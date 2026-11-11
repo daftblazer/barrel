@@ -247,3 +247,50 @@ pub fn skills(pe: &Pe, table: u64) -> Option<Vec<Skill>> {
     }
     (!out.is_empty()).then_some(out)
 }
+
+/// The party's members in the party tables' order, as the skill enum names them.
+pub const PARTY_TAGS: [&str; 11] = ["ESCHA", "LOGY", "AWIN", "THREIA", "REYFER", "LUCILLE", "LINCA", "WILBELL", "MICIE", "KATLA", "NIO"];
+
+/// One party member's skills, as indices into the skill table: the enum's
+/// `SKILL_PT_<MEMBER>_<ROLE>` tags (`ATTACK`, `SKILL_1` to `_3`, `PASSIVE_1` and `_2`,
+/// `SKILL_EX` the finishing attack, and the support skills `AC_ATTACK`, `AC_GUARD`,
+/// `AC_EXTRA` (the AC special), `AC_MOVE`, `AC_CHANGE`, and Escha's and Logy's `AC_SP1`, `AC_SP2`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PartySkills {
+    /// (role, skill index), in enum order.
+    pub roles: Vec<(String, usize)>,
+}
+
+impl PartySkills {
+    pub fn get(&self, role: &str) -> Option<usize> {
+        self.roles.iter().find(|(r, _)| r == role).map(|&(_, i)| i)
+    }
+}
+
+/// Each member's skills from the skill enum's tags (`Pe::enum_names("SKILL_ATTACK_PT")`, whose
+/// order is the skill table's), by [`PARTY_TAGS`].
+pub fn party_skills(tags: &[&str]) -> Vec<PartySkills> {
+    PARTY_TAGS
+        .iter()
+        .map(|m| {
+            let prefix = format!("SKILL_PT_{m}_");
+            let roles = tags.iter().enumerate().filter_map(|(i, t)| t.strip_prefix(&prefix).map(|r| (r.to_string(), i))).collect();
+            PartySkills { roles }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod party_tests {
+    use super::*;
+
+    #[test]
+    fn party_skills_group_by_member() {
+        let tags = ["SKILL_ATTACK_PT", "SKILL_PT_ESCHA_ATTACK", "SKILL_PT_ESCHA_SKILL_1", "SKILL_PT_LOGY_ATTACK", "SKILL_PT_ESCHA_AC_SP1"];
+        let p = party_skills(&tags);
+        assert_eq!(p[0].get("ATTACK"), Some(1));
+        assert_eq!(p[0].get("AC_SP1"), Some(4));
+        assert_eq!(p[1].roles, [("ATTACK".to_string(), 3)]);
+        assert!(p[2].roles.is_empty());
+    }
+}

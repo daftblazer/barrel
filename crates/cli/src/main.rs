@@ -42,6 +42,7 @@ usage:
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
+  barrel party-skills EXE      each party member's skills by role (attack, skills, passives, support)
   barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
@@ -94,6 +95,7 @@ fn main() -> ExitCode {
         ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
+        ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["shops", install] => shops(Path::new(install), None),
@@ -720,6 +722,24 @@ fn party(exe: &Path) -> Result<()> {
             format!("{}:{}/{}/{}/{}/{}", l, s.hp, s.mp, s.attack, s.defense, s.speed)
         };
         println!("{name:<8} {}  {}  {}  {}", show(1), show(10), show(50), show(99));
+    }
+    Ok(())
+}
+
+/// Each party member's skills by role, from the skill enum's `SKILL_PT_<MEMBER>_<ROLE>` tags.
+fn party_skills(exe: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
+    let (tags, _) = pe.enum_names("SKILL_ATTACK_PT").ok_or("no SKILL_ATTACK_PT enum")?;
+    for (member, set) in bd::PARTY_TAGS.iter().zip(bd::party_skills(&tags)) {
+        println!("{member}");
+        for (role, i) in &set.roles {
+            let s = &skills[*i];
+            let effects: Vec<String> = s.effects.iter().map(|e| format!("act {} {}..{}", e.act, e.min, e.max)).collect();
+            println!("  {role:<10} {i:3} {:<22} wait {:3}  {}", s.name, s.wait, effects.join(", "));
+        }
     }
     Ok(())
 }
