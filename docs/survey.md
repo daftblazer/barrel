@@ -169,9 +169,22 @@ has to be broken. The Ryza DX executable (not DRM-wrapped) shows how it reads th
      | 6 | n | copy n + 8 literals |
      | 7 | (n from the extra stream) | copy n + 14 literals |
 
-  `tools/xml_e.py` decrypts a file. On Ryza DX, 386 of the 391 tables that have a plain
-  twin come out identical to it; in the other 5 the shipped twin is the odd one out (a
-  damaged byte in a Japanese comment, where the decrypted copy reads 基本設定).
+  `barrel_formats::xml_e::decrypt` does all of this (`barrel xml-e FILE OUT`;
+  `barrel pak-xml-e FILE.PAK` decrypts every table in an archive and compares it with its
+  plain twin). Over the four games:
+
+  | Game | Identical to the twin | Differ | No twin, decrypted | Fail |
+  |---|---|---|---|---|
+  | Sophie 2 | 371 | 1 | 0 | 5 |
+  | Ryza DX | 386 | 5 | 0 | 8 |
+  | Ryza 2 DX | 450 | 1 | 0 | 8 |
+  | Ryza 3 DX | 593 | 4 | 133 | 5 |
+
+  Where a table differs, the shipped plain twin is the odd one out (in one, a damaged byte
+  in a Japanese comment that reads 基本設定 in the decrypted copy). The failures are always
+  the same few: `saves\mix\mixpanellineeffectdata*`, `saves\recipeidea\*` and
+  `saves\fieldmap\sky\*`, which have no end marker after stage 3. They have the same
+  header, so they must be read with other seeds; `tools/xml_e.py` is the Python prototype.
 
 ## What the games share
 

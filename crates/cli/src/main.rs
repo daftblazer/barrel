@@ -32,6 +32,8 @@ usage:
   barrel g1a-scan DIR          read every animation in the containers
   barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
   barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
+  barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
+  barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -67,6 +69,8 @@ fn main() -> ExitCode {
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
+        ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
+        ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["recipes", exe] => recipes(Path::new(exe)),
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
@@ -347,15 +351,63 @@ fn pak_ls(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
+fn pak_read(
+    f: &mut std::fs::File,
+    pak: &barrel_formats::pak::Pak,
+    entry: &barrel_formats::pak::Entry,
+) -> std::io::Result<Vec<u8>> {
     use std::io::{Read, Seek, SeekFrom};
+    let mut data = vec![0u8; entry.size as usize];
+    f.seek(SeekFrom::Start(entry.offset))?;
+    f.read_exact(&mut data)?;
+    pak.unscramble(entry, 0, &mut data);
+    Ok(data)
+}
+
+fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
     let (mut f, pak) = open_pak(file)?;
     let entry = pak.entries.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or("no such file in the archive")?;
-    let mut data = vec![0u8; entry.size as usize];
-    f.seek(SeekFrom::Start(entry.offset)).and_then(|_| f.read_exact(&mut data)).map_err(|e| format!("{}: {e}", file.display()))?;
-    pak.unscramble(entry, 0, &mut data);
+    let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{}: {e}", file.display()))?;
     std::fs::write(out, &data).map_err(|e| format!("{}: {e}", out.display()))?;
     Ok(())
+}
+
+fn xml_e(file: &Path, out: &Path) -> Result<()> {
+    let plain = barrel_formats::xml_e::decrypt(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    std::fs::write(out, &plain).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(())
+}
+
+fn pak_xml_e(file: &Path) -> Result<()> {
+    let (mut f, pak) = open_pak(file)?;
+    let by_name: BTreeMap<&str, &barrel_formats::pak::Entry> =
+        pak.entries.iter().map(|e| (e.name.as_str(), e)).collect();
+    let (mut same, mut differ, mut alone, mut failed) = (0, 0, 0, 0);
+    for e in pak.entries.iter().filter(|e| e.name.ends_with(".xml.e")) {
+        let data = pak_read(&mut f, &pak, e).map_err(|err| format!("{}: {err}", file.display()))?;
+        let plain = match barrel_formats::xml_e::decrypt(&data) {
+            Ok(p) => p,
+            Err(err) => {
+                println!("FAILED {}: {err}", e.name);
+                failed += 1;
+                continue;
+            }
+        };
+        match by_name.get(&e.name[..e.name.len() - 2]) {
+            Some(twin) => {
+                let t = pak_read(&mut f, &pak, twin).map_err(|err| format!("{}: {err}", file.display()))?;
+                if t == plain {
+                    same += 1;
+                } else {
+                    println!("differs from its twin: {}", e.name);
+                    differ += 1;
+                }
+            }
+            None => alone += 1,
+        }
+    }
+    println!("{same} identical to their twin, {differ} differ, {alone} without a twin, {failed} failed");
+    if failed > 0 { Err("some tables did not decrypt".into()) } else { Ok(()) }
 }
 
 /// Escha & Logy DX's first synthesizable item (Craft).
