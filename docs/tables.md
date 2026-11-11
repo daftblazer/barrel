@@ -176,6 +176,26 @@ turn"). `tools/skills.py` prints the effects by name. An unused slot can keep st
 after its -1. The other fields are named from the values' patterns only and should be checked
 against the battle code.
 
+### Building an action's effects (executable)
+
+`0x14015f560 (skill, list)` (rejects skills above 531) appends a skill's two effect slots to
+an action's effect list, one 0x34-byte entry each: the slot's six i32 copied as they are
+(`ACT_*`, i32, minimum, maximum, two i32), then `0, -1, 0, 0`, a float scale of 1.0 (+0x28),
+a zero byte and -1 (+0x30). An empty slot is appended too, with its -1 number.
+
+Its one caller, `0x14032f420`, then raises the effects when the character has a bonus of kind
+0x17 (summed over 3 parts of each of 4 slots at character +0x194, stride 0x24; equipment
+traits, most likely) and the skill is not one of 0, 4, 7 and 8 to 16: each of the four values
+from +8 (minimum, maximum and the two after) becomes `value × (min(bonus, cap) + 100) / 100`
+(integer division), where `cap` is the effect's limit from the `ACT_*` property table.
+
+The `ACT_*` property table at `0x140ce9598` (English Escha executable): 20 bytes per number,
+from -1 to 233: i32 (1 for the damage kinds, 0 otherwise), i32 the limit on that bonus in
+percent (9999 for most; 0 for `DAMAGE_FIX`, `DAMAGE_PERCENT`, `RUNAWAY`, `PERCENT_QUICK`, so
+no bonus; 100 for `RETURN_WT`, 500 for `ADD_MAXHP`), i32 (5 for `DAMAGE_HP`, 25 for
+`ASSIST_ATTACK`), then 8 flag bytes. `0x14002aa40` reads the limit (9999 for a number out of
+range).
+
 ### Applying effects (executable)
 
 The function at `0x1401bde10` (English Escha executable) applies a resolved action's effects
