@@ -3,7 +3,8 @@
 //!
 //! What it leaves out (each a reason it can differ from the game): the battle's start (both
 //! join with wait 500, the first in front), every trait, state and passive (so every scale is
-//! 1.0 and no quick-turn roll is made), the effect-roll globals (taken as neutral), the
+//! 1.0 and no quick-turn roll is made), the effect-roll globals (taken as neutral: no chain bonus, and full MP power, which the
+//! monsters' normal attack always has since it costs no MP), the
 //! action's float (taken as 1.0), item and party code, death checks beyond HP 0, and the
 //! battle's other random draws.
 

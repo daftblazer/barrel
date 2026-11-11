@@ -222,7 +222,9 @@ an item adds `extra`: its value 0x27 if the amount is at most that, else 0x27² 
 
 and the float scale (+0x28) starts at 1 (or character A's value 0x2b4 / 100 when positive, for
 action kinds other than 2) and is multiplied by the flag-gated factors in the flag table above, then
-by `(global 0x141077e70 + 100) / 100` and `global 0x141077e50 / 100`, then by `1 - clamp(
+by `(global 0x141077e70 + 100) / 100` (a running bonus: `0x1401d07a0` adds to it, `0x1401d08b0`
+clears it; fed by 10, 25 and 5 point steps in `0x1401bd1c0`, a chain bonus by the look of
+it) and `global 0x141077e50 / 100` (the MP power, below), then by `1 - clamp(
 character A's state-12 value × 0.1 / 100, 0, 1)`, and is kept at least 0.15. The function takes two characters, A (its second argument), the user, and B (its third), the
 target. `0x1401bd000 (battle, action)` looks the user up from the action's actor (+0x10) and
 calls `0x1401bd410 (battle, user, target, action)`, which rolls (`0x1401bd520`) and applies
@@ -273,6 +275,15 @@ the effect's `ACT_*` number to its state number with `0x1401c0e80`:
 
 The other state numbers (3, 9 to 0x10, ...) are not reached from this mapping (the bad
 statuses and others, presumably).
+
+### MP cost and power (executable)
+
+A skill's MP cost is `0x14015f6a0 (skill, CONSUME_MP, 0)`: the sum, over its effect slots whose
+number is `ACT_CONSUME_MP` (11), of a number rolled from the slot's minimum to its maximum (a
+draw only when they differ). A user with less MP than the cost still acts, at less power:
+global `0x141077e50` becomes `min(100, MP × 100 / cost)` (`0x1401b8475`; MP is stat 2), and
+every effect's scale is multiplied by it / 100. After each action (`0x1401c0676`) it is set
+back to 100. `barrel_game::battle::mp_cost` and `mp_power` do the above.
 
 ### Turn order (executable)
 

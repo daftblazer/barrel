@@ -20,6 +20,20 @@ pub mod stat {
     pub const COUNT: usize = 35;
 }
 
+/// A skill's MP cost (`0x14015f6a0 (skill, CONSUME_MP, 0)`): the sum, over its effect slots
+/// with `ACT_CONSUME_MP` (11), of a number rolled from the slot's minimum to its maximum.
+pub fn mp_cost(slots: &[(u32, i32, i32)], rng: &mut crate::rng::Rng) -> i32 {
+    const CONSUME_MP: u32 = 11;
+    slots.iter().filter(|s| s.0 == CONSUME_MP).map(|&(_, lo, hi)| rng.range(lo, hi)).sum()
+}
+
+/// The power percentage an action gets from its user's MP (global `0x141077e50`, 100 unless
+/// set, and set back to 100 after each action): a user short of the cost acts at
+/// `MP × 100 / cost` percent.
+pub fn mp_power(mp: i32, cost: i32) -> i32 {
+    if cost > 0 { (mp.wrapping_mul(100) / cost).min(100) } else { 100 }
+}
+
 /// The base of an HP-damage effect (`0x1401c3290`): the rolled amount as a percentage of
 /// `scale_stat`, raised by `attack` (`(attack^1.5)^1.1 / 50` percent, in floats).
 pub fn base_damage(amount: i32, scale_stat: i32, attack: i32) -> i32 {
@@ -264,6 +278,18 @@ mod tests {
         assert_eq!(t.entries, [(2, 0), (3, 0), (1, 180), (4, 380)]);
         assert_eq!(knockback(50, 1, 0), 50);
         assert_eq!(knockback(50, 2, 20), 20);
+    }
+
+    #[test]
+    fn mp() {
+        use crate::rng::Rng;
+        let mut r = Rng::from_state([1, 2, 3, 4]);
+        let before = r.state();
+        assert_eq!(mp_cost(&[(0, 64, 80), (11, 12, 12)], &mut r), 12);
+        assert_eq!(r.state(), before);
+        assert_eq!(mp_power(6, 12), 50);
+        assert_eq!(mp_power(30, 12), 100);
+        assert_eq!(mp_power(0, 0), 100);
     }
 
     #[test]
