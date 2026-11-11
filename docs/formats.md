@@ -267,11 +267,14 @@ highlights. All four use the eye mesh's single UV set.
 
 The voices (and the other Ogg sounds) are decoded natively, from the Vorbis I specification
 and RFC 3533: no outside decoder. Done so far: Ogg pages into packets, the identification
-header, and the setup header's codebooks (Huffman codes assigned from the lengths, lowest free
-code first; lookup types 1 and 2 unpacked into vectors). `barrel vorbis-scan SeriesNNNN.fpl`
+header, and the whole setup header: codebooks (Huffman codes assigned from the lengths, lowest
+free code first; lookup types 1 and 2 unpacked into vectors), floors (types 0 and 1),
+residues (types 0 to 2, with their cascade books), mappings (coupling, submaps), modes, and
+the framing bit. `barrel vorbis-scan SeriesNNNN.fpl`
 reads every clip of a bank: all 18,000 voice clips are mono, 48 kHz, block sizes 256 and 2048,
-with 39 codebooks (a few more in some) that all read. Floors, residues, mappings, modes and the
-audio packets come next.
+with 39 codebooks (a few more in some), and every setup header reads to its framing bit; so do
+the 247 music files (`Sound/BGM/*.kvs`, KOVS like the voices; `vorbis-scan DIR`). The audio
+packets come next.
 
 ## Saves (`GAMEDATA<NN>.pcsave`)
 

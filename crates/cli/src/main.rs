@@ -43,7 +43,7 @@ usage:
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
   barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
   barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
-  barrel vorbis-scan SeriesNNNN.fpl  read every clip's Vorbis headers and codebooks in a voice bank
+  barrel vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -784,8 +784,21 @@ fn save(file: &Path) -> Result<()> {
 /// Every clip of a voice bank through the native Vorbis reader (headers and codebooks so far).
 fn vorbis_scan(fpl: &Path) -> Result<()> {
     use barrel_formats::{voice, vorbis};
-    let list = voice::list(&read(fpl)?).map_err(|e| format!("{}: {e}", fpl.display()))?;
-    let fp = read(&fpl.with_extension("fp"))?;
+    // A folder of loose KOVS files (the music): the same as a bank of them, one after another.
+    let (list, fp) = if fpl.is_dir() {
+        let mut names: Vec<_> = std::fs::read_dir(fpl)?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "kvs")).collect();
+        names.sort();
+        let mut fp = Vec::new();
+        let mut list = Vec::new();
+        for n in names {
+            let d = read(&n)?;
+            list.push(Some((fp.len(), d.len())));
+            fp.extend_from_slice(&d);
+        }
+        (list, fp)
+    } else {
+        (voice::list(&read(fpl)?).map_err(|e| format!("{}: {e}", fpl.display()))?, read(&fpl.with_extension("fp"))?)
+    };
     let (mut ok, mut books, mut failed) = (0usize, 0usize, Vec::new());
     for (k, c) in list.iter().enumerate() {
         let Some((off, size)) = *c else { continue };
@@ -793,8 +806,8 @@ fn vorbis_scan(fpl: &Path) -> Result<()> {
             let ogg = voice::ogg(fp.get(off..off + size).ok_or(barrel_formats::Error::Corrupt("clip past the end"))?)?;
             let packets = vorbis::packets(&ogg)?;
             let id = vorbis::identification(packets.first().ok_or(barrel_formats::Error::Corrupt("no packets"))?)?;
-            let (b, _) = vorbis::codebooks(packets.get(2).ok_or(barrel_formats::Error::Corrupt("no setup header"))?)?;
-            Ok((id, b.len()))
+            let setup = vorbis::setup(packets.get(2).ok_or(barrel_formats::Error::Corrupt("no setup header"))?, id.channels)?;
+            Ok((id, setup.codebooks.len()))
         })();
         match result {
             Ok((id, n)) => {

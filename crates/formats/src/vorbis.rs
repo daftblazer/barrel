@@ -1,8 +1,8 @@
 //! Ogg Vorbis, decoded natively (the game's voices, music and sounds; `voice::ogg` unwraps the
 //! voice clips). Written from the Vorbis I specification (Xiph.Org, 2015) and RFC 3533 (Ogg).
 //!
-//! So far: Ogg pages into packets, the identification header and the setup header's codebooks.
-//! Floors, residues, mappings, modes and the audio packets follow.
+//! So far: Ogg pages into packets, the identification header and the whole setup header
+//! (codebooks, floors, residues, mappings, modes). The audio packets follow.
 
 use crate::Error;
 
@@ -221,6 +221,222 @@ pub fn codebooks(packet: &[u8]) -> Result<(Vec<Codebook>, Bits<'_>), Error> {
     let count = bits.read(8).ok_or(Error::Corrupt("Vorbis setup header empty"))? as usize + 1;
     let books = (0..count).map(|_| codebook(&mut bits)).collect::<Result<Vec<_>, _>>()?;
     Ok((books, bits))
+}
+
+/// A floor (section 6 for type 0, section 7 for type 1).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Floor {
+    Zero { order: u32, rate: u32, bark_map_size: u32, amplitude_bits: u32, amplitude_offset: u32, books: Vec<u8> },
+    One(Floor1),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Floor1 {
+    /// Each partition's class.
+    pub partitions: Vec<u8>,
+    /// Per class: dimensions, subclass bits, master book, subclass books (-1 none).
+    pub classes: Vec<Floor1Class>,
+    /// 1 to 4.
+    pub multiplier: u32,
+    /// The X positions, starting with 0 and 2^rangebits.
+    pub xs: Vec<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Floor1Class {
+    pub dimensions: u32,
+    pub subclasses: u32,
+    pub masterbook: u8,
+    pub subbooks: Vec<i32>,
+}
+
+/// A residue (section 8): its type (0, 1 or 2) and layout.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Residue {
+    pub kind: u16,
+    pub begin: u32,
+    pub end: u32,
+    pub partition_size: u32,
+    pub classifications: u32,
+    pub classbook: u8,
+    /// For each classification, the book of each of the 8 passes (-1 none).
+    pub books: Vec<[i32; 8]>,
+}
+
+/// A mapping (section 4.2.4, type 0).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mapping {
+    /// (magnitude channel, angle channel) coupling steps.
+    pub coupling: Vec<(u32, u32)>,
+    /// Each channel's submap.
+    pub mux: Vec<u8>,
+    /// Per submap: (floor, residue).
+    pub submaps: Vec<(u8, u8)>,
+}
+
+/// A mode: whether it uses the long block, and its mapping.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Mode {
+    pub long: bool,
+    pub mapping: u8,
+}
+
+/// The whole setup header (packet type 5).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Setup {
+    pub codebooks: Vec<Codebook>,
+    pub floors: Vec<Floor>,
+    pub residues: Vec<Residue>,
+    pub mappings: Vec<Mapping>,
+    pub modes: Vec<Mode>,
+}
+
+/// Reads the setup header to its framing bit (section 4.2.4); `channels` from the
+/// identification header.
+pub fn setup(packet: &[u8], channels: u8) -> Result<Setup, Error> {
+    let (codebooks, mut bits) = codebooks(packet)?;
+    let e = || Error::Corrupt("Vorbis setup header past the end of the packet");
+    let books = codebooks.len() as u32;
+    let book = |b: u32| if b < books { Ok(b as u8) } else { Err(Error::Corrupt("Vorbis setup names a codebook it lacks")) };
+    let times = bits.read(6).ok_or_else(e)? + 1;
+    for _ in 0..times {
+        if bits.read(16).ok_or_else(e)? != 0 {
+            return Err(Error::Corrupt("Vorbis time domain transform not 0"));
+        }
+    }
+    let mut floors = Vec::new();
+    for _ in 0..bits.read(6).ok_or_else(e)? + 1 {
+        match bits.read(16).ok_or_else(e)? {
+            0 => {
+                let order = bits.read(8).ok_or_else(e)?;
+                let rate = bits.read(16).ok_or_else(e)?;
+                let bark_map_size = bits.read(16).ok_or_else(e)?;
+                let amplitude_bits = bits.read(6).ok_or_else(e)?;
+                let amplitude_offset = bits.read(8).ok_or_else(e)?;
+                let n = bits.read(4).ok_or_else(e)? + 1;
+                let list = (0..n).map(|_| bits.read(8).ok_or_else(e).and_then(book)).collect::<Result<_, _>>()?;
+                floors.push(Floor::Zero { order, rate, bark_map_size, amplitude_bits, amplitude_offset, books: list });
+            }
+            1 => {
+                let partitions: Vec<u8> = (0..bits.read(5).ok_or_else(e)?).map(|_| bits.read(4).map(|c| c as u8).ok_or_else(e)).collect::<Result<_, _>>()?;
+                let max = partitions.iter().copied().max().map_or(-1, i32::from);
+                let mut classes = Vec::new();
+                for _ in 0..=max {
+                    let dimensions = bits.read(3).ok_or_else(e)? + 1;
+                    let subclasses = bits.read(2).ok_or_else(e)?;
+                    let masterbook = if subclasses > 0 { book(bits.read(8).ok_or_else(e)?)? } else { 0 };
+                    let subbooks = (0..1u32 << subclasses)
+                        .map(|_| {
+                            let b = bits.read(8).ok_or_else(e)? as i32 - 1;
+                            if b >= 0 {
+                                book(b as u32)?;
+                            }
+                            Ok(b)
+                        })
+                        .collect::<Result<_, Error>>()?;
+                    classes.push(Floor1Class { dimensions, subclasses, masterbook, subbooks });
+                }
+                let multiplier = bits.read(2).ok_or_else(e)? + 1;
+                let rangebits = bits.read(4).ok_or_else(e)?;
+                let mut xs = vec![0, 1 << rangebits];
+                for &c in &partitions {
+                    for _ in 0..classes[c as usize].dimensions {
+                        xs.push(bits.read(rangebits).ok_or_else(e)?);
+                    }
+                }
+                let mut sorted = xs.clone();
+                sorted.sort_unstable();
+                sorted.dedup();
+                if sorted.len() != xs.len() || xs.len() > 65 {
+                    return Err(Error::Corrupt("Vorbis floor 1 X list repeats or is too long"));
+                }
+                floors.push(Floor::One(Floor1 { partitions, classes, multiplier, xs }));
+            }
+            _ => return Err(Error::Corrupt("Vorbis floor type")),
+        }
+    }
+    let mut residues = Vec::new();
+    for _ in 0..bits.read(6).ok_or_else(e)? + 1 {
+        let kind = bits.read(16).ok_or_else(e)? as u16;
+        if kind > 2 {
+            return Err(Error::Corrupt("Vorbis residue type"));
+        }
+        let begin = bits.read(24).ok_or_else(e)?;
+        let end = bits.read(24).ok_or_else(e)?;
+        let partition_size = bits.read(24).ok_or_else(e)? + 1;
+        let classifications = bits.read(6).ok_or_else(e)? + 1;
+        let classbook = book(bits.read(8).ok_or_else(e)?)?;
+        let mut cascade = Vec::new();
+        for _ in 0..classifications {
+            let low = bits.read(3).ok_or_else(e)?;
+            let high = if bits.flag().ok_or_else(e)? { bits.read(5).ok_or_else(e)? } else { 0 };
+            cascade.push(high * 8 + low);
+        }
+        let mut list = Vec::new();
+        for c in cascade {
+            let mut row = [-1i32; 8];
+            for (j, slot) in row.iter_mut().enumerate() {
+                if c & (1 << j) != 0 {
+                    *slot = i32::from(book(bits.read(8).ok_or_else(e)?)?);
+                }
+            }
+            list.push(row);
+        }
+        residues.push(Residue { kind, begin, end, partition_size, classifications, classbook, books: list });
+    }
+    let mut mappings = Vec::new();
+    for _ in 0..bits.read(6).ok_or_else(e)? + 1 {
+        if bits.read(16).ok_or_else(e)? != 0 {
+            return Err(Error::Corrupt("Vorbis mapping type"));
+        }
+        let submap_count = if bits.flag().ok_or_else(e)? { bits.read(4).ok_or_else(e)? + 1 } else { 1 };
+        let mut coupling = Vec::new();
+        if bits.flag().ok_or_else(e)? {
+            let width = ilog(u32::from(channels) - 1);
+            for _ in 0..bits.read(8).ok_or_else(e)? + 1 {
+                let m = bits.read(width).ok_or_else(e)?;
+                let a = bits.read(width).ok_or_else(e)?;
+                if m == a || m >= u32::from(channels) || a >= u32::from(channels) {
+                    return Err(Error::Corrupt("Vorbis coupling channels"));
+                }
+                coupling.push((m, a));
+            }
+        }
+        if bits.read(2).ok_or_else(e)? != 0 {
+            return Err(Error::Corrupt("Vorbis mapping reserved bits"));
+        }
+        let mux = if submap_count > 1 {
+            (0..channels).map(|_| bits.read(4).map(|m| m as u8).ok_or_else(e)).collect::<Result<_, _>>()?
+        } else {
+            vec![0; channels as usize]
+        };
+        let mut submaps = Vec::new();
+        for _ in 0..submap_count {
+            bits.read(8).ok_or_else(e)?;
+            let floor = bits.read(8).ok_or_else(e)? as u8;
+            let residue = bits.read(8).ok_or_else(e)? as u8;
+            if usize::from(floor) >= floors.len() || usize::from(residue) >= residues.len() {
+                return Err(Error::Corrupt("Vorbis mapping names a floor or residue it lacks"));
+            }
+            submaps.push((floor, residue));
+        }
+        mappings.push(Mapping { coupling, mux, submaps });
+    }
+    let mut modes = Vec::new();
+    for _ in 0..bits.read(6).ok_or_else(e)? + 1 {
+        let long = bits.flag().ok_or_else(e)?;
+        let window = bits.read(16).ok_or_else(e)?;
+        let transform = bits.read(16).ok_or_else(e)?;
+        let mapping = bits.read(8).ok_or_else(e)? as u8;
+        if window != 0 || transform != 0 || usize::from(mapping) >= mappings.len() {
+            return Err(Error::Corrupt("Vorbis mode"));
+        }
+        modes.push(Mode { long, mapping });
+    }
+    if !bits.flag().ok_or_else(e)? {
+        return Err(Error::Corrupt("Vorbis setup header framing bit"));
+    }
+    Ok(Setup { codebooks, floors, residues, mappings, modes })
 }
 
 /// Assigns the Huffman codes from the lengths the way the specification does (each entry, in
