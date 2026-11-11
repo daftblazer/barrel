@@ -23,7 +23,8 @@ usage:
   barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
   barrel g1t-scan DIR          read every texture, loose and in containers
   barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
-  barrel g1m-scan DIR          read every model in the containers under DIR";
+  barrel g1m-scan DIR          read every model in the containers under DIR
+  barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -42,6 +43,7 @@ fn main() -> ExitCode {
         ["g1t-scan", dir] => g1t_scan(Path::new(dir)),
         ["g1m-obj", file, out] => g1m_obj(file, Path::new(out)),
         ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
+        ["oid-scan", dir] => oid_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -464,4 +466,33 @@ fn g1m_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some models did not read".into()) }
+}
+
+fn oid_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut lists, mut names) = (0usize, 0usize);
+    let mut failed = Vec::new();
+    for path in &files {
+        let bytes = read(path)?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for (i, entry) in e.entries.iter().enumerate() {
+            if !entry.name.ends_with("Oid.bin") {
+                continue;
+            }
+            match barrel_formats::oid::parse(e.data(entry)) {
+                Ok(n) => {
+                    lists += 1;
+                    names += n.len();
+                }
+                Err(err) => failed.push(format!("{}#{i}: {err}", path.display())),
+            }
+        }
+    }
+    println!("{lists} name lists, {names} names, {} failed", failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
 }

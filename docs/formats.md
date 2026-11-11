@@ -128,6 +128,16 @@ Attribute types: 0, 1, 2, 3 are 1 to 4 floats; 5 is four bytes (bone indices); 1
 normalized bytes (colour). Semantics: 0 position, 1 weights, 2 bone indices, 3 normal,
 4 tangent, 5 UV, 10 colour.
 
+## Node names (`*Oid.bin`)
+
+Read by `barrel_formats::oid`. Each model container has one (`<name>Oid.bin`, the `.bin`
+entries with no magic); all 298 in Escha read, 31,415 names in all. `barrel oid-scan DIR`
+reads them.
+
+The file is the model's node names in node order (`root`, `Bip001_Pelvis`, `Bip001_Spine`,
+...), each as `{u8 length, ASCII bytes}`, ended by a single 0xff byte. They name the
+skeleton's bones, which G1MS stores by number only.
+
 ## Event bytecode (`*.ebd`)
 
 Read by `barrel_formats::ebd`. In Escha all 1,639 files read without error: 49,393 actions,

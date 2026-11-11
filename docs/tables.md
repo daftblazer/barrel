@@ -90,3 +90,11 @@ Since the recipes are not in a data file, Barrel has to read them from the playe
 executable. The address differs between builds, so the engine should find the table by its
 shape (a record whose word 0 is the first synthesizable item, repeated every 288 bytes)
 rather than by a fixed address.
+
+## Monster stats
+
+Not found yet. They are not in the XML tables: `chara/CharaBase.xml` and `chara/Chara.xml`
+have a row for every monster model (`MOB00B` and so on) but hold only how it looks and moves
+(model, motions, size, camera). The monster enum is in the executable (153 `MONSTER_*`
+tags, numbered from `MONSTER_FRUITRAT_01` = 0), but no array keyed by those numbers holds
+values that look like stats; the ones found are runtime arrays or per-monster flags.
