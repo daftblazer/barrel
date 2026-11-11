@@ -2,7 +2,7 @@
 //! voice clips). Written from the Vorbis I specification (Xiph.Org, 2015) and RFC 3533 (Ogg).
 //!
 //! So far: Ogg pages into packets, the identification header and the whole setup header
-//! (codebooks, floors, residues, mappings, modes). The audio packets follow.
+//! (codebooks, floors, residues, mappings, modes) and the audio packets ([`Decoder`], [`decode`]).
 
 use crate::Error;
 
@@ -131,21 +131,51 @@ pub struct Codebook {
     pub codes: Vec<u32>,
     /// `dimensions` values per entry, or empty for a codebook without vectors.
     pub vectors: Vec<f32>,
+    /// The decode tree: per node, the next node for a 0 and a 1 bit (0: none; below 0: the
+    /// entry -1 - value).
+    tree: Vec<[i32; 2]>,
 }
 
 impl Codebook {
     /// Reads one entry's number from the packet (`None` at the end of the packet or on a
     /// code no entry has).
     pub fn decode(&self, bits: &mut Bits) -> Option<usize> {
-        let mut code = 0u32;
-        for len in 1..=32u8 {
-            code |= bits.read(1)? << (len - 1);
-            if let Some(i) = (0..self.lengths.len()).find(|&i| self.lengths[i] == len && self.codes[i] == code) {
-                return Some(i);
+        // A codebook with a single used entry of length 1 still reads its one bit.
+        let mut node = 0usize;
+        loop {
+            let next = *self.tree.get(node)?.get(bits.read(1)? as usize)?;
+            match next {
+                0 => return None,
+                n if n < 0 => return Some((-1 - n) as usize),
+                n => node = n as usize,
             }
         }
-        None
     }
+
+    /// The vector of entry `e`.
+    pub fn vector(&self, e: usize) -> &[f32] {
+        &self.vectors[e * self.dimensions..(e + 1) * self.dimensions]
+    }
+}
+
+fn tree(lengths: &[u8], codes: &[u32]) -> Vec<[i32; 2]> {
+    let mut t = vec![[0i32; 2]];
+    for (e, (&len, &code)) in lengths.iter().zip(codes).enumerate() {
+        let mut node = 0usize;
+        for b in 0..len as u32 {
+            let bit = ((code >> b) & 1) as usize;
+            if b + 1 == len as u32 {
+                t[node][bit] = -1 - e as i32;
+            } else {
+                if t[node][bit] <= 0 {
+                    t.push([0, 0]);
+                    t[node][bit] = (t.len() - 1) as i32;
+                }
+                node = t[node][bit] as usize;
+            }
+        }
+    }
+    t
 }
 
 /// Reads one codebook from the setup header (section 3.2.1).
@@ -208,7 +238,8 @@ pub fn codebook(bits: &mut Bits) -> Result<Codebook, Error> {
     } else if lookup != 0 {
         return Err(Error::Corrupt("Vorbis codebook lookup type"));
     }
-    Ok(Codebook { dimensions, lengths, codes, vectors })
+    let tree = tree(&lengths, &codes);
+    Ok(Codebook { dimensions, lengths, codes, vectors, tree })
 }
 
 /// The setup header's codebooks (packet type 5, its first part; the rest follows them).
@@ -439,6 +470,471 @@ pub fn setup(packet: &[u8], channels: u8) -> Result<Setup, Error> {
     Ok(Setup { codebooks, floors, residues, mappings, modes })
 }
 
+/// Floor 1's amplitude to linear table (the specification's `floor1_inverse_dB_table`): 140 dB
+/// over 255 steps of 0.5469 dB, 1.0 at the top.
+fn inverse_db(i: usize) -> f32 {
+    (1.064_986_3f64.powf(i as f64 - 255.0)) as f32
+}
+
+fn low_neighbor(xs: &[u32], i: usize) -> usize {
+    (0..i).filter(|&n| xs[n] < xs[i]).max_by_key(|&n| xs[n]).unwrap_or(0)
+}
+
+fn high_neighbor(xs: &[u32], i: usize) -> usize {
+    (0..i).filter(|&n| xs[n] > xs[i]).min_by_key(|&n| xs[n]).unwrap_or(0)
+}
+
+fn render_point(x0: i32, y0: i32, x1: i32, y1: i32, x: i32) -> i32 {
+    let dy = y1 - y0;
+    let adx = x1 - x0;
+    let off = dy.abs() * (x - x0) / adx;
+    if dy < 0 { y0 - off } else { y0 + off }
+}
+
+fn render_line(x0: i32, y0: i32, x1: i32, y1: i32, v: &mut [i32]) {
+    let dy = y1 - y0;
+    let adx = x1 - x0;
+    let base = dy / adx;
+    let sy = if dy < 0 { base - 1 } else { base + 1 };
+    let ady = dy.abs() - base.abs() * adx;
+    let (mut y, mut err) = (y0, 0);
+    let n = v.len() as i32;
+    if x0 < n {
+        v[x0 as usize] = y;
+    }
+    for x in x0 + 1..x1.min(n) {
+        err += ady;
+        if err >= adx {
+            err -= adx;
+            y += sy;
+        } else {
+            y += base;
+        }
+        v[x as usize] = y;
+    }
+}
+
+/// Decodes a channel's floor 1 from the packet (section 7.2.2): its Y values, or `None` when
+/// the channel is unused in this packet.
+fn floor1_decode(f: &Floor1, books: &[Codebook], bits: &mut Bits) -> Option<Option<Vec<i32>>> {
+    if !bits.flag()? {
+        return Some(None);
+    }
+    let range = [256, 128, 86, 64][f.multiplier as usize - 1];
+    let width = ilog(range - 1);
+    let mut y = vec![bits.read(width)? as i32, bits.read(width)? as i32];
+    for &c in &f.partitions {
+        let class = &f.classes[c as usize];
+        let csub = (1u32 << class.subclasses) - 1;
+        let mut cval = if class.subclasses > 0 { books[class.masterbook as usize].decode(bits)? as u32 } else { 0 };
+        for _ in 0..class.dimensions {
+            let book = class.subbooks[(cval & csub) as usize];
+            cval >>= class.subclasses;
+            y.push(if book >= 0 { books[book as usize].decode(bits)? as i32 } else { 0 });
+        }
+    }
+    Some(Some(y))
+}
+
+/// Floor 1's curve over `n2` = n / 2 bins (section 7.2.4).
+fn floor1_curve(f: &Floor1, ys: &[i32], n2: usize) -> Vec<f32> {
+    let range = [256, 128, 86, 64][f.multiplier as usize - 1];
+    let count = f.xs.len();
+    let mut used = vec![false; count];
+    let mut fy = vec![0i32; count];
+    used[0] = true;
+    used[1] = true;
+    fy[0] = ys[0];
+    fy[1] = ys[1];
+    for i in 2..count {
+        let low = low_neighbor(&f.xs, i);
+        let high = high_neighbor(&f.xs, i);
+        let predicted = render_point(f.xs[low] as i32, fy[low], f.xs[high] as i32, fy[high], f.xs[i] as i32);
+        let val = ys[i];
+        let highroom = range - predicted;
+        let lowroom = predicted;
+        let room = if highroom < lowroom { highroom * 2 } else { lowroom * 2 };
+        if val != 0 {
+            used[low] = true;
+            used[high] = true;
+            used[i] = true;
+            fy[i] = if val >= room {
+                if highroom > lowroom { val - lowroom + predicted } else { predicted - val + highroom - 1 }
+            } else if val % 2 == 1 {
+                predicted - (val + 1) / 2
+            } else {
+                predicted + val / 2
+            };
+        } else {
+            fy[i] = predicted;
+        }
+    }
+    let mut order: Vec<usize> = (0..count).collect();
+    order.sort_by_key(|&i| f.xs[i]);
+    let mult = f.multiplier as i32;
+    let mut v = vec![0i32; n2];
+    let (mut lx, mut ly) = (0i32, fy[order[0]] * mult);
+    for &i in &order[1..] {
+        if used[i] {
+            let (hx, hy) = (f.xs[i] as i32, fy[i] * mult);
+            render_line(lx, ly, hx, hy, &mut v);
+            lx = hx;
+            ly = hy;
+        }
+    }
+    for x in (lx.max(0) as usize)..n2 {
+        v[x] = ly;
+    }
+    v.iter().map(|&y| inverse_db(y.clamp(0, 255) as usize)).collect()
+}
+
+/// Decodes a residue into `vectors` (each n / 2 long) for the channels not marked `skip`
+/// (section 8.6).
+fn residue_decode(r: &Residue, books: &[Codebook], bits: &mut Bits, vectors: &mut [Vec<f32>], skip: &[bool], n2: usize) {
+    if r.kind == 2 {
+        if skip.iter().all(|&s| s) {
+            return;
+        }
+        let ch = vectors.len();
+        let mut joined = vec![vec![0f32; n2 * ch]];
+        residue_partitions(r, books, bits, &mut joined, &[false], n2 * ch, 1);
+        for (i, v) in joined[0].iter().enumerate() {
+            vectors[i % ch][i / ch] = *v;
+        }
+        return;
+    }
+    residue_partitions(r, books, bits, vectors, skip, n2, r.kind);
+}
+
+fn residue_partitions(r: &Residue, books: &[Codebook], bits: &mut Bits, vectors: &mut [Vec<f32>], skip: &[bool], size: usize, kind: u16) {
+    let begin = (r.begin as usize).min(size);
+    let end = (r.end as usize).min(size);
+    let psize = r.partition_size as usize;
+    let classbook = &books[r.classbook as usize];
+    let classwords = classbook.dimensions.max(1);
+    let to_read = end.saturating_sub(begin);
+    let partitions = to_read / psize;
+    if partitions == 0 {
+        return;
+    }
+    let mut classes = vec![vec![0usize; partitions + classwords]; vectors.len()];
+    'passes: for pass in 0..8 {
+        let mut p = 0;
+        while p < partitions {
+            if pass == 0 {
+                for (ch, class) in classes.iter_mut().enumerate() {
+                    if skip[ch] {
+                        continue;
+                    }
+                    let Some(mut temp) = classbook.decode(bits) else { break 'passes };
+                    for i in (0..classwords).rev() {
+                        class[p + i] = temp % r.classifications as usize;
+                        temp /= r.classifications as usize;
+                    }
+                }
+            }
+            for _ in 0..classwords {
+                if p >= partitions {
+                    break;
+                }
+                for ch in 0..vectors.len() {
+                    if skip[ch] {
+                        continue;
+                    }
+                    let book = r.books[classes[ch][p]][pass];
+                    if book < 0 {
+                        continue;
+                    }
+                    let book = &books[book as usize];
+                    let offset = begin + p * psize;
+                    let v = &mut vectors[ch];
+                    let dim = book.dimensions;
+                    if kind == 0 {
+                        let step = psize / dim;
+                        for j in 0..step {
+                            let Some(e) = book.decode(bits) else { break 'passes };
+                            for (k, x) in book.vector(e).iter().enumerate() {
+                                v[offset + j + k * step] += x;
+                            }
+                        }
+                    } else {
+                        let mut i = 0;
+                        while i < psize {
+                            let Some(e) = book.decode(bits) else { break 'passes };
+                            for x in book.vector(e) {
+                                if i < psize {
+                                    v[offset + i] += x;
+                                }
+                                i += 1;
+                            }
+                        }
+                    }
+                }
+                p += 1;
+            }
+        }
+    }
+}
+
+/// The Vorbis window's value at `i` of a slope `n` long (section 4.3.1).
+fn slope(i: usize, n: usize) -> f32 {
+    let x = (i as f64 + 0.5) / n as f64 * std::f64::consts::FRAC_PI_2;
+    (std::f64::consts::FRAC_PI_2 * x.sin().powi(2)).sin() as f32
+}
+
+/// An in-place radix-2 complex FFT (e^-2πi nk/N), N a power of two.
+fn fft(re: &mut [f64], im: &mut [f64]) {
+    let n = re.len();
+    let mut j = 0;
+    for i in 1..n {
+        let mut bit = n >> 1;
+        while j & bit != 0 {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j |= bit;
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    let mut len = 2;
+    while len <= n {
+        let ang = -2.0 * std::f64::consts::PI / len as f64;
+        for start in (0..n).step_by(len) {
+            for k in 0..len / 2 {
+                let (wr, wi) = ((ang * k as f64).cos(), (ang * k as f64).sin());
+                let (a, b) = (start + k, start + k + len / 2);
+                let (xr, xi) = (re[b] * wr - im[b] * wi, re[b] * wi + im[b] * wr);
+                re[b] = re[a] - xr;
+                im[b] = im[a] - xi;
+                re[a] += xr;
+                im[a] += xi;
+            }
+        }
+        len <<= 1;
+    }
+}
+
+/// The DCT-IV of `x` (M points, M a power of two): u[k] = Σ x[n] cos(π / M (n + ½)(k + ½)),
+/// through an M/2-point complex FFT.
+fn dct4(x: &[f32]) -> Vec<f64> {
+    let m = x.len();
+    let h = m / 2;
+    let pi = std::f64::consts::PI;
+    let (mut re, mut im) = (vec![0f64; h], vec![0f64; h]);
+    for n in 0..h {
+        let (a, b) = (x[2 * n] as f64, x[m - 1 - 2 * n] as f64);
+        let t = -pi * (4 * n + 1) as f64 / (4 * m) as f64;
+        let (c, s) = (t.cos(), t.sin());
+        re[n] = a * c - b * s;
+        im[n] = a * s + b * c;
+    }
+    fft(&mut re, &mut im);
+    let mut u = vec![0f64; m];
+    for k in 0..h {
+        let t = -pi * k as f64 / m as f64;
+        let (c, s) = (t.cos(), t.sin());
+        let (r, i) = (re[k] * c - im[k] * s, re[k] * s + im[k] * c);
+        u[2 * k] = r;
+        u[m - 1 - 2 * k] = -i;
+    }
+    u
+}
+
+/// The inverse MDCT of `x` (n / 2 coefficients) into n samples, y[i] = Σ x[k] cos(π / (2n)
+/// (2i + 1 + n / 2)(2k + 1)): the DCT-IV of the coefficients, unfolded.
+fn imdct(x: &[f32]) -> Vec<f32> {
+    let n2 = x.len();
+    let n = n2 * 2;
+    let n4 = n / 4;
+    let u = dct4(x);
+    (0..n)
+        .map(|i| {
+            (if i < n4 {
+                u[n4 + i]
+            } else if i < 3 * n4 {
+                -u[3 * n4 - 1 - i]
+            } else {
+                -u[i - 3 * n4]
+            }) as f32
+        })
+        .collect()
+}
+
+/// The inverse MDCT straight from its definition (the reference for [`imdct`]).
+#[cfg(test)]
+fn imdct_direct(x: &[f32]) -> Vec<f32> {
+    let n2 = x.len();
+    let n = n2 * 2;
+    let f = std::f64::consts::PI / (2.0 * n as f64);
+    (0..n)
+        .map(|i| {
+            let a = (2 * i + 1 + n / 2) as f64;
+            x.iter().enumerate().map(|(k, &c)| c as f64 * (f * a * (2 * k + 1) as f64).cos()).sum::<f64>() as f32
+        })
+        .collect()
+}
+
+/// A stream being decoded, packet by packet.
+pub struct Decoder {
+    pub id: Identification,
+    pub setup: Setup,
+    /// The previous block's right half, per channel, and its size.
+    previous: Option<(usize, Vec<Vec<f32>>)>,
+}
+
+impl Decoder {
+    pub fn new(id: Identification, setup: Setup) -> Decoder {
+        Decoder { id, setup, previous: None }
+    }
+
+    /// Decodes one audio packet, returning the samples it completes per channel (none for
+    /// the first packet, which only fills the overlap).
+    pub fn packet(&mut self, packet: &[u8]) -> Result<Vec<Vec<f32>>, Error> {
+        let e = || Error::Corrupt("Vorbis audio packet past its end");
+        let mut bits = Bits::new(packet);
+        if bits.flag().ok_or_else(e)? {
+            return Err(Error::Corrupt("Vorbis audio packet type"));
+        }
+        let modes = self.setup.modes.len() as u32;
+        let mode = self.setup.modes[bits.read(ilog(modes - 1)).ok_or_else(e)? as usize];
+        let n = self.id.blocksize[usize::from(mode.long)];
+        let short = self.id.blocksize[0];
+        let (prev_long, next_long) = if mode.long { (bits.flag().ok_or_else(e)?, bits.flag().ok_or_else(e)?) } else { (false, false) };
+        let n2 = n / 2;
+        let mapping = &self.setup.mappings[mode.mapping as usize];
+        let ch = usize::from(self.id.channels);
+        let books = &self.setup.codebooks;
+        // Floors.
+        let mut floors: Vec<Option<(usize, Vec<i32>)>> = Vec::with_capacity(ch);
+        for c in 0..ch {
+            let submap = mapping.mux[c] as usize;
+            let fi = mapping.submaps[submap].0 as usize;
+            match &self.setup.floors[fi] {
+                Floor::One(f) => {
+                    let y = floor1_decode(f, books, &mut bits);
+                    // A packet that ends early leaves the rest silent (the specification's rule).
+                    floors.push(y.flatten().map(|y| (fi, y)));
+                }
+                Floor::Zero { .. } => return Err(Error::Corrupt("Vorbis floor 0 not supported")),
+            }
+        }
+        let mut skip: Vec<bool> = floors.iter().map(Option::is_none).collect();
+        for &(m, a) in &mapping.coupling {
+            if !skip[m as usize] || !skip[a as usize] {
+                skip[m as usize] = false;
+                skip[a as usize] = false;
+            }
+        }
+        // Residues, per submap.
+        let mut vectors = vec![vec![0f32; n2]; ch];
+        for (s, &(_, ri)) in mapping.submaps.iter().enumerate() {
+            let chans: Vec<usize> = (0..ch).filter(|&c| mapping.mux[c] as usize == s).collect();
+            let mut sub: Vec<Vec<f32>> = chans.iter().map(|_| vec![0f32; n2]).collect();
+            let sub_skip: Vec<bool> = chans.iter().map(|&c| skip[c]).collect();
+            residue_decode(&self.setup.residues[ri as usize], books, &mut bits, &mut sub, &sub_skip, n2);
+            for (k, &c) in chans.iter().enumerate() {
+                vectors[c] = std::mem::take(&mut sub[k]);
+            }
+        }
+        // Inverse coupling.
+        for &(m, a) in mapping.coupling.iter().rev() {
+            let (m, a) = (m as usize, a as usize);
+            for i in 0..n2 {
+                let (mv, av) = (vectors[m][i], vectors[a][i]);
+                let (nm, na) = if mv > 0.0 {
+                    if av > 0.0 { (mv, mv - av) } else { (mv + av, mv) }
+                } else if av > 0.0 {
+                    (mv, mv + av)
+                } else {
+                    (mv - av, mv)
+                };
+                vectors[m][i] = nm;
+                vectors[a][i] = na;
+            }
+        }
+        // Floor × residue, inverse MDCT, window.
+        let (ls, le, ln) = if mode.long && !prev_long { (n / 4 - short / 4, n / 4 + short / 4, short / 2) } else { (0, n2, n2) };
+        let (rs, re, rn) = if mode.long && !next_long { (3 * n / 4 - short / 4, 3 * n / 4 + short / 4, short / 2) } else { (n2, n, n2) };
+        let mut blocks = Vec::with_capacity(ch);
+        for c in 0..ch {
+            let mut spectrum = vec![0f32; n2];
+            if let Some((fi, y)) = &floors[c] {
+                if let Floor::One(f) = &self.setup.floors[*fi] {
+                    let curve = floor1_curve(f, y, n2);
+                    for i in 0..n2 {
+                        spectrum[i] = curve[i] * vectors[c][i];
+                    }
+                }
+            }
+            let mut out = imdct(&spectrum);
+            for (i, v) in out.iter_mut().enumerate() {
+                let w = if i < ls {
+                    0.0
+                } else if i < le {
+                    slope(i - ls, ln)
+                } else if i < rs {
+                    1.0
+                } else if i < re {
+                    slope(rn - 1 - (i - rs), rn)
+                } else {
+                    0.0
+                };
+                *v *= w;
+            }
+            blocks.push(out);
+        }
+        // Overlap with the previous block's right half: what lies between the two centres.
+        let out = match self.previous.take() {
+            None => vec![Vec::new(); ch],
+            Some((pn, prev)) => (0..ch)
+                .map(|c| {
+                    let cur = &blocks[c];
+                    let p = &prev[c];
+                    if pn == n {
+                        (0..n2).map(|i| p[i] + cur[i]).collect()
+                    } else if pn > n {
+                        let off = pn / 4 - n / 4;
+                        let mut o: Vec<f32> = p[..off].to_vec();
+                        o.extend((0..n2).map(|i| p[off + i] + cur[i]));
+                        o
+                    } else {
+                        let off = n / 4 - pn / 4;
+                        let mut o: Vec<f32> = (0..pn / 2).map(|i| p[i] + cur[off + i]).collect();
+                        o.extend_from_slice(&cur[off + pn / 2..n2]);
+                        o
+                    }
+                })
+                .collect(),
+        };
+        self.previous = Some((n, blocks.into_iter().map(|b| b[n2..].to_vec()).collect()));
+        Ok(out)
+    }
+}
+
+/// Decodes a whole Ogg Vorbis stream to samples per channel, cut to the last page's granule
+/// position.
+pub fn decode(ogg: &[u8]) -> Result<(Identification, Vec<Vec<f32>>), Error> {
+    let packets = packets(ogg)?;
+    let id = identification(packets.first().ok_or(Error::Corrupt("Vorbis stream empty"))?)?;
+    let setup = setup(packets.get(2).ok_or(Error::Corrupt("Vorbis stream without its setup header"))?, id.channels)?;
+    let mut d = Decoder::new(id, setup);
+    let mut out = vec![Vec::new(); usize::from(id.channels)];
+    for p in &packets[3..] {
+        for (c, s) in d.packet(p)?.into_iter().enumerate() {
+            out[c].extend(s);
+        }
+    }
+    let last = ogg.windows(4).rposition(|w| w == b"OggS").and_then(|i| ogg.get(i + 6..i + 14)).map(|g| u64::from_le_bytes(g.try_into().unwrap()));
+    if let Some(total) = last {
+        for c in &mut out {
+            c.truncate(total as usize);
+        }
+    }
+    Ok((id, out))
+}
+
 /// Assigns the Huffman codes from the lengths the way the specification does (each entry, in
 /// order, takes the lowest free code of its length), returned bit-reversed so that the first
 /// bit read is bit 0. `free[l]` holds the free code of length l, aligned to the top of 32 bits.
@@ -487,6 +983,16 @@ mod tests {
         assert_eq!(b.read(3), Some(0b110));
         assert_eq!(b.read(5), Some(0b10100));
         assert_eq!(b.read(4), Some(0xf));
+    }
+
+    #[test]
+    fn fast_imdct_matches_its_definition() {
+        for n2 in [128usize, 1024] {
+            let x: Vec<f32> = (0..n2).map(|k| ((k * 7919 % 1000) as f32 / 500.0 - 1.0) * if k % 3 == 0 { 2.0 } else { 0.5 }).collect();
+            let (a, b) = (imdct(&x), imdct_direct(&x));
+            let worst = a.iter().zip(&b).map(|(p, q)| (p - q).abs()).fold(0f32, f32::max);
+            assert!(worst < 1e-2, "n2 {n2}: off by {worst}");
+        }
     }
 
     #[test]

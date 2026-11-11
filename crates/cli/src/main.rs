@@ -44,6 +44,7 @@ usage:
   barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
   barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
   barrel vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
+  barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -108,6 +109,7 @@ fn main() -> ExitCode {
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
+        ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
         ["days", install, n] => days(Path::new(install), n, false),
         ["days", install, n, "--events"] => days(Path::new(install), n, true),
@@ -824,6 +826,44 @@ fn vorbis_scan(fpl: &Path) -> Result<()> {
     for f in failed.iter().take(5) {
         println!("  {f}");
     }
+    Ok(())
+}
+
+/// One voice clip decoded by the native Vorbis decoder, to a 16-bit PCM WAV.
+fn voice_wav(fpl: &Path, clip: &str, out: &Path, ogg_out: Option<&Path>) -> Result<()> {
+    use barrel_formats::{voice, vorbis};
+    let k: usize = clip.parse().map_err(|_| format!("{clip}: not a clip number"))?;
+    let list = voice::list(&read(fpl)?).map_err(|e| format!("{}: {e}", fpl.display()))?;
+    let (off, size) = list.get(k).copied().flatten().ok_or("no such clip")?;
+    let fp = read(&fpl.with_extension("fp"))?;
+    let ogg = voice::ogg(fp.get(off..off + size).ok_or("clip past the end")?).map_err(|e| e.to_string())?;
+    if let Some(o) = ogg_out {
+        std::fs::write(o, &ogg)?;
+    }
+    let (id, pcm) = vorbis::decode(&ogg).map_err(|e| e.to_string())?;
+    let frames = pcm.first().map_or(0, Vec::len);
+    let ch = pcm.len() as u16;
+    let mut w = Vec::new();
+    let data = frames as u32 * u32::from(ch) * 2;
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&ch.to_le_bytes());
+    w.extend_from_slice(&id.rate.to_le_bytes());
+    w.extend_from_slice(&(id.rate * u32::from(ch) * 2).to_le_bytes());
+    w.extend_from_slice(&(ch * 2).to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&data.to_le_bytes());
+    for i in 0..frames {
+        for c in &pcm {
+            w.extend_from_slice(&((c[i].clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
+        }
+    }
+    std::fs::write(out, w)?;
+    println!("{frames} frames, {} channel(s), {} Hz", ch, id.rate);
     Ok(())
 }
 

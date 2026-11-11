@@ -273,8 +273,17 @@ residues (types 0 to 2, with their cascade books), mappings (coupling, submaps),
 the framing bit. `barrel vorbis-scan SeriesNNNN.fpl`
 reads every clip of a bank: all 18,000 voice clips are mono, 48 kHz, block sizes 256 and 2048,
 with 39 codebooks (a few more in some), and every setup header reads to its framing bit; so do
-the 247 music files (`Sound/BGM/*.kvs`, KOVS like the voices; `vorbis-scan DIR`). The audio
-packets come next.
+the 247 music files (`Sound/BGM/*.kvs`, KOVS like the voices; `vorbis-scan DIR`).
+
+The audio packets decode too (`vorbis::Decoder`, `decode`): floor 1 (its Y values, then the
+curve through the used points and the inverse-dB table), residues 0, 1 and 2 (the classbook's
+classifications per partition, eight passes), the inverse coupling, floor × residue, the
+inverse MDCT (a DCT-IV through an n/4-point FFT, checked against the definition), the
+power-sine windows with their short/long slopes, and overlap-add between the windows' centres;
+the stream is cut to its last page's granule position. Floor 0 is not supported (no file
+uses it so far). `barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]` writes a clip;
+against ffmpeg's decoder the clips tried (banks 0, 3, 10, 14, 17) come out the same length and
+within 3 of 32,767 at every sample (rounding), and a 5.8-second clip takes 0.05 s.
 
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
