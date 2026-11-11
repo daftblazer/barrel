@@ -573,8 +573,15 @@ level, presumably) before the same draw and shuffle (`0x14033eb80` with `0x14033
 the three gathering slots (board places 7 to 9, `0x14033bd10`, groups 0 to 2) come from the
 third list (+0x30), skip a target already on an earlier gathering slot and ask for no count
 (`quest::board_eligible`, `draw_synthesis`, `draw_battle`, `draw_gathering`, `draw_board`).
-`barrel board INSTALL DAY [--events]` draws a day's board (no assignment cleared, the
-`0x1410989f0` global taken as 0, the counts and recipes taken as known): April 1st (day 90) is
+The seed offset (`0x1410989f0`) is drawn once, when the board is reset for a new game
+(`0x1403644f9`: the main generator's next number, `0x1404ca7a0`, after the slots are cleared),
+and kept in the save (`0x1403640d0`), so each playthrough has its own boards. The counts the
+synthesis and battle candidates are tested against are a per-item state (an i32 for each of the
+560 items at `0x141079fe0`; menus test it against 0, 1, 2 and 10), raised by `0x1403692f0
+(item, state, force)` and `0x140369840` (to 2 or 10) and never lowered unless forced; what each
+state means is not read yet (the battle rows' +0x4 index it too). `barrel board INSTALL DAY
+[--events] [--offset=N]` draws a day's board (no assignment cleared, the item states taken as
+high enough): April 1st (day 90) is
 empty, and the April 11th board (100, every start event seen) holds three synthesis, three
 battle (the fourth battle slot takes only `Table` -1 rows, and none has it) and three gathering
 requests. The day ends by clearing

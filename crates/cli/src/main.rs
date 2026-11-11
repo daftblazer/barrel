@@ -39,7 +39,8 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
-  barrel board INSTALL DAY [--events]  the request board drawn on a game day (--events: every request's start event seen)
+  barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
+      request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -103,8 +104,9 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
-        ["board", install, day] => board(Path::new(install), day, false),
-        ["board", install, day, "--events"] => board(Path::new(install), day, true),
+        ["board", install, day, rest @ ..] if rest.iter().all(|a| *a == "--events" || a.starts_with("--offset=")) => {
+            board(Path::new(install), day, rest.contains(&"--events"), rest.iter().find_map(|a| a.strip_prefix("--offset=")))
+        }
         ["shops", install] => shops(Path::new(install), None),
         ["shops", install, lang] => shops(Path::new(install), Some(lang)),
         ["recipes", exe] => recipes(Path::new(exe)),
@@ -661,9 +663,10 @@ fn quests(install: &Path) -> Result<()> {
 }
 
 /// The request board as it would be redrawn on `day` (see `barrel_game::quest::draw_board`):
-/// no assignment cleared, the global at 0x1410989f0 taken as 0, the targets' counts and recipes
+/// no assignment cleared, the seed offset given (0 by default), the targets' states
 /// taken as known, battle candidates sorted by their monster's first stat block level.
-fn board(install: &Path, day: &str, events: bool) -> Result<()> {
+fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Result<()> {
+    let offset: i32 = offset.map_or(Ok(0), |v| v.parse().map_err(|_| format!("{v}: not a number")))?;
     use barrel_game::quest::{draw_board, requests, Kind};
     let day: i32 = day.parse().map_err(|_| format!("{day}: not a day number"))?;
     let mut all = Vec::new();
@@ -684,7 +687,7 @@ fn board(install: &Path, day: &str, events: bool) -> Result<()> {
     };
     let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
     let seen = |e: &str| events && starts.contains(e);
-    let slots = draw_board(&all, day, 0, seen, |_| false, |_| true, level);
+    let slots = draw_board(&all, day, offset, seen, |_| false, |_| true, level);
     let d = barrel_game::calendar::Date::of(day.max(0) as u32);
     println!("day {day} (Y{} {}/{}){}", d.year, d.month, d.day, if barrel_game::calendar::board_day(day.max(0) as u32) { ", a redraw day" } else { ", not a redraw day (drawn as if it were)" });
     for (k, s) in slots.iter().enumerate() {
