@@ -27,6 +27,8 @@ pub enum Format {
     Bc1,
     /// BC3 / DXT5, 16 bytes a 4×4 block.
     Bc3,
+    /// BC7, 16 bytes a 4×4 block (Sophie 2 and later).
+    Bc7,
 }
 
 impl Format {
@@ -35,6 +37,7 @@ impl Format {
             0x01 => Format::Rgba8,
             0x06 | 0x10 | 0x59 => Format::Bc1,
             0x08 | 0x5b => Format::Bc3,
+            0x5f => Format::Bc7,
             _ => return None,
         })
     }
@@ -44,7 +47,7 @@ impl Format {
         match self {
             Format::Rgba8 => w * h * 4,
             Format::Bc1 => w.div_ceil(4) * h.div_ceil(4) * 8,
-            Format::Bc3 => w.div_ceil(4) * h.div_ceil(4) * 16,
+            Format::Bc3 | Format::Bc7 => w.div_ceil(4) * h.div_ceil(4) * 16,
         }
     }
 }
@@ -128,6 +131,7 @@ impl Texture<'_> {
             Format::Rgba8 => src.to_vec(),
             Format::Bc1 => crate::bc::decode(src, w, h, false),
             Format::Bc3 => crate::bc::decode(src, w, h, true),
+            Format::Bc7 => crate::bc7::decode(src, w, h),
         }
     }
 }

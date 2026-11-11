@@ -4,6 +4,7 @@
 //! against the input, and returns [`Error`] rather than panicking on bad data.
 
 pub mod bc;
+pub mod bc7;
 pub mod ebd;
 pub mod ebm;
 mod ebd_tables;

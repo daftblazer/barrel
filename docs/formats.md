@@ -80,10 +80,13 @@ per texture:  u8   mip count << 4 | depth
 | `0x06` | 62 | BC1 (DXT1) |
 | `0x10` | 2 | BC1 |
 | `0x01` | 1 | 8-bit RGBA |
+| `0x5f` | none | BC7 (Sophie 2's UI textures, such as its 256×256 item icons) |
 
 Every texture's data is exactly the size its format, size and mip count give, so there is
-no padding or swizzling on PC. The renderer can upload BC1 and BC3 as they are;
-`barrel_formats::bc` decodes them in software for tools.
+no padding or swizzling on PC. The renderer can upload BC1, BC3 and BC7 as they are;
+`barrel_formats::bc` and `barrel_formats::bc7` decode them in software for tools. The BC7
+decoder covers all eight modes; its partition and anchor tables are checked against each
+other by a test (every anchor pixel lies in its own subset).
 
 ## Models (`*.g1m`)
 

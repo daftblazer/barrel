@@ -79,7 +79,7 @@ most names read as paths, which repeats every 32 bytes.
 
 `barrel_formats::pak` reads the archives; `barrel pak-ls FILE.PAK` lists one and
 `barrel pak-get FILE.PAK NAME OUT` extracts a file. Sophie 2's UI textures use format
-0x5f (BC7), which Escha does not, so the texture decoder needs BC7 next.
+0x5f (BC7), which `barrel_formats::bc7` decodes.
 
 ### Ryza DX, Ryza 2 DX, Ryza 3 DX
 
