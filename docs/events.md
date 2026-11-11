@@ -350,7 +350,7 @@ exactly 1/60 s instead (`0x140853f24`), so 60 Hz is the design rate. (`0x14077ba
 is only a threshold inside the speed move's other update, not a frame time, as an earlier
 note here had it.) Moves are not quite step-independent (a bowed walk adds its velocity
 before taking off its push each frame), so replays and lockstep checks need the same steps;
-the stage steps by 1/60 s and `Stage::frame` takes any length. Where the measured time
+Barrel runs its logic on a fixed 60 Hz tick and blends ticks for the screen (`docs/engine.md`, "Timing"); `Stage::frame` takes any length. Where the measured time
 comes from (the main loop, and whether it is clamped) is still to be found.
 
 **Facings.** `s23` (`ECT_CHARA_ROT_SET`, `{character, x, y, z}`, 4,668 uses; `0x1401f097c`

@@ -13,13 +13,45 @@ use std::collections::BTreeMap;
 use crate::camera::{Anchor, Change, Mover, Part, Position};
 use crate::event::{Step, Timed};
 
-/// The step [`Stage::run_until`] advances by: 1/60 s, the game's design rate. The game itself
-/// updates by each frame's measured time (`GameModeManager`'s update, vtable slot 1, hands it
-/// to the event manager, `0x1402931b0`), and uses exactly 1/60 s (`0x140853f24`) when the
-/// manager's +0x4b is set. Moves come out a little differently with other steps (a bowed walk
-/// adds its velocity before taking off its push), so lockstep checks need the same steps;
-/// [`Stage::frame`] takes any.
-pub const FRAME: f32 = 1.0 / 60.0;
+/// The step [`Stage::run_until`] advances by: one tick at [`crate::clock::DEFAULT_RATE`]
+/// (`docs/engine.md`, "Timing"). The original steps by each frame's measured time instead,
+/// with exactly 1/60 s as its fixed fallback (`docs/events.md`, "Frame time"); Barrel always
+/// steps by whole ticks and blends ticks for the screen ([`Snapshot::blend`]).
+pub const FRAME: f32 = 1.0 / crate::clock::DEFAULT_RATE as f32;
+
+/// What the screen needs of a stage at one tick: where everyone is and faces, and the camera.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Snapshot {
+    /// (position, facing) by character number.
+    pub characters: BTreeMap<u32, ([f32; 3], f32)>,
+    pub eye: Option<[f32; 3]>,
+    pub target: Option<[f32; 3]>,
+}
+
+impl Snapshot {
+    /// The state `alpha` (0 to 1) of the way from `before` to `after`, for drawing between
+    /// ticks. Positions go straight, facings the short way round; a character or camera point
+    /// that is new in `after` is drawn where it is there.
+    pub fn blend(before: &Snapshot, after: &Snapshot, alpha: f32) -> Snapshot {
+        let lerp = |a: [f32; 3], b: [f32; 3]| std::array::from_fn(|i| a[i] + (b[i] - a[i]) * alpha);
+        let point = |a: Option<[f32; 3]>, b: Option<[f32; 3]>| match (a, b) {
+            (Some(a), Some(b)) => Some(lerp(a, b)),
+            (_, b) => b,
+        };
+        let characters = after
+            .characters
+            .iter()
+            .map(|(&n, &(p, f))| {
+                let v = match before.characters.get(&n) {
+                    Some(&(p0, f0)) => (lerp(p0, p), f0 + short_way(f0, f) * alpha),
+                    None => (p, f),
+                };
+                (n, v)
+            })
+            .collect();
+        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target) }
+    }
+}
 
 /// A character's measures, from its `Chara.xml` row: its height and radius in field units and
 /// the heights of its points as fractions of the height (`Foot`, `Body`, `Face`, `Head`, then
@@ -254,6 +286,15 @@ impl Stage {
         self.time += dt;
     }
 
+    /// The state the screen needs now.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(),
+            eye: self.eye.position,
+            target: self.target.position,
+        }
+    }
+
     /// Runs whole [`FRAME`]s until `time`.
     pub fn run_until(&mut self, time: f32) {
         while self.time + FRAME * 0.5 < time {
@@ -279,6 +320,23 @@ impl Stage {
 mod tests {
     use super::*;
     use crate::camera::Move;
+
+    #[test]
+    fn ticks_blend_for_the_screen() {
+        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]) };
+        let b = Snapshot {
+            characters: BTreeMap::from([(1, ([10.0, 0.0, 0.0], 10f32.to_radians())), (2, ([5.0; 3], 0.0))]),
+            eye: Some([1.0; 3]),
+            target: Some([4.0, 0.0, 0.0]),
+        };
+        let m = Snapshot::blend(&a, &b, 0.25);
+        let (p, f) = m.characters[&1];
+        assert_eq!(p, [2.5, 0.0, 0.0]);
+        // 350° to 10° a quarter of the way is 355°, not 260°.
+        assert!((f.to_degrees() - 355.0).abs() < 1e-3);
+        assert_eq!(m.characters[&2], ([5.0; 3], 0.0));
+        assert_eq!((m.eye, m.target), (Some([1.0; 3]), Some([1.0, 0.0, 0.0])));
+    }
 
     #[test]
     fn a_character_walks_and_the_camera_follows() {
