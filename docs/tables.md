@@ -39,3 +39,19 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 What is not in the tables: the ingredient lists of the synthesis recipes, and monster
 stats. The recipe item tags do not occur in the executable as plain text either, so the
 recipes are in some other file or encoded; that is still to be found.
+
+## Numbers behind the tags
+
+The tables name things by tag, but the game works with numbers. The executable keeps each
+enum's names as an array of string pointers in index order, so an entry's position is
+its number. `tools/str_table.py EXE TAG` dumps the array that holds TAG.
+
+| Enum | Escha & Logy DX (English exe) | Notes |
+|---|---|---|
+| items | 569 tags, `ITEM_MAT_ACORN` = 0 … `ITEM_REV_CLASS_ETC` = 568; `ITEM_MIX_CRAFT` = 195 | the rows of `itemData.xml` are in this order (row 195 is Craft) |
+| use types, effect types, categories | one array: 8 `ITEM_USE_*`, 6 `ITEM_ESP_TYPE_*`, then 105 `ITEM_CATEGORY_*` from `ITEM_CATEGORY_PLANT` = 0 | a category's number is its position after the first 14 |
+
+At `0x140754bc0` there is a table of 56-byte records (14 × i32), one for each of the first
+226 items, starting with the item's number. Materials have records too, so it is not the
+recipe list. The code that reads it (`0x14004ff90` and its neighbours) is next to the event
+helpers, so it is probably for the items' 3D objects; it is still to be worked out.
