@@ -10,8 +10,8 @@
 //! block:   u32 flag, then one {u32 key count, u32 offset in units from the block} per
 //!          component. Flag 4 has seven: the rotation quaternion (x, y, z, w) and the
 //!          translation (x, y, z). Flag 6 has ten: scale (x, y, z), rotation, translation.
-//!          Flag 0x191 is a packed encoding, a 16-byte block `{0x191, u32, u32, 0}` per
-//!          bone, not decoded yet; such tracks are kept with no components.
+//!          Flag 0x191 has one: a single scalar, used by the facial animations
+//!          (`*_M_Brw_*`, `*_M_Eye_*`, `*_M_Mth_*`, header type 0x104) for morph weights.
 //! keys:    key count × 4 floats (a, b, c, d), then key count floats (each segment's end
 //!          time in seconds), padded to 16 bytes
 //! ```
@@ -31,8 +31,7 @@ pub struct Key {
 pub struct Track {
     pub bone: u32,
     pub flag: u32,
-    /// The components as stored (see the module notes for their order per flag); empty for
-    /// a packed track.
+    /// The components as stored (see the module notes for their order per flag).
     pub components: Vec<Vec<Key>>,
 }
 
@@ -44,6 +43,11 @@ impl Track {
             (6, 10) => Some((Some(0), 3, 7)),
             _ => None,
         }
+    }
+
+    /// A single-scalar track's value at `time` (a morph weight).
+    pub fn scalar(&self, time: f32) -> Option<f32> {
+        (self.flag == SCALAR && self.components.len() == 1).then(|| sample(&self.components[0], time))
     }
 
     /// Rotation (quaternion x, y, z, w), translation and scale at `time`.
@@ -66,13 +70,13 @@ fn components(flag: u32) -> Option<usize> {
     match flag {
         4 => Some(7),
         6 => Some(10),
-        PACKED => Some(0),
+        SCALAR => Some(1),
         _ => None,
     }
 }
 
-/// The flag of a packed track.
-pub const PACKED: u32 = 0x191;
+/// The flag of a single-scalar track (facial morph weights).
+pub const SCALAR: u32 = 0x191;
 
 /// A component's value at `time` seconds.
 pub fn sample(keys: &[Key], time: f32) -> f32 {

@@ -634,7 +634,7 @@ fn g1a_scan(dir: &Path) -> Result<()> {
                 Ok(a) => {
                     anims += 1;
                     tracks += a.tracks.len();
-                    packed += a.tracks.iter().filter(|t| t.flag == barrel_formats::g1a::PACKED).count();
+                    packed += a.tracks.iter().filter(|t| t.flag == barrel_formats::g1a::SCALAR).count();
                     keys += a.tracks.iter().flat_map(|t| &t.components).map(|c| c.len()).sum::<usize>();
                 }
                 Err(err) => {
@@ -644,7 +644,7 @@ fn g1a_scan(dir: &Path) -> Result<()> {
             }
         }
     }
-    println!("{anims} animations read: {tracks} bone tracks ({packed} packed, not decoded), {keys} keys; failures {failed:?}");
+    println!("{anims} animations read: {tracks} tracks ({packed} single-scalar morph tracks), {keys} keys; failures {failed:?}");
     if let Some(e) = example {
         println!("first failure: {e}");
     }

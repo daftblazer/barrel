@@ -183,11 +183,15 @@ block:   u32 flag, then {u32 key count, u32 offset in units from the block} per 
 keys:    key count × (a, b, c, d) floats, then key count floats: each segment's end time
 ```
 
-| Flag | Blocks | Components |
-|---|---|---|
-| 6 | 380,476 | ten: scale x, y, z; rotation quaternion x, y, z, w; translation x, y, z |
-| 4 | 803 | seven: rotation, translation (no scale) |
-| 0x191 | 48,934 | a packed encoding: one 16-byte block `{0x191, u32, u32, 0}` per bone; not decoded yet |
+| Header type | Files | Flag | Blocks | Components |
+|---|---|---|---|---|
+| 0x3100 | 1,575 | 6 | 380,476 | ten: scale x, y, z; rotation quaternion x, y, z, w; translation x, y, z |
+| 0x2100 | 60 | 4 | 803 | seven: rotation, translation (no scale); the field objects' animations |
+| 0x104 | 4,375 | 0x191 | 48,934 | one scalar: the facial animations (`*_M_Brw_*`, `*_M_Eye_*`, `*_M_Mth_*`), whose "bones" are morph weights |
+
+The header type and the flag always go together, and every one of the 21.3 million keys
+decodes. A facial track is the same kind of spline over a single value: an eye blink eases
+from 0 to 1 with (-2, 3, 0, 0) and back with (2, -3, 0, 1).
 
 The order of flag 6's components comes from the data: the first three are 1.0 in 95-99% of
 blocks (scale at rest), the seventh's median is 0.97 (a quaternion's w).
