@@ -92,8 +92,12 @@ to the power of the fourth header byte's low nibble and halves with each level (
 `wavevolume.g1t`: 512×512×128 BC5, 2 levels, 37,748,736 bytes). 3 is a texture array and 4 an array
 of cube maps; their count is bits 4 to 15 of the extended header's third word (Ryza 2's
 `raindrop.g1t`: 0x100, 16 BC7 layers; Ryza's `hair_highlight.g1t`: 0x50, 5 cube maps, 30
-faces; a top byte of 1 there is another flag). The order of faces, layers and levels inside
-such textures is still to be checked; previews show the first layer.
+faces; a top byte of 1 there is another flag). Inside a level the layers follow one another, each a whole image (`Texture::layer_rgba8`;
+`barrel g1t` writes them all, `NNN_L.png`). In `hair_highlight.g1t`'s first cube map, faces 2
+and 3 are empty and 0, 1, 4 and 5 carry the same horizontal highlight band, which fits the
+Direct3D order +X, -X, +Y, -Y, +Z, -Z (up and down third and fourth); the side faces' exact
+order and orientation still need a seam check, and the level order in arrays of cube maps is
+still to be checked.
 
 Every texture's data is exactly the size its format, size and mip count give, so there is
 no padding or swizzling on PC. The renderer can upload BC1, BC3 and BC7 as they are;

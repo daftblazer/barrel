@@ -790,7 +790,13 @@ fn g1t(spec: &str, out: &Path) -> Result<()> {
     for (i, t) in g.textures.iter().enumerate() {
         let name = out.join(format!("{i:03}.png"));
         std::fs::write(&name, barrel_formats::png::encode_rgba(t.width, t.height, &t.to_rgba8()))?;
-        println!("{} {}x{} {:?} ({:#04x}), {} levels", name.display(), t.width, t.height, t.format, t.format_code, t.levels.len());
+        println!("{} {}x{} {:?} ({:#04x}), {} levels, {} layers", name.display(), t.width, t.height, t.format, t.format_code, t.levels.len(), t.layers);
+        // Every further layer of the largest level (cube faces, array or volume slices).
+        for l in 1..t.layers {
+            if let Some(px) = t.layer_rgba8(l) {
+                std::fs::write(out.join(format!("{i:03}_{l}.png")), barrel_formats::png::encode_rgba(t.width, t.height, &px))?;
+            }
+        }
     }
     Ok(())
 }

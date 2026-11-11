@@ -163,8 +163,23 @@ impl Texture<'_> {
     /// decoded in software yet and comes out black; a float heightmap comes out grey, its
     /// range stretched to 0..255.
     pub fn to_rgba8(&self) -> Vec<u8> {
+        self.layer_rgba8(0).unwrap_or_default()
+    }
+
+    /// Layer `layer` of the largest level (a cube face, an array slice or a volume slice) as
+    /// RGBA8; `None` past the last layer.
+    pub fn layer_rgba8(&self, layer: u32) -> Option<Vec<u8>> {
+        let size = self.format.level_size(self.width, self.height);
+        let start = size * layer as usize;
+        let level = self.levels.first()?;
+        if layer >= self.layers.max(1) || start >= level.len() {
+            return None;
+        }
+        Some(self.decode(&level[start..(start + size).min(level.len())]))
+    }
+
+    fn decode(&self, src: &[u8]) -> Vec<u8> {
         let (w, h) = (self.width as usize, self.height as usize);
-        let src = &self.levels[0][..self.format.level_size(self.width, self.height).min(self.levels[0].len())];
         match self.format {
             Format::Rgba8 => src.to_vec(),
             Format::Bc4 => crate::bc::decode_bc45(src, w, h, false),
