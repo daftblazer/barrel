@@ -66,17 +66,18 @@ pub struct Fighter<'a> {
 
 impl Fighter<'_> {
     /// The skill for this turn: by the block's rules when it has them (the slot's index into
-    /// its skill list, then that skill's record), else the normal attack.
-    fn pick(&self, situation: &crate::monster_ai::Situation, rng: &mut Rng) -> (Option<usize>, &Skill) {
-        let Some(table) = self.skills.filter(|_| !self.block.rules.is_empty()) else { return (None, self.normal) };
-        let (slot, _target) = crate::monster_ai::choose(&self.block.rules, situation, rng);
+    /// its skill list, then that skill's record, and the rule's target pick), else the normal
+    /// attack (and no target pick: a party member's target is the player's choice).
+    fn pick(&self, situation: &crate::monster_ai::Situation, rng: &mut Rng) -> (Option<usize>, &Skill, Option<i32>) {
+        let Some(table) = self.skills.filter(|_| !self.block.rules.is_empty()) else { return (None, self.normal, None) };
+        let (slot, target) = crate::monster_ai::choose(&self.block.rules, situation, rng);
         let skill = usize::try_from(slot)
             .ok()
             .and_then(|k| self.block.slots.get(k))
             .and_then(|&i| usize::try_from(i).ok())
             .and_then(|i| self.block.skills.get(i))
             .and_then(|&(n, _)| table.get(n as usize));
-        (usize::try_from(slot).ok(), skill.unwrap_or(self.normal))
+        (usize::try_from(slot).ok(), skill.unwrap_or(self.normal), Some(target))
     }
 }
 
@@ -95,14 +96,21 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
     };
     while hits.len() < max_hits {
         let who = battle.next();
-        let target = 1 - who;
         hits.extend(battle.start_turn(who).iter().map(hit));
         if battle.winner().is_some() {
             break;
         }
         let f = &battle.fighters[who];
         let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, phase: 0, uses: &f.uses };
-        let (slot, skill) = sides[who].pick(&situation, rng);
+        let (slot, skill, mode) = sides[who].pick(&situation, rng);
+        let candidates = battle.candidates(who, skill);
+        let target = match mode {
+            Some(mode) => battle.pick_target(mode, who, &candidates, rng),
+            None => candidates.first().copied(),
+        };
+        // A skill on its own side (a heal, a self-buff) still meets the foe in this partial
+        // battle's damage step, as before.
+        let target = target.filter(|&t| t != who).unwrap_or(1 - who);
         hits.extend(battle.act(who, skill, slot, target, rng).iter().map(hit));
         if battle.winner().is_some() {
             break;

@@ -882,6 +882,14 @@ The conditions: 0 always; 1 every `value`-th action of its own (its count of act
 the character's +0x2c8, modulo `value` is `value` - 1); 2 HP at or below `value`% of the maximum
 (`max HP × value / 100 >= HP`, battle stats 3 and 1); 3 the battle's phase (+0x2d0) is
 `value`. If no rule gives an action the game logs an error and takes slot 0 at target 0.
+The rule's target is a pick mode (`0x14018a2f0`, among the fighters in the battle's target
+list at `battle+0xab8`, +0x38 to +0x40, filled for the skill's side by `0x140189b00`): 1 the
+nearest to the monster (positions at the model's +0x230), 2 the farthest, 3 the lowest share
+of its maximum HP (stats 1 / 3 in floats), each keeping the first on ties; 4 the character the
+monster remembers (+0x314, through `0x1401b26a0`) and 5 the one in global 0x141077e3c, each
+when it is in the list; otherwise, and for 0, a weighted draw (`0x14018a090`): each candidate
+weighs `max(virtual +0x128 + 40, 1)` and one number (`0x1404ca7a0`, always drawn) modulo the
+total falls on the first whose running total passes it (`fight::Battle::pick_target`).
 `barrel_game::monster_ai::choose` does the same, and `barrel monsters EXE` prints each
 block's rules: the Poison Squirrel uses Running Headbutt 40% of the time and Poison Fruit
 40% (at most twice); the Grand Dragon opens with slot 5 once, uses Flame Gale every sixth turn

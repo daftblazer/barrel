@@ -30,6 +30,13 @@ pub struct Fighter {
     pub uses: [i32; 9],
     /// The maximum HP and MP cap: 999, or 999,999 for monsters.
     pub cap: i32,
+    /// Where it stands (the model's +0x230; not read yet, all 0), for the nearest and
+    /// farthest target picks.
+    pub position: [f32; 3],
+    /// What it adds to its weight as a random target (virtual +0x128; not read yet, 0).
+    pub draw: i32,
+    /// The character a monster remembers (+0x314; -1 none), for target pick 4.
+    pub remembered: i32,
 }
 
 impl Fighter {
@@ -43,7 +50,7 @@ impl Fighter {
         s[stat::DEFENSE] = block.defense;
         s[stat::SPEED] = block.speed;
         s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
-        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap }
+        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1 }
     }
 
     pub fn hp(&self) -> i32 {
@@ -96,6 +103,65 @@ impl Battle {
             (false, true) => Some(1),
             _ => None,
         }
+    }
+
+    /// The fighters a skill of `who`'s may be aimed at (`0x140189b00` fills the battle's list,
+    /// `battle+0xab8`): those standing on its own side for target kinds 1 and 3, on the other
+    /// side otherwise.
+    pub fn candidates(&self, who: usize, skill: &Skill) -> Vec<usize> {
+        let own = self.fighters[who].side;
+        let side = if matches!(skill.target, 1 | 3) { own } else { 1 - own };
+        (0..self.fighters.len()).filter(|&k| self.fighters[k].side == side && !self.fighters[k].down()).collect()
+    }
+
+    /// Picks a target among `candidates` by a monster rule's target `mode` (`0x14018a2f0`):
+    /// 1 the nearest to `who`, 2 the farthest (the first on ties), 3 the lowest share of its
+    /// maximum HP (first on ties), 4 the one `who` remembers (+0x314) and 5 the one the battle
+    /// marks (global 0x141077e3c, not kept here), each when it is a candidate; otherwise, and
+    /// for 0, a weighted draw (`0x14018a090`): each weighs `max(draw + 40, 1)`, and one
+    /// number below the total (`0x1404ca7a0` modulo it, always drawn) falls on the first
+    /// whose running total passes it.
+    pub fn pick_target(&self, mode: i32, who: usize, candidates: &[usize], rng: &mut Rng) -> Option<usize> {
+        let first = *candidates.first()?;
+        let distance = |k: usize| {
+            let (a, b) = (self.fighters[who].position, self.fighters[k].position);
+            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+        };
+        let share = |k: usize| self.fighters[k].stats[stat::HP] as f32 / self.fighters[k].stats[stat::MAX_HP] as f32;
+        let mut best = first;
+        match mode {
+            1 | 2 | 3 => {
+                for &k in &candidates[1..] {
+                    let better = match mode {
+                        1 => distance(best) > distance(k),
+                        2 => distance(k) > distance(best),
+                        _ => share(best) > share(k),
+                    };
+                    if better {
+                        best = k;
+                    }
+                }
+                return Some(best);
+            }
+            4 => {
+                let r = self.fighters[who].remembered;
+                if let Some(&k) = candidates.iter().find(|&&k| k as i32 == r) {
+                    return Some(k);
+                }
+            }
+            _ => {}
+        }
+        let weights: Vec<i32> = candidates.iter().map(|&k| (self.fighters[k].draw + 40).max(1)).collect();
+        let total: i32 = weights.iter().sum();
+        let r = rng.next_31() % total;
+        let mut run = 0;
+        for (&k, w) in candidates.iter().zip(&weights) {
+            run += w;
+            if run > r {
+                return Some(k);
+            }
+        }
+        Some(first)
     }
 
     /// Moves time on to the next turn and says whose it is.
@@ -197,5 +263,25 @@ mod tests {
         assert_eq!(b.winner(), Some(0));
         // The count went down by the turn's ageing.
         assert_eq!(b.fighters[1].states[0].count, 1);
+    }
+
+    #[test]
+    fn target_picks() {
+        let monster = Fighter::new(&block(500), 1, 999_999);
+        let mut party: Vec<Fighter> = [100, 80, 120].iter().map(|&hp| Fighter::new(&block(hp), 0, 999)).collect();
+        party[1].stats[stat::HP] = 20;
+        party[2].stats[stat::HP] = 30;
+        party.push(monster);
+        let b = Battle::new(party);
+        let skill = Skill { name: String::new(), category: String::new(), wait: 600, target: 2, spread: 0, effects: Vec::new(), description: String::new() };
+        let c = b.candidates(3, &skill);
+        assert_eq!(c, [0, 1, 2]);
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        // Lowest share of maximum HP: 20/80 = 0.25 against 30/120 = 0.25, the first wins.
+        assert_eq!(b.pick_target(3, 3, &c, &mut rng), Some(1));
+        // The weighted draw: equal weights of 40, one number below 120.
+        let mut check = Rng::from_state([1, 2, 3, 4]);
+        let r = check.next_31() % 120;
+        assert_eq!(b.pick_target(0, 3, &c, &mut rng), Some(c[(r / 40) as usize]));
     }
 }
