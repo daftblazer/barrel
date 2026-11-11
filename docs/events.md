@@ -351,7 +351,8 @@ executable's `FIELDMAP_*` enum (122 names, found by `FIELDMAP_TOWN_01`): `TOWN_0
 `EVENT_MM08_AS4_130` changes to 3, `TOWN_04` (the plaza it is drawn in), `_110` to 2
 (`TOWN_03`) and `_020` to 8 (`TOWN_09`). `play-event` prints the change with its name, and
 `barrel-view --field auto --event FILE` draws the event in its own field
-(`event::field_maps`, `event::first_field`).
+(`event::field_maps`, `event::first_field`). 512 of the 1,021 story events change field; the
+others play wherever the player already is (their field is not in the event).
 
 **Frame time.** The game's updates take the frame's measured time, not a fixed tick:
 `GameModeManager`'s update (vtable slot 1) passes it to the event manager (`0x1402931b0`),
