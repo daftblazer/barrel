@@ -271,7 +271,12 @@ the load screen shows: i32s from +0x28 (5, 28, 34, 2954, 12, 0, 1, 29, ... in on
 last two read as u16 pairs, 12 and 14, 12 and 15), -1 padding from +0x74, and at +0xa4 the time
 of saving as a Windows `SYSTEMTIME` (year, month, day of the week, day, hour, minute, second,
 milliseconds). The game state follows, encrypted (a 66,624-byte save has 66,368 bytes of
-it; how is not read yet). `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
+it; how is not read yet). It is not compressed (no zlib, raw deflate or gzip stream at any
+of the first offsets), not a short repeating XOR (no period up to 8,192 repeats bytes more
+than chance), and the executable holds none of the usual cipher constants (Blowfish, AES,
+TEA, MD5, SHA-256; only zlib's CRC table). The loader (`0x140135ee0`) reads the file into a
+0x64000-byte buffer; once decrypted, the state is a stream of named, u32-length-prefixed
+sections (`0x14035b320` finds a section by name, `0x14035b220` reads from it). `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
 `barrel_formats::save` reads the header and `barrel save FILE` prints it.
 
 ## Voices (`Sound/Voice/Series*.fp`)
