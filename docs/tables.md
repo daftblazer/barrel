@@ -136,6 +136,50 @@ executable. The address differs between builds, so the engine should find the ta
 shape (a record whose word 0 is the first synthesizable item, repeated every 288 bytes)
 rather than by a fixed address.
 
+## Synthesis skills
+
+Escha's and Logy's synthesis skills are also compiled into the executable: 68 records of 56
+bytes at `0x1407b5f40` (English Escha executable), read by the getter at `0x1400fd480`.
+Each skill appears twice, once for Escha (user 0) and once for Logy (user 1).
+`tools/mix_skills.py EXE` lists them.
+
+| Bytes | What |
+|---|---|
+| 0 | pointer to the name ("Power+ 1") |
+| 8 | type, the case of the skill switch below |
+| 12, 16 | two parameters (Power+ 1: 100; Full Power: 50 and 50) |
+| 20 | not known yet (0) |
+| 24 | user: 0 Escha, 1 Logy |
+| 28 | probably the level it is learnt at (8, 14, 31, ...); -1 for Full Power and Strengthen Material |
+| 32..47 | the cost in Fire, Water, Wind and Earth points, in that order |
+| 48 | pointer to the description |
+
+The executable's own text is sometimes wrong about a skill. Quantity 2's description says
+it costs 3 Earth points, but its record says 5. Barrel follows the record and shows the
+game's text as is.
+
+**Using a skill** (`0x140303620`): the game copies the current synthesis state into a new
+one, subtracts the skill's cost from the four element point counts (never below 0), then
+switches on the type (jump table at RVA `0x304060`, 26 cases; types 7..17 do nothing here,
+since they are the passive skills: Expert Skill, Quick Synthesis, Freestyle, Inherit ...).
+Three cases read so far:
+
+- Type 4, Reset Attribute: the selected attribute's value v goes to 0, and each of the other
+  three gains v / 3 × param 1 / 100.
+- Type 23, Full Power: each attribute value grows by value / 100 × param 1 (cut to an
+  integer), and the effect value gains param 2.
+- Type 0, Conversion: param 1 is added to the selected element's point count, up to 5.
+
+**The synthesis state** (0x4e0 bytes, one per step):
+
+| Offset | What |
+|---|---|
+| +0x44 | effect value (float), at most 120 |
+| +0x4c | effect value bonus from skills |
+| +0x58 | the sum of the four attribute values (integer) |
+| +0x5c + 20 × e | attribute value e (Fire, Water, Wind, Earth) as a float, at most 999, then the last change |
+| +0x4b8 + 4 × e | element point count e, at most 5 |
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
