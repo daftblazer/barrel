@@ -178,3 +178,71 @@ impl ApplicationHandler for App {
         }
     }
 }
+
+/// A window driven from the renderer's own frame loop: winit's events are pumped once a
+/// frame (without blocking), so the scene code keeps its straight line and the FIFO
+/// swapchain paces the loop.
+pub struct Pump {
+    event_loop: EventLoop<()>,
+    state: PumpState,
+}
+
+#[derive(Default)]
+struct PumpState {
+    window: Option<Window>,
+    closed: bool,
+    error: Option<String>,
+}
+
+impl ApplicationHandler for PumpState {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_none() {
+            let attrs = Window::default_attributes().with_title("Barrel").with_inner_size(winit::dpi::PhysicalSize::new(1280, 720));
+            match event_loop.create_window(attrs) {
+                Ok(w) => self.window = Some(w),
+                Err(e) => self.error = Some(e.to_string()),
+            }
+        }
+    }
+
+    fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if let WindowEvent::CloseRequested = event {
+            self.closed = true;
+        }
+    }
+}
+
+impl Pump {
+    /// Opens the window (1280×720).
+    pub fn open() -> Result<Pump> {
+        use winit::platform::pump_events::EventLoopExtPumpEvents;
+        let mut event_loop = EventLoop::new()?;
+        let mut state = PumpState::default();
+        for _ in 0..200 {
+            let _ = event_loop.pump_app_events(Some(std::time::Duration::from_millis(10)), &mut state);
+            if state.window.is_some() || state.error.is_some() {
+                break;
+            }
+        }
+        if let Some(e) = state.error.take() {
+            return Err(e.into());
+        }
+        if state.window.is_none() {
+            return Err("the window did not open".into());
+        }
+        Ok(Pump { event_loop, state })
+    }
+
+    pub fn window(&self) -> &Window {
+        self.state.window.as_ref().expect("open made the window")
+    }
+
+    /// Handles pending events; false once the window is closed.
+    pub fn pump(&mut self) -> bool {
+        use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
+        if let PumpStatus::Exit(_) = self.event_loop.pump_app_events(Some(std::time::Duration::ZERO), &mut self.state) {
+            return false;
+        }
+        !self.state.closed
+    }
+}

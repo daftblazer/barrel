@@ -172,3 +172,16 @@ event's scene into it is next. Run inside headless gamescope (1280×720 at 30 Hz
 frames present and the clock runs 112 logic ticks: about 1.9 s at 60 ticks a second, the
 display pacing the loop. `Gpu::new` takes the window's display handle to add the
 surface and swapchain extensions.
+
+**Events in the window.** `--window FRAMES` with `--field`/`--event` plays the event live:
+the window is opened first (`window::Pump`, winit's events pumped once a frame without
+blocking, so the frame loop stays the renderer's own), the device gets the surface and
+swapchain extensions, the render pass targets the swapchain's format and ends in
+`PRESENT_SRC`, there is one framebuffer per swapchain image (one depth image at the
+window's size), and the projection takes the window's aspect. Each frame pumps events,
+advances the clock by the real time since the last frame (with the stall cap, as a live
+window should), updates the characters' matrices, poses and faces, then acquires an image,
+draws, and presents with one frame in flight. Without a window the same code draws into the
+offscreen image (pixel-identical to before). In headless gamescope at 30 Hz,
+`EVENT_MM08_AS4_130 --at 0.5 --window 90` plays Escha and Logy walking in and changing to
+`F_WAIT` at frame 61 (2.5 s), on the event's own time.

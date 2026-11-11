@@ -1077,6 +1077,9 @@ fn main() -> Result<()> {
     let mut event_line = None::<usize>;
     let mut event_at = None::<f32>;
     let (mut frames, mut fps) = (1u32, 60f64);
+    // --window FRAMES: show that many frames in a window, at the display's rate, instead of
+    // writing them to files.
+    let mut window_frames = None::<u32>;
     let mut look_at = None::<u32>;
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
@@ -1096,6 +1099,7 @@ fn main() -> Result<()> {
             "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
             "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
             "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
+            "--window" => window_frames = Some(it.next().ok_or("--window FRAMES")?.parse::<u32>()?.clamp(1, 100_000)),
             "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
@@ -1221,7 +1225,24 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let gpu = Gpu::new(None)?;
+    // A window (with --window) or an offscreen image to draw into.
+    let mut pump = window_frames.map(|_| window::Pump::open()).transpose()?;
+    let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
+    let gpu = Gpu::new(display)?;
+    let presenter = match (&pump, display) {
+        (Some(p), Some(display)) => {
+            let handle = raw_window_handle::HasWindowHandle::window_handle(p.window())?.as_raw();
+            let size = p.window().inner_size();
+            Some(present::Presenter::new(&gpu, display, handle, size.width, size.height)?)
+        }
+        _ => None,
+    };
+    let (width, height) = presenter.as_ref().map_or((size, size), |p| (p.extent.width, p.extent.height));
+    let color_format = presenter.as_ref().map_or(COLOR_FORMAT, |p| p.format);
+    if let Some(p) = &presenter {
+        eprintln!("window: {width}x{height}, {:?}, {} swapchain images", p.format, p.images.len());
+    }
+    let frames = window_frames.unwrap_or(frames);
     let d = &gpu.device;
     let pool = unsafe {
         d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
@@ -1331,7 +1352,7 @@ fn main() -> Result<()> {
     };
 
     // Offscreen target.
-    let extent = vk::Extent3D { width: size, height: size, depth: 1 };
+    let extent = vk::Extent3D { width, height, depth: 1 };
     let target_info = |format, usage| {
         vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
@@ -1342,7 +1363,12 @@ fn main() -> Result<()> {
             .samples(vk::SampleCountFlags::TYPE_1)
             .usage(usage)
     };
-    let (color, cmem) = gpu.image(&target_info(COLOR_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC))?;
+    // The offscreen colour image (none with a window: the swapchain's images are the targets).
+    let offscreen = if presenter.is_none() {
+        Some(gpu.image(&target_info(COLOR_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC))?)
+    } else {
+        None
+    };
     let (depth, dmem) = gpu.image(&target_info(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT))?;
     let view_of = |image, format, aspect| unsafe {
         d.create_image_view(
@@ -1354,17 +1380,17 @@ fn main() -> Result<()> {
             None,
         )
     };
-    let color_view = view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)?;
+    let color_view = offscreen.map(|(color, _)| view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)).transpose()?;
     let depth_view = view_of(depth, DEPTH_FORMAT, vk::ImageAspectFlags::DEPTH)?;
 
     let attachments = [
         vk::AttachmentDescription::default()
-            .format(COLOR_FORMAT)
+            .format(color_format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL),
+            .final_layout(if presenter.is_some() { vk::ImageLayout::PRESENT_SRC_KHR } else { vk::ImageLayout::TRANSFER_SRC_OPTIMAL }),
         vk::AttachmentDescription::default()
             .format(DEPTH_FORMAT)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -1380,13 +1406,22 @@ fn main() -> Result<()> {
         .color_attachments(&color_ref)
         .depth_stencil_attachment(&depth_ref)];
     let render_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachments).subpasses(&subpass), None)? };
-    let fb_views = [color_view, depth_view];
-    let framebuffer = unsafe {
-        d.create_framebuffer(
-            &vk::FramebufferCreateInfo::default().render_pass(render_pass).attachments(&fb_views).width(size).height(size).layers(1),
-            None,
-        )?
+    // One framebuffer per target image: the offscreen image, or each swapchain image.
+    let targets: Vec<vk::ImageView> = match (&presenter, color_view) {
+        (Some(p), _) => p.views.clone(),
+        (None, Some(v)) => vec![v],
+        (None, None) => return Err("no target to draw into".into()),
     };
+    let framebuffers = targets
+        .iter()
+        .map(|&view| unsafe {
+            let fb_views = [view, depth_view];
+            d.create_framebuffer(
+                &vk::FramebufferCreateInfo::default().render_pass(render_pass).attachments(&fb_views).width(width).height(height).layers(1),
+                None,
+            )
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -1409,8 +1444,8 @@ fn main() -> Result<()> {
     ];
     let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
     let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
-    let viewport = [vk::Viewport { x: 0.0, y: 0.0, width: size as f32, height: size as f32, min_depth: 0.0, max_depth: 1.0 }];
-    let scissor = [vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: size, height: size } }];
+    let viewport = [vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }];
+    let scissor = [vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } }];
     let vstate = vk::PipelineViewportStateCreateInfo::default().viewports(&viewport).scissors(&scissor);
     let raster = vk::PipelineRasterizationStateCreateInfo::default()
         .polygon_mode(vk::PolygonMode::FILL)
@@ -1533,7 +1568,7 @@ fn main() -> Result<()> {
         eprintln!("event camera: target {:?}, distance {}, yaw {}, pitch {}, fov {}", c.target, c.distance, c.yaw, c.pitch, c.fov);
     }
     let view = Mat4::look_at_rh(eye, target, Vec3::Y);
-    let mut proj = Mat4::perspective_rh(fov, 1.0, dist * 0.01, dist * 20.0);
+    let mut proj = Mat4::perspective_rh(fov, width as f32 / height as f32, dist * 0.01, dist * 20.0);
     proj.y_axis.y *= -1.0; // Vulkan's y points down.
     let mvp = proj * view;
 
@@ -1581,9 +1616,11 @@ fn main() -> Result<()> {
             .filter_map(|p| std::fs::read(p).ok())
             .find_map(|b| barrel_game::gesture::read(&b))
             .unwrap_or_default();
-        // Frames written to files are not real time: no stall cap.
+        // Frames written to files are not real time: no stall cap (a window keeps it).
         let mut clock = barrel_game::clock::Clock::default();
-        clock.max_frame = f64::INFINITY;
+        if presenter.is_none() {
+            clock.max_frame = f64::INFINITY;
+        }
         while clock.time() + 1e-9 < event_at.unwrap_or(0.0) as f64 {
             clock.ticks += 1;
             play.tick();
@@ -1601,13 +1638,35 @@ fn main() -> Result<()> {
         };
     }
 
-    // Render each frame and read it back.
-    let bytes = (size * size * 4) as u64;
+    // Render each frame: read it back to a file, or present it in the window.
+    let bytes = (width * height * 4) as u64;
     let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
+    let sync = presenter
+        .as_ref()
+        .map(|_| -> Result<(vk::Semaphore, vk::Semaphore)> {
+            unsafe { Ok((d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?)) }
+        })
+        .transpose()?;
+    let mut last_frame = std::time::Instant::now();
     for frame in 0..frames {
+    if let Some(p) = pump.as_mut() {
+        if !p.pump() {
+            eprintln!("window closed after {frame} frames");
+            break;
+        }
+    }
     if let Some((play, clock, before, after)) = player.as_mut() {
         if frame > 0 {
-            let f = clock.advance(1.0 / fps);
+            // A window takes the real time since the last frame; files take 1/fps.
+            let real = if presenter.is_some() {
+                let now = std::time::Instant::now();
+                let r = (now - last_frame).as_secs_f64();
+                last_frame = now;
+                r
+            } else {
+                1.0 / fps
+            };
+            let f = clock.advance(real);
             for _ in 0..f.ticks {
                 *before = std::mem::replace(after, {
                     play.tick();
@@ -1699,7 +1758,12 @@ fn main() -> Result<()> {
             gpu.upload(palette_mem, unsafe { std::slice::from_raw_parts(palette.as_ptr() as *const u8, palette.len() * size_of::<Mat4>()) })?;
         }
     }
-    gpu.submit(pool, |cb| unsafe {
+    // The image to draw into: the window's next, or the offscreen one.
+    let target = match (&presenter, &sync) {
+        (Some(p), Some((ready, _))) => p.acquire(*ready)? as usize,
+        _ => 0,
+    };
+    let record = |cb: vk::CommandBuffer| unsafe {
         let clear = [
             vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
             vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
@@ -1708,7 +1772,7 @@ fn main() -> Result<()> {
             cb,
             &vk::RenderPassBeginInfo::default()
                 .render_pass(render_pass)
-                .framebuffer(framebuffer)
+                .framebuffer(framebuffers[target])
                 .render_area(scissor[0])
                 .clear_values(&clear),
             vk::SubpassContents::INLINE,
@@ -1738,11 +1802,35 @@ fn main() -> Result<()> {
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
         }
         d.cmd_end_render_pass(cb);
-        let region = vk::BufferImageCopy::default()
-            .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
-            .image_extent(extent);
-        d.cmd_copy_image_to_buffer(cb, color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
-    })?;
+        if let Some((color, _)) = offscreen {
+            let region = vk::BufferImageCopy::default()
+                .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
+                .image_extent(extent);
+            d.cmd_copy_image_to_buffer(cb, color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
+        }
+    };
+    if let (Some(p), Some((ready, done))) = (&presenter, &sync) {
+        // Wait for the image, draw, signal, present; the fence keeps one frame in flight.
+        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0] };
+        unsafe {
+            d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
+            record(cb);
+            d.end_command_buffer(cb)?;
+            let fence = d.create_fence(&vk::FenceCreateInfo::default(), None)?;
+            let (waits, stages, cbs, signals) = ([*ready], [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT], [cb], [*done]);
+            d.queue_submit(
+                gpu.queue,
+                &[vk::SubmitInfo::default().wait_semaphores(&waits).wait_dst_stage_mask(&stages).command_buffers(&cbs).signal_semaphores(&signals)],
+                fence,
+            )?;
+            p.present(&gpu, target as u32, *done)?;
+            d.wait_for_fences(&[fence], true, u64::MAX)?;
+            d.destroy_fence(fence, None);
+            d.free_command_buffers(pool, &cbs);
+        }
+        continue;
+    }
+    gpu.submit(pool, record)?;
     let mut pixels = vec![0u8; bytes as usize];
     unsafe {
         let p = d.map_memory(rmem, 0, bytes, vk::MemoryMapFlags::empty())? as *const u8;
@@ -1757,7 +1845,7 @@ fn main() -> Result<()> {
     } else {
         Path::new(&out_path).to_path_buf()
     };
-    std::fs::write(&path, barrel_formats::png::encode_rgba(size, size, &pixels))?;
+    std::fs::write(&path, barrel_formats::png::encode_rgba(width, height, &pixels))?;
     eprintln!("wrote {}", path.display());
     }
 
@@ -1782,12 +1870,22 @@ fn main() -> Result<()> {
         d.destroy_pipeline_layout(pipeline_layout, None);
         d.destroy_shader_module(vs, None);
         d.destroy_shader_module(fs, None);
-        d.destroy_framebuffer(framebuffer, None);
+        for fb in framebuffers {
+            d.destroy_framebuffer(fb, None);
+        }
         d.destroy_render_pass(render_pass, None);
-        d.destroy_image_view(color_view, None);
+        if let Some(v) = color_view {
+            d.destroy_image_view(v, None);
+        }
         d.destroy_image_view(depth_view, None);
-        d.destroy_image(color, None);
-        d.free_memory(cmem, None);
+        if let Some((color, cmem)) = offscreen {
+            d.destroy_image(color, None);
+            d.free_memory(cmem, None);
+        }
+        if let Some((ready, done)) = sync {
+            d.destroy_semaphore(ready, None);
+            d.destroy_semaphore(done, None);
+        }
         d.destroy_image(depth, None);
         d.free_memory(dmem, None);
         d.destroy_descriptor_pool(dpool, None);
@@ -1803,6 +1901,9 @@ fn main() -> Result<()> {
         d.destroy_buffer(ibuf, None);
         d.free_memory(imem, None);
         d.destroy_command_pool(pool, None);
+        if let Some(p) = presenter {
+            p.destroy(&gpu);
+        }
         d.destroy_device(None);
         gpu.instance.destroy_instance(None);
     }
