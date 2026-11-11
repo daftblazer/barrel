@@ -67,8 +67,15 @@ will handle it. Run in file order, that event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
 waits, and talks the dragon problem through in the right order.
 
-Not yet: actions running side by side (the editor's actions may be parallel tracks rather
-than a sequence), waits taking time, and the speaker numbers' names.
+Only an event's first action ever shows messages: across all 1,021 story events no other
+action has a `u18`. In 894 of them the message ranges run 0, 1, 2, ... without a gap in
+file order. The other 127 jump (e.g. 43, 45, 44, then 40-41 in `EVENT_MM02_OP2_080`): those
+are the events with choices, where `u26` (handled by `BalloonSelectMode`) offers the
+choice, `u16` shows its prompt and the branches pick which messages follow. How a branch
+is chosen and jumped to is still open.
+
+Not yet: branching, the other actions (camera and character tracks, probably run beside the
+first), waits taking time, and the speaker numbers' names.
 
 ## Who handles them
 

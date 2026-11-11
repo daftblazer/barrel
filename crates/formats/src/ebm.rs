@@ -13,9 +13,10 @@
 //! The text uses `<CR>` for line breaks, `<IMnn>` for inline icons and `<CLGR>` / `<CLNR>`
 //! to change and reset the colour.
 //!
-//! 169 lines in each translated language were left in Japanese, and their text was
-//! mangled on the way: each Shift-JIS byte pair became one code point with the bytes
-//! swapped (エ, `83 47`, became U+4783), then UTF-8. [`Message::repaired_text`] undoes it.
+//! Some lines in each translated language were left in Japanese, and their text was mangled
+//! on the way: the Shift-JIS bytes were read two at a time as UTF-16 (エ, `83 47`, became
+//! U+4783; `<CR>` became U+433C U+3E52), then written as UTF-8. [`Message::repaired_text`]
+//! undoes it; characters whose pair fell on a UTF-16 surrogate were lost and show as 〓.
 
 use crate::{Error, u32_at};
 
@@ -35,28 +36,51 @@ impl Message {
     }
 }
 
-/// Undo "Shift-JIS pairs stored as byte-swapped code points": None when `text` is not of
-/// that form (any kana or ordinary kanji fails the byte-range test).
+/// Undo "Shift-JIS bytes read two at a time as UTF-16": None unless `text` looks like that.
+///
+/// Every code point stands for two bytes (low, high), ASCII pairs included (`<CR>` became
+/// U+433C U+3E52). Pairs that landed on UTF-16 surrogates became U+FFFD and are lost; they
+/// come back as 〓. To keep real text safe,
+/// a line only counts as mangled if it has no kana, at least half its characters are CJK,
+/// Hangul or private-use code points, and the bytes decode as Shift-JIS to mostly Japanese.
 fn unpack_sjis(text: &str) -> Option<String> {
-    if text.chars().all(|c| c.is_ascii()) {
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let kana = |c: char| ('\u{3040}'..='\u{30ff}').contains(&c);
+    let wide = |c: char| (c as u32) >= 0x3400;
+    if chars.is_empty() || chars.iter().any(|&c| kana(c)) || chars.iter().filter(|&&c| wide(c)).count() * 2 < chars.len() {
+        return None;
+    }
+    // Each code point is a pair whose first byte (the low one) starts a Shift-JIS character
+    // or is printable ASCII paired with printable ASCII. Real kanji almost never fit.
+    let pair_ok = |c: char| {
+        let c = c as u32;
+        let (lo, hi) = ((c & 0xff) as u8, (c >> 8) as u8);
+        c < 0x80 || c == 0xfffd || matches!(lo, 0x81..=0x9f | 0xe0..=0xfc) || ((0x20..0x7f).contains(&lo) && (0x20..0x7f).contains(&hi))
+    };
+    if !text.chars().all(|c| c.is_whitespace() || pair_ok(c)) {
         return None;
     }
     let mut bytes = Vec::with_capacity(text.len());
     for c in text.chars() {
         let c = c as u32;
-        if c < 0x80 {
-            bytes.push(c as u8);
+        if c == 0xfffd || c > 0xffff {
+            // A pair that fell in the UTF-16 surrogate range could not be written as UTF-8
+            // and became U+FFFD: the character is lost. 〓 (geta) marks the gap.
+            bytes.extend_from_slice(&[0x81, 0xac]);
             continue;
         }
-        let (lead, trail) = ((c & 0xff) as u8, (c >> 8) as u8);
-        if c > 0xffff || !(matches!(lead, 0x81..=0x9f | 0xe0..=0xfc) && (0x40..=0xfc).contains(&trail)) {
-            return None;
+        bytes.push(c as u8);
+        if c >> 8 != 0 {
+            bytes.push((c >> 8) as u8);
         }
-        bytes.push(lead);
-        bytes.push(trail);
     }
-    let (s, _, bad) = encoding_rs::SHIFT_JIS.decode(&bytes);
-    if bad { None } else { Some(s.into_owned()) }
+    let (s, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+    let out: Vec<char> = s.chars().filter(|c| !c.is_whitespace() && !c.is_ascii()).collect();
+    let japanese = out.iter().filter(|&&c| kana(c) || ('\u{4e00}'..='\u{9fff}').contains(&c) || ('\u{3000}'..='\u{303f}').contains(&c) || ('\u{ff00}'..='\u{ffef}').contains(&c)).count();
+    if s.chars().any(|c| c.is_control() && c != '\n') || japanese * 2 < out.len() {
+        return None;
+    }
+    Some(s.into_owned())
 }
 
 pub fn parse(data: &[u8]) -> Result<Vec<Message>, Error> {
@@ -106,5 +130,9 @@ mod tests {
         assert_eq!(m[1].speaker, -1);
         assert_eq!(m[1].repaired_text(), "エス");
         assert_eq!(unpack_sjis("あった"), None);
+        assert_eq!(unpack_sjis("It\u{2019}s fine"), None);
+        assert_eq!(unpack_sjis("【削除】"), None);
+        assert_eq!(unpack_sjis("宝箱？"), None);
+        assert_eq!(unpack_sjis("\u{4783}\u{433c}\u{3e52}\u{5883}"), Some("エ<CR>ス".into()));
     }
 }

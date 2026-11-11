@@ -357,13 +357,19 @@ per message: u32 kind (1 for 89% of lines; 2, 4 and 0 also occur)
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.
 
-**Mangled lines.** 169 lines in each translation (507 in all) were left in Japanese, and
-their text was mangled by the tool that made the translated files: each Shift-JIS byte pair
-was stored as one code point with its bytes swapped (エ, `83 47`, became U+4783), then
-written as UTF-8. They are placeholders such as ダミー ("dummy").
-`Message::repaired_text` turns them back into readable Japanese; the stored text is kept as
-it is. The test cannot misfire on real Japanese text: kana and common kanji never pass the
-byte-range check.
+**Mangled lines.** Some lines in each translation were left in Japanese, and the tool that
+made the translated files mangled them: it read their Shift-JIS bytes two at a time as
+UTF-16 and wrote the result as UTF-8. エ (`83 47`) became U+4783, and markup was paired up
+too (`<CR>` became U+433C U+3E52). Pairs that landed in the UTF-16 surrogate range could not
+be written and became U+FFFD, so those characters (several kana, ま among them) are lost.
+
+`Message::repaired_text` turns such lines back into Japanese and marks the lost characters
+with 〓. The stored text is kept as it is. A line only counts as mangled when it has no
+kana, at least half its characters are CJK, Hangul or private-use code points, every code
+point's low byte could start a Shift-JIS character (or both bytes are printable ASCII), and
+the result reads as Japanese. That repairs 567 English, 579 Simplified Chinese and 578
+Traditional Chinese lines (the tutorial's furniture descriptions among them), and touches
+none of the Japanese originals.
 
 ## Tables (`Saves*/**/*.xml`)
 
