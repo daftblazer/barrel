@@ -558,7 +558,16 @@ candidates from its table's rows (`0x140dff518` for the synthesis requests): row
 `0x1400e31a0`/`0x14033b450`; then, in order, each draws a number modulo 100 and is taken when it
 is below `trunc(Priority + 0.5)` (`Priority`, the float at +0x38); if none is, the list is
 shuffled (each place k from 1 swapped with `below(k + 1)`) and the first taken
-(`quest::BoardRng`, `board_pick`). The day ends by clearing
+(`quest::BoardRng`, `board_pick`). Every candidate first passes `0x14033b450`
+on its row (+0x24 `StartEvent`, +0x28 `EndEvent`, +0x2c `isClearSubject`, +0x30 `StartDate`,
++0x34 `EndDate`): the start event seen and the end event not, each when given; the assignment
+cleared (its state in the 0x14-byte records at `0x141099e10` at least 7); and, when either date
+is above 0, `StartDate <= today <= EndDate` (an end below 0 meaning none). So the April 1st
+draw (day 90) holds none of the requests that start on 91; they first come up on April 11th.
+Synthesis candidates also need a count of at least 6 for their target in `0x141079fe0` and its
+recipe flagged (`0x1400e31a0`, `0x141079fe0` + 0x8c0); battle candidates are sorted first
+(`0x14033ecc0`, comparator `0x14033c1d0`) and gathering ones skip a target already drawn, not
+read further (`quest::board_eligible`, `draw_synthesis`). The day ends by clearing
 `0x1410782e2` (`calendar::daily_rolls`, `daily_gain`, `add_gain`, `month_start`, `board_day`,
 `board_seed`).
 

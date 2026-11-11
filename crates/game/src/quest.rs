@@ -29,6 +29,8 @@ pub struct Request {
     pub priority: f32,
     pub table: i32,
     pub num: i32,
+    /// `isClearSubject`: the assignment that must be cleared first.
+    pub clear_subject: Option<String>,
 }
 
 /// The requests of one quest table.
@@ -55,6 +57,7 @@ pub fn requests(table: &Element, kind: Kind) -> Vec<Request> {
             table: i(e, "Table"),
             // QuestAlc spells it "num", the others "Num".
             num: e.attr("Num").or(e.attr("num")).and_then(|v| v.trim().parse().ok()).unwrap_or(0),
+            clear_subject: opt(e, "isClearSubject"),
         })
         .collect()
 }
@@ -64,6 +67,45 @@ pub fn offered(r: &Request, day: i32, seen: impl Fn(&str) -> bool) -> bool {
     (r.from_day..=r.to_day).contains(&day)
         && r.from_event.as_deref().is_none_or(&seen)
         && !r.until_event.as_deref().is_some_and(&seen)
+}
+
+/// Whether a request may go on the board on `day` (`0x14033b450`, English Escha executable):
+/// its start event seen and its end event not (each when it has one); its `isClearSubject`
+/// assignment cleared (the assignment's state, `0x141099e10` + 0x14 × its number, at least 7);
+/// and, when either date is above 0, `StartDate <= day` and `day <= EndDate` (an end below 0
+/// meaning none). Unlike [`offered`], a request whose dates are both 0 or less is not bounded
+/// by them.
+pub fn board_eligible(r: &Request, day: i32, seen: impl Fn(&str) -> bool, cleared: impl Fn(&str) -> bool) -> bool {
+    if r.from_event.as_deref().is_some_and(|e| !seen(e)) || r.until_event.as_deref().is_some_and(&seen) {
+        return false;
+    }
+    if r.clear_subject.as_deref().is_some_and(|s| !cleared(s)) {
+        return false;
+    }
+    if r.from_day > 0 || r.to_day > 0 {
+        return r.from_day <= day && (r.to_day < 0 || day <= r.to_day);
+    }
+    true
+}
+
+/// The three synthesis slots of a redraw (`0x14033b5e0`): slot k (0 to 2) gathers, in table
+/// order, the synthesis requests whose `Table` is k (or -1) that are [`board_eligible`] and
+/// pass `known` (the game's further tests: a count for the target of at least 6 in
+/// `0x141079fe0`, and its recipe flagged in `0x141079fe0` + 0x8c0 by `0x1400e31a0`; not
+/// modelled here), and draws one by [`board_pick`]. Returns the chosen requests' indices.
+pub fn draw_synthesis(requests: &[Request], day: i32, seen: impl Fn(&str) -> bool, cleared: impl Fn(&str) -> bool, known: impl Fn(&Request) -> bool, rng: &mut BoardRng) -> [Option<usize>; 3] {
+    let mut out = [None; 3];
+    for (k, slot) in out.iter_mut().enumerate() {
+        let candidates: Vec<usize> = (0..requests.len())
+            .filter(|&i| {
+                let r = &requests[i];
+                r.kind == Kind::Synthesis && (r.table == k as i32 || r.table == -1) && board_eligible(r, day, &seen, &cleared) && known(r)
+            })
+            .collect();
+        let chances: Vec<f32> = candidates.iter().map(|&i| requests[i].priority).collect();
+        *slot = board_pick(&chances, rng).map(|j| candidates[j]);
+    }
+    out
 }
 
 /// The request board's generator (the object at `0x140dfc880`, English Escha executable): two
@@ -145,5 +187,32 @@ mod tests {
         assert_eq!(board_pick(&[100.0, 0.0], &mut rng), Some(0));
         assert!(board_pick(&[0.0, 0.0, 0.0], &mut rng).is_some());
         assert_eq!(board_pick(&[], &mut rng), None);
+    }
+
+    #[test]
+    fn board_eligibility() {
+        let r = Request {
+            kind: Kind::Synthesis,
+            target: "ITEM_MIX_CRAFT".into(),
+            points: 0.0,
+            prizes: Vec::new(),
+            from_event: None,
+            until_event: None,
+            from_day: 91,
+            to_day: 1530,
+            priority: 29.0,
+            table: 0,
+            num: 1,
+            clear_subject: Some("SUBJECT_A".into()),
+        };
+        let none = |_: &str| false;
+        let all = |_: &str| true;
+        // April 1st (90) is before its start; the subject must be cleared.
+        assert!(!board_eligible(&r, 90, none, all));
+        assert!(board_eligible(&r, 91, none, all));
+        assert!(!board_eligible(&r, 91, none, none));
+        let mut rng = BoardRng::new(crate::calendar::board_seed(100, 0));
+        let slots = draw_synthesis(std::slice::from_ref(&r), 100, none, all, |_| true, &mut rng);
+        assert!(slots[1].is_none() && slots[2].is_none());
     }
 }
