@@ -26,8 +26,10 @@
 //! of the same length, and each attribute says which of them (by position in that list) it
 //! is in: characters keep positions in a 12-byte buffer and the rest in a second one.
 //!
-//! Types 0x10001, 0x10003, 0x10006 and 0x10009 (shader parameters, bone maps, LOD groups)
-//! are kept as raw sections for now.
+//! | 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags, u32 joint}`; the joint's top bit marks a joint of the base model's skeleton |
+//!
+//! Types 0x10001, 0x10003 and 0x10009 (shader parameters, LOD groups) are kept as raw
+//! sections for now.
 
 use crate::{Error, u32_at};
 
@@ -153,6 +155,19 @@ pub struct Submesh {
     pub index_count: usize,
 }
 
+/// One entry of a bone palette (G1MG section 0x10006).
+#[derive(Clone, Copy, Debug)]
+pub struct BoneRef {
+    /// First word; its use is not known yet.
+    pub matrix: u32,
+    /// Second word (0x80000000 in every Escha entry seen so far).
+    pub flags: u32,
+    /// The joint, as an index into the skeleton's joints.
+    pub joint: u32,
+    /// The joint lives in the base model's skeleton rather than this file's.
+    pub external: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Geometry<'a> {
     pub bounds: [f32; 6],
@@ -161,6 +176,9 @@ pub struct Geometry<'a> {
     pub layouts: Vec<Layout>,
     pub index_buffers: Vec<Vec<u16>>,
     pub submeshes: Vec<Submesh>,
+    /// Bone palettes; a submesh's `bone_map` picks one. A vertex's bone index byte divided
+    /// by 3 is a slot in that palette.
+    pub bone_maps: Vec<Vec<BoneRef>>,
     /// Sections not decoded yet: (type, count, body).
     pub other_sections: Vec<(u32, u32, &'a [u8])>,
 }
@@ -302,6 +320,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         layouts: Vec::new(),
         index_buffers: Vec::new(),
         submeshes: Vec::new(),
+        bone_maps: Vec::new(),
         other_sections: Vec::new(),
     };
     let mut at = 36;
@@ -366,6 +385,24 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
                     g.layouts.push(Layout { buffers, attributes });
                 }
             }
+            0x10006 => {
+                for _ in 0..n {
+                    let count = bounded(u32_at(sec, p)?)?;
+                    p += 4;
+                    let mut map = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let joint = u32_at(sec, p + 8)?;
+                        map.push(BoneRef {
+                            matrix: u32_at(sec, p)?,
+                            flags: u32_at(sec, p + 4)?,
+                            joint: joint & 0x7fff_ffff,
+                            external: joint & 0x8000_0000 != 0,
+                        });
+                        p += 12;
+                    }
+                    g.bone_maps.push(map);
+                }
+            }
             0x10007 => {
                 for _ in 0..n {
                     let count = bounded(u32_at(sec, p)?)?;
@@ -426,6 +463,9 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         }
     }
     for s in &g.submeshes {
+        if !g.bone_maps.is_empty() && s.bone_map >= g.bone_maps.len() {
+            return Err(Error::Corrupt("submesh bone map"));
+        }
         let count = g.vertex_count(s.layout).ok_or(Error::Corrupt("submesh layout"))?;
         let ib = g.index_buffers.get(s.index_buffer).ok_or(Error::Corrupt("submesh index buffer"))?;
         if s.index_start + s.index_count > ib.len() || s.vertex_start + s.vertex_count > count {
@@ -485,6 +525,20 @@ pub struct SimpleMesh {
 }
 
 impl Geometry<'_> {
+    /// The largest bone palette slot any vertex of a submesh uses, if it has bone indices.
+    pub fn max_bone_slot(&self, s: &Submesh) -> Option<usize> {
+        let layout = self.layouts.get(s.layout)?;
+        let a = layout.attributes.iter().find(|a| a.semantic == Semantic::BoneIndices && a.layer == 0)?;
+        let vb = &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
+        let mut max = 0usize;
+        for v in s.vertex_start..s.vertex_start + s.vertex_count {
+            for &b in &vb.data[v * vb.stride + a.offset as usize..][..4] {
+                max = max.max(b as usize / 3);
+            }
+        }
+        Some(max)
+    }
+
     /// How many vertices a layout's buffers hold.
     pub fn vertex_count(&self, layout: usize) -> Option<usize> {
         let first = *self.layouts.get(layout)?.buffers.first()?;

@@ -115,7 +115,7 @@ model:
 | 0x10003 | shader parameters, not decoded yet |
 | 0x10004 | vertex buffers: `{u32, u32 stride, u32 vertex count, u32}`, then the vertices |
 | 0x10005 | vertex layouts: `{u32 buffer count, u32 buffer numbers[], u32 attribute count}`, then per attribute `{u16 buffer (position in this layout's list), u16 offset, u8 type, u8, u8 semantic, u8 layer}` |
-| 0x10006 | bone maps, not decoded yet |
+| 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags (0x80000000), u32 joint}` |
 | 0x10007 | index buffers: `{u32 count, u32 bits (always 16), u32}`, then the indices, padded to 4 bytes |
 | 0x10008 | submeshes, 14 u32 each: flags, **layout**, bone map, ?, ?, shader parameters, material, index buffer, ?, primitive (3 triangle list, 4 strip), first vertex, vertex count, first index, index count |
 | 0x10009 | LOD groups, not decoded yet |
@@ -152,8 +152,20 @@ Characters split the skeleton from the meshes. The base model (`PC20_MODEL.g1m`)
 skeleton and almost no geometry; the `_default` model holds the meshes and a G1MS with one
 placeholder joint and the index map alone. The Oid.bin names are the scene's nodes, not the
 joints one for one (helpers such as the thigh-twist nodes sit in between), so naming the
-joints needs the index map; that is still to be worked out, along with the bone maps
-(G1MG section 0x10006) that tie vertices to joints.
+joints needs the index map; that is still to be worked out.
+
+### Skinning
+
+A vertex's bone-index byte (semantic 2) divided by 3 is a slot in the bone palette its
+submesh names (submesh word 2); the slot's joint word, without its top bit, is the joint
+number in the skeleton. The top bit marks a joint of the base model's skeleton, which is
+how a `_default` model's meshes reach the skeleton in `PC20_MODEL.g1m`. Weights are
+semantic 1.
+
+Checked on Escha: with this mapping her vertices lie a median 7.9 units from the joint that
+weighs most on them; reading the joint through the index map instead gives 23, and the
+palette's first word 69 to 79. Across all of Escha's models, every vertex's bone slot is
+inside its palette (`barrel g1m-scan` checks it).
 
 ## Node names (`*Oid.bin`)
 

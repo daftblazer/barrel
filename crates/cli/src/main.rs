@@ -451,6 +451,12 @@ fn g1m_scan(dir: &Path) -> Result<()> {
                 }
                 let g = m.geometry.ok_or(barrel_formats::Error::Corrupt("no geometry"))?;
                 for s in &g.submeshes {
+                    if let Some(slot) = g.max_bone_slot(s) {
+                        let palette = g.bone_maps.get(s.bone_map).map_or(0, |m| m.len());
+                        if slot >= palette {
+                            return Err(barrel_formats::Error::Corrupt("vertex bone index past its palette"));
+                        }
+                    }
                     let mesh = g.simple_mesh(s)?;
                     vertices += mesh.positions.len();
                     triangles += mesh.triangles.len();
