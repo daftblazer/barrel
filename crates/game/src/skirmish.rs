@@ -81,7 +81,7 @@ pub fn skirmish(party: &[Member], foe: &Foe, rng: &mut Rng, max_events: usize) -
             events.extend(b.act(who, skill, None, target, rng));
         } else {
             let f = &b.fighters[who];
-            let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, phase: 0, uses: &f.uses };
+            let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, state: 0, uses: &f.uses };
             let (slot, skill, mode) = foe.pick(&situation, rng);
             let candidates = b.candidates(who, skill);
             let target = b.pick_target(mode.unwrap_or(0), who, &candidates, rng);

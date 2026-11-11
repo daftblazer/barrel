@@ -16,9 +16,13 @@ pub struct Situation<'a> {
     pub hp: i32,
     pub max_hp: i32,
     /// How many actions the monster has taken so far (its +0x2c8, raised after each of its
-    /// actions at `0x1401aecda`, 0 at the start) and the phase (+0x2d0).
+    /// actions at `0x1401aecda`, 0 at the start).
     pub turn: i32,
-    pub phase: i32,
+    /// The character's +0x2d0: set as each of its actions starts (`0x1401ba3c2`, `0x1401d6320`,
+    /// `0x1401d6dfa`) from virtual +0x18 of the first object in its list at +0x1f0
+    /// (`0x1401aeec0`; +0x2cc gets virtual +0x20). Rules test it in cycles (0 one skill, 1 the
+    /// next, ...; values 0 to 8); what it counts is not read yet.
+    pub state: i32,
     /// How many times each slot has been used this battle.
     pub uses: &'a [i32],
 }
@@ -31,8 +35,8 @@ pub fn holds(rule: &Rule, s: &Situation) -> bool {
         1 => rule.value > 0 && s.turn % rule.value == rule.value - 1,
         // HP at or below `value` percent of the maximum (the percentage cut to an integer).
         2 => s.max_hp * rule.value / 100 >= s.hp,
-        // The battle's phase is `value`.
-        3 => s.phase == rule.value,
+        // The character's action state (+0x2d0) is `value`.
+        3 => s.state == rule.value,
         _ => false,
     }
 }
@@ -68,7 +72,7 @@ mod tests {
     #[test]
     fn conditions() {
         let uses = [0; 9];
-        let s = |hp, turn| Situation { hp, max_hp: 200, turn, phase: 2, uses: &uses };
+        let s = |hp, turn| Situation { hp, max_hp: 200, turn, state: 2, uses: &uses };
         assert!(holds(&rule(1, 6, 100, 1, -1), &s(200, 5)));
         assert!(!holds(&rule(1, 6, 100, 1, -1), &s(200, 6)));
         assert!(holds(&rule(2, 75, 100, 6, 1), &s(150, 0)));
@@ -83,13 +87,13 @@ mod tests {
         let rules = [rule(1, 1, 100, 5, 1), rule(1, 6, 100, 1, -1), rule(2, 75, 100, 6, 1)];
         let mut rng = Rng::from_state([1, 2, 3, 4]);
         let mut uses = [0; 9];
-        let first = choose(&rules, &Situation { hp: 35000, max_hp: 35000, turn: 0, phase: 0, uses: &uses }, &mut rng);
+        let first = choose(&rules, &Situation { hp: 35000, max_hp: 35000, turn: 0, state: 0, uses: &uses }, &mut rng);
         assert_eq!(first, (5, 0));
         uses[5] = 1;
         // Slot 5 is spent; turn 5 is a sixth turn, so slot 1; at turn 1 and full HP nothing
         // fits and the fallback is slot 0.
-        assert_eq!(choose(&rules, &Situation { hp: 35000, max_hp: 35000, turn: 5, phase: 0, uses: &uses }, &mut rng), (1, 0));
-        assert_eq!(choose(&rules, &Situation { hp: 35000, max_hp: 35000, turn: 1, phase: 0, uses: &uses }, &mut rng), (0, 0));
-        assert_eq!(choose(&rules, &Situation { hp: 20000, max_hp: 35000, turn: 1, phase: 0, uses: &uses }, &mut rng), (6, 0));
+        assert_eq!(choose(&rules, &Situation { hp: 35000, max_hp: 35000, turn: 5, state: 0, uses: &uses }, &mut rng), (1, 0));
+        assert_eq!(choose(&rules, &Situation { hp: 35000, max_hp: 35000, turn: 1, state: 0, uses: &uses }, &mut rng), (0, 0));
+        assert_eq!(choose(&rules, &Situation { hp: 20000, max_hp: 35000, turn: 1, state: 0, uses: &uses }, &mut rng), (6, 0));
     }
 }
