@@ -570,8 +570,14 @@ has `Table` 3, so the fourth takes only the -1 rows) come from the manager's sec
 0x40-byte rows), need a count of at least 2 for the monster in `0x141079fe0`, and are sorted by
 `0x14035cc80 (target)` from highest to lowest (`0x14033ecc0` with `0x14033c1d0`; the monster's
 level, presumably) before the same draw and shuffle (`0x14033eb80` with `0x14033c210`);
-gathering candidates skip a target already drawn, not read further (`quest::board_eligible`,
-`draw_synthesis`, `draw_battle`). The day ends by clearing
+the three gathering slots (board places 7 to 9, `0x14033bd10`, groups 0 to 2) come from the
+third list (+0x30), skip a target already on an earlier gathering slot and ask for no count
+(`quest::board_eligible`, `draw_synthesis`, `draw_battle`, `draw_gathering`, `draw_board`).
+`barrel board INSTALL DAY [--events]` draws a day's board (no assignment cleared, the
+`0x1410989f0` global taken as 0, the counts and recipes taken as known): April 1st (day 90) is
+empty, and the April 11th board (100, every start event seen) holds three synthesis, three
+battle (the fourth battle slot takes only `Table` -1 rows, and none has it) and three gathering
+requests. The day ends by clearing
 `0x1410782e2` (`calendar::daily_rolls`, `daily_gain`, `add_gain`, `month_start`, `board_day`,
 `board_seed`).
 

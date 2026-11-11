@@ -39,6 +39,7 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel board INSTALL DAY [--events]  the request board drawn on a game day (--events: every request's start event seen)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -102,6 +103,8 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
+        ["board", install, day] => board(Path::new(install), day, false),
+        ["board", install, day, "--events"] => board(Path::new(install), day, true),
         ["shops", install] => shops(Path::new(install), None),
         ["shops", install, lang] => shops(Path::new(install), Some(lang)),
         ["recipes", exe] => recipes(Path::new(exe)),
@@ -654,6 +657,43 @@ fn quests(install: &Path) -> Result<()> {
         total += rs.len();
     }
     println!("{total} requests (the first five of each shown; points and counts as the tables give them)");
+    Ok(())
+}
+
+/// The request board as it would be redrawn on `day` (see `barrel_game::quest::draw_board`):
+/// no assignment cleared, the global at 0x1410989f0 taken as 0, the targets' counts and recipes
+/// taken as known, battle candidates sorted by their monster's first stat block level.
+fn board(install: &Path, day: &str, events: bool) -> Result<()> {
+    use barrel_game::quest::{draw_board, requests, Kind};
+    let day: i32 = day.parse().map_err(|_| format!("{day}: not a day number"))?;
+    let mut all = Vec::new();
+    for (file, kind) in [("QuestAlc", Kind::Synthesis), ("QuestBtl", Kind::Monster), ("QuestGat", Kind::Gathering)] {
+        let path = install.join(format!("Saves/quest/{file}.xml"));
+        let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        all.extend(requests(&table, kind));
+    }
+    let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
+    let data = read(&exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let monsters = barrel_formats::battle_data::monsters(&pe, barrel_formats::battle_data::MONSTERS_EN).ok_or("no monster table")?;
+    let (tags, _) = pe.enum_names("MONSTER_ROCKRAT_00").ok_or("no MONSTER_* enum")?;
+    let level = |r: &barrel_game::quest::Request| {
+        // The array holds several enums; the monsters' numbers count from its first MONSTER_ tag.
+        let first = tags.iter().position(|t| t.starts_with("MONSTER_")).unwrap_or(0);
+        tags.iter().position(|t| *t == r.target).and_then(|i| i.checked_sub(first)).and_then(|i| monsters.get(i)).and_then(|m| m.blocks.first()).map_or(0, |b| b.level)
+    };
+    let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
+    let seen = |e: &str| events && starts.contains(e);
+    let slots = draw_board(&all, day, 0, seen, |_| false, |_| true, level);
+    let d = barrel_game::calendar::Date::of(day.max(0) as u32);
+    println!("day {day} (Y{} {}/{}){}", d.year, d.month, d.day, if barrel_game::calendar::board_day(day.max(0) as u32) { ", a redraw day" } else { ", not a redraw day (drawn as if it were)" });
+    for (k, s) in slots.iter().enumerate() {
+        let what = ["synthesis", "synthesis", "synthesis", "battle", "battle", "battle", "battle", "gathering", "gathering", "gathering"][k];
+        match s {
+            Some(i) => println!("  {k} {what:<9} {} ({:.0}%, {:.2} pt)", all[*i].target, all[*i].priority, all[*i].points),
+            None => println!("  {k} {what:<9} -"),
+        }
+    }
     Ok(())
 }
 

@@ -101,21 +101,23 @@ fn draw_slots<const N: usize>(
     cleared: &dyn Fn(&str) -> bool,
     known: &dyn Fn(&Request) -> bool,
     key: Option<&dyn Fn(&Request) -> i32>,
+    distinct: bool,
     rng: &mut BoardRng,
 ) -> [Option<usize>; N] {
-    let mut out = [None; N];
-    for (k, slot) in out.iter_mut().enumerate() {
+    let mut out: [Option<usize>; N] = [None; N];
+    for k in 0..N {
         let mut candidates: Vec<usize> = (0..requests.len())
             .filter(|&i| {
                 let r = &requests[i];
-                r.kind == kind && (r.table == k as i32 || r.table == -1) && board_eligible(r, day, seen, cleared) && known(r)
+                let taken = distinct && out[..k].iter().flatten().any(|&j| requests[j].target == r.target);
+                r.kind == kind && (r.table == k as i32 || r.table == -1) && !taken && board_eligible(r, day, seen, cleared) && known(r)
             })
             .collect();
         if let Some(key) = key {
             candidates.sort_by_key(|&i| std::cmp::Reverse(key(&requests[i])));
         }
         let chances: Vec<f32> = candidates.iter().map(|&i| requests[i].priority).collect();
-        *slot = board_pick(&chances, rng).map(|j| candidates[j]);
+        out[k] = board_pick(&chances, rng).map(|j| candidates[j]);
     }
     out
 }
@@ -124,7 +126,7 @@ fn draw_slots<const N: usize>(
 /// stands for the game's tests of the target: a count of at least 6 in `0x141079fe0` and its
 /// recipe flagged (`0x1400e31a0`, `0x141079fe0` + 0x8c0).
 pub fn draw_synthesis(requests: &[Request], day: i32, seen: impl Fn(&str) -> bool, cleared: impl Fn(&str) -> bool, known: impl Fn(&Request) -> bool, rng: &mut BoardRng) -> [Option<usize>; 3] {
-    draw_slots(requests, Kind::Synthesis, day, &seen, &cleared, &known, None, rng)
+    draw_slots(requests, Kind::Synthesis, day, &seen, &cleared, &known, None, false, rng)
 }
 
 /// The four battle slots (`0x14033b990`, board places 3 to 6, `Table` 0 to 3; nothing has
@@ -141,7 +143,39 @@ pub fn draw_battle(
     level: impl Fn(&Request) -> i32,
     rng: &mut BoardRng,
 ) -> [Option<usize>; 4] {
-    draw_slots(requests, Kind::Monster, day, &seen, &cleared, &known, Some(&level), rng)
+    draw_slots(requests, Kind::Monster, day, &seen, &cleared, &known, Some(&level), false, rng)
+}
+
+/// The three gathering slots (`0x14033bd10`, board places 7 to 9, `Table` 0 to 2; the rows with
+/// `Table` 3 come up only through -1, which none has). The candidates come from the manager's
+/// third list (+0x30); a target already on an earlier gathering slot is skipped; no count is
+/// asked for.
+pub fn draw_gathering(requests: &[Request], day: i32, seen: impl Fn(&str) -> bool, cleared: impl Fn(&str) -> bool, rng: &mut BoardRng) -> [Option<usize>; 3] {
+    draw_slots(requests, Kind::Gathering, day, &seen, &cleared, &|_| true, None, true, rng)
+}
+
+/// A whole redraw on `day` (`0x14033ab20`): the generator seeded from the day plus `global`
+/// (the global at `0x1410989f0`), then the three synthesis, four battle and three gathering
+/// slots in that order, all from one list of requests.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_board(
+    requests: &[Request],
+    day: i32,
+    global: i32,
+    seen: impl Fn(&str) -> bool,
+    cleared: impl Fn(&str) -> bool,
+    known: impl Fn(&Request) -> bool,
+    level: impl Fn(&Request) -> i32,
+) -> [Option<usize>; 10] {
+    let mut rng = BoardRng::new(crate::calendar::board_seed(day.max(0) as u32, global));
+    let a = draw_synthesis(requests, day, &seen, &cleared, &known, &mut rng);
+    let b = draw_battle(requests, day, &seen, &cleared, &known, &level, &mut rng);
+    let c = draw_gathering(requests, day, &seen, &cleared, &mut rng);
+    let mut out = [None; 10];
+    out[..3].copy_from_slice(&a);
+    out[3..7].copy_from_slice(&b);
+    out[7..].copy_from_slice(&c);
+    out
 }
 
 /// The request board's generator (the object at `0x140dfc880`, English Escha executable): two
