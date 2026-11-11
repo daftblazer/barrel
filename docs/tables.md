@@ -510,6 +510,18 @@ damage leaves out attack and defence and puts the effect entry's +0x18 in place 
 attack (what fills it, and the quality bonus of flag 3, are not read yet)
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 
+### The adventurer rank
+
+`Saves/rank/RankData.xml` has 21 rows (`point`, `coal`, `percent`, the rates `c_btl`, `c_gat`,
+`c_bou`, `c_mix`, `c_tra`, `c_rel`, `c_que`, and `rank`, the number shown), loaded as 0x28-byte
+rows at `[0x140e00f00]` +0x18. The rank is a row index (global `0x14109c1e4`) and the points an
+integer (`0x14109c1e0`). When the points change (`0x14035fdc0`) the rank climbs from where it
+is through every next row whose `point` is at most the points, no further than the last row,
+and never goes down; if the climb passes the top of the current tier of three (`0x14035fd90`:
+`(trunc((rank - 1) / 3) + 1) × 3`) the manager at `0x140dfc220` is told first (`0x1402681b0`).
+The month-end report keeps the rank (`rank::ranks`, `tier_top`, `promote`; how points are
+earned with the rates, and what `coal` and `percent` give, is not read yet).
+
 ### The calendar
 
 The date is one integer, the global at `0x1410a42cc` (read by `0x14035c050`; English Escha
