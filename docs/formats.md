@@ -428,9 +428,15 @@ script for the speaker and runs it:
   `..._CHANGE_TYPE` (`s96`, the end type), then for each step: a value under 10,000 makes
   it the current motion, and 10,000 + n emits `..._LOOP_ADD` (`s82`: speaker, current
   motion, n, 10), playing it n more times. Gesture 0 is motion 31 once; 198 is motion 61
-  for five loops, then 31; 1, 196 and 246 play their motion (56, 61, 68) twice. Which motion
-  a number names is still open: the numbers are not the `CharaBase` column order counted
-  from any obvious start, and the column names are not in the executable as strings.
+  for five loops, then 31; 1, 196 and 246 play their motion (56, 61, 68) twice. A motion number
+  is the `MOTION_*` enum (553 tags at `0x140cee170`: `MOTION_WAIT` = 0, ...,
+  `MOTION_F_WAIT` = 31, `MOTION_TALK` = 35, `MOTION_EV_ACT_1` = 56, ...); the tag without
+  `MOTION_` is the `CharaBase` column, whose value names the animation for that character
+  (`<FileHead>_<value>.g1a`). For Escha: 31 is `F_WAIT` = `ACT_DEF`, her idle; 56 `EV_ACT_1`
+  = `STAND_NORMAL`; 61 `EV_ACT_6` = `STAND_THINK`; 62 `EV_ACT_7` = `STAND_YES`; 68 `EV_ACT_13`
+  = `STAND_NORMAL_2`. So gesture 0 settles to idle, and 198 thinks for five loops before
+  going back to idle. Not every enum tag has a column; the columns cover the ones a
+  character uses.
 - **Field 3 is the expression**: if it is at most 10, it adds `ECT_CHARA_FACIAL_MOTION_SET`
   (`s88`): speaker, then a brow, eye and mouth facial motion from an 11-entry table at
   `0x1407f2e50` (-1 keeps the current one):
