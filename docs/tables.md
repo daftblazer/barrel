@@ -286,12 +286,20 @@ skipped when looking a character up). Two functions move a character:
 - `0x14018d5e0 (timeline, character, amount)` takes from its wait and moves it forward
   ahead of every entry whose wait is no less than its new one (on a tie, it goes first).
 
+Time moves on in `0x14018c7e0 (timeline)`: it sorts the entries by wait, pushes the entries
+at the front whose +0x10 is negative back by 1000 (at most 1000; what +0x10 is is still open),
+takes the first other entry's wait w off it and every entry after it (not under 0), tells the
+battle that w passed (`0x1401b5b50 (battle +0x8d0, w)`, for the timed states, presumably) and
+sorts again. The sort (`0x1401a8400`, the standard library's introsort) compares waits only;
+for lists under 32 entries it is an insertion sort, so entries with equal waits keep their
+order, which a reimplementation must keep too.
+
 `ACCELARATE_WT` calls the second with the effect's amount. `RETURN_WT` (`0x1401c0313`) first
 counts the push on the target (+0x30c) and pushes it back by `trunc(1 / count × amount ×
 (100 - RESIST_KNOCKBACK) / 100)` in floats, so each push on the same target is weaker than the
 last. When the count resets, and how a turn's wait is set at first and after acting (the
 skills' +24 value, 600 for the normal attack, and speed are the likely inputs), are still to
-be read. `barrel_game::battle::Timeline` and `knockback` do the above.
+be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`) and `knockback` do the above.
 
 ### Random numbers
 

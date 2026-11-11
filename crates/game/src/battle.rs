@@ -116,6 +116,23 @@ impl Timeline {
         self.entries.iter().position(|&(c, _)| c == who)
     }
 
+    /// Moves time on to the next turn (`0x14018c7e0`), returning how much passed: the
+    /// entries are sorted by wait (stably: the executable's sort is an insertion sort for
+    /// lists this short), the next entry's wait is taken off it and every entry after it (not
+    /// under 0), and the list is sorted again. The next entry then has wait 0 and acts.
+    ///
+    /// Not done here: entries at the front whose +0x10 is negative are pushed back by 1000
+    /// instead (what +0x10 is, is still open).
+    pub fn advance(&mut self) -> i32 {
+        self.entries.sort_by_key(|&(_, w)| w);
+        let Some(&(_, passed)) = self.entries.first() else { return 0 };
+        for e in &mut self.entries {
+            e.1 = (e.1 - passed).clamp(0, MAX_WAIT);
+        }
+        self.entries.sort_by_key(|&(_, w)| w);
+        passed
+    }
+
     /// Pushes a character back by `amount` (`0x14018d490`): it goes behind every character
     /// whose wait is no more than its new one. Returns its new place.
     pub fn delay(&mut self, who: u32, amount: i32) -> Option<usize> {
@@ -191,6 +208,9 @@ mod tests {
         assert_eq!(t.delay(2, 5000), Some(3));
         assert_eq!(t.entries[3], (2, MAX_WAIT));
         assert_eq!(t.hasten(9, 1), None);
+        let mut t = Timeline { entries: vec![(1, 300), (2, 120), (3, 120), (4, 500)] };
+        assert_eq!(t.advance(), 120);
+        assert_eq!(t.entries, [(2, 0), (3, 0), (1, 180), (4, 380)]);
         assert_eq!(knockback(50, 1, 0), 50);
         assert_eq!(knockback(50, 2, 20), 20);
     }
