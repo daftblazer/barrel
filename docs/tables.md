@@ -301,6 +301,29 @@ jump table `0x1401c0840`) sends it to one of 64 handlers:
   drains and the field effects;
 - 105 numbers (`CONSUME_MP`, `MOVE_DASH`, ...) that do nothing here (handled elsewhere).
 
+### Battle stats (executable)
+
+A battle character keeps 35 i32 stats at +0x88 (`0x1401af3c0 (c, k)` reads stat k) and 35 base
+values at +0x114. For a monster, `0x1401b70e0` fills the base values from its stat block
+(`docs/tables.md`, "Monsters") through the monster getters at `0x1401122d0` on:
+
+| Stat | What | From the monster's stat block |
+|---|---|---|
+| 0 | level | word 0 |
+| 1, 3 | HP, maximum HP | word 1 (both) |
+| 2, 4 | MP, maximum MP (presumably) | 0 |
+| 5 | attack | word 2 |
+| 6 | defence | word 3 |
+| 7 | speed | word 4 |
+| 8 to 11 | resistance to elements 0 to 3 | words 6 to 9 |
+| 12 | not known | word 10 |
+| 13 to 34 | 0 for monsters | |
+
+Others are known from where battle reads them: 14 (a percentage the user gains on a target
+with bad status 7), 15 (added to effect percent 2), 20 (drain percent). The low-HP test
+(`0x1401ae380` k = 4) is HP × 100 / maximum HP at most 25. `barrel_game::battle::stat` names
+the indices.
+
 ### HP damage (executable)
 
 The shared HP-damage handler (`0x1401bdf6d`) first adjusts the amount for some kinds, among
@@ -314,8 +337,8 @@ them `DAMAGE_TIME_LEFT`, `DAMAGE_IF_BADSTATUS`, `DAMAGE_COST_OVER`, `DAMAGE_HP_L
     damage  = trunc(max(base - defense, base / 5) × scale)
 
 The powers are `powf` in floats; the divisions are integer, truncating. For an item (kind not
-0), attack and defense are 0, and the entry's +0x18 takes the place of stat 5. Stat 0 being the
-level and 5 and 6 attack and defense is a guess from the formula, not checked. Then the target's reductions:
+0), attack and defense are 0, and the entry's +0x18 takes the place of stat 5. Stats 0, 5 and 6 are
+the level, attack and defence ("Battle stats"). Then the target's reductions:
 
 - an elemental effect (its +4 is the element, 0 to 3) is multiplied by `(100 - min(target
   stat 8 + element, 100)) / 100`, so stats 8 to 11 are the resistances;
@@ -490,8 +513,9 @@ or stronger later fights):
 |---|---|
 | 0 | level |
 | 1..4 | HP, attack, defence, speed |
-| 5 | not known yet (1 or 2) |
+| 5 | not known yet (1 or 2; not a battle stat) |
 | 6..9 | the four element resistances |
+| 10 | battle stat 12, not known yet |
 | 12..19 | four pointers, not followed yet |
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then

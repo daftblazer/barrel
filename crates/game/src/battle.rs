@@ -2,6 +2,24 @@
 //! skills" and the sections after it). The steps keep the original's mix of integer and
 //! float arithmetic, since replays must match it exactly.
 
+/// A battle character's stats by index (`docs/tables.md`, "Battle stats"): the executable keeps
+/// 35 live values and 35 base values per character.
+pub mod stat {
+    pub const LEVEL: usize = 0;
+    pub const HP: usize = 1;
+    pub const MP: usize = 2;
+    pub const MAX_HP: usize = 3;
+    pub const MAX_MP: usize = 4;
+    pub const ATTACK: usize = 5;
+    pub const DEFENSE: usize = 6;
+    pub const SPEED: usize = 7;
+    /// Resistances to elements 0 to 3 are this and the next three.
+    pub const RESIST: usize = 8;
+    /// Drain: the percentage of a skill's damage that heals its user.
+    pub const DRAIN: usize = 20;
+    pub const COUNT: usize = 35;
+}
+
 /// The base of an HP-damage effect (`0x1401c3290`): the rolled amount as a percentage of
 /// `scale_stat`, raised by `attack` (`(attack^1.5)^1.1 / 50` percent, in floats).
 pub fn base_damage(amount: i32, scale_stat: i32, attack: i32) -> i32 {
