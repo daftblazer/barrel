@@ -214,6 +214,27 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
+    /// The joints in an order where every parent comes before its children (file order in
+    /// most models; a few list a child before its parent). The parser has ruled out cycles.
+    pub fn order(&self) -> Vec<usize> {
+        let n = self.joints.len();
+        let mut done = vec![false; n];
+        let mut out = Vec::with_capacity(n);
+        while out.len() < n {
+            let before = out.len();
+            for (i, j) in self.joints.iter().enumerate() {
+                if !done[i] && j.parent.is_none_or(|p| done[p]) {
+                    done[i] = true;
+                    out.push(i);
+                }
+            }
+            if out.len() == before {
+                break; // a cycle; the parser rejects these
+            }
+        }
+        out
+    }
+
     /// Each joint's position in model space, composed down the parent chain.
     pub fn world_positions(&self) -> Vec<[f32; 3]> {
         fn rotate(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
@@ -232,18 +253,19 @@ impl Skeleton {
                 a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
             ]
         }
-        let mut pos: Vec<[f32; 3]> = Vec::with_capacity(self.joints.len());
-        let mut rot: Vec<[f32; 4]> = Vec::with_capacity(self.joints.len());
-        for j in &self.joints {
+        let mut pos = vec![[0f32; 3]; self.joints.len()];
+        let mut rot = vec![[0f32, 0.0, 0.0, 1.0]; self.joints.len()];
+        for i in self.order() {
+            let j = &self.joints[i];
             match j.parent {
                 None => {
-                    pos.push(j.position);
-                    rot.push(j.rotation);
+                    pos[i] = j.position;
+                    rot[i] = j.rotation;
                 }
                 Some(p) => {
                     let r = rotate(rot[p], j.position);
-                    pos.push([pos[p][0] + r[0], pos[p][1] + r[1], pos[p][2] + r[2]]);
-                    rot.push(mul(rot[p], j.rotation));
+                    pos[i] = [pos[p][0] + r[0], pos[p][1] + r[1], pos[p][2] + r[2]];
+                    rot[i] = mul(rot[p], j.rotation);
                 }
             }
         }
@@ -268,10 +290,10 @@ fn parse_skeleton(chunk: &[u8]) -> Result<Skeleton, Error> {
         let parent = u32_at(chunk, at + 12)?;
         let parent = if parent & 0x8000_0000 != 0 {
             None
-        } else if (parent as usize) < i {
+        } else if (parent as usize) < count && parent as usize != i {
             Some(parent as usize)
         } else {
-            return Err(Error::Corrupt("g1ms joint's parent does not come before it"));
+            return Err(Error::Corrupt("g1ms joint's parent out of range"));
         };
         joints.push(Joint {
             scale: [f(0)?, f(1)?, f(2)?],
@@ -280,7 +302,11 @@ fn parse_skeleton(chunk: &[u8]) -> Result<Skeleton, Error> {
             position: [f(8)?, f(9)?, f(10)?],
         });
     }
-    Ok(Skeleton { joints, index_map, layer })
+    let skeleton = Skeleton { joints, index_map, layer };
+    if skeleton.order().len() != count {
+        return Err(Error::Corrupt("g1ms joints' parents form a cycle"));
+    }
+    Ok(skeleton)
 }
 
 #[derive(Clone, Debug)]
@@ -692,6 +718,15 @@ impl Geometry<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_child_may_come_before_its_parent() {
+        let j = |parent| Joint { scale: [1.0; 3], parent, rotation: [0.0, 0.0, 0.0, 1.0], position: [1.0, 0.0, 0.0] };
+        // As in Ryza 3's FACILITY-DOOR-02: joint 1's parent is joint 2.
+        let s = Skeleton { joints: vec![j(None), j(Some(2)), j(Some(0))], index_map: vec![], layer: 0 };
+        assert_eq!(s.order(), [0, 2, 1]);
+        assert_eq!(s.world_positions(), [[1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
+    }
 
     #[test]
     fn world_positions_follow_parents() {

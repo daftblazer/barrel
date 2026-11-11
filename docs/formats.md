@@ -175,7 +175,10 @@ its 12-byte header included.
 | 28 | the index map: u16 per entry, 0xffff for none, padded to the joints |
 | joints | 48 bytes each: scale (3 floats), u32 parent (top bit set for a root), rotation quaternion (x, y, z, w), position (3 floats and a 1.0) |
 
-Every joint's parent comes before it, so world transforms compose in one pass:
+A joint's parent nearly always comes before it, but not always: in Ryza 3's
+`obj-A24-S052-FACILITY-DOOR-02_hi.g1m` joint 1's parent is joint 2. So the reader only rules out
+parents outside the skeleton and cycles, and `Skeleton::order` gives a parents-first order to
+compose world transforms in:
 position = parent position + parent rotation × local position, rotation = parent rotation ×
 local rotation. Escha's skeleton (`Character/PC20/PC20_MODEL.g1m`, 345 joints) comes out
 standing in its bind pose: pelvis at 88 units, knees at 51, toes near 0, head at 157.

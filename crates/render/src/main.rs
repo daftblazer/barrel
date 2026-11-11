@@ -375,13 +375,12 @@ fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::An
         }
     }
     let world = |locals: &[Mat4]| {
-        let mut out: Vec<Mat4> = Vec::with_capacity(locals.len());
-        for (i, j) in skeleton.joints.iter().enumerate() {
-            let m = match j.parent {
+        let mut out = vec![Mat4::IDENTITY; locals.len()];
+        for i in skeleton.order() {
+            out[i] = match skeleton.joints[i].parent {
                 Some(p) => out[p] * locals[i],
                 None => locals[i],
             };
-            out.push(m);
         }
         out
     };
