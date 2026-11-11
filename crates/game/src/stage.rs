@@ -72,6 +72,22 @@ pub struct Body {
     /// Radians about the vertical axis, 0 towards +z.
     pub facing: f32,
     mover: Option<Mover>,
+    /// A timed turn: (from, change, seconds, elapsed).
+    turn: Option<(f32, f32, f32, f32)>,
+}
+
+/// The change from angle `from` to `to` the short way round (`0x1401f42e0`: one turn of 2π is
+/// added or taken off when that makes the change smaller).
+pub fn short_way(from: f32, to: f32) -> f32 {
+    use std::f32::consts::TAU;
+    let d = to - from;
+    if d < 0.0 && d + TAU < -d {
+        d + TAU
+    } else if d > 0.0 && TAU - d < d {
+        d - TAU
+    } else {
+        d
+    }
 }
 
 impl Body {
@@ -119,12 +135,24 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None });
                 b.position = *position;
                 b.mover = None;
             }
             Step::Turn { character, rotation, .. } => match self.characters.get_mut(character) {
-                Some(b) => b.facing = rotation[1],
+                Some(b) => {
+                    b.facing = rotation[1];
+                    b.turn = None;
+                }
+                None => self.unresolved += 1,
+            },
+            // The game eases the turn along a curve not read yet; it goes evenly here.
+            Step::TurnOver { character, rotation, seconds, .. } => match self.characters.get_mut(character) {
+                Some(b) if *seconds > 0.0 => b.turn = Some((b.facing, short_way(b.facing, rotation[1]), *seconds, 0.0)),
+                Some(b) => {
+                    b.facing = b.facing + short_way(b.facing, rotation[1]);
+                    b.turn = None;
+                }
                 None => self.unresolved += 1,
             },
             Step::Face { character, toward, .. } => {
@@ -178,6 +206,14 @@ impl Stage {
     /// Runs the movers one frame.
     pub fn frame(&mut self) {
         for b in self.characters.values_mut() {
+            if let Some((from, change, seconds, elapsed)) = b.turn.as_mut() {
+                *elapsed += FRAME;
+                let f = (*elapsed / *seconds).min(1.0);
+                b.facing = *from + *change * f;
+                if f >= 1.0 {
+                    b.turn = None;
+                }
+            }
             if let Some(m) = b.mover.as_mut().filter(|m| !m.done()) {
                 m.step(FRAME);
                 b.position = m.position();
@@ -245,6 +281,9 @@ mod tests {
         steps.push(Timed { time: 4.0, action: 0, step: Step::Face { action: 0, character: 8, toward: on(7, 0.0) } });
         let stage = Stage::play(&steps, BTreeMap::from([(7, escha)]), |_, _| {});
         assert!(stage.characters[&8].facing.abs() < 1e-6);
+        // From 350° to 10° is 20° the short way.
+        assert!((short_way(350f32.to_radians(), 10f32.to_radians()) - 20f32.to_radians()).abs() < 1e-5);
+        assert!((short_way(0.0, -3.0) + 3.0).abs() < 1e-6);
         let b = &stage.characters[&7];
         assert_eq!(b.position, [300.0, 0.0, 0.0]);
         assert!((b.facing - std::f32::consts::FRAC_PI_2).abs() < 1e-4);

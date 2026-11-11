@@ -350,9 +350,15 @@ turns its character writes, and the other two are nearly always 0. `s24`
 (`ECT_CHARA_ROT_SET_TARGET`, `{character, position}`, 6,809 uses) turns it to face a
 position on the ground (`0x1401f4f50`: the yaw of the direction, 0 if the position is where
 it stands). `s25` (`…_TARGET_ALL`) does the same through `0x1401f50c0`, not read.
+`s26` (`ECT_CHARA_ROT_MOVE_SET`, `{character, x, y, z, seconds ×100, curve}`, 1,305 uses;
+`0x1401f42e0`) turns it there over time: each angle changes the short way round (2π added or
+taken off when that makes the change smaller; nothing happens when it is already there), and
+the runner's interpolator at +0x638 (`0x1402034c0`) follows curve number `curve` (0 in 1,260
+uses, 2 in 43), a keyed curve fetched by `0x1404e1770` whose shape is not read yet. Most
+`s26`s take 0 s; 0.5 s is the commonest time. The stage turns evenly meanwhile.
 
 **The stage.** `barrel_game::stage::Stage` plays the timed steps on a clock of 1/30 s
-frames (the events' frame time, `0x14077ba78`): `s4` places a character, `s23`/`s24` turn it, `s18` starts a
+frames (the events' frame time, `0x14077ba78`): `s4` places a character, `s23`/`s24`/`s26` turn it, `s18` starts a
 mover from where it is, and the camera's eye and target are set or moved, positions measured
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16

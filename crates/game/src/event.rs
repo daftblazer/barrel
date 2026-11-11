@@ -31,6 +31,8 @@ pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
 pub const CHARA_ROT_SET: u32 = 0x7300_0017;
 /// `s24` (`ECT_CHARA_ROT_SET_TARGET`): `{character, position (6)}`.
 pub const CHARA_ROT_SET_TARGET: u32 = 0x7300_0018;
+/// `s26` (`ECT_CHARA_ROT_MOVE_SET`): `{character, x, y, z, seconds ×100, curve}`.
+pub const CHARA_ROT_MOVE: u32 = 0x7300_001a;
 /// `s18` (`ECT_CHARA_MOVE_SET`): `{character, position (6), extra, type, ...}`.
 pub const CHARA_MOVE: u32 = 0x7300_0012;
 /// `w1` (0x77000001): start action N (its operand) alongside the one running. Action 0 is the
@@ -66,6 +68,10 @@ pub enum Step<'a> {
     /// degrees, here in radians): `rotation[1]` is the facing about the vertical axis, 0
     /// towards +z (the runner's +0x240, the same angle a move's facing writes).
     Turn { action: usize, character: u32, rotation: [f32; 3] },
+    /// A character turns to a rotation over `seconds` (`s26`, `ECT_CHARA_ROT_MOVE_SET`,
+    /// `{character, x, y, z (degrees), seconds ×100, curve}`; `0x1401f42e0`): each angle goes
+    /// the short way round, along curve number `curve` (`0x1404e1770`; its shape is not read).
+    TurnOver { action: usize, character: u32, rotation: [f32; 3], seconds: f32, curve: u32 },
     /// A character turns to face a position, on the ground (`s24`,
     /// `ECT_CHARA_ROT_SET_TARGET`; `0x1401f4f50`: yaw from the direction, 0 when the position
     /// is where the character stands).
@@ -137,6 +143,11 @@ impl<'a> Player<'a> {
             (CHARA_ROT_SET, [character, x, y, z, ..]) => {
                 let rotation = [*x, *y, *z].map(|v| (v as i32 as f32).to_radians());
                 out.push(Step::Turn { action, character: *character, rotation })
+            }
+            (CHARA_ROT_MOVE, [character, x, y, z, hundredths, curve, ..]) => {
+                let rotation = [*x, *y, *z].map(|v| (v as i32 as f32).to_radians());
+                let seconds = *hundredths as i32 as f32 / 100.0;
+                out.push(Step::TurnOver { action, character: *character, rotation, seconds, curve: *curve })
             }
             (CHARA_ROT_SET_TARGET, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
                 let (toward, _) = crate::camera::Position::read(rest).unwrap();
@@ -315,7 +326,9 @@ mod tests {
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
-                Step::Turn { character, .. } | Step::Face { character, .. } => format!("{character} turns"),
+                Step::Turn { character, .. } | Step::Face { character, .. } | Step::TurnOver { character, .. } => {
+                    format!("{character} turns")
+                }
             })
             .collect();
         assert_eq!(
