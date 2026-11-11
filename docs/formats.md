@@ -177,6 +177,41 @@ The file is the model's node names in node order (`root`, `Bip001_Pelvis`, `Bip0
 ...), each as `{u8 length, ASCII bytes}`, ended by a single 0xff byte. They name the
 skeleton's bones, which G1MS stores by number only.
 
+## Fields
+
+A field is a folder under `Data/x64/Field/` with two containers. `<AREA>.elixir.gz` holds
+the terrain and the field's own data:
+
+| Entry | What |
+|---|---|
+| `<AREA>.ktf` | terrain (KTGL, magic `KFTK`), not read yet |
+| `<AREA>.khm` | heightmap (`_MHK0100`, a 64×64 grid in AREA_01_01), not read yet |
+| `<AREA>.g1t`, `<AREA>_pat.g1t` | terrain textures |
+| `<AREA>.g1s` | the field's shaders |
+| `<AREA>.opl2` | where objects and effects stand (below) |
+| `<AREA>_col.g1co` | collision |
+
+`<AREA>_Obj.elixir.gz` holds the object models, `obj-<name>_hi.g1m`, each followed by
+four `dummy` entries.
+
+### Placement lists (`*.opl2`)
+
+Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 effects.
+`barrel opl2-scan DIR` reads them all.
+
+Two lists of the same shape follow each other, the objects and then the effects:
+
+```text
+u32 type count
+per type:     u32 name length, name with its 0, u32, 16 bytes (0xff in most), u32 instance count
+per instance: position (3 floats + pad), rotation in radians (3 floats + pad),
+              scale (3 floats + pad), u32 tag length, tags, 32 bytes
+```
+
+An object type's name is its model's name without `_hi.g1m`. Instance tags are 4-character
+codes run together: none (10,115 instances), `xDS_` (3,105), `xS3_` (1,129), `xV1_` and
+combinations; effects carry `eff`. What the tags mean is still open.
+
 ## Event bytecode (`*.ebd`)
 
 Read by `barrel_formats::ebd`. In Escha all 1,639 files read without error: 49,393 actions,

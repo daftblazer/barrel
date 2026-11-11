@@ -26,7 +26,8 @@ usage:
   barrel g1m-scan DIR          read every model in the containers under DIR
   barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers
   barrel ebm FILE.ebm          print an event's messages
-  barrel ebm-scan DIR          read every message file under DIR";
+  barrel ebm-scan DIR          read every message file under DIR
+  barrel opl2-scan DIR         read every field placement list in the containers";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -48,6 +49,7 @@ fn main() -> ExitCode {
         ["oid-scan", dir] => oid_scan(Path::new(dir)),
         ["ebm", file] => ebm(Path::new(file)),
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
+        ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -541,4 +543,34 @@ fn ebm_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some message files did not read".into()) }
+}
+
+fn opl2_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut lists, mut objects, mut effects) = (0usize, 0usize, 0usize);
+    let mut failed = Vec::new();
+    for path in &files {
+        let bytes = read(path)?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for (i, entry) in e.entries.iter().enumerate() {
+            if !entry.name.ends_with(".opl2") {
+                continue;
+            }
+            match barrel_formats::opl2::parse(e.data(entry)) {
+                Ok(p) => {
+                    lists += 1;
+                    objects += p.objects.iter().map(|t| t.instances.len()).sum::<usize>();
+                    effects += p.effects.iter().map(|t| t.instances.len()).sum::<usize>();
+                }
+                Err(err) => failed.push(format!("{}#{i}: {err}", path.display())),
+            }
+        }
+    }
+    println!("{lists} placement lists: {objects} objects, {effects} effects; {} failed", failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
 }

@@ -14,6 +14,7 @@ pub mod game;
 pub mod inflate;
 pub mod magic;
 pub mod oid;
+pub mod opl2;
 pub mod png;
 pub mod table;
 
