@@ -5,6 +5,7 @@ pub mod calendar;
 pub mod camera;
 pub mod clock;
 pub mod curve;
+pub mod days;
 pub mod duel;
 pub mod fight;
 pub mod event;

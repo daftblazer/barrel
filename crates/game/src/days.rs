@@ -1,0 +1,184 @@
+//! Days passing: the state the calendar touches and the work of each new day, in the game's
+//! order (`docs/tables.md`, "The calendar"; English Escha executable `0x14035bf10` and
+//! `0x14035bb50`). A new game starts on April 1st of school year 1 and draws the request
+//! board's seed offset from the main generator.
+//!
+//! Left out: the request expiry pass of each day, the manager's monthly work (`0x140267f50`),
+//! the queued messages and `0x14035b930` after the days, and the parts of the board's tests not
+//! read yet (see [`crate::quest::draw_board`]).
+
+use crate::calendar;
+use crate::quest::{self, Request};
+use crate::rank::RankState;
+use crate::rng::Rng;
+
+/// Why days pass (the second argument of `0x14035bf10`; names from the callers).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reason {
+    /// 1: `0x140052b5a` and two more callers.
+    One,
+    /// 2: a synthesis's days.
+    Synthesis,
+    /// 3: one day, `0x14003412b`.
+    Three,
+    /// 4: world-map travel, presumably.
+    Travel,
+    /// 7: one day, from field code.
+    Field,
+    /// 8: one day, `0x14039b3d2`.
+    Eight,
+}
+
+/// One month's report (`0x141093570` + 0x144 × the month, April first).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MonthReport {
+    /// Syntheses of each of the 265 recipes this month.
+    pub recipes: Vec<u8>,
+    /// Battles, gatherings, bou, syntheses, tra, rel, requests (+0x10c to +0x124).
+    pub counts: [i32; 7],
+    /// Points made this month (+0x138).
+    pub points: i32,
+    /// The month's total, set when it closes (+0x134).
+    pub total: i32,
+    /// The rank when it closed (+0x13c).
+    pub rank: i32,
+    /// 0 open, 1 closed and new, 2 paid (+0x140).
+    pub state: u8,
+}
+
+impl Default for MonthReport {
+    fn default() -> Self {
+        MonthReport { recipes: vec![0; RECIPES], counts: [0; 7], points: 0, total: 0, rank: 0, state: 0 }
+    }
+}
+
+pub const RECIPES: usize = 265;
+pub const MEMBERS: usize = 11;
+
+/// What the calendar keeps.
+#[derive(Clone, Debug)]
+pub struct World {
+    /// The date (`0x1410a42cc`).
+    pub date: u32,
+    /// The main random generator, drawn from by each day's rolls.
+    pub rng: Rng,
+    /// The request board's seed offset (`0x1410989f0`).
+    pub board_offset: i32,
+    /// Each character's +0x2a4 (friendship, presumably), and its place in the 11-slot list
+    /// (`0x141093530`; `None` when not in it).
+    pub friendship: [f32; MEMBERS],
+    pub slot: [Option<usize>; MEMBERS],
+    /// The characters the daily gain goes over (the list `0x140330470` builds), and the one it
+    /// skips.
+    pub joined: Vec<usize>,
+    pub leader: usize,
+    pub rank: RankState,
+    /// The twelve months' reports.
+    pub months: Vec<MonthReport>,
+    /// The board's ten slots, as indices into the request list.
+    pub board: [Option<usize>; 10],
+    /// The last day's rolls (`0x1410a42e0`).
+    pub rolls: Vec<i32>,
+}
+
+/// What the days need to look up.
+pub struct Tables<'a> {
+    pub requests: &'a [Request],
+    pub ranks: &'a [crate::rank::Rank],
+    /// The price of the item each recipe makes.
+    pub recipe_cost: &'a dyn Fn(usize) -> i32,
+    pub seen: &'a dyn Fn(&str) -> bool,
+    pub cleared: &'a dyn Fn(&str) -> bool,
+    pub known: &'a dyn Fn(&Request) -> bool,
+    pub level: &'a dyn Fn(&Request) -> i32,
+}
+
+impl World {
+    /// A new game (`0x14035be60` sets the date; the board reset at `0x1403644f9` draws the
+    /// offset): `rng` is the main generator as it stands then.
+    pub fn new_game(mut rng: Rng, leader: usize) -> World {
+        let board_offset = rng.next_31();
+        World {
+            date: calendar::Date { year: 1, month: 4, day: 1 }.number(),
+            rng,
+            board_offset,
+            friendship: [0.0; MEMBERS],
+            slot: [None; MEMBERS],
+            joined: vec![leader],
+            leader,
+            rank: RankState::default(),
+            months: vec![MonthReport::default(); 12],
+            board: [None; 10],
+            rolls: Vec::new(),
+        }
+    }
+
+    /// The month report now being filled.
+    pub fn month(&mut self) -> &mut MonthReport {
+        let k = (calendar::Date::of(self.date).month + 12 - 4) % 12;
+        &mut self.months[k as usize]
+    }
+
+    /// Lets `days` days pass (`0x14035bf10`), working each new day. The reason only labels
+    /// the message the game queues.
+    pub fn advance(&mut self, days: u32, _reason: Reason, t: &Tables) {
+        for _ in 0..days {
+            self.date += 1;
+            self.new_day(t);
+        }
+    }
+
+    /// A new day (`0x14035bb50`).
+    fn new_day(&mut self, t: &Tables) {
+        self.rolls = calendar::daily_rolls(&mut self.rng);
+        for &c in &self.joined {
+            if c != self.leader && c < MEMBERS {
+                self.friendship[c] = calendar::add_gain(self.friendship[c], calendar::daily_gain(self.slot[c]));
+            }
+        }
+        if calendar::month_start(self.date) {
+            let k = calendar::ended_month(self.date) as usize;
+            let rank = self.rank.rank;
+            let m = &mut self.months[k];
+            m.total = calendar::month_total(&m.recipes, t.recipe_cost);
+            m.rank = rank;
+            m.state = 1;
+        }
+        if calendar::board_day(self.date) {
+            self.board = quest::draw_board(t.requests, self.date as i32, self.board_offset, t.seen, t.cleared, t.known, t.level);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_month_goes_by() {
+        let ranks = [crate::rank::Rank { points: 0, coal: 300, percent: 10, rates: [0; 7], number: 1 }];
+        let t = Tables {
+            requests: &[],
+            ranks: &ranks,
+            recipe_cost: &|_| 100,
+            seen: &|_| true,
+            cleared: &|_| true,
+            known: &|_| true,
+            level: &|_| 1,
+        };
+        let mut w = World::new_game(Rng::from_state([1, 2, 3, 4]), 0);
+        w.joined = vec![0, 1, 2];
+        w.slot[1] = Some(1);
+        w.slot[2] = Some(7);
+        assert_eq!(w.date, 90);
+        w.month().recipes[0] = 3;
+        w.advance(30, Reason::Synthesis, &t);
+        // May 1st: April's report is closed; the leader gains nothing.
+        assert_eq!(calendar::Date::of(w.date), calendar::Date { year: 1, month: 5, day: 1 });
+        assert_eq!((w.months[0].total, w.months[0].state), (300, 1));
+        assert_eq!(w.friendship[0], 0.0);
+        assert!((w.friendship[1] - 30.0 * 0.11).abs() < 1e-3);
+        assert!((w.friendship[2] - 30.0 * 0.03).abs() < 1e-3);
+        assert_eq!(w.rolls.len(), calendar::DAILY_ROLLS);
+    }
+}

@@ -510,6 +510,13 @@ damage leaves out attack and defence and puts the effect entry's +0x18 in place 
 attack (what fills it, and the quality bonus of flag 3, are not read yet)
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 
+`barrel_game::days::World` keeps what the days touch (the date, the main generator, the
+board's offset, the characters' friendship and list slots, the rank, the twelve month reports,
+the board, the last day's rolls) and `advance` works each new day in the game's order: the
+rolls, the friendship gains, closing the month just ended on a month's first day, and the
+board redraw on the 1st, 11th and 21st (`World::new_game` starts on April 1st and draws the
+board's offset first). The request expiry pass and the manager's monthly work are left out.
+
 ### The adventurer rank
 
 `Saves/rank/RankData.xml` has 21 rows (`point`, `coal`, `percent`, the rates `c_btl`, `c_gat`,
