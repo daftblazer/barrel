@@ -99,14 +99,25 @@ few metres off, all standing at ground height.
 `EVENT_MM08_AS4_130` that gives Escha and Logy facing Threia and Reyfer across the town
 plaza, by the stone planter, all four standing naturally.
 
-**The event camera** is still open. `t20/0x10` (0x74100014, `CameraCFieldMap`) carries all
-of it in eleven operands, `3791 0 2250 286 448 9983 383 11369 0 150 0` at the start of that
-event, and its parts also come one by one (`t3` 3303, `t7` 2250, `t9` 0, `t11` 448, `t13` a
-position). Operands 5..7 are a point near the characters and 9 a duration in frames;
-reading the rest as yaw, distance 2250 and pitch, or as yaw, field of view 22.5° and
-distance 448, both put the camera inside scenery, so the angle convention or the point's
-role (target or eye) is not yet right. `barrel-view --event-camera` tries it; without it
-the view is placed on the characters.
+**The event camera.** The field camera's commands are handled by `CameraCFieldMap`
+(`0x1401e7a10` in the English executable, a jump table over `0x74100003..0x74100015`).
+Every operand is an integer divided by 100, and the angles are then turned from degrees to
+radians. `t20/0x10` (0x74100014) sets the whole camera; in `EVENT_MM08_AS4_130` it opens
+with `3791 0 2250 286 448 9983 383 11369 0 150 0`:
+
+| Operand | Example | Use (from the handler) |
+|---|---|---|
+| 1 | 37.91° | angle, through the same setter as `t3` (0x74100003): yaw |
+| 2 | 0° | angle, stored where `t5` (0x74100005) stores |
+| 3 | 22.50° | angle, through the same setter as `t7` (0x74100007): pitch |
+| 4, 5 | 2.86, 4.48 | not settled; 448 field units works as the distance |
+| 6..8 | (9983, 383, 11369) | the point looked at, in field units |
+| 10 | 150 | frames to move over |
+
+Read that way (yaw 37.91°, pitch 22.5°, distance 448, a 40° field of view), the opening
+shot stands in the plaza looking at Threia and Reyfer by the planter, but aimed too low:
+the look-at height (the game probably lifts the point, or uses operand 4) is still open.
+`barrel-view --event-camera` uses it; without it the view is placed on the characters.
 
 Not yet: the event camera, characters' motions during the event, waits taking time.
 

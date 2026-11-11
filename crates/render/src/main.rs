@@ -402,8 +402,8 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
                     target: Vec3::new(i(5), i(6), i(7)),
                     distance: i(4),
                     yaw: i(0) / 100.0,
-                    pitch: i(3) / 100.0,
-                    fov: i(2) / 100.0,
+                    pitch: i(2) / 100.0,
+                    fov: 40.0,
                 });
             }
             let place = match c.word {
