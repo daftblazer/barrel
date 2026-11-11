@@ -35,6 +35,7 @@ usage:
   barrel g1a-scan DIR          read every animation in the containers
   barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
   barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
+  barrel pak-scan FILE.PAK...  read every texture, model, animation, morph, event and message in archives
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
@@ -76,6 +77,7 @@ fn main() -> ExitCode {
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
+        ["pak-scan", files @ ..] if !files.is_empty() => pak_scan(files),
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
@@ -377,6 +379,75 @@ fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
     let entry = pak.entries.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or("no such file in the archive")?;
     let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{}: {e}", file.display()))?;
     std::fs::write(out, &data).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(())
+}
+
+/// Which reader a piece of data goes to, by its magic, and whether it read.
+fn check_entry(data: &[u8]) -> Option<(&'static str, std::result::Result<(), String>)> {
+    use barrel_formats as f;
+    let r = |x: std::result::Result<(), f::Error>| x.map_err(|e| e.to_string());
+    Some(match data.get(..4)? {
+        b"GT1G" => ("g1t", r(f::g1t::G1t::parse(data).map(|_| ()))),
+        b"_M1G" => ("g1m", r(f::g1m::G1m::parse(data).map(|_| ()))),
+        b"_A1G" => ("g1a", r(f::g1a::parse(data).map(|_| ()))),
+        b"_H1G" => ("g1h", r(f::g1h::parse(data).map(|_| ()))),
+        _ => return None,
+    })
+}
+
+fn pak_scan(files: &[&str]) -> Result<()> {
+    use barrel_formats as f;
+    let mut stats: BTreeMap<&'static str, (usize, usize, Vec<String>)> = BTreeMap::new();
+    let mut note = |kind: &'static str, name: &str, r: std::result::Result<(), String>| {
+        let e = stats.entry(kind).or_default();
+        match r {
+            Ok(()) => e.0 += 1,
+            Err(err) => {
+                e.1 += 1;
+                if e.2.len() < 4 {
+                    e.2.push(format!("{name}: {err}"));
+                }
+            }
+        }
+    };
+    for file in files {
+        let (mut fh, pak) = open_pak(Path::new(file))?;
+        for entry in &pak.entries {
+            let name = entry.name.as_str();
+            let interesting = [".g1t", ".g1m", ".g1a", ".g1h", ".elixir.gz", ".ebd", ".ebm"].iter().any(|x| name.ends_with(x));
+            if !interesting || entry.size > 512 << 20 {
+                continue;
+            }
+            let data = pak_read(&mut fh, &pak, entry).map_err(|e| format!("{file}: {e}"))?;
+            if name.ends_with(".elixir.gz") {
+                match Elixir::parse(&data) {
+                    Ok(e) => {
+                        note("elixir", name, Ok(()));
+                        for inner in &e.entries {
+                            if let Some((kind, r)) = check_entry(e.data(inner)) {
+                                note(kind, &format!("{name}#{}", inner.name), r);
+                            }
+                        }
+                    }
+                    Err(err) => note("elixir", name, Err(err.to_string())),
+                }
+            } else if name.ends_with(".ebd") {
+                note("ebd", name, f::ebd::Ebd::parse(&data).map(|_| ()).map_err(|e| e.to_string()));
+            } else if name.ends_with(".ebm") {
+                note("ebm", name, f::ebm::parse(&data).map(|_| ()).map_err(|e| e.to_string()));
+            } else if let Some((kind, r)) = check_entry(&data) {
+                note(kind, name, r);
+            } else {
+                note("unknown magic", name, Err(format!("starts {:02x?}", &data[..data.len().min(8)])));
+            }
+        }
+    }
+    for (kind, (ok, bad, examples)) in &stats {
+        println!("{kind:14} {ok:6} read, {bad:6} failed");
+        for e in examples {
+            println!("    {e}");
+        }
+    }
     Ok(())
 }
 
