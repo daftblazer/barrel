@@ -254,11 +254,13 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
 - `s10` (`ECT_CHARA_MOTION_SET_LOOP`, `{character, motion, blend, flag}`) plays the motion
   (a `MOTION_*` number, e.g. 32 `WALK`) through `0x1401f4c50`, blending over `blend` / 100
   seconds, and sets the runner's +0x5c from `flag` (not zero: what it switches is not read).
-- `s18` (`ECT_CHARA_MOVE_SET`, 13 operands) hands the command to the character's move
-  controller (`0x1402f25f0` at runner +0x600, with the character's position at +0x230), which
-  builds a move from it; that is not read yet. Over the 734 uses: operand 1 the character,
-  2 mostly 0 (1, 5, 6, 8 sometimes), 4 to 6 the point to move to (`1036 9 1587`), 7 is 1, 9
-  is 120 to 150 (the speed, by the look of it), the rest 0.
+- `s18` (`ECT_CHARA_MOVE_SET`, `{character, position, extra, type, ...}`) hands the command
+  to the character's move controller (`0x1402f25f0` at runner +0x600, with the character's
+  position at +0x230), which builds a move from it ("Event positions and moves" above): in
+  `EVENT_MM01_OP1_111` Escha walks to (1036, 9, 1587) at 150 units a second. The extra
+  operand (1 in 745 uses, 0 in 736, 2 in 236) goes to the move's +0x38, which the moves'
+  updates check; what it switches (facing the way of travel, perhaps) is not read yet.
+  `play-event` prints these moves.
 
 **Event positions and moves.** Many commands give a point as six operands
 `{kind, id, point, x, y, z}` (`0x1402f13f0` reads them; `s4`'s `{character, 0, 0, 0, x, y, z}`
@@ -283,11 +285,19 @@ whole field units (the code divides by 100 and multiplies back).
 A move (`0x1402f1a90`, used by the camera's `t4`/`t7` and by the characters' `s18`) is a
 position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand, then a type:
 
-| Type | Operands after it | Uses in `t4` / `t7` | Built by |
+| Type | Operands after it | Uses in `t4` / `t7` / `s18` | Built by |
 |---|---|---|---|
-| 4 | seconds ×100, ease | 1,876 / 1,735 | `0x1402f3480` |
-| 1 | eight more (a point and angles, by the look of them) | 129 / 5 | `0x1402f1cd9` |
-| 0, 2, 3 | two each | a few | `0x1402f1f60`, `0x1402f18a0`, `0x1402f1950` |
+| 4 | seconds ×100, ease | 1,876 / 1,735 / 571 | `0x1402f3480` |
+| 0 | speed, then x, y, z (mostly 0) | 27 / 19 / 950 | `0x1402f3720` |
+| 3 | two: 800 to 2,500, then a height (50 to 300) | a few / 13 / 131 | `0x1402f2680` |
+| 1 | eight more (a point and angles, by the look of them) | 129 / 5 / 63 | `0x1402f1cd9` |
+| 2 | two | 1 / 1 / 2 | `0x1402f18a0` |
+
+Type 0 heads for the position at `speed` field units a second (150, a walk, is the
+commonest in `s18`; 120 to 140 for the slower walkers): its velocity is the unit direction
+times the speed, plus the three extra values turned to the direction of travel (a push or
+acceleration; mostly zero). Type 3 is a jump: the move keeps a gravity of 9.8 (+0x8c) and
+`0x1402f28f0` works out the velocity from the height; the first operand is not named yet.
 
 Type 4 goes straight from where the thing is when the command runs to the position, in the
 given time (`0x1402f3530` updates it). With u the part of the time gone, the distance covered
@@ -312,7 +322,7 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 in `SKILL_COMMON_MOB25_APPEAR_00` the camera starts on the monster (character 10002) from
 4 m out and pulls back to 9 m in a second, easing to a stop.
 
-Not yet: the move types other than 4, `t10`/`t12`'s mover, the field camera's two
+Not yet: move types 1 and 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.
 
 ## Who handles them

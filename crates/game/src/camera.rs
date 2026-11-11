@@ -74,7 +74,15 @@ pub enum Move {
     /// Type 4, nearly every camera move: straight there in `seconds`, eased by `ease`
     /// (`0x1402f3480`, updated by `0x1402f3530`; see [`eased`]).
     Straight { to: Position, seconds: f32, ease: i32 },
-    /// The other types (0 to 3, 129 of the 2,006 `t4`s are type 1 with eight more operands),
+    /// Type 0, most character moves (`s18`): towards the position at `speed` field units a
+    /// second (150 the commonest, a walk), its velocity the unit direction times the speed,
+    /// plus `accel` (mostly zero) turned to the direction of travel (`0x1402f3720`).
+    Speed { to: Position, speed: f32, accel: [f32; 3] },
+    /// Type 3: a jump to the position with gravity 9.8 (`0x1402f2680`; `0x1402f28f0` works
+    /// out the velocity): `height` (50 to 300) is how high it rises; `first` (800 to 2,500
+    /// in the events) is not named yet.
+    Jump { to: Position, first: f32, height: f32 },
+    /// Types 1 and 2 (type 1: eight more operands, 129 of the 2,006 `t4`s and 63 `s18`s),
     /// not read yet.
     Other { to: Position, kind: u32 },
 }
@@ -83,11 +91,34 @@ impl Move {
     /// Reads `{position, type, ...}`.
     pub fn read(operands: &[u32]) -> Option<Move> {
         let (to, rest) = Position::read(operands)?;
+        Self::read_type(to, rest)
+    }
+
+    /// Reads `{position, extra, type, ...}`, the form of `s18` (`ECT_CHARA_MOVE_SET`), `s20` and
+    /// `s41`: the extra operand (0, 1 or 2 in `s18`) goes to the move's +0x38, which its update
+    /// checks (what it switches is not read yet).
+    pub fn read_with_extra(operands: &[u32]) -> Option<(u32, Move)> {
+        let (to, rest) = Position::read(operands)?;
+        let (&extra, rest) = rest.split_first()?;
+        Some((extra, Self::read_type(to, rest)?))
+    }
+
+    fn read_type(to: Position, rest: &[u32]) -> Option<Move> {
+        let f = |v: u32| v as i32 as f32;
         let (&kind, rest) = rest.split_first()?;
         Some(match (kind, rest) {
-            (4, [hundredths, ease, ..]) => Move::Straight { to, seconds: *hundredths as i32 as f32 / 100.0, ease: *ease as i32 },
+            (4, [hundredths, ease, ..]) => Move::Straight { to, seconds: f(*hundredths) / 100.0, ease: *ease as i32 },
+            (0, [speed, x, y, z, ..]) => Move::Speed { to, speed: f(*speed), accel: [f(*x), f(*y), f(*z)] },
+            (0, [speed]) => Move::Speed { to, speed: f(*speed), accel: [0.0; 3] },
+            (3, [first, height, ..]) => Move::Jump { to, first: f(*first), height: f(*height) },
             _ => Move::Other { to, kind },
         })
+    }
+
+    pub fn to(&self) -> &Position {
+        match self {
+            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Other { to, .. } => to,
+        }
     }
 }
 
@@ -157,6 +188,10 @@ mod tests {
         let ops = [0, 0, 1, 10, 20, neg, 7];
         let (p, rest) = Position::read(&ops).unwrap();
         assert_eq!((p.anchor, p.offset, rest), (Anchor::World, [10.0, 20.0, -200.0], &[7u32][..]));
+        // An s18 after its character: Escha's place + (0, 0, 500), extra 1, walk at 150.
+        let (extra, m) = Move::read_with_extra(&[5, 10000, 0, 0, 0, 500, 1, 0, 150, 0, 0, 0]).unwrap();
+        assert_eq!(extra, 1);
+        assert!(matches!(m, Move::Speed { speed: 150.0, accel: [0.0, 0.0, 0.0], .. }));
         assert_eq!(changes(EYEAT_POS_SET, &[0, 0, 0, 1, 2, 3, 0, 0, 0, 4, 5, 6]).len(), 2);
     }
 

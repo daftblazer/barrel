@@ -27,6 +27,8 @@ pub const CHARA_TIME_WAIT: u32 = 0x7300_0003;
 pub const CHARA_POS_SET: u32 = 0x7300_0004;
 /// `s10` (`ECT_CHARA_MOTION_SET_LOOP`): `{character, motion, blend (hundredths), flag}`.
 pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
+/// `s18` (`ECT_CHARA_MOVE_SET`): `{character, position (6), extra, type, ...}`.
+pub const CHARA_MOVE: u32 = 0x7300_0012;
 /// `w1` (0x77000001): start action N (its operand) alongside the one running. Action 0 is the
 /// event's main script; it starts the others, each once, in order.
 pub const START_ACTION: u32 = 0x7700_0001;
@@ -56,6 +58,8 @@ pub enum Step<'a> {
     /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
     /// `t9`; [`crate::camera`]).
     Camera { action: usize, part: crate::camera::Part, change: crate::camera::Change },
+    /// A character starts moving (`s18`, `ECT_CHARA_MOVE_SET`; [`crate::camera::Move`]).
+    CharacterMove { action: usize, character: u32, extra: u32, movement: crate::camera::Move },
     /// A command the player does not handle itself.
     Command { action: usize, word: u32, name: Option<&'static str>, operands: &'a [u32] },
 }
@@ -117,6 +121,10 @@ impl<'a> Player<'a> {
                         out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
                     }
                 }
+            }
+            (CHARA_MOVE, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
+                let (extra, movement) = crate::camera::Move::read_with_extra(rest).unwrap();
+                out.push(Step::CharacterMove { action, character: *character, extra, movement })
             }
             (word, operands) if !crate::camera::changes(word, operands).is_empty() => {
                 out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| Step::Camera { action, part, change }))
@@ -286,6 +294,7 @@ mod tests {
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
+                Step::CharacterMove { character, .. } => format!("{character} moves"),
             })
             .collect();
         assert_eq!(

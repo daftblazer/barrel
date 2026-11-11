@@ -64,7 +64,8 @@ fn main() -> ExitCode {
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
-        ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word),
+        ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word, None),
+        ["ebd-ops", dir, word, filter] => ebd_ops(Path::new(dir), word, Some(filter)),
         ["xml", file] => xml(Path::new(file)),
         ["xml-scan", dir] => xml_scan(Path::new(dir)),
         ["g1t", file, out] => g1t(file, Path::new(out)),
@@ -339,9 +340,14 @@ fn ebd_decode(dir: &Path) -> Result<()> {
 }
 
 /// For one command (a hex word such as `74000004`), how often each value appears at each
-/// operand position across every event under `dir`, the commonest first.
-fn ebd_ops(dir: &Path, word: &str) -> Result<()> {
+/// operand position across every event under `dir`, the commonest first. `filter` (`N=V`)
+/// keeps only the uses whose operand N (from 1) is V.
+fn ebd_ops(dir: &Path, word: &str, filter: Option<&str>) -> Result<()> {
     let word = u32::from_str_radix(word.trim_start_matches("0x"), 16).map_err(|_| "the word is hex, e.g. 74000004")?;
+    let filter = filter
+        .map(|f| f.split_once('=').and_then(|(n, v)| Some((n.parse::<usize>().ok()?.checked_sub(1)?, v.parse::<i32>().ok()?))))
+        .map(|f| f.ok_or("the filter is N=V, e.g. 9=3"))
+        .transpose()?;
     let table = OperandTable::escha();
     let mut files = Vec::new();
     files_ending(dir, ".ebd", &mut files)?;
@@ -352,7 +358,8 @@ fn ebd_ops(dir: &Path, word: &str) -> Result<()> {
         let Ok(e) = Ebd::parse(&read(path)?) else { continue };
         for a in &e.actions {
             let Ok(cmds) = ebd::decode(&a.words, &table) else { continue };
-            for c in cmds.iter().filter(|c| c.word == word) {
+            let keep = |c: &&ebd::Command| filter.is_none_or(|(n, v)| c.operands.get(n).is_some_and(|&o| o as i32 == v));
+            for c in cmds.iter().filter(|c| c.word == word).filter(keep) {
                 uses += 1;
                 *lengths.entry(c.operands.len()).or_default() += 1;
                 if values.len() < c.operands.len() {
@@ -372,6 +379,28 @@ fn ebd_ops(dir: &Path, word: &str) -> Result<()> {
         println!("  {}: {} distinct; {}", i + 1, v.len(), top.join(" "));
     }
     Ok(())
+}
+
+fn describe_position(p: &barrel_game::camera::Position) -> String {
+    use barrel_game::camera::Anchor;
+    let [x, y, z] = p.offset;
+    match p.anchor {
+        Anchor::World => format!("({x}, {y}, {z})"),
+        Anchor::Saved(n) => format!("saved point {n} + ({x}, {y}, {z})"),
+        Anchor::Thing { kind, id, point } => format!("thing {kind}/{id} point {point} + ({x}, {y}, {z})"),
+    }
+}
+
+fn describe_move(m: &barrel_game::camera::Move) -> String {
+    use barrel_game::camera::Move;
+    let to = describe_position(m.to());
+    match *m {
+        Move::Straight { seconds, ease, .. } => format!("moves to {to} in {seconds:.2} s (ease {ease})"),
+        Move::Speed { speed, accel, .. } if accel == [0.0; 3] => format!("goes to {to} at {speed}/s"),
+        Move::Speed { speed, accel, .. } => format!("goes to {to} at {speed}/s, accelerating {accel:?}"),
+        Move::Jump { first, height, .. } => format!("jumps to {to}, {height} high ({first})"),
+        Move::Other { kind, .. } => format!("moves (type {kind}) to {to}"),
+    }
 }
 
 fn print_element(e: &barrel_formats::table::Element, depth: usize) {
@@ -1317,21 +1346,16 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 println!("      (wait for {who})");
             }
             Step::Camera { action, part, change } => {
-                use barrel_game::camera::{Anchor, Change, Move, Position};
-                let at = |p: &Position| {
-                    let [x, y, z] = p.offset;
-                    match p.anchor {
-                        Anchor::World => format!("({x}, {y}, {z})"),
-                        Anchor::Saved(n) => format!("saved point {n} + ({x}, {y}, {z})"),
-                        Anchor::Thing { kind, id, point } => format!("thing {kind}/{id} point {point} + ({x}, {y}, {z})"),
-                    }
-                };
+                use barrel_game::camera::Change;
                 let what = match change {
-                    Change::Set(p) => format!("at {}", at(&p)),
-                    Change::Move(Move::Straight { to, seconds, ease }) => format!("moves to {} in {seconds:.2} s (ease {ease})", at(&to)),
-                    Change::Move(Move::Other { to, kind }) => format!("moves (type {kind}) to {}", at(&to)),
+                    Change::Set(p) => format!("at {}", describe_position(&p)),
+                    Change::Move(m) => describe_move(&m),
                 };
                 println!("{action:3} camera {part:?} {what}");
+            }
+            Step::CharacterMove { action, character, extra, movement } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
+                println!("{action:3} {who} {} (extra {extra})", describe_move(&movement));
             }
             Step::Command { action, word, name, operands } => {
                 let ops: Vec<String> = operands.iter().map(|&o| (o as i32).to_string()).collect();
