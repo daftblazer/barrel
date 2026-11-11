@@ -519,8 +519,15 @@ integer (`0x14109c1e0`). When the points change (`0x14035fdc0`) the rank climbs 
 is through every next row whose `point` is at most the points, no further than the last row,
 and never goes down; if the climb passes the top of the current tier of three (`0x14035fd90`:
 `(trunc((rank - 1) / 3) + 1) × 3`) the manager at `0x140dfc220` is told first (`0x1402681b0`).
-The month-end report keeps the rank (`rank::ranks`, `tier_top`, `promote`; how points are
-earned with the rates, and what `coal` and `percent` give, is not read yet).
+The month-end report keeps the rank. Points are added by `0x14035fc90 (n)`: to the
+total, to the current assignment period's count (`0x14109c1bc` + 4 × the period at
+`0x141099e04`) and to the month's report (+0x138), then the promotion above. They come from
+requests done (`trunc(GetPoint)` when above 0, `0x14033b24d`), assignments cleared (their
+`Score`, `SubjectData` +0x24, `0x14035775c`), lines completed on an assignment card
+(`lineScore`, with `lineBonus` applied through `0x14002f310`, `0x1403605c6`), event commands
+(`0x14002f410`), and are taken back by the negated sum of 25 assignments' scores
+(`0x1400cd9a2`). The `c_*` rates take no part in this (`rank::ranks`, `tier_top`, `promote`,
+`RankState`, `request_points`; what the rates, `coal` and `percent` do is not read yet).
 
 ### The calendar
 

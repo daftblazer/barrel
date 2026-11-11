@@ -57,12 +57,54 @@ pub fn promote(ranks: &[Rank], rank: i32, points: i32) -> (i32, bool) {
     (r, r > tier_top(rank))
 }
 
+/// The points and rank as the game keeps them, with the points made in each assignment period.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RankState {
+    pub points: i32,
+    pub rank: i32,
+    /// Points made in each of the nine assignment periods (`0x14109c1bc`).
+    pub by_period: [i32; 9],
+}
+
+impl RankState {
+    /// Adds `n` points (`0x14035fc90`): to the total, to the current period's count (`period`,
+    /// global `0x141099e04`, when 0 to 8) and to the month's report (+0x138, not kept here),
+    /// then promotes. Returns whether the climb passed a tier's top. The points come from
+    /// requests done (`trunc(GetPoint)` when above 0, `0x14033b24d`), assignments cleared (their
+    /// `Score`, `0x14035775c`), assignment card lines completed (`lineScore`, `0x1403605c6`, which
+    /// adds the same way), event commands (`0x14002f410`), and are taken back as the negated sum
+    /// of 25 assignments' scores at `0x1400cd9a2`.
+    pub fn add(&mut self, ranks: &[Rank], n: i32, period: Option<usize>) -> bool {
+        self.points = self.points.wrapping_add(n);
+        if let Some(p) = period.filter(|&p| p < 9) {
+            self.by_period[p] = self.by_period[p].wrapping_add(n);
+        }
+        let (rank, notice) = promote(ranks, self.rank, self.points);
+        self.rank = rank;
+        notice
+    }
+}
+
+/// A request's points (`0x14033b24d`): its `GetPoint` cut to an integer, when above 0.
+pub fn request_points(get_point: f32) -> i32 {
+    if get_point > 0.0 { get_point as i32 } else { 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn table() -> Vec<Rank> {
         [0, 750, 1500, 2500, 4000].iter().enumerate().map(|(i, &p)| Rank { points: p, coal: 300, percent: 10, rates: [0; 7], number: i as i32 + 1 }).collect()
+    }
+
+    #[test]
+    fn points_add_up() {
+        let t = table();
+        let mut st = RankState::default();
+        assert!(!st.add(&t, request_points(5.12) * 150, Some(0)));
+        assert_eq!((st.points, st.rank, st.by_period[0]), (750, 1, 750));
+        assert_eq!(request_points(-1.0), 0);
     }
 
     #[test]
