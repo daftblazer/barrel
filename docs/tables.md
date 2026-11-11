@@ -539,8 +539,14 @@ the random generator), then every character but one (`0x140330120 (0x141098a48)`
 leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
 `0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2
 (or not in the list), 0.08 in 3 to 5, 0.03 below, kept at 100 at most (friendship points,
-presumably). On a month's first day (date divisible by 30) `0x140363860` and `0x140267f50`
-(the manager at `0x140dfc220` +0x120) run. Then, for each 0x34-byte record of a list from
+presumably). On a month's first day (date divisible by 30) `0x140363860` closes the month just ended (0
+for April ... 11 for March, worked out as the months from April 1st of the school year to the
+first of the next month, less one): its report (`0x1403637e0`, 0x144-byte records at
+`0x141093570`) sums the month's syntheses, a byte per recipe for the 265 recipes (+0 to +0x108),
+each times the price (`itemData` `cost`, +0x24) of the item the recipe makes, into +0x134,
+stores the rank (global `0x14109c1e4`, which only rises, through `0x14035fec0` and the
+manager's `0x1402681b0`) at +0x13c and marks the report new (+0x140); then `0x140267f50` (the
+manager at `0x140dfc220` +0x120) runs (`calendar::ended_month`, `month_total`). Then, for each 0x34-byte record of a list from
 `0x140168990`, one whose `0x140168710` (a float) is 0 or less and that is not yet flagged
 (+0x31) is flagged and handed to `0x140268290 (manager +0x120, its i16 +2)` (expiring
 requests, presumably). Last the **request board** (`0x14033aaa0` on `0x140dfc880`): on the 1st,

@@ -113,6 +113,22 @@ pub fn board_seed(date: u32, global: i32) -> [i32; 2] {
     [s0, step(s0, 2)]
 }
 
+/// The month of the school year that has just ended when day `v` begins a month (the monthly
+/// step `0x140363860`): 0 for April, ..., 11 for March. The game finds it as the months
+/// between April 1st of the school year and the first of the next month, less one.
+pub fn ended_month(v: u32) -> u32 {
+    (Date::of(v).month + 12 - 4 - 1) % 12
+}
+
+/// A month's total in its report (`0x1403637e0`, records of 0x144 bytes at `0x141093570`, one
+/// per month): the count of syntheses of each of the 265 recipes that month (a byte each, +0 to
+/// +0x108) times the price (`cost`, `itemData` +0x24) of the item the recipe makes, summed into
+/// +0x134. The month end also stores the rank then (global `0x14109c1e4`, +0x13c) and marks the
+/// report as new (+0x140).
+pub fn month_total(counts: &[u8], cost_of_recipe: impl Fn(usize) -> i32) -> i32 {
+    counts.iter().enumerate().map(|(i, &c)| i32::from(c).wrapping_mul(cost_of_recipe(i))).fold(0, i32::wrapping_add)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +167,14 @@ mod tests {
         let [a, b] = board_seed(90, 0);
         assert_eq!(a, 90i32.wrapping_mul(0x6c07_8965) + 1);
         assert_eq!(b, ((a ^ (a >> 30)).wrapping_mul(0x6c07_8965)).wrapping_add(2));
+    }
+
+    #[test]
+    fn month_reports() {
+        // May 1st ends April; April 1st (a new school year) ends March.
+        assert_eq!(ended_month(Date { year: 1, month: 5, day: 1 }.number()), 0);
+        assert_eq!(ended_month(Date { year: 2, month: 4, day: 1 }.number()), 11);
+        assert_eq!(month_total(&[2, 0, 1], |i| [500, 550, 300][i]), 1300);
     }
 
     #[test]
