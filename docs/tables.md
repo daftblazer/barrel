@@ -508,6 +508,31 @@ each element the finished item has gives 1 point. Then up to two of the state's 
 
 Finally each point count is kept between 0 and 5.
 
+## Field areas
+
+The `FIELDMAP_AREA_*` enum has 86 tags (`FIELDMAP_AREA_01_01` to `_13_05`); a field's files
+are named by its tag without the prefix (`AREA_01_01`). The executable keeps 85 records of
+0x58 bytes for them at `0x140d67fb0` (English Escha executable; `0x140172120 (area)` returns
+one, -1 none), one per tag in order; `tools/areas.py EXE` lists them.
+
+| Bytes | What |
+|---|---|
+| 0 | pointer to the developers' Japanese name: an id and two places, "R0(コルセイト-黄昏を迎える森)" |
+| 8 | pointer to the short id: "R0" to "R14" for the first 13 and the last 2, "A0r0" to "E2r7" for the rest |
+| 16 | i32 1 in all |
+| 20 | i32: 46 to 991 (shared by an R record and the first of its letter group: R0 and A0r0 both 46) |
+| 24, 28 | i32 -1, or small numbers in a few |
+| 32 | i32 -1, or 181 in one |
+| 36 | f32: 1.5 in most; 1.0 to 3.5 among the R records |
+| 40 to 60 | six i32: on the R records three pairs (2 to 7, 688 to 692) and a 0 or 1; 0 and -1 on the others |
+
+So the R records join two places on the world map (Colseit and "the forest that welcomes
+twilight" for R0), and the float is most likely the days the trip takes; the lettered
+records (A0 the forest's, A1 the old road's, ...) join two parts of one field ("A0R1: the
+forest entrance to the path to the settlement"). That reading is from the names and values
+only and should be checked against the code that uses the records. Record 85, past the
+table, is something else (pointers to "Knowledge: nothing", "Knowledge: new", ...).
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
