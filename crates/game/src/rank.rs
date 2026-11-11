@@ -14,7 +14,7 @@ pub struct Rank {
     pub coal: i32,
     pub percent: i32,
     /// Per-activity rates (`c_btl`, `c_gat`, `c_bou`, `c_mix`, `c_tra`, `c_rel`, `c_que`):
-    /// battle, gathering, bou (adventure?), synthesis, travel, rel (?), requests: pay per
+    /// battle, gathering, bou, synthesis, tra, rel, requests (bou, tra and rel not named yet): pay per
     /// activity in the month (see [`pay`]).
     pub rates: [i32; 7],
     /// `rank`: the number shown.
@@ -86,7 +86,7 @@ impl RankState {
     }
 }
 
-/// A month's pay (`0x140114700` and on, the month report's screen).
+/// A month's pay (`0x140114530`, the month report's screen).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pay {
     /// The rank's `coal` (kept in the report at +0x128).
@@ -100,8 +100,8 @@ pub struct Pay {
 
 /// The pay for a month at `rank`, with `points` the points made that month (the report's
 /// +0x138) and `counts` the month's activities in the rates' order (battles, gatherings, bou,
-/// syntheses, travel, rel, requests; the screen's +0x14 to +0x2c, where they come from is not
-/// read yet). The report is then marked paid (+0x140 = 2).
+/// syntheses, tra, rel, requests: the month report's +0x10c to +0x124, each raised by one by
+/// its own function, `0x1403639c0` and on, from battle, field, synthesis and request code). The report is then marked paid (+0x140 = 2).
 pub fn pay(rank: &Rank, points: i32, counts: [i32; 7]) -> Pay {
     let base = rank.coal;
     let bonus = (points.wrapping_mul(rank.percent) / 100).max(0);
