@@ -396,7 +396,15 @@ struct EventCamera {
     fov: f32,
 }
 
-fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Option<usize>) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>)> {
+/// An event character's placement: number, position and facing angle in degrees.
+type Placement = (u32, [f32; 3], f32);
+
+fn event_characters(
+    event_path: &Path,
+    scene: &mut Scene,
+    base: usize,
+    line: Option<usize>,
+) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
@@ -476,6 +484,7 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Opt
             }
         }
     }
+    let placements: Vec<Placement> = first.clone();
     let mut packs = Vec::new();
     let mut tex_base = base;
     let mut centre = Vec3::ZERO;
@@ -553,7 +562,7 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Opt
         tex_base += count;
         packs.push(tex.to_vec());
     }
-    Ok((packs, (placed > 0.0).then(|| centre / placed), camera))
+    Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
 }
 
 /// Blend facial animations (at `time`) into `scene.morph` for the next model added: each
@@ -697,6 +706,7 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
+    let mut look_at = None::<u32>;
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
     let mut it = args[positional..].iter();
@@ -710,6 +720,7 @@ fn main() -> Result<()> {
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
             "--morph" => morph_spec = Some(it.next().ok_or("--morph FILE#N")?.clone()),
             "--face" => face_specs.push(it.next().ok_or("--face FILE#N")?.clone()),
+            "--look-at" => look_at = Some(it.next().ok_or("--look-at CHARA")?.parse()?),
             "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
@@ -755,10 +766,21 @@ fn main() -> Result<()> {
     let mut event_camera: Option<EventCamera> = None;
     if let Some(e) = &event_spec {
         let base = G1t::parse(&pack_bytes[0])?.textures.len();
-        let (packs, centre, cam) = event_characters(Path::new(e), &mut scene, base, event_line)?;
+        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line)?;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
+        // --look-at N: a close-up of character N's head, from in front of them.
+        if let Some(who) = look_at {
+            let &(_, pos, angle) = placements.iter().find(|p| p.0 == who).ok_or("--look-at: that character is not placed")?;
+            event_camera = Some(EventCamera {
+                target: Vec3::from(pos) + Vec3::new(0.0, 140.0, 0.0),
+                distance: 160.0,
+                yaw: 180.0 - angle,
+                pitch: 5.0,
+                fov: 30.0,
+            });
+        }
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();

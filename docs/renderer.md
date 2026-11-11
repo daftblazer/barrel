@@ -65,6 +65,11 @@ its first entry), its `CharaBase` column, then `<FileHead>_<value>.g1a` from the
 container or its own one. At line 5 Escha is in `STAND_NORMAL_2`, Logy `STAND_NORMAL`,
 Threia `STAND_YES_2` and Reyfer `STAND_ANGRY`; characters without a gesture keep `F_WAIT`.
 
+`--look-at N` replaces the event camera with a close-up of character N: aimed 140 units
+above where the event placed them, 160 units away, from the direction they face (yaw 180°
+minus their angle), field of view 30°. Escha at line 5 of `MM08_AS4_130` stands in front of
+the church doors with her hands clasped, green-eyed, mouth set for the sad line.
+
 **Eyes.** An eye material has four textures, none of subtype 1 (Escha's materials 3 and 4):
 the eye white on a skin-coloured ground, the iris with alpha, a green glow and the highlight
 outlines, all on the same UVs. The viewer lays the iris over the white by its alpha into a
