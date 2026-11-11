@@ -451,8 +451,13 @@ FUN2, SAD (`PC20_EYE_M_ANG_M_Brw_B_Def`, ...). Mouths, 0 to 13: each of those mo
 first `PC20_MTH_M_<mood>_M_Mth_B_Def`, a 4-second loop that opens and closes the mouth (the
 talking form, even numbers), then `PC20_MTH_DEF_<mood>_...`, a still pose (odd numbers).
 So expression 10 is sad brows, sad eyes and a sad talking mouth. Other characters' tables
-differ in places (Wilbell's, `PC27`, has a `SAD2`), so Barrel should read each from the data
-rather than assume Escha's. `barrel_game::face::expression` gives the names for Escha's.
+differ: Logy has no FUN2 eyes and a SAD2 instead, Wilbell (`PC27`) only four brows. They
+are three lists of records, `{u64 CharaBase row, then 7 brow, 7 eye or 14 mouth name
+pointers}`, a null pointer where the character lacks that motion (the part then keeps its
+current one); the lists start after the `FACIAL_MOUTH_TALK_*` enum. Escha is row 0, her
+costumes PC20B and PC20C rows 453 and 454 (0x1c5, 0x1c6), matching `CharaBase.xml`.
+`barrel_game::face::Tables::read` finds them by that shape: 55 characters in Escha & Logy
+DX, each with all three lists. `barrel faces EXE` lists them.
 
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.

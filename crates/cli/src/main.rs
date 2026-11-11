@@ -37,6 +37,7 @@ usage:
   barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
+  barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -77,6 +78,7 @@ fn main() -> ExitCode {
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
+        ["faces", exe] => faces(Path::new(exe)),
         ["recipes", exe] => recipes(Path::new(exe)),
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
@@ -414,6 +416,23 @@ fn pak_xml_e(file: &Path) -> Result<()> {
     }
     println!("{same} identical to their twin, {differ} differ, {alone} without a twin, {failed} failed");
     if failed > 0 { Err("some tables did not decrypt".into()) } else { Ok(()) }
+}
+
+fn faces(exe: &Path) -> Result<()> {
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let t = barrel_game::face::Tables::read(&pe);
+    let mut rows: Vec<&u32> = t.brow.keys().chain(t.eye.keys()).chain(t.mouth.keys()).collect();
+    rows.sort();
+    rows.dedup();
+    for r in &rows {
+        let first = |m: &std::collections::HashMap<u32, Vec<Option<String>>>| {
+            m.get(r).map(|v| v.iter().map(|n| n.as_deref().unwrap_or("-")).collect::<Vec<_>>().join(" ")).unwrap_or_default()
+        };
+        println!("row {r}:\n  brow  {}\n  eye   {}\n  mouth {}", first(&t.brow), first(&t.eye), first(&t.mouth));
+    }
+    println!("{} characters: {} brow, {} eye, {} mouth tables", rows.len(), t.brow.len(), t.eye.len(), t.mouth.len());
+    Ok(())
 }
 
 /// Escha & Logy DX's first synthesizable item (Craft).

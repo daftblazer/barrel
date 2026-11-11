@@ -29,6 +29,73 @@ const EXPRESSIONS: [(Option<u8>, Option<u8>, Option<u8>); 11] = [
     (Some(6), Some(6), Some(12)),
 ];
 
+/// Each character's facial animation names by motion number, read from the executable.
+/// The executable keeps three lists of records, `{u64 CharaBase row, then the names}`: 7 brow
+/// names, 7 eye names and 14 mouth names per character, the names ending in
+/// `_M_Brw_B_Def`, `_M_Eye_B_Def` and `_M_Mth_B_Def`.
+#[derive(Clone, Debug, Default)]
+pub struct Tables {
+    pub brow: std::collections::HashMap<u32, Vec<Option<String>>>,
+    pub eye: std::collections::HashMap<u32, Vec<Option<String>>>,
+    pub mouth: std::collections::HashMap<u32, Vec<Option<String>>>,
+}
+
+impl Tables {
+    pub fn read(pe: &barrel_formats::pe::Pe) -> Tables {
+        let mut t = Tables::default();
+        let data = pe.data;
+        let ptr = |at: usize| data.get(at..at + 8).map(|b| u64::from_le_bytes(b.try_into().unwrap()));
+        let mut at = 8;
+        while at + 8 <= data.len() {
+            let name = ptr(at).and_then(|q| pe.name_at(q));
+            let previous = ptr(at - 8).unwrap_or(0);
+            // A record starts where a name follows a small number (the CharaBase row).
+            if let (Some(first), true) = (name, previous < 0x10000) {
+                let (map, count) = if first.ends_with("_M_Brw_B_Def") {
+                    (&mut t.brow, 7)
+                } else if first.ends_with("_M_Eye_B_Def") {
+                    (&mut t.eye, 7)
+                } else if first.ends_with("_M_Mth_B_Def") {
+                    (&mut t.mouth, 14)
+                } else {
+                    at += 8;
+                    continue;
+                };
+                // Slots may be null where the character lacks that motion.
+                let names: Vec<Option<String>> =
+                    (0..count).map(|k| ptr(at + 8 * k).and_then(|q| pe.name_at(q)).map(str::to_string)).collect();
+                map.entry(previous as u32).or_insert(names);
+                at += 8 * count;
+                continue;
+            }
+            at += 8;
+        }
+        t
+    }
+
+    /// The facial animations a line with expression `expression` gives the character of
+    /// CharaBase row `row`; `talking` picks the talking mouth. Falls back to `expression`'s
+    /// names (Escha's order) with `head` for characters the tables do not list. A character
+/// may lack some motions (a null in its record); then that part keeps its current motion.
+    pub fn expression(&self, row: u32, head: &str, expression: i32, talking: bool) -> Face {
+        let Some(&(brow, eye, mouth)) = usize::try_from(expression).ok().and_then(|e| EXPRESSIONS.get(e)) else {
+            return Face { brow: None, eye: None, mouth: None };
+        };
+        let fallback = self::expression(head, expression, talking);
+        // A listed character takes its own names (a null slot keeps the current motion);
+        // an unlisted one falls back to Escha's order.
+        let pick = |m: &std::collections::HashMap<u32, Vec<Option<String>>>, n: Option<u8>, fb: Option<String>| match m.get(&row) {
+            Some(names) => n.and_then(|n| names.get(n as usize).cloned().flatten()),
+            None => fb,
+        };
+        Face {
+            brow: pick(&self.brow, brow, fallback.brow),
+            eye: pick(&self.eye, eye, fallback.eye),
+            mouth: pick(&self.mouth, mouth.map(|m| m + !talking as u8), fallback.mouth),
+        }
+    }
+}
+
 /// What one facial part should play.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Face {
