@@ -510,6 +510,18 @@ damage leaves out attack and defence and puts the effect entry's +0x18 in place 
 attack (what fills it, and the quality bonus of flag 3, are not read yet)
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 
+### The calendar
+
+Days are numbered from 1 in 30-day months and 360-day years, day 1 being January 1st of
+year 1, as the data shows: the nine assignment cards of `subject/SubjectCardData.xml` are
+four-month periods ("Year 1 April to July", "Year 1 August to November", "Year 1 December to
+March", ... "Year 3 December to March"), and every `StartDate` and `EndDate` of
+`quest/QuestAlc.xml` is a period's first day (91, 211, 331, ..., 1171: April 1st year 1, then
+every 120 days) or 1530 (the post-game, March 30th year 5). The executable's date code (the
+`EVENT_CONDITION_DATE_*` checks, the sleep, synthesis and world-map day triggers
+`EVENT_TRIGGER_DATE_*_IS_OVER`) is not read yet (`barrel_game::calendar`; `barrel quests`
+shows the dates).
+
 ### Skill targets (executable)
 
 A skill record's first word (+0x10, `0x14015f900`) says whom it is aimed at. The target
