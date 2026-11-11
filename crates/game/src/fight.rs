@@ -6,7 +6,7 @@
 //! Not in yet (each a way it can differ from the game): traits, passives and the field states;
 //! items; the battle's start rules (everyone joins at wait 500, in order); the effect-roll
 //! globals (neutral: no chain bonus, full MP power); the action's float (1.0); effects other
-//! than HP damage (acts 0 and 8), heals (19, 21), poison (16) and the stat buffs and debuffs
+//! than HP damage (acts 0 and 8), heals and revives (19, 21, 81), poison (16) and the stat buffs and debuffs
 //! (40-42, 45-47);
 //! and more than one target per action.
 
@@ -239,15 +239,33 @@ impl Battle {
         if let Some(k) = slot.filter(|&k| k < 9) {
             self.fighters[who].uses[k] += 1;
         }
-        // A heal (`HEAL_HP`, act 19; `HEAL_HP_BY_ATK`, 21) through the heal event (`0x1401c1d00`).
-        if let Some(effect) = skill.effects.iter().find(|e| e.act == 19 || e.act == 21) {
-            let amount = rng.range(effect.min, effect.max);
-            rng.range(effect.min2, effect.max2);
-            let amount = if effect.act == 21 { battle::heal_by_attack(self.fighters[who].stats[stat::ATTACK], amount, 1.0) } else { amount };
-            let blocked = self.fighters[target].states.iter().any(|s| s.state == 0x4e);
-            let amount = battle::heal(&mut self.fighters[target].stats, amount, blocked);
-            self.fighters[target].guts_used = false;
-            let event = Event::Healed { who, skill: skill.name.clone(), target, amount, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() };
+        // Heals (`HEAL_HP`, act 19; `HEAL_HP_BY_ATK`, 21) through the heal event
+        // (`0x1401c1d00`) and revives (`CURE_REVIVE`, 81, the revive event `0x1401c1e90`), each
+        // effect in its slot's order.
+        let heals: Vec<_> = skill.effects.iter().filter(|e| matches!(e.act, 19 | 21 | 81)).copied().collect();
+        if !heals.is_empty() {
+            let mut total = 0;
+            for effect in heals {
+                let amount = rng.range(effect.min, effect.max);
+                rng.range(effect.min2, effect.max2);
+                let t = &self.fighters[target];
+                let has = |state| t.states.iter().any(|s| s.state == state);
+                let (amount, blocked) = match effect.act {
+                    81 => (battle::revive_amount(t.stats[stat::MAX_HP], amount, has(0x4d), has(0x4e), !t.down()), false),
+                    21 => (battle::heal_by_attack(self.fighters[who].stats[stat::ATTACK], amount, 1.0), has(0x4e)),
+                    _ => (amount, has(0x4e)),
+                };
+                let was_down = self.fighters[target].down();
+                total += battle::heal(&mut self.fighters[target].stats, amount, blocked);
+                self.fighters[target].guts_used = false;
+                // Raised again (virtual +0xf0, `0x1401b7ed0`): its states cleared; it is back
+                // in the running on the timeline at the wait it has.
+                if was_down && !self.fighters[target].down() {
+                    self.fighters[target].states.clear();
+                    self.fighters[target].restat();
+                }
+            }
+            let event = Event::Healed { who, skill: skill.name.clone(), target, amount: total, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() };
             self.end_action(who, skill, rng);
             return vec![event];
         }
@@ -331,6 +349,33 @@ mod tests {
         assert_eq!(b.winner(), Some(0));
         // The count went down by the turn's ageing.
         assert_eq!(b.fighters[1].states[0].count, 1);
+    }
+
+    #[test]
+    fn a_revived_fighter_gets_turns_again() {
+        use barrel_formats::battle_data::SkillEffect;
+        let mut b = Battle::new(vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 0, 999), Fighter::new(&block(500), 1, 999_999)]);
+        b.fighters[1].stats[stat::HP] = 0;
+        b.fighters[1].add_state(0x12, 10, 0);
+        // While down, 1 never comes up.
+        for _ in 0..6 {
+            let who = b.next();
+            assert_ne!(who, 1);
+            let i = b.timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
+            b.timeline.entries[i].1 = 600;
+        }
+        let revive = Skill { name: "Revive".into(), category: String::new(), wait: 600, target: 4, spread: 0, effects: vec![SkillEffect { act: 81, element: None, min: 15, max: 15, min2: 0, max2: 0 }], description: String::new() };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let events = b.act(0, &revive, None, 1, &mut rng);
+        assert_eq!(events, [Event::Healed { who: 0, skill: "Revive".into(), target: 1, amount: 15, hp_left: 15, mp_left: 0 }]);
+        assert!(b.fighters[1].states.is_empty());
+        let came_up = (0..6).any(|_| {
+            let who = b.next();
+            let i = b.timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
+            b.timeline.entries[i].1 = 600;
+            who == 1
+        });
+        assert!(came_up);
     }
 
     #[test]

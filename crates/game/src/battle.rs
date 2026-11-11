@@ -43,6 +43,17 @@ pub fn heal_by_attack(attack: i32, amount: i32, scale: f32) -> i32 {
     (((attack.wrapping_mul(amount)) / 100) as f32 * scale) as i32
 }
 
+/// `CURE_REVIVE`'s amount (act 81, the revive event `0x1401c1e90`): `value` percent of the
+/// target's maximum HP, cut to an integer; nothing under `FIELD_INVALID_REVIE` (state 0x4d),
+/// nor under `FIELD_INVALID_HEAL` (0x4e) for a target still standing. It is given through
+/// [`heal`], so it raises a fallen character from 0 HP.
+pub fn revive_amount(max_hp: i32, value: i32, invalid_revive: bool, invalid_heal: bool, standing: bool) -> i32 {
+    if invalid_revive || (invalid_heal && standing) {
+        return 0;
+    }
+    max_hp.wrapping_mul(value) / 100
+}
+
 /// Heals a character (`0x1401afa20`, the heal event's apply): HP goes up by `amount`, no higher
 /// than the maximum; under `FIELD_INVALID_HEAL` (state 0x4e) a character still standing is not
 /// healed. Returns the HP gained. (The game also clears the character's +0x28d.)
@@ -530,6 +541,14 @@ mod tests {
         assert_eq!(t.entries, [(1, 0), (2, 100), (0, 1000)]);
         assert_eq!(guts_chance(90, false, false), 75);
         assert_eq!(guts_chance(10, true, false), 100);
+    }
+
+    #[test]
+    fn revives() {
+        assert_eq!(revive_amount(200, 15, false, false, false), 30);
+        assert_eq!(revive_amount(200, 15, true, false, false), 0);
+        assert_eq!(revive_amount(200, 15, false, true, true), 0);
+        assert_eq!(revive_amount(200, 15, false, true, false), 30);
     }
 
     #[test]

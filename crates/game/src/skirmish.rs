@@ -2,7 +2,8 @@
 //! rules and target picks, and each party member, standing in for the player, uses the
 //! costliest skill it has learnt by its level and can pay for that is aimed at the foe and
 //! deals damage, or else its normal attack; when a member is at half HP or less, the
-//! costliest affordable heal on the weakest instead. Same gaps as [`crate::fight`]; no items, support
+//! costliest affordable heal on the weakest instead, and a reviving one on a fallen member
+//! first. Same gaps as [`crate::fight`]; no items, support
 //! actions or finishing attacks.
 
 use crate::battle::{self, stat};
@@ -35,11 +36,12 @@ impl<'a> Member<'a> {
         Some(Member { block, mp, attack, skills })
     }
 
-    /// The costliest affordable heal aimed at its own side.
-    fn heal(&self, mp: i32) -> Option<(&'a Skill, i32)> {
+    /// The costliest affordable heal aimed at its own side (one that revives, when `revive`).
+    fn heal_with(&self, mp: i32, revive: bool) -> Option<(&'a Skill, i32)> {
         self.skills
             .iter()
             .filter(|(s, cost)| *cost <= mp && matches!(s.target, 1 | 3 | 4) && s.effects.iter().any(|e| e.act == 19 || e.act == 21))
+            .filter(|(s, _)| !revive || s.effects.iter().any(|e| e.act == 81))
             .max_by_key(|(_, cost)| *cost)
             .copied()
     }
@@ -71,7 +73,9 @@ pub fn skirmish(party: &[Member], foe: &Foe, rng: &mut Rng, max_events: usize) -
             // The weakest standing member, healed when at half HP or less and a heal is affordable.
             let share = |k: usize| b.fighters[k].hp() as f32 / b.fighters[k].stats[stat::MAX_HP] as f32;
             let weakest = (0..n).filter(|&k| !b.fighters[k].down()).min_by(|&x, &y| share(x).total_cmp(&share(y)));
-            let heal = weakest.filter(|&k| share(k) <= 0.5).and_then(|k| party[who].heal(b.fighters[who].mp()).map(|h| (h, k)));
+            let fallen = (0..n).find(|&k| b.fighters[k].down());
+            let revive = fallen.and_then(|k| party[who].heal_with(b.fighters[who].mp(), true).map(|h| (h, k)));
+            let heal = revive.or_else(|| weakest.filter(|&k| share(k) <= 0.5).and_then(|k| party[who].heal_with(b.fighters[who].mp(), false).map(|h| (h, k))));
             let ((skill, cost), target) = heal.unwrap_or_else(|| (party[who].choose(b.fighters[who].mp()), n));
             b.pay_mp(who, cost);
             events.extend(b.act(who, skill, None, target, rng));

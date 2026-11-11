@@ -468,6 +468,16 @@ timed states (`0x1401919a0`), drops its pending action (+0x1e0) and marks its ti
 fallen character never gets a turn until revived (`battle::guts_chance`,
 `Timeline::advance_with`, `fight::Battle`).
 
+The after-effect step tells the two changes apart: a target that has just fallen gets virtual
++0xe8 (`0x1401b0570`, every class: the down handler above), one that stands again +0xf0 (the
+party's `0x1401b7ed0`, the monsters' `0x1401b0660`): it clears its timed states again, and for
+a party member updates its timeline icon (`0x14018ce80` → `0x1401cddd0`; where the entry's -1
+is reset is not read). **Reviving** is `CURE_REVIVE` (81, `0x1401bfe36` → the revive event
+`0x1401c1e90`): `trunc(maximum HP × value / 100)`, nothing under `FIELD_INVALID_REVIE` (state
+0x4d) nor under 0x4e for a target still standing, given through the heal (`0x1401afa20`), so it
+also adds HP to a standing target (Vital Check: about three quarters of the attack plus 14 to
+15% of maximum HP) and raises a fallen one from 0 (`battle::revive_amount`).
+
 ### Skill targets (executable)
 
 A skill record's first word (+0x10, `0x14015f900`) says whom it is aimed at. The target
