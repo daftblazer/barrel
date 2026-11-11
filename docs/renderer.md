@@ -139,3 +139,13 @@ flat placeholder terrain (64×64 cells of 100, every height 0, one layer, drawn 
 the event's camera sees only a large surface close in front, with no characters in view,
 with or without the terrain (`--no-terrain` leaves it out). The field loader prints each
 terrain's height range to tell such placeholders apart.
+
+**Faces.** Facial morph targets are on the GPU too. Every target of a character's `g1h`
+sets goes to a storage buffer of offsets (set 1, binding 2: each morphed vertex's offset in
+each of its set's targets, one after another), and each instance has a block of target
+weights (binding 3; the instance's `weights` says where it begins). A vertex carries where
+its offsets begin and its target count and weight offset; the vertex shader adds the
+weighted offsets (mirrored in x like the vertices) before skinning, as the CPU did. So a
+face changes by writing its weights, like a pose by writing its palette. The weights start
+from the line's expression (`--line`): in `EVENT_MM08_AS4_130`, line 2, 108 weights over three
+faces, 3 not zero (the mouths), and the frame is pixel-identical to the CPU-morphed one.

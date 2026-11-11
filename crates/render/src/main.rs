@@ -52,6 +52,9 @@ struct Vertex {
     /// their weights out of 255; all weights 0 for geometry that is not skinned.
     joints: [u16; 4],
     weights: [u8; 4],
+    /// Facial morph targets: where this vertex's offsets begin in the delta buffer, then
+    /// (target count | weight offset << 16) into its instance's weights; 0 targets: none.
+    morph: [u32; 2],
 }
 
 /// A model's placement on the GPU (std430: 80 bytes): its matrix and where its joints'
@@ -61,7 +64,9 @@ struct Vertex {
 struct Instance {
     model: Mat4,
     palette: u32,
-    _pad: [u32; 3],
+    /// Where its morph weights begin in the weight buffer.
+    weights: u32,
+    _pad: [u32; 2],
 }
 
 struct Draw {
@@ -251,9 +256,14 @@ struct Scene {
     terrain: Option<TerrainDraw>,
     lo: Vec3,
     hi: Vec3,
-    /// Per vertex layout, offsets to add to the next model's positions before skinning
-    /// (its blended facial morphs).
-    morph: std::collections::HashMap<usize, Vec<[f32; 3]>>,
+    /// The next model's facial morph sets by vertex layout: each target's offset per vertex,
+    /// and the set's starting weights (from its facial animations).
+    morph: std::collections::HashMap<usize, (Vec<Vec<[f32; 3]>>, Vec<f32>)>,
+    /// Every morphed vertex's target offsets (vertex by vertex, target by target), for the
+    /// GPU; never empty.
+    deltas: Vec<[f32; 4]>,
+    /// Every morphed model's target weights, one block per instance; never empty.
+    morph_weights: Vec<f32>,
     /// Model matrices in render space (x mirrored), one per movable model; 0 is the identity,
     /// for geometry baked in place. The renderer uploads them to a storage buffer the vertex
     /// shader reads, so a model moves by changing its matrix, not its vertices.
@@ -268,11 +278,13 @@ impl Scene {
     fn new() -> Scene {
         Scene {
             morph: Default::default(),
+            deltas: vec![[0.0; 4]],
+            morph_weights: vec![0.0],
             vertices: Vec::new(),
             indices: Vec::new(),
             draws: Vec::new(),
             terrain: None,
-            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, _pad: [0; 3] }],
+            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, weights: 0, _pad: [0; 2] }],
             palette: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
@@ -286,7 +298,7 @@ impl Scene {
 
     /// A new instance placed by `transform` (game space); returns its number.
     fn instance(&mut self, transform: Mat4) -> u32 {
-        self.instances.push(Instance { model: render_space(transform), palette: 0, _pad: [0; 3] });
+        self.instances.push(Instance { model: render_space(transform), palette: 0, weights: 0, _pad: [0; 2] });
         (self.instances.len() - 1) as u32
     }
 
@@ -316,6 +328,24 @@ impl Scene {
             self.instances[instance as usize].palette = self.palette.len() as u32;
             self.palette.extend(joints.iter().map(|&m| render_space(m)));
         }
+        // The model's morph sets: their weights go to the instance's block, each set at an
+        // offset in it (sorted by layout so the order is fixed).
+        let mut sets: Vec<(usize, u32)> = Vec::new();
+        if !self.morph.is_empty() {
+            if instance == 0 {
+                return Err("a morphed model needs an instance of its own".into());
+            }
+            self.instances[instance as usize].weights = self.morph_weights.len() as u32;
+            let mut layouts: Vec<usize> = self.morph.keys().copied().collect();
+            layouts.sort();
+            let mut offset = 0u32;
+            for l in layouts {
+                sets.push((l, offset));
+                let w = &self.morph[&l].1;
+                self.morph_weights.extend(w);
+                offset += w.len() as u32;
+            }
+        }
         let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
         for s in &geometry.submeshes {
             let mesh = geometry.simple_mesh(s)?;
@@ -329,11 +359,18 @@ impl Scene {
             };
             // The games are left-handed (DirectX): mirror x to draw them right-handed.
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
-            let morph = self.morph.get(&s.layout);
+            let morph = self.morph.get(&s.layout).map(|(t, _)| t);
+            let weight_offset = sets.iter().find(|(l, _)| *l == s.layout).map_or(0, |&(_, o)| o);
             for i in 0..mesh.positions.len() {
-                let (mut pos, nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
-                if let Some(d) = morph.and_then(|m| m.get(mesh.first_vertex + i)) {
-                    pos += Vec3::from(*d);
+                let (pos, nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
+                // This vertex's offset in each target, for the GPU to weight.
+                let mut morph_ref = [0u32; 2];
+                if let Some(targets) = morph {
+                    let v = mesh.first_vertex + i;
+                    if targets.iter().all(|t| v < t.len()) {
+                        morph_ref = [self.deltas.len() as u32, targets.len() as u32 | weight_offset << 16];
+                        self.deltas.extend(targets.iter().map(|t| [t[v][0], t[v][1], t[v][2], 0.0]));
+                    }
                 }
                 // The joints and weights, for the GPU (joints past the pose's count or weights of
                 // 0 are dropped); the bounds use the CPU's own skinning of the point.
@@ -357,7 +394,7 @@ impl Scene {
                 let w = placed.transform_point3(transform.transform_point3(skinned) * mirror);
                 self.lo = self.lo.min(w);
                 self.hi = self.hi.max(w);
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q });
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q, morph: morph_ref });
             }
             let first_index = self.indices.len() as u32;
             for t in &mesh.triangles {
@@ -395,7 +432,7 @@ impl Scene {
                 self.lo = self.lo.min(p);
                 self.hi = self.hi.max(p);
                 let uv = [x as f32 / h.cells_x as f32, z as f32 / h.cells_z as f32];
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4] });
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2] });
             }
         }
         let first_index = self.indices.len() as u32;
@@ -791,15 +828,25 @@ fn motion_clock(anim: &barrel_formats::g1a::Animation, t: f32, looping: bool) ->
 /// animation goes to the morph set with one target fewer than it has tracks.
 fn set_face(scene: &mut Scene, g1h: &[u8], anims: &[(&[u8], f32)]) -> Result<()> {
     let sets = barrel_formats::g1h::parse(g1h)?;
+    // Every set goes to the GPU (so a face can change later), at rest unless an animation
+    // weights it.
+    for set in &sets {
+        scene.morph.insert(set.layout as usize, (set.targets.clone(), vec![0.0; set.targets.len()]));
+    }
     for (bytes, time) in anims {
         let anim = barrel_formats::g1a::parse(bytes)?;
         let Some(set) = sets.iter().find(|s| s.targets.len() + 1 == anim.tracks.len()) else { continue };
-        let t = time.min(anim.duration);
-        let weight =
-            |bone: usize| anim.tracks.iter().find(|tr| tr.bone as usize == bone).and_then(|tr| tr.scalar(t)).unwrap_or(0.0);
-        scene.morph.insert(set.layout as usize, set.blend(weight));
+        if let Some((_, w)) = scene.morph.get_mut(&(set.layout as usize)) {
+            *w = face_weights(&anim, set.targets.len(), *time);
+        }
     }
     Ok(())
+}
+
+/// A facial animation's target weights at `time`: track k + 1 weights target k.
+fn face_weights(anim: &barrel_formats::g1a::Animation, targets: usize, time: f32) -> Vec<f32> {
+    let t = time.min(anim.duration);
+    (0..targets).map(|k| anim.tracks.iter().find(|tr| tr.bone as usize == k + 1).and_then(|tr| tr.scalar(t)).unwrap_or(0.0)).collect()
 }
 
 /// The entry of `container` named `name`, if any.
@@ -1008,7 +1055,7 @@ fn main() -> Result<()> {
         } else if !face_specs.is_empty() {
             return Err("--face needs --morph".into());
         }
-        let instance = if joints.is_some() { scene.instance(Mat4::IDENTITY) } else { 0 };
+        let instance = if joints.is_some() || !scene.morph.is_empty() { scene.instance(Mat4::IDENTITY) } else { 0 };
         scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
         scene.morph.clear();
         tex_bytes
@@ -1043,7 +1090,7 @@ fn main() -> Result<()> {
     if no_terrain {
         scene.terrain = None;
     }
-    let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, deltas, morph_weights, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     for draw in &mut draws {
@@ -1160,20 +1207,39 @@ fn main() -> Result<()> {
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::VERTEX)
     };
-    let inst_binding = [storage(0), storage(1)];
+    if deltas.len() > 1 {
+        eprintln!(
+            "morphs: {} vertex offsets, {} weights, {} not zero",
+            deltas.len() - 1,
+            morph_weights.len() - 1,
+            morph_weights.iter().filter(|&&w| w != 0.0).count()
+        );
+    }
+    // The morph targets' offsets (binding 2) and the instances' weights (binding 3).
+    let dbytes = unsafe { std::slice::from_raw_parts(deltas.as_ptr() as *const u8, deltas.len() * 16) };
+    let (delta_buf, delta_mem) = gpu.buffer(dbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
+    gpu.upload(delta_mem, dbytes)?;
+    let wbytes = unsafe { std::slice::from_raw_parts(morph_weights.as_ptr() as *const u8, morph_weights.len() * 4) };
+    let (weight_buf, weight_mem) = gpu.buffer(wbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
+    gpu.upload(weight_mem, wbytes)?;
+    let inst_binding = [storage(0), storage(1), storage(2), storage(3)];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-    let inst_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 2 }];
+    let inst_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 }];
     let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
     let inst_layouts = [instance_layout];
     let instance_set =
         unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))?[0] };
     let inst_info = [vk::DescriptorBufferInfo::default().buffer(instance_buf).offset(0).range(vk::WHOLE_SIZE)];
     let pal_info = [vk::DescriptorBufferInfo::default().buffer(palette_buf).offset(0).range(vk::WHOLE_SIZE)];
+    let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
+    let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buf).offset(0).range(vk::WHOLE_SIZE)];
     unsafe {
         d.update_descriptor_sets(
             &[
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&inst_info),
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&pal_info),
+                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(2).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&delta_info),
+                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(3).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&weight_info),
             ],
             &[],
         )
@@ -1254,6 +1320,7 @@ fn main() -> Result<()> {
         vk::VertexInputAttributeDescription { location: 2, binding: 0, format: vk::Format::R32G32_SFLOAT, offset: 24 },
         vk::VertexInputAttributeDescription { location: 3, binding: 0, format: vk::Format::R16G16B16A16_UINT, offset: 32 },
         vk::VertexInputAttributeDescription { location: 4, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 40 },
+        vk::VertexInputAttributeDescription { location: 5, binding: 0, format: vk::Format::R32G32_UINT, offset: 44 },
     ];
     let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
     let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
