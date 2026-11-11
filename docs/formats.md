@@ -417,6 +417,33 @@ Logy's lines use about 80 values each (0, 1, 196, 198 and 246 the most), the oth
 many the same across characters. It is not a `CharaBase` row (196, 198 and 246 there are
 dummy camera and position markers) and not a voice clip on its own (see "Voices" below).
 
+**What the game does with them** (English Escha executable). When a line is shown,
+`0x1401837a0` skips kinds 3 and 4 and speaker -1, then `0x140184060` writes a small event
+script for the speaker and runs it:
+
+- **Field 2 is a gesture**: if it is at most 437, `0x140184280` adds the commands for body
+  motion number field 2 (how that number names a motion is still to be read).
+- **Field 3 is the expression**: if it is at most 10, it adds `ECT_CHARA_FACIAL_MOTION_SET`
+  (`s88`): speaker, then a brow, eye and mouth facial motion from an 11-entry table at
+  `0x1407f2e50` (-1 keeps the current one):
+
+  | Field 3 | Brow | Eye | Mouth |
+  |---|---|---|---|
+  | 0 | keep | keep | 0 |
+  | 1 | keep | keep | 8 |
+  | 2 | keep | keep | 2 |
+  | 3 | keep | keep | 4 |
+  | 4 | keep | keep | 6 |
+  | 5, 6, 7 | keep | keep | keep |
+  | 8 | 4 | 4 | 8 |
+  | 9 | 5 | 5 | 10 |
+  | 10 | 6 | 6 | 12 |
+
+  Each row has a second form whose mouth number is one higher (1, 9, 3, ...), chosen by a
+  flag the caller passes; and -1 (1,618 lines) means no expression change.
+
+This is why events hardly use `s88` themselves: every line carries its expression.
+
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.
 
