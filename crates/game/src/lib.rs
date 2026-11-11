@@ -7,4 +7,5 @@ pub mod face;
 pub mod gesture;
 mod names;
 pub mod rng;
+pub mod shop;
 pub mod synthesis;

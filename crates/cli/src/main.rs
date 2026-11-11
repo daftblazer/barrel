@@ -39,6 +39,7 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel duel EXE A B          two monsters (by number) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
@@ -83,6 +84,8 @@ fn main() -> ExitCode {
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b),
+        ["shops", install] => shops(Path::new(install), None),
+        ["shops", install, lang] => shops(Path::new(install), Some(lang)),
         ["recipes", exe] => recipes(Path::new(exe)),
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
@@ -491,6 +494,31 @@ fn pak_xml_e(file: &Path) -> Result<()> {
     }
     println!("{same} identical to their twin, {differ} differ, {alone} without a twin, {failed} failed");
     if failed > 0 { Err("some tables did not decrypt".into()) } else { Ok(()) }
+}
+
+/// Every shop's wares, from `Saves[_LANG]/shop/ShopData.xml`.
+fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
+    let dir = lang.map_or_else(|| "Saves".to_string(), |l| format!("Saves_{l}"));
+    let file = install.join(dir).join("shop/ShopData.xml");
+    let table = barrel_formats::table::parse(&read(&file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    let wares = barrel_game::shop::wares(&table);
+    let mut last = "";
+    for w in &wares {
+        if w.shop != last {
+            println!("{} ({})", w.shop_name, w.shop);
+            last = &w.shop;
+        }
+        let window = match (&w.from_event, &w.until_event) {
+            (None, None) => String::new(),
+            (a, b) => format!("  [{} .. {}]", a.as_deref().unwrap_or(""), b.as_deref().unwrap_or("")),
+        };
+        println!(
+            "  {:<28} {:>5} cole  q{:<3} stock {:>2}  Refill {} RefillCnt {} DayAdd {}{window}",
+            w.item_name, w.cost, w.quality, w.stock, w.refill, w.refill_count, w.days
+        );
+    }
+    println!("{} wares", wares.len());
+    Ok(())
 }
 
 /// A partial battle between two monsters (by number) trading normal attacks; see

@@ -61,6 +61,11 @@ A few registrations pass the type in a way the tool does not follow (types it pr
 (+0x60) as integers; then `ItemEff_00`... and `Pot_00`... (the effects and traits the item is
 sold with) and `EvStart`, `EvEnd` (the events between which it is on sale) as strings.
 
+`barrel_game::shop` reads the wares (`barrel shops INSTALL [LANG]` lists them). How `Refill`,
+`RefillCnt` and `DayAdd` restock a shop over the days is not read yet: the loader keeps the
+rows (0x1e8 bytes each, the integers at the schema's offsets) in a vector, but the code that
+uses them has not been found.
+
 ## Numbers behind the tags
 
 The tables name things by tag, but the game works with numbers. The executable keeps each
