@@ -319,8 +319,13 @@ by that shape in its span (`barrel_formats::kwb`). `A15_bank_se`, the only bank 
 sounds have two blocks with the same samples (what the second is for is not read).
 `Sound/SE/env/` (`00ENV_CAVE01.kvs` ...) and `Sound/SE/stream/` are KOVS like the music. The
 events' `ECT_SOUND_SE_PLAY` `{sound, 0, volume %, ...}` names sounds up to 244, more than this
-bank has, so the rest are elsewhere (the field and battle containers, presumably). `barrel
-se-scan BANK.wh2` lists a bank.
+bank has. It is the only bank: the executable names just `DISC:Sound/SE/A15_bank_se.wh2`
+(the sound library's `KTSL_SE_NUM_BANK_MAX` allows more), and no container holds one (`barrel
+scan`: no sound entries in the 1,580 containers). The entries refer to one another: the first
+starts with the offsets of the last three, so some entries are groups or cues over others,
+and the event numbers presumably go through that layer; it is not read yet (only 5
+`ECT_SOUND_SE_PLAY` uses exist in all the events). The executable also has 38 `SE_*` tags
+(`SE_JUMP01`, `SE_HIT01`, ...). `barrel se-scan BANK.wh2` lists a bank.
 
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
