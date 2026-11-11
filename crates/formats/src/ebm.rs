@@ -3,12 +3,24 @@
 //! `Event_TC`.
 //!
 //! ```text
-//! u32 message count
+//! i32 message count (negative in some later files)
 //! per message: u32 kind (1 for most lines; 2, 4 and 0 also occur)
 //!              i32 speaker (a character number; -1 for system text)
-//!              i32 ×6 (portrait, expression and placement values, not decoded yet)
+//!              i32 × n (gesture, expression, index, ...; see docs/formats.md)
 //!              u32 length, then that many bytes of UTF-8 text ending in 0
+//!              i32 × m
+//! then, in the later layouts, a short trailer
 //! ```
+//!
+//! | Layout | Count | n | m | Seen in |
+//! |---|---|---|---|---|
+//! | Escha | positive | 6 | 0 | Escha & Logy DX, Ryza DX |
+//! | B | negative | 6 | 1 | part of Ryza 2 DX |
+//! | C | negative | 8 | 2 | Sophie 2 |
+//! | D | positive | 13 | 2 | Ryza 3 DX |
+//!
+//! The reader tries each and keeps the one that reads exactly the count's messages, with
+//! nothing after them (Escha) or a trailer of at most 64 bytes (the others).
 //!
 //! The text uses `<CR>` for line breaks, `<IMnn>` for inline icons and `<CLGR>` / `<CLNR>`
 //! to change and reset the colour.
@@ -24,7 +36,10 @@ use crate::{Error, u32_at};
 pub struct Message {
     pub kind: u32,
     pub speaker: i32,
-    pub fields: [i32; 6],
+    /// The values between the speaker and the text (6 in Escha: see docs/formats.md).
+    pub fields: Vec<i32>,
+    /// The values after the text (later layouts).
+    pub after: Vec<i32>,
     /// The text as stored.
     pub text: String,
 }
@@ -83,30 +98,40 @@ fn unpack_sjis(text: &str) -> Option<String> {
     Some(s.into_owned())
 }
 
-pub fn parse(data: &[u8]) -> Result<Vec<Message>, Error> {
-    let count = u32_at(data, 0)? as usize;
-    if count > data.len() / 36 {
-        return Err(Error::Corrupt("ebm message count"));
-    }
+/// (values before the text, after it, trailer allowed)
+const LAYOUTS: [(usize, usize, bool); 4] = [(6, 0, false), (6, 1, true), (8, 2, true), (13, 2, true)];
+
+fn parse_layout(data: &[u8], count: usize, (n, m, trailer): (usize, usize, bool)) -> Option<Vec<Message>> {
     let mut out = Vec::with_capacity(count);
     let mut p = 4;
+    let word = |at: usize| u32_at(data, at).ok();
     for _ in 0..count {
-        let word = |k: usize| u32_at(data, p + 4 * k);
-        let mut fields = [0i32; 6];
-        for (i, f) in fields.iter_mut().enumerate() {
-            *f = word(2 + i)? as i32;
-        }
-        let len = word(8)? as usize;
-        let raw = data.get(p + 36..p + 36 + len).ok_or(Error::Corrupt("ebm text past the end"))?;
+        let kind = word(p)?;
+        let speaker = word(p + 4)? as i32;
+        let fields: Vec<i32> = (0..n).map(|i| word(p + 8 + 4 * i).map(|v| v as i32)).collect::<Option<_>>()?;
+        let at = p + 8 + 4 * n;
+        let len = word(at)? as usize;
+        let raw = data.get(at + 4..at + 4 + len)?;
         let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-        let text = std::str::from_utf8(&raw[..end]).map_err(|_| Error::Corrupt("ebm text is not UTF-8"))?.to_owned();
-        out.push(Message { kind: word(0)?, speaker: word(1)? as i32, fields, text });
-        p += 36 + len;
+        let text = std::str::from_utf8(&raw[..end]).ok()?.to_owned();
+        p = at + 4 + len;
+        let after: Vec<i32> = (0..m).map(|i| word(p + 4 * i).map(|v| v as i32)).collect::<Option<_>>()?;
+        p += 4 * m;
+        out.push(Message { kind, speaker, fields, after, text });
     }
-    if p != data.len() {
-        return Err(Error::Corrupt("ebm has data after its messages"));
+    let rest = data.len().checked_sub(p)?;
+    (rest == 0 || (trailer && rest <= 64)).then_some(out)
+}
+
+pub fn parse(data: &[u8]) -> Result<Vec<Message>, Error> {
+    let count = (u32_at(data, 0)? as i32).unsigned_abs() as usize;
+    if count > data.len() / 16 {
+        return Err(Error::Corrupt("ebm message count"));
     }
-    Ok(out)
+    LAYOUTS
+        .iter()
+        .find_map(|&layout| parse_layout(data, count, layout))
+        .ok_or(Error::Corrupt("ebm layout not known"))
 }
 
 #[cfg(test)]
