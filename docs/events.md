@@ -87,7 +87,14 @@ queue each frame, asks itself whether it can start it (slot +0x40) and whether i
 is (`0x14005b270`). So a wait holds the executor that took the command (the event's own for
 `p1`, a character's for `s3`), not an action. How an action's commands reach the queues, and
 whether an action waits for each before sending the next (the 0.1 s waits between character
-placements in `EVENT_MM08_AS4_130` only make sense if it does), is the next thing to read. Messages take no time
+placements in `EVENT_MM08_AS4_130` only make sense if it does), is the next thing to read.
+
+Two helpers tie the listeners together: `0x140296a60` sends a command to every listener (the
+chain at `0x140293e50`; `Event`'s handlers use it to pass commands on), and `0x140296a90`,
+used by `Event`'s wait checks, asks every listener (`0x140293db0`, each one's slot +0x28)
+whether it is still busy with what the wait names. So `p3` waits until the named
+character's runner says it has nothing left (`EventExecChara`'s +0x28 answers for its
+character), and the other `p` waits ask the camera and the rest the same way. Messages take no time
 there (the game waits for the reader), nor do the waits for characters and the camera. Run that way, that
 event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
