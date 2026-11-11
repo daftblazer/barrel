@@ -458,7 +458,8 @@ A skill record's first word (+0x10, `0x14015f900`) says whom it is aimed at. The
 picker (`0x1401abf70`) turns it into a side, comparing with each candidate's side (virtual
 +0x10, 0 or 1): 1 and 3 the user's own side, 2 the other side, anything else no side (-1).
 Over the 534 skills: 0 on passives (64), 1 on heals and Wind Shell (28), 2 on attacks and
-debuffs (most), 3 on Howling-like self-buffs (49), 4 once. The next word (+0x14) is 1 on 21
+debuffs (most), 3 on Howling-like self-buffs (49), 4 on Lucille's Vital Check (a heal that also
+revives: either side, fallen or not, presumably). The next word (+0x14) is 1 on 21
 skills, among them the Floating Alchemy bombs (an area, presumably; not read). `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
@@ -614,7 +615,12 @@ by the user's stat 20 percent of it (drain), items do not.
 formulas above.
 
 `HEAL_HP` heals `trunc(amount × scale)` (the amount as a float, times the scale, truncated to
-an integer). For `ACT_ASSIST_COUNTER` (93) the
+an integer). `HEAL_HP_BY_ATK` (21, `0x1401bedf3`) heals `trunc(trunc(user's attack ×
+amount / 100) × scale)`: Lucille's Vital Check (72 to 80) heals about three quarters of her
+attack. Both go through the heal event (`0x1401c1d00`), whose apply (`0x1401afa20`) raises HP
+by the amount, no higher than the maximum HP, and clears the character's +0x28d; under
+`FIELD_INVALID_HEAL` (state 0x4e) a character still standing gets nothing (`battle::heal`,
+`heal_by_attack`; `fight::Battle::act` heals before any damage effect). For `ACT_ASSIST_COUNTER` (93) the
 amount is first replaced with `user[+0x2c0] × (user[+0x2c4] + 100) / 100`.
 
 ## Synthesis skills

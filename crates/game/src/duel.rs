@@ -93,6 +93,8 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         // A poison tick: `attacker` is the poisoned fighter itself.
         Event::Poisoned { who, damage, hp_left } => Hit { attacker: *who, skill: "poison".into(), damage: *damage, hp_left: *hp_left },
         Event::Acted { who, skill, damage, hp_left, .. } => Hit { attacker: *who, skill: skill.clone(), damage: *damage, hp_left: *hp_left },
+        // A heal shows as negative damage.
+        Event::Healed { who, skill, amount, hp_left, .. } => Hit { attacker: *who, skill: skill.clone(), damage: -*amount, hp_left: *hp_left },
     };
     while hits.len() < max_hits {
         let who = battle.next();
@@ -108,9 +110,7 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
             Some(mode) => battle.pick_target(mode, who, &candidates, rng),
             None => candidates.first().copied(),
         };
-        // A skill on its own side (a heal, a self-buff) still meets the foe in this partial
-        // battle's damage step, as before.
-        let target = target.filter(|&t| t != who).unwrap_or(1 - who);
+        let target = target.unwrap_or(1 - who);
         hits.extend(battle.act(who, skill, slot, target, rng).iter().map(hit));
         if battle.winner().is_some() {
             break;

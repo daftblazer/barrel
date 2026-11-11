@@ -6,7 +6,8 @@
 //! Not in yet (each a way it can differ from the game): traits, passives and the field states;
 //! items; the battle's start rules (everyone joins at wait 500, in order); the effect-roll
 //! globals (neutral: no chain bonus, full MP power); the action's float (1.0); effects other
-//! than HP damage (acts 0 and 8), poison (16) and the stat buffs and debuffs (40-42, 45-47);
+//! than HP damage (acts 0 and 8), heals (19, 21), poison (16) and the stat buffs and debuffs
+//! (40-42, 45-47);
 //! and more than one target per action.
 
 use crate::battle::{self, stat, Defender, Timeline, TimedState};
@@ -92,6 +93,8 @@ pub enum Event {
     Poisoned { who: usize, damage: i32, hp_left: i32 },
     /// A fighter used a skill on another; `damage` is the HP it took (0 when the skill deals none).
     Acted { who: usize, skill: String, target: usize, damage: i32, hp_left: i32, mp_left: i32 },
+    /// A fighter's skill healed another (or itself) by `amount`.
+    Healed { who: usize, skill: String, target: usize, amount: i32, hp_left: i32, mp_left: i32 },
 }
 
 pub struct Battle {
@@ -120,11 +123,16 @@ impl Battle {
 
     /// The fighters a skill of `who`'s may be aimed at (`0x140189b00` fills the battle's list,
     /// `battle+0xab8`): those standing on its own side for target kinds 1 and 3, on the other
-    /// side otherwise.
+    /// side for 2, on either for the rest (the picker's side -1; Vital Check, a heal that also
+    /// revives, is kind 4).
     pub fn candidates(&self, who: usize, skill: &Skill) -> Vec<usize> {
         let own = self.fighters[who].side;
-        let side = if matches!(skill.target, 1 | 3) { own } else { 1 - own };
-        (0..self.fighters.len()).filter(|&k| self.fighters[k].side == side && !self.fighters[k].down()).collect()
+        let side = match skill.target {
+            1 | 3 => Some(own),
+            2 => Some(1 - own),
+            _ => None,
+        };
+        (0..self.fighters.len()).filter(|&k| side.is_none_or(|s| self.fighters[k].side == s) && !self.fighters[k].down()).collect()
     }
 
     /// Picks a target among `candidates` by a monster rule's target `mode` (`0x14018a2f0`):
@@ -227,6 +235,17 @@ impl Battle {
         if let Some(k) = slot.filter(|&k| k < 9) {
             self.fighters[who].uses[k] += 1;
         }
+        // A heal (`HEAL_HP`, act 19; `HEAL_HP_BY_ATK`, 21) through the heal event (`0x1401c1d00`).
+        if let Some(effect) = skill.effects.iter().find(|e| e.act == 19 || e.act == 21) {
+            let amount = rng.range(effect.min, effect.max);
+            rng.range(effect.min2, effect.max2);
+            let amount = if effect.act == 21 { battle::heal_by_attack(self.fighters[who].stats[stat::ATTACK], amount, 1.0) } else { amount };
+            let blocked = self.fighters[target].states.iter().any(|s| s.state == 0x4e);
+            let amount = battle::heal(&mut self.fighters[target].stats, amount, blocked);
+            let event = Event::Healed { who, skill: skill.name.clone(), target, amount, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() };
+            self.end_action(who, skill, rng);
+            return vec![event];
+        }
         let damage = match skill.effects.iter().find(|e| e.act == 0 || e.act == 8) {
             None => 0,
             Some(effect) => {
@@ -250,16 +269,20 @@ impl Battle {
             }
         };
         let events = vec![Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() }];
-        // Its next wait (`0x1401b9b70`, `0x14018c9d0`) and the action counted (`0x1401aecda`);
-        // a finishing blow ends the battle before either.
-        if !self.fighters[target].down() {
+        self.end_action(who, skill, rng);
+        events
+    }
+
+    /// Its next wait (`0x1401b9b70`, `0x14018c9d0`) and the action counted (`0x1401aecda`); an
+    /// action that wins the battle ends it before the wait.
+    fn end_action(&mut self, who: usize, skill: &Skill, rng: &mut Rng) {
+        if self.winner().is_none() {
             let wait = battle::action_wait(skill.wait, self.fighters[who].stats[stat::SPEED], None, None, &mut self.pending);
             let wait = battle::wait_after_action(wait, None, None, true, rng);
             let i = self.timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
             self.timeline.entries[i].1 = wait;
         }
         self.fighters[who].actions += 1;
-        events
     }
 }
 

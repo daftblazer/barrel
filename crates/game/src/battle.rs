@@ -27,6 +27,25 @@ pub fn equipment_stat(item_stat: i32, traits: i32, quality: f32) -> i32 {
     ((item_stat + traits) as f32 * ((quality * 0.5 + 75.0) / 100.0)) as i32
 }
 
+/// `HEAL_HP_BY_ATK`'s amount (act 21, `0x1401bedf3`): the user's attack times the rolled amount
+/// in percent, cut to an integer, then times the scale. (`HEAL_HP`, act 19, is the rolled
+/// amount times the scale.)
+pub fn heal_by_attack(attack: i32, amount: i32, scale: f32) -> i32 {
+    (((attack.wrapping_mul(amount)) / 100) as f32 * scale) as i32
+}
+
+/// Heals a character (`0x1401afa20`, the heal event's apply): HP goes up by `amount`, no higher
+/// than the maximum; under `FIELD_INVALID_HEAL` (state 0x4e) a character still standing is not
+/// healed. Returns the HP gained. (The game also clears the character's +0x28d.)
+pub fn heal(stats: &mut [i32; stat::COUNT], amount: i32, blocked: bool) -> i32 {
+    if blocked && stats[stat::HP] > 0 {
+        return 0;
+    }
+    let before = stats[stat::HP];
+    stats[stat::HP] = stats[stat::HP].wrapping_add(amount).min(stats[stat::MAX_HP]);
+    stats[stat::HP] - before
+}
+
 /// A party member's MP cost for a skill (virtual +0xb8 of the party character, `0x1401b82e0`,
 /// through `0x14032f200`): the list's cost cut by `equipment_cut` percent (the equipment's
 /// effects of kind 0x16, summed by `0x14032f7c0`), less `leader_cut` when the game's
@@ -479,6 +498,19 @@ mod tests {
         assert_eq!(state_group(0x19), Some(9));
         assert_eq!(state_group(0x2d), Some(9));
         assert_eq!(state_group(0x34), None);
+    }
+
+    #[test]
+    fn heals() {
+        let mut s = [0; stat::COUNT];
+        s[stat::HP] = 50;
+        s[stat::MAX_HP] = 100;
+        assert_eq!(heal_by_attack(80, 50, 1.0), 40);
+        assert_eq!(heal(&mut s, 40, false), 40);
+        assert_eq!(heal(&mut s, 40, false), 10);
+        assert_eq!(s[stat::HP], 100);
+        s[stat::HP] = 10;
+        assert_eq!(heal(&mut s, 40, true), 0);
     }
 
     #[test]

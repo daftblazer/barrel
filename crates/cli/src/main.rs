@@ -801,6 +801,8 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         let (x, y) = if h.attacker == 0 { (&na, &nb) } else { (&nb, &na) };
         if h.skill == "poison" {
             println!("{x} takes {} poison damage ({} HP left)", h.damage, h.hp_left);
+        } else if h.damage < 0 {
+            println!("{x} uses {}: heals {} ({} HP)", h.skill, -h.damage, h.hp_left);
         } else {
             println!("{x} uses {} on {y}: {} damage ({} HP left)", h.skill, h.damage, h.hp_left);
         }
@@ -842,6 +844,10 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             Event::Acted { who, skill, target, damage, hp_left, mp_left } => {
                 let mp = if *who < party.len() { format!(", {mp_left} MP left") } else { String::new() };
                 println!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left{mp})", names[*who], names[*target]);
+            }
+            Event::Healed { who, skill, target, amount, hp_left, mp_left } => {
+                let mp = if *who < party.len() { format!(", {mp_left} MP left") } else { String::new() };
+                println!("{} uses {skill} on {}: heals {amount} ({hp_left} HP{mp})", names[*who], names[*target]);
             }
         }
     }
