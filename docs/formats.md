@@ -85,6 +85,49 @@ Every texture's data is exactly the size its format, size and mip count give, so
 no padding or swizzling on PC. The renderer can upload BC1 and BC3 as they are;
 `barrel_formats::bc` decodes them in software for tools.
 
+## Models (`*.g1m`)
+
+Read by `barrel_formats::g1m`. All 6,005 of Escha's models read: 10,068 submeshes, 7.8
+million vertices, 6.6 million triangles. `barrel g1m-obj FILE.elixir.gz#N OUT.obj` writes a
+model as OBJ; `barrel g1m-scan DIR` reads every model and checks every index. Escha's own
+model (`Character/PC20`), drawn from the OBJ with a software rasterizer, comes out right.
+
+A model is a header (`_M1G`, version `0073`; `0053` in 8 old models) and chunks, each
+`{magic, version, size}` with the size counting the 12-byte header:
+
+| Chunk | What |
+|---|---|
+| `FM1G` (G1MF) | counts and statistics |
+| `SM1G` (G1MS) | the skeleton (not read yet) |
+| `MM1G` (G1MM) | matrices |
+| `GM1G` (G1MG) | the geometry, version `0044` in every model |
+| `RTXE` (EXTR) | extra data |
+
+G1MG starts with a platform tag (`DX11`, or `DX9` in the old models; the layout is the
+same), a u32, a bounding box (six floats) and a count of sections. Each section is
+`{u32 type, u32 size, u32 count}` followed by its entries. All nine types are in every
+model:
+
+| Type | Entries |
+|---|---|
+| 0x10001 | not decoded yet |
+| 0x10002 | materials: `{u32, u32 texture count, u32, u32}`, then per texture `{u16 index into the model's g1t, u16 layer, u16 type, u16 subtype, u16 tile u, u16 tile v}` |
+| 0x10003 | shader parameters, not decoded yet |
+| 0x10004 | vertex buffers: `{u32, u32 stride, u32 vertex count, u32}`, then the vertices |
+| 0x10005 | vertex layouts: `{u32 buffer count, u32 buffer numbers[], u32 attribute count}`, then per attribute `{u16 buffer (position in this layout's list), u16 offset, u8 type, u8, u8 semantic, u8 layer}` |
+| 0x10006 | bone maps, not decoded yet |
+| 0x10007 | index buffers: `{u32 count, u32 bits (always 16), u32}`, then the indices, padded to 4 bytes |
+| 0x10008 | submeshes, 14 u32 each: flags, **layout**, bone map, ?, ?, shader parameters, material, index buffer, ?, primitive (3 triangle list, 4 strip), first vertex, vertex count, first index, index count |
+| 0x10009 | LOD groups, not decoded yet |
+
+A submesh names a vertex layout, not a buffer. A layout lists one or more buffers of the same
+length: characters keep positions in a 12-byte buffer of their own and the rest in a
+second one.
+
+Attribute types: 0, 1, 2, 3 are 1 to 4 floats; 5 is four bytes (bone indices); 13 is four
+normalized bytes (colour). Semantics: 0 position, 1 weights, 2 bone indices, 3 normal,
+4 tangent, 5 UV, 10 colour.
+
 ## Event bytecode (`*.ebd`)
 
 Read by `barrel_formats::ebd`. In Escha all 1,639 files read without error: 49,393 actions,

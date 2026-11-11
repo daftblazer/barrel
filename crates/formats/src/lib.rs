@@ -7,6 +7,7 @@ pub mod bc;
 pub mod ebd;
 mod ebd_tables;
 pub mod elixir;
+pub mod g1m;
 pub mod g1t;
 pub mod game;
 pub mod inflate;

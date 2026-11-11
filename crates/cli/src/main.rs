@@ -21,7 +21,9 @@ usage:
   barrel xml FILE.xml          print a table's rows
   barrel xml-scan DIR          read every XML table under DIR and list what it holds
   barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
-  barrel g1t-scan DIR          read every texture, loose and in containers";
+  barrel g1t-scan DIR          read every texture, loose and in containers
+  barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
+  barrel g1m-scan DIR          read every model in the containers under DIR";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -38,6 +40,8 @@ fn main() -> ExitCode {
         ["xml-scan", dir] => xml_scan(Path::new(dir)),
         ["g1t", file, out] => g1t(file, Path::new(out)),
         ["g1t-scan", dir] => g1t_scan(Path::new(dir)),
+        ["g1m-obj", file, out] => g1m_obj(file, Path::new(out)),
+        ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -379,4 +383,85 @@ fn g1t_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some textures did not read".into()) }
+}
+
+fn g1m_obj(spec: &str, out: &Path) -> Result<()> {
+    use std::fmt::Write as _;
+    let bytes = file_or_entry(spec)?;
+    let m = barrel_formats::g1m::G1m::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    let g = m.geometry.as_ref().ok_or("model has no geometry")?;
+    let mut obj = String::new();
+    let mut base = 1u32;
+    for (i, s) in g.submeshes.iter().enumerate() {
+        let mesh = g.simple_mesh(s)?;
+        writeln!(obj, "o submesh{i}_material{}", mesh.material)?;
+        for p in &mesh.positions {
+            writeln!(obj, "v {} {} {}", p[0], p[1], p[2])?;
+        }
+        for t in &mesh.uvs {
+            writeln!(obj, "vt {} {}", t[0], 1.0 - t[1])?;
+        }
+        for n in &mesh.normals {
+            writeln!(obj, "vn {} {} {}", n[0], n[1], n[2])?;
+        }
+        let (has_uv, has_n) = (!mesh.uvs.is_empty(), !mesh.normals.is_empty());
+        for t in &mesh.triangles {
+            let f: Vec<String> = t
+                .iter()
+                .map(|&v| {
+                    let v = v + base;
+                    match (has_uv, has_n) {
+                        (true, true) => format!("{v}/{v}/{v}"),
+                        (true, false) => format!("{v}/{v}"),
+                        (false, true) => format!("{v}//{v}"),
+                        (false, false) => format!("{v}"),
+                    }
+                })
+                .collect();
+            writeln!(obj, "f {}", f.join(" "))?;
+        }
+        base += mesh.positions.len() as u32;
+    }
+    std::fs::write(out, obj)?;
+    println!("{} submeshes written to {}", g.submeshes.len(), out.display());
+    Ok(())
+}
+
+fn g1m_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut models, mut submeshes, mut vertices, mut triangles) = (0usize, 0usize, 0usize, 0usize);
+    let mut failed = Vec::new();
+    for path in &files {
+        let bytes = read(path)?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for (i, entry) in e.entries.iter().enumerate() {
+            let data = e.data(entry);
+            if !data.starts_with(b"_M1G") {
+                continue;
+            }
+            let result = barrel_formats::g1m::G1m::parse(data).and_then(|m| {
+                let g = m.geometry.ok_or(barrel_formats::Error::Corrupt("no geometry"))?;
+                for s in &g.submeshes {
+                    let mesh = g.simple_mesh(s)?;
+                    vertices += mesh.positions.len();
+                    triangles += mesh.triangles.len();
+                }
+                Ok(g.submeshes.len())
+            });
+            match result {
+                Ok(n) => {
+                    models += 1;
+                    submeshes += n;
+                }
+                Err(err) => failed.push(format!("{}#{i}: {err}", path.display())),
+            }
+        }
+    }
+    println!("{models} models read, {} failed: {submeshes} submeshes, {vertices} vertices, {triangles} triangles", failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some models did not read".into()) }
 }

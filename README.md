@@ -23,7 +23,7 @@ The goals:
 - uncapped frame rates, any aspect ratio, and UI scaling for handhelds.
 
 Status: started, with Escha & Logy DX first. `crates/formats` reads the elixir containers,
-the event bytecode, the XML tables and the textures; every one of Escha's files of both kinds reads without error.
+the event bytecode, the XML tables, the textures and the models' geometry; every one of Escha's files of both kinds reads without error.
 `crates/cli` is the `barrel` tool for looking at the data. See `docs/survey.md` for the
 games and `docs/formats.md` for the formats.
 
@@ -41,6 +41,8 @@ target/release/barrel xml-scan "<install>"            # every XML table and its 
 target/release/barrel xml    FILE.xml
 target/release/barrel g1t-scan "<install>/Data"       # every texture
 target/release/barrel g1t    FILE.g1t OUTDIR           # a texture pack as PNG files
+target/release/barrel g1m-scan "<install>/Data"       # every model
+target/release/barrel g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
 Extracted data goes in `work/`, which git ignores. No game data belongs in the repository.
