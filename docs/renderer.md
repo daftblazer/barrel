@@ -44,6 +44,13 @@ track keep their bind pose; a vertex blends up to four joints by its weights (a 
 last weight is 1 minus the others). Escha at 2 s into `PC20_STAND_HAPPY` stands with a hand
 to her cheek and the other at her side, the mesh whole.
 
+**Sophie 2 characters.** The model container holds the meshes (`PC01A_MODEL_default.g1m`
+is the body, `PC01A_MODEL.g1m` the skeleton), the texture pack is a loose `.g1t` beside it
+(the viewer takes a plain path as well as `FILE#N`), and the motions are in
+`pc01a_motion.elixir.gz`. Most joints' tracks there are rotation only (flag 2); they keep
+the joint's bind translation and scale. `pc01a` at 1 s into `PC01A_000900` stands with both
+arms raised, the mesh whole.
+
 **Faces.** `--morph FILE#N --face FILE#N [--face FILE#N ...]` applies facial animations:
 the morph file is the model's `.g1h` (`PC20_MODEL.elixir.gz#15` for Escha), each `--face` a
 brow, eye or mouth animation from the `_FACIAL` container. Each animation goes to the morph

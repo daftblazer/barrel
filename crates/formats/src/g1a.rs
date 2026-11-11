@@ -47,6 +47,12 @@ impl Track {
         }
     }
 
+    /// A rotation-only track's quaternion (x, y, z, w) at `time` (flag 2, Sophie 2): the
+    /// joint keeps its bind translation and scale.
+    pub fn rotation(&self, time: f32) -> Option<[f32; 4]> {
+        (self.flag == 2 && self.components.len() == 4).then(|| std::array::from_fn(|i| sample(&self.components[i], time)))
+    }
+
     /// A single-scalar track's value at `time` (a morph weight).
     pub fn scalar(&self, time: f32) -> Option<f32> {
         (self.flag == SCALAR && self.components.len() == 1).then(|| sample(&self.components[0], time))

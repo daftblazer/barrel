@@ -28,8 +28,12 @@ const PUSH_SIZE: u32 = 112;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 
+/// `FILE#N` is entry N of a container; a plain path is a loose file (Sophie 2 keeps its
+/// texture packs beside the model containers).
 fn entry_bytes(spec: &str) -> Result<Vec<u8>> {
-    let (file, n) = spec.rsplit_once('#').ok_or("expected FILE#N")?;
+    let Some((file, n)) = spec.rsplit_once('#') else {
+        return Ok(std::fs::read(spec)?);
+    };
     let bytes = std::fs::read(file)?;
     let e = Elixir::parse(&bytes)?;
     let entry = e.entries.get(n.parse::<usize>()?).ok_or("no such entry")?;
@@ -362,8 +366,12 @@ fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::An
     };
     let mut posed_local: Vec<Mat4> = skeleton.joints.iter().map(local).collect();
     for t in &anim.tracks {
-        if let (Some((r, p, s)), Some(slot)) = (t.pose(time), posed_local.get_mut(t.bone as usize)) {
+        let Some(slot) = posed_local.get_mut(t.bone as usize) else { continue };
+        if let Some((r, p, s)) = t.pose(time) {
             *slot = Mat4::from_scale_rotation_translation(Vec3::from(s), glam::Quat::from_array(r).normalize(), Vec3::from(p));
+        } else if let (Some(r), Some(j)) = (t.rotation(time), skeleton.joints.get(t.bone as usize)) {
+            // Rotation-only tracks keep the joint's bind translation and scale.
+            *slot = Mat4::from_scale_rotation_translation(Vec3::from(j.scale), glam::Quat::from_array(r).normalize(), Vec3::from(j.position));
         }
     }
     let world = |locals: &[Mat4]| {
