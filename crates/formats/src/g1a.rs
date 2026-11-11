@@ -49,8 +49,15 @@ impl Track {
 
     /// A rotation-only track's quaternion (x, y, z, w) at `time` (flag 2, Sophie 2): the
     /// joint keeps its bind translation and scale.
+    /// Also flag 8 (scale x, y, z, then the quaternion; Ryza 3's temple door), whose scale is
+    /// left out here.
     pub fn rotation(&self, time: f32) -> Option<[f32; 4]> {
-        (self.flag == 2 && self.components.len() == 4).then(|| std::array::from_fn(|i| sample(&self.components[i], time)))
+        let first = match (self.flag, self.components.len()) {
+            (2, 4) => 0,
+            (SCALE_ROTATION, 7) => 3,
+            _ => return None,
+        };
+        Some(std::array::from_fn(|i| sample(&self.components[first + i], time)))
     }
 
     /// A single-scalar track's value at `time` (a morph weight).
@@ -78,6 +85,7 @@ fn components(flag: u32) -> Option<usize> {
     match flag {
         2 => Some(4),
         4 => Some(7),
+        SCALE_ROTATION => Some(7),
         6 => Some(10),
         CAMERA => Some(9),
         SCALAR => Some(1),
@@ -89,6 +97,10 @@ fn components(flag: u32) -> Option<usize> {
 /// x, y, z, then three more (0, 0.7 and 1.0 in the samples: roll, field of view in radians,
 /// and one still to be named).
 pub const CAMERA: u32 = 0x66;
+
+/// The flag of a scale-and-rotation track (Ryza 3's `obj-S161-TEMPLE-DOOR-01.g1a`): seven
+/// components, scale x, y, z, then the rotation quaternion; no translation.
+pub const SCALE_ROTATION: u32 = 8;
 
 /// The flag of a single-scalar track (facial morph weights).
 pub const SCALAR: u32 = 0x191;
@@ -187,5 +199,13 @@ mod tests {
         assert!((sample(&keys, 1.0) - 1.0).abs() < 1e-6);
         assert!((sample(&keys, 2.0) - 0.0).abs() < 1e-6);
         assert!((sample(&keys, 3.0) + 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scale_rotation_tracks_give_their_rotation() {
+        let k = |v: f32| vec![Key { coefficients: [0.0, 0.0, 0.0, v], end: 1.0 }];
+        let t = Track { bone: 0, flag: SCALE_ROTATION, components: vec![k(1.0), k(1.0), k(1.0), k(0.0), k(0.6), k(0.0), k(0.8)] };
+        assert_eq!(t.rotation(0.5), Some([0.0, 0.6, 0.0, 0.8]));
+        assert!(t.pose(0.5).is_none());
     }
 }

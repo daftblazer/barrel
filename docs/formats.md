@@ -232,6 +232,11 @@ Sophie 2 the blocks' headers sit together and their keys after them, so a block'
 are not right behind its own header. For a flag it does not know, the reader infers the
 component count from the offsets when they do follow the header.
 
+Ryza 3 adds flag **8** in one file, `obj-S161-TEMPLE-DOOR-01.g1a` (a door swinging open): seven
+components, scale x, y, z (1.0) then the rotation quaternion (turning about y), no
+translation; the joint keeps its bind position. Its blocks' headers sit one after another, so
+the reader cannot infer the count there and knows the flag instead.
+
 The header type and the flag always go together, and every one of the 21.3 million keys
 decodes. A facial track is the same kind of spline over a single value: an eye blink eases
 from 0 to 1 with (-2, 3, 0, 0) and back with (2, -3, 0, 1).
