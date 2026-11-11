@@ -205,8 +205,8 @@ shared record 0 `SKILL_ATTACK_PT` 64 to 80 and 54 to 60), `SKILL_1` to `_3` (wai
 `PASSIVE_1` and `_2` (wait 0), `SKILL_EX` (the finishing attack; Escha's and Logy's are "No
 Finish Attack"), the support skills `AC_ATTACK`, `AC_GUARD`, `AC_EXTRA` (the AC special),
 `AC_MOVE`, `AC_CHANGE`, and later in the enum their strengthened `AC_ATTACK_P`, `AC_GUARD_P`,
-`AC_EXTRA_P`; Escha and Logy add `AC_SP1` and `_SP2` (Double Draw), and one member has
-`SKILL_3_FIRE`, `_WIND` and `_SP` forms of their third skill. Which of the two normal attacks
+`AC_EXTRA_P`; Escha and Logy add `AC_SP1` and `_SP2` (Double Draw), and Wilbell has
+`SKILL_3_FIRE`, `_WIND` and `_SP` forms of her third skill. Which of the two normal attacks
 a party member's turn uses, and when the skills are learnt, are not read yet: no table in the
 executable holds the members' skill numbers, so the link is in code
 (`battle_data::party_skills`, `barrel party-skills EXE`).
