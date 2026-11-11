@@ -3,13 +3,16 @@
 
     pak_key.py FILE.PAK [FILE.PAK ...]
 
-Each entry's name is XORed with its own 20-byte key and then with one fixed byte per
-position, the same for every entry (docs/survey.md, "PAK archives"). With the per-entry key
+Each entry's name is XORed with its own 32-byte key and with a fixed 32-byte key for the
+game, both repeating every 32 bytes (docs/survey.md, "PAK archives"). With the entry's key
 removed, this guesses the fixed bytes one position at a time: the names are assumed to
 start with \\Data\\x64\\, and at each later position the byte that turns the most names
 still being read into path characters wins (a 0 counts only right after an extension).
-Prints the bytes found, in hex, and a sample of the names they give. Some positions come
-out wrong where letters are equally likely; they need known names to fix.
+Prints the bytes found, in hex, and a sample of the names they give. The fixed key repeats
+every 32 bytes, so the later blocks of the result, where the names vary most, show it
+best; the first block can be off where every name has the same letters (Sophie 2's names
+start with \\data, not \\Data). This is how Sophie 2's key was found; it is the way to
+find each Ryza game's.
 """
 import struct,sys
 files=sys.argv[1:]
@@ -20,7 +23,7 @@ for f in files:
         d=fh.read(184*cnt)
     for i in range(cnt):
         e=d[184*i:184*(i+1)]
-        names.append(bytes(e[j]^e[132+j%20] for j in range(128)))
+        names.append(bytes(e[j]^e[132+j%32] for j in range(128)))
 print(len(names), file=sys.stderr)
 ok=set(b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_\\./-')
 seed=b'\\Data\\x64\\'

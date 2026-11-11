@@ -30,6 +30,8 @@ usage:
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a-scan DIR          read every animation in the containers
+  barrel pak-ls FILE.PAK       list a Sophie 2 archive's files
+  barrel pak-get FILE.PAK NAME OUT  extract one file from a Sophie 2 archive
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -63,6 +65,8 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
+        ["pak-ls", file] => pak_ls(Path::new(file)),
+        ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
         ["recipes", exe] => recipes(Path::new(exe)),
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
@@ -317,6 +321,40 @@ fn print_element(e: &barrel_formats::table::Element, depth: usize) {
 fn xml(file: &Path) -> Result<()> {
     let root = barrel_formats::table::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     print_element(&root, 0);
+    Ok(())
+}
+
+fn open_pak(file: &Path) -> Result<(std::fs::File, barrel_formats::pak::Pak)> {
+    use barrel_formats::pak::{Pak, SOPHIE2_KEY};
+    use std::io::Read;
+    let mut f = std::fs::File::open(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut header = [0u8; 16];
+    f.read_exact(&mut header).map_err(|e| format!("{}: {e}", file.display()))?;
+    let size = Pak::table_size(&header).map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut table = header.to_vec();
+    table.resize(size, 0);
+    f.read_exact(&mut table[16..]).map_err(|e| format!("{}: {e}", file.display()))?;
+    let pak = Pak::parse(&table, &SOPHIE2_KEY).map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok((f, pak))
+}
+
+fn pak_ls(file: &Path) -> Result<()> {
+    let (_, pak) = open_pak(file)?;
+    for e in &pak.entries {
+        println!("{:>10} {}", e.size, e.name);
+    }
+    println!("{} files", pak.entries.len());
+    Ok(())
+}
+
+fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+    let (mut f, pak) = open_pak(file)?;
+    let entry = pak.entries.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or("no such file in the archive")?;
+    let mut data = vec![0u8; entry.size as usize];
+    f.seek(SeekFrom::Start(entry.offset)).and_then(|_| f.read_exact(&mut data)).map_err(|e| format!("{}: {e}", file.display()))?;
+    pak.unscramble(entry, 0, &mut data);
+    std::fs::write(out, &data).map_err(|e| format!("{}: {e}", out.display()))?;
     Ok(())
 }
 

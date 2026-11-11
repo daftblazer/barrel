@@ -64,19 +64,22 @@ The PAK header is `{version 0x20000, count, 16, flags}`. Each entry is 184 bytes
 | +132 | a 20-byte key |
 | +168 | offset (u64) |
 
-XORing a name with its 20-byte key cycled shows the padding (leftover memory from the
-packing tool). The name is still scrambled by a second, fixed layer: one byte per position,
-the same for every entry (entries whose names differ in one character differ in that byte
-only). The executable cannot show the key directly: its `.text` is encrypted (entropy 8.0,
-with a `.bind` section, the Steam DRM wrapper), so its code has to be unwrapped first.
+An entry's name and its data are both XORed with two 32-byte keys, each repeating every
+32 bytes: the entry's own key (the 32 bytes at +132, the same for every entry of an
+archive in practice, and looking like leftover memory) and a fixed key for the game.
+Sophie 2's fixed key is the text `dGGKXLHLuCJwv8aBc3YQX6X6sREVPchs`; with it, all 13,764
+names in its archives and DLC read as plain paths (`\data\x64\res_cmn\ui\a23_item_l_139.g1t`,
+`\data\x64\character\npc31b\npc31b_model.g1t`), and the data comes out as the formats
+Escha uses (`GT1G0600`, zlib-compressed elixir containers).
 
-The key also comes out of the names themselves. Assuming they start with `\Data\x64\`
-(a string the executable holds), `tools/pak_key.py` guesses the rest position by position
-from how the names read. On Sophie 2's `PACK00_01.PAK` and `PACK00_04_01.PAK` (1,924
-entries) most names come out readable, such as `\Data\x64\..._ui_g23_iten_o_095.g1t` and
-`....elixir.gr`, with some positions still wrong where letters are equally likely; known
-names (extensions, the executable's own paths) are what fix those. The fixed bytes look
-like text themselves (`dgGKXLHLuC@pa8...`).
+The executable could not show the key: its `.text` is encrypted (entropy 8.0, with a
+`.bind` section, the Steam DRM wrapper). It came from the names instead
+(`tools/pak_key.py`): with the entry key removed, the byte at each position that makes the
+most names read as paths, which repeats every 32 bytes.
+
+`barrel_formats::pak` reads the archives; `barrel pak-ls FILE.PAK` lists one and
+`barrel pak-get FILE.PAK NAME OUT` extracts a file. Sophie 2's UI textures use format
+0x5f (BC7), which Escha does not, so the texture decoder needs BC7 next.
 
 ### Ryza DX, Ryza 2 DX, Ryza 3 DX
 
