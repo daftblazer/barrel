@@ -278,9 +278,23 @@ is a character and one of these). `0x1402f0fa0` finds what `kind` and `id` name:
 | 6 | one of four saved points (`point`, clamped to 0..3, at `0x141078288`) |
 | any other | a character by number (`0x1402f0ba0`): kind 5 with the numbers the `s` commands use (10000 and up in skill events) |
 
-`point` picks one of 27 points on a character (`0x1401f3b80`, a switch over per-model
-measurements: 0 its position, the others presumably the feet, chest, head and so on; 1, 2
-and 8 are the camera's commonest). `0x1402f1250` adds the offset, turned first by the
+`point` picks one of 27 points on a character (`0x1401f3b80`, a switch over the
+character's measures, its `Chara.xml` row: `Height` 151 and `Radius` 27 for Escha, and
+`Foot`, `Body`, `Face`, `Head` 0, 0.7, 0.91, 1 and `Extra` 0.7, 1, 1 as fractions of the
+height):
+
+| Point | Where |
+|---|---|
+| 1 to 7 (and 17 to 23) | up by `Height` × `Foot`, `Body`, `Face`, `Head`, `Extra` x, y, z (the runtime row's +0x70..+0x7c and +0x48..+0x50, times +0x60) |
+| 8, 24 | its place at height 0 |
+| 10, 12 | at height 0, `Radius` (+0x64) in front of it or behind it (its facing, +0x244) |
+| 9, 11 | the same along the camera's direction (`0x1402f0ec0`) |
+| 0, 26 | the character's +0x3d8 (not read) |
+| 13 to 16, 25 | other cases (14: fixed points by model, below or above 0x12) |
+
+1 (feet), 2 (body) and 8 are the camera's commonest; the skill camera's target on point 2 sits
+at the body. Which of the runtime row's columns is which comes from matching the schema's
+offsets (`0x1401ed1c0`, each 4 on in the row) and the values' ranges. `0x1402f1250` adds the offset, turned first by the
 anchor's facing unless the kind is 0 or the point is 14 to 26 (the game's Y rotation, from
 `0x140028d50`'s sine and cosine: x' = x·cos + z·sin, z' = z·cos − x·sin). The coordinates are
 whole field units (the code divides by 100 and multiplies back).
@@ -335,8 +349,8 @@ mover from where it is, and the camera's eye and target are set or moved, positi
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16
 walks from (506, 0, 1061) to (891, 0, 1320) between 3.5 and about 7.5 s, ending up facing
-56°. Positions on kinds 2 to 4 and on the points of a character (head, feet) are not placed
-yet; the stage counts what it skips.
+56°. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
+number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
 Not yet: move types 1 and 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.

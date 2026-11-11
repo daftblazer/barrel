@@ -1288,6 +1288,14 @@ fn stage_event(file: &Path) -> Result<()> {
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     let table = OperandTable::escha();
     let steps = Player::escha(&event, &[], &table)?.schedule();
+    // Story events number their characters by Chara.xml row.
+    let measures = file
+        .ancestors()
+        .find(|p| p.join("Saves").is_dir())
+        .and_then(|root| read(&root.join("Saves/chara/Chara.xml")).ok())
+        .and_then(|b| barrel_formats::table::parse(&b).ok())
+        .map(|t| barrel_game::stage::Measures::table(&t))
+        .unwrap_or_default();
     let mut last = None;
     let show = |p: [f32; 3]| format!("({:.0}, {:.0}, {:.0})", p[0], p[1], p[2]);
     let print = |stage: &Stage| {
@@ -1301,7 +1309,7 @@ fn stage_event(file: &Path) -> Result<()> {
         }
         println!("{:8.2}  {}", stage.time, parts.join("  "));
     };
-    let stage = Stage::play(&steps, |t, stage| {
+    let stage = Stage::play(&steps, measures, |t, stage| {
         if last != Some(t.time) {
             last = Some(t.time);
             print(stage);
