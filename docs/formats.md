@@ -85,6 +85,14 @@ per texture:  u8   mip count << 4 | depth
 | `0x02` | none | one 32-bit float a pixel (Ryza 3's shore heightmaps) |
 | `0x60` | none | 8 bytes a 4×4 block, read as BC1; the only ones seen (Ryza's `headsup.g1t`) are all zeros, so BC1 or BC4 is a guess |
 
+**Format 0x03** is four 16-bit floats a pixel (RGBA16F). Sophie 2 uses it for its towns'
+and fields' lighting volumes (`*_lpv.elixir.gz`, `*_ShIrradianceVolumes.g1t`, 9 files): three
+texture arrays of 64 × 32 × 144 (kind 3, layer count 0x90 in the extended header; 2,359,296
+bytes each, exactly 8 bytes a texel). Every value is a finite half float: the first channel 0
+to 10.5 and never negative, the other three signed and small (-0.5 to 2.8), as the constant
+and three linear terms of spherical-harmonics lighting would be; about a quarter are 0
+(empty cells, presumably). Previews tone-map the colour channels like BC6H's.
+
 **BC6H** (`barrel_formats::bc6h`, written from the BPTC_FLOAT specification: 14 modes, one or
 two regions, whole endpoints or a base and signed deltas; previews tone-map with x / (1 + x)
 and gamma 2.2). `charatest_ad.g1t` decodes to a smooth lighting cube, blue sky on face 2,

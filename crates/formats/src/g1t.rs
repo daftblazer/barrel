@@ -37,6 +37,8 @@ pub enum Format {
     Bc7,
     /// One 32-bit float a pixel (Ryza 3's heightmaps, format 0x02).
     Float32,
+    /// Four 16-bit floats a pixel, RGBA (Sophie 2's irradiance volumes, format 0x03).
+    Rgba16f,
 }
 
 impl Format {
@@ -46,6 +48,7 @@ impl Format {
             0x06 | 0x10 | 0x59 | 0x60 => Format::Bc1,
             0x08 | 0x5b => Format::Bc3,
             0x02 => Format::Float32,
+            0x03 => Format::Rgba16f,
             0x5c => Format::Bc4,
             0x5d => Format::Bc5,
             0x5e => Format::Bc6h,
@@ -58,6 +61,7 @@ impl Format {
         let (w, h) = (width.max(1) as usize, height.max(1) as usize);
         match self {
             Format::Rgba8 | Format::Float32 => w * h * 4,
+            Format::Rgba16f => w * h * 8,
             Format::Bc4 => w.div_ceil(4) * h.div_ceil(4) * 8,
             Format::Bc1 => w.div_ceil(4) * h.div_ceil(4) * 8,
             Format::Bc3 | Format::Bc5 | Format::Bc6h | Format::Bc7 => w.div_ceil(4) * h.div_ceil(4) * 16,
@@ -186,6 +190,18 @@ impl Texture<'_> {
             Format::Bc5 => crate::bc::decode_bc45(src, w, h, true),
             // HDR: tone-mapped for viewing (unsigned BC6H; no signed sample has been seen).
             Format::Bc6h => crate::bc6h::decode(src, w, h, false),
+            // HDR: each channel tone-mapped (x / (1 + x), gamma 2.2) for viewing; alpha as is.
+            Format::Rgba16f => src
+                .chunks_exact(8)
+                .flat_map(|p| {
+                    let h = |i: usize| crate::bc6h::half_to_f32(u16::from_le_bytes([p[2 * i], p[2 * i + 1]]));
+                    let t = |f: f32| {
+                        let f = f.max(0.0);
+                        ((f / (1.0 + f)).powf(1.0 / 2.2) * 255.0 + 0.5) as u8
+                    };
+                    [t(h(0)), t(h(1)), t(h(2)), (h(3).clamp(0.0, 1.0) * 255.0 + 0.5) as u8]
+                })
+                .collect(),
             Format::Float32 => {
                 let v: Vec<f32> = src.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
                 let (lo, hi) = v.iter().fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));
