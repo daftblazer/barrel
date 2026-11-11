@@ -276,7 +276,12 @@ of the first offsets), not a short repeating XOR (no period up to 8,192 repeats 
 than chance), and the executable holds none of the usual cipher constants (Blowfish, AES,
 TEA, MD5, SHA-256; only zlib's CRC table). The loader (`0x140135ee0`) reads the file into a
 0x64000-byte buffer; once decrypted, the state is a stream of named, u32-length-prefixed
-sections (`0x14035b320` finds a section by name, `0x14035b220` reads from it). `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
+sections (`0x14035b320` finds a section by name, `0x14035b220` reads from it). The files go through the
+platform layer (`[0x1410c2ee8]` +0x108: `0x1403b8cb0`/`0x1403b8cd0` open, `0x1403b8d00` read,
+`0x1403b8de0` write, `0x1403b8a40` close, handed on to asynchronous jobs at `0x1403bcb40` and
+`0x1403be290`); the Windows paths are built from wide strings (`\SAVEDATA\`,
+`GAMEDATA%02u.pcsave`, `SYSDATA.pcsave`, around `0x140138730`). The cipher sits somewhere in
+that layer and is not found yet. `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
 `barrel_formats::save` reads the header and `barrel save FILE` prints it.
 
 ## Voices (`Sound/Voice/Series*.fp`)
