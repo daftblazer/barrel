@@ -10,6 +10,11 @@
 //! December to March"). The requests of `quest/QuestAlc.xml` open and close on 91, 211, ...
 //! 1171 and 1530: one more than each period's first day (what their comparison is, is not
 //! read).
+//!
+//! Days pass through `0x14035bf10 (days, reason)`: for each day, the date goes up by one
+//! (`0x1402f03a0`), the new day is worked (`0x14035bb50`, see [`daily_rolls`] and
+//! [`daily_gain`]) and a message (kind 8, with the reason) is queued; `0x14035b930 (days,
+//! reason)` follows.
 
 pub const DAYS_PER_MONTH: u32 = 30;
 pub const DAYS_PER_YEAR: u32 = 12 * DAYS_PER_MONTH;
@@ -57,6 +62,35 @@ pub fn period_days(k: u32) -> (u32, u32) {
     (first, first + PERIOD_DAYS - 1)
 }
 
+/// How many records get a fresh roll from 0 to 100 at the start of each new day (`0x14035bb50`:
+/// 0x24-byte records from `0x1410a42e0` to `0x1410ae6b4`; what they are is not read). Each roll
+/// draws a number from the battle's generator, so a day costs this many draws first.
+pub const DAILY_ROLLS: usize = 1165;
+
+/// The day's rolls, in record order.
+pub fn daily_rolls(rng: &mut crate::rng::Rng) -> Vec<i32> {
+    (0..DAILY_ROLLS).map(|_| rng.range(0, 100)).collect()
+}
+
+/// A character's daily gain of its +0x2a4 (a 0 to 100 float, friendship presumably) by its
+/// place in the 11-slot list at `0x141093530` (`0x1403303f0`): 0.11 in slots 0 to 2 or when not
+/// in the list, 0.08 in slots 3 to 5, 0.03 further down. Every character but one (`0x140330120`
+/// of `0x141098a48`, the leader presumably) gains each day.
+pub fn daily_gain(slot: Option<usize>) -> f32 {
+    match slot {
+        Some(k) if k >= 6 => 0.03,
+        Some(k) if k >= 3 => 0.08,
+        _ => 0.11,
+    }
+}
+
+/// The value after a gain (`0x14032db60`): added in floats, and kept at 100 when it would pass
+/// it (only the top is clamped).
+pub fn add_gain(value: f32, gain: f32) -> f32 {
+    let v = value + gain;
+    if v.max(0.0) > 100.0 { 100.0 } else { v }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +105,20 @@ mod tests {
         for v in [90, 91, 330, 359, 360, 1170, 1529] {
             assert_eq!(Date::of(v).number(), v);
         }
+    }
+
+    #[test]
+    fn a_day_for_the_characters() {
+        assert_eq!(daily_gain(Some(1)), 0.11);
+        assert_eq!(daily_gain(None), 0.11);
+        assert_eq!(daily_gain(Some(4)), 0.08);
+        assert_eq!(daily_gain(Some(9)), 0.03);
+        assert_eq!(add_gain(99.95, 0.11), 100.0);
+        assert_eq!(add_gain(10.0, 0.08), 10.08);
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        let rolls = daily_rolls(&mut rng);
+        assert_eq!(rolls.len(), DAILY_ROLLS);
+        assert!(rolls.iter().all(|r| (0..=100).contains(r)));
     }
 
     #[test]

@@ -527,6 +527,21 @@ December to March"). Every `StartDate` and `EndDate` of `quest/QuestAlc.xml` is 
 them with the date is not read). `barrel_game::calendar` follows this, and `barrel quests`
 shows the dates.
 
+A new game sets the date to April 1st of school year 1 (`0x14035be60`, and `0x1410782e4` to
+0); the save holds both. Days pass only through `0x14035bf10 (days, reason)`, called with
+reason 1 (`0x140052b5a` and two more), 2 (synthesis, its days, `0x14030d8a6`), 3 (one day,
+`0x14003412b`), 4 (a record's +0x24 days, `0x14007bf51`: world-map travel, presumably), 7 (one
+day, field code `0x1400795a8`, `0x14007ab66`) and 8 (one day, `0x14039b3d2`, `0x14039ba9c`).
+For each day it adds one (`0x1402f03a0`), works the new day (`0x14035bb50`) and queues a
+message (kind 8, the reason) at `0x140df9988`; then `0x14035b930 (days, reason)`. A new day:
+1165 records of 0x24 bytes from `0x1410a42e0` each get a roll from 0 to 100 (each a draw from
+the random generator), then every character but one (`0x140330120 (0x141098a48)`, the
+leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
+`0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2
+(or not in the list), 0.08 in 3 to 5, 0.03 below, kept at 100 at most (friendship points,
+presumably); `0x140363860`, `0x140267f50`, `0x140168990` and more follow, not read yet
+(`calendar::daily_rolls`, `daily_gain`, `add_gain`).
+
 ### Skill targets (executable)
 
 A skill record's first word (+0x10, `0x14015f900`) says whom it is aimed at. The target
