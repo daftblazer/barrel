@@ -79,8 +79,21 @@ branching has been found inside an event.
 Reyfer and so on. `ECT_FIELDMAP_CHARA_ADDITION_EX` takes the same number as its first
 operand. `play-event` prints the names.
 
-Not yet: the other actions (camera and character tracks, probably run beside the first),
-and waits taking time.
+**Fields.** `ECT_FIELDMAP_CHANGE` and `ECT_FIELDMAP_CHANGE_NOT_BGM` take a field number:
+its position in a table of 24-byte field tags in the executable, 0 `TOWN_01` to 11
+`TOWN_12`, then 12 `AREA_01_01`, 13 `AREA_01_02`, ... (137 tags in Escha). The tags are
+the folder names under `Data/x64/Field/`.
+
+**Placing characters.** `ECT_FIELDMAP_CHARA_ADDITION_EX` (`q4`) is `{character, 0, 0, 0, x,
+y, z, 0, angle in degrees, ...}` in field coordinates; `ECT_CHARA_POS_SET` (`s4`) is
+`{character, 0, 0, 0, x, y, z}`. A character's model is found through its `Chara.xml` row's
+`BaseTag` and that tag's `Model` in `CharaBase.xml` (`PC20/PC20_MODEL`, under
+`Data/x64/Character/`). `barrel-view --field <TOWN_04> --event FILE.ebd` draws an event's
+opening: the field and each character at its first placement. `EVENT_MM08_AS4_130` (field
+3, `TOWN_04`) puts Escha and Logy on the grass by a curved stone wall and Threia and Reyfer a
+few metres off, all standing at ground height.
+
+Not yet: the event's camera (the `t` commands), characters' motions, waits taking time.
 
 ## Who handles them
 

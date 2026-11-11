@@ -246,6 +246,16 @@ impl Scene {
         self.add_posed(geometry, transform, textures, None)
     }
 
+    /// Add a model whose texture pack starts at `base` in the scene's texture list.
+    fn add_with_pack(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, base: usize, count: usize) -> Result<()> {
+        let first = self.draws.len();
+        self.add_posed(geometry, transform, count, None)?;
+        for d in &mut self.draws[first..] {
+            d.texture += base;
+        }
+        Ok(())
+    }
+
     /// Add a model, skinned by `joints` (one matrix per joint, bind pose to posed) if given.
     fn add_posed(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize, joints: Option<&[Mat4]>) -> Result<()> {
         let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
@@ -353,6 +363,63 @@ fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::An
     let bind_local: Vec<Mat4> = skeleton.joints.iter().map(local).collect();
     let (bind, posed) = (world(&bind_local), world(&posed_local));
     bind.iter().zip(&posed).map(|(b, p)| *p * b.inverse()).collect()
+}
+
+/// Place the characters an event adds, at their first position, in the scene. Returns the
+/// texture packs it used, appended after the `base` textures already in the scene.
+fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<Vec3>)> {
+    use barrel_formats::ebd::{self, Ebd, OperandTable};
+    let event = Ebd::parse(&std::fs::read(event_path)?)?;
+    let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
+    let table = |name: &str| -> Result<barrel_formats::table::Element> {
+        Ok(barrel_formats::table::parse(&std::fs::read(root.join("Saves/chara").join(name))?)?)
+    };
+    let (charas, bases) = (table("Chara.xml")?, table("CharaBase.xml")?);
+    // First placement of each character: q4 (ADDITION_EX: number, ..., x, y, z, ?, angle) or
+    // s4 (POS_SET: number, 0, 0, 0, x, y, z).
+    let mut first: Vec<(u32, [f32; 3], f32)> = Vec::new();
+    let ops = OperandTable::escha();
+    for a in &event.actions {
+        for c in ebd::decode(&a.words, &ops)? {
+            let o = c.operands;
+            let place = match c.word {
+                0x7100_0004 if o.len() >= 9 => Some((o[0], [o[4], o[5], o[6]], o[8] as i32 as f32)),
+                0x7300_0004 if o.len() >= 7 => Some((o[0], [o[4], o[5], o[6]], 0.0)),
+                _ => None,
+            };
+            if let Some((who, p, angle)) = place {
+                if !first.iter().any(|f| f.0 == who) {
+                    first.push((who, p.map(|v| v as i32 as f32), angle));
+                }
+            }
+        }
+    }
+    let mut packs = Vec::new();
+    let mut tex_base = base;
+    let mut centre = Vec3::ZERO;
+    let mut placed = 0.0f32;
+    for (who, pos, angle) in first {
+        let Some(tag) = charas.children.get(who as usize).and_then(|c| c.attr("BaseTag")) else { continue };
+        let Some(model) = bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)).and_then(|b| b.attr("Model")) else { continue };
+        let path = root.join("Data/x64/Character").join(format!("{model}.elixir.gz"));
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let container = Elixir::parse(&bytes)?;
+        let stem = model.rsplit('/').next().unwrap_or(model);
+        let (Some(mesh), Some(tex)) = (named(&container, &format!("{stem}_default.g1m")), named(&container, &format!("{stem}.g1t"))) else {
+            continue;
+        };
+        let count = G1t::parse(tex)?.textures.len();
+        let g = G1m::parse(mesh)?;
+        let Some(geometry) = g.geometry.as_ref() else { continue };
+        let transform = Mat4::from_rotation_translation(glam::Quat::from_rotation_y(angle.to_radians()), Vec3::from(pos));
+        scene.add_with_pack(geometry, transform, tex_base, count)?;
+        eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
+        centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
+        placed += 1.0;
+        tex_base += count;
+        packs.push(tex.to_vec());
+    }
+    Ok((packs, (placed > 0.0).then(|| centre / placed)))
 }
 
 /// The entry of `container` named `name`, if any.
@@ -478,6 +545,7 @@ fn main() -> Result<()> {
     let mut pitch = if field { 45f32 } else { 0f32 };
     let mut alpha_cutoff = 0.3f32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
+    let mut event_spec = None::<String>;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -487,6 +555,7 @@ fn main() -> Result<()> {
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
+            "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -516,12 +585,21 @@ fn main() -> Result<()> {
         scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref())?;
         tex_bytes
     };
-    let pack = G1t::parse(&tex_bytes)?;
+    let mut pack_bytes = vec![tex_bytes];
+    let mut focus = None;
+    if let Some(e) = &event_spec {
+        let base = G1t::parse(&pack_bytes[0])?.textures.len();
+        let (packs, centre) = event_characters(Path::new(e), &mut scene, base)?;
+        pack_bytes.extend(packs);
+        focus = centre;
+    }
+    let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
+    let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
     let Scene { vertices, indices, draws, terrain, lo, hi } = scene;
-    if draws.is_empty() || pack.textures.is_empty() {
+    if draws.is_empty() || all_textures.is_empty() {
         return Err("nothing to draw".into());
     }
-    eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, pack.textures.len());
+    eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, all_textures.len());
     eprintln!("bounds {lo:?} .. {hi:?}");
     if std::env::var("BARREL_DRY").is_ok() {
         return Ok(());
@@ -543,7 +621,7 @@ fn main() -> Result<()> {
 
     // Textures, uploaded as their BC blocks with all mip levels.
     let mut textures = Vec::new();
-    for t in &pack.textures {
+    for t in &all_textures {
         textures.push(upload_texture(&gpu, pool, t)?);
     }
     let sampler = unsafe {
@@ -743,8 +821,11 @@ fn main() -> Result<()> {
     }
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
-    let center = (lo + hi) * 0.5;
-    let radius = (hi - lo).length() * 0.5;
+    // With an event, look at its characters from a few metres away; otherwise frame it all.
+    let (center, radius) = match focus {
+        Some(c) => (c, 250.0),
+        None => ((lo + hi) * 0.5, (hi - lo).length() * 0.5),
+    };
     let fov = 30f32.to_radians();
     let dist = radius / (fov * 0.5).sin() * 1.05;
     let (y, p) = (yaw.to_radians(), pitch.to_radians());

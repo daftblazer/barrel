@@ -44,6 +44,10 @@ track keep their bind pose; a vertex blends up to four joints by its weights (a 
 last weight is 1 minus the others). Escha at 2 s into `PC20_STAND_HAPPY` stands with a hand
 to her cheek and the other at her side, the mesh whole.
 
+**Event openings.** `--event FILE.ebd` with `--field` adds the characters an event
+places (see `events.md`) with their own texture packs; the scene's draws index one list of
+textures gathered from every pack. The camera then centres on the characters.
+
 Not done yet: skinning on the GPU, the games' own shaders and
 lighting (toon shading, rim light), materials beyond the first texture, a window and
 interactive camera, and fields.
