@@ -64,6 +64,7 @@ fn main() -> ExitCode {
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
+        ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word),
         ["xml", file] => xml(Path::new(file)),
         ["xml-scan", dir] => xml_scan(Path::new(dir)),
         ["g1t", file, out] => g1t(file, Path::new(out)),
@@ -335,6 +336,42 @@ fn ebd_decode(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some bodies did not decode".into()) }
+}
+
+/// For one command (a hex word such as `74000004`), how often each value appears at each
+/// operand position across every event under `dir`, the commonest first.
+fn ebd_ops(dir: &Path, word: &str) -> Result<()> {
+    let word = u32::from_str_radix(word.trim_start_matches("0x"), 16).map_err(|_| "the word is hex, e.g. 74000004")?;
+    let table = OperandTable::escha();
+    let mut files = Vec::new();
+    files_ending(dir, ".ebd", &mut files)?;
+    let mut uses = 0usize;
+    let mut lengths: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut values: Vec<BTreeMap<i32, usize>> = Vec::new();
+    for path in &files {
+        let Ok(e) = Ebd::parse(&read(path)?) else { continue };
+        for a in &e.actions {
+            let Ok(cmds) = ebd::decode(&a.words, &table) else { continue };
+            for c in cmds.iter().filter(|c| c.word == word) {
+                uses += 1;
+                *lengths.entry(c.operands.len()).or_default() += 1;
+                if values.len() < c.operands.len() {
+                    values.resize_with(c.operands.len(), BTreeMap::new);
+                }
+                for (i, &v) in c.operands.iter().enumerate() {
+                    *values[i].entry(v as i32).or_default() += 1;
+                }
+            }
+        }
+    }
+    println!("{word:08x}: {uses} uses, operand counts {lengths:?}");
+    for (i, m) in values.iter().enumerate() {
+        let mut v: Vec<(i32, usize)> = m.iter().map(|(&k, &n)| (k, n)).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let top: Vec<String> = v.iter().take(8).map(|(k, n)| format!("{k}×{n}")).collect();
+        println!("  {}: {} distinct; {}", i + 1, v.len(), top.join(" "));
+    }
+    Ok(())
 }
 
 fn print_element(e: &barrel_formats::table::Element, depth: usize) {
@@ -1278,6 +1315,23 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
             Step::WaitForCharacter { character } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("      (wait for {who})");
+            }
+            Step::Camera { action, part, change } => {
+                use barrel_game::camera::{Anchor, Change, Move, Position};
+                let at = |p: &Position| {
+                    let [x, y, z] = p.offset;
+                    match p.anchor {
+                        Anchor::World => format!("({x}, {y}, {z})"),
+                        Anchor::Saved(n) => format!("saved point {n} + ({x}, {y}, {z})"),
+                        Anchor::Thing { kind, id, point } => format!("thing {kind}/{id} point {point} + ({x}, {y}, {z})"),
+                    }
+                };
+                let what = match change {
+                    Change::Set(p) => format!("at {}", at(&p)),
+                    Change::Move(Move::Straight { to, seconds, ease }) => format!("moves to {} in {seconds:.2} s (ease {ease})", at(&to)),
+                    Change::Move(Move::Other { to, kind }) => format!("moves (type {kind}) to {}", at(&to)),
+                };
+                println!("{action:3} camera {part:?} {what}");
             }
             Step::Command { action, word, name, operands } => {
                 let ops: Vec<String> = operands.iter().map(|&o| (o as i32).to_string()).collect();

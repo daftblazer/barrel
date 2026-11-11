@@ -1,6 +1,7 @@
 //! Barrel's game logic.
 
 pub mod battle;
+pub mod camera;
 pub mod duel;
 pub mod event;
 pub mod face;

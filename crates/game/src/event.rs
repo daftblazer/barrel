@@ -53,6 +53,9 @@ pub enum Step<'a> {
     /// A character plays a looping motion (`s10`; a `MOTION_*` number), blending over `blend`
     /// seconds.
     Motion { action: usize, character: u32, motion: u32, blend: f32 },
+    /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
+    /// `t9`; [`crate::camera`]).
+    Camera { action: usize, part: crate::camera::Part, change: crate::camera::Change },
     /// A command the player does not handle itself.
     Command { action: usize, word: u32, name: Option<&'static str>, operands: &'a [u32] },
 }
@@ -114,6 +117,9 @@ impl<'a> Player<'a> {
                         out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
                     }
                 }
+            }
+            (word, operands) if !crate::camera::changes(word, operands).is_empty() => {
+                out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| Step::Camera { action, part, change }))
             }
             (word, operands) => out.push(Step::Command { action, word, name: self.name(word), operands }),
         }
@@ -279,6 +285,7 @@ mod tests {
                 Step::CharacterWait { character, seconds, .. } => format!("{character} waits {seconds}"),
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
+                Step::Camera { part, .. } => format!("camera {part:?}"),
             })
             .collect();
         assert_eq!(

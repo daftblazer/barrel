@@ -260,7 +260,60 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
   2 mostly 0 (1, 5, 6, 8 sometimes), 4 to 6 the point to move to (`1036 9 1587`), 7 is 1, 9
   is 120 to 150 (the speed, by the look of it), the rest 0.
 
-Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
+**Event positions and moves.** Many commands give a point as six operands
+`{kind, id, point, x, y, z}` (`0x1402f13f0` reads them; `s4`'s `{character, 0, 0, 0, x, y, z}`
+is a character and one of these). `0x1402f0fa0` finds what `kind` and `id` name:
+
+| Kind | What (from the code) |
+|---|---|
+| 0 | nothing: the offset is a point in the field |
+| 2 | a thing whose +0x160 object gives the point (`0x1402f0de0`; not named yet) |
+| 3 | a thing (`0x1402f0c60`) whose character (+0x70) gives the point; the camera's `t3`/`t6` use it with ids 10048 to 10057 |
+| 4 | a thing (`0x1402f0d20`) with a place at +0x90 and a facing at +0xa0 |
+| 6 | one of four saved points (`point`, clamped to 0..3, at `0x141078288`) |
+| any other | a character by number (`0x1402f0ba0`): kind 5 with the numbers the `s` commands use (10000 and up in skill events) |
+
+`point` picks one of 27 points on a character (`0x1401f3b80`, a switch over per-model
+measurements: 0 its position, the others presumably the feet, chest, head and so on; 1, 2
+and 8 are the camera's commonest). `0x1402f1250` adds the offset, turned first by the
+anchor's facing unless the kind is 0 or the point is 14 to 26 (the game's Y rotation, from
+`0x140028d50`'s sine and cosine: x' = x·cos + z·sin, z' = z·cos − x·sin). The coordinates are
+whole field units (the code divides by 100 and multiplies back).
+
+A move (`0x1402f1a90`, used by the camera's `t4`/`t7` and by the characters' `s18`) is a
+position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand, then a type:
+
+| Type | Operands after it | Uses in `t4` / `t7` | Built by |
+|---|---|---|---|
+| 4 | seconds ×100, ease | 1,876 / 1,735 | `0x1402f3480` |
+| 1 | eight more (a point and angles, by the look of them) | 129 / 5 | `0x1402f1cd9` |
+| 0, 2, 3 | two each | a few | `0x1402f1f60`, `0x1402f18a0`, `0x1402f1950` |
+
+Type 4 goes straight from where the thing is when the command runs to the position, in the
+given time (`0x1402f3530` updates it). With u the part of the time gone, the distance covered
+is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a stop (u·(2 − u)), −100
+(295) starts slowly (u²), 0 (207) is even.
+
+**The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
+`t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):
+
+- `t3` (`ECT_CAMERA_EYE_POS_SET`) and `t6` (`ECT_CAMERA_AT_POS_SET`) put the eye or the target
+  at a position.
+- `t4` and `t7` (`…_MOVE_SET`) move them (a move, as above), from where they are.
+- `t9` (`ECT_CAMERA_EYEAT_POS_SET`) sets both: the *target* first, then the eye (the first
+  position goes where `t6` puts it; the eye's offsets are the larger ones, 2 to 10 m).
+- `t10` (`ECT_CAMERA_ROT_MOVE_SET`, `{a, b, seconds ×100, ease}`) turns the view by the two
+  angles in degrees (a to +0x38) over time, and `t12` (`ECT_CAMERA_LENGTH_MOVE_SET`,
+  `{length, seconds ×100, ease}`) changes the eye's distance from the target; both use the
+  mover at `0x140025890`, not read yet.
+- `t29` (`ECT_CAMERA_MOVE_KILL`) ends both moves where they are; `t5`/`t8` wait for them.
+
+`barrel_game::camera` reads these (`Position`, `Move`, `eased`), and `play-event` prints them:
+in `SKILL_COMMON_MOB25_APPEAR_00` the camera starts on the monster (character 10002) from
+4 m out and pulls back to 9 m in a second, easing to a stop.
+
+Not yet: the move types other than 4, `t10`/`t12`'s mover, the field camera's two
+unidentified angles, characters' motions during the event.
 
 ## Who handles them
 
