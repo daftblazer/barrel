@@ -41,6 +41,11 @@ impl Rng {
 }
 
 impl Rng {
+    /// The low 31 bits of the next number (`0x1404ca7a0`).
+    pub fn next_31(&mut self) -> i32 {
+        (self.next_u32() & 0x7fff_ffff) as i32
+    }
+
     /// A number from 0 to `n - 1` (`n` > 0; the executable divides by it unchecked), the
     /// executable's way: the low 31 bits of the next number modulo `n`. Always draws.
     pub fn below(&mut self, n: u32) -> u32 {

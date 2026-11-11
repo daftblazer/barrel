@@ -280,7 +280,8 @@ The game draws every random number from one Xorshift128 generator (Marsaglia's: 
 << 11)`, then `x, y, z = y, z, w` and `w = w ^ (w >> 19) ^ t ^ (t >> 8)`), state `x, y, z, w`
 at `0x1410c2fd8`. A number from `a` to `b` (`0x1404ca660`, both included, in either order) is
 `low + (w & 0x7fffffff) % (high - low + 1)`, and draws nothing when `a == b`; a number below
-`n` (`0x1404ca740`) is `(w & 0x7fffffff) % n` and always draws. The state is not
+`n` (`0x1404ca740`) is `(w & 0x7fffffff) % n` and always draws; `0x1404ca7a0` returns
+`w & 0x7fffffff`. The state is not
 in the file, and the code that seeds it is still to be found. `barrel_game::rng` is the same
 generator.
 
@@ -354,11 +355,31 @@ the level, attack and defence ("Battle stats"). Then the target's reductions:
   float +0x20) + 1`, at most what is left in +0x308, and takes that from +0x308 (stored
   damage released over hits, apparently).
 
-A damage of 0 or more is then dealt by `0x1401c1970 (battle, user, target, damage, element)`.
+A damage of 0 or more is then dealt by `0x1401c1970 (battle, user, target, damage, element)`,
+which builds a damage event (vtable `0x140809230`): its amount is the damage less the target's
++0x2b8 percent, at least 1 (and is added to the target's +0x2c4 while +0x2c0 is positive). The
+event's apply method (`0x1401c1ac0`) takes it off with `0x1401af770 (target, &amount, 1)`:
+
+1. with passive `PASSIVE_REVERSE_DAMAGE`, that percentage of the amount comes off MP instead
+   (`0x1401af970`; MP not under 0, and under `EQUIP_HPTOMP_MPTOHP` that MP loss heals HP by its
+   percentage through `0x1401afa20`, which `FIELD_INVALID_HEAL` blocks), the rest off HP;
+2. HP goes down by the amount;
+3. the first hit of an action (global `0x141077e74`, cleared by `0x1401bd000`) draws a random
+   number (`0x1404ca7a0`: the next number's low 31 bits) and plays one of four sounds, 0x1e +
+   number % 4. Only a sound, but it draws from the shared generator, so a reimplementation must
+   draw too to stay in step;
+4. HP is kept at least 0;
+5. if HP damage was done and the target lives: a party character (type 0) shakes by amount /
+   maximum HP unless option 0x2a35 is set, and with `EQUIP_HPTOMP_MPTOHP` the target gains
+   amount × value / 100 MP, up to maximum MP.
+
+Then the event sets the target's +0x2ec and, unless it has bad status 10, calls `0x1401b0520`
+(the death check, presumably).
 Afterwards, when the user's stat 1 is positive (alive, presumably), `DAMAGE_REDUCE` heals the
 user by its second value as a percentage of the damage dealt; any other skill heals the user
 by the user's stat 20 percent of it (drain), items do not.
-`barrel_game::battle::skill_damage` and `reduce` are the formulas above.
+`barrel_game::battle::skill_damage`, `reduce`, `hit_amount` and `take_hp_damage` are the
+formulas above.
 
 `HEAL_HP` heals `trunc(amount × scale)` (the amount as a float, times the scale, truncated to
 an integer). For `ACT_ASSIST_COUNTER` (93) the
