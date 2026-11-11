@@ -1,0 +1,21 @@
+//! Compiles the GLSL shaders to SPIR-V with glslc (from the Vulkan SDK / shaderc).
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn main() {
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    for name in ["model.vert", "model.frag"] {
+        let src = PathBuf::from("shaders").join(name);
+        println!("cargo:rerun-if-changed={}", src.display());
+        let dst = out.join(format!("{name}.spv"));
+        let status = Command::new(std::env::var("GLSLC").unwrap_or_else(|_| "glslc".into()))
+            .arg("-O")
+            .arg(&src)
+            .arg("-o")
+            .arg(&dst)
+            .status()
+            .expect("glslc not found: install shaderc (or set GLSLC)");
+        assert!(status.success(), "glslc failed on {}", src.display());
+    }
+}

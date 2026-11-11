@@ -1,0 +1,15 @@
+[package]
+name = "barrel-render"
+description = "Barrel's Vulkan renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "barrel-view"
+path = "src/main.rs"
+
+[dependencies]
+barrel-formats = { path = "../formats" }
+ash = "0.38"
+glam = "0.33"

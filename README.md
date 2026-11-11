@@ -45,6 +45,17 @@ target/release/barrel g1m-scan "<install>/Data"       # every model
 target/release/barrel g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
+`crates/render` is the Vulkan renderer. Its first tool, `barrel-view`, draws one model with
+its textures offscreen and writes the frame as PNG: one frame, no window, then it exits.
+
+```sh
+target/release/barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
+BARREL_VALIDATION=1 target/release/barrel-view ...      # with the Khronos validation layer
+```
+
+Building the renderer needs `glslc` (shaderc, part of the Vulkan SDK) to compile its shaders;
+set `GLSLC` to use another path.
+
 Extracted data goes in `work/`, which git ignores. No game data belongs in the repository.
 
 The name comes from the series' running "Barrel!" joke.
