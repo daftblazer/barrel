@@ -263,6 +263,16 @@ moves its pieces outward; most bones hold still with one key.
 subtype 1 is an eye: texture 0 the eye white, 1 the iris (BC3, with alpha), 2 a glow, 3 the
 highlights. All four use the eye mesh's single UV set.
 
+## Decoding Vorbis (`barrel_formats::vorbis`)
+
+The voices (and the other Ogg sounds) are decoded natively, from the Vorbis I specification
+and RFC 3533: no outside decoder. Done so far: Ogg pages into packets, the identification
+header, and the setup header's codebooks (Huffman codes assigned from the lengths, lowest free
+code first; lookup types 1 and 2 unpacked into vectors). `barrel vorbis-scan SeriesNNNN.fpl`
+reads every clip of a bank: all 18,000 voice clips are mono, 48 kHz, block sizes 256 and 2048,
+with 39 codebooks (a few more in some) that all read. Floors, residues, mappings, modes and the
+audio packets come next.
+
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
 The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its

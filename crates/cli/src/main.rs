@@ -43,6 +43,7 @@ usage:
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
   barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
   barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
+  barrel vorbis-scan SeriesNNNN.fpl  read every clip's Vorbis headers and codebooks in a voice bank
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -106,6 +107,7 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
+        ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["save", file] => save(Path::new(file)),
         ["days", install, n] => days(Path::new(install), n, false),
         ["days", install, n, "--events"] => days(Path::new(install), n, true),
@@ -776,6 +778,39 @@ fn save(file: &Path) -> Result<()> {
     println!("saved {:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
     println!("summary {:?}", s.summary);
     println!("{} encrypted bytes follow", s.body.len());
+    Ok(())
+}
+
+/// Every clip of a voice bank through the native Vorbis reader (headers and codebooks so far).
+fn vorbis_scan(fpl: &Path) -> Result<()> {
+    use barrel_formats::{voice, vorbis};
+    let list = voice::list(&read(fpl)?).map_err(|e| format!("{}: {e}", fpl.display()))?;
+    let fp = read(&fpl.with_extension("fp"))?;
+    let (mut ok, mut books, mut failed) = (0usize, 0usize, Vec::new());
+    for (k, c) in list.iter().enumerate() {
+        let Some((off, size)) = *c else { continue };
+        let result = (|| -> std::result::Result<(vorbis::Identification, usize), barrel_formats::Error> {
+            let ogg = voice::ogg(fp.get(off..off + size).ok_or(barrel_formats::Error::Corrupt("clip past the end"))?)?;
+            let packets = vorbis::packets(&ogg)?;
+            let id = vorbis::identification(packets.first().ok_or(barrel_formats::Error::Corrupt("no packets"))?)?;
+            let (b, _) = vorbis::codebooks(packets.get(2).ok_or(barrel_formats::Error::Corrupt("no setup header"))?)?;
+            Ok((id, b.len()))
+        })();
+        match result {
+            Ok((id, n)) => {
+                if ok == 0 {
+                    println!("clip {k}: {} channel(s), {} Hz, blocks {:?}, {n} codebooks", id.channels, id.rate, id.blocksize);
+                }
+                ok += 1;
+                books += n;
+            }
+            Err(e) => failed.push(format!("clip {k}: {e}")),
+        }
+    }
+    println!("{ok} clips read ({books} codebooks), {} failed", failed.len());
+    for f in failed.iter().take(5) {
+        println!("  {f}");
+    }
     Ok(())
 }
 
