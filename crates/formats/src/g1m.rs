@@ -555,6 +555,9 @@ fn bone_indices(vb: &VertexBuffer, a: &Attribute, v: usize) -> [u32; 4] {
 impl Geometry<'_> {
     /// The largest bone palette slot any vertex of a submesh uses, if it has bone indices.
     pub fn max_bone_slot(&self, s: &Submesh) -> Option<usize> {
+        if !self.palette_indexed(s) {
+            return None;
+        }
         let layout = self.layouts.get(s.layout)?;
         let a = layout.attributes.iter().find(|a| a.semantic == Semantic::BoneIndices && a.layer == 0)?;
         let vb = &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
@@ -565,6 +568,19 @@ impl Geometry<'_> {
             }
         }
         Some(max)
+    }
+
+    /// Whether a submesh's bone indices pick palette slots (every one a multiple of 3, as in
+    /// all of Escha's models). In the later games some submeshes (cloth and other physics
+    /// parts, by their shape) carry other numbers there: dense values from 0 past their
+    /// palette's size.
+    pub fn palette_indexed(&self, s: &Submesh) -> bool {
+        let Some(layout) = self.layouts.get(s.layout) else { return false };
+        let Some(a) = layout.attributes.iter().find(|a| a.semantic == Semantic::BoneIndices && a.layer == 0) else {
+            return false;
+        };
+        let vb = &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
+        (s.vertex_start..s.vertex_start + s.vertex_count).all(|v| bone_indices(vb, a, v).iter().all(|b| b % 3 == 0))
     }
 
     /// Each vertex's joints and weights for a submesh, over the same vertex range as
@@ -590,6 +606,12 @@ impl Geometry<'_> {
             _ => return Err(Error::Corrupt("weights are not floats")),
         };
         let mut out = Vec::with_capacity(hi - lo);
+        // Submeshes whose indices are not palette slots stay rigid on the palette's first
+        // joint until what their numbers mean is worked out.
+        if !self.palette_indexed(s) {
+            let joint = palette.first().map_or(0, |r| r.joint);
+            return Ok(Some(vec![([joint; 4], [1.0, 0.0, 0.0, 0.0]); hi - lo]));
+        }
         for v in lo..hi {
             let b = bone_indices(bvb, bones, v);
             let mut w = [0f32; 4];
