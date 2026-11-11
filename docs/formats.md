@@ -206,6 +206,30 @@ join: the end value of one is the d of the next, which confirms the 0..1 paramet
 and scale at a time. The breakable barrel's animation (`obj-a15_taru_brk_a.g1a`, 0.53 s)
 moves its pieces outward; most bones hold still with one key.
 
+## Morph targets (`*.g1h`)
+
+A character's facial shapes, next to its model in the same container
+(`PC20_MODEL_default.g1h` beside `PC20_MODEL_default.g1m`). `barrel_formats::g1h` reads
+them; `barrel g1h FILE#N` lists one and `barrel g1h-scan DIR` checks them all.
+
+```text
+header:  "_H1G", version "2200", file size, u16 header size, u16 set count, u32 0,
+         then a u32 offset per set
+set:     "PH1G", version "0100", size, u16 header size (0x14), u16 layout, u32 n,
+         then n - 1 u32 offsets from the set's start, one per target
+target:  a whole g1m whose geometry has a single vertex buffer of 12-byte entries
+```
+
+Each set belongs to one **vertex layout** of the base model (the number submeshes name), and
+each target holds an **offset** for every vertex of that layout: small values (under 2 units)
+added to positions in the hundreds. Escha's model has three sets: layout 7 (288 vertices,
+7 targets, every vertex moving), layout 3 (1,512 vertices, 10 targets) and layout 4 (1,446
+vertices, 18 targets), each target moving a different part of the face. The facial
+animations (`*_FACIAL` containers, `PC20_EYE_M_ANG_M_Brw_B_Def.g1a` and so on, by
+expression: angry, default, fun, sad, serious) are the single-value `g1a` tracks above,
+whose "bones" are these targets' weights. All 126 morph files in Escha & Logy DX read and
+match their models: 239 sets, 1,858 targets.
+
 ## Node names (`*Oid.bin`)
 
 Read by `barrel_formats::oid`. Each model container has one (`<name>Oid.bin`, the `.bin`

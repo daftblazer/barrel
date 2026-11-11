@@ -23,6 +23,8 @@ usage:
   barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
   barrel g1t-scan DIR          read every texture, loose and in containers
   barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
+  barrel g1h FILE#N            list a morph file's sets and targets
+  barrel g1h-scan DIR          read every morph file in the containers under DIR
   barrel g1m-scan DIR          read every model in the containers under DIR
   barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers
   barrel ebm FILE.ebm          print an event's messages
@@ -60,6 +62,8 @@ fn main() -> ExitCode {
         ["g1t", file, out] => g1t(file, Path::new(out)),
         ["g1t-scan", dir] => g1t_scan(Path::new(dir)),
         ["g1m-obj", file, out] => g1m_obj(file, Path::new(out)),
+        ["g1h", file] => g1h(file),
+        ["g1h-scan", dir] => g1h_scan(Path::new(dir)),
         ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
         ["oid-scan", dir] => oid_scan(Path::new(dir)),
         ["ebm", file] => ebm(Path::new(file)),
@@ -656,6 +660,67 @@ fn g1m_obj(spec: &str, out: &Path) -> Result<()> {
     std::fs::write(out, obj)?;
     println!("{} submeshes written to {}", g.submeshes.len(), out.display());
     Ok(())
+}
+
+fn g1h(spec: &str) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let sets = barrel_formats::g1h::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    for s in &sets {
+        let moved: Vec<usize> = s
+            .targets
+            .iter()
+            .map(|t| t.iter().filter(|v| v.iter().any(|c| c.abs() > 1e-5)).count())
+            .collect();
+        let n = s.targets.first().map_or(0, |t| t.len());
+        println!("layout {}: {} targets of {n} vertices; vertices moved: {moved:?}", s.layout, s.targets.len());
+    }
+    Ok(())
+}
+
+/// Read every morph file in the containers under `dir` and check it against the model of
+/// the same name: each set's layout must exist and its targets must have that layout's
+/// vertex count.
+fn g1h_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut ok, mut sets, mut targets) = (0usize, 0usize, 0usize);
+    let mut failed = Vec::new();
+    for path in &files {
+        let bytes = read(path)?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for entry in &e.entries {
+            let data = e.data(entry);
+            if !data.starts_with(b"_H1G") {
+                continue;
+            }
+            let stem = entry.name.trim_end_matches(".g1h");
+            let base = e.entries.iter().find(|b| b.name == format!("{stem}.g1m")).map(|b| e.data(b));
+            let result = barrel_formats::g1h::parse(data).and_then(|parsed| {
+                let model = barrel_formats::g1m::G1m::parse(base.ok_or(barrel_formats::Error::Corrupt("no base model"))?)?;
+                let g = model.geometry.ok_or(barrel_formats::Error::Corrupt("base model has no geometry"))?;
+                for s in &parsed {
+                    let layout = g.layouts.get(s.layout as usize).ok_or(barrel_formats::Error::Corrupt("set layout not in the base model"))?;
+                    let count = g.vertex_buffers.get(layout.buffers[0] as usize).map_or(0, |b| b.count);
+                    if s.targets.iter().any(|t| t.len() != count) {
+                        return Err(barrel_formats::Error::Corrupt("target vertex count differs from its layout"));
+                    }
+                    targets += s.targets.len();
+                }
+                sets += parsed.len();
+                Ok(())
+            });
+            match result {
+                Ok(()) => ok += 1,
+                Err(err) => failed.push(format!("{}: {}: {err}", path.display(), entry.name)),
+            }
+        }
+    }
+    println!("{ok} morph files read and matched to their models: {sets} sets, {targets} targets; {} failed", failed.len());
+    for f in failed.iter().take(10) {
+        println!("  {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some morph files did not read".into()) }
 }
 
 fn g1m_scan(dir: &Path) -> Result<()> {
