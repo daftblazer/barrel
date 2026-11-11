@@ -329,6 +329,15 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 in `SKILL_COMMON_MOB25_APPEAR_00` the camera starts on the monster (character 10002) from
 4 m out and pulls back to 9 m in a second, easing to a stop.
 
+**The stage.** `barrel_game::stage::Stage` plays the timed steps on a clock of 1/30 s
+frames (the events' frame time, `0x14077ba78`): `s4` places a character, `s18` starts a
+mover from where it is, and the camera's eye and target are set or moved, positions measured
+from characters taking the character's place and facing. `barrel play-event FILE --stage`
+prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16
+walks from (506, 0, 1061) to (891, 0, 1320) between 3.5 and about 7.5 s, ending up facing
+56°. Positions on kinds 2 to 4 and on the points of a character (head, feet) are not placed
+yet; the stage counts what it skips.
+
 Not yet: move types 1 and 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.
 

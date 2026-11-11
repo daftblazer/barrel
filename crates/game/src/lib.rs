@@ -10,4 +10,5 @@ mod names;
 pub mod quest;
 pub mod rng;
 pub mod shop;
+pub mod stage;
 pub mod synthesis;

@@ -45,7 +45,8 @@ usage:
   barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
-  barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
+  barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)
+  barrel play-event FILE.ebd --stage  run an event on a clock and print where its characters and camera are";
 
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
@@ -98,6 +99,7 @@ fn main() -> ExitCode {
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
         }
+        ["play-event", file, "--stage"] => stage_event(Path::new(file)),
         ["play-event", file] => play_event(Path::new(file), None, false),
         ["play-event", file, "--timed"] => play_event(Path::new(file), None, true),
         ["play-event", file, lang] => play_event(Path::new(file), Some(lang), false),
@@ -1276,6 +1278,38 @@ fn message_file(event: &Path, lang: Option<&str>) -> Option<PathBuf> {
         None => root.to_path_buf(),
     };
     Some(base.join("event").join(chapter).join(format!("EVENT_MESSAGE_{name}.ebm")))
+}
+
+/// Runs an event's timed steps on a stage and prints, whenever the clock moves on, where every
+/// character and the camera are (positions in field units, facings in degrees).
+fn stage_event(file: &Path) -> Result<()> {
+    use barrel_game::event::Player;
+    use barrel_game::stage::Stage;
+    let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    let table = OperandTable::escha();
+    let steps = Player::escha(&event, &[], &table)?.schedule();
+    let mut last = None;
+    let show = |p: [f32; 3]| format!("({:.0}, {:.0}, {:.0})", p[0], p[1], p[2]);
+    let print = |stage: &Stage| {
+        let mut parts: Vec<String> = stage
+            .characters
+            .iter()
+            .map(|(n, b)| format!("{n}{} {} {:.0}°", if b.moving() { "*" } else { "" }, show(b.position), b.facing.to_degrees()))
+            .collect();
+        if let (Some(e), Some(t)) = (stage.eye.position, stage.target.position) {
+            parts.push(format!("camera {} -> {}", show(e), show(t)));
+        }
+        println!("{:8.2}  {}", stage.time, parts.join("  "));
+    };
+    let stage = Stage::play(&steps, |t, stage| {
+        if last != Some(t.time) {
+            last = Some(t.time);
+            print(stage);
+        }
+    });
+    print(&stage);
+    println!("({} positions could not be placed; * = moving)", stage.unresolved);
+    Ok(())
 }
 
 fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
