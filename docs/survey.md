@@ -124,12 +124,13 @@ every archive of the four games, with Escha's readers plus the additions noted:
 | Ryza 2 DX | 5,967 | 10,421 of 10,446 | 4,099 of 4,112 | 10,787 | 3,168 | 11,766 of 11,767 |
 | Ryza 3 DX | 9,684 of 10,039 | 4,373 of 4,381 | 6,425 of 6,477 | 11,081 | 4,806 | 9,629 of 9,630 |
 
-Additions so far: BC7 textures, animation flags 2 and 0x66, and 32-bit index buffers (the
-model failures above were nearly all those; they read now). The messages now read too (four
-record layouts, see `formats.md`). What is left: some texture formats
-(heightmaps, shader textures, environment maps); a newer container version (355 of Ryza
-3's, environment and lighting); a few model attribute types (Ryza 3) and one more animation
-flag (a light, Sophie 2).
+Additions so far: BC7, BC4, BC5, BC6H and float textures, cube maps and volumes;
+animation flags 2 and 0x66; 32-bit index buffers; the later message layouts; container
+version 2 (Ryza 3's environment and lighting containers, 72-byte entries). After them, what
+fails is a handful per game: shader textures of another texture kind (`raindrop`,
+`hair_highlight`, ...), two `headsup` textures in an unknown format, a few Ryza 3 models
+with an unknown vertex attribute type, the light animations (`*-light.g1a`, Sophie 2) and
+one Ryza 3 door animation, and the two test events' messages.
 
 **Encrypted tables (`.xml.e`).** Many tables also come as `.xml.e`: a 16-byte header of
 big-endian u32s `{2, plain size, 0, 0}` (`freeachievement.xml.e`: 2, 23,144, the size of

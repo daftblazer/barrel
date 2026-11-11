@@ -9,7 +9,7 @@
 //! | Offset | Field |
 //! |---|---|
 //! | 0 | magic `CRAE` |
-//! | 4 | version: 0 (40-byte entries, 32-byte names) or 1 (56-byte entries, 48-byte names) |
+//! | 4 | version: 0 (40-byte entries, 32-byte names), 1 (56-byte entries, 48-byte names) or 2 (72-byte entries, 64-byte names; Ryza 3 DX's environment and lighting) |
 //! | 8 | size of the data after the table |
 //! | 12 | header size, 28 |
 //! | 16 | table size |
@@ -87,6 +87,7 @@ impl<'a> Elixir<'a> {
         let entry_size = match version {
             0 => 40,
             1 => 56,
+            2 => 72,
             _ => return Err(Error::Corrupt("unknown elixir version")),
         };
         if header_size != HEADER_SIZE {
