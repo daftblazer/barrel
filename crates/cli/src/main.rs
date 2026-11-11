@@ -42,7 +42,7 @@ usage:
   barrel duel EXE A B          two monsters (by number) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
-  barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
+  barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
 
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
@@ -87,8 +87,10 @@ fn main() -> ExitCode {
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
         }
-        ["play-event", file] => play_event(Path::new(file), None),
-        ["play-event", file, lang] => play_event(Path::new(file), Some(lang)),
+        ["play-event", file] => play_event(Path::new(file), None, false),
+        ["play-event", file, "--timed"] => play_event(Path::new(file), None, true),
+        ["play-event", file, lang] => play_event(Path::new(file), Some(lang), false),
+        ["play-event", file, lang, "--timed"] => play_event(Path::new(file), Some(lang), true),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -1078,7 +1080,7 @@ fn message_file(event: &Path, lang: Option<&str>) -> Option<PathBuf> {
     Some(base.join("event").join(chapter).join(format!("EVENT_MESSAGE_{name}.ebm")))
 }
 
-fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
+fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
     use barrel_game::event::{Player, Step};
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     let messages = match message_file(file, lang) {
@@ -1111,7 +1113,16 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
         .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::gesture::motions(&pe)).unwrap_or_default())
         .unwrap_or_default();
     let table = OperandTable::escha();
-    for step in Player::escha(&event, &messages, &table)? {
+    let player = Player::escha(&event, &messages, &table)?;
+    let steps: Vec<(Option<f32>, Step)> = if timed {
+        player.schedule().into_iter().map(|t| (Some(t.time), t.step)).collect()
+    } else {
+        player.map(|s| (None, s)).collect()
+    };
+    for (time, step) in steps {
+        if let Some(t) = time {
+            print!("{t:8.2} ");
+        }
         match step {
             Step::StartAction { action } => println!("{action:3} --- action {action} starts"),
             Step::Message { index, speaker, text } => {

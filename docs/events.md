@@ -68,7 +68,12 @@ its second, inclusive**, and the waits (below). In `EVENT_MM08_AS4_130` its rang
 4–11, ... 25–25) cover the 26 messages exactly once, in order. The player runs action 0 and starts
 another action wherever a `w1` says (the game runs them at once; the player puts a started
 action's steps right where it starts, each tagged with its action); every other command is
-reported with its name and operands, for the systems that will handle it. Run that way, that
+reported with its name and operands, for the systems that will handle it. `Player::schedule`
+(`play-event FILE [LANG] --timed`) runs the event on a clock instead: every started action
+at once, each held only by its own waits, and prints each step with its time. That each
+action has its own timer is an assumption (the event's timer is at +8 of the object the
+handlers are given, which may be per action or per event; not checked). Messages take no time
+there (the game waits for the reader), nor do the waits for characters and the camera. Run that way, that
 event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
 waits, and talks the dragon problem through in the right order.

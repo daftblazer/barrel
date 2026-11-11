@@ -86,6 +86,85 @@ impl<'a> Player<'a> {
     }
 }
 
+impl<'a> Player<'a> {
+    /// What command `c` of action `action` does: steps to report (in order), and an action
+    /// to start, if any.
+    fn translate(&self, action: usize, c: ebd::Command<'a>, out: &mut Vec<Step<'a>>) -> Option<usize> {
+        let f = |v: u32| v as i32 as f32;
+        match (c.word, c.operands) {
+            (START_ACTION, [n, ..]) => return Some(*n as usize),
+            (START_ACTION, []) => {}
+            (TIME_WAIT, [hundredths, ..]) => out.push(Step::Wait { seconds: f(*hundredths) / 100.0 }),
+            (TIME_WAIT, []) => out.push(Step::Wait { seconds: 0.0 }),
+            (SHORT_WAIT, _) => out.push(Step::Wait { seconds: 0.3 }),
+            (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: *character }),
+            (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
+                out.push(Step::CharacterWait { action, character: *character, seconds: f(*hundredths) / 100.0 })
+            }
+            (CHARA_POS_SET, [character, _, _, _, x, y, z, ..]) => {
+                out.push(Step::Place { action, character: *character, position: [f(*x), f(*y), f(*z)] })
+            }
+            (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
+                let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
+                out.push(Step::Motion { action, character: *character, motion: *motion, blend });
+            }
+            (SHOW_MESSAGES, [first, last]) => {
+                for i in *first as usize..=(*last as usize) {
+                    if let Some(m) = self.messages.get(i) {
+                        out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
+                    }
+                }
+            }
+            (word, operands) => out.push(Step::Command { action, word, name: self.name(word), operands }),
+        }
+        None
+    }
+
+    /// The event on a clock: every started action runs at once, each held only by its own
+    /// waits (`p1`, `u1`), as the game's event player runs them. Messages take no time here
+    /// (the game waits for the player to read them), nor do waits for characters or the
+    /// camera, whose lengths depend on what they wait for.
+    pub fn schedule(mut self) -> Vec<Timed<'a>> {
+        // (ready at, action, next command), in start order.
+        let mut threads: Vec<(f32, usize, usize)> = vec![];
+        if !self.actions.is_empty() {
+            threads.push((0.0, 0, 0));
+        }
+        let mut out = Vec::new();
+        let mut steps = Vec::new();
+        while let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len()).min_by(|&i, &j| {
+            threads[i].0.partial_cmp(&threads[j].0).unwrap().then(i.cmp(&j))
+        }) {
+            let (now, action, pc) = threads[t];
+            threads[t].2 = pc + 1;
+            let c = self.actions[action][pc];
+            steps.clear();
+            if let Some(n) = self.translate(action, c, &mut steps) {
+                if n < self.actions.len() && !self.started[n] {
+                    self.started[n] = true;
+                    threads.push((now, n, 0));
+                    out.push(Timed { time: now, action, step: Step::StartAction { action: n } });
+                }
+            }
+            for s in steps.drain(..) {
+                if let Step::Wait { seconds } = s {
+                    threads[t].0 += seconds.max(0.0);
+                }
+                out.push(Timed { time: now, action, step: s });
+            }
+        }
+        out
+    }
+}
+
+/// A step and when it happens, in seconds from the event's start, and the action it is in.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Timed<'a> {
+    pub time: f32,
+    pub action: usize,
+    pub step: Step<'a>,
+}
+
 impl<'a> Iterator for Player<'a> {
     type Item = Step<'a>;
 
@@ -100,42 +179,15 @@ impl<'a> Iterator for Player<'a> {
                 continue;
             };
             *next += 1;
-            match (c.word, c.operands) {
-                (START_ACTION, [n, ..]) => {
-                    let n = *n as usize;
-                    if n < self.actions.len() && !self.started[n] {
-                        self.started[n] = true;
-                        self.running.push((n, 0));
-                        return Some(Step::StartAction { action: n });
-                    }
-                }
-                (START_ACTION, []) => {}
-                (TIME_WAIT, [hundredths, ..]) => return Some(Step::Wait { seconds: *hundredths as i32 as f32 / 100.0 }),
-                (TIME_WAIT, []) => return Some(Step::Wait { seconds: 0.0 }),
-                (SHORT_WAIT, _) => return Some(Step::Wait { seconds: 0.3 }),
-                (CHARA_WAIT, [character, ..]) => return Some(Step::WaitForCharacter { character: *character }),
-                (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
-                    return Some(Step::CharacterWait { action, character: *character, seconds: *hundredths as i32 as f32 / 100.0 })
-                }
-                (CHARA_POS_SET, [character, _, _, _, x, y, z, ..]) => {
-                    let f = |v: u32| v as i32 as f32;
-                    return Some(Step::Place { action, character: *character, position: [f(*x), f(*y), f(*z)] });
-                }
-                (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
-                    let blend = rest.first().map_or(0.0, |&b| b as i32 as f32 / 100.0);
-                    return Some(Step::Motion { action, character: *character, motion: *motion, blend });
-                }
-                (SHOW_MESSAGES, [first, last]) => {
-                    for i in *first as usize..=(*last as usize) {
-                        if let Some(m) = self.messages.get(i) {
-                            self.pending.push_back(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
-                        }
-                    }
-                }
-                (word, operands) => {
-                    return Some(Step::Command { action, word, name: self.name(word), operands });
+            let mut steps = Vec::new();
+            if let Some(n) = self.translate(action, c, &mut steps) {
+                if n < self.actions.len() && !self.started[n] {
+                    self.started[n] = true;
+                    self.running.push((n, 0));
+                    return Some(Step::StartAction { action: n });
                 }
             }
+            self.pending.extend(steps);
         }
     }
 }
@@ -169,6 +221,31 @@ mod tests {
             .collect();
         // Action 3 is never started, so it never runs.
         assert_eq!(steps, ["wait 0.1", "start 2", "wait 2", "wait 0.2", "start 1", "wait 1"]);
+    }
+
+    #[test]
+    fn actions_run_at_once_on_a_clock() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        // Main: start 1, wait 1 s, mark; action 1: wait 0.5 s, mark, wait 1 s, mark.
+        let mark = 0x7300_0006;
+        let event = Ebd {
+            actions: vec![
+                act(vec![START_ACTION, 1, TIME_WAIT, 100, mark, 0, END]),
+                act(vec![TIME_WAIT, 50, mark, 1, TIME_WAIT, 100, mark, 2, END]),
+            ],
+            resources: vec![],
+        };
+        let table = OperandTable::new(&[(START_ACTION, Some(1)), (TIME_WAIT, Some(1)), (mark, Some(1))]);
+        let marks: Vec<(f32, u32)> = Player::escha(&event, &[], &table)
+            .unwrap()
+            .schedule()
+            .into_iter()
+            .filter_map(|t| match t.step {
+                Step::Command { operands: [m], .. } => Some((t.time, *m)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks, [(0.5, 1), (1.0, 0), (1.5, 2)]);
     }
 
     #[test]
