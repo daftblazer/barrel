@@ -59,6 +59,11 @@ executable's facial tables (`barrel_game::face::Tables`, read from the install's
 executable), the animations from the character's `Facial` container, the shapes from its
 model's `.g1h`. In `MM08_AS4_130` at line 5 Escha speaks with the sad talking mouth
 (`PC20_MTH_M_SAD_M_Mth_B_Def`), Logy keeps a closed sad mouth, Threia and Reyfer the default.
+The characters also take their latest gesture (each line's third field) as their pose:
+the gesture's main motion from `barrel_game::gesture` (the table found in the executable by
+its first entry), its `CharaBase` column, then `<FileHead>_<value>.g1a` from the `Motion1`
+container or its own one. At line 5 Escha is in `STAND_NORMAL_2`, Logy `STAND_NORMAL`,
+Threia `STAND_YES_2` and Reyfer `STAND_ANGRY`; characters without a gesture keep `F_WAIT`.
 
 **Eyes.** An eye material has four textures, none of subtype 1 (Escha's materials 3 and 4):
 the eye white on a skin-coloured ground, the iris with alpha, a green glow and the highlight

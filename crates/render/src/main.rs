@@ -407,7 +407,10 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Opt
     // Faces at message line `line`: each speaker's latest expression up to it (the line's
     // fourth field), with the line's own speaker talking.
     let mut faces: std::collections::HashMap<i32, (i32, bool)> = Default::default();
+    // And each speaker's latest gesture (the line's third field).
+    let mut gestures: std::collections::HashMap<i32, i32> = Default::default();
     let mut face_tables = None;
+    let mut gesture_table: Option<(Vec<[Option<barrel_game::gesture::Form>; 2]>, Vec<String>)> = None;
     if let Some(n) = line {
         let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
@@ -415,6 +418,9 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Opt
         for (i, m) in messages.iter().enumerate().take(n + 1) {
             if m.fields[3] >= 0 {
                 faces.insert(m.speaker, (m.fields[3], false));
+            }
+            if m.fields[2] >= 0 {
+                gestures.insert(m.speaker, m.fields[2]);
             }
             if i == n {
                 if let Some(text) = Some(m.repaired_text()) {
@@ -431,6 +437,9 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Opt
                     let t = barrel_game::face::Tables::read(&pe);
                     if !t.brow.is_empty() {
                         face_tables = Some(t);
+                        if let Some(g) = barrel_game::gesture::read(&bytes) {
+                            gesture_table = Some((g, barrel_game::gesture::motions(&pe)));
+                        }
                         break;
                     }
                 }
@@ -487,17 +496,35 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Opt
         let g = G1m::parse(mesh)?;
         let Some(geometry) = g.geometry.as_ref() else { continue };
         let transform = Mat4::from_rotation_translation(glam::Quat::from_rotation_y(angle.to_radians()), Vec3::from(pos));
-        // The field wait motion: <FileHead>_<F_WAIT>.g1a in the <Motion1> container, on the
-        // skeleton in the base model (<stem>.g1m).
+        // The body motion: the speaker's gesture at this line if any (its main motion's
+        // CharaBase column), otherwise the field wait (F_WAIT). The animation is
+        // <FileHead>_<value>.g1a, in the <Motion1> container or in a container of its own
+        // beside it, on the skeleton in the base model (<stem>.g1m).
+        let column = gestures
+            .get(&(who as i32))
+            .and_then(|&g| {
+                let (table, names) = gesture_table.as_ref()?;
+                let form = table.get(g as usize)?[0].as_ref()?;
+                names.get(form.main_motion() as usize).cloned()
+            })
+            .filter(|c| row.attr(c).is_some())
+            .unwrap_or_else(|| "F_WAIT".to_string());
         let joints = (|| -> Option<Vec<Mat4>> {
             let head = row.attr("FileHead")?;
             let motion = row.attr("Motion1")?;
-            let wait = row.attr("F_WAIT")?;
+            let value = row.attr(&column)?;
             let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
-            let mbytes = std::fs::read(root.join("Data/x64/Character").join(dir).join(format!("{motion}.elixir.gz"))).ok()?;
-            let motions = Elixir::parse(&mbytes).ok()?;
-            let anim = barrel_formats::g1a::parse(named(&motions, &format!("{head}_{wait}.g1a"))?).ok()?;
+            let char_dir = root.join("Data/x64/Character").join(dir);
+            let anim_name = format!("{head}_{value}.g1a");
+            let from = |file: String| -> Option<Vec<u8>> {
+                let bytes = std::fs::read(char_dir.join(file)).ok()?;
+                let c = Elixir::parse(&bytes).ok()?;
+                named(&c, &anim_name).map(|b| b.to_vec())
+            };
+            let anim_bytes = from(format!("{motion}.elixir.gz")).or_else(|| from(format!("{head}_{value}.elixir.gz")))?;
+            let anim = barrel_formats::g1a::parse(&anim_bytes).ok()?;
             let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
+            eprintln!("character {who}: motion {column} = {head}_{value}");
             Some(pose(&skeleton, &anim, 0.5))
         })();
         if let (Some(&(expr, talking)), Some(tables), Some(head), Some(facial)) =
