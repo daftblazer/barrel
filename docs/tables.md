@@ -549,7 +549,16 @@ requests, presumably). Last the shop rotation (`0x14033aaa0` on `0x140dfc880`): 
 another with stock `min(n / 2, 10)`, at least 1, three from a third, through `0x14033b5e0`,
 `0x14033b990` and `0x14033bd10`) with a generator of its own, seeded from the date plus global
 `0x1410989f0` by the Mersenne Twister seeding step: `s0 = (x ^ (x >> 30)) × 0x6c078965 + 1`
-with `x` that sum, `s1` the same of `s0` plus 2 (the shift arithmetic). The day ends by clearing
+with `x` that sum, `s1` the same of `s0` plus 2 (the shift arithmetic). The rotation's generator is the object's own two words (`0x140dfc880`), stepped like the
+battle's Xorshift on two words (`t = x ^ (x << 11)`, `x = y`, `y = y ^ (y >> 19) ^ (t >> 8) ^ t`,
+the 19 arithmetic, the 8 logical; a number is the new `y`'s low 31 bits, `0x14033c210` takes
+it modulo n). Each of the first three slots (`0x14033b5e0`, one per group 0 to 2) gathers
+candidates from the list at `0x140dff518` (built by `0x14017c1e0`): entries whose +0x3c is the
+group (or -1), whose counter in the array at `0x141079fe0` (by +0x4) is at least 6, that pass
+`0x1400e31a0`/`0x14033b450`; then, in order, each draws a number modulo 100 and is taken when it
+is below `trunc(chance + 0.5)` (the chance is the float at +0x38); if none is, the list is
+shuffled (each place k from 1 swapped with `below(k + 1)`) and the first taken
+(`shop::ShopRng`, `rotation_pick`; what the entries are is not read yet). The day ends by clearing
 `0x1410782e2` (`calendar::daily_rolls`, `daily_gain`, `add_gain`, `month_start`, `shop_day`,
 `shop_seed`).
 
