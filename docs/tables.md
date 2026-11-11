@@ -536,6 +536,25 @@ object, the route's path. The float's meaning is still a reading from the values
 reader of +0x24 has been found yet. Record 85, past the
 table, is something else (pointers to "Knowledge: nothing", "Knowledge: new", ...).
 
+### Places
+
+The places the area records join are a table of 96 records of 0x60 bytes at `0x140d65bb0`
+(English Escha executable; `0x1401717e0` finds one by its id). `tools/areas.py --places EXE`
+lists them.
+
+| Bytes | What |
+|---|---|
+| 0 | pointer to the name in the executable's language ("Colseit", "Twilight Forest") |
+| 16 | i32: 0 for the 16 world-map places, 1 for the 80 places inside fields |
+| 24 | pointer to the id: "T0" (the town), "A0" to "G2" (fields), "B1p4" (a place in field B1) |
+| 32 | six i32: the area records that start or end here, -1 for none |
+| 56 | pointer to the description ("A withering forest.") |
+| 72 | two i32 (-1 and 0 in most) |
+
+The links agree with the area names: Colseit's are areas 0 to 3 (R0 to R3, the four routes
+whose names start at Colseit), the Upland Forest's are R3, R7, R13 and R6. One link is out of
+the area range: the Withering Plains' 208, still to be explained.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
