@@ -1107,6 +1107,10 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
                 println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));
             }
             Step::Wait { seconds } => println!("      (wait {seconds:.2} s)"),
+            Step::WaitForCharacter { character } => {
+                let who = names.get(character as usize).map_or("?", String::as_str);
+                println!("      (wait for {who})");
+            }
             Step::Command { action, word, name, operands } => {
                 let ops: Vec<String> = operands.iter().map(|&o| (o as i32).to_string()).collect();
                 let short = Word::classify(word).to_string();

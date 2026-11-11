@@ -122,12 +122,22 @@ event's camera; `--free-camera` places the view on the characters instead. The f
 view is not in the command (40° is used for now).
 
 **Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
-second: `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and
+second (the unit is read from the values below; that the frame time it counts down by is in
+seconds is not yet confirmed from the code): `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and
 sets the event's timer (`0x14005b310`, the float at +0x44), which counts down by each frame's
 elapsed time (`0x14005b330`) and lets the event go on when it reaches 0. The values are short
 pauses: 50 (half a second) 3,806 times, 10 2,647 times, then 100, 150, 200 and up to a few
 seconds. `u1` (0x75000001) waits 0.3 s, a constant in the same handler. `play-event` prints
 both as waits.
+
+The other `p` commands (`p2` to `p5`, and a few others such as `0x71000023`, `0x72000013`,
+`0x7200000f`) wait until a listener says a thing is done (`0x140052f35` in the event
+player's update). `p3` (`ECT_MACRO_CHARA_WAIT`) takes a character number (1 and 0, Logy and
+Escha, most often): `0x1400710b0` finds the character by number (its +0x78) through
+`0x1400760c0` and asks it, and `WMResMgr` (`0x1403874e0`) matches it against its characters'
++0x81c. What it waits for (a move or motion to end, or the character's files to load; the
+resource manager's part hints at the latter) is still open. `p5` (`ECT_MACRO_CAMERA_WAIT`)
+is answered by `EventExecCamera`.
 
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 

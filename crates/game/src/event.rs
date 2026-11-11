@@ -18,6 +18,8 @@ pub const SHOW_MESSAGES: u32 = 0x7500_0012;
 pub const TIME_WAIT: u32 = 0x7000_0001;
 /// `u1` (0x75000001): wait 0.3 seconds (the event player's constant).
 pub const SHORT_WAIT: u32 = 0x7500_0001;
+/// `p3` (`ECT_MACRO_CHARA_WAIT`): wait for a character (its number).
+pub const CHARA_WAIT: u32 = 0x7000_0003;
 /// `w1`: a step marker.
 pub const STEP: u32 = 0x7700_0001;
 
@@ -28,6 +30,9 @@ pub enum Step<'a> {
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
     /// counts down by each frame's elapsed time).
     Wait { seconds: f32 },
+    /// Wait until a character (by `Chara.xml` row) is ready (`p3`); what "ready" means is
+    /// still open (`docs/events.md`, "Waits").
+    WaitForCharacter { character: u32 },
     /// A command the player does not handle itself.
     Command { action: usize, word: u32, name: Option<&'static str>, operands: &'a [u32] },
 }
@@ -79,6 +84,7 @@ impl<'a> Iterator for Player<'a> {
                 (TIME_WAIT, [hundredths, ..]) => return Some(Step::Wait { seconds: *hundredths as i32 as f32 / 100.0 }),
                 (TIME_WAIT, []) => return Some(Step::Wait { seconds: 0.0 }),
                 (SHORT_WAIT, _) => return Some(Step::Wait { seconds: 0.3 }),
+                (CHARA_WAIT, [character, ..]) => return Some(Step::WaitForCharacter { character: *character }),
                 (SHOW_MESSAGES, [first, last]) => {
                     for i in *first as usize..=(*last as usize) {
                         if let Some(m) = self.messages.get(i) {
@@ -113,6 +119,7 @@ mod tests {
                 Step::Message { text, .. } => text.clone(),
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
+                Step::WaitForCharacter { character } => format!("wait for {character}"),
             })
             .collect();
         assert_eq!(texts, ["a", "b", "ECT_CHARA_MOTION_WAIT", "wait 0.5", "c"]);
