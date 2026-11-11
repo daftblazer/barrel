@@ -1099,6 +1099,17 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
                 .unwrap_or_default()
         })
         .unwrap_or_default();
+    // Motion names (CharaBase columns) from the executable's MOTION_* enum, when the install's
+    // executable is found next to Saves.
+    let motions: Vec<String> = file
+        .ancestors()
+        .find(|p| p.join("Saves").is_dir())
+        .and_then(|root| {
+            ["Atelier_Escha_and_Logy_EN.exe", "Atelier_Escha_and_Logy.exe"].iter().map(|n| root.join(n)).find(|p| p.is_file())
+        })
+        .and_then(|exe| read(&exe).ok())
+        .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::gesture::motions(&pe)).unwrap_or_default())
+        .unwrap_or_default();
     let table = OperandTable::escha();
     for step in Player::escha(&event, &messages, &table)? {
         match step {
@@ -1117,7 +1128,8 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
             }
             Step::Motion { action, character, motion, blend } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
-                println!("{action:3} {who} plays motion {motion} (blend {blend:.2} s)");
+                let name = motions.get(motion as usize).map_or_else(|| motion.to_string(), Clone::clone);
+                println!("{action:3} {who} plays {name} (blend {blend:.2} s)");
             }
             Step::WaitForCharacter { character } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);

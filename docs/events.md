@@ -133,7 +133,9 @@ both as waits.
 
 `barrel_game::event::Player` also turns `s3`, `s4` and `s10` into steps of their own (a
 character's wait, place and looping motion, each with the action it belongs to), and
-`play-event` prints them with the character's name (`Escha plays motion 32 (blend 0.40 s)`).
+`play-event` prints them with the character's name and, when it finds the install's
+executable next to `Saves`, the motion's name from its `MOTION_*` enum (`Escha plays TURN_L`,
+then `Escha plays WALK (blend 0.40 s)` in `EVENT_MM01_OP1_111`, after a turn command).
 
 The other `p` commands (`p2` to `p5`, and a few others such as `0x71000023`, `0x72000013`,
 `0x7200000f`) wait until a listener says a thing is done (`0x140052f35` in the event
