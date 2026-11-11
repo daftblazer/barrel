@@ -68,7 +68,7 @@ impl Fighter<'_> {
     /// The skill for this turn: by the block's rules when it has them (the slot's index into
     /// its skill list, then that skill's record, and the rule's target pick), else the normal
     /// attack (and no target pick: a party member's target is the player's choice).
-    fn pick(&self, situation: &crate::monster_ai::Situation, rng: &mut Rng) -> (Option<usize>, &Skill, Option<i32>) {
+    pub(crate) fn pick(&self, situation: &crate::monster_ai::Situation, rng: &mut Rng) -> (Option<usize>, &Skill, Option<i32>) {
         let Some(table) = self.skills.filter(|_| !self.block.rules.is_empty()) else { return (None, self.normal, None) };
         let (slot, target) = crate::monster_ai::choose(&self.block.rules, situation, rng);
         let skill = usize::try_from(slot)

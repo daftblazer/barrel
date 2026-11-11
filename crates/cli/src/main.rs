@@ -41,6 +41,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
+  barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
   barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
   barrel party-skills EXE      each party member's skill list: command, level learnt, MP cost
   barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
@@ -93,6 +94,7 @@ fn main() -> ExitCode {
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
+        ["battle", exe, monster, party @ ..] if !party.is_empty() => battle(Path::new(exe), monster, party),
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
@@ -804,6 +806,50 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         }
     }
     println!("{} hits (partial battle: no traits or start rules, states only poison and stat buffs; see barrel_game::duel)", hits.len());
+    Ok(())
+}
+
+/// Party members against a monster: see `barrel_game::skirmish`.
+fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    use barrel_game::fight::Event;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
+    let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
+    let lists = bd::party_skills(&pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists at the English executable's address")?;
+    let growth = bd::party_growth(&pe, bd::PARTY_GROWTH_EN).ok_or("no party growth table")?;
+    let member_names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
+    let mut names = Vec::new();
+    let mut members = Vec::new();
+    for s in party {
+        let (m, l) = s.strip_prefix('p').and_then(|r| r.split_once(':')).ok_or_else(|| format!("{s}: write p<member>:<level>"))?;
+        let (m, l): (usize, usize) = (m.parse().map_err(|_| format!("{s}: member"))?, l.parse().map_err(|_| format!("{s}: level"))?);
+        let stats = growth.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
+        let block = barrel_game::duel::party_block(l as i32, stats);
+        members.push(barrel_game::skirmish::Member::new(block, stats.mp, &lists[m], &skills).ok_or("no party attack")?);
+        names.push(format!("{} ({l})", member_names[m]));
+    }
+    let n: usize = monster.parse().map_err(|_| format!("{monster}: not a monster number"))?;
+    let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{monster}: no such monster"))?;
+    names.push(m.name.clone());
+    let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) };
+    let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, &mut rng, 1000);
+    for e in &events {
+        match e {
+            Event::Poisoned { who, damage, hp_left } => println!("{} takes {damage} poison damage ({hp_left} HP left)", names[*who]),
+            Event::Acted { who, skill, target, damage, hp_left, mp_left } => {
+                let mp = if *who < party.len() { format!(", {mp_left} MP left") } else { String::new() };
+                println!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left{mp})", names[*who], names[*target]);
+            }
+        }
+    }
+    match winner {
+        Some(0) => println!("the party wins"),
+        Some(_) => println!("{} wins", m.name),
+        None => println!("no winner after {} events", events.len()),
+    }
     Ok(())
 }
 

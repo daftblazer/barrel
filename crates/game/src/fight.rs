@@ -53,6 +53,19 @@ impl Fighter {
         Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1 }
     }
 
+    /// With `mp` as its MP and maximum MP (the monsters' blocks have none).
+    pub fn with_mp(mut self, mp: i32) -> Fighter {
+        for s in [&mut self.base, &mut self.stats] {
+            s[stat::MP] = mp;
+            s[stat::MAX_MP] = mp;
+        }
+        self
+    }
+
+    pub fn mp(&self) -> i32 {
+        self.stats[stat::MP]
+    }
+
     pub fn hp(&self) -> i32 {
         self.stats[stat::HP]
     }
@@ -78,7 +91,7 @@ pub enum Event {
     /// A fighter's turn-start HP change took `damage` (poison).
     Poisoned { who: usize, damage: i32, hp_left: i32 },
     /// A fighter used a skill on another; `damage` is the HP it took (0 when the skill deals none).
-    Acted { who: usize, skill: String, target: usize, damage: i32, hp_left: i32 },
+    Acted { who: usize, skill: String, target: usize, damage: i32, hp_left: i32, mp_left: i32 },
 }
 
 pub struct Battle {
@@ -187,6 +200,12 @@ impl Battle {
         events
     }
 
+    /// `who` pays a skill's MP before acting (`0x1401af970` at `0x1401b8440`; MP not under 0).
+    pub fn pay_mp(&mut self, who: usize, cost: i32) {
+        let f = &mut self.fighters[who];
+        f.stats[stat::MP] = (f.stats[stat::MP] - cost).max(0);
+    }
+
     /// `who` uses `skill` on `target` (its foe; own-side skills put their states on `who`), then
     /// gets its next wait and counts the action. `slot` is the monster action slot it came from.
     pub fn act(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, rng: &mut Rng) -> Vec<Event> {
@@ -230,7 +249,7 @@ impl Battle {
                 battle::take_hp_damage(&mut self.fighters[target].stats, amount, None, None)
             }
         };
-        let events = vec![Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp() }];
+        let events = vec![Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() }];
         // Its next wait (`0x1401b9b70`, `0x14018c9d0`) and the action counted (`0x1401aecda`);
         // a finishing blow ends the battle before either.
         if !self.fighters[target].down() {

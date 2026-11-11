@@ -468,7 +468,13 @@ skills, among them the Floating Alchemy bombs (an area, presumably; not read). `
 side, timed states, action count and slot uses; the timeline) and its steps: `next` (whose
 turn), `start_turn` (the netted HP change and the states' ageing) and `act` (a skill on a
 target: its poison and stat states, its damage, the next wait, the action counted), reporting
-`Event`s. The duel drives it for two fighters.
+`Event`s. The duel drives it for two fighters. `barrel_game::skirmish` (`barrel battle EXE MONSTER p<member>:<level>...`) puts party
+members (base stats at their level, MP, the skills learnt by then at their listed cost) against
+one monster: the monster acts by its rules and target picks, and each member, standing in for
+the player, uses the costliest learnt skill it can pay for that hits the foe, or its normal
+attack. Escha, Logy and Reyfer at level 20 beat a Howling Beast with Ether Shoot, Flash Cut and
+Dragon Breath until their MP runs out; the Beast spreads its hits by the weighted draw and
+fells Escha.
 
 `barrel_formats::battle_data` reads the monster and skill tables from the English
 executable, and `barrel_game::duel` puts the pieces above together: two monsters trading the
