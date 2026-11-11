@@ -396,6 +396,9 @@ fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::An
 /// distance, target x, y, z, offset x, y, z}; the camera looks at target + offset.
 #[derive(Clone, Copy, Debug)]
 struct EventCamera {
+    /// Where the eye is, when known outright (the stage's camera, `--at`); otherwise it is
+    /// worked out from distance, yaw and pitch.
+    eye: Option<Vec3>,
     target: Vec3,
     distance: f32,
     yaw: f32,
@@ -411,6 +414,7 @@ fn event_characters(
     scene: &mut Scene,
     base: usize,
     line: Option<usize>,
+    at: Option<f32>,
 ) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
@@ -472,6 +476,7 @@ fn event_characters(
             if c.word == 0x7410_0014 && o.len() >= 11 && camera.is_none() {
                 let i = |k: usize| o[k] as i32 as f32;
                 camera = Some(EventCamera {
+                    eye: None,
                     target: Vec3::new(i(5) + i(8), i(6) + i(9), i(7) + i(10)),
                     distance: i(4),
                     yaw: i(0) / 100.0,
@@ -490,6 +495,26 @@ fn event_characters(
                 }
             }
         }
+    }
+    // --at SECONDS: where the stage has everyone then (barrel_game::stage), and its camera
+    // when it has set both the eye and the target.
+    if let Some(at) = at {
+        use barrel_game::stage::{Measures, Stage, FRAME};
+        let curves = std::fs::read(root.join("Saves/curve/curve_data.xml"))
+            .ok()
+            .and_then(|b| barrel_formats::table::parse(&b).ok())
+            .map(|t| barrel_game::curve::Curve::table(&t))
+            .unwrap_or_default();
+        let steps = barrel_game::event::Player::escha(&event, &[], &ops)?.schedule();
+        let upto: Vec<_> = steps.into_iter().filter(|t| t.time <= at).collect();
+        let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
+        stage.run_until(at + FRAME * 0.5);
+        first = stage.characters.iter().map(|(&n, b)| (n, b.position, b.facing.to_degrees())).collect();
+        if let (Some(e), Some(t)) = (stage.eye.position, stage.target.position) {
+            let (e, t) = (Vec3::from(e), Vec3::from(t));
+            camera = Some(EventCamera { eye: Some(e), target: t, distance: (e - t).length().max(1.0), yaw: 0.0, pitch: 0.0, fov: 40.0 });
+        }
+        eprintln!("at {at} s: {} characters on the stage, {} positions not placed", first.len(), stage.unresolved);
     }
     let placements: Vec<Placement> = first.clone();
     let mut packs = Vec::new();
@@ -718,6 +743,7 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
+    let mut event_at = None::<f32>;
     let mut look_at = None::<u32>;
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
@@ -734,6 +760,7 @@ fn main() -> Result<()> {
             "--face" => face_specs.push(it.next().ok_or("--face FILE#N")?.clone()),
             "--look-at" => look_at = Some(it.next().ok_or("--look-at CHARA")?.parse()?),
             "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
+            "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -778,7 +805,7 @@ fn main() -> Result<()> {
     let mut event_camera: Option<EventCamera> = None;
     if let Some(e) = &event_spec {
         let base = G1t::parse(&pack_bytes[0])?.textures.len();
-        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line)?;
+        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at)?;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
@@ -786,6 +813,7 @@ fn main() -> Result<()> {
         if let Some(who) = look_at {
             let &(_, pos, angle) = placements.iter().find(|p| p.0 == who).ok_or("--look-at: that character is not placed")?;
             event_camera = Some(EventCamera {
+                eye: None,
                 target: Vec3::from(pos) + Vec3::new(0.0, 140.0, 0.0),
                 distance: 160.0,
                 yaw: 180.0 - angle,
@@ -1075,7 +1103,7 @@ fn main() -> Result<()> {
         let back = Vec3::new(yw.sin() * pt.cos(), pt.sin(), -yw.cos() * pt.cos());
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
         target = c.target * mirror;
-        eye = (c.target + back * c.distance) * mirror;
+        eye = c.eye.unwrap_or(c.target + back * c.distance) * mirror;
         fov = c.fov.clamp(10.0, 120.0).to_radians();
         dist = c.distance;
         eprintln!("event camera: target {:?}, distance {}, yaw {}, pitch {}, fov {}", c.target, c.distance, c.yaw, c.pitch, c.fov);

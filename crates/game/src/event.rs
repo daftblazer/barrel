@@ -27,6 +27,9 @@ pub const CHARA_TIME_WAIT: u32 = 0x7300_0003;
 pub const CHARA_POS_SET: u32 = 0x7300_0004;
 /// `s10` (`ECT_CHARA_MOTION_SET_LOOP`): `{character, motion, blend (hundredths), flag}`.
 pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
+/// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
+/// operands): adds the character there, facing `angle` degrees.
+pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
 /// `s23` (`ECT_CHARA_ROT_SET`): `{character, x, y, z}`, degrees.
 pub const CHARA_ROT_SET: u32 = 0x7300_0017;
 /// `s24` (`ECT_CHARA_ROT_SET_TARGET`): `{character, position (6)}`.
@@ -139,6 +142,10 @@ impl<'a> Player<'a> {
                         out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
                     }
                 }
+            }
+            (FIELD_CHARA_ADD, [character, _, _, _, x, y, z, _, angle, ..]) => {
+                out.push(Step::Place { action, character: *character, position: [f(*x), f(*y), f(*z)] });
+                out.push(Step::Turn { action, character: *character, rotation: [0.0, f(*angle).to_radians(), 0.0] });
             }
             (CHARA_ROT_SET, [character, x, y, z, ..]) => {
                 let rotation = [*x, *y, *z].map(|v| (v as i32 as f32).to_radians());

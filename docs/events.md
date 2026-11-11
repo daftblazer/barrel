@@ -364,7 +364,11 @@ mover from where it is, and the camera's eye and target are set or moved, positi
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16
 walks from (506, 0, 1061) to (891, 0, 1320) between 3.5 and about 7.5 s, ending up facing
-56°. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
+56°. `q4` (adding a field character) places it and turns it to its angle there too.
+`barrel-view --field <DIR> --event FILE.ebd --at SECONDS` draws the stage as it stands at that
+time: every character where it has walked to and facing where it turned, seen from the
+stage's camera when the event has set its eye and target (the skill camera), otherwise from
+the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
 Not yet: move types 1 and 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
