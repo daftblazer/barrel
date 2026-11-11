@@ -524,9 +524,10 @@ board's offset, the characters' friendship and list slots, the rank, the twelve 
 the board, the last day's rolls) and `advance` works each new day in the game's order: the
 rolls, the friendship gains, closing the month just ended on a month's first day, and the
 board redraw on the 1st, 11th and 21st (`World::new_game` starts on April 1st and draws the
-board's offset first). The request expiry pass and the manager's monthly work are left out. `barrel days
+board's offset first), then, once for all the days, the shops' restock. The request expiry pass and the manager's monthly work are left out. `barrel days
 INSTALL N [--events]` runs a new game's first N days on it (a fixed generator state, everyone in
-the list in slot order) and prints each board redraw and month close: boards on April 11th,
+the list in slot order) with every shop emptied at the start, and prints each board redraw, month close and restock
+(22 wares, those that come back every 10 days, on April 11th and 21st): boards on April 11th,
 21st, May 1st, ..., April's report closing on May 1st. The days a world-map trip takes (reason
 4) are the trip object's +0x24 (vtable `0x140772c48`, built by `0x14007b920` with 1 there);
 what sets it is still not read.

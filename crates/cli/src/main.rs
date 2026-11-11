@@ -41,7 +41,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
-  barrel days INSTALL N [--events]  a new game's first N days: each board redraw and month close (fixed seed)
+  barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -731,8 +731,14 @@ fn days(install: &Path, n: &str, events: bool) -> Result<()> {
     };
     let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
     let seen = |e: &str| events && starts.contains(e);
-    let t = Tables { requests: &all, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &|_| true, level: &|_| 0 };
-    let mut w = World::new_game(barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]), 0);
+    let path = install.join("Saves/shop/ShopData.xml");
+    let wares = barrel_game::shop::wares(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
+    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &|_| true, level: &|_| 0 };
+    let mut w = World::new_game(barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]), 0, &wares);
+    // A buyer who empties every shop on the first day.
+    for s in &mut w.stock {
+        s.count = 0;
+    }
     w.joined = (0..barrel_game::days::MEMBERS).collect();
     for (k, s) in w.slot.iter_mut().enumerate() {
         *s = Some(k);
@@ -741,8 +747,11 @@ fn days(install: &Path, n: &str, events: bool) -> Result<()> {
     for _ in 0..n {
         let board = w.board;
         let closed: Vec<u8> = w.months.iter().map(|m| m.state).collect();
-        w.advance(1, Reason::One, &t);
+        let refilled = w.advance(1, Reason::One, &t);
         let d = barrel_game::calendar::Date::of(w.date);
+        if !refilled.is_empty() {
+            println!("day {} (Y{} {}/{}): {} wares restocked", w.date, d.year, d.month, d.day, refilled.len());
+        }
         if w.board != board {
             let names: Vec<&str> = w.board.iter().map(|s| s.map_or("-", |i| all[i].target.as_str())).collect();
             println!("day {} (Y{} {}/{}): board {}", w.date, d.year, d.month, d.day, names.join(", "));

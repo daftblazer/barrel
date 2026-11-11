@@ -3,13 +3,16 @@
 //! `0x14035bb50`). A new game starts on April 1st of school year 1 and draws the request
 //! board's seed offset from the main generator.
 //!
+//! After the days, the shops restock (`0x14035b930` → `0x14035c560`, with the number of days).
+//!
 //! Left out: the request expiry pass of each day, the manager's monthly work (`0x140267f50`),
-//! the queued messages and `0x14035b930` after the days, and the parts of the board's tests not
-//! read yet (see [`crate::quest::draw_board`]).
+//! the queued messages, the characters' recovery and the field objects of `0x14035b930`, and
+//! the parts of the board's tests not read yet (see [`crate::quest::draw_board`]).
 
 use crate::calendar;
 use crate::quest::{self, Request};
 use crate::rank::RankState;
+use crate::shop::{self, Stock, Ware};
 use crate::rng::Rng;
 
 /// Why days pass (the second argument of `0x14035bf10`; names from the callers).
@@ -79,11 +82,14 @@ pub struct World {
     pub board: [Option<usize>; 10],
     /// The last day's rolls (`0x1410a42e0`).
     pub rolls: Vec<i32>,
+    /// Each ware's stock, in the wares' order.
+    pub stock: Vec<Stock>,
 }
 
 /// What the days need to look up.
 pub struct Tables<'a> {
     pub requests: &'a [Request],
+    pub wares: &'a [Ware],
     pub ranks: &'a [crate::rank::Rank],
     /// The price of the item each recipe makes.
     pub recipe_cost: &'a dyn Fn(usize) -> i32,
@@ -96,7 +102,7 @@ pub struct Tables<'a> {
 impl World {
     /// A new game (`0x14035be60` sets the date; the board reset at `0x1403644f9` draws the
     /// offset): `rng` is the main generator as it stands then.
-    pub fn new_game(mut rng: Rng, leader: usize) -> World {
+    pub fn new_game(mut rng: Rng, leader: usize, wares: &[Ware]) -> World {
         let board_offset = rng.next_31();
         World {
             date: calendar::Date { year: 1, month: 4, day: 1 }.number(),
@@ -110,6 +116,7 @@ impl World {
             months: vec![MonthReport::default(); 12],
             board: [None; 10],
             rolls: Vec::new(),
+            stock: wares.iter().map(Stock::new).collect(),
         }
     }
 
@@ -121,11 +128,24 @@ impl World {
 
     /// Lets `days` days pass (`0x14035bf10`), working each new day. The reason only labels
     /// the message the game queues.
-    pub fn advance(&mut self, days: u32, _reason: Reason, t: &Tables) {
+    pub fn advance(&mut self, days: u32, _reason: Reason, t: &Tables) -> Vec<usize> {
         for _ in 0..days {
             self.date += 1;
             self.new_day(t);
         }
+        self.restock(days as i32, t)
+    }
+
+    /// The shops after `days` days (`0x14035c560`): every ware whose event window is open
+    /// counts the days; returns the wares refilled.
+    fn restock(&mut self, days: i32, t: &Tables) -> Vec<usize> {
+        let mut refilled = Vec::new();
+        for (i, (s, w)) in self.stock.iter_mut().zip(t.wares).enumerate() {
+            if shop::on_sale(w, t.seen) && shop::pass_days(s, w, days) {
+                refilled.push(i);
+            }
+        }
+        refilled
     }
 
     /// A new day (`0x14035bb50`).
@@ -159,6 +179,7 @@ mod tests {
         let ranks = [crate::rank::Rank { points: 0, coal: 300, percent: 10, rates: [0; 7], number: 1 }];
         let t = Tables {
             requests: &[],
+            wares: &[],
             ranks: &ranks,
             recipe_cost: &|_| 100,
             seen: &|_| true,
@@ -166,7 +187,7 @@ mod tests {
             known: &|_| true,
             level: &|_| 1,
         };
-        let mut w = World::new_game(Rng::from_state([1, 2, 3, 4]), 0);
+        let mut w = World::new_game(Rng::from_state([1, 2, 3, 4]), 0, &[]);
         w.joined = vec![0, 1, 2];
         w.slot[1] = Some(1);
         w.slot[2] = Some(7);
