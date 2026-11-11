@@ -539,6 +539,48 @@ impl Geometry<'_> {
         Some(max)
     }
 
+    /// Each vertex's joints and weights for a submesh, over the same vertex range as
+    /// [`Geometry::simple_mesh`]: the bone-index byte / 3 picks a slot of the submesh's
+    /// palette, whose joint is returned; a missing last weight is 1 minus the others.
+    /// None when the submesh is not skinned.
+    pub fn skin(&self, s: &Submesh) -> Result<Option<Vec<([u32; 4], [f32; 4])>>, Error> {
+        let layout = self.layouts.get(s.layout).ok_or(Error::Corrupt("submesh layout"))?;
+        let find = |sem: Semantic| layout.attributes.iter().find(|a| a.semantic == sem && a.layer == 0);
+        let (Some(bones), Some(weights), Some(palette)) = (find(Semantic::BoneIndices), find(Semantic::Weights), self.bone_maps.get(s.bone_map)) else {
+            return Ok(None);
+        };
+        let buffer = |a: &Attribute| &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
+        let ib = &self.index_buffers[s.index_buffer][s.index_start..s.index_start + s.index_count];
+        let lo = ib.iter().copied().min().unwrap_or(0) as usize;
+        let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
+        let (bvb, wvb) = (buffer(bones), buffer(weights));
+        let count = match weights.kind {
+            AttrType::Float1 => 1,
+            AttrType::Float2 => 2,
+            AttrType::Float3 => 3,
+            AttrType::Float4 => 4,
+            _ => return Err(Error::Corrupt("weights are not floats")),
+        };
+        let mut out = Vec::with_capacity(hi - lo);
+        for v in lo..hi {
+            let b = &bvb.data[v * bvb.stride + bones.offset as usize..][..4];
+            let mut w = [0f32; 4];
+            for (i, x) in w.iter_mut().enumerate().take(count) {
+                *x = f32_at(wvb.data, v * wvb.stride + weights.offset as usize + 4 * i)?;
+            }
+            if count < 4 {
+                w[count] = (1.0 - w[..count].iter().sum::<f32>()).max(0.0);
+            }
+            let mut j = [0u32; 4];
+            for i in 0..4 {
+                let slot = b[i] as usize / 3;
+                j[i] = palette.get(slot).map_or(0, |r| r.joint);
+            }
+            out.push((j, w));
+        }
+        Ok(Some(out))
+    }
+
     /// How many vertices a layout's buffers hold.
     pub fn vertex_count(&self, layout: usize) -> Option<usize> {
         let first = *self.layouts.get(layout)?.buffers.first()?;

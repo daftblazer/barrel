@@ -36,7 +36,15 @@ Conventions learned from the data:
   models face +z.
 - Texture rows are top to bottom, as Vulkan expects; UVs are used as they are.
 
-Not done yet: skinning (bones are read, see `formats.md`), the games' own shaders and
+**Posing.** `--skeleton FILE#N --anim FILE#N --time SECONDS` poses a character: the
+skeleton comes from the base model (`PC20_MODEL.elixir.gz#0` for Escha), the animation from
+a motion container, and the vertices are skinned on the CPU. Each joint's matrix is its
+posed world transform times the inverse of its bind world transform; joints without a
+track keep their bind pose; a vertex blends up to four joints by its weights (a missing
+last weight is 1 minus the others). Escha at 2 s into `PC20_STAND_HAPPY` stands with a hand
+to her cheek and the other at her side, the mesh whole.
+
+Not done yet: skinning on the GPU, the games' own shaders and
 lighting (toon shading, rim light), materials beyond the first texture, a window and
 interactive camera, and fields.
 

@@ -52,6 +52,8 @@ its textures offscreen and writes the frame as PNG: one frame, no window, then i
 
 ```sh
 target/release/barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
+target/release/barrel-view MODEL#N TEXTURES#N out.png --skeleton BASE_MODEL#N --anim MOTION#N --time 2
+target/release/barrel-view --field "<install>/Data/x64/Field/AREA_01_01" out.png
 BARREL_VALIDATION=1 target/release/barrel-view ...      # with the Khronos validation layer
 ```
 

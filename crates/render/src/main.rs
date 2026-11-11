@@ -243,6 +243,11 @@ impl Scene {
 
     /// Add a model's textured submeshes, placed by `transform`.
     fn add(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize) -> Result<()> {
+        self.add_posed(geometry, transform, textures, None)
+    }
+
+    /// Add a model, skinned by `joints` (one matrix per joint, bind pose to posed) if given.
+    fn add_posed(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize, joints: Option<&[Mat4]>) -> Result<()> {
         let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
         for s in &geometry.submeshes {
             let mesh = geometry.simple_mesh(s)?;
@@ -250,11 +255,28 @@ impl Scene {
                 continue;
             }
             let base = self.vertices.len() as u32;
+            let skin = match joints {
+                Some(_) => geometry.skin(s)?,
+                None => None,
+            };
             // The games are left-handed (DirectX): mirror x to draw them right-handed.
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
             for i in 0..mesh.positions.len() {
-                let p = transform.transform_point3(Vec3::from(mesh.positions[i])) * mirror;
-                let n = normals.transform_vector3(Vec3::from(mesh.normals[i])).normalize_or_zero() * mirror;
+                let (mut pos, mut nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
+                if let (Some(skin), Some(joints)) = (&skin, joints) {
+                    let (j, w) = skin[i];
+                    let (mut sp, mut sn) = (Vec3::ZERO, Vec3::ZERO);
+                    for k in 0..4 {
+                        if w[k] > 0.0 {
+                            let m = joints.get(j[k] as usize).copied().unwrap_or(Mat4::IDENTITY);
+                            sp += m.transform_point3(pos) * w[k];
+                            sn += m.transform_vector3(nrm) * w[k];
+                        }
+                    }
+                    (pos, nrm) = (sp, sn);
+                }
+                let p = transform.transform_point3(pos) * mirror;
+                let n = normals.transform_vector3(nrm).normalize_or_zero() * mirror;
                 self.lo = self.lo.min(p);
                 self.hi = self.hi.max(p);
                 self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i] });
@@ -303,6 +325,34 @@ impl Scene {
         }
         (first_index, self.indices.len() as u32 - first_index)
     }
+}
+
+/// Each joint's skinning matrix for an animation at `time`: its posed world transform times
+/// the inverse of its bind world transform. Joints without a track keep their bind pose.
+fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::Animation, time: f32) -> Vec<Mat4> {
+    let local = |j: &barrel_formats::g1m::Joint| {
+        Mat4::from_scale_rotation_translation(Vec3::from(j.scale), glam::Quat::from_array(j.rotation).normalize(), Vec3::from(j.position))
+    };
+    let mut posed_local: Vec<Mat4> = skeleton.joints.iter().map(local).collect();
+    for t in &anim.tracks {
+        if let (Some((r, p, s)), Some(slot)) = (t.pose(time), posed_local.get_mut(t.bone as usize)) {
+            *slot = Mat4::from_scale_rotation_translation(Vec3::from(s), glam::Quat::from_array(r).normalize(), Vec3::from(p));
+        }
+    }
+    let world = |locals: &[Mat4]| {
+        let mut out: Vec<Mat4> = Vec::with_capacity(locals.len());
+        for (i, j) in skeleton.joints.iter().enumerate() {
+            let m = match j.parent {
+                Some(p) => out[p] * locals[i],
+                None => locals[i],
+            };
+            out.push(m);
+        }
+        out
+    };
+    let bind_local: Vec<Mat4> = skeleton.joints.iter().map(local).collect();
+    let (bind, posed) = (world(&bind_local), world(&posed_local));
+    bind.iter().zip(&posed).map(|(b, p)| *p * b.inverse()).collect()
 }
 
 /// The entry of `container` named `name`, if any.
@@ -427,12 +477,16 @@ fn main() -> Result<()> {
     let mut yaw = 0f32;
     let mut pitch = if field { 45f32 } else { 0f32 };
     let mut alpha_cutoff = 0.3f32;
+    let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--size" => size = it.next().ok_or("--size N")?.parse::<u32>()?.clamp(64, 1280),
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,
+            "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
+            "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
+            "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -448,7 +502,18 @@ fn main() -> Result<()> {
         let geometry = model.geometry.as_ref().ok_or("model has no geometry")?;
         let tex_bytes = entry_bytes(&args[1])?;
         let count = G1t::parse(&tex_bytes)?.textures.len();
-        scene.add(geometry, Mat4::IDENTITY, count)?;
+        let joints = match (&skeleton_spec, &anim_spec) {
+            (Some(sk), Some(an)) => {
+                let sk_bytes = entry_bytes(sk)?;
+                let skel = G1m::parse(&sk_bytes)?.skeleton.ok_or("no skeleton in that model")?;
+                let anim = barrel_formats::g1a::parse(&entry_bytes(an)?)?;
+                eprintln!("posing {} joints with {} tracks at {time}s of {}s", skel.joints.len(), anim.tracks.len(), anim.duration);
+                Some(pose(&skel, &anim, time))
+            }
+            (None, None) => None,
+            _ => return Err("--skeleton and --anim go together".into()),
+        };
+        scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref())?;
         tex_bytes
     };
     let pack = G1t::parse(&tex_bytes)?;
