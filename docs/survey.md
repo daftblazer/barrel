@@ -183,8 +183,18 @@ has to be broken. The Ryza DX executable (not DRM-wrapped) shows how it reads th
   Where a table differs, the shipped plain twin is the odd one out (in one, a damaged byte
   in a Japanese comment that reads 基本設定 in the decrypted copy). The failures are always
   the same few: `saves\mix\mixpanellineeffectdata*`, `saves\recipeidea\*` and
-  `saves\fieldmap\sky\*`, which have no end marker after stage 3. They have the same
-  header, so they must be read with other seeds; `tools/xml_e.py` is the Python prototype.
+  `saves\fieldmap\sky\*`, which have no end marker after stage 3. No game loads them:
+  none of the executables names `recipetext`, `mixpanellineeffectdata`, `a17_wmap` or the
+  `bf_pointNN` tables (Sophie 2 loads `recipeIdeaScenario*.xml` instead, the Ryza games only
+  `sky_default.xml` and `sky_weather.xml` from that folder), so they are leftovers in the
+  archives and Barrel does not need them. `tools/xml_e.py` is the Python prototype.
+
+  The executables also hold a second scheme, used by the game's own encoder at
+  `0x140477630` (Ryza DX): word stage with seed 0xd5c1, test r mod 0xdb2 ≥ 0x6d9 and the
+  XOR from a second draw; bit shuffle seeded 0x3745d in one 0x800-byte chunk; byte stage
+  with states 0x9f73, 0xaee3, 0x394d and runs 7, 0xd, 0x17; plain sum and XOR checks; the
+  key from a clock (`0x140b8c9f0`). It is probably for save data; the leftover tables do not
+  decode with it either.
 
 ## What the games share
 
