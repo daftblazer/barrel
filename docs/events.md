@@ -41,8 +41,12 @@ command uses. The unnamed ones are not exposed to Squirrel. They are mostly in `
 
 `w1` (`0x77000001`) is the commonest word in the events (47,448 uses). It always takes
 one operand, a number that counts up through an event (1, 2, 3, ...), and it often comes in
-runs (`w1 1 w1 2 w1 3`) between other commands. It is a step or label marker: a command of
-its own, not a prefix on other commands' operands.
+runs (`w1 1 w1 2 w1 3`) between other commands. It **starts an action**: `Event`'s handler
+(`0x1400523bf` in the English executable) queues its operand, an action number, among the
+actions to start (`0x140210d30`), and the action then runs alongside the one that started it.
+Action 0 is the event's main script and starts the others: in 934 of the 1,021 story events
+its `w1` numbers are exactly 1 to the last action, each once and in order; the other 87 skip a
+few actions, which never run.
 
 ## Decoding
 
@@ -61,9 +65,11 @@ message file on its own (`Event_<LANG>/event/<chapter>/EVENT_MESSAGE_<name>.ebm`
 
 It knows **`u18` (0x75000012), which shows the event's messages from its first operand to
 its second, inclusive**, and the waits (below). In `EVENT_MM08_AS4_130` its ranges (0–0, 1–3,
-4–11, ... 25–25) cover the 26 messages exactly once, in order. Step markers (`w1`) are
-skipped; every other command is reported with its name and operands, for the systems that
-will handle it. Run in file order, that event fades the music out
+4–11, ... 25–25) cover the 26 messages exactly once, in order. The player runs action 0 and starts
+another action wherever a `w1` says (the game runs them at once; the player puts a started
+action's steps right where it starts, each tagged with its action); every other command is
+reported with its name and operands, for the systems that will handle it. Run that way, that
+event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
 waits, and talks the dragon problem through in the right order.
 
@@ -252,7 +258,7 @@ That gives a place for 61 of the 106 unnamed commands. The ones that matter most
 | `u3/0x40` | 88 | `MessageItemGp` | item-received message |
 
 `w1` and `w4` are tested only by `Event`'s own code and the helpers around
-`0x140050d30`: the event player handles its step markers itself.
+`0x140050d30`: the event player starts actions itself (`w1`, above).
 
 ## Operand counts
 

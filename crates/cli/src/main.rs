@@ -1113,6 +1113,7 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
     let table = OperandTable::escha();
     for step in Player::escha(&event, &messages, &table)? {
         match step {
+            Step::StartAction { action } => println!("{action:3} --- action {action} starts"),
             Step::Message { index, speaker, text } => {
                 let who = usize::try_from(speaker).ok().and_then(|i| names.get(i)).map_or("", String::as_str);
                 println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));

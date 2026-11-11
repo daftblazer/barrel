@@ -1,7 +1,8 @@
 //! The event player: runs an event's bytecode and says what happens, step by step.
 //!
-//! This first version runs the actions one after another in file order and turns each
-//! command into a [`Step`]. It knows `u18` (0x75000012), which shows the event's messages
+//! Action 0 is the event's main script; its `w1 N` starts action N alongside it (the game runs
+//! them at once; here a started action's steps come right where it starts). Each command
+//! becomes a [`Step`]. It knows `u18` (0x75000012), which shows the event's messages
 //! from its first operand to its second, inclusive, and the waits `p1` and `u1`.
 //! Everything else is reported by name, with its operands, for the systems that will
 //! handle it.
@@ -26,11 +27,17 @@ pub const CHARA_TIME_WAIT: u32 = 0x7300_0003;
 pub const CHARA_POS_SET: u32 = 0x7300_0004;
 /// `s10` (`ECT_CHARA_MOTION_SET_LOOP`): `{character, motion, blend (hundredths), flag}`.
 pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
-/// `w1`: a step marker.
-pub const STEP: u32 = 0x7700_0001;
+/// `w1` (0x77000001): start action N (its operand) alongside the one running. Action 0 is the
+/// event's main script; it starts the others, each once, in order.
+pub const START_ACTION: u32 = 0x7700_0001;
+/// The old name of [`START_ACTION`], from when it was taken for a step marker.
+pub const STEP: u32 = START_ACTION;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step<'a> {
+    /// Action `action` starts here (`w1`), running alongside the action that started it; its
+    /// steps follow, tagged with its number.
+    StartAction { action: usize },
     /// A line of dialogue (or system text) to show.
     Message { index: usize, speaker: i32, text: String },
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
@@ -52,28 +59,25 @@ pub enum Step<'a> {
 
 pub struct Player<'a> {
     names: HashMap<u32, &'static str>,
-    commands: Vec<(usize, ebd::Command<'a>)>,
+    /// Each action's commands.
+    actions: Vec<Vec<ebd::Command<'a>>>,
+    /// The actions being run, innermost last: (action, next command).
+    running: Vec<(usize, usize)>,
+    started: Vec<bool>,
     messages: &'a [Message],
-    next: usize,
     pending: std::collections::VecDeque<Step<'a>>,
 }
 
 impl<'a> Player<'a> {
     /// A player for Escha & Logy DX's events.
     pub fn escha(event: &'a Ebd, messages: &'a [Message], table: &OperandTable) -> Result<Self, Error> {
-        let mut commands = Vec::new();
-        for (i, a) in event.actions.iter().enumerate() {
-            for c in ebd::decode(&a.words, table)? {
-                commands.push((i, c));
-            }
+        let actions = event.actions.iter().map(|a| ebd::decode(&a.words, table)).collect::<Result<Vec<_>, _>>()?;
+        let mut started = vec![false; actions.len()];
+        let running = if actions.is_empty() { vec![] } else { vec![(0, 0)] };
+        if let Some(s) = started.first_mut() {
+            *s = true;
         }
-        Ok(Player {
-            names: crate::names::ESCHA.iter().copied().collect(),
-            commands,
-            messages,
-            next: 0,
-            pending: Default::default(),
-        })
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default() })
     }
 
     /// The name the executable gives a command word, if any.
@@ -90,10 +94,22 @@ impl<'a> Iterator for Player<'a> {
             if let Some(s) = self.pending.pop_front() {
                 return Some(s);
             }
-            let (action, c) = *self.commands.get(self.next)?;
-            self.next += 1;
+            let &mut (action, ref mut next) = self.running.last_mut()?;
+            let Some(&c) = self.actions[action].get(*next) else {
+                self.running.pop();
+                continue;
+            };
+            *next += 1;
             match (c.word, c.operands) {
-                (STEP, _) => continue,
+                (START_ACTION, [n, ..]) => {
+                    let n = *n as usize;
+                    if n < self.actions.len() && !self.started[n] {
+                        self.started[n] = true;
+                        self.running.push((n, 0));
+                        return Some(Step::StartAction { action: n });
+                    }
+                }
+                (START_ACTION, []) => {}
                 (TIME_WAIT, [hundredths, ..]) => return Some(Step::Wait { seconds: *hundredths as i32 as f32 / 100.0 }),
                 (TIME_WAIT, []) => return Some(Step::Wait { seconds: 0.0 }),
                 (SHORT_WAIT, _) => return Some(Step::Wait { seconds: 0.3 }),
@@ -130,6 +146,32 @@ mod tests {
     use barrel_formats::ebd::{Action, END};
 
     #[test]
+    fn actions_start_where_the_main_script_says() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        // Action 0 waits, starts 2, waits, starts 1 (and 2 again, which does nothing).
+        let event = Ebd {
+            actions: vec![
+                act(vec![TIME_WAIT, 10, START_ACTION, 2, TIME_WAIT, 20, START_ACTION, 1, START_ACTION, 2, END]),
+                act(vec![TIME_WAIT, 100, END]),
+                act(vec![TIME_WAIT, 200, END]),
+                act(vec![TIME_WAIT, 300, END]),
+            ],
+            resources: vec![],
+        };
+        let table = OperandTable::new(&[(START_ACTION, Some(1)), (TIME_WAIT, Some(1))]);
+        let steps: Vec<String> = Player::escha(&event, &[], &table)
+            .unwrap()
+            .map(|s| match s {
+                Step::StartAction { action } => format!("start {action}"),
+                Step::Wait { seconds } => format!("wait {seconds}"),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        // Action 3 is never started, so it never runs.
+        assert_eq!(steps, ["wait 0.1", "start 2", "wait 2", "wait 0.2", "start 1", "wait 1"]);
+    }
+
+    #[test]
     fn messages_come_out_in_ranges() {
         let words = vec![
             STEP, 1, SHOW_MESSAGES, 0, 1, 0x7300_0006, 4, TIME_WAIT, 50, SHOW_MESSAGES, 2, 2,
@@ -152,6 +194,7 @@ mod tests {
             .iter()
             .map(|s| match s {
                 Step::Message { text, .. } => text.clone(),
+                Step::StartAction { action } => format!("start {action}"),
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),
