@@ -17,7 +17,9 @@ usage:
   barrel scan DIR              read every container under DIR and count what they hold
   barrel ebd FILE.ebd          print an event's actions as words
   barrel ebd-scan DIR          read every event under DIR and count its commands
-  barrel ebd-decode DIR        decode every event under DIR into commands (Escha's table)";
+  barrel ebd-decode DIR        decode every event under DIR into commands (Escha's table)
+  barrel xml FILE.xml          print a table's rows
+  barrel xml-scan DIR          read every XML table under DIR and list what it holds";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -30,6 +32,8 @@ fn main() -> ExitCode {
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
+        ["xml", file] => xml(Path::new(file)),
+        ["xml-scan", dir] => xml_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -265,4 +269,44 @@ fn ebd_decode(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some bodies did not decode".into()) }
+}
+
+fn print_element(e: &barrel_formats::table::Element, depth: usize) {
+    let attrs: Vec<String> = e.attributes.iter().map(|(k, v)| format!("{k}={v:?}")).collect();
+    println!("{:indent$}{} {}", "", e.name, attrs.join(" "), indent = depth * 2);
+    for c in &e.children {
+        print_element(c, depth + 1);
+    }
+}
+
+fn xml(file: &Path) -> Result<()> {
+    let root = barrel_formats::table::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    print_element(&root, 0);
+    Ok(())
+}
+
+fn xml_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".xml", &mut files)?;
+    files.sort();
+    let mut failed = Vec::new();
+    for path in &files {
+        match barrel_formats::table::parse(&read(path)?) {
+            Ok(root) => {
+                let mut rows: BTreeMap<&str, usize> = BTreeMap::new();
+                for c in &root.children {
+                    *rows.entry(c.name.as_str()).or_default() += 1;
+                }
+                let rel = path.strip_prefix(dir).unwrap_or(path);
+                let summary: Vec<String> = rows.iter().map(|(k, n)| format!("{n} {k}")).collect();
+                println!("{}: {}", rel.display(), summary.join(", "));
+            }
+            Err(err) => failed.push(format!("{}: {err}", path.display())),
+        }
+    }
+    println!("{} tables, {} failed", files.len(), failed.len());
+    for f in &failed {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some tables did not parse".into()) }
 }

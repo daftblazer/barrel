@@ -22,8 +22,8 @@ The goals:
 - graphics beyond the DX11 originals once the original look is reproduced;
 - uncapped frame rates, any aspect ratio, and UI scaling for handhelds.
 
-Status: started, with Escha & Logy DX first. `crates/formats` reads the elixir containers
-and the event bytecode; every one of Escha's files of both kinds reads without error.
+Status: started, with Escha & Logy DX first. `crates/formats` reads the elixir containers,
+the event bytecode and the XML tables; every one of Escha's files of both kinds reads without error.
 `crates/cli` is the `barrel` tool for looking at the data. See `docs/survey.md` for the
 games and `docs/formats.md` for the formats.
 
@@ -37,6 +37,8 @@ target/release/barrel unpack FILE.elixir.gz OUTDIR
 target/release/barrel ebd-scan "<install>/Event"       # every event and its commands
 target/release/barrel ebd-decode "<install>/Event"     # split every event into commands
 target/release/barrel ebd    FILE.ebd
+target/release/barrel xml-scan "<install>"            # every XML table and its rows
+target/release/barrel xml    FILE.xml
 ```
 
 Extracted data goes in `work/`, which git ignores. No game data belongs in the repository.

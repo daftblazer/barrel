@@ -101,10 +101,20 @@ other commands take odd counts (`ECT_CHARA_POS_SET` takes 7), so pairs are not t
 
 ## Tables (`Saves*/**/*.xml`)
 
-Not read yet. These are Shift-JIS XML files with one element per row and the values as
-attributes. Some attribute names are Japanese (`レベル`, level). `Saves/` holds the
-Japanese and shared tables; `Saves_EN/`, `Saves_SC/` and `Saves_TC/` hold the translated
-ones. Among them: items, recipes and their effects (`item/`), characters, costumes, shops,
-quests, the assignments (`subject/`), fields and system messages. Monster stats are not in
-the tables; the executable names 306 `MONSTER_*` tags, so they are probably compiled into
-the executable.
+Read by `barrel_formats::table`. All 312 of Escha's XML files read without error. What the
+tables hold is in `tables.md`.
+
+The files are XML only loosely; the game's own reader accepts all of them, so this one
+is lenient in the same ways:
+- **Encoding.** The declaration is not to be trusted. The translated tables declare
+  Shift-JIS but are UTF-8 with a byte-order mark, and some Shift-JIS files have UTF-8
+  comments. The rule that works for every file: a BOM or valid UTF-8 means UTF-8;
+  anything else is Shift-JIS (code page 932).
+- **Attributes** may follow each other with no space (`pos_y="21.0"rot_x="0"`).
+- **Entities.** `&nbsp;` is used, which XML does not define. Unknown entities are kept as
+  written.
+- **Unclosed elements.** `field/_def.xml` never closes `<wind_root>` before `</root>`. A
+  closing tag that matches an element further out closes the ones inside it.
+
+There is no text content; everything is in attributes. Comments are common (1,426 in
+Escha), some of them holding commented-out rows.

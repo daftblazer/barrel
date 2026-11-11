@@ -9,6 +9,7 @@ pub mod elixir;
 pub mod game;
 pub mod inflate;
 pub mod magic;
+pub mod table;
 
 use std::fmt;
 
