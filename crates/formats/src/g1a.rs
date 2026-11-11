@@ -10,6 +10,8 @@
 //! block:   u32 flag, then one {u32 key count, u32 offset in units from the block} per
 //!          component. Flag 4 has seven: the rotation quaternion (x, y, z, w) and the
 //!          translation (x, y, z). Flag 6 has ten: scale (x, y, z), rotation, translation.
+//!          Flag 2 (Sophie 2's body motions) has four: rotation only. Flag 0x66 (Sophie 2's
+//!          cameras) has nine: eye, target and three more.
 //!          Flag 0x191 has one: a single scalar, used by the facial animations
 //!          (`*_M_Brw_*`, `*_M_Eye_*`, `*_M_Mth_*`, header type 0x104) for morph weights.
 //! keys:    key count × 4 floats (a, b, c, d), then key count floats (each segment's end
@@ -68,12 +70,19 @@ pub struct Animation {
 /// How many components a block with this flag has.
 fn components(flag: u32) -> Option<usize> {
     match flag {
+        2 => Some(4),
         4 => Some(7),
         6 => Some(10),
+        CAMERA => Some(9),
         SCALAR => Some(1),
         _ => None,
     }
 }
+
+/// The flag of a camera track (Sophie 2): nine components, the eye's x, y, z, the target's
+/// x, y, z, then three more (0, 0.7 and 1.0 in the samples: roll, field of view in radians,
+/// and one still to be named).
+pub const CAMERA: u32 = 0x66;
 
 /// The flag of a single-scalar track (facial morph weights).
 pub const SCALAR: u32 = 0x191;
@@ -93,6 +102,30 @@ pub fn sample(keys: &[Key], time: f32) -> f32 {
     0.0
 }
 
+/// The component count of a block whose flag is not in [`components`] (the later games add
+/// some, such as Sophie 2's 0x66 camera tracks): the list of {key count, offset} ends where
+/// the first component's keys begin, and each component's keys follow the previous one's.
+fn infer_components(d: &[u8], at: usize) -> Option<usize> {
+    let first = u32_at(d, at + 8).ok()? as usize;
+    // 4 bytes of flag and 8 a component, padded to 16: n components fit when
+    // 4 + 8n <= 16 * first < 4 + 8n + 16.
+    let n = (16 * first).checked_sub(4)? / 8;
+    if n == 0 || n > 64 {
+        return None;
+    }
+    let mut expected = first;
+    for c in 0..n {
+        let keys = u32_at(d, at + 4 + 8 * c).ok()? as usize;
+        let off = u32_at(d, at + 8 + 8 * c).ok()? as usize;
+        if keys == 0 || off != expected {
+            // Padding may leave room for one more pair than there are components.
+            return (c > 0 && c + 1 == n).then_some(c);
+        }
+        expected = off + (keys * 20).div_ceil(16);
+    }
+    Some(n)
+}
+
 pub fn parse(d: &[u8]) -> Result<Animation, Error> {
     if !d.starts_with(b"_A1G") {
         return Err(Error::NotThisFormat);
@@ -110,7 +143,10 @@ pub fn parse(d: &[u8]) -> Result<Animation, Error> {
         let block = u32_at(d, 0x38 + 8 * i)? as usize;
         let at = 0x30 + 16 * block;
         let flag = u32_at(d, at)?;
-        let n = components(flag).ok_or(Error::Corrupt("g1a block flag not known"))?;
+        let n = match components(flag) {
+            Some(n) => n,
+            None => infer_components(d, at).ok_or(Error::Corrupt("g1a block flag not known"))?,
+        };
         let mut comps = Vec::with_capacity(n);
         for c in 0..n {
             let keys = u32_at(d, at + 4 + 8 * c)? as usize;

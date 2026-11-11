@@ -116,8 +116,8 @@ this way (`\event\skill\skill_party_tao_99.ebd`) reads with Escha's event reader
 **How far Escha's readers reach.** `barrel pak-scan FILE.PAK...` reads every texture,
 model, animation, morph file, event and message in archives, inside containers too. On
 Sophie 2's `PACK00_01` and `PACK00_02`: all 735 containers, 1,586 models and 1,981 textures
-read with the readers written for Escha (BC7 included); of 5,750 animations 2,398 read and
-3,352 stop at a block flag Escha does not use (the camera animations among them).
+read with the readers written for Escha (BC7 included); and with two block flags added
+for rotation-only joints and cameras, all 5,750 animations.
 
 **Encrypted tables (`.xml.e`).** Many tables also come as `.xml.e`: a 16-byte header of
 big-endian u32s `{2, plain size, 0, 0}` (`freeachievement.xml.e`: 2, 23,144, the size of

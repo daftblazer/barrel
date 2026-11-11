@@ -192,6 +192,14 @@ keys:    key count × (a, b, c, d) floats, then key count floats: each segment's
 | 0x2100 | 60 | 4 | 803 | seven: rotation, translation (no scale); the field objects' animations |
 | 0x104 | 4,375 | 0x191 | 48,934 | one scalar: the facial animations (`*_M_Brw_*`, `*_M_Eye_*`, `*_M_Mth_*`), whose "bones" are morph weights |
 
+Sophie 2's animations are version "2400" and add two flags: **2**, four components, the
+rotation only (most joints of its body motions, `CF00_000000.g1a`: 59 of 63 blocks), and
+**0x66**, nine components, a camera: eye x, y, z, target x, y, z, then three more (0, 0.7
+and 1.0 in `PC02_01230_cam.g1a`; roll and the field of view in radians, probably). In
+Sophie 2 the blocks' headers sit together and their keys after them, so a block's offsets
+are not right behind its own header. For a flag it does not know, the reader infers the
+component count from the offsets when they do follow the header.
+
 The header type and the flag always go together, and every one of the 21.3 million keys
 decodes. A facial track is the same kind of spline over a single value: an eye blink eases
 from 0 to 1 with (-2, 3, 0, 0) and back with (2, -3, 0, 1).
