@@ -393,9 +393,13 @@ the HP, and setting the attacker's next wait from its speed. A monster picks eac
 its block's rules ("Monster actions": its own action count stands in for the turn count, the
 phase is 0), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, with its element: an
 elemental hit skips defence and meets the target's resistance, a physical one the reverse
-(Ice Bomb on the Grand Dragon does 41, Bomb 10 against its fire resistance). A skill whose
-damage is another effect (Flame Gale's `DAMAGE_TURN`) or that does something else deals 0
-there. `barrel duel EXE 3 30` has the Alchemy Rat throwing Ice Bomb and
+(Ice Bomb on the Grand Dragon does 41, Bomb 10 against its fire resistance). `DAMAGE_TURN` (act 8, `0x1401bebdc`) is worked too: the
+rolled amount grows by the effect's second value in percent for each of the battle's turns
+(+0x2c8): `trunc((second × turns + 100) × amount / 100) × scale`, dealt straight through
+`0x1401c1970` with no attack, defence or resistance, so Flame Gale (36 to 45, 5 a turn) hits
+5% harder each turn (66 at turn 10). The duel counts a turn per action taken, for these and
+for the monster rules; when the game counts its turns up is not read yet. Skills that do
+something else deal 0 there. `barrel duel EXE 3 30` has the Alchemy Rat throwing Ice Bomb and
 Rolling Rat and the Grand Dragon mixing Jaws of Death and Pressure, then Flame Gale on its
 sixth action. `barrel duel EXE A B` runs one
 (monster numbers, or `p<member>:<level>` for a party member from "Party growth", with the

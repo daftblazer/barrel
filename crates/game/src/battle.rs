@@ -91,6 +91,15 @@ pub fn reduce(damage: i32, element: Option<u8>, d: &Defender) -> i32 {
     }
 }
 
+/// `ACT_DAMAGE_TURN`'s damage (`0x1401bebdc`): the rolled amount grown by `per_turn` percent
+/// (the effect's second value) for each of the battle's turns so far (the battle's +0x2c8), cut
+/// to an integer, then times the action's scale. No attack, defence or resistance: it goes
+/// straight to [`hit_amount`]. Flame Gale (36 to 45, 5 a turn) hits 5% harder each turn.
+pub fn turn_damage(amount: i32, per_turn: i32, turn: i32, scale: f32) -> i32 {
+    let grown = (per_turn.wrapping_mul(turn) + 100).wrapping_mul(amount) / 100;
+    (grown as f32 * scale) as i32
+}
+
 /// The damage event's amount (`0x1401c1970`): the target's +0x2b8 percent taken off, and never
 /// under 1. (The executable also adds it to the target's +0x2c4 while +0x2c0 is positive.)
 pub fn hit_amount(damage: i32, target_2b8: i32) -> i32 {
@@ -239,6 +248,13 @@ pub fn knockback(amount: i32, times: i32, resist: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turn_damage_grows_with_the_turns() {
+        assert_eq!(turn_damage(40, 5, 0, 1.0), 40);
+        assert_eq!(turn_damage(40, 5, 10, 1.0), 60);
+        assert_eq!(turn_damage(45, 5, 3, 1.0), 51);
+    }
 
     #[test]
     fn damage_by_hand() {
