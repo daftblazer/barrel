@@ -72,8 +72,8 @@ names in its archives and DLC read as plain paths (`\data\x64\res_cmn\ui\a23_ite
 `\data\x64\character\npc31b\npc31b_model.g1t`), and the data comes out as the formats
 Escha uses (`GT1G0600`, zlib-compressed elixir containers).
 
-The executable could not show the key: its `.text` is encrypted (entropy 8.0, with a
-`.bind` section, the Steam DRM wrapper). It came from the names instead
+The executable could not show the key: its code is encrypted by Steam's DRM wrapper.The Ryza DX executables are not wrapped (their `.text` reads
+as plain code, entropy 6.4), so they can be studied as they are. It came from the names instead
 (`tools/pak_key.py`): with the entry key removed, the byte at each position that makes the
 most names read as paths, which repeats every 32 bytes.
 
