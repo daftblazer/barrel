@@ -121,7 +121,8 @@ impl<'a> Player<'a> {
     }
 
     /// The event on a clock: every started action runs at once, each held only by its own
-    /// waits (`p1`, `u1`), as the game's event player runs them. Messages take no time here
+    /// waits (`p1`, `u1`). The game keeps one wait timer per event, not per action
+    /// (`docs/events.md`), so overlapping waits may run differently there; not settled. Messages take no time here
     /// (the game waits for the player to read them), nor do waits for characters or the
     /// camera, whose lengths depend on what they wait for.
     pub fn schedule(mut self) -> Vec<Timed<'a>> {

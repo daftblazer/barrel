@@ -71,8 +71,13 @@ action's steps right where it starts, each tagged with its action); every other 
 reported with its name and operands, for the systems that will handle it. `Player::schedule`
 (`play-event FILE [LANG] --timed`) runs the event on a clock instead: every started action
 at once, each held only by its own waits, and prints each step with its time. That each
-action has its own timer is an assumption (the event's timer is at +8 of the object the
-handlers are given, which may be per action or per event; not checked). Messages take no time
+action has its own timer is an assumption, and a doubtful one: the timer is at +8 of the
+`Event` object (RTTI `Event`, vtable `0x140758188`, built by `0x140050560`), which holds the
+event's `EventData` at +0x70 (vtable `0x140847128`; `w1` queues action numbers in it), so
+there is one timer per event. The setter (`0x14005b310`) only takes a time while the timer is
+armed (+0x40), so two actions waiting at once may take turns rather than overlap; how the
+update loop (`Event` slot +0x48, `0x140052ee0`) shares it among running actions is still to
+be read. Messages take no time
 there (the game waits for the reader), nor do the waits for characters and the camera. Run that way, that
 event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
