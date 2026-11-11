@@ -433,8 +433,8 @@ A skill record's first word (+0x10, `0x14015f900`) says whom it is aimed at. The
 picker (`0x1401abf70`) turns it into a side, comparing with each candidate's side (virtual
 +0x10, 0 or 1): 1 and 3 the user's own side, 2 the other side, anything else no side (-1).
 Over the 534 skills: 0 on passives (64), 1 on heals and Wind Shell (28), 2 on attacks and
-debuffs (most), 3 on Howling-like self-buffs (49), 4 once. The next word (+0x14) is 1 only on
-14+ Floating Alchemy and similar bombs (an area, presumably; not read). `Skill::target` and
+debuffs (most), 3 on Howling-like self-buffs (49), 4 once. The next word (+0x14) is 1 on 21
+skills, among them the Floating Alchemy bombs (an area, presumably; not read). `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
 ### A first duel
