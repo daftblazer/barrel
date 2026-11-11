@@ -531,11 +531,11 @@ exactly at the table's end. In the later layouts the line's index sits among the
 table records are is still open. All message files read: Sophie 2's 3,607, Ryza DX's 8,415,
 Ryza 2's 11,766 of 11,767 and Ryza 3's 9,629 of 9,630 (the two left are Japanese-only
 `zz01_010` and `aa01_010`, test events by their names). Ryza 2's Japanese `zz01_010` (2,606
-bytes, count -23) fits none of the four layouts: its first record has 8 values before the text
-(2, 0, 0, 0, 3, -1, 0, -1), the next one value after its text (-1) and 7 before the next; a
-work-in-progress mix of layouts B and C, by the look of it. Its translated copies are a
-two-message stub ("Stylish Weapon Skins - Ryza available.") that reads as layout Escha. In every
-layout the text itself is `2`, a byte length, then the UTF-8 bytes with a 0.
+bytes, count -23) fits none of the four layouts: read as kind, speaker, values, text, its first
+message is kind 2, speaker 0 with seven values before the text (0, 0, 3, -1, 0, -1, 2), the
+second has one value after its text (-1) and six before the next; a work-in-progress mix, by
+the look of it. Its translated copies are a two-message stub ("Stylish Weapon Skins - Ryza
+available.") that reads as layout Escha.
 
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.
