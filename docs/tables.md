@@ -66,6 +66,10 @@ sold with) and `EvStart`, `EvEnd` (the events between which it is on sale) as st
 rows (0x1e8 bytes each, the integers at the schema's offsets) in a vector, but the code that
 uses them has not been found.
 
+`itemData`'s schema also says what equipment gives: `HP`, `MP`, `ATK`, `DEF`, `SPD` and the
+four resistances `RES_FIRE`, `RES_WATER`, `RES_WIND`, `RES_EARTH` (integers), and which party
+members can use the item: flags `PC00` to `PC10`, one per playable character.
+
 ## Requests
 
 `QuestAlc` (synthesis), `QuestBtl` (monsters) and `QuestGat` (gathering) share one schema
