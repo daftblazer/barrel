@@ -9,12 +9,13 @@ use barrel_formats::table::Element;
 pub struct Rank {
     /// The points it takes (`point`).
     pub points: i32,
-    /// `coal` and `percent`: a sum and a percentage that come with the rank (pay, presumably).
+    /// `coal` and `percent`: the month's base pay, and the share of the month's points paid on top
+    /// (see [`pay`]).
     pub coal: i32,
     pub percent: i32,
     /// Per-activity rates (`c_btl`, `c_gat`, `c_bou`, `c_mix`, `c_tra`, `c_rel`, `c_que`):
-    /// battle, gathering, bou (adventure?), synthesis, travel, rel (?), requests; how the
-    /// points are earned from them is not read yet.
+    /// battle, gathering, bou (adventure?), synthesis, travel, rel (?), requests: pay per
+    /// activity in the month (see [`pay`]).
     pub rates: [i32; 7],
     /// `rank`: the number shown.
     pub number: i32,
@@ -85,6 +86,29 @@ impl RankState {
     }
 }
 
+/// A month's pay (`0x140114700` and on, the month report's screen).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pay {
+    /// The rank's `coal` (kept in the report at +0x128).
+    pub base: i32,
+    /// `trunc(the month's points × percent / 100)`, at least 0 (+0x12c).
+    pub bonus: i32,
+    /// Each rate times the month's count of that activity, summed.
+    pub activity: i32,
+    pub total: i32,
+}
+
+/// The pay for a month at `rank`, with `points` the points made that month (the report's
+/// +0x138) and `counts` the month's activities in the rates' order (battles, gatherings, bou,
+/// syntheses, travel, rel, requests; the screen's +0x14 to +0x2c, where they come from is not
+/// read yet). The report is then marked paid (+0x140 = 2).
+pub fn pay(rank: &Rank, points: i32, counts: [i32; 7]) -> Pay {
+    let base = rank.coal;
+    let bonus = (points.wrapping_mul(rank.percent) / 100).max(0);
+    let activity = rank.rates.iter().zip(counts).map(|(r, c)| r.wrapping_mul(c)).fold(0, i32::wrapping_add);
+    Pay { base, bonus, activity, total: base.wrapping_add(bonus).wrapping_add(activity) }
+}
+
 /// A request's points (`0x14033b24d`): its `GetPoint` cut to an integer, when above 0.
 pub fn request_points(get_point: f32) -> i32 {
     if get_point > 0.0 { get_point as i32 } else { 0 }
@@ -105,6 +129,14 @@ mod tests {
         assert!(!st.add(&t, request_points(5.12) * 150, Some(0)));
         assert_eq!((st.points, st.rank, st.by_period[0]), (750, 1, 750));
         assert_eq!(request_points(-1.0), 0);
+    }
+
+    #[test]
+    fn a_months_pay() {
+        let r = Rank { points: 0, coal: 300, percent: 10, rates: [10, 5, 5, 15, 15, 10, 15], number: 1 };
+        let p = pay(&r, 755, [2, 0, 0, 3, 0, 0, 1]);
+        assert_eq!((p.base, p.bonus, p.activity, p.total), (300, 75, 20 + 45 + 15, 455));
+        assert_eq!(pay(&r, -50, [0; 7]).bonus, 0);
     }
 
     #[test]

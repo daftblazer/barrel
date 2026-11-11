@@ -526,8 +526,13 @@ requests done (`trunc(GetPoint)` when above 0, `0x14033b24d`), assignments clear
 `Score`, `SubjectData` +0x24, `0x14035775c`), lines completed on an assignment card
 (`lineScore`, with `lineBonus` applied through `0x14002f310`, `0x1403605c6`), event commands
 (`0x14002f410`), and are taken back by the negated sum of 25 assignments' scores
-(`0x1400cd9a2`). The `c_*` rates take no part in this (`rank::ranks`, `tier_top`, `promote`,
-`RankState`, `request_points`; what the rates, `coal` and `percent` do is not read yet).
+(`0x1400cd9a2`). The other columns are the **month's pay** (the report screen, `0x140114530`;
+rows loaded as `point` +0, `coal` +4, `percent` +8, `c_btl` ... `c_que` +0xc to +0x24): a base of
+`coal`, a bonus of `trunc(the month's points × percent / 100)` (at least 0), and each `c_*` rate
+times the month's count of that activity (battles, gatherings, bou, syntheses, travel, rel,
+requests: the screen's +0x14 to +0x2c, filled from where is not read yet), all added; the
+report keeps the base (+0x128) and the bonus (+0x12c) and is marked paid (+0x140 = 2)
+(`rank::ranks`, `tier_top`, `promote`, `RankState`, `request_points`, `pay`).
 
 ### The calendar
 
