@@ -803,3 +803,20 @@ differently from a textbook spline; Barrel keeps the game's arithmetic. Past the
 `curve_obj_001` (0, 0.757 at 30, 1) eases out, `_003` (0, 0.203, 1) eases in, `_000` and
 `_002` are straight, `_004` rises to 1 at frame 30 and falls back. `barrel_game::curve`
 reads and evaluates them.
+
+## Motion phases (`CharaDiv.xml`, `SubCharaDiv.xml`)
+
+`Saves/chara/CharaDiv.xml` (2,281 rows) cuts a character's motions into phases: each row is
+`{BaseTag, MotionTag, Div0, Div1, ...}`, the tag a `CharaBase` motion column (`JUMP`,
+`ATTACK00`, `GUARD`, `B_RUN`, `MIX_POT`, ...) and each `DivN` a `start, end, loop` triple in
+seconds (end -1: to the motion's end; loop 1: the phase repeats until something ends it).
+Escha's `JUMP` is `0,0.1,0` `0.1,0.6,0` `0.61,1.1,0` `1.1,1.5,1` `1.5,-1,0`: take-off, rise, fall,
+a held landing loop, recovery. `SubCharaDiv.xml` does the same with twelve slots for event
+motions (`EV_ACT_1` ...). What reads them (the field, battle and synthesis motion players)
+is not traced yet. These are not `s116`'s segments, which are fixed frame ranges in the code
+(`docs/events.md`).
+
+Field NPCs are not in the field tables: `Saves/field/<FIELD>.xml` holds the field's camera,
+fog, light, wind and shader settings, and the field's `.opl2` only its objects. Where a
+town's own NPCs (character numbers 10048 and up, which events put in event mode with `q7`)
+come from is still open.
