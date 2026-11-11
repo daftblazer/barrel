@@ -77,7 +77,17 @@ event's `EventData` at +0x70 (vtable `0x140847128`; `w1` queues action numbers i
 there is one timer per event. The setter (`0x14005b310`) only takes a time while the timer is
 armed (+0x40), so two actions waiting at once may take turns rather than overlap; how the
 update loop (`Event` slot +0x48, `0x140052ee0`) shares it among running actions is still to
-be read. Messages take no time
+be read.
+
+What is known of that loop: every listener (`Event`, `EventExecChara` and the others) is an
+executor with a queue of commands of its own (`0x140029190` returns it) and a timer of its own
+at +8. Its update (`0x1402117e0`, the shared base) looks at the command at the front of its
+queue each frame, asks itself whether it can start it (slot +0x40) and whether it is done
+(slot +0x48, `Event`'s being `0x140052ee0`, where the waits are checked), and moves on when it
+is (`0x14005b270`). So a wait holds the executor that took the command (the event's own for
+`p1`, a character's for `s3`), not an action. How an action's commands reach the queues, and
+whether an action waits for each before sending the next (the 0.1 s waits between character
+placements in `EVENT_MM08_AS4_130` only make sense if it does), is the next thing to read. Messages take no time
 there (the game waits for the reader), nor do the waits for characters and the camera. Run that way, that
 event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
