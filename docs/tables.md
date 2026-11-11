@@ -539,8 +539,19 @@ the random generator), then every character but one (`0x140330120 (0x141098a48)`
 leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
 `0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2
 (or not in the list), 0.08 in 3 to 5, 0.03 below, kept at 100 at most (friendship points,
-presumably); `0x140363860`, `0x140267f50`, `0x140168990` and more follow, not read yet
-(`calendar::daily_rolls`, `daily_gain`, `add_gain`).
+presumably). On a month's first day (date divisible by 30) `0x140363860` and `0x140267f50`
+(the manager at `0x140dfc220` +0x120) run. Then, for each 0x34-byte record of a list from
+`0x140168990`, one whose `0x140168710` (a float) is 0 or less and that is not yet flagged
+(+0x31) is flagged and handed to `0x140268290 (manager +0x120, its i16 +2)` (expiring
+requests, presumably). Last the shop rotation (`0x14033aaa0` on `0x140dfc880`): on the 1st,
+11th and 21st of each month (day of month mod 10 is 1) global `0x1410989e8` is cleared and
+`0x14033ab20` redraws ten 0x34-byte slots at `0x1410985e0` (three from one list, four from
+another with stock `min(n / 2, 10)`, at least 1, three from a third, through `0x14033b5e0`,
+`0x14033b990` and `0x14033bd10`) with a generator of its own, seeded from the date plus global
+`0x1410989f0` by the Mersenne Twister seeding step: `s0 = (x ^ (x >> 30)) × 0x6c078965 + 1`
+with `x` that sum, `s1` the same of `s0` plus 2 (the shift arithmetic). The day ends by clearing
+`0x1410782e2` (`calendar::daily_rolls`, `daily_gain`, `add_gain`, `month_start`, `shop_day`,
+`shop_seed`).
 
 ### Skill targets (executable)
 
