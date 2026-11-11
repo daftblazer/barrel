@@ -389,7 +389,13 @@ executable, and `barrel_game::duel` puts the pieces above together: two monsters
 monsters' normal attack (`SKILL_ATTACK_ENEMY`, `DAMAGE_HP` 48 to 60, wait 600), each turn
 advancing the timeline, rolling the amount (and the second value), working the damage
 through `skill_damage`, `reduce` and `hit_amount`, drawing the hit sound's number, taking
-the HP, and setting the attacker's next wait from its speed. `barrel duel EXE A B` runs one
+the HP, and setting the attacker's next wait from its speed. A monster picks each action by
+its block's rules ("Monster actions": its own action count stands in for the turn count, the
+phase is 0), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, so a
+skill whose damage is another effect (Flame Gale's elemental damage) or that does something
+else deals 0 there. `barrel duel EXE 3 30` has the Alchemy Rat throwing Ice Bomb and
+Rolling Rat and the Grand Dragon mixing Jaws of Death and Pressure, then Flame Gale on its
+sixth action. `barrel duel EXE A B` runs one
 (monster numbers, or `p<member>:<level>` for a party member from "Party growth", with the
 party's normal attack `SKILL_ATTACK_PT`; fixed seed). A party member fights there with base
 stats only, no equipment: Escha at level 5 does 1 damage to a Poison Squirrel.

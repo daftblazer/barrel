@@ -766,10 +766,14 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         println!("{na} equips {name} (quality {quality}): attack {}, defence {}, speed {}", ba.attack, ba.defense, ba.speed);
     }
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-    let hits = barrel_game::duel::duel(&ba, &bb, [aa, ab], &mut rng, 1000);
+    // Monsters pick by their rules from the skill table; party members use the normal attack.
+    let table = |s: &str| (!s.starts_with('p')).then_some(&skills[..]);
+    let fa = barrel_game::duel::Fighter { block: ba, normal: aa, skills: table(a) };
+    let fb = barrel_game::duel::Fighter { block: bb, normal: ab, skills: table(b) };
+    let hits = barrel_game::duel::duel(&fa, &fb, &mut rng, 1000);
     for h in &hits {
         let (x, y) = if h.attacker == 0 { (&na, &nb) } else { (&nb, &na) };
-        println!("{x} hits {y} for {} ({} HP left)", h.damage, h.hp_left);
+        println!("{x} uses {} on {y}: {} damage ({} HP left)", h.skill, h.damage, h.hp_left);
     }
     println!("{} hits (partial battle: no traits, states or start rules; see barrel_game::duel)", hits.len());
     Ok(())

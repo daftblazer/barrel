@@ -1,6 +1,7 @@
-//! A partial battle: two fighters (monsters, or a party member at a level) trading their
-//! normal attacks, built from the pieces in
-//! [`crate::battle`]. It is a check that the pieces fit, not the game's battle yet.
+//! A partial battle: two fighters (monsters, or a party member at a level) acting in turn,
+//! built from the pieces in [`crate::battle`]: a monster picks each action by its rules
+//! ([`crate::monster_ai`]), a party member uses its normal attack. It is a check that the
+//! pieces fit, not the game's battle yet.
 //!
 //! What it leaves out (each a reason it can differ from the game): the battle's start (both
 //! join with wait 500, the first in front), every trait, state and passive (so every scale is
@@ -17,6 +18,8 @@ use barrel_formats::battle_data::{Skill, StatBlock};
 pub struct Hit {
     /// 0 or 1: which fighter acted.
     pub attacker: usize,
+    /// The skill it used.
+    pub skill: String,
     pub damage: i32,
     /// The target's HP after the hit.
     pub hp_left: i32,
@@ -65,21 +68,66 @@ pub fn equip(block: &StatBlock, items: &[Equipment]) -> StatBlock {
     b
 }
 
-/// Runs the duel until one side's HP is 0 or `max_hits` hits have been made; fighter i uses
-/// `attacks[i]` (the party's normal attack is skill 0, the monsters' skill 1).
-pub fn duel(a: &StatBlock, b: &StatBlock, attacks: [&Skill; 2], rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
-    let mut fighters = [stats(a), stats(b)];
+/// One side of a duel: its stat block, its normal attack, and (for a monster) the skill
+/// table its rules pick from (`None`, or a block without rules: always the normal attack).
+pub struct Fighter<'a> {
+    pub block: StatBlock,
+    pub normal: &'a Skill,
+    pub skills: Option<&'a [Skill]>,
+}
+
+impl Fighter<'_> {
+    /// The skill for this turn: by the block's rules when it has them (the slot's index into
+    /// its skill list, then that skill's record), else the normal attack.
+    fn pick(&self, situation: &crate::monster_ai::Situation, rng: &mut Rng) -> (Option<usize>, &Skill) {
+        let Some(table) = self.skills.filter(|_| !self.block.rules.is_empty()) else { return (None, self.normal) };
+        let (slot, _target) = crate::monster_ai::choose(&self.block.rules, situation, rng);
+        let skill = usize::try_from(slot)
+            .ok()
+            .and_then(|k| self.block.slots.get(k))
+            .and_then(|&i| usize::try_from(i).ok())
+            .and_then(|i| self.block.skills.get(i))
+            .and_then(|&(n, _)| table.get(n as usize));
+        (usize::try_from(slot).ok(), skill.unwrap_or(self.normal))
+    }
+}
+
+/// Runs the duel until one side's HP is 0 or `max_hits` actions have been taken. A monster's
+/// "turn" for its rules is its own count of actions so far (the game's is the owner's +0x2c8,
+/// whose exact meaning is not read yet); the phase is 0.
+pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
+    let sides = [a, b];
+    let mut fighters = [stats(&a.block), stats(&b.block)];
     let mut timeline = Timeline { entries: vec![(0, 500), (1, 500)] };
     let mut hits = Vec::new();
-    let effect_of = |s: &Skill| s.effects.iter().find(|e| e.act == 0).copied();
-    let (Some(e0), Some(e1)) = (effect_of(attacks[0]), effect_of(attacks[1])) else { return hits };
-    let effects = [e0, e1];
+    let mut uses = [[0i32; 9]; 2];
+    let mut turns = [0i32; 2];
     let mut pending = -1;
     while hits.len() < max_hits {
         timeline.advance();
         let who = timeline.entries[0].0 as usize;
         let target = 1 - who;
-        let (effect, attack) = (&effects[who], attacks[who]);
+        let situation = crate::monster_ai::Situation {
+            hp: fighters[who][stat::HP],
+            max_hp: fighters[who][stat::MAX_HP],
+            turn: turns[who],
+            phase: 0,
+            uses: &uses[who],
+        };
+        let (slot, attack) = sides[who].pick(&situation, rng);
+        if let Some(k) = slot.filter(|&k| k < 9) {
+            uses[who][k] += 1;
+        }
+        turns[who] += 1;
+        // Only the skill's HP damage effect is worked (others need the parts not built yet).
+        let Some(effect) = attack.effects.iter().find(|e| e.act == 0).copied() else {
+            hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: 0, hp_left: fighters[target][stat::HP] });
+            let wait = battle::action_wait(attack.wait, fighters[who][stat::SPEED], None, None, &mut pending);
+            let i = timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
+            timeline.entries[i].1 = battle::wait_after_action(wait, None, None, true, rng);
+            continue;
+        };
+        let effect = &effect;
         // The roll (0x1401bd520): the amount, then the second value.
         let amount = rng.range(effect.min, effect.max);
         let _second = rng.range(effect.min2, effect.max2);
@@ -90,7 +138,7 @@ pub fn duel(a: &StatBlock, b: &StatBlock, attacks: [&Skill; 2], rng: &mut Rng, m
         // The first hit of an action draws for its sound (0x1401af770).
         rng.next_31();
         let dealt = battle::take_hp_damage(&mut fighters[target], amount, None, None);
-        hits.push(Hit { attacker: who, damage: dealt, hp_left: fighters[target][stat::HP] });
+        hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: dealt, hp_left: fighters[target][stat::HP] });
         if fighters[target][stat::HP] == 0 {
             break;
         }
@@ -119,13 +167,14 @@ mod tests {
             description: String::new(),
         };
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-        let hits = duel(&squirrel, &rat, [&attack, &attack], &mut rng, 100);
+        let (a, b) = (Fighter { block: squirrel.clone(), normal: &attack, skills: None }, Fighter { block: rat.clone(), normal: &attack, skills: None });
+        let hits = duel(&a, &b, &mut rng, 100);
         let last = hits.last().unwrap();
         assert_eq!(last.hp_left, 0);
         // The faster, stronger rat wins.
         assert_eq!(last.attacker, 1);
         // Same seed, same battle.
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-        assert_eq!(duel(&squirrel, &rat, [&attack, &attack], &mut rng, 100), hits);
+        assert_eq!(duel(&a, &b, &mut rng, 100), hits);
     }
 }
