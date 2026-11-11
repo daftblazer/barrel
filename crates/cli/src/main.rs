@@ -1106,6 +1106,7 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
                 let who = usize::try_from(speaker).ok().and_then(|i| names.get(i)).map_or("", String::as_str);
                 println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));
             }
+            Step::Wait { seconds } => println!("      (wait {seconds:.2} s)"),
             Step::Command { action, word, name, operands } => {
                 let ops: Vec<String> = operands.iter().map(|&o| (o as i32).to_string()).collect();
                 let short = Word::classify(word).to_string();

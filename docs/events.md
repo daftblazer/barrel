@@ -59,8 +59,8 @@ all 49,393 of Escha's bodies decode into 238,443 commands.
 step by step; `barrel play-event FILE.ebd [EN|SC|TC]` prints it, finding the event's
 message file on its own (`Event_<LANG>/event/<chapter>/EVENT_MESSAGE_<name>.ebm`).
 
-It knows one command's meaning so far: **`u18` (0x75000012) shows the event's messages from
-its first operand to its second, inclusive.** In `EVENT_MM08_AS4_130` its ranges (0–0, 1–3,
+It knows **`u18` (0x75000012), which shows the event's messages from its first operand to
+its second, inclusive**, and the waits (below). In `EVENT_MM08_AS4_130` its ranges (0–0, 1–3,
 4–11, ... 25–25) cover the 26 messages exactly once, in order. Step markers (`w1`) are
 skipped; every other command is reported with its name and operands, for the systems that
 will handle it. Run in file order, that event fades the music out
@@ -121,7 +121,15 @@ stall and flowerbeds behind them and Escha coming into frame. `barrel-view --eve
 event's camera; `--free-camera` places the view on the characters instead. The field of
 view is not in the command (40° is used for now).
 
-Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event, waits taking time.
+**Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
+second: `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and
+sets the event's timer (`0x14005b310`, the float at +0x44), which counts down by each frame's
+elapsed time (`0x14005b330`) and lets the event go on when it reaches 0. The values are short
+pauses: 50 (half a second) 3,806 times, 10 2,647 times, then 100, 150, 200 and up to a few
+seconds. `u1` (0x75000001) waits 0.3 s, a constant in the same handler. `play-event` prints
+both as waits.
+
+Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 
 ## Who handles them
 
