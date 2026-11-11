@@ -23,7 +23,7 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 |---|---|---|
 | `item/itemData.xml` | 560 | an item: name, image, cost, use type, stacking, kind, level, effect value, element and element values, up to four categories |
 | `item/item_status.xml` | 560 | the potentials (`POT_00`…) and effects (`ESP_00`…) an item starts with; row *n* is item *n* of `itemData`, many rows empty |
-| `item/item_effect.xml` | 698 | item effects |
+| `item/item_effect.xml` | 698 | item effects: up to two battle effect slots each ("Item effects in battle") |
 | `item/item_potential.xml` | 400 | potentials (traits) |
 | `item/item_mat_pot.xml` | 90 | material effects: type, which item kinds they apply to (`mix`, `atk`, `heal`, … as -1/0/1), condition and result tags |
 | `item/item_book.xml` | 73 | recipe books: the book's tag and the recipes (`ItemTag`…`ItemTag7`) it teaches |
@@ -477,6 +477,19 @@ is reset is not read). **Reviving** is `CURE_REVIVE` (81, `0x1401bfe36` → the 
 0x4d) nor under 0x4e for a target still standing, given through the heal (`0x1401afa20`), so it
 also adds HP to a standing target (Vital Check: about three quarters of the attack plus 14 to
 15% of maximum HP) and raises a fallen one from 0 (`battle::revive_amount`).
+
+### Item effects in battle
+
+A battle item's effects are the item effects its synthesis gave it, and each row of
+`item/item_effect.xml` holds up to two effect slots in a skill's shape. The loader
+(`0x1400e8b00` and on) reads `ItemEffectName`, `g_tag`, `value`, `actTag` with `attributeTag`,
+`min_1`..`max_1` (its amount) and `min_2`..`max_2` (its second value), then `actTag2` with
+`attributeTag2` and `min_3`..`max_4`; the rows' unsuffixed `min` and `max` and the Japanese
+design columns (`Lv想定`, `コスト`, ...) are not read. Element tags are Fire, Water, Wind and
+Earth (0 to 3), anything else physical; 613 rows have no second act. For an item action the
+damage leaves out attack and defence and puts the effect entry's +0x18 in place of the user's
+attack (what fills it, and the quality bonus of flag 3, are not read yet)
+(`battle_data::item_effects`, `barrel item-effects EXE`).
 
 ### Skill targets (executable)
 

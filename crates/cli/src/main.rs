@@ -42,6 +42,7 @@ usage:
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
+  barrel item-effects EXE      each item effect's battle effects (Saves/item/item_effect.xml next to EXE)
   barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
   barrel party-skills EXE      each party member's skill list: command, level learnt, MP cost
   barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
@@ -97,6 +98,7 @@ fn main() -> ExitCode {
         ["battle", exe, monster, party @ ..] if !party.is_empty() => battle(Path::new(exe), monster, party),
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
+        ["item-effects", exe] => item_effects(Path::new(exe)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
@@ -808,6 +810,30 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         }
     }
     println!("{} hits (partial battle: no traits or start rules, states only poison and stat buffs; see barrel_game::duel)", hits.len());
+    Ok(())
+}
+
+/// Each row of `Saves/item/item_effect.xml` with its battle effects (act names from EXE).
+fn item_effects(exe: &Path) -> Result<()> {
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+    let path = exe.parent().ok_or("no install folder")?.join("Saves_EN/item/item_effect.xml");
+    let root = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let rows = barrel_formats::battle_data::item_effects(&root, &acts);
+    let elements = ["fire", "water", "wind", "earth"];
+    for (i, r) in rows.iter().enumerate() {
+        let effects: Vec<String> = r
+            .effects
+            .iter()
+            .map(|e| {
+                let act = acts.get(e.act as usize).map_or("?", |a| a.trim_start_matches("ACT_"));
+                let element = e.element.map_or("physical", |k| elements[k as usize]);
+                format!("{act} {element} {}..{} ({}..{})", e.min, e.max, e.min2, e.max2)
+            })
+            .collect();
+        println!("{i:3} {:<28} {}", r.name, effects.join(", "));
+    }
     Ok(())
 }
 

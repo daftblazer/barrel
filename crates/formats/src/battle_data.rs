@@ -290,3 +290,62 @@ pub fn party_skills(pe: &Pe, table: u64) -> Option<Vec<Vec<PartySkill>>> {
         })
         .collect()
 }
+
+/// One row of `Saves/item/item_effect.xml`: an item effect's battle effects, as the loader
+/// (`0x1400e8b00` and on, English Escha executable) reads it: `actTag` with `attributeTag`,
+/// `min_1`..`max_1` (the amount) and `min_2`..`max_2` (the second value), then `actTag2` with
+/// `attributeTag2`, `min_3`..`max_4`. The rows' unsuffixed `min` and `max` and the Japanese
+/// columns are not read by the game.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ItemEffect {
+    pub name: String,
+    pub tag: String,
+    /// `g_tag`, the effect's group (`ITEM_EFF_GROUP_DAMAGE`, ...).
+    pub group: String,
+    /// The two effect slots that are not `ACT_NONE`, in the shape of a skill's.
+    pub effects: Vec<SkillEffect>,
+}
+
+/// The rows of `item_effect.xml`, in order (they are the `ITEM_EFF_*` enum); `acts` names the
+/// `ACT_*` numbers (`Pe::enum_names("ACT_DAMAGE_HP")`). An element tag outside Fire, Water,
+/// Wind and Earth (`ELEMENT_PHYSICS`) is physical.
+pub fn item_effects(root: &crate::table::Element, acts: &[&str]) -> Vec<ItemEffect> {
+    let element = |t: Option<&str>| match t? {
+        "ELEMENT_FIRE" => Some(0),
+        "ELEMENT_WATER" => Some(1),
+        "ELEMENT_WIND" => Some(2),
+        "ELEMENT_EARTH" => Some(3),
+        _ => None,
+    };
+    root.children
+        .iter()
+        .map(|row| {
+            let n = |k: &str| row.attr(k).and_then(|v| v.parse().ok()).unwrap_or(0);
+            let mut effects = Vec::new();
+            for (act, attr, lo, hi, lo2, hi2) in [("actTag", "attributeTag", "min_1", "max_1", "min_2", "max_2"), ("actTag2", "attributeTag2", "min_3", "max_3", "min_4", "max_4")] {
+                let Some(act) = row.attr(act).and_then(|t| acts.iter().position(|a| *a == t)) else { continue };
+                effects.push(SkillEffect { act: act as u32, element: element(row.attr(attr)), min: n(lo), max: n(hi), min2: n(lo2), max2: n(hi2) });
+            }
+            ItemEffect {
+                name: row.attr("ItemEffectName").unwrap_or_default().to_string(),
+                tag: row.attr("ItemEffTag").unwrap_or_default().to_string(),
+                group: row.attr("g_tag").unwrap_or_default().to_string(),
+                effects,
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod item_effect_tests {
+    use super::*;
+
+    #[test]
+    fn an_item_effect_row() {
+        let xml = r#"<Root><item_effect ItemEffectName="Fire Damage L" ItemEffTag="ITEM_EFF_DAMAGE_FIRE_1" g_tag="ITEM_EFF_GROUP_DAMAGE" attributeTag="ELEMENT_FIRE" actTag="ACT_DAMAGE_HP" min_1="23" max_1="31" min_2="0" max_2="0" attributeTag2="ELEMENT_PHYSICS" actTag2="ACT_NONE" min="21" max="35"/></Root>"#;
+        let root = crate::table::parse_str(xml).unwrap();
+        let rows = item_effects(&root, &["ACT_DAMAGE_HP", "ACT_X"]);
+        assert_eq!(rows[0].effects, [SkillEffect { act: 0, element: Some(0), min: 23, max: 31, min2: 0, max2: 0 }]);
+        assert_eq!(rows[0].group, "ITEM_EFF_GROUP_DAMAGE");
+    }
+}
