@@ -1,6 +1,7 @@
 //! An event's stage: where its characters and the camera are as the event runs, from the
 //! player's timed steps ([`crate::event::Player::schedule`]), moved frame by frame by
-//! [`Mover`]s.
+//! [`Mover`]s. A frame can be any length (the game's are its measured frame times); see
+//! [`FRAME`].
 //!
 //! Positions measured from a character start from one of its points ([`Measures::point`]),
 //! when the stage knows the character's measures (its `Chara.xml` row); otherwise from where
@@ -12,8 +13,13 @@ use std::collections::BTreeMap;
 use crate::camera::{Anchor, Change, Mover, Part, Position};
 use crate::event::{Step, Timed};
 
-/// The game's frame time in events (`1/30` s, the constant at `0x14077ba78`).
-pub const FRAME: f32 = 1.0 / 30.0;
+/// The step [`Stage::run_until`] advances by: 1/60 s, the game's design rate. The game itself
+/// updates by each frame's measured time (`GameModeManager`'s update, vtable slot 1, hands it
+/// to the event manager, `0x1402931b0`), and uses exactly 1/60 s (`0x140853f24`) when the
+/// manager's +0x4b is set. Moves come out a little differently with other steps (a bowed walk
+/// adds its velocity before taking off its push), so lockstep checks need the same steps;
+/// [`Stage::frame`] takes any.
+pub const FRAME: f32 = 1.0 / 60.0;
 
 /// A character's measures, from its `Chara.xml` row: its height and radius in field units and
 /// the heights of its points as fractions of the height (`Foot`, `Body`, `Face`, `Head`, then
@@ -205,11 +211,11 @@ impl Stage {
         }
     }
 
-    /// Runs the movers one frame.
-    pub fn frame(&mut self) {
+    /// Runs the movers one frame of `dt` seconds.
+    pub fn frame(&mut self, dt: f32) {
         for b in self.characters.values_mut() {
             if let Some((from, change, seconds, elapsed, curve)) = b.turn.as_mut() {
-                *elapsed += FRAME;
+                *elapsed += dt;
                 let u = (*elapsed / *seconds).min(1.0);
                 let f = if u >= 1.0 {
                     1.0
@@ -222,7 +228,7 @@ impl Stage {
                 }
             }
             if let Some(m) = b.mover.as_mut().filter(|m| !m.done()) {
-                m.step(FRAME);
+                m.step(dt);
                 b.position = m.position();
                 if let Some(f) = m.facing() {
                     b.facing = f;
@@ -231,17 +237,17 @@ impl Stage {
         }
         for p in [&mut self.eye, &mut self.target] {
             if let Some(m) = p.mover.as_mut().filter(|m| !m.done()) {
-                m.step(FRAME);
+                m.step(dt);
                 p.position = Some(m.position());
             }
         }
-        self.time += FRAME;
+        self.time += dt;
     }
 
-    /// Runs whole frames until `time`.
+    /// Runs whole [`FRAME`]s until `time`.
     pub fn run_until(&mut self, time: f32) {
         while self.time + FRAME * 0.5 < time {
-            self.frame();
+            self.frame(FRAME);
         }
     }
 

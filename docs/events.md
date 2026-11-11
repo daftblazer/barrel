@@ -343,6 +343,16 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 in `SKILL_COMMON_MOB25_APPEAR_00` the camera starts on the monster (character 10002) from
 4 m out and pulls back to 9 m in a second, easing to a stop.
 
+**Frame time.** The game's updates take the frame's measured time, not a fixed tick:
+`GameModeManager`'s update (vtable slot 1) passes it to the event manager (`0x1402931b0`),
+which hands it to every event and executor. When the manager's +0x4b is set it uses
+exactly 1/60 s instead (`0x140853f24`), so 60 Hz is the design rate. (`0x14077ba78`, 1/30,
+is only a threshold inside the speed move's other update, not a frame time, as an earlier
+note here had it.) Moves are not quite step-independent (a bowed walk adds its velocity
+before taking off its push each frame), so replays and lockstep checks need the same steps;
+the stage steps by 1/60 s and `Stage::frame` takes any length. Where the measured time
+comes from (the main loop, and whether it is clamped) is still to be found.
+
 **Facings.** `s23` (`ECT_CHARA_ROT_SET`, `{character, x, y, z}`, 4,668 uses; `0x1401f097c`
 in the runner switch) sets the character's rotation (+0x240) to the three angles in degrees;
 the middle one is the facing (0 towards +z, 90 towards +x), the same angle a move that
@@ -358,8 +368,8 @@ uses, 2 in 43) from `Saves/curve/curve_data.xml`, stretched from its 60 frames t
 time (`0x1404e1770` fetches it; see "Curves" in `docs/tables.md`). Curves 0 and 2 have two
 keys and so go evenly. Most `s26`s take 0 s; 0.5 s is the commonest time.
 
-**The stage.** `barrel_game::stage::Stage` plays the timed steps on a clock of 1/30 s
-frames (the events' frame time, `0x14077ba78`): `s4` places a character, `s23`/`s24`/`s26` turn it, `s18` starts a
+**The stage.** `barrel_game::stage::Stage` plays the timed steps on a clock of 1/60 s
+frames (see "Frame time" above): `s4` places a character, `s23`/`s24`/`s26` turn it, `s18` starts a
 mover from where it is, and the camera's eye and target are set or moved, positions measured
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16
