@@ -202,7 +202,11 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
   turns the segment (0 to 7) into a frame range at 30 frames a second, 0-39, 54-88, 103-137,
   147-181, 192-223, 237-267, 282-312 or 327-360; duration and blend are hundredths of a
   second. The events use segments 4 and 6, a duration of 99900 (999 s, so it holds) and a
-  blend of 20 to 40 (0.2 to 0.4 s). Which clip the segments are cut from is not read yet.
+  blend of 20 to 40 (0.2 to 0.4 s). Which clip the segments are cut from is not read yet
+  (`0x1404ee950` only stores the range, duration and blend at player +0x44 to +0x50 when the
+  player has a clip). One candidate by length: Escha's `PC20_ACT_MIX` (synthesis) is 12.03 s,
+  361 frames, the only one of her clips that long, matching the table's last frame 360; not
+  confirmed.
 - `s117` (0x73000075, `{character}`, 1,632 uses) clears the character's +0x8d, ending it.
 
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
