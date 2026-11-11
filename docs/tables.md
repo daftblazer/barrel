@@ -555,6 +555,15 @@ The links agree with the area names: Colseit's are areas 0 to 3 (R0 to R3, the f
 whose names start at Colseit), the Upland Forest's are R3, R7, R13 and R6. One link is out of
 the area range: the Withering Plains' 208, still to be explained.
 
+### Gathering (not found yet)
+
+What each field's gathering points give is in none of the data files: not in
+`Saves/field/AREA_*.xml` (camera, fog, light, sky, HDR and shader settings only), not in the
+area containers (`Data/x64/Field/AREA_*/AREA_*.elixir.gz` and `_Obj`: terrain, textures,
+placements, collision), whose placement lists hold scenery models only, and not in
+`Script/` (36 Squirrel scripts for monster behaviour, `ai_*_in.nut` and `_out.nut`). Like
+the recipes and monsters, it must be compiled into the executable.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
