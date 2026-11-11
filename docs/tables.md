@@ -233,8 +233,11 @@ the item's two traits into +0x38. Then come the cost points:
   marked invalid (+0x4d8 = 0) and the material is not added. Otherwise the elements are
   added (above), then the element points (below), and +0x3e0 counts the cost.
 
-Where a slot entry's cost and element value are first set is still open; the skills change
-them in place. Power+ (type 2) and Strengthen Material (24) raise the element value, and
+Where a slot entry's cost and element value are first set is still open. The state's
+constructor (`0x140313690`) clears all four entries (cost 0, +8 = -1); apart from it, only
+the skills write them, so they are filled through a pointer the plain searches miss. The
+caller at `0x140303420` passes 100 as the percentage. The skills change the entries in
+place. Power+ (type 2) and Strengthen Material (24) raise the element value, and
 Crafting Help (20) takes param 1 percent off the cost, never below 0.
 
 Other skill cases found here:
