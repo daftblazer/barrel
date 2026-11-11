@@ -111,8 +111,25 @@ fixed key bare from byte 20 on):
 
 Every name in every archive reads as a path (`\data`, `\saves`, `\event`, `\dlc`), and
 `barrel_formats::pak::Pak::parse_any` picks the key by that test. A Ryza event extracted
-this way (`\event\skill\skill_party_tao_99.ebd`) reads with Escha's event reader. The
-Ryza tables come as `.xml.e` next to `.xml`, a further encryption still to look at.
+this way (`\event\skill\skill_party_tao_99.ebd`) reads with Escha's event reader. 
+
+**Encrypted tables (`.xml.e`).** Many tables also come as `.xml.e`: a 16-byte header of
+big-endian u32s `{2, plain size, 0, 0}` (`freeachievement.xml.e`: 2, 23,144, the size of
+the `.xml` next to it), then data that is compressed and encrypted (entropy 7.94; 3,504
+bytes for a table zlib packs into 2,232 to 3,288, so not plain zlib, and XORing it with
+zlib's output gives a different stream for each file). Most have a plain twin in the same
+archive, which Barrel can read instead:
+
+| Game | `.xml.e` | with a plain `.xml` twin | Only encrypted |
+|---|---|---|---|
+| Sophie 2 | 377 | 373 | `saves\mix\mixpanellineeffectdata*`, `saves\recipeidea\recipetext*` |
+| Ryza DX | 399 | 391 | `saves\fieldmap\sky\*` (6), `saves\recipeidea\*` (2) |
+| Ryza 2 DX | 459 | 451 | 8 |
+| Ryza 3 DX | 735 | 598 | `saves\fieldmap\cameraparam\enced\*` (133), `saves\mix` (2), `saves\recipeidea` (2) |
+
+The ones with no twin include the synthesis panel and recipe-idea tables, so the format
+has to be broken eventually: from the executable's code (once the DRM wrapper is
+unwrapped), or from the twin pairs as known plaintext.
 
 ## What the games share
 
