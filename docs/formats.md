@@ -437,6 +437,13 @@ script for the speaker and runs it:
   = `STAND_NORMAL_2`. So gesture 0 settles to idle, and 198 thinks for five loops before
   going back to idle. Not every enum tag has a column; the columns cover the ones a
   character uses.
+
+  Where the animations are: the `ACT_*` ones (idle `ACT_DEF`, `ACT_DEF_2`, ...) in the
+  character's `<Motion1>` container (`PC20_BASE_MOTION1`, 56 animations), the event ones in
+  a container of their own beside it (`PC20/PC20_STAND_THINK.elixir.gz`). Each body motion
+  comes with its own facial animations: `PC20_STAND_THINK.g1a` plus
+  `PC20_STAND_THINK_M_Brw_B_Def.g1a`, `..._M_Eye_...` and `..._M_Mth_...`, so a gesture
+  moves the face too unless an expression overrides it.
 - **Field 3 is the expression**: if it is at most 10, it adds `ECT_CHARA_FACIAL_MOTION_SET`
   (`s88`): speaker, then a brow, eye and mouth facial motion from an 11-entry table at
   `0x1407f2e50` (-1 keeps the current one):
