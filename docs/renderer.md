@@ -131,5 +131,7 @@ and Escha walking into the plaza towards Threia and Reyfer, mid-stride; 4 frames
 `F_WAIT` at 2.4 s, as the event says. Every character the event ever places is loaded up front; a character the stage does not
 have at a frame (not placed yet, or removed by `q5`) is not drawn (its draws are skipped
 by instance), so characters come and go as the event says (`EVENT_MM08_AS4_020`: Escha,
-Logy and character 7 appear by 0.5 s, placed at 0.1 and 0.2 s). Not yet: which field an
-event plays in (given by hand with `--field`), the stage camera, faces.
+Logy and character 7 appear by 0.5 s, placed at 0.1 and 0.2 s). `--field auto` takes the field from the event (`docs/events.md`, "Which field"). A field
+with one terrain blend map (`TOWN_03`) gets a black second map, so its layers 4 to 6 have no
+weight. Not yet: the stage camera, faces; `EVENT_MM08_AS4_110` in `TOWN_03` draws from
+inside the ground with no characters seen, still to look into.

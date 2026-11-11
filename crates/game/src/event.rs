@@ -30,6 +30,9 @@ pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
 /// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
 /// operands): adds the character there, facing `angle` degrees.
 pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
+/// `q2` (`ECT_FIELDMAP_CHANGE`) and `q12` (`ECT_FIELDMAP_CHANGE_NOT_BGM`): `{map}`.
+pub const FIELD_CHANGE: u32 = 0x7100_0002;
+pub const FIELD_CHANGE_KEEP_BGM: u32 = 0x7100_000c;
 /// `q5` (`ECT_FIELDMAP_CHARA_DELETE`): `{character}`.
 pub const FIELD_CHARA_DELETE: u32 = 0x7100_0005;
 /// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
@@ -71,6 +74,9 @@ pub enum Step<'a> {
     /// (`ECT_CHARA_MOTION_SET`, `{character, motion, variant, blend}`) plays it with
     /// `variant` (0 to 7, kept at the runner's +0x828; not read) and leaves the range as is.
     Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, variant: u32 },
+    /// The event moves to a field map (`q12`, `ECT_FIELDMAP_CHANGE_NOT_BGM`, `{map}`; `q2`,
+    /// `ECT_FIELDMAP_CHANGE`, likewise): `map` is a `FIELDMAP_*` number ([`field_maps`]).
+    FieldChange { action: usize, map: u32 },
     /// A field character is removed (`q5`, `ECT_FIELDMAP_CHARA_DELETE`, `{character}`).
     Remove { action: usize, character: u32 },
     /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
@@ -149,6 +155,7 @@ impl<'a> Player<'a> {
                 let blend = f(*hundredths) / 100.0;
                 out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: false, variant: *variant });
             }
+            (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
             (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),
             (SHOW_MESSAGES, [first, last]) => {
                 for i in *first as usize..=(*last as usize) {
@@ -347,6 +354,7 @@ mod tests {
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
+                Step::FieldChange { map, .. } => format!("field {map}"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
                 Step::Turn { character, .. } | Step::Face { character, .. } | Step::TurnOver { character, .. } => {
                     format!("{character} turns")
@@ -358,4 +366,23 @@ mod tests {
             ["a", "b", "ECT_CHARA_MOTION_WAIT", "wait 0.5", "c", "0 at [100.0, -5.0, 200.0]", "0 motion 32 blend 0.4", "1 waits 1.5"]
         );
     }
+}
+
+/// The field maps by `FIELDMAP_*` number, without the prefix: the names of the field
+/// directories under `Data/x64/Field` (`TOWN_01` to `TOWN_12` are 0 to 11, then `AREA_01_01`
+/// and on; 122 in Escha & Logy DX), from the executable's enum names.
+pub fn field_maps(pe: &barrel_formats::pe::Pe) -> Vec<String> {
+    pe.enum_names("FIELDMAP_TOWN_01")
+        .map(|(names, first)| {
+            names[first..].iter().take_while(|n| n.starts_with("FIELDMAP_")).map(|n| n["FIELDMAP_".len()..].to_string()).collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The field an event plays in: the map of its first field change, if it has one.
+pub fn first_field(steps: &[Timed]) -> Option<u32> {
+    steps.iter().find_map(|t| match t.step {
+        Step::FieldChange { map, .. } => Some(map),
+        _ => None,
+    })
 }

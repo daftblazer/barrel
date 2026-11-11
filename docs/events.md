@@ -343,6 +343,16 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 in `SKILL_COMMON_MOB25_APPEAR_00` the camera starts on the monster (character 10002) from
 4 m out and pulls back to 9 m in a second, easing to a stop.
 
+**Which field.** An event names its field itself: `q12` (`ECT_FIELDMAP_CHANGE_NOT_BGM`,
+`{map}`, 621 uses) and `q2` (`ECT_FIELDMAP_CHANGE`) change to field map `map`, a number in the
+executable's `FIELDMAP_*` enum (122 names, found by `FIELDMAP_TOWN_01`): `TOWN_01` to
+`TOWN_12` are 0 to 11, then `AREA_01_01` (12) and on, then the extra areas and
+`A15_WMAP`. Without the prefix the names are the field directories under `Data/x64/Field`.
+`EVENT_MM08_AS4_130` changes to 3, `TOWN_04` (the plaza it is drawn in), `_110` to 2
+(`TOWN_03`) and `_020` to 8 (`TOWN_09`). `play-event` prints the change with its name, and
+`barrel-view --field auto --event FILE` draws the event in its own field
+(`event::field_maps`, `event::first_field`).
+
 **Frame time.** The game's updates take the frame's measured time, not a fixed tick:
 `GameModeManager`'s update (vtable slot 1) passes it to the event manager (`0x1402931b0`),
 which hands it to every event and executor. When the manager's +0x4b is set it uses

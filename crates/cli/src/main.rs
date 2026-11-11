@@ -1381,6 +1381,13 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
         .and_then(|exe| read(&exe).ok())
         .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::gesture::motions(&pe)).unwrap_or_default())
         .unwrap_or_default();
+    let fields: Vec<String> = file
+        .ancestors()
+        .find(|p| p.join("Saves").is_dir())
+        .and_then(|root| ["Atelier_Escha_and_Logy_EN.exe", "Atelier_Escha_and_Logy.exe"].iter().map(|n| root.join(n)).find(|p| p.is_file()))
+        .and_then(|exe| read(&exe).ok())
+        .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::event::field_maps(&pe)).unwrap_or_default())
+        .unwrap_or_default();
     let table = OperandTable::escha();
     let player = Player::escha(&event, &messages, &table)?;
     let steps: Vec<(Option<f32>, Step)> = if timed {
@@ -1406,6 +1413,10 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
             Step::Place { action, character, position } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("{action:3} {who} at ({}, {}, {})", position[0], position[1], position[2]);
+            }
+            Step::FieldChange { action, map } => {
+                let name = fields.get(map as usize).map_or("?", String::as_str);
+                println!("{action:3} --- field {map} ({name})");
             }
             Step::Remove { action, character } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);

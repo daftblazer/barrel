@@ -764,6 +764,24 @@ fn event_characters(
     Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
 }
 
+/// The field directory an event plays in (`docs/events.md`, "Which field").
+fn event_field(event_path: &Path) -> Result<PathBuf> {
+    let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
+    let event = barrel_formats::ebd::Ebd::parse(&std::fs::read(event_path)?)?;
+    let steps = barrel_game::event::Player::escha(&event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
+    let map = barrel_game::event::first_field(&steps).ok_or("the event changes to no field; give --field DIR")?;
+    let names = std::fs::read_dir(root)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "exe"))
+        .filter_map(|p| std::fs::read(p).ok())
+        .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::event::field_maps(&pe)).filter(|m| !m.is_empty()))
+        .unwrap_or_default();
+    let name = names.get(map as usize).ok_or("field map number past the executable's list")?;
+    eprintln!("field {map}: {name}");
+    Ok(root.join("Data/x64/Field").join(name))
+}
+
 /// Where in `anim` to sample at motion time `t`: looping motions wrap, others hold their end.
 fn motion_clock(anim: &barrel_formats::g1a::Animation, t: f32, looping: bool) -> f32 {
     if looping && anim.duration > 0.0 { t.rem_euclid(anim.duration) } else { t.clamp(0.0, anim.duration) }
@@ -946,7 +964,14 @@ fn main() -> Result<()> {
     // CPU side: the vertices and draws, and the texture pack.
     let mut scene = Scene::new();
     let tex_bytes = if field {
-        field_scene(Path::new(&args[1]), &mut scene)?
+        // `--field auto` with an event: the field of the event's first field change.
+        let dir = if args[1] == "auto" {
+            let e = event_spec.as_ref().ok_or("--field auto needs --event")?;
+            event_field(Path::new(e))?
+        } else {
+            PathBuf::from(&args[1])
+        };
+        field_scene(&dir, &mut scene)?
     } else {
         let model_bytes = entry_bytes(&args[0])?;
         let model = G1m::parse(&model_bytes)?;
@@ -1259,6 +1284,21 @@ fn main() -> Result<()> {
         let mut tex = Vec::new();
         for b in bundle.blend.textures.iter().take(2) {
             tex.push(upload_texture(&gpu, pool, b)?);
+        }
+        // A field with one blend map (TOWN_03) weights only the first three layers: the
+        // second map is black, so layers 4 to 6 get no weight.
+        let black = [0u8, 0, 0, 255];
+        while tex.len() < 2 && !tex.is_empty() {
+            let t = barrel_formats::g1t::Texture {
+                width: 1,
+                height: 1,
+                format: Format::Rgba8,
+                format_code: 1,
+                layers: 1,
+                volume: false,
+                levels: vec![&black[..]],
+            };
+            tex.push(upload_texture(&gpu, pool, &t)?);
         }
         let layer_count = bundle.layers.textures.len().clamp(1, 6);
         for i in 0..6 {
