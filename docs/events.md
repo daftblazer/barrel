@@ -160,8 +160,13 @@ Events also add invisible markers as characters: `Chara.xml` rows 590 to 603 are
 `ID_DUMMY_POS_000` to `_013`; rows 591 to 602 (`_001` to `_012`) are added (`q3`) and set up
 (`q7`, `q8`) 281 times each in Escha's events, and row 749, "Master Character", often too, places for the camera and the characters to aim at, by the look of it.
 `q3` (`ECT_FIELDMAP_CHARA_ADDITION`) is `{character, 0}`; `q8`
-(`ECT_FIELDMAP_CHARA_COLLISION_FLAG`) is `{character, a, b, c, d}`, most often `0 0 0 2` or
-`1 1 1 2`, through a listener not found yet.
+(`ECT_FIELDMAP_CHARA_COLLISION_FLAG`) is `{character, collides, b, c, d}`, most often
+`0 0 0 2` (no collision) or `1 1 1 2`. The field's character listener (`0x140071160`, which
+takes `q1`, `q3` to `q5`, `q8`, `q13`, `q14`, `q17` to `q19`, `q29`, `q32`, `q37` and `q39`,
+as its filter `0x140071030` lists) finds the character by number and sets its +0x128 from
+`collides` (when that changes, the character's collision body is added to the field's
+collision world, `0x140506fc0`, or taken out, `0x140507070`) and its +0x129 flag from `b` (what
+reads it is not followed yet). `c` and `d` are not read there.
 
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 
