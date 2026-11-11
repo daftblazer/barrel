@@ -40,6 +40,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "barrel-formats",
+ "barrel-game",
  "glam",
 ]
 

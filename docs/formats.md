@@ -243,7 +243,7 @@ to n × 1000 + 999. How an event line picks its clip is still open.
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone
 indices (index / 3 picks a slot of the submesh's palette) still holds for most submeshes
 of the later games, every index a multiple of 3. The ones that break it (13 of 29 in Sophie
-2's `PC01A_MODEL_default.g1m`, the eyes, hair and skirt among them by their layouts) carry
+2's `PC01A_MODEL_default.g1m`; which parts of the body they are is not checked yet) carry
 other numbers there: dense values from 0 up past their palette's size (80 values against a
 palette of 5), even with zero weight counted out. These look like the cloth and physics
 parts the containers' `.swg` and `.rigbin` files drive. The reader treats a submesh as
