@@ -701,10 +701,15 @@ five i32, one block per party member, each 99 levels (1 to 99) and a row of zero
 HP, MP, attack, defence, speed, the battle stats 1 (and 3), 2 (and 4), 5, 6 and 7.
 `barrel_formats::battle_data::party_growth` reads them; `barrel party EXE` prints them.
 
-That the blocks are in the `PARTY_*` order (Escha, Logy, Awin, Threia, Reyfer, Lucille, Linca,
-Wilbell, Micie, Katla, Nio) is read from where they sit and from the numbers, not yet from
-the code that reads them: Awin has the most HP (461 at level 99), Threia the most MP (290),
-Lucille is the fastest (208), Escha starts at 18 HP, 27 MP, 4 attack, 3 defence, 6 speed.
+The blocks are in the `PARTY_*` order (Escha, Logy, Awin, Threia, Reyfer, Lucille, Linca,
+Wilbell, Micie, Katla, Nio): the getter `0x14032ce70 (member, level, k)` reads
+`table[(member × 100 + level - 1) × 5 + k - 2]` for a party member number up to 10, a level
+up to 99 and k from 2 to 6 (HP to speed), and `0x14032d840` fills a party member's record
+(member number at +0, level at +4) with the five at +0x14 to +0x24 before `0x14032de50`
+works out the rest (equipment, presumably). The level test lets 0 through, which would read
+the row before the block; the game presumably never asks for it. Awin has the most HP (461
+at level 99), Threia the most MP (290), Lucille is the fastest (208); Escha starts at 18 HP,
+27 MP, 4 attack, 3 defence, 6 speed.
 
 ## Monsters
 

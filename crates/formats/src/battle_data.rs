@@ -17,7 +17,8 @@ const SKILL_RECORD: usize = 96;
 const MAX_SKILLS: usize = 1024;
 
 pub const PARTY_GROWTH_EN: u64 = 0x1_40d8_f370;
-/// The party members, in the executable's `PARTY_*` order (Escha, Logy, Awin, Threia, Reyfer,
+/// The party members, in the executable's `PARTY_*` order (the getter `0x14032ce70` indexes
+/// the blocks by party member number) (Escha, Logy, Awin, Threia, Reyfer,
 /// Lucille, Linca, Wilbell, Micie, Katla, Nio).
 pub const PARTY_COUNT: usize = 11;
 pub const MAX_LEVEL: usize = 99;
