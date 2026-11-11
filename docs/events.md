@@ -209,6 +209,17 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
   confirmed.
 - `s117` (0x73000075, `{character}`, 1,632 uses) clears the character's +0x8d, ending it.
 
+**Motions and moves.** In the same runner switch:
+
+- `s10` (`ECT_CHARA_MOTION_SET_LOOP`, `{character, motion, blend, flag}`) plays the motion
+  (a `MOTION_*` number, e.g. 32 `WALK`) through `0x1401f4c50`, blending over `blend` / 100
+  seconds, and sets the runner's +0x5c from `flag` (not zero: what it switches is not read).
+- `s18` (`ECT_CHARA_MOVE_SET`, 13 operands) hands the command to the character's move
+  controller (`0x1402f25f0` at runner +0x600, with the character's position at +0x230), which
+  builds a move from it; that is not read yet. Over the 734 uses: operand 1 the character,
+  2 mostly 0 (1, 5, 6, 8 sometimes), 4 to 6 the point to move to (`1036 9 1587`), 7 is 1, 9
+  is 120 to 150 (the speed, by the look of it), the rest 0.
+
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 
 ## Who handles them
