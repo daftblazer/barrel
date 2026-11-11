@@ -37,8 +37,9 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 | `field/AREA_*.xml` | one per area | field settings: camera, fog, light, wind and the like |
 
 What is not in the tables: the ingredient lists of the synthesis recipes, and monster
-stats. The recipe item tags do not occur in the executable as plain text either, so the
-recipes are in some other file or encoded; that is still to be found.
+stats. The executable holds the item and monster tags as plain text (510 `ITEM_MIX_*`,
+1,302 `MONSTER_*`), so both are probably compiled into it; where exactly is still to be
+found.
 
 ## Numbers behind the tags
 
