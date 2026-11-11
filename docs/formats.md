@@ -444,6 +444,16 @@ script for the speaker and runs it:
 
 This is why events hardly use `s88` themselves: every line carries its expression.
 
+**From motion numbers to animations.** The executable keeps three string tables per
+character naming its `_FACIAL` animations by number (Escha's: brows at `0x140cfe5e8`, eyes
+at `0x140cff3e8`, mouths at `0x140cfcb70`). Brows and eyes, 0 to 6: DEF, FUN, ANG, SAD, SER,
+FUN2, SAD (`PC20_EYE_M_ANG_M_Brw_B_Def`, ...). Mouths, 0 to 13: each of those moods twice,
+first `PC20_MTH_M_<mood>_M_Mth_B_Def`, a 4-second loop that opens and closes the mouth (the
+talking form, even numbers), then `PC20_MTH_DEF_<mood>_...`, a still pose (odd numbers).
+So expression 10 is sad brows, sad eyes and a sad talking mouth. Other characters' tables
+differ in places (Wilbell's, `PC27`, has a `SAD2`), so Barrel should read each from the data
+rather than assume Escha's. `barrel_game::face::expression` gives the names for Escha's.
+
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.
 
