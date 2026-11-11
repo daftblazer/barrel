@@ -20,6 +20,9 @@ use glam::{Mat4, Vec3};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+mod present;
+mod window;
+
 const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
 const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
 const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
@@ -90,13 +93,22 @@ struct Gpu {
 }
 
 impl Gpu {
-    fn new() -> Result<Gpu> {
+    /// A device for offscreen work (`display` None) or for presenting to a window on
+    /// `display` (adds the surface and swapchain extensions).
+    fn new(display: Option<raw_window_handle::RawDisplayHandle>) -> Result<Gpu> {
         let entry = unsafe { ash::Entry::load()? };
         let validation = std::env::var("BARREL_VALIDATION").is_ok_and(|v| v == "1");
         let layers: Vec<*const i8> = if validation { vec![c"VK_LAYER_KHRONOS_validation".as_ptr()] } else { vec![] };
         let app = vk::ApplicationInfo::default().application_name(c"barrel-view").api_version(vk::API_VERSION_1_1);
         let instance = unsafe {
-            entry.create_instance(&vk::InstanceCreateInfo::default().application_info(&app).enabled_layer_names(&layers), None)?
+            let extensions = match display {
+                Some(d) => present::instance_extensions(d)?,
+                None => Vec::new(),
+            };
+            entry.create_instance(
+                &vk::InstanceCreateInfo::default().application_info(&app).enabled_layer_names(&layers).enabled_extension_names(&extensions),
+                None,
+            )?
         };
         let devices = unsafe { instance.enumerate_physical_devices()? };
         let pick = |kind| {
@@ -121,10 +133,14 @@ impl Gpu {
         let priorities = [1.0f32];
         let queues = [vk::DeviceQueueCreateInfo::default().queue_family_index(queue_family).queue_priorities(&priorities)];
         let enabled = vk::PhysicalDeviceFeatures::default().texture_compression_bc(true);
+        let swapchain_ext = [ash::khr::swapchain::NAME.as_ptr()];
         let device = unsafe {
             instance.create_device(
                 physical,
-                &vk::DeviceCreateInfo::default().queue_create_infos(&queues).enabled_features(&enabled),
+                &vk::DeviceCreateInfo::default()
+                    .queue_create_infos(&queues)
+                    .enabled_features(&enabled)
+                    .enabled_extension_names(if display.is_some() { &swapchain_ext[..] } else { &[] }),
                 None,
             )?
         };
@@ -1042,6 +1058,10 @@ fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Tex
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // --window FRAMES: open a window and present that many frames (the live loop's start).
+    if let ["--window", frames] = args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        return window::run(frames.parse()?);
+    }
     let field = args.first().is_some_and(|a| a == "--field");
     let positional = if field { 3 } else { 3 };
     if args.len() < positional {
@@ -1201,7 +1221,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let gpu = Gpu::new()?;
+    let gpu = Gpu::new(None)?;
     let d = &gpu.device;
     let pool = unsafe {
         d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?

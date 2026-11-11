@@ -14,3 +14,5 @@ barrel-formats = { path = "../formats" }
 barrel-game = { path = "../game" }
 ash = "0.38"
 glam = "0.33"
+winit = { version = "0.30", default-features = false, features = ["wayland", "x11", "rwh_06"] }
+raw-window-handle = "0.6"

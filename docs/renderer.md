@@ -162,3 +162,11 @@ weighted offsets (mirrored in x like the vertices) before skinning, as the CPU d
 face changes by writing its weights, like a pose by writing its palette. The weights start
 from the line's expression (`--line`): in `EVENT_MM08_AS4_130`, line 2, 108 weights over three
 faces, 3 not zero (the mouths), and the frame is pixel-identical to the CPU-morphed one.
+
+**Live window.** `barrel-view --window FRAMES` opens a 1280×720 window (winit 0.30, Wayland or
+X11) and presents through a FIFO swapchain (`present.rs`: the surface, the swapchain, acquire
+and present; vsync, so the display paces the loop), with the engine clock taking each
+frame's real time (`docs/engine.md`, "Timing"). It clears each frame to a colour that moves
+with the logic time, a bounded smoke test of the window, swapchain and clock; drawing the
+event's scene into it is next. `Gpu::new` takes the window's display handle to add the
+surface and swapchain extensions.
