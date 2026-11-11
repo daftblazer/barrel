@@ -176,6 +176,27 @@ turn"). `tools/skills.py` prints the effects by name. An unused slot can keep st
 after its -1. The other fields are named from the values' patterns only and should be checked
 against the battle code.
 
+### Applying effects (executable)
+
+The function at `0x1401bde10` (English Escha executable) applies a resolved action's effects
+one by one. Each runtime effect entry holds its `ACT_*` number at +0, an integer amount at
++0x20 and a float scale at +0x28 (the power roll from the minimum..maximum happens before this
+function, not yet found). A switch on the number (`cmp r14d,0xe9`, byte table `0x1401c0930`,
+jump table `0x1401c0840`) sends it to one of 64 handlers:
+
+- one handler for 17 HP-damage kinds (`DAMAGE_HP`, `DAMAGE_REDUCE`, `ASSIST_ATTACK`,
+  `DAMAGE_IF_BADSTATUS`, `DAMAGE_TIME_LEFT`, `DAMAGE_RANGE_PROPOTION`, ...), at `0x1401bdf6d`;
+- one each for `DAMAGE_FIX`, `DAMAGE_PERCENT`, `DAMAGE_MP`, `HEAL_HP`, `HEAL_MP`,
+  `HEAL_HP_BY_ATK`, `RUNAWAY`, `ASSIST_GUARD`, `RETURN_WT`, `PERCENT_QUICK`, `KNOCKBACK`, ...;
+- shared ones for the bad states (`BAD_SLEEP`, `BAD_POISON`, ...), their cures, the stat
+  drops (`MINUS_ATK/DEF/SPD`), the timed effects (`DAMAGE_HP_TURN`, `PLUS_ATK`, ...), the
+  drains and the field effects;
+- 105 numbers (`CONSUME_MP`, `MOVE_DASH`, ...) that do nothing here (handled elsewhere).
+
+`HEAL_HP` heals `trunc(amount × scale)` (the amount as a float, times the scale, truncated to
+an integer). For `ACT_ASSIST_COUNTER` (93) the
+amount is first replaced with `user[+0x2c0] × (user[+0x2c4] + 100) / 100`.
+
 ## Synthesis skills
 
 Escha's and Logy's synthesis skills are also compiled into the executable: 68 records of 56
