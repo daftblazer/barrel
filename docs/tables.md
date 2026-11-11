@@ -89,6 +89,39 @@ The five `{effect, 0, threshold}` triples in words 9..23 point at the same enum,
 they are for is still open (Craft's name Earth Damage, Rain of Fire, Water Damage, Poison and
 HP regen at 10, 20, 30, 50 and 75).
 
+### How the game reads the recipes
+
+The accessors around `0x1400e31a0` and `0x1402a2bd0` (English Escha executable) show what
+the game does with a record:
+
+- **Finding a recipe**: a linear search for the item's number in word 0, giving the record's
+  index or -1 (`0x1400e31a0`). Every other accessor takes that index and rejects anything
+  above 264.
+- **Ingredient count**: the slots whose id is not -1 (`0x1402a2bd0`).
+- **The effect a slot gets** (`0x1402a3bf0`, called with the record, the slot and a value):
+  the value is capped at 99, and the result is the effect of the first pair whose "up to"
+  is greater than the value. If no pair matches, the effect of the fourth pair is used. So an
+  "up to" of 100 covers the rest of the line, and a line's values run from 0 to 99.
+- **Where the value comes from**: on the synthesis screen, each slot's line value is a float
+  at +0x70 + 20 × slot in a 0x4e0-byte synthesis state. The game keeps one state per step,
+  as an undo history. The value is truncated toward zero before the lookup, and when a step
+  changes a slot's effect the screen shows a message (`0x1402fc4b9`). What adds to the value
+  is still to be followed.
+- **Words 3 and 4, and the levels table**: `0x14029da50` builds `{word 3, value, 2}`, where
+  the value comes from a second table at `0x140d196f0`. That table holds 28-byte records:
+  `{item, level, id, value, percent, 1.0f, base id}`, ended by -1. There are two levels per
+  attack item (1 and 2). The percent is 100, and 125 for level 1 of the `_S` versions;
+  `ITEM_MIX_SLUG_SELF_DEFENCE` also has a level 0. The value is word 4 when the item has no
+  entry for that level (`0x1400e34e0`). The ids run 0..59 with a gap per item; the base id is
+  level 1's id minus 1, and the `_S` versions' level 2 ids are 560..563. These are not the
+  skill enum (`SKILL_*`, 543 entries at `0x140cf73c0`, all battle actions); what they index
+  is still open.
+- **Words 5 and 6**: cost and time, read by their own getters (`0x1402a263f` and
+  `0x1402a3ea0`, which reads the time as a float). Words 3 and 4 have plain getters too
+  (`0x1402a25bf`, `0x1402a25ff`).
+- **The header triples**: `0x1402a3510` hands each of the five `{a, 0, threshold}` triples
+  to `0x1402b49f0`, which adds them to a list. What the list is for is still open.
+
 For example:
 
 | Item | Ingredients |
