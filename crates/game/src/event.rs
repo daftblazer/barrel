@@ -111,6 +111,15 @@ pub struct Player<'a> {
     started: Vec<bool>,
     messages: &'a [Message],
     pending: std::collections::VecDeque<Step<'a>>,
+    /// How long [`Player::schedule`] holds each line: none by default, since the game waits
+    /// for the player; [`Player::reading_time`] sets one for unattended playback.
+    reading: Option<fn(&str) -> f32>,
+}
+
+/// A reading time for unattended playback (not the game's: it waits for a button): one
+/// second plus 0.08 s a character, newlines and spaces not counted.
+pub fn reading_time(text: &str) -> f32 {
+    1.0 + 0.08 * text.chars().filter(|c| !c.is_whitespace()).count() as f32
 }
 
 impl<'a> Player<'a> {
@@ -122,7 +131,14 @@ impl<'a> Player<'a> {
         if let Some(s) = started.first_mut() {
             *s = true;
         }
-        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default() })
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None })
+    }
+
+    /// Holds each line for `time(text)` seconds in [`Player::schedule`] (the action showing
+    /// it waits that long), as an unattended playback would.
+    pub fn reading_time(mut self, time: fn(&str) -> f32) -> Self {
+        self.reading = Some(time);
+        self
     }
 
     /// The name the executable gives a command word, if any.
@@ -227,7 +243,13 @@ impl<'a> Player<'a> {
                 if let Step::Wait { seconds } = s {
                     threads[t].0 += seconds.max(0.0);
                 }
-                out.push(Timed { time: now, action, step: s });
+                let held = match (&s, self.reading) {
+                    (Step::Message { text, .. }, Some(f)) => f(&text.replace("<CR>", "")).max(0.0),
+                    _ => 0.0,
+                };
+                let shown_at = threads[t].0;
+                threads[t].0 += held;
+                out.push(Timed { time: if held > 0.0 { shown_at } else { now }, action, step: s });
             }
         }
         out
@@ -343,6 +365,12 @@ mod tests {
             (CHARA_MOTION_LOOP, Some(4)),
             (CHARA_TIME_WAIT, Some(2)),
         ]);
+        // Read unattended, each line holds its reading time: "a" at 0, "b" after it, the wait
+        // and "c" after that.
+        let timed = Player::escha(&event, &messages, &table).unwrap().reading_time(|_| 2.0).schedule();
+        let at: Vec<(String, f32)> =
+            timed.iter().filter_map(|t| match &t.step { Step::Message { text, .. } => Some((text.clone(), t.time)), _ => None }).collect();
+        assert_eq!(at, [("a".into(), 0.0), ("b".into(), 2.0), ("c".into(), 4.5)]);
         let steps: Vec<Step> = Player::escha(&event, &messages, &table).unwrap().collect();
         let texts: Vec<String> = steps
             .iter()

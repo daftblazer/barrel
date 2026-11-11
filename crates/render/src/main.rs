@@ -732,7 +732,11 @@ fn event_characters(
             .and_then(|b| barrel_formats::table::parse(&b).ok())
             .map(|t| barrel_game::curve::Curve::table(&t))
             .unwrap_or_default();
-        let steps = barrel_game::event::Player::escha(&event, &[], &ops)?.schedule();
+        // The same schedule playback uses: the event's lines, each held for a reading time.
+        let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
+        let lines = std::fs::read(&ebm).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).unwrap_or_default();
+        let steps = barrel_game::event::Player::escha(&event, &lines, &ops)?.reading_time(barrel_game::event::reading_time).schedule();
         let upto: Vec<_> = steps.into_iter().filter(|t| t.time <= at).collect();
         let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
         stage.run_until(at + FRAME * 0.5);
@@ -1532,7 +1536,10 @@ fn main() -> Result<()> {
         let stem = Path::new(e).file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = Path::new(e).with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
         messages = std::fs::read(&ebm).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).unwrap_or_default();
-        let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?.schedule();
+        // Lines held for a reading time, as nobody presses a button here.
+        let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?
+            .reading_time(barrel_game::event::reading_time)
+            .schedule();
         let mut play = Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
         motion_names = std::fs::read_dir(root)?
             .flatten()
