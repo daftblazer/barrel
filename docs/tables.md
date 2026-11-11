@@ -36,9 +36,8 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 | `subject/SubjectData.xml` | 457 | assignments: name, category, score, the card and square they sit on, the condition and its parameters, the two help texts |
 | `field/AREA_*.xml` | one per area | field settings: camera, fog, light, wind and the like |
 
-What is not in the tables: the synthesis recipes and the monster stats. Both are compiled
-into the executable (see "Recipes" below; the monster stats are still to be found, though
-the executable holds 1,302 `MONSTER_*` strings).
+What is not in the tables: the synthesis recipes and the monsters. Both are compiled into
+the executable; see "Recipes" and "Monsters" below.
 
 ## Numbers behind the tags
 
@@ -91,10 +90,42 @@ executable. The address differs between builds, so the engine should find the ta
 shape (a record whose word 0 is the first synthesizable item, repeated every 288 bytes)
 rather than by a fixed address.
 
-## Monster stats
+## Monsters
 
-Not found yet. They are not in the XML tables: `chara/CharaBase.xml` and `chara/Chara.xml`
-have a row for every monster model (`MOB00B` and so on) but hold only how it looks and moves
-(model, motions, size, camera). The monster enum is in the executable (153 `MONSTER_*`
-tags, numbered from `MONSTER_FRUITRAT_01` = 0), but no array keyed by those numbers holds
-values that look like stats; the ones found are runtime arrays or per-monster flags.
+Compiled into the executable like the recipes. The monster enum has 153 tags, from
+`MONSTER_FRUITRAT_01` = 0 (the tags are in two string arrays; `tools/str_table.py` dumps
+them). The getters at `0x1401118c0` and its neighbours index a table of 48-byte records at
+`0x140d34810` (English Escha executable) by that number. `tools/monsters.py` lists them.
+
+| Bytes | What |
+|---|---|
+| 0 | pointer to the name in the executable's language ("Poison Squirrel") |
+| 8 | family (4 for the squirrels and rats, 7 for the dragons, ...) |
+| 12 | 1 for bosses |
+| 16 | experience |
+| 20 | money |
+| 24, 28 | not known yet |
+| 32 | pointer to the drop list |
+| 40 | pointer to the stat blocks |
+
+The **stat blocks** are 20 i32 each, one after another, ended by a block whose level is
+-1 or 0. Most monsters have one; bosses have more (the same monster at other resistances,
+or stronger later fights):
+
+| Words | What |
+|---|---|
+| 0 | level |
+| 1..4 | HP, attack, defence, speed |
+| 5 | not known yet (1 or 2) |
+| 6..9 | the four element resistances |
+| 12..19 | four pointers, not followed yet |
+
+The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
+entries of another shape (skills, probably). Some drops have numbers above the item enum's
+568; what those are is still open.
+
+| Monster | Level | HP | ATK | DEF | SPD | Drops |
+|---|---|---|---|---|---|---|
+| Poison Squirrel | 6 | 35 | 15 | 8 | 13 | Apple 50%, Acorn 35%, Poison Apple 25%, Blue Nuts 10% |
+| Golden Rat | 30 | 351 | 52 | 27 | 37 | Golden Apple 50%, ... |
+| Altegewalt | 60 | 35,000 | 329 | 187 | 139 | resistances 40, and 75 in its second block |
