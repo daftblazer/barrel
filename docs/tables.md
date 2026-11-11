@@ -223,8 +223,8 @@ to the Water attribute.
 
 **The whole add-material step** (`0x1403040d0`): the new state starts as a copy of the
 previous one, and counts the material (+4, +8, +0xc). The state keeps one 40-byte entry per
-ingredient slot at +0x420 + 40 × slot, holding the material's cost points (+0), its
-element value (+0xc) and a bonus (+0x10). The step marks the slot used (+0x18) and copies
+ingredient slot at +0x418 + 40 × slot, holding a pointer to the material's item
+instance (+0), its cost points (+8), its element value (+0x14) and a bonus (+0x18). The step marks the slot used (+0x18) and copies
 the item's two traits into +0x38. Then come the cost points:
 
 - used = the slot's cost × a percentage the synthesis screen passes / 100;
@@ -234,8 +234,10 @@ the item's two traits into +0x38. Then come the cost points:
   added (above), then the element points (below), and +0x3e0 counts the cost.
 
 Where a slot entry's cost and element value are first set is still open. The state's
-constructor (`0x140313690`) clears all four entries (cost 0, +8 = -1); apart from it, only
-the skills write them, so they are filled through a pointer the plain searches miss. The
+constructor (`0x140313690`) clears all four entries; apart from it only the skills write
+them, so they are copied in whole somewhere. The synthesis screen reads them for display
+(`0x140314b90` copies each entry's item, cost and value into its own lists, through
+`0x140315d10`), not to compute them. The
 caller at `0x140303420` passes 100 as the percentage. The skills change the entries in
 place. Power+ (type 2) and Strengthen Material (24) raise the element value, and
 Crafting Help (20) takes param 1 percent off the cost, never below 0.
