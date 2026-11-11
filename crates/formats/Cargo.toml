@@ -1,0 +1,6 @@
+[package]
+name = "barrel-formats"
+description = "Readers for the data formats of Gust's Atelier games"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
