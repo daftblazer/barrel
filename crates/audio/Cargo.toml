@@ -1,0 +1,10 @@
+[package]
+name = "barrel-audio"
+description = "Barrel's sound: a mixer over decoded clips and an SDL3 output stream"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+barrel-formats = { path = "../formats" }
+sdl3-sys = { version = "=0.7.2", default-features = false, features = ["use-pkg-config"] }

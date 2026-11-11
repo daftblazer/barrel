@@ -64,6 +64,11 @@ BARREL_VALIDATION=1 target/release/barrel-view ...      # with the Khronos valid
 Building the renderer needs `glslc` (shaderc, part of the Vulkan SDK) to compile its shaders;
 set `GLSLC` to use another path.
 
+`crates/audio` is the sound: a mixer over clips decoded by Barrel's own Vorbis decoder
+(`barrel_formats::vorbis`) and an SDL3 output stream. Building it needs SDL3 (found through
+`pkg-config`). `barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav` decodes a voice clip; the output
+test runs with `SDL_AUDIO_DRIVER=dummy cargo test -p barrel-audio -- --ignored`.
+
 Extracted data goes in `work/`, which git ignores. No game data belongs in the repository.
 
 The name comes from the series' running "Barrel!" joke.

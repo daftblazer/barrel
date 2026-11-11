@@ -41,3 +41,14 @@ the game.
   differently (a bowed walk adds its velocity before taking off its push each frame, so the
   path depends on the step lengths). Barrel's results are those of a steady 60 fps. Lockstep
   checks compare against the original running at a steady 60 fps.
+
+## Sound
+
+`barrel-audio` keeps sound apart from the renderer. `Mixer` adds the playing sounds (each a
+`Sound`: samples per channel, decoded natively) into one interleaved stereo float stream at
+48 kHz, with a gain per sound, looping, and linear stepping for sounds at another rate; it is
+plain code, tested without a device. `Output` is an SDL3 device stream in the same format: the
+engine calls `pump(&mut mixer)` from its frame loop, which mixes just enough to keep about a
+set time queued (a tenth of a second in the test), so the sound runs on the device's clock
+while the logic keeps its fixed tick.
+
