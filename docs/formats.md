@@ -285,6 +285,21 @@ uses it so far). `barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]` writes
 against ffmpeg's decoder the clips tried (banks 0, 3, 10, 14, 17) come out the same length and
 within 3 of 32,767 at every sample (rounding), and a 5.8-second clip takes 0.05 s.
 
+## Music
+
+`Data/x64/Sound/BGM/` holds 248 KOVS files (the same wrapper as the voices, decoded the same
+way): 221 named (`ev_usual01.kvs`, `bt_boss02.kvs`, `sy_item.kvs`) and 27 numbered
+(`11547.kvs` ...). The executable lists the tracks by number at `0x1407e5ef0` (English Escha
+executable): 245 records of 0x38 bytes, each the PC file (`DISC:Sound/BGM/<name>.kvs`), the
+PlayStation (`.at9`) and Vita (`.kno`) files, a volume (a float at +0x2c: 0.5 for most event
+music, 0.7 to 1.0 for the rest) and the Japanese title at +0x30 (track 1 "タイトル画面　ピアノ
+8ch", 104 "日常1", 115 "トラブル発生a", 244 "MARIA(イグドラシル戦BGM)"). Events name tracks by
+these numbers: `ECT_SOUND_BG_PLAY` `{track, volume %, 0, 0}` (805 uses, 116 tracks),
+`ECT_SOUND_BG_STOP` and `ECT_SOUND_BG_FADEOUT` `{hundredths of a second, 0}` (1,220 uses,
+mostly 1 or 1.5 s); `EVENT_MM08_AS4_130` stops the music, plays 105 ("日常2") and then the
+item jingle (6). `barrel_formats::bgm::tracks` reads the list and `barrel play-event` prints the
+music steps with their files and titles. Where the loop points are kept is not read yet.
+
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
 The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its

@@ -1785,6 +1785,14 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
         .and_then(|exe| read(&exe).ok())
         .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::event::field_maps(&pe)).unwrap_or_default())
         .unwrap_or_default();
+    // The music list, from the English executable (where its address is known).
+    let tracks: Vec<barrel_formats::bgm::Track> = file
+        .ancestors()
+        .find(|p| p.join("Saves").is_dir())
+        .map(|root| root.join("Atelier_Escha_and_Logy_EN.exe"))
+        .and_then(|exe| read(&exe).ok())
+        .and_then(|data| barrel_formats::pe::Pe::parse(&data).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
+        .unwrap_or_default();
     let table = OperandTable::escha();
     let player = Player::escha(&event, &messages, &table)?;
     let steps: Vec<(Option<f32>, Step)> = if timed {
@@ -1819,6 +1827,13 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("{action:3} {who} leaves");
             }
+            Step::Music { action, track, volume, fade } => match track {
+                Some(t) => {
+                    let name = tracks.get(t as usize).map_or("?".to_string(), |k| format!("{} ({})", k.file, k.title));
+                    println!("{action:3} --- music {t}: {name} at {:.0}%", volume * 100.0);
+                }
+                None => println!("{action:3} --- music stops over {fade} s"),
+            },
             Step::Voice { action, character, clip } => {
                 let who = character.map_or("", |c| names.get(c as usize).map_or("?", String::as_str));
                 println!("{action:3} {who} voice {clip} (bank Series{:04}, clip {})", clip / 1000 * 1000, clip % 1000);

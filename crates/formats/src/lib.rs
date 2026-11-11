@@ -4,6 +4,7 @@
 //! against the input, and returns [`Error`] rather than panicking on bad data.
 
 pub mod battle_data;
+pub mod bgm;
 pub mod bc;
 pub mod bc6h;
 pub mod bc7;
