@@ -443,6 +443,12 @@ skills, among them the Floating Alchemy bombs (an area, presumably; not read). `
 
 ### A first duel
 
+`barrel_game::fight::Battle` holds a battle in progress (fighters with base and current stats,
+side, timed states, action count and slot uses; the timeline) and its steps: `next` (whose
+turn), `start_turn` (the netted HP change and the states' ageing) and `act` (a skill on a
+target: its poison and stat states, its damage, the next wait, the action counted), reporting
+`Event`s. The duel drives it for two fighters.
+
 `barrel_formats::battle_data` reads the monster and skill tables from the English
 executable, and `barrel_game::duel` puts the pieces above together: two monsters trading the
 monsters' normal attack (`SKILL_ATTACK_ENEMY`, `DAMAGE_HP` 48 to 60, wait 600), each turn

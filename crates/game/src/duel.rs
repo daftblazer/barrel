@@ -10,7 +10,7 @@
 //! action's float (taken as 1.0), item and party code, death checks beyond HP 0, and the
 //! battle's other random draws.
 
-use crate::battle::{self, stat, Defender, Timeline};
+use crate::battle::{self, stat};
 use crate::rng::Rng;
 use barrel_formats::battle_data::{Skill, StatBlock};
 
@@ -23,18 +23,6 @@ pub struct Hit {
     pub damage: i32,
     /// The target's HP after the hit.
     pub hp_left: i32,
-}
-
-fn stats(b: &StatBlock) -> [i32; stat::COUNT] {
-    let mut s = [0; stat::COUNT];
-    s[stat::LEVEL] = b.level;
-    s[stat::HP] = b.hp;
-    s[stat::MAX_HP] = b.hp;
-    s[stat::ATTACK] = b.attack;
-    s[stat::DEFENSE] = b.defense;
-    s[stat::SPEED] = b.speed;
-    s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&b.resist);
-    s
 }
 
 /// A party member's base stats at a level as a stat block (no resistances, no equipment).
@@ -92,115 +80,33 @@ impl Fighter<'_> {
     }
 }
 
-/// Runs the duel until one side's HP is 0 or `max_hits` actions have been taken. Each fighter
-/// counts its own actions (the character's +0x2c8, raised once its action is done at
-/// `0x1401aecda`), which its monster rules and its `DAMAGE_TURN` effects read. The phase is 0.
+/// Runs the duel (a [`crate::fight::Battle`] of two) until one side's HP is 0 or `max_hits`
+/// actions and poison ticks have happened. The phase is 0; both fighters are capped as
+/// monsters (999,999 HP).
 pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
+    use crate::fight::{Battle, Event};
     let sides = [a, b];
-    let mut fighters = [stats(&a.block), stats(&b.block)];
-    let bases = fighters;
-    // Monsters' HP may pass 999 (party members' cap); both sides here are kept to 999,999.
-    let restat = |f: &mut [i32; stat::COUNT], k: usize, states: &[battle::TimedState]| *f = battle::stats_with_states(&bases[k], f, states, 999_999);
-    let mut timeline = Timeline { entries: vec![(0, 500), (1, 500)] };
+    let mut battle = Battle::new(vec![crate::fight::Fighter::new(&a.block, 0, 999_999), crate::fight::Fighter::new(&b.block, 1, 999_999)]);
     let mut hits = Vec::new();
-    let mut uses = [[0i32; 9]; 2];
-    let mut turns = [0i32; 2];
-    let mut states: [Vec<battle::TimedState>; 2] = [Vec::new(), Vec::new()];
-    let mut pending = -1;
+    let hit = |e: &Event| match e {
+        // A poison tick: `attacker` is the poisoned fighter itself.
+        Event::Poisoned { who, damage, hp_left } => Hit { attacker: *who, skill: "poison".into(), damage: *damage, hp_left: *hp_left },
+        Event::Acted { who, skill, damage, hp_left, .. } => Hit { attacker: *who, skill: skill.clone(), damage: *damage, hp_left: *hp_left },
+    };
     while hits.len() < max_hits {
-        timeline.advance();
-        let who = timeline.entries[0].0 as usize;
+        let who = battle.next();
         let target = 1 - who;
-        // Its turn starts (`0x1401ae4f0`): poison, then its states age.
-        let poison: i32 = states[who].iter().filter(|s| s.state == 0x34).map(|s| s.value as i32).sum();
-        let poison = if poison > 0 { battle::poison_damage(poison, fighters[who][stat::DEFENSE]) } else { 0 };
-        let change = battle::turn_hp_change(0, poison, 0);
-        if change < 0 {
-            let damage = battle::hit_amount(-change, 0);
-            let dealt = battle::take_hp_damage(&mut fighters[who], damage, None, None);
-            // A poison tick: `attacker` is the poisoned fighter itself.
-            hits.push(Hit { attacker: who, skill: "poison".into(), damage: dealt, hp_left: fighters[who][stat::HP] });
-            if fighters[who][stat::HP] == 0 {
-                break;
-            }
-        }
-        battle::age_states(&mut states[who]);
-        restat(&mut fighters[who], who, &states[who]);
-        let situation = crate::monster_ai::Situation {
-            hp: fighters[who][stat::HP],
-            max_hp: fighters[who][stat::MAX_HP],
-            turn: turns[who],
-            phase: 0,
-            uses: &uses[who],
-        };
-        let (slot, attack) = sides[who].pick(&situation, rng);
-        // A poisoning effect (`DAMAGE_HP_TURN`, act 16) puts state 0x34 on the target.
-        if let Some(e) = attack.effects.iter().find(|e| e.act == 16) {
-            let value = rng.range(e.min, e.max);
-            let second = rng.range(e.min2, e.max2);
-            battle::add_state(&mut states[target], 0x34, value, second);
-        }
-        // Stat buffs and debuffs go on the skill's target: its own side for target kinds 1
-        // and 3, the other side for 2.
-        for e in &attack.effects {
-            if let Some((state, minus)) = battle::stat_state(e.act) {
-                let value = rng.range(e.min, e.max);
-                let second = rng.range(e.min2, e.max2);
-                let on = if matches!(attack.target, 1 | 3) { who } else { target };
-                battle::add_state(&mut states[on], state, if minus { -value } else { value }, second);
-                restat(&mut fighters[on], on, &states[on]);
-            }
-        }
-        if let Some(k) = slot.filter(|&k| k < 9) {
-            uses[who][k] += 1;
-        }
-        // The skill's HP damage (act 0) or turn-grown damage (act 8, `DAMAGE_TURN`) effect is
-        // worked; the others need parts not built yet.
-        let Some(effect) = attack.effects.iter().find(|e| e.act == 0 || e.act == 8).copied() else {
-            turns[who] += 1;
-            hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: 0, hp_left: fighters[target][stat::HP] });
-            let wait = battle::action_wait(attack.wait, fighters[who][stat::SPEED], None, None, &mut pending);
-            let i = timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
-            timeline.entries[i].1 = battle::wait_after_action(wait, None, None, true, rng);
-            continue;
-        };
-        let effect = &effect;
-        // The roll (0x1401bd520): the amount, then the second value.
-        let amount = rng.range(effect.min, effect.max);
-        let _second = rng.range(effect.min2, effect.max2);
-        let user = &fighters[who];
-        if effect.act == 8 {
-            rng.next_31();
-            let amount = battle::hit_amount(battle::turn_damage(amount, _second, turns[who], 1.0), 0);
-            let dealt = battle::take_hp_damage(&mut fighters[target], amount, None, None);
-            hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: dealt, hp_left: fighters[target][stat::HP] });
-            turns[who] += 1;
-            if fighters[target][stat::HP] == 0 {
-                break;
-            }
-            let wait = battle::action_wait(attack.wait, fighters[who][stat::SPEED], None, None, &mut pending);
-            let i = timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
-            timeline.entries[i].1 = battle::wait_after_action(wait, None, None, true, rng);
-            continue;
-        }
-        // Elemental damage skips defence and meets the target's resistance (stats 8 to 11).
-        let damage = battle::skill_damage(amount, user[stat::ATTACK], user[stat::LEVEL], fighters[target][stat::DEFENSE], effect.element.is_none(), 1.0);
-        let mut resist = [0; 4];
-        resist.copy_from_slice(&fighters[target][stat::RESIST..stat::RESIST + 4]);
-        let damage = battle::reduce(damage, effect.element, &Defender { resist, ..Defender::default() });
-        let amount = battle::hit_amount(damage, 0);
-        // The first hit of an action draws for its sound (0x1401af770).
-        rng.next_31();
-        let dealt = battle::take_hp_damage(&mut fighters[target], amount, None, None);
-        hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: dealt, hp_left: fighters[target][stat::HP] });
-        turns[who] += 1;
-        if fighters[target][stat::HP] == 0 {
+        hits.extend(battle.start_turn(who).iter().map(hit));
+        if battle.winner().is_some() {
             break;
         }
-        let wait = battle::action_wait(attack.wait, fighters[who][stat::SPEED], None, None, &mut pending);
-        let wait = battle::wait_after_action(wait, None, None, true, rng);
-        let i = timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
-        timeline.entries[i].1 = wait;
+        let f = &battle.fighters[who];
+        let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, phase: 0, uses: &f.uses };
+        let (slot, skill) = sides[who].pick(&situation, rng);
+        hits.extend(battle.act(who, skill, slot, target, rng).iter().map(hit));
+        if battle.winner().is_some() {
+            break;
+        }
     }
     hits
 }
