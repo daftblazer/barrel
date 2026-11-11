@@ -133,5 +133,9 @@ have at a frame (not placed yet, or removed by `q5`) is not drawn (its draws are
 by instance), so characters come and go as the event says (`EVENT_MM08_AS4_020`: Escha,
 Logy and character 7 appear by 0.5 s, placed at 0.1 and 0.2 s). `--field auto` takes the field from the event (`docs/events.md`, "Which field"). A field
 with one terrain blend map (`TOWN_03`) gets a black second map, so its layers 4 to 6 have no
-weight. Not yet: the stage camera, faces; `EVENT_MM08_AS4_110` in `TOWN_03` draws from
-inside the ground with no characters seen, still to look into.
+weight. Not yet: the stage camera, faces; `EVENT_MM08_AS4_110` in `TOWN_03` does not
+look right yet: `TOWN_03` is a small round room near the field's origin (67 objects) over a
+flat placeholder terrain (64×64 cells of 100, every height 0, one layer, drawn black), and
+the event's camera sees only a large surface close in front, with no characters in view,
+with or without the terrain (`--no-terrain` leaves it out). The field loader prints each
+terrain's height range to tell such placeholders apart.

@@ -824,7 +824,17 @@ fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
         for (i, s) in t.layer_scales().into_iter().take(6).enumerate() {
             scales[i] = s;
         }
-        eprintln!("{area}: terrain {}x{} cells of {}, {} layers, scales {scales:?}", h.cells_x, h.cells_z, h.cell_size, t.layers.textures.len());
+        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+        for z in 0..=h.cells_z {
+            for x in 0..=h.cells_x {
+                let v = h.height(x, z);
+                (lo, hi) = (lo.min(v), hi.max(v));
+            }
+        }
+        eprintln!(
+            "{area}: terrain {}x{} cells of {}, heights {lo}..{hi}, {} layers, scales {scales:?}",
+            h.cells_x, h.cells_z, h.cell_size, t.layers.textures.len()
+        );
         scene.terrain = Some(TerrainDraw {
             first_index,
             index_count,
@@ -938,6 +948,7 @@ fn main() -> Result<()> {
     let mut look_at = None::<u32>;
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
+    let mut no_terrain = false;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -956,6 +967,7 @@ fn main() -> Result<()> {
             "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
+            "--no-terrain" => no_terrain = true,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -1028,6 +1040,9 @@ fn main() -> Result<()> {
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
+    if no_terrain {
+        scene.terrain = None;
+    }
     let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
