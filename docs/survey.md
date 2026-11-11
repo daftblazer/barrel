@@ -128,8 +128,20 @@ archive, which Barrel can read instead:
 | Ryza 3 DX | 735 | 598 | `saves\fieldmap\cameraparam\enced\*` (133), `saves\mix` (2), `saves\recipeidea` (2) |
 
 The ones with no twin include the synthesis panel and recipe-idea tables, so the format
-has to be broken eventually: from the executable's code (once the DRM wrapper is
-unwrapped), or from the twin pairs as known plaintext.
+has to be broken. The Ryza DX executable (not DRM-wrapped) shows how it reads them:
+
+- `0x140094ee0` builds `%s.e` from a table's name; if that file exists it is read with
+  `0x14049b590`, otherwise the plain `.xml` with `0x14049b2c0`.
+- `0x140477010` checks the header: the first two u32s, big-endian; the first (the version)
+  must be 1 or 2.
+- `0x1404770b0` unscrambles the data in place, in stages. A generator starts as
+  `{multiplier 0x3b9a73c9, state 0xcb53}`; `0x1404785b0` first works over the last 0x800
+  bytes (arguments 0x6d3f and 0x100). Then, for each big-endian 16-bit word of the data:
+  state = state × multiplier + 0x2f09, r = (state >> 16) & 0x7fff; if r mod 0x1462 ≥
+  0xa31 the word is XORed with r; then r is subtracted. After that the data must end,
+  past trailing zeros, in a 0xff byte, and the big-endian u32 just before the end seeds the
+  next stage (`0x140477298` on, with constants 0x1d, 0x13, 0xb, 0xa83b, 0xb11d, 0x88a5).
+  The rest, decompression included, is still to be read.
 
 ## What the games share
 
