@@ -779,12 +779,39 @@ Squirrel has Running Headbutt (`skill/Skill_MONSTER_FRUITRAT_01_0.ebd`) and Pois
 the Grand Dragon, five (`skill/Skill_MONSTER_BOSS_DRAGON_01_0..4.ebd`). `barrel monsters EXE`
 lists every monster's blocks with their skills (185 blocks).
 
-The **first pointer** (words 12, 13) leads to a header `{pointer, 0, 1, n}` whose pointer
-holds 32-byte records that look like the monster's action rules: the Poison Squirrel's are
-`(2,0,0,0,40,0,-1,0)`, `(2,0,0,0,40,1,2,0)`, `(2,0,0,0,30,2,2,0)`, the Grand Dragon's
-`(3,0,1,1,100,5,1,0)`, `(3,0,1,6,100,1,-1,0)`, `(3,0,2,75,100,6,1,0)`: a kind, a condition and
-its value, a chance in percent and a skill slot, by the look of them; what each word means
-needs the code that reads them. The fourth pointer is set only for some bosses (the Grand
+### Monster actions
+
+The **first pointer** (words 12, 13) leads to the block's action set: `{pointer to the
+rules, i32 slot[9]}`. Each slot names an index into the block's skill list (the getter
+`0x140112c70` takes slots 0 to 8). The rules are 32-byte records, ended by one whose first
+word is -1:
+
+| Word | What |
+|---|---|
+| 0 | a kind (2 or 3; the chooser does not read it) |
+| 1 | the target, handed on with the slot |
+| 2, 3 | the condition and its value |
+| 4 | the chance in percent |
+| 5 | the slot it picks |
+| 6 | how many times the slot may be used in the battle (-1: no limit) |
+| 7 | 0 |
+
+The chooser (`0x1401a5290`, from the monster's turn at `0x1401b72xx`) tries the rules in
+order and takes the first whose condition holds (`0x1401a5360`), whose slot has been used
+fewer than `limit` times (the use counts are the monster's +0x3e8 per slot, raised as it
+acts), and whose `chance(percent)` roll succeeds (one roll per rule that gets that far).
+The conditions: 0 always; 1 every `value`-th turn (the battle's turn count, the owner's
++0x2c8, modulo `value` is `value` - 1); 2 HP at or below `value`% of the maximum
+(`max HP × value / 100 >= HP`, battle stats 3 and 1); 3 the battle's phase (+0x2d0) is
+`value`. If no rule gives an action the game logs an error and takes slot 0 at target 0.
+`barrel_game::monster_ai::choose` does the same, and `barrel monsters EXE` prints each
+block's rules: the Poison Squirrel uses Running Headbutt 40% of the time and Poison Fruit
+40% (at most twice); the Grand Dragon opens with slot 5 once, uses Flame Gale every sixth turn
+and has once-only actions at 75% and 50% HP. Its slots 5 to 8 read 0 (the skill list's first
+skill) because its slot list names only five; whether slots past the list mean something
+else is not checked.
+
+The fourth pointer is set only for some bosses (the Grand
 Dragon's: `2, 9, 48, 40, 1, -1, ...`), not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then

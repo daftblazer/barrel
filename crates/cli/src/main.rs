@@ -685,6 +685,23 @@ fn monsters(exe: &Path) -> Result<()> {
         for b in &m.blocks {
             let names: Vec<String> = b.skills.iter().map(|(s, _)| skills.get(*s as usize).map_or_else(|| s.to_string(), |k| k.name.clone())).collect();
             println!("      lv {:2}  {}/{}/{}/{}  {}", b.level, b.hp, b.attack, b.defense, b.speed, names.join(", "));
+            for r in &b.rules {
+                let when = match r.condition {
+                    0 => "always".to_string(),
+                    1 => format!("every {} turns", r.value),
+                    2 => format!("HP <= {}%", r.value),
+                    3 => format!("phase {}", r.value),
+                    c => format!("condition {c} {}", r.value),
+                };
+                let skill = usize::try_from(r.slot)
+                    .ok()
+                    .and_then(|k| b.slots.get(k))
+                    .and_then(|&i| usize::try_from(i).ok())
+                    .and_then(|i| names.get(i))
+                    .map_or("?", String::as_str);
+                let limit = if r.limit >= 0 { format!(", at most {}x", r.limit) } else { String::new() };
+                println!("          {when}: {}% {skill} (slot {}){limit}", r.chance, r.slot);
+            }
         }
     }
     Ok(())

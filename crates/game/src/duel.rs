@@ -36,7 +36,7 @@ fn stats(b: &StatBlock) -> [i32; stat::COUNT] {
 
 /// A party member's base stats at a level as a stat block (no resistances, no equipment).
 pub fn party_block(level: i32, s: &barrel_formats::battle_data::LevelStats) -> StatBlock {
-    StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0, skills: Vec::new() }
+    StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] }
 }
 
 /// What an equipped item adds (`docs/tables.md`, "A party member's stats"): its HP, MP,
@@ -109,8 +109,8 @@ mod tests {
 
     #[test]
     fn a_duel_ends() {
-        let squirrel = StatBlock { level: 6, hp: 35, attack: 15, defense: 8, speed: 13, resist: [0; 4], stat12: 0, skills: Vec::new() };
-        let rat = StatBlock { level: 30, hp: 351, attack: 52, defense: 27, speed: 37, resist: [0; 4], stat12: 0, skills: Vec::new() };
+        let squirrel = StatBlock { level: 6, hp: 35, attack: 15, defense: 8, speed: 13, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let rat = StatBlock { level: 30, hp: 351, attack: 52, defense: 27, speed: 37, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
         let attack = Skill {
             name: "Attack".into(),
             category: String::new(),

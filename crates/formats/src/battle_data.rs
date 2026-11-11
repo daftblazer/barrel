@@ -67,6 +67,28 @@ pub struct StatBlock {
     /// second of the block's four pointers, words 14 and 15: `{i32 skill, i32 0, pointer to
     /// the event name}` records, ended by skill -1).
     pub skills: Vec<(u32, String)>,
+    /// How it picks its action (`docs/tables.md`, "Monster actions"): the rules in order,
+    /// and each of the 9 action slots' index into `skills`.
+    pub rules: Vec<Rule>,
+    pub slots: [i32; 9],
+}
+
+/// One of a monster's action rules (32 bytes: eight i32).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rule {
+    /// Word 0 (2 or 3; not read by the chooser).
+    pub kind: i32,
+    /// Word 1: who the action is aimed at (handed on with the slot).
+    pub target: i32,
+    /// Words 2 and 3: the condition and its value.
+    pub condition: i32,
+    pub value: i32,
+    /// Word 4: the chance, in percent, once the condition holds.
+    pub chance: i32,
+    /// Word 5: the action slot it picks.
+    pub slot: i32,
+    /// Word 6: how many times the slot may be used in a battle (-1: no limit).
+    pub limit: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -154,7 +176,27 @@ pub fn monsters(pe: &Pe, table: u64) -> Option<Vec<Monster>> {
                             .collect()
                     })
                     .unwrap_or_default(),
+                rules: Vec::new(),
+                slots: [-1; 9],
             });
+            // The first pointer (words 12, 13): {pointer to the rules, i32 slot[9]}; the rules
+            // are 32-byte records ended by one whose first word is -1.
+            if let Some(header) = u64_at(d, stats + 4 * (BLOCK_WORDS * b + 12)).and_then(|h| pe.offset(h)) {
+                let block = blocks.last_mut().expect("just pushed");
+                for (k, slot) in block.slots.iter_mut().enumerate() {
+                    *slot = i32_at(d, header + 8 + 4 * k).unwrap_or(-1);
+                }
+                if let Some(list) = u64_at(d, header).and_then(|l| pe.offset(l)) {
+                    block.rules = (0..32)
+                        .map_while(|i| {
+                            let w = |k: usize| i32_at(d, list + 32 * i + 4 * k);
+                            let kind = w(0)?;
+                            (kind != -1).then_some(())?;
+                            Some(Rule { kind, target: w(1)?, condition: w(2)?, value: w(3)?, chance: w(4)?, slot: w(5)?, limit: w(6)? })
+                        })
+                        .collect();
+                }
+            }
         }
         out.push(Monster {
             name,
