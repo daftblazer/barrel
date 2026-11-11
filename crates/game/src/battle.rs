@@ -27,6 +27,16 @@ pub fn equipment_stat(item_stat: i32, traits: i32, quality: f32) -> i32 {
     ((item_stat + traits) as f32 * ((quality * 0.5 + 75.0) / 100.0)) as i32
 }
 
+/// A party member's MP cost for a skill (virtual +0xb8 of the party character, `0x1401b82e0`,
+/// through `0x14032f200`): the list's cost cut by `equipment_cut` percent (the equipment's
+/// effects of kind 0x16, summed by `0x14032f7c0`), less `leader_cut` when the game's
+/// `0x14035ebb0` names this member (a value from `0x14002f2f0 (0x10)`, not read further), not
+/// under 0; then raised by the `CHANGE_SKILLCOST` (state 0x2e) values in percent.
+pub fn party_mp_cost(listed: i32, equipment_cut: i32, leader_cut: i32, skillcost: i32) -> i32 {
+    let cost = ((100 - equipment_cut).wrapping_mul(listed) / 100 - leader_cut).max(0);
+    (100 + skillcost).wrapping_mul(cost) / 100
+}
+
 /// A skill's MP cost (`0x14015f6a0 (skill, CONSUME_MP, 0)`): the sum, over its effect slots
 /// with `ACT_CONSUME_MP` (11), of a number rolled from the slot's minimum to its maximum.
 pub fn mp_cost(slots: &[(u32, i32, i32)], rng: &mut crate::rng::Rng) -> i32 {
@@ -469,6 +479,14 @@ mod tests {
         assert_eq!(state_group(0x19), Some(9));
         assert_eq!(state_group(0x2d), Some(9));
         assert_eq!(state_group(0x34), None);
+    }
+
+    #[test]
+    fn party_mp_costs() {
+        assert_eq!(party_mp_cost(15, 0, 0, 0), 15);
+        assert_eq!(party_mp_cost(15, 20, 0, 0), 12);
+        assert_eq!(party_mp_cost(15, 20, 20, 0), 0);
+        assert_eq!(party_mp_cost(28, 0, 0, 50), 42);
     }
 
     #[test]

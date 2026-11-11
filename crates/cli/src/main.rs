@@ -42,7 +42,7 @@ usage:
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
-  barrel party-skills EXE      each party member's skills by role (attack, skills, passives, support)
+  barrel party-skills EXE      each party member's skill list: command, level learnt, MP cost
   barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
@@ -726,19 +726,20 @@ fn party(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Each party member's skills by role, from the skill enum's `SKILL_PT_<MEMBER>_<ROLE>` tags.
+/// Each party member's skill list: command, skill, the level it is learnt at, MP cost.
 fn party_skills(exe: &Path) -> Result<()> {
     use barrel_formats::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
-    let (tags, _) = pe.enum_names("SKILL_ATTACK_PT").ok_or("no SKILL_ATTACK_PT enum")?;
-    for (member, set) in bd::PARTY_TAGS.iter().zip(bd::party_skills(&tags)) {
-        println!("{member}");
-        for (role, i) in &set.roles {
-            let s = &skills[*i];
-            let effects: Vec<String> = s.effects.iter().map(|e| format!("act {} {}..{}", e.act, e.min, e.max)).collect();
-            println!("  {role:<10} {i:3} {:<22} wait {:3}  {}", s.name, s.wait, effects.join(", "));
+    let lists = bd::party_skills(&pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists at the English executable's address")?;
+    let names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
+    for (name, list) in names.iter().zip(&lists) {
+        println!("{name}");
+        for e in list {
+            let s = skills.get(e.skill as usize).map_or("?", |s| s.name.as_str());
+            let level = e.level.map_or("-".to_string(), |l| l.to_string());
+            println!("  command {:2}  {:3} {:<22} level {:>3}  MP {:2}", e.command, e.skill, s, level, e.mp);
         }
     }
     Ok(())
@@ -752,8 +753,10 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
-    // SKILL_ATTACK_PT and SKILL_ATTACK_ENEMY, the party's and the monsters' normal attacks.
-    let (party_attack, monster_attack) = (skills.first().ok_or("no skill 0")?, skills.get(1).ok_or("no skill 1")?);
+    // The monsters' normal attack is SKILL_ATTACK_ENEMY; a party member's is command 0 of its
+    // skill list.
+    let monster_attack = skills.get(1).ok_or("no skill 1")?;
+    let lists = bd::party_skills(&pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists at the English executable's address")?;
     let growth = bd::party_growth(&pe, bd::PARTY_GROWTH_EN);
     let party_names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
     // A fighter: a monster number, or p<member>:<level> for a party member.
@@ -764,7 +767,8 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
             let g = growth.as_ref().ok_or("no party growth table")?;
             let stats = g.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
             let name = format!("{} (level {l})", party_names.get(m).unwrap_or(&"?"));
-            return Ok((name, barrel_game::duel::party_block(l as i32, stats), party_attack));
+            let attack = lists[m].iter().find(|e| e.command == 0).and_then(|e| skills.get(e.skill as usize)).ok_or("no party attack")?;
+            return Ok((name, barrel_game::duel::party_block(l as i32, stats), attack));
         }
         let n: usize = s.parse().map_err(|_| format!("{s}: not a monster number"))?;
         let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{s}: no such monster"))?;

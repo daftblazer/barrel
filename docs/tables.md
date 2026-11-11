@@ -198,18 +198,26 @@ Skill 1"), 260 Katla's "Merchant Punch"; the party's support skills ("... AC Att
 "... AC Guard", "... AC Special") and every enemy's and boss's skills are in it, each with its
 English name and description.
 
-The party's skills are grouped by their tags, `SKILL_PT_<MEMBER>_<ROLE>` with the members
-in the party tables' order (Escha, Logy, Awin, Threia, Reyfer, Lucille, Linca, Wilbell, Micie,
-Katla, Nio): every member has `ATTACK` (their own normal attack: Escha's is 68 to 75, the
-shared record 0 `SKILL_ATTACK_PT` 64 to 80 and 54 to 60), `SKILL_1` to `_3` (wait 400 to 800),
-`PASSIVE_1` and `_2` (wait 0), `SKILL_EX` (the finishing attack; Escha's and Logy's are "No
-Finish Attack"), the support skills `AC_ATTACK`, `AC_GUARD`, `AC_EXTRA` (the AC special),
-`AC_MOVE`, `AC_CHANGE`, and later in the enum their strengthened `AC_ATTACK_P`, `AC_GUARD_P`,
-`AC_EXTRA_P`; Escha and Logy add `AC_SP1` and `_SP2` (Double Draw), and Wilbell has
-`SKILL_3_FIRE`, `_WIND` and `_SP` forms of her third skill. Which of the two normal attacks
-a party member's turn uses, and when the skills are learnt, are not read yet: no table in the
-executable holds the members' skill numbers, so the link is in code
-(`battle_data::party_skills`, `barrel party-skills EXE`).
+Each party member's skills are listed at `0x140d96f90` (English Escha executable): 11
+pointers, one per member in the party tables' order (Escha, Logy, Awin, Threia, Reyfer,
+Lucille, Linca, Wilbell, Micie, Katla, Nio), each to 12-byte entries ended by skill -1:
+
+| Bytes | What |
+|---|---|
+| 0 | the skill (an index into the skill table) |
+| 4 | its place among the member's numbered skills (1 to 10; -1 for the normal attack, the support actions and Double Draw) |
+| 8 | the battle command it sits on: 0 the normal attack (the member's own `SKILL_PT_<MEMBER>_ATTACK`, not record 0), 1 to 3 the skills, 4 the AC special, 5 and 6 the passives, 7 the finishing attack, 8 and on Support Attack, Support Guard, Move, Swap, Double Draw and the strengthened supports |
+| 9 | the level it is learnt at (Escha: Ether Shoot 7, Super Energetic 10, Protection 15, Ancient Alchemy 20, Ether Spear 25; finishing attacks 30), 0xff when not learnt by level |
+| 10 | its MP cost, a signed byte (Escha: 15, 27, 28) |
+
+A party member's MP cost (its virtual +0xb8, `0x1401b82e0` → `0x14032f200`): the listed cost
+times `(100 - x) / 100` where x sums the equipment's effects of kind 0x16 (`0x14032f7c0`, three
+effects on each of four pieces), less a value (`0x14002f2f0 (0x10)`) when `0x14035ebb0` names
+the member, not under 0; then times `(100 + the CHANGE_SKILLCOST values) / 100`. It is taken
+from MP (`0x1401af970`, not under 0) before the action (`0x1401b8440`); the MP power of "MP
+cost and power" is then worked from the `CONSUME_MP` effects alone against the MP left, and
+since no skill has one it stays 100
+(`battle_data::party_skills`, `battle::party_mp_cost`, `barrel party-skills EXE`).
 
 | Bytes | What |
 |---|---|
@@ -482,7 +490,7 @@ something else deal 0 there. `barrel duel EXE 3 30` has the Alchemy Rat throwing
 Rolling Rat and the Grand Dragon mixing Jaws of Death and Pressure, then Flame Gale on its
 sixth action. `barrel duel EXE A B` runs one
 (monster numbers, or `p<member>:<level>` for a party member from "Party growth", with the
-party's normal attack `SKILL_ATTACK_PT`; fixed seed). A party member fights there with base
+member's own normal attack, command 0 of its skill list; fixed seed). A party member fights there with base
 stats only, no equipment: Escha at level 5 does 1 damage to a Poison Squirrel.
 `--equip "NAME[@QUALITY]"` gives the first fighter an item from `itemData` (its HP, ATK, DEF and
 SPD columns through `equipment_stat`, traits not counted; which item column feeds which battle
