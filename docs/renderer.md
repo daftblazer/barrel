@@ -168,5 +168,7 @@ X11) and presents through a FIFO swapchain (`present.rs`: the surface, the swapc
 and present; vsync, so the display paces the loop), with the engine clock taking each
 frame's real time (`docs/engine.md`, "Timing"). It clears each frame to a colour that moves
 with the logic time, a bounded smoke test of the window, swapchain and clock; drawing the
-event's scene into it is next. `Gpu::new` takes the window's display handle to add the
+event's scene into it is next. Run inside headless gamescope (1280×720 at 30 Hz), 60
+frames present and the clock runs 112 logic ticks: about 1.9 s at 60 ticks a second, the
+display pacing the loop. `Gpu::new` takes the window's display handle to add the
 surface and swapchain extensions.
