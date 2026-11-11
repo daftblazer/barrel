@@ -61,10 +61,19 @@ A few registrations pass the type in a way the tool does not follow (types it pr
 (+0x60) as integers; then `ItemEff_00`... and `Pot_00`... (the effects and traits the item is
 sold with) and `EvStart`, `EvEnd` (the events between which it is on sale) as strings.
 
-`barrel_game::shop` reads the wares (`barrel shops INSTALL [LANG]` lists them). How `Refill`,
-`RefillCnt` and `DayAdd` restock a shop over the days is not read yet: the loader keeps the
-rows (0x1e8 bytes each, the integers at the schema's offsets) in a vector, but the code that
-uses them has not been found.
+`barrel_game::shop` reads the wares (`barrel shops INSTALL [LANG]` lists them). The rows
+(0x88 bytes in the list at `0x1410782d8` +0x18; `Stock` +0x4c, `Refill` +0x50, `RefillCnt` +0x54,
+`DayAdd` +0x58, `Cost` +0x5c, `Quality` +0x60, the item +0x48, the shop +0x20, the events
++0x80 and +0x84) are the shops' defaults; what is sold stays in a block of its own (four shops
+of 50 wares, 12 bytes each: the count, the days counted, a state for the menu; at `0x141078e14`,
+0x25c bytes a shop, saved with the game, and on a new game the count is `Stock`). After every
+day advance, `0x14035c560 (days)` goes over each shop's wares whose event window is open: with
+`RefillCnt` 0 a ware never comes back (state 3); at or above `Refill` it counts no days;
+otherwise the days count up, and once they reach `DayAdd` they start again and `RefillCnt`
+more come in, up to `Refill` (the shop is flagged as restocked). Sold out and further than 30
+days from a refill gives state 2, within 30 days state 1 (`shop::Stock`, `pass_days`). Nio's
+first ware, the thorny nut (`Stock` 5, `Refill` 5, `RefillCnt` 3, `DayAdd` 10), sold out comes
+back as 3 ten days later and 5 after another ten.
 
 `itemData`'s schema also says what equipment gives: `HP`, `MP`, `ATK`, `DEF`, `SPD` and the
 four resistances `RES_FIRE`, `RES_WATER`, `RES_WIND`, `RES_EARTH` (integers), and which party
