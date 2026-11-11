@@ -29,7 +29,13 @@ usage:
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR         read every field placement list in the containers";
 
+unsafe extern "C" {
+    fn signal(signum: i32, handler: usize) -> usize;
+}
+
 fn main() -> ExitCode {
+    // Die quietly on a closed pipe (`barrel ls ... | head`) instead of panicking.
+    unsafe { signal(13, 0) };
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let result = match args.as_slice() {

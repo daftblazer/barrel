@@ -1,6 +1,10 @@
 //! `barrel-view`: draw one model offscreen with Vulkan and write the frame as PNG.
 //!
 //!     barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png [--size N] [--yaw DEG]
+//!     barrel-view --field FIELD_DIR OUT.png [--size N] [--yaw DEG]
+//!
+//! The second form draws every object a field's placement list puts down, each with its
+//! model from the field's `_Obj` container and the field's shared textures.
 //!
 //! It renders a single frame and exits: no window, no loop. Set BARREL_VALIDATION=1 to
 //! enable the Khronos validation layer.
@@ -201,61 +205,135 @@ fn barrier(
     };
 }
 
+struct Scene {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    draws: Vec<Draw>,
+    lo: Vec3,
+    hi: Vec3,
+}
+
+impl Scene {
+    fn new() -> Scene {
+        Scene { vertices: Vec::new(), indices: Vec::new(), draws: Vec::new(), lo: Vec3::splat(f32::MAX), hi: Vec3::splat(f32::MIN) }
+    }
+
+    /// Add a model's textured submeshes, placed by `transform`.
+    fn add(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize) -> Result<()> {
+        let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
+        for s in &geometry.submeshes {
+            let mesh = geometry.simple_mesh(s)?;
+            if mesh.uvs.is_empty() || mesh.normals.is_empty() {
+                continue;
+            }
+            let base = self.vertices.len() as u32;
+            // The games are left-handed (DirectX): mirror x to draw them right-handed.
+            let mirror = Vec3::new(-1.0, 1.0, 1.0);
+            for i in 0..mesh.positions.len() {
+                let p = transform.transform_point3(Vec3::from(mesh.positions[i])) * mirror;
+                let n = normals.transform_vector3(Vec3::from(mesh.normals[i])).normalize_or_zero() * mirror;
+                self.lo = self.lo.min(p);
+                self.hi = self.hi.max(p);
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i] });
+            }
+            let first_index = self.indices.len() as u32;
+            for t in &mesh.triangles {
+                self.indices.extend(t.iter().map(|&v| v + base));
+            }
+            let texture = geometry
+                .materials
+                .get(mesh.material)
+                .and_then(|m| m.textures.iter().find(|t| t.kind == 1).or(m.textures.first()))
+                .map_or(0, |t| t.index as usize)
+                .min(textures.saturating_sub(1));
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture });
+        }
+        Ok(())
+    }
+}
+
+/// The entry of `container` named `name`, if any.
+fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
+    container.entries.iter().find(|e| e.name == name && !e.is_dummy()).map(|e| container.data(e))
+}
+
+/// A field's placed objects and its shared texture pack.
+fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
+    let area = dir.file_name().ok_or("field directory has no name")?.to_string_lossy().into_owned();
+    let main_bytes = std::fs::read(dir.join(format!("{area}.elixir.gz")))?;
+    let main = Elixir::parse(&main_bytes)?;
+    let obj_bytes = std::fs::read(dir.join(format!("{area}_Obj.elixir.gz")))?;
+    let objects = Elixir::parse(&obj_bytes)?;
+    let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
+    let texture_count = G1t::parse(&textures)?.textures.len();
+    let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
+    let (mut placed, mut missing) = (0usize, 0usize);
+    for t in &placements.objects {
+        let Some(bytes) = named(&objects, &format!("{}_hi.g1m", t.name)) else {
+            missing += t.instances.len();
+            continue;
+        };
+        let model = G1m::parse(bytes)?;
+        let Some(geometry) = model.geometry.as_ref() else { continue };
+        for i in &t.instances {
+            // Scale, then rotate about x, y and z in that order, then move.
+            let rotation = glam::Quat::from_euler(glam::EulerRot::ZYX, i.rotation[2], i.rotation[1], i.rotation[0]);
+            let transform = Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position));
+            scene.add(geometry, transform, texture_count)?;
+            placed += 1;
+        }
+    }
+    eprintln!("{area}: {placed} objects placed, {missing} without a model");
+    Ok(textures)
+}
+
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 3 {
-        return Err("usage: barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png [--size N] [--yaw DEG]".into());
+    let field = args.first().is_some_and(|a| a == "--field");
+    let positional = if field { 3 } else { 3 };
+    if args.len() < positional {
+        return Err("usage: barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png | --field DIR OUT.png  [--size N] [--yaw DEG] [--pitch DEG]".into());
     }
+    let out_path = if field { args[2].clone() } else { args[2].clone() };
     let mut size = 768u32;
     let mut yaw = 0f32;
-    let mut it = args[3..].iter();
+    let mut pitch = if field { 45f32 } else { 0f32 };
+    let mut alpha_cutoff = 0.3f32;
+    let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--size" => size = it.next().ok_or("--size N")?.parse::<u32>()?.clamp(64, 1280),
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
+            "--no-alpha" => alpha_cutoff = -1.0,
+            "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
     }
 
-    // CPU side: the model's vertices and draws, and the texture pack.
-    let model_bytes = entry_bytes(&args[0])?;
-    let model = G1m::parse(&model_bytes)?;
-    let geometry = model.geometry.as_ref().ok_or("model has no geometry")?;
-    let tex_bytes = entry_bytes(&args[1])?;
+    // CPU side: the vertices and draws, and the texture pack.
+    let mut scene = Scene::new();
+    let tex_bytes = if field {
+        field_scene(Path::new(&args[1]), &mut scene)?
+    } else {
+        let model_bytes = entry_bytes(&args[0])?;
+        let model = G1m::parse(&model_bytes)?;
+        let geometry = model.geometry.as_ref().ok_or("model has no geometry")?;
+        let tex_bytes = entry_bytes(&args[1])?;
+        let count = G1t::parse(&tex_bytes)?.textures.len();
+        scene.add(geometry, Mat4::IDENTITY, count)?;
+        tex_bytes
+    };
     let pack = G1t::parse(&tex_bytes)?;
-    let mut vertices = Vec::<Vertex>::new();
-    let mut indices = Vec::<u32>::new();
-    let mut draws = Vec::new();
-    let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
-    for s in &geometry.submeshes {
-        let mesh = geometry.simple_mesh(s)?;
-        if mesh.uvs.is_empty() || mesh.normals.is_empty() {
-            continue;
-        }
-        let base = vertices.len() as u32;
-        for i in 0..mesh.positions.len() {
-            let p = Vec3::from(mesh.positions[i]);
-            lo = lo.min(p);
-            hi = hi.max(p);
-            vertices.push(Vertex { pos: mesh.positions[i], normal: mesh.normals[i], uv: mesh.uvs[i] });
-        }
-        let first_index = indices.len() as u32;
-        for t in &mesh.triangles {
-            indices.extend(t.iter().map(|&v| v + base));
-        }
-        let texture = geometry
-            .materials
-            .get(mesh.material)
-            .and_then(|m| m.textures.iter().find(|t| t.kind == 1).or(m.textures.first()))
-            .map_or(0, |t| t.index as usize)
-            .min(pack.textures.len().saturating_sub(1));
-        draws.push(Draw { first_index, index_count: indices.len() as u32 - first_index, texture });
-    }
+    let Scene { vertices, indices, draws, lo, hi } = scene;
     if draws.is_empty() || pack.textures.is_empty() {
         return Err("nothing to draw".into());
     }
     eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, pack.textures.len());
+    eprintln!("bounds {lo:?} .. {hi:?}");
+    if std::env::var("BARREL_DRY").is_ok() {
+        return Ok(());
+    }
 
     let gpu = Gpu::new()?;
     let d = &gpu.device;
@@ -451,7 +529,7 @@ fn main() -> Result<()> {
         .depth_compare_op(vk::CompareOp::LESS);
     let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA)];
     let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att);
-    let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX, offset: 0, size: 64 }];
+    let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 80 }];
     let set_layouts = [set_layout];
     let pipeline_layout = unsafe {
         d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
@@ -476,13 +554,12 @@ fn main() -> Result<()> {
     let radius = (hi - lo).length() * 0.5;
     let fov = 30f32.to_radians();
     let dist = radius / (fov * 0.5).sin() * 1.05;
-    let dir = Vec3::new(yaw.to_radians().sin(), 0.0, yaw.to_radians().cos());
+    let (y, p) = (yaw.to_radians(), pitch.to_radians());
+    let dir = Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
     let view = Mat4::look_at_rh(center + dir * dist, center, Vec3::Y);
     let mut proj = Mat4::perspective_rh(fov, 1.0, dist * 0.01, dist * 4.0);
     proj.y_axis.y *= -1.0; // Vulkan's y points down.
     let mvp = proj * view;
-    // The game's data is left-handed (DirectX); mirror x so the model is not flipped.
-    let mvp = mvp * Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
 
     // Render one frame and read it back.
     let bytes = (size * size * 4) as u64;
@@ -504,9 +581,11 @@ fn main() -> Result<()> {
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
         d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
-        let m = mvp.to_cols_array();
-        let pc = std::slice::from_raw_parts(m.as_ptr() as *const u8, 64);
-        d.cmd_push_constants(cb, pipeline_layout, vk::ShaderStageFlags::VERTEX, 0, pc);
+        let mut push = [0f32; 20];
+        push[..16].copy_from_slice(&mvp.to_cols_array());
+        push[16] = alpha_cutoff;
+        let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, 80);
+        d.cmd_push_constants(cb, pipeline_layout, vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, 0, pc);
         for draw in &draws {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
@@ -523,8 +602,8 @@ fn main() -> Result<()> {
         std::ptr::copy_nonoverlapping(p, pixels.as_mut_ptr(), pixels.len());
         d.unmap_memory(rmem);
     }
-    std::fs::write(Path::new(&args[2]), barrel_formats::png::encode_rgba(size, size, &pixels))?;
-    eprintln!("wrote {}", args[2]);
+    std::fs::write(Path::new(&out_path), barrel_formats::png::encode_rgba(size, size, &pixels))?;
+    eprintln!("wrote {out_path}");
 
     // Tear down in reverse order.
     unsafe {
