@@ -83,13 +83,17 @@ per texture:  u8   mip count << 4 | depth
 | `0x5f` | none | BC7 (Sophie 2's UI textures, such as its 256×256 item icons) |
 | `0x5c`, `0x5d`, `0x5e` | none | BC4, BC5, BC6H (the later games; BC6H for HDR environment cube maps) |
 | `0x02` | none | one 32-bit float a pixel (Ryza 3's shore heightmaps) |
+| `0x60` | none | 8 bytes a 4×4 block, read as BC1; the only ones seen (Ryza's `headsup.g1t`) are all zeros, so BC1 or BC4 is a guess |
 
 **Cube maps and volumes.** The first header byte's low nibble, 0 in all of Escha's
 textures, says what a texture is: 1 a cube map (each level holds six faces;
 `charatest_ad.g1t`, 256×256 BC6H, is exactly 6 × 65,536 bytes), 2 a volume, whose depth is 2
 to the power of the fourth header byte's low nibble and halves with each level (Ryza's
-`wavevolume.g1t`: 512×512×128 BC5, 2 levels, 37,748,736 bytes). The order of faces and
-levels inside a cube map is still to be checked; previews show the first face.
+`wavevolume.g1t`: 512×512×128 BC5, 2 levels, 37,748,736 bytes). 3 is a texture array and 4 an array
+of cube maps; their count is bits 4 to 15 of the extended header's third word (Ryza 2's
+`raindrop.g1t`: 0x100, 16 BC7 layers; Ryza's `hair_highlight.g1t`: 0x50, 5 cube maps, 30
+faces; a top byte of 1 there is another flag). The order of faces, layers and levels inside
+such textures is still to be checked; previews show the first layer.
 
 Every texture's data is exactly the size its format, size and mip count give, so there is
 no padding or swizzling on PC. The renderer can upload BC1, BC3 and BC7 as they are;

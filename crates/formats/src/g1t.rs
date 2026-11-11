@@ -7,7 +7,7 @@
 //!                    size of extra data (0)
 //! u32 flags per texture (right after the header)
 //! offset table: u32 per texture, relative to the table
-//! per texture:  u8  mip count << 4 | kind (0 a 2D texture, 1 a cube map, 2 a volume)
+//! per texture:  u8  mip count << 4 | kind (0 2D, 1 cube map, 2 volume, 3 array, 4 cube-map array)
 //!               u8  format
 //!               u8  log2 height << 4 | log2 width
 //!               u8 ×4 (0, 0, 0x10, 0x21 in model textures; other values in terrain)
@@ -43,7 +43,7 @@ impl Format {
     pub fn from_code(code: u8) -> Option<Format> {
         Some(match code {
             0x01 => Format::Rgba8,
-            0x06 | 0x10 | 0x59 => Format::Bc1,
+            0x06 | 0x10 | 0x59 | 0x60 => Format::Bc1,
             0x08 | 0x5b => Format::Bc3,
             0x02 => Format::Float32,
             0x5c => Format::Bc4,
@@ -111,10 +111,19 @@ impl<'a> G1t<'a> {
             let mips = (h[0] >> 4).max(1) as u32;
             // The low nibble: 0 a 2D texture, 1 a cube map (six faces), 2 a volume of
             // 2^(byte 3's low nibble) slices.
+            // 3 an array and 4 an array of cube maps, their count in the extended header's
+            // third word (bits 4..16).
+            let array = if h[7] & 0x10 != 0 && u32_at(data, at + 8)? >= 12 {
+                (u32_at(data, at + 16)? >> 4) & 0xfff
+            } else {
+                0
+            };
             let (layers, volume) = match h[0] & 15 {
                 0 => (1, false),
                 1 => (6, false),
                 2 => (1u32 << (h[3] & 15), true),
+                3 if array > 0 => (array, false),
+                4 if array > 0 => (6 * array, false),
                 _ => return Err(Error::Corrupt("g1t texture kind not known")),
             };
             let format_code = h[1];
