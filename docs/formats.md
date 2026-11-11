@@ -276,7 +276,11 @@ to n × 1000 + 999. Some clips are named outright: events play them with `u31`
 11083, 11084 ...; `SysMess`, -1 for none). Only 16 story events use the two commands, and
 the small script a dialogue line runs (`0x140184060`) plays no voice, so how a story line
 picks its clip is still open (the event's resource list names no voice either).
-`barrel play-event` prints the voice commands with their bank and clip.
+`barrel play-event` prints the voice commands with their bank and clip. By what names them, the banks
+divide by use: 10 and 11 hold the system and field voices of every character (`SysMess`:
+Escha and Logy 45 each in bank 10, 22 each in 11, and the others in 11; `SubjectTalkData`:
+Marion's in 11), 14 and 15 the battle voices (the skill events' `u31`), and 17 a few more of
+Nio's; nothing names a clip in banks 0 to 9, which leaves those 10,000 for the story lines.
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone
