@@ -420,19 +420,40 @@ fn render_space(transform: Mat4) -> Mat4 {
 /// Each joint's skinning matrix for an animation at `time`: its posed world transform times
 /// the inverse of its bind world transform. Joints without a track keep their bind pose.
 fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::Animation, time: f32) -> Vec<Mat4> {
+    skin(skeleton, &local_pose(skeleton, anim, time))
+}
+
+/// A joint's local transform: scale, rotation, translation.
+type Trs = (Vec3, glam::Quat, Vec3);
+
+/// Each joint's local transform for an animation at `time`. Joints without a track keep their
+/// bind pose; rotation-only tracks keep the joint's bind translation and scale.
+fn local_pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::Animation, time: f32) -> Vec<Trs> {
+    let bind = |j: &barrel_formats::g1m::Joint| (Vec3::from(j.scale), glam::Quat::from_array(j.rotation).normalize(), Vec3::from(j.position));
+    let mut out: Vec<Trs> = skeleton.joints.iter().map(bind).collect();
+    for t in &anim.tracks {
+        let Some(slot) = out.get_mut(t.bone as usize) else { continue };
+        if let Some((r, p, s)) = t.pose(time) {
+            *slot = (Vec3::from(s), glam::Quat::from_array(r).normalize(), Vec3::from(p));
+        } else if let Some(r) = t.rotation(time) {
+            slot.1 = glam::Quat::from_array(r).normalize();
+        }
+    }
+    out
+}
+
+/// Two local poses mixed: `w` of the way from `a` to `b` (rotations by slerp).
+fn mix_pose(a: &[Trs], b: &[Trs], w: f32) -> Vec<Trs> {
+    a.iter().zip(b).map(|(x, y)| (x.0.lerp(y.0, w), x.1.slerp(y.1, w), x.2.lerp(y.2, w))).collect()
+}
+
+/// Skinning matrices for local joint transforms: each joint's posed world transform times the
+/// inverse of its bind world transform.
+fn skin(skeleton: &barrel_formats::g1m::Skeleton, locals: &[Trs]) -> Vec<Mat4> {
     let local = |j: &barrel_formats::g1m::Joint| {
         Mat4::from_scale_rotation_translation(Vec3::from(j.scale), glam::Quat::from_array(j.rotation).normalize(), Vec3::from(j.position))
     };
-    let mut posed_local: Vec<Mat4> = skeleton.joints.iter().map(local).collect();
-    for t in &anim.tracks {
-        let Some(slot) = posed_local.get_mut(t.bone as usize) else { continue };
-        if let Some((r, p, s)) = t.pose(time) {
-            *slot = Mat4::from_scale_rotation_translation(Vec3::from(s), glam::Quat::from_array(r).normalize(), Vec3::from(p));
-        } else if let (Some(r), Some(j)) = (t.rotation(time), skeleton.joints.get(t.bone as usize)) {
-            // Rotation-only tracks keep the joint's bind translation and scale.
-            *slot = Mat4::from_scale_rotation_translation(Vec3::from(j.scale), glam::Quat::from_array(r).normalize(), Vec3::from(j.position));
-        }
-    }
+    let posed_local: Vec<Mat4> = locals.iter().map(|&(s, r, t)| Mat4::from_scale_rotation_translation(s, r, t)).collect();
     let world = |locals: &[Mat4]| {
         let mut out = vec![Mat4::IDENTITY; locals.len()];
         for i in skeleton.order() {
@@ -477,6 +498,10 @@ struct Actor {
     anim: barrel_formats::g1a::Animation,
     start: f32,
     looping: bool,
+    /// The motion being blended out: it, its time at the switch, whether it loops.
+    previous: Option<(barrel_formats::g1a::Animation, f32, bool)>,
+    /// The time shown at the last frame, in the current motion.
+    last_t: f32,
 }
 
 /// A character's motions: `<FileHead>_<value>.g1a` for a `CharaBase` column's value, in the
@@ -637,9 +662,9 @@ fn event_characters(
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::gesture::motions(&pe)).filter(|m| !m.is_empty()))
             .unwrap_or_default();
         for (&n, b) in &stage.characters {
-            if let Some((m, since, looping)) = b.motion {
-                if let Some(name) = names.get(m as usize) {
-                    stage_motions.insert(n, (name.clone(), at - since, looping));
+            if let Some(m) = b.motion {
+                if let Some(name) = names.get(m.motion as usize) {
+                    stage_motions.insert(n, (name.clone(), at - m.since, m.looping));
                 }
             }
         }
@@ -720,7 +745,7 @@ fn event_characters(
         }
         let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
         if let Some((skeleton, motions, anim, start)) = rig {
-            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping });
+            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start });
         }
         scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
@@ -1353,25 +1378,42 @@ fn main() -> Result<()> {
                 // loaded (once) and played from the time the stage started it.
                 let staged = play.stage.characters.get(&a.who).and_then(|b| b.motion);
                 let mut t = a.start + since;
-                if let Some((m, from, looping)) = staged {
-                    if let Some(column) = motion_names.get(m as usize) {
+                // Blend weight of the current motion against the one before it.
+                let mut weight = 1.0;
+                if let Some(m) = staged {
+                    if let Some(column) = motion_names.get(m.motion as usize) {
                         if *column != a.column {
-                            if let Some(anim) = a.motions.get(column) {
-                                a.anim = anim.clone();
-                                eprintln!("frame {frame}: character {} plays {column}", a.who);
+                            if let Some(anim) = a.motions.get(column).cloned() {
+                                eprintln!("frame {frame}: character {} plays {column} (blend {:.2} s)", a.who, m.blend);
+                                let old = std::mem::replace(&mut a.anim, anim);
+                                a.previous = (m.blend > 0.0).then_some((old, a.last_t, a.looping));
                             }
                             a.column = column.clone();
-                            a.looping = looping;
+                            a.looping = m.looping;
                         }
-                        t = shown_time - from;
+                        t = shown_time - m.since;
+                        if m.blend > 0.0 {
+                            weight = (t / m.blend).clamp(0.0, 1.0);
+                        }
                     }
                 }
+                a.last_t = t;
                 if let Some(&(pos, facing)) = shown.characters.get(&a.who) {
                     instances[a.instance as usize].model =
                         render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(facing), Vec3::from(pos)));
                 }
                 let base = instances[a.instance as usize].palette as usize;
-                let joints = pose(&a.skeleton, &a.anim, motion_clock(&a.anim, t, a.looping));
+                let mut locals = local_pose(&a.skeleton, &a.anim, motion_clock(&a.anim, t, a.looping));
+                match (&a.previous, weight < 1.0) {
+                    // The old motion runs on from where it was while the new one fades in.
+                    (Some((old, at_switch, old_loops)), true) => {
+                        let before = local_pose(&a.skeleton, old, motion_clock(old, at_switch + t.max(0.0), *old_loops));
+                        locals = mix_pose(&before, &locals, weight);
+                    }
+                    (Some(_), false) => a.previous = None,
+                    _ => {}
+                }
+                let joints = skin(&a.skeleton, &locals);
                 for (k, m) in joints.iter().enumerate() {
                     if let Some(slot) = palette.get_mut(base + k) {
                         *slot = render_space(*m);

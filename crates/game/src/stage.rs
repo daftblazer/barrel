@@ -104,15 +104,24 @@ impl Measures {
     }
 }
 
+/// A motion a character plays: its `MOTION_*` number, since when (stage seconds), whether
+/// it loops, and over how many seconds it blends in from the motion before.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Playing {
+    pub motion: u32,
+    pub since: f32,
+    pub looping: bool,
+    pub blend: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Body {
     pub position: [f32; 3],
     /// Radians about the vertical axis, 0 towards +z.
     pub facing: f32,
     mover: Option<Mover>,
-    /// The motion it plays (a `MOTION_*` number), since when (stage seconds), and whether it
-    /// loops; `None` until a command sets one.
-    pub motion: Option<(u32, f32, bool)>,
+    /// The motion it plays; `None` until a command sets one.
+    pub motion: Option<Playing>,
     /// A timed turn: (from, change, seconds, elapsed, curve).
     turn: Option<(f32, f32, f32, f32, u32)>,
 }
@@ -182,8 +191,8 @@ impl Stage {
                 b.position = *position;
                 b.mover = None;
             }
-            Step::Motion { character, motion, looping, .. } => match self.characters.get_mut(character) {
-                Some(b) => b.motion = Some((*motion, self.time, *looping)),
+            Step::Motion { character, motion, looping, blend, .. } => match self.characters.get_mut(character) {
+                Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0) }),
                 None => self.unresolved += 1,
             },
             Step::Remove { character, .. } => {

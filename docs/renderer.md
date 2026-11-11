@@ -119,10 +119,13 @@ two ticks blended (`docs/engine.md`, "Timing"). Between frames only the characte
 instance matrices and joint palettes are rewritten; each character plays the motion the
 stage gives it (`s5`/`s10`), loaded by its `MOTION_*` name from the character's `CharaBase`
 row the first time it is needed and kept, from the time the stage started it (looping
-motions wrap); a character the stage has given no motion keeps its field wait. The blend
-time between motions is not used yet (they cut). Frames written to files are not real time,
+motions wrap); a character the stage has given no motion keeps its field wait. A new motion
+blends in over the time its command gives (`s10`'s third operand / 100, 0.4 s in
+`EVENT_MM01_OP1_111`): each joint's local scale, rotation (slerp) and translation are mixed
+from the old motion, which runs on from where it was, to the new one, then skinned
+(`local_pose`, `mix_pose`, `skin`). With no blend (the plaza event) the frames are
+pixel-identical to before; the blend itself is not yet checked by eye. Frames written to files are not real time,
 so the viewer's clock has no stall cap (`Clock::max_frame`). Frames go to `OUT_000.png`,
 `OUT_001.png`, ... In `EVENT_MM08_AS4_130` (`TOWN_04`), 4 frames at 2 Hz from 0.5 s show Logy
 and Escha walking into the plaza towards Threia and Reyfer, mid-stride; 4 frames at 1 Hz from 1.5 s show them arriving and changing from `WALK` to
-`F_WAIT` at 2.4 s, as the event says. Not yet: motion blends, characters added after the
-start, the stage camera, faces.
+`F_WAIT` at 2.4 s, as the event says. Not yet: characters added after the start, the stage camera, faces.
