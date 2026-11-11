@@ -88,24 +88,60 @@ pub fn board_eligible(r: &Request, day: i32, seen: impl Fn(&str) -> bool, cleare
     true
 }
 
-/// The three synthesis slots of a redraw (`0x14033b5e0`): slot k (0 to 2) gathers, in table
-/// order, the synthesis requests whose `Table` is k (or -1) that are [`board_eligible`] and
-/// pass `known` (the game's further tests: a count for the target of at least 6 in
-/// `0x141079fe0`, and its recipe flagged in `0x141079fe0` + 0x8c0 by `0x1400e31a0`; not
-/// modelled here), and draws one by [`board_pick`]. Returns the chosen requests' indices.
-pub fn draw_synthesis(requests: &[Request], day: i32, seen: impl Fn(&str) -> bool, cleared: impl Fn(&str) -> bool, known: impl Fn(&Request) -> bool, rng: &mut BoardRng) -> [Option<usize>; 3] {
-    let mut out = [None; 3];
+/// One kind's slots of a redraw: slot k gathers, in table order, the requests of `kind` whose
+/// `Table` is k (or -1), that are [`board_eligible`] and pass `known` (the game's further tests,
+/// not modelled here), sorts them by `key` from highest to lowest when given (stably), and draws
+/// one by [`board_pick`]. Returns the chosen requests' indices.
+#[allow(clippy::too_many_arguments)]
+fn draw_slots<const N: usize>(
+    requests: &[Request],
+    kind: Kind,
+    day: i32,
+    seen: &dyn Fn(&str) -> bool,
+    cleared: &dyn Fn(&str) -> bool,
+    known: &dyn Fn(&Request) -> bool,
+    key: Option<&dyn Fn(&Request) -> i32>,
+    rng: &mut BoardRng,
+) -> [Option<usize>; N] {
+    let mut out = [None; N];
     for (k, slot) in out.iter_mut().enumerate() {
-        let candidates: Vec<usize> = (0..requests.len())
+        let mut candidates: Vec<usize> = (0..requests.len())
             .filter(|&i| {
                 let r = &requests[i];
-                r.kind == Kind::Synthesis && (r.table == k as i32 || r.table == -1) && board_eligible(r, day, &seen, &cleared) && known(r)
+                r.kind == kind && (r.table == k as i32 || r.table == -1) && board_eligible(r, day, seen, cleared) && known(r)
             })
             .collect();
+        if let Some(key) = key {
+            candidates.sort_by_key(|&i| std::cmp::Reverse(key(&requests[i])));
+        }
         let chances: Vec<f32> = candidates.iter().map(|&i| requests[i].priority).collect();
         *slot = board_pick(&chances, rng).map(|j| candidates[j]);
     }
     out
+}
+
+/// The three synthesis slots (`0x14033b5e0`, board places 0 to 2, `Table` 0 to 2). `known`
+/// stands for the game's tests of the target: a count of at least 6 in `0x141079fe0` and its
+/// recipe flagged (`0x1400e31a0`, `0x141079fe0` + 0x8c0).
+pub fn draw_synthesis(requests: &[Request], day: i32, seen: impl Fn(&str) -> bool, cleared: impl Fn(&str) -> bool, known: impl Fn(&Request) -> bool, rng: &mut BoardRng) -> [Option<usize>; 3] {
+    draw_slots(requests, Kind::Synthesis, day, &seen, &cleared, &known, None, rng)
+}
+
+/// The four battle slots (`0x14033b990`, board places 3 to 6, `Table` 0 to 3; nothing has
+/// `Table` 3, so the fourth takes only -1). The candidates come from the manager's second list
+/// (+0x18), need a count of at least 2 for the monster in `0x141079fe0` (`known`), and are sorted
+/// by `level` (`0x14035cc80` of the target, the monster's level presumably; comparator
+/// `0x14033c1d0`) from highest to lowest before the draw.
+pub fn draw_battle(
+    requests: &[Request],
+    day: i32,
+    seen: impl Fn(&str) -> bool,
+    cleared: impl Fn(&str) -> bool,
+    known: impl Fn(&Request) -> bool,
+    level: impl Fn(&Request) -> i32,
+    rng: &mut BoardRng,
+) -> [Option<usize>; 4] {
+    draw_slots(requests, Kind::Monster, day, &seen, &cleared, &known, Some(&level), rng)
 }
 
 /// The request board's generator (the object at `0x140dfc880`, English Escha executable): two
@@ -214,5 +250,16 @@ mod tests {
         let mut rng = BoardRng::new(crate::calendar::board_seed(100, 0));
         let slots = draw_synthesis(std::slice::from_ref(&r), 100, none, all, |_| true, &mut rng);
         assert!(slots[1].is_none() && slots[2].is_none());
+        // Battle: the higher level goes first, so a sure candidate there wins.
+        let mut a = r.clone();
+        a.kind = Kind::Monster;
+        a.clear_subject = None;
+        a.priority = 0.0;
+        let mut b = a.clone();
+        b.priority = 100.0;
+        b.target = "B".into();
+        let level = |q: &Request| if q.target == "B" { 9 } else { 1 };
+        let slots = draw_battle(&[a, b], 100, none, all, |_| true, level, &mut rng);
+        assert_eq!(slots[0], Some(1));
     }
 }

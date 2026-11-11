@@ -565,9 +565,13 @@ cleared (its state in the 0x14-byte records at `0x141099e10` at least 7); and, w
 is above 0, `StartDate <= today <= EndDate` (an end below 0 meaning none). So the April 1st
 draw (day 90) holds none of the requests that start on 91; they first come up on April 11th.
 Synthesis candidates also need a count of at least 6 for their target in `0x141079fe0` and its
-recipe flagged (`0x1400e31a0`, `0x141079fe0` + 0x8c0); battle candidates are sorted first
-(`0x14033ecc0`, comparator `0x14033c1d0`) and gathering ones skip a target already drawn, not
-read further (`quest::board_eligible`, `draw_synthesis`). The day ends by clearing
+recipe flagged (`0x1400e31a0`, `0x141079fe0` + 0x8c0); the four battle slots (board places 3 to 6, groups 0 to 3; no row
+has `Table` 3, so the fourth takes only the -1 rows) come from the manager's second list (+0x18,
+0x40-byte rows), need a count of at least 2 for the monster in `0x141079fe0`, and are sorted by
+`0x14035cc80 (target)` from highest to lowest (`0x14033ecc0` with `0x14033c1d0`; the monster's
+level, presumably) before the same draw and shuffle (`0x14033eb80` with `0x14033c210`);
+gathering candidates skip a target already drawn, not read further (`quest::board_eligible`,
+`draw_synthesis`, `draw_battle`). The day ends by clearing
 `0x1410782e2` (`calendar::daily_rolls`, `daily_gain`, `add_gain`, `month_start`, `board_day`,
 `board_seed`).
 
