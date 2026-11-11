@@ -210,6 +210,14 @@ moves its pieces outward; most bones hold still with one key.
 subtype 1 is an eye: texture 0 the eye white, 1 the iris (BC3, with alpha), 2 a glow, 3 the
 highlights. All four use the eye mesh's single UV set.
 
+## Voices (`Sound/Voice/Series*.fp`)
+
+`Data/x64/Sound/Voice` (and `Voice_EN`) hold 18 banks, `Series0000` to `Series17000`, each
+a `.fp` of sound data and a `.fpl` index: u32 count (1,000), then that many
+`{u32 offset, u32 size}` pairs into the `.fp`. Every bank fills 999 of its 1,000 slots, so
+the voices are one list of 18,000 clips numbered from 0, bank n × 1000 holding clips n × 1000
+to n × 1000 + 999. How an event line picks its clip is still open.
+
 ## Morph targets (`*.g1h`)
 
 A character's facial shapes, next to its model in the same container
@@ -401,6 +409,13 @@ In `MM08_AS4_130` the third field runs 246, 91, 1, 1, 237, 248, ... (Escha's lin
 with commands (`ECT_CHARA_FACIAL_MOTION_SET`, `s88`, occurs 17 times in all 1,639 events, and
 the brow, eye and mouth variants never), so per-line expressions must come from these
 fields or from the body motions. `barrel ebm` prints the fields.
+
+Over all 14,271 Japanese lines: field 0 is always 0, field 1 equals the speaker in 13,928;
+field 5 is 0 or 1. Field 3 is 0 (7,397), 4 (3,589), -1 (1,618), 2, 3, 10, 8 or 9. Field 2
+is -1 for system text and otherwise a number up to 437 from one shared set: Escha's and
+Logy's lines use about 80 values each (0, 1, 196, 198 and 246 the most), the others 40 to 50,
+many the same across characters. It is not a `CharaBase` row (196, 198 and 246 there are
+dummy camera and position markers) and not a voice clip on its own (see "Voices" below).
 
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.
