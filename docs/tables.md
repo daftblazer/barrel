@@ -39,6 +39,28 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 What is not in the tables: the synthesis recipes and the monsters. Both are compiled into
 the executable; see "Recipes" and "Monsters" below.
 
+## Column types
+
+The executable reads each table through a schema its loader builds column by column:
+`0x1404de950 (schema, type, record offset, name)` (English Escha executable). There are 40
+such loaders and 401 columns; `tools/xml_schemas.py EXE ASM` lists them (from an objdump
+listing of the executable). The types, by the columns that use them:
+
+| Type | What | Columns |
+|---|---|---|
+| 1 | a flag | `exclude`, `PC00` to `PC04` |
+| 2 | an integer | `Stock`, `Refill`, `Cost`, ... (107 columns) |
+| 4 | a float | `position_x`, `day`, `dec_day` |
+| 5 | three floats | `scale`, `rotation`, `offset`, `Size`, `Color` (written "256,256,256") |
+| 6 | four floats | `Color` |
+| 7 | a string (a tag, a name) | 236 columns |
+
+A few registrations pass the type in a way the tool does not follow (types it prints above 9).
+`ShopData`'s loader (`0x14033f840`), for example: `ShopName`, `itemName`, `ShopTag`,
+`ItemTag` as strings; `Stock` (+0x4c), `Refill`, `RefillCnt`, `DayAdd`, `Cost`, `Quality`
+(+0x60) as integers; then `ItemEff_00`... and `Pot_00`... (the effects and traits the item is
+sold with) and `EvStart`, `EvEnd` (the events between which it is on sale) as strings.
+
 ## Numbers behind the tags
 
 The tables name things by tag, but the game works with numbers. The executable keeps each
