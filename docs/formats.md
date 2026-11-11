@@ -185,7 +185,7 @@ the terrain and the field's own data:
 | Entry | What |
 |---|---|
 | `<AREA>.ktf` | terrain (KTGL, magic `KFTK`), not read yet |
-| `<AREA>.khm` | heightmap (`_MHK0100`, a 64×64 grid in AREA_01_01), not read yet |
+| `<AREA>.khm` | heightmap (below) |
 | `<AREA>.g1t`, `<AREA>_pat.g1t` | terrain textures |
 | `<AREA>.g1s` | the field's shaders |
 | `<AREA>.opl2` | where objects and effects stand (below) |
@@ -193,6 +193,24 @@ the terrain and the field's own data:
 
 `<AREA>_Obj.elixir.gz` holds the object models, `obj-<name>_hi.g1m`, each followed by
 four `dummy` entries.
+
+### Heightmaps (`*.khm`)
+
+Read by `barrel_formats::khm`.
+
+```text
+32-byte header: "_MHK", "0100", u32 0, u32 file size, u16 cells across, u16 cells down,
+                f32 cell size, f32 lowest height, f32 highest height
+(across + 1) × (down + 1) u32 vertices, row by row
+```
+
+A vertex's top 24 bits are its height, 0 to 2^24 - 1 spanning the lowest to the highest
+height; its low byte is a flag (0, or 2 in 63 of AREA_01_01's vertices). AREA_01_01 is 64 ×
+64 cells of 100 units, from x = 0 and z = 0, heights -15.7 to 193.4; most of it is the
+value for height 0 (0x1338aa), the valley floor. Drawn under the field's objects it lines up
+with them, the cliff ring standing around its edge. It is coarse, one vertex every 100
+units, so it is most likely the height for walking and placing; the detailed ground is in
+the `.ktf`.
 
 ### Placement lists (`*.opl2`)
 

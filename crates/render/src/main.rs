@@ -252,6 +252,36 @@ impl Scene {
     }
 }
 
+impl Scene {
+    /// A heightmap as a grid of quads with the field's first texture tiled once a cell.
+    fn add_heightmap(&mut self, h: &barrel_formats::khm::Heightmap, textures: usize) {
+        let mirror = Vec3::new(-1.0, 1.0, 1.0);
+        let base = self.vertices.len() as u32;
+        let w = h.cells_x + 1;
+        for z in 0..=h.cells_z {
+            for x in 0..=h.cells_x {
+                let p = Vec3::new(x as f32 * h.cell_size, h.height(x, z), z as f32 * h.cell_size) * mirror;
+                let hx = |dx: isize| h.height((x as isize + dx).clamp(0, h.cells_x as isize) as usize, z);
+                let hz = |dz: isize| h.height(x, (z as isize + dz).clamp(0, h.cells_z as isize) as usize);
+                let n = Vec3::new(hx(-1) - hx(1), 2.0 * h.cell_size, hz(-1) - hz(1)).normalize() * mirror;
+                self.lo = self.lo.min(p);
+                self.hi = self.hi.max(p);
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: [x as f32, z as f32] });
+            }
+        }
+        let first_index = self.indices.len() as u32;
+        for z in 0..h.cells_z {
+            for x in 0..h.cells_x {
+                let i = base + (z * w + x) as u32;
+                let w = w as u32;
+                self.indices.extend([i, i + 1, i + w, i + 1, i + w + 1, i + w]);
+            }
+        }
+        let _ = textures;
+        self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture: 0 });
+    }
+}
+
 /// The entry of `container` named `name`, if any.
 fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
     container.entries.iter().find(|e| e.name == name && !e.is_dummy()).map(|e| container.data(e))
@@ -266,6 +296,11 @@ fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
     let objects = Elixir::parse(&obj_bytes)?;
     let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
     let texture_count = G1t::parse(&textures)?.textures.len();
+    if let Some(bytes) = named(&main, &format!("{area}.khm")) {
+        let h = barrel_formats::khm::parse(bytes)?;
+        scene.add_heightmap(&h, texture_count);
+        eprintln!("{area}: heightmap {}x{} cells of {}", h.cells_x, h.cells_z, h.cell_size);
+    }
     let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
     let (mut placed, mut missing) = (0usize, 0usize);
     for t in &placements.objects {

@@ -8,7 +8,8 @@ field's placement list, with its model from the `_Obj` container and the field's
 texture pack (the object models carry no textures of their own). Each instance is scaled,
 rotated (x, then y, then z, in radians) and moved on the CPU. AREA_01_01 places 112
 objects (126 draws, 52,089 triangles), and they come out where they belong: a ring of
-cliffs around a valley of trees, rocks and flowers. The ground is still missing; the
+cliffs around a valley of trees, rocks and flowers. Under them it draws the field's
+heightmap (`.khm`) as a grid with the first field texture tiled once a cell; the detailed
 terrain (`.ktf`) is not read yet.
 
 Options: `--size N` (64..1280), `--yaw DEG`, `--pitch DEG` (45 by default for fields),
