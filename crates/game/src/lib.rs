@@ -2,3 +2,4 @@
 
 pub mod event;
 mod names;
+pub mod synthesis;

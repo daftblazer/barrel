@@ -30,6 +30,7 @@ usage:
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a-scan DIR          read every animation in the containers
+  barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
 
 unsafe extern "C" {
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
+        ["recipes", exe] => recipes(Path::new(exe)),
         ["play-event", file] => play_event(Path::new(file), None),
         ["play-event", file, lang] => play_event(Path::new(file), Some(lang)),
         _ => {
@@ -311,6 +313,41 @@ fn print_element(e: &barrel_formats::table::Element, depth: usize) {
 fn xml(file: &Path) -> Result<()> {
     let root = barrel_formats::table::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     print_element(&root, 0);
+    Ok(())
+}
+
+/// Escha & Logy DX's first synthesizable item (Craft).
+const ESCHA_FIRST_RECIPE: u32 = 195;
+
+fn recipes(exe: &Path) -> Result<()> {
+    use barrel_formats::recipe::{self, Ingredient};
+    let data = read(exe)?;
+    let at = recipe::find(&data, ESCHA_FIRST_RECIPE).ok_or("no recipe table found")?;
+    let list = recipe::parse(&data, at).map_err(|e| format!("recipes: {e}"))?;
+    println!("{} recipes at file offset {at:#x}", list.len());
+    for r in &list {
+        let slots: Vec<String> = r
+            .slots
+            .iter()
+            .map(|s| {
+                let what = match s.ingredient {
+                    Ingredient::Item(i) => format!("item {i}"),
+                    Ingredient::Category(c) => format!("(category {c})"),
+                };
+                let line: Vec<String> = s
+                    .line
+                    .iter()
+                    .take_while(|st| st.up_to >= 0)
+                    .map(|st| match st.effect {
+                        Some(e) => format!("{e}<{}", st.up_to),
+                        None => format!("-<{}", st.up_to),
+                    })
+                    .collect();
+                format!("{what} x{} [{}]", s.count, line.join(" "))
+            })
+            .collect();
+        println!("{} kind {} cost {} days {} | {}", r.item, r.kind, r.cost, r.days, slots.join(", "));
+    }
     Ok(())
 }
 

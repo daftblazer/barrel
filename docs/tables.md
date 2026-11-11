@@ -58,7 +58,7 @@ helpers, so it is probably for the items' 3D objects; it is still to be worked o
 ## Recipes
 
 The recipes are an array in the executable's `.data` section, one 288-byte record (72
-little-endian i32) per synthesizable item, in item order from Craft (`0x140d19c70` in the
+little-endian i32) per synthesizable item, starting from Craft and mostly in item order (record 99 jumps back from item 326 to 259) (`0x140d19c70` in the
 English Escha executable). `tools/recipes.py` lists them with their ingredients. Escha &
 Logy DX has 265 records, covering items 195 to 559; the recipe books at the end have empty
 slots.
@@ -132,7 +132,7 @@ For example:
 | Drifting Cloud | Sky Gas ×2, (Medical), (Nature), (Perfume) |
 
 Since the recipes are not in a data file, Barrel has to read them from the player's
-executable. The address differs between builds, so the engine should find the table by its
+executable (`barrel_formats::recipe`; `barrel recipes EXE` lists them). The address differs between builds, so the engine should find the table by its
 shape (a record whose word 0 is the first synthesizable item, repeated every 288 bytes)
 rather than by a fixed address.
 
@@ -169,6 +169,9 @@ Three cases read so far:
 - Type 23, Full Power: each attribute value grows by value / 100 × param 1 (cut to an
   integer), and the effect value gains param 2.
 - Type 0, Conversion: param 1 is added to the selected element's point count, up to 5.
+
+`barrel_game::synthesis` follows these rules (materials, Conversion, Reset Attribute, Full
+Power), with the cauldron's state kept in its own terms rather than the game's layout.
 
 **The synthesis state** (0x4e0 bytes, one per step):
 

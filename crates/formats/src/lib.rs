@@ -19,6 +19,7 @@ pub mod magic;
 pub mod oid;
 pub mod opl2;
 pub mod png;
+pub mod recipe;
 pub mod table;
 
 use std::fmt;

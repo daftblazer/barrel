@@ -38,6 +38,7 @@ target/release/barrel ebd-scan "<install>/Event"       # every event and its com
 target/release/barrel ebd-decode "<install>/Event"     # split every event into commands
 target/release/barrel ebd    FILE.ebd
 target/release/barrel play-event "<install>/Event/event/MM08_AS4/EVENT_MM08_AS4_130.ebd" EN
+target/release/barrel recipes "<install>/Atelier_Escha_and_Logy_EN.exe"   # the synthesis recipes
 target/release/barrel ebm-scan "<install>"            # every dialogue line, all languages
 target/release/barrel ebm    FILE.ebm
 target/release/barrel xml-scan "<install>"            # every XML table and its rows
