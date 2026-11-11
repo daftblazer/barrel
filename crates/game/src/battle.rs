@@ -156,6 +156,26 @@ impl Timeline {
     }
 }
 
+/// An action's wait for a character (`0x1401b9b70 (character, wait)`), from the skill's wait
+/// (+0x18 in its record; 600 for the normal attack): speed cuts it by speed / 5 percent, at
+/// most 25%; timed state 0xb adds half its value plus 50; timed state `REDUCE_WT` cuts it by its
+/// value in percent, at most 50%; then a pending extra wait (global `0x141077e54`, when not
+/// negative) is added and used up. Never under 0.
+pub fn action_wait(wait: i32, speed: i32, state_b: Option<i32>, reduce_wt: Option<i32>, pending: &mut i32) -> i32 {
+    let mut w = ((100.0 - (speed as f32 / 5.0).min(25.0)) * wait as f32 / 100.0) as i32;
+    if let Some(v) = state_b {
+        w += v / 2 + 50;
+    }
+    if let Some(v) = reduce_wt {
+        w = (100 - v.min(50)).wrapping_mul(w) / 100;
+    }
+    if *pending >= 0 {
+        w += *pending;
+        *pending = 0;
+    }
+    w.max(0)
+}
+
 /// A character's wait after it acts (`0x14018d180`), from the action's wait: with timed state
 /// `ADD_PERCENT_QUICK` (`quick_state`, its value a chance in percent) a successful roll cuts it
 /// by 25%; with passive `PASSIVE_PERCENT_QUICK` (`quick_passive`: chance, cut) a successful
@@ -244,6 +264,19 @@ mod tests {
         assert_eq!(t.entries, [(2, 0), (3, 0), (1, 180), (4, 380)]);
         assert_eq!(knockback(50, 1, 0), 50);
         assert_eq!(knockback(50, 2, 20), 20);
+    }
+
+    #[test]
+    fn action_waits() {
+        let mut none = -1;
+        // Speed 50: 10% off 600.
+        assert_eq!(action_wait(600, 50, None, None, &mut none), 540);
+        // Speed 300 caps at 25%.
+        assert_eq!(action_wait(600, 300, None, None, &mut none), 450);
+        assert_eq!(action_wait(600, 0, Some(31), Some(80), &mut none), 332);
+        let mut pending = 40;
+        assert_eq!(action_wait(600, 0, None, None, &mut pending), 640);
+        assert_eq!(pending, 0);
     }
 
     #[test]

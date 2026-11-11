@@ -315,9 +315,19 @@ hold actions that happen later at their own wait, such as charged skills.
 `ACCELARATE_WT` calls the second with the effect's amount. `RETURN_WT` (`0x1401c0313`) first
 counts the push on the target (+0x30c) and pushes it back by `trunc(1 / count × amount ×
 (100 - RESIST_KNOCKBACK) / 100)` in floats, so each push on the same target is weaker than the
-last. When the count resets, and how the action's wait comes from the skill (+24, 600 for the
-normal attack) and the character's speed, are still to be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`), `wait_after_action` and
-`knockback` do the above.
+last. The action's wait comes from the skill's (+24 in the record; 600 for the normal attack,
+`0x14015f9c0`; a monster's slot k through its virtual +0xc0, `0x1401b7690`) by
+`0x1401b9b70 (character, wait)`:
+
+    w = trunc((100 - min(speed / 5, 25)) × wait / 100)     in floats; speed is stat 7
+    with timed state 0xb:      w += value / 2 + 50
+    with timed state REDUCE_WT: w = (100 - min(value, 50)) × w / 100
+    if global 0x141077e54 is not negative: w += it, and it becomes 0
+    w = max(w, 0)
+
+So speed takes up to a quarter off every wait (at speed 125 and more). When `RETURN_WT`'s
+count resets is still to be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`), `action_wait`,
+`wait_after_action` and `knockback` do the above.
 
 ### Random numbers
 
