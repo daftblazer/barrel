@@ -396,7 +396,7 @@ struct EventCamera {
     fov: f32,
 }
 
-fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>)> {
+fn event_characters(event_path: &Path, scene: &mut Scene, base: usize, line: Option<usize>) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
@@ -404,6 +404,39 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
         Ok(barrel_formats::table::parse(&std::fs::read(root.join("Saves/chara").join(name))?)?)
     };
     let (charas, bases) = (table("Chara.xml")?, table("CharaBase.xml")?);
+    // Faces at message line `line`: each speaker's latest expression up to it (the line's
+    // fourth field), with the line's own speaker talking.
+    let mut faces: std::collections::HashMap<i32, (i32, bool)> = Default::default();
+    let mut face_tables = None;
+    if let Some(n) = line {
+        let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
+        let messages = barrel_formats::ebm::parse(&std::fs::read(&ebm)?)?;
+        for (i, m) in messages.iter().enumerate().take(n + 1) {
+            if m.fields[3] >= 0 {
+                faces.insert(m.speaker, (m.fields[3], false));
+            }
+            if i == n {
+                if let Some(text) = Some(m.repaired_text()) {
+                    eprintln!("line {n}, speaker {}: {}", m.speaker, text.replace("<CR>", " "));
+                }
+                faces.entry(m.speaker).or_insert((0, false)).1 = true;
+            }
+        }
+        for entry in std::fs::read_dir(root)?.flatten() {
+            let p = entry.path();
+            if p.extension().is_some_and(|x| x == "exe") {
+                let bytes = std::fs::read(&p)?;
+                if let Ok(pe) = barrel_formats::pe::Pe::parse(&bytes) {
+                    let t = barrel_game::face::Tables::read(&pe);
+                    if !t.brow.is_empty() {
+                        face_tables = Some(t);
+                        break;
+                    }
+                }
+            }
+        }
+    }
     // First placement of each character: q4 (ADDITION_EX: number, ..., x, y, z, ?, angle) or
     // s4 (POS_SET: number, 0, 0, 0, x, y, z).
     let mut first: Vec<(u32, [f32; 3], f32)> = Vec::new();
@@ -440,7 +473,8 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
     let mut placed = 0.0f32;
     for (who, pos, angle) in first {
         let Some(tag) = charas.children.get(who as usize).and_then(|c| c.attr("BaseTag")) else { continue };
-        let Some(row) = bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)) else { continue };
+        let Some(row_index) = bases.children.iter().position(|b| b.attr("BaseTag") == Some(tag)) else { continue };
+        let row = &bases.children[row_index];
         let Some(model) = row.attr("Model") else { continue };
         let path = root.join("Data/x64/Character").join(format!("{model}.elixir.gz"));
         let Ok(bytes) = std::fs::read(&path) else { continue };
@@ -466,7 +500,26 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
             let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
             Some(pose(&skeleton, &anim, 0.5))
         })();
+        if let (Some(&(expr, talking)), Some(tables), Some(head), Some(facial)) =
+            (faces.get(&(who as i32)), &face_tables, row.attr("FileHead"), row.attr("Facial"))
+        {
+            let face = tables.expression(row_index as u32, head, expr, talking);
+            let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
+            let fbytes = std::fs::read(root.join("Data/x64/Character").join(dir).join(format!("{facial}.elixir.gz")));
+            if let (Ok(fbytes), Some(g1h)) = (fbytes, named(&container, &format!("{stem}_default.g1h"))) {
+                let facials = Elixir::parse(&fbytes)?;
+                let mut anims = Vec::new();
+                for (name, t) in [(&face.brow, 0.5), (&face.eye, 0.5), (&face.mouth, 1.0)] {
+                    if let Some(bytes) = name.as_ref().and_then(|n| named(&facials, &format!("{n}.g1a"))) {
+                        anims.push((bytes, t));
+                    }
+                }
+                eprintln!("character {who}: expression {expr}{} {face:?}", if talking { ", talking" } else { "" });
+                set_face(scene, g1h, &anims)?;
+            }
+        }
         scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
+        scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
         placed += 1.0;
@@ -474,6 +527,21 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
         packs.push(tex.to_vec());
     }
     Ok((packs, (placed > 0.0).then(|| centre / placed), camera))
+}
+
+/// Blend facial animations (at `time`) into `scene.morph` for the next model added: each
+/// animation goes to the morph set with one target fewer than it has tracks.
+fn set_face(scene: &mut Scene, g1h: &[u8], anims: &[(&[u8], f32)]) -> Result<()> {
+    let sets = barrel_formats::g1h::parse(g1h)?;
+    for (bytes, time) in anims {
+        let anim = barrel_formats::g1a::parse(bytes)?;
+        let Some(set) = sets.iter().find(|s| s.targets.len() + 1 == anim.tracks.len()) else { continue };
+        let t = time.min(anim.duration);
+        let weight =
+            |bone: usize| anim.tracks.iter().find(|tr| tr.bone as usize == bone).and_then(|tr| tr.scalar(t)).unwrap_or(0.0);
+        scene.morph.insert(set.layout as usize, set.blend(weight));
+    }
+    Ok(())
 }
 
 /// The entry of `container` named `name`, if any.
@@ -601,6 +669,7 @@ fn main() -> Result<()> {
     let mut alpha_cutoff = 0.3f32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
+    let mut event_line = None::<usize>;
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
     let mut it = args[positional..].iter();
@@ -614,6 +683,7 @@ fn main() -> Result<()> {
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
             "--morph" => morph_spec = Some(it.next().ok_or("--morph FILE#N")?.clone()),
             "--face" => face_specs.push(it.next().ok_or("--face FILE#N")?.clone()),
+            "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -643,21 +713,9 @@ fn main() -> Result<()> {
             _ => return Err("--skeleton and --anim go together".into()),
         };
         if let Some(m) = &morph_spec {
-            let sets = barrel_formats::g1h::parse(&entry_bytes(m)?)?;
-            for f in &face_specs {
-                let anim = barrel_formats::g1a::parse(&entry_bytes(f)?)?;
-                // The facial animation for a set has one track per target plus the rest shape.
-                let set = sets
-                    .iter()
-                    .find(|s| s.targets.len() + 1 == anim.tracks.len())
-                    .ok_or_else(|| format!("{f}: no morph set with {} targets", anim.tracks.len().saturating_sub(1)))?;
-                let t = time.min(anim.duration);
-                let weight = |bone: usize| {
-                    anim.tracks.iter().find(|tr| tr.bone as usize == bone).and_then(|tr| tr.scalar(t)).unwrap_or(0.0)
-                };
-                eprintln!("face: layout {} from {f}", set.layout);
-                scene.morph.insert(set.layout as usize, set.blend(weight));
-            }
+            let anims: Vec<Vec<u8>> = face_specs.iter().map(|f| entry_bytes(f)).collect::<Result<_>>()?;
+            let with_time: Vec<(&[u8], f32)> = anims.iter().map(|a| (&a[..], time)).collect();
+            set_face(&mut scene, &entry_bytes(m)?, &with_time)?;
         } else if !face_specs.is_empty() {
             return Err("--face needs --morph".into());
         }
@@ -670,7 +728,7 @@ fn main() -> Result<()> {
     let mut event_camera: Option<EventCamera> = None;
     if let Some(e) = &event_spec {
         let base = G1t::parse(&pack_bytes[0])?.textures.len();
-        let (packs, centre, cam) = event_characters(Path::new(e), &mut scene, base)?;
+        let (packs, centre, cam) = event_characters(Path::new(e), &mut scene, base, event_line)?;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;

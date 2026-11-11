@@ -52,6 +52,14 @@ blended offsets are added to that vertex layout's positions before skinning (see
 `formats.md`, "Morph targets"). Escha with `PC20_EYE_M_ANG_M_*` at 2 s opens her mouth and
 moves her brows and eyes.
 
+**Expressions at a line.** With `--event`, `--line N` gives each placed character the
+expression the event's messages have set by line N (each line's fourth field; see
+`formats.md`, "Event messages"), with line N's speaker talking. The names come from the
+executable's facial tables (`barrel_game::face::Tables`, read from the install's own
+executable), the animations from the character's `Facial` container, the shapes from its
+model's `.g1h`. In `MM08_AS4_130` at line 5 Escha speaks with the sad talking mouth
+(`PC20_MTH_M_SAD_M_Mth_B_Def`), Logy keeps a closed sad mouth, Threia and Reyfer the default.
+
 **Eyes.** An eye material has four textures, none of subtype 1 (Escha's materials 3 and 4):
 the eye white on a skin-coloured ground, the iris with alpha, a green glow and the highlight
 outlines, all on the same UVs. The viewer lays the iris over the white by its alpha into a
