@@ -421,8 +421,16 @@ dummy camera and position markers) and not a voice clip on its own (see "Voices"
 `0x1401837a0` skips kinds 3 and 4 and speaker -1, then `0x140184060` writes a small event
 script for the speaker and runs it:
 
-- **Field 2 is a gesture**: if it is at most 437, `0x140184280` adds the commands for body
-  motion number field 2 (how that number names a motion is still to be read).
+- **Field 2 is a gesture**: if it is at most 437, `0x140184280` turns it into a chain of
+  body motions from a 438-entry table at `0x1407f2f60` (0x88 bytes each: two forms of 17
+  i32, the second used by a flag and empty so far). A form is a first motion number, up to
+  15 steps and an end type. The game emits `ECT_CHARA_MULTI_MOTION_LOOP_CLEAR` (`s83`) and
+  `..._CHANGE_TYPE` (`s96`, the end type), then for each step: a value under 10,000 makes
+  it the current motion, and 10,000 + n emits `..._LOOP_ADD` (`s82`: speaker, current
+  motion, n, 10), playing it n more times. Gesture 0 is motion 31 once; 198 is motion 61
+  for five loops, then 31; 1, 196 and 246 play their motion (56, 61, 68) twice. Which motion
+  a number names is still open: the numbers are not the `CharaBase` column order counted
+  from any obvious start, and the column names are not in the executable as strings.
 - **Field 3 is the expression**: if it is at most 10, it adds `ECT_CHARA_FACIAL_MOTION_SET`
   (`s88`): speaker, then a brow, eye and mouth facial motion from an 11-entry table at
   `0x1407f2e50` (-1 keeps the current one):
