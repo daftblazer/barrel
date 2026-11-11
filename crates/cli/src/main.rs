@@ -82,6 +82,7 @@ fn main() -> ExitCode {
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
         ["pak-scan", files @ ..] if !files.is_empty() => pak_scan(files),
+        ["pak-bc6h", files @ ..] if !files.is_empty() => pak_bc6h(files),
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
@@ -405,6 +406,35 @@ fn check_entry(data: &[u8]) -> Option<(&'static str, std::result::Result<(), Str
         b"_H1G" => ("g1h", r(f::g1h::parse(data).map(|_| ()))),
         _ => return None,
     })
+}
+
+/// How often each BC6H mode occurs in the archives' textures, with a texture that uses it.
+fn pak_bc6h(files: &[&str]) -> Result<()> {
+    let mut modes: BTreeMap<u8, (usize, String)> = BTreeMap::new();
+    for file in files {
+        let (mut fh, pak) = open_pak(Path::new(file))?;
+        for entry in &pak.entries {
+            if !entry.name.ends_with(".g1t") || entry.size > 256 << 20 {
+                continue;
+            }
+            let data = pak_read(&mut fh, &pak, entry).map_err(|e| format!("{file}: {e}"))?;
+            let Ok(g) = barrel_formats::g1t::G1t::parse(&data) else { continue };
+            for t in g.textures.iter().filter(|t| t.format == barrel_formats::g1t::Format::Bc6h) {
+                for level in &t.levels {
+                    for block in level.chunks_exact(16) {
+                        let low = block[0] & 3;
+                        let m = if low < 2 { low } else { block[0] & 31 };
+                        let e = modes.entry(m).or_insert((0, entry.name.clone()));
+                        e.0 += 1;
+                    }
+                }
+            }
+        }
+    }
+    for (m, (n, sample)) in &modes {
+        println!("mode bits {m:#04x}: {n} blocks, e.g. {sample}");
+    }
+    Ok(())
 }
 
 fn pak_scan(files: &[&str]) -> Result<()> {

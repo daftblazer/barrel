@@ -90,8 +90,12 @@ two regions, whole endpoints or a base and signed deltas; previews tone-map with
 and gamma 2.2). `charatest_ad.g1t` decodes to a smooth lighting cube, blue sky on face 2,
 brown ground on face 3, sides shading from one to the other, which confirms the Direct3D face
 order (+X, -X, +Y, -Y, +Z, -Z). Its blocks use modes 1, 3, 11, 12, 13 (22,682 of 24,576
-blocks; the mode whose high endpoint bits are stored reversed) and 14; modes 2 and 4 to 10 are
-not covered by a sample yet. Only the unsigned variant has been seen.
+blocks; the mode whose high endpoint bits are stored reversed) and 14; Ryza 3 uses all 14 (`barrel pak-bc6h
+FILE.PAK...` counts the modes of every BC6H texture and names one that uses each): its
+`charatest_as.g1t` and `field/env/texture/s013_default_as.g1t` cover the rest, and both
+decode cleanly, the second a sharp beach panorama (palms, sea, cliffs; clouds and the sun on
+face 2, sand on face 3) with no stray blocks, so every mode's bit layout checks out by eye.
+Only the unsigned variant has been seen.
 
 **Cube maps and volumes.** The first header byte's low nibble, 0 in all of Escha's
 textures, says what a texture is: 1 a cube map (each level holds six faces;
