@@ -648,6 +648,10 @@ fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Tex
             Format::Bc1 => vk::Format::BC1_RGBA_UNORM_BLOCK,
             Format::Bc3 => vk::Format::BC3_UNORM_BLOCK,
             Format::Bc7 => vk::Format::BC7_UNORM_BLOCK,
+            Format::Bc4 => vk::Format::BC4_UNORM_BLOCK,
+            Format::Bc5 => vk::Format::BC5_UNORM_BLOCK,
+            Format::Bc6h => vk::Format::BC6H_UFLOAT_BLOCK,
+            Format::Float32 => vk::Format::R32_SFLOAT,
             Format::Rgba8 => vk::Format::R8G8B8A8_UNORM,
         };
         let levels = t.levels.len() as u32;
@@ -823,6 +827,8 @@ fn main() -> Result<()> {
             height: *h,
             format: Format::Rgba8,
             format_code: 1,
+            layers: 1,
+            volume: false,
             levels: vec![&px[..]],
         })
         .collect();

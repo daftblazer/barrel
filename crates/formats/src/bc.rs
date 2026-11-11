@@ -67,6 +67,33 @@ fn alpha_block(b: &[u8]) -> [u8; 16] {
     out
 }
 
+/// Decode a BC4 (one channel, shown grey) or BC5 (two channels, red and green) level.
+pub fn decode_bc45(src: &[u8], width: usize, height: usize, bc5: bool) -> Vec<u8> {
+    let block = if bc5 { 16 } else { 8 };
+    let (bw, bh) = (width.div_ceil(4), height.div_ceil(4));
+    let mut out = vec![0u8; width * height * 4];
+    for by in 0..bh {
+        for bx in 0..bw {
+            let at = (by * bw + bx) * block;
+            let Some(b) = src.get(at..at + block) else { return out };
+            let r = alpha_block(&b[..8]);
+            let g = if bc5 { Some(alpha_block(&b[8..16])) } else { None };
+            for i in 0..16 {
+                let (x, y) = (bx * 4 + i % 4, by * 4 + i / 4);
+                if x >= width || y >= height {
+                    continue;
+                }
+                let px = match g {
+                    Some(g) => [r[i], g[i], 0, 255],
+                    None => [r[i], r[i], r[i], 255],
+                };
+                out[(y * width + x) * 4..][..4].copy_from_slice(&px);
+            }
+        }
+    }
+    out
+}
+
 /// Decode a level of `width`×`height` pixels. `bc3` selects BC3; otherwise BC1.
 pub fn decode(src: &[u8], width: usize, height: usize, bc3: bool) -> Vec<u8> {
     let block = if bc3 { 16 } else { 8 };

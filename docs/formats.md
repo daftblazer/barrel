@@ -81,6 +81,15 @@ per texture:  u8   mip count << 4 | depth
 | `0x10` | 2 | BC1 |
 | `0x01` | 1 | 8-bit RGBA |
 | `0x5f` | none | BC7 (Sophie 2's UI textures, such as its 256×256 item icons) |
+| `0x5c`, `0x5d`, `0x5e` | none | BC4, BC5, BC6H (the later games; BC6H for HDR environment cube maps) |
+| `0x02` | none | one 32-bit float a pixel (Ryza 3's shore heightmaps) |
+
+**Cube maps and volumes.** The first header byte's low nibble, 0 in all of Escha's
+textures, says what a texture is: 1 a cube map (each level holds six faces;
+`charatest_ad.g1t`, 256×256 BC6H, is exactly 6 × 65,536 bytes), 2 a volume, whose depth is 2
+to the power of the fourth header byte's low nibble and halves with each level (Ryza's
+`wavevolume.g1t`: 512×512×128 BC5, 2 levels, 37,748,736 bytes). The order of faces and
+levels inside a cube map is still to be checked; previews show the first face.
 
 Every texture's data is exactly the size its format, size and mip count give, so there is
 no padding or swizzling on PC. The renderer can upload BC1, BC3 and BC7 as they are;

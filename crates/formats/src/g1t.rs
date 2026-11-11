@@ -7,7 +7,7 @@
 //!                    size of extra data (0)
 //! u32 flags per texture (right after the header)
 //! offset table: u32 per texture, relative to the table
-//! per texture:  u8  mip count << 4 | depth
+//! per texture:  u8  mip count << 4 | kind (0 a 2D texture, 1 a cube map, 2 a volume)
 //!               u8  format
 //!               u8  log2 height << 4 | log2 width
 //!               u8 ×4 (0, 0, 0x10, 0x21 in model textures; other values in terrain)
@@ -27,8 +27,16 @@ pub enum Format {
     Bc1,
     /// BC3 / DXT5, 16 bytes a 4×4 block.
     Bc3,
+    /// BC4, 8 bytes a 4×4 block: one channel.
+    Bc4,
+    /// BC5, 16 bytes a 4×4 block: two channels.
+    Bc5,
+    /// BC6H, 16 bytes a 4×4 block: HDR colour (the later games' environment cube maps).
+    Bc6h,
     /// BC7, 16 bytes a 4×4 block (Sophie 2 and later).
     Bc7,
+    /// One 32-bit float a pixel (Ryza 3's heightmaps, format 0x02).
+    Float32,
 }
 
 impl Format {
@@ -37,6 +45,10 @@ impl Format {
             0x01 => Format::Rgba8,
             0x06 | 0x10 | 0x59 => Format::Bc1,
             0x08 | 0x5b => Format::Bc3,
+            0x02 => Format::Float32,
+            0x5c => Format::Bc4,
+            0x5d => Format::Bc5,
+            0x5e => Format::Bc6h,
             0x5f => Format::Bc7,
             _ => return None,
         })
@@ -45,9 +57,10 @@ impl Format {
     pub fn level_size(self, width: u32, height: u32) -> usize {
         let (w, h) = (width.max(1) as usize, height.max(1) as usize);
         match self {
-            Format::Rgba8 => w * h * 4,
+            Format::Rgba8 | Format::Float32 => w * h * 4,
+            Format::Bc4 => w.div_ceil(4) * h.div_ceil(4) * 8,
             Format::Bc1 => w.div_ceil(4) * h.div_ceil(4) * 8,
-            Format::Bc3 | Format::Bc7 => w.div_ceil(4) * h.div_ceil(4) * 16,
+            Format::Bc3 | Format::Bc5 | Format::Bc6h | Format::Bc7 => w.div_ceil(4) * h.div_ceil(4) * 16,
         }
     }
 }
@@ -58,7 +71,12 @@ pub struct Texture<'a> {
     pub height: u32,
     pub format: Format,
     pub format_code: u8,
-    /// Mip levels, largest first.
+    /// Images per level: 1, 6 for a cube map, or the depth of a volume (halving each level,
+    /// down to 1; [`Texture::layers`] gives a level's count).
+    pub layers: u32,
+    /// Whether `layers` is a volume's depth (which halves with each level).
+    pub volume: bool,
+    /// Mip levels, largest first, each holding all its layers one after another.
     pub levels: Vec<&'a [u8]>,
 }
 
@@ -91,6 +109,14 @@ impl<'a> G1t<'a> {
             let at = table + u32_at(data, table + 4 * i)? as usize;
             let h = data.get(at..at + 8).ok_or(Error::Corrupt("g1t texture header past the end"))?;
             let mips = (h[0] >> 4).max(1) as u32;
+            // The low nibble: 0 a 2D texture, 1 a cube map (six faces), 2 a volume of
+            // 2^(byte 3's low nibble) slices.
+            let (layers, volume) = match h[0] & 15 {
+                0 => (1, false),
+                1 => (6, false),
+                2 => (1u32 << (h[3] & 15), true),
+                _ => return Err(Error::Corrupt("g1t texture kind not known")),
+            };
             let format_code = h[1];
             let format = Format::from_code(format_code).ok_or(Error::Corrupt("g1t format not known"))?;
             let (mut width, mut height) = (1u32 << (h[2] & 15), 1u32 << (h[2] >> 4));
@@ -111,24 +137,40 @@ impl<'a> G1t<'a> {
             }
             let mut levels = Vec::with_capacity(mips as usize);
             for level in 0..mips {
-                let size = format.level_size(width >> level, height >> level);
+                let n = if volume { (layers >> level).max(1) } else { layers } as usize;
+                let size = format.level_size(width >> level, height >> level) * n;
                 let bytes = data.get(pos..pos + size).ok_or(Error::Corrupt("g1t texture data past the end"))?;
                 levels.push(bytes);
                 pos += size;
             }
-            textures.push(Texture { width, height, format, format_code, levels });
+            textures.push(Texture { width, height, format, format_code, layers, volume, levels });
         }
         Ok(G1t { version, platform, textures })
     }
 }
 
 impl Texture<'_> {
-    /// The largest level as 8-bit RGBA, rows top to bottom.
+    /// The largest level's first layer as 8-bit RGBA, rows top to bottom. BC6H is not
+    /// decoded in software yet and comes out black; a float heightmap comes out grey, its
+    /// range stretched to 0..255.
     pub fn to_rgba8(&self) -> Vec<u8> {
         let (w, h) = (self.width as usize, self.height as usize);
-        let src = self.levels[0];
+        let src = &self.levels[0][..self.format.level_size(self.width, self.height).min(self.levels[0].len())];
         match self.format {
             Format::Rgba8 => src.to_vec(),
+            Format::Bc4 => crate::bc::decode_bc45(src, w, h, false),
+            Format::Bc5 => crate::bc::decode_bc45(src, w, h, true),
+            Format::Bc6h => {
+                let mut out = vec![0u8; w * h * 4];
+                out.iter_mut().skip(3).step_by(4).for_each(|a| *a = 255);
+                out
+            }
+            Format::Float32 => {
+                let v: Vec<f32> = src.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+                let (lo, hi) = v.iter().fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));
+                let span = (hi - lo).max(1e-6);
+                v.iter().flat_map(|&x| { let g = ((x - lo) / span * 255.0) as u8; [g, g, g, 255] }).collect()
+            }
             Format::Bc1 => crate::bc::decode(src, w, h, false),
             Format::Bc3 => crate::bc::decode(src, w, h, true),
             Format::Bc7 => crate::bc7::decode(src, w, h),
