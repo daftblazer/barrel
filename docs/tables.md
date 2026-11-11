@@ -147,19 +147,21 @@ rather than by a fixed address.
 
 ## Battle skills
 
-Also compiled into the executable: 96-byte records at `0x140d5ab10` (English Escha
-executable), 158 skills and a `DUMMY` that ends them. `tools/skills.py EXE` lists them. They
-are the party's support skills ("Hero AC Attack", "Heroine AC Guard", "... AC Special") and
-the bosses' skills ("True Boss Skill 3_Variation 1_Top", "Flameu_Charge"), each with its
-English name and description; not the 543-entry `SKILL_*` enum, which numbers every battle
-action.
+Also compiled into the executable: one 96-byte record per skill of the `SKILL_*` enum, in
+its order, at `0x140d51ed0` (English Escha executable): 533 records (the enum's first 533
+tags) and a `DUMMY` that ends them. `tools/skills.py EXE` lists them. Record 0 is "Attack"
+(`SKILL_ATTACK_PT`), 1 the enemies' "Attack", 2 "Run" (`SKILL_ENEMY_ANIMAL_RUNAWAY`, category
+"Hamster Escape"), 200 Reyfer's "Wide Shot" (`SKILL_PT_REYFER_SKILL_1`, "Treasure Hunter
+Skill 1"), 260 Katla's "Merchant Punch"; the party's support skills ("... AC Attack",
+"... AC Guard", "... AC Special") and every enemy's and boss's skills are in it, each with its
+English name and description.
 
 | Bytes | What |
 |---|---|
 | 0 | pointer to the name ("Stun Blow") |
 | 8 | pointer to the category ("Hero AC Attack") |
 | 16 | i32: 1 for guards and self-targeted skills, 2 for attacks, 3 for boss charges |
-| 24 | i32: 0 for the party's skills, 650 to 900 for bosses' (still to be named) |
+| 24 | i32: 600 for the normal attacks and escape, 500 to 900 for many enemy skills, 0 for most of the party's (a wait or speed value, probably) |
 | 40 | first effect: i32 effect number (-1 none), i32, i32 minimum power, i32 maximum power |
 | 56 | two i32 (0, or 2 and 2) |
 | 64 | second effect: number, i32, minimum, maximum |

@@ -3,7 +3,7 @@
 
     skills.py EXE [TABLE_VA]
 
-TABLE_VA defaults to 0x140d5ab10 (English Escha executable): 96-byte records of a name
+TABLE_VA defaults to 0x140d51ed0 (English Escha executable): 96-byte records of a name
 pointer, a category pointer, 18 i32 and a description pointer; docs/tables.md has the
 layout. Prints one line per skill: index, name, category, the values, description.
 """
@@ -18,7 +18,7 @@ SIZE = 96
 
 def main():
     pe = PE(sys.argv[1])
-    va = int(sys.argv[2], 16) if len(sys.argv) > 2 else 0x140d5ab10
+    va = int(sys.argv[2], 16) if len(sys.argv) > 2 else 0x140d51ed0
 
     def text(ptr):
         if not pe.base <= ptr < pe.base + 0x4000000:
