@@ -149,6 +149,14 @@ pub fn poison_by_missing_hp(value: i32, hp: i32, max_hp: i32, defense: i32) -> i
     if v < 20000 { 1 } else { v / 10000 }
 }
 
+/// The HP change at a character's turn start (`0x1401b0100`): the `HEAL_HP_TURN` amounts (and
+/// the two HP traits) minus the poisons, netted into one number. Positive is healed (a heal
+/// event, `0x1401c1d00`), negative is dealt as ordinary damage of the opposite amount through
+/// `0x1401c1970` (so [`hit_amount`] applies), 0 is nothing.
+pub fn turn_hp_change(heal: i32, poison: i32, poison_by_missing: i32) -> i32 {
+    heal.wrapping_sub(poison).wrapping_sub(poison_by_missing)
+}
+
 /// Ages a character's timed states by one of its turns (`0x140191120`, called at its turn's
 /// start after the HP change): counted states go down by one and go when they reach 0; states
 /// without a count stay. (The game passes the character's +0x2d8 as a float; that it is one a
@@ -332,6 +340,13 @@ mod tests {
         assert_eq!(states.last().unwrap().value, 50.0);
         add_state(&mut states, 0x1a, 80, 0);
         assert_eq!(states.last().unwrap().value, 80.0);
+    }
+
+    #[test]
+    fn turn_start_nets_heal_and_poison() {
+        assert_eq!(turn_hp_change(20, 8, 0), 12);
+        assert_eq!(turn_hp_change(5, 8, 3), -6);
+        assert_eq!(turn_hp_change(0, 0, 0), 0);
     }
 
     #[test]

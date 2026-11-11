@@ -110,8 +110,10 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         let target = 1 - who;
         // Its turn starts (`0x1401ae4f0`): poison, then its states age.
         let poison: i32 = states[who].iter().filter(|s| s.state == 0x34).map(|s| s.value as i32).sum();
-        if poison > 0 {
-            let damage = battle::poison_damage(poison, fighters[who][stat::DEFENSE]);
+        let poison = if poison > 0 { battle::poison_damage(poison, fighters[who][stat::DEFENSE]) } else { 0 };
+        let change = battle::turn_hp_change(0, poison, 0);
+        if change < 0 {
+            let damage = battle::hit_amount(-change, 0);
             let dealt = battle::take_hp_damage(&mut fighters[who], damage, None, None);
             // A poison tick: `attacker` is the poisoned fighter itself.
             hits.push(Hit { attacker: who, skill: "poison".into(), damage: dealt, hp_left: fighters[who][stat::HP] });

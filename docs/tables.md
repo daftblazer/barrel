@@ -339,7 +339,11 @@ values, defence)`: with `cut = clamp(trunc(defence / 10) + trunc(defence / 3), 0
 damage is `trunc((100 - cut) × value / 100)`, or 1 when `(100 - cut) × value` is below 200.
 State 0x35 (`DAMAGE_HP_TURN_DIFFERENTIAL`) takes `0x1401b90c0`: `(100 - cut) × (max HP - HP)
 × value / 10000`, or 1 below 20000 (value percent of the HP missing). Field states 0x48 and
-others follow (not worked). Then `0x140191120` ages both state lists by the character's
+others follow (not worked). The parts are netted into one change: when it is positive a heal
+event (`0x1401c1d00`) gives it back, when negative its opposite is dealt as an ordinary damage
+event (`0x1401c1970`, element slot 4: the target's +0x2b8 cut, at least 1), and at 0 nothing
+happens; a heal-over-time thus cancels a poison before either is shown (`battle::
+turn_hp_change`). Then `0x140191120` ages both state lists by the character's
 +0x2d8 (taken as one turn): counted states go down and are dropped at 0. `battle::
 poison_damage`, `poison_by_missing_hp` and `age_states` follow this, and the duel poisons with
 `DAMAGE_HP_TURN` effects (Bomb: 10 for 2 turns, 5 a turn against the Grand Dragon's defence).
