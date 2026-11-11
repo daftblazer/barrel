@@ -111,3 +111,13 @@ placements. Vertices with all weights 0 (the field) are not skinned. So a new po
 palette, a new place a new instance matrix; the vertex buffer never changes. Checked against
 the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by more than 8
 (from the 8-bit weights), the same picture.
+
+**Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
+--fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a
+`stage::Playback` stepped by a `clock::Clock` fed 1/HZ a frame, each frame drawing the last
+two ticks blended (`docs/engine.md`, "Timing"). Between frames only the characters'
+instance matrices and joint palettes are rewritten; each character keeps the motion it had
+at the start, sampled at its time (looping motions wrap). Frames go to `OUT_000.png`,
+`OUT_001.png`, ... In `EVENT_MM08_AS4_130` (`TOWN_04`), 4 frames at 2 Hz from 0.5 s show Logy
+and Escha walking into the plaza towards Threia and Reyfer, mid-stride. Not yet: motion
+changes during the event, characters added after the start, the stage camera, faces.

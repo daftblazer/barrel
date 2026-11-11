@@ -465,6 +465,17 @@ struct EventCamera {
     fov: f32,
 }
 
+/// A character the frame loop moves: its instance, its skeleton and the motion it plays, and
+/// how far into that motion it is at the start (`--at`).
+struct Actor {
+    who: u32,
+    instance: u32,
+    skeleton: barrel_formats::g1m::Skeleton,
+    anim: barrel_formats::g1a::Animation,
+    start: f32,
+    looping: bool,
+}
+
 /// An event character's placement: number, position and facing angle in degrees.
 type Placement = (u32, [f32; 3], f32);
 
@@ -474,6 +485,7 @@ fn event_characters(
     base: usize,
     line: Option<usize>,
     at: Option<f32>,
+    actors: &mut Vec<Actor>,
 ) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
@@ -628,7 +640,7 @@ fn event_characters(
             .unwrap_or_else(|| "F_WAIT".to_string());
         // How far into it: the stage's time in the motion (looping ones wrap), else the middle.
         let motion_time = staged.map(|&(_, t, looping)| (t, looping));
-        let joints = (|| -> Option<Vec<Mat4>> {
+        let rig = (|| -> Option<(Vec<Mat4>, barrel_formats::g1m::Skeleton, barrel_formats::g1a::Animation, f32)> {
             let head = row.attr("FileHead")?;
             let motion = row.attr("Motion1")?;
             let value = row.attr(&column)?;
@@ -644,13 +656,15 @@ fn event_characters(
             let anim = barrel_formats::g1a::parse(&anim_bytes).ok()?;
             let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
             eprintln!("character {who}: motion {column} = {head}_{value}");
-            let t = match motion_time {
-                Some((t, true)) if anim.duration > 0.0 => t.rem_euclid(anim.duration),
-                Some((t, _)) => t.clamp(0.0, anim.duration),
-                None => 0.5,
-            };
-            Some(pose(&skeleton, &anim, t))
+            let t0 = motion_time.map_or(0.5, |(t, _)| t);
+            let joints = pose(&skeleton, &anim, motion_clock(&anim, t0, motion_time.is_none_or(|(_, l)| l)));
+            Some((joints, skeleton, anim, t0))
         })();
+        let looping = motion_time.is_none_or(|(_, l)| l);
+        let (joints, rig) = match rig {
+            Some((j, sk, an, t0)) => (Some(j), Some((sk, an, t0))),
+            None => (None, None),
+        };
         if let (Some(&(expr, talking)), Some(tables), Some(head), Some(facial)) =
             (faces.get(&(who as i32)), &face_tables, row.attr("FileHead"), row.attr("Facial"))
         {
@@ -669,7 +683,10 @@ fn event_characters(
                 set_face(scene, g1h, &anims)?;
             }
         }
-        scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
+        let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
+        if let Some((skeleton, anim, start)) = rig {
+            actors.push(Actor { who, instance, skeleton, anim, start, looping });
+        }
         scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
@@ -678,6 +695,11 @@ fn event_characters(
         packs.push(tex.to_vec());
     }
     Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
+}
+
+/// Where in `anim` to sample at motion time `t`: looping motions wrap, others hold their end.
+fn motion_clock(anim: &barrel_formats::g1a::Animation, t: f32, looping: bool) -> f32 {
+    if looping && anim.duration > 0.0 { t.rem_euclid(anim.duration) } else { t.clamp(0.0, anim.duration) }
 }
 
 /// Blend facial animations (at `time`) into `scene.morph` for the next model added: each
@@ -827,6 +849,7 @@ fn main() -> Result<()> {
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
     let mut event_at = None::<f32>;
+    let (mut frames, mut fps) = (1u32, 60f64);
     let mut look_at = None::<u32>;
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
@@ -844,6 +867,8 @@ fn main() -> Result<()> {
             "--look-at" => look_at = Some(it.next().ok_or("--look-at CHARA")?.parse()?),
             "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
             "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
+            "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
+            "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -887,9 +912,10 @@ fn main() -> Result<()> {
     let mut pack_bytes = vec![tex_bytes];
     let mut focus = None;
     let mut event_camera: Option<EventCamera> = None;
+    let mut actors: Vec<Actor> = Vec::new();
     if let Some(e) = &event_spec {
         let base = G1t::parse(&pack_bytes[0])?.textures.len();
-        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at)?;
+        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors)?;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
@@ -908,7 +934,7 @@ fn main() -> Result<()> {
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
-    let Scene { vertices, indices, mut draws, terrain, lo, hi, instances, palette, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     for draw in &mut draws {
@@ -1235,9 +1261,63 @@ fn main() -> Result<()> {
     proj.y_axis.y *= -1.0; // Vulkan's y points down.
     let mvp = proj * view;
 
-    // Render one frame and read it back.
+    // With --frames N, play the event on: the clock at --fps HZ decides the logic ticks
+    // (docs/engine.md, "Timing"), each frame draws the last two ticks blended, and only the
+    // characters' instance matrices and joint palettes change between frames.
+    let mut player = None;
+    let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
+    let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
+    if let (Some(event), Some(e)) = (&event_data, &event_spec) {
+        use barrel_game::stage::{Measures, Playback, Stage};
+        let root = Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
+        let xml = |rel: &str| std::fs::read(root.join(rel)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+        let measures = xml("Saves/chara/Chara.xml").map(|t| Measures::table(&t)).unwrap_or_default();
+        let curves = xml("Saves/curve/curve_data.xml").map(|t| barrel_game::curve::Curve::table(&t)).unwrap_or_default();
+        let steps = barrel_game::event::Player::escha(event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
+        let mut play = Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
+        let mut clock = barrel_game::clock::Clock::default();
+        while clock.time() + 1e-9 < event_at.unwrap_or(0.0) as f64 {
+            clock.ticks += 1;
+            play.tick();
+        }
+        let snap = play.stage.snapshot();
+        eprintln!("playing {frames} frames at {fps} Hz from {:.2} s, {} actors", clock.time(), actors.len());
+        player = Some((play, clock, snap.clone(), snap));
+    }
+    let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);
+
+    // Render each frame and read it back.
     let bytes = (size * size * 4) as u64;
     let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
+    for frame in 0..frames {
+    if let Some((play, clock, before, after)) = player.as_mut() {
+        if frame > 0 {
+            let f = clock.advance(1.0 / fps);
+            for _ in 0..f.ticks {
+                *before = std::mem::replace(after, {
+                    play.tick();
+                    play.stage.snapshot()
+                });
+            }
+            let shown = barrel_game::stage::Snapshot::blend(before, after, f.alpha);
+            let since = ((clock.ticks - start_ticks) as f32 + f.alpha) / clock.rate() as f32;
+            for a in &actors {
+                if let Some(&(pos, facing)) = shown.characters.get(&a.who) {
+                    instances[a.instance as usize].model =
+                        render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(facing), Vec3::from(pos)));
+                }
+                let base = instances[a.instance as usize].palette as usize;
+                let joints = pose(&a.skeleton, &a.anim, motion_clock(&a.anim, a.start + since, a.looping));
+                for (k, m) in joints.iter().enumerate() {
+                    if let Some(slot) = palette.get_mut(base + k) {
+                        *slot = render_space(*m);
+                    }
+                }
+            }
+            gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
+            gpu.upload(palette_mem, unsafe { std::slice::from_raw_parts(palette.as_ptr() as *const u8, palette.len() * size_of::<Mat4>()) })?;
+        }
+    }
     gpu.submit(pool, |cb| unsafe {
         let clear = [
             vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
@@ -1288,8 +1368,17 @@ fn main() -> Result<()> {
         std::ptr::copy_nonoverlapping(p, pixels.as_mut_ptr(), pixels.len());
         d.unmap_memory(rmem);
     }
-    std::fs::write(Path::new(&out_path), barrel_formats::png::encode_rgba(size, size, &pixels))?;
-    eprintln!("wrote {out_path}");
+    // One frame: OUT.png; several: OUT_000.png, OUT_001.png, ...
+    let path = if frames > 1 {
+        let p = Path::new(&out_path);
+        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("frame");
+        p.with_file_name(format!("{stem}_{frame:03}.png"))
+    } else {
+        Path::new(&out_path).to_path_buf()
+    };
+    std::fs::write(&path, barrel_formats::png::encode_rgba(size, size, &pixels))?;
+    eprintln!("wrote {}", path.display());
+    }
 
     // Tear down in reverse order.
     unsafe {
