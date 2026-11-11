@@ -134,14 +134,27 @@ has to be broken. The Ryza DX executable (not DRM-wrapped) shows how it reads th
   `0x14049b590`, otherwise the plain `.xml` with `0x14049b2c0`.
 - `0x140477010` checks the header: the first two u32s, big-endian; the first (the version)
   must be 1 or 2.
-- `0x1404770b0` unscrambles the data in place, in stages. A generator starts as
-  `{multiplier 0x3b9a73c9, state 0xcb53}`; `0x1404785b0` first works over the last 0x800
-  bytes (arguments 0x6d3f and 0x100). Then, for each big-endian 16-bit word of the data:
-  state = state × multiplier + 0x2f09, r = (state >> 16) & 0x7fff; if r mod 0x1462 ≥
-  0xa31 the word is XORed with r; then r is subtracted. After that the data must end,
-  past trailing zeros, in a 0xff byte, and the big-endian u32 just before the end seeds the
-  next stage (`0x140477298` on, with constants 0x1d, 0x13, 0xb, 0xa83b, 0xb11d, 0x88a5).
-  The rest, decompression included, is still to be read.
+- `0x1404770b0` unscrambles the data in place, after `0x140477580` has dropped the
+  16-byte header. Every stage draws from one generator: state = state × m + 0x2f09
+  (32-bit), giving (state >> 16) & 0x7fff, with m = 0x3b9a73c9 unless a stage changes it.
+  1. **Bit shuffle** of the last 0x800 bytes (`0x1404785b0`, seed 0x6d3f, in chunks of
+     0x100 bytes): for each chunk, list its bit numbers, draw them out one by one at
+     random index (value mod the number left), and swap the bits of each drawn pair
+     (bit n is bit n & 7 of byte n >> 3).
+  2. **Words** (seed 0xcb53): for each big-endian 16-bit word, draw r; if r mod 0x1462 ≥
+     0xa31 XOR the word with r; then subtract r.
+  3. The data now ends in a 0xff marker, then zeros, then 12 bytes: a sum check, a XOR
+     check and a key (big-endian u32s). **Bytes**: m becomes key + 0x3b9a73c9, and three
+     generators (states 0xa83b, 0xb11d, 0x88a5) take turns XORing bytes up to the marker
+     with the low byte of their draws, in runs of 0x1d, 0x13 and 0xb bytes, each run one
+     longer after every round of three.
+  4. **Checks**: over the big-endian u32s before the marker, 0 minus their sum and the XOR
+     of their complements must equal the two stored checks.
+  5. **Bit shuffle** of the first 0x800 bytes (seed 0x74b9, chunks of 0x80).
+  6. `0x1404755e0` decompresses what is left (still to be read).
+
+  `tools/xml_e.py` runs stages 1 to 5; on `freeachievement.xml.e` both checks match
+  (0x22b16218, 0x38aba7de), leaving 3,473 compressed bytes for a 23,144-byte table.
 
 ## What the games share
 
