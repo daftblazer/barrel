@@ -30,8 +30,8 @@ usage:
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a-scan DIR          read every animation in the containers
-  barrel pak-ls FILE.PAK       list a Sophie 2 archive's files
-  barrel pak-get FILE.PAK NAME OUT  extract one file from a Sophie 2 archive
+  barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
+  barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -325,7 +325,7 @@ fn xml(file: &Path) -> Result<()> {
 }
 
 fn open_pak(file: &Path) -> Result<(std::fs::File, barrel_formats::pak::Pak)> {
-    use barrel_formats::pak::{Pak, SOPHIE2_KEY};
+    use barrel_formats::pak::Pak;
     use std::io::Read;
     let mut f = std::fs::File::open(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut header = [0u8; 16];
@@ -334,7 +334,7 @@ fn open_pak(file: &Path) -> Result<(std::fs::File, barrel_formats::pak::Pak)> {
     let mut table = header.to_vec();
     table.resize(size, 0);
     f.read_exact(&mut table[16..]).map_err(|e| format!("{}: {e}", file.display()))?;
-    let pak = Pak::parse(&table, &SOPHIE2_KEY).map_err(|e| format!("{}: {e}", file.display()))?;
+    let (pak, _) = Pak::parse_any(&table).map_err(|e| format!("{}: {e}", file.display()))?;
     Ok((f, pak))
 }
 

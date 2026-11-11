@@ -16,6 +16,7 @@
 //! 32-byte key for the game, each repeating every 32 bytes. Entries whose key is all zero
 //! are stored plain.
 
+use crate::game::Game;
 use crate::{Error, u32_at};
 
 const ENTRY: usize = 184;
@@ -23,6 +24,15 @@ const MAX_ENTRIES: usize = 1 << 20;
 
 /// Atelier Sophie 2's fixed key.
 pub const SOPHIE2_KEY: [u8; 32] = *b"dGGKXLHLuCJwv8aBc3YQX6X6sREVPchs";
+
+/// Each game's fixed key. They are text; each shows in plain sight wherever a name's padding
+/// is zero, since only the two keys are left there.
+pub const KEYS: [(Game, [u8; 32]); 4] = [
+    (Game::Sophie2, SOPHIE2_KEY),
+    (Game::RyzaDx, *b"EGkUyYzPidcRx5yTecqk5AYJeSzzc5BR"),
+    (Game::Ryza2Dx, *b"ivZBFzn82RVuYnmgXfeFEgk33ALZcZDP"),
+    (Game::Ryza3Dx, *b"fyrixtT9AhA4v0cFahgMcgVwxFrry42A"),
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -79,6 +89,22 @@ impl Pak {
         Ok(Pak { entries, game_key: *game_key })
     }
 
+    /// Read the entry table with whichever game's key makes every name a path (each starts
+    /// with a backslash and is printable ASCII).
+    pub fn parse_any(table: &[u8]) -> Result<(Pak, Game), Error> {
+        for (game, key) in &KEYS {
+            if let Ok(pak) = Pak::parse(table, key) {
+                let paths = pak.entries.iter().all(|e| {
+                    e.name.starts_with('\\') && e.name.bytes().all(|b| b.is_ascii_graphic())
+                });
+                if paths {
+                    return Ok((pak, *game));
+                }
+            }
+        }
+        Err(Error::Corrupt("no known game's key gives readable names"))
+    }
+
     /// Unscramble `data`, which was read from `entry.offset + start` onward.
     pub fn unscramble(&self, entry: &Entry, start: u64, data: &mut [u8]) {
         if entry.key == [0; 32] {
@@ -116,6 +142,7 @@ mod tests {
         f.extend(body.iter().enumerate().map(|(p, &c)| c ^ key[p] ^ SOPHIE2_KEY[p]));
         assert_eq!(Pak::table_size(&f).unwrap(), 16 + ENTRY);
         let pak = Pak::parse(&f, &SOPHIE2_KEY).unwrap();
+        assert_eq!(Pak::parse_any(&f).unwrap().1, Game::Sophie2);
         let entry = &pak.entries[0];
         assert_eq!((entry.name.as_str(), entry.size, entry.offset), ("\\data\\x64\\a.g1t", 8, at));
         let mut data = f[at as usize + 4..].to_vec();

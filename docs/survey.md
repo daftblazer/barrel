@@ -97,8 +97,22 @@ embeds Squirrel, so their AI is either native code or events, still to be checke
 ### PAK archives (Sophie 2 and the Ryza trilogy)
 
 All four games use the same PAK format: header `{0x20000, count, 16, 13}`, then 184-byte
-entries with the layout given under Sophie 2. The second, fixed scramble over the names is
-present in all four, so one reader with a key for each game covers them.
+entries with the layout given under Sophie 2, and the same two-key scramble. Only the
+fixed key differs; each is a 32-character text that shows in plain sight wherever a name's
+padding is zero (Ryza's entry keys are 20 bytes followed by 12 zeros, which leaves the
+fixed key bare from byte 20 on):
+
+| Game | Fixed key | Names |
+|---|---|---|
+| Sophie 2 | `dGGKXLHLuCJwv8aBc3YQX6X6sREVPchs` | 13,764 |
+| Ryza DX | `EGkUyYzPidcRx5yTecqk5AYJeSzzc5BR` | 21,821 |
+| Ryza 2 DX | `ivZBFzn82RVuYnmgXfeFEgk33ALZcZDP` | 28,065 |
+| Ryza 3 DX | `fyrixtT9AhA4v0cFahgMcgVwxFrry42A` | 36,792 |
+
+Every name in every archive reads as a path (`\data`, `\saves`, `\event`, `\dlc`), and
+`barrel_formats::pak::Pak::parse_any` picks the key by that test. A Ryza event extracted
+this way (`\event\skill\skill_party_tao_99.ebd`) reads with Escha's event reader. The
+Ryza tables come as `.xml.e` next to `.xml`, a further encryption still to look at.
 
 ## What the games share
 
