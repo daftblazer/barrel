@@ -93,7 +93,22 @@ opening: the field and each character at its first placement. `EVENT_MM08_AS4_13
 3, `TOWN_04`) puts Escha and Logy on the grass by a curved stone wall and Threia and Reyfer a
 few metres off, all standing at ground height.
 
-Not yet: the event's camera (the `t` commands), characters' motions, waits taking time.
+**Idle poses.** Each character stands in its field wait motion: the `CharaBase.xml` row's
+`F_WAIT` names it (`ACT_DEF` for Escha), the file is `<FileHead>_<F_WAIT>.g1a` in the
+`<Motion1>` container (`PC20_BASE_MOTION1`), on the skeleton in the base model. In
+`EVENT_MM08_AS4_130` that gives Escha and Logy facing Threia and Reyfer across the town
+plaza, by the stone planter, all four standing naturally.
+
+**The event camera** is still open. `t20/0x10` (0x74100014, `CameraCFieldMap`) carries all
+of it in eleven operands, `3791 0 2250 286 448 9983 383 11369 0 150 0` at the start of that
+event, and its parts also come one by one (`t3` 3303, `t7` 2250, `t9` 0, `t11` 448, `t13` a
+position). Operands 5..7 are a point near the characters and 9 a duration in frames;
+reading the rest as yaw, distance 2250 and pitch, or as yaw, field of view 22.5° and
+distance 448, both put the camera inside scenery, so the angle convention or the point's
+role (target or eye) is not yet right. `barrel-view --event-camera` tries it; without it
+the view is placed on the characters.
+
+Not yet: the event camera, characters' motions during the event, waits taking time.
 
 ## Who handles them
 

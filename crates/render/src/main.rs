@@ -246,10 +246,11 @@ impl Scene {
         self.add_posed(geometry, transform, textures, None)
     }
 
-    /// Add a model whose texture pack starts at `base` in the scene's texture list.
-    fn add_with_pack(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, base: usize, count: usize) -> Result<()> {
+    /// Add a model whose texture pack starts at `base` in the scene's texture list,
+    /// skinned by `joints` if given.
+    fn add_with_pack(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, base: usize, count: usize, joints: Option<&[Mat4]>) -> Result<()> {
         let first = self.draws.len();
-        self.add_posed(geometry, transform, count, None)?;
+        self.add_posed(geometry, transform, count, joints)?;
         for d in &mut self.draws[first..] {
             d.texture += base;
         }
@@ -367,7 +368,19 @@ fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::An
 
 /// Place the characters an event adds, at their first position, in the scene. Returns the
 /// texture packs it used, appended after the `base` textures already in the scene.
-fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<Vec3>)> {
+/// An event's camera: where it looks, from how far, at which angles (degrees) and field of
+/// view. From `t20/0x10` (0x74100014): {yaw, 0, fov, pitch, distance, x, y, z, 0, frames, 0},
+/// angles in hundredths of a degree.
+#[derive(Clone, Copy, Debug)]
+struct EventCamera {
+    target: Vec3,
+    distance: f32,
+    yaw: f32,
+    pitch: f32,
+    fov: f32,
+}
+
+fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
@@ -378,10 +391,21 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
     // First placement of each character: q4 (ADDITION_EX: number, ..., x, y, z, ?, angle) or
     // s4 (POS_SET: number, 0, 0, 0, x, y, z).
     let mut first: Vec<(u32, [f32; 3], f32)> = Vec::new();
+    let mut camera = None;
     let ops = OperandTable::escha();
     for a in &event.actions {
         for c in ebd::decode(&a.words, &ops)? {
             let o = c.operands;
+            if c.word == 0x7410_0014 && o.len() >= 8 && camera.is_none() {
+                let i = |k: usize| o[k] as i32 as f32;
+                camera = Some(EventCamera {
+                    target: Vec3::new(i(5), i(6), i(7)),
+                    distance: i(4),
+                    yaw: i(0) / 100.0,
+                    pitch: i(3) / 100.0,
+                    fov: i(2) / 100.0,
+                });
+            }
             let place = match c.word {
                 0x7100_0004 if o.len() >= 9 => Some((o[0], [o[4], o[5], o[6]], o[8] as i32 as f32)),
                 0x7300_0004 if o.len() >= 7 => Some((o[0], [o[4], o[5], o[6]], 0.0)),
@@ -400,7 +424,8 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
     let mut placed = 0.0f32;
     for (who, pos, angle) in first {
         let Some(tag) = charas.children.get(who as usize).and_then(|c| c.attr("BaseTag")) else { continue };
-        let Some(model) = bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)).and_then(|b| b.attr("Model")) else { continue };
+        let Some(row) = bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)) else { continue };
+        let Some(model) = row.attr("Model") else { continue };
         let path = root.join("Data/x64/Character").join(format!("{model}.elixir.gz"));
         let Ok(bytes) = std::fs::read(&path) else { continue };
         let container = Elixir::parse(&bytes)?;
@@ -412,14 +437,27 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
         let g = G1m::parse(mesh)?;
         let Some(geometry) = g.geometry.as_ref() else { continue };
         let transform = Mat4::from_rotation_translation(glam::Quat::from_rotation_y(angle.to_radians()), Vec3::from(pos));
-        scene.add_with_pack(geometry, transform, tex_base, count)?;
+        // The field wait motion: <FileHead>_<F_WAIT>.g1a in the <Motion1> container, on the
+        // skeleton in the base model (<stem>.g1m).
+        let joints = (|| -> Option<Vec<Mat4>> {
+            let head = row.attr("FileHead")?;
+            let motion = row.attr("Motion1")?;
+            let wait = row.attr("F_WAIT")?;
+            let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
+            let mbytes = std::fs::read(root.join("Data/x64/Character").join(dir).join(format!("{motion}.elixir.gz"))).ok()?;
+            let motions = Elixir::parse(&mbytes).ok()?;
+            let anim = barrel_formats::g1a::parse(named(&motions, &format!("{head}_{wait}.g1a"))?).ok()?;
+            let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
+            Some(pose(&skeleton, &anim, 0.5))
+        })();
+        scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
         placed += 1.0;
         tex_base += count;
         packs.push(tex.to_vec());
     }
-    Ok((packs, (placed > 0.0).then(|| centre / placed)))
+    Ok((packs, (placed > 0.0).then(|| centre / placed), camera))
 }
 
 /// The entry of `container` named `name`, if any.
@@ -546,6 +584,7 @@ fn main() -> Result<()> {
     let mut alpha_cutoff = 0.3f32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
+    let mut use_event_camera = false;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -556,6 +595,7 @@ fn main() -> Result<()> {
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
+            "--event-camera" => use_event_camera = true,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -587,11 +627,13 @@ fn main() -> Result<()> {
     };
     let mut pack_bytes = vec![tex_bytes];
     let mut focus = None;
+    let mut event_camera: Option<EventCamera> = None;
     if let Some(e) = &event_spec {
         let base = G1t::parse(&pack_bytes[0])?.textures.len();
-        let (packs, centre) = event_characters(Path::new(e), &mut scene, base)?;
+        let (packs, centre, cam) = event_characters(Path::new(e), &mut scene, base)?;
         pack_bytes.extend(packs);
         focus = centre;
+        event_camera = cam;
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
@@ -830,8 +872,21 @@ fn main() -> Result<()> {
     let dist = radius / (fov * 0.5).sin() * 1.05;
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let dir = Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
-    let view = Mat4::look_at_rh(center + dir * dist, center, Vec3::Y);
-    let mut proj = Mat4::perspective_rh(fov, 1.0, dist * 0.01, dist * 4.0);
+    let (mut eye, mut target, mut fov, mut dist) = (center + dir * dist, center, fov, dist);
+    // The event camera's operands are not understood yet (see docs/events.md); opt in.
+    if let (Some(c), true) = (event_camera, use_event_camera) {
+        // Game space: yaw about y from -z, pitch up; then mirror x like the vertices.
+        let (yw, pt) = (c.yaw.to_radians(), c.pitch.to_radians());
+        let back = Vec3::new(yw.sin() * pt.cos(), pt.sin(), -yw.cos() * pt.cos());
+        let mirror = Vec3::new(-1.0, 1.0, 1.0);
+        target = c.target * mirror;
+        eye = (c.target + back * c.distance) * mirror;
+        fov = c.fov.clamp(10.0, 120.0).to_radians();
+        dist = c.distance;
+        eprintln!("event camera: target {:?}, distance {}, yaw {}, pitch {}, fov {}", c.target, c.distance, c.yaw, c.pitch, c.fov);
+    }
+    let view = Mat4::look_at_rh(eye, target, Vec3::Y);
+    let mut proj = Mat4::perspective_rh(fov, 1.0, dist * 0.01, dist * 20.0);
     proj.y_axis.y *= -1.0; // Vulkan's y points down.
     let mvp = proj * view;
 
