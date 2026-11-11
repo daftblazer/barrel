@@ -20,6 +20,13 @@ pub mod stat {
     pub const COUNT: usize = 35;
 }
 
+/// The first part of what an equipped item adds to one of the first nine stats
+/// (`0x14029dda0`): the item's own stat (the item table's equipment columns) plus its traits'
+/// shares, scaled by its quality: quality 50 gives the stat as it is, 100 gives 125%.
+pub fn equipment_stat(item_stat: i32, traits: i32, quality: f32) -> i32 {
+    ((item_stat + traits) as f32 * ((quality * 0.5 + 75.0) / 100.0)) as i32
+}
+
 /// A skill's MP cost (`0x14015f6a0 (skill, CONSUME_MP, 0)`): the sum, over its effect slots
 /// with `ACT_CONSUME_MP` (11), of a number rolled from the slot's minimum to its maximum.
 pub fn mp_cost(slots: &[(u32, i32, i32)], rng: &mut crate::rng::Rng) -> i32 {
@@ -278,6 +285,13 @@ mod tests {
         assert_eq!(t.entries, [(2, 0), (3, 0), (1, 180), (4, 380)]);
         assert_eq!(knockback(50, 1, 0), 50);
         assert_eq!(knockback(50, 2, 20), 20);
+    }
+
+    #[test]
+    fn equipment() {
+        assert_eq!(equipment_stat(20, 0, 50.0), 20);
+        assert_eq!(equipment_stat(20, 4, 100.0), 30);
+        assert_eq!(equipment_stat(7, 0, 0.0), 5);
     }
 
     #[test]

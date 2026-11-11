@@ -714,6 +714,29 @@ the row before the block; the game presumably never asks for it. Awin has the mo
 at level 99), Threia the most MP (290), Lucille is the fastest (208); Escha starts at 18 HP,
 27 MP, 4 attack, 3 defence, 6 speed.
 
+### A party member's stats (executable)
+
+A party member's record keeps three arrays of 32 stats: the base (+0x14, from the growth table
+above), a bonus (+0x94) and the total the battle uses (+0x114). `0x14032de50` works the total
+out:
+
+1. total = base + bonus, stat by stat;
+2. for each of the 4 equipment slots (stride 0x24 from +0x194; the item number at +0x196,
+   0xffff for none), every stat gets `0x14029dda0 (slot, stat, base)` added. For the first
+   nine stats that starts with the item's own value (the item table's 0x1c0-byte rows,
+   `row + 0x78 + 4 × stat` when the row's kind at +0x28 is 2) plus what each of the slot's 4
+   traits (+0x10) adds (`0x1402a20f0`), scaled by quality (the float at slot +4):
+   `trunc((item + traits) × (quality × 0.5 + 75) / 100)`, so quality 50 gives the item's value
+   and 100 gives 125%. More shares follow from the slot's entries at +8, indexes into the
+   400 potentials (`0x58`-byte rows), not read yet;
+3. for one party member (the one `0x14035ebb0` names), `0x14002f2f0 (stat + 4)` is added to
+   each stat (a party-wide bonus, by the look of it);
+4. three more passes (`0x14032e080`, `0x14032e580`, `0x14032e670`), not read yet;
+5. every stat is kept within the limits of a table at `0x140935180` (999 for most): at least 1
+   for the first five, at least minus the limit for the others.
+
+`barrel_game::battle::equipment_stat` is step 2's formula.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
