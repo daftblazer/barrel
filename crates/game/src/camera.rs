@@ -133,6 +133,122 @@ pub fn eased(elapsed: f32, seconds: f32, ease: i32) -> f32 {
     u * (1.0 + ease as f32 / 100.0 * (1.0 - u))
 }
 
+/// A move under way: a camera point or a character going from where it was to a resolved
+/// point, one frame at a time, as the game's move objects do (their update is vtable slot 1:
+/// `0x1402f3530` for [`Move::Straight`], `0x1402f3a70` for [`Move::Speed`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mover {
+    from: [f32; 3],
+    to: [f32; 3],
+    kind: MoverKind,
+    /// Seconds left (the move's +0x28).
+    left: f32,
+    position: [f32; 3],
+    /// The extra operand of `s18`: 1 turns the mover to face the way it goes (on the ground).
+    face: u32,
+    facing: Option<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum MoverKind {
+    Straight { seconds: f32, ease: i32 },
+    Speed { velocity: [f32; 3], accel: [f32; 3] },
+}
+
+impl Mover {
+    /// A mover from `from` to `to` (the move's position, already resolved). `None` for the
+    /// types not read yet (jumps and types 1 and 2).
+    pub fn new(from: [f32; 3], to: [f32; 3], movement: &Move, face: u32) -> Option<Mover> {
+        let (kind, left) = match *movement {
+            Move::Straight { seconds, ease, .. } => (MoverKind::Straight { seconds, ease }, seconds),
+            Move::Speed { speed, accel, .. } => {
+                // 0x1402f3720: the velocity is the direction times the speed, the time the
+                // distance over the speed. The extra vector is turned to the direction of travel
+                // (yaw from the ground-plane direction) and taken off the velocity every second;
+                // half of it times the time is added at the start, so the move still ends on
+                // the point, bowed.
+                let d = sub(to, from);
+                let distance = len(d);
+                if distance == 0.0 {
+                    return Some(Mover::arrived(from, to, face));
+                }
+                let speed = if speed == 0.0 { 1.0 } else { speed };
+                let dir = d.map(|v| v / distance);
+                let yaw = if d[0].abs() < 0.01 && d[2].abs() < 0.01 { 0.0 } else { d[0].atan2(d[2]) };
+                let (s, c) = yaw.sin_cos();
+                let [x, y, z] = accel;
+                let accel = [x * c + z * s, y, z * c - x * s];
+                let t = distance / speed.abs();
+                let velocity = std::array::from_fn(|i| dir[i] * speed + 0.5 * t * accel[i]);
+                (MoverKind::Speed { velocity, accel }, t)
+            }
+            _ => return None,
+        };
+        if left <= 0.0 {
+            // The game's move is never started then; snapping to the end is assumed here.
+            return Some(Mover::arrived(from, to, face));
+        }
+        Some(Mover { from, to, kind, left, position: from, face, facing: None })
+    }
+
+    fn arrived(from: [f32; 3], to: [f32; 3], face: u32) -> Mover {
+        Mover { from, to, kind: MoverKind::Straight { seconds: 0.0, ease: 0 }, left: 0.0, position: to, face, facing: None }
+    }
+
+    pub fn position(&self) -> [f32; 3] {
+        self.position
+    }
+
+    /// The facing (radians about the vertical axis, 0 towards +z) from the last frame's
+    /// travel, when the mover turns (`face` 1) and moved far enough on the ground
+    /// (`0x1402f21a0`: more than 0.01 along x or z).
+    pub fn facing(&self) -> Option<f32> {
+        self.facing
+    }
+
+    pub fn done(&self) -> bool {
+        self.left <= 0.0
+    }
+
+    /// Advances by `dt` seconds: the time left goes down first, then the point moves; once
+    /// the time is used up the point is the end.
+    pub fn step(&mut self, dt: f32) {
+        if self.done() {
+            return;
+        }
+        let before = self.position;
+        self.left -= dt;
+        match &mut self.kind {
+            MoverKind::Straight { seconds, ease } => {
+                let f = eased(*seconds - self.left, *seconds, *ease);
+                self.position = std::array::from_fn(|i| self.from[i] + (self.to[i] - self.from[i]) * f);
+            }
+            MoverKind::Speed { velocity, accel } => {
+                for i in 0..3 {
+                    self.position[i] += velocity[i] * dt;
+                    velocity[i] -= accel[i] * dt;
+                }
+            }
+        }
+        if self.left <= 0.0 {
+            self.position = self.to;
+            self.left = 0.0;
+        }
+        let d = sub(self.position, before);
+        if self.face == 1 && (d[0].abs() >= 0.01 || d[2].abs() >= 0.01) {
+            self.facing = Some(d[0].atan2(d[2]));
+        }
+    }
+}
+
+fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn len(a: [f32; 3]) -> f32 {
+    (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
+}
+
 /// Which of the camera's two points a command changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Part {
@@ -202,6 +318,35 @@ mod tests {
         assert!((q[0] - 310.0).abs() < 1e-3 && (q[1] - 100.0).abs() < 1e-3 && q[2].abs() < 1e-3);
         let bone = Position { anchor: Anchor::Thing { kind: 5, id: 10000, point: 14 }, ..p };
         assert_eq!(bone.resolve(Some(([10.0, 0.0, 0.0], 1.0))), [10.0, 100.0, 300.0]);
+    }
+
+    #[test]
+    fn movers_arrive() {
+        let to = Position { anchor: Anchor::World, offset: [300.0, 0.0, 400.0] };
+        // A walk of 500 units at 150 a second takes 10/3 s, facing the way it goes.
+        let mut m = Mover::new([0.0; 3], [300.0, 0.0, 400.0], &Move::Speed { to, speed: 150.0, accel: [0.0; 3] }, 1).unwrap();
+        for _ in 0..100 {
+            m.step(1.0 / 30.0);
+        }
+        assert!(!m.done());
+        let p = m.position();
+        assert!((p[0] - 300.0 * 100.0 / 30.0 * 150.0 / 500.0).abs() < 0.1, "{p:?}");
+        assert!((m.facing().unwrap() - 0.6435).abs() < 1e-3);
+        m.step(1.0 / 30.0);
+        assert!(m.done());
+        assert_eq!(m.position(), [300.0, 0.0, 400.0]);
+        // A bowed walk ends on the point too.
+        let mut b = Mover::new([0.0; 3], [0.0, 0.0, 600.0], &Move::Speed { to, speed: 150.0, accel: [0.0, 100.0, 0.0] }, 0).unwrap();
+        let mut top: f32 = 0.0;
+        while !b.done() {
+            b.step(1.0 / 30.0);
+            top = top.max(b.position()[1]);
+        }
+        assert!(top > 150.0 && b.position() == [0.0, 0.0, 600.0]);
+        // An eased camera move is three quarters there at half time.
+        let mut e = Mover::new([0.0; 3], [100.0, 0.0, 0.0], &Move::Straight { to, seconds: 1.0, ease: 100 }, 0).unwrap();
+        e.step(0.5);
+        assert!((e.position()[0] - 75.0).abs() < 1e-3);
     }
 
     #[test]

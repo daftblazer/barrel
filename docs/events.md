@@ -259,7 +259,10 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
   position at +0x230), which builds a move from it ("Event positions and moves" above): in
   `EVENT_MM01_OP1_111` Escha walks to (1036, 9, 1587) at 150 units a second. The extra
   operand (1 in 745 uses, 0 in 736, 2 in 236) goes to the move's +0x38, which the moves'
-  updates check; what it switches (facing the way of travel, perhaps) is not read yet.
+  updates check: 1 turns the character to face the way it moved that frame, on the ground
+  (yaw = atan2(dx, dz), 0 towards +z; not when it moved less than 0.01 along both x and z),
+  and 2 also tilts it to the slope (`0x1402f21a0`). `barrel_game::camera::Mover` runs type 4
+  and type 0 moves frame by frame this way.
   `play-event` prints these moves.
 
 **Event positions and moves.** Many commands give a point as six operands
@@ -296,7 +299,11 @@ position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand,
 Type 0 heads for the position at `speed` field units a second (150, a walk, is the
 commonest in `s18`; 120 to 140 for the slower walkers): its velocity is the unit direction
 times the speed, plus the three extra values turned to the direction of travel (a push or
-acceleration; mostly zero). Type 3 is a jump: the move keeps a gravity of 9.8 (+0x8c) and
+acceleration; mostly zero). Its time is the distance over the speed; the extra vector is taken
+off the velocity every second, and half of it times the time is added at the start, so
+the move bows (up, or to a side) and still ends on the point (`0x1402f3720`, update
+`0x1402f3a70`). Every move's update takes the frame time off the time left first, then
+moves the point, and puts it on the end once the time is used up. Type 3 is a jump: the move keeps a gravity of 9.8 (+0x8c) and
 `0x1402f28f0` works out the velocity from the height; the first operand is not named yet.
 
 Type 4 goes straight from where the thing is when the command runs to the position, in the
