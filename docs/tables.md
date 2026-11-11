@@ -512,15 +512,20 @@ attack (what fills it, and the quality bonus of flag 3, are not read yet)
 
 ### The calendar
 
-Days are numbered from 1 in 30-day months and 360-day years, day 1 being January 1st of
-year 1, as the data shows: the nine assignment cards of `subject/SubjectCardData.xml` are
-four-month periods ("Year 1 April to July", "Year 1 August to November", "Year 1 December to
-March", ... "Year 3 December to March"), and every `StartDate` and `EndDate` of
-`quest/QuestAlc.xml` is a period's first day (91, 211, 331, ..., 1171: April 1st year 1, then
-every 120 days) or 1530 (the post-game, March 30th year 5). The executable's date code (the
-`EVENT_CONDITION_DATE_*` checks, the sleep, synthesis and world-map day triggers
-`EVENT_TRIGGER_DATE_*_IS_OVER`) is not read yet (`barrel_game::calendar`; `barrel quests`
-shows the dates).
+The date is one integer, the global at `0x1410a42cc` (read by `0x14035c050`; English Escha
+executable), counting days from 0 in 30-day months and 360-day years: `v = 360 × (calendar
+year − 1) + 30 × (month − 1) + (day − 1)`. The game shows it in school years from April
+(`0x1402f0300`: year `v / 360 + 1` for April to December, `v / 360` for January to March;
+month `v / 30 mod 12 + 1`, day `v mod 30 + 1`) and builds it back with `0x1402f02d0 (school
+year, month, day)` = `(year' × 12 + month) × 30 + day − 391`, `year'` being the school year
+plus one for January to March. April 1st of school year 1 is 90.
+
+The nine assignment cards of `subject/SubjectCardData.xml` are four-month periods from there
+("Year 1 April to July", "Year 1 August to November", "Year 1 December to March", ... "Year 3
+December to March"). Every `StartDate` and `EndDate` of `quest/QuestAlc.xml` is 91, 211, 331,
+..., 1171 or 1530: one more than a period's first day (April 2nd, ...; how requests compare
+them with the date is not read). `barrel_game::calendar` follows this, and `barrel quests`
+shows the dates.
 
 ### Skill targets (executable)
 

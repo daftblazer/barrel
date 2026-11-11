@@ -646,7 +646,7 @@ fn quests(install: &Path) -> Result<()> {
         for r in rs.iter().take(5) {
             let prizes: Vec<String> = r.prizes.iter().map(|(t, n)| format!("{t} x{n}")).collect();
             let date = |n: i32| {
-                let d = barrel_game::calendar::Date::of(n.max(1) as u32);
+                let d = barrel_game::calendar::Date::of(n.max(0) as u32);
                 format!("Y{} {}/{}", d.year, d.month, d.day)
             };
             println!("  {:<32} {:>6.2} pt  days {}-{} ({} to {})  {}", r.target, r.points, r.from_day, r.to_day, date(r.from_day), date(r.to_day), prizes.join(", "));
