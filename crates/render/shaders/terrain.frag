@@ -2,7 +2,7 @@
 // Field terrain: two blend maps over the whole field weight six tiled ground layers.
 layout(set = 0, binding = 0) uniform sampler2D blend[2];
 layout(set = 0, binding = 1) uniform sampler2D layers[6];
-layout(push_constant) uniform Push { mat4 mvp; vec4 params; vec4 scale_a; vec4 scale_b; } pc;
+layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; } pc;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv; // 0..1 across the field
 layout(location = 0) out vec4 color;

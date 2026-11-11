@@ -93,3 +93,16 @@ interactive camera, and fields.
 
 Every run is one frame and exits; set `BARREL_VALIDATION=1` to run with the Khronos
 validation layer, which Escha's model and an item pass without errors.
+
+**Instances.** Every draw names an instance: a model matrix in a storage buffer (set 1,
+binding 0) that `model.vert` reads by the draw's instance number (a push constant at offset
+112, after the camera's `view_proj` and the shared parameters). Instance 0 is the identity,
+for geometry baked in place (the field's objects and terrain); each event character gets an
+instance of its own and keeps its vertices in model space, so it moves by changing its
+matrix, not its vertices. The vertices are mirrored in x as they are built, so a game-space
+placement T becomes S·T·S (S the x mirror) in render space, still a rotation and a
+translation, which is why the shader turns normals by the matrix's upper 3×3. This is the
+base for playing events in time: per frame, the blended stage snapshot
+(`docs/engine.md`, "Timing") only rewrites the characters' matrices. Skinning is still done
+on the CPU when the scene is built (one pose per character), to move to the GPU with the
+frame loop.

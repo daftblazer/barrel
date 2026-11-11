@@ -24,7 +24,9 @@ const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
 const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
 const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
-const PUSH_SIZE: u32 = 112;
+/// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
+const PUSH_SIZE: u32 = 116;
+const PUSH_INSTANCE: u32 = 112;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 
@@ -54,6 +56,8 @@ struct Draw {
     texture: usize,
     /// A texture to lay over `texture` by its alpha (the iris over the eye white).
     overlay: Option<usize>,
+    /// Which of [`Scene::instances`] places it.
+    instance: u32,
 }
 
 struct Gpu {
@@ -236,6 +240,10 @@ struct Scene {
     /// Per vertex layout, offsets to add to the next model's positions before skinning
     /// (its blended facial morphs).
     morph: std::collections::HashMap<usize, Vec<[f32; 3]>>,
+    /// Model matrices in render space (x mirrored), one per movable model; 0 is the identity,
+    /// for geometry baked in place. The renderer uploads them to a storage buffer the vertex
+    /// shader reads, so a model moves by changing its matrix, not its vertices.
+    instances: Vec<Mat4>,
 }
 
 impl Scene {
@@ -246,6 +254,7 @@ impl Scene {
             indices: Vec::new(),
             draws: Vec::new(),
             terrain: None,
+            instances: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
         }
@@ -253,23 +262,32 @@ impl Scene {
 
     /// Add a model's textured submeshes, placed by `transform`.
     fn add(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize) -> Result<()> {
-        self.add_posed(geometry, transform, textures, None)
+        self.add_posed(geometry, transform, textures, None, 0)
     }
 
-    /// Add a model whose texture pack starts at `base` in the scene's texture list,
-    /// skinned by `joints` if given.
-    fn add_with_pack(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, base: usize, count: usize, joints: Option<&[Mat4]>) -> Result<()> {
+    /// A new instance placed by `transform` (game space); returns its number.
+    fn instance(&mut self, transform: Mat4) -> u32 {
+        self.instances.push(render_space(transform));
+        (self.instances.len() - 1) as u32
+    }
+
+    /// Add a movable model (its own instance, placed by `transform`) whose texture pack starts
+    /// at `base` in the scene's texture list, skinned by `joints` if given. Returns its instance.
+    fn add_with_pack(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, base: usize, count: usize, joints: Option<&[Mat4]>) -> Result<u32> {
         let first = self.draws.len();
-        self.add_posed(geometry, transform, count, joints)?;
+        let instance = self.instance(transform);
+        self.add_posed(geometry, Mat4::IDENTITY, count, joints, instance)?;
         for d in &mut self.draws[first..] {
             d.texture += base;
             d.overlay = d.overlay.map(|o| o + base);
         }
-        Ok(())
+        Ok(instance)
     }
 
     /// Add a model, skinned by `joints` (one matrix per joint, bind pose to posed) if given.
-    fn add_posed(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize, joints: Option<&[Mat4]>) -> Result<()> {
+    /// `transform` is baked into the vertices; `instance` places them at draw time.
+    fn add_posed(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize, joints: Option<&[Mat4]>, instance: u32) -> Result<()> {
+        let placed = self.instances[instance as usize];
         let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
         for s in &geometry.submeshes {
             let mesh = geometry.simple_mesh(s)?;
@@ -303,8 +321,9 @@ impl Scene {
                 }
                 let p = transform.transform_point3(pos) * mirror;
                 let n = normals.transform_vector3(nrm).normalize_or_zero() * mirror;
-                self.lo = self.lo.min(p);
-                self.hi = self.hi.max(p);
+                let w = placed.transform_point3(p);
+                self.lo = self.lo.min(w);
+                self.hi = self.hi.max(w);
                 self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i] });
             }
             let first_index = self.indices.len() as u32;
@@ -322,7 +341,7 @@ impl Scene {
             let overlay = material
                 .filter(|m| m.textures.len() >= 4 && m.textures.iter().all(|t| t.subtype != 1))
                 .map(|m| (m.textures[1].index as usize).min(textures.saturating_sub(1)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance });
         }
         Ok(())
     }
@@ -356,6 +375,13 @@ impl Scene {
         }
         (first_index, self.indices.len() as u32 - first_index)
     }
+}
+
+/// A game-space placement as a render-space matrix: the vertices are mirrored in x as they are
+/// built, so a placement T becomes S·T·S with S the x mirror (a rotation stays a rotation).
+fn render_space(transform: Mat4) -> Mat4 {
+    let s = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
+    s * transform * s
 }
 
 /// Each joint's skinning matrix for an animation at `time`: its posed world transform times
@@ -820,7 +846,7 @@ fn main() -> Result<()> {
         } else if !face_specs.is_empty() {
             return Err("--face needs --morph".into());
         }
-        scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref())?;
+        scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref(), 0)?;
         scene.morph.clear();
         tex_bytes
     };
@@ -848,7 +874,7 @@ fn main() -> Result<()> {
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
-    let Scene { vertices, indices, mut draws, terrain, lo, hi, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrain, lo, hi, instances, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     for draw in &mut draws {
@@ -949,6 +975,30 @@ fn main() -> Result<()> {
         unsafe { d.update_descriptor_sets(&[write], &[]) };
     }
 
+    // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
+    // draw's instance number (set 1, bound once for every pipeline).
+    let ibytes_inst = unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Mat4>()) };
+    let (instance_buf, instance_mem) = gpu.buffer(ibytes_inst.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
+    gpu.upload(instance_mem, ibytes_inst)?;
+    let inst_binding = [vk::DescriptorSetLayoutBinding::default()
+        .binding(0)
+        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::VERTEX)];
+    let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
+    let inst_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 1 }];
+    let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
+    let inst_layouts = [instance_layout];
+    let instance_set =
+        unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))?[0] };
+    let inst_info = [vk::DescriptorBufferInfo::default().buffer(instance_buf).offset(0).range(vk::WHOLE_SIZE)];
+    unsafe {
+        d.update_descriptor_sets(
+            &[vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&inst_info)],
+            &[],
+        )
+    };
+
     // Offscreen target.
     let extent = vk::Extent3D { width: size, height: size, depth: 1 };
     let target_info = |format, usage| {
@@ -1040,7 +1090,7 @@ fn main() -> Result<()> {
     let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA)];
     let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att);
     let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
-    let set_layouts = [set_layout];
+    let set_layouts = [set_layout, instance_layout];
     let pipeline_layout = unsafe {
         d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
     };
@@ -1091,6 +1141,7 @@ fn main() -> Result<()> {
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 }];
         let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&sizes), None)? };
         let tl = [tlayout];
+        let tpl_layouts = [tlayout, instance_layout];
         let tset = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
         let infos: Vec<vk::DescriptorImageInfo> = tex
             .iter()
@@ -1101,7 +1152,7 @@ fn main() -> Result<()> {
             vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
         ];
         unsafe { d.update_descriptor_sets(&writes, &[]) };
-        let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tl).push_constant_ranges(&push), None)? };
+        let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
         let tfs = module(TERRAIN_FRAG)?;
         let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
         let info = pipeline_info.stages(&tstages).layout(tpl);
@@ -1157,7 +1208,8 @@ fn main() -> Result<()> {
         d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-        let mut push = [0f32; 28];
+        // view_proj, params, the terrain's scales; the instance number goes in per draw.
+        let mut push = [0f32; 29];
         push[..16].copy_from_slice(&mvp.to_cols_array());
         push[16] = alpha_cutoff;
         if let (Some(t), Some((_, _, _, tset, tpl, _, tpipe))) = (&terrain, &terrain_gpu) {
@@ -1165,13 +1217,15 @@ fn main() -> Result<()> {
             push[20..26].copy_from_slice(&t.scales);
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, *tpipe);
             d.cmd_push_constants(cb, *tpl, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, *tpl, 0, &[*tset], &[]);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, *tpl, 0, &[*tset, instance_set], &[]);
             d.cmd_draw_indexed(cb, t.index_count, 1, t.first_index, 0, 0);
         }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
         let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
+        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
         for draw in &draws {
+            d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &draw.instance.to_le_bytes());
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
         }
