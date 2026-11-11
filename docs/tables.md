@@ -178,7 +178,12 @@ Three cases read so far:
 - Type 0, Conversion: param 1 is added to the selected element's point count, up to 5.
 
 `barrel_game::synthesis` follows these rules (materials, Conversion, Reset Attribute, Full
-Power), with the cauldron's state kept in its own terms rather than the game's layout.
+Power), with the cauldron's state kept in its own terms rather than the game's layout. A
+material's element value is `itemData`'s `value` (the loaded row keeps it at +0x48, getter
+`0x1402a1530`). `barrel synth INSTALL ITEM MATERIAL...` runs one with item numbers and
+prints each line's effect (names from `Saves_EN/item/item_effect.xml`, whose rows are the
+effect numbers): Craft from Buried Bomb, Bubbling Water and Dragon Core reaches Fire 60,
+Water 40, Wind 20, Earth 40, giving Embedding Thorns, Bursting and Phy Damage L.
 
 **The synthesis state** (0x4e0 bytes, one per step):
 

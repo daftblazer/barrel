@@ -31,6 +31,7 @@ usage:
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a-scan DIR          read every animation in the containers
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
+  barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
 
 unsafe extern "C" {
@@ -63,6 +64,9 @@ fn main() -> ExitCode {
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["recipes", exe] => recipes(Path::new(exe)),
+        ["synth", install, item, materials @ ..] if !materials.is_empty() => {
+            synth(Path::new(install), item, materials)
+        }
         ["play-event", file] => play_event(Path::new(file), None),
         ["play-event", file, lang] => play_event(Path::new(file), Some(lang)),
         _ => {
@@ -359,6 +363,55 @@ fn recipes(exe: &Path) -> Result<()> {
             slots.join(", "),
             lines.join(" ")
         );
+    }
+    Ok(())
+}
+
+fn table_rows(path: &Path) -> Result<Vec<barrel_formats::table::Element>> {
+    let root = barrel_formats::table::parse(&read(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(root.children)
+}
+
+fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
+    use barrel_formats::recipe;
+    use barrel_game::synthesis::{Material, Synthesis};
+    let number = |s: &str| s.parse::<usize>().map_err(|_| format!("not an item number: {s}"));
+    // The install has the game for each language plus a launcher and a settings tool; use
+    // the first that holds the table.
+    let mut exes: Vec<PathBuf> = std::fs::read_dir(install)
+        .map_err(|e| format!("{}: {e}", install.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "exe"))
+        .collect();
+    exes.sort();
+    let mut recipes = None;
+    for exe in &exes {
+        let data = read(exe)?;
+        if let Some(at) = recipe::find(&data, ESCHA_FIRST_RECIPE) {
+            recipes = Some(recipe::parse(&data, at).map_err(|e| format!("{}: recipes: {e}", exe.display()))?);
+            break;
+        }
+    }
+    let recipes = recipes.ok_or("no executable in the install folder holds a recipe table")?;
+    let item = number(item)?;
+    let recipe = recipes.iter().find(|r| r.item as usize == item).ok_or("that item has no recipe")?;
+    let items = table_rows(&install.join("Saves_EN/item/itemData.xml"))?;
+    let effects = table_rows(&install.join("Saves_EN/item/item_effect.xml"))?;
+    let name = |rows: &[barrel_formats::table::Element], n: usize, attr: &str| {
+        rows.get(n).and_then(|r| r.attr(attr)).unwrap_or("?").to_string()
+    };
+    println!("{} ({item})", name(&items, item, "ItemName"));
+    let mut s = Synthesis::new();
+    for m in materials {
+        let m = number(m)?;
+        let row = items.get(m).ok_or_else(|| format!("no item {m}"))?;
+        s.add(&Material::from_item(row));
+        println!("  + {} ({m}): attributes {:?}, effect value {}", name(&items, m, "ItemName"), s.attributes, s.effect_value());
+    }
+    for (k, (element, e)) in ["Fire", "Water", "Wind", "Earth"].iter().zip(s.effects(&recipe.lines)).enumerate() {
+        let what = e.map_or("-".to_string(), |e| name(&effects, e as usize, "ItemEffectName"));
+        println!("  {element:5} {:>3}: {what}", s.attributes[k] as i32);
     }
     Ok(())
 }

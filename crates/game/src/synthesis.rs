@@ -23,6 +23,19 @@ pub struct Material {
     pub effect: f32,
 }
 
+impl Material {
+    /// A material as an `itemData.xml` row describes it, before quality or traits change
+    /// it. Missing or unreadable numbers count as 0.
+    pub fn from_item(row: &barrel_formats::table::Element) -> Material {
+        let num = |name: &str| row.attr(name).and_then(|v| v.trim().parse::<i32>().ok()).unwrap_or(0);
+        Material {
+            elements: ["fire", "water", "wind", "soil"].map(|e| num(e) > 0),
+            element_value: num("value"),
+            effect: num("effect") as f32,
+        }
+    }
+}
+
 /// The skills whose effect on the state is known.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Skill {
@@ -143,6 +156,16 @@ mod tests {
         let big = Material { element_value: 2000, ..EARTH };
         s.add(&big);
         assert_eq!(s.attributes[3], MAX_ATTRIBUTE);
+    }
+
+    #[test]
+    fn from_item_row() {
+        let root = barrel_formats::table::parse_str(
+            r#"<Root><itemData effect="50" attribute="ELEMENT_FIRE" value="10" fire="1" water="0" wind="2" soil="0"/></Root>"#,
+        )
+        .unwrap();
+        let m = Material::from_item(&root.children[0]);
+        assert_eq!(m, Material { elements: [true, false, true, false], element_value: 10, effect: 50.0 });
     }
 
     #[test]
