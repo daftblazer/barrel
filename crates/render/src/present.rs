@@ -60,6 +60,25 @@ impl Presenter {
         if !unsafe { surface_fn.get_physical_device_surface_support(gpu.physical, gpu.queue_family, surface)? } {
             return Err("the graphics queue cannot present to this window".into());
         }
+        let swapchain_fn = ash::khr::swapchain::Device::new(&gpu.instance, &gpu.device);
+        let mut p = Presenter {
+            surface_fn,
+            swapchain_fn,
+            surface,
+            swapchain: vk::SwapchainKHR::null(),
+            format: vk::Format::UNDEFINED,
+            extent: vk::Extent2D { width, height },
+            images: Vec::new(),
+            views: Vec::new(),
+        };
+        p.rebuild(gpu, width, height)?;
+        Ok(p)
+    }
+
+    /// (Re)makes the swapchain at the window's size (`width` × `height` when the surface
+    /// leaves it to us), replacing the old one; after a resize, or when it went stale.
+    pub fn rebuild(&mut self, gpu: &Gpu, width: u32, height: u32) -> Result<()> {
+        let (surface_fn, surface) = (&self.surface_fn, self.surface);
         let caps = unsafe { surface_fn.get_physical_device_surface_capabilities(gpu.physical, surface)? };
         let formats = unsafe { surface_fn.get_physical_device_surface_formats(gpu.physical, surface)? };
         // The same 8-bit sRGB-encoded output as the offscreen frames.
@@ -81,9 +100,9 @@ impl Presenter {
         if caps.max_image_count > 0 {
             count = count.min(caps.max_image_count);
         }
-        let swapchain_fn = ash::khr::swapchain::Device::new(&gpu.instance, &gpu.device);
+        let old = self.swapchain;
         let swapchain = unsafe {
-            swapchain_fn.create_swapchain(
+            self.swapchain_fn.create_swapchain(
                 &vk::SwapchainCreateInfoKHR::default()
                     .surface(surface)
                     .min_image_count(count)
@@ -97,11 +116,21 @@ impl Presenter {
                     .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
                     // FIFO: vsync, always available; the display paces the loop.
                     .present_mode(vk::PresentModeKHR::FIFO)
-                    .clipped(true),
+                    .clipped(true)
+                    .old_swapchain(old),
                 None,
             )?
         };
-        let images = unsafe { swapchain_fn.get_swapchain_images(swapchain)? };
+        unsafe {
+            gpu.device.device_wait_idle()?;
+            for v in self.views.drain(..) {
+                gpu.device.destroy_image_view(v, None);
+            }
+            if old != vk::SwapchainKHR::null() {
+                self.swapchain_fn.destroy_swapchain(old, None);
+            }
+        }
+        let images = unsafe { self.swapchain_fn.get_swapchain_images(swapchain)? };
         let views = images
             .iter()
             .map(|&image| unsafe {
@@ -115,25 +144,34 @@ impl Presenter {
                 )
             })
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(Presenter { surface_fn, swapchain_fn, surface, swapchain, format: chosen.format, extent, images, views })
+        (self.swapchain, self.format, self.extent, self.images, self.views) = (swapchain, chosen.format, extent, images, views);
+        Ok(())
     }
 
-    /// The next image to draw into; `ready` is signalled when it may be written.
-    pub fn acquire(&self, ready: vk::Semaphore) -> Result<u32> {
-        let (index, _) = unsafe { self.swapchain_fn.acquire_next_image(self.swapchain, u64::MAX, ready, vk::Fence::null())? };
-        Ok(index)
+    /// The next image to draw into (`ready` is signalled when it may be written), or `None`
+    /// when the swapchain no longer fits the window and must be rebuilt.
+    pub fn acquire(&self, ready: vk::Semaphore) -> Result<Option<u32>> {
+        match unsafe { self.swapchain_fn.acquire_next_image(self.swapchain, u64::MAX, ready, vk::Fence::null()) } {
+            Ok((index, _)) => Ok(Some(index)),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
-    /// Shows image `index` once `done` is signalled.
-    pub fn present(&self, gpu: &Gpu, index: u32, done: vk::Semaphore) -> Result<()> {
+    /// Shows image `index` once `done` is signalled; true when the swapchain should be
+    /// rebuilt (stale or no longer a perfect fit).
+    pub fn present(&self, gpu: &Gpu, index: u32, done: vk::Semaphore) -> Result<bool> {
         let (swapchains, indices, waits) = ([self.swapchain], [index], [done]);
-        unsafe {
+        match unsafe {
             self.swapchain_fn.queue_present(
                 gpu.queue,
                 &vk::PresentInfoKHR::default().wait_semaphores(&waits).swapchains(&swapchains).image_indices(&indices),
-            )?
-        };
-        Ok(())
+            )
+        } {
+            Ok(suboptimal) => Ok(suboptimal),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok(true),
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub fn destroy(self, gpu: &Gpu) {

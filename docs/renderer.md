@@ -185,3 +185,11 @@ draws, and presents with one frame in flight. Without a window the same code dra
 offscreen image (pixel-identical to before). In headless gamescope at 30 Hz,
 `EVENT_MM08_AS4_130 --at 0.5 --window 90` plays Escha and Logy walking in and changing to
 `F_WAIT` at frame 61 (2.5 s), on the event's own time.
+
+**Resizing.** Viewport and scissor are dynamic state, so the pipelines survive a resize;
+the depth image and framebuffers are one `Targets` set, remade at the new size; the
+swapchain is rebuilt (`Presenter::rebuild`, handing over the old one) when the window
+reports a new size or when acquire or present says it is stale or suboptimal; a minimised
+window (0 × 0) skips frames; and the projection takes the current aspect each frame. Not
+yet exercised by an actual resize: headless gamescope scales the 1280×720 window into a
+smaller output instead of resizing it.

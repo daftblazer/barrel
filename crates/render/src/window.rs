@@ -85,7 +85,8 @@ impl App {
             d.wait_for_fences(&[live.fence], true, u64::MAX)?;
             d.reset_fences(&[live.fence])?;
         }
-        let index = live.presenter.acquire(live.ready)?;
+        // (The smoke test does not resize; a stale swapchain just skips the frame.)
+        let Some(index) = live.presenter.acquire(live.ready)? else { return Ok(()) };
         let image = live.presenter.images[index as usize];
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(live.pool).command_buffer_count(1))?[0] };
         let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
@@ -122,7 +123,7 @@ impl App {
                 live.fence,
             )?;
         }
-        live.presenter.present(&live.gpu, index, live.done)?;
+        let _ = live.presenter.present(&live.gpu, index, live.done)?;
         unsafe {
             d.wait_for_fences(&[live.fence], true, u64::MAX)?;
             d.free_command_buffers(live.pool, &[cb]);
@@ -192,6 +193,8 @@ struct PumpState {
     window: Option<Window>,
     closed: bool,
     error: Option<String>,
+    /// Set when the window changed size since it was last taken.
+    resized: bool,
 }
 
 impl ApplicationHandler for PumpState {
@@ -206,8 +209,10 @@ impl ApplicationHandler for PumpState {
     }
 
     fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        if let WindowEvent::CloseRequested = event {
-            self.closed = true;
+        match event {
+            WindowEvent::CloseRequested => self.closed = true,
+            WindowEvent::Resized(_) => self.resized = true,
+            _ => {}
         }
     }
 }
@@ -235,6 +240,11 @@ impl Pump {
 
     pub fn window(&self) -> &Window {
         self.state.window.as_ref().expect("open made the window")
+    }
+
+    /// Whether the window changed size since the last call.
+    pub fn take_resized(&mut self) -> bool {
+        std::mem::take(&mut self.state.resized)
     }
 
     /// Handles pending events; false once the window is closed.
