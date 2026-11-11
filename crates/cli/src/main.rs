@@ -29,7 +29,8 @@ usage:
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel ktf-scan DIR          read every field terrain in the containers
-  barrel g1a-scan DIR          read every animation in the containers";
+  barrel g1a-scan DIR          read every animation in the containers
+  barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
 
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
@@ -60,6 +61,8 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
+        ["play-event", file] => play_event(Path::new(file), None),
+        ["play-event", file, lang] => play_event(Path::new(file), Some(lang)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -649,4 +652,40 @@ fn g1a_scan(dir: &Path) -> Result<()> {
         println!("first failure: {e}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some animations did not read".into()) }
+}
+
+/// The message file for an event: Event[_LANG]/event/<dir>/EVENT_MESSAGE_<name>.ebm.
+fn message_file(event: &Path, lang: Option<&str>) -> Option<PathBuf> {
+    let name = event.file_name()?.to_str()?.strip_prefix("EVENT_")?.strip_suffix(".ebd")?;
+    let dir = event.parent()?;
+    let chapter = dir.file_name()?;
+    let root = dir.parent()?.parent()?; // .../Event
+    let base = match lang {
+        Some(l) => root.with_file_name(format!("Event_{l}")),
+        None => root.to_path_buf(),
+    };
+    Some(base.join("event").join(chapter).join(format!("EVENT_MESSAGE_{name}.ebm")))
+}
+
+fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
+    use barrel_game::event::{Player, Step};
+    let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    let messages = match message_file(file, lang) {
+        Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).map_err(|e| format!("{}: {e}", m.display()))?,
+        _ => Vec::new(),
+    };
+    let table = OperandTable::escha();
+    for step in Player::escha(&event, &messages, &table)? {
+        match step {
+            Step::Message { index, speaker, text } => {
+                println!("  [{index:3}] speaker {speaker:>3}: {}", text.replace("<CR>", " "));
+            }
+            Step::Command { action, word, name, operands } => {
+                let ops: Vec<String> = operands.iter().map(|&o| (o as i32).to_string()).collect();
+                let short = Word::classify(word).to_string();
+                println!("{action:3} {short:<10} {:<40} {}", name.unwrap_or(""), ops.join(" "));
+            }
+        }
+    }
+    Ok(())
 }

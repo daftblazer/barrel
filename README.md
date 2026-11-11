@@ -24,7 +24,7 @@ The goals:
 
 Status: started, with Escha & Logy DX first. `crates/formats` reads the elixir containers,
 the event bytecode, the XML tables, the textures and the models' geometry; every one of Escha's files of both kinds reads without error.
-`crates/cli` is the `barrel` tool for looking at the data. See `docs/survey.md` for the
+`crates/game` holds the game logic, so far an event player. `crates/cli` is the `barrel` tool for looking at the data. See `docs/survey.md` for the
 games and `docs/formats.md` for the formats.
 
 ```sh
@@ -37,6 +37,7 @@ target/release/barrel unpack FILE.elixir.gz OUTDIR
 target/release/barrel ebd-scan "<install>/Event"       # every event and its commands
 target/release/barrel ebd-decode "<install>/Event"     # split every event into commands
 target/release/barrel ebd    FILE.ebd
+target/release/barrel play-event "<install>/Event/event/MM08_AS4/EVENT_MM08_AS4_130.ebd" EN
 target/release/barrel ebm-scan "<install>"            # every dialogue line, all languages
 target/release/barrel ebm    FILE.ebm
 target/release/barrel xml-scan "<install>"            # every XML table and its rows

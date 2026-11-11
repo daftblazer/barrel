@@ -53,6 +53,23 @@ The decoder checks that every command lands on another command word or `END`, so
 that is wrong for a game fails at once. `barrel ebd-decode DIR` runs it over every event:
 all 49,393 of Escha's bodies decode into 238,443 commands.
 
+## Playing an event
+
+`barrel_game::event::Player` (crate `crates/game`) runs an event and yields what happens,
+step by step; `barrel play-event FILE.ebd [EN|SC|TC]` prints it, finding the event's
+message file on its own (`Event_<LANG>/event/<chapter>/EVENT_MESSAGE_<name>.ebm`).
+
+It knows one command's meaning so far: **`u18` (0x75000012) shows the event's messages from
+its first operand to its second, inclusive.** In `EVENT_MM08_AS4_130` its ranges (0–0, 1–3,
+4–11, ... 25–25) cover the 26 messages exactly once, in order. Step markers (`w1`) are
+skipped; every other command is reported with its name and operands, for the systems that
+will handle it. Run in file order, that event fades the music out
+(`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
+waits, and talks the dragon problem through in the right order.
+
+Not yet: actions running side by side (the editor's actions may be parallel tracks rather
+than a sequence), waits taking time, and the speaker numbers' names.
+
 ## Who handles them
 
 The event player hands each command to a chain of listener objects, each asked in turn

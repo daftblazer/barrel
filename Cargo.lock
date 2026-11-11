@@ -16,6 +16,7 @@ name = "barrel-cli"
 version = "0.1.0"
 dependencies = [
  "barrel-formats",
+ "barrel-game",
  "encoding_rs",
 ]
 
@@ -24,6 +25,13 @@ name = "barrel-formats"
 version = "0.1.0"
 dependencies = [
  "encoding_rs",
+]
+
+[[package]]
+name = "barrel-game"
+version = "0.1.0"
+dependencies = [
+ "barrel-formats",
 ]
 
 [[package]]
