@@ -50,8 +50,13 @@ brow, eye or mouth animation from the `_FACIAL` container. Each animation goes t
 set with one target fewer than it has tracks, its weights are taken at `--time`, and the
 blended offsets are added to that vertex layout's positions before skinning (see
 `formats.md`, "Morph targets"). Escha with `PC20_EYE_M_ANG_M_*` at 2 s opens her mouth and
-moves her brows and eyes. Her eyes themselves still draw blank white: the eye material
-needs a texture layer or blend the viewer does not do yet.
+moves her brows and eyes.
+
+**Eyes.** An eye material has four textures, none of subtype 1 (Escha's materials 3 and 4):
+the eye white on a skin-coloured ground, the iris with alpha, a green glow and the highlight
+outlines, all on the same UVs. The viewer lays the iris over the white by its alpha into a
+new texture when it loads them, which gives her green eyes; the glow and highlights, and
+whatever the game's shader does to move the iris, are left out for now.
 
 **Event openings.** `--event FILE.ebd` with `--field` adds the characters an event
 places (see `events.md`) with their own texture packs; the scene's draws index one list of

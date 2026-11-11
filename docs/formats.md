@@ -206,6 +206,10 @@ join: the end value of one is the d of the next, which confirms the 0..1 paramet
 and scale at a time. The breakable barrel's animation (`obj-a15_taru_brk_a.g1a`, 0.53 s)
 moves its pieces outward; most bones hold still with one key.
 
+**Eye materials.** In the character models, a material with four textures and none of
+subtype 1 is an eye: texture 0 the eye white, 1 the iris (BC3, with alpha), 2 a glow, 3 the
+highlights. All four use the eye mesh's single UV set.
+
 ## Morph targets (`*.g1h`)
 
 A character's facial shapes, next to its model in the same container

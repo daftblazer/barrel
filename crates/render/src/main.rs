@@ -48,6 +48,8 @@ struct Draw {
     first_index: u32,
     index_count: u32,
     texture: usize,
+    /// A texture to lay over `texture` by its alpha (the iris over the eye white).
+    overlay: Option<usize>,
 }
 
 struct Gpu {
@@ -257,6 +259,7 @@ impl Scene {
         self.add_posed(geometry, transform, count, joints)?;
         for d in &mut self.draws[first..] {
             d.texture += base;
+            d.overlay = d.overlay.map(|o| o + base);
         }
         Ok(())
     }
@@ -304,13 +307,18 @@ impl Scene {
             for t in &mesh.triangles {
                 self.indices.extend(t.iter().map(|&v| v + base));
             }
-            let texture = geometry
-                .materials
-                .get(mesh.material)
+            let material = geometry.materials.get(mesh.material);
+            let texture = material
                 .and_then(|m| m.textures.iter().find(|t| t.kind == 1).or(m.textures.first()))
                 .map_or(0, |t| t.index as usize)
                 .min(textures.saturating_sub(1));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture });
+            // Eye materials: four or more textures, none of subtype 1. The first is the eye
+            // white, the second the iris with alpha, which the game's shader lays on top (the
+            // rest, a glow and highlights, are left out here).
+            let overlay = material
+                .filter(|m| m.textures.len() >= 4 && m.textures.iter().all(|t| t.subtype != 1))
+                .map(|m| (m.textures[1].index as usize).min(textures.saturating_sub(1)));
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay });
         }
         Ok(())
     }
@@ -669,7 +677,41 @@ fn main() -> Result<()> {
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
-    let Scene { vertices, indices, draws, terrain, lo, hi, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrain, lo, hi, .. } = scene;
+    // Lay each overlay over its base texture into a new RGBA texture.
+    let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+    for draw in &mut draws {
+        if let Some(o) = draw.overlay {
+            let (base, top) = (all_textures[draw.texture], all_textures[o]);
+            let (w, h) = (base.width, base.height);
+            let mut px = base.to_rgba8();
+            let over = top.to_rgba8();
+            for y in 0..h {
+                for x in 0..w {
+                    let (sx, sy) = (x * top.width / w, y * top.height / h);
+                    let src = &over[((sy * top.width + sx) * 4) as usize..][..4];
+                    let dst = &mut px[((y * w + x) * 4) as usize..][..4];
+                    let a = src[3] as u32;
+                    for c in 0..3 {
+                        dst[c] = ((src[c] as u32 * a + dst[c] as u32 * (255 - a)) / 255) as u8;
+                    }
+                }
+            }
+            draw.texture = all_textures.len() + composites.len();
+            composites.push((w, h, px));
+        }
+    }
+    let composite_textures: Vec<barrel_formats::g1t::Texture> = composites
+        .iter()
+        .map(|(w, h, px)| barrel_formats::g1t::Texture {
+            width: *w,
+            height: *h,
+            format: Format::Rgba8,
+            format_code: 1,
+            levels: vec![&px[..]],
+        })
+        .collect();
+    let all_textures: Vec<&barrel_formats::g1t::Texture> = all_textures.into_iter().chain(composite_textures.iter()).collect();
     if draws.is_empty() || all_textures.is_empty() {
         return Err("nothing to draw".into());
     }
