@@ -15,8 +15,8 @@
 //! in, then by the segment's first key's mode: 1 straight, 2 hold the key's value, 0 smooth
 //! (`0x1404e09e0`): a cubic spline (`0x1404e0440` solves it, `0x1404e0850` evaluates it)
 //! through this key and the next, the key before when it is smooth too, and the key after
-//! next when the next is smooth; with only the two it is straight. The spline's ends are
-//! taken as natural (second derivative 0), which is what the solver's zero start reads as.
+//! next when the next is smooth; with only the two it is straight. The spline is natural (σ
+//! 0 at both ends), with one quirk for four points (see [`spline`]).
 //! Past the last key the value is the last key's.
 
 use std::collections::BTreeMap;
@@ -99,31 +99,50 @@ impl Curve {
     }
 }
 
-/// A natural cubic spline through `points` (at least three), at `x`.
+/// The game's cubic spline through `points` (three or four), at `x`: `0x1404e0440`'s solve and
+/// `0x1404e0850`'s evaluation, step for step in f32. σ is the second derivative over 6, 0 at
+/// both ends (a natural spline). With four points the solver sets the third row's right-hand
+/// side to 0 instead of the slope difference (`subss xmm1, xmm1` at `0x1404e0581`), so the
+/// curve is not the textbook spline there; that is kept.
 fn spline(points: &[Key], x: f32) -> f32 {
     let n = points.len();
     let xs: Vec<f32> = points.iter().map(|p| p.frame).collect();
     let ys: Vec<f32> = points.iter().map(|p| p.value).collect();
-    // Second derivatives, natural ends (Thomas algorithm).
-    let mut m = vec![0.0f32; n];
-    let mut c = vec![0.0f32; n];
-    let mut d = vec![0.0f32; n];
-    for i in 1..n - 1 {
-        let h0 = xs[i] - xs[i - 1];
-        let h1 = xs[i + 1] - xs[i];
-        let r = 6.0 * ((ys[i + 1] - ys[i]) / h1 - (ys[i] - ys[i - 1]) / h0);
-        let diag = 2.0 * (h0 + h1) - h0 * c[i - 1];
-        c[i] = h1 / diag;
-        d[i] = (r - h0 * d[i - 1]) / diag;
+    let h: Vec<f32> = (0..n - 1).map(|i| xs[i + 1] - xs[i]).collect();
+    // s[i + 1] is the slope of segment i; from index 1 on the solver reuses it for the diagonal.
+    let mut s = vec![0.0f32; n];
+    for i in 0..n - 1 {
+        s[i + 1] = (ys[i + 1] - ys[i]) / h[i];
     }
-    for i in (1..n - 1).rev() {
-        m[i] = d[i] - c[i] * m[i + 1];
+    let mut sigma = vec![0.0f32; n];
+    sigma[1] = s[2] - s[1] - sigma[0] * h[0];
+    s[1] = 2.0 * (xs[2] - xs[0]);
+    for i in 1..n - 2 {
+        let t = h[i] / s[i];
+        sigma[i + 1] = 0.0 - t * sigma[i];
+        s[i + 1] = 2.0 * (xs[i + 2] - xs[i]) - t * h[i];
     }
-    let i = (0..n - 1).rfind(|&i| xs[i] <= x).unwrap_or(0);
-    let h = xs[i + 1] - xs[i];
-    let t = x - xs[i];
-    let b = (ys[i + 1] - ys[i]) / h - h * (2.0 * m[i] + m[i + 1]) / 6.0;
-    ys[i] + t * (b + t * (m[i] / 2.0 + t * (m[i + 1] - m[i]) / (6.0 * h)))
+    sigma[n - 2] -= h[n - 2] * sigma[n - 1];
+    for i in (1..=n - 2).rev() {
+        sigma[i] = (sigma[i] - h[i] * sigma[i + 1]) / s[i];
+    }
+    // 0x1404e0850: the segment by binary search, then the cubic from its first point.
+    let (mut lo, mut hi) = (0usize, n - 1);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if x > xs[mid] {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    let i = if lo == 0 { 0 } else { lo - 1 };
+    let (x0, y0, s0, s1) = (xs[i], ys[i], sigma[i], sigma[i + 1]);
+    let w = xs[i + 1] - x0;
+    let dx = x - x0;
+    let b = (ys[i + 1] - y0) / w - (s0 + s0 + s1) * w;
+    let c = (s1 - s0) * dx / w + s0 * 3.0;
+    (b + c * dx) * dx + y0
 }
 
 #[cfg(test)]
@@ -153,5 +172,13 @@ mod tests {
         // Through (0,0), (1,1), (2,0): natural spline value at 0.5 is 0.6875.
         let k = |value: f32, frame: f32| Key { value, frame, mode: 0 };
         assert!((spline(&[k(0.0, 0.0), k(1.0, 1.0), k(0.0, 2.0)], 0.5) - 0.6875).abs() < 1e-5);
+        // Four points still pass through every point, the quirk only changes the bend.
+        let four = [k(0.0, 0.0), k(1.0, 1.0), k(0.0, 2.0), k(1.0, 3.0)];
+        for p in &four[..3] {
+            assert!((spline(&four, p.frame) - p.value).abs() < 1e-5);
+        }
+        // Straight data stays straight.
+        let line = [k(0.0, 0.0), k(1.0, 1.0), k(2.0, 2.0), k(3.0, 3.0)];
+        assert!((spline(&line, 1.5) - 1.5).abs() < 1e-5);
     }
 }

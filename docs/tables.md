@@ -795,8 +795,11 @@ The value at a time (`0x1404e1230`) comes from the segment it falls in, by the s
 first key's `liner`: 1 straight, 2 hold, 0 smooth, a cubic spline (`0x1404e0440` solves it,
 `0x1404e0850` evaluates it with the usual b, c = 3σ, d form) through the segment's two keys
 plus the key before when that one is smooth and the key after next when the next is smooth.
-With only two keys in all, or only two points to use, it is straight. The ends are read as a
-natural spline's (second derivative 0). Past the last key the value is the last key's.
+With only two keys in all, or only two points to use, it is straight. The spline is natural
+(σ, the second derivative over 6, is 0 at both ends). With four points the solver puts 0 in
+the third row's right-hand side instead of the slope difference (`subss xmm1, xmm1` at
+`0x1404e0581`: the slope array has just been reused for the diagonal), so those curves bend
+differently from a textbook spline; Barrel keeps the game's arithmetic. Past the last key the value is the last key's.
 `curve_obj_001` (0, 0.757 at 30, 1) eases out, `_003` (0, 0.203, 1) eases in, `_000` and
 `_002` are straight, `_004` rises to 1 at frame 30 and falls back. `barrel_game::curve`
 reads and evaluates them.
