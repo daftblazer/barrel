@@ -114,10 +114,22 @@ Every name in every archive reads as a path (`\data`, `\saves`, `\event`, `\dlc`
 this way (`\event\skill\skill_party_tao_99.ebd`) reads with Escha's event reader. 
 
 **How far Escha's readers reach.** `barrel pak-scan FILE.PAK...` reads every texture,
-model, animation, morph file, event and message in archives, inside containers too. On
-Sophie 2's `PACK00_01` and `PACK00_02`: all 735 containers, 1,586 models and 1,981 textures
-read with the readers written for Escha (BC7 included); and with two block flags added
-for rotation-only joints and cameras, all 5,750 animations.
+model, animation, morph file, event and message in archives, inside containers too. Over
+every archive of the four games, with Escha's readers plus the additions noted:
+
+| Game | Containers | Models | Textures | Animations | Events | Messages |
+|---|---|---|---|---|---|---|
+| Sophie 2 | 1,067 | 9,274 of 9,281 | 3,439 of 3,461 | 6,092 of 6,095 | 2,780 | 0 of 3,607 |
+| Ryza DX | 4,116 | 8,142 of 8,149 | 3,425 of 3,624 | 3,565 | 2,333 | 8,415 |
+| Ryza 2 DX | 5,967 | 10,421 of 10,446 | 4,099 of 4,112 | 10,787 | 3,168 | 6,238 of 11,767 |
+| Ryza 3 DX | 9,684 of 10,039 | 4,373 of 4,381 | 6,425 of 6,477 | 11,081 | 4,806 | 0 of 9,630 |
+
+Additions so far: BC7 textures, animation flags 2 and 0x66, and 32-bit index buffers (the
+model failures above were nearly all those; they read now). What is left: the message
+format changed in Sophie 2 and Ryza 3 and in part of Ryza 2's files; some texture formats
+(heightmaps, shader textures, environment maps); a newer container version (355 of Ryza
+3's, environment and lighting); a few model attribute types (Ryza 3) and one more animation
+flag (a light, Sophie 2).
 
 **Encrypted tables (`.xml.e`).** Many tables also come as `.xml.e`: a 16-byte header of
 big-endian u32s `{2, plain size, 0, 0}` (`freeachievement.xml.e`: 2, 23,144, the size of

@@ -19,7 +19,7 @@
 //! | 0x10002 | materials: `{u32, u32 texture count, u32, u32}` then per texture `{u16 index, u16 layer, u16 type, u16 subtype, u16 tile u, u16 tile v}` |
 //! | 0x10004 | vertex buffers: `{u32, u32 stride, u32 vertex count, u32}` then the vertices |
 //! | 0x10005 | vertex layouts: `{u32 buffer count, u32 buffers[], u32 attribute count}` then per attribute `{u16 buffer, u16 offset, u8 type, u8, u8 semantic, u8 layer}` |
-//! | 0x10007 | index buffers: `{u32 index count, u32 bits (16), u32}` then the indices, padded to 4 bytes |
+//! | 0x10007 | index buffers: `{u32 index count, u32 bits (16; 32 in later games' large field models), u32}` then the indices, padded to 4 bytes |
 //! | 0x10008 | submeshes: 14 u32 each (see [`Submesh`]) |
 //!
 //! A submesh names a vertex *layout*, not a buffer. A layout lists one or more vertex buffers
@@ -174,7 +174,7 @@ pub struct Geometry<'a> {
     pub materials: Vec<Material>,
     pub vertex_buffers: Vec<VertexBuffer<'a>>,
     pub layouts: Vec<Layout>,
-    pub index_buffers: Vec<Vec<u16>>,
+    pub index_buffers: Vec<Vec<u32>>,
     pub submeshes: Vec<Submesh>,
     /// Bone palettes; a submesh's `bone_map` picks one. A vertex's bone index byte divided
     /// by 3 is a slot in that palette.
@@ -406,13 +406,26 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
             0x10007 => {
                 for _ in 0..n {
                     let count = bounded(u32_at(sec, p)?)?;
-                    if u32_at(sec, p + 4)? != 16 {
-                        return Err(Error::Corrupt("g1mg index size is not 16 bits"));
-                    }
+                    // 16-bit indices in Escha; Sophie 2 and the Ryza games also use 32-bit
+                    // ones for large field models.
+                    let width = match u32_at(sec, p + 4)? {
+                        8 => 1,
+                        16 => 2,
+                        32 => 4,
+                        _ => return Err(Error::Corrupt("g1mg index size not known")),
+                    };
                     p += 12;
-                    let raw = sec.get(p..p + 2 * count).ok_or(Error::Corrupt("g1mg indices past the end"))?;
-                    g.index_buffers.push(raw.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect());
-                    p = (p + 2 * count + 3) & !3;
+                    let raw = sec.get(p..p + width * count).ok_or(Error::Corrupt("g1mg indices past the end"))?;
+                    g.index_buffers.push(
+                        raw.chunks_exact(width)
+                            .map(|b| match width {
+                                1 => b[0] as u32,
+                                2 => u16::from_le_bytes([b[0], b[1]]) as u32,
+                                _ => u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
+                            })
+                            .collect(),
+                    );
+                    p = (p + width * count + 3) & !3;
                 }
             }
             0x10008 => {
@@ -621,7 +634,7 @@ impl Geometry<'_> {
                 m.uvs.push([t[0], t[1]]);
             }
         }
-        let rel = |i: u16| (i as usize - lo) as u32;
+        let rel = |i: u32| (i as usize - lo) as u32;
         match s.primitive {
             Primitive::Triangles => {
                 for t in ib.chunks_exact(3) {
