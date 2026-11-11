@@ -273,10 +273,10 @@ is a character and one of these). `0x1402f0fa0` finds what `kind` and `id` name:
 |---|---|
 | 0 | nothing: the offset is a point in the field |
 | 2 | a thing whose +0x160 object gives the point (`0x1402f0de0`; not named yet) |
-| 3 | a thing (`0x1402f0c60`) whose character (+0x70) gives the point; the camera's `t3`/`t6` use it with ids 10048 to 10057 |
+| 3 | a field character by number (`0x1402f0c60` asks the listeners with `0x7600000d {id}`; the field-character manager answers, `0x1400718c0` → `0x1400760c0`, which looks the number up in its two character lists by +0x78, then `0x140270230`, then the player). The camera's `t3`/`t6` use ids 10048 to 10057: the field's own NPCs (`EVENT_QC08_MIC_050` puts them in event mode with `q7 10048` ...), placed by the field, not the event |
 | 4 | a thing (`0x1402f0d20`) with a place at +0x90 and a facing at +0xa0 |
 | 6 | one of four saved points (`point`, clamped to 0..3, at `0x141078288`) |
-| any other | a character by number (`0x1402f0ba0`): kind 5 with the numbers the `s` commands use (10000 and up in skill events) |
+| any other | a character by kind and number (`0x1402f0ba0` asks with `0x76000002 {kind, id}`): kind 5 with the numbers the `s` commands use (10000 and up in skill events) |
 
 `point` picks one of 27 points on a character (`0x1401f3b80`, a switch over the
 character's measures, its `Chara.xml` row: `Height` 151 and `Radius` 27 for Escha, and
