@@ -269,7 +269,14 @@ highlights. All four use the eye mesh's single UV set.
 a `.fp` of sound data and a `.fpl` index: u32 count (1,000), then that many
 `{u32 offset, u32 size}` pairs into the `.fp`. Every bank fills 999 of its 1,000 slots, so
 the voices are one list of 18,000 clips numbered from 0, bank n × 1000 holding clips n × 1000
-to n × 1000 + 999. How an event line picks its clip is still open.
+to n × 1000 + 999. Some clips are named outright: events play them with `u31`
+(`ECT_EVENT_VOICE_PLAY`, `{clip}`, 400 uses, nearly all in the battle skill events: 10246 in
+`SKILL_COMMON_ITEM_AT_DREAM_BOOK_01`, 14235 ...) and `s102` (`ECT_CHARA_VOICE_PLAY`,
+`{character, clip}`, 12 uses), and the tables have a `VoiceNo` column (`SubjectTalkData`:
+11083, 11084 ...; `SysMess`, -1 for none). Only 16 story events use the two commands, and
+the small script a dialogue line runs (`0x140184060`) plays no voice, so how a story line
+picks its clip is still open (the event's resource list names no voice either).
+`barrel play-event` prints the voice commands with their bank and clip.
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone

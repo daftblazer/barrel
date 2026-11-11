@@ -37,6 +37,10 @@ pub const FIELD_CHANGE_KEEP_BGM: u32 = 0x7100_000c;
 pub const FIELD_CHARA_DELETE: u32 = 0x7100_0005;
 /// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
 pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
+/// `u31` (`ECT_EVENT_VOICE_PLAY`): `{clip}`, a voice clip number (`docs/formats.md`, "Voices").
+pub const EVENT_VOICE_PLAY: u32 = 0x7500_001f;
+/// `s102` (`ECT_CHARA_VOICE_PLAY`): `{character, clip}`.
+pub const CHARA_VOICE_PLAY: u32 = 0x7300_0066;
 /// `s23` (`ECT_CHARA_ROT_SET`): `{character, x, y, z}`, degrees.
 pub const CHARA_ROT_SET: u32 = 0x7300_0017;
 /// `s24` (`ECT_CHARA_ROT_SET_TARGET`): `{character, position (6)}`.
@@ -81,6 +85,8 @@ pub enum Step<'a> {
     FieldChange { action: usize, map: u32 },
     /// A field character is removed (`q5`, `ECT_FIELDMAP_CHARA_DELETE`, `{character}`).
     Remove { action: usize, character: u32 },
+    /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
+    Voice { action: usize, character: Option<u32>, clip: u32 },
     /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
     /// `t9`; [`crate::camera`]).
     Camera { action: usize, part: crate::camera::Part, change: crate::camera::Change },
@@ -175,6 +181,8 @@ impl<'a> Player<'a> {
             }
             (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
             (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),
+            (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
+            (CHARA_VOICE_PLAY, [character, clip, ..]) => out.push(Step::Voice { action, character: Some(*character), clip: *clip }),
             (SHOW_MESSAGES, [first, last]) => {
                 for i in *first as usize..=(*last as usize) {
                     if let Some(m) = self.messages.get(i) {
@@ -385,6 +393,7 @@ mod tests {
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
+                Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::FieldChange { map, .. } => format!("field {map}"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
                 Step::Turn { character, .. } | Step::Face { character, .. } | Step::TurnOver { character, .. } => {
