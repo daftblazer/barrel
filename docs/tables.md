@@ -224,10 +224,49 @@ and the float scale (+0x28) starts at 1 (or character A's value 0x2b4 / 100 when
 action kinds other than 2) and is multiplied by the flag-gated factors in the flag table above, then
 by `(global 0x141077e70 + 100) / 100` and `global 0x141077e50 / 100`, then by `1 - clamp(
 character A's state-12 value × 0.1 / 100, 0, 1)`, and is kept at least 0.15. The function takes two characters, A (its second argument) and B (its third); which is the
-user and which the target is not checked yet. Percent 1 starts at 100 and moves with A's
-traits 0x5d and 0x72 and B's 0x71 and states 0x1e and 8; percent 2 starts at 100 + A's value
-15 and moves with traits 0x2f, 0x47, 0x30, 0x9c and 0x33 of both. Which traits and states
-these numbers are is still to be named.
+user and which the target is not checked yet. The numbers it asks a character about come in
+three kinds:
+
+- passive traits, through the character's virtual "has" (+0x48) and "value" (+0x50): these
+  numbers are `ACT_*` numbers and fit the passive names: 0x72 `PASSIVE_GREAT_BATTLE`, 0x71
+  `PASSIVE_INNER_FIRE`, 0x6f `PASSIVE_ASSIST_ALLUP`, 0x70 `PASSIVE_ASSIST_DEFUP`, 0x9c
+  `PASSIVE_CHANGE_ITEM_POWER`, 0xe1 `PASSIVE_CATEGORY_UP`, 0xde `FIX_SKILL_BONUS`;
+- timed states (`0x1401afd10` has, `0x1401afc70` value: two lists at character +0x1a0 and
+  +0x1c0), numbered by the state table below: 0x1e `MITIGATE_DAMAGE`, 8 `PROTECT_DAMEGE_NUM`
+  (the roll also uses up one of its charges), 0x2f `CHANGE_DAMAGE`, 0x30 `CHANGE_ITEMEFFECT`,
+  0x33 `CHANGE_ITEM_POWER`, 0x47 `FIELD_RACE_STRENGTH`;
+- bad-status bytes at character +0x280 (`0x1401ae380 (c, k)`), where k = 4 instead means "HP at
+  most 25% of maximum".
+
+Percent 1 starts at 100, adds A's `PASSIVE_GREAT_BATTLE` (when B qualifies) and subtracts B's
+`PASSIVE_INNER_FIRE`, `MITIGATE_DAMAGE` and `PROTECT_DAMEGE_NUM`; percent 2 starts at 100 + A's
+stat 15 (stats are i32 at character +0x88) and adds B's `CHANGE_DAMAGE` (skills),
+`FIELD_RACE_STRENGTH`, `CHANGE_ITEMEFFECT` and `PASSIVE_CHANGE_ITEM_POWER` (items), less
+`CHANGE_ITEM_POWER`. Some of these conditions are read only roughly and should be checked.
+
+Timed states are added by `0x1401bf1e2` (the shared handler of the timed effects), which maps
+the effect's `ACT_*` number to its state number with `0x1401c0e80`:
+
+| State | `ACT_*` | State | `ACT_*` |
+|---|---|---|---|
+| 1 | `AUTO_REVIVE` | 0x26-0x28 | `MINUS_ATK`, `MINUS_DEF`, `MINUS_SPD` |
+| 2 | `HEAL_HP_TURN` | 0x2e | `CHANGE_SKILLCOST` |
+| 4 | `ADD_GUTS` | 0x2f | `CHANGE_DAMAGE` |
+| 5 | `ADD_ACTION` | 0x30 | `CHANGE_ITEMEFFECT` |
+| 6 | `REDUCE_WT` | 0x31 | `COST_HP_BY_WT` |
+| 7 | `ADD_PERCENT_QUICK` | 0x32 | `REDUCE_WT_ITEM` |
+| 8 | `PROTECT_DAMEGE_NUM` | 0x33 | `CHANGE_ITEM_POWER` |
+| 0x11 | `PLUS_LEVEL_STATUS` | 0x34 | `DAMAGE_HP_TURN` |
+| 0x12-0x14 | `PLUS_ATK`, `PLUS_DEF`, `PLUS_SPD` | 0x35 | `DAMAGE_HP_TURN_DIFFERENTIAL` |
+| 0x1a | `ADD_MAXHP` | 0x46 | `AVOID_TARGET` |
+| 0x1b | `CHANGE_CRITICAL` | 0x47 | `FIELD_RACE_STRENGTH` |
+| 0x1c | `ADD_EVADE` | 0x48-0x4a | `FIELD_ACUMULATE_DAMAGE`, `_WEAK`, `_HEAL` |
+| 0x1d | `MITIGATE_BADSTATUS` | 0x4c-0x4e | `FIELD_INVALID_BUFF`, `_REVIE`, `_HEAL` |
+| 0x1e | `MITIGATE_DAMAGE` | 0x4f-0x52 | `FIELD_ITEM_SINGLE_USE`, `FIELD_NO_ITEM_USE`, `_LIVING`, `_TIME` |
+| 0x24 | `INCREASE_CRITICAL_DAMAGE` | | |
+
+The other state numbers (3, 9 to 0x10, ...) are not reached from this mapping (the bad
+statuses and others, presumably).
 
 ### Random numbers
 
