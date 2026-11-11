@@ -8,6 +8,7 @@ pub mod ebd;
 pub mod ebm;
 mod ebd_tables;
 pub mod elixir;
+pub mod g1a;
 pub mod g1m;
 pub mod g1t;
 pub mod game;

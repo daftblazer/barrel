@@ -28,7 +28,8 @@ usage:
   barrel ebm FILE.ebm          print an event's messages
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR         read every field placement list in the containers
-  barrel ktf-scan DIR          read every field terrain in the containers";
+  barrel ktf-scan DIR          read every field terrain in the containers
+  barrel g1a-scan DIR          read every animation in the containers";
 
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
@@ -58,6 +59,7 @@ fn main() -> ExitCode {
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
+        ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -611,4 +613,40 @@ fn ktf_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some terrains did not read".into()) }
+}
+
+fn g1a_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut anims, mut tracks, mut keys, mut packed) = (0usize, 0usize, 0usize, 0usize);
+    let mut failed: BTreeMap<String, usize> = BTreeMap::new();
+    let mut example = None;
+    for path in &files {
+        let bytes = read(path)?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for (i, entry) in e.entries.iter().enumerate() {
+            let data = e.data(entry);
+            if !data.starts_with(b"_A1G") {
+                continue;
+            }
+            match barrel_formats::g1a::parse(data) {
+                Ok(a) => {
+                    anims += 1;
+                    tracks += a.tracks.len();
+                    packed += a.tracks.iter().filter(|t| t.flag == barrel_formats::g1a::PACKED).count();
+                    keys += a.tracks.iter().flat_map(|t| &t.components).map(|c| c.len()).sum::<usize>();
+                }
+                Err(err) => {
+                    *failed.entry(err.to_string()).or_default() += 1;
+                    example.get_or_insert_with(|| format!("{}#{i}", path.display()));
+                }
+            }
+        }
+    }
+    println!("{anims} animations read: {tracks} bone tracks ({packed} packed, not decoded), {keys} keys; failures {failed:?}");
+    if let Some(e) = example {
+        println!("first failure: {e}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some animations did not read".into()) }
 }

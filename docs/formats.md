@@ -167,6 +167,38 @@ weighs most on them; reading the joint through the index map instead gives 23, a
 palette's first word 69 to 79. Across all of Escha's models, every vertex's bone slot is
 inside its palette (`barrel g1m-scan` checks it).
 
+## Animations (`*.g1a`)
+
+Read by `barrel_formats::g1a`. All 6,010 of Escha's animations read (version `0042` in
+every one): 430,213 bone tracks, 21.2 million keys. `barrel g1a-scan DIR` reads them all.
+
+Sizes and offsets count 16-byte units.
+
+```text
+header:  "_A1G", "0042", u32 file size (units), u16 type, u16, f32 duration in seconds,
+         u32 data offset (units), u32 ×4
+at 0x30: u16 bone entry count, u16 highest bone number,
+         then per entry {u32 bone, u32 offset of its block, in units from 0x30}
+block:   u32 flag, then {u32 key count, u32 offset in units from the block} per component
+keys:    key count × (a, b, c, d) floats, then key count floats: each segment's end time
+```
+
+| Flag | Blocks | Components |
+|---|---|---|
+| 6 | 380,476 | ten: scale x, y, z; rotation quaternion x, y, z, w; translation x, y, z |
+| 4 | 803 | seven: rotation, translation (no scale) |
+| 0x191 | 48,934 | a packed encoding: one 16-byte block `{0x191, u32, u32, 0}` per bone; not decoded yet |
+
+The order of flag 6's components comes from the data: the first three are 1.0 in 95-99% of
+blocks (scale at rest), the seventh's median is 0.97 (a quaternion's w).
+
+A component is a cubic spline: inside a segment, value = a·s³ + b·s² + c·s + d with s from 0
+to 1 between the previous key's end time (0 for the first) and this key's. The segments
+join: the end value of one is the d of the next, which confirms the 0..1 parameter.
+`g1a::sample` evaluates a component and `Track::pose` gives a bone's rotation, translation
+and scale at a time. The breakable barrel's animation (`obj-a15_taru_brk_a.g1a`, 0.53 s)
+moves its pieces outward; most bones hold still with one key.
+
 ## Node names (`*Oid.bin`)
 
 Read by `barrel_formats::oid`. Each model container has one (`<name>Oid.bin`, the `.bin`
