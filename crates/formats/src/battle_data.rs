@@ -63,6 +63,10 @@ pub struct StatBlock {
     pub resist: [i32; 4],
     /// Word 10, battle stat 12 (not named yet).
     pub stat12: i32,
+    /// The skills it can use at this level, each with the event that plays it (from the
+    /// second of the block's four pointers, words 14 and 15: `{i32 skill, i32 0, pointer to
+    /// the event name}` records, ended by skill -1).
+    pub skills: Vec<(u32, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -138,6 +142,18 @@ pub fn monsters(pe: &Pe, table: u64) -> Option<Vec<Monster>> {
                 speed: w(4)?,
                 resist: [w(6)?, w(7)?, w(8)?, w(9)?],
                 stat12: w(10)?,
+                skills: u64_at(d, stats + 4 * (BLOCK_WORDS * b + 14))
+                    .and_then(|list| pe.offset(list))
+                    .map(|list| {
+                        (0..16)
+                            .map_while(|i| {
+                                let skill = i32_at(d, list + 16 * i)?;
+                                let event = u64_at(d, list + 16 * i + 8).and_then(|v| text(pe, v)).unwrap_or_default();
+                                (skill >= 0).then_some((skill as u32, event))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             });
         }
         out.push(Monster {

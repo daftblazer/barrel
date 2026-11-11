@@ -770,7 +770,22 @@ or stronger later fights):
 | 5 | not known yet (1 or 2; not a battle stat) |
 | 6..9 | the four element resistances |
 | 10 | battle stat 12, not known yet |
-| 12..19 | four pointers, not followed yet |
+| 12..19 | four pointers (below) |
+
+The block's **second pointer** (words 14, 15) is its skill list: 16-byte records
+`{i32 skill, i32 0, pointer to the event that plays it}`, ended by skill -1. The Poison
+Squirrel has Running Headbutt (`skill/Skill_MONSTER_FRUITRAT_01_0.ebd`) and Poison Fruit
+(`_4.ebd`); the Alchemy Rat, Running Headbutt, Bomb, Ice Bomb, Lightning Bomb and Rolling Rat;
+the Grand Dragon, five (`skill/Skill_MONSTER_BOSS_DRAGON_01_0..4.ebd`). `barrel monsters EXE`
+lists every monster's blocks with their skills (185 blocks).
+
+The **first pointer** (words 12, 13) leads to a header `{pointer, 0, 1, n}` whose pointer
+holds 32-byte records that look like the monster's action rules: the Poison Squirrel's are
+`(2,0,0,0,40,0,-1,0)`, `(2,0,0,0,40,1,2,0)`, `(2,0,0,0,30,2,2,0)`, the Grand Dragon's
+`(3,0,1,1,100,5,1,0)`, `(3,0,1,6,100,1,-1,0)`, `(3,0,2,75,100,6,1,0)`: a kind, a condition and
+its value, a chance in percent and a skill slot, by the look of them; what each word means
+needs the code that reads them. The fourth pointer is set only for some bosses (the Grand
+Dragon's: `2, 9, 48, 40, 1, -1, ...`), not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Some drops have numbers above the item enum's

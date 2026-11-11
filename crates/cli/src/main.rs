@@ -94,6 +94,7 @@ fn main() -> ExitCode {
         ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
+        ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["shops", install] => shops(Path::new(install), None),
         ["shops", install, lang] => shops(Path::new(install), Some(lang)),
@@ -672,6 +673,23 @@ fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
 }
 
 /// Each party member's base stats at levels 1, 10, 50 and 99.
+/// Every monster: each stat block's level, HP/ATK/DEF/SPD and skills.
+fn monsters(exe: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
+    let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
+    for (n, m) in monsters.iter().enumerate() {
+        println!("{n:3} {}{}", m.name, if m.boss { " (boss)" } else { "" });
+        for b in &m.blocks {
+            let names: Vec<String> = b.skills.iter().map(|(s, _)| skills.get(*s as usize).map_or_else(|| s.to_string(), |k| k.name.clone())).collect();
+            println!("      lv {:2}  {}/{}/{}/{}  {}", b.level, b.hp, b.attack, b.defense, b.speed, names.join(", "));
+        }
+    }
+    Ok(())
+}
+
 fn party(exe: &Path) -> Result<()> {
     use barrel_formats::battle_data as bd;
     let data = read(exe)?;
