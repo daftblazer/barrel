@@ -49,6 +49,42 @@ What Escha's containers hold, by the first four bytes of each entry:
 
 The magic numbers are KTGL's own, byte-reversed (`_M1G` is G1M_).
 
+## Textures (`*.g1t`)
+
+Read by `barrel_formats::g1t`. Escha's 1,830 texture packs, loose and inside containers,
+hold 8,778 textures, and all of them read. `barrel g1t FILE OUTDIR` writes a pack as PNG
+files (`FILE.elixir.gz#N` names entry N of a container); `barrel g1t-scan DIR` reads every
+pack. The decoded textures were checked by eye (an item's texture and a battle UI sheet).
+
+```text
+header (28 bytes): "GT1G", version as 4 ASCII digits ("0600" or "4600"), file size,
+                   offset of the offset table, texture count, platform (10 for DX11 in
+                   all but 14 packs), size of extra data (0)
+u32 flags per texture, from offset 28
+offset table: u32 per texture, relative to the table's start
+per texture:  u8   mip count << 4 | depth
+              u8   format
+              u8   log2 height << 4 | log2 width
+              u8×4 0, 0, 0x10, 0x21 in every Escha texture
+              u8   1 if an extended header follows
+              [u32 extended size, 12 or 20, then size - 4 bytes; at 20 the true width and
+               height are u32 at +12 and +16, for sizes that are not powers of two]
+              the mip levels, largest first, tightly packed, rows top to bottom
+```
+
+| Format | Escha textures | Data |
+|---|---|---|
+| `0x59` | 5,357 | BC1 |
+| `0x5b` | 3,283 | BC3 |
+| `0x08` | 73 | BC3 (DXT5) |
+| `0x06` | 62 | BC1 (DXT1) |
+| `0x10` | 2 | BC1 |
+| `0x01` | 1 | 8-bit RGBA |
+
+Every texture's data is exactly the size its format, size and mip count give, so there is
+no padding or swizzling on PC. The renderer can upload BC1 and BC3 as they are;
+`barrel_formats::bc` decodes them in software for tools.
+
 ## Event bytecode (`*.ebd`)
 
 Read by `barrel_formats::ebd`. In Escha all 1,639 files read without error: 49,393 actions,

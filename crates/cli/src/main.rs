@@ -19,7 +19,9 @@ usage:
   barrel ebd-scan DIR          read every event under DIR and count its commands
   barrel ebd-decode DIR        decode every event under DIR into commands (Escha's table)
   barrel xml FILE.xml          print a table's rows
-  barrel xml-scan DIR          read every XML table under DIR and list what it holds";
+  barrel xml-scan DIR          read every XML table under DIR and list what it holds
+  barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
+  barrel g1t-scan DIR          read every texture, loose and in containers";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -34,6 +36,8 @@ fn main() -> ExitCode {
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
         ["xml", file] => xml(Path::new(file)),
         ["xml-scan", dir] => xml_scan(Path::new(dir)),
+        ["g1t", file, out] => g1t(file, Path::new(out)),
+        ["g1t-scan", dir] => g1t_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -309,4 +313,70 @@ fn xml_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some tables did not parse".into()) }
+}
+
+/// The bytes of FILE, or of entry N of a container written FILE#N.
+fn file_or_entry(spec: &str) -> Result<Vec<u8>> {
+    if let Some((file, n)) = spec.rsplit_once('#') {
+        let n: usize = n.parse()?;
+        let bytes = read(Path::new(file))?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{file}: {err}"))?;
+        let entry = e.entries.get(n).ok_or("no such entry")?;
+        return Ok(e.data(entry).to_vec());
+    }
+    read(Path::new(spec))
+}
+
+fn g1t(spec: &str, out: &Path) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let g = barrel_formats::g1t::G1t::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    std::fs::create_dir_all(out)?;
+    for (i, t) in g.textures.iter().enumerate() {
+        let name = out.join(format!("{i:03}.png"));
+        std::fs::write(&name, barrel_formats::png::encode_rgba(t.width, t.height, &t.to_rgba8()))?;
+        println!("{} {}x{} {:?} ({:#04x}), {} levels", name.display(), t.width, t.height, t.format, t.format_code, t.levels.len());
+    }
+    Ok(())
+}
+
+fn g1t_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".g1t", &mut files)?;
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut packs, mut textures) = (0usize, 0usize);
+    let mut formats: BTreeMap<String, usize> = BTreeMap::new();
+    let mut failed = Vec::new();
+    let mut check = |name: String, data: &[u8], failed: &mut Vec<String>| match barrel_formats::g1t::G1t::parse(data) {
+        Ok(g) => {
+            packs += 1;
+            for t in &g.textures {
+                textures += 1;
+                *formats.entry(format!("{:?} ({:#04x})", t.format, t.format_code)).or_default() += 1;
+            }
+        }
+        Err(e) => failed.push(format!("{name}: {e}")),
+    };
+    for path in &files {
+        let bytes = read(path)?;
+        if path.to_string_lossy().ends_with(".g1t") {
+            check(path.display().to_string(), &bytes, &mut failed);
+            continue;
+        }
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for (i, entry) in e.entries.iter().enumerate() {
+            let data = e.data(entry);
+            if data.starts_with(b"GT1G") {
+                check(format!("{}#{i}", path.display()), data, &mut failed);
+            }
+        }
+    }
+    println!("{packs} texture packs, {textures} textures, {} failed", failed.len());
+    for (f, n) in &formats {
+        println!("{n:>7}  {f}");
+    }
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some textures did not read".into()) }
 }

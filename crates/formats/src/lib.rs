@@ -3,12 +3,15 @@
 //! Every reader works on bytes already in memory, checks each count and offset it reads
 //! against the input, and returns [`Error`] rather than panicking on bad data.
 
+pub mod bc;
 pub mod ebd;
 mod ebd_tables;
 pub mod elixir;
+pub mod g1t;
 pub mod game;
 pub mod inflate;
 pub mod magic;
+pub mod png;
 pub mod table;
 
 use std::fmt;
