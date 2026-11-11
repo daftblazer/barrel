@@ -101,6 +101,52 @@ pub fn take_hp_damage(stats: &mut [i32; stat::COUNT], amount: i32, reverse: Opti
     amount
 }
 
+/// The turn order (the battle's timeline at +0xa28): characters by wait, the first acts next.
+/// Waits run from 0 to `MAX_WAIT`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Timeline {
+    /// `(character, wait)`, in turn order.
+    pub entries: Vec<(u32, i32)>,
+}
+
+pub const MAX_WAIT: i32 = 1000;
+
+impl Timeline {
+    fn index(&self, who: u32) -> Option<usize> {
+        self.entries.iter().position(|&(c, _)| c == who)
+    }
+
+    /// Pushes a character back by `amount` (`0x14018d490`): it goes behind every character
+    /// whose wait is no more than its new one. Returns its new place.
+    pub fn delay(&mut self, who: u32, amount: i32) -> Option<usize> {
+        let i = self.index(who)?;
+        let wait = (self.entries[i].1 + amount).clamp(0, MAX_WAIT);
+        let at = (i..self.entries.len()).find(|&j| j != i && wait < self.entries[j].1).map_or(self.entries.len() - 1, |j| j - 1);
+        self.entries.remove(i);
+        self.entries.insert(at, (who, wait));
+        Some(at)
+    }
+
+    /// Brings a character forward by `amount` (`0x14018d5e0`): it goes ahead of every
+    /// character whose wait is no less than its new one. Returns its new place.
+    pub fn hasten(&mut self, who: u32, amount: i32) -> Option<usize> {
+        let i = self.index(who)?;
+        let wait = (self.entries[i].1 - amount).clamp(0, MAX_WAIT);
+        let at = (0..=i).rev().find(|&j| j != i && wait > self.entries[j].1).map_or(0, |j| j + 1);
+        self.entries.remove(i);
+        self.entries.insert(at, (who, wait));
+        Some(at)
+    }
+}
+
+/// How far `RETURN_WT` pushes a target back (`0x1401c0313`): its amount divided by how many
+/// times the target has been pushed back (its +0x30c counter, this one included; when that
+/// resets is not yet found), less the
+/// target's `RESIST_KNOCKBACK` percent.
+pub fn knockback(amount: i32, times: i32, resist: i32) -> i32 {
+    (1.0 / times as f32 * amount as f32 * (100 - resist) as f32 / 100.0) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +177,22 @@ mod tests {
         assert_eq!((s[stat::HP], s[stat::MP]), (80, 20));
         assert_eq!(take_hp_damage(&mut s, 500, None, Some(100)), 500);
         assert_eq!((s[stat::HP], s[stat::MP]), (0, 20));
+    }
+
+    #[test]
+    fn turn_order() {
+        let mut t = Timeline { entries: vec![(1, 100), (2, 200), (3, 300), (4, 300)] };
+        // Pushed to 300: behind both at 300.
+        assert_eq!(t.delay(1, 200), Some(3));
+        assert_eq!(t.entries, [(2, 200), (3, 300), (4, 300), (1, 300)]);
+        // Brought forward to 200: ahead of the one at 200.
+        assert_eq!(t.hasten(4, 100), Some(0));
+        assert_eq!(t.entries, [(4, 200), (2, 200), (3, 300), (1, 300)]);
+        assert_eq!(t.delay(2, 5000), Some(3));
+        assert_eq!(t.entries[3], (2, MAX_WAIT));
+        assert_eq!(t.hasten(9, 1), None);
+        assert_eq!(knockback(50, 1, 0), 50);
+        assert_eq!(knockback(50, 2, 20), 20);
     }
 
     #[test]

@@ -274,6 +274,25 @@ the effect's `ACT_*` number to its state number with `0x1401c0e80`:
 The other state numbers (3, 9 to 0x10, ...) are not reached from this mapping (the bad
 statuses and others, presumably).
 
+### Turn order (executable)
+
+The battle's timeline (battle +0xa28) is a list of entries in turn order, each with a wait
+(+0x14, kept from 0 to 1000) and the character it belongs to (+0x18, matched against the
+character's +0x70; entries flagged at +0xe, or whose +0x20 object is not of kind 3, are
+skipped when looking a character up). Two functions move a character:
+
+- `0x14018d490 (timeline, character, amount)` adds to its wait and moves it back behind
+  every entry whose wait is no more than its new one (on a tie, it goes last);
+- `0x14018d5e0 (timeline, character, amount)` takes from its wait and moves it forward
+  ahead of every entry whose wait is no less than its new one (on a tie, it goes first).
+
+`ACCELARATE_WT` calls the second with the effect's amount. `RETURN_WT` (`0x1401c0313`) first
+counts the push on the target (+0x30c) and pushes it back by `trunc(1 / count × amount ×
+(100 - RESIST_KNOCKBACK) / 100)` in floats, so each push on the same target is weaker than the
+last. When the count resets, and how a turn's wait is set at first and after acting (the
+skills' +24 value, 600 for the normal attack, and speed are the likely inputs), are still to
+be read. `barrel_game::battle::Timeline` and `knockback` do the above.
+
 ### Random numbers
 
 The game draws every random number from one Xorshift128 generator (Marsaglia's: `t = x ^ (x
