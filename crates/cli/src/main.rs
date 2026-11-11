@@ -27,7 +27,8 @@ usage:
   barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers
   barrel ebm FILE.ebm          print an event's messages
   barrel ebm-scan DIR          read every message file under DIR
-  barrel opl2-scan DIR         read every field placement list in the containers";
+  barrel opl2-scan DIR         read every field placement list in the containers
+  barrel ktf-scan DIR          read every field terrain in the containers";
 
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
@@ -56,6 +57,7 @@ fn main() -> ExitCode {
         ["ebm", file] => ebm(Path::new(file)),
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
+        ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -579,4 +581,34 @@ fn opl2_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
+}
+
+fn ktf_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let mut terrains = 0usize;
+    let mut layers: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut failed = Vec::new();
+    for path in &files {
+        let bytes = read(path)?;
+        let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        for (i, entry) in e.entries.iter().enumerate() {
+            if !entry.name.ends_with(".ktf") {
+                continue;
+            }
+            match barrel_formats::ktf::parse(e.data(entry)) {
+                Ok(t) => {
+                    terrains += 1;
+                    *layers.entry(t.layers.textures.len()).or_default() += 1;
+                }
+                Err(err) => failed.push(format!("{}#{i}: {err}", path.display())),
+            }
+        }
+    }
+    println!("{terrains} terrains, {} failed; layer counts {layers:?}", failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some terrains did not read".into()) }
 }

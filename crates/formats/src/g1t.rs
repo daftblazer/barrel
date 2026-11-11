@@ -10,8 +10,8 @@
 //! per texture:  u8  mip count << 4 | depth
 //!               u8  format
 //!               u8  log2 height << 4 | log2 width
-//!               u8 ×4 (0, 0, 0x10, 0x21 in every Escha texture)
-//!               u8  extended header follows (0 or 1)
+//!               u8 ×4 (0, 0, 0x10, 0x21 in model textures; other values in terrain)
+//!               u8  flags: 0x10 = an extended header follows (0x02 in terrain textures)
 //!               [u32 extended size (12 or 20), then size-4 bytes; at 20, width and height
 //!                as u32 at +12 and +16, used when they are not powers of two]
 //!               the mip levels, largest first, each tightly packed
@@ -92,7 +92,7 @@ impl<'a> G1t<'a> {
             let format = Format::from_code(format_code).ok_or(Error::Corrupt("g1t format not known"))?;
             let (mut width, mut height) = (1u32 << (h[2] & 15), 1u32 << (h[2] >> 4));
             let mut pos = at + 8;
-            if h[7] != 0 {
+            if h[7] & 0x10 != 0 {
                 let ext = u32_at(data, pos)? as usize;
                 if !(4..=64).contains(&ext) {
                     return Err(Error::Corrupt("g1t extended header size"));
@@ -137,7 +137,7 @@ mod tests {
     use super::*;
 
     fn pack(format: u8, dims: u8, ext: Option<(u32, u32)>, body: &[u8]) -> Vec<u8> {
-        let mut tex = vec![0x10, format, dims, 0, 0, 0x10, 0x21, ext.is_some() as u8];
+        let mut tex = vec![0x10, format, dims, 0, 0, 0x10, 0x21, if ext.is_some() { 0x10 } else { 0x02 }];
         if let Some((w, h)) = ext {
             for v in [20u32, 0, 0, w, h] {
                 tex.extend_from_slice(&v.to_le_bytes());

@@ -65,8 +65,8 @@ offset table: u32 per texture, relative to the table's start
 per texture:  u8   mip count << 4 | depth
               u8   format
               u8   log2 height << 4 | log2 width
-              u8×4 0, 0, 0x10, 0x21 in every Escha texture
-              u8   1 if an extended header follows
+              u8×4 0, 0, 0x10, 0x21 in model textures (other values in terrain)
+              u8   flags: 0x10 when an extended header follows (0x02 in terrain textures)
               [u32 extended size, 12 or 20, then size - 4 bytes; at 20 the true width and
                height are u32 at +12 and +16, for sizes that are not powers of two]
               the mip levels, largest first, tightly packed, rows top to bottom
@@ -184,7 +184,7 @@ the terrain and the field's own data:
 
 | Entry | What |
 |---|---|
-| `<AREA>.ktf` | terrain (KTGL, magic `KFTK`), not read yet |
+| `<AREA>.ktf` | terrain (below) |
 | `<AREA>.khm` | heightmap (below) |
 | `<AREA>.g1t`, `<AREA>_pat.g1t` | terrain textures |
 | `<AREA>.g1s` | the field's shaders |
@@ -211,6 +211,26 @@ value for height 0 (0x1338aa), the valley floor. Drawn under the field's objects
 with them, the cliff ring standing around its edge. It is coarse, one vertex every 100
 units, so it is most likely the height for walking and placing; the detailed ground is in
 the `.ktf`.
+
+### Terrain (`*.ktf`)
+
+Read by `barrel_formats::ktf`; all 141 of Escha's read (`barrel ktf-scan DIR`). The ground
+is the field's heightmap textured by blending ground layers, and the file bundles all of
+it:
+
+| Offset | What |
+|---|---|
+| 0x0c | u32 file size |
+| 0x10 | u32 offset of the layer textures: a `g1t` of 512×512 BC3 tiles (sand, dirt, cracked earth, grass in AREA_01_01), 1 to 20 per field |
+| 0x14 | u32 offset of the blend maps: a `g1t` of two 512×512 BC1 maps over the whole field, their RGB channels the layers' weights |
+| 0x1c | u32 offset of the heightmap: a `khm`, the same as the field's own `.khm` |
+| 0x84 | f32 cell size (100), f32 25, f32 1/256 |
+| 0x90 | u16 cells across, u16 cells down (64 × 64) |
+
+The layer tiles' alpha is 0 throughout, so alpha means something other than opacity there.
+Fields with more layers than the two maps' six channels can weight need the block between
+0x98 and the layer textures (layer settings and a tree of patches with their bounds),
+which is not decoded yet.
 
 ### Placement lists (`*.opl2`)
 
