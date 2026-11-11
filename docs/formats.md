@@ -88,16 +88,16 @@ reader stops there.
 | 0x7f000000 | end of the body |
 | anything else | an operand |
 
-Most operands come in `(value, type)` pairs, where type 0 is an integer literal and 9 is
-seen too. For example `q4` takes seven pairs:
+Each command is followed by a fixed number of operand words; `docs/events.md` lists
+the commands, their names and their operand counts. For example `q4`
+(`ECT_FIELDMAP_CHARA_ADDITION_EX`) takes 14 words:
 
 ```text
 q4  7 0  0 0  1000 0  800 0  -50 0  31 0  2 0
 ```
 
-The number of operands each command takes, and what the commands do, is the next step.
-The game's command dispatch in the executable will give both. The commonest commands in
-Escha are `w1` (47,448 uses), `s4`, `s38`, `p1`, `q8`, `s24` and `t2` with flags 0x30.
+Here the operands read as `(value, type)` pairs, with type 0 an integer literal, but
+other commands take odd counts (`ECT_CHARA_POS_SET` takes 7), so pairs are not the rule.
 
 ## Tables (`Saves*/**/*.xml`)
 
