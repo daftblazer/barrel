@@ -39,6 +39,32 @@ pub fn party_block(level: i32, s: &barrel_formats::battle_data::LevelStats) -> S
     StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0 }
 }
 
+/// What an equipped item adds (`docs/tables.md`, "A party member's stats"): its HP, MP,
+/// attack, defence and speed columns, at a quality. Which item column goes to which battle stat
+/// is taken by name; the executable reads them as an array (item row +0x78) not mapped yet.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Equipment {
+    pub hp: i32,
+    pub mp: i32,
+    pub attack: i32,
+    pub defense: i32,
+    pub speed: i32,
+    pub quality: f32,
+}
+
+/// `block` with each item's share added (traits and potentials not counted).
+pub fn equip(block: &StatBlock, items: &[Equipment]) -> StatBlock {
+    let mut b = block.clone();
+    for e in items {
+        let add = |v: i32| battle::equipment_stat(v, 0, e.quality);
+        b.hp += add(e.hp);
+        b.attack += add(e.attack);
+        b.defense += add(e.defense);
+        b.speed += add(e.speed);
+    }
+    b
+}
+
 /// Runs the duel until one side's HP is 0 or `max_hits` hits have been made; fighter i uses
 /// `attacks[i]` (the party's normal attack is skill 0, the monsters' skill 1).
 pub fn duel(a: &StatBlock, b: &StatBlock, attacks: [&Skill; 2], rng: &mut Rng, max_hits: usize) -> Vec<Hit> {

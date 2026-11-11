@@ -42,7 +42,7 @@ usage:
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
-  barrel duel EXE A B          two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
+  barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -85,7 +85,8 @@ fn main() -> ExitCode {
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
-        ["duel", exe, a, b] => duel(Path::new(exe), a, b),
+        ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
+        ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["shops", install] => shops(Path::new(install), None),
@@ -564,7 +565,7 @@ fn party(exe: &Path) -> Result<()> {
 
 /// A partial battle between two monsters (by number) trading normal attacks; see
 /// `barrel_game::duel` for what it leaves out.
-fn duel(exe: &Path, a: &str, b: &str) -> Result<()> {
+fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
     use barrel_formats::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
@@ -588,7 +589,21 @@ fn duel(exe: &Path, a: &str, b: &str) -> Result<()> {
         let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{s}: no such monster"))?;
         Ok((m.name.clone(), m.blocks[0].clone(), monster_attack))
     };
-    let ((na, ba, aa), (nb, bb, ab)) = (pick(a)?, pick(b)?);
+    let ((na, mut ba, aa), (nb, bb, ab)) = (pick(a)?, pick(b)?);
+    // --equip "NAME[@QUALITY]": an item from Saves_EN/item/itemData.xml for the first fighter.
+    if let Some(spec) = equip {
+        let (name, quality) = spec.rsplit_once('@').map_or((spec, 50.0), |(n, q)| (n, q.parse().unwrap_or(50.0)));
+        let root = exe.parent().ok_or("no install folder")?;
+        let path = root.join("Saves_EN/item/itemData.xml");
+        let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        let row = table.children.iter().find(|r| r.attr("ItemName") == Some(name)).ok_or_else(|| format!("no item named {name}"))?;
+        let n = |k: &str| row.attr(k).and_then(|v| v.parse().ok()).unwrap_or(0);
+        let e = barrel_game::duel::Equipment {
+            hp: n("HP"), mp: n("MP"), attack: n("ATK"), defense: n("DEF"), speed: n("SPD"), quality,
+        };
+        ba = barrel_game::duel::equip(&ba, &[e]);
+        println!("{na} equips {name} (quality {quality}): attack {}, defence {}, speed {}", ba.attack, ba.defense, ba.speed);
+    }
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let hits = barrel_game::duel::duel(&ba, &bb, [aa, ab], &mut rng, 1000);
     for h in &hits {
