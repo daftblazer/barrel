@@ -525,12 +525,15 @@ one, -1 none), one per tag in order; `tools/areas.py EXE` lists them.
 | 32 | i32 -1, or 181 in one |
 | 36 | f32: 1.5 in most; 1.0 to 3.5 among the R records |
 | 40 to 60 | six i32: on the R records three pairs (2 to 7, 688 to 692) and a 0 or 1; 0 and -1 on the others |
+| 64 to 87 | three pointers, 0 in the file: filled at run time (+0x48 and +0x50 point to the two places' objects) |
 
 So the R records join two places on the world map (Colseit and "the forest that welcomes
 twilight" for R0), and the float is most likely the days the trip takes; the lettered
 records (A0 the forest's, A1 the old road's, ...) join two parts of one field ("A0R1: the
-forest entrance to the path to the settlement"). That reading is from the names and values
-only and should be checked against the code that uses the records. Record 85, past the
+forest entrance to the path to the settlement"). `0x14037f650` (which takes an area number) confirms the joining: it takes the two place
+objects from +0x48 and +0x50, and looks the short id up by name (`0x1404f14d0`) in the map
+object, the route's path. The float's meaning is still a reading from the values; no
+reader of +0x24 has been found yet. Record 85, past the
 table, is something else (pointers to "Knowledge: nothing", "Knowledge: new", ...).
 
 ## Monsters
