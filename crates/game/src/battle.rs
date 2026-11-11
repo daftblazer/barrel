@@ -27,6 +27,15 @@ pub fn equipment_stat(item_stat: i32, traits: i32, quality: f32) -> i32 {
     ((item_stat + traits) as f32 * ((quality * 0.5 + 75.0) / 100.0)) as i32
 }
 
+/// A party member's chance to survive a fatal blow at 1 HP ("guts", the party character's
+/// virtual +0x130, `0x1401b8850`, run on each target after an effect): only when its HP is 0
+/// and guts has not already saved it since its last heal (+0x28d); stat 25 percent, at most
+/// 75, or 100 under `ADD_GUTS` (state 4, which it then loses) or while its +0x2b8 or +0x2c0
+/// is positive. The chance roll (`0x1404ca5f0`) is always drawn when it gets that far.
+pub fn guts_chance(stat25: i32, add_guts: bool, forced: bool) -> i32 {
+    if add_guts || forced { 100 } else { stat25.min(75) }
+}
+
 /// `HEAL_HP_BY_ATK`'s amount (act 21, `0x1401bedf3`): the user's attack times the rolled amount
 /// in percent, cut to an integer, then times the scale. (`HEAL_HP`, act 19, is the rolled
 /// amount times the scale.)
@@ -346,12 +355,25 @@ impl Timeline {
     /// lists this short), the next entry's wait is taken off it and every entry after it (not
     /// under 0), and the list is sorted again. The next entry then has wait 0 and acts.
     ///
-    /// Not done here: entries at the front whose +0x10 is negative are pushed back by 1000
-    /// instead (what +0x10 is, is still open).
+    /// Everyone takes part; see [`Timeline::advance_with`] for fallen characters.
     pub fn advance(&mut self) -> i32 {
+        self.advance_with(|_| false)
+    }
+
+    /// [`Timeline::advance`] where `out(character)` says whose entry is out of the running (a
+    /// fallen character's: the down handler sets the entry's +0x10 to -1, `0x14018ccf0`):
+    /// such entries at the front are pushed back by 1000 (no further than 1000) and skipped,
+    /// and the time taken off is the first entry still in the running's wait, off it and every
+    /// entry after it.
+    pub fn advance_with(&mut self, out: impl Fn(u32) -> bool) -> i32 {
         self.entries.sort_by_key(|&(_, w)| w);
-        let Some(&(_, passed)) = self.entries.first() else { return 0 };
-        for e in &mut self.entries {
+        let mut first = 0;
+        while first < self.entries.len() && out(self.entries[first].0) {
+            self.entries[first].1 = (self.entries[first].1 + MAX_WAIT).min(MAX_WAIT);
+            first += 1;
+        }
+        let Some(&(_, passed)) = self.entries.get(first) else { return 0 };
+        for e in &mut self.entries[first..] {
             e.1 = (e.1 - passed).clamp(0, MAX_WAIT);
         }
         self.entries.sort_by_key(|&(_, w)| w);
@@ -498,6 +520,16 @@ mod tests {
         assert_eq!(state_group(0x19), Some(9));
         assert_eq!(state_group(0x2d), Some(9));
         assert_eq!(state_group(0x34), None);
+    }
+
+    #[test]
+    fn fallen_entries_wait_out_the_turn() {
+        let mut t = Timeline { entries: vec![(0, 100), (1, 200), (2, 300)] };
+        // 0 has fallen: pushed to 1000, and 1's 200 passes for the others.
+        assert_eq!(t.advance_with(|c| c == 0), 200);
+        assert_eq!(t.entries, [(1, 0), (2, 100), (0, 1000)]);
+        assert_eq!(guts_chance(90, false, false), 75);
+        assert_eq!(guts_chance(10, true, false), 100);
     }
 
     #[test]

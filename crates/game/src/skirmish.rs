@@ -63,12 +63,6 @@ pub fn skirmish(party: &[Member], foe: &Foe, rng: &mut Rng, max_events: usize) -
     let mut events = Vec::new();
     while events.len() < max_events && b.winner().is_none() {
         let who = b.next();
-        if b.fighters[who].down() {
-            // A fallen fighter's turn passes (the game takes it off the timeline; not read).
-            let i = b.timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
-            b.timeline.entries[i].1 = battle::MAX_WAIT;
-            continue;
-        }
         events.extend(b.start_turn(who));
         if b.winner().is_some() || b.fighters[who].down() {
             continue;

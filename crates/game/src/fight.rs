@@ -38,6 +38,8 @@ pub struct Fighter {
     pub draw: i32,
     /// The character a monster remembers (+0x314; -1 none), for target pick 4.
     pub remembered: i32,
+    /// Whether guts has saved it since its last heal (+0x28d).
+    pub guts_used: bool,
 }
 
 impl Fighter {
@@ -51,7 +53,7 @@ impl Fighter {
         s[stat::DEFENSE] = block.defense;
         s[stat::SPEED] = block.speed;
         s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
-        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1 }
+        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1, guts_used: false }
     }
 
     /// With `mp` as its MP and maximum MP (the monsters' blocks have none).
@@ -185,9 +187,11 @@ impl Battle {
         Some(first)
     }
 
-    /// Moves time on to the next turn and says whose it is.
+    /// Moves time on to the next turn and says whose it is; fallen fighters' entries are out
+    /// of the running.
     pub fn next(&mut self) -> usize {
-        self.timeline.advance();
+        let fallen: Vec<bool> = self.fighters.iter().map(Fighter::down).collect();
+        self.timeline.advance_with(|c| fallen[c as usize]);
         self.timeline.entries[0].0 as usize
     }
 
@@ -242,6 +246,7 @@ impl Battle {
             let amount = if effect.act == 21 { battle::heal_by_attack(self.fighters[who].stats[stat::ATTACK], amount, 1.0) } else { amount };
             let blocked = self.fighters[target].states.iter().any(|s| s.state == 0x4e);
             let amount = battle::heal(&mut self.fighters[target].stats, amount, blocked);
+            self.fighters[target].guts_used = false;
             let event = Event::Healed { who, skill: skill.name.clone(), target, amount, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() };
             self.end_action(who, skill, rng);
             return vec![event];
@@ -268,9 +273,30 @@ impl Battle {
                 battle::take_hp_damage(&mut self.fighters[target].stats, amount, None, None)
             }
         };
+        self.after_effect(target, rng);
         let events = vec![Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() }];
         self.end_action(who, skill, rng);
         events
+    }
+
+    /// What happens to a target after an effect (`0x1401c0676` and on): a party member's guts
+    /// (stat 25) may keep it at 1 HP; one that has gone down loses its timed states (`0x1401b0580`
+    /// through the down handler, virtual +0xf0) and drops out of the timeline.
+    fn after_effect(&mut self, target: usize, rng: &mut Rng) {
+        let f = &mut self.fighters[target];
+        if f.side == 0 && f.hp() <= 0 && !f.guts_used {
+            // `ADD_GUTS` is spent before the roll, whatever it gives.
+            let add_guts = f.states.iter().any(|s| s.state == 4);
+            f.states.retain(|s| s.state != 4);
+            if rng.chance(battle::guts_chance(f.stats[25], add_guts, false)) {
+                f.guts_used = true;
+                f.stats[stat::HP] = 1;
+            }
+        }
+        if f.down() {
+            f.states.clear();
+            f.restat();
+        }
     }
 
     /// Its next wait (`0x1401b9b70`, `0x14018c9d0`) and the action counted (`0x1401aecda`); an

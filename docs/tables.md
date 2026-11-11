@@ -410,7 +410,7 @@ skipped when looking a character up). Two functions move a character:
   ahead of every entry whose wait is no less than its new one (on a tie, it goes first).
 
 Time moves on in `0x14018c7e0 (timeline)`: it sorts the entries by wait, pushes the entries
-at the front whose +0x10 is negative back by 1000 (at most 1000; what +0x10 is is still open),
+at the front whose +0x10 is negative back by 1000 (at most 1000; +0x10 is -1 for a fallen character, "Falling and guts"),
 takes the first other entry's wait w off it and every entry after it (not under 0), tells the
 battle that w passed (`0x1401b5b50 (battle +0x8d0, w)`, for the timed states, presumably) and
 sorts again. The sort (`0x1401a8400`, the standard library's introsort) compares waits only;
@@ -451,6 +451,22 @@ last. The action's wait comes from the skill's (+24 in the record; 600 for the n
 So speed takes up to a quarter off every wait (at speed 125 and more). When `RETURN_WT`'s
 count resets is still to be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`), `action_wait`,
 `wait_after_action` and `knockback` do the above.
+
+### Falling and guts (executable)
+
+After each effect on a target (`0x1401c0676` and on) the game sets the MP power back to 100,
+runs the target's virtual +0x130, updates its standing flag (+0x282, `0x1401b0540`: false
+when its maximum HP is positive and its HP is 0 or less) and, when it has just gone down, its
+virtual +0xf0. A party member's +0x130 (`0x1401b8850`, the party vtable `0x140808540`) is
+**guts**: with HP at 0 and +0x28d clear, the chance is stat 25 percent at most 75, or 100 under
+`ADD_GUTS` (state 4, removed before the roll whatever it gives) or while +0x2b8 or +0x2c0 is
+positive; the roll (`0x1404ca5f0`) is always drawn, and on success the member stays at 1 HP and
++0x28d is set until a heal clears it. The down handler (`0x1401b0580`) clears the character's
+timed states (`0x1401919a0`), drops its pending action (+0x1e0) and marks its timeline entry
+(+0x10 = -1, `0x14018ccf0`); time's advance then pushes such entries at the front back by 1000
+(no further than 1000) and takes the time from the first entry still in the running, so a
+fallen character never gets a turn until revived (`battle::guts_chance`,
+`Timeline::advance_with`, `fight::Battle`).
 
 ### Skill targets (executable)
 
