@@ -1623,10 +1623,20 @@ fn main() -> Result<()> {
         dist = c.distance;
         eprintln!("event camera: target {:?}, distance {}, yaw {}, pitch {}, fov {}", c.target, c.distance, c.yaw, c.pitch, c.fov);
     }
-    let view = Mat4::look_at_rh(eye, target, Vec3::Y);
+    // The camera can be turned about its target and moved in or out from the window
+    // (arrows, + and -): `orbit` holds the turn (yaw, pitch in radians) and the zoom factor.
+    let mut orbit = (0f32, 0f32, 1f32);
     // The projection follows the target's current aspect (the window can change size).
-    let view_proj = |width: u32, height: u32| {
-        let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01, dist * 20.0);
+    let view_proj = |width: u32, height: u32, (yaw, pitch, zoom): (f32, f32, f32)| {
+        let offset = eye - target;
+        let flat = offset.length();
+        let turned = glam::Quat::from_rotation_y(yaw) * offset;
+        let right = turned.cross(Vec3::Y).normalize_or_zero();
+        let tilted = glam::Quat::from_axis_angle(right, pitch) * turned;
+        // Do not tip over the top or under the bottom.
+        let offset = if tilted.normalize_or_zero().y.abs() < 0.98 { tilted } else { turned };
+        let view = Mat4::look_at_rh(target + offset.normalize_or_zero() * flat * zoom, target, Vec3::Y);
+        let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01 * zoom, dist * 20.0 * zoom);
         proj.y_axis.y *= -1.0; // Vulkan's y points down.
         proj * view
     };
@@ -1708,21 +1718,47 @@ fn main() -> Result<()> {
         .transpose()?;
     let mut last_frame = std::time::Instant::now();
     let mut stale = false;
+    let mut paused = false;
     for frame in 0..frames {
+    // The real time since the last frame (a window's frames are real time).
+    let now = std::time::Instant::now();
+    let frame_dt = (now - last_frame).as_secs_f64().min(0.25) as f32;
+    last_frame = now;
     if let Some(p) = pump.as_mut() {
         if !p.pump() {
             eprintln!("window closed after {frame} frames");
             break;
         }
+        // Space pauses the event, Escape quits; arrows turn the camera about its target
+        // and + / - move it in and out (R puts it back).
+        use winit::keyboard::KeyCode;
+        let mut quit = false;
+        for key in p.take_pressed() {
+            match key {
+                KeyCode::Space => {
+                    paused = !paused;
+                    eprintln!("frame {frame}: {}", if paused { "paused" } else { "playing" });
+                }
+                KeyCode::Escape => quit = true,
+                KeyCode::KeyR => orbit = (0.0, 0.0, 1.0),
+                _ => {}
+            }
+        }
+        if quit {
+            eprintln!("quit after {frame} frames");
+            break;
+        }
+        let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
+        orbit.0 += axis(KeyCode::ArrowLeft, KeyCode::ArrowRight) * 1.5 * frame_dt;
+        orbit.1 = (orbit.1 + axis(KeyCode::ArrowDown, KeyCode::ArrowUp) * 1.0 * frame_dt).clamp(-1.2, 1.2);
+        let zoom_in = axis(KeyCode::Minus, KeyCode::Equal) + axis(KeyCode::NumpadSubtract, KeyCode::NumpadAdd);
+        orbit.2 = (orbit.2 * (1.0 - zoom_in * 1.2 * frame_dt)).clamp(0.1, 10.0);
     }
     if let Some((play, clock, before, after)) = player.as_mut() {
         if frame > 0 {
             // A window takes the real time since the last frame; files take 1/fps.
             let real = if presenter.is_some() {
-                let now = std::time::Instant::now();
-                let r = (now - last_frame).as_secs_f64();
-                last_frame = now;
-                r
+                if paused { 0.0 } else { frame_dt as f64 }
             } else {
                 1.0 / fps
             };
@@ -1844,7 +1880,7 @@ fn main() -> Result<()> {
         },
         _ => 0,
     };
-    let mvp = view_proj(width, height);
+    let mvp = view_proj(width, height, orbit);
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
     let record = |cb: vk::CommandBuffer| unsafe {
         let clear = [

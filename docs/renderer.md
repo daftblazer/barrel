@@ -193,3 +193,12 @@ reports a new size or when acquire or present says it is stale or suboptimal; a 
 window (0 × 0) skips frames; and the projection takes the current aspect each frame. Not
 yet exercised by an actual resize: headless gamescope scales the 1280×720 window into a
 smaller output instead of resizing it.
+
+**Controls.** In the window: Space pauses and resumes the event (the clock is given no
+time while paused; the frame still draws), arrows turn the camera about its target (left
+and right about the vertical, up and down over it, stopping short of straight above or
+below), `=`/`+` and `-` move it in and out, R puts it back, Escape quits. The pump keeps
+which keys are held and which were pressed since the last frame (repeats left out; all
+released when the window loses focus); turning and zooming go by each frame's real time.
+With the camera as it starts, frames are pixel-identical to before. Not yet driven by real
+key presses in a test: headless gamescope has no keyboard.

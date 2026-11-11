@@ -195,6 +195,9 @@ struct PumpState {
     error: Option<String>,
     /// Set when the window changed size since it was last taken.
     resized: bool,
+    /// Keys held down now, and keys pressed since the last `take_pressed`.
+    held: std::collections::HashSet<winit::keyboard::KeyCode>,
+    pressed: Vec<winit::keyboard::KeyCode>,
 }
 
 impl ApplicationHandler for PumpState {
@@ -212,6 +215,19 @@ impl ApplicationHandler for PumpState {
         match event {
             WindowEvent::CloseRequested => self.closed = true,
             WindowEvent::Resized(_) => self.resized = true,
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
+                    if event.state.is_pressed() {
+                        if !event.repeat {
+                            self.pressed.push(code);
+                        }
+                        self.held.insert(code);
+                    } else {
+                        self.held.remove(&code);
+                    }
+                }
+            }
+            WindowEvent::Focused(false) => self.held.clear(),
             _ => {}
         }
     }
@@ -240,6 +256,16 @@ impl Pump {
 
     pub fn window(&self) -> &Window {
         self.state.window.as_ref().expect("open made the window")
+    }
+
+    /// Keys pressed (not repeats) since the last call.
+    pub fn take_pressed(&mut self) -> Vec<winit::keyboard::KeyCode> {
+        std::mem::take(&mut self.state.pressed)
+    }
+
+    /// Whether `key` is held down now.
+    pub fn held(&self, key: winit::keyboard::KeyCode) -> bool {
+        self.state.held.contains(&key)
     }
 
     /// Whether the window changed size since the last call.
