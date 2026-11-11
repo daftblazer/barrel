@@ -31,6 +31,7 @@ usage:
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel ktf-scan DIR          read every field terrain in the containers
+  barrel g1a FILE#N            list an animation's tracks (bone, kind, values over time)
   barrel g1a-scan DIR          read every animation in the containers
   barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
   barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
@@ -70,6 +71,7 @@ fn main() -> ExitCode {
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
+        ["g1a", file] => g1a(file),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
@@ -659,6 +661,23 @@ fn g1m_obj(spec: &str, out: &Path) -> Result<()> {
     }
     std::fs::write(out, obj)?;
     println!("{} submeshes written to {}", g.submeshes.len(), out.display());
+    Ok(())
+}
+
+fn g1a(spec: &str) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let a = barrel_formats::g1a::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    println!("{:.3} s, {} tracks", a.duration, a.tracks.len());
+    for t in &a.tracks {
+        let times = [0.0, a.duration * 0.25, a.duration * 0.5, a.duration * 0.75, a.duration];
+        match t.scalar(0.0) {
+            Some(_) => {
+                let v: Vec<String> = times.iter().map(|&x| format!("{:.2}", t.scalar(x).unwrap())).collect();
+                println!("  bone {:4} weight {}", t.bone, v.join(" "));
+            }
+            None => println!("  bone {:4} flag {:#x}, {} components", t.bone, t.flag, t.components.len()),
+        }
+    }
     Ok(())
 }
 

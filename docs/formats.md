@@ -230,6 +230,15 @@ expression: angry, default, fun, sad, serious) are the single-value `g1a` tracks
 whose "bones" are these targets' weights. All 126 morph files in Escha & Logy DX read and
 match their models: 239 sets, 1,858 targets.
 
+**Which track drives which target.** A set's n counts its targets plus one, and the
+facial animation for that part of the face has exactly n tracks: Escha's brow animations
+(`*_M_Brw_*`) have 8 tracks for the 8 of layout 7, the eye animations 11 for layout 3 and the
+mouth animations 19 for layout 4. Track (bone) 0 is the rest shape, which has no stored
+target; bone k ≥ 1 weights target k − 1. The posed face is then base + Σ weight × offset
+over the set's targets. `barrel g1a FILE#N` prints the weights over time: the default mouth
+moves bones 1, 5 and 6 (up to 0.77) while she talks, the angry mouth holds bone 12 at 1.0 and
+moves 6, 8 and 13.
+
 ## Node names (`*Oid.bin`)
 
 Read by `barrel_formats::oid`. Each model container has one (`<name>Oid.bin`, the `.bin`
