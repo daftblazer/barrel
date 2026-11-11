@@ -825,7 +825,7 @@ fn oid_scan(dir: &Path) -> Result<()> {
 fn ebm(file: &Path) -> Result<()> {
     let msgs = barrel_formats::ebm::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     for m in &msgs {
-        println!("[{} speaker {}] {}", m.kind, m.speaker, m.repaired_text().replace("<CR>", " / "));
+        println!("[{} speaker {} {:?}] {}", m.kind, m.speaker, m.fields, m.repaired_text().replace("<CR>", " / "));
     }
     Ok(())
 }

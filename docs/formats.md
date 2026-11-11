@@ -390,9 +390,17 @@ UTF-8. `barrel ebm FILE` prints a file; `barrel ebm-scan DIR` reads them all.
 u32 message count
 per message: u32 kind (1 for 89% of lines; 2, 4 and 0 also occur)
              i32 speaker, a character number (-1 for system text)
-             i32 ×6, not decoded yet (they vary with portrait and expression)
+             i32 ×6: 0; the speaker again; a number per line (0..~250); a small
+                   code (0, 3 or 4); the line's index in the file; 0
              u32 length, then the UTF-8 text with its terminating 0
 ```
+
+In `MM08_AS4_130` the third field runs 246, 91, 1, 1, 237, 248, ... (Escha's lines 246, 248,
+235, 134), which looks like a voice clip or expression number per line, and the fourth is 0,
+3 or 4; which they are is still open. They matter for faces: events hardly set expressions
+with commands (`ECT_CHARA_FACIAL_MOTION_SET`, `s88`, occurs 17 times in all 1,639 events, and
+the brow, eye and mouth variants never), so per-line expressions must come from these
+fields or from the body motions. `barrel ebm` prints the fields.
 
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.
