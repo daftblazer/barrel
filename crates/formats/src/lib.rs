@@ -26,6 +26,7 @@ pub mod pak;
 pub mod pe;
 pub mod png;
 pub mod recipe;
+pub mod save;
 pub mod table;
 pub mod voice;
 pub mod xml_e;

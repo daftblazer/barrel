@@ -42,6 +42,7 @@ usage:
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
   barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
+  barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -105,6 +106,7 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
+        ["save", file] => save(Path::new(file)),
         ["days", install, n] => days(Path::new(install), n, false),
         ["days", install, n, "--events"] => days(Path::new(install), n, true),
         ["board", install, day, rest @ ..] if rest.iter().all(|a| *a == "--events" || a.starts_with("--offset=")) => {
@@ -763,6 +765,17 @@ fn days(install: &Path, n: &str, events: bool) -> Result<()> {
         }
     }
     println!("day {}: friendship {:?}", w.date, w.friendship.iter().map(|f| (f * 100.0).round() / 100.0).collect::<Vec<_>>());
+    Ok(())
+}
+
+/// A save's header.
+fn save(file: &Path) -> Result<()> {
+    let data = read(file)?;
+    let s = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?;
+    let t = s.saved_at;
+    println!("saved {:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
+    println!("summary {:?}", s.summary);
+    println!("{} encrypted bytes follow", s.body.len());
     Ok(())
 }
 

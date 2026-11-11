@@ -263,6 +263,17 @@ moves its pieces outward; most bones hold still with one key.
 subtype 1 is an eye: texture 0 the eye white, 1 the iris (BC3, with alpha), 2 a glow, 3 the
 highlights. All four use the eye mesh's single UV set.
 
+## Saves (`GAMEDATA<NN>.pcsave`)
+
+The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its
+`ROOT:savedata/GAMEDATA%02d`). A `GAMEDATA` file starts with 0x100 plain bytes, the summary
+the load screen shows: i32s from +0x28 (5, 28, 34, 2954, 12, 0, 1, 29, ... in one save; the
+last two read as u16 pairs, 12 and 14, 12 and 15), -1 padding from +0x74, and at +0xa4 the time
+of saving as a Windows `SYSTEMTIME` (year, month, day of the week, day, hour, minute, second,
+milliseconds). The game state follows, encrypted (a 66,624-byte save has 66,368 bytes of
+it; how is not read yet). `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
+`barrel_formats::save` reads the header and `barrel save FILE` prints it.
+
 ## Voices (`Sound/Voice/Series*.fp`)
 
 `Data/x64/Sound/Voice` (and `Voice_EN`) hold 18 banks, `Series0000` to `Series17000`, each
