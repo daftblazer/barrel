@@ -139,6 +139,30 @@ Escha, most often): `0x1400710b0` finds the character by number (its +0x78) thro
 resource manager's part hints at the latter) is still open. `p5` (`ECT_MACRO_CAMERA_WAIT`)
 is answered by `EventExecCamera`.
 
+**Characters' own commands.** Each character in an event has a listener of its own
+(`0x14026b110` decides, `0x14026b3c0` runs): it takes a command when the command's first
+operand is its character number (the character's +0x78), for `q7`, `q9`, `s3`, `s4`, `s18`
+to `s21`, `s66` and a few more. So these commands' first operand is always a character, and
+each character runs them on its own:
+
+- `q7` (`ECT_FIELDMAP_CHARA_SET_EVENT_MODE`, `{character}`) sets the character's mode
+  (+0x138, through `0x14026d040`) to 1, the event mode; `q9` (0x71000009) sets it to its
+  second operand (5 when there is none);
+- `s3` (`ECT_CHARA_TIME_WAIT`, `{character, hundredths}`) starts a timer on the character
+  (the same timer as the event's, `0x14005b310`), so the character waits while the rest of
+  the event goes on;
+- `s4` (`ECT_CHARA_POS_SET`) places it (see "Placing characters").
+
+That a `p3` (`ECT_MACRO_CHARA_WAIT`) waits until a character has done what it was told (its
+timer and queued commands) would fit, but is not read yet.
+
+Events also add invisible markers as characters: `Chara.xml` rows 590 to 603 are
+`ID_DUMMY_POS_000` to `_013`; rows 591 to 602 (`_001` to `_012`) are added (`q3`) and set up
+(`q7`, `q8`) 281 times each in Escha's events, and row 749, "Master Character", often too, places for the camera and the characters to aim at, by the look of it.
+`q3` (`ECT_FIELDMAP_CHARA_ADDITION`) is `{character, 0}`; `q8`
+(`ECT_FIELDMAP_CHARA_COLLISION_FLAG`) is `{character, a, b, c, d}`, most often `0 0 0 2` or
+`1 1 1 2`, through a listener not found yet.
+
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 
 ## Who handles them
