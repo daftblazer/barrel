@@ -128,4 +128,8 @@ pixel-identical to before; the blend itself is not yet checked by eye. Frames wr
 so the viewer's clock has no stall cap (`Clock::max_frame`). Frames go to `OUT_000.png`,
 `OUT_001.png`, ... In `EVENT_MM08_AS4_130` (`TOWN_04`), 4 frames at 2 Hz from 0.5 s show Logy
 and Escha walking into the plaza towards Threia and Reyfer, mid-stride; 4 frames at 1 Hz from 1.5 s show them arriving and changing from `WALK` to
-`F_WAIT` at 2.4 s, as the event says. Not yet: characters added after the start, the stage camera, faces.
+`F_WAIT` at 2.4 s, as the event says. Every character the event ever places is loaded up front; a character the stage does not
+have at a frame (not placed yet, or removed by `q5`) is not drawn (its draws are skipped
+by instance), so characters come and go as the event says (`EVENT_MM08_AS4_020`: Escha,
+Logy and character 7 appear by 0.5 s, placed at 0.1 and 0.2 s). Not yet: which field an
+event plays in (given by hand with `--field`), the stage camera, faces.

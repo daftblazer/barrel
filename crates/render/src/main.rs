@@ -557,6 +557,7 @@ fn event_characters(
     line: Option<usize>,
     at: Option<f32>,
     actors: &mut Vec<Actor>,
+    absent_out: &mut std::collections::HashSet<u32>,
 ) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
@@ -639,6 +640,7 @@ fn event_characters(
         }
     }
     let mut stage_motions: std::collections::HashMap<u32, (String, f32, bool)> = Default::default();
+    let absent = absent_out;
     // --at SECONDS: where the stage has everyone then (barrel_game::stage), and its camera
     // when it has set both the eye and the target.
     if let Some(at) = at {
@@ -652,7 +654,12 @@ fn event_characters(
         let upto: Vec<_> = steps.into_iter().filter(|t| t.time <= at).collect();
         let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
         stage.run_until(at + FRAME * 0.5);
+        // Everyone the event ever places is loaded (so playing on can show characters who come
+        // later); those not on the stage at `at` start hidden.
+        let later: Vec<Placement> = first.iter().filter(|f| !stage.characters.contains_key(&f.0)).copied().collect();
         first = stage.characters.iter().map(|(&n, b)| (n, b.position, b.facing.to_degrees())).collect();
+        absent.extend(later.iter().map(|f| f.0));
+        first.extend(later);
         // Each character's motion then, by its MOTION_* name (a CharaBase column), and how far in.
         let names = std::fs::read_dir(root)?
             .flatten()
@@ -973,9 +980,11 @@ fn main() -> Result<()> {
     let mut focus = None;
     let mut event_camera: Option<EventCamera> = None;
     let mut actors: Vec<Actor> = Vec::new();
+    // Characters loaded but not on the stage (yet, or any more): not drawn.
+    let mut absent: std::collections::HashSet<u32> = Default::default();
     if let Some(e) = &event_spec {
         let base = G1t::parse(&pack_bytes[0])?.textures.len();
-        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors)?;
+        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent)?;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
@@ -1355,6 +1364,13 @@ fn main() -> Result<()> {
         player = Some((play, clock, snap.clone(), snap));
     }
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);
+    let mut hidden = vec![false; instances.len()];
+    for a in &actors {
+        hidden[a.instance as usize] = match &player {
+            Some((_, _, _, now)) => !now.characters.contains_key(&a.who),
+            None => absent.contains(&a.who),
+        };
+    }
 
     // Render each frame and read it back.
     let bytes = (size * size * 4) as u64;
@@ -1374,6 +1390,11 @@ fn main() -> Result<()> {
             // The time on screen: the logic time less the part of the last tick not yet shown.
             let shown_time = play.stage.time - (1.0 - f.alpha) / clock.rate() as f32;
             for a in actors.iter_mut() {
+                let gone = !shown.characters.contains_key(&a.who);
+                if gone != hidden[a.instance as usize] {
+                    eprintln!("frame {frame}: character {} {}", a.who, if gone { "leaves" } else { "appears" });
+                }
+                hidden[a.instance as usize] = gone;
                 // The stage's motion for the character, by its MOTION_* name; a new one is
                 // loaded (once) and played from the time the stage started it.
                 let staged = play.stage.characters.get(&a.who).and_then(|b| b.motion);
@@ -1457,7 +1478,7 @@ fn main() -> Result<()> {
         let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        for draw in &draws {
+        for draw in draws.iter().filter(|d| !hidden[d.instance as usize]) {
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &draw.instance.to_le_bytes());
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
