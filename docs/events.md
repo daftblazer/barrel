@@ -107,19 +107,21 @@ with `3791 0 2250 286 448 9983 383 11369 0 150 0`:
 
 | Operand | Example | Use (from the handler) |
 |---|---|---|
-| 1 | 37.91° | angle, through the same setter as `t3` (0x74100003): yaw |
-| 2 | 0° | angle, stored where `t5` (0x74100005) stores |
-| 3 | 22.50° | angle, through the same setter as `t7` (0x74100007): pitch |
-| 4, 5 | 2.86, 4.48 | not settled; 448 field units works as the distance |
-| 6..8 | (9983, 383, 11369) | the point looked at, in field units |
-| 10 | 150 | frames to move over |
+| 1 | 37.91° | yaw, through the same setter as `t3` (0x74100003) |
+| 2 | 0° | an angle, stored where `t5` (0x74100005) stores |
+| 3 | 22.50° | pitch, through the same setter as `t7` (0x74100007) |
+| 4 | 2.86° | an angle, through `0x1401ec8f0` (not identified yet) |
+| 5 | 448 | distance (divided by 100, then multiplied back) |
+| 6..8 | (9983, 383, 11369) | the target point, in field units |
+| 9..11 | (0, 150, 0) | an offset added to the target: the look-at point sits 150 units up, about head height |
 
-Read that way (yaw 37.91°, pitch 22.5°, distance 448, a 40° field of view), the opening
-shot stands in the plaza looking at Threia and Reyfer by the planter, but aimed too low:
-the look-at height (the game probably lifts the point, or uses operand 4) is still open.
-`barrel-view --event-camera` uses it; without it the view is placed on the characters.
+The camera looks at target + offset from `distance` away, turned by yaw and pitch. In
+`EVENT_MM08_AS4_130` that opens on Threia and Reyfer by the plaza's planter, with a market
+stall and flowerbeds behind them and Escha coming into frame. `barrel-view --event` uses the
+event's camera; `--free-camera` places the view on the characters instead. The field of
+view is not in the command (40° is used for now).
 
-Not yet: the event camera, characters' motions during the event, waits taking time.
+Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event, waits taking time.
 
 ## Who handles them
 

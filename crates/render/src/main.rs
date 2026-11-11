@@ -369,8 +369,8 @@ fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::An
 /// Place the characters an event adds, at their first position, in the scene. Returns the
 /// texture packs it used, appended after the `base` textures already in the scene.
 /// An event's camera: where it looks, from how far, at which angles (degrees) and field of
-/// view. From `t20/0x10` (0x74100014): {yaw, 0, fov, pitch, distance, x, y, z, 0, frames, 0},
-/// angles in hundredths of a degree.
+/// view. From `t20/0x10` (0x74100014), all in hundredths: {yaw°, angle°, pitch°, angle°,
+/// distance, target x, y, z, offset x, y, z}; the camera looks at target + offset.
 #[derive(Clone, Copy, Debug)]
 struct EventCamera {
     target: Vec3,
@@ -396,10 +396,10 @@ fn event_characters(event_path: &Path, scene: &mut Scene, base: usize) -> Result
     for a in &event.actions {
         for c in ebd::decode(&a.words, &ops)? {
             let o = c.operands;
-            if c.word == 0x7410_0014 && o.len() >= 8 && camera.is_none() {
+            if c.word == 0x7410_0014 && o.len() >= 11 && camera.is_none() {
                 let i = |k: usize| o[k] as i32 as f32;
                 camera = Some(EventCamera {
-                    target: Vec3::new(i(5), i(6), i(7)),
+                    target: Vec3::new(i(5) + i(8), i(6) + i(9), i(7) + i(10)),
                     distance: i(4),
                     yaw: i(0) / 100.0,
                     pitch: i(2) / 100.0,
@@ -584,7 +584,7 @@ fn main() -> Result<()> {
     let mut alpha_cutoff = 0.3f32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
-    let mut use_event_camera = false;
+    let mut use_event_camera = true;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -595,7 +595,7 @@ fn main() -> Result<()> {
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
-            "--event-camera" => use_event_camera = true,
+            "--free-camera" => use_event_camera = false,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -873,7 +873,7 @@ fn main() -> Result<()> {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let dir = Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
     let (mut eye, mut target, mut fov, mut dist) = (center + dir * dist, center, fov, dist);
-    // The event camera's operands are not understood yet (see docs/events.md); opt in.
+    // The event's opening camera (see docs/events.md); --free-camera frames the characters.
     if let (Some(c), true) = (event_camera, use_event_camera) {
         // Game space: yaw about y from -z, pitch up; then mirror x like the vertices.
         let (yw, pt) = (c.yaw.to_radians(), c.pitch.to_radians());
