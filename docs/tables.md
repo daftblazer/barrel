@@ -76,13 +76,15 @@ slots.
 
 An ingredient slot is `{kind, id, count, slot number, then four (effect, up to) pairs}`.
 Kind 1 is a category (any item of it) and kind 0 a specific item; an id of -1 marks an
-unused slot. The pairs are the slot's **effect line**: each effect holds up to the value
+unused slot. The pairs are an **effect line**, and line k belongs to element k (Fire,
+Water, Wind, Earth), not to the ingredient in slot k: the game reads it at that element's
+attribute value (see below). In the line, each effect holds up to the value
 after it, -1 meaning no effect, and an "up to" of -1 ends the line. The effect numbers are
 the item effect enum (`ITEM_EFF_*`, in the same order as the rows of
-`item/item_effect.xml`, whose `ItemEffectName` gives the name). For example Craft's
-thorny-nuts slot reads none up to 20, *Embedding Thorns* up to 80, *Shredding Thorns* up to
-100, and its powder slot none up to 20, *Bursting* up to 70, *Explosive* up to 100; Flam's
-fuel slot is *Fire Damage* all the way. `tools/recipes.py ... EFFECT_TAGS.txt` prints the
+`item/item_effect.xml`, whose `ItemEffectName` gives the name). For example Craft's Water
+line reads none up to 20, *Embedding Thorns* up to 80, *Shredding Thorns* up to 100, and
+its Wind line none up to 20, *Bursting* up to 70, *Explosive* up to 100; Flam's Fire line
+is *Fire Damage* all the way. `tools/recipes.py ... EFFECT_TAGS.txt` prints the
 lines.
 
 The five `{effect, 0, threshold}` triples in words 9..23 point at the same enum, but what
@@ -102,11 +104,16 @@ the game does with a record:
   the value is capped at 99, and the result is the effect of the first pair whose "up to"
   is greater than the value. If no pair matches, the effect of the fourth pair is used. So an
   "up to" of 100 covers the rest of the line, and a line's values run from 0 to 99.
-- **Where the value comes from**: on the synthesis screen, each slot's line value is a float
+- **Where the value comes from**: the preview at `0x14010fe20` adds up the element values
+  of the materials so far, per element (each material adds its value to every element it
+  has), and looks up line k at element k's total. So line k follows element k, and the
+  fourth line counts even for a recipe with three ingredients.
+- **The step check**: on the synthesis screen, each slot's line value is a float
   at +0x70 + 20 × slot in a 0x4e0-byte synthesis state. The game keeps one state per step,
   as an undo history. The value is truncated toward zero before the lookup, and when a step
-  changes a slot's effect the screen shows a message (`0x1402fc4b9`). What adds to the value
-  is still to be followed.
+  changes a slot's effect the screen shows a message (`0x1402fc4b9`). It reads +0x70 + 20 × line,
+  one record past the attribute values at +0x5c + 20 × element that the other code uses;
+  why is still open.
 - **Words 3 and 4, and the levels table**: `0x14029da50` builds `{word 3, value, 2}`, where
   the value comes from a second table at `0x140d196f0`. That table holds 28-byte records:
   `{item, level, id, value, percent, 1.0f, base id}`, ended by -1. There are two levels per

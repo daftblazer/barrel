@@ -32,17 +32,17 @@ pub struct Step {
 pub struct Slot {
     pub ingredient: Ingredient,
     pub count: u32,
-    pub line: [Step; 4],
 }
 
-impl Slot {
-    /// The effect this slot gives at `value`, as the game picks it: the value is capped at
-    /// 99, and the first step whose "up to" is above it wins. If none is, the fourth step's
-    /// effect is used.
-    pub fn effect_at(&self, value: i32) -> Option<u16> {
-        let v = value.min(99);
-        self.line.iter().find(|s| v < s.up_to).unwrap_or(&self.line[3]).effect
-    }
+/// One element's effect line (lines 0..3 follow Fire, Water, Wind and Earth).
+pub type Line = [Step; 4];
+
+/// The effect `line` gives at `value`, as the game picks it: the value is capped at 99, and
+/// the first step whose "up to" is above it wins. If none is, the fourth step's effect is
+/// used.
+pub fn effect_at(line: &Line, value: i32) -> Option<u16> {
+    let v = value.min(99);
+    line.iter().find(|s| v < s.up_to).unwrap_or(&line[3]).effect
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,7 +54,11 @@ pub struct Recipe {
     pub cost: u32,
     /// Synthesis time in days.
     pub days: f32,
+    /// The ingredients, unused slots left out.
     pub slots: Vec<Slot>,
+    /// The four effect lines, one per element. The record keeps line k with ingredient
+    /// slot k, but the game feeds it element k's value, whatever that slot holds.
+    pub lines: [Line; 4],
 }
 
 fn i32_at(data: &[u8], at: usize) -> Result<i32, Error> {
@@ -80,8 +84,13 @@ pub fn parse(data: &[u8], at: usize) -> Result<Vec<Recipe>, Error> {
             break;
         }
         let mut slots = Vec::new();
+        let mut lines = [[Step { effect: None, up_to: -1 }; 4]; 4];
         for s in 0..4 {
             let w = r + 96 + 48 * s;
+            for (k, step) in lines[s].iter_mut().enumerate() {
+                let p = w + 16 + 8 * k;
+                *step = Step { effect: effect(i32_at(data, p)?), up_to: i32_at(data, p + 4)? };
+            }
             let (kind, id, count) = (i32_at(data, w)?, i32_at(data, w + 4)?, i32_at(data, w + 8)?);
             let Ok(id) = u16::try_from(id) else { continue };
             let ingredient = match kind {
@@ -89,12 +98,7 @@ pub fn parse(data: &[u8], at: usize) -> Result<Vec<Recipe>, Error> {
                 1 => Ingredient::Category(id),
                 _ => return Err(Error::Corrupt("recipe ingredient kind")),
             };
-            let mut line = [Step { effect: None, up_to: -1 }; 4];
-            for (k, step) in line.iter_mut().enumerate() {
-                let p = w + 16 + 8 * k;
-                *step = Step { effect: effect(i32_at(data, p)?), up_to: i32_at(data, p + 4)? };
-            }
-            slots.push(Slot { ingredient, count: count.max(0) as u32, line });
+            slots.push(Slot { ingredient, count: count.max(0) as u32 });
         }
         out.push(Recipe {
             item: item as u16,
@@ -102,6 +106,7 @@ pub fn parse(data: &[u8], at: usize) -> Result<Vec<Recipe>, Error> {
             cost: i32_at(data, r + 20)?.max(0) as u32,
             days: f32::from_bits(u32_at(data, r + 24)?),
             slots,
+            lines,
         });
     }
     if out.is_empty() {
@@ -162,11 +167,12 @@ mod tests {
         assert_eq!((r[0].item, r[0].cost, r[0].days), (195, 500, 3.0));
         let s = &r[0].slots[0];
         assert_eq!((s.ingredient, s.count), (Ingredient::Category(92), 1));
-        assert_eq!(s.effect_at(0), None);
-        assert_eq!(s.effect_at(19), None);
-        assert_eq!(s.effect_at(20), Some(101));
-        assert_eq!(s.effect_at(80), Some(102));
-        assert_eq!(s.effect_at(500), Some(102)); // capped at 99
+        let line = &r[0].lines[0];
+        assert_eq!(effect_at(line, 0), None);
+        assert_eq!(effect_at(line, 19), None);
+        assert_eq!(effect_at(line, 20), Some(101));
+        assert_eq!(effect_at(line, 80), Some(102));
+        assert_eq!(effect_at(line, 500), Some(102)); // capped at 99
         assert_eq!(r[0].slots.len(), 1);
     }
 }

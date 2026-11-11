@@ -3,6 +3,8 @@
 //!
 //! The four elements are, in order, Fire, Water, Wind and Earth.
 
+use barrel_formats::recipe::{Line, effect_at};
+
 /// Attribute values stop at this.
 pub const MAX_ATTRIBUTE: f32 = 999.0;
 /// The effect value stops at this.
@@ -58,6 +60,12 @@ impl Synthesis {
     pub fn effect_value(&self) -> f32 {
         let average = if self.materials == 0 { 0.0 } else { self.effect_sum / self.materials as f32 };
         (average + self.effect_bonus as f32).min(MAX_EFFECT)
+    }
+
+    /// The effect each of a recipe's four lines gives now: line k is read at attribute k's
+    /// value (cut to a whole number).
+    pub fn effects(&self, lines: &[Line; 4]) -> [Option<u16>; 4] {
+        std::array::from_fn(|k| effect_at(&lines[k], self.attributes[k] as i32))
     }
 
     /// Put a material in: each element it has gains its element value.
@@ -135,6 +143,20 @@ mod tests {
         let big = Material { element_value: 2000, ..EARTH };
         s.add(&big);
         assert_eq!(s.attributes[3], MAX_ATTRIBUTE);
+    }
+
+    #[test]
+    fn lines_follow_elements() {
+        use barrel_formats::recipe::Step;
+        let none = Step { effect: None, up_to: -1 };
+        let mut lines = [[none; 4]; 4];
+        lines[0] = [Step { effect: None, up_to: 20 }, Step { effect: Some(7), up_to: 100 }, none, none];
+        lines[3] = [Step { effect: Some(9), up_to: 100 }, none, none, none];
+        let mut s = Synthesis::new();
+        assert_eq!(s.effects(&lines), [None, None, None, Some(9)]);
+        s.add(&FIRE_WATER);
+        s.add(&FIRE_WATER);
+        assert_eq!(s.effects(&lines)[0], Some(7)); // Fire at 20
     }
 
     #[test]

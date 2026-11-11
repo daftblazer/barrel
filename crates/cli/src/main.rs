@@ -329,13 +329,17 @@ fn recipes(exe: &Path) -> Result<()> {
         let slots: Vec<String> = r
             .slots
             .iter()
-            .map(|s| {
-                let what = match s.ingredient {
-                    Ingredient::Item(i) => format!("item {i}"),
-                    Ingredient::Category(c) => format!("(category {c})"),
-                };
-                let line: Vec<String> = s
-                    .line
+            .map(|s| match s.ingredient {
+                Ingredient::Item(i) => format!("item {i} x{}", s.count),
+                Ingredient::Category(c) => format!("(category {c}) x{}", s.count),
+            })
+            .collect();
+        let lines: Vec<String> = r
+            .lines
+            .iter()
+            .zip(["fire", "water", "wind", "earth"])
+            .map(|(l, element)| {
+                let steps: Vec<String> = l
                     .iter()
                     .take_while(|st| st.up_to >= 0)
                     .map(|st| match st.effect {
@@ -343,10 +347,18 @@ fn recipes(exe: &Path) -> Result<()> {
                         None => format!("-<{}", st.up_to),
                     })
                     .collect();
-                format!("{what} x{} [{}]", s.count, line.join(" "))
+                format!("{element} [{}]", steps.join(" "))
             })
             .collect();
-        println!("{} kind {} cost {} days {} | {}", r.item, r.kind, r.cost, r.days, slots.join(", "));
+        println!(
+            "{} kind {} cost {} days {} | {} | {}",
+            r.item,
+            r.kind,
+            r.cost,
+            r.days,
+            slots.join(", "),
+            lines.join(" ")
+        );
     }
     Ok(())
 }
