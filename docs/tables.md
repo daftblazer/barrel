@@ -390,7 +390,10 @@ monsters' normal attack (`SKILL_ATTACK_ENEMY`, `DAMAGE_HP` 48 to 60, wait 600), 
 advancing the timeline, rolling the amount (and the second value), working the damage
 through `skill_damage`, `reduce` and `hit_amount`, drawing the hit sound's number, taking
 the HP, and setting the attacker's next wait from its speed. `barrel duel EXE A B` runs one
-(monster numbers, fixed seed). It is a check that the pieces fit, not the game's battle: the
+(monster numbers, or `p<member>:<level>` for a party member from "Party growth", with the
+party's normal attack `SKILL_ATTACK_PT`; fixed seed). A party member fights there with base
+stats only, no equipment: Escha at level 5 does 1 damage to a Poison Squirrel, where a
+weapon's attack would add to it. It is a check that the pieces fit, not the game's battle: the
 start of battle, traits, states, passives, the roll's globals and the action's float are left
 out or taken as neutral, so its numbers are not yet the game's.
 

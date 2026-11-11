@@ -42,7 +42,7 @@ usage:
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
-  barrel duel EXE A B          two monsters (by number) trading normal attacks: a partial battle
+  barrel duel EXE A B          two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -570,18 +570,30 @@ fn duel(exe: &Path, a: &str, b: &str) -> Result<()> {
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
-    // SKILL_ATTACK_ENEMY, the monsters' normal attack.
-    let attack = skills.get(1).ok_or("no skill 1")?;
-    let pick = |s: &str| -> Result<&bd::Monster> {
+    // SKILL_ATTACK_PT and SKILL_ATTACK_ENEMY, the party's and the monsters' normal attacks.
+    let (party_attack, monster_attack) = (skills.first().ok_or("no skill 0")?, skills.get(1).ok_or("no skill 1")?);
+    let growth = bd::party_growth(&pe, bd::PARTY_GROWTH_EN);
+    let party_names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
+    // A fighter: a monster number, or p<member>:<level> for a party member.
+    let pick = |s: &str| -> Result<(String, bd::StatBlock, &bd::Skill)> {
+        if let Some(rest) = s.strip_prefix('p') {
+            let (m, l) = rest.split_once(':').ok_or_else(|| format!("{s}: write p<member>:<level>"))?;
+            let (m, l): (usize, usize) = (m.parse().map_err(|_| format!("{s}: member"))?, l.parse().map_err(|_| format!("{s}: level"))?);
+            let g = growth.as_ref().ok_or("no party growth table")?;
+            let stats = g.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
+            let name = format!("{} (level {l})", party_names.get(m).unwrap_or(&"?"));
+            return Ok((name, barrel_game::duel::party_block(l as i32, stats), party_attack));
+        }
         let n: usize = s.parse().map_err(|_| format!("{s}: not a monster number"))?;
-        monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{s}: no such monster").into())
+        let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{s}: no such monster"))?;
+        Ok((m.name.clone(), m.blocks[0].clone(), monster_attack))
     };
-    let (ma, mb) = (pick(a)?, pick(b)?);
+    let ((na, ba, aa), (nb, bb, ab)) = (pick(a)?, pick(b)?);
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-    let hits = barrel_game::duel::duel(&ma.blocks[0], &mb.blocks[0], attack, &mut rng, 1000);
+    let hits = barrel_game::duel::duel(&ba, &bb, [aa, ab], &mut rng, 1000);
     for h in &hits {
-        let (x, y) = if h.attacker == 0 { (ma, mb) } else { (mb, ma) };
-        println!("{} hits {} for {} ({} HP left)", x.name, y.name, h.damage, h.hp_left);
+        let (x, y) = if h.attacker == 0 { (&na, &nb) } else { (&nb, &na) };
+        println!("{x} hits {y} for {} ({} HP left)", h.damage, h.hp_left);
     }
     println!("{} hits (partial battle: no traits, states or start rules; see barrel_game::duel)", hits.len());
     Ok(())

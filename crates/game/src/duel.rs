@@ -1,4 +1,5 @@
-//! A partial battle: two monsters trading their normal attack, built from the pieces in
+//! A partial battle: two fighters (monsters, or a party member at a level) trading their
+//! normal attacks, built from the pieces in
 //! [`crate::battle`]. It is a check that the pieces fit, not the game's battle yet.
 //!
 //! What it leaves out (each a reason it can differ from the game): the battle's start (both
@@ -33,17 +34,26 @@ fn stats(b: &StatBlock) -> [i32; stat::COUNT] {
     s
 }
 
-/// Runs the duel until one side's HP is 0 or `max_hits` hits have been made.
-pub fn duel(a: &StatBlock, b: &StatBlock, attack: &Skill, rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
+/// A party member's base stats at a level as a stat block (no resistances, no equipment).
+pub fn party_block(level: i32, s: &barrel_formats::battle_data::LevelStats) -> StatBlock {
+    StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0 }
+}
+
+/// Runs the duel until one side's HP is 0 or `max_hits` hits have been made; fighter i uses
+/// `attacks[i]` (the party's normal attack is skill 0, the monsters' skill 1).
+pub fn duel(a: &StatBlock, b: &StatBlock, attacks: [&Skill; 2], rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
     let mut fighters = [stats(a), stats(b)];
     let mut timeline = Timeline { entries: vec![(0, 500), (1, 500)] };
     let mut hits = Vec::new();
-    let Some(effect) = attack.effects.iter().find(|e| e.act == 0) else { return hits };
+    let effect_of = |s: &Skill| s.effects.iter().find(|e| e.act == 0).copied();
+    let (Some(e0), Some(e1)) = (effect_of(attacks[0]), effect_of(attacks[1])) else { return hits };
+    let effects = [e0, e1];
     let mut pending = -1;
     while hits.len() < max_hits {
         timeline.advance();
         let who = timeline.entries[0].0 as usize;
         let target = 1 - who;
+        let (effect, attack) = (&effects[who], attacks[who]);
         // The roll (0x1401bd520): the amount, then the second value.
         let amount = rng.range(effect.min, effect.max);
         let _second = rng.range(effect.min2, effect.max2);
@@ -83,13 +93,13 @@ mod tests {
             description: String::new(),
         };
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-        let hits = duel(&squirrel, &rat, &attack, &mut rng, 100);
+        let hits = duel(&squirrel, &rat, [&attack, &attack], &mut rng, 100);
         let last = hits.last().unwrap();
         assert_eq!(last.hp_left, 0);
         // The faster, stronger rat wins.
         assert_eq!(last.attacker, 1);
         // Same seed, same battle.
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-        assert_eq!(duel(&squirrel, &rat, &attack, &mut rng, 100), hits);
+        assert_eq!(duel(&squirrel, &rat, [&attack, &attack], &mut rng, 100), hits);
     }
 }
