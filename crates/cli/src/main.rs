@@ -41,6 +41,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
+  barrel days INSTALL N [--events]  a new game's first N days: each board redraw and month close (fixed seed)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -104,6 +105,8 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
+        ["days", install, n] => days(Path::new(install), n, false),
+        ["days", install, n, "--events"] => days(Path::new(install), n, true),
         ["board", install, day, rest @ ..] if rest.iter().all(|a| *a == "--events" || a.starts_with("--offset=")) => {
             board(Path::new(install), day, rest.contains(&"--events"), rest.iter().find_map(|a| a.strip_prefix("--offset=")))
         }
@@ -697,6 +700,60 @@ fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Resul
             None => println!("  {k} {what:<9} -"),
         }
     }
+    Ok(())
+}
+
+/// A new game's first `n` days on `barrel_game::days::World` (fixed generator state, everyone in
+/// the list in slot order, no assignment cleared, the item states taken as high enough).
+fn days(install: &Path, n: &str, events: bool) -> Result<()> {
+    use barrel_game::days::{Reason, Tables, World};
+    use barrel_game::quest::{requests, Kind};
+    let n: u32 = n.parse().map_err(|_| format!("{n}: not a number of days"))?;
+    let mut all = Vec::new();
+    for (file, kind) in [("QuestAlc", Kind::Synthesis), ("QuestBtl", Kind::Monster), ("QuestGat", Kind::Gathering)] {
+        let path = install.join(format!("Saves/quest/{file}.xml"));
+        all.extend(requests(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?, kind));
+    }
+    let path = install.join("Saves/rank/RankData.xml");
+    let ranks = barrel_game::rank::ranks(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
+    // A recipe's price: its item (the first word of its 0x120-byte record at 0x140d19c70) and
+    // that item's itemData cost.
+    let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
+    let data = read(&exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let at = pe.offset(0x1_40d1_9c70).ok_or("no recipe table")?;
+    let path = install.join("Saves/item/itemData.xml");
+    let items = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let costs: Vec<i32> = items.children.iter().map(|r| r.attr("cost").and_then(|v| v.parse().ok()).unwrap_or(0)).collect();
+    let recipe_cost = |k: usize| {
+        let o = at + k * 0x120;
+        data.get(o..o + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap())).and_then(|i| costs.get(i as usize)).copied().unwrap_or(0)
+    };
+    let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
+    let seen = |e: &str| events && starts.contains(e);
+    let t = Tables { requests: &all, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &|_| true, level: &|_| 0 };
+    let mut w = World::new_game(barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]), 0);
+    w.joined = (0..barrel_game::days::MEMBERS).collect();
+    for (k, s) in w.slot.iter_mut().enumerate() {
+        *s = Some(k);
+    }
+    println!("new game: day {}, board offset {}", w.date, w.board_offset);
+    for _ in 0..n {
+        let board = w.board;
+        let closed: Vec<u8> = w.months.iter().map(|m| m.state).collect();
+        w.advance(1, Reason::One, &t);
+        let d = barrel_game::calendar::Date::of(w.date);
+        if w.board != board {
+            let names: Vec<&str> = w.board.iter().map(|s| s.map_or("-", |i| all[i].target.as_str())).collect();
+            println!("day {} (Y{} {}/{}): board {}", w.date, d.year, d.month, d.day, names.join(", "));
+        }
+        for (k, m) in w.months.iter().enumerate() {
+            if m.state != closed[k] {
+                println!("day {} (Y{} {}/{}): month {} closed, total {}", w.date, d.year, d.month, d.day, k, m.total);
+            }
+        }
+    }
+    println!("day {}: friendship {:?}", w.date, w.friendship.iter().map(|f| (f * 100.0).round() / 100.0).collect::<Vec<_>>());
     Ok(())
 }
 
