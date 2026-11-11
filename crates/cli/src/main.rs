@@ -1290,7 +1290,11 @@ fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
     use barrel_game::stage::Stage;
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     let table = OperandTable::escha();
-    let steps = Player::escha(&event, &[], &table)?.schedule();
+    let messages = match message_file(file, None) {
+        Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let steps = Player::escha(&event, &messages, &table)?.schedule();
     // Story events number their characters by Chara.xml row.
     let measures = file
         .ancestors()
@@ -1305,7 +1309,15 @@ fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
         let mut parts: Vec<String> = stage
             .characters
             .iter()
-            .map(|(n, b)| format!("{n}{} {} {:.0}°", if b.moving() { "*" } else { "" }, show(b.position), b.facing.to_degrees()))
+            .map(|(n, b)| {
+                let face = match (b.expression, b.talking) {
+                    (Some(e), true) => format!(" face {e}, talking"),
+                    (Some(e), false) => format!(" face {e}"),
+                    (None, true) => " talking".to_string(),
+                    (None, false) => String::new(),
+                };
+                format!("{n}{} {} {:.0}°{face}", if b.moving() { "*" } else { "" }, show(b.position), b.facing.to_degrees())
+            })
             .collect();
         if let (Some(e), Some(t)) = (stage.eye.position, stage.target.position) {
             parts.push(format!("camera {} -> {}", show(e), show(t)));
@@ -1401,7 +1413,7 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
         }
         match step {
             Step::StartAction { action } => println!("{action:3} --- action {action} starts"),
-            Step::Message { index, speaker, text } => {
+            Step::Message { index, speaker, text, .. } => {
                 let who = usize::try_from(speaker).ok().and_then(|i| names.get(i)).map_or("", String::as_str);
                 println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));
             }

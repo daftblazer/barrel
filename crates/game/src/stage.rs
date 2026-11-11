@@ -122,6 +122,10 @@ pub struct Body {
     mover: Option<Mover>,
     /// The motion it plays; `None` until a command sets one.
     pub motion: Option<Playing>,
+    /// Its face: the expression its latest line set (`None` before any), and whether it is
+    /// speaking (its line is the one shown).
+    pub expression: Option<i32>,
+    pub talking: bool,
     /// A timed turn: (from, change, seconds, elapsed, curve).
     turn: Option<(f32, f32, f32, f32, u32)>,
 }
@@ -187,7 +191,7 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false });
                 b.position = *position;
                 b.mover = None;
             }
@@ -195,6 +199,17 @@ impl Stage {
                 Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0) }),
                 None => self.unresolved += 1,
             },
+            // A line: its speaker talks (and takes the line's expression, if it sets one); the
+            // others fall quiet and keep their faces.
+            Step::Message { speaker, expression, .. } => {
+                for (&n, b) in self.characters.iter_mut() {
+                    let speaking = i64::from(n) == i64::from(*speaker);
+                    b.talking = speaking;
+                    if speaking && expression.is_some() {
+                        b.expression = *expression;
+                    }
+                }
+            }
             Step::Remove { character, .. } => {
                 self.characters.remove(character);
             }
@@ -396,6 +411,19 @@ mod tests {
         let mut straight = Stage::default().play(&steps, |_, _| {});
         straight.run_until(t30 as f32 / 60.0);
         assert_eq!(straight.snapshot().characters[&1].0, s30.characters[&1].0);
+    }
+
+    #[test]
+    fn lines_set_faces() {
+        let mut stage = Stage::default();
+        let line = |speaker: i32, expression: Option<i32>| Step::Message { index: 0, speaker, text: String::new(), expression, gesture: None };
+        stage.apply(&Step::Place { action: 0, character: 0, position: [0.0; 3] });
+        stage.apply(&Step::Place { action: 0, character: 1, position: [0.0; 3] });
+        stage.apply(&line(0, Some(4)));
+        assert_eq!((stage.characters[&0].expression, stage.characters[&0].talking), (Some(4), true));
+        stage.apply(&line(1, None));
+        assert_eq!((stage.characters[&0].expression, stage.characters[&0].talking), (Some(4), false));
+        assert_eq!((stage.characters[&1].expression, stage.characters[&1].talking), (None, true));
     }
 
     #[test]

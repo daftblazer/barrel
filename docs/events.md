@@ -385,7 +385,9 @@ mover from where it is, and the camera's eye and target are set or moved, positi
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16
 walks from (506, 0, 1061) to (891, 0, 1320) between 3.5 and about 7.5 s, ending up facing
-56°. `q4` (adding a field character) places it and turns it to its angle there too, `q5`
+56°. Each line shown sets its speaker talking (the others fall quiet) and, when the line gives
+one, the speaker's expression from then on (the message's fourth field; its third is a
+gesture); `--stage` prints them (`face 4, talking`). `q4` (adding a field character) places it and turns it to its angle there too, `q5`
 removes it, and `s5`/`s10` set the motion it plays. `s5` (`ECT_CHARA_MOTION_SET`,
 `{character, motion, variant, blend ×100}`, 4,435 uses; `0x1401eff27`) goes through the same
 `0x1401f4c50` as `s10` with `variant` (0 to 7) as its third argument, kept at the runner's

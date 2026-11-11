@@ -57,7 +57,9 @@ pub enum Step<'a> {
     /// steps follow, tagged with its number.
     StartAction { action: usize },
     /// A line of dialogue (or system text) to show.
-    Message { index: usize, speaker: i32, text: String },
+    /// `expression` is the speaker's face from this line on and `gesture` a body gesture to
+    /// play, when the line sets them (the message's fourth and third fields; -1 leaves them).
+    Message { index: usize, speaker: i32, text: String, expression: Option<i32>, gesture: Option<i32> },
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
     /// counts down by each frame's elapsed time).
     Wait { seconds: f32 },
@@ -160,7 +162,8 @@ impl<'a> Player<'a> {
             (SHOW_MESSAGES, [first, last]) => {
                 for i in *first as usize..=(*last as usize) {
                     if let Some(m) = self.messages.get(i) {
-                        out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
+                        let field = |k: usize| m.fields.get(k).copied().filter(|&v| v >= 0);
+                        out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text(), expression: field(3), gesture: field(2) });
                     }
                 }
             }
