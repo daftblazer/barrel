@@ -489,23 +489,24 @@ costumes PC20B and PC20C rows 453 and 454 (0x1c5, 0x1c6), matching `CharaBase.xm
 DX, each with all three lists. `barrel faces EXE` lists them.
 
 **Later games.** The message files of Sophie 2 and the Ryza games use the same records
-with more values, and after the text some values more; the count is sometimes stored
-negative, and the newer files end in a short trailer (40 to 56 bytes in the samples, such
-as `1, -1, -1, -1, -1, -1, 0, 0, 0, 0`):
+with more values, some values after the text too, the count sometimes stored negative, and
+then a table: a u32 count and that many records of k i32 (one record of
+`1, -1, -1, -1, -1, -1, 0, 0, 0` in most of Sophie 2's; Ryza 3's `cm01_010` has 15):
 
-| Layout | Count | Values before the text | After | Seen in |
-|---|---|---|---|---|
-| Escha | positive | 6 | 0 | Escha & Logy DX, Ryza DX |
-| B | negative | 6 | 1 | part of Ryza 2 DX |
-| C | negative | 8 | 2 (-1, 300) | Sophie 2 |
-| D | positive | 13 | 2 (-1, 300) | Ryza 3 DX |
+| Layout | Count | Values before the text | After | Table records | Seen in |
+|---|---|---|---|---|---|
+| Escha | positive | 6 | 0 | none | Escha & Logy DX, Ryza DX |
+| B | negative | 6 | 1 | 6 values | Ryza 2 DX |
+| C | negative | 8 | 2 (-1, 300) | 9 values | Sophie 2 |
+| D | positive | 13 | 2 (-1, 300) | 13 values | Ryza 3 DX |
 
-The reader tries each and keeps the one that reads exactly the count's messages. In the
-later layouts the line's index sits among the values (Sophie 2's seventh, 0, 1, 2, ...;
-Ryza 2's fifth and Ryza 3's twelfth, from 40000 and 60000) and the speaker numbers are the
-later games' own (Ryza 3's Clifford is 286). With these four, 3,136 of Sophie 2's 3,607
-files read, 10,329 of Ryza 2's 11,767 and 7,977 of Ryza 3's 9,630; the rest have yet
-another variant.
+The reader tries each and keeps the one that reads exactly the count's messages and ends
+exactly at the table's end. In the later layouts the line's index sits among the values
+(Sophie 2's seventh, 0, 1, 2, ...; Ryza 2's fifth and Ryza 3's twelfth, from 40000 and
+60000) and the speaker numbers are the later games' own (Ryza 3's Clifford is 286). What the
+table records are is still open. All message files read: Sophie 2's 3,607, Ryza DX's 8,415,
+Ryza 2's 11,766 of 11,767 and Ryza 3's 9,629 of 9,630 (the two left are Japanese-only
+`zz01_010` and `aa01_010`, test events by their names).
 
 Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
 `<CLGR>` and `<CLNR>` change and reset the colour.

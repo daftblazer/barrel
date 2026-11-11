@@ -9,18 +9,18 @@
 //!              i32 × n (gesture, expression, index, ...; see docs/formats.md)
 //!              u32 length, then that many bytes of UTF-8 text ending in 0
 //!              i32 × m
-//! then, in the later layouts, a short trailer
+//! then, in the later layouts, a table: u32 n, then n records of k i32
 //! ```
 //!
-//! | Layout | Count | n | m | Seen in |
-//! |---|---|---|---|---|
-//! | Escha | positive | 6 | 0 | Escha & Logy DX, Ryza DX |
-//! | B | negative | 6 | 1 | part of Ryza 2 DX |
-//! | C | negative | 8 | 2 | Sophie 2 |
-//! | D | positive | 13 | 2 | Ryza 3 DX |
+//! | Layout | Count | n | m | k | Seen in |
+//! |---|---|---|---|---|---|
+//! | Escha | positive | 6 | 0 | (no table) | Escha & Logy DX, Ryza DX |
+//! | B | negative | 6 | 1 | 6 | Ryza 2 DX |
+//! | C | negative | 8 | 2 | 9 | Sophie 2 |
+//! | D | positive | 13 | 2 | 13 | Ryza 3 DX |
 //!
-//! The reader tries each and keeps the one that reads exactly the count's messages, with
-//! nothing after them (Escha) or a trailer of at most 64 bytes (the others).
+//! The reader tries each and keeps the one that reads exactly the count's messages and
+//! ends exactly where its table does.
 //!
 //! The text uses `<CR>` for line breaks, `<IMnn>` for inline icons and `<CLGR>` / `<CLNR>`
 //! to change and reset the colour.
@@ -98,10 +98,10 @@ fn unpack_sjis(text: &str) -> Option<String> {
     Some(s.into_owned())
 }
 
-/// (values before the text, after it, trailer allowed)
-const LAYOUTS: [(usize, usize, bool); 4] = [(6, 0, false), (6, 1, true), (8, 2, true), (13, 2, true)];
+/// (values before the text, after it, values per trailer record; 0: no trailer)
+const LAYOUTS: [(usize, usize, usize); 4] = [(6, 0, 0), (6, 1, 6), (8, 2, 9), (13, 2, 13)];
 
-fn parse_layout(data: &[u8], count: usize, (n, m, trailer): (usize, usize, bool)) -> Option<Vec<Message>> {
+fn parse_layout(data: &[u8], count: usize, (n, m, trailer): (usize, usize, usize)) -> Option<Vec<Message>> {
     let mut out = Vec::with_capacity(count);
     let mut p = 4;
     let word = |at: usize| u32_at(data, at).ok();
@@ -119,8 +119,15 @@ fn parse_layout(data: &[u8], count: usize, (n, m, trailer): (usize, usize, bool)
         p += 4 * m;
         out.push(Message { kind, speaker, fields, after, text });
     }
+    // The later layouts end with a table: a count, then that many records of `trailer`
+    // values each.
     let rest = data.len().checked_sub(p)?;
-    (rest == 0 || (trailer && rest <= 64)).then_some(out)
+    let fits = if trailer == 0 {
+        rest == 0
+    } else {
+        word(p).is_some_and(|records| rest == 4 + 4 * trailer * records as usize)
+    };
+    fits.then_some(out)
 }
 
 pub fn parse(data: &[u8]) -> Result<Vec<Message>, Error> {

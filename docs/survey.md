@@ -119,14 +119,14 @@ every archive of the four games, with Escha's readers plus the additions noted:
 
 | Game | Containers | Models | Textures | Animations | Events | Messages |
 |---|---|---|---|---|---|---|
-| Sophie 2 | 1,067 | 9,274 of 9,281 | 3,439 of 3,461 | 6,092 of 6,095 | 2,780 | 0 of 3,607 |
+| Sophie 2 | 1,067 | 9,274 of 9,281 | 3,439 of 3,461 | 6,092 of 6,095 | 2,780 | 3,607 |
 | Ryza DX | 4,116 | 8,142 of 8,149 | 3,425 of 3,624 | 3,565 | 2,333 | 8,415 |
-| Ryza 2 DX | 5,967 | 10,421 of 10,446 | 4,099 of 4,112 | 10,787 | 3,168 | 6,238 of 11,767 |
-| Ryza 3 DX | 9,684 of 10,039 | 4,373 of 4,381 | 6,425 of 6,477 | 11,081 | 4,806 | 0 of 9,630 |
+| Ryza 2 DX | 5,967 | 10,421 of 10,446 | 4,099 of 4,112 | 10,787 | 3,168 | 11,766 of 11,767 |
+| Ryza 3 DX | 9,684 of 10,039 | 4,373 of 4,381 | 6,425 of 6,477 | 11,081 | 4,806 | 9,629 of 9,630 |
 
 Additions so far: BC7 textures, animation flags 2 and 0x66, and 32-bit index buffers (the
-model failures above were nearly all those; they read now). What is left: the message
-format changed in Sophie 2 and Ryza 3 and in part of Ryza 2's files; some texture formats
+model failures above were nearly all those; they read now). The messages now read too (four
+record layouts, see `formats.md`). What is left: some texture formats
 (heightmaps, shader textures, environment maps); a newer container version (355 of Ryza
 3's, environment and lighting); a few model attribute types (Ryza 3) and one more animation
 flag (a light, Sophie 2).
