@@ -496,6 +496,7 @@ fn event_characters(
             }
         }
     }
+    let mut stage_motions: std::collections::HashMap<u32, (String, f32, bool)> = Default::default();
     // --at SECONDS: where the stage has everyone then (barrel_game::stage), and its camera
     // when it has set both the eye and the target.
     if let Some(at) = at {
@@ -510,6 +511,21 @@ fn event_characters(
         let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
         stage.run_until(at + FRAME * 0.5);
         first = stage.characters.iter().map(|(&n, b)| (n, b.position, b.facing.to_degrees())).collect();
+        // Each character's motion then, by its MOTION_* name (a CharaBase column), and how far in.
+        let names = std::fs::read_dir(root)?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
+            .filter_map(|p| std::fs::read(p).ok())
+            .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::gesture::motions(&pe)).filter(|m| !m.is_empty()))
+            .unwrap_or_default();
+        for (&n, b) in &stage.characters {
+            if let Some((m, since, looping)) = b.motion {
+                if let Some(name) = names.get(m as usize) {
+                    stage_motions.insert(n, (name.clone(), at - since, looping));
+                }
+            }
+        }
         if let (Some(e), Some(t)) = (stage.eye.position, stage.target.position) {
             let (e, t) = (Vec3::from(e), Vec3::from(t));
             camera = Some(EventCamera { eye: Some(e), target: t, distance: (e - t).length().max(1.0), yaw: 0.0, pitch: 0.0, fov: 40.0 });
@@ -541,15 +557,18 @@ fn event_characters(
         // CharaBase column), otherwise the field wait (F_WAIT). The animation is
         // <FileHead>_<value>.g1a, in the <Motion1> container or in a container of its own
         // beside it, on the skeleton in the base model (<stem>.g1m).
-        let column = gestures
+        let staged = stage_motions.get(&who).filter(|(c, ..)| row.attr(c).is_some());
+        let column = staged.map(|(c, ..)| c.clone()).or_else(|| gestures
             .get(&(who as i32))
             .and_then(|&g| {
                 let (table, names) = gesture_table.as_ref()?;
                 let form = table.get(g as usize)?[0].as_ref()?;
                 names.get(form.main_motion() as usize).cloned()
             })
-            .filter(|c| row.attr(c).is_some())
+            .filter(|c| row.attr(c).is_some()))
             .unwrap_or_else(|| "F_WAIT".to_string());
+        // How far into it: the stage's time in the motion (looping ones wrap), else the middle.
+        let motion_time = staged.map(|&(_, t, looping)| (t, looping));
         let joints = (|| -> Option<Vec<Mat4>> {
             let head = row.attr("FileHead")?;
             let motion = row.attr("Motion1")?;
@@ -566,7 +585,12 @@ fn event_characters(
             let anim = barrel_formats::g1a::parse(&anim_bytes).ok()?;
             let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
             eprintln!("character {who}: motion {column} = {head}_{value}");
-            Some(pose(&skeleton, &anim, 0.5))
+            let t = match motion_time {
+                Some((t, true)) if anim.duration > 0.0 => t.rem_euclid(anim.duration),
+                Some((t, _)) => t.clamp(0.0, anim.duration),
+                None => 0.5,
+            };
+            Some(pose(&skeleton, &anim, t))
         })();
         if let (Some(&(expr, talking)), Some(tables), Some(head), Some(facial)) =
             (faces.get(&(who as i32)), &face_tables, row.attr("FileHead"), row.attr("Facial"))

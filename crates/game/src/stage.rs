@@ -78,6 +78,9 @@ pub struct Body {
     /// Radians about the vertical axis, 0 towards +z.
     pub facing: f32,
     mover: Option<Mover>,
+    /// The motion it plays (a `MOTION_*` number), since when (stage seconds), and whether it
+    /// loops; `None` until a command sets one.
+    pub motion: Option<(u32, f32, bool)>,
     /// A timed turn: (from, change, seconds, elapsed, curve).
     turn: Option<(f32, f32, f32, f32, u32)>,
 }
@@ -143,9 +146,16 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None });
                 b.position = *position;
                 b.mover = None;
+            }
+            Step::Motion { character, motion, looping, .. } => match self.characters.get_mut(character) {
+                Some(b) => b.motion = Some((*motion, self.time, *looping)),
+                None => self.unresolved += 1,
+            },
+            Step::Remove { character, .. } => {
+                self.characters.remove(character);
             }
             Step::Turn { character, rotation, .. } => match self.characters.get_mut(character) {
                 Some(b) => {

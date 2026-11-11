@@ -1386,7 +1386,11 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("{action:3} {who} at ({}, {}, {})", position[0], position[1], position[2]);
             }
-            Step::Motion { action, character, motion, blend } => {
+            Step::Remove { action, character } => {
+                let who = names.get(character as usize).map_or("?", String::as_str);
+                println!("{action:3} {who} leaves");
+            }
+            Step::Motion { action, character, motion, blend, .. } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 let name = motions.get(motion as usize).map_or_else(|| motion.to_string(), Clone::clone);
                 println!("{action:3} {who} plays {name} (blend {blend:.2} s)");

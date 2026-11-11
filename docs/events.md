@@ -374,7 +374,13 @@ mover from where it is, and the camera's eye and target are set or moved, positi
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16
 walks from (506, 0, 1061) to (891, 0, 1320) between 3.5 and about 7.5 s, ending up facing
-56°. `q4` (adding a field character) places it and turns it to its angle there too.
+56°. `q4` (adding a field character) places it and turns it to its angle there too, `q5`
+removes it, and `s5`/`s10` set the motion it plays. `s5` (`ECT_CHARA_MOTION_SET`,
+`{character, motion, variant, blend ×100}`, 4,435 uses; `0x1401eff27`) goes through the same
+`0x1401f4c50` as `s10` with `variant` (0 to 7) as its third argument, kept at the runner's
++0x828 (not read); `s10` passes 0 there and then clears the motion's play range
+(`0x1402036d0` with -1, -1), so it loops from the start. With `--at` the viewer poses each
+character in its stage motion that far in (looping ones wrap).
 `barrel-view --field <DIR> --event FILE.ebd --at SECONDS` draws the stage as it stands at that
 time: every character where it has walked to and facing where it turned, seen from the
 stage's camera when the event has set its eye and target (the skill camera), otherwise from

@@ -30,6 +30,10 @@ pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
 /// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
 /// operands): adds the character there, facing `angle` degrees.
 pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
+/// `q5` (`ECT_FIELDMAP_CHARA_DELETE`): `{character}`.
+pub const FIELD_CHARA_DELETE: u32 = 0x7100_0005;
+/// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
+pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 /// `s23` (`ECT_CHARA_ROT_SET`): `{character, x, y, z}`, degrees.
 pub const CHARA_ROT_SET: u32 = 0x7300_0017;
 /// `s24` (`ECT_CHARA_ROT_SET_TARGET`): `{character, position (6)}`.
@@ -63,7 +67,12 @@ pub enum Step<'a> {
     Place { action: usize, character: u32, position: [f32; 3] },
     /// A character plays a looping motion (`s10`; a `MOTION_*` number), blending over `blend`
     /// seconds.
-    Motion { action: usize, character: u32, motion: u32, blend: f32 },
+    /// `s10` loops it from its start (`0x1402036d0` with -1, -1 clears the play range); `s5`
+    /// (`ECT_CHARA_MOTION_SET`, `{character, motion, variant, blend}`) plays it with
+    /// `variant` (0 to 7, kept at the runner's +0x828; not read) and leaves the range as is.
+    Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, variant: u32 },
+    /// A field character is removed (`q5`, `ECT_FIELDMAP_CHARA_DELETE`, `{character}`).
+    Remove { action: usize, character: u32 },
     /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
     /// `t9`; [`crate::camera`]).
     Camera { action: usize, part: crate::camera::Part, change: crate::camera::Change },
@@ -134,8 +143,13 @@ impl<'a> Player<'a> {
             }
             (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
                 let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: *character, motion: *motion, blend });
+                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, variant: 0 });
             }
+            (CHARA_MOTION_SET, [character, motion, variant, hundredths, ..]) => {
+                let blend = f(*hundredths) / 100.0;
+                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: false, variant: *variant });
+            }
+            (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),
             (SHOW_MESSAGES, [first, last]) => {
                 for i in *first as usize..=(*last as usize) {
                     if let Some(m) = self.messages.get(i) {
@@ -332,6 +346,7 @@ mod tests {
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
+                Step::Remove { character, .. } => format!("{character} removed"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
                 Step::Turn { character, .. } | Step::Face { character, .. } | Step::TurnOver { character, .. } => {
                     format!("{character} turns")
