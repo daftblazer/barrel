@@ -65,9 +65,18 @@ The PAK header is `{version 0x20000, count, 16, flags}`. Each entry is 184 bytes
 | +168 | offset (u64) |
 
 XORing a name with its 20-byte key cycled shows the padding (leftover memory from the
-packing tool). The start of the name is still scrambled by a second, fixed layer, which is
-the same for every entry. That key is still to be found, from the executable or from known
-file names.
+packing tool). The name is still scrambled by a second, fixed layer: one byte per position,
+the same for every entry (entries whose names differ in one character differ in that byte
+only). The executable cannot show the key directly: its `.text` is encrypted (entropy 8.0,
+with a `.bind` section, the Steam DRM wrapper), so its code has to be unwrapped first.
+
+The key also comes out of the names themselves. Assuming they start with `\Data\x64\`
+(a string the executable holds), `tools/pak_key.py` guesses the rest position by position
+from how the names read. On Sophie 2's `PACK00_01.PAK` and `PACK00_04_01.PAK` (1,924
+entries) most names come out readable, such as `\Data\x64\..._ui_g23_iten_o_095.g1t` and
+`....elixir.gr`, with some positions still wrong where letters are equally likely; known
+names (extensions, the executable's own paths) are what fix those. The fixed bytes look
+like text themselves (`dgGKXLHLuC@pa8...`).
 
 ### Ryza DX, Ryza 2 DX, Ryza 3 DX
 
