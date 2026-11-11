@@ -24,7 +24,9 @@ usage:
   barrel g1t-scan DIR          read every texture, loose and in containers
   barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
   barrel g1m-scan DIR          read every model in the containers under DIR
-  barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers";
+  barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers
+  barrel ebm FILE.ebm          print an event's messages
+  barrel ebm-scan DIR          read every message file under DIR";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -44,6 +46,8 @@ fn main() -> ExitCode {
         ["g1m-obj", file, out] => g1m_obj(file, Path::new(out)),
         ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
         ["oid-scan", dir] => oid_scan(Path::new(dir)),
+        ["ebm", file] => ebm(Path::new(file)),
+        ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -507,4 +511,34 @@ fn oid_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
+}
+
+fn ebm(file: &Path) -> Result<()> {
+    let msgs = barrel_formats::ebm::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    for m in &msgs {
+        println!("[{} speaker {}] {}", m.kind, m.speaker, m.repaired_text().replace("<CR>", " / "));
+    }
+    Ok(())
+}
+
+fn ebm_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".ebm", &mut files)?;
+    files.sort();
+    let (mut messages, mut repaired) = (0usize, 0usize);
+    let mut failed = Vec::new();
+    for path in &files {
+        match barrel_formats::ebm::parse(&read(path)?) {
+            Ok(msgs) => {
+                messages += msgs.len();
+                repaired += msgs.iter().filter(|m| m.repaired_text() != m.text).count();
+            }
+            Err(e) => failed.push(format!("{}: {e}", path.display())),
+        }
+    }
+    println!("{} files, {messages} messages ({repaired} repaired from mangled Shift-JIS), {} failed", files.len(), failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some message files did not read".into()) }
 }

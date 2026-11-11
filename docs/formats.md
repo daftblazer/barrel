@@ -227,6 +227,31 @@ q4  7 0  0 0  1000 0  800 0  -50 0  31 0  2 0
 Here the operands read as `(value, type)` pairs, with type 0 an integer literal, but
 other commands take odd counts (`ECT_CHARA_POS_SET` takes 7), so pairs are not the rule.
 
+## Event messages (`EVENT_MESSAGE_*.ebm`)
+
+Read by `barrel_formats::ebm`. All 4,660 of Escha's message files read: 57,084 lines across
+Japanese (`Event/`) and the three translations (`Event_EN`, `Event_SC`, `Event_TC`), all
+UTF-8. `barrel ebm FILE` prints a file; `barrel ebm-scan DIR` reads them all.
+
+```text
+u32 message count
+per message: u32 kind (1 for 89% of lines; 2, 4 and 0 also occur)
+             i32 speaker, a character number (-1 for system text)
+             i32 ×6, not decoded yet (they vary with portrait and expression)
+             u32 length, then the UTF-8 text with its terminating 0
+```
+
+Markup in the text: `<CR>` breaks the line (35,202 uses), `<IMnn>` puts an icon inline,
+`<CLGR>` and `<CLNR>` change and reset the colour.
+
+**Mangled lines.** 169 lines in each translation (507 in all) were left in Japanese, and
+their text was mangled by the tool that made the translated files: each Shift-JIS byte pair
+was stored as one code point with its bytes swapped (エ, `83 47`, became U+4783), then
+written as UTF-8. They are placeholders such as ダミー ("dummy").
+`Message::repaired_text` turns them back into readable Japanese; the stored text is kept as
+it is. The test cannot misfire on real Japanese text: kana and common kanji never pass the
+byte-range check.
+
 ## Tables (`Saves*/**/*.xml`)
 
 Read by `barrel_formats::table`. All 312 of Escha's XML files read without error. What the

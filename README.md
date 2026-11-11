@@ -37,6 +37,8 @@ target/release/barrel unpack FILE.elixir.gz OUTDIR
 target/release/barrel ebd-scan "<install>/Event"       # every event and its commands
 target/release/barrel ebd-decode "<install>/Event"     # split every event into commands
 target/release/barrel ebd    FILE.ebd
+target/release/barrel ebm-scan "<install>"            # every dialogue line, all languages
+target/release/barrel ebm    FILE.ebm
 target/release/barrel xml-scan "<install>"            # every XML table and its rows
 target/release/barrel xml    FILE.xml
 target/release/barrel g1t-scan "<install>/Data"       # every texture

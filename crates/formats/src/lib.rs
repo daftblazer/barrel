@@ -5,6 +5,7 @@
 
 pub mod bc;
 pub mod ebd;
+pub mod ebm;
 mod ebd_tables;
 pub mod elixir;
 pub mod g1m;
