@@ -1309,7 +1309,15 @@ fn stage_event(file: &Path) -> Result<()> {
         }
         println!("{:8.2}  {}", stage.time, parts.join("  "));
     };
-    let stage = Stage::play(&steps, measures, |t, stage| {
+    let curves = file
+        .ancestors()
+        .find(|p| p.join("Saves").is_dir())
+        .and_then(|root| read(&root.join("Saves/curve/curve_data.xml")).ok())
+        .and_then(|b| barrel_formats::table::parse(&b).ok())
+        .map(|t| barrel_game::curve::Curve::table(&t))
+        .unwrap_or_default();
+    println!("({} curves)", curves.len());
+    let stage = Stage { measures, curves, ..Stage::default() }.play(&steps, |t, stage| {
         if last != Some(t.time) {
             last = Some(t.time);
             print(stage);

@@ -781,3 +781,22 @@ entries of another shape (skills, probably). Some drops have numbers above the i
 | Poison Squirrel | 6 | 35 | 15 | 8 | 13 | Apple 50%, Acorn 35%, Poison Apple 25%, Blue Nuts 10% |
 | Golden Rat | 30 | 351 | 52 | 27 | 37 | Golden Apple 50%, ... |
 | Altegewalt | 60 | 35,000 | 329 | 187 | 139 | resistances 40, and 75 in its second block |
+
+## Curves
+
+`Saves/curve/curve_data.xml` holds 72 keyed curves, `curve_obj_000` to `curve_obj_071`,
+used by number (`0x1404e1770` in the English executable indexes the loaded list; `s26`'s
+last operand is one). Each `CurveData` has one `CURVE_ENVELOPE_LINKER_DATA` (`initData`,
+`num`, `bLoop`, `offset`) and 16 `CURVE_ENVELOPE_DATA` slots `{point, frame, liner}`, the
+first `num` used (the rest have frame -1). Frames run 0 to 60; a user stretches them to its
+own length (frame × seconds / 60, `0x1402034c0`).
+
+The value at a time (`0x1404e1230`) comes from the segment it falls in, by the segment's
+first key's `liner`: 1 straight, 2 hold, 0 smooth, a cubic spline (`0x1404e0440` solves it,
+`0x1404e0850` evaluates it with the usual b, c = 3σ, d form) through the segment's two keys
+plus the key before when that one is smooth and the key after next when the next is smooth.
+With only two keys in all, or only two points to use, it is straight. The ends are read as a
+natural spline's (second derivative 0). Past the last key the value is the last key's.
+`curve_obj_001` (0, 0.757 at 30, 1) eases out, `_003` (0, 0.203, 1) eases in, `_000` and
+`_002` are straight, `_004` rises to 1 at frame 30 and falls back. `barrel_game::curve`
+reads and evaluates them.

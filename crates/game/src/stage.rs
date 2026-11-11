@@ -72,8 +72,8 @@ pub struct Body {
     /// Radians about the vertical axis, 0 towards +z.
     pub facing: f32,
     mover: Option<Mover>,
-    /// A timed turn: (from, change, seconds, elapsed).
-    turn: Option<(f32, f32, f32, f32)>,
+    /// A timed turn: (from, change, seconds, elapsed, curve).
+    turn: Option<(f32, f32, f32, f32, u32)>,
 }
 
 /// The change from angle `from` to `to` the short way round (`0x1401f42e0`: one turn of 2π is
@@ -114,6 +114,8 @@ pub struct Stage {
     pub unresolved: usize,
     /// The characters' measures, by character number (see [`Measures::table`]).
     pub measures: BTreeMap<u32, Measures>,
+    /// The curves timed turns follow (`curve_data.xml`, [`crate::curve::Curve::table`]).
+    pub curves: BTreeMap<u32, crate::curve::Curve>,
 }
 
 impl Stage {
@@ -146,9 +148,9 @@ impl Stage {
                 }
                 None => self.unresolved += 1,
             },
-            // The game eases the turn along a curve not read yet; it goes evenly here.
-            Step::TurnOver { character, rotation, seconds, .. } => match self.characters.get_mut(character) {
-                Some(b) if *seconds > 0.0 => b.turn = Some((b.facing, short_way(b.facing, rotation[1]), *seconds, 0.0)),
+            // Along its curve (`crate::curve`; evenly when the stage has no curves).
+            Step::TurnOver { character, rotation, seconds, curve, .. } => match self.characters.get_mut(character) {
+                Some(b) if *seconds > 0.0 => b.turn = Some((b.facing, short_way(b.facing, rotation[1]), *seconds, 0.0, *curve)),
                 Some(b) => {
                     b.facing = b.facing + short_way(b.facing, rotation[1]);
                     b.turn = None;
@@ -206,11 +208,16 @@ impl Stage {
     /// Runs the movers one frame.
     pub fn frame(&mut self) {
         for b in self.characters.values_mut() {
-            if let Some((from, change, seconds, elapsed)) = b.turn.as_mut() {
+            if let Some((from, change, seconds, elapsed, curve)) = b.turn.as_mut() {
                 *elapsed += FRAME;
-                let f = (*elapsed / *seconds).min(1.0);
+                let u = (*elapsed / *seconds).min(1.0);
+                let f = if u >= 1.0 {
+                    1.0
+                } else {
+                    self.curves.get(curve).map_or(u, |c| c.at(u * crate::curve::FRAMES))
+                };
                 b.facing = *from + *change * f;
-                if f >= 1.0 {
+                if u >= 1.0 {
                     b.turn = None;
                 }
             }
@@ -240,8 +247,9 @@ impl Stage {
 
     /// Plays a timed event: each step is applied at its time, the movers run in between, and
     /// `each` sees the stage after every step.
-    pub fn play<'a>(steps: &[Timed<'a>], measures: BTreeMap<u32, Measures>, mut each: impl FnMut(&Timed<'a>, &Stage)) -> Stage {
-        let mut stage = Stage { measures, ..Stage::default() };
+    /// (Set [`Stage::measures`] and [`Stage::curves`] first.)
+    pub fn play<'a>(self, steps: &[Timed<'a>], mut each: impl FnMut(&Timed<'a>, &Stage)) -> Stage {
+        let mut stage = self;
         for t in steps {
             stage.run_until(t.time);
             stage.apply(&t.step);
@@ -279,7 +287,7 @@ mod tests {
         let mut steps = steps;
         steps.push(Timed { time: 4.0, action: 0, step: Step::Place { action: 0, character: 8, position: [300.0, 0.0, -100.0] } });
         steps.push(Timed { time: 4.0, action: 0, step: Step::Face { action: 0, character: 8, toward: on(7, 0.0) } });
-        let stage = Stage::play(&steps, BTreeMap::from([(7, escha)]), |_, _| {});
+        let stage = Stage { measures: BTreeMap::from([(7, escha)]), ..Stage::default() }.play(&steps, |_, _| {});
         assert!(stage.characters[&8].facing.abs() < 1e-6);
         // From 350° to 10° is 20° the short way.
         assert!((short_way(350f32.to_radians(), 10f32.to_radians()) - 20f32.to_radians()).abs() < 1e-5);

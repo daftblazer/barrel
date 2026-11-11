@@ -2,6 +2,7 @@
 
 pub mod battle;
 pub mod camera;
+pub mod curve;
 pub mod duel;
 pub mod event;
 pub mod face;
