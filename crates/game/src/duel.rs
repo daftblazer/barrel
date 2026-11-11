@@ -79,10 +79,16 @@ impl Fighter<'_> {
             .and_then(|&(n, _)| table.get(n as usize));
         (usize::try_from(slot).ok(), skill.unwrap_or(self.normal), Some(target))
     }
+
+    /// A slot's index into the skill list (what an action through it leaves at +0x2d0); 0 for
+    /// no slot.
+    pub(crate) fn skill_index(&self, slot: Option<usize>) -> i32 {
+        slot.and_then(|k| self.block.slots.get(k).copied()).unwrap_or(0)
+    }
 }
 
 /// Runs the duel (a [`crate::fight::Battle`] of two) until one side's HP is 0 or `max_hits`
-/// actions and poison ticks have happened. The action state is 0; both fighters are capped as
+/// actions and poison ticks have happened. Both fighters are capped as
 /// monsters (999,999 HP).
 pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
     use crate::fight::{Battle, Event};
@@ -103,8 +109,9 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
             break;
         }
         let f = &battle.fighters[who];
-        let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, state: 0, uses: &f.uses };
+        let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, last_skill: f.last_skill, uses: &f.uses };
         let (slot, skill, mode) = sides[who].pick(&situation, rng);
+        battle.fighters[who].last_skill = sides[who].skill_index(slot);
         let candidates = battle.candidates(who, skill);
         let target = match mode {
             Some(mode) => battle.pick_target(mode, who, &candidates, rng),

@@ -38,6 +38,10 @@ pub struct Fighter {
     pub draw: i32,
     /// The character a monster remembers (+0x314; -1 none), for target pick 4.
     pub remembered: i32,
+    /// The index into its skill list of the skill its latest action uses (+0x2d0, set as each
+    /// action starts; monster rule condition 3 reads it). 0 before its first action (the
+    /// constructor's value is not read).
+    pub last_skill: i32,
     /// Whether guts has saved it since its last heal (+0x28d).
     pub guts_used: bool,
 }
@@ -53,7 +57,7 @@ impl Fighter {
         s[stat::DEFENSE] = block.defense;
         s[stat::SPEED] = block.speed;
         s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
-        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1, guts_used: false }
+        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1, last_skill: 0, guts_used: false }
     }
 
     /// With `mp` as its MP and maximum MP (the monsters' blocks have none).

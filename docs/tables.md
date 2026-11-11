@@ -676,7 +676,7 @@ advancing the timeline, rolling the amount (and the second value), working the d
 through `skill_damage`, `reduce` and `hit_amount`, drawing the hit sound's number, taking
 the HP, and setting the attacker's next wait from its speed. A monster picks each action by
 its block's rules ("Monster actions": its own action count stands in for the turn count, the
-action state is 0), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, with its element: an
+the latest skill is 0 before any action), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, with its element: an
 elemental hit skips defence and meets the target's resistance, a physical one the reverse
 (Ice Bomb on the Grand Dragon does 41, Bomb 10 against its fire resistance). `DAMAGE_TURN` (act 8, `0x1401bebdc`) is worked too: the
 rolled amount grows by the effect's second value in percent for each action the user has
@@ -1105,7 +1105,7 @@ fewer than `limit` times (the use counts are the monster's +0x3e8 per slot, rais
 acts), and whose `chance(percent)` roll succeeds (one roll per rule that gets that far).
 The conditions: 0 always; 1 every `value`-th action of its own (its count of actions taken,
 the character's +0x2c8, modulo `value` is `value` - 1); 2 HP at or below `value`% of the maximum
-(`max HP × value / 100 >= HP`, battle stats 3 and 1); 3 the character's +0x2d0 is `value`: not a battle phase but a value set as each of its actions starts (`0x1401ba3c2`, `0x1401d6320`, `0x1401d6dfa`) from virtual +0x18 of the first object in its list at +0x1f0 (`0x1401aeec0`; +0x2cc gets virtual +0x20); bosses test it in cycles (one skill for 0, the next for 1, ...; values 0 to 8 over 191 rules), and what it counts is not read yet. If no rule gives an action the game logs an error and takes slot 0 at target 0.
+(`max HP × value / 100 >= HP`, battle stats 3 and 1); 3 the monster's latest action used skill `value` of its list: +0x2d0, set as each action starts (`0x1401ba3c2`, `0x1401d6320`, `0x1401d6dfa`) from virtual +0x18 of the current action (`0x1401aeec0`, the first in the list at +0x1f0; +0x2cc gets the action's kind from virtual +0x20: 3 a skill, 1, 5 to 8 other kinds), which for a skill action (`0x1401b9f70` kinds 0, 3, 4) is the value the monster's turn passed: `0x140112c70(monster, block, slot)`, the slot's entry in the block's slot table. Bosses chain skills with it (Frigate: Charge once, then Bunker Quake after it; 191 such rules, values 0 to 8). Before the first action it is taken as 0 (the constructor's value is not read). If no rule gives an action the game logs an error and takes slot 0 at target 0.
 The rule's target is a pick mode (`0x14018a2f0`, among the fighters in the battle's target
 list at `battle+0xab8`, +0x38 to +0x40, filled for the skill's side by `0x140189b00`): 1 the
 nearest to the monster (positions at the model's +0x230), 2 the farthest, 3 the lowest share

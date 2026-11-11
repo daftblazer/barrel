@@ -938,7 +938,7 @@ fn monsters(exe: &Path) -> Result<()> {
                     0 => "always".to_string(),
                     1 => format!("every {} turns", r.value),
                     2 => format!("HP <= {}%", r.value),
-                    3 => format!("state {}", r.value),
+                    3 => format!("after {}", usize::try_from(r.value).ok().and_then(|i| names.get(i)).map_or_else(|| format!("skill {}", r.value), String::clone)),
                     c => format!("condition {c} {}", r.value),
                 };
                 let skill = usize::try_from(r.slot)
