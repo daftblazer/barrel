@@ -192,7 +192,8 @@ mod tests {
         assert_eq!(b.winner(), None);
         b.fighters[1].add_state(0x34, 10, 2);
         let events = b.start_turn(1);
-        assert_eq!(events, [Event::Poisoned { who: 1, damage: 3, hp_left: 0 }]);
+        // The damage is the amount dealt, not what was left to take.
+        assert_eq!(events, [Event::Poisoned { who: 1, damage: 10, hp_left: 0 }]);
         assert_eq!(b.winner(), Some(0));
         // The count went down by the turn's ageing.
         assert_eq!(b.fighters[1].states[0].count, 1);
