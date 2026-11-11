@@ -98,6 +98,9 @@ impl Fighter<'_> {
 pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
     let sides = [a, b];
     let mut fighters = [stats(&a.block), stats(&b.block)];
+    let bases = fighters;
+    // Monsters' HP may pass 999 (party members' cap); both sides here are kept to 999,999.
+    let restat = |f: &mut [i32; stat::COUNT], k: usize, states: &[battle::TimedState]| *f = battle::stats_with_states(&bases[k], f, states, 999_999);
     let mut timeline = Timeline { entries: vec![(0, 500), (1, 500)] };
     let mut hits = Vec::new();
     let mut uses = [[0i32; 9]; 2];
@@ -122,6 +125,7 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
             }
         }
         battle::age_states(&mut states[who]);
+        restat(&mut fighters[who], who, &states[who]);
         let situation = crate::monster_ai::Situation {
             hp: fighters[who][stat::HP],
             max_hp: fighters[who][stat::MAX_HP],
@@ -135,6 +139,17 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
             let value = rng.range(e.min, e.max);
             let second = rng.range(e.min2, e.max2);
             battle::add_state(&mut states[target], 0x34, value, second);
+        }
+        // Stat buffs go on the user, debuffs on the foe (taken; the skills' targets are not
+        // read yet).
+        for e in &attack.effects {
+            if let Some((state, minus)) = battle::stat_state(e.act) {
+                let value = rng.range(e.min, e.max);
+                let second = rng.range(e.min2, e.max2);
+                let on = if minus { target } else { who };
+                battle::add_state(&mut states[on], state, if minus { -value } else { value }, second);
+                restat(&mut fighters[on], on, &states[on]);
+            }
         }
         if let Some(k) = slot.filter(|&k| k < 9) {
             uses[who][k] += 1;

@@ -343,7 +343,22 @@ others follow (not worked). The parts are netted into one change: when it is pos
 event (`0x1401c1d00`) gives it back, when negative its opposite is dealt as an ordinary damage
 event (`0x1401c1970`, element slot 4: the target's +0x2b8 cut, at least 1), and at 0 nothing
 happens; a heal-over-time thus cancels a poison before either is shown (`battle::
-turn_hp_change`). Then `0x140191120` ages both state lists by the character's
+turn_hp_change`).
+
+A state changes stats through a 35-stat block in its record (+0x10), filled when it is added
+(`0x140191e90`) with its value on the stats it touches: attack (5), defence (6) and speed (7)
+for `PLUS_*` (0x12-0x14), `MINUS_*` (0x26-0x28) and two further families (0x36-0x38,
+0x3e-0x40); stats 8 to 12 for the next five of each family (0x15-0x19, ...); 13 (critical) for
+0x1b, 14 for 0x24, 18 (evade) for 0x1c; all of attack, defence and speed for 0x49. 0x11
+(`PLUS_LEVEL_STATUS`) works from the attack (not read further). The amounts are flat: the
+`MINUS_*` acts (45-47) have their own entry (`0x1401bf1da`) that negates the amount and then
+joins the shared handler, so Siren (9 to 10) takes 9 or 10 attack off and Howling (14 to 15)
+adds 14 or 15. Whenever a state is added or goes, `0x1401af440` recalculates: the 35 base
+stats (+0x114) copied over the stats (+0x88) but the current HP and MP kept, each list's
+blocks added (`0x140191a30` → `0x1401a8e00`), maximum HP raised by the sum of `ADD_MAXHP`
+(0x1a) percentages, then maximum HP and MP kept to 1..999 (999,999 when the character's
+vtable +0x10 says 1, monsters), HP and MP to 0..the maximum, and attack, defence and speed to
+1..999 (`battle::state_stats`, `stats_with_states`, `stat_state`). Then `0x140191120` ages both state lists by the character's
 +0x2d8 (taken as one turn): counted states go down and are dropped at 0. `battle::
 poison_damage`, `poison_by_missing_hp` and `age_states` follow this, and the duel poisons with
 `DAMAGE_HP_TURN` effects (Bomb: 10 for 2 turns, 5 a turn against the Grand Dragon's defence).

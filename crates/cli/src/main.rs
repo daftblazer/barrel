@@ -779,7 +779,7 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
             println!("{x} uses {} on {y}: {} damage ({} HP left)", h.skill, h.damage, h.hp_left);
         }
     }
-    println!("{} hits (partial battle: no traits, start rules, or states other than poison; see barrel_game::duel)", hits.len());
+    println!("{} hits (partial battle: no traits or start rules, states only poison and stat buffs; see barrel_game::duel)", hits.len());
     Ok(())
 }
 

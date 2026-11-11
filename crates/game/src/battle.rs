@@ -170,6 +170,68 @@ pub fn age_states(states: &mut Vec<TimedState>) {
     states.retain(|s| s.count != 0);
 }
 
+/// The battle stats a timed state changes by its value (`0x140191e90`): attack (5), defence
+/// (6), speed (7) for the `PLUS_*` (0x12-0x14), `MINUS_*` (0x26-0x28) and two further families
+/// (0x36-0x38, 0x3e-0x40); stats 8 to 12 for 0x15-0x19 and their kin; 13 (critical) for 0x1b,
+/// 14 for 0x24, 18 (evade) for 0x1c; all three of attack, defence and speed for 0x49
+/// (`FIELD_ACUMULATE_WEAK`). State 0x11 (`PLUS_LEVEL_STATUS`) works from the attack and is not
+/// worked here; the rest change no stat.
+pub fn state_stats(state: u32) -> &'static [usize] {
+    use stat::*;
+    const S: [usize; 8] = [ATTACK, DEFENSE, SPEED, 8, 9, 10, 11, 12];
+    match state {
+        0x12..=0x19 => &S[(state - 0x12) as usize..][..1],
+        0x26..=0x2d => &S[(state - 0x26) as usize..][..1],
+        0x36..=0x3d => &S[(state - 0x36) as usize..][..1],
+        0x3e..=0x45 => &S[(state - 0x3e) as usize..][..1],
+        0x1b => &[13],
+        0x24 => &[14],
+        0x1c => &[18],
+        0x49 => &S[..3],
+        _ => &[],
+    }
+}
+
+/// A character's battle stats with its timed states (`0x1401af440`, run whenever a state is
+/// added or goes): the base stats, keeping the current HP and MP; each state's value added to
+/// the stats it changes ([`state_stats`]; `MINUS_*` amounts were negated when the effect was
+/// applied); the maximum HP raised by the `ADD_MAXHP` (0x1a) percentages; then the maximum HP
+/// and MP kept to 1..=`cap` (999, or 999,999 for monsters), HP and MP to 0..=the maximum, and
+/// attack, defence and speed to 1..=999.
+pub fn stats_with_states(base: &[i32; stat::COUNT], current: &[i32; stat::COUNT], states: &[TimedState], cap: i32) -> [i32; stat::COUNT] {
+    use stat::*;
+    let mut out = *base;
+    out[HP] = current[HP];
+    out[MP] = current[MP];
+    for s in states {
+        for &k in state_stats(s.state) {
+            out[k] = out[k].wrapping_add(s.value as i32);
+        }
+    }
+    let more: i32 = states.iter().filter(|s| s.state == 0x1a).map(|s| s.value as i32).sum();
+    out[MAX_HP] = out[MAX_HP].wrapping_add(out[MAX_HP].wrapping_mul(more) / 100);
+    for k in [MAX_HP, MAX_MP] {
+        out[k] = out[k].min(cap).max(1);
+    }
+    out[HP] = out[HP].min(out[MAX_HP]).max(0);
+    out[MP] = out[MP].min(out[MAX_MP]).max(0);
+    for k in [ATTACK, DEFENSE, SPEED] {
+        out[k] = out[k].clamp(1, 999);
+    }
+    out
+}
+
+/// The timed state an `ACT_*` buff or debuff puts on (part of `0x1401c0e80`): `PLUS_ATK`,
+/// `PLUS_DEF`, `PLUS_SPD` (acts 40-42) give 0x12-0x14, `MINUS_ATK`, `MINUS_DEF`, `MINUS_SPD`
+/// (45-47) 0x26-0x28, the minuses with their amount negated (`0x1401bf1da`).
+pub fn stat_state(act: u32) -> Option<(u32, bool)> {
+    match act {
+        40..=42 => Some((0x12 + act - 40, false)),
+        45..=47 => Some((0x26 + act - 45, true)),
+        _ => None,
+    }
+}
+
 /// `ACT_DAMAGE_TURN`'s damage (`0x1401bebdc`): the rolled amount grown by `per_turn` percent
 /// (the effect's second value) for each action the user has taken so far (its +0x2c8), cut
 /// to an integer, then times the action's scale. No attack, defence or resistance: it goes
@@ -347,6 +409,26 @@ mod tests {
         assert_eq!(turn_hp_change(20, 8, 0), 12);
         assert_eq!(turn_hp_change(5, 8, 3), -6);
         assert_eq!(turn_hp_change(0, 0, 0), 0);
+    }
+
+    #[test]
+    fn buffs_and_debuffs_change_stats() {
+        let mut base = [0; stat::COUNT];
+        base[stat::MAX_HP] = 200;
+        base[stat::MAX_MP] = 50;
+        base[stat::ATTACK] = 40;
+        base[stat::DEFENSE] = 5;
+        base[stat::SPEED] = 30;
+        let mut current = base;
+        current[stat::HP] = 150;
+        let mut states = Vec::new();
+        add_state(&mut states, 0x12, 15, 0);
+        add_state(&mut states, 0x27, -10, 0);
+        add_state(&mut states, 0x1a, 50, 0);
+        let s = stats_with_states(&base, &current, &states, 999);
+        assert_eq!((s[stat::ATTACK], s[stat::DEFENSE], s[stat::SPEED]), (55, 1, 30));
+        assert_eq!((s[stat::MAX_HP], s[stat::HP]), (300, 150));
+        assert_eq!(stat_state(46), Some((0x27, true)));
     }
 
     #[test]
