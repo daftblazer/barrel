@@ -301,6 +301,25 @@ jump table `0x1401c0840`) sends it to one of 64 handlers:
   drains and the field effects;
 - 105 numbers (`CONSUME_MP`, `MOVE_DASH`, ...) that do nothing here (handled elsewhere).
 
+### HP damage (executable)
+
+The shared HP-damage handler (`0x1401bdf6d`) first adjusts the amount for some kinds, among
+them `DAMAGE_TIME_LEFT`, `DAMAGE_IF_BADSTATUS`, `DAMAGE_COST_OVER`, `DAMAGE_HP_LEFT`,
+`DAMAGE_SPLASH` (amount / number of targets), `DAMAGE_TARGET_LEFT` and
+`DAMEGE_TIMECARD_NUM` (not written out yet), then, for a skill (action kind 0):
+
+    attack  = the user's EQUIP_PARAM_LEVEL value + the user's stat 0
+    base    = trunc(trunc(amount × user stat 5 / 100) × ((attack^1.5)^1.1 / 50 + 100) / 100)
+    defense = target stat 6 / 4      (0 when the effect's +4 is not -1, or for DAMAGE_4ELEMENT)
+    damage  = trunc(max(base - defense, base / 5) × scale)
+
+The powers are `powf` in floats; the divisions are integer, truncating. For an item (kind not
+0), attack and defense are 0, and the entry's +0x18 takes the place of stat 5. Stat 0 being the
+level and 5 and 6 attack and defense is a guess from the formula, not checked. After this
+come the target's reductions (`AUTO_DAMAGE_REDUCE` up to 80%, `EQUIP_REDUCE_SUFFERDMG` up to
+50%, for physical effects; element resistances otherwise), not yet written out.
+`barrel_game::battle::skill_damage` is the formula above.
+
 `HEAL_HP` heals `trunc(amount × scale)` (the amount as a float, times the scale, truncated to
 an integer). For `ACT_ASSIST_COUNTER` (93) the
 amount is first replaced with `user[+0x2c0] × (user[+0x2c4] + 100) / 100`.
