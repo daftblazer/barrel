@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 barrel-formats = { path = "../formats" }
 barrel-game = { path = "../game" }
+barrel-audio = { path = "../audio" }
 ash = "0.38"
 glam = "0.33"
 winit = { version = "0.30", default-features = false, features = ["wayland", "x11", "rwh_06"] }

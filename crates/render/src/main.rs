@@ -1645,6 +1645,9 @@ fn main() -> Result<()> {
     // (docs/engine.md, "Timing"), each frame draws the last two ticks blended, and only the
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
+    // The event's music and voices, in a window only (frames written to files are silent):
+    // the output, the mixer, the library, and the music now playing.
+    let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
     let mut motion_names: Vec<String> = Vec::new();
     let messages: Vec<barrel_formats::ebm::Message>;
     let mut face_tables_play: Option<barrel_game::face::Tables> = None;
@@ -1697,6 +1700,16 @@ fn main() -> Result<()> {
         let snap = play.stage.snapshot();
         eprintln!("playing {frames} frames at {fps} Hz from {:.2} s, {} actors", clock.time(), actors.len());
         player = Some((play, clock, snap.clone(), snap));
+        if presenter.is_some() {
+            let tracks = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+                .ok()
+                .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
+                .unwrap_or_default();
+            match barrel_audio::Output::open(0.1) {
+                Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice", tracks), None)),
+                Err(e) => eprintln!("no sound: {e}"),
+            }
+        }
     }
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);
     let mut hidden = vec![false; instances.len()];
@@ -1768,6 +1781,35 @@ fn main() -> Result<()> {
                     play.tick();
                     play.stage.snapshot()
                 });
+                let cues = std::mem::take(&mut play.stage.cues);
+                if let Some((_, mixer, library, music)) = sound.as_mut() {
+                    for cue in cues {
+                        match cue {
+                            barrel_game::stage::Cue::Music { track: Some(t), volume, .. } => {
+                                if let Some(m) = music.take() {
+                                    mixer.stop(m);
+                                }
+                                if let Some(m) = library.music(t) {
+                                    eprintln!("music {t}");
+                                    *music = Some(mixer.play(m.sound, m.volume * volume, m.loop_from));
+                                }
+                            }
+                            barrel_game::stage::Cue::Music { track: None, fade, .. } => {
+                                if let Some(m) = music.take() {
+                                    mixer.fade_out(m, fade);
+                                }
+                            }
+                            barrel_game::stage::Cue::Voice { clip } => {
+                                if let Some(v) = library.voice(clip) {
+                                    mixer.play(v, 1.0, None);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some((out, mixer, ..)) = sound.as_mut() {
+                out.pump(mixer);
             }
             let shown = barrel_game::stage::Snapshot::blend(before, after, f.alpha);
             let since = ((clock.ticks - start_ticks) as f32 + f.alpha) / clock.rate() as f32;

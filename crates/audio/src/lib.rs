@@ -48,6 +48,8 @@ struct Voice {
     gain: f32,
     /// Where it starts again on reaching its end (in its frames), when it loops.
     loop_from: Option<usize>,
+    /// While fading out: the gain taken off per output frame (it stops at 0).
+    fading: Option<f32>,
 }
 
 /// What a [`Mixer::play`] returns, to stop or change the sound later.
@@ -73,7 +75,7 @@ impl Mixer {
     pub fn play(&mut self, sound: Arc<Sound>, gain: f32, loop_from: Option<usize>) -> Playing {
         self.next += 1;
         let loop_from = loop_from.filter(|&f| f < sound.frames());
-        self.voices.push(Voice { id: self.next, sound, at: 0.0, gain, loop_from });
+        self.voices.push(Voice { id: self.next, sound, at: 0.0, gain, loop_from, fading: None });
         Playing(self.next)
     }
 
@@ -84,6 +86,15 @@ impl Mixer {
     pub fn set_gain(&mut self, p: Playing, gain: f32) {
         if let Some(v) = self.voices.iter_mut().find(|v| v.id == p.0) {
             v.gain = gain;
+        }
+    }
+
+    /// Fades a sound out over `seconds` (at once for 0), then stops it.
+    pub fn fade_out(&mut self, p: Playing, seconds: f32) {
+        if seconds <= 0.0 {
+            self.stop(p);
+        } else if let Some(v) = self.voices.iter_mut().find(|v| v.id == p.0) {
+            v.fading = Some(v.gain / (seconds * RATE as f32));
         }
     }
 
@@ -122,12 +133,65 @@ impl Mixer {
                 out[2 * f] += (l0 + (l1 - l0) * t) * v.gain;
                 out[2 * f + 1] += (r0 + (r1 - r0) * t) * v.gain;
                 v.at += step;
+                if let Some(d) = v.fading {
+                    v.gain -= d;
+                    if v.gain <= 0.0 {
+                        v.gain = 0.0;
+                        break;
+                    }
+                }
             }
         }
-        self.voices.retain(|v| v.loop_from.is_some() || (v.at as usize) < v.sound.frames());
+        self.voices.retain(|v| !(v.fading.is_some() && v.gain <= 0.0) && (v.loop_from.is_some() || (v.at as usize) < v.sound.frames()));
         for s in out.iter_mut() {
             *s = (*s * self.master).clamp(-1.0, 1.0);
         }
+    }
+}
+
+/// The game's sounds from its install folder, decoded on first use and kept: voice clips by
+/// number (`Data/x64/Sound/<voices>/SeriesNNNN.fpl` and `.fp`, a bank per thousand) and music
+/// tracks by the executable's list (`Data/x64/Sound/BGM/<file>`, with its volume and loop).
+pub struct Library {
+    sound: std::path::PathBuf,
+    voices: String,
+    tracks: Vec<barrel_formats::bgm::Track>,
+    banks: std::collections::HashMap<u32, Option<(Vec<Option<(usize, usize)>>, Vec<u8>)>>,
+}
+
+/// A music track ready to play.
+pub struct Music {
+    pub sound: Arc<Sound>,
+    pub volume: f32,
+    pub loop_from: Option<usize>,
+}
+
+impl Library {
+    /// `install` is the game's folder; `voices` the voice folder under `Sound/` (`Voice` for
+    /// Japanese, `Voice_EN` for English); `tracks` from `barrel_formats::bgm::tracks`.
+    pub fn new(install: &std::path::Path, voices: &str, tracks: Vec<barrel_formats::bgm::Track>) -> Library {
+        Library { sound: install.join("Data/x64/Sound"), voices: voices.to_string(), tracks, banks: Default::default() }
+    }
+
+    pub fn voice(&mut self, clip: u32) -> Option<Arc<Sound>> {
+        let bank = clip / 1000 * 1000;
+        let path = self.sound.join(&self.voices).join(format!("Series{bank:04}.fpl"));
+        let entry = self.banks.entry(bank).or_insert_with(|| {
+            let list = barrel_formats::voice::list(&std::fs::read(&path).ok()?).ok()?;
+            Some((list, std::fs::read(path.with_extension("fp")).ok()?))
+        });
+        let (list, fp) = entry.as_ref()?;
+        let (off, size) = list.get((clip - bank) as usize).copied().flatten()?;
+        let ogg = barrel_formats::voice::ogg(fp.get(off..off + size)?).ok()?;
+        Sound::from_ogg(&ogg).ok().map(Arc::new)
+    }
+
+    pub fn music(&self, track: u32) -> Option<Music> {
+        let t = self.tracks.get(track as usize)?;
+        let kovs = std::fs::read(self.sound.join("BGM").join(&t.file)).ok()?;
+        let looping = barrel_formats::voice::looping(&kovs).ok()?;
+        let sound = Sound::from_ogg(&barrel_formats::voice::ogg(&kovs).ok()?).ok()?;
+        Some(Music { sound: Arc::new(sound), volume: t.volume, loop_from: (!looping.once).then_some(looping.start as usize) })
     }
 }
 
@@ -171,5 +235,17 @@ mod tests {
         m.mix(&mut out);
         let left: Vec<f32> = out.iter().step_by(2).copied().collect();
         assert_eq!(left, [0.0, 0.25, 0.5, 0.75, 0.5, 0.75, 0.5, 0.75]);
+    }
+
+    #[test]
+    fn fading_out() {
+        let mut m = Mixer::new();
+        let p = m.play(tone(RATE as usize, 1.0), 1.0, Some(0));
+        m.fade_out(p, 4.0 / RATE as f32);
+        let mut out = [0f32; 12];
+        m.mix(&mut out);
+        let left: Vec<f32> = out.iter().step_by(2).copied().collect();
+        assert_eq!(left, [1.0, 0.75, 0.5, 0.25, 0.0, 0.0]);
+        assert!(!m.is_playing(p));
     }
 }

@@ -158,6 +158,16 @@ pub struct CameraPoint {
     mover: Option<Mover>,
 }
 
+/// A sound the event asks for, for whoever plays the stage (it has no sound of its own).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Cue {
+    /// A music track starts at `volume` (0 to 1), or (`track` None) the music stops over
+    /// `fade` seconds.
+    Music { track: Option<u32>, volume: f32, fade: f32 },
+    /// A voice clip plays.
+    Voice { clip: u32 },
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Stage {
     /// By the number the event's commands use (a `Chara.xml` row in story events, 10000 and
@@ -172,6 +182,8 @@ pub struct Stage {
     pub measures: BTreeMap<u32, Measures>,
     /// The curves timed turns follow (`curve_data.xml`, [`crate::curve::Curve::table`]).
     pub curves: BTreeMap<u32, crate::curve::Curve>,
+    /// Sounds asked for and not yet taken (the player drains them).
+    pub cues: Vec<Cue>,
 }
 
 impl Stage {
@@ -279,6 +291,8 @@ impl Stage {
                     }
                 }
             }
+            Step::Music { track, volume, fade, .. } => self.cues.push(Cue::Music { track: *track, volume: *volume, fade: *fade }),
+            Step::Voice { clip, .. } => self.cues.push(Cue::Voice { clip: *clip }),
             _ => {}
         }
     }

@@ -97,6 +97,7 @@ name = "barrel-render"
 version = "0.1.0"
 dependencies = [
  "ash",
+ "barrel-audio",
  "barrel-formats",
  "barrel-game",
  "glam",
