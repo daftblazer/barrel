@@ -773,9 +773,13 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
     let hits = barrel_game::duel::duel(&fa, &fb, &mut rng, 1000);
     for h in &hits {
         let (x, y) = if h.attacker == 0 { (&na, &nb) } else { (&nb, &na) };
-        println!("{x} uses {} on {y}: {} damage ({} HP left)", h.skill, h.damage, h.hp_left);
+        if h.skill == "poison" {
+            println!("{x} takes {} poison damage ({} HP left)", h.damage, h.hp_left);
+        } else {
+            println!("{x} uses {} on {y}: {} damage ({} HP left)", h.skill, h.damage, h.hp_left);
+        }
     }
-    println!("{} hits (partial battle: no traits, states or start rules; see barrel_game::duel)", hits.len());
+    println!("{} hits (partial battle: no traits, start rules, or states other than poison; see barrel_game::duel)", hits.len());
     Ok(())
 }
 

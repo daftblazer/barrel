@@ -330,8 +330,19 @@ effect's second value for the counted states (2 `HEAL_HP_TURN`, 3, 5 `ADD_ACTION
 lasts 2), 5 for the buffs and debuffs (7 and 0x12 to 0x2d), and -1 (no count) for the
 rest. A state already there with no count is replaced only by a stronger value (compared as
 floats). `battle::state_count`, `TimedState` and `add_state` follow this; how a counted state
-already there is merged, the exclusion groups, and where the counts go down (the per-turn tick)
-are next.
+already there is merged and the exclusion groups are not read yet.
+
+At the start of a character's turn (`0x1401ae4f0`; when +0x282 is set) `0x1401b0100` works
+out its HP change: the `HEAL_HP_TURN` states (2) and two traits (0x65, 0x83) add to it, and
+the poisons take from it. State 0x34 (`DAMAGE_HP_TURN`) takes `0x1401b9050 (sum of the 0x34
+values, defence)`: with `cut = clamp(trunc(defence / 10) + trunc(defence / 3), 0, 999)`, the
+damage is `trunc((100 - cut) × value / 100)`, or 1 when `(100 - cut) × value` is below 200.
+State 0x35 (`DAMAGE_HP_TURN_DIFFERENTIAL`) takes `0x1401b90c0`: `(100 - cut) × (max HP - HP)
+× value / 10000`, or 1 below 20000 (value percent of the HP missing). Field states 0x48 and
+others follow (not worked). Then `0x140191120` ages both state lists by the character's
++0x2d8 (taken as one turn): counted states go down and are dropped at 0. `battle::
+poison_damage`, `poison_by_missing_hp` and `age_states` follow this, and the duel poisons with
+`DAMAGE_HP_TURN` effects (Bomb: 10 for 2 turns, 5 a turn against the Grand Dragon's defence).
 
 ### MP cost and power (executable)
 

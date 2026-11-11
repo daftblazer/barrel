@@ -102,11 +102,24 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
     let mut hits = Vec::new();
     let mut uses = [[0i32; 9]; 2];
     let mut turns = [0i32; 2];
+    let mut states: [Vec<battle::TimedState>; 2] = [Vec::new(), Vec::new()];
     let mut pending = -1;
     while hits.len() < max_hits {
         timeline.advance();
         let who = timeline.entries[0].0 as usize;
         let target = 1 - who;
+        // Its turn starts (`0x1401ae4f0`): poison, then its states age.
+        let poison: i32 = states[who].iter().filter(|s| s.state == 0x34).map(|s| s.value as i32).sum();
+        if poison > 0 {
+            let damage = battle::poison_damage(poison, fighters[who][stat::DEFENSE]);
+            let dealt = battle::take_hp_damage(&mut fighters[who], damage, None, None);
+            // A poison tick: `attacker` is the poisoned fighter itself.
+            hits.push(Hit { attacker: who, skill: "poison".into(), damage: dealt, hp_left: fighters[who][stat::HP] });
+            if fighters[who][stat::HP] == 0 {
+                break;
+            }
+        }
+        battle::age_states(&mut states[who]);
         let situation = crate::monster_ai::Situation {
             hp: fighters[who][stat::HP],
             max_hp: fighters[who][stat::MAX_HP],
@@ -115,6 +128,12 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
             uses: &uses[who],
         };
         let (slot, attack) = sides[who].pick(&situation, rng);
+        // A poisoning effect (`DAMAGE_HP_TURN`, act 16) puts state 0x34 on the target.
+        if let Some(e) = attack.effects.iter().find(|e| e.act == 16) {
+            let value = rng.range(e.min, e.max);
+            let second = rng.range(e.min2, e.max2);
+            battle::add_state(&mut states[target], 0x34, value, second);
+        }
         if let Some(k) = slot.filter(|&k| k < 9) {
             uses[who][k] += 1;
         }

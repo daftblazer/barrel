@@ -129,6 +129,39 @@ pub fn add_state(states: &mut Vec<TimedState>, state: u32, value: i32, second: i
     states.push(new);
 }
 
+/// How much defence softens damage over time (`0x1401b9050`, `0x1401b90c0`): trunc(d / 10) +
+/// trunc(d / 3), kept to 0..=999.
+fn over_time_cut(defense: i32) -> i32 {
+    (defense / 10 + defense / 3).clamp(0, 999)
+}
+
+/// A turn's poison (state 0x34, `DAMAGE_HP_TURN`; `0x1401b9050`): `value` (the states' values
+/// added up) cut by the character's defence, at least 1.
+pub fn poison_damage(value: i32, defense: i32) -> i32 {
+    let v = (100 - over_time_cut(defense)).wrapping_mul(value);
+    if v < 200 { 1 } else { v / 100 }
+}
+
+/// A turn's poison by missing HP (state 0x35, `DAMAGE_HP_TURN_DIFFERENTIAL`; `0x1401b90c0`):
+/// `value` percent of the HP missing, cut by the defence, at least 1.
+pub fn poison_by_missing_hp(value: i32, hp: i32, max_hp: i32, defense: i32) -> i32 {
+    let v = (100 - over_time_cut(defense)).wrapping_mul(max_hp - hp).wrapping_mul(value);
+    if v < 20000 { 1 } else { v / 10000 }
+}
+
+/// Ages a character's timed states by one of its turns (`0x140191120`, called at its turn's
+/// start after the HP change): counted states go down by one and go when they reach 0; states
+/// without a count stay. (The game passes the character's +0x2d8 as a float; that it is one a
+/// turn is taken, not read.)
+pub fn age_states(states: &mut Vec<TimedState>) {
+    for s in states.iter_mut() {
+        if s.count > 0 {
+            s.count -= 1;
+        }
+    }
+    states.retain(|s| s.count != 0);
+}
+
 /// `ACT_DAMAGE_TURN`'s damage (`0x1401bebdc`): the rolled amount grown by `per_turn` percent
 /// (the effect's second value) for each action the user has taken so far (its +0x2c8), cut
 /// to an integer, then times the action's scale. No attack, defence or resistance: it goes
@@ -299,6 +332,20 @@ mod tests {
         assert_eq!(states.last().unwrap().value, 50.0);
         add_state(&mut states, 0x1a, 80, 0);
         assert_eq!(states.last().unwrap().value, 80.0);
+    }
+
+    #[test]
+    fn poison() {
+        // Defence 30: cut 3 + 10 = 13, so 10 poison does 8.
+        assert_eq!(poison_damage(10, 30), 8);
+        assert_eq!(poison_damage(1, 0), 1);
+        assert_eq!(poison_by_missing_hp(10, 50, 100, 0), 5);
+        let mut states = Vec::new();
+        add_state(&mut states, 0x34, 10, 2);
+        age_states(&mut states);
+        assert_eq!(states[0].count, 1);
+        age_states(&mut states);
+        assert!(states.is_empty());
     }
 
     #[test]
