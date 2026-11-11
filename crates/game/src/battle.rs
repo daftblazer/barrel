@@ -22,6 +22,36 @@ pub fn skill_damage(amount: i32, user_stat5: i32, attack: i32, target_stat6: i32
     (damage as f32 * scale) as i32
 }
 
+/// What the target brings against an HP-damage effect.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Defender {
+    /// The target's stats 8 to 11: resistance in percent to elements 0 to 3.
+    pub resist: [i32; 4],
+    /// Passive `AUTO_DAMAGE_REDUCE`'s value, if the target has it.
+    pub auto_reduce: Option<i32>,
+    /// Passive `EQUIP_REDUCE_SUFFERDMG`'s value, if the target has it.
+    pub equip_reduce: Option<i32>,
+    /// Passive `PASSIVE_ABSORB_DAMAGE`'s value for the effect's element, if positive.
+    pub absorb: Option<i32>,
+}
+
+/// The damage after the target's reductions (`0x1401be495` on): an elemental effect
+/// (`element` 0 to 3) by the resistance (at most 100%), a physical one by
+/// `EQUIP_REDUCE_SUFFERDMG` (at most 50%) when the target has it, else `AUTO_DAMAGE_REDUCE`
+/// (at most 80%). The executable takes the second in place of the first, not both. Then an
+/// absorbing target turns the damage into healing: `-(damage x absorb / 100)`.
+pub fn reduce(damage: i32, element: Option<u8>, d: &Defender) -> i32 {
+    let cut = match element {
+        Some(e) => d.resist.get(e as usize).map_or(0, |&r| r.min(100)),
+        None => d.equip_reduce.map(|v| v.min(50)).or(d.auto_reduce.map(|v| v.min(80))).unwrap_or(0),
+    };
+    let damage = (100 - cut).wrapping_mul(damage) / 100;
+    match d.absorb {
+        Some(a) if a > 0 => -(a.wrapping_mul(damage) / 100),
+        _ => damage,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -37,5 +67,20 @@ mod tests {
         assert_eq!(skill_damage(64, 100, 10, 40, true, 1.5), 81);
         // At attack 100: (100^1.5)^1.1 = 1000^1.1 = 1995, / 50 = 39.9 percent more.
         assert_eq!(base_damage(100, 100, 100), 139);
+    }
+
+    #[test]
+    fn reductions() {
+        let none = Defender::default();
+        assert_eq!(reduce(200, None, &none), 200);
+        let d = Defender { resist: [50, 0, 150, 0], auto_reduce: Some(90), ..none };
+        assert_eq!(reduce(200, Some(0), &d), 100);
+        assert_eq!(reduce(200, Some(2), &d), 0);
+        assert_eq!(reduce(200, None, &d), 40);
+        // The equipment reduction replaces the automatic one.
+        let d = Defender { equip_reduce: Some(10), ..d };
+        assert_eq!(reduce(200, None, &d), 180);
+        let d = Defender { absorb: Some(50), ..none };
+        assert_eq!(reduce(201, Some(1), &d), -100);
     }
 }

@@ -315,10 +315,27 @@ them `DAMAGE_TIME_LEFT`, `DAMAGE_IF_BADSTATUS`, `DAMAGE_COST_OVER`, `DAMAGE_HP_L
 
 The powers are `powf` in floats; the divisions are integer, truncating. For an item (kind not
 0), attack and defense are 0, and the entry's +0x18 takes the place of stat 5. Stat 0 being the
-level and 5 and 6 attack and defense is a guess from the formula, not checked. After this
-come the target's reductions (`AUTO_DAMAGE_REDUCE` up to 80%, `EQUIP_REDUCE_SUFFERDMG` up to
-50%, for physical effects; element resistances otherwise), not yet written out.
-`barrel_game::battle::skill_damage` is the formula above.
+level and 5 and 6 attack and defense is a guess from the formula, not checked. Then the target's reductions:
+
+- an elemental effect (its +4 is the element, 0 to 3) is multiplied by `(100 - min(target
+  stat 8 + element, 100)) / 100`, so stats 8 to 11 are the resistances;
+- a physical effect (+4 is -1) by `(100 - r) / 100`, where r is the target's passive
+  `EQUIP_REDUCE_SUFFERDMG` (at most 50) when it has one, else `AUTO_DAMAGE_REDUCE` (at most
+  80). The second replaces the first; they do not add;
+- a target with passive `PASSIVE_ABSORB_DAMAGE` (asked with the element) turns it into
+  `-(damage × value / 100)`, healing;
+- when global `0x141077e44` is positive and the target is of type 0, that percentage of the
+  damage is taken off and added to global `0x141077e48` (a shared pool, not yet named);
+- an action with target mode 2 adds the damage to the user's +0x304 and +0x308 instead of
+  dealing it; a later hit by a user with +0x304 positive deals `trunc(+0x304 × the action's
+  float +0x20) + 1`, at most what is left in +0x308, and takes that from +0x308 (stored
+  damage released over hits, apparently).
+
+A damage of 0 or more is then dealt by `0x1401c1970 (battle, user, target, damage, element)`.
+Afterwards, when the user's stat 1 is positive (alive, presumably), `DAMAGE_REDUCE` heals the
+user by its second value as a percentage of the damage dealt; any other skill heals the user
+by the user's stat 20 percent of it (drain), items do not.
+`barrel_game::battle::skill_damage` and `reduce` are the formulas above.
 
 `HEAL_HP` heals `trunc(amount × scale)` (the amount as a float, times the scale, truncated to
 an integer). For `ACT_ASSIST_COUNTER` (93) the
