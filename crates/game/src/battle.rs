@@ -36,6 +36,87 @@ pub fn guts_chance(stat25: i32, add_guts: bool, forced: bool) -> i32 {
     if add_guts || forced { 100 } else { stat25.min(75) }
 }
 
+/// What an item's trait bonus to its effects is worked from (`0x1401bd8ee` and on): the sums of
+/// its traits' values by `ITEM_SUB_*` kind (`0x14029db00 (item, kind, 0)`: each of its three
+/// traits' two slots of that kind, rolled from minimum to maximum; see [`ItemBonusInputs::sum`]),
+/// and the item's and battle's numbers the terms multiply.
+#[derive(Clone, Copy, Debug)]
+pub struct ItemBonusInputs {
+    /// Trait sums by kind: 0 `ITM_CHANGE_POWER`, 25 `BTL_RANK_BONUS`, 26
+    /// `BTL_LARGE_ENEMYBONUS`, 27 `BTL_SHORT_ENEMYBONUS`, 28 `BTL_LAST_BONUS`, 29
+    /// `BTL_BIG_ENEMYBONUS`, 30 `BTL_SMALL_ENEMYBONUS`, 31 `BTL_COST_BONUS`, 34
+    /// `BTL_FORCED_LASTUSE`, 35 `BTL_COUNT_POWER`, 41 `COST_PROPORTION_BONUS`, 42
+    /// `WT_PROPORTION_BONUS`.
+    pub sum: [i32; 43],
+    /// `0x14029dd10 (item)`, taken from 5 for the rank bonus (the item's rank, presumably).
+    pub rank: i32,
+    /// `0x14029dc50 (item)` (its cost, presumably).
+    pub cost: i32,
+    /// The item's i16 +0x1c (uses left, presumably: 1 gives the last-use bonus), +0x1e and
+    /// +0x20 (summed for `COUNT_POWER`), +0x18 (for `COST_PROPORTION_BONUS`).
+    pub uses_left: i32,
+    pub counts: i32,
+    pub x18: i32,
+    /// Under `FIELD_ITEM_SINGLE_USE` (state 0x4f): the last-use bonus always counts.
+    pub single_use: bool,
+    /// For a monster target, `0x140111a80 (its +0x78)` + 1 (its size class, presumably);
+    /// `None` for a party target, whose big and small enemy terms are skipped.
+    pub monster_size: Option<i32>,
+    /// How many targets the action has.
+    pub targets: i32,
+    /// `0x140190b90 (timeline, user)`, for `WT_PROPORTION_BONUS`.
+    pub wait_term: i32,
+}
+
+impl Default for ItemBonusInputs {
+    fn default() -> Self {
+        ItemBonusInputs { sum: [0; 43], rank: 0, cost: 0, uses_left: 0, counts: 0, x18: 0, single_use: false, monster_size: None, targets: 1, wait_term: 0 }
+    }
+}
+
+/// An item action's bonus percentage (the sum `0x1401bd8ee` builds; cut to the act's bonus
+/// limit by [`boost_amounts`]).
+pub fn item_bonus(i: &ItemBonusInputs) -> i32 {
+    let s = |k: usize| i.sum[k];
+    let mut b = s(0);
+    b += s(25).wrapping_mul(5 - i.rank);
+    b += s(31).wrapping_mul(i.cost);
+    if i.uses_left == 1 || i.single_use {
+        b += s(28);
+    }
+    b += s(35).wrapping_mul(i.counts);
+    b += s(34).wrapping_mul(i.uses_left);
+    if let Some(size) = i.monster_size {
+        b += s(29).wrapping_mul(size);
+        b += s(30) / size.max(1);
+    }
+    let targets = i.targets.max(1);
+    b += s(26).wrapping_mul(targets);
+    b += ((s(27) as i64 as u64) / targets as u64) as i32;
+    b += s(41).wrapping_mul(i.x18);
+    (s(42).wrapping_mul(i.wait_term) as f32 / 100.0 + b as f32) as i32
+}
+
+/// The rolled amount and second value raised by a bonus (`0x1401bdbcc`): the bonus is cut to
+/// `limit` (the act's bonus limit, `0x14002aa40`), both values are multiplied by
+/// `(100 + bonus) / 100` (integer), and `extra` is added to the amount.
+pub fn boost_amounts(amount: i32, second: i32, bonus: i32, limit: i32, extra: i32) -> (i32, i32) {
+    let b = bonus.min(limit) + 100;
+    (amount.wrapping_mul(b) / 100 + extra, second.wrapping_mul(b) / 100)
+}
+
+/// The flat addition an item's `CHANGE_ACTUAL_POWER` traits (kind 39) give an act with flag 4
+/// (`0x1401bdad5`): their sum `v` when the amount is at most `v`, else `v² / amount`.
+pub fn actual_power_extra(amount: i32, v: i32) -> i32 {
+    if v <= 0 {
+        0
+    } else if amount <= v {
+        v
+    } else {
+        v.wrapping_mul(v) / amount
+    }
+}
+
 /// `HEAL_HP_BY_ATK`'s amount (act 21, `0x1401bedf3`): the user's attack times the rolled amount
 /// in percent, cut to an integer, then times the scale. (`HEAL_HP`, act 19, is the rolled
 /// amount times the scale.)
@@ -549,6 +630,21 @@ mod tests {
         assert_eq!(revive_amount(200, 15, true, false, false), 0);
         assert_eq!(revive_amount(200, 15, false, true, true), 0);
         assert_eq!(revive_amount(200, 15, false, true, false), 30);
+    }
+
+    #[test]
+    fn item_bonuses() {
+        let mut i = ItemBonusInputs { rank: 3, cost: 10, uses_left: 1, targets: 2, ..Default::default() };
+        i.sum[0] = 20;
+        i.sum[25] = 5;
+        i.sum[28] = 30;
+        i.sum[26] = 4;
+        // 20 + 5 × 2 + 30 (last use) + 4 × 2 targets.
+        assert_eq!(item_bonus(&i), 68);
+        assert_eq!(boost_amounts(100, 10, 68, 9999, 5), (173, 16));
+        assert_eq!(boost_amounts(100, 10, 68, 50, 0), (150, 15));
+        assert_eq!(actual_power_extra(20, 30), 30);
+        assert_eq!(actual_power_extra(60, 30), 15);
     }
 
     #[test]
