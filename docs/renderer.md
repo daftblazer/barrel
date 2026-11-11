@@ -116,8 +116,13 @@ the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by 
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a
 `stage::Playback` stepped by a `clock::Clock` fed 1/HZ a frame, each frame drawing the last
 two ticks blended (`docs/engine.md`, "Timing"). Between frames only the characters'
-instance matrices and joint palettes are rewritten; each character keeps the motion it had
-at the start, sampled at its time (looping motions wrap). Frames go to `OUT_000.png`,
+instance matrices and joint palettes are rewritten; each character plays the motion the
+stage gives it (`s5`/`s10`), loaded by its `MOTION_*` name from the character's `CharaBase`
+row the first time it is needed and kept, from the time the stage started it (looping
+motions wrap); a character the stage has given no motion keeps its field wait. The blend
+time between motions is not used yet (they cut). Frames written to files are not real time,
+so the viewer's clock has no stall cap (`Clock::max_frame`). Frames go to `OUT_000.png`,
 `OUT_001.png`, ... In `EVENT_MM08_AS4_130` (`TOWN_04`), 4 frames at 2 Hz from 0.5 s show Logy
-and Escha walking into the plaza towards Threia and Reyfer, mid-stride. Not yet: motion
-changes during the event, characters added after the start, the stage camera, faces.
+and Escha walking into the plaza towards Threia and Reyfer, mid-stride; 4 frames at 1 Hz from 1.5 s show them arriving and changing from `WALK` to
+`F_WAIT` at 2.4 s, as the event says. Not yet: motion blends, characters added after the
+start, the stage camera, faces.

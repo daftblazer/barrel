@@ -20,6 +20,9 @@ pub struct Clock {
     owed: f64,
     /// Ticks run since the start.
     pub ticks: u64,
+    /// The longest real frame taken as it is ([`MAX_FRAME`] by default); a host rendering
+    /// frames offline, where a frame is not a stall, sets it to infinity.
+    pub max_frame: f64,
 }
 
 /// What a frame should do: run `ticks` logic ticks, then draw at `alpha` (0 to 1) of the way
@@ -32,7 +35,7 @@ pub struct Frame {
 
 impl Clock {
     pub fn new(rate: u32) -> Clock {
-        Clock { rate: rate.max(1), owed: 0.0, ticks: 0 }
+        Clock { rate: rate.max(1), owed: 0.0, ticks: 0, max_frame: MAX_FRAME }
     }
 
     pub fn rate(&self) -> u32 {
@@ -49,10 +52,10 @@ impl Clock {
         self.ticks as f64 / self.rate as f64
     }
 
-    /// Takes `real` seconds of wall time (clamped to [`MAX_FRAME`]).
+    /// Takes `real` seconds of wall time (clamped to [`Clock::max_frame`]).
     pub fn advance(&mut self, real: f64) -> Frame {
         let step = 1.0 / self.rate as f64;
-        self.owed += real.clamp(0.0, MAX_FRAME);
+        self.owed += real.clamp(0.0, self.max_frame);
         let ticks = (self.owed / step).floor();
         self.owed -= ticks * step;
         self.ticks += ticks as u64;

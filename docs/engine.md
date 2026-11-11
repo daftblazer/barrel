@@ -19,7 +19,8 @@ Game logic runs on a **fixed tick**; the screen draws at its own rate and blends
   round. So the picture is smooth at any refresh rate (60, 144, 180 Hz) and the logic is the
   same at all of them.
 - A long stall (loading, a suspended window) runs at most 0.25 s of logic (15 ticks) when it
-  ends instead of racing to catch up.
+  ends instead of racing to catch up (`Clock::max_frame`; a host writing frames offline,
+  where a long frame is not a stall, turns it off).
 - `stage::Playback` is the host's side: each tick applies the event steps due by then and
   runs one tick of movers; it gives the same state as playing the steps straight through.
   `barrel play-event FILE --stage --fps HZ` drives it as a renderer at HZ would: for

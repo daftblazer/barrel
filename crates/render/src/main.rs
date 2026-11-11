@@ -10,7 +10,7 @@
 //! enable the Khronos validation layer.
 
 use std::ffi::CStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ash::vk;
 use barrel_formats::elixir::Elixir;
@@ -465,15 +465,61 @@ struct EventCamera {
     fov: f32,
 }
 
-/// A character the frame loop moves: its instance, its skeleton and the motion it plays, and
-/// how far into that motion it is at the start (`--at`).
+/// A character the frame loop moves: its instance, its skeleton, where its motions come
+/// from, and the motion it plays (its `CharaBase` column) and how far into it it is at the
+/// start (`--at`).
 struct Actor {
     who: u32,
     instance: u32,
     skeleton: barrel_formats::g1m::Skeleton,
+    motions: Motions,
+    column: String,
     anim: barrel_formats::g1a::Animation,
     start: f32,
     looping: bool,
+}
+
+/// A character's motions: `<FileHead>_<value>.g1a` for a `CharaBase` column's value, in the
+/// `<Motion1>` container or in a container of its own beside it. Loaded on demand, kept once
+/// loaded.
+struct Motions {
+    char_dir: PathBuf,
+    head: String,
+    container: String,
+    /// The `CharaBase` row's columns (`F_WAIT` → `ACT_DEF`, ...).
+    columns: std::collections::HashMap<String, String>,
+    loaded: std::collections::HashMap<String, Option<barrel_formats::g1a::Animation>>,
+}
+
+impl Motions {
+    fn new(root: &Path, model: &str, row: &barrel_formats::table::Element) -> Option<Motions> {
+        let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
+        Some(Motions {
+            char_dir: root.join("Data/x64/Character").join(dir),
+            head: row.attr("FileHead")?.to_string(),
+            container: row.attr("Motion1")?.to_string(),
+            columns: row.attributes.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            loaded: Default::default(),
+        })
+    }
+
+    /// The motion in `column`, if the row has one and its file is there.
+    fn get(&mut self, column: &str) -> Option<&barrel_formats::g1a::Animation> {
+        if !self.loaded.contains_key(column) {
+            let anim = self.columns.get(column).and_then(|value| {
+                let name = format!("{}_{value}.g1a", self.head);
+                let from = |file: String| -> Option<Vec<u8>> {
+                    let bytes = std::fs::read(self.char_dir.join(file)).ok()?;
+                    let c = Elixir::parse(&bytes).ok()?;
+                    named(&c, &name).map(|b| b.to_vec())
+                };
+                let bytes = from(format!("{}.elixir.gz", self.container)).or_else(|| from(format!("{}_{value}.elixir.gz", self.head)))?;
+                barrel_formats::g1a::parse(&bytes).ok()
+            });
+            self.loaded.insert(column.to_string(), anim);
+        }
+        self.loaded.get(column).and_then(Option::as_ref)
+    }
 }
 
 /// An event character's placement: number, position and facing angle in degrees.
@@ -640,29 +686,18 @@ fn event_characters(
             .unwrap_or_else(|| "F_WAIT".to_string());
         // How far into it: the stage's time in the motion (looping ones wrap), else the middle.
         let motion_time = staged.map(|&(_, t, looping)| (t, looping));
-        let rig = (|| -> Option<(Vec<Mat4>, barrel_formats::g1m::Skeleton, barrel_formats::g1a::Animation, f32)> {
-            let head = row.attr("FileHead")?;
-            let motion = row.attr("Motion1")?;
-            let value = row.attr(&column)?;
-            let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
-            let char_dir = root.join("Data/x64/Character").join(dir);
-            let anim_name = format!("{head}_{value}.g1a");
-            let from = |file: String| -> Option<Vec<u8>> {
-                let bytes = std::fs::read(char_dir.join(file)).ok()?;
-                let c = Elixir::parse(&bytes).ok()?;
-                named(&c, &anim_name).map(|b| b.to_vec())
-            };
-            let anim_bytes = from(format!("{motion}.elixir.gz")).or_else(|| from(format!("{head}_{value}.elixir.gz")))?;
-            let anim = barrel_formats::g1a::parse(&anim_bytes).ok()?;
-            let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
-            eprintln!("character {who}: motion {column} = {head}_{value}");
-            let t0 = motion_time.map_or(0.5, |(t, _)| t);
-            let joints = pose(&skeleton, &anim, motion_clock(&anim, t0, motion_time.is_none_or(|(_, l)| l)));
-            Some((joints, skeleton, anim, t0))
-        })();
         let looping = motion_time.is_none_or(|(_, l)| l);
+        let rig = (|| -> Option<(Vec<Mat4>, barrel_formats::g1m::Skeleton, Motions, barrel_formats::g1a::Animation, f32)> {
+            let mut motions = Motions::new(root, model, row)?;
+            let anim = motions.get(&column)?.clone();
+            let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
+            eprintln!("character {who}: motion {column} = {}_{}", motions.head, motions.columns[&column]);
+            let t0 = motion_time.map_or(0.5, |(t, _)| t);
+            let joints = pose(&skeleton, &anim, motion_clock(&anim, t0, looping));
+            Some((joints, skeleton, motions, anim, t0))
+        })();
         let (joints, rig) = match rig {
-            Some((j, sk, an, t0)) => (Some(j), Some((sk, an, t0))),
+            Some((j, sk, m, an, t0)) => (Some(j), Some((sk, m, an, t0))),
             None => (None, None),
         };
         if let (Some(&(expr, talking)), Some(tables), Some(head), Some(facial)) =
@@ -684,8 +719,8 @@ fn event_characters(
             }
         }
         let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
-        if let Some((skeleton, anim, start)) = rig {
-            actors.push(Actor { who, instance, skeleton, anim, start, looping });
+        if let Some((skeleton, motions, anim, start)) = rig {
+            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping });
         }
         scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
@@ -1265,6 +1300,7 @@ fn main() -> Result<()> {
     // (docs/engine.md, "Timing"), each frame draws the last two ticks blended, and only the
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
+    let mut motion_names: Vec<String> = Vec::new();
     let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
@@ -1275,7 +1311,16 @@ fn main() -> Result<()> {
         let curves = xml("Saves/curve/curve_data.xml").map(|t| barrel_game::curve::Curve::table(&t)).unwrap_or_default();
         let steps = barrel_game::event::Player::escha(event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
         let mut play = Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
+        motion_names = std::fs::read_dir(root)?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
+            .filter_map(|p| std::fs::read(p).ok())
+            .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::gesture::motions(&pe)).filter(|m| !m.is_empty()))
+            .unwrap_or_default();
+        // Frames written to files are not real time: no stall cap.
         let mut clock = barrel_game::clock::Clock::default();
+        clock.max_frame = f64::INFINITY;
         while clock.time() + 1e-9 < event_at.unwrap_or(0.0) as f64 {
             clock.ticks += 1;
             play.tick();
@@ -1301,13 +1346,32 @@ fn main() -> Result<()> {
             }
             let shown = barrel_game::stage::Snapshot::blend(before, after, f.alpha);
             let since = ((clock.ticks - start_ticks) as f32 + f.alpha) / clock.rate() as f32;
-            for a in &actors {
+            // The time on screen: the logic time less the part of the last tick not yet shown.
+            let shown_time = play.stage.time - (1.0 - f.alpha) / clock.rate() as f32;
+            for a in actors.iter_mut() {
+                // The stage's motion for the character, by its MOTION_* name; a new one is
+                // loaded (once) and played from the time the stage started it.
+                let staged = play.stage.characters.get(&a.who).and_then(|b| b.motion);
+                let mut t = a.start + since;
+                if let Some((m, from, looping)) = staged {
+                    if let Some(column) = motion_names.get(m as usize) {
+                        if *column != a.column {
+                            if let Some(anim) = a.motions.get(column) {
+                                a.anim = anim.clone();
+                                eprintln!("frame {frame}: character {} plays {column}", a.who);
+                            }
+                            a.column = column.clone();
+                            a.looping = looping;
+                        }
+                        t = shown_time - from;
+                    }
+                }
                 if let Some(&(pos, facing)) = shown.characters.get(&a.who) {
                     instances[a.instance as usize].model =
                         render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(facing), Vec3::from(pos)));
                 }
                 let base = instances[a.instance as usize].palette as usize;
-                let joints = pose(&a.skeleton, &a.anim, motion_clock(&a.anim, a.start + since, a.looping));
+                let joints = pose(&a.skeleton, &a.anim, motion_clock(&a.anim, t, a.looping));
                 for (k, m) in joints.iter().enumerate() {
                     if let Some(slot) = palette.get_mut(base + k) {
                         *slot = render_space(*m);
