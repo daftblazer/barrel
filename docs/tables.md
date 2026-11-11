@@ -36,10 +36,9 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 | `subject/SubjectData.xml` | 457 | assignments: name, category, score, the card and square they sit on, the condition and its parameters, the two help texts |
 | `field/AREA_*.xml` | one per area | field settings: camera, fog, light, wind and the like |
 
-What is not in the tables: the ingredient lists of the synthesis recipes, and monster
-stats. The executable holds the item and monster tags as plain text (510 `ITEM_MIX_*`,
-1,302 `MONSTER_*`), so both are probably compiled into it; where exactly is still to be
-found.
+What is not in the tables: the synthesis recipes and the monster stats. Both are compiled
+into the executable (see "Recipes" below; the monster stats are still to be found, though
+the executable holds 1,302 `MONSTER_*` strings).
 
 ## Numbers behind the tags
 
@@ -56,3 +55,38 @@ At `0x140754bc0` there is a table of 56-byte records (14 × i32), one for each o
 226 items, starting with the item's number. Materials have records too, so it is not the
 recipe list. The code that reads it (`0x14004ff90` and its neighbours) is next to the event
 helpers, so it is probably for the items' 3D objects; it is still to be worked out.
+
+## Recipes
+
+The recipes are an array in the executable's `.data` section, one 288-byte record (72
+little-endian i32) per synthesizable item, in item order from Craft (`0x140d19c70` in the
+English Escha executable). `tools/recipes.py` lists them with their ingredients. Escha &
+Logy DX has 265 records, covering items 195 to 559; the recipe books at the end have empty
+slots.
+
+| Words | What |
+|---|---|
+| 0 | the item's number |
+| 1 | the item's kind (0..7) |
+| 2..4 | not known yet (2 is -1 for the books) |
+| 5 | cost (300..900) |
+| 6 | synthesis time in days, as a float (2.0, 3.0, ...) |
+| 7, 8 | 1, then a small count |
+| 9..23 | five `{effect, 0, threshold}` triples, thresholds rising (10, 20, 30, 50, 75) |
+| 24..71 | four ingredient slots of 12 words |
+
+An ingredient slot is `{kind, id, count, slot number, then four (effect, threshold) pairs
+ending in -1}`. Kind 1 is a category (any item of it) and kind 0 a specific item; an id of
+-1 marks an unused slot. For example:
+
+| Item | Ingredients |
+|---|---|
+| Craft | (Thorny nuts), (Thorny nuts), (Powder) |
+| Flam | (Fuel), (Powder), (Paper) |
+| Healing Salve | (Plant), (Oil), (Liquid) |
+| Drifting Cloud | Sky Gas ×2, (Medical), (Nature), (Perfume) |
+
+Since the recipes are not in a data file, Barrel has to read them from the player's
+executable. The address differs between builds, so the engine should find the table by its
+shape (a record whose word 0 is the first synthesizable item, repeated every 288 bytes)
+rather than by a fixed address.
