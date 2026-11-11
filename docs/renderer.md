@@ -139,7 +139,11 @@ whether it is talking, through `face::Tables`), brow and eyes held at 0.5 s into
 animations and a talking mouth moving through its animation in time (looping), a quiet one
 held at its end. `BARREL_FACE_LOG=1` prints each character's face and weight sum per frame:
 in `EVENT_MM08_AS4_130` Logy's mouth moves while he talks (weight sums 1.35, 1.15, 0.90) and
-settles when Escha's line comes. Not yet: the stage camera; `EVENT_MM08_AS4_110` in `TOWN_03` does not
+settles when Escha's line comes. A line's gesture (its third field, a `gesture::read` entry) plays its main motion on the
+speaker from that line until the next motion command or gesture, blending in over 0.2 s;
+how long the game holds a gesture, and the blend, are assumptions. Lines take no time in the
+schedule (the game waits for the reader), so a stretch of dialogue changes gestures at once;
+a reading time per line is still to be chosen. Not yet: the stage camera; `EVENT_MM08_AS4_110` in `TOWN_03` does not
 look right yet: `TOWN_03` is a small round room near the field's origin (67 objects) over a
 flat placeholder terrain (64×64 cells of 100, every height 0, one layer, drawn black), and
 the event's camera sees only a large surface close in front, with no characters in view,

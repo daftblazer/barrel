@@ -126,6 +126,8 @@ pub struct Body {
     /// speaking (its line is the one shown).
     pub expression: Option<i32>,
     pub talking: bool,
+    /// The gesture its latest line set (a gesture number, `docs/events.md`) and when.
+    pub gesture: Option<(i32, f32)>,
     /// A timed turn: (from, change, seconds, elapsed, curve).
     turn: Option<(f32, f32, f32, f32, u32)>,
 }
@@ -191,7 +193,7 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None });
                 b.position = *position;
                 b.mover = None;
             }
@@ -201,12 +203,16 @@ impl Stage {
             },
             // A line: its speaker talks (and takes the line's expression, if it sets one); the
             // others fall quiet and keep their faces.
-            Step::Message { speaker, expression, .. } => {
+            Step::Message { speaker, expression, gesture, .. } => {
+                let now = self.time;
                 for (&n, b) in self.characters.iter_mut() {
                     let speaking = i64::from(n) == i64::from(*speaker);
                     b.talking = speaking;
                     if speaking && expression.is_some() {
                         b.expression = *expression;
+                    }
+                    if let (true, Some(g)) = (speaking, gesture) {
+                        b.gesture = Some((*g, now));
                     }
                 }
             }
@@ -421,6 +427,8 @@ mod tests {
         stage.apply(&Step::Place { action: 0, character: 1, position: [0.0; 3] });
         stage.apply(&line(0, Some(4)));
         assert_eq!((stage.characters[&0].expression, stage.characters[&0].talking), (Some(4), true));
+        stage.apply(&Step::Message { index: 1, speaker: 0, text: String::new(), expression: None, gesture: Some(7) });
+        assert_eq!((stage.characters[&0].expression, stage.characters[&0].gesture), (Some(4), Some((7, 0.0))));
         stage.apply(&line(1, None));
         assert_eq!((stage.characters[&0].expression, stage.characters[&0].talking), (Some(4), false));
         assert_eq!((stage.characters[&1].expression, stage.characters[&1].talking), (None, true));

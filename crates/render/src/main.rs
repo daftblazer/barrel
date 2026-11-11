@@ -1520,6 +1520,7 @@ fn main() -> Result<()> {
     let mut motion_names: Vec<String> = Vec::new();
     let messages: Vec<barrel_formats::ebm::Message>;
     let mut face_tables_play: Option<barrel_game::face::Tables> = None;
+    let mut gestures_play: Vec<[Option<barrel_game::gesture::Form>; 2]> = Vec::new();
     let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
@@ -1546,6 +1547,13 @@ fn main() -> Result<()> {
             .filter(|p| p.extension().is_some_and(|x| x == "exe"))
             .filter_map(|p| std::fs::read(p).ok())
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::face::Tables::read(&pe)).filter(|t| !t.brow.is_empty()));
+        gestures_play = std::fs::read_dir(root)?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
+            .filter_map(|p| std::fs::read(p).ok())
+            .find_map(|b| barrel_game::gesture::read(&b))
+            .unwrap_or_default();
         // Frames written to files are not real time: no stall cap.
         let mut clock = barrel_game::clock::Clock::default();
         clock.max_frame = f64::INFINITY;
@@ -1592,6 +1600,17 @@ fn main() -> Result<()> {
                 // The stage's motion for the character, by its MOTION_* name; a new one is
                 // loaded (once) and played from the time the stage started it.
                 let staged = play.stage.characters.get(&a.who).and_then(|b| b.motion);
+                // A line's gesture, when newer than the motion: its main motion plays from then
+                // on (until the next motion command or gesture), looping.
+                let gestured = play.stage.characters.get(&a.who).and_then(|b| b.gesture).and_then(|(g, since)| {
+                    let form = gestures_play.get(usize::try_from(g).ok()?)?[0].as_ref()?;
+                    Some(barrel_game::stage::Playing { motion: form.main_motion(), since, looping: true, blend: 0.2 })
+                });
+                let staged = match (staged, gestured) {
+                    (Some(m), Some(g)) if g.since > m.since => Some(g),
+                    (None, Some(g)) => Some(g),
+                    (m, _) => m,
+                };
                 let mut t = a.start + since;
                 // Blend weight of the current motion against the one before it.
                 let mut weight = 1.0;
