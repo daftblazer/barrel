@@ -97,16 +97,17 @@ pub fn month_start(v: u32) -> bool {
     v % DAYS_PER_MONTH == 0
 }
 
-/// Whether the shop rotation is redrawn on day `v` (`0x14033aaa0`): the 1st, 11th and 21st of
+/// Whether the request board is redrawn on day `v` (`0x14033aaa0`: three synthesis, four battle
+/// and three gathering requests): the 1st, 11th and 21st of
 /// each month (`(day of month) mod 10 == 1`).
-pub fn shop_day(v: u32) -> bool {
+pub fn board_day(v: u32) -> bool {
     (v % DAYS_PER_MONTH + 1) % 10 == 1
 }
 
-/// The two words the shop rotation's generator starts from (`0x14033ab20`): `seed` is the date
+/// The two words the request board's generator starts from (`0x14033ab20`): `seed` is the date
 /// plus the global at `0x1410989f0`, each word the Mersenne Twister seeding step of the one
 /// before (`(x ^ (x >> 30)) × 0x6c078965 + i`, the shift arithmetic, from i = 1).
-pub fn shop_seed(date: u32, global: i32) -> [i32; 2] {
+pub fn board_seed(date: u32, global: i32) -> [i32; 2] {
     let step = |x: i32, i: i32| ((x ^ (x >> 30)).wrapping_mul(0x6c07_8965)).wrapping_add(i);
     let s0 = step((date as i32).wrapping_add(global), 1);
     [s0, step(s0, 2)]
@@ -145,9 +146,9 @@ mod tests {
     #[test]
     fn the_days_things_happen() {
         assert!(month_start(90) && !month_start(91));
-        let shop: Vec<u32> = (90..120).filter(|&v| shop_day(v)).map(|v| Date::of(v).day).collect();
-        assert_eq!(shop, [1, 11, 21]);
-        let [a, b] = shop_seed(90, 0);
+        let board: Vec<u32> = (90..120).filter(|&v| board_day(v)).map(|v| Date::of(v).day).collect();
+        assert_eq!(board, [1, 11, 21]);
+        let [a, b] = board_seed(90, 0);
         assert_eq!(a, 90i32.wrapping_mul(0x6c07_8965) + 1);
         assert_eq!(b, ((a ^ (a >> 30)).wrapping_mul(0x6c07_8965)).wrapping_add(2));
     }

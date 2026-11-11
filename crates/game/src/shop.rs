@@ -63,56 +63,6 @@ pub fn on_sale(w: &Ware, seen: impl Fn(&str) -> bool) -> bool {
     w.from_event.as_deref().is_none_or(&seen) && !w.until_event.as_deref().is_some_and(&seen)
 }
 
-/// The shop rotation's generator (the object at `0x140dfc880`, English Escha executable): two
-/// words, stepped like the battle's Xorshift but on two: `t = x ^ (x << 11)`, `x = y`,
-/// `y = y ^ (y >> 19) ^ (t >> 8) ^ t` with the shift by 19 arithmetic and by 8 logical; a
-/// number is the new `y`'s low 31 bits. Seeded on each redraw by [`crate::calendar::shop_seed`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ShopRng {
-    pub state: [i32; 2],
-}
-
-impl ShopRng {
-    pub fn new(state: [i32; 2]) -> ShopRng {
-        ShopRng { state }
-    }
-
-    pub fn next(&mut self) -> i32 {
-        let [x, y] = self.state;
-        let t = x ^ (x << 11);
-        let y2 = y ^ (y >> 19) ^ (((t as u32) >> 8) as i32) ^ t;
-        self.state = [y, y2];
-        y2 & 0x7fff_ffff
-    }
-
-    /// A number below `n` (`0x14033c210`).
-    pub fn below(&mut self, n: i32) -> i32 {
-        self.next() % n.max(1)
-    }
-}
-
-/// Picks one of `chances` (each candidate's percentage, the float at its +0x38) the way the
-/// rotation does (`0x14033b836`): in order, each draws a number below 100 and is taken when it
-/// is under `trunc(chance + 0.5)`; when none is, the candidates are shuffled (for each place
-/// k from 1, swapped with the one at `below(k + 1)`, the standard library's `random_shuffle`)
-/// and the first is taken. Returns the candidate's index; `None` when there are none.
-pub fn rotation_pick(chances: &[f32], rng: &mut ShopRng) -> Option<usize> {
-    if chances.is_empty() {
-        return None;
-    }
-    for (i, &c) in chances.iter().enumerate() {
-        if rng.next() % 100 < (c + 0.5) as i32 {
-            return Some(i);
-        }
-    }
-    let mut order: Vec<usize> = (0..chances.len()).collect();
-    for k in 1..order.len() {
-        let j = rng.below(k as i32 + 1) as usize;
-        order.swap(k, j);
-    }
-    Some(order[0])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,16 +81,4 @@ mod tests {
         assert!(on_sale(&w[0], |e| e == "EVENT_MQ03_010"));
     }
 
-    #[test]
-    fn the_rotation_generator() {
-        let mut rng = ShopRng::new([1, 2]);
-        // t = 1 ^ 2048 = 2049; y = 2 ^ 0 ^ (2049 >> 8 = 8) ^ 2049 = 2059.
-        assert_eq!(rng.next(), 2059);
-        assert_eq!(rng.state, [2, 2059]);
-        // A sure candidate is taken at once; none gives a shuffled pick.
-        let mut rng = ShopRng::new(crate::calendar::shop_seed(90, 0));
-        assert_eq!(rotation_pick(&[100.0, 0.0], &mut rng), Some(0));
-        assert!(rotation_pick(&[0.0, 0.0, 0.0], &mut rng).is_some());
-        assert_eq!(rotation_pick(&[], &mut rng), None);
-    }
 }
