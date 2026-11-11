@@ -115,13 +115,38 @@ pub struct TimedState {
     pub value: f32,
 }
 
-/// Adds a timed state (`0x140191340`): a state already there with no count is replaced only by
-/// a stronger value (compared as floats); otherwise the new one goes in (how a counted state
-/// already there is merged, and the exclusion groups of `0x140191db0`, are not read yet).
+/// A state's exclusion group (`0x140191db0`): states of one group replace each other. Each
+/// `PLUS_*` stat state shares one with its `MINUS_*` (0x12 and 0x26 group 1, ... 0x19 and 0x2d
+/// group 9, skipping 4); 0 and 1 are group 10, 0x1d and 0x1e 11, 0x1a 12, 0x11 and 0x2f 13;
+/// the rest have none.
+pub fn state_group(state: u32) -> Option<u32> {
+    Some(match state {
+        0 | 1 => 10,
+        0x1d | 0x1e => 11,
+        0x1a => 12,
+        0x11 | 0x2f => 13,
+        0x12..=0x14 => state - 0x11,
+        0x15..=0x19 => state - 0x10,
+        0x26..=0x28 => state - 0x25,
+        0x29..=0x2d => state - 0x24,
+        _ => return None,
+    })
+}
+
+/// Adds a timed state (`0x140191340`). The state it meets is the first of its group, or, for
+/// a state with no group, the first of the same number. A meeting state of the same number
+/// with no count stays if the new value is not stronger (compared as floats); in every other
+/// case the meeting state goes and the new one is added at the end, so a buff wipes the
+/// matching debuff and a poison put on again starts its count afresh.
 pub fn add_state(states: &mut Vec<TimedState>, state: u32, value: i32, second: i32) {
     let new = TimedState { state, count: state_count(state, second), value: value as f32 };
-    if let Some(i) = states.iter().position(|s| s.state == state) {
-        if states[i].count == -1 && new.value <= states[i].value {
+    let group = state_group(state);
+    let meets = |s: &TimedState| match group {
+        Some(g) => state_group(s.state) == Some(g),
+        None => s.state == state,
+    };
+    if let Some(i) = states.iter().position(meets) {
+        if states[i].state == state && states[i].count == -1 && new.value <= states[i].value {
             return;
         }
         states.remove(i);
@@ -429,6 +454,21 @@ mod tests {
         assert_eq!((s[stat::ATTACK], s[stat::DEFENSE], s[stat::SPEED]), (55, 1, 30));
         assert_eq!((s[stat::MAX_HP], s[stat::HP]), (300, 150));
         assert_eq!(stat_state(46), Some((0x27, true)));
+    }
+
+    #[test]
+    fn groups_replace() {
+        let mut states = Vec::new();
+        add_state(&mut states, 0x26, -10, 0);
+        add_state(&mut states, 0x12, 15, 0);
+        assert_eq!(states.iter().map(|s| (s.state, s.value)).collect::<Vec<_>>(), [(0x12, 15.0)]);
+        add_state(&mut states, 0x34, 10, 3);
+        age_states(&mut states);
+        add_state(&mut states, 0x34, 4, 3);
+        assert_eq!(states.iter().find(|s| s.state == 0x34).map(|s| (s.count, s.value)), Some((3, 4.0)));
+        assert_eq!(state_group(0x19), Some(9));
+        assert_eq!(state_group(0x2d), Some(9));
+        assert_eq!(state_group(0x34), None);
     }
 
     #[test]

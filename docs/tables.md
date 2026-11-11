@@ -328,9 +328,13 @@ exclusion group (`0x140191db0`), +0xa0 an active byte. The count (`0x140191d00`)
 effect's second value for the counted states (2 `HEAL_HP_TURN`, 3, 5 `ADD_ACTION`, 6
 `REDUCE_WT`, 0x34 `DAMAGE_HP_TURN`, 0x35 its differential form: Bomb's poison, value 10,
 lasts 2), 5 for the buffs and debuffs (7 and 0x12 to 0x2d), and -1 (no count) for the
-rest. A state already there with no count is replaced only by a stronger value (compared as
-floats). `battle::state_count`, `TimedState` and `add_state` follow this; how a counted state
-already there is merged and the exclusion groups are not read yet.
+rest. The exclusion group (`0x140191db0`) pairs each `PLUS_*` stat state with its `MINUS_*`
+(0x12/0x26 group 1, 0x13/0x27 2, 0x14/0x28 3, 0x15/0x29 to 0x19/0x2d groups 5 to 9); 0 and 1
+are group 10, 0x1d/0x1e 11, 0x1a 12, 0x11/0x2f 13, the rest none. Adding a state meets the
+first state of its group (or of the same number, without a group): a meeting state of the same
+number with no count stays when the new value is not stronger (compared as floats); otherwise
+it goes and the new one is added at the end. So a buff wipes the matching debuff, and a poison
+put on again starts afresh with the new value and count. `battle::state_count`, `state_group`, `TimedState` and `add_state` follow this.
 
 At the start of a character's turn (`0x1401ae4f0`; when +0x282 is set) `0x1401b0100` works
 out its HP change: the `HEAL_HP_TURN` states (2) and two traits (0x65, 0x83) add to it, and
