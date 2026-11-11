@@ -43,7 +43,9 @@ the executable; see "Recipes" and "Monsters" below.
 
 The tables name things by tag, but the game works with numbers. The executable keeps each
 enum's names as an array of string pointers in index order, so an entry's position is
-its number. `tools/str_table.py EXE TAG` dumps the array that holds TAG.
+its number. `tools/str_table.py EXE TAG` dumps the array that holds TAG. In Rust, `barrel_formats::pe::Pe::enum_names(TAG)`
+finds it the same way: the string, then an 8-aligned pointer to it, then the neighbouring
+pointers that also point at names.
 
 | Enum | Escha & Logy DX (English exe) | Notes |
 |---|---|---|
@@ -184,6 +186,13 @@ material's element value is `itemData`'s `value` (the loaded row keeps it at +0x
 prints each line's effect (names from `Saves_EN/item/item_effect.xml`, whose rows are the
 effect numbers): Craft from Buried Bomb, Bubbling Water and Dragon Core reaches Fire 60,
 Water 40, Wind 20, Earth 40, giving Embedding Thorns, Bursting and Phy Damage L.
+
+Without Freestyle ("allows materials to be added in any order"), the materials go in in
+slot order, each slot as many times as its count; `barrel_game::synthesis::order` lists
+that sequence and `fits` checks a material against an entry. A material fits a category
+slot when one of its `itemData` columns `category_00`..`category_03` is that category
+(the tags turn into numbers through the executable's category enum). `barrel synth` warns
+when a material does not fit.
 
 **The synthesis state** (0x4e0 bytes, one per step):
 

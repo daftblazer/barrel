@@ -3,7 +3,21 @@
 //!
 //! The four elements are, in order, Fire, Water, Wind and Earth.
 
-use barrel_formats::recipe::{Line, effect_at};
+use barrel_formats::recipe::{Ingredient, Line, Recipe, effect_at};
+
+/// Whether an item (its number and its categories' numbers) can go where `ingredient` asks.
+pub fn fits(ingredient: Ingredient, item: u16, categories: &[u16]) -> bool {
+    match ingredient {
+        Ingredient::Item(i) => i == item,
+        Ingredient::Category(c) => categories.contains(&c),
+    }
+}
+
+/// The ingredients a recipe takes, one entry per material, in the order the game asks for
+/// them without Freestyle: each slot as many times as its count.
+pub fn order(recipe: &Recipe) -> Vec<Ingredient> {
+    recipe.slots.iter().flat_map(|s| std::iter::repeat_n(s.ingredient, s.count as usize)).collect()
+}
 
 /// Attribute values stop at this.
 pub const MAX_ATTRIBUTE: f32 = 999.0;
@@ -156,6 +170,26 @@ mod tests {
         let big = Material { element_value: 2000, ..EARTH };
         s.add(&big);
         assert_eq!(s.attributes[3], MAX_ATTRIBUTE);
+    }
+
+    #[test]
+    fn ingredient_order() {
+        use barrel_formats::recipe::{Slot, Step};
+        let none = Step { effect: None, up_to: -1 };
+        let r = Recipe {
+            item: 201,
+            kind: 1,
+            cost: 600,
+            days: 4.0,
+            slots: vec![
+                Slot { ingredient: Ingredient::Item(54), count: 2 },
+                Slot { ingredient: Ingredient::Category(31), count: 1 },
+            ],
+            lines: [[none; 4]; 4],
+        };
+        assert_eq!(order(&r), [Ingredient::Item(54), Ingredient::Item(54), Ingredient::Category(31)]);
+        assert!(fits(Ingredient::Category(31), 7, &[2, 31]));
+        assert!(!fits(Ingredient::Item(54), 55, &[31]));
     }
 
     #[test]

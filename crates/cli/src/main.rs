@@ -385,15 +385,19 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
         .filter(|p| p.extension().is_some_and(|x| x == "exe"))
         .collect();
     exes.sort();
-    let mut recipes = None;
+    let mut found = None;
     for exe in &exes {
         let data = read(exe)?;
         if let Some(at) = recipe::find(&data, ESCHA_FIRST_RECIPE) {
-            recipes = Some(recipe::parse(&data, at).map_err(|e| format!("{}: recipes: {e}", exe.display()))?);
+            let recipes = recipe::parse(&data, at).map_err(|e| format!("{}: recipes: {e}", exe.display()))?;
+            let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+            let (names, first) = pe.enum_names("ITEM_CATEGORY_PLANT").ok_or("no item category enum")?;
+            let categories: Vec<String> = names[first..].iter().map(|n| n.to_string()).collect();
+            found = Some((recipes, categories));
             break;
         }
     }
-    let recipes = recipes.ok_or("no executable in the install folder holds a recipe table")?;
+    let (recipes, categories) = found.ok_or("no executable in the install folder holds a recipe table")?;
     let item = number(item)?;
     let recipe = recipes.iter().find(|r| r.item as usize == item).ok_or("that item has no recipe")?;
     let items = table_rows(&install.join("Saves_EN/item/itemData.xml"))?;
@@ -402,12 +406,26 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
         rows.get(n).and_then(|r| r.attr(attr)).unwrap_or("?").to_string()
     };
     println!("{} ({item})", name(&items, item, "ItemName"));
+    let wanted = barrel_game::synthesis::order(recipe);
     let mut s = Synthesis::new();
-    for m in materials {
+    for (i, m) in materials.iter().enumerate() {
         let m = number(m)?;
         let row = items.get(m).ok_or_else(|| format!("no item {m}"))?;
+        let cats: Vec<u16> = (0..4)
+            .filter_map(|k| row.attr(&format!("category_{k:02}")))
+            .filter_map(|tag| categories.iter().position(|c| c == tag))
+            .map(|n| n as u16)
+            .collect();
+        match wanted.get(i) {
+            Some(&w) if barrel_game::synthesis::fits(w, m as u16, &cats) => {}
+            Some(w) => println!("  ! material {} does not fit {w:?} (the game takes them in order without Freestyle)", i + 1),
+            None => println!("  ! material {} is one more than the recipe takes ({})", i + 1, wanted.len()),
+        }
         s.add(&Material::from_item(row));
         println!("  + {} ({m}): attributes {:?}, effect value {}", name(&items, m, "ItemName"), s.attributes, s.effect_value());
+    }
+    if materials.len() < wanted.len() {
+        println!("  ! the recipe takes {} materials", wanted.len());
     }
     for (k, (element, e)) in ["Fire", "Water", "Wind", "Earth"].iter().zip(s.effects(&recipe.lines)).enumerate() {
         let what = e.map_or("-".to_string(), |e| name(&effects, e as usize, "ItemEffectName"));

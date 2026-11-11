@@ -18,6 +18,7 @@ pub mod ktf;
 pub mod magic;
 pub mod oid;
 pub mod opl2;
+pub mod pe;
 pub mod png;
 pub mod recipe;
 pub mod table;
