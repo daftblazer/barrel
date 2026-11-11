@@ -239,6 +239,14 @@ a `.fp` of sound data and a `.fpl` index: u32 count (1,000), then that many
 the voices are one list of 18,000 clips numbered from 0, bank n × 1000 holding clips n × 1000
 to n × 1000 + 999. How an event line picks its clip is still open.
 
+**Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
+(bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone
+indices (index / 3 picks a slot of the submesh's palette) does not hold in the later games:
+in Sophie 2's `PC01A_MODEL_default.g1m` 13 of 29 skinned submeshes have indices past their
+palette under it (25 against a palette of 3), and the same in Ryza 3's `NPC70B_default.g1m`.
+Their palettes or the submesh's palette field must differ; still to be worked out, so later
+games' characters skin only roughly for now.
+
 ## Morph targets (`*.g1h`)
 
 A character's facial shapes, next to its model in the same container

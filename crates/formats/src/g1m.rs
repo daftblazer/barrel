@@ -43,6 +43,8 @@ pub enum AttrType {
     UByte4,
     /// Four unsigned bytes read as 0..1 (colours).
     UNorm4,
+    /// Four unsigned 16-bit values (bone indices and others in Ryza 3's larger models).
+    UShort4,
 }
 
 impl AttrType {
@@ -53,6 +55,7 @@ impl AttrType {
             2 => AttrType::Float3,
             3 => AttrType::Float4,
             5 => AttrType::UByte4,
+            7 => AttrType::UShort4,
             13 => AttrType::UNorm4,
             _ => return None,
         })
@@ -61,7 +64,7 @@ impl AttrType {
     pub fn size(self) -> usize {
         match self {
             AttrType::Float1 | AttrType::UByte4 | AttrType::UNorm4 => 4,
-            AttrType::Float2 => 8,
+            AttrType::Float2 | AttrType::UShort4 => 8,
             AttrType::Float3 => 12,
             AttrType::Float4 => 16,
         }
@@ -540,6 +543,15 @@ pub struct SimpleMesh {
     pub first_vertex: usize,
 }
 
+/// The four bone indices of vertex `v`, bytes or 16-bit values by the attribute's type.
+fn bone_indices(vb: &VertexBuffer, a: &Attribute, v: usize) -> [u32; 4] {
+    let at = v * vb.stride + a.offset as usize;
+    match a.kind {
+        AttrType::UShort4 => std::array::from_fn(|i| u16::from_le_bytes([vb.data[at + 2 * i], vb.data[at + 2 * i + 1]]) as u32),
+        _ => std::array::from_fn(|i| vb.data[at + i] as u32),
+    }
+}
+
 impl Geometry<'_> {
     /// The largest bone palette slot any vertex of a submesh uses, if it has bone indices.
     pub fn max_bone_slot(&self, s: &Submesh) -> Option<usize> {
@@ -548,7 +560,7 @@ impl Geometry<'_> {
         let vb = &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
         let mut max = 0usize;
         for v in s.vertex_start..s.vertex_start + s.vertex_count {
-            for &b in &vb.data[v * vb.stride + a.offset as usize..][..4] {
+            for b in bone_indices(vb, a, v) {
                 max = max.max(b as usize / 3);
             }
         }
@@ -579,7 +591,7 @@ impl Geometry<'_> {
         };
         let mut out = Vec::with_capacity(hi - lo);
         for v in lo..hi {
-            let b = &bvb.data[v * bvb.stride + bones.offset as usize..][..4];
+            let b = bone_indices(bvb, bones, v);
             let mut w = [0f32; 4];
             for (i, x) in w.iter_mut().enumerate().take(count) {
                 *x = f32_at(wvb.data, v * wvb.stride + weights.offset as usize + 4 * i)?;
