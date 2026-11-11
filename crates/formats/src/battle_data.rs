@@ -106,6 +106,9 @@ pub struct Monster {
 pub struct SkillEffect {
     /// The `ACT_*` number.
     pub act: u32,
+    /// The element, 0 to 3 (Fire, Water, Wind, Earth: Bomb 0, Ice Bomb 1, Lightning Bomb
+    /// 2); `None` for physical (-1). The effect's second word, the battle's effect +4.
+    pub element: Option<u8>,
     pub min: i32,
     pub max: i32,
     /// The second pair (rolled into the effect's second value).
@@ -222,7 +225,8 @@ pub fn skills(pe: &Pe, table: u64) -> Option<Vec<Skill>> {
         let mut effects = Vec::new();
         for slot in [6usize, 12] {
             if let Ok(act) = u32::try_from(v(slot)?) {
-                effects.push(SkillEffect { act, min: v(slot + 2)?, max: v(slot + 3)?, min2: v(slot + 4)?, max2: v(slot + 5)? });
+                let element = u8::try_from(v(slot + 1)?).ok().filter(|&e| e < 4);
+                effects.push(SkillEffect { act, element, min: v(slot + 2)?, max: v(slot + 3)?, min2: v(slot + 4)?, max2: v(slot + 5)? });
             }
         }
         out.push(Skill {

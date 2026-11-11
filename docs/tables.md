@@ -204,7 +204,7 @@ English name and description.
 | 8 | pointer to the category ("Hero AC Attack") |
 | 16 | i32: 1 for guards and self-targeted skills, 2 for attacks, 3 for boss charges |
 | 24 | i32: 600 for the normal attacks and escape, 500 to 900 for many enemy skills, 0 for most of the party's (a wait or speed value, probably) |
-| 40 | first effect, six i32: an `ACT_*` number (-1 none), i32, minimum power, maximum power, two i32 (0 and 0, or 2 and 2) |
+| 40 | first effect, six i32: an `ACT_*` number (-1 none), the element (-1 physical, 0 to 3 Fire, Water, Wind, Earth: Bomb 0, Ice Bomb 1, Lightning Bomb 2; the battle's effect +4), minimum power, maximum power, two i32 (0 and 0, or 2 and 2) |
 | 64 | second effect, the same six |
 | 88 | pointer to the description |
 
@@ -391,9 +391,11 @@ advancing the timeline, rolling the amount (and the second value), working the d
 through `skill_damage`, `reduce` and `hit_amount`, drawing the hit sound's number, taking
 the HP, and setting the attacker's next wait from its speed. A monster picks each action by
 its block's rules ("Monster actions": its own action count stands in for the turn count, the
-phase is 0), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, so a
-skill whose damage is another effect (Flame Gale's elemental damage) or that does something
-else deals 0 there. `barrel duel EXE 3 30` has the Alchemy Rat throwing Ice Bomb and
+phase is 0), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, with its element: an
+elemental hit skips defence and meets the target's resistance, a physical one the reverse
+(Ice Bomb on the Grand Dragon does 41, Bomb 10 against its fire resistance). A skill whose
+damage is another effect (Flame Gale's `DAMAGE_TURN`) or that does something else deals 0
+there. `barrel duel EXE 3 30` has the Alchemy Rat throwing Ice Bomb and
 Rolling Rat and the Grand Dragon mixing Jaws of Death and Pressure, then Flame Gale on its
 sixth action. `barrel duel EXE A B` runs one
 (monster numbers, or `p<member>:<level>` for a party member from "Party growth", with the

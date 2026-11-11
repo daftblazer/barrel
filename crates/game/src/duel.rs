@@ -132,8 +132,11 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         let amount = rng.range(effect.min, effect.max);
         let _second = rng.range(effect.min2, effect.max2);
         let user = &fighters[who];
-        let damage = battle::skill_damage(amount, user[stat::ATTACK], user[stat::LEVEL], fighters[target][stat::DEFENSE], true, 1.0);
-        let damage = battle::reduce(damage, None, &Defender::default());
+        // Elemental damage skips defence and meets the target's resistance (stats 8 to 11).
+        let damage = battle::skill_damage(amount, user[stat::ATTACK], user[stat::LEVEL], fighters[target][stat::DEFENSE], effect.element.is_none(), 1.0);
+        let mut resist = [0; 4];
+        resist.copy_from_slice(&fighters[target][stat::RESIST..stat::RESIST + 4]);
+        let damage = battle::reduce(damage, effect.element, &Defender { resist, ..Defender::default() });
         let amount = battle::hit_amount(damage, 0);
         // The first hit of an action draws for its sound (0x1401af770).
         rng.next_31();
@@ -163,7 +166,7 @@ mod tests {
             name: "Attack".into(),
             category: String::new(),
             wait: 600,
-            effects: vec![SkillEffect { act: 0, min: 48, max: 60, min2: 2, max2: 2 }],
+            effects: vec![SkillEffect { act: 0, element: None, min: 48, max: 60, min2: 2, max2: 2 }],
             description: String::new(),
         };
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
