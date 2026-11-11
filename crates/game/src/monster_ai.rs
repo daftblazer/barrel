@@ -15,7 +15,8 @@ pub struct Situation<'a> {
     /// Its HP and maximum HP (battle stats 1 and 3).
     pub hp: i32,
     pub max_hp: i32,
-    /// The battle's turn count (the owner's +0x2c8) and phase (+0x2d0).
+    /// How many actions the monster has taken so far (its +0x2c8, raised after each of its
+    /// actions at `0x1401aecda`, 0 at the start) and the phase (+0x2d0).
     pub turn: i32,
     pub phase: i32,
     /// How many times each slot has been used this battle.

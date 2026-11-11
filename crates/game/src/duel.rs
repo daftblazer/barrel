@@ -92,16 +92,16 @@ impl Fighter<'_> {
     }
 }
 
-/// Runs the duel until one side's HP is 0 or `max_hits` actions have been taken. The battle's
-/// turn count (the +0x2c8 that monster rules and `DAMAGE_TURN` read) is taken as the number of
-/// actions taken so far; when the game counts it up is not read yet. The phase is 0.
+/// Runs the duel until one side's HP is 0 or `max_hits` actions have been taken. Each fighter
+/// counts its own actions (the character's +0x2c8, raised once its action is done at
+/// `0x1401aecda`), which its monster rules and its `DAMAGE_TURN` effects read. The phase is 0.
 pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit> {
     let sides = [a, b];
     let mut fighters = [stats(&a.block), stats(&b.block)];
     let mut timeline = Timeline { entries: vec![(0, 500), (1, 500)] };
     let mut hits = Vec::new();
     let mut uses = [[0i32; 9]; 2];
-    let mut turn = 0i32;
+    let mut turns = [0i32; 2];
     let mut pending = -1;
     while hits.len() < max_hits {
         timeline.advance();
@@ -110,7 +110,7 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         let situation = crate::monster_ai::Situation {
             hp: fighters[who][stat::HP],
             max_hp: fighters[who][stat::MAX_HP],
-            turn,
+            turn: turns[who],
             phase: 0,
             uses: &uses[who],
         };
@@ -121,7 +121,7 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         // The skill's HP damage (act 0) or turn-grown damage (act 8, `DAMAGE_TURN`) effect is
         // worked; the others need parts not built yet.
         let Some(effect) = attack.effects.iter().find(|e| e.act == 0 || e.act == 8).copied() else {
-            turn += 1;
+            turns[who] += 1;
             hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: 0, hp_left: fighters[target][stat::HP] });
             let wait = battle::action_wait(attack.wait, fighters[who][stat::SPEED], None, None, &mut pending);
             let i = timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
@@ -135,10 +135,10 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         let user = &fighters[who];
         if effect.act == 8 {
             rng.next_31();
-            let amount = battle::hit_amount(battle::turn_damage(amount, _second, turn, 1.0), 0);
+            let amount = battle::hit_amount(battle::turn_damage(amount, _second, turns[who], 1.0), 0);
             let dealt = battle::take_hp_damage(&mut fighters[target], amount, None, None);
             hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: dealt, hp_left: fighters[target][stat::HP] });
-            turn += 1;
+            turns[who] += 1;
             if fighters[target][stat::HP] == 0 {
                 break;
             }
@@ -157,7 +157,7 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         rng.next_31();
         let dealt = battle::take_hp_damage(&mut fighters[target], amount, None, None);
         hits.push(Hit { attacker: who, skill: attack.name.clone(), damage: dealt, hp_left: fighters[target][stat::HP] });
-        turn += 1;
+        turns[who] += 1;
         if fighters[target][stat::HP] == 0 {
             break;
         }

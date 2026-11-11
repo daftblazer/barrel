@@ -92,7 +92,7 @@ pub fn reduce(damage: i32, element: Option<u8>, d: &Defender) -> i32 {
 }
 
 /// `ACT_DAMAGE_TURN`'s damage (`0x1401bebdc`): the rolled amount grown by `per_turn` percent
-/// (the effect's second value) for each of the battle's turns so far (the battle's +0x2c8), cut
+/// (the effect's second value) for each action the user has taken so far (its +0x2c8), cut
 /// to an integer, then times the action's scale. No attack, defence or resistance: it goes
 /// straight to [`hit_amount`]. Flame Gale (36 to 45, 5 a turn) hits 5% harder each turn.
 pub fn turn_damage(amount: i32, per_turn: i32, turn: i32, scale: f32) -> i32 {

@@ -394,11 +394,12 @@ its block's rules ("Monster actions": its own action count stands in for the tur
 phase is 0), the slot naming the skill; only the skill's `DAMAGE_HP` effect is worked, with its element: an
 elemental hit skips defence and meets the target's resistance, a physical one the reverse
 (Ice Bomb on the Grand Dragon does 41, Bomb 10 against its fire resistance). `DAMAGE_TURN` (act 8, `0x1401bebdc`) is worked too: the
-rolled amount grows by the effect's second value in percent for each of the battle's turns
-(+0x2c8): `trunc((second × turns + 100) × amount / 100) × scale`, dealt straight through
+rolled amount grows by the effect's second value in percent for each action the user has
+taken (its +0x2c8): `trunc((second × turns + 100) × amount / 100) × scale`, dealt straight through
 `0x1401c1970` with no attack, defence or resistance, so Flame Gale (36 to 45, 5 a turn) hits
-5% harder each turn (66 at turn 10). The duel counts a turn per action taken, for these and
-for the monster rules; when the game counts its turns up is not read yet. Skills that do
+5% harder each turn (66 at turn 10). A character's +0x2c8 counts its own actions: it is 0 at the start (`0x1401b7515` for
+monsters) and goes up once the action is done, after its next wait is set
+(`0x1401aecda`), so the rules and `DAMAGE_TURN` see the actions taken before this one. Skills that do
 something else deal 0 there. `barrel duel EXE 3 30` has the Alchemy Rat throwing Ice Bomb and
 Rolling Rat and the Grand Dragon mixing Jaws of Death and Pressure, then Flame Gale on its
 sixth action. `barrel duel EXE A B` runs one
@@ -812,8 +813,8 @@ The chooser (`0x1401a5290`, from the monster's turn at `0x1401b72xx`) tries the 
 order and takes the first whose condition holds (`0x1401a5360`), whose slot has been used
 fewer than `limit` times (the use counts are the monster's +0x3e8 per slot, raised as it
 acts), and whose `chance(percent)` roll succeeds (one roll per rule that gets that far).
-The conditions: 0 always; 1 every `value`-th turn (the battle's turn count, the owner's
-+0x2c8, modulo `value` is `value` - 1); 2 HP at or below `value`% of the maximum
+The conditions: 0 always; 1 every `value`-th action of its own (its count of actions taken,
+the character's +0x2c8, modulo `value` is `value` - 1); 2 HP at or below `value`% of the maximum
 (`max HP × value / 100 >= HP`, battle stats 3 and 1); 3 the battle's phase (+0x2d0) is
 `value`. If no rule gives an action the game logs an error and takes slot 0 at target 0.
 `barrel_game::monster_ai::choose` does the same, and `barrel monsters EXE` prints each
