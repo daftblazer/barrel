@@ -103,6 +103,11 @@ matrix, not its vertices. The vertices are mirrored in x as they are built, so a
 placement T becomes S·T·S (S the x mirror) in render space, still a rotation and a
 translation, which is why the shader turns normals by the matrix's upper 3×3. This is the
 base for playing events in time: per frame, the blended stage snapshot
-(`docs/engine.md`, "Timing") only rewrites the characters' matrices. Skinning is still done
-on the CPU when the scene is built (one pose per character), to move to the GPU with the
-frame loop.
+(`docs/engine.md`, "Timing") only rewrites the characters' matrices. Skinning is on the GPU: each vertex
+carries up to four joints (u16, indices into its model's skeleton) and weights (unorm8,
+renormalised to their sum), and each instance says where its joints' matrices begin in a
+second storage buffer, the palette (set 1, binding 1), held in render space as S·M·S like
+placements. Vertices with all weights 0 (the field) are not skinned. So a new pose is a new
+palette, a new place a new instance matrix; the vertex buffer never changes. Checked against
+the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by more than 8
+(from the 8-bit weights), the same picture.

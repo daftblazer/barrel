@@ -48,6 +48,20 @@ struct Vertex {
     pos: [f32; 3],
     normal: [f32; 3],
     uv: [f32; 2],
+    /// Up to four joints of the model's skeleton (indices into its instance's palette) and
+    /// their weights out of 255; all weights 0 for geometry that is not skinned.
+    joints: [u16; 4],
+    weights: [u8; 4],
+}
+
+/// A model's placement on the GPU (std430: 80 bytes): its matrix and where its joints'
+/// matrices start in the palette.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Instance {
+    model: Mat4,
+    palette: u32,
+    _pad: [u32; 3],
 }
 
 struct Draw {
@@ -243,7 +257,11 @@ struct Scene {
     /// Model matrices in render space (x mirrored), one per movable model; 0 is the identity,
     /// for geometry baked in place. The renderer uploads them to a storage buffer the vertex
     /// shader reads, so a model moves by changing its matrix, not its vertices.
-    instances: Vec<Mat4>,
+    instances: Vec<Instance>,
+    /// Every skinned model's joint matrices (bind pose to posed, render space), one after
+    /// another; an instance's `palette` is where its own begin. Never empty (the GPU buffer
+    /// needs a size), so it starts with one identity.
+    palette: Vec<Mat4>,
 }
 
 impl Scene {
@@ -254,7 +272,8 @@ impl Scene {
             indices: Vec::new(),
             draws: Vec::new(),
             terrain: None,
-            instances: vec![Mat4::IDENTITY],
+            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, _pad: [0; 3] }],
+            palette: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
         }
@@ -267,7 +286,7 @@ impl Scene {
 
     /// A new instance placed by `transform` (game space); returns its number.
     fn instance(&mut self, transform: Mat4) -> u32 {
-        self.instances.push(render_space(transform));
+        self.instances.push(Instance { model: render_space(transform), palette: 0, _pad: [0; 3] });
         (self.instances.len() - 1) as u32
     }
 
@@ -287,7 +306,16 @@ impl Scene {
     /// Add a model, skinned by `joints` (one matrix per joint, bind pose to posed) if given.
     /// `transform` is baked into the vertices; `instance` places them at draw time.
     fn add_posed(&mut self, geometry: &barrel_formats::g1m::Geometry, transform: Mat4, textures: usize, joints: Option<&[Mat4]>, instance: u32) -> Result<()> {
-        let placed = self.instances[instance as usize];
+        let placed = self.instances[instance as usize].model;
+        // A posed model's joints go to the palette, in render space (S·M·S like placements),
+        // and the GPU skins its vertices; baked geometry (instance 0) must not be posed.
+        if let Some(joints) = joints {
+            if instance == 0 {
+                return Err("a posed model needs an instance of its own".into());
+            }
+            self.instances[instance as usize].palette = self.palette.len() as u32;
+            self.palette.extend(joints.iter().map(|&m| render_space(m)));
+        }
         let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
         for s in &geometry.submeshes {
             let mesh = geometry.simple_mesh(s)?;
@@ -303,28 +331,33 @@ impl Scene {
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
             let morph = self.morph.get(&s.layout);
             for i in 0..mesh.positions.len() {
-                let (mut pos, mut nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
+                let (mut pos, nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
                 if let Some(d) = morph.and_then(|m| m.get(mesh.first_vertex + i)) {
                     pos += Vec3::from(*d);
                 }
+                // The joints and weights, for the GPU (joints past the pose's count or weights of
+                // 0 are dropped); the bounds use the CPU's own skinning of the point.
+                let (mut joint_ix, mut weight_q, mut skinned) = ([0u16; 4], [0u8; 4], pos);
                 if let (Some(skin), Some(joints)) = (&skin, joints) {
                     let (j, w) = skin[i];
-                    let (mut sp, mut sn) = (Vec3::ZERO, Vec3::ZERO);
-                    for k in 0..4 {
-                        if w[k] > 0.0 {
-                            let m = joints.get(j[k] as usize).copied().unwrap_or(Mat4::IDENTITY);
-                            sp += m.transform_point3(pos) * w[k];
-                            sn += m.transform_vector3(nrm) * w[k];
+                    let total: f32 = (0..4).filter(|&k| w[k] > 0.0 && (j[k] as usize) < joints.len()).map(|k| w[k]).sum();
+                    if total > 0.0 {
+                        skinned = Vec3::ZERO;
+                        for k in 0..4 {
+                            if w[k] > 0.0 && (j[k] as usize) < joints.len() {
+                                joint_ix[k] = j[k] as u16;
+                                weight_q[k] = (w[k] / total * 255.0).round() as u8;
+                                skinned += joints[j[k] as usize].transform_point3(pos) * (w[k] / total);
+                            }
                         }
                     }
-                    (pos, nrm) = (sp, sn);
                 }
                 let p = transform.transform_point3(pos) * mirror;
                 let n = normals.transform_vector3(nrm).normalize_or_zero() * mirror;
-                let w = placed.transform_point3(p);
+                let w = placed.transform_point3(transform.transform_point3(skinned) * mirror);
                 self.lo = self.lo.min(w);
                 self.hi = self.hi.max(w);
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i] });
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q });
             }
             let first_index = self.indices.len() as u32;
             for t in &mesh.triangles {
@@ -362,7 +395,7 @@ impl Scene {
                 self.lo = self.lo.min(p);
                 self.hi = self.hi.max(p);
                 let uv = [x as f32 / h.cells_x as f32, z as f32 / h.cells_z as f32];
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv });
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4] });
             }
         }
         let first_index = self.indices.len() as u32;
@@ -846,7 +879,8 @@ fn main() -> Result<()> {
         } else if !face_specs.is_empty() {
             return Err("--face needs --morph".into());
         }
-        scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref(), 0)?;
+        let instance = if joints.is_some() { scene.instance(Mat4::IDENTITY) } else { 0 };
+        scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
         scene.morph.clear();
         tex_bytes
     };
@@ -874,7 +908,7 @@ fn main() -> Result<()> {
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
-    let Scene { vertices, indices, mut draws, terrain, lo, hi, instances, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrain, lo, hi, instances, palette, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     for draw in &mut draws {
@@ -977,24 +1011,35 @@ fn main() -> Result<()> {
 
     // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
     // draw's instance number (set 1, bound once for every pipeline).
-    let ibytes_inst = unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Mat4>()) };
+    let ibytes_inst = unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) };
     let (instance_buf, instance_mem) = gpu.buffer(ibytes_inst.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
     gpu.upload(instance_mem, ibytes_inst)?;
-    let inst_binding = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::VERTEX)];
+    // And the joint palette (binding 1).
+    let pbytes = unsafe { std::slice::from_raw_parts(palette.as_ptr() as *const u8, palette.len() * size_of::<Mat4>()) };
+    let (palette_buf, palette_mem) = gpu.buffer(pbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
+    gpu.upload(palette_mem, pbytes)?;
+    let storage = |b: u32| {
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(b)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+    };
+    let inst_binding = [storage(0), storage(1)];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-    let inst_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 1 }];
+    let inst_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 2 }];
     let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
     let inst_layouts = [instance_layout];
     let instance_set =
         unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))?[0] };
     let inst_info = [vk::DescriptorBufferInfo::default().buffer(instance_buf).offset(0).range(vk::WHOLE_SIZE)];
+    let pal_info = [vk::DescriptorBufferInfo::default().buffer(palette_buf).offset(0).range(vk::WHOLE_SIZE)];
     unsafe {
         d.update_descriptor_sets(
-            &[vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&inst_info)],
+            &[
+                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&inst_info),
+                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&pal_info),
+            ],
             &[],
         )
     };
@@ -1072,6 +1117,8 @@ fn main() -> Result<()> {
         vk::VertexInputAttributeDescription { location: 0, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 0 },
         vk::VertexInputAttributeDescription { location: 1, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 12 },
         vk::VertexInputAttributeDescription { location: 2, binding: 0, format: vk::Format::R32G32_SFLOAT, offset: 24 },
+        vk::VertexInputAttributeDescription { location: 3, binding: 0, format: vk::Format::R16G16B16A16_UINT, offset: 32 },
+        vk::VertexInputAttributeDescription { location: 4, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 40 },
     ];
     let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
     let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
