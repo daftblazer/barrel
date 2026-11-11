@@ -20,6 +20,7 @@ pub mod game;
 pub mod inflate;
 pub mod khm;
 pub mod ktf;
+pub mod kwb;
 pub mod magic;
 pub mod oid;
 pub mod opl2;

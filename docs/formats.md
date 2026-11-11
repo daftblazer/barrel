@@ -308,6 +308,20 @@ loop back to a point partway in (`ev_usual01` to sample 177,664 of 3,007,104, `b
 files, not from the player's code (`voice::looping`; `barrel_audio::Mixer::play` takes the
 frame to loop back to).
 
+## Sound effect banks (`Sound/SE/*.wh2` + `.wb2`)
+
+Koei Tecmo's KWB2: a header file (`.wh2`: `_HBW0000`, its size, `KWB2`, a u16, the sound count,
+the data size, a 1.0, and at +0x24 one u32 offset per sound) and a data file (`.wb2`:
+`_DBW0000`, its size, then the samples from 0xc). Each sound holds one or more blocks
+`{u16 rate, u8 0, u8 channels, u32 codec, u32 0, u32 samples, u32 offset, u32 size}`, found
+by that shape in its span (`barrel_formats::kwb`). `A15_bank_se`, the only bank on disk, has
+127 sounds in 226 blocks, all codec 2 (16-bit PCM), mono, 48 kHz, 284 seconds in all; most
+sounds have two blocks with the same samples (what the second is for is not read).
+`Sound/SE/env/` (`00ENV_CAVE01.kvs` ...) and `Sound/SE/stream/` are KOVS like the music. The
+events' `ECT_SOUND_SE_PLAY` `{sound, 0, volume %, ...}` names sounds up to 244, more than this
+bank has, so the rest are elsewhere (the field and battle containers, presumably). `barrel
+se-scan BANK.wh2` lists a bank.
+
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
 The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its

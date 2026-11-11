@@ -45,6 +45,7 @@ usage:
   barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
   barrel vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
   barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
+  barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -109,6 +110,7 @@ fn main() -> ExitCode {
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
+        ["se-scan", wh2] => se_scan(Path::new(wh2)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
         ["days", install, n] => days(Path::new(install), n, false),
@@ -864,6 +866,32 @@ fn voice_wav(fpl: &Path, clip: &str, out: &Path, ogg_out: Option<&Path>) -> Resu
     }
     std::fs::write(out, w)?;
     println!("{frames} frames, {} channel(s), {} Hz", ch, id.rate);
+    Ok(())
+}
+
+/// A KWB2 sound effect bank (`.wh2` beside its `.wb2`).
+fn se_scan(wh2: &Path) -> Result<()> {
+    use barrel_formats::kwb;
+    let wb2 = read(&wh2.with_extension("wb2"))?;
+    let sounds = kwb::sounds(&read(wh2)?, wb2.len()).map_err(|e| format!("{}: {e}", wh2.display()))?;
+    let blocks: usize = sounds.iter().map(Vec::len).sum();
+    let mut formats = std::collections::BTreeMap::new();
+    let mut seconds = 0.0;
+    let mut peak = 0f32;
+    for b in sounds.iter().flatten() {
+        *formats.entry((b.codec, b.channels, b.rate)).or_insert(0) += 1;
+        seconds += b.samples as f32 / b.rate as f32;
+        if let Ok(p) = kwb::pcm(&wb2, b) {
+            peak = p.iter().flatten().fold(peak, |m, s| m.max(s.abs()));
+        }
+    }
+    println!("{} sounds, {blocks} blocks, {seconds:.1} s in all, peak {peak:.3}", sounds.len());
+    for ((codec, ch, rate), n) in formats {
+        println!("  codec {codec}, {ch} channel(s), {rate} Hz: {n} blocks");
+    }
+    for (i, s) in sounds.iter().enumerate().take(4) {
+        println!("  sound {i}: {}", s.iter().map(|b| format!("{} samples at {}", b.samples, b.offset)).collect::<Vec<_>>().join("; "));
+    }
     Ok(())
 }
 
