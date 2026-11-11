@@ -318,6 +318,21 @@ the effect's `ACT_*` number to its state number with `0x1401c0e80`:
 The other state numbers (3, 9 to 0x10, ...) are not reached from this mapping (the bad
 statuses and others, presumably).
 
+The shared handler builds a state event (vtable `0x1408090e0`) holding the state number, the
+rolled amount and the effect's second value; a target under field state 0x4c
+(`FIELD_INVALID_BUFF`) gets value 0 for the buffs (states 0x12 to 0x1a and 0x26 to 0x2d).
+Its apply (`0x1401c0dd0`) adds the state through `0x1401afb80` to the list at character
++0x1a0 (`0x140191340`; +0x1c0 in another battle mode). A state is a 0xa4-byte record:
++0 the state, +4 its count, +8 the value as a float, +0xc a further argument, +0x9c its
+exclusion group (`0x140191db0`), +0xa0 an active byte. The count (`0x140191d00`) is the
+effect's second value for the counted states (2 `HEAL_HP_TURN`, 3, 5 `ADD_ACTION`, 6
+`REDUCE_WT`, 0x34 `DAMAGE_HP_TURN`, 0x35 its differential form: Bomb's poison, value 10,
+lasts 2), 5 for the buffs and debuffs (7 and 0x12 to 0x2d), and -1 (no count) for the
+rest. A state already there with no count is replaced only by a stronger value (compared as
+floats). `battle::state_count`, `TimedState` and `add_state` follow this; how a counted state
+already there is merged, the exclusion groups, and where the counts go down (the per-turn tick)
+are next.
+
 ### MP cost and power (executable)
 
 A skill's MP cost is `0x14015f6a0 (skill, CONSUME_MP, 0)`: the sum, over its effect slots whose

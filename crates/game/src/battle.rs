@@ -91,6 +91,44 @@ pub fn reduce(damage: i32, element: Option<u8>, d: &Defender) -> i32 {
     }
 }
 
+/// How many times (turns) a timed state lasts when added (`0x140191d00`): the effect's
+/// second value for the counted states (2 `HEAL_HP_TURN`, 3, 5 `ADD_ACTION`, 6 `REDUCE_WT`,
+/// 0x34 `DAMAGE_HP_TURN`, 0x35 `DAMAGE_HP_TURN_DIFFERENTIAL`), 5 for the buffs and debuffs
+/// (7 and 0x12 to 0x2d: `ADD_PERCENT_QUICK`, `PLUS_*`, `MINUS_*`, critical, evade, ...), and
+/// -1 (no count) for the rest.
+pub fn state_count(state: u32, second: i32) -> i32 {
+    match state {
+        2 | 3 | 5 | 6 | 0x34 | 0x35 => second,
+        7 | 0x12..=0x19 | 0x1b | 0x1c | 0x1f..=0x2d => 5,
+        _ => -1,
+    }
+}
+
+/// A character's timed state (the battle keeps them as 0xa4-byte records in the lists at
+/// character +0x1a0; here only what the rules use).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TimedState {
+    pub state: u32,
+    /// Turns left ([`state_count`]); -1 for none.
+    pub count: i32,
+    /// The effect's rolled amount (kept as a float, as the game does).
+    pub value: f32,
+}
+
+/// Adds a timed state (`0x140191340`): a state already there with no count is replaced only by
+/// a stronger value (compared as floats); otherwise the new one goes in (how a counted state
+/// already there is merged, and the exclusion groups of `0x140191db0`, are not read yet).
+pub fn add_state(states: &mut Vec<TimedState>, state: u32, value: i32, second: i32) {
+    let new = TimedState { state, count: state_count(state, second), value: value as f32 };
+    if let Some(i) = states.iter().position(|s| s.state == state) {
+        if states[i].count == -1 && new.value <= states[i].value {
+            return;
+        }
+        states.remove(i);
+    }
+    states.push(new);
+}
+
 /// `ACT_DAMAGE_TURN`'s damage (`0x1401bebdc`): the rolled amount grown by `per_turn` percent
 /// (the effect's second value) for each action the user has taken so far (its +0x2c8), cut
 /// to an integer, then times the action's scale. No attack, defence or resistance: it goes
@@ -248,6 +286,20 @@ pub fn knockback(amount: i32, times: i32, resist: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn states_count_and_replace() {
+        let mut states = Vec::new();
+        add_state(&mut states, 0x34, 10, 2);
+        add_state(&mut states, 0x12, 30, 0);
+        assert_eq!(states.iter().map(|s| (s.state, s.count)).collect::<Vec<_>>(), [(0x34, 2), (0x12, 5)]);
+        // An uncounted state keeps the stronger value.
+        add_state(&mut states, 0x1a, 50, 0);
+        add_state(&mut states, 0x1a, 20, 0);
+        assert_eq!(states.last().unwrap().value, 50.0);
+        add_state(&mut states, 0x1a, 80, 0);
+        assert_eq!(states.last().unwrap().value, 80.0);
+    }
 
     #[test]
     fn turn_damage_grows_with_the_turns() {
