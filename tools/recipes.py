@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Dump Atelier Escha & Logy DX's synthesis recipes from its executable.
 
-    recipes.py EXE TABLE_VA ITEM_TAGS.txt CATEGORY_TAGS.txt
+    recipes.py EXE TABLE_VA ITEM_TAGS.txt CATEGORY_TAGS.txt [EFFECT_TAGS.txt]
 
-TABLE_VA is the first record (Craft's); the tag files are str_table.py dumps of the item
-and category enums. Each record is 72 little-endian i32 (288 bytes); docs/tables.md has the
+TABLE_VA is the first record (Craft's); the tag files are str_table.py dumps of the item,
+category and (optionally) item effect enums; with the effects, each slot's effect line is
+printed too. Each record is 72 little-endian i32 (288 bytes); docs/tables.md has the
 layout. Prints one line per recipe: the item, its header fields and its ingredients, where
 (Category) is any item of that category.
 """
@@ -28,6 +29,7 @@ def tags(path, prefix=None):
 
 def main():
     exe, va, item_file, cat_file = sys.argv[1:5]
+    effects = tags(sys.argv[5], 'ITEM_EFF_') if len(sys.argv) > 5 else None
     pe = PE(exe)
     items = tags(item_file)
     cats = tags(cat_file, 'ITEM_CATEGORY_')
@@ -50,7 +52,16 @@ def main():
                 name = items[ident]
             else:
                 name = '?%d:%d' % (kind, ident)
-            slots.append('%s x%d' % (name, count))
+            line = ''
+            if effects is not None:
+                pairs = r[28 + 12 * s:36 + 12 * s]
+                steps = []
+                for e, upto in zip(pairs[0::2], pairs[1::2]):
+                    if upto < 0:
+                        break
+                    steps.append('%s<=%d' % ('-' if e < 0 else effects[e][len('ITEM_EFF_'):], upto))
+                line = ' [' + ' '.join(steps) + ']'
+            slots.append('%s x%d%s' % (name, count, line))
         days = struct.unpack('<f', struct.pack('<i', r[6]))[0]
         print('%3d %-34s kind %d level? %d %d %d cost %d time %g | %s' % (
             r[0], items[r[0]], r[1], r[2], r[3], r[4], r[5], days, ', '.join(slots)))

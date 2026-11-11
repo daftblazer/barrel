@@ -74,9 +74,22 @@ slots.
 | 9..23 | five `{effect, 0, threshold}` triples, thresholds rising (10, 20, 30, 50, 75) |
 | 24..71 | four ingredient slots of 12 words |
 
-An ingredient slot is `{kind, id, count, slot number, then four (effect, threshold) pairs
-ending in -1}`. Kind 1 is a category (any item of it) and kind 0 a specific item; an id of
--1 marks an unused slot. For example:
+An ingredient slot is `{kind, id, count, slot number, then four (effect, up to) pairs}`.
+Kind 1 is a category (any item of it) and kind 0 a specific item; an id of -1 marks an
+unused slot. The pairs are the slot's **effect line**: each effect holds up to the value
+after it, -1 meaning no effect, and an "up to" of -1 ends the line. The effect numbers are
+the item effect enum (`ITEM_EFF_*`, in the same order as the rows of
+`item/item_effect.xml`, whose `ItemEffectName` gives the name). For example Craft's
+thorny-nuts slot reads none up to 20, *Embedding Thorns* up to 80, *Shredding Thorns* up to
+100, and its powder slot none up to 20, *Bursting* up to 70, *Explosive* up to 100; Flam's
+fuel slot is *Fire Damage* all the way. `tools/recipes.py ... EFFECT_TAGS.txt` prints the
+lines.
+
+The five `{effect, 0, threshold}` triples in words 9..23 point at the same enum, but what
+they are for is still open (Craft's name Earth Damage, Rain of Fire, Water Damage, Poison and
+HP regen at 10, 20, 30, 50 and 75).
+
+For example:
 
 | Item | Ingredients |
 |---|---|
