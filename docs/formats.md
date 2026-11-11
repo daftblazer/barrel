@@ -228,6 +228,10 @@ it:
 | 0x90 | u16 cells across, u16 cells down (64 × 64) |
 
 The layer tiles' alpha is 0 throughout, so alpha means something other than opacity there.
+
+The settings block starts with layer records at 0x1c (file offset 0xb4), 32 bytes each and
+one per layer texture: `{u16 layer, u16 0xffff, u16 0, u8 n, u8 n, f32 u scale, f32 v
+scale, 16 bytes of 0}`. The scale is 1 / (100 × n): the layer repeats every n cells.
 Fields with more layers than the two maps' six channels can weight need the block between
 0x98 and the layer textures (layer settings and a tree of patches with their bounds),
 which is not decoded yet.

@@ -25,6 +25,25 @@ pub struct Terrain<'a> {
     pub settings: &'a [u8],
 }
 
+impl Terrain<'_> {
+    /// Each layer's tile scale (1 / world units per tile repeat), from the layer records
+    /// that start 0x1c into the settings block: 32 bytes each, `{u16 layer, u16 0xffff,
+    /// u16, u8, u8, f32 u scale, f32 v scale, ...}`, one per layer texture.
+    pub fn layer_scales(&self) -> Vec<f32> {
+        let mut out = Vec::new();
+        let mut at = 0x1c;
+        while at + 16 <= self.settings.len() && out.len() < self.layers.textures.len() {
+            let s = &self.settings[at..];
+            if u16::from_le_bytes([s[2], s[3]]) != 0xffff {
+                break;
+            }
+            out.push(f32::from_le_bytes([s[8], s[9], s[10], s[11]]));
+            at += 0x20;
+        }
+        out
+    }
+}
+
 pub fn parse(d: &[u8]) -> Result<Terrain<'_>, Error> {
     if !d.starts_with(b"KFTK") {
         return Err(Error::NotThisFormat);

@@ -22,6 +22,9 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
 const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
+const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
+/// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
+const PUSH_SIZE: u32 = 112;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 
@@ -205,17 +208,37 @@ fn barrier(
     };
 }
 
+/// The field's ground: a heightmap grid drawn with the terrain shader.
+struct TerrainDraw {
+    first_index: u32,
+    index_count: u32,
+    /// The field's width in world units (the blend maps span it).
+    field_size: f32,
+    /// Tile scale (1/world units) of each of the six layers the blend maps weight.
+    scales: [f32; 6],
+    /// The terrain bundle, for its layer and blend textures.
+    ktf: Vec<u8>,
+}
+
 struct Scene {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     draws: Vec<Draw>,
+    terrain: Option<TerrainDraw>,
     lo: Vec3,
     hi: Vec3,
 }
 
 impl Scene {
     fn new() -> Scene {
-        Scene { vertices: Vec::new(), indices: Vec::new(), draws: Vec::new(), lo: Vec3::splat(f32::MAX), hi: Vec3::splat(f32::MIN) }
+        Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            draws: Vec::new(),
+            terrain: None,
+            lo: Vec3::splat(f32::MAX),
+            hi: Vec3::splat(f32::MIN),
+        }
     }
 
     /// Add a model's textured submeshes, placed by `transform`.
@@ -253,8 +276,8 @@ impl Scene {
 }
 
 impl Scene {
-    /// A heightmap as a grid of quads with the field's first texture tiled once a cell.
-    fn add_heightmap(&mut self, h: &barrel_formats::khm::Heightmap, textures: usize) {
+    /// A heightmap as a grid of quads; UVs run 0..1 across the field. Returns the index range.
+    fn add_heightmap(&mut self, h: &barrel_formats::khm::Heightmap) -> (u32, u32) {
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
         let base = self.vertices.len() as u32;
         let w = h.cells_x + 1;
@@ -266,7 +289,8 @@ impl Scene {
                 let n = Vec3::new(hx(-1) - hx(1), 2.0 * h.cell_size, hz(-1) - hz(1)).normalize() * mirror;
                 self.lo = self.lo.min(p);
                 self.hi = self.hi.max(p);
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: [x as f32, z as f32] });
+                let uv = [x as f32 / h.cells_x as f32, z as f32 / h.cells_z as f32];
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv });
             }
         }
         let first_index = self.indices.len() as u32;
@@ -277,8 +301,7 @@ impl Scene {
                 self.indices.extend([i, i + 1, i + w, i + 1, i + w + 1, i + w]);
             }
         }
-        let _ = textures;
-        self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture: 0 });
+        (first_index, self.indices.len() as u32 - first_index)
     }
 }
 
@@ -296,10 +319,22 @@ fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
     let objects = Elixir::parse(&obj_bytes)?;
     let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
     let texture_count = G1t::parse(&textures)?.textures.len();
-    if let Some(bytes) = named(&main, &format!("{area}.khm")) {
-        let h = barrel_formats::khm::parse(bytes)?;
-        scene.add_heightmap(&h, texture_count);
-        eprintln!("{area}: heightmap {}x{} cells of {}", h.cells_x, h.cells_z, h.cell_size);
+    if let Some(bytes) = named(&main, &format!("{area}.ktf")) {
+        let t = barrel_formats::ktf::parse(bytes)?;
+        let h = &t.heightmap;
+        let (first_index, index_count) = scene.add_heightmap(h);
+        let mut scales = [0.01f32; 6];
+        for (i, s) in t.layer_scales().into_iter().take(6).enumerate() {
+            scales[i] = s;
+        }
+        eprintln!("{area}: terrain {}x{} cells of {}, {} layers, scales {scales:?}", h.cells_x, h.cells_z, h.cell_size, t.layers.textures.len());
+        scene.terrain = Some(TerrainDraw {
+            first_index,
+            index_count,
+            field_size: h.cells_x as f32 * h.cell_size,
+            scales,
+            ktf: bytes.to_vec(),
+        });
     }
     let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
     let (mut placed, mut missing) = (0usize, 0usize);
@@ -322,71 +357,10 @@ fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
     Ok(textures)
 }
 
-#[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
-fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let field = args.first().is_some_and(|a| a == "--field");
-    let positional = if field { 3 } else { 3 };
-    if args.len() < positional {
-        return Err("usage: barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png | --field DIR OUT.png  [--size N] [--yaw DEG] [--pitch DEG]".into());
-    }
-    let out_path = if field { args[2].clone() } else { args[2].clone() };
-    let mut size = 768u32;
-    let mut yaw = 0f32;
-    let mut pitch = if field { 45f32 } else { 0f32 };
-    let mut alpha_cutoff = 0.3f32;
-    let mut it = args[positional..].iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--size" => size = it.next().ok_or("--size N")?.parse::<u32>()?.clamp(64, 1280),
-            "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
-            "--no-alpha" => alpha_cutoff = -1.0,
-            "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
-            other => return Err(format!("unknown option {other}").into()),
-        }
-    }
-
-    // CPU side: the vertices and draws, and the texture pack.
-    let mut scene = Scene::new();
-    let tex_bytes = if field {
-        field_scene(Path::new(&args[1]), &mut scene)?
-    } else {
-        let model_bytes = entry_bytes(&args[0])?;
-        let model = G1m::parse(&model_bytes)?;
-        let geometry = model.geometry.as_ref().ok_or("model has no geometry")?;
-        let tex_bytes = entry_bytes(&args[1])?;
-        let count = G1t::parse(&tex_bytes)?.textures.len();
-        scene.add(geometry, Mat4::IDENTITY, count)?;
-        tex_bytes
-    };
-    let pack = G1t::parse(&tex_bytes)?;
-    let Scene { vertices, indices, draws, lo, hi } = scene;
-    if draws.is_empty() || pack.textures.is_empty() {
-        return Err("nothing to draw".into());
-    }
-    eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, pack.textures.len());
-    eprintln!("bounds {lo:?} .. {hi:?}");
-    if std::env::var("BARREL_DRY").is_ok() {
-        return Ok(());
-    }
-
-    let gpu = Gpu::new()?;
+/// Upload a texture as it is stored (BC blocks and all mip levels) for sampling.
+fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Texture) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
     let d = &gpu.device;
-    let pool = unsafe {
-        d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
-    };
-
-    // Geometry buffers (host-visible: one frame does not need a staging copy).
-    let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
-    let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
-    let (vbuf, vmem) = gpu.buffer(vbytes.len() as u64, vk::BufferUsageFlags::VERTEX_BUFFER, true)?;
-    gpu.upload(vmem, vbytes)?;
-    let (ibuf, imem) = gpu.buffer(ibytes.len() as u64, vk::BufferUsageFlags::INDEX_BUFFER, true)?;
-    gpu.upload(imem, ibytes)?;
-
-    // Textures, uploaded as their BC blocks with all mip levels.
-    let mut textures = Vec::new();
-    for t in &pack.textures {
+    {
         let format = match t.format {
             Format::Bc1 => vk::Format::BC1_RGBA_UNORM_BLOCK,
             Format::Bc3 => vk::Format::BC3_UNORM_BLOCK,
@@ -436,7 +410,76 @@ fn main() -> Result<()> {
                 None,
             )?
         };
-        textures.push((image, mem, view));
+        Ok((image, mem, view))
+    }
+}
+
+#[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let field = args.first().is_some_and(|a| a == "--field");
+    let positional = if field { 3 } else { 3 };
+    if args.len() < positional {
+        return Err("usage: barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png | --field DIR OUT.png  [--size N] [--yaw DEG] [--pitch DEG]".into());
+    }
+    let out_path = if field { args[2].clone() } else { args[2].clone() };
+    let mut size = 768u32;
+    let mut yaw = 0f32;
+    let mut pitch = if field { 45f32 } else { 0f32 };
+    let mut alpha_cutoff = 0.3f32;
+    let mut it = args[positional..].iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--size" => size = it.next().ok_or("--size N")?.parse::<u32>()?.clamp(64, 1280),
+            "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
+            "--no-alpha" => alpha_cutoff = -1.0,
+            "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
+            other => return Err(format!("unknown option {other}").into()),
+        }
+    }
+
+    // CPU side: the vertices and draws, and the texture pack.
+    let mut scene = Scene::new();
+    let tex_bytes = if field {
+        field_scene(Path::new(&args[1]), &mut scene)?
+    } else {
+        let model_bytes = entry_bytes(&args[0])?;
+        let model = G1m::parse(&model_bytes)?;
+        let geometry = model.geometry.as_ref().ok_or("model has no geometry")?;
+        let tex_bytes = entry_bytes(&args[1])?;
+        let count = G1t::parse(&tex_bytes)?.textures.len();
+        scene.add(geometry, Mat4::IDENTITY, count)?;
+        tex_bytes
+    };
+    let pack = G1t::parse(&tex_bytes)?;
+    let Scene { vertices, indices, draws, terrain, lo, hi } = scene;
+    if draws.is_empty() || pack.textures.is_empty() {
+        return Err("nothing to draw".into());
+    }
+    eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, pack.textures.len());
+    eprintln!("bounds {lo:?} .. {hi:?}");
+    if std::env::var("BARREL_DRY").is_ok() {
+        return Ok(());
+    }
+
+    let gpu = Gpu::new()?;
+    let d = &gpu.device;
+    let pool = unsafe {
+        d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
+    };
+
+    // Geometry buffers (host-visible: one frame does not need a staging copy).
+    let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
+    let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
+    let (vbuf, vmem) = gpu.buffer(vbytes.len() as u64, vk::BufferUsageFlags::VERTEX_BUFFER, true)?;
+    gpu.upload(vmem, vbytes)?;
+    let (ibuf, imem) = gpu.buffer(ibytes.len() as u64, vk::BufferUsageFlags::INDEX_BUFFER, true)?;
+    gpu.upload(imem, ibytes)?;
+
+    // Textures, uploaded as their BC blocks with all mip levels.
+    let mut textures = Vec::new();
+    for t in &pack.textures {
+        textures.push(upload_texture(&gpu, pool, t)?);
     }
     let sampler = unsafe {
         d.create_sampler(
@@ -564,7 +607,7 @@ fn main() -> Result<()> {
         .depth_compare_op(vk::CompareOp::LESS);
     let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA)];
     let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att);
-    let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 80 }];
+    let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
     let set_layouts = [set_layout];
     let pipeline_layout = unsafe {
         d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
@@ -583,6 +626,56 @@ fn main() -> Result<()> {
     let pipeline = unsafe {
         d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
     };
+
+    // Terrain: its own textures, a set of 2 blend maps + 6 layers, and a pipeline with the
+    // terrain fragment shader.
+    let mut terrain_gpu = None;
+    if let Some(t) = &terrain {
+        let bundle = barrel_formats::ktf::parse(&t.ktf)?;
+        let mut tex = Vec::new();
+        for b in bundle.blend.textures.iter().take(2) {
+            tex.push(upload_texture(&gpu, pool, b)?);
+        }
+        let layer_count = bundle.layers.textures.len().clamp(1, 6);
+        for i in 0..6 {
+            tex.push(upload_texture(&gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
+        }
+        if tex.len() != 8 {
+            return Err("terrain needs two blend maps".into());
+        }
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(2)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(6)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        ];
+        let tlayout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings), None)? };
+        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 }];
+        let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&sizes), None)? };
+        let tl = [tlayout];
+        let tset = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
+        let infos: Vec<vk::DescriptorImageInfo> = tex
+            .iter()
+            .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
+            .collect();
+        let writes = [
+            vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..2]),
+            vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
+        ];
+        unsafe { d.update_descriptor_sets(&writes, &[]) };
+        let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tl).push_constant_ranges(&push), None)? };
+        let tfs = module(TERRAIN_FRAG)?;
+        let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
+        let info = pipeline_info.stages(&tstages).layout(tpl);
+        let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
+        terrain_gpu = Some((tex, tlayout, tpool, tset, tpl, tfs, tpipe));
+    }
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
     let center = (lo + hi) * 0.5;
@@ -613,14 +706,23 @@ fn main() -> Result<()> {
                 .clear_values(&clear),
             vk::SubpassContents::INLINE,
         );
-        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
         d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
-        let mut push = [0f32; 20];
+        let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+        let mut push = [0f32; 28];
         push[..16].copy_from_slice(&mvp.to_cols_array());
         push[16] = alpha_cutoff;
-        let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, 80);
-        d.cmd_push_constants(cb, pipeline_layout, vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, 0, pc);
+        if let (Some(t), Some((_, _, _, tset, tpl, _, tpipe))) = (&terrain, &terrain_gpu) {
+            push[17] = t.field_size;
+            push[20..26].copy_from_slice(&t.scales);
+            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, *tpipe);
+            d.cmd_push_constants(cb, *tpl, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, *tpl, 0, &[*tset], &[]);
+            d.cmd_draw_indexed(cb, t.index_count, 1, t.first_index, 0, 0);
+        }
+        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
+        let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
+        d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         for draw in &draws {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
@@ -645,6 +747,18 @@ fn main() -> Result<()> {
         d.device_wait_idle()?;
         d.destroy_buffer(readback, None);
         d.free_memory(rmem, None);
+        if let Some((tex, tlayout, tpool, _, tpl, tfs, tpipe)) = terrain_gpu {
+            d.destroy_pipeline(tpipe, None);
+            d.destroy_pipeline_layout(tpl, None);
+            d.destroy_shader_module(tfs, None);
+            d.destroy_descriptor_pool(tpool, None);
+            d.destroy_descriptor_set_layout(tlayout, None);
+            for (image, mem, view) in tex {
+                d.destroy_image_view(view, None);
+                d.destroy_image(image, None);
+                d.free_memory(mem, None);
+            }
+        }
         d.destroy_pipeline(pipeline, None);
         d.destroy_pipeline_layout(pipeline_layout, None);
         d.destroy_shader_module(vs, None);

@@ -8,9 +8,14 @@ field's placement list, with its model from the `_Obj` container and the field's
 texture pack (the object models carry no textures of their own). Each instance is scaled,
 rotated (x, then y, then z, in radians) and moved on the CPU. AREA_01_01 places 112
 objects (126 draws, 52,089 triangles), and they come out where they belong: a ring of
-cliffs around a valley of trees, rocks and flowers. Under them it draws the field's
-heightmap (`.khm`) as a grid with the first field texture tiled once a cell; the detailed
-terrain (`.ktf`) is not read yet.
+cliffs around a valley of trees, rocks and flowers. Under them it draws the
+terrain from the field's `.ktf`: the heightmap as a grid, shaded by `terrain.frag`, which
+reads the two blend maps across the whole field (UV 0..1) and uses their six channels
+(map 0 RGB, map 1 RGB) as weights for the first six ground layers, each tiled at the scale
+its layer record gives (AREA_01_01: 300, 300, 400, 300, 200 and 100 units a repeat). In
+AREA_01_01 that gives sand on the open ground and dirt and grass in the valley under the
+trees. Still to check against the game: the blend maps' orientation, and fields with more
+than six layers, where the settings block must say which layers a map's channels weight.
 
 Options: `--size N` (64..1280), `--yaw DEG`, `--pitch DEG` (45 by default for fields),
 `--no-alpha` to turn off the alpha test. `BARREL_DRY=1` builds the scene and prints its
