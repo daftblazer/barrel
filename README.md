@@ -35,6 +35,7 @@ target/release/barrel scan  "<install>/Data"           # every container and wha
 target/release/barrel ls     FILE.elixir.gz
 target/release/barrel unpack FILE.elixir.gz OUTDIR
 target/release/barrel ebd-scan "<install>/Event"       # every event and its commands
+target/release/barrel ebd-decode "<install>/Event"     # split every event into commands
 target/release/barrel ebd    FILE.ebd
 ```
 

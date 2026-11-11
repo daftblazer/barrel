@@ -39,10 +39,19 @@ Of the 238 command words the events use, 132 are named; they account for 66% of 
 command uses. The unnamed ones are not exposed to Squirrel. They are mostly in `r` (battle),
 `u` and `w`, and their names have to come from their handlers.
 
-`w1` (`0x77000001`) is the commonest word in the events (47,448 uses). It is always
-followed by exactly one word, and it comes up in the middle of other commands' operands,
-so it is probably an operand prefix (a variable or reference) rather than a command of its
-own. A command that varies in the table below most likely has a `w1` operand in it.
+`w1` (`0x77000001`) is the commonest word in the events (47,448 uses). It always takes
+one operand, a number that counts up through an event (1, 2, 3, ...), and it often comes in
+runs (`w1 1 w1 2 w1 3`) between other commands. It is a step or label marker: a command of
+its own, not a prefix on other commands' operands.
+
+## Decoding
+
+`barrel_formats::ebd::decode` splits a body into commands using an operand table for the
+game (`OperandTable::escha()`, generated from the table below). A command with a fixed count
+takes exactly that many words; the six whose count varies run to the next command word.
+The decoder checks that every command lands on another command word or `END`, so a table
+that is wrong for a game fails at once. `barrel ebd-decode DIR` runs it over every event:
+all 49,393 of Escha's bodies decode into 238,443 commands.
 
 ## Who handles them
 
@@ -68,7 +77,7 @@ That gives a place for 61 of the 106 unnamed commands. The ones that matter most
 | `u3/0x40` | 88 | `MessageItemGp` | item-received message |
 
 `w1` and `w4` are tested only by `Event`'s own code and the helpers around
-`0x140050d30`, which fits `w1` being an operand prefix the event player resolves itself.
+`0x140050d30`: the event player handles its step markers itself.
 
 ## Operand counts
 

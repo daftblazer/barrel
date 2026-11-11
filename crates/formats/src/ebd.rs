@@ -181,3 +181,90 @@ mod tests {
         assert_eq!(e.resources, vec![b"".to_vec(), b"ULTSET_0".to_vec()]);
     }
 }
+
+/// How many operand words each command takes, for one game.
+pub struct OperandTable {
+    counts: std::collections::HashMap<u32, Option<u8>>,
+}
+
+impl OperandTable {
+    pub fn new(entries: &[(u32, Option<u8>)]) -> Self {
+        OperandTable { counts: entries.iter().copied().collect() }
+    }
+
+    pub fn escha() -> Self {
+        Self::new(crate::ebd_tables::ESCHA)
+    }
+
+    /// `Some(Some(n))` for a fixed count, `Some(None)` for a command whose count varies,
+    /// `None` for a word this game does not use.
+    pub fn get(&self, word: u32) -> Option<Option<u8>> {
+        self.counts.get(&word).copied()
+    }
+}
+
+/// One decoded command: its word and the operand words after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Command<'a> {
+    pub word: u32,
+    pub operands: &'a [u32],
+}
+
+fn is_command_word(w: u32) -> bool {
+    matches!(Word::classify(w), Word::Command { .. } | Word::End)
+}
+
+/// Split a body into commands. The final `END` is not returned.
+///
+/// A command with a fixed count takes exactly that many words, and the word after them must
+/// be a command word or `END`. A command with a varying count runs to the next command word.
+/// An unknown command is an error, so a table that is wrong for a game shows up at once.
+pub fn decode<'a>(body: &'a [u32], table: &OperandTable) -> Result<Vec<Command<'a>>, Error> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    loop {
+        let word = *body.get(i).ok_or(Error::Corrupt("ebd body ends without END"))?;
+        if word == END {
+            if i + 1 != body.len() {
+                return Err(Error::Corrupt("ebd words after END"));
+            }
+            return Ok(out);
+        }
+        if !matches!(Word::classify(word), Word::Command { .. }) {
+            return Err(Error::Corrupt("ebd operand where a command was expected"));
+        }
+        let count = match table.get(word).ok_or(Error::Corrupt("ebd command not in the operand table"))? {
+            Some(n) => n as usize,
+            None => body[i + 1..].iter().position(|&w| is_command_word(w)).unwrap_or(body.len() - i - 1),
+        };
+        let operands = body.get(i + 1..i + 1 + count).ok_or(Error::Corrupt("ebd operands past the end"))?;
+        if !body.get(i + 1 + count).is_some_and(|&w| is_command_word(w)) {
+            return Err(Error::Corrupt("ebd operand count does not reach the next command"));
+        }
+        out.push(Command { word, operands });
+        i += 1 + count;
+    }
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use super::*;
+
+    #[test]
+    fn fixed_and_varying() {
+        let table = OperandTable::new(&[(0x7700_0001, Some(1)), (0x7300_0012, None), (0x7400_001d, Some(0))]);
+        let body = [0x7700_0001, 1, 0x7300_0012, 5, 6, 7, 0x7400_001d, 0x7700_0001, 2, END];
+        let cmds = decode(&body, &table).unwrap();
+        assert_eq!(cmds.len(), 4);
+        assert_eq!(cmds[1], Command { word: 0x7300_0012, operands: &[5, 6, 7] });
+        assert_eq!(cmds[2].operands, &[] as &[u32]);
+        assert_eq!(cmds[3].operands, &[2]);
+    }
+
+    #[test]
+    fn wrong_count_is_an_error() {
+        let table = OperandTable::new(&[(0x7700_0001, Some(2))]);
+        assert!(decode(&[0x7700_0001, 1, END], &table).is_err());
+        assert!(decode(&[0x7300_0004, END], &table).is_err());
+    }
+}

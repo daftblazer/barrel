@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use barrel_formats::ebd::{Ebd, Word};
+use barrel_formats::ebd::{self, Ebd, OperandTable, Word};
 use barrel_formats::elixir::Elixir;
 use barrel_formats::game::Game;
 use barrel_formats::magic;
@@ -16,7 +16,8 @@ usage:
   barrel unpack FILE.elixir.gz OUTDIR
   barrel scan DIR              read every container under DIR and count what they hold
   barrel ebd FILE.ebd          print an event's actions as words
-  barrel ebd-scan DIR          read every event under DIR and count its commands";
+  barrel ebd-scan DIR          read every event under DIR and count its commands
+  barrel ebd-decode DIR        decode every event under DIR into commands (Escha's table)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -28,6 +29,7 @@ fn main() -> ExitCode {
         ["scan", dir] => scan(Path::new(dir)),
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
+        ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -230,4 +232,37 @@ fn scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     Ok(())
+}
+
+fn ebd_decode(dir: &Path) -> Result<()> {
+    let table = OperandTable::escha();
+    let mut files = Vec::new();
+    files_ending(dir, ".ebd", &mut files)?;
+    files.sort();
+    let (mut bodies, mut commands) = (0usize, 0usize);
+    let mut failed = Vec::new();
+    for path in &files {
+        let bytes = read(path)?;
+        let e = match Ebd::parse(&bytes) {
+            Ok(e) => e,
+            Err(err) => {
+                failed.push(format!("{}: {err}", path.display()));
+                continue;
+            }
+        };
+        for (i, a) in e.actions.iter().enumerate() {
+            match ebd::decode(&a.words, &table) {
+                Ok(cmds) => {
+                    bodies += 1;
+                    commands += cmds.len();
+                }
+                Err(err) => failed.push(format!("{} action {i}: {err}", path.display())),
+            }
+        }
+    }
+    println!("{} events: {bodies} bodies decoded into {commands} commands, {} failures", files.len(), failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some bodies did not decode".into()) }
 }

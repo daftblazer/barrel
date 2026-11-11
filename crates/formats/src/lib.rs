@@ -4,6 +4,7 @@
 //! against the input, and returns [`Error`] rather than panicking on bad data.
 
 pub mod ebd;
+mod ebd_tables;
 pub mod elixir;
 pub mod game;
 pub mod inflate;

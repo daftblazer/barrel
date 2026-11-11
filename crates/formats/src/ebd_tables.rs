@@ -1,0 +1,244 @@
+//! Operand counts of Atelier Escha & Logy DX's event commands, measured over all of its
+//! events (see docs/events.md). `None` marks the commands seen with more than one count;
+//! the decoder runs those to the next command word.
+
+pub static ESCHA: &[(u32, Option<u8>)] = &[
+    (0x70000001, Some(1)), // ECT_MACRO_TIME_WAIT
+    (0x70000002, Some(0)), // ECT_MACRO_FIELDMAP_CAMERA_MOVE_WAIT
+    (0x70000003, Some(1)), // ECT_MACRO_CHARA_WAIT
+    (0x70000004, Some(1)), // ECT_MACRO_CHARA_MARKER_WAIT
+    (0x70000005, Some(0)), // ECT_MACRO_CAMERA_WAIT
+    (0x71000003, Some(2)), // ECT_FIELDMAP_CHARA_ADDITION
+    (0x71000004, Some(14)), // ECT_FIELDMAP_CHARA_ADDITION_EX
+    (0x71000005, Some(1)), // ECT_FIELDMAP_CHARA_DELETE
+    (0x71000006, Some(0)), // ECT_FIELDMAP_CHARA_DELETE_ALL
+    (0x71000007, Some(1)), // ECT_FIELDMAP_CHARA_SET_EVENT_MODE
+    (0x71000008, Some(5)), // ECT_FIELDMAP_CHARA_COLLISION_FLAG
+    (0x7100000a, Some(1)), // ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET
+    (0x7100000b, Some(0)), // ECT_FIELDMAP_NPC_ENEMY_RESET
+    (0x7100000c, Some(1)), // ECT_FIELDMAP_CHANGE_NOT_BGM
+    (0x7100000d, Some(0)), // ECT_FIELDMAP_GIMMICK_RESET
+    (0x7100000f, Some(3)), // ECT_FIELDMAP_MAPVISIBLE_SET
+    (0x71000010, Some(6)), // ECT_FIELDMAP_MAPANIMATION_EXEC
+    (0x71000020, Some(5)), // ECT_FIELDMAP_CHARA_TRANSPARENT_FOCUS
+    (0x71000021, Some(4)), // ECT_FIELDMAP_SET_FIELD_COLOR
+    (0x71000024, Some(1)),
+    (0x7100002a, Some(6)), // ECT_FIELDMAP_LIGHT_PARALLEL_SET
+    (0x7100002b, Some(1)), // ECT_FIELDMAP_LIGHT_PARALLEL_ORG
+    (0x7100002c, Some(3)), // ECT_FIELDMAP_LIGHT_AMBIENT_SET
+    (0x7100002d, Some(0)), // ECT_FIELDMAP_LIGHT_AMBIENT_ORG
+    (0x71000032, Some(4)), // ECT_FIELDMAP_CHARA_LIGHT_COLOR_SET
+    (0x71000033, Some(0)), // ECT_FIELDMAP_CHARA_LIGHT_COLOR_ORG
+    (0x71000034, Some(4)), // ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_SET
+    (0x71000035, Some(0)), // ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_ORG
+    (0x71000036, Some(14)),
+    (0x71000037, Some(1)),
+    (0x71000038, Some(1)),
+    (0x71000039, Some(0)),
+    (0x72000004, Some(2)), // ECT_BATTLE_ADD_EFFECT_ID
+    (0x72000008, Some(1)),
+    (0x7200000d, Some(4)),
+    (0x7200000e, Some(6)),
+    (0x7200000f, Some(0)),
+    (0x72000010, Some(14)),
+    (0x72000011, Some(2)),
+    (0x72000012, Some(7)),
+    (0x72000013, Some(1)),
+    (0x72000014, Some(2)),
+    (0x72000016, Some(6)),
+    (0x72000018, Some(4)),
+    (0x7200001b, Some(1)),
+    (0x7200001c, Some(3)),
+    (0x7200001d, Some(1)),
+    (0x7200001e, Some(3)),
+    (0x7200001f, Some(4)),
+    (0x72000020, Some(6)),
+    (0x72000021, Some(1)),
+    (0x72000022, Some(3)),
+    (0x72000023, Some(2)),
+    (0x73000001, Some(5)), // ECT_CHARA_SET_MARKER
+    (0x73000002, Some(3)), // ECT_CHARA_CAMERA_QUAKE_SET
+    (0x73000003, Some(2)), // ECT_CHARA_TIME_WAIT
+    (0x73000004, Some(7)), // ECT_CHARA_POS_SET
+    (0x73000005, Some(4)), // ECT_CHARA_MOTION_SET
+    (0x73000006, Some(1)), // ECT_CHARA_MOTION_WAIT
+    (0x73000007, Some(2)), // ECT_CHARA_MOTION_SET_DIRECT
+    (0x73000008, Some(4)), // ECT_CHARA_MOTION_SET_DIV
+    (0x73000009, Some(2)), // ECT_CHARA_MOTION_SET_SPEED
+    (0x7300000a, Some(4)), // ECT_CHARA_MOTION_SET_LOOP
+    (0x7300000b, Some(5)), // ECT_CHARA_MOTION_SET_AUTO_LOOP
+    (0x7300000c, Some(4)), // ECT_CHARA_MOTION_SPEED_MOVE_SET
+    (0x7300000d, Some(3)), // ECT_CHARA_MOTION_SET_OFFSET_ONLY
+    (0x7300000e, Some(3)), // ECT_CHARA_MOTION_SET_OFFSET_AUTO_LOOP
+    (0x7300000f, Some(5)), // ECT_CHARA_COLOR_SET
+    (0x73000010, Some(7)), // ECT_CHARA_COLOR_MOVE_SET
+    (0x73000011, Some(1)), // ECT_CHARA_COLOR_MOVE_WAIT
+    (0x73000012, None), // ECT_CHARA_MOVE_SET
+    (0x73000013, Some(1)), // ECT_CHARA_MOVE_WAIT
+    (0x73000014, Some(13)), // ECT_CHARA_MOVE_SET_WAIT
+    (0x73000015, Some(2)), // ECT_CHARA_MOVE_PRE_WAIT
+    (0x73000017, Some(4)), // ECT_CHARA_ROT_SET
+    (0x73000018, Some(7)), // ECT_CHARA_ROT_SET_TARGET
+    (0x73000019, Some(7)), // ECT_CHARA_ROT_SET_TARGET_ALL
+    (0x7300001a, Some(6)), // ECT_CHARA_ROT_MOVE_SET
+    (0x7300001b, Some(9)), // ECT_CHARA_ROT_MOVE_SET_TARGET
+    (0x7300001c, Some(9)), // ECT_CHARA_ROT_MOVE_SET_TARGET_ALL
+    (0x7300001d, Some(1)), // ECT_CHARA_ROT_MOVE_WAIT
+    (0x73000021, Some(1)), // ECT_CHARA_ROT_STOP
+    (0x73000022, Some(6)), // ECT_CHARA_OFFSET_ROT_MOVE
+    (0x73000023, Some(4)), // ECT_CHARA_SCALE_SET
+    (0x73000024, Some(6)), // ECT_CHARA_SCALE_MOVE_SET
+    (0x73000025, Some(1)), // ECT_CHARA_SCALE_MOVE_WAIT
+    (0x73000026, Some(25)), // ECT_CHARA_EFF_ADD
+    (0x73000027, Some(2)), // ECT_CHARA_EFF_WAIT
+    (0x73000029, None), // ECT_CHARA_EFF_MOVE_SET
+    (0x7300002a, Some(2)), // ECT_CHARA_EFF_MOVE_WAIT
+    (0x7300002c, Some(3)), // ECT_CHARA_EFF_PRE_WAIT
+    (0x7300002d, Some(2)), // ECT_CHARA_EFF_STOP
+    (0x7300002e, Some(2)), // ECT_CHARA_EFF_KILL
+    (0x7300002f, Some(17)),
+    (0x73000030, Some(2)), // ECT_CHARA_NODEEFF_STOP
+    (0x73000031, Some(2)), // ECT_CHARA_NODEEFF_KILL
+    (0x73000033, Some(4)), // ECT_CHARA_LOOK_SET
+    (0x73000035, Some(6)), // ECT_CHARA_LOOK_MOVE_SET
+    (0x73000039, Some(1)), // ECT_CHARA_LOOK_CLEAR
+    (0x7300003e, Some(6)), // ECT_CHARA_SE_PLAY
+    (0x73000040, Some(3)), // ECT_CHARA_CHANGE_PARTS
+    (0x73000042, Some(4)), // ECT_CHARA_CHANGE_ADD_OBJ
+    (0x73000044, Some(12)), // ECT_CHARA_NODECHARA_ADD
+    (0x73000045, Some(2)), // ECT_CHARA_NODECHARA_DETACHCHILD
+    (0x73000046, Some(1)), // ECT_CHARA_NODECHARA_DETACH
+    (0x73000047, Some(2)), // ECT_CHARA_SET_DISP
+    (0x73000050, Some(3)), // ECT_CHARA_SET_FLAG
+    (0x73000051, Some(1)), // ECT_CHARA_SET_PROGRAM_MOTION_WAIT
+    (0x73000053, Some(1)), // ECT_CHARA_MULTI_MOTION_LOOP_CLEAR
+    (0x73000054, Some(7)),
+    (0x73000055, Some(7)), // ECT_CHARA_ROT_SET_COPY_TARGET_ALL
+    (0x73000056, Some(9)), // ECT_CHARA_ROT_MOVE_SET_COPY_TARGET
+    (0x73000058, Some(4)), // ECT_CHARA_FACIAL_MOTION_SET
+    (0x7300005f, Some(2)), // ECT_CHARA_LOAD_ONE_MOTION
+    (0x73000062, Some(19)), // ECT_CHARA_NODEEFF_ADD2
+    (0x73000063, Some(6)), // ECT_CHARA_SE_NON_STREAM_PLAY
+    (0x73000066, Some(2)), // ECT_CHARA_VOICE_PLAY
+    (0x73000070, Some(1)),
+    (0x73000071, Some(2)), // ECT_CHARA_EFF_FADEOUT
+    (0x73000072, Some(2)), // ECT_CHARA_NODEEFF_FADEOUT
+    (0x73000073, Some(6)), // ECT_CHARA_OFFSET_ROT_MOVE_WITHOUT_SORTROT
+    (0x73000074, Some(4)),
+    (0x73000075, Some(1)),
+    (0x73000076, Some(5)),
+    (0x73000077, Some(7)),
+    (0x73000079, Some(3)),
+    (0x7300007a, Some(14)),
+    (0x7300007b, Some(2)),
+    (0x74000001, None), // ECT_CAMERA_C_TYPE_SET
+    (0x74000002, Some(1)), // ECT_CAMERA_TIME_WAIT
+    (0x74000003, Some(6)), // ECT_CAMERA_EYE_POS_SET
+    (0x74000004, None), // ECT_CAMERA_EYE_MOVE_SET
+    (0x74000005, Some(0)), // ECT_CAMERA_EYE_MOVE_WAIT
+    (0x74000006, Some(6)), // ECT_CAMERA_AT_POS_SET
+    (0x74000007, None), // ECT_CAMERA_AT_MOVE_SET
+    (0x74000008, Some(0)), // ECT_CAMERA_AT_MOVE_WAIT
+    (0x74000009, Some(12)), // ECT_CAMERA_EYEAT_POS_SET
+    (0x7400000a, Some(4)), // ECT_CAMERA_ROT_MOVE_SET
+    (0x7400000b, Some(0)), // ECT_CAMERA_ROT_MOVE_WAIT
+    (0x7400000c, Some(3)), // ECT_CAMERA_LENGTH_MOVE_SET
+    (0x7400000d, Some(0)), // ECT_CAMERA_LENGTH_MOVE_WAIT
+    (0x7400000e, Some(2)), // ECT_CAMERA_QUAKE_SET
+    (0x74000010, Some(0)), // ECT_CAMERA_QUAKE_STOP
+    (0x74000018, Some(1)), // ECT_CAMERA_FOV_SET
+    (0x7400001a, Some(3)), // ECT_CAMERA_FOV_MOVE
+    (0x7400001d, Some(0)), // ECT_CAMERA_MOVE_KILL
+    (0x74100002, Some(0)),
+    (0x74100003, Some(2)),
+    (0x74100005, Some(2)),
+    (0x74100007, Some(2)),
+    (0x74100009, Some(2)),
+    (0x7410000b, Some(2)),
+    (0x7410000d, Some(4)),
+    (0x74100012, Some(2)), // ECT_FIELDMAP_CAMERA_SET_FOLLOW_CHARA
+    (0x74100013, Some(1)), // ECT_FIELDMAP_CAMERA_DATA_EFFECT_SET
+    (0x74100014, Some(11)),
+    (0x74100015, Some(12)),
+    (0x7420000c, Some(0)),
+    (0x74200011, Some(1)),
+    (0x74200012, Some(1)),
+    (0x74200013, Some(0)),
+    (0x74300001, Some(0)), // ECT_VARIINDEX_INDEX_START
+    (0x74300002, Some(2)), // ECT_VARIINDEX_INDEX_SETTING
+    (0x75000001, Some(0)),
+    (0x75000002, Some(1)),
+    (0x75000003, Some(1)),
+    (0x75000005, Some(1)),
+    (0x75000007, Some(1)),
+    (0x75000008, Some(3)),
+    (0x7500000b, Some(6)), // ECT_EVENT_SET_TIME_EFFECT
+    (0x7500000c, Some(1)), // ECT_EVENT_WAIT_TIME_EFFECT
+    (0x7500000d, None), // ECT_EVENT_SET_POST_EFFECT
+    (0x7500000e, Some(0)), // ECT_EVENT_WAIT_POST_EFFECT
+    (0x7500000f, Some(0)),
+    (0x75000010, Some(2)),
+    (0x75000011, Some(0)),
+    (0x75000012, Some(2)),
+    (0x75000015, Some(1)), // ECT_EVENT_CONTRAST_WAIT
+    (0x75000016, Some(3)), // ECT_EVENT_CONTRAST_SET_MIX
+    (0x75000019, Some(3)),
+    (0x7500001a, Some(4)),
+    (0x7500001b, Some(5)),
+    (0x7500001d, Some(5)),
+    (0x7500001e, Some(1)),
+    (0x7500001f, Some(1)), // ECT_EVENT_VOICE_PLAY
+    (0x75000022, Some(2)),
+    (0x75000023, Some(2)),
+    (0x75000024, Some(2)),
+    (0x75000026, Some(1)),
+    (0x7500002e, Some(3)),
+    (0x7500002f, Some(0)),
+    (0x75000030, Some(0)),
+    (0x75000033, Some(1)),
+    (0x75000034, Some(0)),
+    (0x75000035, Some(0)),
+    (0x75000037, Some(1)),
+    (0x75000038, Some(3)),
+    (0x75000043, Some(1)),
+    (0x75000044, Some(0)),
+    (0x7500004f, Some(0)),
+    (0x75000061, Some(3)),
+    (0x75000067, Some(6)), // ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET
+    (0x75000069, Some(0)),
+    (0x7500006a, Some(0)),
+    (0x7500006b, Some(1)),
+    (0x7500006c, Some(0)),
+    (0x75000082, Some(2)),
+    (0x75000086, Some(1)),
+    (0x75000087, Some(0)),
+    (0x75000088, Some(0)),
+    (0x7500008b, Some(0)), // ECT_EVENT_DEL_POST_EFFECT_ALL
+    (0x75000091, Some(7)),
+    (0x75000092, Some(2)), // ECT_EVENT_VOICE_PLAY_TRACK
+    (0x75100001, Some(5)), // ECT_SOUND_SE_PLAY
+    (0x75100003, Some(4)), // ECT_SOUND_BG_PLAY
+    (0x75100004, Some(1)), // ECT_SOUND_BG_STOP
+    (0x75100005, Some(2)), // ECT_SOUND_BG_FADEOUT
+    (0x75100008, Some(5)),
+    (0x75200001, Some(3)), // ECT_CONTRAST_SET
+    (0x75200003, Some(1)), // ECT_CONTRAST_WAIT
+    (0x75200004, Some(3)), // ECT_CONTRAST_SET_MIX
+    (0x75300001, Some(1)),
+    (0x75300002, Some(2)),
+    (0x75300004, Some(1)),
+    (0x75300007, Some(7)),
+    (0x75350001, Some(1)),
+    (0x75400001, Some(4)),
+    (0x75400002, Some(3)),
+    (0x75400003, Some(2)),
+    (0x75400004, Some(2)),
+    (0x75400005, Some(2)),
+    (0x75400006, Some(0)),
+    (0x75400007, Some(0)),
+    (0x75400008, Some(0)),
+    (0x75400009, Some(0)),
+    (0x7540000a, Some(0)),
+    (0x77000001, Some(1)),
+    (0x77000004, Some(1)),
+];
