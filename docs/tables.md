@@ -189,22 +189,45 @@ traits, most likely) and the skill is not one of 0, 4, 7 and 8 to 16: each of th
 from +8 (minimum, maximum and the two after) becomes `value × (min(bonus, cap) + 100) / 100`
 (integer division), where `cap` is the effect's limit from the `ACT_*` property table.
 
-The `ACT_*` property table at `0x140ce9598` (English Escha executable): 20 bytes per number,
-from -1 to 233: i32 (1 for the damage kinds, 0 otherwise), i32 the limit on that bonus in
-percent (9999 for most; 0 for `DAMAGE_FIX`, `DAMAGE_PERCENT`, `RUNAWAY`, `PERCENT_QUICK`, so
-no bonus; 100 for `RETURN_WT`, 500 for `ADD_MAXHP`), i32 (5 for `DAMAGE_HP`, 25 for
-`ASSIST_ATTACK`), then 8 flag bytes. `0x14002aa40` reads the limit (9999 for a number out of
-range).
+The `ACT_*` property table at `0x140ce9590` (English Escha executable): 20 bytes per number
+from 0 to 233: 8 flag bytes (`0x14002aa10 (act, k)` reads flag k), then i32 (1 for the damage
+kinds, 0 otherwise), i32 the limit on bonuses in percent (9999 for most; 0 for `DAMAGE_FIX`,
+`DAMAGE_PERCENT`, `RUNAWAY`, `PERCENT_QUICK`, so no bonus; 100 for `RETURN_WT`, 500 for
+`ADD_MAXHP`; `0x14002aa40` reads it, 9999 out of range), i32 (5 for `DAMAGE_HP`, 25 for
+`ASSIST_ATTACK`). The readers also accept -1, whose 20 bytes are whatever precedes the table.
+
+| Flag | Set for | What the amount roll does with it |
+|---|---|---|
+| 0 | 78 numbers: `RUNAWAY`, `RETURN_WT`, `ASSIST_GUARD`, `PERCENT_QUICK`, ... | when clear, the scale is also multiplied by the roll's float argument |
+| 1 | damage and heals | x (A's value 14 + 100) / 100 when B has state 7 |
+| 2 | damage | x 0.5 when B has state 3 |
+| 3 | damage, heals, `ASSIST_*` | (items) the item's quality terms are added to the bonus |
+| 4 | `DAMAGE_HP`, `DAMAGE_REDUCE`, heals | (items) a flat addition from the item's value 0x27 |
+| 5 | damage | x percent 1 / 100 |
+| 7 | damage and heals | x percent 2 / 100 |
+
 
 ### Rolling the amounts (executable)
 
 `0x1401bd520` (English Escha executable) then goes over the action's effects: for each
 effect with a number, the amount (+0x20) is a random number from the minimum to the maximum
-(+8, +0xc), and the second value (+0x24) one from the two values after (+0x10, +0x14). It
-then works out the effect's float scale (+0x28) from the user's and target's states and
-traits (a percentage from 100 moved by several traits; several factors applied only when the
-`ACT_*` property table's flags say so; constants 100, 1, 0.5, 0.15 and 0.1), not yet
-written out; for items it also adds item-specific terms.
+(+8, +0xc), and the second value (+0x24) one from the two values after (+0x10, +0x14). Then, for an item (action
+kind 1) whose effect has flag 3, a bonus is summed from the item's values (quality and other
+item properties, `0x14029db00` on the item at A +0x31c); for a skill (kind 0) the bonus is
+one of A's values 0x6f, 0x70 or 0xde when the skill's kind (+0xc) matches. With flag 4
+an item adds `extra`: its value 0x27 if the amount is at most that, else 0x27² / amount. Then
+
+    amount = amount × (min(bonus, limit) + 100) / 100 + extra     (integers, truncating)
+    second = second × (min(bonus, limit) + 100) / 100
+
+and the float scale (+0x28) starts at 1 (or character A's value 0x2b4 / 100 when positive, for
+action kinds other than 2) and is multiplied by the flag-gated factors in the flag table above, then
+by `(global 0x141077e70 + 100) / 100` and `global 0x141077e50 / 100`, then by `1 - clamp(
+character A's state-12 value × 0.1 / 100, 0, 1)`, and is kept at least 0.15. The function takes two characters, A (its second argument) and B (its third); which is the
+user and which the target is not checked yet. Percent 1 starts at 100 and moves with A's
+traits 0x5d and 0x72 and B's 0x71 and states 0x1e and 8; percent 2 starts at 100 + A's value
+15 and moves with traits 0x2f, 0x47, 0x30, 0x9c and 0x33 of both. Which traits and states
+these numbers are is still to be named.
 
 ### Random numbers
 
