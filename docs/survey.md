@@ -69,17 +69,24 @@ packing tool). The start of the name is still scrambled by a second, fixed layer
 the same for every entry. That key is still to be found, from the executable or from known
 file names.
 
-### Ryza 2 DX
+### Ryza DX, Ryza 2 DX, Ryza 3 DX
 
-The data is in `Data/*.PAK` archives. Their names decode with the plain per-entry key.
+| | Ryza DX | Ryza 2 DX | Ryza 3 DX |
+|---|---|---|---|
+| Install | 28 GB | 35 GB | 46 GB |
+| RTTI game classes | 925 | 1,117 | 1,441 |
+| `.ebd` / `.ebm` named in the exe | 1,691 / 1,683 | 2,141 / 2,133 | 3,382 / 3,379 |
+| `.xml` tables named | 326 | 393 | 557 |
+| Squirrel | no | no | no |
 
-The executable refers to ~2,140 `.ebd` files, ~390 `.xml` tables and the g1m models. The
-RTTI names 1,117 classes. Unlike the older games, it embeds **no Squirrel**. Its AI is
-either native or event-driven; that is still to be checked.
+All three render through D3D11 on KTGL and elixir, the same base as Sophie 2. None of them
+embeds Squirrel, so their AI is either native code or events, still to be checked.
 
-### Ryza DX, Ryza 3 DX
+### PAK archives (Sophie 2 and the Ryza trilogy)
 
-Not installed yet. They are expected to match Ryza 2.
+All four games use the same PAK format: header `{0x20000, count, 16, 13}`, then 184-byte
+entries with the layout given under Sophie 2. The second, fixed scramble over the names is
+present in all four, so one reader with a key for each game covers them.
 
 ## What the games share
 

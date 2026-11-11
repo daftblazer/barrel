@@ -11,9 +11,9 @@ game adds its own rules on top: synthesis, battle, calendar and menus.
 | Atelier Escha & Logy DX | 2021 | KTGL + elixir, Squirrel 2.2.5 |
 | Atelier Shallie DX | 2021 | KTGL + elixir, Squirrel 2.2.5 |
 | Atelier Sophie 2 | 2022 | KTGL + elixir, PAK archives, Squirrel 2.2.5 |
-| Atelier Ryza DX | 2023 | not surveyed yet |
+| Atelier Ryza DX | 2023 | KTGL + elixir, PAK archives, no Squirrel |
 | Atelier Ryza 2 DX | 2023 | KTGL + elixir, PAK archives, no Squirrel |
-| Atelier Ryza 3 DX | 2024 | not surveyed yet |
+| Atelier Ryza 3 DX | 2024 | KTGL + elixir, PAK archives, no Squirrel |
 
 The goals:
 - run natively on Linux, including aarch64 handhelds (Vulkan);
