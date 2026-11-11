@@ -537,8 +537,52 @@ struct Actor {
     looping: bool,
     /// The motion being blended out: it, its time at the switch, whether it loops.
     previous: Option<(barrel_formats::g1a::Animation, f32, bool)>,
+    face: Option<FaceRig>,
     /// The time shown at the last frame, in the current motion.
     last_t: f32,
+}
+
+/// What a character's face needs to change during playback: its rows, its facial
+/// animations (loaded by name, kept), and its morph sets' places in the weight buffer.
+struct FaceRig {
+    row: u32,
+    head: String,
+    facials: Vec<u8>,
+    /// Per morph set (sorted by layout, as the weights are laid out): its target count and
+    /// where its weights begin in the instance's block.
+    sets: Vec<(usize, u32)>,
+    loaded: std::collections::HashMap<String, Option<barrel_formats::g1a::Animation>>,
+}
+
+impl FaceRig {
+    fn anim(&mut self, name: &str) -> Option<&barrel_formats::g1a::Animation> {
+        if !self.loaded.contains_key(name) {
+            let anim = Elixir::parse(&self.facials)
+                .ok()
+                .and_then(|c| named(&c, &format!("{name}.g1a")).map(|b| b.to_vec()))
+                .and_then(|b| barrel_formats::g1a::parse(&b).ok());
+            self.loaded.insert(name.to_string(), anim);
+        }
+        self.loaded.get(name).and_then(Option::as_ref)
+    }
+
+    /// The weights for a face (brow and eyes held at 0.5 s; the mouth at its end, or moving
+    /// over `time` while the character talks), into `block` (the instance's weights).
+    fn weights(&mut self, face: &barrel_game::face::Face, talking: bool, time: f32, block: &mut [f32]) {
+        block.fill(0.0);
+        for (name, t) in [(&face.brow, Some(0.5)), (&face.eye, Some(0.5)), (&face.mouth, None)] {
+            let Some(name) = name.clone() else { continue };
+            let sets = self.sets.clone();
+            let Some(anim) = self.anim(&name) else { continue };
+            let Some(&(n, offset)) = sets.iter().find(|(n, _)| n + 1 == anim.tracks.len()) else { continue };
+            let at = t.unwrap_or(if talking && anim.duration > 0.0 { time.rem_euclid(anim.duration) } else { 1.0 });
+            let w = face_weights(anim, n, at);
+            let o = offset as usize;
+            if let Some(slot) = block.get_mut(o..o + n) {
+                slot.copy_from_slice(&w);
+            }
+        }
+    }
 }
 
 /// A character's motions: `<FileHead>_<value>.g1a` for a `CharaBase` column's value, in the
@@ -628,19 +672,20 @@ fn event_characters(
                 faces.entry(m.speaker).or_insert((0, false)).1 = true;
             }
         }
-        for entry in std::fs::read_dir(root)?.flatten() {
-            let p = entry.path();
-            if p.extension().is_some_and(|x| x == "exe") {
-                let bytes = std::fs::read(&p)?;
-                if let Ok(pe) = barrel_formats::pe::Pe::parse(&bytes) {
-                    let t = barrel_game::face::Tables::read(&pe);
-                    if !t.brow.is_empty() {
-                        face_tables = Some(t);
-                        if let Some(g) = barrel_game::gesture::read(&bytes) {
-                            gesture_table = Some((g, barrel_game::gesture::motions(&pe)));
-                        }
-                        break;
+    }
+    // The face and gesture tables (always: a played event changes faces as it goes).
+    for entry in std::fs::read_dir(root)?.flatten() {
+        let p = entry.path();
+        if p.extension().is_some_and(|x| x == "exe") {
+            let bytes = std::fs::read(&p)?;
+            if let Ok(pe) = barrel_formats::pe::Pe::parse(&bytes) {
+                let t = barrel_game::face::Tables::read(&pe);
+                if !t.brow.is_empty() {
+                    face_tables = Some(t);
+                    if let Some(g) = barrel_game::gesture::read(&bytes) {
+                        gesture_table = Some((g, barrel_game::gesture::motions(&pe)));
                     }
+                    break;
                 }
             }
         }
@@ -769,27 +814,43 @@ fn event_characters(
             Some((j, sk, m, an, t0)) => (Some(j), Some((sk, m, an, t0))),
             None => (None, None),
         };
-        if let (Some(&(expr, talking)), Some(tables), Some(head), Some(facial)) =
-            (faces.get(&(who as i32)), &face_tables, row.attr("FileHead"), row.attr("Facial"))
-        {
-            let face = tables.expression(row_index as u32, head, expr, talking);
+        // The face: every morph set goes in (so playback can change it), weighted by the line's
+        // expression when `--line` gives one.
+        let mut face_rig = None;
+        if let (Some(tables), Some(head), Some(facial)) = (&face_tables, row.attr("FileHead"), row.attr("Facial")) {
             let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
             let fbytes = std::fs::read(root.join("Data/x64/Character").join(dir).join(format!("{facial}.elixir.gz")));
             if let (Ok(fbytes), Some(g1h)) = (fbytes, named(&container, &format!("{stem}_default.g1h"))) {
                 let facials = Elixir::parse(&fbytes)?;
                 let mut anims = Vec::new();
-                for (name, t) in [(&face.brow, 0.5), (&face.eye, 0.5), (&face.mouth, 1.0)] {
-                    if let Some(bytes) = name.as_ref().and_then(|n| named(&facials, &format!("{n}.g1a"))) {
-                        anims.push((bytes, t));
+                if let Some(&(expr, talking)) = faces.get(&(who as i32)) {
+                    let face = tables.expression(row_index as u32, head, expr, talking);
+                    for (name, t) in [(&face.brow, 0.5), (&face.eye, 0.5), (&face.mouth, 1.0)] {
+                        if let Some(bytes) = name.as_ref().and_then(|n| named(&facials, &format!("{n}.g1a"))) {
+                            anims.push((bytes, t));
+                        }
                     }
+                    eprintln!("character {who}: expression {expr}{} {face:?}", if talking { ", talking" } else { "" });
                 }
-                eprintln!("character {who}: expression {expr}{} {face:?}", if talking { ", talking" } else { "" });
                 set_face(scene, g1h, &anims)?;
+                let mut layouts: Vec<(usize, usize)> = scene.morph.iter().map(|(&l, (t, _))| (l, t.len())).collect();
+                layouts.sort();
+                let mut offset = 0u32;
+                let sets = layouts
+                    .iter()
+                    .map(|&(_, n)| {
+                        let o = offset;
+                        offset += n as u32;
+                        (n, o)
+                    })
+                    .collect();
+                drop(facials);
+                face_rig = Some(FaceRig { row: row_index as u32, head: head.to_string(), facials: fbytes, sets, loaded: Default::default() });
             }
         }
         let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
         if let Some((skeleton, motions, anim, start)) = rig {
-            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start });
+            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take() });
         }
         scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
@@ -1090,7 +1151,7 @@ fn main() -> Result<()> {
     if no_terrain {
         scene.terrain = None;
     }
-    let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, deltas, morph_weights, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     for draw in &mut draws {
@@ -1457,6 +1518,8 @@ fn main() -> Result<()> {
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
     let mut motion_names: Vec<String> = Vec::new();
+    let messages: Vec<barrel_formats::ebm::Message>;
+    let mut face_tables_play: Option<barrel_game::face::Tables> = None;
     let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
@@ -1465,7 +1528,10 @@ fn main() -> Result<()> {
         let xml = |rel: &str| std::fs::read(root.join(rel)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
         let measures = xml("Saves/chara/Chara.xml").map(|t| Measures::table(&t)).unwrap_or_default();
         let curves = xml("Saves/curve/curve_data.xml").map(|t| barrel_game::curve::Curve::table(&t)).unwrap_or_default();
-        let steps = barrel_game::event::Player::escha(event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
+        let stem = Path::new(e).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let ebm = Path::new(e).with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
+        messages = std::fs::read(&ebm).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).unwrap_or_default();
+        let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?.schedule();
         let mut play = Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
         motion_names = std::fs::read_dir(root)?
             .flatten()
@@ -1474,6 +1540,12 @@ fn main() -> Result<()> {
             .filter_map(|p| std::fs::read(p).ok())
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::gesture::motions(&pe)).filter(|m| !m.is_empty()))
             .unwrap_or_default();
+        face_tables_play = std::fs::read_dir(root)?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
+            .filter_map(|p| std::fs::read(p).ok())
+            .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::face::Tables::read(&pe)).filter(|t| !t.brow.is_empty()));
         // Frames written to files are not real time: no stall cap.
         let mut clock = barrel_game::clock::Clock::default();
         clock.max_frame = f64::INFINITY;
@@ -1557,6 +1629,19 @@ fn main() -> Result<()> {
                     _ => {}
                 }
                 let joints = skin(&a.skeleton, &locals);
+                // The face the stage gives the character now (a talking mouth moves).
+                if let (Some(rig), Some(tables), Some(b)) = (a.face.as_mut(), &face_tables_play, play.stage.characters.get(&a.who)) {
+                    let face = tables.expression(rig.row, &rig.head, b.expression.unwrap_or(0), b.talking);
+                    let base = instances[a.instance as usize].weights as usize;
+                    let total: usize = rig.sets.iter().map(|(n, _)| n).sum();
+                    if let Some(block) = morph_weights.get_mut(base..base + total) {
+                        rig.weights(&face, b.talking, shown_time, block);
+                        if std::env::var("BARREL_FACE_LOG").is_ok() {
+                            let on: f32 = block.iter().sum();
+                            eprintln!("frame {frame}: character {} face {:?}{} weight sum {on:.3}", a.who, b.expression, if b.talking { " talking" } else { "" });
+                        }
+                    }
+                }
                 for (k, m) in joints.iter().enumerate() {
                     if let Some(slot) = palette.get_mut(base + k) {
                         *slot = render_space(*m);
@@ -1564,6 +1649,7 @@ fn main() -> Result<()> {
                 }
             }
             gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
+            gpu.upload(weight_mem, unsafe { std::slice::from_raw_parts(morph_weights.as_ptr() as *const u8, morph_weights.len() * 4) })?;
             gpu.upload(palette_mem, unsafe { std::slice::from_raw_parts(palette.as_ptr() as *const u8, palette.len() * size_of::<Mat4>()) })?;
         }
     }
