@@ -329,6 +329,18 @@ So speed takes up to a quarter off every wait (at speed 125 and more). When `RET
 count resets is still to be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`), `action_wait`,
 `wait_after_action` and `knockback` do the above.
 
+### A first duel
+
+`barrel_formats::battle_data` reads the monster and skill tables from the English
+executable, and `barrel_game::duel` puts the pieces above together: two monsters trading the
+monsters' normal attack (`SKILL_ATTACK_ENEMY`, `DAMAGE_HP` 48 to 60, wait 600), each turn
+advancing the timeline, rolling the amount (and the second value), working the damage
+through `skill_damage`, `reduce` and `hit_amount`, drawing the hit sound's number, taking
+the HP, and setting the attacker's next wait from its speed. `barrel duel EXE A B` runs one
+(monster numbers, fixed seed). It is a check that the pieces fit, not the game's battle: the
+start of battle, traits, states, passives, the roll's globals and the action's float are left
+out or taken as neutral, so its numbers are not yet the game's.
+
 ### Random numbers
 
 The game draws every random number from one Xorshift128 generator (Marsaglia's: `t = x ^ (x

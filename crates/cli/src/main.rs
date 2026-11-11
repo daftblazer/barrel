@@ -39,6 +39,7 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel duel EXE A B          two monsters (by number) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG]  run an event and print what happens (LANG: EN, SC, TC; default JP)";
@@ -81,6 +82,7 @@ fn main() -> ExitCode {
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
+        ["duel", exe, a, b] => duel(Path::new(exe), a, b),
         ["recipes", exe] => recipes(Path::new(exe)),
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
@@ -487,6 +489,31 @@ fn pak_xml_e(file: &Path) -> Result<()> {
     }
     println!("{same} identical to their twin, {differ} differ, {alone} without a twin, {failed} failed");
     if failed > 0 { Err("some tables did not decrypt".into()) } else { Ok(()) }
+}
+
+/// A partial battle between two monsters (by number) trading normal attacks; see
+/// `barrel_game::duel` for what it leaves out.
+fn duel(exe: &Path, a: &str, b: &str) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
+    let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
+    // SKILL_ATTACK_ENEMY, the monsters' normal attack.
+    let attack = skills.get(1).ok_or("no skill 1")?;
+    let pick = |s: &str| -> Result<&bd::Monster> {
+        let n: usize = s.parse().map_err(|_| format!("{s}: not a monster number"))?;
+        monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{s}: no such monster").into())
+    };
+    let (ma, mb) = (pick(a)?, pick(b)?);
+    let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
+    let hits = barrel_game::duel::duel(&ma.blocks[0], &mb.blocks[0], attack, &mut rng, 1000);
+    for h in &hits {
+        let (x, y) = if h.attacker == 0 { (ma, mb) } else { (mb, ma) };
+        println!("{} hits {} for {} ({} HP left)", x.name, y.name, h.damage, h.hp_left);
+    }
+    println!("{} hits (partial battle: no traits, states or start rules; see barrel_game::duel)", hits.len());
+    Ok(())
 }
 
 fn faces(exe: &Path) -> Result<()> {

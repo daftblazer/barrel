@@ -3,6 +3,7 @@
 //! Every reader works on bytes already in memory, checks each count and offset it reads
 //! against the input, and returns [`Error`] rather than panicking on bad data.
 
+pub mod battle_data;
 pub mod bc;
 pub mod bc7;
 pub mod ebd;
