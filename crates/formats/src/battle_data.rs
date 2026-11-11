@@ -122,6 +122,12 @@ pub struct Skill {
     pub category: String,
     /// The action's wait before speed (600 for the normal attack).
     pub wait: i32,
+    /// Whom it is aimed at (record +0x10, `0x14015f900`; the target picker `0x1401abf70`):
+    /// 1 and 3 a character on the user's side (3: Howling's self-buff, heals are 1), 2 one on
+    /// the other side (attacks, debuffs), 0 (passives) and 4 no side.
+    pub target: i32,
+    /// Record +0x14: 1 only on the Floating Alchemy bombs (an area, presumably; not read).
+    pub spread: i32,
     pub effects: Vec<SkillEffect>,
     pub description: String,
 }
@@ -233,6 +239,8 @@ pub fn skills(pe: &Pe, table: u64) -> Option<Vec<Skill>> {
             name,
             category: u64_at(d, r + 8).and_then(|p| text(pe, p)).unwrap_or_default(),
             wait: v(2)?,
+            target: v(0)?,
+            spread: v(1)?,
             effects,
             description: u64_at(d, r + 88).and_then(|p| text(pe, p)).unwrap_or_default(),
         });

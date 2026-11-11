@@ -140,13 +140,13 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
             let second = rng.range(e.min2, e.max2);
             battle::add_state(&mut states[target], 0x34, value, second);
         }
-        // Stat buffs go on the user, debuffs on the foe (taken; the skills' targets are not
-        // read yet).
+        // Stat buffs and debuffs go on the skill's target: its own side for target kinds 1
+        // and 3, the other side for 2.
         for e in &attack.effects {
             if let Some((state, minus)) = battle::stat_state(e.act) {
                 let value = rng.range(e.min, e.max);
                 let second = rng.range(e.min2, e.max2);
-                let on = if minus { target } else { who };
+                let on = if matches!(attack.target, 1 | 3) { who } else { target };
                 battle::add_state(&mut states[on], state, if minus { -value } else { value }, second);
                 restat(&mut fighters[on], on, &states[on]);
             }
@@ -218,6 +218,8 @@ mod tests {
             name: "Attack".into(),
             category: String::new(),
             wait: 600,
+            target: 2,
+            spread: 0,
             effects: vec![SkillEffect { act: 0, element: None, min: 48, max: 60, min2: 2, max2: 2 }],
             description: String::new(),
         };
