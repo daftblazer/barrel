@@ -227,11 +227,15 @@ struct Scene {
     terrain: Option<TerrainDraw>,
     lo: Vec3,
     hi: Vec3,
+    /// Per vertex layout, offsets to add to the next model's positions before skinning
+    /// (its blended facial morphs).
+    morph: std::collections::HashMap<usize, Vec<[f32; 3]>>,
 }
 
 impl Scene {
     fn new() -> Scene {
         Scene {
+            morph: Default::default(),
             vertices: Vec::new(),
             indices: Vec::new(),
             draws: Vec::new(),
@@ -272,8 +276,12 @@ impl Scene {
             };
             // The games are left-handed (DirectX): mirror x to draw them right-handed.
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
+            let morph = self.morph.get(&s.layout);
             for i in 0..mesh.positions.len() {
                 let (mut pos, mut nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
+                if let Some(d) = morph.and_then(|m| m.get(mesh.first_vertex + i)) {
+                    pos += Vec3::from(*d);
+                }
                 if let (Some(skin), Some(joints)) = (&skin, joints) {
                     let (j, w) = skin[i];
                     let (mut sp, mut sn) = (Vec3::ZERO, Vec3::ZERO);
@@ -519,6 +527,7 @@ fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Tex
         let format = match t.format {
             Format::Bc1 => vk::Format::BC1_RGBA_UNORM_BLOCK,
             Format::Bc3 => vk::Format::BC3_UNORM_BLOCK,
+            Format::Bc7 => vk::Format::BC7_UNORM_BLOCK,
             Format::Rgba8 => vk::Format::R8G8B8A8_UNORM,
         };
         let levels = t.levels.len() as u32;
@@ -584,6 +593,7 @@ fn main() -> Result<()> {
     let mut alpha_cutoff = 0.3f32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
+    let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
@@ -594,6 +604,8 @@ fn main() -> Result<()> {
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
+            "--morph" => morph_spec = Some(it.next().ok_or("--morph FILE#N")?.clone()),
+            "--face" => face_specs.push(it.next().ok_or("--face FILE#N")?.clone()),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             "--free-camera" => use_event_camera = false,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -622,7 +634,27 @@ fn main() -> Result<()> {
             (None, None) => None,
             _ => return Err("--skeleton and --anim go together".into()),
         };
+        if let Some(m) = &morph_spec {
+            let sets = barrel_formats::g1h::parse(&entry_bytes(m)?)?;
+            for f in &face_specs {
+                let anim = barrel_formats::g1a::parse(&entry_bytes(f)?)?;
+                // The facial animation for a set has one track per target plus the rest shape.
+                let set = sets
+                    .iter()
+                    .find(|s| s.targets.len() + 1 == anim.tracks.len())
+                    .ok_or_else(|| format!("{f}: no morph set with {} targets", anim.tracks.len().saturating_sub(1)))?;
+                let t = time.min(anim.duration);
+                let weight = |bone: usize| {
+                    anim.tracks.iter().find(|tr| tr.bone as usize == bone).and_then(|tr| tr.scalar(t)).unwrap_or(0.0)
+                };
+                eprintln!("face: layout {} from {f}", set.layout);
+                scene.morph.insert(set.layout as usize, set.blend(weight));
+            }
+        } else if !face_specs.is_empty() {
+            return Err("--face needs --morph".into());
+        }
         scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref())?;
+        scene.morph.clear();
         tex_bytes
     };
     let mut pack_bytes = vec![tex_bytes];
@@ -637,7 +669,7 @@ fn main() -> Result<()> {
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
-    let Scene { vertices, indices, draws, terrain, lo, hi } = scene;
+    let Scene { vertices, indices, draws, terrain, lo, hi, .. } = scene;
     if draws.is_empty() || all_textures.is_empty() {
         return Err("nothing to draw".into());
     }

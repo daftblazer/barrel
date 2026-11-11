@@ -44,6 +44,15 @@ track keep their bind pose; a vertex blends up to four joints by its weights (a 
 last weight is 1 minus the others). Escha at 2 s into `PC20_STAND_HAPPY` stands with a hand
 to her cheek and the other at her side, the mesh whole.
 
+**Faces.** `--morph FILE#N --face FILE#N [--face FILE#N ...]` applies facial animations:
+the morph file is the model's `.g1h` (`PC20_MODEL.elixir.gz#15` for Escha), each `--face` a
+brow, eye or mouth animation from the `_FACIAL` container. Each animation goes to the morph
+set with one target fewer than it has tracks, its weights are taken at `--time`, and the
+blended offsets are added to that vertex layout's positions before skinning (see
+`formats.md`, "Morph targets"). Escha with `PC20_EYE_M_ANG_M_*` at 2 s opens her mouth and
+moves her brows and eyes. Her eyes themselves still draw blank white: the eye material
+needs a texture layer or blend the viewer does not do yet.
+
 **Event openings.** `--event FILE.ebd` with `--field` adds the characters an event
 places (see `events.md`) with their own texture packs; the scene's draws index one list of
 textures gathered from every pack. The camera then centres on the characters.

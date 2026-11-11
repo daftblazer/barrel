@@ -522,6 +522,9 @@ pub struct SimpleMesh {
     pub uvs: Vec<[f32; 2]>,
     pub triangles: Vec<[u32; 3]>,
     pub material: usize,
+    /// The layout vertex the first of `positions` is (morph targets count from the
+    /// layout's start).
+    pub first_vertex: usize,
 }
 
 impl Geometry<'_> {
@@ -607,6 +610,7 @@ impl Geometry<'_> {
         let ib = &self.index_buffers[s.index_buffer][s.index_start..s.index_start + s.index_count];
         let lo = ib.iter().copied().min().unwrap_or(0) as usize;
         let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
+        m.first_vertex = lo;
         for v in lo..hi {
             m.positions.push(read(v, pos, 3)?);
             if let Some(a) = nrm {

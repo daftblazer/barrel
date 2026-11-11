@@ -30,6 +30,27 @@ pub struct MorphSet {
     pub targets: Vec<Vec<[f32; 3]>>,
 }
 
+impl MorphSet {
+    /// The offset of each vertex with the targets weighted by `weight(bone)`, where bone
+    /// k + 1 weights target k (bone 0 is the rest shape): the facial animations' tracks.
+    pub fn blend(&self, weight: impl Fn(usize) -> f32) -> Vec<[f32; 3]> {
+        let n = self.targets.first().map_or(0, |t| t.len());
+        let mut out = vec![[0f32; 3]; n];
+        for (k, t) in self.targets.iter().enumerate() {
+            let w = weight(k + 1);
+            if w == 0.0 {
+                continue;
+            }
+            for (o, d) in out.iter_mut().zip(t) {
+                for c in 0..3 {
+                    o[c] += w * d[c];
+                }
+            }
+        }
+        out
+    }
+}
+
 fn u16_at(d: &[u8], at: usize) -> Result<u16, Error> {
     d.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).ok_or(Error::Corrupt("read past the end"))
 }
@@ -50,6 +71,18 @@ fn target(data: &[u8]) -> Result<Vec<[f32; 3]>, Error> {
             [f(0), f(4), f(8)]
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blend_weights_targets_from_bone_one() {
+        let set = MorphSet { layout: 0, targets: vec![vec![[1.0, 0.0, 0.0]], vec![[0.0, 2.0, 0.0]]] };
+        let out = set.blend(|bone| [9.0, 0.5, 1.0][bone]);
+        assert_eq!(out, [[0.5, 2.0, 0.0]]);
+    }
 }
 
 pub fn parse(data: &[u8]) -> Result<Vec<MorphSet>, Error> {
