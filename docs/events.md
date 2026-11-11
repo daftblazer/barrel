@@ -192,6 +192,19 @@ reads it is not followed yet). `c` and `d` are not read there.
 | 11 | a motion number: 31 (`F_WAIT`) in 2,353, 32 `WALK`, 34 `SIT_DOWN`, 33 `RUN`, 67 `EV_ACT_12` | the motion it starts in (the `MOTION_*` enum) |
 | 13 | 1 in 2,166, 2 in 230 | not known |
 
+**`s116` and `s117`.** The character's own command runner (`EventExecChara`, vtable
+`0x14081b140`; its filter takes commands whose first operand is the character's +0x81c, and
+its slot +0x28 is what a `p3` on that character asks) runs both, in its switch at
+`0x1401eff04`:
+
+- `s116` (0x73000074, `{character, segment, duration, blend}`, 1,604 uses) plays one segment
+  of a motion clip on the character's motion player (+0x38, `0x1404ee950`): `0x140037a10`
+  turns the segment (0 to 7) into a frame range at 30 frames a second, 0-39, 54-88, 103-137,
+  147-181, 192-223, 237-267, 282-312 or 327-360; duration and blend are hundredths of a
+  second. The events use segments 4 and 6, a duration of 99900 (999 s, so it holds) and a
+  blend of 20 to 40 (0.2 to 0.4 s). Which clip the segments are cut from is not read yet.
+- `s117` (0x73000075, `{character}`, 1,632 uses) clears the character's +0x8d, ending it.
+
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 
 ## Who handles them
@@ -209,7 +222,7 @@ That gives a place for 61 of the 106 unnamed commands. The ones that matter most
 |---|---|---|---|
 | `u18` | 4,990 | `B3Balloon` | show a speech balloon (a message line) |
 | `t20/0x10` and the other `t…/0x10` | 4,484 | `CameraCFieldMap`, `EventExecCamera` | field-map camera |
-| `s116`, `s117` | 1,604, 1,632 | `EventExecChara` | character |
+| `s116`, `s117` | 1,604, 1,632 | `EventExecChara` | play a segment of a motion, and stop it ("`s116` and `s117`" below) |
 | `u9/0x40`, `u10/0x40` | 3,628 each | `Event` | event flow; always together, with no operands |
 | `u67`, `u68`, `u16` | 294, 194, 98 | `B3Balloon` | balloon variants |
 | `u1/0x30`, `u2/0x30` | 243, 84 | `IpuGallery` | still pictures (Ipu are the CG images) |
