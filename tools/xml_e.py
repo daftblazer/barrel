@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""Unscramble an encrypted table (`.xml.e`, Sophie 2 and the Ryza games): prototype.
+"""Decrypt an encrypted table (`.xml.e`, Sophie 2 and the Ryza games): prototype.
 
-    xml_e.py FILE.xml.e
+    xml_e.py FILE.xml.e OUT.xml
 
-Runs the stages read from the Ryza DX executable (docs/survey.md, "Encrypted tables") up
-to the decompression, which is still to be read, and prints the stored checksums next to
-the computed ones.
+Follows the stages read from the Ryza DX executable (docs/survey.md, "Encrypted tables"):
+unscrambling, the two checksums, then the LZ decompression. Checked against the plain
+`.xml` twins: 386 of Ryza DX's 391 pairs match byte for byte; in the other 5 the shipped
+plain twin is the one that differs (a damaged comment, for instance).
 """
 import struct,sys
 MULT=0x3b9a73c9
 class Rng:
-    def __init__(s,state): s.state=state&0xffffffff
+    def __init__(s,state,mult=MULT): s.state=state&0xffffffff; s.mult=mult
     def next(s):
-        s.state=(s.state*MULT+0x2f09)&0xffffffff
+        s.state=(s.state*s.mult+0x2f09)&0xffffffff
         v=s.state
         if v&0x80000000: v-=1<<32
         return (v>>16)&0x7fff
-def bit_shuffle(buf,start,length,seed,chunk):
-    rng=Rng(seed); pos=start
+def bit_shuffle(buf,start,length,seed,chunk,mult=MULT):
+    rng=Rng(seed,mult); pos=start
     while length>0:
         n=min(length,chunk); nbits=n*8
         lst=list(range(nbits)); perm=[]
@@ -43,7 +44,6 @@ def decode(raw):
     bit_shuffle(d,n-last,last,0x6d3f,0x100)
     words(d,0xcb53)
     return ver,size,d
-
 def stage3(d):
     n=len(d)
     e=n-12
@@ -68,12 +68,55 @@ def stage3(d):
     for i in range(0,edi//4*4,4):
         v=struct.unpack_from('>I',d,i)[0]; s_sub=(s_sub-v)&0xffffffff; s_xor^=(~v)&0xffffffff
     want_xor=struct.unpack_from('>I',d,n-8)[0]; want_sub=struct.unpack_from('>I',d,n-12)[0]
-    print('checksums', hex(s_xor),hex(want_xor), hex(s_sub),hex(want_sub))
+    if (s_xor,s_sub)!=(want_xor,want_sub): raise ValueError('checksum mismatch')
     out=d[:edi]
-    bit_shuffle(out,0,min(edi,0x800),0x74b9,0x80)
+    bit_shuffle(out,0,min(edi,0x800),0x74b9,0x80,mult)
     return out
+def gamma(buf):
+    n=struct.unpack_from('>I',buf,0)[0]
+    out=bytearray(); pos=4; bit=7
+    def get():
+        nonlocal pos,bit
+        v=(buf[pos]>>bit)&1
+        if bit==0: bit=7; pos+=1
+        else: bit-=1
+        return v
+    def peek(): return (buf[pos]>>bit)&1
+    while len(out)<n:
+        k=0
+        while k<8 and peek()==0: get(); k+=1
+        if k==8: out.append(0); continue
+        v=0
+        for _ in range(k+1): v=(v<<1)|get()
+        out.append(v&0xff)
+    return out
+def lz(c):
+    total,b=struct.unpack_from('>II',c,0)
+    cmd=gamma(c[8:8+b])
+    p=8+b; cl=struct.unpack_from('>I',c,p)[0]; lit=c[p+4:p+4+cl]
+    p=p+4+cl; dl=struct.unpack_from('>I',c,p)[0]; ext=c[p+4:p+4+dl]
+    out=bytearray(); i=0; li=0; ei=0
+    while i<len(cmd):
+        op=cmd[i]; i+=1
+        if op==1: out.append(lit[li]); li+=1
+        elif op==2: d=cmd[i]; i+=1; out.append(out[-d])
+        elif op in (3,4,5):
+            if op==3: b0=cmd[i]; ln=cmd[i+1]+1; i+=2; dist=b0+ln
+            elif op==4: ln=cmd[i]+1; i+=1; dist=lit[li]+ln; li+=1
+            else: hi=cmd[i]; ln=cmd[i+1]+1; i+=2; dist=(hi<<8)+lit[li]+ln; li+=1
+            s=len(out)-dist+1
+            for k in range(ln): out.append(out[s+k])
+        elif op==6:
+            n=cmd[i]+8; i+=1; out+=lit[li:li+n]; li+=n
+        elif op==7:
+            n=ext[ei]+0xe; ei+=1; out+=lit[li:li+n]; li+=n
+        else: raise ValueError('op %d'%op)
+    return total,out
+
+
 if __name__ == '__main__':
     ver, size, d = decode(open(sys.argv[1], 'rb').read())
-    out = stage3(d)
-    print('version', ver, 'plain size', size, 'compressed', len(out))
-    print(out[:64].hex())
+    total, out = lz(stage3(d))
+    if total != size or len(out) != size:
+        sys.exit('size mismatch')
+    open(sys.argv[2], 'wb').write(out)

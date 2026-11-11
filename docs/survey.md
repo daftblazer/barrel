@@ -150,11 +150,28 @@ has to be broken. The Ryza DX executable (not DRM-wrapped) shows how it reads th
      longer after every round of three.
   4. **Checks**: over the big-endian u32s before the marker, 0 minus their sum and the XOR
      of their complements must equal the two stored checks.
-  5. **Bit shuffle** of the first 0x800 bytes (seed 0x74b9, chunks of 0x80).
-  6. `0x1404755e0` decompresses what is left (still to be read).
+  5. **Bit shuffle** of the first 0x800 bytes (seed 0x74b9, chunks of 0x80), still with
+     stage 3's multiplier (it is put back to 0x3b9a73c9 only afterwards).
+  6. **Decompression** (`0x1404755e0`). The data is big-endian u32s and streams: the
+     output size; the length of a command stream, then the stream; the length of a
+     literal stream, then the stream; the length of an extra stream, then the stream.
+     The command stream is packed itself (`0x140475e00`): a u32 count, then that many
+     bytes in an Elias-gamma code read most significant bit first (k zero bits, then k + 1
+     bits for the value; eight zeros mean 0). The commands then build the output:
 
-  `tools/xml_e.py` runs stages 1 to 5; on `freeachievement.xml.e` both checks match
-  (0x22b16218, 0x38aba7de), leaving 3,473 compressed bytes for a 23,144-byte table.
+     | Command | Then | Does |
+     |---|---|---|
+     | 1 | | copy one literal |
+     | 2 | d | copy the byte d back |
+     | 3 | a, n | copy n + 1 bytes from a + n + 1 back, plus one |
+     | 4 | n (and a literal a) | the same, with a from the literal stream |
+     | 5 | h, n (and a literal l) | the same, from (h << 8) + l + n + 1 back, plus one |
+     | 6 | n | copy n + 8 literals |
+     | 7 | (n from the extra stream) | copy n + 14 literals |
+
+  `tools/xml_e.py` decrypts a file. On Ryza DX, 386 of the 391 tables that have a plain
+  twin come out identical to it; in the other 5 the shipped twin is the odd one out (a
+  damaged byte in a Japanese comment, where the decrypted copy reads 基本設定).
 
 ## What the games share
 
