@@ -179,8 +179,8 @@ Three cases read so far:
   integer), and the effect value gains param 2.
 - Type 0, Conversion: param 1 is added to the selected element's point count, up to 5.
 
-`barrel_game::synthesis` follows these rules (materials, Conversion, Reset Attribute, Full
-Power), with the cauldron's state kept in its own terms rather than the game's layout. A
+`barrel_game::synthesis` follows these rules (materials and their cost points, Conversion,
+CP Recovery, Crafting Help, Reset Attribute, Full Power), with the cauldron's state kept in its own terms rather than the game's layout. A
 material's element value is `itemData`'s `value` (the loaded row keeps it at +0x48, getter
 `0x1402a1530`). `barrel synth INSTALL ITEM MATERIAL...` runs one with item numbers and
 prints each line's effect (names from `Saves_EN/item/item_effect.xml`, whose rows are the
@@ -220,6 +220,32 @@ instance):
 
 So a Fire-and-Water material with element value 10 adds 10 to the Fire attribute and 10
 to the Water attribute.
+
+**The whole add-material step** (`0x1403040d0`): the new state starts as a copy of the
+previous one, and counts the material (+4, +8, +0xc). The state keeps one 40-byte entry per
+ingredient slot at +0x420 + 40 × slot, holding the material's cost points (+0), its
+element value (+0xc) and a bonus (+0x10). The step marks the slot used (+0x18) and copies
+the item's two traits into +0x38. Then come the cost points:
+
+- used = the slot's cost × a percentage the synthesis screen passes / 100;
+- cost points left (+0x10, copied to +0x14) drop by that, and +0x1c records it;
+- if the material costs something and the points left would be below 0, the state is
+  marked invalid (+0x4d8 = 0) and the material is not added. Otherwise the elements are
+  added (above), then the element points (below), and +0x3e0 counts the cost.
+
+Where a slot entry's cost and element value are first set is still open; the skills change
+them in place. Power+ (type 2) and Strengthen Material (24) raise the element value, and
+Crafting Help (20) takes param 1 percent off the cost, never below 0.
+
+Other skill cases found here:
+
+| Type | Skill | What it changes |
+|---|---|---|
+| 5 | Draw Property | +0x3f4 gains param 1 |
+| 18 | Compression | +0x4c8 gains param 1 (days), +0x4d0 gains param 2 |
+| 19 | Effect+ | the effect value bonus gains param 1 |
+| 21 | Quantity | +0x4d4 (uses) or +0x4cc (count) gains param 1, depending on the recipe |
+| 22 | CP Recovery | cost points left (+0x10, +0x14) gain param 1, no limit |
 
 **Element points** (`0x140305040`, only once Bonus Generation, skill type 15, is learnt):
 each element the finished item has gives 1 point. Then up to two of the state's traits

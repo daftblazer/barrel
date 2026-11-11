@@ -35,6 +35,8 @@ pub struct Material {
     pub element_value: i32,
     /// Its effect value (starts from `itemData`'s `effect`).
     pub effect: f32,
+    /// The cost points it uses up (where the game takes this from is still open).
+    pub cp: i32,
 }
 
 impl Material {
@@ -46,8 +48,15 @@ impl Material {
             elements: ["fire", "water", "wind", "soil"].map(|e| num(e) > 0),
             element_value: num("value"),
             effect: num("effect") as f32,
+            cp: 0,
         }
     }
+}
+
+/// A material's cost after Crafting Help (type 20): `percent` of it comes off, never
+/// below 0. Crafting Help 3 takes 100 off.
+pub fn crafting_help(cp: i32, percent: i32) -> i32 {
+    (cp - cp * percent / 100).max(0)
 }
 
 /// The skills whose effect on the state is known.
@@ -55,6 +64,8 @@ impl Material {
 pub enum Skill {
     /// Type 0: the element gains this many points.
     Conversion { points: i32 },
+    /// Type 22: the cost points left grow by `amount`, with no limit.
+    CpRecovery { amount: i32 },
     /// Type 4: the selected attribute goes to 0; each other one gains a third of it, times
     /// `percent` / 100.
     ResetAttribute { percent: i32 },
@@ -76,11 +87,18 @@ pub struct Synthesis {
     pub effect_bonus: i32,
     /// Each element's points, for skills.
     pub points: [i32; 4],
+    /// Cost points left.
+    pub cp: i32,
 }
 
 impl Synthesis {
     pub fn new() -> Synthesis {
         Synthesis::default()
+    }
+
+    /// A synthesis with `cp` cost points to spend.
+    pub fn with_cp(cp: i32) -> Synthesis {
+        Synthesis { cp, ..Synthesis::default() }
     }
 
     /// The effect value: the materials' average, plus the skill bonus, at most 120.
@@ -95,8 +113,17 @@ impl Synthesis {
         std::array::from_fn(|k| effect_at(&lines[k], self.attributes[k] as i32))
     }
 
-    /// Put a material in: each element it has gains its element value.
-    pub fn add(&mut self, m: &Material) {
+    /// Put a material in: it uses up its cost points (the game refuses it, changing nothing,
+    /// when it costs some and too few are left), then each element it has gains its element
+    /// value. Returns whether it went in.
+    pub fn add(&mut self, m: &Material) -> bool {
+        // The game scales the cost by a percentage passed in by the synthesis screen; at
+        // 100 it is the cost itself. What else it can be is still open.
+        let used = m.cp;
+        if used > 0 && self.cp - used < 0 {
+            return false;
+        }
+        self.cp -= used;
         self.effect_sum += m.effect;
         self.materials += 1;
         for e in 0..4 {
@@ -109,6 +136,7 @@ impl Synthesis {
             *a = a.min(MAX_ATTRIBUTE);
             self.total += *a as i32;
         }
+        true
     }
 
     /// Pay a skill's cost in element points; a count never goes below 0.
@@ -121,6 +149,7 @@ impl Synthesis {
     /// Use `skill` on element `e`, after paying for it.
     pub fn use_skill(&mut self, skill: Skill, e: usize) {
         match skill {
+            Skill::CpRecovery { amount } => self.cp += amount,
             Skill::Conversion { points } => {
                 self.points[e] = (self.points[e] + points).clamp(0, MAX_POINTS);
             }
@@ -156,8 +185,8 @@ impl Synthesis {
 mod tests {
     use super::*;
 
-    const FIRE_WATER: Material = Material { elements: [true, true, false, false], element_value: 10, effect: 50.0 };
-    const EARTH: Material = Material { elements: [false, false, false, true], element_value: 15, effect: 60.0 };
+    const FIRE_WATER: Material = Material { elements: [true, true, false, false], element_value: 10, effect: 50.0, cp: 0 };
+    const EARTH: Material = Material { elements: [false, false, false, true], element_value: 15, effect: 60.0, cp: 0 };
 
     #[test]
     fn materials_fill_their_elements() {
@@ -199,7 +228,7 @@ mod tests {
         )
         .unwrap();
         let m = Material::from_item(&root.children[0]);
-        assert_eq!(m, Material { elements: [true, false, true, false], element_value: 10, effect: 50.0 });
+        assert_eq!(m, Material { elements: [true, false, true, false], element_value: 10, effect: 50.0, cp: 0 });
     }
 
     #[test]
@@ -217,9 +246,23 @@ mod tests {
     }
 
     #[test]
+    fn cost_points() {
+        let m = Material { cp: 6, ..EARTH };
+        let mut s = Synthesis::with_cp(10);
+        assert!(s.add(&m));
+        assert_eq!(s.cp, 4);
+        assert!(!s.add(&m)); // 4 left, costs 6: refused
+        assert_eq!((s.cp, s.attributes[3]), (4, 15.0));
+        s.use_skill(Skill::CpRecovery { amount: 25 }, 0);
+        assert!(s.add(&m));
+        assert_eq!(s.cp, 23);
+        assert_eq!((crafting_help(6, 50), crafting_help(6, 75), crafting_help(6, 100)), (3, 2, 0));
+    }
+
+    #[test]
     fn skills() {
         let mut s = Synthesis::new();
-        s.add(&Material { elements: [true; 4], element_value: 30, effect: 100.0 });
+        s.add(&Material { elements: [true; 4], element_value: 30, effect: 100.0, cp: 0 });
         s.use_skill(Skill::ResetAttribute { percent: 100 }, 0);
         assert_eq!(s.attributes, [0.0, 40.0, 40.0, 40.0]);
         assert_eq!(s.total, 120);
