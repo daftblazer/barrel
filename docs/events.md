@@ -131,6 +131,10 @@ pauses: 50 (half a second) 3,806 times, 10 2,647 times, then 100, 150, 200 and u
 seconds. `u1` (0x75000001) waits 0.3 s, a constant in the same handler. `play-event` prints
 both as waits.
 
+`barrel_game::event::Player` also turns `s3`, `s4` and `s10` into steps of their own (a
+character's wait, place and looping motion, each with the action it belongs to), and
+`play-event` prints them with the character's name (`Escha plays motion 32 (blend 0.40 s)`).
+
 The other `p` commands (`p2` to `p5`, and a few others such as `0x71000023`, `0x72000013`,
 `0x7200000f`) wait until a listener says a thing is done (`0x140052f35` in the event
 player's update). `p3` (`ECT_MACRO_CHARA_WAIT`) takes a character number (1 and 0, Logy and

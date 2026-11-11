@@ -1107,6 +1107,18 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
                 println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));
             }
             Step::Wait { seconds } => println!("      (wait {seconds:.2} s)"),
+            Step::CharacterWait { action, character, seconds } => {
+                let who = names.get(character as usize).map_or("?", String::as_str);
+                println!("{action:3} {who} waits {seconds:.2} s");
+            }
+            Step::Place { action, character, position } => {
+                let who = names.get(character as usize).map_or("?", String::as_str);
+                println!("{action:3} {who} at ({}, {}, {})", position[0], position[1], position[2]);
+            }
+            Step::Motion { action, character, motion, blend } => {
+                let who = names.get(character as usize).map_or("?", String::as_str);
+                println!("{action:3} {who} plays motion {motion} (blend {blend:.2} s)");
+            }
             Step::WaitForCharacter { character } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("      (wait for {who})");

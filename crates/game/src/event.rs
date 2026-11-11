@@ -20,6 +20,12 @@ pub const TIME_WAIT: u32 = 0x7000_0001;
 pub const SHORT_WAIT: u32 = 0x7500_0001;
 /// `p3` (`ECT_MACRO_CHARA_WAIT`): wait for a character (its number).
 pub const CHARA_WAIT: u32 = 0x7000_0003;
+/// `s3` (`ECT_CHARA_TIME_WAIT`): a character waits, `{character, hundredths}`.
+pub const CHARA_TIME_WAIT: u32 = 0x7300_0003;
+/// `s4` (`ECT_CHARA_POS_SET`): `{character, 0, 0, 0, x, y, z}`.
+pub const CHARA_POS_SET: u32 = 0x7300_0004;
+/// `s10` (`ECT_CHARA_MOTION_SET_LOOP`): `{character, motion, blend (hundredths), flag}`.
+pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
 /// `w1`: a step marker.
 pub const STEP: u32 = 0x7700_0001;
 
@@ -33,6 +39,13 @@ pub enum Step<'a> {
     /// Wait until a character (by `Chara.xml` row) is ready (`p3`); what "ready" means is
     /// still open (`docs/events.md`, "Waits").
     WaitForCharacter { character: u32 },
+    /// A character pauses its own commands (`s3`) while the event goes on.
+    CharacterWait { action: usize, character: u32, seconds: f32 },
+    /// A character is put at a point in field units (`s4`).
+    Place { action: usize, character: u32, position: [f32; 3] },
+    /// A character plays a looping motion (`s10`; a `MOTION_*` number), blending over `blend`
+    /// seconds.
+    Motion { action: usize, character: u32, motion: u32, blend: f32 },
     /// A command the player does not handle itself.
     Command { action: usize, word: u32, name: Option<&'static str>, operands: &'a [u32] },
 }
@@ -85,6 +98,17 @@ impl<'a> Iterator for Player<'a> {
                 (TIME_WAIT, []) => return Some(Step::Wait { seconds: 0.0 }),
                 (SHORT_WAIT, _) => return Some(Step::Wait { seconds: 0.3 }),
                 (CHARA_WAIT, [character, ..]) => return Some(Step::WaitForCharacter { character: *character }),
+                (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
+                    return Some(Step::CharacterWait { action, character: *character, seconds: *hundredths as i32 as f32 / 100.0 })
+                }
+                (CHARA_POS_SET, [character, _, _, _, x, y, z, ..]) => {
+                    let f = |v: u32| v as i32 as f32;
+                    return Some(Step::Place { action, character: *character, position: [f(*x), f(*y), f(*z)] });
+                }
+                (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
+                    let blend = rest.first().map_or(0.0, |&b| b as i32 as f32 / 100.0);
+                    return Some(Step::Motion { action, character: *character, motion: *motion, blend });
+                }
                 (SHOW_MESSAGES, [first, last]) => {
                     for i in *first as usize..=(*last as usize) {
                         if let Some(m) = self.messages.get(i) {
@@ -107,11 +131,22 @@ mod tests {
 
     #[test]
     fn messages_come_out_in_ranges() {
-        let words = vec![STEP, 1, SHOW_MESSAGES, 0, 1, 0x7300_0006, 4, TIME_WAIT, 50, SHOW_MESSAGES, 2, 2, END];
+        let words = vec![
+            STEP, 1, SHOW_MESSAGES, 0, 1, 0x7300_0006, 4, TIME_WAIT, 50, SHOW_MESSAGES, 2, 2,
+            CHARA_POS_SET, 0, 0, 0, 0, 100, (-5i32) as u32, 200, CHARA_MOTION_LOOP, 0, 32, 40, 1, CHARA_TIME_WAIT, 1, 150, END,
+        ];
         let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words }], resources: vec![] };
         let msg = |t: &str| Message { kind: 1, speaker: 0, fields: vec![0; 6], after: Vec::new(), text: t.into() };
         let messages = vec![msg("a"), msg("b"), msg("c")];
-        let table = OperandTable::new(&[(STEP, Some(1)), (SHOW_MESSAGES, Some(2)), (0x7300_0006, Some(1)), (TIME_WAIT, Some(1))]);
+        let table = OperandTable::new(&[
+            (STEP, Some(1)),
+            (SHOW_MESSAGES, Some(2)),
+            (0x7300_0006, Some(1)),
+            (TIME_WAIT, Some(1)),
+            (CHARA_POS_SET, Some(7)),
+            (CHARA_MOTION_LOOP, Some(4)),
+            (CHARA_TIME_WAIT, Some(2)),
+        ]);
         let steps: Vec<Step> = Player::escha(&event, &messages, &table).unwrap().collect();
         let texts: Vec<String> = steps
             .iter()
@@ -120,8 +155,14 @@ mod tests {
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),
+                Step::CharacterWait { character, seconds, .. } => format!("{character} waits {seconds}"),
+                Step::Place { character, position, .. } => format!("{character} at {position:?}"),
+                Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
             })
             .collect();
-        assert_eq!(texts, ["a", "b", "ECT_CHARA_MOTION_WAIT", "wait 0.5", "c"]);
+        assert_eq!(
+            texts,
+            ["a", "b", "ECT_CHARA_MOTION_WAIT", "wait 0.5", "c", "0 at [100.0, -5.0, 200.0]", "0 motion 32 blend 0.4", "1 waits 1.5"]
+        );
     }
 }
