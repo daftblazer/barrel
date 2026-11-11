@@ -1395,6 +1395,14 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 };
                 println!("{action:3} camera {part:?} {what}");
             }
+            Step::Turn { action, character, rotation } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
+                println!("{action:3} {who} turns to {:.0}°", rotation[1].to_degrees());
+            }
+            Step::Face { action, character, toward } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
+                println!("{action:3} {who} faces {}", describe_position(&toward));
+            }
             Step::CharacterMove { action, character, extra, movement } => {
                 let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
                 println!("{action:3} {who} {} (extra {extra})", describe_move(&movement));

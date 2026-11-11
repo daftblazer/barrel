@@ -343,8 +343,16 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 in `SKILL_COMMON_MOB25_APPEAR_00` the camera starts on the monster (character 10002) from
 4 m out and pulls back to 9 m in a second, easing to a stop.
 
+**Facings.** `s23` (`ECT_CHARA_ROT_SET`, `{character, x, y, z}`, 4,668 uses; `0x1401f097c`
+in the runner switch) sets the character's rotation (+0x240) to the three angles in degrees;
+the middle one is the facing (0 towards +z, 90 towards +x), the same angle a move that
+turns its character writes, and the other two are nearly always 0. `s24`
+(`ECT_CHARA_ROT_SET_TARGET`, `{character, position}`, 6,809 uses) turns it to face a
+position on the ground (`0x1401f4f50`: the yaw of the direction, 0 if the position is where
+it stands). `s25` (`…_TARGET_ALL`) does the same through `0x1401f50c0`, not read.
+
 **The stage.** `barrel_game::stage::Stage` plays the timed steps on a clock of 1/30 s
-frames (the events' frame time, `0x14077ba78`): `s4` places a character, `s18` starts a
+frames (the events' frame time, `0x14077ba78`): `s4` places a character, `s23`/`s24` turn it, `s18` starts a
 mover from where it is, and the camera's eye and target are set or moved, positions measured
 from characters taking the character's place and facing. `barrel play-event FILE --stage`
 prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` character 16

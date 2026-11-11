@@ -123,6 +123,22 @@ impl Stage {
                 b.position = *position;
                 b.mover = None;
             }
+            Step::Turn { character, rotation, .. } => match self.characters.get_mut(character) {
+                Some(b) => b.facing = rotation[1],
+                None => self.unresolved += 1,
+            },
+            Step::Face { character, toward, .. } => {
+                let Some(at) = self.resolve(toward) else {
+                    self.unresolved += 1;
+                    return;
+                };
+                let Some(b) = self.characters.get_mut(character) else {
+                    self.unresolved += 1;
+                    return;
+                };
+                let (dx, dz) = (at[0] - b.position[0], at[2] - b.position[2]);
+                b.facing = if dx == 0.0 && dz == 0.0 { 0.0 } else { dx.atan2(dz) };
+            }
             Step::CharacterMove { character, extra, movement, .. } => {
                 let Some(to) = self.resolve(movement.to()) else {
                     self.unresolved += 1;
@@ -224,7 +240,11 @@ mod tests {
             Timed { time: 3.0, action: 0, step: Step::Camera { action: 0, part: Part::Eye, change: Change::Set(on(9, 0.0)) } },
         ];
         let escha = Measures { height: 151.0, radius: 27.0, fractions: [0.0, 0.7, 0.91, 1.0, 0.7, 1.0, 1.0] };
+        let mut steps = steps;
+        steps.push(Timed { time: 4.0, action: 0, step: Step::Place { action: 0, character: 8, position: [300.0, 0.0, -100.0] } });
+        steps.push(Timed { time: 4.0, action: 0, step: Step::Face { action: 0, character: 8, toward: on(7, 0.0) } });
         let stage = Stage::play(&steps, BTreeMap::from([(7, escha)]), |_, _| {});
+        assert!(stage.characters[&8].facing.abs() < 1e-6);
         let b = &stage.characters[&7];
         assert_eq!(b.position, [300.0, 0.0, 0.0]);
         assert!((b.facing - std::f32::consts::FRAC_PI_2).abs() < 1e-4);

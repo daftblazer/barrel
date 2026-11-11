@@ -27,6 +27,10 @@ pub const CHARA_TIME_WAIT: u32 = 0x7300_0003;
 pub const CHARA_POS_SET: u32 = 0x7300_0004;
 /// `s10` (`ECT_CHARA_MOTION_SET_LOOP`): `{character, motion, blend (hundredths), flag}`.
 pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
+/// `s23` (`ECT_CHARA_ROT_SET`): `{character, x, y, z}`, degrees.
+pub const CHARA_ROT_SET: u32 = 0x7300_0017;
+/// `s24` (`ECT_CHARA_ROT_SET_TARGET`): `{character, position (6)}`.
+pub const CHARA_ROT_SET_TARGET: u32 = 0x7300_0018;
 /// `s18` (`ECT_CHARA_MOVE_SET`): `{character, position (6), extra, type, ...}`.
 pub const CHARA_MOVE: u32 = 0x7300_0012;
 /// `w1` (0x77000001): start action N (its operand) alongside the one running. Action 0 is the
@@ -58,6 +62,14 @@ pub enum Step<'a> {
     /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
     /// `t9`; [`crate::camera`]).
     Camera { action: usize, part: crate::camera::Part, change: crate::camera::Change },
+    /// A character's rotation is set (`s23`, `ECT_CHARA_ROT_SET`, `{character, x, y, z}` in
+    /// degrees, here in radians): `rotation[1]` is the facing about the vertical axis, 0
+    /// towards +z (the runner's +0x240, the same angle a move's facing writes).
+    Turn { action: usize, character: u32, rotation: [f32; 3] },
+    /// A character turns to face a position, on the ground (`s24`,
+    /// `ECT_CHARA_ROT_SET_TARGET`; `0x1401f4f50`: yaw from the direction, 0 when the position
+    /// is where the character stands).
+    Face { action: usize, character: u32, toward: crate::camera::Position },
     /// A character starts moving (`s18`, `ECT_CHARA_MOVE_SET`; [`crate::camera::Move`]).
     CharacterMove { action: usize, character: u32, extra: u32, movement: crate::camera::Move },
     /// A command the player does not handle itself.
@@ -121,6 +133,14 @@ impl<'a> Player<'a> {
                         out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text() });
                     }
                 }
+            }
+            (CHARA_ROT_SET, [character, x, y, z, ..]) => {
+                let rotation = [*x, *y, *z].map(|v| (v as i32 as f32).to_radians());
+                out.push(Step::Turn { action, character: *character, rotation })
+            }
+            (CHARA_ROT_SET_TARGET, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
+                let (toward, _) = crate::camera::Position::read(rest).unwrap();
+                out.push(Step::Face { action, character: *character, toward })
             }
             (CHARA_MOVE, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
                 let (extra, movement) = crate::camera::Move::read_with_extra(rest).unwrap();
@@ -295,6 +315,7 @@ mod tests {
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
+                Step::Turn { character, .. } | Step::Face { character, .. } => format!("{character} turns"),
             })
             .collect();
         assert_eq!(
