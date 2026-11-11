@@ -196,6 +196,25 @@ no bonus; 100 for `RETURN_WT`, 500 for `ADD_MAXHP`), i32 (5 for `DAMAGE_HP`, 25 
 `ASSIST_ATTACK`), then 8 flag bytes. `0x14002aa40` reads the limit (9999 for a number out of
 range).
 
+### Rolling the amounts (executable)
+
+`0x1401bd520` (English Escha executable) then goes over the action's effects: for each
+effect with a number, the amount (+0x20) is a random number from the minimum to the maximum
+(+8, +0xc), and the second value (+0x24) one from the two values after (+0x10, +0x14). It
+then works out the effect's float scale (+0x28) from the user's and target's states and
+traits (a percentage from 100 moved by several traits; several factors applied only when the
+`ACT_*` property table's flags say so; constants 100, 1, 0.5, 0.15 and 0.1), not yet
+written out; for items it also adds item-specific terms.
+
+### Random numbers
+
+The game draws every random number from one Xorshift128 generator (Marsaglia's: `t = x ^ (x
+<< 11)`, then `x, y, z = y, z, w` and `w = w ^ (w >> 19) ^ t ^ (t >> 8)`), state `x, y, z, w`
+at `0x1410c2fd8`. A number from `a` to `b` (`0x1404ca660`, both included, in either order) is
+`low + (w & 0x7fffffff) % (high - low + 1)`, and draws nothing when `a == b`. The state is not
+in the file, and the code that seeds it is still to be found. `barrel_game::rng` is the same
+generator.
+
 ### Applying effects (executable)
 
 The function at `0x1401bde10` (English Escha executable) applies a resolved action's effects

@@ -93,7 +93,7 @@ mod tests {
     fn messages_come_out_in_ranges() {
         let words = vec![STEP, 1, SHOW_MESSAGES, 0, 1, 0x7300_0006, 4, SHOW_MESSAGES, 2, 2, END];
         let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words }], resources: vec![] };
-        let msg = |t: &str| Message { kind: 1, speaker: 0, fields: [0; 6], text: t.into() };
+        let msg = |t: &str| Message { kind: 1, speaker: 0, fields: vec![0; 6], after: Vec::new(), text: t.into() };
         let messages = vec![msg("a"), msg("b"), msg("c")];
         let table = OperandTable::new(&[(STEP, Some(1)), (SHOW_MESSAGES, Some(2)), (0x7300_0006, Some(1))]);
         let steps: Vec<Step> = Player::escha(&event, &messages, &table).unwrap().collect();
