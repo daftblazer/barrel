@@ -85,7 +85,8 @@ its position in a table of 24-byte field tags in the executable, 0 `TOWN_01` to 
 the folder names under `Data/x64/Field/`.
 
 **Placing characters.** `ECT_FIELDMAP_CHARA_ADDITION_EX` (`q4`) is `{character, 0, 0, 0, x,
-y, z, 0, angle in degrees, ...}` in field coordinates; `ECT_CHARA_POS_SET` (`s4`) is
+y, z, 0, angle in degrees, ...}` in field coordinates (all 14 operands below, "Adding and
+removing characters"); `ECT_CHARA_POS_SET` (`s4`) is
 `{character, 0, 0, 0, x, y, z}`. A character's model is found through its `Chara.xml` row's
 `BaseTag` and that tag's `Model` in `CharaBase.xml` (`PC20/PC20_MODEL`, under
 `Data/x64/Character/`). `barrel-view --field <TOWN_04> --event FILE.ebd` draws an event's
@@ -167,6 +168,29 @@ as its filter `0x140071030` lists) finds the character by number and sets its +0
 `collides` (when that changes, the character's collision body is added to the field's
 collision world, `0x140506fc0`, or taken out, `0x140507070`) and its +0x129 flag from `b` (what
 reads it is not followed yet). `c` and `d` are not read there.
+
+**Adding and removing characters.** In the field character listener (`0x140071160`):
+
+- `q3` (`ECT_FIELDMAP_CHARA_ADDITION`, `{character, v}`) creates the character if the field
+  has none of that number (`0x140075720`) and sets its +0x148 to `v` (0 in the events);
+- `q5` (`ECT_FIELDMAP_CHARA_DELETE`, `{character}`) removes it (`0x1400758e0`);
+- `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`) creates it if needed, sets +0x148 from operand 12,
+  and hands the whole command to the character's own command player (`0x14026cf70`, which
+  queues it at character +0x10 through `0x140211970`), which places it;
+- `0x71000027` does the same as `q4` with a 13th operand, passed when creating the character
+  (when not above 0).
+
+`q4`'s operands over Escha's 2,398 uses:
+
+| Operand | Values | What |
+|---|---|---|
+| 1 | character | `Chara.xml` row |
+| 2, 4, 8, 10, 12, 14 | always 0 | |
+| 3 | 0, or 709 in 90 | not known |
+| 5, 6, 7 | x, y, z | position in field units |
+| 9 | angle in degrees | facing |
+| 11 | a motion number: 31 (`F_WAIT`) in 2,353, 32 `WALK`, 34 `SIT_DOWN`, 33 `RUN`, 67 `EV_ACT_12` | the motion it starts in (the `MOTION_*` enum) |
+| 13 | 1 in 2,166, 2 in 230 | not known |
 
 Not yet: the camera's moves over time and its two unidentified angles, characters' motions during the event.
 
