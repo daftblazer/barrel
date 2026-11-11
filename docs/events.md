@@ -89,12 +89,13 @@ is (`0x14005b270`). So a wait holds the executor that took the command (the even
 whether an action waits for each before sending the next (the 0.1 s waits between character
 placements in `EVENT_MM08_AS4_130` only make sense if it does), is the next thing to read.
 
-Two helpers tie the listeners together: `0x140296a60` sends a command to every listener (the
-chain at `0x140293e50`; `Event`'s handlers use it to pass commands on), and `0x140296a90`,
-used by `Event`'s wait checks, asks every listener (`0x140293db0`, each one's slot +0x28)
-whether it is still busy with what the wait names. So `p3` waits until the named
-character's runner says it has nothing left (`EventExecChara`'s +0x28 answers for its
-character), and the other `p` waits ask the camera and the rest the same way. Messages take no time
+Two helpers tie the listeners together (read, but not fully): `0x140296a60` asks each
+listener in turn through its slot +0x28 until one says yes (`0x140293db0`); `Event`'s
+handlers call it, 6 times, with commands they build. `EventExecChara`'s +0x28 says yes to a
+`p3` naming its character, so a `p3` most likely waits through that question. The other,
+`0x140296a90`, is what `Event`'s wait checks call (6 times); it goes through `0x140293ef0`,
+which calls a method (+0xe0) of another object, not the listener chain; what it asks is not
+read yet. (An earlier version of this paragraph had the two the wrong way round.) Messages take no time
 there (the game waits for the reader), nor do the waits for characters and the camera. Run that way, that
 event fades the music out
 (`ECT_SOUND_BG_FADEOUT`), starts track 105 (`ECT_SOUND_BG_PLAY`), shifts the contrast,
