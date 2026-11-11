@@ -6,6 +6,7 @@ pub mod event;
 pub mod face;
 pub mod gesture;
 mod names;
+pub mod quest;
 pub mod rng;
 pub mod shop;
 pub mod synthesis;

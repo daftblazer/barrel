@@ -66,6 +66,17 @@ sold with) and `EvStart`, `EvEnd` (the events between which it is on sale) as st
 rows (0x1e8 bytes each, the integers at the schema's offsets) in a vector, but the code that
 uses them has not been found.
 
+## Requests
+
+`QuestAlc` (synthesis), `QuestBtl` (monsters) and `QuestGat` (gathering) share one schema
+(loader `0x14011f6b0`): `TargetTag` (the item or monster), `GetPoint` (a float), two prizes
+(`PrizeItemTag1`/`2` with a float count `PrizeItemNum1`/`2`), `StartEvent`/`EndEvent`,
+`isClearSubject` (strings), `StartDate`/`EndDate` (integer days), `Priority` (a float),
+`Table` and `Num` (integers; `QuestAlc` writes `num`), `PotTag`. The points and prize counts
+are fractions in the tables (5.12 points, 1.7067 of a prize): how they become whole numbers is
+not read yet. `barrel_game::quest` reads the requests and says whether one is offered on a
+day; `barrel quests INSTALL` lists them (93 synthesis, 124 monster, 305 gathering).
+
 ## Numbers behind the tags
 
 The tables name things by tag, but the game works with numbers. The executable keeps each

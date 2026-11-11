@@ -39,6 +39,7 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel duel EXE A B          two monsters (by number) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
@@ -84,6 +85,7 @@ fn main() -> ExitCode {
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b),
+        ["quests", install] => quests(Path::new(install)),
         ["shops", install] => shops(Path::new(install), None),
         ["shops", install, lang] => shops(Path::new(install), Some(lang)),
         ["recipes", exe] => recipes(Path::new(exe)),
@@ -494,6 +496,25 @@ fn pak_xml_e(file: &Path) -> Result<()> {
     }
     println!("{same} identical to their twin, {differ} differ, {alone} without a twin, {failed} failed");
     if failed > 0 { Err("some tables did not decrypt".into()) } else { Ok(()) }
+}
+
+/// Every request, from `Saves/quest/Quest{Alc,Btl,Gat}.xml`.
+fn quests(install: &Path) -> Result<()> {
+    use barrel_game::quest::{requests, Kind};
+    let mut total = 0;
+    for (file, kind) in [("QuestAlc", Kind::Synthesis), ("QuestBtl", Kind::Monster), ("QuestGat", Kind::Gathering)] {
+        let path = install.join(format!("Saves/quest/{file}.xml"));
+        let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        let rs = requests(&table, kind);
+        println!("{file}: {} requests", rs.len());
+        for r in rs.iter().take(5) {
+            let prizes: Vec<String> = r.prizes.iter().map(|(t, n)| format!("{t} x{n}")).collect();
+            println!("  {:<32} {:>6.2} pt  days {}-{}  {}", r.target, r.points, r.from_day, r.to_day, prizes.join(", "));
+        }
+        total += rs.len();
+    }
+    println!("{total} requests (the first five of each shown; points and counts as the tables give them)");
+    Ok(())
 }
 
 /// Every shop's wares, from `Saves[_LANG]/shop/ShopData.xml`.
