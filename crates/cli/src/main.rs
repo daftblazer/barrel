@@ -46,7 +46,8 @@ usage:
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)
-  barrel play-event FILE.ebd --stage  run an event on a clock and print where its characters and camera are";
+  barrel play-event FILE.ebd --stage [--fps HZ]  run an event on a clock and print where its characters and camera are
+      (--fps: drive it as a renderer at HZ would, and print the end state)";
 
 unsafe extern "C" {
     fn signal(signum: i32, handler: usize) -> usize;
@@ -99,7 +100,8 @@ fn main() -> ExitCode {
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
         }
-        ["play-event", file, "--stage"] => stage_event(Path::new(file)),
+        ["play-event", file, "--stage"] => stage_event(Path::new(file), None),
+        ["play-event", file, "--stage", "--fps", hz] => stage_event(Path::new(file), Some(hz)),
         ["play-event", file] => play_event(Path::new(file), None, false),
         ["play-event", file, "--timed"] => play_event(Path::new(file), None, true),
         ["play-event", file, lang] => play_event(Path::new(file), Some(lang), false),
@@ -1282,7 +1284,8 @@ fn message_file(event: &Path, lang: Option<&str>) -> Option<PathBuf> {
 
 /// Runs an event's timed steps on a stage and prints, whenever the clock moves on, where every
 /// character and the camera are (positions in field units, facings in degrees).
-fn stage_event(file: &Path) -> Result<()> {
+fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
+    let fps: Option<f64> = fps.map(|h| h.parse()).transpose().map_err(|_| "--fps HZ is a number")?;
     use barrel_game::event::Player;
     use barrel_game::stage::Stage;
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
@@ -1317,6 +1320,24 @@ fn stage_event(file: &Path) -> Result<()> {
         .map(|t| barrel_game::curve::Curve::table(&t))
         .unwrap_or_default();
     println!("({} curves)", curves.len());
+    // As a renderer drawing HZ frames a second drives it: the clock decides the ticks; the
+    // end state must not depend on HZ (docs/engine.md, "Timing").
+    if let Some(hz) = fps {
+        use barrel_game::clock::Clock;
+        let end = steps.last().map_or(0.0, |t| t.time as f64) + 1.0;
+        let mut clock = Clock::default();
+        let mut play = barrel_game::stage::Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
+        let mut frames = 0u64;
+        while clock.time() < end {
+            for _ in 0..clock.advance(1.0 / hz).ticks {
+                play.tick();
+            }
+            frames += 1;
+        }
+        println!("{frames} frames at {hz} Hz, {} ticks", clock.ticks);
+        print(&play.stage);
+        return Ok(());
+    }
     let stage = Stage { measures, curves, ..Stage::default() }.play(&steps, |t, stage| {
         if last != Some(t.time) {
             last = Some(t.time);

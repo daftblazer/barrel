@@ -20,6 +20,11 @@ Game logic runs on a **fixed tick**; the screen draws at its own rate and blends
   same at all of them.
 - A long stall (loading, a suspended window) runs at most 0.25 s of logic (15 ticks) when it
   ends instead of racing to catch up.
+- `stage::Playback` is the host's side: each tick applies the event steps due by then and
+  runs one tick of movers; it gives the same state as playing the steps straight through.
+  `barrel play-event FILE --stage --fps HZ` drives it as a renderer at HZ would: for
+  `EVENT_MM01_OP1_111` (97 s) 30, 60, 144 and 179.9 Hz all run 5,832 ticks to the same end
+  state, byte for byte.
 - The tick rate is a setting. Everything that moves takes its step as a parameter, so a
   higher rate is a one-line change, at the cost of a deliberate difference (below).
 

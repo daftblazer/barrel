@@ -316,10 +316,78 @@ impl Stage {
     }
 }
 
+/// A stage played tick by tick, for a host driving it from [`crate::clock::Clock`]: each
+/// [`Playback::tick`] applies the steps due by then and runs one [`FRAME`]. It gives the same
+/// stage as [`Stage::play`] at the same tick.
+pub struct Playback<'a> {
+    pub stage: Stage,
+    steps: Vec<Timed<'a>>,
+    next: usize,
+}
+
+impl<'a> Playback<'a> {
+    pub fn new(stage: Stage, steps: Vec<Timed<'a>>) -> Playback<'a> {
+        Playback { stage, steps, next: 0 }
+    }
+
+    /// Whether every step has been applied.
+    pub fn finished(&self) -> bool {
+        self.next >= self.steps.len()
+    }
+
+    /// One tick: the steps due now (within half a tick), then the movers.
+    pub fn tick(&mut self) {
+        while let Some(t) = self.steps.get(self.next).filter(|t| t.time <= self.stage.time + FRAME * 0.5) {
+            self.stage.apply(&t.step);
+            self.next += 1;
+        }
+        self.stage.frame(FRAME);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::camera::Move;
+
+    #[test]
+    fn the_same_ticks_at_any_frame_rate() {
+        use crate::camera::{Anchor, Move, Position};
+        use crate::clock::Clock;
+        let to = Position { anchor: Anchor::World, offset: [600.0, 0.0, 450.0] };
+        let steps = vec![
+            Timed { time: 0.0, action: 0, step: Step::Place { action: 0, character: 1, position: [0.0; 3] } },
+            Timed {
+                time: 0.5,
+                action: 0,
+                step: Step::CharacterMove { action: 0, character: 1, extra: 1, movement: Move::Speed { to, speed: 150.0, accel: [0.0, 80.0, 0.0] } },
+            },
+        ];
+        let run = |hz: f64| {
+            let mut clock = Clock::default();
+            let mut p = Playback::new(Stage::default(), steps.clone());
+            let mut before = p.stage.snapshot();
+            let mut drawn = Snapshot::default();
+            while clock.time() < 3.0 {
+                let f = clock.advance(1.0 / hz);
+                for _ in 0..f.ticks {
+                    before = p.stage.snapshot();
+                    p.tick();
+                }
+                drawn = Snapshot::blend(&before, &p.stage.snapshot(), f.alpha);
+            }
+            (clock.ticks, p.stage.snapshot(), drawn)
+        };
+        let (t30, s30, _) = run(30.0);
+        let (t144, s144, d144) = run(144.0);
+        // The logic lands on the same tick with the same state; only the drawn blend differs.
+        assert_eq!((t30, &s30), (t144, &s144));
+        assert!(d144.characters[&1].0[0] <= s144.characters[&1].0[0]);
+        // And it matches playing the steps straight through.
+        let mut straight = Stage::default().play(&steps, |_, _| {});
+        straight.run_until(t30 as f32 / 60.0);
+        assert_eq!(straight.snapshot().characters[&1].0, s30.characters[&1].0);
+    }
 
     #[test]
     fn ticks_blend_for_the_screen() {
