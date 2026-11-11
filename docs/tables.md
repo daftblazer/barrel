@@ -693,6 +693,19 @@ In the executable, field objects that do things are "gimmicks", of the types in 
 gimmicks have their own tags, named by area and event (`FIELDMAP_GIMMICK_ENUM_AREA_03_07_MS01_070`).
 Where the gimmicks of each area are listed is still to be found.
 
+## Party growth
+
+The party's base stats by level are compiled into the executable too: at `0x140d8f370`
+(English Escha executable), right after the `PARTY_*` enum's names, 11 blocks of 100 rows of
+five i32, one block per party member, each 99 levels (1 to 99) and a row of zeros. A row is
+HP, MP, attack, defence, speed, the battle stats 1 (and 3), 2 (and 4), 5, 6 and 7.
+`barrel_formats::battle_data::party_growth` reads them; `barrel party EXE` prints them.
+
+That the blocks are in the `PARTY_*` order (Escha, Logy, Awin, Threia, Reyfer, Lucille, Linca,
+Wilbell, Micie, Katla, Nio) is read from where they sit and from the numbers, not yet from
+the code that reads them: Awin has the most HP (461 at level 99), Threia the most MP (290),
+Lucille is the fastest (208), Escha starts at 18 HP, 27 MP, 4 attack, 3 defence, 6 speed.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from

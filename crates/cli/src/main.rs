@@ -41,6 +41,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
+  barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
   barrel duel EXE A B          two monsters (by number) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
@@ -85,6 +86,7 @@ fn main() -> ExitCode {
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b),
+        ["party", exe] => party(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["shops", install] => shops(Path::new(install), None),
         ["shops", install, lang] => shops(Path::new(install), Some(lang)),
@@ -539,6 +541,24 @@ fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
         );
     }
     println!("{} wares", wares.len());
+    Ok(())
+}
+
+/// Each party member's base stats at levels 1, 10, 50 and 99.
+fn party(exe: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let growth = bd::party_growth(&pe, bd::PARTY_GROWTH_EN).ok_or("no party growth table at the English executable's address")?;
+    let names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
+    println!("level:HP/MP/attack/defence/speed");
+    for (name, levels) in names.iter().zip(&growth) {
+        let show = |l: usize| {
+            let s = levels[l - 1];
+            format!("{}:{}/{}/{}/{}/{}", l, s.hp, s.mp, s.attack, s.defense, s.speed)
+        };
+        println!("{name:<8} {}  {}  {}  {}", show(1), show(10), show(50), show(99));
+    }
     Ok(())
 }
 

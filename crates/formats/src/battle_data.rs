@@ -16,6 +16,41 @@ pub const SKILLS_EN: u64 = 0x1_40d5_1ed0;
 const SKILL_RECORD: usize = 96;
 const MAX_SKILLS: usize = 1024;
 
+pub const PARTY_GROWTH_EN: u64 = 0x1_40d8_f370;
+/// The party members, in the executable's `PARTY_*` order (Escha, Logy, Awin, Threia, Reyfer,
+/// Lucille, Linca, Wilbell, Micie, Katla, Nio).
+pub const PARTY_COUNT: usize = 11;
+pub const MAX_LEVEL: usize = 99;
+const GROWTH_ROWS: usize = 100;
+
+/// A party member's base stats at a level: HP, MP, attack, defence, speed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LevelStats {
+    pub hp: i32,
+    pub mp: i32,
+    pub attack: i32,
+    pub defense: i32,
+    pub speed: i32,
+}
+
+/// Each party member's stats for levels 1 to 99 (`docs/tables.md`, "Party growth"): blocks of
+/// 100 rows of five i32 (99 levels and a row of zeros), one per member.
+pub fn party_growth(pe: &Pe, table: u64) -> Option<Vec<Vec<LevelStats>>> {
+    let at = pe.offset(table)?;
+    (0..PARTY_COUNT)
+        .map(|c| {
+            (0..MAX_LEVEL)
+                .map(|l| {
+                    let r = at + 20 * (GROWTH_ROWS * c + l);
+                    let w = |i: usize| i32_at(pe.data, r + 4 * i);
+                    let s = LevelStats { hp: w(0)?, mp: w(1)?, attack: w(2)?, defense: w(3)?, speed: w(4)? };
+                    (s.hp > 0).then_some(s)
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// One of a monster's stat blocks (the same monster at another strength).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StatBlock {
