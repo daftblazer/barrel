@@ -223,8 +223,12 @@ an item adds `extra`: its value 0x27 if the amount is at most that, else 0x27² 
 and the float scale (+0x28) starts at 1 (or character A's value 0x2b4 / 100 when positive, for
 action kinds other than 2) and is multiplied by the flag-gated factors in the flag table above, then
 by `(global 0x141077e70 + 100) / 100` and `global 0x141077e50 / 100`, then by `1 - clamp(
-character A's state-12 value × 0.1 / 100, 0, 1)`, and is kept at least 0.15. The function takes two characters, A (its second argument) and B (its third); which is the
-user and which the target is not checked yet. The numbers it asks a character about come in
+character A's state-12 value × 0.1 / 100, 0, 1)`, and is kept at least 0.15. The function takes two characters, A (its second argument), the user, and B (its third), the
+target. `0x1401bd000 (battle, action)` looks the user up from the action's actor (+0x10) and
+calls `0x1401bd410 (battle, user, target, action)`, which rolls (`0x1401bd520`) and applies
+(`0x1401bde10`) the effects, once per target as the action's +0x38 says: 0 and 2, every
+character in the battle's target list (+0x40 to +0x48); 1, the one character at
+battle +0x938; 3, one target of the list drawn at random (`0x1404ca740`). The numbers it asks a character about come in
 three kinds:
 
 - passive traits, through the character's virtual "has" (+0x48) and "value" (+0x50): these
@@ -238,8 +242,10 @@ three kinds:
 - bad-status bytes at character +0x280 (`0x1401ae380 (c, k)`), where k = 4 instead means "HP at
   most 25% of maximum".
 
-Percent 1 starts at 100, adds A's `PASSIVE_GREAT_BATTLE` (when B qualifies) and subtracts B's
-`PASSIVE_INNER_FIRE`, `MITIGATE_DAMAGE` and `PROTECT_DAMEGE_NUM`; percent 2 starts at 100 + A's
+Percent 1 starts at 100, or at 100 + A's `PASSIVE_INNER_FIRE` value when A's stat 0 is at most
+that passive's second value above B's; it adds A's `PASSIVE_GREAT_BATTLE` (when B qualifies),
+subtracts B's `PASSIVE_INNER_FIRE` under the mirrored condition, and subtracts B's
+`MITIGATE_DAMAGE` and `PROTECT_DAMEGE_NUM`; percent 2 starts at 100 + A's
 stat 15 (stats are i32 at character +0x88) and adds B's `CHANGE_DAMAGE` (skills),
 `FIELD_RACE_STRENGTH`, `CHANGE_ITEMEFFECT` and `PASSIVE_CHANGE_ITEM_POWER` (items), less
 `CHANGE_ITEM_POWER`. Some of these conditions are read only roughly and should be checked.
@@ -273,7 +279,8 @@ statuses and others, presumably).
 The game draws every random number from one Xorshift128 generator (Marsaglia's: `t = x ^ (x
 << 11)`, then `x, y, z = y, z, w` and `w = w ^ (w >> 19) ^ t ^ (t >> 8)`), state `x, y, z, w`
 at `0x1410c2fd8`. A number from `a` to `b` (`0x1404ca660`, both included, in either order) is
-`low + (w & 0x7fffffff) % (high - low + 1)`, and draws nothing when `a == b`. The state is not
+`low + (w & 0x7fffffff) % (high - low + 1)`, and draws nothing when `a == b`; a number below
+`n` (`0x1404ca740`) is `(w & 0x7fffffff) % n` and always draws. The state is not
 in the file, and the code that seeds it is still to be found. `barrel_game::rng` is the same
 generator.
 

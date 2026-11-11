@@ -40,6 +40,15 @@ impl Rng {
     }
 }
 
+impl Rng {
+    /// A number from 0 to `n - 1` (`n` > 0; the executable divides by it unchecked), the
+    /// executable's way: the low 31 bits of the next number modulo `n`. Always draws.
+    pub fn below(&mut self, n: u32) -> u32 {
+        assert!(n > 0 && n <= i32::MAX as u32, "below: n out of range");
+        (self.next_u32() & 0x7fff_ffff) % n
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,5 +71,12 @@ mod tests {
         let before = a.state();
         assert_eq!(a.range(50, 50), 50);
         assert_eq!(a.state(), before);
+    }
+
+    #[test]
+    fn below_draws_once() {
+        let mut r = Rng::from_state(SEED);
+        assert_eq!(r.below(3), (3701687786u32 & 0x7fff_ffff) % 3);
+        assert_eq!(r.next_u32(), 458299110);
     }
 }
