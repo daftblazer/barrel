@@ -162,15 +162,19 @@ English name and description.
 | 8 | pointer to the category ("Hero AC Attack") |
 | 16 | i32: 1 for guards and self-targeted skills, 2 for attacks, 3 for boss charges |
 | 24 | i32: 600 for the normal attacks and escape, 500 to 900 for many enemy skills, 0 for most of the party's (a wait or speed value, probably) |
-| 40 | first effect: i32 effect number (-1 none), i32, i32 minimum power, i32 maximum power |
-| 56 | two i32 (0, or 2 and 2) |
-| 64 | second effect: number, i32, minimum, maximum |
-| 80 | two i32 more |
+| 40 | first effect, six i32: an `ACT_*` number (-1 none), i32, minimum power, maximum power, two i32 (0 and 0, or 2 and 2) |
+| 64 | second effect, the same six |
 | 88 | pointer to the description |
 
-So Stun Blow is effect 6 at 54 to 60 power with effect 201 at 50, and Hard Guard effect 86
-at 50 ("reduces damage by 50%"). Which table the effect numbers index is still open. All of
-this is from the values' patterns and should be checked against the battle code.
+The effect numbers are the executable's `ACT_*` enum (234 names, `ACT_DAMAGE_HP` first),
+and they fit the descriptions: "Attack" is `ACT_DAMAGE_HP` at 64 to 80, "Run" `ACT_RUNAWAY`
+at 95 to 100, Hard Guard `ACT_ASSIST_GUARD` at 50 ("reduces damage by 50%"), Stun Blow
+`ACT_ASSIST_ATTACK` at 54 to 60 with `ACT_RETURN_WT` at 50 ("delays the target's turn"),
+Plasma Break `ACT_DAMAGE_HP` with `ACT_PERCENT_QUICK` ("allows you to take another turn"),
+Wide Shot `ACT_DAMAGE_HP` with `ACT_DAMAGE_HP_TURN_DIFFERENTIAL` at 1 ("continuous damage for 1
+turn"). `tools/skills.py` prints the effects by name. An unused slot can keep stale numbers
+after its -1. The other fields are named from the values' patterns only and should be checked
+against the battle code.
 
 ## Synthesis skills
 
