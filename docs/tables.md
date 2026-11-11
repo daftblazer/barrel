@@ -180,6 +180,39 @@ Three cases read so far:
 | +0x5c + 20 × e | attribute value e (Fire, Water, Wind, Earth) as a float, at most 999, then the last change |
 | +0x4b8 + 4 × e | element point count e, at most 5 |
 
+**Adding a material** (`0x140304eb0`, called with the state and the material's item
+instance):
+
+- The state keeps a running sum of the materials' effect values (+0x40) and their count
+  (+8). The effect value (+0x44) is that sum divided by the count, plus the skill bonus
+  (+0x4c) and another bonus (+0x50), at most 120. A material's effect value starts from
+  its row's `effect` in `itemData.xml`.
+- For each of the four elements the material has (`itemData` columns `fire`, `water`,
+  `wind`, `soil`; the loaded row keeps them at +0x4c, and the getter `0x1402a33c0` asks if
+  one is above 0), that attribute grows by the material's element value. The value is kept
+  in a per-material entry of the state (+0x42c + 40 × entry: the value, then a bonus), and
+  it starts from the row's `value`. Elements the material lacks gain nothing.
+- Each attribute is then capped at 999, and +0x58 becomes their sum.
+
+So a Fire-and-Water material with element value 10 adds 10 to the Fire attribute and 10
+to the Water attribute.
+
+**Element points** (`0x140305040`, only once Bonus Generation, skill type 15, is learnt):
+each element the finished item has gives 1 point. Then up to two of the state's traits
+(+0x38, +0x3c) are applied, from a compiled table of 90 records of 0x78 bytes (getter
+`0x1402a36f0`; `item_mat_pot.xml` also has 90 rows: "火属性ボーナス×１", Fire bonus ×1,
+...). Each record holds five `{type, a, b}` entries:
+
+| Type | Effect |
+|---|---|
+| 0 | attribute a gains b (all four if a is -1) |
+| 1 | element a gains b points (all four if a is -1) |
+| 2 | +0x3f8 gains a |
+| 3 | the effect value bonus gains a |
+| 4 | +0x3f4 gains a |
+
+Finally each point count is kept between 0 and 5.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
