@@ -674,11 +674,26 @@ fn play_event(file: &Path, lang: Option<&str>) -> Result<()> {
         Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).map_err(|e| format!("{}: {e}", m.display()))?,
         _ => Vec::new(),
     };
+    // Speakers are character numbers: rows of Saves[_LANG]/chara/Chara.xml.
+    let names: Vec<String> = file
+        .ancestors()
+        .find(|p| p.join("Saves").is_dir())
+        .map(|root| {
+            let lang_table = lang.map(|l| root.join(format!("Saves_{l}/chara/Chara.xml")));
+            let table = lang_table.filter(|p| p.is_file()).unwrap_or_else(|| root.join("Saves/chara/Chara.xml"));
+            read(&table)
+                .ok()
+                .and_then(|b| barrel_formats::table::parse(&b).ok())
+                .map(|r| r.children.iter().map(|c| c.attr("Name").unwrap_or("").to_string()).collect())
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
     let table = OperandTable::escha();
     for step in Player::escha(&event, &messages, &table)? {
         match step {
             Step::Message { index, speaker, text } => {
-                println!("  [{index:3}] speaker {speaker:>3}: {}", text.replace("<CR>", " "));
+                let who = usize::try_from(speaker).ok().and_then(|i| names.get(i)).map_or("", String::as_str);
+                println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));
             }
             Step::Command { action, word, name, operands } => {
                 let ops: Vec<String> = operands.iter().map(|&o| (o as i32).to_string()).collect();

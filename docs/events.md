@@ -68,14 +68,19 @@ will handle it. Run in file order, that event fades the music out
 waits, and talks the dragon problem through in the right order.
 
 Only an event's first action ever shows messages: across all 1,021 story events no other
-action has a `u18`. In 894 of them the message ranges run 0, 1, 2, ... without a gap in
-file order. The other 127 jump (e.g. 43, 45, 44, then 40-41 in `EVENT_MM02_OP2_080`): those
-are the events with choices, where `u26` (handled by `BalloonSelectMode`) offers the
-choice, `u16` shows its prompt and the branches pick which messages follow. How a branch
-is chosen and jumped to is still open.
+action has a `u18`. In 894 of them the message ranges run 0, 1, 2, ... in file order. The
+other 127 are still linear scripts: their messages are shown out of numeric order (the
+prologue tutorial shows 43, 45, 44, then 40-41 as it walks past the furniture), or some are
+never shown at all, the lines the writers deleted (their text is 【削除】, "deleted"). No
+branching has been found inside an event.
 
-Not yet: branching, the other actions (camera and character tracks, probably run beside the
-first), waits taking time, and the speaker numbers' names.
+**Speakers** are character numbers: the rows of `Saves/chara/Chara.xml` (or
+`Saves_<LANG>/chara/Chara.xml` for a translation), 0 Escha, 1 Logy, 2 Awin, 3 Threia, 4
+Reyfer and so on. `ECT_FIELDMAP_CHARA_ADDITION_EX` takes the same number as its first
+operand. `play-event` prints the names.
+
+Not yet: the other actions (camera and character tracks, probably run beside the first),
+and waits taking time.
 
 ## Who handles them
 
