@@ -156,7 +156,7 @@ impl Bits {
     }
 }
 
-fn subset_of(subsets: usize, partition: usize, pixel: usize) -> usize {
+pub(crate) fn subset_of(subsets: usize, partition: usize, pixel: usize) -> usize {
     match subsets {
         2 => ((PARTITION2[partition] >> pixel) & 1) as usize,
         3 => PARTITION3[partition][pixel] as usize,
@@ -164,7 +164,7 @@ fn subset_of(subsets: usize, partition: usize, pixel: usize) -> usize {
     }
 }
 
-fn is_anchor(subsets: usize, partition: usize, pixel: usize) -> bool {
+pub(crate) fn is_anchor(subsets: usize, partition: usize, pixel: usize) -> bool {
     pixel == 0
         || match subsets {
             2 => pixel == ANCHOR2[partition] as usize,

@@ -184,11 +184,8 @@ impl Texture<'_> {
             Format::Rgba8 => src.to_vec(),
             Format::Bc4 => crate::bc::decode_bc45(src, w, h, false),
             Format::Bc5 => crate::bc::decode_bc45(src, w, h, true),
-            Format::Bc6h => {
-                let mut out = vec![0u8; w * h * 4];
-                out.iter_mut().skip(3).step_by(4).for_each(|a| *a = 255);
-                out
-            }
+            // HDR: tone-mapped for viewing (unsigned BC6H; no signed sample has been seen).
+            Format::Bc6h => crate::bc6h::decode(src, w, h, false),
             Format::Float32 => {
                 let v: Vec<f32> = src.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
                 let (lo, hi) = v.iter().fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));

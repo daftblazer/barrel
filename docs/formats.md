@@ -85,6 +85,14 @@ per texture:  u8   mip count << 4 | depth
 | `0x02` | none | one 32-bit float a pixel (Ryza 3's shore heightmaps) |
 | `0x60` | none | 8 bytes a 4×4 block, read as BC1; the only ones seen (Ryza's `headsup.g1t`) are all zeros, so BC1 or BC4 is a guess |
 
+**BC6H** (`barrel_formats::bc6h`, written from the BPTC_FLOAT specification: 14 modes, one or
+two regions, whole endpoints or a base and signed deltas; previews tone-map with x / (1 + x)
+and gamma 2.2). `charatest_ad.g1t` decodes to a smooth lighting cube, blue sky on face 2,
+brown ground on face 3, sides shading from one to the other, which confirms the Direct3D face
+order (+X, -X, +Y, -Y, +Z, -Z). Its blocks use modes 1, 3, 11, 12, 13 (22,682 of 24,576
+blocks; the mode whose high endpoint bits are stored reversed) and 14; modes 2 and 4 to 10 are
+not covered by a sample yet. Only the unsigned variant has been seen.
+
 **Cube maps and volumes.** The first header byte's low nibble, 0 in all of Escha's
 textures, says what a texture is: 1 a cube map (each level holds six faces;
 `charatest_ad.g1t`, 256×256 BC6H, is exactly 6 × 65,536 bytes), 2 a volume, whose depth is 2
@@ -95,8 +103,8 @@ of cube maps; their count is bits 4 to 15 of the extended header's third word (R
 faces; a top byte of 1 there is another flag). Inside a level the layers follow one another, each a whole image (`Texture::layer_rgba8`;
 `barrel g1t` writes them all, `NNN_L.png`). In `hair_highlight.g1t`'s first cube map, faces 2
 and 3 are empty and 0, 1, 4 and 5 carry the same horizontal highlight band, which fits the
-Direct3D order +X, -X, +Y, -Y, +Z, -Z (up and down third and fourth); the side faces' exact
-order and orientation still need a seam check, and the level order in arrays of cube maps is
+Direct3D order +X, -X, +Y, -Y, +Z, -Z (up and down third and fourth), as `charatest_ad.g1t`
+confirms (below); the side faces' orientation still needs a seam check, and the level order in arrays of cube maps is
 still to be checked.
 
 Every texture's data is exactly the size its format, size and mip count give, so there is

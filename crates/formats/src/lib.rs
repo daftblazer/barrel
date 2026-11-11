@@ -5,6 +5,7 @@
 
 pub mod battle_data;
 pub mod bc;
+pub mod bc6h;
 pub mod bc7;
 pub mod ebd;
 pub mod ebm;
