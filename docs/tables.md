@@ -145,6 +145,31 @@ executable (`barrel_formats::recipe`; `barrel recipes EXE` lists them). The addr
 shape (a record whose word 0 is the first synthesizable item, repeated every 288 bytes)
 rather than by a fixed address.
 
+## Battle skills
+
+Also compiled into the executable: 96-byte records at `0x140d5ab10` (English Escha
+executable), 158 skills and a `DUMMY` that ends them. `tools/skills.py EXE` lists them. They
+are the party's support skills ("Hero AC Attack", "Heroine AC Guard", "... AC Special") and
+the bosses' skills ("True Boss Skill 3_Variation 1_Top", "Flameu_Charge"), each with its
+English name and description; not the 543-entry `SKILL_*` enum, which numbers every battle
+action.
+
+| Bytes | What |
+|---|---|
+| 0 | pointer to the name ("Stun Blow") |
+| 8 | pointer to the category ("Hero AC Attack") |
+| 16 | i32: 1 for guards and self-targeted skills, 2 for attacks, 3 for boss charges |
+| 24 | i32: 0 for the party's skills, 650 to 900 for bosses' (still to be named) |
+| 40 | first effect: i32 effect number (-1 none), i32, i32 minimum power, i32 maximum power |
+| 56 | two i32 (0, or 2 and 2) |
+| 64 | second effect: number, i32, minimum, maximum |
+| 80 | two i32 more |
+| 88 | pointer to the description |
+
+So Stun Blow is effect 6 at 54 to 60 power with effect 201 at 50, and Hard Guard effect 86
+at 50 ("reduces damage by 50%"). Which table the effect numbers index is still open. All of
+this is from the values' patterns and should be checked against the battle code.
+
 ## Synthesis skills
 
 Escha's and Logy's synthesis skills are also compiled into the executable: 68 records of 56
