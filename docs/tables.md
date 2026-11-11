@@ -294,12 +294,30 @@ sorts again. The sort (`0x1401a8400`, the standard library's introsort) compares
 for lists under 32 entries it is an insertion sort, so entries with equal waits keep their
 order, which a reimplementation must keep too.
 
+Entries whose +0x10 (the character's virtual +0x20 value) is negative are free slots.
+`0x14018cf20 (timeline, character)` puts a joining character in a free slot with wait 500
+(1000 when its +0x10 value is negative). After a character acts, `0x14018d180 (timeline,
+character, wait)` gives it the action's wait (the action's virtual +0x30):
+
+1. with timed state `ADD_PERCENT_QUICK`, a chance roll on its value (`0x1404ca5f0`: the next
+   number's low 31 bits modulo 100, under the value) makes the turn quick, a 25% cut;
+2. with passive `PASSIVE_PERCENT_QUICK`, a chance roll on its first value makes the cut its
+   second value instead;
+3. a quick turn's wait is `trunc(wait × (100 - cut) / 100)` in floats; a character for which
+   `0x1401b07c0` is false gets 0; the wait is at most 1000;
+4. the entry gets the wait (and the character's +0x2d8 a copy); a scheduled entry of the
+   character's is freed; the character's +0x84 counts up (its turns, presumably).
+
+Each roll draws only when the character has the state or passive, so they must be made in
+that order. Scheduled entries (+0xd set, an action object at +0x20; `0x14018db00` and on)
+hold actions that happen later at their own wait, such as charged skills.
+
 `ACCELARATE_WT` calls the second with the effect's amount. `RETURN_WT` (`0x1401c0313`) first
 counts the push on the target (+0x30c) and pushes it back by `trunc(1 / count × amount ×
 (100 - RESIST_KNOCKBACK) / 100)` in floats, so each push on the same target is weaker than the
-last. When the count resets, and how a turn's wait is set at first and after acting (the
-skills' +24 value, 600 for the normal attack, and speed are the likely inputs), are still to
-be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`) and `knockback` do the above.
+last. When the count resets, and how the action's wait comes from the skill (+24, 600 for the
+normal attack) and the character's speed, are still to be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`), `wait_after_action` and
+`knockback` do the above.
 
 ### Random numbers
 
@@ -308,7 +326,7 @@ The game draws every random number from one Xorshift128 generator (Marsaglia's: 
 at `0x1410c2fd8`. A number from `a` to `b` (`0x1404ca660`, both included, in either order) is
 `low + (w & 0x7fffffff) % (high - low + 1)`, and draws nothing when `a == b`; a number below
 `n` (`0x1404ca740`) is `(w & 0x7fffffff) % n` and always draws; `0x1404ca7a0` returns
-`w & 0x7fffffff`. The state is not
+`w & 0x7fffffff`; a chance of p percent (`0x1404ca5f0`) is `(w & 0x7fffffff) % 100 < p`. The state is not
 in the file, and the code that seeds it is still to be found. `barrel_game::rng` is the same
 generator.
 

@@ -41,6 +41,12 @@ impl Rng {
 }
 
 impl Rng {
+    /// True with `percent` percent chance (`0x1404ca5f0`): the low 31 bits of the next number,
+    /// modulo 100, under `percent`. Always draws.
+    pub fn chance(&mut self, percent: i32) -> bool {
+        ((self.next_u32() & 0x7fff_ffff) % 100) < percent.max(0) as u32
+    }
+
     /// The low 31 bits of the next number (`0x1404ca7a0`).
     pub fn next_31(&mut self) -> i32 {
         (self.next_u32() & 0x7fff_ffff) as i32

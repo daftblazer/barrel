@@ -156,6 +156,37 @@ impl Timeline {
     }
 }
 
+/// A character's wait after it acts (`0x14018d180`), from the action's wait: with timed state
+/// `ADD_PERCENT_QUICK` (`quick_state`, its value a chance in percent) a successful roll cuts it
+/// by 25%; with passive `PASSIVE_PERCENT_QUICK` (`quick_passive`: chance, cut) a successful
+/// roll cuts it by the passive's amount instead. Each roll draws only when the character has
+/// the state or passive, the state's first. `counts` is `0x1401b07c0`'s answer for the
+/// character (false gives wait 0; what it tests is still open). At most `MAX_WAIT`.
+pub fn wait_after_action(
+    wait: i32,
+    quick_state: Option<i32>,
+    quick_passive: Option<(i32, i32)>,
+    counts: bool,
+    rng: &mut crate::rng::Rng,
+) -> i32 {
+    let mut cut = None;
+    if let Some(p) = quick_state {
+        if rng.chance(p) {
+            cut = Some(25);
+        }
+    }
+    if let Some((p, amount)) = quick_passive {
+        if rng.chance(p) {
+            cut = Some(amount);
+        }
+    }
+    let wait = match cut {
+        Some(c) => (wait as f32 * (100 - c) as f32 / 100.0) as i32,
+        None => wait,
+    };
+    if counts { wait.min(MAX_WAIT) } else { 0 }
+}
+
 /// How far `RETURN_WT` pushes a target back (`0x1401c0313`): its amount divided by how many
 /// times the target has been pushed back (its +0x30c counter, this one included; when that
 /// resets is not yet found), less the
@@ -213,6 +244,22 @@ mod tests {
         assert_eq!(t.entries, [(2, 0), (3, 0), (1, 180), (4, 380)]);
         assert_eq!(knockback(50, 1, 0), 50);
         assert_eq!(knockback(50, 2, 20), 20);
+    }
+
+    #[test]
+    fn wait_after_acting() {
+        use crate::rng::Rng;
+        let seed = [123456789, 362436069, 521288629, 88675123];
+        // The first draw is 3701687786: & 0x7fffffff = 1554204138, % 100 = 38.
+        let mut r = Rng::from_state(seed);
+        assert_eq!(wait_after_action(600, Some(39), None, true, &mut r), 450);
+        let mut r = Rng::from_state(seed);
+        assert_eq!(wait_after_action(600, Some(38), None, true, &mut r), 600);
+        let mut r = Rng::from_state(seed);
+        assert_eq!(wait_after_action(600, None, None, true, &mut r), 600);
+        assert_eq!(r.state(), seed);
+        assert_eq!(wait_after_action(2000, None, None, true, &mut r), MAX_WAIT);
+        assert_eq!(wait_after_action(600, None, None, false, &mut r), 0);
     }
 
     #[test]
