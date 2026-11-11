@@ -605,3 +605,18 @@ is lenient in the same ways:
 
 There is no text content; everything is in attributes. Comments are common (1,426 in
 Escha), some of them holding commented-out rows.
+
+## Voice packs (`Sound/Voice*/SeriesNNNN.fp`, `.fpl`)
+
+`Data/x64/Sound/Voice` (and `Voice_EN`) holds 18 series, `Series0000` to `Series17000`, each a
+`.fp` of up to 1,000 clips and a `.fpl` listing them: `u32 count` (1000), then per clip
+`{u32 size, u32 offset}` into the `.fp` (size 0: no clip). Each clip is a KOVS file:
+`"KOVS"`, `u32` Ogg size, 24 zero bytes, then an Ogg Vorbis stream whose first 0x100 bytes
+are XORed with their index (`OfeP` for `OggS`). A clip's length is its last Ogg page's
+granule position over the identification header's sample rate. `barrel_formats::voice`
+reads them; `barrel voice-scan DIR` finds 18,000 clips, 21.7 hours, all decoding, in
+Escha's Japanese voices. Clips are numbered within a series (`SeriesN` clip k is voice N + k,
+by the look of it); which voice a message line plays is not in the line (its fields are
+speaker, gesture, expression and line number) and is still open, as are
+`ECT_EVENT_VOICE_PLAY` (`u31`, 400 uses, a voice number such as 14235) and
+`ECT_CHARA_VOICE_PLAY`.

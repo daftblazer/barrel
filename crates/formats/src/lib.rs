@@ -27,6 +27,7 @@ pub mod pe;
 pub mod png;
 pub mod recipe;
 pub mod table;
+pub mod voice;
 pub mod xml_e;
 
 use std::fmt;

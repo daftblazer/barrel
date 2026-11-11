@@ -66,6 +66,7 @@ fn main() -> ExitCode {
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
+        ["voice-scan", dir] => voice_scan(Path::new(dir)),
         ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word, None),
         ["ebd-ops", dir, word, filter] => ebd_ops(Path::new(dir), word, Some(filter)),
         ["xml", file] => xml(Path::new(file)),
@@ -405,6 +406,31 @@ fn describe_move(m: &barrel_game::camera::Move) -> String {
         Move::Jump { first, height, .. } => format!("jumps to {to}, {height} high ({first})"),
         Move::Other { kind, .. } => format!("moves (type {kind}) to {to}"),
     }
+}
+
+/// Every voice series under `dir` (`SeriesNNNN.fp` + `.fpl`): clips, lengths.
+fn voice_scan(dir: &Path) -> Result<()> {
+    let mut lists: Vec<_> = std::fs::read_dir(dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "fpl")).collect();
+    lists.sort();
+    let (mut clips, mut total, mut failed) = (0usize, 0f64, 0usize);
+    for fpl in &lists {
+        let fp = std::fs::read(fpl.with_extension("fp"))?;
+        let (mut n, mut secs) = (0usize, 0f64);
+        for (offset, size) in barrel_formats::voice::list(&read(fpl)?)?.into_iter().flatten() {
+            match fp.get(offset..offset + size).ok_or(barrel_formats::Error::Corrupt("clip past the end")).and_then(barrel_formats::voice::ogg) {
+                Ok(ogg) => {
+                    n += 1;
+                    secs += barrel_formats::voice::ogg_seconds(&ogg).unwrap_or(0.0) as f64;
+                }
+                Err(_) => failed += 1,
+            }
+        }
+        println!("{}: {n} clips, {secs:.0} s", fpl.file_stem().unwrap_or_default().to_string_lossy());
+        clips += n;
+        total += secs;
+    }
+    println!("{clips} clips, {:.1} hours, {failed} failed", total / 3600.0);
+    Ok(())
 }
 
 fn print_element(e: &barrel_formats::table::Element, depth: usize) {
