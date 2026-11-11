@@ -98,7 +98,7 @@ A model is a header (`_M1G`, version `0073`; `0053` in 8 old models) and chunks,
 | Chunk | What |
 |---|---|
 | `FM1G` (G1MF) | counts and statistics |
-| `SM1G` (G1MS) | the skeleton (not read yet) |
+| `SM1G` (G1MS) | the skeleton (below) |
 | `MM1G` (G1MM) | matrices |
 | `GM1G` (G1MG) | the geometry, version `0044` in every model |
 | `RTXE` (EXTR) | extra data |
@@ -127,6 +127,33 @@ second one.
 Attribute types: 0, 1, 2, 3 are 1 to 4 floats; 5 is four bytes (bone indices); 13 is four
 normalized bytes (colour). Semantics: 0 position, 1 weights, 2 bone indices, 3 normal,
 4 tangent, 5 UV, 10 colour.
+
+### Skeleton (G1MS)
+
+All 6,005 skeletons read: 37,956 joints. Offsets in G1MS count from the start of the chunk,
+its 12-byte header included.
+
+| Offset | What |
+|---|---|
+| 12 | u32 offset of the joints |
+| 16 | u32, 0 |
+| 20 | u16 joint count |
+| 22 | u16 index map count |
+| 24 | u16 layer |
+| 28 | the index map: u16 per entry, 0xffff for none, padded to the joints |
+| joints | 48 bytes each: scale (3 floats), u32 parent (top bit set for a root), rotation quaternion (x, y, z, w), position (3 floats and a 1.0) |
+
+Every joint's parent comes before it, so world transforms compose in one pass:
+position = parent position + parent rotation × local position, rotation = parent rotation ×
+local rotation. Escha's skeleton (`Character/PC20/PC20_MODEL.g1m`, 345 joints) comes out
+standing in its bind pose: pelvis at 88 units, knees at 51, toes near 0, head at 157.
+
+Characters split the skeleton from the meshes. The base model (`PC20_MODEL.g1m`) holds the
+skeleton and almost no geometry; the `_default` model holds the meshes and a G1MS with one
+placeholder joint and the index map alone. The Oid.bin names are the scene's nodes, not the
+joints one for one (helpers such as the thigh-twist nodes sit in between), so naming the
+joints needs the index map; that is still to be worked out, along with the bone maps
+(G1MG section 0x10006) that tie vertices to joints.
 
 ## Node names (`*Oid.bin`)
 

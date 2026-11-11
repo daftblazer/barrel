@@ -6,7 +6,7 @@
 //! | Chunk | What |
 //! |---|---|
 //! | `FM1G` (G1MF) | counts and statistics |
-//! | `SM1G` (G1MS) | the skeleton |
+//! | `SM1G` (G1MS) | the skeleton, see [`Skeleton`] |
 //! | `MM1G` (G1MM) | matrices |
 //! | `GM1G` (G1MG) | the geometry |
 //! | `RTXE` (EXTR) | extra data |
@@ -172,11 +172,102 @@ pub struct Chunk<'a> {
     pub body: &'a [u8],
 }
 
+/// A joint of the skeleton, relative to its parent.
+#[derive(Clone, Copy, Debug)]
+pub struct Joint {
+    pub scale: [f32; 3],
+    pub parent: Option<usize>,
+    /// Quaternion x, y, z, w.
+    pub rotation: [f32; 4],
+    pub position: [f32; 3],
+}
+
+/// G1MS. A model's own skeleton has its joints; a `_default` model that shares the base
+/// model's skeleton has a single placeholder joint and only the index map.
+#[derive(Clone, Debug)]
+pub struct Skeleton {
+    pub joints: Vec<Joint>,
+    /// Maps a joint number used by the geometry to an index into `joints` (0xffff: none).
+    pub index_map: Vec<u16>,
+    pub layer: u16,
+}
+
+impl Skeleton {
+    /// Each joint's position in model space, composed down the parent chain.
+    pub fn world_positions(&self) -> Vec<[f32; 3]> {
+        fn rotate(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+            let u = [q[0], q[1], q[2]];
+            let cross = |a: [f32; 3], b: [f32; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+            let c1 = cross(u, v);
+            let t = [c1[0] + q[3] * v[0], c1[1] + q[3] * v[1], c1[2] + q[3] * v[2]];
+            let c2 = cross(u, t);
+            [v[0] + 2.0 * c2[0], v[1] + 2.0 * c2[1], v[2] + 2.0 * c2[2]]
+        }
+        fn mul(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+            [
+                a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+                a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+                a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+                a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+            ]
+        }
+        let mut pos: Vec<[f32; 3]> = Vec::with_capacity(self.joints.len());
+        let mut rot: Vec<[f32; 4]> = Vec::with_capacity(self.joints.len());
+        for j in &self.joints {
+            match j.parent {
+                None => {
+                    pos.push(j.position);
+                    rot.push(j.rotation);
+                }
+                Some(p) => {
+                    let r = rotate(rot[p], j.position);
+                    pos.push([pos[p][0] + r[0], pos[p][1] + r[1], pos[p][2] + r[2]]);
+                    rot.push(mul(rot[p], j.rotation));
+                }
+            }
+        }
+        pos
+    }
+}
+
+fn parse_skeleton(chunk: &[u8]) -> Result<Skeleton, Error> {
+    // `chunk` includes its 12-byte header: offsets in G1MS count from the chunk's start.
+    let joints_at = u32_at(chunk, 12)? as usize;
+    let count = u16_at(chunk, 20)? as usize;
+    let map_count = u16_at(chunk, 22)? as usize;
+    let layer = u16_at(chunk, 24)?;
+    let mut index_map = Vec::with_capacity(map_count);
+    for i in 0..map_count {
+        index_map.push(u16_at(chunk, 28 + 2 * i)?);
+    }
+    let mut joints = Vec::with_capacity(count);
+    for i in 0..count {
+        let at = joints_at + 48 * i;
+        let f = |k: usize| f32_at(chunk, at + 4 * k);
+        let parent = u32_at(chunk, at + 12)?;
+        let parent = if parent & 0x8000_0000 != 0 {
+            None
+        } else if (parent as usize) < i {
+            Some(parent as usize)
+        } else {
+            return Err(Error::Corrupt("g1ms joint's parent does not come before it"));
+        };
+        joints.push(Joint {
+            scale: [f(0)?, f(1)?, f(2)?],
+            parent,
+            rotation: [f(4)?, f(5)?, f(6)?, f(7)?],
+            position: [f(8)?, f(9)?, f(10)?],
+        });
+    }
+    Ok(Skeleton { joints, index_map, layer })
+}
+
 #[derive(Clone, Debug)]
 pub struct G1m<'a> {
     pub version: [u8; 4],
     pub chunks: Vec<Chunk<'a>>,
     pub geometry: Option<Geometry<'a>>,
+    pub skeleton: Option<Skeleton>,
 }
 
 const MAX_COUNT: usize = 1 << 20;
@@ -358,6 +449,7 @@ impl<'a> G1m<'a> {
         let count = bounded(u32_at(data, 20)?)?;
         let mut chunks = Vec::with_capacity(count);
         let mut geometry = None;
+        let mut skeleton = None;
         for _ in 0..count {
             let head = data.get(at..at + 12).ok_or(Error::Corrupt("g1m chunk header past the end"))?;
             let len = u32_at(head, 8)? as usize;
@@ -372,10 +464,13 @@ impl<'a> G1m<'a> {
             if &chunk.magic == b"GM1G" {
                 geometry = Some(parse_geometry(chunk.body)?);
             }
+            if &chunk.magic == b"SM1G" {
+                skeleton = Some(parse_skeleton(&data[at..at + len])?);
+            }
             chunks.push(chunk);
             at += len;
         }
-        Ok(G1m { version, chunks, geometry })
+        Ok(G1m { version, chunks, geometry, skeleton })
     }
 }
 
@@ -444,5 +539,26 @@ impl Geometry<'_> {
             }
         }
         Ok(m)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn world_positions_follow_parents() {
+        // Root turned 90° about y; its child 10 along x ends up at -10 along z.
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        let s = Skeleton {
+            joints: vec![
+                Joint { scale: [1.0; 3], parent: None, rotation: [0.0, h, 0.0, h], position: [0.0, 5.0, 0.0] },
+                Joint { scale: [1.0; 3], parent: Some(0), rotation: [0.0, 0.0, 0.0, 1.0], position: [10.0, 0.0, 0.0] },
+            ],
+            index_map: vec![0, 1],
+            layer: 0,
+        };
+        let w = s.world_positions();
+        assert!((w[1][0]).abs() < 1e-4 && (w[1][1] - 5.0).abs() < 1e-4 && (w[1][2] + 10.0).abs() < 1e-4, "{w:?}");
     }
 }

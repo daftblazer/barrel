@@ -434,6 +434,7 @@ fn g1m_scan(dir: &Path) -> Result<()> {
     files_ending(dir, ".elixir.gz", &mut files)?;
     files.sort();
     let (mut models, mut submeshes, mut vertices, mut triangles) = (0usize, 0usize, 0usize, 0usize);
+    let (mut skeletons, mut joints) = (0usize, 0usize);
     let mut failed = Vec::new();
     for path in &files {
         let bytes = read(path)?;
@@ -444,6 +445,10 @@ fn g1m_scan(dir: &Path) -> Result<()> {
                 continue;
             }
             let result = barrel_formats::g1m::G1m::parse(data).and_then(|m| {
+                if let Some(s) = &m.skeleton {
+                    skeletons += 1;
+                    joints += s.joints.len();
+                }
                 let g = m.geometry.ok_or(barrel_formats::Error::Corrupt("no geometry"))?;
                 for s in &g.submeshes {
                     let mesh = g.simple_mesh(s)?;
@@ -462,6 +467,7 @@ fn g1m_scan(dir: &Path) -> Result<()> {
         }
     }
     println!("{models} models read, {} failed: {submeshes} submeshes, {vertices} vertices, {triangles} triangles", failed.len());
+    println!("{skeletons} skeletons, {joints} joints");
     for f in failed.iter().take(20) {
         println!("failed: {f}");
     }
