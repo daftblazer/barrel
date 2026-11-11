@@ -298,7 +298,15 @@ these numbers: `ECT_SOUND_BG_PLAY` `{track, volume %, 0, 0}` (805 uses, 116 trac
 `ECT_SOUND_BG_STOP` and `ECT_SOUND_BG_FADEOUT` `{hundredths of a second, 0}` (1,220 uses,
 mostly 1 or 1.5 s); `EVENT_MM08_AS4_130` stops the music, plays 105 ("日常2") and then the
 item jingle (6). `barrel_formats::bgm::tracks` reads the list and `barrel play-event` prints the
-music steps with their files and titles. Where the loop points are kept is not read yet.
+music steps with their files and titles.
+
+A music file's KOVS header carries its loop after the Ogg size: +0x08 the sample the loop goes
+back to, +0x0c the loop's end (0 in every file: the stream's end), and +0x10 1 for a piece
+played once. Of the 247 tracks 57 play once (the jingles: `sy_item`, the orchestral title), 184
+loop back to a point partway in (`ev_usual01` to sample 177,664 of 3,007,104, `bt_boss02` to
+314,838), and 6 loop whole; no loop point lies past its track's end. This is read from the
+files, not from the player's code (`voice::looping`; `barrel_audio::Mixer::play` takes the
+frame to loop back to).
 
 ## Saves (`GAMEDATA<NN>.pcsave`)
 

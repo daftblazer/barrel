@@ -77,7 +77,7 @@ mod tests {
         let mut out = Output::open(0.1).expect("audio device");
         let mut mixer = Mixer::new();
         let tone: Vec<f32> = (0..RATE as usize / 2).map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / RATE as f32).sin() * 0.1).collect();
-        let p = mixer.play(std::sync::Arc::new(crate::Sound { rate: RATE, channels: vec![tone] }), 1.0, false);
+        let p = mixer.play(std::sync::Arc::new(crate::Sound { rate: RATE, channels: vec![tone] }), 1.0, None);
         let mut fed = 0;
         let start = std::time::Instant::now();
         while mixer.is_playing(p) && start.elapsed().as_secs_f32() < 3.0 {

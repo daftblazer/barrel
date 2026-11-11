@@ -4,7 +4,8 @@
 //! ```text
 //! .fpl: u32 count (1000), then count × {u32 size, u32 offset} into the .fp (size 0: no clip)
 //! .fp:  the clips one after another, each a KOVS file:
-//!       "KOVS", u32 Ogg size, 24 bytes (0 here), then the Ogg Vorbis stream with its first
+//!       "KOVS", u32 Ogg size, 24 bytes (0 for the voices; for music the loop, [`looping`]),
+//!       then the Ogg Vorbis stream with its first
 //!       0x100 bytes XORed with their index ("OfeP" for "OggS")
 //! ```
 
@@ -23,6 +24,24 @@ pub fn list(fpl: &[u8]) -> Result<Vec<Option<(usize, usize)>>, Error> {
             Ok((size > 0).then_some((offset, size)))
         })
         .collect()
+}
+
+/// How a KOVS stream repeats (the header after its size; from the music, the code that plays it
+/// is not read): `once` for the pieces played a single time (+0x10 is 1: the item jingle, the
+/// orchestral title), otherwise looping from `start` (+0x08, in samples) to `end` (+0x0c; 0 in
+/// every file so far, the end of the stream).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Looping {
+    pub start: u32,
+    pub end: u32,
+    pub once: bool,
+}
+
+pub fn looping(kovs: &[u8]) -> Result<Looping, Error> {
+    if !kovs.starts_with(b"KOVS") {
+        return Err(Error::NotThisFormat);
+    }
+    Ok(Looping { start: u32_at(kovs, 8)?, end: u32_at(kovs, 12)?, once: u32_at(kovs, 16)? == 1 })
 }
 
 /// A KOVS clip's Ogg Vorbis stream, unscrambled.
