@@ -1561,8 +1561,14 @@ levels up to 50, is another table (0, 0, 0, 4, 9, 15 ... 9,999 at 50) not follow
 member's record keeps its level at +4 and its experience at +8; what it still needs
 (`0x14032dc50`) is the first column at one level past its own, held at the limit of 50 plus
 bonus value 2 (`0x14002f2f0 (2)`, raised by the bonuses), less its experience, at least 0
-(`battle_data::exp_table`, `barrel_game::growth`). How the battle's experience reaches each
-member's record (shared or whole, the members out of battle) is not read yet.
+(`battle_data::exp_table`, `barrel_game::growth`). The result screen (`0x1401d86f0`) gives the
+experience whole to every fighter on the party's side (`0x1401b2b30` with 6) and to the party
+list's seventh member (`0x141093530` slot 6, `0x140330620 (6)`), each held within 0 and 999,999
+(`0x14032dc20`); a member then goes up (`0x14032d8c0`: the level its experience reaches,
+`0x14005fc60`, the count of first-column totals it has within the limit, is above its own;
+`0x14032d790` sets it, adds the levels gained to +0x2a0, refreshes its stats with `0x14032d840`)
+unless the fighter's flag byte +0x286 is set (`0x1401ae380 (fighter, 6)`; not followed:
+presumably being down). `growth::Growth::gain`.
 
 ### A party member's stats (executable)
 

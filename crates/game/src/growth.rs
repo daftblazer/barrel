@@ -22,7 +22,7 @@ pub fn to_next(table: &[(i32, i32)], level: i32, exp: i32, limit_bonus: i32) -> 
     Some((need - exp).max(0))
 }
 
-/// The level `exp` reaches: the highest whose table total it has, within the limit.
+/// The level `exp` reaches (`0x14005fc60`): the count of table totals it has, within the limit.
 pub fn level_for(table: &[(i32, i32)], exp: i32, limit_bonus: i32) -> i32 {
     let limit = level_limit(limit_bonus);
     let mut level = 1;
@@ -32,6 +32,34 @@ pub fn level_for(table: &[(i32, i32)], exp: i32, limit_bonus: i32) -> i32 {
         }
     }
     level
+}
+
+/// The most experience a member keeps (`0x14032dc20` and `0x14032dbf0` hold it there, and at 0).
+pub const EXP_MAX: i32 = 999_999;
+
+/// A party member's growth: level (record +4), experience (+8) and the levels gained in all
+/// (+0x2a0).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Growth {
+    pub level: i32,
+    pub exp: i32,
+    pub gained: i32,
+}
+
+impl Growth {
+    /// A battle's experience reaching this member (`0x1401d86f0` on): it is added whole (each
+    /// fighter and the party's seventh, the list `0x141093530` slot 6, get all of it), held
+    /// within 0 and [`EXP_MAX`]; then, unless `held` (the fighter's flag +0x286), the member
+    /// goes up to the level its experience reaches (`0x14032d8c0`, `0x14032d790`) and the
+    /// levels gained are counted.
+    pub fn gain(&mut self, table: &[(i32, i32)], amount: i32, limit_bonus: i32, held: bool) {
+        self.exp = (self.exp + amount).clamp(0, EXP_MAX);
+        let level = level_for(table, self.exp, limit_bonus);
+        if !held && level > self.level {
+            self.gained += level - self.level;
+            self.level = level;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -49,5 +77,10 @@ mod tests {
         assert_eq!(to_next(&table, 50, 1_000_000, 0), Some(0));
         assert_eq!(level_for(&table, 1_000_000, 0), 50);
         assert_eq!(level_limit(60), 99);
+        let mut g = Growth { level: 3, exp: 25, gained: 0 };
+        g.gain(&table, 50, 0, false);
+        assert_eq!(g, Growth { level: 5, exp: 75, gained: 2 });
+        g.gain(&table, 2_000_000, 0, true);
+        assert_eq!((g.level, g.exp), (5, EXP_MAX));
     }
 }
