@@ -52,3 +52,14 @@ engine calls `pump(&mut mixer)` from its frame loop, which mixes just enough to 
 set time queued (a tenth of a second in the test), so the sound runs on the device's clock
 while the logic keeps its fixed tick.
 
+**Streaming.** Music is not decoded up front (a long track is tens of millions of frames and
+takes seconds): `barrel_formats::vorbis::Stream` keeps the compressed packets and, from a pass
+over each packet's mode bits (its block size), the frame each one's samples start at (a packet
+gives a quarter of the previous block plus a quarter of its own). Seeking to a frame restarts
+the decoder one packet early (that packet only primes the overlap), so the samples after a
+seek are the same as a whole decode's, bit for bit (`barrel stream-check FILE.kvs`). The
+mixer's stream voice (`Mixer::play_stream`) decodes just ahead of what it mixes and, at the
+end, seeks to the loop's start and carries on in the same buffer, so the wrap is seamless and
+interpolates across it as a whole clip would (the ignored test `streams_like_clips` compares
+the two over two wraps). Decoding happens in the frame loop's pump, a packet (about a
+thousandth of a second of work on the PC) at a time.

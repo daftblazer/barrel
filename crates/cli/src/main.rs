@@ -45,6 +45,7 @@ usage:
   barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
   barrel vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
   barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
+  barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
   barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
@@ -111,6 +112,7 @@ fn main() -> ExitCode {
         ["quests", install] => quests(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["se-scan", wh2] => se_scan(Path::new(wh2)),
+        ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
         ["days", install, n] => days(Path::new(install), n, false),
@@ -866,6 +868,34 @@ fn voice_wav(fpl: &Path, clip: &str, out: &Path, ogg_out: Option<&Path>) -> Resu
     }
     std::fs::write(out, w)?;
     println!("{frames} frames, {} channel(s), {} Hz", ch, id.rate);
+    Ok(())
+}
+
+/// Decodes a KOVS file whole and as a [`barrel_formats::vorbis::Stream`], from the start and
+/// from its loop point, and reports where they differ.
+fn stream_check(kvs: &Path) -> Result<()> {
+    use barrel_formats::{voice, vorbis};
+    let kovs = read(kvs)?;
+    let ogg = voice::ogg(&kovs).map_err(|e| format!("{}: {e}", kvs.display()))?;
+    let t = std::time::Instant::now();
+    let (_, whole) = vorbis::decode(&ogg).map_err(|e| format!("{}: {e}", kvs.display()))?;
+    let whole_time = t.elapsed();
+    let loop_start = voice::looping(&kovs).map(|l| u64::from(l.start)).unwrap_or(0);
+    for from in [0, loop_start, whole[0].len() as u64 / 2] {
+        let t = std::time::Instant::now();
+        let mut s = vorbis::Stream::open(&ogg).map_err(|e| format!("{}: {e}", kvs.display()))?;
+        let mut skip = s.seek(from) as usize;
+        let mut got: Vec<Vec<f32>> = vec![Vec::new(); whole.len()];
+        while let Some(chunk) = s.read() {
+            for (c, x) in chunk.into_iter().enumerate() {
+                got[c].extend_from_slice(&x[skip.min(x.len())..]);
+            }
+            skip = 0;
+        }
+        let want: Vec<&[f32]> = whole.iter().map(|c| &c[from as usize..]).collect();
+        let worst = got.iter().zip(&want).flat_map(|(g, w)| g.iter().zip(w.iter()).map(|(a, b)| (a - b).abs())).fold(0f32, f32::max);
+        println!("from frame {from}: {} frames (want {}), largest difference {worst:e}, {:?} (whole decode {whole_time:?})", got[0].len(), want[0].len(), t.elapsed());
+    }
     Ok(())
 }
 

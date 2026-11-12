@@ -38,12 +38,57 @@ impl Sound {
     }
 }
 
+/// A long sound decoded as it plays (music): the frames decoded and not yet played, as
+/// (left, right), and where it goes back to on reaching its end.
+struct Streamed {
+    stream: barrel_formats::vorbis::Stream,
+    ahead: std::collections::VecDeque<(f32, f32)>,
+    loop_from: Option<u64>,
+    ended: bool,
+}
+
+impl Streamed {
+    /// Decodes until `n` frames are ahead, or the stream (when it does not loop) ends.
+    fn fill(&mut self, n: usize) {
+        while self.ahead.len() < n && !self.ended {
+            match self.stream.read() {
+                Some(chunk) => self.push(&chunk, 0),
+                None => match self.loop_from {
+                    // Seamless: the loop's first frames follow the last ones directly.
+                    Some(from) => {
+                        let skip = self.stream.seek(from) as usize;
+                        match self.stream.read() {
+                            Some(chunk) => self.push(&chunk, skip),
+                            None => self.ended = true,
+                        }
+                    }
+                    None => self.ended = true,
+                },
+            }
+        }
+    }
+
+    fn push(&mut self, chunk: &[Vec<f32>], skip: usize) {
+        match chunk {
+            [m] => self.ahead.extend(m.iter().skip(skip).map(|&x| (x, x))),
+            [l, r, ..] => self.ahead.extend(l.iter().zip(r).skip(skip).map(|(&a, &b)| (a, b))),
+            [] => {}
+        }
+    }
+}
+
+enum Source {
+    Clip(Arc<Sound>),
+    Stream(Box<Streamed>),
+}
+
 /// A sound being played.
-#[derive(Clone, Debug)]
 struct Voice {
     id: u64,
-    sound: Arc<Sound>,
-    /// The position in the sound's frames (fractional when its rate differs from [`RATE`]).
+    source: Source,
+    rate: u32,
+    /// The position in the sound's frames (fractional when its rate differs from [`RATE`]); for
+    /// a stream, from the first frame still held.
     at: f64,
     gain: f32,
     /// Where it starts again on reaching its end (in its frames), when it loops.
@@ -75,7 +120,19 @@ impl Mixer {
     pub fn play(&mut self, sound: Arc<Sound>, gain: f32, loop_from: Option<usize>) -> Playing {
         self.next += 1;
         let loop_from = loop_from.filter(|&f| f < sound.frames());
-        self.voices.push(Voice { id: self.next, sound, at: 0.0, gain, loop_from, fading: None });
+        let rate = sound.rate;
+        self.voices.push(Voice { id: self.next, source: Source::Clip(sound), rate, at: 0.0, gain, loop_from, fading: None });
+        Playing(self.next)
+    }
+
+    /// Starts a stream at `gain`, decoding it as it plays: once, or going back to frame
+    /// `loop_from` each time it ends.
+    pub fn play_stream(&mut self, stream: barrel_formats::vorbis::Stream, gain: f32, loop_from: Option<u64>) -> Playing {
+        self.next += 1;
+        let loop_from = loop_from.filter(|&f| f < stream.frames());
+        let rate = stream.id().rate;
+        let s = Streamed { stream, ahead: Default::default(), loop_from, ended: false };
+        self.voices.push(Voice { id: self.next, source: Source::Stream(Box::new(s)), rate, at: 0.0, gain, loop_from: None, fading: None });
         Playing(self.next)
     }
 
@@ -109,44 +166,99 @@ impl Mixer {
         out.fill(0.0);
         let frames = out.len() / 2;
         for v in &mut self.voices {
-            let step = f64::from(v.sound.rate) / f64::from(RATE);
-            let len = v.sound.frames();
-            if len == 0 {
-                continue;
-            }
-            for f in 0..frames {
-                let i = v.at as usize;
-                if i >= len {
-                    match v.loop_from {
-                        Some(from) => v.at -= (len - from) as f64,
-                        None => break,
-                    }
-                }
-                let i = v.at as usize;
-                let t = (v.at - i as f64) as f32;
-                let (l0, r0) = v.sound.frame(i);
-                let (l1, r1) = match (i + 1 < len, v.loop_from) {
-                    (true, _) => v.sound.frame(i + 1),
-                    (false, Some(from)) => v.sound.frame(from),
-                    (false, None) => (l0, r0),
-                };
-                out[2 * f] += (l0 + (l1 - l0) * t) * v.gain;
-                out[2 * f + 1] += (r0 + (r1 - r0) * t) * v.gain;
-                v.at += step;
-                if let Some(d) = v.fading {
-                    v.gain -= d;
-                    if v.gain <= 0.0 {
-                        v.gain = 0.0;
-                        break;
-                    }
-                }
+            let step = f64::from(v.rate) / f64::from(RATE);
+            let level = Level { gain: &mut v.gain, fading: v.fading };
+            let out = &mut out[..2 * frames];
+            match &mut v.source {
+                Source::Clip(sound) => mix_clip(sound, &mut v.at, v.loop_from, step, level, out),
+                Source::Stream(s) => mix_stream(s, &mut v.at, step, level, out),
             }
         }
-        self.voices.retain(|v| !(v.fading.is_some() && v.gain <= 0.0) && (v.loop_from.is_some() || (v.at as usize) < v.sound.frames()));
+        self.voices.retain(|v| {
+            let faded = v.fading.is_some() && v.gain <= 0.0;
+            let more = match &v.source {
+                Source::Clip(s) => v.loop_from.is_some() || (v.at as usize) < s.frames(),
+                Source::Stream(s) => !s.ended || (v.at as usize) < s.ahead.len(),
+            };
+            !faded && more
+        });
         for s in out.iter_mut() {
             *s = (*s * self.master).clamp(-1.0, 1.0);
         }
     }
+}
+
+/// A voice's gain and fade.
+struct Level<'a> {
+    gain: &'a mut f32,
+    fading: Option<f32>,
+}
+
+impl Level<'_> {
+    /// Adds output frame `f` at the gain and moves the fade on; false once it has faded out.
+    fn add(&mut self, out: &mut [f32], f: usize, (l, r): (f32, f32)) -> bool {
+        out[2 * f] += l * *self.gain;
+        out[2 * f + 1] += r * *self.gain;
+        if let Some(d) = self.fading {
+            *self.gain -= d;
+            if *self.gain <= 0.0 {
+                *self.gain = 0.0;
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn lerp((l0, r0): (f32, f32), (l1, r1): (f32, f32), t: f32) -> (f32, f32) {
+    (l0 + (l1 - l0) * t, r0 + (r1 - r0) * t)
+}
+
+fn mix_clip(sound: &Sound, at: &mut f64, loop_from: Option<usize>, step: f64, mut level: Level, out: &mut [f32]) {
+    let len = sound.frames();
+    if len == 0 {
+        return;
+    }
+    for f in 0..out.len() / 2 {
+        if *at as usize >= len {
+            match loop_from {
+                Some(from) => *at -= (len - from) as f64,
+                None => break,
+            }
+        }
+        let i = *at as usize;
+        let t = (*at - i as f64) as f32;
+        let a = sound.frame(i);
+        let b = match (i + 1 < len, loop_from) {
+            (true, _) => sound.frame(i + 1),
+            (false, Some(from)) => sound.frame(from),
+            (false, None) => a,
+        };
+        *at += step;
+        if !level.add(out, f, lerp(a, b, t)) {
+            break;
+        }
+    }
+}
+
+fn mix_stream(s: &mut Streamed, at: &mut f64, step: f64, mut level: Level, out: &mut [f32]) {
+    let frames = out.len() / 2;
+    // Enough decoded for this mix and the frame after, to interpolate towards.
+    s.fill((*at + step * frames as f64) as usize + 2);
+    for f in 0..frames {
+        let i = *at as usize;
+        let Some(&a) = s.ahead.get(i) else { break };
+        let b = s.ahead.get(i + 1).copied().unwrap_or(a);
+        let t = (*at - i as f64) as f32;
+        *at += step;
+        if !level.add(out, f, lerp(a, b, t)) {
+            break;
+        }
+    }
+    // Drop what has been played.
+    let done = (*at as usize).min(s.ahead.len());
+    s.ahead.drain(..done);
+    *at -= done as f64;
 }
 
 /// The game's sounds from its install folder, decoded on first use and kept: voice clips by
@@ -161,9 +273,10 @@ pub struct Library {
 
 /// A music track ready to play.
 pub struct Music {
-    pub sound: Arc<Sound>,
+    /// Decoded as it plays ([`Mixer::play_stream`]).
+    pub stream: barrel_formats::vorbis::Stream,
     pub volume: f32,
-    pub loop_from: Option<usize>,
+    pub loop_from: Option<u64>,
 }
 
 impl Library {
@@ -190,8 +303,8 @@ impl Library {
         let t = self.tracks.get(track as usize)?;
         let kovs = std::fs::read(self.sound.join("BGM").join(&t.file)).ok()?;
         let looping = barrel_formats::voice::looping(&kovs).ok()?;
-        let sound = Sound::from_ogg(&barrel_formats::voice::ogg(&kovs).ok()?).ok()?;
-        Some(Music { sound: Arc::new(sound), volume: t.volume, loop_from: (!looping.once).then_some(looping.start as usize) })
+        let stream = barrel_formats::vorbis::Stream::open(&barrel_formats::voice::ogg(&kovs).ok()?).ok()?;
+        Some(Music { stream, volume: t.volume, loop_from: (!looping.once).then_some(u64::from(looping.start)) })
     }
 }
 
@@ -235,6 +348,28 @@ mod tests {
         m.mix(&mut out);
         let left: Vec<f32> = out.iter().step_by(2).copied().collect();
         assert_eq!(left, [0.0, 0.25, 0.5, 0.75, 0.5, 0.75, 0.5, 0.75]);
+    }
+
+    /// A stream plays as the whole clip does, through its loop's wrap. Needs a looping
+    /// KOVS file from the game: `BARREL_KVS=<file> cargo test -- --ignored streams_like_clips`.
+    #[test]
+    #[ignore]
+    fn streams_like_clips() {
+        let kovs = std::fs::read(std::env::var("BARREL_KVS").expect("BARREL_KVS")).unwrap();
+        let ogg = barrel_formats::voice::ogg(&kovs).unwrap();
+        let start = u64::from(barrel_formats::voice::looping(&kovs).unwrap().start);
+        let clip = Arc::new(Sound::from_ogg(&ogg).unwrap());
+        let len = clip.frames();
+        let (mut a, mut b) = (Mixer::new(), Mixer::new());
+        a.play(clip, 0.5, Some(start as usize));
+        b.play_stream(barrel_formats::vorbis::Stream::open(&ogg).unwrap(), 0.5, Some(start));
+        // Two passes over the end, in mixes of an odd size.
+        let (mut x, mut y) = (vec![0f32; 2 * 997], vec![0f32; 2 * 997]);
+        for _ in 0..(2 * len - start as usize) / 997 + 2 {
+            a.mix(&mut x);
+            b.mix(&mut y);
+            assert_eq!(x, y);
+        }
     }
 
     #[test]

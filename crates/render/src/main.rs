@@ -1791,7 +1791,7 @@ fn main() -> Result<()> {
                                 }
                                 if let Some(m) = library.music(t) {
                                     eprintln!("music {t}");
-                                    *music = Some(mixer.play(m.sound, m.volume * volume, m.loop_from));
+                                    *music = Some(mixer.play_stream(m.stream, m.volume * volume, m.loop_from));
                                 }
                             }
                             barrel_game::stage::Cue::Music { track: None, fade, .. } => {

@@ -915,6 +915,93 @@ impl Decoder {
 
 /// Decodes a whole Ogg Vorbis stream to samples per channel, cut to the last page's granule
 /// position.
+/// A Vorbis stream decoded a packet at a time, for long sounds (music) that are not worth
+/// holding decoded: it keeps the compressed audio packets and where each one's samples start,
+/// so it can go back to any frame (a loop's start) by restarting the decoder one packet early.
+pub struct Stream {
+    decoder: Decoder,
+    packets: Vec<Vec<u8>>,
+    /// The frame each audio packet's samples start at (the first packet gives none).
+    starts: Vec<u64>,
+    /// The stream's length in frames (the last page's granule position).
+    total: u64,
+    next: usize,
+}
+
+impl Stream {
+    pub fn open(ogg: &[u8]) -> Result<Stream, Error> {
+        let mut packets = packets(ogg)?;
+        let id = identification(packets.first().ok_or(Error::Corrupt("Vorbis stream empty"))?)?;
+        let setup = setup(packets.get(2).ok_or(Error::Corrupt("Vorbis stream without its setup header"))?, id.channels)?;
+        packets.drain(..3.min(packets.len()));
+        // Each packet's block size from its mode (the bits after the packet type); a packet
+        // gives a quarter of the previous block plus a quarter of its own.
+        let bits = ilog(setup.modes.len() as u32 - 1);
+        let mut starts = Vec::with_capacity(packets.len());
+        let (mut at, mut previous) = (0u64, None::<usize>);
+        for p in &packets {
+            let mut b = Bits::new(p);
+            let size = match (b.flag(), b.read(bits)) {
+                (Some(false), Some(m)) => setup.modes.get(m as usize).map(|m| id.blocksize[usize::from(m.long)]),
+                _ => None,
+            }
+            .ok_or(Error::Corrupt("Vorbis audio packet header"))?;
+            starts.push(at);
+            at += previous.map_or(0, |prev| (prev / 4 + size / 4) as u64);
+            previous = Some(size);
+        }
+        let last = ogg.windows(4).rposition(|w| w == b"OggS").and_then(|i| ogg.get(i + 6..i + 14)).map(|g| u64::from_le_bytes(g.try_into().unwrap()));
+        let total = last.unwrap_or(at).min(at);
+        Ok(Stream { decoder: Decoder::new(id, setup), packets, starts, total, next: 0 })
+    }
+
+    pub fn id(&self) -> Identification {
+        self.decoder.id
+    }
+
+    pub fn frames(&self) -> u64 {
+        self.total
+    }
+
+    /// Goes back (or on) to `frame`; returns how many frames of the next [`Stream::read`] come
+    /// before it, to be skipped.
+    pub fn seek(&mut self, frame: u64) -> u64 {
+        self.decoder.previous = None;
+        // The packet whose samples hold `frame`, decoded after its predecessor (which only
+        // primes the overlap and gives nothing).
+        let p = self.starts.partition_point(|&s| s <= frame).saturating_sub(1).max(1);
+        if p >= self.packets.len() {
+            self.next = self.packets.len();
+            return 0;
+        }
+        if self.decoder.packet(&self.packets[p - 1]).is_err() {
+            self.decoder.previous = None;
+        }
+        self.next = p;
+        frame.saturating_sub(self.starts[p])
+    }
+
+    /// The next packet's samples per channel, cut at the stream's end; `None` at the end.
+    pub fn read(&mut self) -> Option<Vec<Vec<f32>>> {
+        while self.next < self.packets.len() {
+            let k = self.next;
+            self.next += 1;
+            let mut out = self.decoder.packet(&self.packets[k]).ok()?;
+            let keep = self.total.saturating_sub(self.starts[k]) as usize;
+            for c in &mut out {
+                c.truncate(keep);
+            }
+            if out.first().is_some_and(|c| !c.is_empty()) {
+                return Some(out);
+            }
+            if keep == 0 && k > 0 && self.starts[k] >= self.total {
+                return None;
+            }
+        }
+        None
+    }
+}
+
 pub fn decode(ogg: &[u8]) -> Result<(Identification, Vec<Vec<f32>>), Error> {
     let packets = packets(ogg)?;
     let id = identification(packets.first().ok_or(Error::Corrupt("Vorbis stream empty"))?)?;
