@@ -647,6 +647,26 @@ number their characters by `Chara.xml` row, so `--stage` takes the measures from
 Not yet: move types 1 and 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.
 
+**Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
+`0x14028a700`) changes the field's lights for a scene and puts them back. Each `_SET` has an
+`_ORG` that restores what the field had (kept at the object's +0x258 to +0x2c8). The stage
+does not play them yet.
+
+| Command | Operands | What |
+|---|---|---|
+| `q42` `ECT_FIELDMAP_LIGHT_PARALLEL_SET` | `{light, r, g, b, pitch, yaw}` | a sun light (0 or 1): colour in 128ths (50, 30, 30 most often), and its direction (0, 0, 1) turned about x by `pitch` and then about y by `yaw`, both in hundredths of a degree (2000 and 23000 most often); handed to the scene's lights (+0x150, `0x1404d72b0`) |
+| `q43` `…_PARALLEL_ORG` | `{light}` | that light back as the field had it |
+| `q44` `ECT_FIELDMAP_LIGHT_AMBIENT_SET` | `{r, g, b}` | the ambient colour in 128ths (`0x1404d7270`); 80, 90, 85 most often |
+| `q45` `…_AMBIENT_ORG` | | the field's ambient back |
+| `q50` `ECT_FIELDMAP_CHARA_LIGHT_COLOR_SET` | `{r, g, b, w}` | the characters' shader colour `atCharaLightColor`, all four in hundredths (60, 30, 10, 35 most often) |
+| `q51` | | its field value back |
+| `q52` `ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_SET` | `{r, g, b, w}` | the same for the rim light, `atCharaRimLightColor` |
+| `q53` | | its field value back |
+| `q54` | 14: `{light, x, y, z, ...}` | one of four point lights (0 to 3) at a place in field units, with two colours in 128ths, ranges in thousandths and a falloff (`0x1404d7300`) |
+| `q55` | `{light}` | that point light back |
+| `q56` | `{strength}` | `atCharaPointLightStrength` in hundredths (30 most often) |
+| `q57` | | back to 0.3 |
+
 ## Who handles them
 
 The event player hands each command to a chain of listener objects, each asked in turn
@@ -681,7 +701,7 @@ body, over every event in Escha & Logy DX. 232 of the 238 commands are followed 
 number of words every time, which gives their operand count. The 6 that vary are listed
 with each count seen.
 
-The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` are in no switch found. The other groups' blanks were filled the same way, from every jump-table switch over command words in the executable (a range check, then a table of 4-byte offsets): the `q` commands' handlers are the field character listener and the world map's event object (`nspFM::clsFMWorldEvent`, vtable `0x1408f1390`, its slot 8 at `0x14028a700`, the `q42` to `q57` group), the `r` commands' `GameModeBattle` (`0x1401a0e90`, called from its slots 5 and 6), the `u` commands' `Event` itself (slot 8, `0x140050fa0`), `B3Balloon` and `IpuGallery`. Only `t1/0x30`, `t2/0x30` (operand prefixes), `u1/0x10` and `u6/0x40` are left without one.
+The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` are in no switch found. The other groups' blanks were filled the same way, from every jump-table switch over command words in the executable (a range check, then a table of 4-byte offsets): the `q` commands' handlers are the field character listener and the field map's event object (`nspFM::clsFMWorldEvent`, vtable `0x1408f1390`, its slot 8 at `0x14028a700`, the lighting commands `q42` to `q57`), the `r` commands' `GameModeBattle` (`0x1401a0e90`, called from its slots 5 and 6), the `u` commands' `Event` itself (slot 8, `0x140050fa0`), `B3Balloon` and `IpuGallery`. Only `t1/0x30`, `t2/0x30` (operand prefixes), `u1/0x10` and `u6/0x40` are left without one.
 
 | Word | Short | Name | Handled by | Uses | Words after it (count) |
 |---|---|---|---|---|---|
