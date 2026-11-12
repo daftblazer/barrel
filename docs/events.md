@@ -985,11 +985,14 @@ Most of what is left unmapped does not carry over by name at all. Sophie 2's com
 `s40` (`ECT_CHARA_MOTION_SET_LOOP`, 15,125 uses, five operands against Escha's four), shows
 why: Escha's `{character, motion, blend, loop}` holds `Chara.xml`-style characters (0, 1, 11,
 749), motions from the executable's small motion table (31, 32, 40) and blends in hundredths
-(0 to 100); Sophie 2's holds characters numbered from 10,028 up (the event's own, by the look
-of it), five- and six-digit motion numbers (12501, 172501), blends of 1,500 to 8,000 (likely
+(0 to 100); Sophie 2's holds characters numbered from 10,028 up, five- and six-digit motion numbers (12501, 172501), blends of 1,500 to 8,000 (likely
 milliseconds) and a fifth word (0, or -1 in 612). So Sophie 2's character, motion and timing
 commands need its own tables (its characters, its motions) rather than Escha's, and the
-translation is right to leave them out. (`BARREL_GAME=sophie2 barrel ebd-ops DIR WORD` reads
+translation is right to leave them out. The characters at least work as in Escha: they are
+slots, bound by `t2/0x30` (`{slot, row}`, Escha's `ECT_VARIINDEX_INDEX_SETTING`, same word)
+in the event's setup (`event_mm01_*`: 10029 → row 0, 10030 → 1, 10032 → 3, 10033 → 4, 10028 →
+420), which the player already reads through its slots. The motions and the third operand
+are what need Sophie 2's own tables. (`BARREL_GAME=sophie2 barrel ebd-ops DIR WORD` reads
 operand values with Sophie 2's table.)
 
 ## Script macros (`Script/*.nut`)
