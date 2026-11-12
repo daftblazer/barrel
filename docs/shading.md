@@ -207,8 +207,10 @@ then down at each level (each level's first blur reads the level above, so it al
 
 The renderer draws the scene into its own 8-bit target at half brightness (`HDR_RANGE_INV`);
 `glow.rs` then takes the bright parts into level 0 (a quarter of the screen), blurs across and
-down through the five levels and back up, adding (the add is a blend, which the programs do
-not show; taken as plain addition), and the post pass doubles the scene, adds level 0 at the
+down through the five levels and back up, averaging each level into the one above (the blend the
+programs do not show: plain addition summed five levels and made the glow three to five times
+the oracle close-up's; averaging puts Escha's face at 246, 218, 183 against the game's 245,
+219, 186, the workshop unchanged), and the post pass doubles the scene, adds level 0 at the
 field's `glow_add_rate` and draws the text over it. A field without `<hdr>` gets no glow.
 
 ## Terrain (the field's own `<AREA>.g1s`)

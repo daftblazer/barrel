@@ -116,14 +116,17 @@ impl Pipelines {
             let make = |additive: bool, render_pass: vk::RenderPass| {
                 let blend_att = [vk::PipelineColorBlendAttachmentState::default()
                     .blend_enable(additive)
-                    .src_color_blend_factor(vk::BlendFactor::ONE)
-                    .dst_color_blend_factor(vk::BlendFactor::ONE)
+                    // Back up the chain each level is averaged into the one above (the
+                    // blend the programs do not show; plain addition summed five levels and
+                    // came out three to five times the oracle frame's glow).
+                    .src_color_blend_factor(vk::BlendFactor::CONSTANT_COLOR)
+                    .dst_color_blend_factor(vk::BlendFactor::CONSTANT_COLOR)
                     .color_blend_op(vk::BlendOp::ADD)
                     .src_alpha_blend_factor(vk::BlendFactor::ONE)
                     .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
                     .alpha_blend_op(vk::BlendOp::ADD)
                     .color_write_mask(vk::ColorComponentFlags::RGBA)];
-                let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att);
+                let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att).blend_constants([0.5; 4]);
                 let info = vk::GraphicsPipelineCreateInfo::default()
                     .stages(&stages)
                     .vertex_input_state(&input)
