@@ -475,3 +475,33 @@ pub fn finish(s: &Synthesis, f: &Finish, serial: u16, k: &mut barrel_formats::sa
     let exp = experience(f.level, days, f.count, first, f.exp_rate, f.alchemy_level);
     (unit, exp)
 }
+
+/// The cost points a synthesis starts with for `user` (0 Escha, 1 Logy; `0x1400fe640`):
+/// the alchemy level + 10 + the `INIT_COST_ADD` synthesis bonus + the first parameter of
+/// every passive of type 8 (Expert Skill, +15) the user has learnt, at least 0. `learnt` is
+/// the save's `bonus/skill` flags, one per synthesis skill record.
+pub fn start_cp(user: i32, alchemy_level: i32, mix: &[i32], learnt: &[bool], skills: &[barrel_formats::battle_data::MixSkill]) -> i32 {
+    let bonus = crate::bonus::mix_slot(7, 0).and_then(|s| mix.get(s)).copied().unwrap_or(0);
+    let expert: i32 = skills
+        .iter()
+        .zip(learnt)
+        .filter(|(s, l)| **l && s.kind == 8 && (s.user == user || s.user == -1))
+        .map(|(s, _)| s.params[0])
+        .sum();
+    (alchemy_level + 10 + bonus + expert).max(0)
+}
+
+#[cfg(test)]
+mod start_tests {
+    use barrel_formats::battle_data::MixSkill;
+
+    #[test]
+    fn starting_cp_counts_level_bonus_and_expert_skill() {
+        let skill = |user, kind, p| MixSkill { name: String::new(), kind, params: [p, 0], user, level: 30, cost: [0; 4], description: String::new() };
+        let skills = [skill(0, 8, 15), skill(1, 8, 15), skill(0, 22, 10)];
+        let mut mix = vec![0; 0x220];
+        mix[5] = 30;
+        assert_eq!(super::start_cp(0, 12, &mix, &[true, true, true], &skills), 12 + 10 + 30 + 15);
+        assert_eq!(super::start_cp(1, 12, &[], &[false, false, true], &skills), 22);
+    }
+}

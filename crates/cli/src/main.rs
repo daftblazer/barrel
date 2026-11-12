@@ -908,6 +908,13 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
         }
     }
     println!("stats in use rebuilt for {same} of {all} characters");
+    if let (Some(mix_skills), Some((level, _))) = (bd::mix_skills(&pe, bd::MIX_SKILLS_EN), s.alchemy) {
+        let learnt: Vec<&str> = mix_skills.iter().zip(&s.mix_skills_learnt).filter(|(_, l)| **l).map(|(m, _)| m.name.as_str()).collect();
+        println!("synthesis skills learnt: {}", learnt.join(", "));
+        for (user, who) in ["Escha", "Logy"].iter().enumerate() {
+            println!("{who} starts a synthesis with {} CP", barrel_game::synthesis::start_cp(user as i32, level, &s.mix_bonus, &s.mix_skills_learnt, &mix_skills));
+        }
+    }
     Ok(())
 }
 

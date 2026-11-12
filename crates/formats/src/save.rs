@@ -616,6 +616,11 @@ pub struct Summary {
     /// `bonus/value`: 128 bonus values (`0x141079de0`, read through `0x14002f2f0`), mostly
     /// percentages added to 100 where they are used (docs/formats.md, "Bonuses").
     pub bonus_values: Vec<i32>,
+    /// `bonus/skill`: a flag per synthesis skill record (`battle_data::mix_skills`, 68 used of
+    /// 128): learnt.
+    pub mix_skills_learnt: Vec<bool>,
+    /// `bonus/mixvalue`: the 544 synthesis bonus totals (`bonus::mix_slot`).
+    pub mix_bonus: Vec<i32>,
     /// `worldmap/knowledgeRoute` (the 85 area records) and `knowledgePointer` (the 96
     /// places): 0 nothing, 10 new, 15 all (the game's "Knowledge: ..." levels).
     pub route_knowledge: Vec<i32>,
@@ -735,6 +740,10 @@ pub fn summary(records: &[Record]) -> Summary {
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
             .unwrap_or_default(),
         world_position: bytes(top("worldmap").and_then(|r| r.child("chara"))).and_then(|d| Some((i32_at(&d, 0)?, i32_at(&d, 4)?))),
+        mix_skills_learnt: bytes(top("bonus").and_then(|r| r.child("skill"))).map(|d| d.iter().map(|&b| b != 0).collect()).unwrap_or_default(),
+        mix_bonus: bytes(top("bonus").and_then(|r| r.child("mixvalue")))
+            .map(|d| d.chunks_exact(2).map(|c| i32::from(u16::from_le_bytes([c[0], c[1]]))).collect())
+            .unwrap_or_default(),
         bonus_values: bytes(top("bonus").and_then(|r| r.child("value")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
             .unwrap_or_default(),

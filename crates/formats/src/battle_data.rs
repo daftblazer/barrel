@@ -636,3 +636,44 @@ pub fn field_enemies(pe: &Pe, builder: u64) -> Option<Vec<FieldEnemy>> {
             .collect(),
     )
 }
+
+/// Escha's and Logy's synthesis skills: 68 records of 56 bytes (English executable; getter
+/// `0x1400fd480`), each skill twice, for user 0 (Escha) and 1 (Logy). docs/tables.md,
+/// "Synthesis skills".
+pub const MIX_SKILLS_EN: u64 = 0x1_407b_5f40;
+pub const MIX_SKILL_COUNT: usize = 68;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MixSkill {
+    pub name: String,
+    /// The skill switch's case (`synthesis::Skill`); 7 to 17 are passives.
+    pub kind: i32,
+    pub params: [i32; 2],
+    /// 0 Escha, 1 Logy.
+    pub user: i32,
+    /// The alchemy level it is learnt at; -1 for the two learnt otherwise.
+    pub level: i32,
+    /// Its cost in Fire, Water, Wind and Earth points.
+    pub cost: [i32; 4],
+    pub description: String,
+}
+
+pub fn mix_skills(pe: &Pe, table: u64) -> Option<Vec<MixSkill>> {
+    (0..MIX_SKILL_COUNT)
+        .map(|k| {
+            let va = table + 56 * k as u64;
+            let at = pe.offset(va)?;
+            let d = pe.data;
+            let w = |o: usize| i32_at(d, at + o);
+            Some(MixSkill {
+                name: text(pe, u64_at(d, at)?).unwrap_or_default(),
+                kind: w(8)?,
+                params: [w(12)?, w(16)?],
+                user: w(24)?,
+                level: w(28)?,
+                cost: [w(32)?, w(36)?, w(40)?, w(44)?],
+                description: text(pe, u64_at(d, at + 48)?).unwrap_or_default(),
+            })
+        })
+        .collect()
+}

@@ -1109,6 +1109,14 @@ slot when one of its `itemData` columns `category_00`..`category_03` is that cat
 (the tags turn into numbers through the executable's category enum). `barrel synth` warns
 when a material does not fit.
 
+**Learnt skills and starting CP.** The save's `bonus/skill` (128 bytes at `0x141079780`)
+holds a flag per skill record: learnt (`0x1400fd940` lists a user's learnt skills of a
+type: the flag set and the record's user that user or -1). One save at alchemy level 12 has
+exactly the level-8 and level-10 skills of both alchemists. A synthesis starts with the
+alchemy level + 10 + the `INIT_COST_ADD` bonus + the first parameter of every learnt type-8
+passive (Expert Skill, +15) cost points, at least 0 (`0x1400fe640`; `synthesis::start_cp`):
+22 for both in that save. `battle_data::mix_skills` reads the records.
+
 **The synthesis state** (0x4e0 bytes, one per step):
 
 | Offset | What |
