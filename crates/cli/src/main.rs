@@ -812,20 +812,23 @@ fn save(file: &Path) -> Result<()> {
     };
     let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
     println!("{} coded bytes → {} bytes of state", body.len(), state.len());
-    // The section names: NUL-terminated runs of 2 to 31 name characters after a u32 length.
-    let mut names = Vec::new();
-    let mut i = 4;
-    while i < state.len() {
-        let start = i;
-        while i < state.len() && (state[i].is_ascii_alphanumeric() || state[i] == b'_') {
-            i += 1;
+    fn show(r: &barrel_formats::save::Record, depth: usize) {
+        use barrel_formats::save::Body;
+        let pad = "  ".repeat(depth);
+        match &r.body {
+            Body::Data(d) => println!("{pad}{} [{}]", r.name, d.len()),
+            Body::Raw(d) => println!("{pad}{} raw {}", r.name, d.len()),
+            Body::Group(c) => {
+                println!("{pad}{} {{{}}}", r.name, c.len());
+                for x in c {
+                    show(x, depth + 1);
+                }
+            }
         }
-        if i < state.len() && state[i] == 0 && (2..32).contains(&(i - start)) {
-            names.push(String::from_utf8_lossy(&state[start..i]).into_owned());
-        }
-        i += 1;
     }
-    println!("names: {}", names.join(" "));
+    for r in barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))? {
+        show(&r, 0);
+    }
     Ok(())
 }
 

@@ -434,7 +434,23 @@ and a little-endian u32 length. The settings hold `ipu`, `bgm`, `movie`, `buc`, 
 coded, 300,855 decoded). The coding was found from a memory read of a short test run: the
 decoded settings sat in the save buffer at the title screen, and the code that fills it led
 to the codec; the decoder reproduces that memory byte for byte. The sections' fields are not
-read yet. `barrel save FILE` prints a save's header and its section names.
+read yet.
+
+**Records** (`save::state_records`): after the 0x20-byte header, each record is a
+little-endian u32 size counting itself and a NUL-terminated name, then most often a u32 length
+and that many bytes (`Body::Data`), or child records filling it exactly (`Body::Group`:
+`system_data`, `option`, `event`, `knowledge`, `item`, ...). Some are written by their own code
+and kept raw (`Body::Raw`: `FLAG` is two bytes and a `CLEAR` record of two bytes; `m_recipeData`
+a byte and a count of 265 entries; `costumeData` a count and length-value pairs; `money` 4
+bytes; `party` 7,852). Encoding drops the state's trailing zeros, so `decode` pads the state
+back until its top records are whole. A game save's top records: `dlc`, `event`
+(`m_eventListSaveData`, `m_eventFlag`, `m_isDoneToday`), `knowledge` (`item`, `recipe`, `book`,
+`fieldMap`, `monster`, `mixEsp`, `potential`, `eff`), `money`, `party`, `fieldmap`
+(`m_userDataFieldMapData`, `...Gimmick`, `...Enemy`, `m_userDataItemBoxOpenNum`), `library`,
+`item` (`m_unitKago` the basket, `m_unitContainer`, the `...Important` pair, `m_unitMaterial`,
+`limitSize`, `ID`), `time`, `fieldmap_effect`, `event_check`, `date`, `global`, `mix_lv`
+(`m_lv`, `m_exp`), `explore_equip`, `worldmap`, ... `barrel save FILE` prints the header and
+the record tree.
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

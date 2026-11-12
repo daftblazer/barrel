@@ -215,7 +215,88 @@ pub fn decode(coded: &[u8]) -> Result<Vec<u8>, Error> {
     if (sum, xor) != (sum_want, xor_want) {
         return Err(Error::Corrupt("save: checksums differ"));
     }
-    unsubstitute(&ungamma(&d[..data_len])?)
+    let mut state = unsubstitute(&ungamma(&d[..data_len])?)?;
+    // Encoding drops the state's trailing zero bytes (`0x140021a1f`): pad them back so the last
+    // top record is whole (each top record's size read in turn after the 0x20-byte header).
+    let mut end = 0x20;
+    while let Some(size) = state.get(end..end + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize) {
+        if size == 0 || size > 1 << 24 {
+            break;
+        }
+        end += size;
+    }
+    if end > state.len() {
+        state.resize(end, 0);
+    }
+    Ok(state)
+}
+
+/// A record of a save's state (after its 0x20-byte header): a little-endian u32 size counting
+/// itself, a NUL-terminated name, then one of
+/// - `Data`: a u32 length and that many bytes (most records);
+/// - `Group`: records that fill the rest exactly (`system_data`, `option`, ...);
+/// - `Raw`: anything else, kept as it is (some records are written by their own code:
+///   `FLAG` holds two bytes and a `CLEAR` record of two bytes, `m_recipeData` a byte and a
+///   count of 265 entries, `costumeData` a count and length-value pairs).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Record<'a> {
+    pub name: &'a str,
+    pub body: Body<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Body<'a> {
+    Data(&'a [u8]),
+    Group(Vec<Record<'a>>),
+    Raw(&'a [u8]),
+}
+
+impl<'a> Record<'a> {
+    /// The child record of that name, in a group.
+    pub fn child(&self, name: &str) -> Option<&Record<'a>> {
+        match &self.body {
+            Body::Group(c) => c.iter().find(|r| r.name == name),
+            _ => None,
+        }
+    }
+}
+
+/// The records that fill `d` exactly, or `None`.
+fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
+    let mut out = Vec::new();
+    let mut o = 0;
+    while o < d.len() {
+        let size = u32::from_le_bytes(d.get(o..o + 4)?.try_into().unwrap()) as usize;
+        let rec = d.get(o..o.checked_add(size)?)?;
+        let z = rec.get(4..)?.iter().position(|&b| b == 0)? + 4;
+        let name = std::str::from_utf8(&rec[4..z]).ok().filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))?;
+        let rest = &rec[z + 1..];
+        let body = match rest.get(..4).map(|l| u32::from_le_bytes(l.try_into().unwrap()) as usize) {
+            Some(len) if len == rest.len() - 4 => Body::Data(&rest[4..]),
+            _ => match records(rest) {
+                Some(children) if !rest.is_empty() => Body::Group(children),
+                _ => Body::Raw(rest),
+            },
+        };
+        out.push(Record { name, body });
+        o += size;
+    }
+    Some(out)
+}
+
+/// The top records of a decoded state ([`decode`]'s output): its header skipped, records read
+/// until the zero padding.
+pub fn state_records(state: &[u8]) -> Result<Vec<Record<'_>>, Error> {
+    let d = state.get(0x20..).ok_or(Error::Corrupt("save state shorter than its header"))?;
+    let mut end = 0;
+    while end + 4 <= d.len() {
+        let size = u32::from_le_bytes(d[end..end + 4].try_into().unwrap()) as usize;
+        if size == 0 || end + size > d.len() {
+            break;
+        }
+        end += size;
+    }
+    records(&d[..end]).ok_or(Error::Corrupt("save state records"))
 }
 
 #[cfg(test)]
@@ -264,7 +345,8 @@ mod tests {
         assert_eq!(d, original);
     }
 
-    /// The settings file of a test run against its state read from the game's memory
+    /// The settings file of a test run against its state read from the game's memory (whose
+    /// trailing zeros the file drops; `decode` restores those its records cover)
     /// (`BARREL_SYSDATA` = the file, `BARREL_SYSDATA_PLAIN` = the state; not in the repository).
     #[test]
     #[ignore]
@@ -272,5 +354,27 @@ mod tests {
         let (Ok(f), Ok(p)) = (std::env::var("BARREL_SYSDATA"), std::env::var("BARREL_SYSDATA_PLAIN")) else { return };
         let out = decode(&std::fs::read(f).unwrap()).unwrap();
         assert_eq!(out[..], std::fs::read(p).unwrap()[..out.len()]);
+    }
+
+    #[test]
+    fn records_nest() {
+        // header, then system_data { ipu [2 bytes], FLAG raw }
+        let rec = |name: &str, body: &[u8]| {
+            let mut r = ((4 + name.len() + 1 + body.len()) as u32).to_le_bytes().to_vec();
+            r.extend_from_slice(name.as_bytes());
+            r.push(0);
+            r.extend_from_slice(body);
+            r
+        };
+        let ipu = rec("ipu", &[2, 0, 0, 0, 7, 8]);
+        let flag = rec("FLAG", &[0, 0, 9]);
+        let top = rec("system_data", &[ipu, flag].concat());
+        let mut state = vec![0u8; 0x20];
+        state.extend_from_slice(&top);
+        state.extend_from_slice(&[0; 8]);
+        let r = state_records(&state).unwrap();
+        assert_eq!(r[0].name, "system_data");
+        assert_eq!(r[0].child("ipu").unwrap().body, Body::Data(&[7, 8]));
+        assert_eq!(r[0].child("FLAG").unwrap().body, Body::Raw(&[0, 0, 9]));
     }
 }
