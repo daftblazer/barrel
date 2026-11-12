@@ -39,6 +39,30 @@ The executables are mixed C++/CLI builds. Their .NET metadata names ~5,500 (Esch
 methods are IL, and almost all of those are CRT. The game logic is native. The game code's
 RTTI names 472 (Escha) and 546 (Shallie) classes.
 
+**How far Escha's readers reach in Shallie DX** (`barrel scan`, `g1m-scan`, `g1t-scan`,
+`g1a-scan`, `g1h-scan`, `opl2-scan`, `ktf-scan`, `ebd-scan`, `ebm-scan`, `xml-scan`,
+`voice-scan`, `vorbis-scan` over its install, unchanged):
+
+| Data | Read | Failed |
+|---|---|---|
+| Containers | 2,153 (106 zlib-chunked; versions 0 and 1) | 0 |
+| Models | 6,771 (13,493 submeshes, 6,771 skeletons) | 0 |
+| Textures | 11,885 in 2,259 packs | 0 |
+| Animations | 8,286 | 0 |
+| Morph files | 78 | 14: target strides other than 12, another set magic |
+| Placement lists, terrains | 136, 136 | 0 |
+| Events | 2,194 (270 distinct commands) | 0 |
+| Messages | 53,027 in 5,040 files | 0 |
+| Tables | 1,545 | 0 |
+| Voices | 17,000 clips each in Japanese (19.2 hours) and English (11.5 hours) | 0 |
+| Music | 246 | 0 |
+
+The save coding is the same too: Shallie's `SYSDATA.pcsave` decodes with `save::decode` (2,992
+bytes to 19,704, checksums matching) into the same record names (`system_data`, `ipu`, `bgm`,
+`eventData`, ...), though its leaf records do not follow Escha's u32-length form and read as
+raw (not looked into yet). What differs is the executable: every address in the docs is
+Escha's, and Shallie's game rules (its calendar works differently) need their own reading.
+
 ### Ayesha DX
 
 This is a hybrid. It keeps the PS3 game's PSSG data (`*.PSSG`) alongside KTGL formats.
