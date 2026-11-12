@@ -41,7 +41,7 @@ RTTI names 472 (Escha) and 546 (Shallie) classes.
 
 **How far Escha's readers reach in Shallie DX** (`barrel scan`, `g1m-scan`, `g1t-scan`,
 `g1a-scan`, `g1h-scan`, `opl2-scan`, `ktf-scan`, `ebd-scan`, `ebm-scan`, `xml-scan`,
-`voice-scan`, `vorbis-scan` over its install, unchanged):
+`voice-scan`, `vorbis-scan` over its install, unchanged but for the morph fix noted):
 
 | Data | Read | Failed |
 |---|---|---|
@@ -49,7 +49,7 @@ RTTI names 472 (Escha) and 546 (Shallie) classes.
 | Models | 6,771 (13,493 submeshes, 6,771 skeletons) | 0 |
 | Textures | 11,885 in 2,259 packs | 0 |
 | Animations | 8,286 | 0 |
-| Morph files | 78 | 14: target strides other than 12, another set magic |
+| Morph files | 92 (211 sets, 1,986 targets; after two fixes: the older `0200` header and targets with more than a position per vertex) | 0 |
 | Placement lists, terrains | 136, 136 | 0 |
 | Events | 2,194 (270 distinct commands) | 0 |
 | Messages | 53,027 in 5,040 files | 0 |

@@ -2,12 +2,14 @@
 //! the facial animations (single-value `g1a` tracks) blend.
 //!
 //! ```text
-//! header:  "_H1G", version ("2200"), file size, u16 header size, u16 set count,
-//!          u32 (0), then a u32 offset per set
+//! header:  "_H1G", version ("2200"; "0200" in some Shallie models), file size, u16 header
+//!          size (0x14; 0x10), u16 set count, then a u32 offset per set from the header's end
+//!          (in 2200 after a u32 0 the header size counts)
 //! set:     "PH1G", version ("0100"), size, u16 header size (0x14), u16 layout,
 //!          u32 n, then n - 1 u32 offsets from the set's start, one per target
 //! target:  a whole g1m ("_M1G") whose geometry has one vertex buffer: an offset (x, y, z
-//!          floats) for every vertex of the base model's vertex layout `layout`
+//!          floats, the layout's position attribute; most targets hold only that, 12 bytes a
+//!          vertex) for every vertex of the base model's vertex layout `layout`
 //! ```
 //!
 //! The base model is the `.g1m` of the same name (`PC20_MODEL_default.g1m` for
@@ -59,15 +61,23 @@ fn target(data: &[u8]) -> Result<Vec<[f32; 3]>, Error> {
     let model = G1m::parse(data)?;
     let geometry = model.geometry.ok_or(Error::Corrupt("g1h target without geometry"))?;
     let vb = geometry.vertex_buffers.first().ok_or(Error::Corrupt("g1h target without vertices"))?;
-    if vb.stride != 12 {
-        return Err(Error::Corrupt("g1h target stride is not 12"));
+    // The offsets are the layout's position (a float3 or float4; tightly packed float3s when
+    // the target names no layout). Some Shallie targets carry more than the position.
+    let at = match geometry.layouts.first().and_then(|l| l.attributes.iter().find(|a| a.semantic == crate::g1m::Semantic::Position && a.buffer == 0)) {
+        Some(a) if matches!(a.kind, crate::g1m::AttrType::Float3 | crate::g1m::AttrType::Float4) => a.offset as usize,
+        Some(_) => return Err(Error::Corrupt("g1h target position is not float")),
+        None if vb.stride == 12 => 0,
+        None => return Err(Error::Corrupt("g1h target without a position")),
+    };
+    if vb.stride < at + 12 {
+        return Err(Error::Corrupt("g1h target stride"));
     }
     Ok(vb
         .data
-        .chunks_exact(12)
+        .chunks_exact(vb.stride)
         .take(vb.count)
         .map(|v| {
-            let f = |i: usize| f32::from_le_bytes(v[i..i + 4].try_into().unwrap());
+            let f = |i: usize| f32::from_le_bytes(v[at + i..at + i + 4].try_into().unwrap());
             [f(0), f(4), f(8)]
         })
         .collect())
@@ -89,13 +99,16 @@ pub fn parse(data: &[u8]) -> Result<Vec<MorphSet>, Error> {
     if !data.starts_with(b"_H1G") {
         return Err(Error::NotThisFormat);
     }
+    // The set offsets follow the header, whose size is the u16 at +0xc (0x14 in version
+    // "2200", 0x10 in Shallie's older "0200", which has no zero word before them).
+    let header = u16_at(data, 0xc)? as usize;
     let sets = u16_at(data, 14)? as usize;
     if sets > MAX_SETS {
         return Err(Error::Corrupt("g1h set count"));
     }
     let mut out = Vec::with_capacity(sets);
     for i in 0..sets {
-        let at = u32_at(data, 0x14 + 4 * i)? as usize;
+        let at = u32_at(data, header + 4 * i)? as usize;
         let head = data.get(at..at + 0x14).ok_or(Error::Corrupt("g1h set past the end"))?;
         if !head.starts_with(b"PH1G") {
             return Err(Error::Corrupt("g1h set magic"));
