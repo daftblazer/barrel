@@ -1505,7 +1505,11 @@ fn main() -> Result<()> {
     let dynamic_state = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic);
     let raster = vk::PipelineRasterizationStateCreateInfo::default()
         .polygon_mode(vk::PolygonMode::FILL)
-        .cull_mode(vk::CullModeFlags::NONE)
+        // Back faces are culled, as the game does: rooms are one-sided boxes the event camera
+        // often looks into from outside, through walls and a ceiling that face away from it.
+        // The models' front faces wind clockwise once x is mirrored into render space.
+        .cull_mode(vk::CullModeFlags::BACK)
+        .front_face(vk::FrontFace::CLOCKWISE)
         .line_width(1.0);
     let msaa = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
     let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
@@ -1596,7 +1600,10 @@ fn main() -> Result<()> {
         let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
         let tfs = module(TERRAIN_FRAG)?;
         let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
-        let info = pipeline_info.stages(&tstages).layout(tpl);
+        // The heightmap is wound the other way from the models and seen from above only: no
+        // culling.
+        let traster = raster.cull_mode(vk::CullModeFlags::NONE);
+        let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster);
         let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
         terrain_gpu = Some((tex, tlayout, tpool, tset, tpl, tfs, tpipe));
     }

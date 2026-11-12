@@ -217,6 +217,12 @@ names) and the line spacing (53 atlas pixels) are ours: the game's layout code i
 `BARREL_TEXT_LOG=1` prints each line as it goes up. Frames written to files show the lines
 too.
 
+**Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
+mirrored into render space); the terrain is not culled (it winds the other way and is only seen
+from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are
+one-sided boxes with a ceiling that the event camera looks into from outside: without
+culling, the outside of a wall filled the view.
+
 **Resizing.** Viewport and scissor are dynamic state, so the pipelines survive a resize;
 the depth image and framebuffers are one `Targets` set, remade at the new size; the
 swapchain is rebuilt (`Presenter::rebuild`, handing over the old one) when the window

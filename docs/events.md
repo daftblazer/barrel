@@ -156,6 +156,18 @@ stall and flowerbeds behind them and Escha coming into frame. `barrel-view --eve
 event's camera; `--free-camera` places the view on the characters instead. The field of
 view is not in the command (40° is used for now).
 
+`t18/0x10` (`ECT_FIELDMAP_CAMERA_SET_FOLLOW_CHARA`, handler `0x1401e816d`) is `{character,
+on}`: the camera follows the character only when `on` is not 0, and otherwise follows nothing
+(`virtual +0x78(-1)`); the opening's `t18 0 0` turns following off, so `t20`'s target stands.
+
+Not settled: the sign of the yaw. With the camera placed at target + (sin yaw, ., -cos yaw)
+× distance before mirroring x, `EVENT_MM08_AS4_130` opens on its four characters but
+`EVENT_MM01_OP1_111` (yaw 137.89°, target (607, -21, 1808) + 150 up, distance 1000) frames a
+corner of the workshop with Escha about 30° off the view's centre; with the sign flipped,
+the opening frames the workshop and Escha (2° off centre) but `MM08_AS4_130` looks at empty
+grass. Something else in the field camera (the field's own camera data that `t19` selects,
+or operand 4's angle) presumably decides it.
+
 **Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
 second (the unit is read from the values below; that the frame time it counts down by is in
 seconds is not yet confirmed from the code): `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and
