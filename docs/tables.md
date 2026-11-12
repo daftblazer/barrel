@@ -604,9 +604,10 @@ the random generator), then every character but one (`0x140330120 (0x141098a48)`
 leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
 `0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2
 (or not in the list), 0.08 in 3 to 5, 0.03 below, kept at 100 at most (friendship points,
-presumably). On a month's first day (date divisible by 30) `0x140363860` closes the month just ended (0
-for April ... 11 for March, worked out as the months from April 1st of the school year to the
-first of the next month, less one): its report (`0x1403637e0`, 0x144-byte records at
+presumably). On a month's first day (date divisible by 30) `0x140363860` closes the month just ended: the
+months from the game's first day (`0x1402f02d0 (year 1, April, 1)`) to the first of the new
+month, less one, so 0 for the first April, 12 for the second (`calendar::ended_month`; sixty
+reports, five years, are kept and saved, `monthrep/data`): its report (`0x1403637e0`, 0x144-byte records at
 `0x141093570`) sums the month's syntheses, a byte per recipe for the 265 recipes (+0 to +0x108),
 each times the price (`itemData` `cost`, +0x24) of the item the recipe makes, into +0x134,
 stores the rank (global `0x14109c1e4`, which only rises, through `0x14035fec0` and the

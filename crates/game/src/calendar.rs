@@ -113,11 +113,23 @@ pub fn board_seed(date: u32, global: i32) -> [i32; 2] {
     [s0, step(s0, 2)]
 }
 
-/// The month of the school year that has just ended when day `v` begins a month (the monthly
-/// step `0x140363860`): 0 for April, ..., 11 for March. The game finds it as the months
-/// between April 1st of the school year and the first of the next month, less one.
+/// The game's first day, April 1st of school year 1.
+pub fn first_day() -> u32 {
+    Date { year: 1, month: 4, day: 1 }.number()
+}
+
+/// The month report a day falls in (`0x141093570` + 0x144 × it): the months since the game's
+/// first day (0 for the first April, 12 for the next; 60 reports, five years, are kept).
+pub fn month_index(v: u32) -> u32 {
+    v.saturating_sub(first_day()) / DAYS_PER_MONTH
+}
+
+/// The month that has just ended when day `v` begins a month (the monthly step
+/// `0x140363860`): the months from the game's first day (`0x1402f02d0 (year 1, April, 1)`) to
+/// the first of the new month, less one, so counted from the game's start, not the school
+/// year's.
 pub fn ended_month(v: u32) -> u32 {
-    (Date::of(v).month + 12 - 4 - 1) % 12
+    month_index(v).saturating_sub(1)
 }
 
 /// A month's total in its report (`0x1403637e0`, records of 0x144 bytes at `0x141093570`, one
@@ -174,6 +186,9 @@ mod tests {
         // May 1st ends April; April 1st (a new school year) ends March.
         assert_eq!(ended_month(Date { year: 1, month: 5, day: 1 }.number()), 0);
         assert_eq!(ended_month(Date { year: 2, month: 4, day: 1 }.number()), 11);
+        // Counted from the game's start: the second year's April is report 12, not 0.
+        assert_eq!(ended_month(Date { year: 2, month: 5, day: 1 }.number()), 12);
+        assert_eq!(month_index(Date { year: 1, month: 8, day: 20 }.number()), 4);
         assert_eq!(month_total(&[2, 0, 1], |i| [500, 550, 300][i]), 1300);
     }
 

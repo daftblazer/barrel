@@ -56,6 +56,8 @@ impl Default for MonthReport {
 }
 
 pub const RECIPES: usize = 265;
+/// Month reports kept (`0x141093570`, 0x144 bytes each; 19,440 bytes in a save): five years.
+pub const MONTHS: usize = 60;
 pub const MEMBERS: usize = 11;
 
 /// What the calendar keeps.
@@ -76,7 +78,7 @@ pub struct World {
     pub joined: Vec<usize>,
     pub leader: usize,
     pub rank: RankState,
-    /// The twelve months' reports.
+    /// The month reports, one per month since the game began (`MONTHS`).
     pub months: Vec<MonthReport>,
     /// The board's ten slots, as indices into the request list.
     pub board: [Option<usize>; 10],
@@ -113,7 +115,7 @@ impl World {
             joined: vec![leader],
             leader,
             rank: RankState::default(),
-            months: vec![MonthReport::default(); 12],
+            months: vec![MonthReport::default(); MONTHS],
             board: [None; 10],
             rolls: Vec::new(),
             stock: wares.iter().map(Stock::new).collect(),
@@ -122,8 +124,8 @@ impl World {
 
     /// The month report now being filled.
     pub fn month(&mut self) -> &mut MonthReport {
-        let k = (calendar::Date::of(self.date).month + 12 - 4) % 12;
-        &mut self.months[k as usize]
+        let k = calendar::month_index(self.date) as usize;
+        &mut self.months[k.min(MONTHS - 1)]
     }
 
     /// Lets `days` days pass (`0x14035bf10`), working each new day. The reason only labels
@@ -159,7 +161,7 @@ impl World {
         if calendar::month_start(self.date) {
             let k = calendar::ended_month(self.date) as usize;
             let rank = self.rank.rank;
-            let m = &mut self.months[k];
+            let m = &mut self.months[k.min(MONTHS - 1)];
             m.total = calendar::month_total(&m.recipes, t.recipe_cost);
             m.rank = rank;
             m.state = 1;
