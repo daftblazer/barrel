@@ -361,6 +361,14 @@ read as a big-endian number (`0xc2a2` ¢, `0xe280a6` …). The Latin glyphs reac
 the line's top; a space advances 10, `A` 23 (`barrel_formats::font`; `barrel font-text EXE
 FONT.g1t OUT.png TEXT` lays out a line from both). The other languages' tables are not read yet.
 
+The font also holds the 33 button icons that `<IMnn>` puts in a line: codes `0xd090` to
+`0xd0b0` (which would read as Cyrillic А to а), 50×50 at the atlas's top. The colours that
+`<CLxx>` names are a table at `0x1407b49b0` in the English executable, 16-byte records
+`{u64 name, u8 r, g, b, 0}`: `NR` ffffff, `BK` 000000, `RE` c80000, `GR` 00aa00, `BL` 5050f0,
+`R1` ff5050, `G1` 0af000, `P1` 882244, `YL` ffff00, `EG` 1eff1e, `BR` 3a1a08; the tag names
+that follow them are `CR`, `CL`, `#`, `CS`, `IM` (what `#` and `CS` do is not read). The English
+events use `<IMnn>` 23 times (tutorials) and `<CLGR>`/`<CLNR>` 5 times (accessories gained).
+
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
 The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its

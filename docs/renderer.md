@@ -200,9 +200,10 @@ pan law, the far side turned down linearly, is ours: the sound library's is not 
 (`text.rs`, `barrel_formats::font`): the lines come from `Event_EN` (the original's when no
 translation exists) and the speakers' names from `Saves_EN/chara/Chara.xml`. The stage keeps
 the latest line (`Stage::line`) and, for unattended playback, takes it down after the same
-reading time the schedule holds it for (`Stage::reading`). `<CR>` breaks a line, other
-markup (colours, inline icons) is left out for now, and long lines wrap at spaces (anywhere
-in Japanese). The text layer is a second pipeline in the same render pass (no depth, alpha
+reading time the schedule holds it for (`Stage::reading`). `<CR>` breaks a line, `<IMnn>`
+puts in button icon nn (a glyph of the font, drawn in its own colours), `<CLxx>` changes the
+colour by the executable's table and `<CLNR>` goes back to the line's own, and long lines
+wrap at spaces (anywhere in Japanese). The window's text is the table's `BR`, a dark brown. The text layer is a second pipeline in the same render pass (no depth, alpha
 blending) drawing screen-pixel quads from one vertex buffer that is only rewritten when the
 line or the screen size changes; glyphs take their coverage from the atlas's alpha and the
 panel is a quad with no texture. Sizes are for a 1080-line screen, scaled. The window is the game's own art,

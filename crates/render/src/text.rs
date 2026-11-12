@@ -34,6 +34,35 @@ pub struct Quad {
     pub texture: usize,
 }
 
+/// The text colours the markup names (`<CLGR>` ...), from the executable's table at
+/// `0x1407b49b0` (English; 16-byte records `{u64 name, u8 r, g, b, 0}`, in this order).
+pub const COLOURS: [(&str, [u8; 3]); 11] = [
+    ("NR", [0xff, 0xff, 0xff]),
+    ("BK", [0x00, 0x00, 0x00]),
+    ("RE", [0xc8, 0x00, 0x00]),
+    ("GR", [0x00, 0xaa, 0x00]),
+    ("BL", [0x50, 0x50, 0xf0]),
+    ("R1", [0xff, 0x50, 0x50]),
+    ("G1", [0x0a, 0xf0, 0x00]),
+    ("P1", [0x88, 0x22, 0x44]),
+    ("YL", [0xff, 0xff, 0x00]),
+    ("EG", [0x1e, 0xff, 0x1e]),
+    ("BR", [0x3a, 0x1a, 0x08]),
+];
+
+/// The first button icon's character: `<IMnn>` is the font's glyph for U+0410 + nn (codes
+/// `0xd090` on, which would be Cyrillic А to а; the game uses them for its 33 icons).
+pub const ICONS: u32 = 0x410;
+/// Colour changes ride in the laid-out text as these private-use characters (U+E000 + the
+/// colour's place in [`COLOURS`]; U+E0FF goes back to the line's own colour). They have no
+/// glyph, so they take no room.
+const COLOUR_MARK: u32 = 0xe000;
+const COLOUR_RESET: u32 = 0xe0ff;
+
+fn colour(rgb: [u8; 3]) -> [f32; 4] {
+    [f32::from(rgb[0]) / 255.0, f32::from(rgb[1]) / 255.0, f32::from(rgb[2]) / 255.0, 1.0]
+}
+
 /// The layer's textures: the font atlas and the message window pieces.
 pub const FONT: usize = 0;
 pub const UI: usize = 1;
@@ -91,10 +120,20 @@ impl Font {
 
     /// Glyph quads for `s` with its line's top-left at (x, y), `scale` screen pixels per atlas
     /// pixel.
-    fn run(&self, s: &str, x: f32, y: f32, scale: f32, color: [f32; 4], out: &mut Vec<Quad>) {
+    fn run(&self, s: &str, x: f32, y: f32, scale: f32, base: [f32; 4], out: &mut Vec<Quad>) {
         let mut pen = x;
+        let mut color = base;
         for c in s.chars() {
+            match u32::from(c) {
+                COLOUR_RESET => color = base,
+                // `<CLNR>` (normal) is the line's own colour too: white is for dark windows.
+                n if n == COLOUR_MARK => color = base,
+                n if (COLOUR_MARK..COLOUR_MARK + COLOURS.len() as u32).contains(&n) => color = colour(COLOURS[(n - COLOUR_MARK) as usize].1),
+                _ => {}
+            }
             let Some(g) = self.glyphs.get(&c) else { continue };
+            // Icons keep their own colours.
+            let tint = if (ICONS..ICONS + 33).contains(&u32::from(c)) { [1.0; 4] } else { color };
             if g.width > 3 {
                 let (gx, gy, gw, gh) = (f32::from(g.x), f32::from(g.y), f32::from(g.width), f32::from(g.height));
                 let left = pen + g.x_offset as f32 * scale;
@@ -102,7 +141,7 @@ impl Font {
                 out.push(Quad {
                     rect: [left, top, left + gw * scale, top + gh * scale],
                     uv: [gx / self.size, gy / self.size, (gx + gw) / self.size, (gy + gh) / self.size],
-                    color,
+                    color: tint,
                     texture: FONT,
                 });
             }
@@ -154,15 +193,16 @@ impl Font {
             self.run(name, sx + 50.0 * sk, name_top, name_scale, [1.0, 0.95, 0.85, 1.0], &mut out);
         }
         for l in &lines {
-            self.run(l, text_left, y, scale, [0.27, 0.19, 0.12, 1.0], &mut out);
+            // The game's brown (`BR`) on the cream window.
+            self.run(l, text_left, y, scale, colour(COLOURS[10].1), &mut out);
             y += LINE * scale;
         }
         out
     }
 }
 
-/// A message's text as plain lines: `<CR>` breaks a line, other markup (colours, inline
-/// icons) is left out.
+/// A message's text as lines ready to lay out: `<CR>` breaks a line, `<IMnn>` becomes the
+/// icon's character ([`ICONS`]), `<CLxx>` a colour mark, and other markup is left out.
 pub fn plain_lines(text: &str) -> Vec<String> {
     text.split("<CR>")
         .map(|l| {
@@ -170,13 +210,21 @@ pub fn plain_lines(text: &str) -> Vec<String> {
             let mut rest = l;
             while let Some(i) = rest.find('<') {
                 out.push_str(&rest[..i]);
-                match rest[i..].find('>') {
-                    Some(j) => rest = &rest[i + j + 1..],
-                    None => {
-                        rest = &rest[i..];
-                        break;
-                    }
+                let Some(j) = rest[i..].find('>') else {
+                    rest = &rest[i..];
+                    break;
+                };
+                let tag = &rest[i + 1..i + j];
+                if let Some(n) = tag.strip_prefix("IM").and_then(|n| n.parse::<u32>().ok()) {
+                    out.extend(char::from_u32(ICONS + n));
+                } else if let Some(name) = tag.strip_prefix("CL") {
+                    let mark = COLOURS.iter().position(|(c, _)| *c == name).map_or(COLOUR_RESET, |k| COLOUR_MARK + k as u32);
+                    out.extend(char::from_u32(mark));
+                } else if tag.chars().any(|c| !c.is_ascii_alphanumeric()) {
+                    // Not markup ("x < y > z").
+                    out.push_str(&rest[i..i + j + 1]);
                 }
+                rest = &rest[i + j + 1..];
             }
             out.push_str(rest);
             out
@@ -388,9 +436,24 @@ mod tests {
 
     #[test]
     fn markup_and_breaks() {
-        assert_eq!(plain_lines("Hello<CR><CLGR>there<CLNR>!"), ["Hello", "there!"]);
-        assert_eq!(plain_lines("a <IM12>b"), ["a b"]);
+        assert_eq!(plain_lines("Hello<CR><CLGR>there<CLNR>!"), ["Hello", "\u{e003}there\u{e000}!"]);
+        assert_eq!(plain_lines("Press <IM15> now"), ["Press \u{41f} now"]);
+        assert_eq!(plain_lines("a<XX>b<CLZZ>c"), ["ab\u{e0ff}c"]);
         assert_eq!(plain_lines("x < y"), ["x < y"]);
+        assert_eq!(plain_lines("x < y > z"), ["x < y > z"]);
+    }
+
+    #[test]
+    fn colours_and_icons() {
+        let mut f = font();
+        f.glyphs.insert('\u{410}', Glyph { x: 0, y: 0, width: 10, height: 20, x_offset: 0, y_offset: 10, advance: 10 });
+        let mut out = Vec::new();
+        let line = &plain_lines("a<CLGR>b<CLNR>c<IM00>")[0];
+        f.run(line, 0.0, 0.0, 1.0, [0.5; 4], &mut out);
+        let colours: Vec<[f32; 4]> = out.iter().map(|q| q.color).collect();
+        assert_eq!(colours, [[0.5; 4], colour([0, 0xaa, 0]), [0.5; 4], [1.0; 4]]);
+        // Marks take no room: the four glyphs sit 10 apart.
+        assert_eq!(out.iter().map(|q| q.rect[0]).collect::<Vec<_>>(), [0.0, 10.0, 20.0, 30.0]);
     }
 
     #[test]
