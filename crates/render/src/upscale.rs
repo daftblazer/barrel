@@ -1,7 +1,8 @@
 //! FSR 1 in the frame (`fsr.rs` has the constants, `easu.frag` and `rcas.frag` the passes):
 //! when the scene is drawn below the output's size, EASU scales it to the output into
 //! `upscaled` and RCAS sharpens that into `sharp`, which the post pass then reads in the
-//! scene's place. Both targets are 8-bit like the scene.
+//! scene's place. Both targets are 8-bit like the scene. Without scaling (the scene at the
+//! output's size, `RenderSettings::sharpen`, after TAA) RCAS alone sharpens the scene.
 
 use ash::vk;
 
@@ -36,7 +37,8 @@ pub struct Targets {
     pool: vk::DescriptorPool,
     scene_set: vk::DescriptorSet,
     upscaled_set: vk::DescriptorSet,
-    upscaled: Target,
+    /// EASU's output; none when the scene is already the output's size.
+    upscaled: Option<Target>,
     sharp: Target,
     input: (u32, u32),
     output: (u32, u32),
@@ -179,9 +181,17 @@ impl Targets {
             };
             Ok(Target { image, memory, view, framebuffer })
         };
-        let upscaled = target()?;
+        // EASU's target only when it scales; RCAS then reads that, else the scene itself.
+        let scene_set = set_for(scene)?;
+        let (upscaled, upscaled_set) = if input != output {
+            let t = target()?;
+            let set = set_for(t.view)?;
+            (Some(t), set)
+        } else {
+            (None, scene_set)
+        };
         let sharp = target()?;
-        Ok(Targets { pool, scene_set: set_for(scene)?, upscaled_set: set_for(upscaled.view)?, upscaled, sharp, input, output })
+        Ok(Targets { pool, scene_set, upscaled_set, upscaled, sharp, input, output })
     }
 
     /// The upscaled, sharpened scene, for the post pass to read.
@@ -189,7 +199,7 @@ impl Targets {
         self.sharp.view
     }
 
-    /// Records EASU then RCAS.
+    /// Records EASU (when it scales) then RCAS.
     ///
     /// # Safety
     /// `cb` is recording outside a render pass, after the scene's pass.
@@ -207,8 +217,10 @@ impl Targets {
             d.cmd_draw(cb, 3, 1, 0, 0);
             d.cmd_end_render_pass(cb);
         };
-        let con: Vec<f32> = fsr::easu_constants(self.input, self.output).concat();
-        run(&self.upscaled, p.easu, self.scene_set, &con);
+        if let Some(upscaled) = &self.upscaled {
+            let con: Vec<f32> = fsr::easu_constants(self.input, self.output).concat();
+            run(upscaled, p.easu, self.scene_set, &con);
+        }
         run(&self.sharp, p.rcas, self.upscaled_set, &[fsr::rcas_sharpness(SHARPNESS_STOPS)]);
     }
 
@@ -216,7 +228,7 @@ impl Targets {
         let d = &gpu.device;
         unsafe {
             let _ = d.device_wait_idle();
-            for t in [self.upscaled, self.sharp] {
+            for t in self.upscaled.into_iter().chain([self.sharp]) {
                 d.destroy_framebuffer(t.framebuffer, None);
                 d.destroy_image_view(t.view, None);
                 d.destroy_image(t.image, None);

@@ -689,7 +689,8 @@ impl Targets {
         };
         let resolved = taa.as_ref().map_or(scene_view, taa::Targets::result);
         let upscale = match upscale_pipelines {
-            Some(p) if scene_size != (width, height) => Some(upscale::Targets::new(gpu, p, resolved, sampler, scene_size, (width, height))?),
+            // FSR 1 when the scene is smaller; RCAS alone (`--sharpen`) when it is not.
+            Some(p) => Some(upscale::Targets::new(gpu, p, resolved, sampler, scene_size, (width, height))?),
             _ => None,
         };
         // The post pass samples the new scene image (TAA's, then FSR's when they run) and the glow.
@@ -1521,6 +1522,7 @@ fn main() -> Result<()> {
             "--motion" => settings.motion = true,
             "--jitter" => settings.jitter = true,
             "--taa" => settings.taa = true,
+            "--sharpen" => settings.sharpen = true,
             "--show-motion" => {
                 settings.motion = true;
                 show_motion = true;
@@ -2087,7 +2089,7 @@ fn main() -> Result<()> {
         }
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
-    let upscale_pipelines = if settings.fsr1() { Some(upscale::Pipelines::new(&gpu)?) } else { None };
+    let upscale_pipelines = if settings.fsr1() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu)?) } else { None };
     let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
     let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
