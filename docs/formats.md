@@ -420,6 +420,23 @@ buffer unchanged. So the bytes are turned between the read's end and the readers
 that owns those buffers; no function in the executable is dense in rotates or xors apart from
 runtime-library ones. Reading it from the running game (the plain buffer next to the file's
 bytes) would settle it, but test runs are on hold (they counted as Steam play time).
+
+**The codec, found from a memory read.** A short run dumped the game at its title screen. The
+decrypted `SYSDATA.pcsave` sat in the global save buffer (`[0x140e00f30]`, a vector of 0x5000
+bytes): a 0x20-byte header starting with the i32 20130322 (a date, 2013-03-22), then a u32
+length (0x4a6c), the name `system_data`, and named sections, each a NUL-terminated name and a
+little-endian u32 length (`ipu`, `bgm`, `movie`, `buc`, `eventData`, ...), mostly zeros. The file is
+2,912 bytes for 19,052 of state: it is **compressed**, then encrypted. The settings writer
+(`0x14015d380`) codes the buffer in place with `0x1400219a0 (codec = 0x14001ef90(), buffer,
+length, &coded_length, encode = 1)` and writes `coded_length` bytes with `fwrite`
+(`0x140138890` task, state 2 at `0x140138a70`, `0x140138580`). The codec trims trailing zero
+bytes, pads to 16, and works on 16-bit words with a multiply-add stream (`state = state ×
+key + 0x2f09`, the word xored with `(state >> 16) & 0x7fff` on some steps and less a running
+value), seeded from `0x3b9a73c9` (plus `0x1403b7390`'s value when encoding), with
+`0x140020340`/`0x140020840` (compression, encode side) and `0x14001fe10` (keyed with
+`0x3745d`, decode side) around it. Translating it is static work; the pair from the run (the
+file and its decrypted state) is the test.
+
 `barrel_formats::save` reads the header and `barrel save FILE` prints it.
 
 ## Voices (`Sound/Voice/Series*.fp`)
