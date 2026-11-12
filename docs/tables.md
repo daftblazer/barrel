@@ -661,7 +661,12 @@ slot 5, `0x1401bb650`) takes its targets as a list: `0x140189fc0` copies the bat
 selection (an object at +0xab8 of the battle, a vector of fighter pointers from its +0x1f8 to
 +0x200) into a local vector, and every step after that (the turn mark at the fighter's +0x29c,
 the hit loop from `0x1401bb956`) walks the whole vector. So one action can hit several
-fighters, and how many is decided where that selection is filled (not read yet). `Skill::target` and
+fighters, and how many is decided where that selection is filled. One filler: `0x140189d50`,
+when the selection's state (+0x1e8) is 5, has `0x1401a4430` gather fighters into it (+0x1f8)
+by a pick code from +0x1ec: 0 and 3 give 0x409, 1 gives 0x40a, anything else 0x408 (presumably
+whole-side picks, foes, allies or everyone; what sets +0x1e8 and +0x1ec, the skill or the
+menu, is not read yet). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
+and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
 ### A first duel
