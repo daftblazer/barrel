@@ -1891,8 +1891,12 @@ is not traced yet. These are not `s116`'s segments, which are fixed frame ranges
 
 Field NPCs are not in the field tables: `Saves/field/<FIELD>.xml` holds the field's camera,
 fog, light, wind and shader settings, and the field's `.opl2` only its objects. Where a
-town's own NPCs (character numbers 10048 and up, which events put in event mode with `q7`)
-come from is still open.
+town's own NPCs come from is still open. There are ten: character numbers 10048 to 10057, all
+of them put in event mode with `q7` by 201 events (most in the `QC*` chapters). No event adds
+them with `q3` or `q4` (only `EVENT_YY10_024` adds any number above 10000), so the field
+places them itself. The field-character manager finds a character by its number at +0x78
+(`0x1400760c0`, two lists at +0x10 and +0x28, then `0x140270230`), and no code builds the
+numbers from 10048 directly, so they presumably come from data.
 
 ## Deliveries (`Saves/delivery/DeliveryData.xml`)
 
