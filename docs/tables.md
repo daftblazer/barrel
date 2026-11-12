@@ -743,6 +743,16 @@ centre ((sin, 0, cos) × distance, `0x140804bb4` = 200), the first at the centre
 and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
+### The field's battle start
+
+The field's state machine (states registered by `0x140083e60` as pairs of an entry and an update
+function) has a battle-start state, `0x140084710` (update `0x140084c20`): it builds the battle
+setup from an encounter group (its +0x1c, `0x1400502a0`), copies its +0x20 into the setup's
++0x38 and the current area record's +0x14 (above) into the setup's +0x30, then makes the battle
+request (`0x140291b00`, `0x140291fd0`). What puts the field into that state when an enemy
+touches the player is not read yet (the scripts' `isHitCollision` is a wall check: on a hit
+they go back to waiting).
+
 ### Encounter groups
 
 Who a field enemy's battle brings is a static table in the executable: 226 groups of 0x38
@@ -1434,7 +1444,9 @@ gimmicks have their own tags, named by area and event (`FIELDMAP_GIMMICK_ENUM_AR
 **Gimmicks** are compiled in too: at `0x140770230` (English Escha) 96 records of 0x40 bytes,
 one per field area in `AREA_*` order (record 0 is `AREA_01_01`, "Twilight Forest 1", the Forest
 Entrance; its gimmicks stand around its gathering points), each six words (the first is the
-region: 1 the Twilight Forest, 2 the Old Highway, 3 the Southern Ruins ...), a pointer to the
+region: 1 the Twilight Forest, 2 the Old Highway, 3 the Southern Ruins ...; the sixth, +0x14,
+is what the field's battle start puts into the battle setup's +0x30: 19 for the Twilight Forest's
+areas, 7 for the Southern Ruins', the battle stage by the look of it), a pointer to the
 area's gimmick list (+0x20), a word, and pointers to its place and area names (+0x30, +0x38).
 The field copies each into its runtime object (+0x10e8 + 0x40 × area) and walks the list from
 there. A list is 0x60-byte gimmicks ended by -1:
