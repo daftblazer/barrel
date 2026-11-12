@@ -597,6 +597,20 @@ so on), so they track effects actually reached, not recipes known. Which code se
 not found yet (no direct stores into the block). `BARREL_EXE=... barrel save FILE` prints
 them.
 
+**Bonuses** (`bonus`, written by `0x14036b940`): four blocks copied from memory as they are.
+`skill`, 128 bytes at `0x141079780` (one byte a skill slot, 0 or 1); `mixvalue`, 544 u16 at
+`0x1410799a0`; `value`, 128 i32 at `0x141079de0`; `collectTimeBonus`, 17 bytes at
+`0x1410782e8`. A shorter saved block is zero-filled on load. `value[i]` is read through
+`0x14002f2f0` and raised through `0x14002f930(i, amount)` (adds). Where the readers put
+them: `value[1]` and `value[0x28]` as percentages on top of 100 (`0x1401d8600`, `0x140347f25`),
+`value[2]` (and `value[2 + k]` at `0x14005fc80`) added to a base of 50 and capped at 99,
+`value[3]` added as a float in the synthesis code (`0x14030f029`), `value[0x11]` taken off a
+cost (`0x14032f2ce`), a run of them added to the characters' equipped stats (`0x14032df23`,
+the +0x114 block of `Party`). One save has only `value[4]` = 5. These are the game's lasting
+bonuses (rewards), presumably granted through the reward action table at `0x14002f310` (247
+records of 0xb0 bytes behind `0x140df9998`, each a list of actions in 55 kinds: flags,
+events, items, achievements, ...), not read yet. `save::Summary::bonus_values`.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0

@@ -603,6 +603,9 @@ pub struct Summary {
     /// at `0x1410993a0`, 10 bytes a recipe; saved as a count, then a length (10) and the bytes
     /// for each.
     pub recipe_effects: Vec<[bool; 10]>,
+    /// `bonus/value`: 128 bonus values (`0x141079de0`, read through `0x14002f2f0`), mostly
+    /// percentages added to 100 where they are used (docs/formats.md, "Bonuses").
+    pub bonus_values: Vec<i32>,
 }
 
 /// The `knowledge` record: the library's level (0 to 10) for every entry of its eight lists,
@@ -686,6 +689,9 @@ pub fn summary(records: &[Record]) -> Summary {
         month_reports: bytes(top("monthrep").and_then(|r| r.child("data"))).map(|d| d.chunks_exact(0x144).map(<[u8]>::to_vec).collect()).unwrap_or_default(),
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
+            .unwrap_or_default(),
+        bonus_values: bytes(top("bonus").and_then(|r| r.child("value")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
             .unwrap_or_default(),
         recipe_effects: bytes(top("mix_recipe")).map(|d| recipe_flags(&d)).unwrap_or_default(),
         knowledge: {

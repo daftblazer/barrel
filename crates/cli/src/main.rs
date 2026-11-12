@@ -897,6 +897,8 @@ fn save(file: &Path) -> Result<()> {
         }
         n.iter().map(|(l, c)| format!("{l}:{c}")).collect::<Vec<_>>().join(" ")
     };
+    let bonuses: Vec<String> = s.bonus_values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
+    println!("bonus values {}", bonuses.join(" "));
     // BARREL_EXE=path/to/the executable: the recipes' revealed effects, by the recipe table.
     let recipes = std::env::var("BARREL_EXE").ok().and_then(|p| read(Path::new(&p)).ok()).and_then(|d| {
         let at = barrel_formats::recipe::find(&d, ESCHA_FIRST_RECIPE)?;
