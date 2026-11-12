@@ -302,7 +302,7 @@ target, 29 `BTL_BIG_ENEMYBONUS` × s and 30 `BTL_SMALL_ENEMYBONUS` / s with s =
 (unsigned) the number of targets; 41 `COST_PROPORTION_BONUS` × +0x18; and 42
 `WT_PROPORTION_BONUS` × `0x140190b90 (timeline, user)` / 100 added in floats. Each trait slot
 is rolled as its kind is asked for, in that order. `battle_data::traits` reads `item_potential.xml`'s rows (name, group and the two slots with their `ITEM_SUB_*` tags; `ITEM_SUB_BASE_NONE` left out) and `battle::trait_value` sums one kind over an item's traits as `0x14029db00` does. With a bonus b or an extra
-(`0x1401bdbcc`): b is cut to the act's bonus limit, and the amount becomes `trunc(amount ×
+(`0x1401bdbcc`): b is cut to the act's bonus limit (the per-act table at `0x140ce9590`: 20-byte records by act number, 12 flag bytes asked by `0x14002aa10(act, flag)`, the limit asked by `0x14002aa40`, 9,999 for most and 0 for some, e.g. `DAMAGE_FIX`, a last word; flag 3 is set on 77 acts; `battle_data::acts`, `barrel acts EXE`), and the amount becomes `trunc(amount ×
 (100 + b) / 100) + extra` and the second value `trunc(second × (100 + b) / 100)`
 (`battle::ItemBonusInputs`, `item_bonus`, `boost_amounts`, `actual_power_extra`; what
 `0x14029dd10`, `0x14029dc50`, `0x140111a80`, `0x140190b90` and the item's +0x18 to +0x20 are is

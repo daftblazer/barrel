@@ -117,6 +117,7 @@ fn main() -> ExitCode {
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
         ["item-effects", exe] => item_effects(Path::new(exe)),
+        ["acts", exe] => acts(Path::new(exe)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
@@ -2302,5 +2303,17 @@ fn quakes(install: &Path) -> Result<()> {
         println!("{:<11} {}", q.id, tracks.join(" "));
     }
     println!("{} quakes", all.len());
+    Ok(())
+}
+
+/// The per-act table (`battle_data::acts`): each act's name, set flags and bonus limit.
+fn acts(exe: &Path) -> Result<()> {
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let (names, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+    for (k, a) in barrel_formats::battle_data::acts(&pe, barrel_formats::battle_data::ACTS_EN).iter().enumerate() {
+        let flags: Vec<String> = a.flags.iter().enumerate().filter(|(_, f)| **f).map(|(i, _)| i.to_string()).collect();
+        println!("{k:3} {:32} flags {:20} limit {} last {}", names.get(k).map_or("?".to_string(), |n| n.to_string()), flags.join(","), a.limit, a.last);
+    }
     Ok(())
 }

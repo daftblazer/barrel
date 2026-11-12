@@ -420,3 +420,33 @@ pub fn traits(root: &crate::table::Element) -> Vec<Trait> {
         })
         .collect()
 }
+
+/// The per-act table (`0x14002aa10` asks its flags, `0x14002aa40` its limit): 20-byte records,
+/// one per `ACT_*` number from 0 to 0xe9 (record -1 sits before it), each 12 flag bytes, the
+/// limit an item's bonus is cut to (9,999 for most) and a last word.
+pub const ACTS_EN: u64 = 0x1_40ce_9590;
+pub const ACT_COUNT: usize = 0xea;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActInfo {
+    /// Flag 3: an item's trait bonus applies (`0x1401bd8ee`); flag 4: its `extra`.
+    pub flags: [bool; 12],
+    pub limit: i32,
+    pub last: i32,
+}
+
+/// Every act's flags and limit.
+pub fn acts(pe: &Pe, table: u64) -> Vec<ActInfo> {
+    (0..ACT_COUNT)
+        .map_while(|k| {
+            let at = pe.offset(table + 20 * k as u64)?;
+            let b = pe.data.get(at..at + 20)?;
+            let mut flags = [false; 12];
+            for (f, &v) in flags.iter_mut().zip(&b[..12]) {
+                *f = v != 0;
+            }
+            let word = |o: usize| i32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
+            Some(ActInfo { flags, limit: word(12), last: word(16) })
+        })
+        .collect()
+}
