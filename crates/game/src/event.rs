@@ -81,6 +81,9 @@ pub const EVENT_TELOP: u32 = 0x7500_0037;
 /// `u1/0x30` (`IpuGallery`): `{picture}`: a still picture over the scene
 /// (`barrel_formats::layout::still`; 0 and 1 show none).
 pub const STILL_SHOW: u32 = 0x7530_0001;
+/// `u2/0x30`: `{picture, hundredths}`: the still changes to `picture` fading over the time
+/// (`0x14029b2f0`, where `u1/0x30` calls `0x14029b1f0`).
+pub const STILL_FADE: u32 = 0x7530_0002;
 /// `u56`: `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to`.
 pub const EVENT_TELOP_ALPHA: u32 = 0x7500_0038;
 /// `ECT_SOUND_SE_PLAY` (`u1/0x10`, 5 uses): `{effect, a, volume %, pan ×100, d}`, taken to
@@ -183,8 +186,9 @@ pub enum Step<'a> {
     HeadStop { action: usize, character: u32 },
     /// A narration card is chosen (`u55`).
     Telop { action: usize, card: u32 },
-    /// A still picture is shown over the scene (`u1/0x30`).
-    Still { action: usize, picture: u32 },
+    /// A still picture is shown over the scene (`u1/0x30`), or fades in over `seconds`
+    /// (`u2/0x30`).
+    Still { action: usize, picture: u32, seconds: f32 },
     /// The narration card's opacity moves from `from` to `to` (0 to 1) over `seconds` (`u56`).
     TelopAlpha { action: usize, from: f32, to: f32, seconds: f32 },
     /// A sound effect plays (`ECT_SOUND_SE_PLAY`, or `s62` from a character) at `volume`
@@ -332,7 +336,10 @@ impl<'a> Player<'a> {
                 weight: rest.get(1).map_or(1.0, |&v| v as i32 as f32 / 100.0),
             }),
             (CHARA_HEAD_STOP, [character, ..]) => out.push(Step::HeadStop { action, character: *character }),
-            (STILL_SHOW, [picture, ..]) => out.push(Step::Still { action, picture: *picture }),
+            (STILL_SHOW, [picture, ..]) => out.push(Step::Still { action, picture: *picture, seconds: 0.0 }),
+            (STILL_FADE, [picture, rest @ ..]) => {
+                out.push(Step::Still { action, picture: *picture, seconds: rest.first().map_or(0.0, |&h| h as i32 as f32 / 100.0) })
+            }
             (EVENT_TELOP, [card, ..]) => out.push(Step::Telop { action, card: *card }),
             (EVENT_TELOP_ALPHA, [from, to, hundredths, ..]) => out.push(Step::TelopAlpha {
                 action,
@@ -694,7 +701,7 @@ mod tests {
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),
                 Step::Fade { preset, seconds, .. } => format!("fade {preset} over {seconds} s"),
                 Step::Telop { card, .. } => format!("narration card {card}"),
-                Step::Still { picture, .. } => format!("still {picture}"),
+                Step::Still { picture, seconds, .. } => format!("still {picture} over {seconds} s"),
                 Step::HeadGesture { character, segment, rate, weight, .. } => format!("{character} head gesture {segment} at {rate}× (weight {weight})"),
                 Step::HeadStop { character, .. } => format!("{character} head gesture ends"),
                 Step::TelopAlpha { from, to, seconds, .. } => format!("narration card {from} -> {to} over {seconds} s"),

@@ -2083,7 +2083,7 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
             }
             Step::HeadGesture { action, character, segment, rate, weight } => println!("{action:3} {} head gesture {segment} at {rate}x, weight {weight}", names.get(character as usize).map_or("?", String::as_str)),
             Step::HeadStop { action, character } => println!("{action:3} {} head gesture ends", names.get(character as usize).map_or("?", String::as_str)),
-            Step::Still { action, picture } => println!("{action:3} --- still picture {picture}"),
+            Step::Still { action, picture, seconds } => println!("{action:3} --- still picture {picture} (fading over {seconds} s)"),
             Step::Telop { action, card } => println!("{action:3} --- narration card {card}"),
             Step::TelopAlpha { action, from, to, seconds } => println!("{action:3} --- narration card opacity {from} -> {to} over {seconds} s"),
             Step::Fade { action, preset, seconds } => println!("{action:3} --- fade (preset {preset}) over {seconds} s"),

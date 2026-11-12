@@ -209,8 +209,9 @@ pub struct Stage {
     pub fade: Option<(u32, f32, f32)>,
     /// The narration card on screen (`u55`) and its opacity (`u56`).
     pub telop: Option<u32>,
-    /// The still picture shown (`u1/0x30`).
-    pub still: Option<u32>,
+    /// The still picture shown (`u1/0x30`, `u2/0x30`): it, the one before it, the stage time it
+    /// came and the seconds it fades in over.
+    pub still: Option<(u32, Option<u32>, f32, f32)>,
     pub telop_alpha: crate::field_camera::Tween,
     /// The latest line ([`Stage::line_shown`] says whether it is still up).
     pub line: Option<Line>,
@@ -331,7 +332,7 @@ impl Stage {
             Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
             Step::Telop { card, .. } => self.telop = Some(*card),
-            Step::Still { picture, .. } => self.still = Some(*picture),
+            Step::Still { picture, seconds, .. } => self.still = Some((*picture, self.still.map(|s| s.0), self.time, *seconds)),
             Step::MotionDivision { character, division, .. } => {
                 let now = self.time;
                 if let Some(p) = self.characters.get_mut(character).and_then(|b| b.motion.as_mut()) {

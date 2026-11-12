@@ -2034,7 +2034,7 @@ fn main() -> Result<()> {
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
     // The text layer, the font, and the line it was last given (rebuilt when that changes).
-    let mut text_layer: Option<(text::Layer, text::Font, Option<(Option<barrel_game::stage::Line>, u32, u32, Option<u32>, u16, Option<u32>)>)> = None;
+    let mut text_layer: Option<(text::Layer, text::Font, Option<(Option<barrel_game::stage::Line>, u32, u32, Option<u32>, u16, Option<(u32, Option<u32>, u16)>)>)> = None;
     // The narration cards the event shows (u55), and each one's pieces once the layer has
     // their textures: (texture slot, uv, rectangle on a 1920 × 1080 screen).
     let telop_cards: Vec<u32>;
@@ -2389,16 +2389,27 @@ fn main() -> Result<()> {
                 // The narration card and its opacity (in 1/1000ths, so a fade redraws each step).
                 let card = play.stage.telop.filter(|_| play.stage.telop_alpha.now() > 0.0);
                 let card_alpha = (play.stage.telop_alpha.now().clamp(0.0, 1.0) * 1000.0) as u16;
-                let still = play.stage.still.filter(|n| still_slots.contains_key(n));
+                // The still (and the one it fades in over), with its opacity in 1/1000ths.
+                let still = play.stage.still.map(|(n, before, since, seconds)| {
+                    let a = if seconds > 0.0 { ((play.stage.time - since) / seconds).clamp(0.0, 1.0) } else { 1.0 };
+                    (n, before, (a * 1000.0) as u16)
+                });
                 let now = Some((line.clone(), width, height, card, card_alpha, still));
                 if now != *last {
                     // The still picture first (under the window and the text): its size on a
                     // 1920 × 1080 screen, scaled to the height and centred.
                     let mut quads = Vec::new();
-                    if let Some(&(texture, [w, h])) = still.and_then(|n| still_slots.get(&n)) {
+                    if let Some((n, before, a)) = still {
                         let k = height as f32 / 1080.0;
                         let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
-                        quads.push(text::Quad { rect: [cx - w * k / 2.0, cy - h * k / 2.0, cx + w * k / 2.0, cy + h * k / 2.0], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture });
+                        let a = a as f32 / 1000.0;
+                        let layers = [(before.filter(|_| a < 1.0), 1.0), (Some(n), a)];
+                        for (picture, alpha) in layers {
+                            if let Some(&(texture, [w, h])) = picture.and_then(|p| still_slots.get(&p)) {
+                                let rect = [cx - w * k / 2.0, cy - h * k / 2.0, cx + w * k / 2.0, cy + h * k / 2.0];
+                                quads.push(text::Quad { rect, uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, alpha], texture });
+                            }
+                        }
                     }
                     quads.extend(match &line {
                         Some(l) => {

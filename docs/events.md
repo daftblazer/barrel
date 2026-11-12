@@ -227,7 +227,10 @@ file}`; files in `Data/x64/Ipu_EN`, else `Ipu`). 0 and 1 show none (most uses: 1
 `u1/0x30 1`), 2 is a black screen (63 uses), 3 white; the rest are logos, title screens and
 the `ev_still_*` event pictures. `EVENT_MM01_OP1_111` holds the black one from 0 to 1.5 s,
 under its first fade. The viewer draws the still under the window and the text, scaled to the
-height and centred; how the game fades a picture in or out (`u2/0x30`?) is not read.
+height and centred; `u2/0x30` (`{picture, hundredths}`, 84
+uses, case `0x14029b6f2` → `0x14029b2f0` with the seconds) changes to `picture` fading over
+the time (0.5 s between event stills); the viewer fades the new one in over the one before
+(how the game blends them inside `0x14029b2f0` is not read).
 
 **Labels and jumps.** `u3 {n}` marks label `n` in its action (an action's labels are found
 by scanning its words, `0x14020fcd6`); `u5 {n}` goes on from label `n` at once
