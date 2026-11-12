@@ -13,6 +13,7 @@ pub mod fight;
 pub mod event;
 pub mod face;
 pub mod gesture;
+pub mod library;
 pub mod monster_ai;
 mod names;
 pub mod macros;

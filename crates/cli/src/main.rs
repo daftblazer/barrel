@@ -889,6 +889,17 @@ fn save(file: &Path) -> Result<()> {
         format!("{d} (year {}, {}/{})", c.year, c.month, c.day)
     });
     println!("money {:?}, alchemy (level, exp) {:?}, day {}, sizes {:?}", s.money, s.alchemy, date.unwrap_or_else(|| "?".into()), s.limits);
+    let k = &s.knowledge;
+    let levels = |v: &[i32]| {
+        let mut n = std::collections::BTreeMap::new();
+        for &l in v {
+            *n.entry(l).or_insert(0) += 1;
+        }
+        n.iter().map(|(l, c)| format!("{l}:{c}")).collect::<Vec<_>>().join(" ")
+    };
+    for (name, v) in [("item", &k.item), ("recipe", &k.recipe), ("book", &k.book), ("fieldMap", &k.field_map), ("monster", &k.monster), ("mixEsp", &k.mix_esp), ("potential", &k.potential), ("eff", &k.eff)] {
+        println!("knowledge {name} ({}): {}", v.len(), levels(v));
+    }
     // BARREL_ITEMS=path/to/itemData.xml names the items.
     let names: Vec<String> = std::env::var("BARREL_ITEMS")
         .ok()

@@ -558,6 +558,33 @@ an entry holds once a field enemy is beaten (its record, the day, whether it is 
 read yet; the field's out-or-beaten check (`0x140075e10`) looks enemies up by area in a map kept
 at the field (+0x228, +0x40).
 
+**Knowledge** (`knowledge`, written by `0x140369970`): the library's levels, one i32 per
+entry in eight lists that are one block in memory at `0x141079fe0` (0x24e4 bytes, zeroed by
+`0x1403692d0`), each saved as its own record:
+
+| record | entries | offset | what |
+|---|---|---|---|
+| `item` | 560 | 0 | `itemData` rows |
+| `recipe` | 265 | 0x8c0 | recipes |
+| `book` | 73 | 0xce4 | recipe books |
+| `fieldMap` | 122 | 0xe08 | field maps |
+| `monster` | 153 | 0xff0 | monsters |
+| `mixEsp` | 90 | 0x1254 | synthesis skills |
+| `potential` | 400 | 0x13bc | traits |
+| `eff` | 698 | 0x19fc | effects |
+
+Levels only rise: the setters (`0x1403692f0` items, `0x1403694f0` recipes, `0x140369560`
+books) keep the higher value unless their third argument forces it, and an item reaching 2
+or more posts a library notice (message 0xe). Taking an item (`0x14029f4f0`, by how it came:
+kinds 0 to 4 at 10 and its recipe book at 2 via `0x140369520`, any other kind at 2) runs
+`0x140369840`, which raises the item, its four effects, its three traits (not while the flag
+at `0x1410782e3` is set) and the item row's two synthesis skills (`0x1402a35b0`) to that
+level. So 10 is known in full (made or gathered) and 2 seen (bought or given). One save holds
+items at 0, 2, 4 and 10, recipes at 0, 5 and 6, books at 0, 4 and 10. The request board reads
+the item levels: a synthesis request needs its item at 6 or more, a battle request an
+entry at 2 or more (which list is not read yet). The engine's rule is `library::learn_item`; `barrel save` counts the
+levels.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0

@@ -596,6 +596,35 @@ pub struct Summary {
     /// `shop/shop_data`: four shops, each a u32 and 50 wares' (count, days, state), the
     /// calendar's `Stock`.
     pub shops: Vec<Vec<[i32; 3]>>,
+    /// `knowledge`: how well the library knows each entry.
+    pub knowledge: Knowledge,
+}
+
+/// The `knowledge` record: the library's level (0 to 10) for every entry of its eight lists,
+/// as one block at `0x141079fe0` (0x24e4 bytes, zeroed by `0x1403692d0`). The levels only
+/// rise (`0x1403692f0` and the others keep the higher one unless forced), and an item reaching
+/// 2 or more posts a library notice. Item levels: 0 unknown, 2 seen (an item bought or
+/// given), 10 known in full (an item made or gathered), 4 also seen in a save; recipes hold 5
+/// and 6, books 4 and 10. The request board reads them: a synthesis request needs its item at
+/// 6 or more, a battle request an entry at 2.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Knowledge {
+    /// `item`: an `itemData` row each (560).
+    pub item: Vec<i32>,
+    /// `recipe`: the recipes (265).
+    pub recipe: Vec<i32>,
+    /// `book`: the recipe books (73).
+    pub book: Vec<i32>,
+    /// `fieldMap`: the field maps (122).
+    pub field_map: Vec<i32>,
+    /// `monster`: the monsters (153).
+    pub monster: Vec<i32>,
+    /// `mixEsp`: synthesis skills (90).
+    pub mix_esp: Vec<i32>,
+    /// `potential`: the traits (400).
+    pub potential: Vec<i32>,
+    /// `eff`: the effects (698).
+    pub eff: Vec<i32>,
 }
 
 pub fn summary(records: &[Record]) -> Summary {
@@ -653,6 +682,20 @@ pub fn summary(records: &[Record]) -> Summary {
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
             .unwrap_or_default(),
+        knowledge: {
+            let k = top("knowledge");
+            let levels = |n: &str| bytes(k.and_then(|r| r.child(n))).map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect()).unwrap_or_default();
+            Knowledge {
+                item: levels("item"),
+                recipe: levels("recipe"),
+                book: levels("book"),
+                field_map: levels("fieldMap"),
+                monster: levels("monster"),
+                mix_esp: levels("mixEsp"),
+                potential: levels("potential"),
+                eff: levels("eff"),
+            }
+        },
     }
 }
 
