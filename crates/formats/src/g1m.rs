@@ -28,8 +28,9 @@
 //!
 //! | 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags, u32 joint}`; the joint's top bit marks a joint of the base model's skeleton |
 //!
-//! Types 0x10001, 0x10003 and 0x10009 (shader parameters, LOD groups) are kept as raw
-//! sections for now.
+//! | 0x10003 | shader parameter sets (a submesh names one): per set `{u32 count}`, then per parameter `{u32 record size, u32 name length, u32 0, u16 value count, u16 type, name (padded), values}`; type 1 floats (`atEdge` 0.2, `atOutCol` (0.8, 0.8, 0.8), `g_specularPower`, `g_UVOffsetScaleL`, ...) |
+//!
+//! Types 0x10001 and 0x10009 (LOD groups) are kept as raw sections for now.
 
 use crate::{Error, u32_at};
 
@@ -158,6 +159,22 @@ pub struct Submesh {
     pub index_count: usize,
 }
 
+/// A named shader parameter (G1MG section 0x10003): `values` as floats (type 1) or the raw
+/// words read as floats otherwise.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShaderParam {
+    pub name: String,
+    pub kind: u16,
+    pub values: Vec<f32>,
+}
+
+impl Geometry<'_> {
+    /// A submesh's parameter by name.
+    pub fn param(&self, s: &Submesh, name: &str) -> Option<&[f32]> {
+        self.shader_params.get(s.shader_params)?.iter().find(|p| p.name == name).map(|p| p.values.as_slice())
+    }
+}
+
 /// One entry of a bone palette (G1MG section 0x10006).
 #[derive(Clone, Copy, Debug)]
 pub struct BoneRef {
@@ -182,6 +199,8 @@ pub struct Geometry<'a> {
     /// Bone palettes; a submesh's `bone_map` picks one. A vertex's bone index byte divided
     /// by 3 is a slot in that palette.
     pub bone_maps: Vec<Vec<BoneRef>>,
+    /// Shader parameter sets (a submesh's `shader_params` picks one).
+    pub shader_params: Vec<Vec<ShaderParam>>,
     /// Sections not decoded yet: (type, count, body).
     pub other_sections: Vec<(u32, u32, &'a [u8])>,
 }
@@ -350,6 +369,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         index_buffers: Vec::new(),
         submeshes: Vec::new(),
         bone_maps: Vec::new(),
+        shader_params: Vec::new(),
         other_sections: Vec::new(),
     };
     let mut at = 36;
@@ -361,6 +381,28 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         let n = bounded(count)?;
         let mut p = 12;
         match kind {
+            0x10003 => {
+                for _ in 0..n {
+                    let params = bounded(u32_at(sec, p)?)?;
+                    p += 4;
+                    let mut set = Vec::with_capacity(params);
+                    for _ in 0..params {
+                        let size = u32_at(sec, p)? as usize;
+                        let name_len = u32_at(sec, p + 4)? as usize;
+                        let count = u16_at(sec, p + 12)? as usize;
+                        let kind = u16_at(sec, p + 14)?;
+                        if size < 16 + name_len || name_len > 256 {
+                            return Err(Error::Corrupt("g1mg shader parameter size"));
+                        }
+                        let name_bytes = sec.get(p + 16..p + 16 + name_len).ok_or(Error::Corrupt("g1mg shader parameter past the end"))?;
+                        let name = String::from_utf8_lossy(name_bytes.split(|&b| b == 0).next().unwrap_or_default()).into_owned();
+                        let values = (0..count.min(64)).map(|k| f32_at(sec, p + 16 + name_len + 4 * k)).collect::<Result<_, _>>()?;
+                        set.push(ShaderParam { name, kind, values });
+                        p += size;
+                    }
+                    g.shader_params.push(set);
+                }
+            }
             0x10002 => {
                 for _ in 0..n {
                     let textures = bounded(u32_at(sec, p + 4)?)?;

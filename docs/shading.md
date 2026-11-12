@@ -199,3 +199,16 @@ under the light colour's soft light, blended half multiply, half overlay with `s
 (the channels within 1/255 of the brightest kept, the rest lowered 10%), then the point lights,
 fog, `atColor` and the HDR range as for the body. `g_outlineThickness` is the engine's (not
 read yet).
+
+## The materials' own parameters (`g1m` section 0x10003)
+
+Each submesh names a set of shader parameters in its model (`barrel g1m-materials FILE#N`
+lists them). Escha (`PC20_MODEL_default`): the eyes' sets have `g_UVOffsetScaleL`/`R` (0, 0, 1,
+1), `atColor` white, `g_ambientColor` white and `g_specularPower` 64; the body's have `atAtten`
+1, `atDark` (0.2, 0.2, 0.2), `atColor` white, `atOutCol` (0.8, 0.8, 0.8) and `atEdge` 0.2 (the
+outline's colour and thickness, for the `CharaFra*` pass), `g_FalloffGradVals` (0.3, 0.2, 32,
+32) and `g_ToonGradVals` (0.546875, 0.421875, 10.66667, 10.66667) - the rim and toon steps'
+constants that `CharaMTC`'s pixel program has compiled in (0.3 × 32, 0.546875 × 10.66667) -
+and `g_SphereCenter`. `Saves/shader/shader.xml` lists the shader packs by id (`CHARA_MTC` 1,
+`CHARA_FRA_HAIR` 17, `CHARA_FRA_BODY` 18, ...) and `chara_shader_param.xml` the shared
+textures (`sEnv` `defaultref.g1t`, `sOutline` `outline.g1t`, `sAlphamask` `alphamask.g1t`).
