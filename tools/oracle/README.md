@@ -22,3 +22,10 @@ scene really looks like, and values the game only computes while running.
 To the opening, with the pad: A at the title, A (New Game), A on Escha's card, A, D-pad left
 (Yes), A; the opening movie shows Proton's colour bars and A skips it, and
 `EVENT_MM01_OP1_111` begins. On the keyboard: `k` confirms, the arrow keys move.
+
+**Without Steam:** tried (2026-11-12) and the game will not run: under Proton's own Wine (its
+Wine Mono for the English executable's .NET import, its DXVK copied into a prefix of its own),
+with no Steam variables, the executable exits with 0 after a second, the Steam API's restart
+check asking Steam to start it instead. Getting around that would mean replacing or patching
+the game's `steam_api64.dll`, which this project does not do. So oracle runs go through Steam:
+keep them short and stop them right after (`stop.sh`), as they count as the player's playtime.
