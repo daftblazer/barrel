@@ -1413,7 +1413,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
                 }
                 None => effect_names,
             };
-            let mut action = barrel_game::battle::item_action(&name, 2, 600, &ids, &item_rows);
+            let mut action = barrel_game::battle::item_action(&name, 2, row.map_or(0, |b| b.area), 600, &ids, &item_rows);
             if action.effects.iter().any(|e| matches!(e.act, 19 | 21 | 81)) {
                 action.target = 1;
             }
@@ -2568,7 +2568,7 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
         for u in s.battle_items.get(c).into_iter().flatten() {
             let Some(row) = table.iter().find(|b| b.item == u.item as i32) else { continue };
             let name = item_names.get(u.item as usize).cloned().unwrap_or_default();
-            let action = barrel_game::battle::item_action(&name, row.target, row.wait, &u.effects, &item_rows);
+            let action = barrel_game::battle::item_action(&name, row.target, row.area, row.wait, &u.effects, &item_rows);
             let held_traits = u.traits.iter().filter_map(|&t| usize::try_from(t).ok().and_then(|t| traits.get(t)).cloned()).collect();
             member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(u.quality), count: u.counts[0].max(0) as u32, traits: held_traits });
         }

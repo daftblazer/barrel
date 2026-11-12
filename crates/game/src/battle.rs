@@ -36,19 +36,20 @@ pub fn item_power(value: f32) -> i32 {
     (value * 0.5 + 75.0) as i32
 }
 
-/// A held item as a battle action (`0x14029d270`): its effects are the `item_effect` rows its
+/// A held item as a battle action (`0x14029d270`), reaching its `area` (the item record's word
+/// after its target, `0x1402a25e0`; `fight::Battle::area`): its effects are the `item_effect` rows its
 /// instance names (four 16-bit ids at +0x10, -1 for none; rows up to 0x2b9), each row's slots
 /// in order, all at the item's power ([`item_power`] of its value). Not in yet: the override
 /// record some items have (`0x1400e3480`: one id swapped for another) and the effects its kind-7
 /// traits add (instance +0x8, `0x1402a1e20`).
-pub fn item_action(name: &str, target: i32, wait: i32, effect_ids: &[i16], rows: &[barrel_formats::battle_data::ItemEffect]) -> barrel_formats::battle_data::Skill {
+pub fn item_action(name: &str, target: i32, area: i32, wait: i32, effect_ids: &[i16], rows: &[barrel_formats::battle_data::ItemEffect]) -> barrel_formats::battle_data::Skill {
     let effects = effect_ids
         .iter()
         .filter(|&&id| (0..=0x2b9).contains(&id))
         .filter_map(|&id| rows.get(id as usize))
         .flat_map(|row| row.effects.iter().copied())
         .collect();
-    barrel_formats::battle_data::Skill { name: name.to_string(), category: String::new(), wait, target, spread: 0, effects, description: String::new() }
+    barrel_formats::battle_data::Skill { name: name.to_string(), category: String::new(), wait, target, spread: area, effects, description: String::new() }
 }
 
 /// The chance an instant-death act kills (the handlers at `0x1401bfd59`, `0x1401bfd9f` and
@@ -749,7 +750,7 @@ mod tests {
             ItemEffect { name: "Heal S".into(), tag: String::new(), group: String::new(), effects: vec![fx(19, 30)] },
             ItemEffect { name: "Revive".into(), tag: String::new(), group: String::new(), effects: vec![fx(81, 20), fx(19, 5)] },
         ];
-        let item = item_action("Salve", 1, 600, &[1, -1, 0, 0x300], &rows);
+        let item = item_action("Salve", 1, 0, 600, &[1, -1, 0, 0x300], &rows);
         assert_eq!(item.effects.iter().map(|e| (e.act, e.min)).collect::<Vec<_>>(), [(81, 20), (19, 5), (19, 30)]);
         assert_eq!((item.target, item.wait), (1, 600));
     }

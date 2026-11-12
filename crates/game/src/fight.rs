@@ -60,6 +60,8 @@ pub struct Fighter {
     /// Where it stands (the model's +0x230; not read yet, all 0), for the nearest and
     /// farthest target picks.
     pub position: [f32; 3],
+    /// How big it stands (+0x358), counted in areas' reach and in the formation's spacing.
+    pub size: f32,
     /// What it adds to its weight as a random target (virtual +0x128; not read yet, 0).
     pub draw: i32,
     /// The character a monster remembers (+0x314; -1 none), for target pick 4.
@@ -83,7 +85,7 @@ impl Fighter {
         s[stat::DEFENSE] = block.defense;
         s[stat::SPEED] = block.speed;
         s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
-        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], draw: 0, remembered: -1, last_skill: 0, guts_used: false }
+        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], size: 0.0, draw: 0, remembered: -1, last_skill: 0, guts_used: false }
     }
 
     /// With `mp` as its MP and maximum MP (the monsters' blocks have none).
@@ -373,8 +375,7 @@ impl Battle {
     /// standing (and the centre itself, standing or not) within the area `kind` gives. Kind 6 is a
     /// line from `who` towards the centre, 150 either side and 2,000 long (`0x1401bc5c0`,
     /// `0x1401bc700`); any other a circle about the centre on the ground of radius
-    /// `RADIUS[kind]` (`0x1408041d8`). The game also allows for each fighter's size (+0x358),
-    /// which Barrel's fighters do not carry yet (taken as 0).
+    /// `RADIUS[kind]` (`0x1408041d8`), each fighter's size (+0x358) added to the reach.
     /// Kind 0 (radius 50) is taken as the centre alone: in the game no two fighters stand that
     /// close (the nudge parts monsters by their sizes; the party's places are hundreds apart),
     /// and fighters built without places all stand at the origin.
@@ -398,10 +399,11 @@ impl Battle {
                 let (px, pz) = (p[0] - u[0], p[2] - u[2]);
                 let along = px * fx + pz * fz;
                 let across = (px * fz - pz * fx).abs();
-                (0.0..=2000.0).contains(&along) && across <= 150.0
+                let size = self.fighters[k].size;
+                (-size..=2000.0 + size).contains(&along) && across <= 150.0 + size
             } else {
                 let r = RADIUS.get(kind.max(0) as usize).copied().unwrap_or(50.0);
-                ((p[0] - c[0]).powi(2) + (p[2] - c[2]).powi(2)).sqrt() < r
+                ((p[0] - c[0]).powi(2) + (p[2] - c[2]).powi(2)).sqrt() < r + self.fighters[k].size
             }
         };
         let mut out = vec![centre];

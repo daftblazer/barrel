@@ -825,7 +825,14 @@ fights encounter group N's draw with the save's party: group 12 drew two Ore Rat
 Dogs against Escha, Katla and Wilbell, who won. An action now reaches everyone its area holds (`Battle::area`, `act_with`): its effects are
 rolled once and then applied, in slot order, to each fighter on the centre's side within it
 (the centre first), each reported; the action's wait and count once. Kind 0 is the target alone
-(no two fighters stand within 50 in the game). Sizes are not carried yet (taken as 0). The
+(no two fighters stand within 50 in the game). Each fighter's size (`Fighter::size`, +0x358)
+adds to the reach (and the line's width and length), as in the game; monsters' real sizes are
+not read yet, so the skirmish gives each a stand-in 100, the same it spaces them by. Items
+reach their record's area word (the word after the target, `0x1402a25e0`;
+`battle::item_action`'s `area`): Bomb, Ice Bomb, Living Bomb, Dire Bomb and Omega Craft 1 (350),
+Craft and the Dimension Bombs 2 (450), the Lightning Bomb 0 (one foe). Over the 265 battle items
+(target, area): (1, 0) 214, (2, 2) 15, (2, 1) 9, (1, 2) 7, (2, 0) 5, (2, 5) 3, and a few others.
+Against group 3's five Ore Rats a Bomb now hits two at once, for the same rolled damage. The
 skills' area word is record +0x20 (`battle_data::Skill::spread`; it had been read from +0x14,
 another word).
 

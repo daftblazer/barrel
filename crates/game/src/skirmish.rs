@@ -92,6 +92,9 @@ impl<'a> Member<'a> {
     }
 }
 
+/// A stand-in for every monster's size (+0x358) until the real ones are read.
+const MONSTER_SIZE: f32 = 100.0;
+
 /// Runs the battle until a side wins or `max_events` happened: the party are fighters 0..n,
 /// the monsters n and on, in `foes`' order. Returns the events and the winning side (0 the
 /// party).
@@ -113,10 +116,12 @@ pub fn skirmish(party: &[Member], foes: &[Foe], rules: ItemRules, rng: &mut Rng,
             f
         })
         .collect();
-    let spots = crate::battle::scatter(&vec![100.0; foes.len()], rng);
+    let sizes = vec![MONSTER_SIZE; foes.len()];
+    let spots = crate::battle::scatter(&sizes, rng);
     for (foe, (spot, _)) in foes.iter().zip(spots) {
         let mut f = Fighter::new(&foe.block, 1, 999_999);
         f.position = spot;
+        f.size = MONSTER_SIZE;
         fighters.push(f);
     }
     let mut b = Battle::new(fighters);
