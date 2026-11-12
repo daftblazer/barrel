@@ -51,6 +51,28 @@ pub fn item_action(name: &str, target: i32, wait: i32, effect_ids: &[i16], rows:
     barrel_formats::battle_data::Skill { name: name.to_string(), category: String::new(), wait, target, spread: 0, effects, description: String::new() }
 }
 
+/// The chance an instant-death act kills (the handlers at `0x1401bfd59`, `0x1401bfd9f` and
+/// `0x1401bfdfe` in `0x1401bde10`'s switch), or `None` for any other act:
+/// - `PERCENT_DEATH` (80): the amount + 5 × (user's level − target's level), percent;
+/// - `DEATH_PERCENT` (176): certain when the target's HP is at most the amount percent of its
+///   maximum (`HP × 100 / max(max HP, 1)`), else nothing;
+/// - `ABSOLUTE_DEATH` (195): certain, and past the immunities ([`death_blocked`] does not apply).
+pub fn death_chance(act: u32, amount: i32, user_level: i32, target: &crate::fight::Stats) -> Option<i32> {
+    match act {
+        80 => Some(amount + 5 * (user_level - target[stat::LEVEL])),
+        176 => (amount >= target[stat::HP] * 100 / target[stat::MAX_HP].max(1)).then_some(100),
+        195 => Some(100),
+        _ => None,
+    }
+}
+
+/// Whether a death event misses its target (`0x1401c1340`): under state 0x50, or when the
+/// target's virtual +0x40 says so (not read yet; `immune`). Otherwise it rolls its chance
+/// ([`crate::rng::Rng::chance`]).
+pub fn death_blocked(states: &[TimedState], immune: bool) -> bool {
+    immune || states.iter().any(|s| s.state == 0x50)
+}
+
 /// The effects an item's traits add to its action (`0x14029d530`): each slot of kind
 /// `ITEM_SUB_BTL_ADD_USEEFFECT` rolled from its minimum to maximum (`0x1402a1e20`) names an
 /// `item_effect` row, whose used slots follow the item's own effects. The game does this only

@@ -1327,6 +1327,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, rules, &mut rng, 1000);
     for e in &events {
         match e {
+            Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),
             Event::Poisoned { who, damage, hp_left } => println!("{} takes {damage} poison damage ({hp_left} HP left)", names[*who]),
             Event::Acted { who, skill, target, damage, hp_left, mp_left } => {
                 let mp = if *who < party.len() { format!(", {mp_left} MP left") } else { String::new() };

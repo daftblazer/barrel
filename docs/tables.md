@@ -799,6 +799,15 @@ jump table `0x1401c0840`) sends it to one of 64 handlers:
   drains and the field effects;
 - 105 numbers (`CONSUME_MP`, `MOVE_DASH`, ...) that do nothing here (handled elsewhere).
 
+The instant-death acts (`battle::death_chance`; the user is r13, the target r12 in
+`0x1401bde10`): `PERCENT_DEATH` (80, `0x1401bfd59`) hands the death event a chance of the
+amount + 5 × (user's level − target's level); `DEATH_PERCENT` (176, `0x1401bfd9f`) a certain
+one when the target's HP × 100 / max(max HP, 1) is at most the amount, else none;
+`ABSOLUTE_DEATH` (195, `0x1401bfdfe`) builds the event already landed. The event
+(`0x1401c1340`, vtable `0x140809170`) misses under state 0x50 or when the target's virtual
++0x40 says so (not read yet), else rolls its chance (`0x1404ca5f0`, `Rng::chance`). A landed
+one leaves the target at 0 HP (`fight::Event::Felled`).
+
 ### Battle stats (executable)
 
 A battle character keeps 35 i32 stats at +0x88 (`0x1401af3c0 (c, k)` reads stat k) and 35 base

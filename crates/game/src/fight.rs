@@ -125,6 +125,8 @@ pub enum Event {
     Acted { who: usize, skill: String, target: usize, damage: i32, hp_left: i32, mp_left: i32 },
     /// A fighter's skill healed another (or itself) by `amount`.
     Healed { who: usize, skill: String, target: usize, amount: i32, hp_left: i32, mp_left: i32 },
+    /// An instant-death effect felled the target.
+    Felled { who: usize, skill: String, target: usize },
 }
 
 pub struct Battle {
@@ -288,6 +290,20 @@ impl Battle {
         if let Some(k) = slot.filter(|&k| k < 9) {
             self.fighters[who].uses[k] += 1;
         }
+        // Instant death (`battle::death_chance`): the target's HP to 0 when it lands.
+        let mut felled = Vec::new();
+        for e in skill.effects.iter().filter(|e| matches!(e.act, 80 | 176 | 195)) {
+            let amount = rng.range(e.min, e.max);
+            let second = rng.range(e.min2, e.max2);
+            let (amount, _) = boosted(e.act, amount, second);
+            let t = &self.fighters[target];
+            let Some(chance) = battle::death_chance(e.act, amount, self.fighters[who].stats[stat::LEVEL], &t.stats) else { continue };
+            let lands = if e.act == 195 { true } else { !battle::death_blocked(&t.states, false) && rng.chance(chance) };
+            if lands && !t.down() {
+                self.fighters[target].stats[stat::HP] = 0;
+                felled.push(Event::Felled { who, skill: skill.name.clone(), target });
+            }
+        }
         // Heals (`HEAL_HP`, act 19; `HEAL_HP_BY_ATK`, 21) through the heal event
         // (`0x1401c1d00`) and revives (`CURE_REVIVE`, 81, the revive event `0x1401c1e90`), each
         // effect in its slot's order.
@@ -317,7 +333,8 @@ impl Battle {
             }
             let event = Event::Healed { who, skill: skill.name.clone(), target, amount: total, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() };
             self.end_action(who, skill, rng);
-            return vec![event];
+            felled.push(event);
+            return felled;
         }
         let damage = match skill.effects.iter().find(|e| e.act == 0 || e.act == 8) {
             None => 0,
@@ -343,7 +360,8 @@ impl Battle {
             }
         };
         self.after_effect(target, rng);
-        let events = vec![Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() }];
+        let mut events = felled;
+        events.push(Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
         self.end_action(who, skill, rng);
         events
     }
@@ -448,6 +466,33 @@ mod tests {
         assert_eq!(hit(None), battle::skill_damage(100, 30, level, 0, false, 1.0));
         assert_eq!(hit(Some(battle::item_power(50.0))), battle::skill_damage(100, 100, level, 0, false, 1.0));
         assert!(hit(Some(100)) > hit(None));
+    }
+
+    #[test]
+    fn an_absolute_death_fells_its_target() {
+        use barrel_formats::battle_data::SkillEffect;
+        let mut b = Battle::new(vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(500), 1, 999_999)]);
+        let doom = Skill { name: "Doom".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 195, element: None, min: 0, max: 0, min2: 0, max2: 0 }], description: String::new() };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let events = b.use_item(0, &doom, 100, 1, &mut rng);
+        assert_eq!(events[0], Event::Felled { who: 0, skill: "Doom".into(), target: 1 });
+        assert!(b.fighters[1].down());
+        assert_eq!(b.winner(), Some(0));
+    }
+
+    #[test]
+    fn death_chances() {
+        let mut t: Stats = [0; stat::COUNT];
+        t[stat::LEVEL] = 10;
+        t[stat::HP] = 30;
+        t[stat::MAX_HP] = 100;
+        // 20 + 5 × (14 - 10).
+        assert_eq!(battle::death_chance(80, 20, 14, &t), Some(40));
+        // HP at 30%: 30 lands, 29 does not.
+        assert_eq!((battle::death_chance(176, 30, 1, &t), battle::death_chance(176, 29, 1, &t)), (Some(100), None));
+        assert_eq!((battle::death_chance(195, 0, 1, &t), battle::death_chance(0, 100, 1, &t)), (Some(100), None));
+        let shield = [battle::TimedState { state: 0x50, count: -1, value: 0.0 }];
+        assert!(battle::death_blocked(&shield, false) && !battle::death_blocked(&[], false));
     }
 
     #[test]
