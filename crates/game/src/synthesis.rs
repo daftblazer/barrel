@@ -505,3 +505,29 @@ mod start_tests {
         assert_eq!(super::start_cp(1, 12, &[], &[false, false, true], &skills), 22);
     }
 }
+
+/// The property points a synthesis starts with (state +0x378, set at `0x140302640` and on):
+/// 1 + the first parameter of every learnt type-10 passive of the user (Inherit Apprentice,
+/// Journeyman, Master: 4, 5 and 10; their descriptions say 5, 10 and 20) + the `INIT_PP_ADD`
+/// synthesis bonus + the `GET_PP_ADD` bonuses of the made item's four categories.
+pub fn start_pp(user: i32, mix: &[i32], learnt: &[bool], skills: &[barrel_formats::battle_data::MixSkill], categories: &[i32; 4]) -> i32 {
+    let bonus = |kind, cat| crate::bonus::mix_slot(kind, cat).and_then(|s| mix.get(s)).copied().unwrap_or(0);
+    let inherit: i32 = skills.iter().zip(learnt).filter(|(s, l)| **l && s.kind == 10 && (s.user == user || s.user == -1)).map(|(s, _)| s.params[0]).sum();
+    1 + inherit + bonus(10, 0) + categories.iter().filter(|&&c| c >= 0).map(|&c| bonus(9, c)).sum::<i32>()
+}
+
+#[cfg(test)]
+mod pp_tests {
+    use barrel_formats::battle_data::MixSkill;
+
+    #[test]
+    fn starting_pp() {
+        let skill = |user, p| MixSkill { name: String::new(), kind: 10, params: [p, 0], user, level: 18, cost: [0; 4], description: String::new() };
+        let skills = [skill(0, 4), skill(1, 4), skill(0, 5)];
+        let mut mix = vec![0; 0x220];
+        mix[0x87] = 3;
+        mix[7 + 2] = 3;
+        assert_eq!(super::start_pp(0, &mix, &[true, true, true], &skills, &[2, -1, -1, -1]), 1 + 4 + 5 + 3 + 3);
+        assert_eq!(super::start_pp(1, &[], &[false; 3], &skills, &[-1; 4]), 1);
+    }
+}
