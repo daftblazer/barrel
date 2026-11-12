@@ -159,6 +159,32 @@ time (+0x28, clamped), shift x and z (+0x2c, +0x30) and weight (+0x34); the `<wi
 reads `freq` at `0x140285327`. How weight, the winds and the time become `g_f3Wind` and
 `g_fWindTime` is not read yet, so the renderer does not sway plants.
 
+### Fog (read from the running game)
+
+The constants a field's `<fog start end ambient mieG rayleighPow mieRGB rayleighRGB>` becomes,
+read from the game's memory in an oracle run (`TOWN_11`: copies of the per-draw constant
+buffer found by their `-2g`, `1 + g²` pair; start 19, end 50, ambient 1, mieG 0.5,
+rayleighPow 20, mieRGB (0, 0.2, 0), rayleighRGB (0.1, 0.1, 0.7), the first `PARALLEL`
+colour (0.7, 0.5, 0.4), the `<light ambient>` (0.45, 0.5, 0.3)), with βR = rayleighRGB,
+βM = mieRGB, and E the first directional light's colour:
+
+```text
+fog   = (1 / (end - start), -start / (end - start))    start, end × 100 (field units)
+Scat0 = -(βR + βM) × log2 e                            (0.000323, -0.6129) / (-0.144, -0.433, -1.010)
+Scat1 = <light ambient> × ambient                      (0.45, 0.5, 0.3)
+Scat2 = 3 / (16π) × rayleighPow × E × βR / (βR + βM), w = -2g     (0.8356, 0.1989, 0.4775, -1)
+Scat3 = E × βM / (βR + βM) × (1 + g²) / π, w = 1 + g²             (0, 0.1326, 0, 1.25)
+```
+
+so the extinction is `exp(-(βR + βM) s)` with s the eye distance over the fog's span (0 at
+the start), Rayleigh in-scattering `(1 + cos² θ) Scat2`, Mie (Henyey-Greenstein)
+`Scat3 (1 + g² - 2g cos θ)^-1.5`, and the ambient. Scat3's `1 + g²` factor equals 1.25
+here only; one field with another `mieG` would confirm it. The renderer computes these per
+vertex for the field's models, the terrain, the characters and the distant view (θ taken
+between the way to the eye and the sun), and mixes each colour toward the in-scattered light
+by the extinction. In `TOWN_10`'s town shot the distance turns warm as in the game, if
+duller.
+
 ## After the scene (`Data/x64/PostEffect/pe_pack.elixir.gz`, `PostEffectGlow.kps`)
 
 The post effects are `_SPK4100` packs of DXBC programs (`barrel g1s` reads them too). The glow

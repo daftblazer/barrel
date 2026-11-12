@@ -36,7 +36,7 @@ const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 32 * 16;
+const LOOK_SIZE: u64 = 37 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 const SHADOW_HALF: f32 = 1500.0;
@@ -2734,7 +2734,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         });
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 32];
+        let mut look = [[0f32; 4]; 37];
         look[..5].copy_from_slice(&[m(c.light_dir), c.light_color, m(c.rim_light_dir), c.rim_light_color, [e.x, e.y, e.z, 1.0]]);
         // The field's first four point lights (metres to field units, x mirrored).
         let points = field_look.map_or(Vec::new(), |l| {
@@ -2768,6 +2768,24 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             }
         }
         look[26] = field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]);
+        // The fog, as the game turns the field's <fog> into its shader constants (read from
+        // its memory: docs/shading.md, "Fog"); none: nothing taken off or added.
+        if let Some(f) = field_look.and_then(|l| l.fog) {
+            let (start, end) = (f.start * 100.0, f.end * 100.0);
+            let span = (end - start).max(1.0);
+            look[32] = [1.0 / span, -start / span, 0.0, 0.0];
+            let sun = parallels.first().map_or([1.0; 4], |p| p.1);
+            let (r, m, g) = (f.rayleigh_rgb, f.mie_rgb, f.mie_g);
+            let ext = |i: usize| r[i] + m[i];
+            let part = |x: f32, i: usize| if ext(i) > 0.0 { x / ext(i) } else { 0.0 };
+            let pi = std::f32::consts::PI;
+            look[33] = [-ext(0) * std::f32::consts::LOG2_E, -ext(1) * std::f32::consts::LOG2_E, -ext(2) * std::f32::consts::LOG2_E, 0.0];
+            look[34] = [look[26][0] * f.ambient, look[26][1] * f.ambient, look[26][2] * f.ambient, 1.0];
+            let k = 3.0 / (16.0 * pi) * f.rayleigh_pow;
+            look[35] = [k * sun[0] * part(r[0], 0), k * sun[1] * part(r[1], 1), k * sun[2] * part(r[2], 2), -2.0 * g];
+            let h = (1.0 + g * g) / pi;
+            look[36] = [h * sun[0] * part(m[0], 0), h * sun[1] * part(m[1], 1), h * sun[2] * part(m[2], 2), 1.0 + g * g];
+        }
         // The sun's shadow map: from the first directional light, over the camera's target.
         // On unless BARREL_NO_SHADOWS is set (for comparing).
         if !parallels.is_empty() && std::env::var("BARREL_NO_SHADOWS").is_err() {

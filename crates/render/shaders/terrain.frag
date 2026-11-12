@@ -9,6 +9,8 @@ layout(location = 2) in vec3 world;
 // The field light at this vertex (model.vert), the sun's part apart.
 layout(location = 4) in vec3 field_light;
 layout(location = 6) in vec3 sun_part;
+layout(location = 7) in vec3 fog_add;
+layout(location = 8) in vec3 fog_keep;
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 light_dir;
     vec4 light_color;
@@ -33,6 +35,10 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The sun's shadow map: world (render space) to its clip space, and {texel size, on}.
     mat4 shadow_vp;
     vec4 shadow_info;
+    // The field's fog: {1 / (end - start), -start / (end - start)} in field units, and the
+    // scattering constants (docs/shading.md, "Fog": read from the game's memory).
+    vec4 fog;
+    vec4 scat[4];
 } look;
 layout(set = 1, binding = 5) uniform sampler2DShadow shadow_map;
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
@@ -71,5 +77,5 @@ void main() {
     // Lit as the field's own terrain program does (its pack's pixel program 9 in TOWN_10):
     // the same per-vertex light as the field's models (the vertex colour white), on the
     // blended layers; the light texture, shadow and specular are not done yet.
-    color = vec4((field_light + sun_part * sun_shadow(world)) * c * pc.params.w, 1.0);
+    color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world)) * c, fog_keep) * pc.params.w, 1.0);
 }

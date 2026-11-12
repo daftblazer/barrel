@@ -33,6 +33,10 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The sun's shadow map: world (render space) to its clip space, and {texel size, on}.
     mat4 shadow_vp;
     vec4 shadow_info;
+    // The field's fog: {1 / (end - start), -start / (end - start)} in field units, and the
+    // scattering constants (docs/shading.md, "Fog": read from the game's memory).
+    vec4 fog;
+    vec4 scat[4];
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -42,6 +46,8 @@ layout(location = 3) in vec3 scene_light;
 layout(location = 4) in vec3 field_light;
 layout(location = 5) in vec2 screen_uv;
 layout(location = 6) in vec3 sun_part;
+layout(location = 7) in vec3 fog_add;
+layout(location = 8) in vec3 fog_keep;
 layout(set = 1, binding = 5) uniform sampler2DShadow shadow_map;
 layout(location = 0) out vec4 color;
 
@@ -78,7 +84,7 @@ void main() {
     vec4 c = texture(tex, uv);
     if ((pc.flags & 8u) != 0u) {
         // The distant view: unlit, blended by its alpha (clouds over the dome).
-        color = vec4((field_light + sun_part * sun_shadow(world)) * c.rgb * pc.params.w, c.a);
+        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world)) * c.rgb, fog_keep) * pc.params.w, c.a);
         return;
     }
     if (c.a < pc.params.x) discard;
@@ -86,7 +92,7 @@ void main() {
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the
         // light texture and shadows are not done yet, nor fog.
-        color = vec4((field_light + sun_part * sun_shadow(world)) * c.rgb * pc.params.w, 1.0);
+        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world)) * c.rgb, fog_keep) * pc.params.w, 1.0);
         return;
     }
     vec3 col;
@@ -132,5 +138,5 @@ void main() {
     col = clamp(col + w * (over - col), 0.0, 1.0);
     // (6. fog is not done yet; 7. atColor is 1 and the HDR range 1.)
     // The scene is drawn at the HDR range's inverse (params.w), doubled back after.
-    color = vec4(col * pc.params.w, 1.0);
+    color = vec4(mix(fog_add, col, fog_keep) * pc.params.w, 1.0);
 }

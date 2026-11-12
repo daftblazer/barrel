@@ -29,6 +29,10 @@ layout(location = 4) out vec3 field_light;
 layout(location = 5) out vec2 screen_uv;
 // The sun's part of a field model's light, kept apart for its shadow (MapSTD's v6).
 layout(location = 6) out vec3 sun_part;
+// The fog at this vertex (MapSTD's and CharaMTC's v3 and v4): the colour it adds and how much
+// of the surface's own colour is left.
+layout(location = 7) out vec3 fog_add;
+layout(location = 8) out vec3 fog_keep;
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 light_dir;
     vec4 light_color;
@@ -53,6 +57,10 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The sun's shadow map: world (render space) to its clip space, and {texel size, on}.
     mat4 shadow_vp;
     vec4 shadow_info;
+    // The field's fog: {1 / (end - start), -start / (end - start)} in field units, and the
+    // scattering constants (docs/shading.md, "Fog": read from the game's memory).
+    vec4 fog;
+    vec4 scat[4];
 } look;
 void main() {
     Instance i = instances.inst[pc.instance];
@@ -110,6 +118,16 @@ void main() {
         sun_part = vec3(0.0);
     }
     gl_Position = pc.view_proj * w;
+    // Fog: extinction exp2(s × Scat0) (Scat0 holds -(βR + βM) log2 e), s the eye distance mapped
+    // over the fog's start and end; in-scattering Mie (Henyey-Greenstein) plus Rayleigh plus
+    // the ambient, θ between the way to the eye and the sun.
+    {
+        vec3 e = look.eye.xyz - w.xyz;
+        float s = look.fog.x * length(e) + look.fog.y;
+        fog_keep = min(exp2(s * look.scat[0].xyz), vec3(1.0));
+        float c = dot(normalize(e), normalize(look.sun_dir.xyz));
+        fog_add = look.scat[3].xyz * pow(max(look.scat[2].w * c + look.scat[3].w, 0.0001), -1.5) + (1.0 + c * c) * look.scat[2].xyz + look.scat[1].xyz;
+    }
     if ((pc.flags & 4u) != 0u) {
         // The outline pass (CharaFra*): pushed out along the clip-space normal, about the same
         // width on screen (w capped at 350), thinner where the vertex colour's red says and a
