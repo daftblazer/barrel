@@ -183,7 +183,10 @@ the start), Rayleigh in-scattering `(1 + cos² θ) Scat2`, Mie (Henyey-Greenstei
 -8.656), Scat1 (0.42, 0.36, 0.36, 0.5: Scat1.w is the light ambient's w), Scat2 (0.0767,
 0.0141, 0, -0), Scat3 (0.2558, 0.2199, 0, 1): Mie's factor is rayleighPow (1 - g)² / 4π
 (Henyey-Greenstein's numerator, with the same sun strength as Rayleigh's), 3.75/π there and
-1.25/π in `TOWN_11`. The renderer computes these per
+1.25/π in `TOWN_11`. A third field, `TOWN_07` (g 0.1, rayleighPow 20, βM (0.2, 0.3, 0.4),
+βR (0.5, 0.8, 0.7), E (0.25, 0.3, 0.2), light ambient (0.5, 0.3, 0.4, 0.7), fog ambient 0.7),
+read live in Logy's opening, matches to four places: Scat1 (0.35, 0.21, 0.28, 0.7), Scat2
+(0.2132, 0.2604, 0.1519, -0.2), Scat3 (0.0921, 0.1055, 0.0938, 1.01). The renderer computes these per
 vertex for the field's models, the terrain, the characters and the distant view (θ taken
 between the way to the eye and the sun), and mixes each colour toward the in-scattered light
 by the extinction. In `TOWN_10`'s town shot the distance turns warm as in the game, if

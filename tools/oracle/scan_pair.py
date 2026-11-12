@@ -5,7 +5,9 @@ import os, subprocess, sys, array
 here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 work = os.path.join(here, "work", "oracle")
 pid = open(os.path.join(work, "pid")).read().strip()
-A, B, gap = float(sys.argv[1]), float(sys.argv[2]), int(sys.argv[3])
+# Rounded to float32, as the game stores them (-0.2 is not exactly -0.2).
+A, B = (array.array("f", [float(v)])[0] for v in sys.argv[1:3])
+gap = int(sys.argv[3])
 limit = int(sys.argv[4]) if len(sys.argv) > 4 else 4096
 tmp = os.path.join(work, "scan.bin")
 total = 0
