@@ -618,8 +618,11 @@ message (kind 8, the reason) at `0x140df9988`; then `0x14035b930 (days, reason)`
 the random generator), then every character but one (`0x140330120 (0x141098a48)`, the
 leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
 `0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2
-(or not in the list), 0.08 in 3 to 5, 0.03 below, kept at 100 at most (friendship points,
-presumably). On a month's first day (date divisible by 30) `0x140363860` closes the month just ended: the
+(or not in the list), 0.08 in 3 to 5, 0.03 below, kept within 0 and 100 (`0x14032db60`;
+friendship points, presumably). The value picks one of three texts a member has
+(`0x14032cf00`: below 30 the first, below 60 the second, else the third; 11 records of 0x30
+bytes at `0x140d94a20`, the member then three text pointers, filled at run time;
+`growth::friendship_tier`); `0x140213670` (nine reads) and `0x1401378a0` read it too. On a month's first day (date divisible by 30) `0x140363860` closes the month just ended: the
 months from the game's first day (`0x1402f02d0 (year 1, April, 1)`) to the first of the new
 month, less one, so 0 for the first April, 12 for the second (`calendar::ended_month`; sixty
 reports, five years, are kept and saved, `monthrep/data`): its report (`0x1403637e0`, 0x144-byte records at

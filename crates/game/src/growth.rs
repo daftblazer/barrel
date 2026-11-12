@@ -84,3 +84,25 @@ mod tests {
         assert_eq!((g.level, g.exp), (5, EXP_MAX));
     }
 }
+
+/// Which of a party member's three texts its friendship value (record +0x2a4, 0 to 100, raised
+/// each day by its place in the party list) shows (`0x14032cf00`): below 30 the first, below 60
+/// the second, else the third (from a table of 11 records of 0x30 bytes at `0x140d94a20`,
+/// filled at run time: the member, then the three texts).
+pub fn friendship_tier(friendship: f32) -> usize {
+    if friendship < 30.0 {
+        0
+    } else if friendship < 60.0 {
+        1
+    } else {
+        2
+    }
+}
+
+#[cfg(test)]
+mod friendship_tests {
+    #[test]
+    fn tiers() {
+        assert_eq!([0.0, 29.9, 30.0, 59.9, 60.0, 100.0].map(super::friendship_tier), [0, 0, 1, 1, 2, 2]);
+    }
+}
