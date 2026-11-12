@@ -187,8 +187,17 @@ pipeline has its own one-target blend state.
   native Linux library is present. It is never shipped, never required, and 3.1 is the
   fallback. Nothing to build for it until AMD ships one.
 
-Order: store depth, port the 3.1 upscaler passes, a reactive mask, then (desktop) frame
-generation.
+- *Snapdragon Game Super Resolution* (Qualcomm, BSD 3-clause, plain shaders on GitHub, so
+  nothing tying it to Android or a driver: it runs on Turnip and desktops alike). GSR 1 is
+  spatial, one pass that scales and sharpens one image with a 12-tap Lanczos-like filter: a
+  one-pass alternative to FSR 1's two (EASU + RCAS) on the handhelds. GSR 2 is temporal (the
+  same inputs as FSR 2/3: colour, depth, motion, jitter) and is made for Adreno's tiled GPUs, with
+  fewer and lighter passes than FSR 3.1. That makes it the likely temporal upscaler for the RP6,
+  with FSR 3.1 for desktops. Both are measured on the RP6 before choosing defaults. Ported into
+  Barrel's own passes like FSR 1, the licence notice kept with the shaders.
+
+Order: store depth, then GSR 1 (small, handheld), the temporal upscalers on the shared inputs
+(GSR 2, then FSR 3.1), a reactive mask, then (desktop) frame generation.
 
 **Wide screens.** The projection keeps the vertical field of view and widens the horizontal
 one with the aspect, so 21:9 (3440×1440) and 32:9 (5120×1440) show more to the sides without
