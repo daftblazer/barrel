@@ -448,10 +448,10 @@ impl Stage {
             Step::Camera { part, change, .. } => {
                 self.manual_camera = true;
                 let (to, movement) = match change {
-                    Change::Set(p) => (self.resolve(p), None),
-                    Change::Move(m) => (self.resolve(m.to()), Some(*m)),
+                    Change::Set(p) => (self.resolve_anchored(p), None),
+                    Change::Move(m) => (self.resolve_anchored(m.to()), Some(*m)),
                 };
-                let Some(to) = to else {
+                let Some((to, yaw)) = to else {
                     self.unresolved += 1;
                     return;
                 };
@@ -460,7 +460,7 @@ impl Stage {
                     Part::Target => &mut self.target,
                 };
                 match (movement, point.position) {
-                    (Some(m), Some(from)) => point.mover = Mover::new(from, to, &m, 0),
+                    (Some(m), Some(from)) => point.mover = Mover::anchored(from, to, yaw, &m, 0),
                     _ => {
                         point.position = Some(to);
                         point.mover = None;
