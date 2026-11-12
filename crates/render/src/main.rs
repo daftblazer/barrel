@@ -191,7 +191,12 @@ impl Gpu {
         let queues = [vk::DeviceQueueCreateInfo::default().queue_family_index(queue_family).queue_priorities(&priorities)];
         // Independent blending where there is one (desktop, Turnip and Mali all have it): the
         // motion target is written unblended beside a blended colour.
-        let enabled = vk::PhysicalDeviceFeatures::default().texture_compression_bc(true).independent_blend(features.independent_blend != 0);
+        // FSR 3.1 writes its output through format-less storage images.
+        let enabled = vk::PhysicalDeviceFeatures::default()
+            .texture_compression_bc(true)
+            .independent_blend(features.independent_blend != 0)
+            .shader_storage_image_write_without_format(features.shader_storage_image_write_without_format != 0)
+            .shader_storage_image_read_without_format(features.shader_storage_image_read_without_format != 0);
         let swapchain_ext = [ash::khr::swapchain::NAME.as_ptr()];
         let device = unsafe {
             instance.create_device(
@@ -592,6 +597,8 @@ struct Targets {
     taa: Option<taa::Targets>,
     /// GSR 2 (`--gsr2`): the temporal upscaler.
     gsr2: Option<gsr2::Targets>,
+    /// FSR 3.1 (`--fsr3`): the desktop's temporal upscaler (its state changes as it records).
+    fsr3: std::cell::RefCell<Option<fsr3::Targets>>,
     history_fresh: std::cell::Cell<bool>,
     /// The scene as it was when a cross-fade began (`u13` kind 3), faded out over the live one;
     /// whether it has been given a layout yet.
@@ -624,6 +631,7 @@ impl Targets {
         upscale_pipelines: Option<&upscale::Pipelines>,
         taa_pipelines: Option<&taa::Pipelines>,
         gsr2_pipelines: Option<&gsr2::Pipelines>,
+        fsr3_pipelines: Option<&fsr3::Pipelines>,
         samples: vk::SampleCountFlags,
         motion: bool,
         show_motion: bool,
@@ -660,7 +668,7 @@ impl Targets {
         let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         // Depth is cleared and never stored (the scene pass): transient.
         // Depth is transient unless GSR 2 reads it (then the scene pass stores it).
-        let depth_usage = if gsr2_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::TRANSIENT_ATTACHMENT };
+        let depth_usage = if gsr2_pipelines.is_some() || fsr3_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::TRANSIENT_ATTACHMENT };
         let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | depth_usage, samples)?;
         // With samples, the multisampled colour the pass resolves into the scene: transient too.
         let multisample = if samples != vk::SampleCountFlags::TYPE_1 {
@@ -702,6 +710,12 @@ impl Targets {
             _ => None,
         };
         let resolved = gsr2.as_ref().map_or(resolved, gsr2::Targets::result);
+        // FSR 3.1 likewise.
+        let fsr3 = match (fsr3_pipelines, motion_target) {
+            (Some(p), Some((_, _, motion_view))) => Some(fsr3::Targets::new(gpu, p, scene_view, depth_view, motion_view, scene_size, (width, height))?),
+            _ => None,
+        };
+        let resolved = fsr3.as_ref().map_or(resolved, fsr3::Targets::result);
         let upscale = match upscale_pipelines {
             // FSR 1 when the scene is smaller; RCAS alone (`--sharpen`) when it is not.
             Some(p) => Some(upscale::Targets::new(gpu, p, resolved, sampler, scene_size, (width, height))?),
@@ -741,6 +755,7 @@ impl Targets {
             upscale,
             taa,
             gsr2,
+            fsr3: std::cell::RefCell::new(fsr3),
             history_fresh: std::cell::Cell::new(true),
             frozen,
             frozen_memory,
@@ -768,6 +783,9 @@ impl Targets {
             }
             if let Some(g) = self.gsr2.take() {
                 g.destroy(gpu);
+            }
+            if let Some(f) = self.fsr3.get_mut().take() {
+                f.destroy(gpu);
             }
             if let Some(u) = self.upscale.take() {
                 u.destroy(gpu);
@@ -1542,6 +1560,7 @@ fn main() -> Result<()> {
             "--jitter" => settings.jitter = true,
             "--taa" => settings.taa = true,
             "--gsr2" => settings.gsr2 = true,
+            "--fsr3" => settings.fsr3 = true,
             "--sharpen" => settings.sharpen = true,
             "--show-motion" => {
                 settings.motion = true;
@@ -2000,9 +2019,9 @@ fn main() -> Result<()> {
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             // Kept for GSR 2 to read, else never stored.
-            .store_op(if settings.gsr2 { vk::AttachmentStoreOp::STORE } else { vk::AttachmentStoreOp::DONT_CARE })
+            .store_op(if settings.keeps_depth() { vk::AttachmentStoreOp::STORE } else { vk::AttachmentStoreOp::DONT_CARE })
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(if settings.gsr2 { vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL } else { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL }),
+            .final_layout(if settings.keeps_depth() { vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL } else { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL }),
     ];
     let multi_attachments = [
         vk::AttachmentDescription::default()
@@ -2114,7 +2133,8 @@ fn main() -> Result<()> {
     let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode)?) } else { None };
     let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
     let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+    let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -3005,7 +3025,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -3043,7 +3063,9 @@ fn main() -> Result<()> {
     // (`settings::jitter`, a clip-space translation by the offset in pixels × 2 / the scene's
     // size), the plain one otherwise.
     let draw_vp = if settings.jitter {
-        let (jx, jy) = settings::jitter(jitter_index);
+        // FSR 3.1 expects its own cycle length (8 × the upscale ratio squared).
+        let (sw, _) = targets.scene_size;
+        let (jx, jy) = if settings.fsr3 { settings::jitter_cycle(jitter_index, fsr3::jitter_phase_count(sw as i32, width as i32) as u32) } else { settings::jitter(jitter_index) };
         frame_jitter = (jx, jy);
         let (sw, sh) = targets.scene_size;
         let mut j = Mat4::IDENTITY;
@@ -3344,6 +3366,23 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             let fresh = targets.history_fresh.replace(false);
             t.record(d, p, cb, fresh, fresh);
         }
+        if let (Some(f), Some(p)) = (targets.fsr3.borrow_mut().as_mut(), &fsr3_pipelines) {
+            let fresh = targets.history_fresh.replace(false);
+            let zoom = orbit.2;
+            let frame = fsr3::Frame {
+                render: targets.scene_size,
+                upscale: (width, height),
+                jitter: frame_jitter,
+                fov,
+                near: dist * 0.01 * zoom,
+                far: (dist * 20.0 * zoom).max(80_000.0),
+                dt: frame_dt,
+                reset: fresh,
+            };
+            if let Err(e) = f.record(&gpu, p, cb, &frame) {
+                eprintln!("FSR 3: {e}");
+            }
+        }
         if let (Some(g), Some(p)) = (&targets.gsr2, &gsr2_pipelines) {
             let fresh = targets.history_fresh.replace(false);
             let frame = gsr2::Frame { jitter: frame_jitter, fov, reset: fresh, same_camera };
@@ -3467,6 +3506,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             p.destroy(&gpu);
         }
         if let Some(p) = gsr2_pipelines {
+            p.destroy(&gpu);
+        }
+        if let Some(p) = fsr3_pipelines {
             p.destroy(&gpu);
         }
         d.destroy_render_pass(render_pass, None);

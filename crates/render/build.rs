@@ -21,7 +21,7 @@ fn main() {
         assert!(status.success(), "glslc failed on {}", src.display());
     }
     // FSR 3.1's upscaler passes (shaders/ffx, vendored from the FidelityFX SDK), as compute
-    // shaders with Barrel's permutation: LDR colour, full-size motion vectors without the
+    // shaders with Barrel's permutation: LDR colour, render-size motion vectors without the
     // jitter, depth not inverted, the LUT Lanczos for reprojection, no sharpening inside (RCAS
     // runs as its own pass).
     println!("cargo:rerun-if-changed=shaders/ffx");
@@ -40,7 +40,7 @@ fn main() {
                 "-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_USE_LANCZOS_TYPE=2",
                 "-DFFX_FSR3UPSCALER_OPTION_REPROJECT_USE_LANCZOS_TYPE=1",
                 "-DFFX_FSR3UPSCALER_OPTION_HDR_COLOR_INPUT=0",
-                "-DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=0",
+                "-DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=1",
                 "-DFFX_FSR3UPSCALER_OPTION_JITTERED_MOTION_VECTORS=0",
                 "-DFFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH=0",
                 "-DFFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=0",

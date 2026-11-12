@@ -194,10 +194,11 @@ the only upscaler without stair-stepped edges, near native and slightly soft; th
 camera pan at 6.4 s show no trails. Validation clean. Still to do: time it on the RP6 against
 FSR 1 and GSR 1; ping-pong the history instead of copying it (one output-sized copy a frame).
 
-**FSR 3.1** (in progress). The upscaler's shaders are vendored unchanged from the FidelityFX
+**FSR 3.1.** The upscaler's shaders are vendored unchanged from the FidelityFX
 SDK v1.1.4 into `crates/render/shaders/ffx/` (the GPU headers and the Vulkan GLSL pass entry
 points, 32 files, all MIT) and compiled by `build.rs` as compute shaders with glslc. The
-permutation is LDR colour, full-size motion vectors without the jitter, depth not inverted,
+permutation is LDR colour, render-size motion vectors (the SDK's usual case; full-size ones
+make moving pixels read the wrong vectors, which smeared a walking character) without the jitter, depth not inverted,
 the LUT Lanczos for reprojection, and no sharpening inside the accumulate pass (RCAS as its own
 pass). The SDK's host code (`ffx_fsr3upscaler.cpp`, not vendored) dispatches: prepare inputs →
 luma pyramid (SPD) → shading-change pyramid → shading change → prepare reactivity → luma
@@ -207,7 +208,21 @@ the jitter phase count (8 × upscale ratio², so 32 phases from half scale; Barr
 follow it when FSR 3 runs), SPD's setup and RCAS's constants. Barrel's motion vectors are
 current minus previous in texture units, so the motion vector scale is -1.
 
-The GPU side still to write (all at render size unless noted): dilated motion (RG16F), dilated
+`--fsr3` (`RenderSettings::fsr3`, with `--scale` below 1) runs it: the eight passes as
+compute pipelines whose bindings come from the compiled shaders' reflection (bindings the
+compiler dropped are left out), one descriptor set per pass for even and odd frames (the
+swapped pairs), every internal image kept in `GENERAL` with one memory barrier between passes,
+the constant buffers in one host-visible buffer (main, SPD and RCAS at 256-byte steps), RCAS at
+0.8 sharpness (the SDK samples' default) writing the RGBA16F output the post pass reads. The
+jitter follows FSR's phase count (`settings::jitter_cycle`); depth is kept as for GSR 2; the
+format-less storage writes need `shaderStorageImageWriteWithoutFormat` (enabled when present).
+One change from the SDK: the luma history is RGBA8, as the shaders declare it (the SDK makes it
+RGBA16F, which a declared `rgba8` storage image does not match in Vulkan). From half scale into
+1080p in the first opening it is sharper than GSR 2 and close to native, and the walk at 6.4 s
+stays crisp. Validation clean. Still to do: a reactive mask for the transparencies and the
+glow, timing, and Barrel's own jitter cycle for TAA and GSR 2 kept at 16.
+
+The images (all at render size unless noted): dilated motion (RG16F), dilated
 depth (R32F) and the reconstructed previous nearest depth (R32UI, cleared to 1.0's bits each
 frame); luma 1/2 (R16F, swapped each frame); luma history 1/2 (RGBA16F); accumulation 1/2
 (R8); internal upscaled 1/2 (RGBA16F, output size); new locks (R8, output size); the SPD mips
