@@ -171,6 +171,23 @@ and green (each divided by their sum plus 1/1024), at the world position's x and
 and × 0.5 written in (the HDR range's inverse). The renderer's terrain takes the same
 per-vertex light as the field's models (with a white vertex colour) on its blended layers.
 
+## Shadows (what is known)
+
+The fields receive one shadow map, the first directional light's: `MapSTD` and the terrain
+programs sample `sShadow` at `mW2S` (world → shadow map) with 16 taps (4 × 4) averaged and
+scaled by `max((atColor.x - 0.7) × 3.33, 0)`, and multiply only the sun's diffuse and
+specular by it (above). Casters are drawn with their own programs: `Saves/shader/shader.xml`
+lists `standard_shadowmap`, `terrain_shadowmap` and the character variants `b0_shadowmap`,
+`b0c_shadowmap`, `b0t0_shadowmap`, `b1_shadowmap`, `b1c_shadowmap`, `b2_shadowmap`,
+`b2c_shadowmap` (by bone count and cut-out). The game's classes are
+`EXSceneCoordinatorShadow` (vtable `0x14095a3f8`, constructor near `0x1404d75cf`; its methods
+`0x14050d880`, `0x14050de00`, `0x14050de10`, `0x14050e190` only bind shader parameters),
+`EXShadowMapShader` (`0x14095dec8`) and `CBlendMapTerrainShadowMapShaderBase` for the
+ground. The engine (`ktgl`) carries cascaded, light-space-perspective, cube, dual-paraboloid
+and plain depth mappers (their names are in the executable, no vtables are referenced from
+code by RTTI), so which one the game runs, and how `mW2S` (its extent, the `scSM`/`scSM2`
+constants) is built, are not read yet.
+
 ## Eyes (`CharaEYEL.g1s`/`CharaEYER.g1s`, pixel program 12)
 
 Four textures: `sDiffusePupWH` (the white, at the model's UVs), `sDiffusePup` (the iris, at
