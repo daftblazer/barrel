@@ -85,13 +85,17 @@ pub mod window {
     pub const AT_TAG: [f32; 4] = [352.0, 535.0, 627.0, 585.0];
     pub const AT_CORD: [f32; 4] = [340.0, 548.0, 374.0, 722.0];
     pub const AT_TEXT: [f32; 2] = [409.0, 596.0];
-    pub const TEXT_WIDTH: f32 = 482.0;
+    pub const TEXT_WIDTH: f32 = 490.0;
     pub const AT_NAME: [f32; 2] = [505.0, 560.0];
     /// The game's first line, "You haven't forgotten anything, have you, Escha?", spans 482
     /// pixels there: the text is sized to match.
     pub const SAMPLE: &str = "You haven't forgotten anything, have you, Escha?";
     pub const SAMPLE_WIDTH: f32 = 482.0;
 }
+
+/// The most characters on one line of the message window, as the game breaks its English
+/// text (measured in the openings: docs/renderer.md, "Message window").
+pub const LINE_CHARS: usize = 48;
 
 impl Font {
     fn advance(&self, c: char) -> f32 {
@@ -102,17 +106,17 @@ impl Font {
         s.chars().map(|c| self.advance(c)).sum()
     }
 
-    /// Breaks `line` into lines no wider than `max` (atlas pixels), closing punctuation allowed to
-    /// hang past it: at spaces, or anywhere in a word longer than a line (Japanese has no spaces).
+    /// Breaks `line` into lines of at most [`LINE_CHARS`] characters and `max` atlas pixels: at
+    /// spaces, or anywhere in a word longer than a line (Japanese has no spaces).
     pub fn wrap(&self, line: &str, max: f32) -> Vec<String> {
         let mut out = Vec::new();
         let mut cur = String::new();
         for word in line.split(' ') {
             let candidate = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
-            // Closing punctuation may hang past the edge (the game keeps "…, have you, Escha?"
-            // on one line yet moves "no" after "…like a child," to the next).
-            let body = candidate.trim_end_matches(['?', '!', '.', ',', '…', '"', '。', '、', '」', '』', '！', '？']);
-            if self.width(body) <= max {
+            // The game breaks English lines by count, at most LINE_CHARS characters (it keeps
+            // "…, have you, Escha?", 48 and 480 pixels, yet moves "trip," after "…for a long",
+            // 54 and 464 pixels); the width only guards wide glyphs.
+            if candidate.chars().count() <= LINE_CHARS && self.width(&candidate) <= max {
                 cur = candidate;
                 continue;
             }
@@ -458,6 +462,8 @@ mod tests {
         assert_eq!(f.wrap("abcdefgh", 30.0), ["abc", "def", "gh"]);
         assert_eq!(f.wrap("あああ", 80.0), ["ああ", "あ"]);
         assert_eq!(f.wrap("", 80.0), [""]);
+        let long = "...Finally, I'm here. I knew I was in for a long trip, it was farther than I expected.";
+        assert_eq!(f.wrap(long, 1e9)[0], "...Finally, I'm here. I knew I was in for a long");
     }
 
     #[test]

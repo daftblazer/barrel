@@ -253,9 +253,10 @@ centred.
 panel, the brown name tag and the cord from its grommet (texture 28, used before, holds the
 message log's bubbles). The layout was measured from an oracle frame of
 `EVENT_MM01_OP1_111` at 1280 × 720 (`text::window`: panel 360..960 × 562..710, tag, cord,
-text from (409, 596), wrapped at 482 pixels with closing punctuation allowed to hang past (the
-game keeps "…, have you, Escha?" on one line, 480 pixels to its "?", yet moves "no" after
-"…like a child," down), sized so the game's first line spans its 482 pixels)
+text from (409, 596), broken at spaces into lines of at most 48 characters (`LINE_CHARS`), whatever their
+width: the game keeps "…, have you, Escha?" (48 characters, 480 pixels) on one line but
+moves "trip," after "…in for a long" (54 characters, 464 pixels) down; seven lines of the
+two openings agree. A 490-pixel width only guards wide glyphs, sized so the game's first line spans its 482 pixels)
 and scales with the height, centred. Not yet as the game: the tag's slight tilt (about 5°)
 and the small green fleur at the panel's lower right. `--size WxH` renders other shapes
 (1280x720 for comparing with oracle frames).
