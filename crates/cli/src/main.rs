@@ -1441,7 +1441,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let acts = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
     let rules = barrel_game::skirmish::ItemRules { acts: &acts, kinds: &kinds, effects: &item_rows };
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, rules, &mut rng, 1000);
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, std::slice::from_ref(&foe), rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),
@@ -2577,14 +2577,27 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
         names.push(format!("{} ({})", member_names.get(c).unwrap_or(&"?"), saved.level));
         members.push(member);
     }
-    let m = monsters.get(monster.parse::<usize>().map_err(|_| format!("{monster}: monster number"))?).filter(|m| !m.blocks.is_empty()).ok_or("no such monster")?;
-    let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) };
-    names.push(m.name.clone());
+    let mut rng = barrel_game::rng::Rng::seeded(1);
+    // MONSTER: a monster number, or gN for encounter group N drawn as the game does.
+    let drawn: Vec<usize> = match monster.strip_prefix('g') {
+        Some(g) => {
+            let g: usize = g.parse().map_err(|_| format!("{monster}: group number"))?;
+            let group = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN).into_iter().nth(g).ok_or("no such group")?;
+            barrel_game::battle::encounter_monsters(&group, &mut rng).into_iter().map(|m| m as usize).collect()
+        }
+        None => vec![monster.parse::<usize>().map_err(|_| format!("{monster}: monster number"))?],
+    };
+    let mut foes = Vec::new();
+    for &k in &drawn {
+        let m = monsters.get(k).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("monster {k}: none"))?;
+        foes.push(barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) });
+        names.push(m.name.clone());
+    }
+    println!("against {}", names[members.len()..].join(", "));
     let acts_info = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
     let rules = barrel_game::skirmish::ItemRules { acts: &acts_info, kinds: &kinds, effects: &item_rows };
-    let mut rng = barrel_game::rng::Rng::seeded(1);
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, rules, &mut rng, 1000);
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foes, rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),
@@ -2593,6 +2606,6 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
             Event::Healed { who, skill, target, amount, hp_left, .. } => println!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", names[*who], names[*target]),
         }
     }
-    println!("{}", match winner { Some(0) => "the party wins".to_string(), Some(_) => format!("{} wins", m.name), None => format!("no winner after {} events", events.len()) });
+    println!("{}", match winner { Some(0) => "the party wins".to_string(), Some(_) => "the monsters win".to_string(), None => format!("no winner after {} events", events.len()) });
     Ok(())
 }

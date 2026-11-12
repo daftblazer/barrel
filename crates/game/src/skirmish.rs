@@ -93,11 +93,13 @@ impl<'a> Member<'a> {
 }
 
 /// Runs the battle until a side wins or `max_events` happened: the party are fighters 0..n,
-/// the monster n. Returns the events and the winning side (0 the party).
-pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
+/// the monsters n and on, in `foes`' order. Returns the events and the winning side (0 the
+/// party).
+pub fn skirmish(party: &[Member], foes: &[Foe], rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
     let n = party.len();
     // The formation (`battle::party_spot`, `battle::scatter`): each member at its sector's
-    // place (its index mod 3), the lone monster at the centre (the largest, and only, one).
+    // place (its index mod 3), the monsters scattered round the centre (their sizes are not
+    // read yet: all alike, so they go in order, the first at the centre).
     let mut fighters: Vec<Fighter> = party
         .iter()
         .enumerate()
@@ -111,7 +113,12 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
             f
         })
         .collect();
-    fighters.push(Fighter::new(&foe.block, 1, 999_999));
+    let spots = crate::battle::scatter(&vec![100.0; foes.len()], rng);
+    for (foe, (spot, _)) in foes.iter().zip(spots) {
+        let mut f = Fighter::new(&foe.block, 1, 999_999);
+        f.position = spot;
+        fighters.push(f);
+    }
     let mut b = Battle::new(fighters);
     let mut events = Vec::new();
     // What is left of each member's items.
@@ -122,6 +129,9 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
         if b.winner().is_some() || b.fighters[who].down() {
             continue;
         }
+        // The party's target: the first monster still standing (a player's choice; this stand-in
+        // works down the line).
+        let foe_target = (n..b.fighters.len()).find(|&k| !b.fighters[k].down()).unwrap_or(n);
         if who < n {
             // The weakest standing member, healed when at half HP or less and a heal is affordable.
             let share = |k: usize| b.fighters[k].hp() as f32 / b.fighters[k].stats[stat::MAX_HP] as f32;
@@ -142,7 +152,7 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
                 // stand-in throws them before skills).
                 pick(true, fallen).or_else(|| pick(false, weakest.filter(|&k| share(k) <= 0.5))).or_else(|| {
                     let i = (0..party[who].items.len()).find(|&i| left[who][i] > 0 && party[who].items[i].attacks())?;
-                    Some((i, n))
+                    Some((i, foe_target))
                 })
             };
             if let Some((i, target)) = item {
@@ -159,11 +169,12 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
                     events.extend(b.use_item_boosted(who, &action, held.power, boost, target, rng));
                 }
             } else {
-                let ((skill, cost), target) = heal.unwrap_or_else(|| (party[who].choose(b.fighters[who].mp()), n));
+                let ((skill, cost), target) = heal.unwrap_or_else(|| (party[who].choose(b.fighters[who].mp()), foe_target));
                 b.pay_mp(who, cost);
                 events.extend(b.act(who, skill, None, target, rng));
             }
         } else {
+            let foe = &foes[who - n];
             let f = &b.fighters[who];
             let situation = crate::monster_ai::Situation { hp: f.hp(), max_hp: f.stats[stat::MAX_HP], turn: f.actions, last_skill: f.last_skill, uses: &f.uses };
             let (slot, skill, mode) = foe.pick(&situation, rng);
@@ -200,7 +211,7 @@ mod tests {
         let claw = skill("Claw", 600, 1, 1);
         let foe = Foe { block: foe_block, normal: &claw, skills: None };
         let mut rng = Rng::from_state([1, 2, 3, 4]);
-        let (events, winner) = skirmish(&[m], &foe, ItemRules::default(), &mut rng, 60);
+        let (events, winner) = skirmish(&[m], std::slice::from_ref(&foe), ItemRules::default(), &mut rng, 60);
         assert!(events.iter().any(|e| matches!(e, Event::Felled { skill, .. } if skill == "Doom")));
         assert_eq!(winner, Some(0));
     }
@@ -233,7 +244,7 @@ mod tests {
         let claw = skill("Claw", 600, 30, 30);
         let foe = Foe { block: foe_block, normal: &claw, skills: None };
         let mut rng = Rng::from_state([5, 6, 7, 8]);
-        let (events, _) = skirmish(&[m], &foe, ItemRules::default(), &mut rng, 60);
+        let (events, _) = skirmish(&[m], std::slice::from_ref(&foe), ItemRules::default(), &mut rng, 60);
         let used = events.iter().filter(|e| matches!(e, Event::Healed { skill, .. } if skill == "Salve")).count();
         assert_eq!(used, 1);
     }

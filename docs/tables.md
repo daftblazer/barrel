@@ -816,10 +816,13 @@ overlap. Which of the two library calls there is sine and which cosine (`0x1405c
 The arena (`0x14019eab0`, `battle::arena_outside`) is a circle of radius 500 (`0x140804bb8`)
 about the centre: a spot's distance from it past 500, horizontally, else 0. So the scattered
 monsters (200 to 400 out, then nudged) stay within 500, while the party stands at 700 to 800,
-outside it (the party is not nudged). The skirmish (`skirmish::skirmish`, one monster against
-the party) now stands each member at its place and the monster at the centre, so the monster
-rules' nearest and farthest targets (`Battle::pick_target`) go by real distances; skills'
-spreads (several monsters) wait for battles with more than one.
+outside it (the party is not nudged). The skirmish (`skirmish::skirmish`) takes the party
+and any number of monsters: each member at its place, the monsters scattered (their sizes are
+not read yet, so all alike: they keep their order, the first at the centre), so the monster
+rules' nearest and farthest targets (`Battle::pick_target`) go by real distances. The party's
+stand-in works down the line (the first monster standing). `barrel battle EXE gN --from SAVE`
+fights encounter group N's draw with the save's party: group 12 drew two Ore Rats and two Stray
+Dogs against Escha, Katla and Wilbell, who won. Skills' spreads over several monsters are next.
 
 Still to read: where the field enemy entries come from.
 
