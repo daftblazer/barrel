@@ -1219,3 +1219,38 @@ event. So only the top passing priority counts. One is picked with `0x1404ca7a0 
 none gives event -1. Barrel keeps file order among equal priorities. Matching the game's pick
 among equals needs its sort's order, which is not reproduced yet.
 
+## What events change (`Event/eventprocess/EventProcessDataAll.epd`)
+
+Read by `0x140059c60` into a map at `0x140df9eb0` (`barrel_formats::event_process`). The file
+is an i32 count (1,165, one per event), then per event a group count and, per group, a word
+count and that many words. 851 events have 2 groups, 309 none; the file reads exactly. The
+words are ordinary event commands handled by `0x140052391`, the same handler as `w1`, and
+every group ends with `ECT_END`. Ten commands occur:
+
+| Code | Operands | What it does |
+|---|---|---|
+| `0x77100002` | 1 | money down by the operand (`0x14036a8e0` of its negative) |
+| `0x77100004` | 2 | an item set (`0x1400d2ab0`) into the basket (where = 0) or the container (1) |
+| `0x77110001` | 1 | a character joins the 11-slot companion list (`0x140362030` → `0x140330220`) |
+| `0x7711000a` | 2 | not read yet |
+| `0x77120001` | 2 | an event marked seen or not (`0x14035f480`) |
+| `0x77130002` | 2 | event flag change (`0x14035f6b0`) |
+| `0x77130004` | 2 | event flag set (`0x14035f660`), the commonest command (41 uses) |
+| `0x77140002` | 2 | book knowledge level (`0x140369560`) |
+| `0x77140005` | 2 | a knowledge level in the table at `0x14107a8a0` (`0x140369460`) |
+| `0x77160002` | 1 | days pass (`0x14035bf10`) |
+
+The handler names more of the family:
+
+- `0x77100001` raises money.
+- `0x77100003` goes through `0x14036a990` and `0x14036a960`.
+- `0x77110002` takes a character off the companion list.
+- `0x77110003`–`6` join or leave depending on whether the event in the second operand has
+  been seen.
+- `0x77130005` raises an item's knowledge (`0x1403692f0`).
+- `0x77140003` and `4` set map knowledge.
+- `0x77141001` sets a place and `0x77141002` a route.
+
+Group 0 is presumably run when the event ends. When group 1 runs (40 events have commands
+there) is not read yet.
+
