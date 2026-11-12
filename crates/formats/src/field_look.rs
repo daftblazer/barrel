@@ -51,6 +51,35 @@ pub struct FieldLook {
     pub fog: Option<Fog>,
     /// `<hdr threshold glow_add_rate>`.
     pub hdr: Option<(f32, f32)>,
+    /// `<sphere offset>`: where the distant view sits from the camera (metres), when it
+    /// follows the camera.
+    pub sphere_offset: Option<[f32; 3]>,
+}
+
+/// Each field's distant view (sky, far ground, clouds: `Data/x64/Field/C_SPHERE/<set>`), by
+/// field name, from the English executable's table at `0x14076eff0`: 32-byte records `{u64
+/// field name, u64 set file name, f32 × 4 (not read)}`. Indoor fields have `set-black`.
+pub const SKY_SETS_EN: u64 = 0x1407_6eff0;
+
+pub fn sky_sets(pe: &crate::pe::Pe, table: u64) -> Vec<(String, String)> {
+    let d = pe.data;
+    let Some(at) = pe.offset(table) else { return Vec::new() };
+    let text = |va: u64| -> Option<String> {
+        let o = pe.offset(va)?;
+        let end = d.get(o..)?.iter().take(64).position(|&b| b == 0)?;
+        String::from_utf8(d[o..o + end].to_vec()).ok()
+    };
+    let q = |o: usize| d.get(o..o + 8).map(|b| u64::from_le_bytes(b.try_into().unwrap()));
+    let mut out = Vec::new();
+    for k in 0..512 {
+        let r = at + 32 * k;
+        let (Some(field), Some(set)) = (q(r).and_then(text), q(r + 8).and_then(text)) else { break };
+        if !set.starts_with("set-") {
+            break;
+        }
+        out.push((field, set));
+    }
+    out
 }
 
 fn numbers<const N: usize>(e: &Element, name: &str) -> Option<[f32; N]> {
@@ -111,6 +140,7 @@ pub fn read(root: &Element) -> FieldLook {
                 })
             }
             "hdr" => look.hdr = Some((number(e, "threshold").unwrap_or(1.0), number(e, "glow_add_rate").unwrap_or(0.0))),
+            "sphere" if e.attr("tracking_camera") != Some("false") => look.sphere_offset = numbers(e, "offset"),
             _ => {}
         }
     }

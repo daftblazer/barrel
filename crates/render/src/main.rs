@@ -99,6 +99,8 @@ struct Draw {
     mask: Option<usize>,
     /// Shaded as an eye (`CharaEYE`: `docs/shading.md`, "Eyes").
     eye: bool,
+    /// Part of a field's distant view (unlit: its texture on its vertex colour).
+    sky: bool,
     /// The outline pass's colour (the material's `atOutCol`, grey), when the material has an
     /// outline (an `atEdge` parameter).
     outline: Option<f32>,
@@ -490,7 +492,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, outline, field: self.field });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field });
         }
         Ok(())
     }
@@ -1299,6 +1301,8 @@ fn main() -> Result<()> {
     // The field map numbers loaded, in scene order (empty for `--field DIR`).
     let mut field_maps: Vec<u32> = Vec::new();
     let mut field_looks: Vec<Option<barrel_formats::field_look::FieldLook>> = Vec::new();
+    // Each field's distant view's instance (it follows the camera), if it has one.
+    let mut sky_instances: Vec<Option<u32>> = Vec::new();
     let mut pack_bytes = Vec::new();
     if field {
         // `--field auto` with an event: every field the event goes to.
@@ -1323,6 +1327,40 @@ fn main() -> Result<()> {
             base += G1t::parse(&bytes)?.textures.len();
             pack_bytes.push(bytes);
             field_maps.push(*map);
+            // Its distant view (C_SPHERE/<set>, by the executable's table), all in one instance.
+            let root = dir.ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
+            let set = root.as_ref().and_then(|r| {
+                let exe = std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok()?;
+                let pe = barrel_formats::pe::Pe::parse(&exe).ok()?;
+                let name = dir.file_name()?.to_str()?;
+                barrel_formats::field_look::sky_sets(&pe, barrel_formats::field_look::SKY_SETS_EN).into_iter().find(|(f, _)| f == name).map(|(_, s)| s)
+            });
+            let mut sky = None;
+            if let (Some(root), Some(set)) = (&root, set.filter(|s| !s.starts_with("set-black"))) {
+                let bytes = std::fs::read(root.join("Data/x64/Field/C_SPHERE").join(&set))?;
+                let container = Elixir::parse(&bytes)?;
+                let instance = scene.instance(Mat4::IDENTITY);
+                for e in &container.entries {
+                    let Some(stem) = e.name.strip_suffix(".g1m") else { continue };
+                    let (Some(mesh), Some(tex)) = (named(&container, &format!("{stem}.g1m")), named(&container, &format!("{stem}.g1t"))) else { continue };
+                    let count = G1t::parse(tex)?.textures.len();
+                    let model = G1m::parse(mesh)?;
+                    let Some(geometry) = model.geometry.as_ref() else { continue };
+                    let first = scene.draws.len();
+                    scene.add_posed(geometry, Mat4::IDENTITY, count, None, instance)?;
+                    for d in &mut scene.draws[first..] {
+                        d.texture += base;
+                        d.overlay = d.overlay.map(|o| o + base);
+                        d.mask = d.mask.map(|m| m + base);
+                        d.sky = true;
+                    }
+                    base += count;
+                    pack_bytes.push(tex.to_vec());
+                }
+                eprintln!("{}: distant view {set}", dir.display());
+                sky = Some(instance);
+            }
+            sky_instances.push(sky);
         }
         scene.field = None;
     } else {
@@ -1765,6 +1803,22 @@ fn main() -> Result<()> {
         d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
     };
 
+    // The distant view: drawn first, behind everything (no depth test or write).
+    let no_depth = vk::PipelineDepthStencilStateCreateInfo::default();
+    // Alpha-blended: its clouds are soft-edged layers over the dome.
+    let sky_blend_att = [vk::PipelineColorBlendAttachmentState::default()
+        .blend_enable(true)
+        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .alpha_blend_op(vk::BlendOp::ADD)
+        .color_write_mask(vk::ColorComponentFlags::RGBA)];
+    let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att);
+    let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
+    let sky_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_info], None).map_err(|(_, e)| e)?[0] };
+
     // The characters' outline pass: the same shaders in outline mode, front faces culled (an
     // inverted hull: only the pushed-out back faces show, as a rim).
     let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
@@ -1912,7 +1966,8 @@ fn main() -> Result<()> {
     let view_proj = |eye: Vec3, target: Vec3, dist: f32, fov: f32, width: u32, height: u32, orbit: (f32, f32, f32)| {
         let zoom = orbit.2;
         let view = Mat4::look_at_rh(turned_eye(eye, target, orbit), target, Vec3::Y);
-        let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01 * zoom, dist * 20.0 * zoom);
+        // Far enough for the distant view (its dome is about 35,000 units across).
+        let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01 * zoom, (dist * 20.0 * zoom).max(80_000.0));
         proj.y_axis.y *= -1.0; // Vulkan's y points down.
         proj * view
     };
@@ -2273,6 +2328,13 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // The current field's distant view follows the eye (plus the field's sphere offset).
+    if let Some(Some(inst)) = sky_instances.get(current_field as usize) {
+        let offset = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.sphere_offset).unwrap_or([0.0; 3]);
+        let at = turned_eye(eye, target, orbit) + Vec3::new(-offset[0], offset[1], offset[2]) * 100.0;
+        instances[*inst as usize].model = Mat4::from_translation(at);
+        gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
+    }
     // The field's character lighting, mirrored into render space, and the eye.
     {
         let field_look = field_looks.get(current_field as usize).and_then(|l| l.as_ref());
@@ -2370,10 +2432,13 @@ fn main() -> Result<()> {
         let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
+        // The current field's distant view first, then the rest over it.
+        for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
+        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
+        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
-            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
+            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3;
             let mut per_draw = [0u8; 8];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
             per_draw[4..].copy_from_slice(&flags.to_le_bytes());
@@ -2381,6 +2446,7 @@ fn main() -> Result<()> {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+        }
         }
         // The outlines: the outlined materials again, pushed out, with the outline texture.
         if let Some(outline_tex) = outline_tex {
@@ -2496,6 +2562,7 @@ fn main() -> Result<()> {
         d.destroy_sampler(post_sampler, None);
         d.destroy_render_pass(post_pass, None);
         d.destroy_pipeline(outline_pipeline, None);
+        d.destroy_pipeline(sky_pipeline, None);
         d.destroy_pipeline(pipeline, None);
         d.destroy_pipeline_layout(pipeline_layout, None);
         d.destroy_shader_module(vs, None);

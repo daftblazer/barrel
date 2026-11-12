@@ -224,3 +224,17 @@ constants that `CharaMTC`'s pixel program has compiled in (0.3 × 32, 0.546875 �
 and `g_SphereCenter`. `Saves/shader/shader.xml` lists the shader packs by id (`CHARA_MTC` 1,
 `CHARA_FRA_HAIR` 17, `CHARA_FRA_BODY` 18, ...) and `chara_shader_param.xml` the shared
 textures (`sEnv` `defaultref.g1t`, `sOutline` `outline.g1t`, `sAlphamask` `alphamask.g1t`).
+
+## The distant view (`Data/x64/Field/C_SPHERE/set-*.elixir.gz`)
+
+Outdoor fields have a distant view around them: a sky dome (about 35,000 units across), far
+ground, stones, plants and clouds (`set-a15_01_sphere`: `obj-a15a01_Sphere_sky_hi`,
+`..._ground_hi`, `..._stones_hi`, `..._plants_hi`, `obj-xEF_a15a01_Sphere_cloud_hi`, each
+model with its own texture pack). Which set a field has is the executable's table at
+`0x14076eff0` (English): 122 records of 32 bytes, `{u64 field name, u64 set file, f32 × 4}`
+(`TOWN_07` the airship dock: `set-a15_01_sphere_tw07`; `TOWN_10` and `TOWN_04`:
+`set-a15_01_sphere`; indoors such as `TOWN_11`: `set-black`; the four floats are not read).
+The field's table places it: `<sphere offset tracking_camera>` (metres from the camera,
+`TOWN_07` 20 below it). The renderer loads each event field's set into one instance that
+follows the eye, draws it first with no depth test or write, alpha-blended (the clouds are
+soft-edged), unlit (texture on vertex colour), and keeps the far plane past the dome.

@@ -98,6 +98,10 @@ void main() {
     }
     vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
     field_light = amb * in_color.rgb + in_color.rgb * diffuse + in_color.rgb * sun;
+    // A distant view is not lit: its texture on its vertex colour.
+    if ((pc.flags & 8u) != 0u) {
+        field_light = in_color.rgb;
+    }
     gl_Position = pc.view_proj * w;
     if ((pc.flags & 4u) != 0u) {
         // The outline pass (CharaFra*): pushed out along the clip-space normal, about the same

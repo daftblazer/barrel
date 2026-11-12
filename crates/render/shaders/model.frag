@@ -53,6 +53,11 @@ vec3 soft_light(vec3 a, vec4 kw) {
 
 void main() {
     vec4 c = texture(tex, uv);
+    if ((pc.flags & 8u) != 0u) {
+        // The distant view: unlit, blended by its alpha (clouds over the dome).
+        color = vec4(field_light * c.rgb * pc.params.w, c.a);
+        return;
+    }
     if (c.a < pc.params.x) discard;
     vec3 n = normalize(normal);
     if ((pc.flags & 1u) == 0u) {
