@@ -324,6 +324,12 @@ impl Stage {
             Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
             Step::Telop { card, .. } => self.telop = Some(*card),
+            Step::MotionDivision { character, division, .. } => {
+                let now = self.time;
+                if let Some(p) = self.characters.get_mut(character).and_then(|b| b.motion.as_mut()) {
+                    *p = Playing { since: now, blend: 0.0, division: Some(*division), ..*p };
+                }
+            }
             Step::HeadGesture { character, segment, rate, weight, .. } => {
                 let now = self.time;
                 if let Some(b) = self.characters.get_mut(character) {

@@ -346,8 +346,12 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
   passes 0 and then clears the range (`0x1402036d0` with -1, -1), so it plays the whole clip.
   So a seated townsperson's `s11 … SIT_DOWN 1` loops 1.0 to 3.97 s, the sitting, and an
   `EV_ACT_1` division 1 its 0.67 to 4.67 s loop, not the whole clip. `s13`
-  (`ECT_CHARA_MOTION_SET_OFFSET_ONLY`, `{character, motion, flag}`, case `0x1401f0211`) calls
-  `0x1401f6830` (not read).
+  (`ECT_CHARA_MOTION_SET_OFFSET_ONLY`, `{character, division, flag}`, case `0x1401f0211`)
+  moves the motion playing (+0x824) to another of its divisions (`0x1401f6830`: the player's
+  range set from the division, its time to the start, no blend; +0x828 keeps the division,
+  +0x5c = flag ≠ 0). `EVENT_MM01_OP1_121` starts Escha's `EV_ACT_21` at division 0 (`s11`)
+  and steps it through 2, 1, 2, 1, 3, an `s6` (`ECT_CHARA_MOTION_WAIT`) after each one that
+  does not loop.
 
 - `s10` (`ECT_CHARA_MOTION_SET_LOOP`, `{character, motion, blend, flag}`) plays the motion
   (a `MOTION_*` number, e.g. 32 `WALK`) through `0x1401f4c50`, blending over `blend` / 100

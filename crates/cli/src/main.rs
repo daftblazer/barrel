@@ -2069,6 +2069,9 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = character.map_or("", |c| names.get(c as usize).map_or("?", String::as_str));
                 println!("{action:3} {who} voice {clip} (bank Series{:04}, clip {})", clip / 1000 * 1000, clip % 1000);
             }
+            Step::MotionDivision { action, character, division } => {
+                println!("{action:3} {} moves to division {division} of its motion", names.get(character as usize).map_or("?", String::as_str))
+            }
             Step::Motion { action, character, motion, blend, .. } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 let name = motions.get(motion as usize).map_or_else(|| motion.to_string(), Clone::clone);

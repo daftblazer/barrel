@@ -30,6 +30,10 @@ pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
 /// `s11` (`ECT_CHARA_MOTION_SET_AUTO_LOOP`): `{character, motion, division, flag, blend
 /// (hundredths)}`; the runner's +0x5c is set when division equals flag (not read further).
 pub const CHARA_MOTION_AUTO_LOOP: u32 = 0x7300_000b;
+/// `s13` (`ECT_CHARA_MOTION_SET_OFFSET_ONLY`): `{character, division, flag}`: the motion
+/// playing moves to another of its divisions, from that division's start, without a blend
+/// (`0x1401f6830`).
+pub const CHARA_MOTION_DIVISION: u32 = 0x7300_000d;
 /// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
 /// operands): adds the character there, facing `angle` degrees.
 pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
@@ -124,6 +128,8 @@ pub enum Step<'a> {
     /// (`ECT_CHARA_MOTION_SET_AUTO_LOOP`, `{character, motion, division, flag, blend}`) play
     /// one of its divisions (`barrel_formats::chara_div`), which says whether it loops.
     Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, division: Option<u32> },
+    /// The motion a character plays moves to another division (`s13`).
+    MotionDivision { action: usize, character: u32, division: u32 },
     /// The event moves to a field map (`q12`, `ECT_FIELDMAP_CHANGE_NOT_BGM`, `{map}`; `q2`,
     /// `ECT_FIELDMAP_CHANGE`, likewise): `map` is a `FIELDMAP_*` number ([`field_maps`]).
     FieldChange { action: usize, map: u32 },
@@ -254,6 +260,7 @@ impl<'a> Player<'a> {
                 let blend = f(*hundredths) / 100.0;
                 out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: false, division: Some(*division) });
             }
+            (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: *character, division: *division }),
             (CHARA_MOTION_AUTO_LOOP, [character, motion, division, rest @ ..]) => {
                 let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
                 out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, division: Some(*division) });
@@ -510,6 +517,7 @@ mod tests {
                 Step::CharacterWait { character, seconds, .. } => format!("{character} waits {seconds}"),
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
+                Step::MotionDivision { character, division, .. } => format!("{character} motion division {division}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::FieldCamera { change, .. } => format!("field camera {change:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
