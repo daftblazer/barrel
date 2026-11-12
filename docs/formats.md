@@ -715,7 +715,10 @@ start or end where another strong one does, and growing chains from them (the be
 event at each chain's end, correlation 0.7 or more) places 13 more, 205 in all of the 521
 events with three lines or more; the strong matches sit in banks 0 to 3 and 10 to 17. Many
 of the rest are unvoiced, and a few placements look doubtful (`MM01_OP1_011` at 10804,
-`_012` at 3153), so another read-log run over other scenes is the way to firm the table up.
+`_012` at 3153), so another read-log run over other scenes is the way to firm the table up. The viewer
+uses the strong ones: in a window it plays each line's clip from the English banks as the
+line comes up (`stage::Stage::story_voice`; `barrel-view` prints "story voices from clip
+12900 (match 0.89)" for the first opening scene).
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone

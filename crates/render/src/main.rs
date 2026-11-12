@@ -2570,7 +2570,25 @@ fn main() -> Result<()> {
                 _ => None,
             })
             .collect();
-        let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_game::event::reading_time), ..Stage::default() }, steps);
+        // The lines' voices (English): where the event's clips start, found by matching clip
+        // sizes to line lengths (docs/formats.md, "Story lines' voices"); used when the match
+        // is strong.
+        let story_voice = {
+            let bank = root.join("Data/x64/Sound/Voice_EN");
+            let mut sizes: Vec<u32> = Vec::new();
+            for b in 0..18 {
+                let list = std::fs::read(bank.join(format!("Series{:04}.fpl", b * 1000))).ok().and_then(|d| barrel_formats::voice::list(&d).ok()).unwrap_or_default();
+                let mut v: Vec<u32> = list.iter().map(|c| c.map_or(0, |(_, n)| n as u32)).collect();
+                v.resize(1000, 0);
+                sizes.extend(v);
+            }
+            let lengths: Vec<usize> = messages.iter().map(|m| m.repaired_text().chars().count()).collect();
+            barrel_formats::voice::story_start(&sizes, &lengths).filter(|&(_, r)| r >= 0.85).map(|(c, r)| {
+                eprintln!("story voices from clip {c} (match {r:.2})");
+                c as u32
+            })
+        };
+        let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_game::event::reading_time), story_voice, ..Stage::default() }, steps);
         face_tables_play = std::fs::read_dir(root)?
             .flatten()
             .map(|e| e.path())
@@ -2602,7 +2620,7 @@ fn main() -> Result<()> {
                 .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
                 .unwrap_or_default();
             match barrel_audio::Output::open(0.1) {
-                Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice", tracks), None)),
+                Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", tracks), None)),
                 Err(e) => eprintln!("no sound: {e}"),
             }
         }

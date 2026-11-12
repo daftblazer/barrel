@@ -185,6 +185,9 @@ pub enum Cue {
 
 #[derive(Clone, Debug, Default)]
 pub struct Stage {
+    /// The first voice clip of the event's lines (`voice::story_start`), when known: line k
+    /// then plays clip `story_voice + k` as it comes up (docs/formats.md, "Story lines' voices").
+    pub story_voice: Option<u32>,
     /// By the number the event's commands use (a `Chara.xml` row in story events, 10000 and
     /// up in skill events).
     pub characters: BTreeMap<u32, Body>,
@@ -285,7 +288,10 @@ impl Stage {
             },
             // A line: its speaker talks (and takes the line's expression, if it sets one); the
             // others fall quiet and keep their faces.
-            Step::Message { speaker, name, text, expression, gesture, .. } => {
+            Step::Message { index, speaker, name, text, expression, gesture } => {
+                if let Some(first) = self.story_voice {
+                    self.cues.push(Cue::Voice { clip: first + *index as u32 });
+                }
                 let now = self.time;
                 let until = self.reading.map(|f| now + f(&text.replace("<CR>", "")).max(0.0));
                 self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until });
