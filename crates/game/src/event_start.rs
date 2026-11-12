@@ -92,7 +92,8 @@ pub trait World {
     /// An event flag (`0x14035f460`).
     fn flag(&self, flag: i32) -> i32;
     /// `0x140236070`: the first word of the map's runtime record (`[0x140df9a08]+0x10e8+0x40×map`,
-    /// the region for a field area) is 0.
+    /// the region for a field area) is 0. All 110 compiled records have a region of 1 or more, so
+    /// this is presumably true for maps 110 to 121 only (the towns; not checked).
     fn region_zero(&self, map: i32) -> bool;
     /// The field map the player is in (`0x1400546c0` non-null, then `0x140236160`), None outside
     /// a field.

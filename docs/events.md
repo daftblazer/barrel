@@ -1327,7 +1327,9 @@ The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired v
 - `0x60000002` matches anything.
 - `0x60000001` matches a map for which `0x140236070` is false. That function tests the first
   word of the map's runtime record, `[0x140df9a08]+0x10e8+0x40×map`, which is the region for a
-  field area, for 0.
+  field area, for 0. Every one of the 110 compiled records (`0x140770230`) has a region of 1 or more,
+  so 0 is presumably the maps past them, 110 to 121, the towns by the field file names. That is
+  not checked: where the runtime records for those maps come from is not found.
 - In the from-to triggers, `0x60000001` counts only at operands 1 and 3 after a kind of 0.
 
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed

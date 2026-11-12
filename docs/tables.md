@@ -1550,7 +1550,10 @@ models only; `Script/`, monster behaviour). The field objects that do things are
 (`FIELDMAP_CHANGE`, `WORLDMAP_CHANGE`, `IN_CHANGE`, ...), messages and events. Twelve
 gimmicks have their own tags, named by area and event (`FIELDMAP_GIMMICK_ENUM_AREA_03_07_MS01_070`).
 
-**Gimmicks** are compiled in too: at `0x140770230` (English Escha) 96 records of 0x40 bytes,
+**Gimmicks** are compiled in too: at `0x140770230` (English Escha) 110 records of 0x40 bytes (96
+field areas, then ten `Reserve Frame 11`–`20` placeholders of region 1, the `World Map` and three
+test maps of region 14; the town maps, 110 to 121 in the runtime's 122 records, are not in it),
+for the 96 field areas
 one per field area in `AREA_*` order (record 0 is `AREA_01_01`, "Twilight Forest 1", the Forest
 Entrance; its gimmicks stand around its gathering points), each six words (the first is the
 region: 1 the Twilight Forest, 2 the Old Highway, 3 the Southern Ruins ...; the sixth, +0x14,
