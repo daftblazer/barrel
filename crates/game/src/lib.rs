@@ -18,6 +18,7 @@ pub mod field_camera;
 pub mod play_camera;
 pub mod fight;
 pub mod event;
+pub mod event_start;
 pub mod face;
 pub mod gather;
 pub mod inventory;

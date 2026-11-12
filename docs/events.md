@@ -1194,3 +1194,28 @@ by the table. Most used: `EVENT_OCCURRENCE` (1,006), `EVENT_NOT_OCCURRENCE` (767
 then `TRIGGER_MAP_FROM_TO_AFTER 0 4 0 5`. The file's 121,876 bytes read exactly so. `Event/eventprocess/EventProcessDataAll.epd`
 (21,708 bytes, the same count first) is not read yet.
 
+### Which event starts (`0x140214d70`, `barrel_game::event_start`)
+
+Called from 31 places with a trigger group. Nothing starts while `0x141077ef0` or `0x141077ef1`
+is set or `0x1402969b0` says no. Otherwise it walks the group's list. Each entry is 16 bytes:
+event, the group holding the trigger, 1, and priority (word 1). The list is built by
+`0x1400555d0`: a group goes under its first trigger code, found by a word-by-word scan for
+0x7000007e..0xa6. It is sorted highest priority first by the library sort `0x140057570`,
+which does not keep order among equals.
+
+An entry passes when `0x140214c00` passes for group 0 and for its own group:
+
+- **Gate:**
+  - Word 0 = 1 fails while `0x1410782e2` is set (cleared at day end).
+  - A seen event (`0x14035f270`) needs word 2 (repeatable).
+  - Word 4 set needs event flag 1.
+  - Words 8–10 and 11–13 are checked against the date by `0x14035c140` and `0x14035c160`,
+    a range going by the names.
+- **Group:** every command must pass, in order (`0x140214920` stops at the first failure;
+  `0x140213670` evaluates one).
+
+Passing entries are kept unless an earlier kept one has a different priority or the same
+event. So only the top passing priority counts. One is picked with `0x1404ca7a0 %` the count;
+none gives event -1. Barrel keeps file order among equal priorities. Matching the game's pick
+among equals needs its sort's order, which is not reproduced yet.
+
