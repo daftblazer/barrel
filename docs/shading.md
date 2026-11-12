@@ -136,6 +136,29 @@ for now: the material colours white no light texture or shadow (1), the
 `PARALLEL` `rot` as pitch below level then yaw in degrees, and point light distances in
 metres. Point light distances are in field units, as for characters.
 
+### Wind (plants swaying)
+
+`MapSTD`'s vertex programs bend a field model's vertices (`p` the world position;
+`g_f3Wind` cb0[45].xyz, `g_nWindFlag` .w, `g_fWindTime` cb0[46].x, `g_fInvHeight` .y,
+`g_f3Shift` cb0[47].xyz, `g_fRootHeight` .w; the model's world y is `mL2W`'s row 1 w):
+
+```text
+phase  = p.x · shift.x + time + p.z · shift.z
+height = saturate((p.y - model y - root height) · invHeight)
+p'     = p + wind · sin(phase) · height          (only when the flag is set)
+```
+
+The models' own values are placeholders (flag 0, wind and shift (1, 1, 1), invHeight 1, root
+0: 67 submeshes in `AREA_01_01_Obj`), so the engine sets them from the field table's
+`<wind_root>` (23 fields): `<wind dir power freq shift>` (global winds), `<v_shaker keyword
+weight root_height height shake_time shift_x shift_z>` (vertex sway for the meshes whose
+names hold the keyword, `xV1_` ...) and `<n_shaker keyword weight axis max_angle axis_power
+char_range char_power>` (node sway: a spring per bone, `0x1402859xx`). The `v_shaker` parser
+(`0x140285125` on) keeps height ×100 (+0x20) and root height ×100 (+0x24, field units), shake
+time (+0x28, clamped), shift x and z (+0x2c, +0x30) and weight (+0x34); the `<wind>` parser
+reads `freq` at `0x140285327`. How weight, the winds and the time become `g_f3Wind` and
+`g_fWindTime` is not read yet, so the renderer does not sway plants.
+
 ## After the scene (`Data/x64/PostEffect/pe_pack.elixir.gz`, `PostEffectGlow.kps`)
 
 The post effects are `_SPK4100` packs of DXBC programs (`barrel g1s` reads them too). The glow
