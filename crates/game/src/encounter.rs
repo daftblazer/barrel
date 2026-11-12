@@ -45,6 +45,26 @@ pub fn touched(player: [f64; 3], player_radius: f64, enemies: &[([f64; 3], f64)]
     best.map(|(k, _)| k)
 }
 
+/// How far ahead of the player the field strike's centre sits, by the player's +0x1e0
+/// (`0x1408edd58`; 0 to 5).
+pub const STRIKE_REACH: [f64; 6] = [120.0, 160.0, 130.0, 190.0, 150.0, 210.0];
+
+/// The strike check (`0x140270f50`): its centre is the player's point 2 (`0x1401f3b80`) moved
+/// ahead along the player's facing (radians, 0 = +z) by [`STRIKE_REACH`]`[stage]`; the enemy
+/// nearest it within its radius plus the strike's (the player's +0x1e4) is hit.
+pub fn struck(point: [f64; 3], facing: f64, stage: usize, strike_radius: f64, enemies: &[([f64; 3], f64)]) -> Option<usize> {
+    let reach = STRIKE_REACH.get(stage).copied().unwrap_or(0.0);
+    let c = [point[0] + facing.sin() * reach, point[1], point[2] + facing.cos() * reach];
+    let mut best: Option<(usize, f64)> = None;
+    for (k, (e, r)) in enemies.iter().enumerate() {
+        let d = ((c[0] - e[0]).powi(2) + (c[1] - e[1]).powi(2) + (c[2] - e[2]).powi(2)).sqrt();
+        if r + strike_radius >= d && best.is_none_or(|(_, b)| d < b) {
+            best = Some((k, d));
+        }
+    }
+    best.map(|(k, _)| k)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,6 +74,14 @@ mod tests {
         let enemies = [([0.0, 100.0, 120.0], 50.0), ([0.0, 100.0, 90.0], 50.0), ([0.0, 100.0, 400.0], 50.0)];
         assert_eq!(touched([0.0; 3], 40.0, &enemies), Some(1));
         assert_eq!(touched([0.0, 0.0, 500.0], 40.0, &enemies[..2]), None);
+    }
+
+    #[test]
+    fn the_strike_lands_ahead() {
+        let enemies = [([0.0, 0.0, 160.0], 60.0), ([0.0, 0.0, -160.0], 60.0)];
+        assert_eq!(struck([0.0; 3], 0.0, 1, 30.0, &enemies), Some(0));
+        assert_eq!(struck([0.0; 3], std::f64::consts::PI, 1, 30.0, &enemies), Some(1));
+        assert_eq!(struck([0.0; 3], std::f64::consts::FRAC_PI_2, 1, 30.0, &enemies), None);
     }
 
     #[test]

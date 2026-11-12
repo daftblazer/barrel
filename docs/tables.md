@@ -754,7 +754,10 @@ bytes, `0x140081260 (group?, group, start, kind)` builds it: +0x18, +0x1c the en
 +0x20 how it began, +0x24 a kind; state 0, `0x140084410`/`0x140084670`, blends +0x48 toward
 +0x44 over +0x4c seconds and then moves to state 1). The field's contact check (`0x140270260`)
 makes one when the player's field strike, while out (`0x14026e2c0`), hits an enemy
-(`0x140270f50`; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
+(`0x140270f50`: the nearest active enemy within its radius plus the strike's, the player's
++0x1e4, of a point ahead of the player's point 2 along its facing by 120, 160, 130, 190, 150 or
+210 by the player's +0x1e0 (`0x1408edd58`, `encounter::struck`); the hit plays sound 0x20 for
+Escha in the lead, 0x24 for Logy (`0x140160070`), and hands on the enemy's +0x178; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
 they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
 raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.5; the enemy's
 height is moved first by its monster row's +0x5c, +0x60 and +0x74, `encounter::touched`);
@@ -763,7 +766,8 @@ a field character's radius, +0x90, is set by `0x14026c3c0` from its `CharaBase.x
 the loader (`0x1401edae0`) multiplies by 100 like `FMhig` and `FMslp`, so Escha and Logy
 (`PC20`, `PC21`, 0.48) touch at 48 field units; the lead's partner (by `0x14035ebb0`: Escha,
 then character 1, or Logy, then character 0) gets 0.4 of it. 87 of the 507 rows have 0.2,
-23 have 1, 11 have 2. A field enemy's own `Chara.xml` row (418 to 420, "zako enemy slot" 1 to 3, all
+23 have 1, 11 have 2. A field enemy's own `Chara.xml` row (418 to 420, of the slots 418 to 466 that both checks
+map to a monster row with `0x1402025a0` before reading its heights, "zako enemy slot" 1 to 3, all
 `PUNI`) is a stand-in whose model its group fills, so `barrel field-sim` takes the radius of the
 group's first monster's row (`battle_data::field_radii`; the Ore Rat 60, the Stray Dog 70; not
 checked against a live +0x90). At `AREA_01_01` the stand-in player walking west touches the
