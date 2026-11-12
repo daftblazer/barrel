@@ -322,3 +322,31 @@ mod experience_tests {
         assert_eq!(experience(30, 5, 1, false, 0, 50), 0);
     }
 }
+
+/// The finished item's quality (`0x14030baf0` and on): the cauldron's effect value (its
+/// quality so far, at most [`MAX_EFFECT`]) plus, for each trait the item takes, the amount of
+/// its `ITEM_SUB_ITM_ADD_QUALITY` slots (`0x1402a1fd0` asks for the kind, `0x1402a1ed0` gives
+/// the amount, a roll in the slot's range), kept within 0 and 120 (`0x1407272a0`).
+pub fn finished_quality(effect_value: f32, traits: &[&barrel_formats::battle_data::Trait], roll: &mut dyn FnMut(i32, i32) -> i32) -> f32 {
+    let mut q = effect_value;
+    for t in traits {
+        for s in t.slots.iter().filter(|s| s.kind == "ITEM_SUB_ITM_ADD_QUALITY") {
+            q += roll(s.min, s.max) as f32;
+        }
+    }
+    q.clamp(0.0, MAX_EFFECT)
+}
+
+#[cfg(test)]
+mod quality_tests {
+    use barrel_formats::battle_data::{Trait, TraitSlot};
+
+    #[test]
+    fn quality_traits_add_and_cap_at_120() {
+        let t = Trait { name: "Quality+".into(), group: String::new(), slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_ADD_QUALITY".into(), min: 15, max: 15 }] };
+        let other = Trait { name: "Power".into(), group: String::new(), slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_CHANGE_POWER".into(), min: 30, max: 30 }] };
+        let mut roll = |lo: i32, _: i32| lo;
+        assert_eq!(super::finished_quality(50.0, &[&t, &other], &mut roll), 65.0);
+        assert_eq!(super::finished_quality(110.0, &[&t], &mut roll), 120.0);
+    }
+}

@@ -1178,6 +1178,14 @@ each element the finished item has gives 1 point. Then up to two of the state's 
 
 Finally each point count is kept between 0 and 5.
 
+**The finished item's quality** (`0x14030baf0` and on): the screen keeps the result item's
+quality as it stands (+0xa94, copied from the result's +4 at `0x14030b457`): the state's
+"effect value" above, which is the quality (`itemData`'s `effect` column, 50 for most
+materials, is a material's quality; the cap of 120 is the quality cap). It then adds, over
+the traits the result takes, each `ITEM_SUB_ITM_ADD_QUALITY` slot's amount (`0x1402a1fd0`,
+`0x1402a1ed0`) and keeps the sum within 0 and 120 (`0x1407272a0`) as the item's quality.
+`synthesis::finished_quality`.
+
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
 `itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:
 `0x14036c3d0(12)`, at least 1) and N the number of items made (state +0x98), the first item
