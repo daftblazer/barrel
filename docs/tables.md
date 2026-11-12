@@ -1375,8 +1375,13 @@ list numbers (words 0 to 6, -1 for none; five in most, one list five times in so
 that are 1 and 1 in most, its field map (word 9: 12 is `AREA_01_01`), 0, 100 and 0, then its
 place in metres and two float triples (0.01 three times, 2.0 three times). `AREA_01_01`'s four
 points draw from lists 0, 13, 17, 21, 25 and 51; 13, 17, 21 and 25 give the same plants a little
-better each time, so the list is most likely picked by the story's progress, which is not read
-yet.
+better each time. **Which list** (`0x140281230 (lists, point, ...)` → `0x1400d3160`): the
+point's byte +0x30 (word 12) chooses the rule, and the result, at most 4, indexes the point's list
+words. Set: the level of `ACT_ALC_TABLE_LEVELUP` (act 215) on the item unit at `0x140dfc8d4`;
+clear: the level of `ACT_GAT_TABLE_LEVELUP` (216) on the unit at `0x140dfc8b0`, plus
+`0x1410783b4` while `0x1410783b0` is 4 (both read through `0x14029e8d0 (item, act)`). So a
+point's five lists are tiers that a gathering "table" upgrade raises (`gather::list_index`);
+which items those two units hold is not read yet.
 
 **The draw** (`0x14023c210 (lists, list, ...)`, `barrel_game::gather`): the list's records are
 gathered in table order; each gets a weight, its own plus a roll of 30 to 100 when the player
