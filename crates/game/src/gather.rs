@@ -26,6 +26,20 @@ pub fn list_index(alchemy_point: bool, alc_level: i32, gat_level: i32, field_bon
     level.clamp(0, 4) as usize
 }
 
+/// A gathered item's quality (`0x14023c8b0`): a stacking item (`itemData` `isStack`
+/// `ITEM_STACK_TYPE_STACK`, the loaded row's +0x2c) comes at its row's `effect` (+0x40), at
+/// most 120; any other at a roll between the record's quality bounds, raised by
+/// `bonus_percent` percent of itself (`0x1400d3030 (3, ...)`, 0 when the gather's flag says so),
+/// within 0 and 120.
+pub fn quality(stacks: bool, effect: f32, record: &Gather, bonus_percent: i32, rng: &mut crate::rng::Rng) -> f32 {
+    if stacks {
+        return effect.min(120.0).max(0.0);
+    }
+    let q = rng.range(record.quality.0, record.quality.1) as f32;
+    let q = if bonus_percent > 0 { q + bonus_percent as f32 * 0.01 * q } else { q };
+    q.min(120.0).max(0.0)
+}
+
 /// One pick from a list (the loop at `0x14023c80f`): a roll of 0 to 100, then the records in
 /// order, those with a weight of their own above 0 each adding its share (weight × 100 /
 /// total), the first to reach the roll; when none does, the first with a drawn weight above 0,
@@ -82,6 +96,18 @@ mod tests {
         assert_eq!(list_index(false, 0, 2, 1), 3);
         assert_eq!(list_index(false, 0, 9, 0), 4);
         assert_eq!(list_index(true, 2, 4, 0), 2);
+    }
+
+    #[test]
+    fn gathered_quality() {
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        // A Spiky Bud (stacks, effect 60) comes at 60, as the running game's did.
+        assert_eq!(quality(true, 60.0, &g(70, 50), 0, &mut rng), 60.0);
+        let chest = Gather { quality: (60, 70), ..g(195, 40) };
+        let q = quality(false, 50.0, &chest, 0, &mut rng);
+        assert!((60.0..=70.0).contains(&q));
+        let q = quality(false, 50.0, &Gather { quality: (100, 100), ..g(195, 40) }, 50, &mut rng);
+        assert_eq!(q, 120.0);
     }
 
     #[test]

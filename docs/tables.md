@@ -1389,7 +1389,14 @@ knows its item at level 2 or less (the item knowledge list at `0x141079fe0`), so
 turn up more. Then for each pick (a count passed in, plus a bonus from `0x1400d3030` unless a
 flag clears it): a roll of 0 to 100, and the records in order, those whose own weight is above
 0 each adding weight × 100 / total, the first to reach the roll; if none does, the first with a
-weight above 0, else the last. The area map's list for Sector One (71) belongs to no point.
+weight above 0, else the last. Each pick's item (`0x14023c883`): its quality is the row's `effect`
+(the loaded row's float +0x40), at most 120, for an item that stacks (`isStack`
+`ITEM_STACK_TYPE_STACK`, +0x2c; the Spiky Buds in the running game had 60, their `effect`),
+else a roll between the record's bounds (words 3 and 4) raised by a percentage of itself
+(`0x1400d3030 (3, ...)`), within 0 and 120 (`gather::quality`); then the record's traits
+(words 9 to 12) are put on it (`0x14029e290`), and words 6 and 7 go to `0x14023d8c0` (not read
+yet) with it. (The shipped `itemData.xml` writes the other stack type as
+`ITEM_STACK_TYPE_NONE_STACK`, a name the enum does not have: it holds `_NON_STACK`.) The area map's list for Sector One (71) belongs to no point.
 
 What does not hold it: the data files (`Saves/field/AREA_*.xml`: camera, fog, light, sky, HDR
 and shaders; the area containers `Data/x64/Field/AREA_*`, whose placement lists hold scenery
