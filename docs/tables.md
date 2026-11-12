@@ -692,7 +692,15 @@ candidates whose distance from the centre on the ground (x and z of +0x230) is l
 their size (+0x358) plus `RADIUS[kind]` (`0x1408041d8`: 50, 350, 450, 650, 900, 1000, 150).
 Over the 532 skills: kind 0 (50, the target alone in practice) 353, 1 (350) 6, 2 (450) 117, 3
 (650) 3, 5 (1000) 49, 6 (a line) 4. So many skills hit everyone near the target; the battle
-loop here keeps one target until fighters have positions (`fight::Fighter::position`, all 0). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
+loop here keeps one target until fighters have positions (`fight::Fighter::position`, all 0).
+
+Where fighters stand: each keeps a home spot (its model's +0x3d8) that its position (+0x230)
+returns to. The battle's setup hands over a list of `{fighter, position}` records (read at
+`0x14019ddd0`: each home spot set from the record, the fighter's size +0x35c stored beside it),
+so the formation comes from whoever builds the battle (the field encounter, not read yet).
+Fighters joining later are scattered by `0x1401a3e7d`: parked at (-100000, 0, 0), then each
+after the first put at a random angle (0 to 359°) and a random distance 200 to 400 from the
+centre ((sin, 0, cos) × distance, `0x140804bb4` = 200), the first at the centre. Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
 and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
