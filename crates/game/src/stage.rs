@@ -28,6 +28,8 @@ pub struct Snapshot {
     pub target: Option<[f32; 3]>,
     /// The field camera's field of view (degrees), when it is the camera in use.
     pub fov: Option<f32>,
+    /// The manual camera's roll about its line of sight (radians; `t10`).
+    pub roll: f32,
 }
 
 impl Snapshot {
@@ -55,7 +57,8 @@ impl Snapshot {
             (Some(a), Some(b)) => Some(a + (b - a) * alpha),
             (_, b) => b,
         };
-        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target), fov }
+        let roll = before.roll + (after.roll - before.roll) * alpha;
+        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target), fov, roll }
     }
 }
 
@@ -147,6 +150,14 @@ pub struct Body {
 
 /// The change from angle `from` to `to` the short way round (`0x1401f42e0`: one turn of 2π is
 /// added or taken off when that makes the change smaller).
+fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn len3(a: [f32; 3]) -> f32 {
+    (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
+}
+
 pub fn short_way(from: f32, to: f32) -> f32 {
     use std::f32::consts::TAU;
     let d = to - from;
@@ -249,6 +260,13 @@ pub struct Stage {
     pub fade: Option<(u32, f32, f32)>,
     /// The event's changes to the field's lights (`q42` to `q57`).
     pub lights: EventLights,
+    /// The manual camera's roll (degrees, `t10`) and its change under way: from, to, seconds,
+    /// seconds gone, curve.
+    pub roll: f32,
+    pub roll_change: Option<(f32, f32, f32, f32, u32)>,
+    /// The eye's slide toward or away from the target (`t12`): from, to (field units),
+    /// seconds, seconds gone, curve.
+    pub eye_distance: Option<(f32, f32, f32, f32, u32)>,
     /// The narration card on screen (`u55`) and its opacity (`u56`).
     pub telop: Option<u32>,
     /// The still picture shown (`u1/0x30`, `u2/0x30`): it, the one before it, the stage time it
@@ -351,6 +369,14 @@ impl Stage {
             Step::RemoveAll { .. } => self.characters.clear(),
             Step::Quake { quake, seconds, .. } => self.quake = Some((*quake, self.time, *seconds)),
             Step::QuakeStop { .. } => self.quake = None,
+            Step::CameraRoll { from, to, seconds, curve, .. } => {
+                self.roll = *from;
+                self.roll_change = Some((*from, *to, *seconds, 0.0, *curve));
+            }
+            Step::CameraDistance { length, seconds, curve, .. } => match (self.eye.position, self.target.position) {
+                (Some(e), Some(t)) => self.eye_distance = Some((len3(sub3(e, t)), *length, *seconds, 0.0, *curve)),
+                _ => self.unresolved += 1,
+            },
             Step::EventObjects { shown, .. } => self.event_objects = *shown,
             Step::MapVisible { version, shown, .. } => {
                 if *shown {
@@ -509,6 +535,35 @@ impl Stage {
                 p.position = Some(m.position());
             }
         }
+        // The camera's roll and the eye's distance, along their curves (0x1401ead70: after the
+        // points have moved, the eye is put back on its line to the target at the distance).
+        let curves = &self.curves;
+        let advance = |c: &mut (f32, f32, f32, f32, u32)| -> (f32, bool) {
+            c.3 += dt;
+            let u = if c.2 > 0.0 { (c.3 / c.2).min(1.0) } else { 1.0 };
+            let f = if u >= 1.0 { 1.0 } else { curves.get(&c.4).map_or(u, |k| k.at(u * crate::curve::FRAMES)) };
+            (c.0 + (c.1 - c.0) * f, u >= 1.0)
+        };
+        if let Some(c) = self.roll_change.as_mut() {
+            let (v, done) = advance(c);
+            self.roll = v;
+            if done {
+                self.roll_change = None;
+            }
+        }
+        if let Some(c) = self.eye_distance.as_mut() {
+            let (d, done) = advance(c);
+            if let (Some(e), Some(t)) = (self.eye.position, self.target.position) {
+                let v = sub3(e, t);
+                let l = len3(v);
+                if l > 0.0 {
+                    self.eye.position = Some(std::array::from_fn(|i| t[i] + v[i] / l * d));
+                }
+            }
+            if done {
+                self.eye_distance = None;
+            }
+        }
         self.telop_alpha.step(dt);
         self.time += dt;
     }
@@ -516,15 +571,15 @@ impl Stage {
     /// The state the screen needs now.
     pub fn snapshot(&self) -> Snapshot {
         // The camera in use: the field camera unless the manual one was set after it.
-        let (eye, target, fov) = match (&self.field_camera, self.manual_camera) {
+        let (eye, target, fov, roll) = match (&self.field_camera, self.manual_camera) {
             (Some(c), false) => {
                 let followed = self.camera_follow.and_then(|n| self.characters.get(&n)).map(|b| b.position);
                 let (e, t) = followed.map_or_else(|| c.eye_target(), |p| c.eye_target_from(p));
-                (Some(e), Some(t), Some(c.fov.now()))
+                (Some(e), Some(t), Some(c.fov.now()), 0.0)
             }
-            _ => (self.eye.position, self.target.position, None),
+            _ => (self.eye.position, self.target.position, None, self.roll.to_radians()),
         };
-        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target, fov }
+        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target, fov, roll }
     }
 
     /// Runs whole [`FRAME`]s until `time`.
@@ -579,6 +634,24 @@ impl<'a> Playback<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn camera_roll_and_eye_distance() {
+        use crate::event::Step;
+        let mut stage = super::Stage::default();
+        stage.manual_camera = true;
+        stage.eye.position = Some([0.0, 0.0, 400.0]);
+        stage.target.position = Some([0.0, 0.0, 0.0]);
+        stage.apply(&Step::CameraRoll { action: 0, from: 0.0, to: 10.0, seconds: 1.0, curve: 0 });
+        stage.apply(&Step::CameraDistance { action: 0, length: 900.0, seconds: 1.0, curve: 0 });
+        stage.frame(0.5);
+        assert!((stage.roll - 5.0).abs() < 1e-4);
+        assert!((stage.eye.position.unwrap()[2] - 650.0).abs() < 1e-3);
+        stage.frame(0.6);
+        assert_eq!(stage.roll, 10.0);
+        assert_eq!(stage.eye.position, Some([0.0, 0.0, 900.0]));
+        assert!((stage.snapshot().roll - 10f32.to_radians()).abs() < 1e-6);
+    }
 
     #[test]
     fn event_lights_set_and_restore() {
@@ -668,12 +741,13 @@ mod tests {
 
     #[test]
     fn ticks_blend_for_the_screen() {
-        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]), fov: None };
+        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]), fov: None, roll: 0.0 };
         let b = Snapshot {
             characters: BTreeMap::from([(1, ([10.0, 0.0, 0.0], 10f32.to_radians())), (2, ([5.0; 3], 0.0))]),
             eye: Some([1.0; 3]),
             target: Some([4.0, 0.0, 0.0]),
             fov: None,
+            roll: 0.0,
         };
         let m = Snapshot::blend(&a, &b, 0.25);
         let (p, f) = m.characters[&1];

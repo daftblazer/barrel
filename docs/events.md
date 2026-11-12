@@ -602,10 +602,14 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 - `t4` and `t7` (`…_MOVE_SET`) move them (a move, as above), from where they are.
 - `t9` (`ECT_CAMERA_EYEAT_POS_SET`) sets both: the *target* first, then the eye (the first
   position goes where `t6` puts it; the eye's offsets are the larger ones, 2 to 10 m).
-- `t10` (`ECT_CAMERA_ROT_MOVE_SET`, `{a, b, seconds ×100, ease}`) turns the view by the two
-  angles in degrees (a to +0x38) over time, and `t12` (`ECT_CAMERA_LENGTH_MOVE_SET`,
-  `{length, seconds ×100, ease}`) changes the eye's distance from the target; both use the
-  mover at `0x140025890`, not read yet.
+- `t10` (`ECT_CAMERA_ROT_MOVE_SET`, `{from, to, seconds ×100, curve}`) rolls the camera about
+  its line of sight from `from` to `to` degrees (+0x38, from +0x78 to +0x7c): the update
+  (`0x1401ead70`) turns the up vector (0, 1, 0) about the line from the target to the eye by it
+  (`0x1405c83c4`, a rotation about an axis). `t12` (`ECT_CAMERA_LENGTH_MOVE_SET`, `{length,
+  seconds ×100, curve}`) slides the eye along its line to the target, from its distance when
+  the command runs to `length`, each frame after the points have moved. Both follow a curve of
+  `curve_data.xml` (`0x140025890(mover, curve, from, to, seconds)`; curves 0, 1, 3 and 13 in the
+  events, as in "Curves"), and the stage plays both (`Stage::roll`, the snapshot's `roll`).
 - `t29` (`ECT_CAMERA_MOVE_KILL`) ends both moves where they are; `t5`/`t8` wait for them.
 
 `barrel_game::camera` reads these (`Position`, `Move`, `eased`), and `play-event` prints them:
@@ -673,7 +677,7 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: the tilt of `s18`'s facing mode 2, `t10`/`t12`'s mover, the field camera's two
+Not yet: the tilt of `s18`'s facing mode 2, the field camera's two
 unidentified angles, characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at

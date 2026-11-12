@@ -103,6 +103,12 @@ pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
 pub const CAMERA_QUAKE_SET: u32 = 0x7400_000e;
 /// `t16` (`ECT_CAMERA_QUAKE_STOP`): ends the quake.
 pub const CAMERA_QUAKE_STOP: u32 = 0x7400_0010;
+/// `t10` (`ECT_CAMERA_ROT_MOVE_SET`, the manual camera's): `{from, to, seconds ×100, curve}`:
+/// the camera rolls (about its line of sight) from `from` to `to` degrees along a curve.
+pub const CAMERA_ROT_MOVE_SET: u32 = 0x7400_000a;
+/// `t12` (`ECT_CAMERA_LENGTH_MOVE_SET`): `{length, seconds ×100, curve}`: the eye slides along
+/// its line to the target, from where it is to `length` field units away, along a curve.
+pub const CAMERA_LENGTH_MOVE_SET: u32 = 0x7400_000c;
 /// `u3 {n}`: label `n` in its action (`0x14020fcd6` on: an action's labels are found by
 /// scanning its words when it starts; also `u73` when the global at `0x141077ef0` is set).
 pub const LABEL: u32 = 0x7500_0003;
@@ -283,6 +289,10 @@ pub enum Step<'a> {
     EventObjects { action: usize, shown: bool },
     /// A camera quake starts ([`CAMERA_QUAKE_SET`]) for `seconds`.
     Quake { action: usize, quake: u32, seconds: f32 },
+    /// The camera rolls ([`CAMERA_ROT_MOVE_SET`]; degrees).
+    CameraRoll { action: usize, from: f32, to: f32, seconds: f32, curve: u32 },
+    /// The eye slides to `length` from the target ([`CAMERA_LENGTH_MOVE_SET`]).
+    CameraDistance { action: usize, length: f32, seconds: f32, curve: u32 },
     /// The camera quake ends ([`CAMERA_QUAKE_STOP`]).
     QuakeStop { action: usize },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
@@ -521,6 +531,12 @@ impl<'a> Player<'a> {
             }),
             (CAMERA_QUAKE_SET, [quake, rest @ ..]) => out.push(Step::Quake { action, quake: *quake, seconds: rest.first().map_or(0.0, |&s| f(s) / 100.0) }),
             (CAMERA_QUAKE_STOP, _) => out.push(Step::QuakeStop { action }),
+            (CAMERA_ROT_MOVE_SET, [from, to, hundredths, curve, ..]) => {
+                out.push(Step::CameraRoll { action, from: f(*from), to: f(*to), seconds: f(*hundredths) / 100.0, curve: *curve })
+            }
+            (CAMERA_LENGTH_MOVE_SET, [length, hundredths, curve, ..]) => {
+                out.push(Step::CameraDistance { action, length: f(*length), seconds: f(*hundredths) / 100.0, curve: *curve })
+            }
             (FIELD_EVENT_OBJECTS | FIELD_EVENT_OBJECTS_2, rest) => out.push(Step::EventObjects { action, shown: rest.first().is_some_and(|&v| v != 0) }),
             (FIELD_MAP_VISIBLE, [version, shown, ..]) => out.push(Step::MapVisible { action, version: *version, shown: *shown != 0 }),
             (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
@@ -1028,6 +1044,8 @@ mod tests {
                 Step::EventObjects { shown, .. } => format!("event objects shown {shown}"),
                 Step::Quake { quake, seconds, .. } => format!("quake {quake} for {seconds} s"),
                 Step::QuakeStop { .. } => "quake stops".to_string(),
+                Step::CameraRoll { from, to, seconds, .. } => format!("camera rolls {from}° -> {to}° over {seconds} s"),
+                Step::CameraDistance { length, seconds, .. } => format!("eye slides to {length} out over {seconds} s"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),

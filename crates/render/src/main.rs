@@ -2425,9 +2425,9 @@ fn main() -> Result<()> {
     // is which against an oracle frame).
     let hide_names: Vec<String> = std::env::var("BARREL_HIDE").map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect()).unwrap_or_default();
     let hide_by_name = |name: &str| !name.is_empty() && hide_names.iter().any(|h| name.contains(h.as_str()));
-    let view_proj = |eye: Vec3, target: Vec3, dist: f32, fov: f32, width: u32, height: u32, orbit: (f32, f32, f32)| {
+    let view_proj = |eye: Vec3, target: Vec3, up: Vec3, dist: f32, fov: f32, width: u32, height: u32, orbit: (f32, f32, f32)| {
         let zoom = orbit.2;
-        let view = Mat4::look_at_rh(turned_eye(eye, target, orbit), target, Vec3::Y);
+        let view = Mat4::look_at_rh(turned_eye(eye, target, orbit), target, up);
         // Far enough for the distant view (its dome is about 35,000 units across).
         let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01 * zoom, (dist * 20.0 * zoom).max(80_000.0));
         proj.y_axis.y *= -1.0; // Vulkan's y points down.
@@ -2794,6 +2794,8 @@ fn main() -> Result<()> {
         let zoom_in = axis(KeyCode::Minus, KeyCode::Equal) + axis(KeyCode::NumpadSubtract, KeyCode::NumpadAdd);
         orbit.2 = (orbit.2 * (1.0 - zoom_in * 1.2 * frame_dt)).clamp(0.1, 10.0);
     }
+    // The view's up: the event camera's roll turns it (t10).
+    let mut up = Vec3::Y;
     if let Some((play, clock, before, after)) = player.as_mut() {
         if frame > 0 {
             // A window takes the real time since the last frame; files take 1/fps.
@@ -2922,6 +2924,14 @@ fn main() -> Result<()> {
             if let (Some(e), Some(t), true) = (shown.eye, shown.target, use_event_camera) {
                 let mirror = Vec3::new(-1.0, 1.0, 1.0);
                 (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
+                // The camera's roll (t10): up turned about the line from the target to the eye
+                // (game space, then mirrored like the rest).
+                if shown.roll != 0.0 {
+                    let axis = (Vec3::from(e) - Vec3::from(t)).normalize_or_zero();
+                    if axis != Vec3::ZERO {
+                        up = glam::Quat::from_axis_angle(axis, shown.roll) * Vec3::Y * mirror;
+                    }
+                }
                 // A camera quake: each axis a random whole number of field units between its two
                 // tracks' values (metres) at the quake's frame, added to the eye and the target
                 // (0x140035920; which camera values the game moves is taken, not read).
@@ -3094,7 +3104,7 @@ fn main() -> Result<()> {
         },
         _ => 0,
     };
-    let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    let mvp = view_proj(eye, target, up, dist, fov, width, height, orbit);
     // A camera cut (or a new field): the last frame's view says nothing about this one, so TAA
     // starts its history afresh and the motion vectors take this frame's view for the last.
     let shot = taa::Shot { eye, target, fov };
@@ -3234,7 +3244,7 @@ fn main() -> Result<()> {
         }
         // The billboards' axes (docs/shading.md, "Billboards"): the camera's right as the screen
         // shows it (render space is mirrored, so the view's -x), up, and back toward the eye.
-        let cam = Mat4::look_at_rh(e, target, Vec3::Y);
+        let cam = Mat4::look_at_rh(e, target, up);
         let row = |k: usize, sign: f32| [sign * cam.row(k).x, sign * cam.row(k).y, sign * cam.row(k).z, 0.0];
         look[37] = row(0, -1.0);
         look[38] = row(1, 1.0);
