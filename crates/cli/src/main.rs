@@ -2985,46 +2985,19 @@ fn nut_run(root: &Path, file: &str, ticks: usize) -> Result<()> {
 /// frames while a stand-in player walks west through them from 15 m east of the first,
 /// printing each creature's changes.
 fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
-    use barrel_formats::battle_data as bd;
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
     let motions = barrel_game::gesture::motions(&pe);
-    let names = barrel_game::macros::Names::escha(&motions);
-    let constants: std::collections::HashMap<String, i64> = names.all().map(|(n, v)| (n.to_string(), v as i32 as i64)).collect();
-    let load = |name: &str| -> Result<Vec<barrel_game::squirrel::Stmt>> {
-        let bytes = read(&root.join("Script").join(format!("{name}.nut")))?;
+    let script = |name: &str| -> std::result::Result<Vec<barrel_game::squirrel::Stmt>, String> {
+        let bytes = read(&root.join("Script").join(format!("{name}.nut"))).map_err(|e| format!("{name}: {e}"))?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
-        barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}").into())
+        barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}"))
     };
-    let utility = load("utility")?;
     let area: i32 = area.parse().map_err(|_| "the area is a field map number (12 is AREA_01_01)")?;
-    let enemies: Vec<bd::FieldEnemy> = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
-    if enemies.is_empty() {
-        return Err("no field enemies in that area".into());
-    }
-    // Each enemy's field radius: its group's first monster's Chara.xml row's CharaBase FMrad
-    // (the enemy's own row, 418 to 420, is a stand-in "slot" whose model the group fills).
     let xml = |name: &str| read(&root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
-    let radii = match (xml("Chara.xml"), xml("CharaBase.xml")) {
-        (Some(c), Some(b)) => bd::field_radii(&c, &b),
-        _ => Vec::new(),
-    };
-    let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
-    let radius = |e: &bd::FieldEnemy| {
-        let m = groups.iter().find(|g| g.id == e.group).and_then(|g| g.monsters.first()).map(|m| m.0);
-        m.and_then(|m| radii.get(bd::MONSTER_CHARA_FIRST + m as usize)).copied().unwrap_or(50.0) as f64
-    };
-    let mut cache: std::collections::HashMap<String, std::rc::Rc<Vec<barrel_game::squirrel::Stmt>>> = std::collections::HashMap::new();
-    let script = |name: &str| -> std::result::Result<std::rc::Rc<Vec<barrel_game::squirrel::Stmt>>, String> {
-        if let Some(s) = cache.get(name) {
-            return Ok(s.clone());
-        }
-        let s = std::rc::Rc::new(load(name).map_err(|e| e.to_string())?);
-        cache.insert(name.to_string(), s.clone());
-        Ok(s)
-    };
-    let player_radius = radii.first().copied().unwrap_or(48.0) as f64;
-    let mut field = barrel_game::field_ai::Field::new(&enemies, &constants, &utility, script, radius, player_radius)?;
+    let (chara, base) = (xml("Chara.xml"), xml("CharaBase.xml"));
+    let (mut field, enemies) = barrel_game::field_ai::build(&pe, area, script, chara.as_ref(), base.as_ref())?;
+    let player_radius = field.player_radius;
     println!("radii: player {player_radius}, enemies {:?}", field.radii);
     let start = field.mobs[0].creature.position;
     let mut player = [start[0] + 1500.0, start[1], start[2]];

@@ -86,3 +86,53 @@ impl Field {
         Ok(None)
     }
 }
+
+/// Field area `area`'s enemies set up from the English executable: the enemy table, the
+/// scripts by name (`script(name)`, the caller reading and decoding `Script/<name>.nut`; each
+/// is parsed once), the motion names as script constants, and each enemy's field radius from
+/// its group's first monster's `Chara.xml` row's `CharaBase` `FMrad` (`chara`, `base`; the
+/// enemy's own row, 418 to 420, is a stand-in slot). Returns the field and the enemies' records.
+pub fn build(
+    pe: &barrel_formats::pe::Pe,
+    area: i32,
+    script: impl Fn(&str) -> Result<Vec<Stmt>, String>,
+    chara: Option<&barrel_formats::table::Element>,
+    base: Option<&barrel_formats::table::Element>,
+) -> Result<(Field, Vec<barrel_formats::battle_data::FieldEnemy>), String> {
+    use barrel_formats::battle_data as bd;
+    let motions = crate::gesture::motions(pe);
+    let names = crate::macros::Names::escha(&motions);
+    let constants: std::collections::HashMap<String, i64> = names.all().map(|(n, v)| (n.to_string(), v as i32 as i64)).collect();
+    let enemies: Vec<bd::FieldEnemy> = bd::field_enemies(pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
+    if enemies.is_empty() {
+        return Err(format!("no field enemies in area {area}"));
+    }
+    let radii = match (chara, base) {
+        (Some(c), Some(b)) => bd::field_radii(c, b),
+        _ => Vec::new(),
+    };
+    let groups = bd::encounter_groups(pe, bd::ENCOUNTER_GROUPS_EN);
+    let radius = |e: &bd::FieldEnemy| {
+        let m = groups.iter().find(|g| g.id == e.group).and_then(|g| g.monsters.first()).map(|m| m.0);
+        m.and_then(|m| radii.get(bd::MONSTER_CHARA_FIRST + m as usize)).copied().unwrap_or(50.0) as f64
+    };
+    let utility = script("utility")?;
+    let mut cache: std::collections::HashMap<String, Rc<Vec<Stmt>>> = std::collections::HashMap::new();
+    let loader = |name: &str| -> Result<Rc<Vec<Stmt>>, String> {
+        if let Some(s) = cache.get(name) {
+            return Ok(s.clone());
+        }
+        let s = Rc::new(script(name)?);
+        cache.insert(name.to_string(), s.clone());
+        Ok(s)
+    };
+    let player_radius = radii.first().copied().unwrap_or(48.0) as f64;
+    let field = Field::new(&enemies, &constants, &utility, loader, radius, player_radius)?;
+    Ok((field, enemies))
+}
+
+/// The `Chara.xml` row an enemy is drawn as: its group's first monster's (row 18 + monster).
+pub fn body_row(pe_groups: &[barrel_formats::battle_data::EncounterGroup], enemy: &barrel_formats::battle_data::FieldEnemy) -> Option<usize> {
+    let m = pe_groups.iter().find(|g| g.id == enemy.group)?.monsters.first()?.0;
+    Some(barrel_formats::battle_data::MONSTER_CHARA_FIRST + usize::try_from(m).ok()?)
+}
