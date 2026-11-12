@@ -723,7 +723,7 @@ Over the 532 skills: kind 0 (50, the target alone in practice) 353, 1 (350) 6, 2
 (650) 3, 5 (1000) 49, 6 (a line) 4. So many skills hit everyone near the target; the battle
 loop here keeps one target until fighters have positions (`fight::Fighter::position`, all 0).
 
-Where fighters stand: each keeps a home spot (its model's +0x3d8) that its position (+0x230)
+Where fighters stand: each keeps a home spot (its model's +0x3d8; the model is the fighter's +0x10, while the fighter's own +0x3d8 starts a pointer list) that its position (+0x230)
 returns to. The battle's setup hands over a list of `{fighter, position}` records (read at
 `0x14019ddd0`: each home spot set from the record, the fighter's size +0x35c stored beside it),
 so the formation comes from whoever builds the battle (the field encounter, not read yet). The
