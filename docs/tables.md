@@ -785,7 +785,10 @@ An encounter ends with no battle when the player struck first, the party's avera
 (`0x140330a10`, the party list at `0x141093530`) is at least 10 above the group's (the average of
 its three monster slots' levels), its kind is not 1 to 5, the strike's stage is 1 (so only once event 733 is seen) and a field
 check (`0x1402177c0`) says no (`barrel_game::encounter::skips_battle`): weak enemies are struck
-down on the field. What the field then does with them (drops, the enemy's removal) is not read.
+down on the field. The battle start then (`0x1400847fe`) draws the group's monsters as a
+battle would and takes each one's drop slots in turn by their chances (`0x1404ca5f0`;
+`encounter::struck_down_drops`); items numbered 560 and up go through `0x140113810` (not read).
+The stage-1 strike needs event 733, `EVENT_XG05_100`. The enemy's removal is not read.
 
 ### Encounter groups
 
@@ -1609,7 +1612,7 @@ them). The getters at `0x1401118c0` and its neighbours index a table of 48-byte 
 | 16 | experience |
 | 20 | money |
 | 24, 28 | not known yet |
-| 32 | pointer to the drop list |
+| 32 | pointer to the drop list: four 12-byte slots, i32 item, i8 chance in percent, i32 count at +8 (the Poison Squirrel: items 55, 0, 57, 70 at 50, 35, 25 and 10 percent, one each) |
 | 40 | pointer to the stat blocks |
 
 The **stat blocks** are 20 i32 each, one after another, ended by a block whose level is

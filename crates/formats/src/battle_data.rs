@@ -106,6 +106,9 @@ pub struct Monster {
     pub exp: i32,
     pub money: i32,
     pub blocks: Vec<StatBlock>,
+    /// What it can drop: four `(item, chance in percent, count)` slots (record +0x20, 12 bytes
+    /// each: i32 item, i8 chance, i32 count at +8; read by `0x140111b00`, `0x140111bc0`).
+    pub drops: Vec<Drop>,
 }
 
 /// One effect slot of a skill.
@@ -225,9 +228,30 @@ pub fn monsters(pe: &Pe, table: u64) -> Option<Vec<Monster>> {
             exp: i32_at(d, r + 16)?,
             money: i32_at(d, r + 20)?,
             blocks,
+            drops: u64_at(d, r + 32)
+                .and_then(|p| pe.offset(p))
+                .map(|o| {
+                    (0..4)
+                        .filter_map(|i| {
+                            let at = o + 12 * i;
+                            let item = i32_at(d, at)?;
+                            (item != -1).then_some(())?;
+                            Some(Drop { item, chance: *d.get(at + 4)? as i8 as i32, count: i32_at(d, at + 8)? })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         });
     }
     Some(out)
+}
+
+/// One of a monster's drop slots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Drop {
+    pub item: i32,
+    pub chance: i32,
+    pub count: i32,
 }
 
 /// The skills, by `SKILL_*` number, up to the record without a name.

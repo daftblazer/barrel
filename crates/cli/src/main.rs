@@ -1503,7 +1503,8 @@ fn monsters(exe: &Path) -> Result<()> {
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
     for (n, m) in monsters.iter().enumerate() {
-        println!("{n:3} {}{}", m.name, if m.boss { " (boss)" } else { "" });
+        let drops: Vec<String> = m.drops.iter().map(|d| format!("item {} {}%", d.item, d.chance)).collect();
+        println!("{n:3} {}{}  drops {}", m.name, if m.boss { " (boss)" } else { "" }, drops.join(", "));
         for b in &m.blocks {
             let names: Vec<String> = b.skills.iter().map(|(s, _)| skills.get(*s as usize).map_or_else(|| s.to_string(), |k| k.name.clone())).collect();
             println!("      lv {:2}  {}/{}/{}/{}  {}", b.level, b.hp, b.attack, b.defense, b.speed, names.join(", "));

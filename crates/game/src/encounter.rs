@@ -28,6 +28,27 @@ pub fn skips_battle(start: Start, party_level: i32, group_level: i32, kind: i32,
     start == Start::Struck && party_level - group_level >= 10 && !(1..=5).contains(&kind) && strike_stage == 1 && !field_check
 }
 
+/// What a group struck down on the field gives (`0x1400847fe`, the battle start when the
+/// encounter's +0x51 is set): its monsters drawn as for a battle ([`crate::battle::encounter_monsters`]),
+/// then for each, in order, each of its drop slots in order taken with its chance
+/// (`0x1404ca5f0`). Returns `(item, count)`; items numbered 560 and up take a further roll
+/// (`0x140113810`, not read yet) that is left out.
+pub fn struck_down_drops(
+    group: &barrel_formats::battle_data::EncounterGroup,
+    monsters: &[barrel_formats::battle_data::Monster],
+    rng: &mut crate::rng::Rng,
+) -> Vec<(i32, i32)> {
+    let mut out = Vec::new();
+    for m in crate::battle::encounter_monsters(group, rng) {
+        for d in monsters.get(m as usize).map_or(&[][..], |m| &m.drops) {
+            if rng.chance(d.chance) {
+                out.push((d.item, d.count));
+            }
+        }
+    }
+    out
+}
+
 /// The touch check (`0x140270cc0`): the enemy nearest the player whose distance (3D, from the
 /// player's place raised by 100 to the enemy's) is at most the enemy's radius × 1.1 plus the
 /// player's × 1.5 (both the field character's +0x90). Enemies are `(place, radius)`; the
