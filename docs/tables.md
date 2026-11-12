@@ -1540,6 +1540,16 @@ the row before the block; the game presumably never asks for it. Awin has the mo
 at level 99), Threia the most MP (290), Lucille is the fastest (208); Escha starts at 18 HP,
 27 MP, 4 attack, 3 defence, 6 speed.
 
+### Battle rewards (executable)
+
+When a battle is won, `0x140192f10` runs once for each defeated monster (a fighter whose kind,
+its +0x10 method, is 1): the battle's experience (its +0x8) gains the monster's experience
+(record +0x10) times 100 plus the experience bonus percent (`0x141077df8`) over 100, and its
+money (+0xc) likewise with the money bonus (`0x141077df4`), each cut toward zero per monster;
+then the monster's four drop slots are rolled through its +0x110 method into the spoils list
+(`0x140d8de30`). `barrel_game::battle::rewards`. Who sets the two bonuses (equipment, traits)
+and how the experience is shared out and turned into levels are not read yet.
+
 ### A party member's stats (executable)
 
 A party member's record keeps three arrays of 32 stats: the base (+0x14, from the growth table

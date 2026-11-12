@@ -1096,3 +1096,29 @@ mod encounter_tests {
         assert!(field_enemy_appears((532, 753), seen));
     }
 }
+
+/// What a battle's defeated monsters give in experience and money (`0x140192f10`, once per
+/// defeated monster): each its own (`0x140111930`, `0x140111970`: the monster record's +0x10
+/// and +0x14) times 100 plus the battle's bonus percent (`0x141077df8` for experience,
+/// `0x141077df4` for money), over 100, cut toward zero per monster. (Its four drop slots are
+/// then rolled through the monster's +0x110 method, not read here.)
+pub fn rewards(monsters: &[barrel_formats::battle_data::Monster], defeated: &[i32], exp_bonus: i32, money_bonus: i32) -> (i32, i32) {
+    let mut total = (0, 0);
+    for m in defeated.iter().filter_map(|&m| monsters.get(usize::try_from(m).ok()?)) {
+        total.0 += m.exp * (100 + exp_bonus) / 100;
+        total.1 += m.money * (100 + money_bonus) / 100;
+    }
+    total
+}
+
+#[cfg(test)]
+mod reward_tests {
+    #[test]
+    fn rewards_add_up_per_monster() {
+        let m = |exp, money| barrel_formats::battle_data::Monster { name: String::new(), family: 0, boss: false, exp, money, blocks: Vec::new(), drops: Vec::new() };
+        let monsters = vec![m(7, 13), m(5, 9)];
+        assert_eq!(super::rewards(&monsters, &[0, 0, 1], 0, 0), (19, 35));
+        // 10 percent more, each cut on its own: 7 → 7, 5 → 5; 13 → 14, 9 → 9.
+        assert_eq!(super::rewards(&monsters, &[0, 0, 1], 10, 10), (19, 37));
+    }
+}
