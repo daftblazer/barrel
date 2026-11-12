@@ -241,4 +241,12 @@ pub static ESCHA: &[(u32, Option<u8>)] = &[
     (0x7540000a, Some(0)),
     (0x77000001, Some(1)),
     (0x77000004, Some(1)),
+    // Commands only the script macros use (Script/macro_*.nut), their counts as every use there
+    // has them: FIELDMAP_CHARA_SET_BRAIN_MODE (11 uses), SET_DEFCHARA_BCID (3),
+    // CHARA_SET_PROGRAM_ROT, CHARA_LOOK_SET_TARGET and CHARA_LOOK_MOVE_WAIT (1 each).
+    (0x71000009, Some(2)),
+    (0x78000004, Some(1)),
+    (0x73000069, Some(1)),
+    (0x73000034, Some(7)),
+    (0x73000037, Some(1)),
 ];

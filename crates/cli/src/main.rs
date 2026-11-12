@@ -120,6 +120,7 @@ fn main() -> ExitCode {
         ["item-effects", exe] => item_effects(Path::new(exe)),
         ["acts", exe] => acts(Path::new(exe)),
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
+        ["macros", root] => macros(Path::new(root)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
@@ -2432,6 +2433,49 @@ fn acts(exe: &Path) -> Result<()> {
         println!("{k:3} {:32} flags {:20} limit {} last {}", names.get(k).map_or("?".to_string(), |n| n.to_string()), flags.join(","), a.limit, a.last);
     }
     Ok(())
+}
+
+/// Reads every command macro in ROOT/Script/macro_*.nut, resolves it with placeholder
+/// arguments and decodes it as an event action, listing its commands or what it names that is
+/// not known.
+fn macros(root: &Path) -> Result<()> {
+    let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
+    let names = barrel_game::macros::Names::escha(&barrel_game::gesture::motions(&pe));
+    let table = barrel_formats::ebd::OperandTable::escha();
+    let mut paths: Vec<_> = std::fs::read_dir(root.join("Script"))?.flatten().map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("macro_"))).collect();
+    paths.sort();
+    for path in paths {
+        let bytes = read(&path)?;
+        let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+        for m in barrel_game::macros::read(&text) {
+            let args: Vec<u32> = (0..m.params.len() as u32).map(|k| 10000 + k).collect();
+            match m.words(&names, &args) {
+                Ok(words) => match barrel_formats::ebd::decode(&words, &table) {
+                    Ok(commands) => println!("{:<22} {:<34} {} words, {} commands", path.file_name().unwrap().to_string_lossy(), m.name, words.len(), commands.len()),
+                    Err(e) => {
+                        // The command words the table does not know (event files never use them).
+                        let missing: Vec<String> = m
+                            .words
+                            .iter()
+                            .filter_map(|t| match t {
+                                barrel_game::macros::Token::Name(n) if n.starts_with("ECT_") => Some(n.clone()),
+                                _ => None,
+                            })
+                            .filter(|n| names_word(n).is_some_and(|w| table.get(w).is_none()))
+                            .collect();
+                        println!("{:<22} {:<34} decode: {e:?} {missing:?}", path.file_name().unwrap().to_string_lossy(), m.name)
+                    }
+                },
+                Err(u) => println!("{:<22} {:<34} unknown {}", path.file_name().unwrap().to_string_lossy(), m.name, u.0),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn names_word(name: &str) -> Option<u32> {
+    barrel_game::macros::Names::escha(&[]).value(name)
 }
 
 fn trait_kinds(exe: &Path) -> Result<()> {

@@ -15,6 +15,8 @@ pub mod face;
 pub mod gesture;
 pub mod monster_ai;
 mod names;
+pub mod macros;
+pub mod sq_consts;
 pub mod quest;
 pub mod rank;
 pub mod rng;

@@ -955,5 +955,15 @@ commands as the `.ebd` events.
   slags, dragon, spirit...), calling the host through `SQ.getPlayer`, `SQ.getActiveChara` and
   the like.
 
-Barrel can run the macros as it runs events once the Squirrel side is read: the arrays are
-literal, so a small reader can turn each function into a command list.
+`macros::read` reads them without a Squirrel VM (the arrays are literal): each function's name,
+parameters and array; `Macro::words` resolves the array into an event action's words, with the
+call's arguments for the parameters, the command names (`names.rs`), the other constants the
+executable registers (`sq_consts.rs`, 453 of them, from `tools/sq_consts.py`: `mov r8d, value;
+lea rdx, name; call 0x14012d910`) and the motions by name (`MOTION_` + the executable's motion
+table). `barrel macros ROOT` checks them all: 32 of the 36 macros read and decode, all eleven
+encounters among them. Four compute words in the function body, which a literal reader cannot
+(`setCommandMove`'s local `s32XAccel`, `setTargetCameraCraneShot`'s `s32IsUp ? 800 : 200`,
+`setTornadoRolling`, `fieldEventRaidEnd`). Five commands appear only in the macros, never in the
+events; their operand counts come from every use there (`ebd_tables.rs`):
+`FIELDMAP_CHARA_SET_BRAIN_MODE` 2, `SET_DEFCHARA_BCID` 1, `CHARA_SET_PROGRAM_ROT` 1,
+`CHARA_LOOK_SET_TARGET` 7, `CHARA_LOOK_MOVE_WAIT` 1.
