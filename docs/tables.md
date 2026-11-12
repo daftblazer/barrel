@@ -1262,8 +1262,14 @@ running game's effect table (no column of `item_effect.xml` lands there). So as 
 `trunc(quality / 3 × 2)` alone.
 In `0x1402a2fa0` the traits come before the bounds; an item with no cost gives 0 there and
 100 in `0x1402a3070`. `synthesis::price_figure`, `table_price_a` and `table_price_b` follow
-them (a Craft, cost 30, at quality 50: 65 and 598). Which is the shop's buying price and which
-its selling price is still to be checked.
+them (a Craft, cost 30, at quality 50: 65 and 598). Neither of these two is called anywhere (their addresses turn up only in the exception and
+unwind tables). **Selling** goes by the worth: a sale (`0x140347f00`) sums, over the items
+sold, `0x14029dce0 (item)` (which is `0x1402a3130`, the worth, when above 0, else 0) times the
+count, then takes `trunc(sum × (100 + bonus value 40) / 100)` (the sell-price bonus) and pays
+it (`0x14036a8e0`, the money at `0x1410989f4`, a gain capped at 999,999). **Buying**
+(`0x140346ff0`) takes the count times the shop list entry's price for one (+0x2c) off the
+money; the list's prices start from `ShopData`'s `Cost`. `shop::sale_total` and
+`purchase_cost` follow them.
 
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
 `itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:

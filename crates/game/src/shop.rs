@@ -118,8 +118,32 @@ pub fn pass_days(s: &mut Stock, w: &Ware, days: i32) -> bool {
     true
 }
 
+/// What a sale pays (`0x140347f00`): each item's worth (`synthesis::worth`, the shop's sell
+/// price for one, `0x14029dce0`) times how many, summed, then scaled by 100 plus the
+/// sell-price bonus (bonus value 40) percent, cut to a whole number.
+pub fn sale_total(items: &[(i32, i32)], sell_bonus: i32) -> i32 {
+    let sum: i32 = items.iter().map(|&(worth, count)| worth * count).sum();
+    sum * (100 + sell_bonus) / 100
+}
+
+/// What buying `count` of a ware costs (`0x140346ff0`): the shop list's price for one times
+/// the count.
+pub fn purchase_cost(price: i32, count: i32) -> i32 {
+    price * count
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn selling_and_buying() {
+        // Two Crafts (cost 30) at quality 50 are worth 22 each; a 10% sell bonus.
+        let w = crate::synthesis::worth(30, 50.0, &[]);
+        assert_eq!(w, 22);
+        assert_eq!(super::sale_total(&[(w, 2)], 0), 44);
+        assert_eq!(super::sale_total(&[(w, 2), (5, 3)], 10), 64);
+        assert_eq!(super::purchase_cost(70, 3), 210);
+    }
+
     use super::*;
 
     #[test]
