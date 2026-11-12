@@ -926,6 +926,80 @@ struct Actor {
     last_division_column: String,
 }
 
+/// A character's body as loaded: its texture pack, the pack's texture count, its instance, and
+/// what playback moves it with (skeleton, motions, the motion and its start) when found.
+struct Body {
+    pack: Vec<u8>,
+    count: usize,
+    instance: u32,
+    rig: Option<(barrel_formats::g1m::Skeleton, Motions, barrel_formats::g1a::Animation, f32)>,
+}
+
+/// Loads `row`'s model (a `CharaBase` row) into the scene at `pos` turned `angle` degrees,
+/// posed in motion `column` at `motion_time` (seconds, looping or not; the middle when none),
+/// its textures from `tex_base`, with the accessories always worn; `face(scene, container)`
+/// runs before the body is added (for morph targets) and gives what it returns back.
+#[allow(clippy::too_many_arguments)]
+fn add_body<F>(
+    root: &Path,
+    scene: &mut Scene,
+    tex_base: usize,
+    row: &barrel_formats::table::Element,
+    who: u32,
+    pos: [f32; 3],
+    angle: f32,
+    column: &str,
+    motion_time: Option<(f32, bool)>,
+    face: impl FnOnce(&mut Scene, &Elixir, &str, &str) -> Result<Option<F>>,
+) -> Result<Option<(Body, Option<F>)>> {
+    let Some(model) = row.attr("Model") else { return Ok(None) };
+    let path = root.join("Data/x64/Character").join(format!("{model}.elixir.gz"));
+    let Ok(bytes) = std::fs::read(&path) else { return Ok(None) };
+    let container = Elixir::parse(&bytes)?;
+    let stem = model.rsplit('/').next().unwrap_or(model);
+    let (Some(mesh), Some(tex)) = (named(&container, &format!("{stem}_default.g1m")), named(&container, &format!("{stem}.g1t"))) else {
+        return Ok(None);
+    };
+    let count = G1t::parse(tex)?.textures.len();
+    let g = G1m::parse(mesh)?;
+    let Some(geometry) = g.geometry.as_ref() else { return Ok(None) };
+    let transform = Mat4::from_rotation_translation(glam::Quat::from_rotation_y(angle.to_radians()), Vec3::from(pos));
+    let looping = motion_time.is_none_or(|(_, l)| l);
+    let rig = (|| -> Option<(Vec<Mat4>, barrel_formats::g1m::Skeleton, Motions, barrel_formats::g1a::Animation, f32)> {
+        let mut motions = Motions::new(root, model, row)?;
+        let anim = motions.get(column)?.clone();
+        let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
+        eprintln!("character {who}: motion {column} = {}_{}", motions.head, motions.columns[column]);
+        let t0 = motion_time.map_or(0.5, |(t, _)| t);
+        let joints = pose(&skeleton, &anim, motion_clock(&anim, t0, looping));
+        Some((joints, skeleton, motions, anim, t0))
+    })();
+    let (joints, rig) = match rig {
+        Some((j, sk, m, an, t0)) => (Some(j), Some((sk, m, an, t0))),
+        None => (None, None),
+    };
+    let face = face(scene, &container, model, stem)?;
+    let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
+    scene.morph.clear();
+    // The accessories always worn (<stem>_P_M_Acc_*: Escha's hat), on the body's skeleton
+    // and instance; the weapons and options (CharaPartsChange groups) are left off.
+    let accessory = format!("{stem}_P_M_Acc_");
+    let first = scene.draws.len();
+    for e in container.entries.iter().filter(|e| e.name.starts_with(&accessory) && e.name.ends_with(".g1m")) {
+        let Some(bytes) = named(&container, &e.name) else { continue };
+        let part = G1m::parse(bytes)?;
+        if let Some(pg) = part.geometry.as_ref() {
+            scene.add_posed(pg, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
+        }
+    }
+    for d in &mut scene.draws[first..] {
+        d.texture += tex_base;
+        d.overlay = d.overlay.map(|o| o + tex_base);
+        d.mask = d.mask.map(|m| m + tex_base);
+    }
+    Ok(Some((Body { pack: tex.to_vec(), count, instance, rig }, face)))
+}
+
 /// What a character's face needs to change during playback: its rows, its facial
 /// animations (loaded by name, kept), and its morph sets' places in the weight buffer.
 struct FaceRig {
@@ -1190,18 +1264,6 @@ fn event_characters(
         let Some(tag) = charas.children.get(who as usize).and_then(|c| c.attr("BaseTag")) else { continue };
         let Some(row_index) = bases.children.iter().position(|b| b.attr("BaseTag") == Some(tag)) else { continue };
         let row = &bases.children[row_index];
-        let Some(model) = row.attr("Model") else { continue };
-        let path = root.join("Data/x64/Character").join(format!("{model}.elixir.gz"));
-        let Ok(bytes) = std::fs::read(&path) else { continue };
-        let container = Elixir::parse(&bytes)?;
-        let stem = model.rsplit('/').next().unwrap_or(model);
-        let (Some(mesh), Some(tex)) = (named(&container, &format!("{stem}_default.g1m")), named(&container, &format!("{stem}.g1t"))) else {
-            continue;
-        };
-        let count = G1t::parse(tex)?.textures.len();
-        let g = G1m::parse(mesh)?;
-        let Some(geometry) = g.geometry.as_ref() else { continue };
-        let transform = Mat4::from_rotation_translation(glam::Quat::from_rotation_y(angle.to_radians()), Vec3::from(pos));
         // The body motion: the speaker's gesture at this line if any (its main motion's
         // CharaBase column), otherwise the field wait (F_WAIT). The animation is
         // <FileHead>_<value>.g1a, in the <Motion1> container or in a container of its own
@@ -1219,79 +1281,48 @@ fn event_characters(
         // How far into it: the stage's time in the motion (looping ones wrap), else the middle.
         let motion_time = staged.map(|&(_, t, looping)| (t, looping));
         let looping = motion_time.is_none_or(|(_, l)| l);
-        let rig = (|| -> Option<(Vec<Mat4>, barrel_formats::g1m::Skeleton, Motions, barrel_formats::g1a::Animation, f32)> {
-            let mut motions = Motions::new(root, model, row)?;
-            let anim = motions.get(&column)?.clone();
-            let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
-            eprintln!("character {who}: motion {column} = {}_{}", motions.head, motions.columns[&column]);
-            let t0 = motion_time.map_or(0.5, |(t, _)| t);
-            let joints = pose(&skeleton, &anim, motion_clock(&anim, t0, looping));
-            Some((joints, skeleton, motions, anim, t0))
-        })();
-        let (joints, rig) = match rig {
-            Some((j, sk, m, an, t0)) => (Some(j), Some((sk, m, an, t0))),
-            None => (None, None),
-        };
         // The face: every morph set goes in (so playback can change it), weighted by the line's
         // expression when `--line` gives one.
-        let mut face_rig = None;
-        if let (Some(tables), Some(head), Some(facial)) = (&face_tables, row.attr("FileHead"), row.attr("Facial")) {
+        let face = |scene: &mut Scene, container: &Elixir, model: &str, stem: &str| -> Result<Option<FaceRig>> {
+            let (Some(tables), Some(head), Some(facial)) = (&face_tables, row.attr("FileHead"), row.attr("Facial")) else { return Ok(None) };
             let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
             let fbytes = std::fs::read(root.join("Data/x64/Character").join(dir).join(format!("{facial}.elixir.gz")));
-            if let (Ok(fbytes), Some(g1h)) = (fbytes, named(&container, &format!("{stem}_default.g1h"))) {
-                let facials = Elixir::parse(&fbytes)?;
-                let mut anims = Vec::new();
-                if let Some(&(expr, talking)) = faces.get(&(who as i32)) {
-                    let face = tables.expression(row_index as u32, head, expr, talking);
-                    for (name, t) in [(&face.brow, 0.5), (&face.eye, 0.5), (&face.mouth, 1.0)] {
-                        if let Some(bytes) = name.as_ref().and_then(|n| named(&facials, &format!("{n}.g1a"))) {
-                            anims.push((bytes, t));
-                        }
+            let (Ok(fbytes), Some(g1h)) = (fbytes, named(container, &format!("{stem}_default.g1h"))) else { return Ok(None) };
+            let facials = Elixir::parse(&fbytes)?;
+            let mut anims = Vec::new();
+            if let Some(&(expr, talking)) = faces.get(&(who as i32)) {
+                let face = tables.expression(row_index as u32, head, expr, talking);
+                for (name, t) in [(&face.brow, 0.5), (&face.eye, 0.5), (&face.mouth, 1.0)] {
+                    if let Some(bytes) = name.as_ref().and_then(|n| named(&facials, &format!("{n}.g1a"))) {
+                        anims.push((bytes, t));
                     }
-                    eprintln!("character {who}: expression {expr}{} {face:?}", if talking { ", talking" } else { "" });
                 }
-                set_face(scene, g1h, &anims)?;
-                let mut layouts: Vec<(usize, usize)> = scene.morph.iter().map(|(&l, (t, _))| (l, t.len())).collect();
-                layouts.sort();
-                let mut offset = 0u32;
-                let sets = layouts
-                    .iter()
-                    .map(|&(_, n)| {
-                        let o = offset;
-                        offset += n as u32;
-                        (n, o)
-                    })
-                    .collect();
-                drop(facials);
-                face_rig = Some(FaceRig { row: row_index as u32, head: head.to_string(), facials: fbytes, sets, loaded: Default::default() });
+                eprintln!("character {who}: expression {expr}{} {face:?}", if talking { ", talking" } else { "" });
             }
-        }
-        let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
-        if let Some((skeleton, motions, anim, start)) = rig {
-            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take(), head: None, division: None, last_division_column: String::new() });
-        }
-        scene.morph.clear();
-        // The accessories always worn (<stem>_P_M_Acc_*: Escha's hat), on the body's skeleton
-        // and instance; the weapons and options (CharaPartsChange groups) are left off.
-        let accessory = format!("{stem}_P_M_Acc_");
-        let first = scene.draws.len();
-        for e in container.entries.iter().filter(|e| e.name.starts_with(&accessory) && e.name.ends_with(".g1m")) {
-            let Some(bytes) = named(&container, &e.name) else { continue };
-            let part = G1m::parse(bytes)?;
-            if let Some(pg) = part.geometry.as_ref() {
-                scene.add_posed(pg, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
-            }
-        }
-        for d in &mut scene.draws[first..] {
-            d.texture += tex_base;
-            d.overlay = d.overlay.map(|o| o + tex_base);
-            d.mask = d.mask.map(|m| m + tex_base);
+            set_face(scene, g1h, &anims)?;
+            let mut layouts: Vec<(usize, usize)> = scene.morph.iter().map(|(&l, (t, _))| (l, t.len())).collect();
+            layouts.sort();
+            let mut offset = 0u32;
+            let sets = layouts
+                .iter()
+                .map(|&(_, n)| {
+                    let o = offset;
+                    offset += n as u32;
+                    (n, o)
+                })
+                .collect();
+            drop(facials);
+            Ok(Some(FaceRig { row: row_index as u32, head: head.to_string(), facials: fbytes, sets, loaded: Default::default() }))
+        };
+        let Some((body, face_rig)) = add_body(root, scene, tex_base, row, who, pos, angle, &column, motion_time, face)? else { continue };
+        if let Some((skeleton, motions, anim, start)) = body.rig {
+            actors.push(Actor { who, instance: body.instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig, head: None, division: None, last_division_column: String::new() });
         }
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
         placed += 1.0;
-        tex_base += count;
-        packs.push(tex.to_vec());
+        tex_base += body.count;
+        packs.push(body.pack);
     }
     Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
 }
