@@ -329,7 +329,7 @@ three (what for is not read). The executable also has 38 `SE_*` tags (`SE_JUMP01
 bank's sounds by number (`0x140501330`); 128 to 151 are group 2, the 24 ambience loops by the
 pointer list at `0x140d5fb10` (`RES:Sound/SE/env/00ENV_CAVE01.kvs` to `23ENV_RAIN01.kvs`,
 `0x1405014e0`); group 1 (`0x140501540`) has no numbers. Above 151 it plays nothing.
-`ECT_SOUND_SE_PLAY` (`0x75100001`, handler `0x14005210c`) is `{effect, a, volume %, pan ×100,
+`u8/0x10` (`0x75100008`, 234 uses; handler `0x14005210c`, case 6 of the `0x75100002` table at `0x140052e70`; `ECT_SOUND_SE_PLAY`, `0x75100001`, 5 uses, is dispatched elsewhere and taken to work alike) is `{effect, a, volume %, pan ×100,
 d}`: volume and pan are divided by 100; the pan (0 left, 64 centre, 128 right, 64 by default)
 becomes `(clamp(x, 0, 128) / 128 - 0.5) × 2` (`0x140160230`, the player's +0x19a0); `a` goes to
 `0x1410c8428` and `d` to +0x199c (neither named). Its five uses (the `BSP_EV_SE_*` parts) name

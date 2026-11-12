@@ -782,7 +782,7 @@ with each count seen.
 | `75100003` | `u3/0x10` | ECT_SOUND_BG_PLAY |  | 805 | 4 (805) |
 | `75100004` | `u4/0x10` | ECT_SOUND_BG_STOP |  | 19 | 1 (19) |
 | `75100005` | `u5/0x10` | ECT_SOUND_BG_FADEOUT |  | 1220 | 2 (1220) |
-| `75100008` | `u8/0x10` |  |  | 234 | 5 (234) |
+| `75100008` | `u8/0x10` | (sound effect, `0x14005210c`) |  | 234 | 5 (234) |
 | `75200001` | `u1/0x20` | ECT_CONTRAST_SET | Contrast | 515 | 3 (515) |
 | `75200003` | `u3/0x20` | ECT_CONTRAST_WAIT | Contrast | 141 | 1 (141) |
 | `75200004` | `u4/0x20` | ECT_CONTRAST_SET_MIX | Contrast | 8 | 3 (8) |

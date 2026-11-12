@@ -72,10 +72,15 @@ pub const EVENT_CONTRAST_SET_MIX: u32 = 0x7500_0016;
 pub const EVENT_TELOP: u32 = 0x7500_0037;
 /// `u56`: `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to`.
 pub const EVENT_TELOP_ALPHA: u32 = 0x7500_0038;
-/// `ECT_SOUND_SE_PLAY`: `{effect, a, volume %, pan ×100, d}` (`0x14005210c`): the volume and
-/// pan (0 left, 64 centre, 128 right) are divided by 100; `a` and `d` go to settings not named
-/// yet. The effect is a number for `0x140160070` (`barrel_audio::Library::effect`).
+/// `ECT_SOUND_SE_PLAY` (`u1/0x10`, 5 uses): `{effect, a, volume %, pan ×100, d}`, taken to
+/// play as `u8/0x10` does (its own handler is not read).
 pub const SOUND_SE_PLAY: u32 = 0x7510_0001;
+/// `u8/0x10` (234 uses, the events' sound effects): `{effect, a, volume %, pan ×100, d}`
+/// (`0x14005210c`): the volume and pan (0 left, 64 centre, 128 right) are divided by 100, `a`
+/// and `d` (also /100) go to settings not named yet (`0x140160270`, `0x140160210`); the effect
+/// is a number for `0x140160070` (`barrel_audio::Library::effect`), its voice kept in a ring of
+/// ten (the event's +0xb4) for stopping later.
+pub const SOUND_EFFECT: u32 = 0x7510_0008;
 /// `s62` (`ECT_CHARA_SE_PLAY`): `{character, effect, a, volume %, pan ×100, d}` from a character
 /// (18 uses, all in battle skill events, where the effect looks like another numbering: 151
 /// would be the rain loop; its handler is not read).
@@ -315,7 +320,7 @@ impl<'a> Player<'a> {
             (EVENT_SET_POST_EFFECT, [_, param, hundredths, kind, ..]) => {
                 out.push(Step::ScreenEffect { action, kind: *kind, param: *param as i32, seconds: *hundredths as i32 as f32 / 100.0 })
             }
-            (SOUND_SE_PLAY, [effect, _, volume, pan, ..]) => out.push(Step::Effect { action, character: None, effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) }),
+            (SOUND_SE_PLAY | SOUND_EFFECT, [effect, _, volume, pan, ..]) => out.push(Step::Effect { action, character: None, effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) }),
             (CHARA_SE_PLAY, [character, effect, _, volume, pan, ..]) => {
                 out.push(Step::Effect { action, character: Some(*character), effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) })
             }
