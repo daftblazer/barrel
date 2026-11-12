@@ -223,7 +223,7 @@ the voice and out over 0.5 s.
 The layout ids index `0x140dd9080` (16 bytes from id 0x165 on: `{node pointer, x, y}`;
 `0x140373f40`), the cards at (180, 390). The nodes are the UI layouts compiled into the
 executable (the `WinXls` sheets ship no data files): 0x28-byte records starting `{u32 part,
-u32 cut, ...}` (part 0x128 on for the telops), their cut rectangles not yet found.
+u32 cut, ...}` (part 0x128 on for the telops): see `docs/formats.md`, "Interface layouts".
 
 **Fades** (`u22`, `ECT_EVENT_CONTRAST_SET_MIX`, 3,159 uses). The command goes to the `Contrast`
 objects (vtable `0x1407275f8`; virtual +0x20 `0x14003d3f0`): `{id, preset, hundredths of a

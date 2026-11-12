@@ -238,6 +238,11 @@ is drawn, and the post pass lays the frozen frame over the live one, its weight 
 the presets from the executable and the post pass lays the colour between the preset's two
 over the scene by its opacity, under the text.
 
+**Narration cards.** The viewer finds the cards an event shows (`u55`), reads their pieces
+(`layout::pieces`) and loads their sheets into the text layer after the font and the window;
+the card is drawn at the stage's opacity, its 1920 × 1080 layout scaled to the height and
+centred.
+
 **Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
 mirrored into render space); the terrain is not culled (it winds the other way and is only seen
 from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are
