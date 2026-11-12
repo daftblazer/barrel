@@ -958,8 +958,19 @@ the next command word; `None` where that varies) and prints it: over Escha's eve
 exactly the hand-checked table, less the five commands only the script macros use, which is
 what makes it trustworthy as a first draft. Over Sophie 2's it gives 339 fixed counts and 22
 varying, and all 45,074 bodies decode with it (`OperandTable::sophie2`,
-`ebd_tables::SOPHIE2`). Names and handlers for Sophie 2's commands are still to be read from
-its executable.
+`ebd_tables::SOPHIE2`).
+
+Sophie 2's executable registers 280 `ECT_*` names the same way
+as Escha's (`tools/ect_names.py` → `work/sophie2_ect.txt`), naming 182 of the 361 words its
+events use (the table's comments carry them). The two games share 192 names, but only 30 keep
+their word: the groups were renumbered (`ECT_CAMERA_AT_POS_SET` is `74000006` in Escha,
+`74000007` in Sophie 2; `ECT_CAMERA_EYE_MOVE_PRE_WAIT` `7400001e` against `74000006`), so a
+player for both has to go through the names, not the words. Of the shared names both games
+use, 102 take the same operand count and 10 changed: `ECT_FIELDMAP_CHARA_ADDITION` 2 → 1,
+`_ADDITION_EX` 14 → 13, `ECT_FIELDMAP_LIGHT_PARALLEL_SET` 6 → 7, `ECT_CHARA_MOTION_SET` 4 →
+varying, `_SET_LOOP` 4 → 5, `ECT_CHARA_VOICE_PLAY` 2 → 3, `ECT_CHARA_SET_MARKER` 5 → 11,
+`ECT_CHARA_CAMERA_QUAKE_SET` 3 → varying, `ECT_CHARA_SET_FLAG` 3 → 2, and
+`ECT_CAMERA_C_TYPE_SET` varying → 1.
 
 ## Script macros (`Script/*.nut`)
 
