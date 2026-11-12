@@ -854,6 +854,48 @@ fn bonuses(file: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Rebuilds each `Party` record's stats in use (`equipment::in_use`) and compares them with
+/// the saved ones.
+fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_formats::save::Summary) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    use barrel_game::equipment::{self, ItemRow, Tables, STATS};
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+    let dir = exe.parent().ok_or("no install folder")?.join("Saves_EN/item");
+    let table = |n: &str| -> Result<barrel_formats::table::Element> { let p = dir.join(n); barrel_formats::table::parse(&read(&p)?).map_err(|e| format!("{}: {e}", p.display()).into()) };
+    let effects_root = table("item_effect.xml")?;
+    let effects = bd::item_effects(&effects_root, &acts);
+    let tags: Vec<&str> = effects.iter().map(|e| e.tag.as_str()).collect();
+    let traits = bd::traits(&table("item_potential.xml")?, &tags);
+    let items: Vec<ItemRow> = table("itemData.xml")?.children.iter().map(ItemRow::from_row).collect();
+    let t = Tables { items: &items, effects: &effects, traits: &traits, acts: &acts };
+    let Some(party) = records.iter().find(|r| r.name == "party") else { return Err("no party record".into()) };
+    let barrel_formats::save::Body::Group(children) = &party.body else { return Err("party is not a group".into()) };
+    let words = |d: &[u8], at: usize| -> [i32; STATS] { std::array::from_fn(|k| d.get(at + 4 * k..at + 4 * k + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()))) };
+    let (mut same, mut all) = (0, 0);
+    for r in children.iter().filter(|r| r.name == "Party") {
+        let (barrel_formats::save::Body::Data(d) | barrel_formats::save::Body::Raw(d)) = &r.body else { continue };
+        let who = words(d, 0)[0];
+        let (base, extra, saved) = (words(d, 0x18), words(d, 0x98), words(d, 0x118));
+        let equipped = barrel_formats::save::item_units(d.get(0x19c..0x19c + 4 * barrel_formats::save::ITEM_UNIT).unwrap_or(&[]));
+        let hero = s.hero.is_some_and(|h| h == who);
+        let mut lo = |a: i32, _b: i32| a;
+        let mut hi = |_a: i32, b: i32| b;
+        let low = equipment::in_use(&t, &base, &extra, &equipped, hero.then_some(&s.bonus_values[..]), &mut lo);
+        let high = equipment::in_use(&t, &base, &extra, &equipped, hero.then_some(&s.bonus_values[..]), &mut hi);
+        let off: Vec<String> = (0..STATS).filter(|&k| !(low[k].min(high[k])..=low[k].max(high[k])).contains(&saved[k])).map(|k| format!("{k}: {} (rule {}..{})", saved[k], low[k], high[k])).collect();
+        all += 1;
+        if off.is_empty() {
+            same += 1;
+        } else {
+            println!("character {who}: {} stats differ: {}", off.len(), off.join(", "));
+        }
+    }
+    println!("stats in use rebuilt for {same} of {all} characters");
+    Ok(())
+}
+
 /// A save's header.
 fn save(file: &Path) -> Result<()> {
     let data = read(file)?;
@@ -933,6 +975,12 @@ fn save(file: &Path) -> Result<()> {
             }
         };
         println!("{who}'s battle grid ({open} open): {grid:?}{check}");
+    }
+    // BARREL_EXE: rebuild every character's stats in use from base, equipment and bonuses.
+    if let Some(exe) = std::env::var_os("BARREL_EXE") {
+        if let Err(e) = check_stats(Path::new(&exe), &records, &s) {
+            println!("stats check: {e}");
+        }
     }
     let bonuses: Vec<String> = s.bonus_values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
     println!("bonus values {}", bonuses.join(" "));

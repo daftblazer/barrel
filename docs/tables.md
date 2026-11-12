@@ -1323,6 +1323,23 @@ the stat's base value). The acts each stat takes (`0x1402b4560`):
 The last three agree with the bonuses: `Add_Exp_Rate`, `Add_Money_Rate` and `Add_Drop_Rate`
 are bonus values 33 to 35, stat 29 to 31 + 4.
 
+The traits each stat takes (`0x1402b4770`, `ITEM_SUB_*`): stats 0 to 4 their own
+`EQI_ADD_MAXHP`, `_MAXMP`, `_ATTACK`, `_DEFENSE`, `_SPEED`, plus `EQI_ADD_ALLPARAM` and
+`EVOLVE_STATUS` (a percentage of the base); 5 to 9 `RESIST_FIRE`, `_WATER`, `_WIND`, `_EARTH`,
+`_BADSTATUS`; 12 `EQI_ADD_SKILLPOWER`; 14 `EQI_REDUCE_SKILLCOST`; every stat
+`BTL_ADD_USEEFFECT` (an effect, its row in the slot's lower bound, counted by the effect
+rule). An `ACT_EQUIP_ADD_RESIST` slot names its element in its first range (stat − 5) and
+the amount in its second. Stats 5 to 8 are the element resistances (the item rows'
+`RES_FIRE` .. `RES_EARTH`), 9 the ailment resistance.
+
+`equipment::in_use` ports the refresh up to the bonuses, and `BARREL_EXE=... barrel save`
+rebuilds every character's block and compares: in one save all 11 characters' max HP, max
+MP, attack, defense, speed and resistances come out exactly (the equipped items sit at +0x19c
+of the saved `Party` record, after base +0x18, a second block +0x98 and the block in use
++0x118). What still differs are a few of stats 10 to 31 (10, 11, 12, 15, 22, 30, 31: 5 to 35
+more in the save), which the three calls after the bonuses add (`0x14032e080`, `0x14032e580`,
+`0x14032e670`; the characters' passive skills, presumably), not ported yet.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
