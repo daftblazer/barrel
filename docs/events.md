@@ -855,5 +855,16 @@ the "until stopped" value); `t16` (`ECT_CAMERA_QUAKE_STOP`) clears the player (+
 `barrel quakes INSTALL`): 61, each six tracks of up to 16 keys `{value, frame}` at 60 frames
 a second, linear between keys, held or looped. The tracks come in opposite-signed pairs
 (`cq_obj_001`: 0 to -0.3 and 0 to +0.3 over two seconds; `cq_obj_031`: ±0.01 on two pairs),
-taken as each axis's bounds for a random shake; which camera values they move is not read
-yet.
+each axis's bounds: the player's offset function (`0x140035920`) takes tracks 2k and 2k + 1
+at the current time, ×100 to whole numbers, draws a random whole number between them with
+the game's range draw (`0x1404ca660`, `barrel_game::rng::Rng::range`), and returns the
+three over 100, ×100 again: an offset in field units, one unit steps, a new one every frame.
+Its caller (`0x1401e16fd`) hands it to the camera (slot 0xd0); the renderer adds it to the eye
+and the target alike (taken: what the camera does with it is not read). The update
+(`0x140035880`) adds the frame time to the elapsed time (+0xc) and stops the quake past its
+seconds (or wraps, with +0x10 set); the envelopes advance by the frame time over the seconds
+(not read further: the renderer runs them at 60 frames a second). `Step::Quake` and
+`Step::QuakeStop` carry them; the stage keeps the running one.
+
+Deliberate difference: the viewer's shake draws from its own generator (the game's kind,
+seeded apart), not the game's shared one, so the jitter differs frame by frame.

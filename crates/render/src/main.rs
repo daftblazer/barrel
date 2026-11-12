@@ -2180,6 +2180,16 @@ fn main() -> Result<()> {
     let mut face_tables_play: Option<barrel_game::face::Tables> = None;
     let mut gestures_play: Vec<[Option<barrel_game::gesture::Form>; 2]> = Vec::new();
     // The motions' divisions (s5, s11), from Saves/chara.
+    // The camera quakes (t14), and the generator their shake draws from: the game's own kind,
+    // seeded here (the game's shared generator state is not followed: docs/events.md).
+    let quakes: Vec<barrel_formats::quake::Quake> = event_spec
+        .as_ref()
+        .and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf))
+        .and_then(|root| std::fs::read(root.join("Saves/cameraQuake/camera_quake_data.xml")).ok())
+        .and_then(|b| barrel_formats::table::parse(&b).ok())
+        .map(|t| barrel_formats::quake::read(&t))
+        .unwrap_or_default();
+    let mut quake_rng = barrel_game::rng::Rng::from_state([0x1234_5678, 0x9abc_def0, 0x0fed_cba9, 0x8765_4321]);
     let mut divisions = barrel_formats::chara_div::Divisions::new();
     let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
@@ -2585,6 +2595,24 @@ fn main() -> Result<()> {
             if let (Some(e), Some(t), true) = (shown.eye, shown.target, use_event_camera) {
                 let mirror = Vec3::new(-1.0, 1.0, 1.0);
                 (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
+                // A camera quake: each axis a random whole number of field units between its two
+                // tracks' values (metres) at the quake's frame, added to the eye and the target
+                // (0x140035920; which camera values the game moves is taken, not read).
+                if let Some((number, since, seconds)) = play.stage.quake {
+                    let elapsed = play.stage.time - since;
+                    if let (Some(q), true) = (quakes.iter().find(|q| q.number() == Some(number)), elapsed <= seconds) {
+                        let frame = elapsed * 60.0;
+                        let mut shake = [0.0f32; 3];
+                        for (k, axis) in shake.iter_mut().enumerate() {
+                            if let (Some(a), Some(b)) = (q.tracks.get(2 * k), q.tracks.get(2 * k + 1)) {
+                                let (lo, hi) = ((a.at(frame) * 100.0) as i32, (b.at(frame) * 100.0) as i32);
+                                *axis = quake_rng.range(lo, hi) as f32;
+                            }
+                        }
+                        let offset = Vec3::from(shake) * mirror;
+                        (eye, target) = (eye + offset, target + offset);
+                    }
+                }
                 dist = (eye - target).length().max(1.0);
                 if let Some(f) = shown.fov {
                     fov = f.clamp(5.0, 120.0).to_radians();

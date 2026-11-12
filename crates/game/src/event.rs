@@ -72,6 +72,11 @@ pub const CHARA_VOICE_PLAY: u32 = 0x7300_0066;
 pub const EVENT_SET_POST_EFFECT: u32 = 0x7500_000d;
 /// `u14` (`ECT_EVENT_WAIT_POST_EFFECT`): the action waits for the screen effect to end.
 pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
+/// `t14` (`ECT_CAMERA_QUAKE_SET`): `{quake, seconds × 100}`, camera quake `cq_obj_<quake>`
+/// (`barrel_formats::quake`; `docs/events.md`, "Camera quakes").
+pub const CAMERA_QUAKE_SET: u32 = 0x7400_000e;
+/// `t16` (`ECT_CAMERA_QUAKE_STOP`): ends the quake.
+pub const CAMERA_QUAKE_STOP: u32 = 0x7400_0010;
 /// `u3 {n}`: label `n` in its action (`0x14020fcd6` on: an action's labels are found by
 /// scanning its words when it starts; also `u73` when the global at `0x141077ef0` is set).
 pub const LABEL: u32 = 0x7500_0003;
@@ -187,6 +192,10 @@ pub enum Step<'a> {
     Collision { action: usize, character: u32, solid: bool, flag: bool },
     /// The field objects of a version shown or hidden ([`FIELD_MAP_VISIBLE`]).
     MapVisible { action: usize, version: u32, shown: bool },
+    /// A camera quake starts ([`CAMERA_QUAKE_SET`]) for `seconds`.
+    Quake { action: usize, quake: u32, seconds: f32 },
+    /// The camera quake ends ([`CAMERA_QUAKE_STOP`]).
+    QuakeStop { action: usize },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
     Voice { action: usize, character: Option<u32>, clip: u32 },
     /// A screen effect starts (`u13`): `kind` (`docs/events.md`, "Screen effects"), its
@@ -346,6 +355,8 @@ impl<'a> Player<'a> {
                 solid: rest.first().is_none_or(|&v| v != 0),
                 flag: rest.get(1).is_none_or(|&v| v != 0),
             }),
+            (CAMERA_QUAKE_SET, [quake, rest @ ..]) => out.push(Step::Quake { action, quake: *quake, seconds: rest.first().map_or(0.0, |&s| f(s) / 100.0) }),
+            (CAMERA_QUAKE_STOP, _) => out.push(Step::QuakeStop { action }),
             (FIELD_MAP_VISIBLE, [version, shown, ..]) => out.push(Step::MapVisible { action, version: *version, shown: *shown != 0 }),
             (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
@@ -726,6 +737,8 @@ mod tests {
                 Step::RemoveAll { .. } => "everyone removed".to_string(),
                 Step::Collision { character, solid, .. } => format!("{character} solid {solid}"),
                 Step::MapVisible { version, shown, .. } => format!("version {version} shown {shown}"),
+                Step::Quake { quake, seconds, .. } => format!("quake {quake} for {seconds} s"),
+                Step::QuakeStop { .. } => "quake stops".to_string(),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),

@@ -224,6 +224,9 @@ pub struct Stage {
     /// The field object versions the event shows (`q15`); objects tagged with a version not
     /// here are hidden (`event::FIELD_MAP_VISIBLE`).
     pub versions_shown: std::collections::BTreeSet<u32>,
+    /// The camera quake running (`t14`): quake number, the stage time it started and its
+    /// seconds; `t16` or the end of its time stops it.
+    pub quake: Option<(u32, f32, f32)>,
 }
 
 /// A line of the event's text.
@@ -294,6 +297,8 @@ impl Stage {
                 }
             }
             Step::RemoveAll { .. } => self.characters.clear(),
+            Step::Quake { quake, seconds, .. } => self.quake = Some((*quake, self.time, *seconds)),
+            Step::QuakeStop { .. } => self.quake = None,
             Step::MapVisible { version, shown, .. } => {
                 if *shown {
                     self.versions_shown.insert(*version);
