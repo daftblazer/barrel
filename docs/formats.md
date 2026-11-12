@@ -471,7 +471,12 @@ a word (+0x18) and four counts (+0x1c ...: the battle code's uses left first); a
 `m_squad` (11 i32 slots: the squad's characters in order, -1 empty; 5 used in one save). A
 `Party` record (698 bytes, `save::Member`) starts with the character (0 to 10), level,
 experience, a word (392 in every one), HP and MP now and their maxima (Escha in one save:
-level 12, 694 experience, HP 24 of 30, MP 43 of 47); more stats follow, not read yet.
+level 12, 694 experience, HP 24 and MP 43 now, base max HP 30 and MP 47), then base attack,
+defense and speed (8, 8, 13), five small values (resistances, presumably) and two constants
+(5 and 25), the same block with equipment applied from +0x114 (max HP 35, attack 13), twelve
+12-byte entries from +0x230 (an increasing serial and a 1; the equipment, presumably) and a
+float at +0x2b0: 0 for Escha, 15.02 and 14.69 for two companions, 0.99 for others (the
+friendship the calendar raises daily, presumably).
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

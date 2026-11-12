@@ -853,7 +853,7 @@ fn save(file: &Path) -> Result<()> {
         .map(|t| t.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect())
         .unwrap_or_default();
     for m in &s.party {
-        println!("character {}: level {} (exp {}), HP {}/{}, MP {}/{}", m.character, m.level, m.exp, m.hp, m.max_hp, m.mp, m.max_mp);
+        println!("character {}: level {} (exp {}), HP {}/{}, MP {}/{}, attack {} defense {} speed {}, equipped {:?}, friendship {:.2}", m.character, m.level, m.exp, m.hp, m.max_hp, m.mp, m.max_mp, m.attack, m.defense, m.speed, m.equipped, m.friendship);
     }
     println!("squad {:?}", s.squad);
     for (label, list) in [("basket", &s.basket), ("container", &s.container), ("materials", &s.materials)] {

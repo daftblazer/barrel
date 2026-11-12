@@ -329,8 +329,12 @@ pub fn item_units(d: &[u8]) -> Vec<ItemUnit> {
 
 /// A character's record in `party` (a `Party` record, 698 bytes after its name): the
 /// character (+0), level (+4), experience (+8), a word (+0xc, 392 in every one seen), HP and
-/// MP now (+0x10, +0x14) and their maxima (+0x18, +0x1c); more stats follow (not read yet).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// MP now (+0x10, +0x14), then the base stats: max HP, max MP, attack, defense, speed
+/// (+0x18 to +0x28), five small values (+0x2c, resistances presumably) and two constants (5,
+/// 25); the same block with equipment applied at +0x114 (max HP from +0x118); twelve 12-byte
+/// entries from +0x230 (a serial and a 1: the equipment, presumably); and a float at +0x2b0
+/// (0 for the leader, 15.02 and 14.69 for two companions: the friendship, presumably).
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Member {
     pub character: i32,
     pub level: i32,
@@ -339,11 +343,31 @@ pub struct Member {
     pub mp: i32,
     pub max_hp: i32,
     pub max_mp: i32,
+    pub attack: i32,
+    pub defense: i32,
+    pub speed: i32,
+    /// Max HP, max MP, attack, defense, speed with equipment.
+    pub equipped: [i32; 5],
+    pub friendship: f32,
 }
 
 pub fn member(d: &[u8]) -> Option<Member> {
     let w = |k: usize| d.get(4 * k..4 * k + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
-    Some(Member { character: w(0)?, level: w(1)?, exp: w(2)?, hp: w(4)?, mp: w(5)?, max_hp: w(6)?, max_mp: w(7)? })
+    let f = d.get(0x2b0..0x2b4).map(|b| f32::from_le_bytes(b.try_into().unwrap()))?;
+    Some(Member {
+        character: w(0)?,
+        level: w(1)?,
+        exp: w(2)?,
+        hp: w(4)?,
+        mp: w(5)?,
+        max_hp: w(6)?,
+        max_mp: w(7)?,
+        attack: w(8)?,
+        defense: w(9)?,
+        speed: w(10)?,
+        equipped: [w(0x46)?, w(0x47)?, w(0x48)?, w(0x49)?, w(0x4a)?],
+        friendship: f,
+    })
 }
 
 /// What a game save's state says in plain numbers (records read so far).
