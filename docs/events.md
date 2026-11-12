@@ -931,3 +931,29 @@ seconds (or wraps, with +0x10 set); the envelopes advance by the frame time over
 
 Deliberate difference: the viewer's shake draws from its own generator (the game's kind,
 seeded apart), not the game's shared one, so the jitter differs frame by frame.
+
+## Script macros (`Script/*.nut`)
+
+Escha's `Script` folder is 36 plain Squirrel sources (Shift-JIS, CRLF, Japanese comments). Some
+are command macros written with the event commands themselves: a function fills an array with
+`ECT_*` words and operands, copies it word by word (`SQ.copyProgramMacro(value, index)`) and
+runs it (`SQ.execProgramMacro(name)`, or `execProgramMacroFast`). So they play through the same
+commands as the `.ebd` events.
+
+- `macro_encount.nut`: the field's forced encounters (`forceEncount` and one per scripted boss,
+  e.g. `forceEncountSkySlug`, `forceEncountDragon`, `forceEncountBeast`): the
+  player and target taken out of play (`ECT_FIELDMAP_CHARA_SET_EVENT_MODE`, collisions off),
+  the camera on the target, its roar motion (`MOTION_EX10`), effects, voice, then collisions
+  back on. They play the lead-in only; the battle and its formation come from the code
+  (`docs/tables.md`, battle notes).
+- `macro_battle.nut`: battle camera and movement helpers (`selectMoveCamera`,
+  `setTargetCameraCraneShot`, `setCommandMove`, `setEvadeChara`/`setEvadeCamera`,
+  `setProgramPosACEvade(ranks)`, `setTornadoRolling`/`Falling`), naming fighters by
+  `CHARA_EX_DEF`/`CHARA_EX_CUR` (`ECT_SET_DEFCHARA_BCID` binds the default to a battle
+  character).
+- `ai_*.nut`: the field creatures' behaviour (`_in`/`_out` pairs per kind: bear, cow, dog,
+  slags, dragon, spirit...), calling the host through `SQ.getPlayer`, `SQ.getActiveChara` and
+  the like.
+
+Barrel can run the macros as it runs events once the Squirrel side is read: the arrays are
+literal, so a small reader can turn each function into a command list.
