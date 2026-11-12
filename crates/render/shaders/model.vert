@@ -13,7 +13,9 @@ layout(location = 7) in vec3 in_corner;
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour; } pc;
 // Each instance's model matrix (render space, x already mirrored) and where its joints'
 // matrices begin in the palette. Instance 0 is the identity, for geometry baked in place.
-struct Instance { mat4 model; uvec4 info; };
+// info: x the palette's first joint, y the first morph weight, z last frame's first joint;
+// prev_model last frame's model matrix (both for the motion vectors).
+struct Instance { mat4 model; uvec4 info; mat4 prev_model; };
 layout(std430, set = 1, binding = 0) readonly buffer Instances { Instance inst[]; } instances;
 // Joint matrices (bind pose to posed, render space) of every posed model.
 layout(std430, set = 1, binding = 1) readonly buffer Palette { mat4 joint[]; } palette;
@@ -85,18 +87,27 @@ void main() {
     }
     vec3 n = in_normal;
     float total = dot(in_weights, vec4(1.0));
+    // Last frame's position too, for the motion vectors: the same vertex on last frame's joints
+    // and model matrix (its morphs taken as this frame's).
+    vec4 prev_pos = pos;
     if (total > 0.0) {
         uint base = i.info.x;
         mat4 skin = (in_weights.x * palette.joint[base + in_joints.x] + in_weights.y * palette.joint[base + in_joints.y]
             + in_weights.z * palette.joint[base + in_joints.z] + in_weights.w * palette.joint[base + in_joints.w]) / total;
+        uint prev = i.info.z;
+        mat4 prev_skin = (in_weights.x * palette.joint[prev + in_joints.x] + in_weights.y * palette.joint[prev + in_joints.y]
+            + in_weights.z * palette.joint[prev + in_joints.z] + in_weights.w * palette.joint[prev + in_joints.w]) / total;
         pos = skin * pos;
+        prev_pos = prev_skin * prev_pos;
         n = mat3(skin) * n;
     }
     vec4 w = i.model * pos;
+    vec4 prev_w = i.prev_model * prev_pos;
     // Billboards: the corner, and the normal, in the camera's frame (MapSTD-B0 program 0).
     mat3 bb = mat3(look.bb_right.xyz, look.bb_up.xyz, look.bb_back.xyz);
     if (in_corner != vec3(0.0)) {
         w.xyz += bb * in_corner;
+        prev_w.xyz += bb * in_corner;
         n = bb * n;
     }
     world = w.xyz;
@@ -138,7 +149,7 @@ void main() {
     }
     gl_Position = pc.view_proj * w;
     cur_clip = gl_Position;
-    prev_clip = look.prev_view_proj * w;
+    prev_clip = look.prev_view_proj * prev_w;
     // Fog: extinction exp2(s × Scat0) (Scat0 holds -(βR + βM) log2 e), s the eye distance mapped
     // over the fog's start and end; in-scattering Mie (Henyey-Greenstein) plus Rayleigh plus
     // the ambient, θ between the way to the eye and the sun.

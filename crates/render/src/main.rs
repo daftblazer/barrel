@@ -96,7 +96,12 @@ struct Instance {
     palette: u32,
     /// Where its morph weights begin in the weight buffer.
     weights: u32,
-    _pad: [u32; 2],
+    /// Where its last frame's joints begin in the palette buffer (the palette's second half),
+    /// for the motion vectors.
+    prev_palette: u32,
+    _pad: u32,
+    /// Its last frame's model matrix, for the motion vectors.
+    prev_model: Mat4,
 }
 
 struct Draw {
@@ -224,8 +229,12 @@ impl Gpu {
     }
 
     fn upload(&self, mem: vk::DeviceMemory, bytes: &[u8]) -> Result<()> {
+        self.upload_at(mem, 0, bytes)
+    }
+
+    fn upload_at(&self, mem: vk::DeviceMemory, offset: u64, bytes: &[u8]) -> Result<()> {
         unsafe {
-            let p = self.device.map_memory(mem, 0, bytes.len() as u64, vk::MemoryMapFlags::empty())? as *mut u8;
+            let p = self.device.map_memory(mem, offset, bytes.len() as u64, vk::MemoryMapFlags::empty())? as *mut u8;
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), p, bytes.len());
             self.device.unmap_memory(mem);
         }
@@ -375,7 +384,7 @@ impl Scene {
             draws: Vec::new(),
             terrains: Vec::new(),
             field: None,
-            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, weights: 0, _pad: [0; 2] }],
+            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, weights: 0, prev_palette: 0, _pad: 0, prev_model: Mat4::IDENTITY }],
             palette: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
@@ -389,7 +398,7 @@ impl Scene {
 
     /// A new instance placed by `transform` (game space); returns its number.
     fn instance(&mut self, transform: Mat4) -> u32 {
-        self.instances.push(Instance { model: render_space(transform), palette: 0, weights: 0, _pad: [0; 2] });
+        self.instances.push(Instance { model: render_space(transform), palette: 0, weights: 0, prev_palette: 0, _pad: 0, prev_model: render_space(transform) });
         (self.instances.len() - 1) as u32
     }
 
@@ -1796,13 +1805,21 @@ fn main() -> Result<()> {
 
     // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
     // draw's instance number (set 1, bound once for every pipeline).
+    for i in &mut instances {
+        i.prev_palette = i.palette + palette.len() as u32;
+        i.prev_model = i.model;
+    }
     let ibytes_inst = unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) };
     let (instance_buf, instance_mem) = gpu.buffer(ibytes_inst.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
     gpu.upload(instance_mem, ibytes_inst)?;
-    // And the joint palette (binding 1).
-    let pbytes = unsafe { std::slice::from_raw_parts(palette.as_ptr() as *const u8, palette.len() * size_of::<Mat4>()) };
-    let (palette_buf, palette_mem) = gpu.buffer(pbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
-    gpu.upload(palette_mem, pbytes)?;
+    // And the joint palette (binding 1): this frame's joints, then last frame's (the same
+    // to begin with), for the motion vectors.
+    let palette_bytes = |p: &[Mat4]| unsafe { std::slice::from_raw_parts(p.as_ptr() as *const u8, p.len() * size_of::<Mat4>()) };
+    let half = (palette.len() * size_of::<Mat4>()) as u64;
+    let (palette_buf, palette_mem) = gpu.buffer((2 * half).max(64), vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
+    gpu.upload(palette_mem, palette_bytes(&palette))?;
+    gpu.upload_at(palette_mem, half, palette_bytes(&palette))?;
+    let mut prev_palette = palette.clone();
     let storage = |b: u32| {
         vk::DescriptorSetLayoutBinding::default()
             .binding(b)
@@ -2608,6 +2625,11 @@ fn main() -> Result<()> {
     let mut last_effect: Option<f32> = None;
     let mut prev_mvp: Option<Mat4> = None;
     for frame in 0..frames {
+    // Last frame's transforms and joints, before this frame moves anything (motion vectors).
+    for i in &mut instances {
+        i.prev_model = i.model;
+    }
+    prev_palette.copy_from_slice(&palette);
     // The real time since the last frame (a window's frames are real time).
     let now = std::time::Instant::now();
     let frame_dt = (now - last_frame).as_secs_f64().min(0.25) as f32;
@@ -2912,7 +2934,8 @@ fn main() -> Result<()> {
             }
             gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
             gpu.upload(weight_mem, unsafe { std::slice::from_raw_parts(morph_weights.as_ptr() as *const u8, morph_weights.len() * 4) })?;
-            gpu.upload(palette_mem, unsafe { std::slice::from_raw_parts(palette.as_ptr() as *const u8, palette.len() * size_of::<Mat4>()) })?;
+            gpu.upload(palette_mem, palette_bytes(&palette))?;
+            gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
         }
     }
     // A resized window, or a swapchain gone stale: remake it and the framebuffers.
@@ -2942,6 +2965,13 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // With motion vectors, this frame's and last frame's transforms and joints every frame (a
+    // frame that moves nothing still has last frame's movement to forget).
+    if settings.motion {
+        gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
+        gpu.upload(palette_mem, palette_bytes(&palette))?;
+        gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
+    }
     // The sun's shadow map (deliberately one square around the camera's target: the game's
     // cascades are not read yet, docs/renderer.md "Shadows").
     let sun_dir = field_looks

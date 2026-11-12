@@ -113,9 +113,15 @@ anti-aliasing is the next piece. At scale 1 `--fsr` changes nothing.
 red and green, 40 times their size) the scene pass writes a second colour target
 (`R16G16_SFLOAT`, single-sampled: motion turns MSAA off): each pixel's movement since the last
 frame in texture coordinates, `(this clip position − last frame's) / 2` from the vertex shader,
-last frame's view-projection riding in the `Look` block (entries 40 to 43). So far only the
-camera's movement is in it: objects and skinned characters move with this frame's transforms
-and pose on both sides (their last frame's are the next step). In the first opening's camera
+last frame's view-projection riding in the `Look` block (entries 40 to 43). Objects and characters
+move in it too: each instance keeps last frame's model matrix (`Instance::prev_model`) and the
+palette buffer holds last frame's joints after this frame's (`Instance::prev_palette`), so the
+vertex shader skins each vertex twice, with this frame's joints and matrix and with last
+frame's (the facial morphs are taken as this frame's on both sides). Both are snapshotted at
+the start of each frame and uploaded every frame while motion is on. In the first opening at
+7 s, with the camera finishing a move and a character walking, the characters stand out from
+the camera's smooth field; at 8.5 s, the camera still and only idle animation left, the vectors
+are a few thousandths and only on the characters. In the first opening's camera
 move (2.5 s on, a 5-second turn and dolly) the vectors come to about 0.0014 across and 0.0008
 down a frame at 60 Hz, a smooth field over the screen, as the move works out to; a still
 camera gives zero. The viewer's seek to `--at` falls between its first two frames, which the
