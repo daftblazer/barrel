@@ -141,6 +141,13 @@ lamp glow as in the game but blows Escha's workshop out to white (101, 65, 67 be
 75, 76, 54 here, the room otherwise matching to a few levels) comes from something not done
 yet: an emissive material or the light texture.
 
+**The light texture is the field's `<AREA>_pat.g1t`.** Outdoor fields carry a real one
+(`TOWN_10_pat.g1t`: one 512 × 512 BC1 texture, grey, mean 0.61, black to white: drifting cloud
+shadows), indoor ones a 64-byte stub (`TOWN_03`, `TOWN_07`, `TOWN_11`). The pixel program
+multiplies it into the sun's part only (`s · lit · v6`), at the world position through
+`mW2Pt` (its scale and scroll not read yet), so it dapples the sunlit ground; it cannot
+explain shade where the sun's part is small (the TOWN_10 walls, mostly ambient).
+
 ### Wind (plants swaying)
 
 `MapSTD`'s vertex programs bend a field model's vertices (`p` the world position;

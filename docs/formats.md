@@ -492,7 +492,7 @@ the terrain and the field's own data:
 |---|---|
 | `<AREA>.ktf` | terrain (below) |
 | `<AREA>.khm` | heightmap (below) |
-| `<AREA>.g1t`, `<AREA>_pat.g1t` | terrain textures |
+| `<AREA>.g1t`, `<AREA>_pat.g1t` | terrain textures; `_pat` is the light texture (cloud shadows outdoors, a 64-byte stub indoors; `docs/shading.md`) |
 | `<AREA>.g1s` | the field's shaders |
 | `<AREA>.opl2` | where objects and effects stand (below) |
 | `<AREA>_col.g1co` | collision |
