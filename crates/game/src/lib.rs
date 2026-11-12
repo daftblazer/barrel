@@ -28,5 +28,6 @@ pub mod rng;
 pub mod shop;
 pub mod skirmish;
 pub mod sophie2;
+pub mod squirrel;
 pub mod stage;
 pub mod synthesis;

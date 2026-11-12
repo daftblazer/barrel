@@ -43,6 +43,7 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
   barrel gimmicks EXE [AREA]   each field area's gimmicks: kind, place, size, event window
@@ -145,6 +146,7 @@ fn main() -> ExitCode {
         ["acts", exe] => acts(Path::new(exe)),
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
+        ["nut-parse", root] => nut_parse(Path::new(root)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["encounters", exe] => encounters(Path::new(exe)),
@@ -2942,6 +2944,26 @@ fn acts(exe: &Path) -> Result<()> {
 /// Reads every command macro in ROOT/Script/macro_*.nut, resolves it with placeholder
 /// arguments and decodes it as an event action, listing its commands or what it names that is
 /// not known.
+/// Parses every Squirrel script under ROOT/Script with Barrel's own front end.
+fn nut_parse(root: &Path) -> Result<()> {
+    let mut paths: Vec<_> = std::fs::read_dir(root.join("Script"))?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "nut")).collect();
+    paths.sort();
+    let mut bad = 0;
+    for path in &paths {
+        let bytes = read(path)?;
+        let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+        match barrel_game::squirrel::parse(&text) {
+            Ok(s) => println!("{:<24} {} statements", path.file_name().unwrap().to_string_lossy(), s.len()),
+            Err(e) => {
+                bad += 1;
+                println!("{:<24} {e}", path.file_name().unwrap().to_string_lossy());
+            }
+        }
+    }
+    println!("{} of {} parse", paths.len() - bad, paths.len());
+    Ok(())
+}
+
 fn macros(root: &Path) -> Result<()> {
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;

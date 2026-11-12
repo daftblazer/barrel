@@ -1093,6 +1093,14 @@ commands as the `.ebd` events.
 - `ai_*.nut`: the field creatures' behaviour (`_in`/`_out` pairs per kind: bear, cow, dog,
   slags, dragon, spirit...), calling the host through `SQ.getPlayer`, `SQ.getActiveChara` and
   the like.
+  Each is a bare block run per tick: a state machine over `pcOwn.getState()` (the `Enum.STATE_*`
+  values of `utility.nut`'s `Enum` class: 0 select, 1 wait, 2 waiting, 3 to 7 the move steps,
+  100 and up free states), setting motions (`setMotionTag`), timers, movement and emotion
+  icons on the creature, with `Val`'s constants (`MOTION_BLEND_FRAME` 0.2, `CHARA_ROT_LIFE`
+  0.35, ...). `barrel_game::squirrel` parses the subset the 36 scripts use (locals, constants,
+  `if`/`switch`/`for`/`foreach`/`while`, functions with `...`, classes of static members,
+  arrays, calls and members): `barrel nut-parse ROOT` parses all 36. Running them needs the
+  host objects (`SQ.*` and the creature's methods), not written yet.
 
 `macros::read` reads them without a Squirrel VM (the arrays are literal): each function's name,
 parameters and array; `Macro::words` resolves the array into an event action's words, with the
