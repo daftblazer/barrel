@@ -3,6 +3,16 @@
 What each event bytecode command is and how many operand words it takes. The body format
 itself is in `formats.md`, "Event bytecode".
 
+
+**Field object versions (`q15`).** `ECT_FIELDMAP_MAPVISIBLE_SET {version, shown, ...}` shows
+or hides the field objects whose placement tags carry that version (`xAM_balloon_ver<N>`:
+TOWN_07's airship dock is built in three versions, `obj-map08b_balloon_body` ver1,
+`obj-a15_05balloon_b_low_b` ver2, `obj-map08townparts_a_tw7` ver3). Logy's opening
+(`EVENT_MM01_OP1_212`) runs `q15 2 1 1` as it starts and `q15 2 0 1` later; in the oracle
+frames the version 2 airship shows and the version 3 dock parts (a banner and a balloon behind
+Awin and Logy) do not, so objects of a version the event has not shown are hidden. Read from
+the frames, not the handler; how the story picks a version outside events is not known yet.
+
 ## Where the names come from
 
 The executable registers every event command word with its Squirrel VM as a constant named

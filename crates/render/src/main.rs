@@ -121,6 +121,9 @@ struct Draw {
     /// What it is part of, for `BARREL_HIDE` (a field object's placement name, `sky:<model>`
     /// for the distant view, empty for characters).
     name: String,
+    /// The version a field object belongs to (its placement tag `xAM_…_ver<N>`): drawn only
+    /// while the event shows that version (`q15`, `Stage::versions_shown`).
+    version: Option<u32>,
 }
 
 struct Gpu {
@@ -510,7 +513,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new() });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None });
         }
         Ok(())
     }
@@ -1274,9 +1277,11 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
             // Only the objects marked xDS_ cast the sun's shadow (TOWN_11's workshop: its
             // furniture and a second, xDS_ ceiling; the ceiling drawn does not cast).
             let casts = t.name.contains("xDS_") || i.tags.contains("xDS_");
+            let version = object_version(&i.tags);
             for d in &mut scene.draws[before..] {
                 d.casts = casts;
                 d.name = t.name.clone();
+                d.version = version;
             }
             placed += 1;
         }
@@ -1288,6 +1293,17 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
         d.mask = d.mask.map(|m| m + base);
     }
     Ok(textures)
+}
+
+/// The version a placement's tags give it: `<N>` from `xAM_balloon_ver<N>` (TOWN_07's dock
+/// parts: `xDS_xAM_balloon_ver2`, `_balloon_ver3_xAM_`).
+fn object_version(tags: &str) -> Option<u32> {
+    if !tags.contains("xAM_") {
+        return None;
+    }
+    let at = tags.find("_ver")? + 4;
+    let digits: String = tags[at..].chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
 }
 
 /// Upload a texture as it is stored (BC blocks and all mip levels) for sampling.
@@ -2377,6 +2393,8 @@ fn main() -> Result<()> {
         .map_or(0, |k| k as u16);
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);
     let mut hidden = vec![false; instances.len()];
+    // The field object versions shown (q15): none until the event shows one.
+    let mut versions_shown = player.as_ref().map(|p| p.0.stage.versions_shown.clone()).unwrap_or_default();
     for a in &actors {
         hidden[a.instance as usize] = match &player {
             Some((_, _, _, now)) => !now.characters.contains_key(&a.who),
@@ -2493,6 +2511,7 @@ fn main() -> Result<()> {
             if let Some((out, mixer, ..)) = sound.as_mut() {
                 out.pump(mixer);
             }
+            versions_shown.clone_from(&play.stage.versions_shown);
             // The field the event is in now.
             if let Some(k) = play.stage.field.and_then(|m| field_maps.iter().position(|&f| f == m)) {
                 if k as u16 != current_field {
@@ -2885,7 +2904,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && !hide_by_name(&d.name)) {
+            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && !hide_by_name(&d.name)) {
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
                 let mut per_draw = [0u8; 8];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
@@ -2937,7 +2956,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         // The current field's distant view first, then the rest over it.
         for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
-        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && !hide_by_name(&d.name)) {
+        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && !hide_by_name(&d.name)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
             // The distant view's solid pieces (all but the dome and the clouds) are lit and

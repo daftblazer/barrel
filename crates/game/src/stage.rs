@@ -221,6 +221,9 @@ pub struct Stage {
     /// schedule holds each line for (`event::Player::reading_time`). None keeps each line up
     /// until the next.
     pub reading: Option<fn(&str) -> f32>,
+    /// The field object versions the event shows (`q15`); objects tagged with a version not
+    /// here are hidden (`event::FIELD_MAP_VISIBLE`).
+    pub versions_shown: std::collections::BTreeSet<u32>,
 }
 
 /// A line of the event's text.
@@ -291,6 +294,13 @@ impl Stage {
                 }
             }
             Step::RemoveAll { .. } => self.characters.clear(),
+            Step::MapVisible { version, shown, .. } => {
+                if *shown {
+                    self.versions_shown.insert(*version);
+                } else {
+                    self.versions_shown.remove(version);
+                }
+            }
             Step::Collision { character, solid, .. } => {
                 if let Some(b) = self.characters.get_mut(character) {
                     b.solid = *solid;

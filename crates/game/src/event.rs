@@ -56,6 +56,11 @@ pub const FIELD_CHARA_DELETE_ALL: u32 = 0x7100_0006;
 /// field character's body is in the physics world (`0x14026c570`, +0x128) and a second flag
 /// (`0x14026c5d0`, +0x129, not read further); case `0x140071348`.
 pub const FIELD_CHARA_COLLISION: u32 = 0x7100_0008;
+/// `q15` (`ECT_FIELDMAP_MAPVISIBLE_SET`): `{version, shown, ...}`: shows or hides the field
+/// objects tagged with that version (`xAM_balloon_ver<N>`, the airship dock in TOWN_07: Logy's
+/// opening shows version 2 and hides the dock's version 3 parts). Read from the oracle frames,
+/// not the handler (not found yet).
+pub const FIELD_MAP_VISIBLE: u32 = 0x7100_000f;
 /// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
 pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 /// `u31` (`ECT_EVENT_VOICE_PLAY`): `{clip}`, a voice clip number (`docs/formats.md`, "Voices").
@@ -180,6 +185,8 @@ pub enum Step<'a> {
     RemoveAll { action: usize },
     /// A field character's collision (`q8`): solid or not, and the second flag.
     Collision { action: usize, character: u32, solid: bool, flag: bool },
+    /// The field objects of a version shown or hidden ([`FIELD_MAP_VISIBLE`]).
+    MapVisible { action: usize, version: u32, shown: bool },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
     Voice { action: usize, character: Option<u32>, clip: u32 },
     /// A screen effect starts (`u13`): `kind` (`docs/events.md`, "Screen effects"), its
@@ -339,6 +346,7 @@ impl<'a> Player<'a> {
                 solid: rest.first().is_none_or(|&v| v != 0),
                 flag: rest.get(1).is_none_or(|&v| v != 0),
             }),
+            (FIELD_MAP_VISIBLE, [version, shown, ..]) => out.push(Step::MapVisible { action, version: *version, shown: *shown != 0 }),
             (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
@@ -717,6 +725,7 @@ mod tests {
                 Step::Remove { character, .. } => format!("{character} removed"),
                 Step::RemoveAll { .. } => "everyone removed".to_string(),
                 Step::Collision { character, solid, .. } => format!("{character} solid {solid}"),
+                Step::MapVisible { version, shown, .. } => format!("version {version} shown {shown}"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),
