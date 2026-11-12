@@ -1458,7 +1458,13 @@ fn main() -> Result<()> {
                 let bytes = std::fs::read(root.join("Data/x64/Field/C_SPHERE").join(&set))?;
                 let container = Elixir::parse(&bytes)?;
                 let instance = scene.instance(Mat4::IDENTITY);
-                for e in &container.entries {
+                // Drawn without depth, so back to front by kind: the dome, then the clouds
+                // (`xEF_`), then the ground, stones, trees and cliffs in front of them (in file
+                // order the clouds came after the trees and veiled them: TOWN_07, event 212).
+                let rank = |name: &str| if name.contains("Sphere_sky") { 0 } else if name.contains("xEF_") { 1 } else { 2 };
+                let mut entries: Vec<_> = container.entries.iter().collect();
+                entries.sort_by_key(|e| rank(&e.name));
+                for e in entries {
                     let Some(stem) = e.name.strip_suffix(".g1m") else { continue };
                     let (Some(mesh), Some(tex)) = (named(&container, &format!("{stem}.g1m")), named(&container, &format!("{stem}.g1t"))) else { continue };
                     let count = G1t::parse(tex)?.textures.len();

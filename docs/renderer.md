@@ -273,6 +273,13 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
+**Distant view order.** The distant view draws without depth, so its models go back to
+front by kind: the dome (`Sphere_sky`), the clouds (`xEF_`), then everything else (ground,
+stones, `ns_` trees, `xS3_` cliffs) in file order. In file order the clouds came after
+`obj-ns_a15_obj_objtree_leaf_a` and the cliffs and veiled them: the dark bush and spires in
+front of the green ruins at TOWN_07's airship dock (event `MM01_OP1_212`) were missing. How
+much fog those near pieces get is still open (the game's are darker than `s = 1` makes them).
+
 **Accessories.** A character's container holds its body (`<stem>_default.g1m`), its skeleton
 (`<stem>.g1m`) and part models (`<stem>_P_M_*.g1m`). The parts named in
 `CharaPartsChange.xml` (weapons, options: `P_M_Wep_*`, `P_M_Opt_*`) are switched on by group
