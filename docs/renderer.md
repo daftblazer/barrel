@@ -112,15 +112,15 @@ palette, a new place a new instance matrix; the vertex buffer never changes. Che
 the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by more than 8
 (from the 8-bit weights), the same picture.
 
-**Outfits.** `--costume WHO:BODY:HEAD` (repeatable) dresses event character WHO in outfit BODY
-(a `CostumeBody` row; its model is that row's `CharaBase` tag) with head accessory HEAD (a
-`CostumeHead` row): `costume::resolve` gives the accessory attached and the body's own nodes
+**Outfits.** `--costume WHO:BODY:HEAD[:FACE]` (repeatable) dresses event character WHO in outfit
+BODY (a `CostumeBody` row; its model is that row's `CharaBase` tag) with head accessory HEAD and
+face accessory FACE (`CostumeHead` and `CostumeFace` rows), each part resolved on its own: `costume::resolve` gives the accessory attached and the body's own nodes
 left off (`P_M_Acc_Hat1` ...), the body's tag being its `COSTUME_BODY_*` enum name. The
 accessory (`Data/x64/Accessory/<HEADnn>.elixir.gz`, an unskinned model) hangs from the body's
-`head_attach` node (its index in the body's `Oid.bin` names): its vertices are moved into that
+`head_attach` (a face accessory from `face_attach`) node (its index in the body's `Oid.bin` names): its vertices are moved into that
 joint's bind frame and by its `AccessoryAdjust` row (offset, then the rotation in degrees about
 x, y, z, then the scale; the order is taken, not read) and bound wholly to the joint, so the pose
-carries them. Escha with `--costume 0:0:2` wears the Flowery Hat in place of her own.
+carries them. Escha with `--costume 0:0:2:1` wears the Flowery Hat in place of her own and the eyepatch.
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its

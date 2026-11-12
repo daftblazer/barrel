@@ -948,12 +948,13 @@ struct Body {
 }
 
 /// An outfit's parts on a body (`barrel_formats::costume::resolve`): the body's own nodes to
-/// leave off (`P_M_Acc_Hat1` ...), and an accessory hung from a node: its file stem in
-/// `Data/x64/Accessory` (`HEAD01`), the node's name and its placement there (`AccessoryAdjust`).
+/// leave off (`P_M_Acc_Hat1` ...), and the accessories hung from nodes: each its file stem in
+/// `Data/x64/Accessory` (`HEAD01`, `FACE00`), the node's name and its placement there
+/// (`AccessoryAdjust`).
 #[derive(Clone, Debug, Default)]
 struct Wear {
     hidden: Vec<String>,
-    accessory: Option<(String, String, Mat4)>,
+    accessories: Vec<(String, String, Mat4)>,
 }
 
 /// Loads `row`'s model (a `CharaBase` row) into the scene at `pos` turned `angle` degrees,
@@ -1022,35 +1023,33 @@ fn add_body<F>(
     }
     let mut packs = vec![tex.to_vec()];
     let mut count = count;
-    // The outfit's accessory, hung from its node: its vertices are moved into the node's bind
-    // frame (and by the table's placement) and bound wholly to that joint, so the pose carries
-    // them as the body moves.
-    if let (Some((stem_a, node, adjust)), Some((skeleton, ..)), Some(j)) = (wear.and_then(|w| w.accessory.as_ref()), rig.as_ref(), joints.as_ref()) {
-        let names = named(&container, &format!("{stem}Oid.bin")).and_then(|b| barrel_formats::oid::parse(b).ok()).unwrap_or_default();
+    // The outfit's accessories, each hung from its node: its vertices are moved into the node's
+    // bind frame (and by the table's placement) and bound wholly to that joint, so the pose
+    // carries them as the body moves.
+    let names = named(&container, &format!("{stem}Oid.bin")).and_then(|b| barrel_formats::oid::parse(b).ok()).unwrap_or_default();
+    for (stem_a, node, adjust) in wear.map_or(&[][..], |w| &w.accessories[..]) {
+        let (Some((skeleton, ..)), Some(j)) = (rig.as_ref(), joints.as_ref()) else { break };
         let joint = names.iter().position(|n| n == node);
         let acc_bytes = std::fs::read(root.join("Data/x64/Accessory").join(format!("{stem_a}.elixir.gz"))).ok();
         let acc = acc_bytes.as_deref().and_then(|b| Elixir::parse(b).ok());
-        if let (Some(joint), Some(acc)) = (joint, acc) {
-            let (mesh, atex) = (named(&acc, &format!("{stem_a}_MODEL.g1m")), named(&acc, &format!("{stem_a}_MODEL.g1t")));
-            if let (Some(mesh), Some(atex)) = (mesh, atex) {
-                let g = G1m::parse(mesh)?;
-                if let Some(geometry) = g.geometry.as_ref() {
-                    let bind = bind_world(skeleton);
-                    let first = scene.draws.len();
-                    scene.rigid_joint = Some(joint as u16);
-                    scene.add_posed(geometry, bind[joint] * *adjust, G1t::parse(atex)?.textures.len(), Some(j), instance)?;
-                    scene.rigid_joint = None;
-                    for d in &mut scene.draws[first..] {
-                        d.texture += tex_base + count;
-                        d.overlay = d.overlay.map(|o| o + tex_base + count);
-                        d.mask = d.mask.map(|m| m + tex_base + count);
-                    }
-                    count += G1t::parse(atex)?.textures.len();
-                    packs.push(atex.to_vec());
-                    eprintln!("character {who}: {stem_a} at {node} (joint {joint})");
-                }
-            }
+        let (Some(joint), Some(acc)) = (joint, acc) else { continue };
+        let (Some(mesh), Some(atex)) = (named(&acc, &format!("{stem_a}_MODEL.g1m")), named(&acc, &format!("{stem_a}_MODEL.g1t"))) else { continue };
+        let g = G1m::parse(mesh)?;
+        let Some(geometry) = g.geometry.as_ref() else { continue };
+        let bind = bind_world(skeleton);
+        let textures = G1t::parse(atex)?.textures.len();
+        let first = scene.draws.len();
+        scene.rigid_joint = Some(joint as u16);
+        scene.add_posed(geometry, bind[joint] * *adjust, textures, Some(j), instance)?;
+        scene.rigid_joint = None;
+        for d in &mut scene.draws[first..] {
+            d.texture += tex_base + count;
+            d.overlay = d.overlay.map(|o| o + tex_base + count);
+            d.mask = d.mask.map(|m| m + tex_base + count);
         }
+        count += textures;
+        packs.push(atex.to_vec());
+        eprintln!("character {who}: {stem_a} at {node} (joint {joint})");
     }
     Ok(Some((Body { packs, count, instance, rig }, face)))
 }
@@ -1058,16 +1057,13 @@ fn add_body<F>(
 /// Outfit `body` (a `CostumeBody` row) with head accessory `head` (a `CostumeHead` row): the
 /// body's model tag and what it wears (`costume::resolve`; the accessory placed by its
 /// `AccessoryAdjust` row: offset, then the rotation in degrees about x, y, z, then the scale).
-fn outfit(root: &Path, body: usize, head: usize) -> Result<Option<(String, Wear)>> {
+fn outfit(root: &Path, body: usize, head: usize, face: usize) -> Result<Option<(String, Wear)>> {
     use barrel_formats::costume as c;
     let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join("Saves/costume").join(n))?)?) };
     let bodies = c::bodies(&table("CostumeBody.xml")?);
-    let heads = c::accessories(&table("CostumeHead.xml")?);
-    let (Some(b), Some(h)) = (bodies.get(body), heads.get(head)) else { return Ok(None) };
-    // The rows are named by tag in the other tables: the tags follow the rows (`COSTUME_HEAD_` and
-    // the model stem, `COSTUME_HEAD_NONE` for none); a body by the tag the other tables give it.
-    let head_tag = if h.file.is_empty() { "COSTUME_HEAD_NONE".to_string() } else { format!("COSTUME_HEAD_{}", h.file) };
+    let Some(b) = bodies.get(body) else { return Ok(None) };
     let adjusts = c::adjusts(&table("AccessoryAdjust.xml")?);
+    let (changes, hides) = (c::changes(&table("AccessoryChange.xml")?), c::hides(&table("PartsInvisible.xml")?));
     // The body's tag: the `COSTUME_BODY_*` name of its row, in the executable's enum order.
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -1075,15 +1071,26 @@ fn outfit(root: &Path, body: usize, head: usize) -> Result<Option<(String, Wear)
         .enum_names("COSTUME_BODY_ESCHA_DEFAULT")
         .and_then(|(names, first)| names[first..].iter().take_while(|n| n.starts_with("COSTUME_BODY_")).nth(body).map(|n| n.to_string()))
         .unwrap_or_default();
-    let (attached, hidden) = c::resolve(&body_tag, "COSTUME_PARTS_HEAD", &head_tag, &c::changes(&table("AccessoryChange.xml")?), &c::hides(&table("PartsInvisible.xml")?));
-    let accessory = attached.and_then(|tag| {
-        let a = adjusts.iter().find(|a| a.body == body_tag && a.parts == "COSTUME_PARTS_HEAD" && a.accessory == tag)?;
-        let r = glam::Quat::from_euler(glam::EulerRot::XYZ, a.rotation[0].to_radians(), a.rotation[1].to_radians(), a.rotation[2].to_radians());
-        let m = Mat4::from_scale_rotation_translation(Vec3::from(a.scale), r, Vec3::from(a.offset));
-        Some((tag.trim_start_matches("COSTUME_HEAD_").to_string(), b.head_attach.clone(), m))
-    });
-    eprintln!("outfit: body {body} {} ({body_tag}), head {head_tag}, hidden {hidden:?}, accessory {:?}", b.base, accessory.as_ref().map(|a| &a.0));
-    Ok(Some((b.base.clone(), Wear { hidden, accessory })))
+    let mut wear = Wear::default();
+    // Each part: its accessory row's tag (`COSTUME_HEAD_` or `COSTUME_FACE_` and the model stem,
+    // `_NONE` for none), resolved on the body and placed by its `AccessoryAdjust` row (offset,
+    // then the rotation in degrees about x, y, z, then the scale).
+    for (part, prefix, file, row, node) in [("COSTUME_PARTS_HEAD", "COSTUME_HEAD_", "CostumeHead.xml", head, &b.head_attach), ("COSTUME_PARTS_FACE", "COSTUME_FACE_", "CostumeFace.xml", face, &b.face_attach)] {
+        let rows = c::accessories(&table(file)?);
+        let Some(a) = rows.get(row) else { continue };
+        let tag = if a.file.is_empty() { format!("{prefix}NONE") } else { format!("{prefix}{}", a.file) };
+        let (attached, hidden) = c::resolve(&body_tag, part, &tag, &changes, &hides);
+        wear.hidden.extend(hidden);
+        if let Some(tag) = attached {
+            if let Some(adj) = adjusts.iter().find(|x| x.body == body_tag && x.parts == part && x.accessory == tag) {
+                let r = glam::Quat::from_euler(glam::EulerRot::XYZ, adj.rotation[0].to_radians(), adj.rotation[1].to_radians(), adj.rotation[2].to_radians());
+                let m = Mat4::from_scale_rotation_translation(Vec3::from(adj.scale), r, Vec3::from(adj.offset));
+                wear.accessories.push((tag.trim_start_matches(prefix).to_string(), node.clone(), m));
+            }
+        }
+    }
+    eprintln!("outfit: body {body} {} ({body_tag}), head {head}, face {face}: hidden {:?}, accessories {:?}", b.base, wear.hidden, wear.accessories.iter().map(|a| &a.0).collect::<Vec<_>>());
+    Ok(Some((b.base.clone(), wear)))
 }
 
 /// A skeleton's joints in their bind pose, in model space.
@@ -1281,7 +1288,7 @@ fn event_characters(
     at: Option<f32>,
     actors: &mut Vec<Actor>,
     absent_out: &mut std::collections::HashSet<u32>,
-    costumes: &[(u32, usize, usize)],
+    costumes: &[(u32, usize, usize, usize)],
 ) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
@@ -1427,7 +1434,7 @@ fn event_characters(
         // A chosen outfit (`--costume`): its body's model, and its head accessory and the
         // body's nodes hidden for it, by the costume tables.
         let (tag, wear) = match costumes.iter().find(|c| c.0 == who) {
-            Some(&(_, b, h)) => match outfit(root, b, h)? {
+            Some(&(_, b, h, f)) => match outfit(root, b, h, f)? {
                 Some((body_tag, wear)) => (body_tag, Some(wear)),
                 None => (tag.to_string(), None),
             },
@@ -1752,9 +1759,9 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
-    // --costume WHO:BODY:HEAD (repeatable): an event character in outfit BODY with head HEAD
-    // (rows of CostumeBody.xml and CostumeHead.xml).
-    let mut costumes: Vec<(u32, usize, usize)> = Vec::new();
+    // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
+    // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
+    let mut costumes: Vec<(u32, usize, usize, usize)> = Vec::new();
     // --save-every N: of several frames, write only every Nth and the last.
     let mut save_every = 1u32;
     let mut event_line = None::<usize>;
@@ -1829,10 +1836,13 @@ fn main() -> Result<()> {
             // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
             "--save-every" => save_every = it.next().ok_or("--save-every N")?.parse::<u32>()?.max(1),
             "--costume" => {
-                let v = it.next().ok_or("--costume WHO:BODY:HEAD")?;
-                let p: Vec<&str> = v.split(':').collect();
-                let [w, b, h] = p[..] else { return Err("--costume WHO:BODY:HEAD".into()) };
-                costumes.push((w.parse()?, b.parse()?, h.parse()?));
+                let v = it.next().ok_or("--costume WHO:BODY:HEAD[:FACE]")?;
+                let p: Vec<usize> = v.split(':').map(str::parse).collect::<std::result::Result<_, _>>()?;
+                match p[..] {
+                    [w, b, h] => costumes.push((w as u32, b, h, 0)),
+                    [w, b, h, f] => costumes.push((w as u32, b, h, f)),
+                    _ => return Err("--costume WHO:BODY:HEAD[:FACE]".into()),
+                }
             }
             "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
             "--free-camera" => use_event_camera = false,
