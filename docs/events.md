@@ -1296,8 +1296,7 @@ wherever the pattern has -1. Both sides then count -1 as 1 and encode as `0x1402
 so a -1 field is ignored and (-1, -1, -1) always matches. The gate's words 8–10 and 11–13
 are such dates (today from the one to the other); 1,139 events leave all six at -1.
 
-Not read yet, by uses in the data: `CHARA_FRIEND_POINT_MT` (36),
-`ITEM_QUALITY_HAVE_MT` (33), `MAP_FIELDAREA_BE` (27), the date triggers (20 each), `TRIGGER_PROGRAM_EXEC` (16),
+Not read yet, by uses in the data: `MAP_FIELDAREA_BE` (27), the date triggers (20 each), `TRIGGER_PROGRAM_EXEC` (16),
 `CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
 `CHARA_PARTY_IN` (6), and a few single uses.
 
