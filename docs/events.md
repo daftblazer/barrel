@@ -199,9 +199,17 @@ on}`: the camera follows the character only when `on` is not 0, and otherwise fo
 (`virtual +0x78(-1)`); the opening's `t18 0 0` turns following off, so `t20`'s target stands. When on,
 the stage takes the followed character's position as the target (`t20`'s offset still added;
 `Stage::camera_follow`, `FieldCamera::eye_target_from`). Of 1,144 uses 589 turn following off;
-most of the others come as an event ends, following character 749, "Master Character" (the
-protagonist the player chose, a stand-in the stage does not resolve yet), handing the camera
-back to play; `EVENT_MM02_OP2_141` follows Escha from its first frame.
+most of the others come as an event ends, following character 749, "Master Character",
+handing the camera back to play; `EVENT_MM02_OP2_141` follows Escha from its first frame.
+
+**The master character** (`Chara.xml` row 749) stands for the protagonist the player chose. As
+the executable reads a command's operands (`0x1401ddcbe` and the like, after the slots are
+resolved), each that equals 749 becomes what `0x14035ebb0` returns: the global `0x141098a48`,
+which the new game's choice screen sets (`0x1400ce4f3`: 1 if the choice is Logy, else 0). So
+749 is row 0, Escha, or row 1, Logy. `Player::hero` sets the choice (Escha by default;
+`barrel-view --hero logy`) and `Player::slot` swaps 749 for it, the camera's follow (`t18`)
+included. Where the save keeps the choice is still to find (the global sits in the block the
+game state's reset clears, `0x14035e8e0`).
 
 **Where the eye is** (`0x1401e68f0`, settled from the code). The point looked at is the
 target plus the offset (+0xd0 and virtual +0x70). The eye is `(0, 0, distance)` (virtual +0x68)

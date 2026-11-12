@@ -1528,6 +1528,7 @@ fn main() -> Result<()> {
     let mut show_motion = false;
     // Print the GPU's time per stage at the end (--timings).
     let mut timings = false;
+    let mut hero = 0u32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1565,6 +1566,14 @@ fn main() -> Result<()> {
             "--gsr2" => settings.gsr2 = true,
             "--fsr3" => settings.fsr3 = true,
             "--timings" => timings = true,
+            // The protagonist the player chose, whom "Master Character" (row 749) stands for.
+            "--hero" => {
+                hero = match it.next().ok_or("--hero escha|logy")?.as_str() {
+                    "escha" => 0,
+                    "logy" => 1,
+                    other => return Err(format!("--hero {other}: escha or logy").into()),
+                }
+            }
             "--sharpen" => settings.sharpen = true,
             "--show-motion" => {
                 settings.motion = true;
@@ -2485,7 +2494,7 @@ fn main() -> Result<()> {
             use barrel_game::event::Step;
             let mut current: std::collections::HashMap<u32, u32> = Default::default();
             let mut wanted = Vec::new();
-            for step in barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())? {
+            for step in barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?.hero(hero) {
                 match step {
                     Step::Motion { character, motion, division, .. } => {
                         current.insert(character, motion);
@@ -2513,6 +2522,7 @@ fn main() -> Result<()> {
         }
         // Lines held for a reading time, as nobody presses a button here.
         let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?
+            .hero(hero)
             .reading_time(barrel_game::event::reading_time)
             .motion_length(Box::new(move |c, m, d| lengths.get(&(c, m, d)).copied()))
             .schedule();

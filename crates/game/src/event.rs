@@ -300,7 +300,16 @@ pub struct Player<'a> {
     /// The variable slots `t2/0x30` binds (slot number, 10000 and up, to a `Chara.xml` row):
     /// commands may name a character by its slot.
     slots: HashMap<u32, u32>,
+    /// The protagonist the player chose (`Chara.xml` row 0 Escha, 1 Logy), which
+    /// [`MASTER_CHARACTER`] stands for.
+    hero: u32,
 }
+
+/// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
+/// The executable swaps it for the choice as it reads each command's operands (`0x1401ddcbe`
+/// and the like: `cmp ecx, 749` → `0x14035ebb0`, which returns the global `0x141098a48`); the
+/// new game's choice screen sets that to 1 for Logy and 0 for Escha (`0x1400ce4f3`).
+pub const MASTER_CHARACTER: u32 = 749;
 
 /// A reading time for unattended playback (not the game's: it waits for a button): one
 /// second plus 0.08 s a character, newlines and spaces not counted.
@@ -326,7 +335,14 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots })
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0 })
+    }
+
+    /// Plays as `hero` (`Chara.xml` row: 0 Escha, the default, or 1 Logy), whom
+    /// [`MASTER_CHARACTER`] then stands for.
+    pub fn hero(mut self, hero: u32) -> Self {
+        self.hero = hero;
+        self
     }
 
     /// Holds each line for `time(text)` seconds in [`Player::schedule`] (the action showing
@@ -362,9 +378,15 @@ impl<'a> Player<'a> {
         p
     }
 
-    /// A character number with a bound slot (`SLOT_SET`) read as its row.
+    /// A character number with a bound slot (`SLOT_SET`) read as its row, and the master
+    /// character as the hero.
     fn slot(&self, character: u32) -> u32 {
-        self.slots.get(&character).copied().unwrap_or(character)
+        let c = self.slots.get(&character).copied().unwrap_or(character);
+        if c == MASTER_CHARACTER {
+            self.hero
+        } else {
+            c
+        }
     }
 
     pub fn name(&self, word: u32) -> Option<&'static str> {
@@ -484,7 +506,11 @@ impl<'a> Player<'a> {
                 out.push(Step::CharacterMove { action, character: self.slot(*character), extra, movement })
             }
             (word, operands) if crate::field_camera::Change::read(word, operands).is_some() => {
-                out.push(Step::FieldCamera { action, change: crate::field_camera::Change::read(word, operands).unwrap() })
+                let mut change = crate::field_camera::Change::read(word, operands).unwrap();
+                if let crate::field_camera::Change::Follow { character: Some(c) } = &mut change {
+                    *c = self.slot(*c);
+                }
+                out.push(Step::FieldCamera { action, change })
             }
             (word, operands) if !crate::camera::changes(word, operands).is_empty() => {
                 out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| {
@@ -692,6 +718,31 @@ mod tests {
         assert_eq!((LONG_WAIT, MARK_EVENT), (0x7500_000f, 0x7500_0024));
     }
     use barrel_formats::ebd::{Action, END};
+
+    #[test]
+    fn the_master_character_is_the_hero() {
+        use crate::field_camera::{Change, FOLLOW};
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        // An event's end hands the camera back: follow 749, then 749 waits for a character.
+        let event = Ebd { actions: vec![act(vec![FOLLOW, MASTER_CHARACTER, 1, CHARA_WAIT, MASTER_CHARACTER, END])], resources: vec![] };
+        let table = OperandTable::new(&[(FOLLOW, Some(2)), (CHARA_WAIT, Some(1))]);
+        let follows = |hero: Option<u32>| -> Vec<String> {
+            let p = Player::escha(&event, &[], &table).unwrap();
+            let p = match hero {
+                Some(h) => p.hero(h),
+                None => p,
+            };
+            p.map(|s| match s {
+                Step::FieldCamera { change: Change::Follow { character }, .. } => format!("follow {character:?}"),
+                Step::WaitForCharacter { character } => format!("wait {character}"),
+                other => format!("{other:?}"),
+            })
+            .collect()
+        };
+        // Escha by default, Logy when chosen.
+        assert_eq!(follows(None), ["follow Some(0)", "wait 0"]);
+        assert_eq!(follows(Some(1)), ["follow Some(1)", "wait 1"]);
+    }
 
     #[test]
     fn actions_start_where_the_main_script_says() {
