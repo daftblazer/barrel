@@ -229,6 +229,8 @@ pub struct Stage {
     pub quake: Option<(u32, f32, f32)>,
     /// Whether the field's `xEV_` objects show (`q10`/`q36`; hidden until an event shows them).
     pub event_objects: bool,
+    /// The character the field camera's target follows (`t18`), when on stage.
+    pub camera_follow: Option<u32>,
 }
 
 /// A line of the event's text.
@@ -379,6 +381,8 @@ impl Stage {
             }
             Step::TelopAlpha { from, to, seconds, .. } => self.telop_alpha = crate::field_camera::Tween { from: *from, to: *to, seconds: *seconds, elapsed: 0.0 },
             Step::ScreenEffect { kind, param, seconds, .. } => self.screen_effect = Some((*kind, *param, *seconds, self.time)),
+            // t18 only says whom the camera follows (kept apart: it may come before t20).
+            Step::FieldCamera { change: crate::field_camera::Change::Follow { character }, .. } => self.camera_follow = *character,
             // t19 only flips a flag; it neither makes the field camera nor takes the view.
             Step::FieldCamera { change: crate::field_camera::Change::DataEffect { on }, .. } => {
                 if let Some(c) = self.field_camera.as_mut() {
@@ -465,7 +469,8 @@ impl Stage {
         // The camera in use: the field camera unless the manual one was set after it.
         let (eye, target, fov) = match (&self.field_camera, self.manual_camera) {
             (Some(c), false) => {
-                let (e, t) = c.eye_target();
+                let followed = self.camera_follow.and_then(|n| self.characters.get(&n)).map(|b| b.position);
+                let (e, t) = followed.map_or_else(|| c.eye_target(), |p| c.eye_target_from(p));
                 (Some(e), Some(t), Some(c.fov.now()))
             }
             _ => (self.eye.position, self.target.position, None),

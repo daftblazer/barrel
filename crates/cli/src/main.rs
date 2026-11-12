@@ -2146,6 +2146,10 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                     C::Distance { value, relative, seconds } => format!("distance {} {value} over {seconds} s", rel(relative)),
                     C::Target { value, relative, seconds } => format!("target {} {value:?} over {seconds} s", rel(relative)),
                     C::DataEffect { on } => format!("the field's camera data {}", if on { "on (back to play)" } else { "off" }),
+                    C::Follow { character } => match character {
+                        Some(n) => format!("follows {}", names.get(n as usize).map_or("?", String::as_str)),
+                        None => "follows no one".to_string(),
+                    },
                 };
                 println!("{action:3} --- field camera: {what}");
             }

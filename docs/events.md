@@ -189,7 +189,12 @@ view is not in the command (40° is used for now).
 
 `t18/0x10` (`ECT_FIELDMAP_CAMERA_SET_FOLLOW_CHARA`, handler `0x1401e816d`) is `{character,
 on}`: the camera follows the character only when `on` is not 0, and otherwise follows nothing
-(`virtual +0x78(-1)`); the opening's `t18 0 0` turns following off, so `t20`'s target stands.
+(`virtual +0x78(-1)`); the opening's `t18 0 0` turns following off, so `t20`'s target stands. When on,
+the stage takes the followed character's position as the target (`t20`'s offset still added;
+`Stage::camera_follow`, `FieldCamera::eye_target_from`). Of 1,144 uses 589 turn following off;
+most of the others come as an event ends, following character 749, "Master Character" (the
+protagonist the player chose, a stand-in the stage does not resolve yet), handing the camera
+back to play; `EVENT_MM02_OP2_141` follows Escha from its first frame.
 
 **Where the eye is** (`0x1401e68f0`, settled from the code). The point looked at is the
 target plus the offset (+0xd0 and virtual +0x70). The eye is `(0, 0, distance)` (virtual +0x68)

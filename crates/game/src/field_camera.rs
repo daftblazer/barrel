@@ -64,6 +64,9 @@ pub enum Change {
     /// `t19`: the field's camera data on or off (events turn it off at their start and back on
     /// at their end, handing the camera back to play, so a scene never draws with it).
     DataEffect { on: bool },
+    /// `t18` (`ECT_FIELDMAP_CAMERA_SET_FOLLOW_CHARA`, `{character, on}`): the camera's target
+    /// follows that character (None: nothing; handler `0x1401e816d`).
+    Follow { character: Option<u32> },
 }
 
 pub const FIRST: u32 = 0x7410_0003;
@@ -71,6 +74,7 @@ pub const FIRST: u32 = 0x7410_0003;
 /// data steers the camera (`docs/events.md`, "The event camera").
 pub const DATA_EFFECT: u32 = 0x7410_0013;
 pub const ALL: u32 = 0x7410_0014;
+pub const FOLLOW: u32 = 0x7410_0012;
 
 impl Change {
     /// The change a field-camera command word makes, if it is one this model follows.
@@ -89,6 +93,7 @@ impl Change {
                 target: [unit(5)?, unit(6)?, unit(7)?],
                 offset: [unit(8)?, unit(9)?, unit(10)?],
             }),
+            FOLLOW => Some(Change::Follow { character: (*operands.get(1)? != 0).then(|| operands[0]) }),
             0x7410_0003 | 0x7410_0004 => {
                 let (value, seconds) = one(v(0)?, 1);
                 Some(Change::Yaw { value, relative, seconds })
@@ -144,6 +149,7 @@ impl FieldCamera {
             Change::Pitch { value, relative, seconds } => go(&mut self.pitch, value, relative, seconds),
             Change::Distance { value, relative, seconds } => go(&mut self.distance, value, relative, seconds),
             Change::DataEffect { on } => self.data_effect = on,
+            Change::Follow { .. } => {}
             Change::Target { value, relative, seconds } => {
                 for (t, v) in self.target.iter_mut().zip(value) {
                     go(t, v, relative, seconds);
@@ -163,7 +169,12 @@ impl FieldCamera {
     /// `0x1401e68f0` builds it (`(0, 0, distance)` turned by the angles `{x: -pitch, y: yaw}`,
     /// `0x14004fbd0`, row vectors).
     pub fn eye_target(&self) -> ([f32; 3], [f32; 3]) {
-        let at: [f32; 3] = std::array::from_fn(|i| self.target[i].now() + self.offset[i]);
+        self.eye_target_from(std::array::from_fn(|i| self.target[i].now()))
+    }
+
+    /// As [`FieldCamera::eye_target`], from another target (a followed character's position).
+    pub fn eye_target_from(&self, target: [f32; 3]) -> ([f32; 3], [f32; 3]) {
+        let at: [f32; 3] = std::array::from_fn(|i| target[i] + self.offset[i]);
         let (yaw, pitch) = (self.yaw.now().to_radians(), self.pitch.now().to_radians());
         let d = self.distance.now();
         let back = [yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos()];
