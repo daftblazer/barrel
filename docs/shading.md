@@ -88,3 +88,35 @@ rayleighRGB); the shader constants are filled through the engine's parameter-nam
 (`Scat` at `0x140953378`), whose code is not found yet. The pixel program's form is
 Henyey-Greenstein for Mie (`Scat[2].w` and `Scat[3].w` presumably -2g and 1 + g²) and
 `1 + cos² θ` for Rayleigh.
+
+## Fields (`MapSTD.g1s`: 36 vertex programs, pixel program 36)
+
+**Vertex program 0** (inputs: position, normal, vertex colour, one UV set; `$Globals`:
+`litDir[2]`, `litPos[4]`, `litCol`, `litAmb`, `litAtt`, `ambLit`, `vEye`, `cDiff`, `cAmb`,
+`cSpec`, the matrices, `fog`, `Scat`, and wind for swaying plants). Lighting is per vertex,
+Blinn-Phong with the specular power in `cSpec.w`:
+
+- the first directional light (`litDir[0]`, `litCol[0]`): diffuse `max(n·-L, 0)` and specular
+  `(n·h)^power`, kept apart (the pixel program shadows and lightmaps them);
+- the second directional light and the point lights (each within its range, attenuated by
+  `1 / (att.x + att.y·d + att.z·d²)`): diffuse and specular summed;
+- the ambient: `ambLit` plus each point light's `litAmb` times its attenuation.
+
+With `d = vertex colour × cDiff`: v6 = d × the first light's diffuse; v7 = its specular ×
+`cSpec`; v1 = ambient × vertex colour × `cAmb` + d × the other diffuse (alpha d.a); v8 = the
+other specular × `cSpec`. v3.xy is the world position through a projection (`mW2Pt` rows,
+the light texture's coordinates over the field), v3.zw the texture coordinates, v2 the shadow
+map's (`mW2S`), v4/v5 the fog colour and extinction as for characters.
+
+**Pixel program 36** (`sStage0` the colour, `sShadow` a shadow map, `sLit` the light texture;
+`nStageNum`, `vATest`, `scSM`, `scSM2`, `atColor`, `HdrRangeInv`): `lit` = `sLit` at v3.xy;
+`tex` = the colour at v3.zw (white when `nStageNum` is 0), alpha-tested; `s` = a 4×4
+filtered shadow-map lookup (16 taps averaged, then scaled by `max((atColor.x - 0.7) × 3.33,
+0)`); colour = `(v1 + s·lit·v6) × tex + (v8 + s·lit·v7)`; then the fog, `atColor` and the HDR
+range as for characters.
+
+So fields have a shadowed, light-textured "sun" (the first directional light) and an
+unshadowed fill (the second), point lights and ambient, all on the vertex colours. Still to
+pin down before the renderer can follow it: the `rot` convention of the field's `PARALLEL`
+lights, the fields' vertex colours (not read from the g1m yet), `cDiff`/`cAmb`/`cSpec` (the
+material's, presumably), and where the light texture and its projection come from.
