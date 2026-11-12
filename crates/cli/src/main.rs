@@ -3002,13 +3002,6 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
     if enemies.is_empty() {
         return Err("no field enemies in that area".into());
     }
-    let mut mobs = Vec::new();
-    for (k, e) in enemies.iter().enumerate() {
-        let mut c = barrel_game::creature::Creature::from_field_enemy(e, barrel_game::rng::Rng::from_state([1 + k as u32, 2, 3, 4]));
-        c.constants = constants.clone();
-        let scripts = (std::rc::Rc::new(load(&e.ai.0)?), std::rc::Rc::new(load(&e.ai.1)?));
-        mobs.push(barrel_game::field_ai::Mob::new(c, &utility, scripts).map_err(|e| e.to_string())?);
-    }
     // Each enemy's field radius: its group's first monster's Chara.xml row's CharaBase FMrad
     // (the enemy's own row, 418 to 420, is a stand-in "slot" whose model the group fills).
     let xml = |name: &str| read(&root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
@@ -3017,28 +3010,33 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
         _ => Vec::new(),
     };
     let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
-    let enemy_radius: Vec<f64> = enemies
-        .iter()
-        .map(|e| {
-            let m = groups.iter().find(|g| g.id == e.group).and_then(|g| g.monsters.first()).map(|m| m.0);
-            m.and_then(|m| radii.get(bd::MONSTER_CHARA_FIRST + m as usize)).copied().unwrap_or(50.0) as f64
-        })
-        .collect();
+    let radius = |e: &bd::FieldEnemy| {
+        let m = groups.iter().find(|g| g.id == e.group).and_then(|g| g.monsters.first()).map(|m| m.0);
+        m.and_then(|m| radii.get(bd::MONSTER_CHARA_FIRST + m as usize)).copied().unwrap_or(50.0) as f64
+    };
+    let mut cache: std::collections::HashMap<String, std::rc::Rc<Vec<barrel_game::squirrel::Stmt>>> = std::collections::HashMap::new();
+    let script = |name: &str| -> std::result::Result<std::rc::Rc<Vec<barrel_game::squirrel::Stmt>>, String> {
+        if let Some(s) = cache.get(name) {
+            return Ok(s.clone());
+        }
+        let s = std::rc::Rc::new(load(name).map_err(|e| e.to_string())?);
+        cache.insert(name.to_string(), s.clone());
+        Ok(s)
+    };
     let player_radius = radii.first().copied().unwrap_or(48.0) as f64;
-    println!("radii: player {player_radius}, enemies {enemy_radius:?}");
-    let start = mobs[0].creature.position;
+    let mut field = barrel_game::field_ai::Field::new(&enemies, &constants, &utility, script, radius, player_radius)?;
+    println!("radii: player {player_radius}, enemies {:?}", field.radii);
+    let start = field.mobs[0].creature.position;
     let mut player = [start[0] + 1500.0, start[1], start[2]];
     let facing = -std::f64::consts::FRAC_PI_2;
-    let mut last: Vec<String> = vec![String::new(); mobs.len()];
-    'frames: for f in 0..frames {
+    let mut last: Vec<String> = vec![String::new(); field.mobs.len()];
+    for f in 0..frames {
         player[0] -= 200.0 / 60.0;
-        let placed: Vec<([f64; 3], f64)> = mobs.iter().zip(&enemy_radius).map(|(m, &r)| (m.creature.position, r)).collect();
-        if let Some(k) = barrel_game::encounter::touched(player, player_radius, &placed) {
-            println!("{:6.2} s  #{k} touches the player at ({:.0}, {:.0}): encounter group {}", f as f64 / 60.0, player[0], player[2], enemies[k].group);
-            break 'frames;
+        if let Some(t) = field.step(player, facing, 1.0 / 60.0).map_err(|e| format!("frame {f}: {e}"))? {
+            println!("{:6.2} s  #{} touches the player at ({:.0}, {:.0}): encounter group {}", f as f64 / 60.0, t.enemy, player[0], player[2], t.group);
+            break;
         }
-        for (k, m) in mobs.iter_mut().enumerate() {
-            m.tick(player, facing, 1.0 / 60.0).map_err(|e| format!("enemy {k}, frame {f}: {e}"))?;
+        for (k, m) in field.mobs.iter().enumerate() {
             let c = &m.creature;
             let motion = c.motion.and_then(|v| motions.get(v as usize)).map_or("-", |v| v.as_str());
             let now = format!("{} state {} motion {motion}", if c.aware { "aware" } else { "idle " }, c.state);
