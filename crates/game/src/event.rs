@@ -35,6 +35,9 @@ pub const FIELD_CHANGE: u32 = 0x7100_0002;
 pub const FIELD_CHANGE_KEEP_BGM: u32 = 0x7100_000c;
 /// `q5` (`ECT_FIELDMAP_CHARA_DELETE`): `{character}`.
 pub const FIELD_CHARA_DELETE: u32 = 0x7100_0005;
+/// `q6` (`ECT_FIELDMAP_CHARA_DELETE_ALL`): every field character is removed (an action usually
+/// starts with it before placing the scene's cast).
+pub const FIELD_CHARA_DELETE_ALL: u32 = 0x7100_0006;
 /// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
 pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 /// `u31` (`ECT_EVENT_VOICE_PLAY`): `{clip}`, a voice clip number (`docs/formats.md`, "Voices").
@@ -107,6 +110,8 @@ pub enum Step<'a> {
     FieldChange { action: usize, map: u32 },
     /// A field character is removed (`q5`, `ECT_FIELDMAP_CHARA_DELETE`, `{character}`).
     Remove { action: usize, character: u32 },
+    /// Every field character is removed (`q6`).
+    RemoveAll { action: usize },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
     Voice { action: usize, character: Option<u32>, clip: u32 },
     /// A screen effect starts (`u13`): `kind` (`docs/events.md`, "Screen effects"), its
@@ -222,6 +227,7 @@ impl<'a> Player<'a> {
             }
             (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
             (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),
+            (FIELD_CHARA_DELETE_ALL, _) => out.push(Step::RemoveAll { action }),
             (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
@@ -459,6 +465,7 @@ mod tests {
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::FieldCamera { change, .. } => format!("field camera {change:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
+                Step::RemoveAll { .. } => "everyone removed".to_string(),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),

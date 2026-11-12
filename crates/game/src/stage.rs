@@ -270,6 +270,7 @@ impl Stage {
                     }
                 }
             }
+            Step::RemoveAll { .. } => self.characters.clear(),
             Step::Remove { character, .. } => {
                 self.characters.remove(character);
             }
