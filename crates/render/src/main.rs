@@ -1485,12 +1485,12 @@ fn main() -> Result<()> {
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            // N (square) or WxH, at most 1280 either way.
+            // N (square) or WxH, up to 8192 either way (4K, ultrawide 3440×1440 and 5120×1440, 8K wide).
             "--size" => {
                 let v = it.next().ok_or("--size N|WxH")?;
                 let (w, h) = v.split_once('x').unwrap_or((v, v));
-                size = w.parse::<u32>()?.clamp(64, 1280);
-                size_h = h.parse::<u32>()?.clamp(64, 1280);
+                size = w.parse::<u32>()?.clamp(64, 8192);
+                size_h = h.parse::<u32>()?.clamp(64, 8192);
             }
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,

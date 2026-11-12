@@ -128,6 +128,14 @@ camera gives zero. The viewer's seek to `--at` falls between its first two frame
 temporal methods have to treat as a cut (they drop their history there). With motion off the
 frame is exactly as before.
 
+**Wide screens.** The projection keeps the vertical field of view and widens the horizontal
+one with the aspect, so 21:9 (3440×1440) and 32:9 (5120×1440) show more to the sides without
+stretching (`barrel-view --size` takes up to 8192 either way; the first opening at 5120×1440
+with 4× MSAA renders in about 0.6 s offscreen, 4K about the same). Event scenes were framed for
+16:9: at 32:9 the first opening's camera sees past the end of the room's set into the empty
+background on the right. Still to decide: fill such views (pillarbox events to the game's
+16:9, or extend sets), as a deliberate difference either way.
+
 **Settings.** `settings::RenderSettings` holds the scale, the upscaler (bilinear or FSR 1), the
 MSAA samples and the shadow map, with presets: `DESKTOP` (full size, no MSAA, the large shadow
 map: the renderer as it was), `DESKTOP_HIGH` (4× MSAA) and `HANDHELD` (three-quarter scale
