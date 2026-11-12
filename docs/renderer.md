@@ -234,6 +234,10 @@ one starts, the last frame's scene image is copied into a "frozen" image before 
 is drawn, and the post pass lays the frozen frame over the live one, its weight falling from
 1 to 0 over the effect's seconds. The other kinds are kept on the stage but not drawn yet.
 
+**Fades.** The stage keeps the latest `u22` fade (preset, seconds, start); the viewer reads
+the presets from the executable and the post pass lays the colour between the preset's two
+over the scene by its opacity, under the text.
+
 **Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
 mirrored into render space); the terrain is not culled (it winds the other way and is only seen
 from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are

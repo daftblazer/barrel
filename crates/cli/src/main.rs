@@ -2033,6 +2033,7 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("      (wait for {who})");
             }
+            Step::Fade { action, preset, seconds } => println!("{action:3} --- fade (preset {preset}) over {seconds} s"),
             Step::ScreenEffect { action, kind, param, seconds } => {
                 const KINDS: [&str; 17] = [
                     "fade", "blur", "old sepia", "cross-fade", "battle start", "negative", "glow", "refraction", "?", "hue", "gamma", "colour",

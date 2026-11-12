@@ -1859,7 +1859,7 @@ fn main() -> Result<()> {
         vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
         vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
     ];
-    let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 8 }];
+    let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 32 }];
     let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
     let no_input = vk::PipelineVertexInputStateCreateInfo::default();
     let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
@@ -2121,6 +2121,13 @@ fn main() -> Result<()> {
     let mut last_frame = std::time::Instant::now();
     let mut stale = false;
     let mut paused = false;
+    // The fades' presets (u22), from the executable.
+    let fade_presets = event_spec
+        .as_ref()
+        .and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf))
+        .and_then(|r| std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok())
+        .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_formats::field_look::fade_presets(&pe, barrel_formats::field_look::FADE_PRESETS_EN)))
+        .unwrap_or_default();
     // The start time of the last screen effect seen (a new one starts a cross-fade).
     let mut last_effect: Option<f32> = None;
     for frame in 0..frames {
@@ -2372,6 +2379,17 @@ fn main() -> Result<()> {
         }
         _ => (false, 0.0),
     };
+    // The fade's colour over the screen now (u22): from the preset's first colour to its second.
+    let overlay: [f32; 4] = match player.as_ref().and_then(|p| p.0.stage.fade.map(|f| (f, p.0.stage.time))) {
+        Some(((preset, seconds, since), now)) => match fade_presets.get(preset as usize) {
+            Some((from, to)) => {
+                let t = if seconds > 0.0 { ((now - since) / seconds).clamp(0.0, 1.0) } else { 1.0 };
+                std::array::from_fn(|i| from[i] + (to[i] - from[i]) * t)
+            }
+            None => [0.0; 4],
+        },
+        None => [0.0; 4],
+    };
     // The current field's distant view follows the eye (plus the field's sphere offset).
     if let Some(Some(inst)) = sky_instances.get(current_field as usize) {
         let offset = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.sphere_offset).unwrap_or([0.0; 3]);
@@ -2536,9 +2554,12 @@ fn main() -> Result<()> {
         );
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[post_set], &[]);
-        let mut post_push = [0u8; 8];
+        let mut post_push = [0u8; 32];
         post_push[..4].copy_from_slice(&rate.to_le_bytes());
-        post_push[4..].copy_from_slice(&frozen_weight.to_le_bytes());
+        post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
+        for (k, v) in overlay.iter().enumerate() {
+            post_push[16 + 4 * k..20 + 4 * k].copy_from_slice(&v.to_le_bytes());
+        }
         d.cmd_push_constants(cb, post_layout, vk::ShaderStageFlags::FRAGMENT, 0, &post_push);
         d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
         d.cmd_set_scissor(cb, 0, &[area]);

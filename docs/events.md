@@ -210,6 +210,16 @@ none). Their programs are the `.kps` packs in `Data/x64/PostEffect/pe_pack.elixi
 `EVENT_MM01_OP1_111`'s main action changes shots with `u13 -1 0 50 3` ... `u14`: a half-second
 cross-fade from the last shot to the new one.
 
+**Fades** (`u22`, `ECT_EVENT_CONTRAST_SET_MIX`, 3,159 uses). The command goes to the `Contrast`
+objects (vtable `0x1407275f8`; virtual +0x20 `0x14003d3f0`): `{id, preset, hundredths of a
+second}`, the id matching the object's +0x58 (1 in the story events). `0x14003ce20` takes
+preset `preset` (0 to 20) from the table at `0x1407272b0`, 32 bytes each: two colours with
+opacity, the overlay's start and end, which it moves between over the time (0: at once).
+Preset 2 goes from clear to black (fade out), 3 from black to clear (fade in), 0 and 1 the
+same with white, 4 to 11 and 16 to 20 partial darkenings (0.5, 0.8), 12 to 15 coloured
+tints. `EVENT_MM01_OP1_111` starts black (2, at once) and fades in over a second (3, 100)
+on the workshop floor before the camera finds Escha and Clone.
+
 **Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
 second (the unit is read from the values below; that the frame time it counts down by is in
 seconds is not yet confirmed from the code): `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and

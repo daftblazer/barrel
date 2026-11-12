@@ -200,6 +200,8 @@ pub struct Stage {
     pub manual_camera: bool,
     /// The latest screen effect (`u13`): kind, parameter, seconds, and the stage time it started.
     pub screen_effect: Option<(u32, i32, f32, f32)>,
+    /// The latest fade (`u22`): preset, seconds, and the stage time it started.
+    pub fade: Option<(u32, f32, f32)>,
     /// The latest line ([`Stage::line_shown`] says whether it is still up).
     pub line: Option<Line>,
     /// How long a line stays up, for playback nobody reads along with: the reading time the
@@ -311,6 +313,7 @@ impl Stage {
                 b.mover = Mover::new(b.position, to, movement, *extra);
             }
             Step::FieldChange { map, .. } => self.field = Some(*map),
+            Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
             Step::ScreenEffect { kind, param, seconds, .. } => self.screen_effect = Some((*kind, *param, *seconds, self.time)),
             Step::FieldCamera { change, .. } => {
                 match self.field_camera.as_mut() {

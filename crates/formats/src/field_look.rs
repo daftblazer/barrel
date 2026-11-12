@@ -61,6 +61,24 @@ pub struct FieldLook {
 /// field name, u64 set file name, f32 × 4 (not read)}`. Indoor fields have `set-black`.
 pub const SKY_SETS_EN: u64 = 0x1407_6eff0;
 
+/// The screen fades' presets (`u22`, `ECT_EVENT_CONTRAST_SET_MIX`): 21 pairs of colours (with
+/// opacity) a fade goes from and to, at `0x1407272b0` in the English executable
+/// (`0x14003ce20` picks one; preset 2 fades to black, 3 back from it, 0 and 1 the same with
+/// white).
+pub const FADE_PRESETS_EN: u64 = 0x1407_272b0;
+
+pub fn fade_presets(pe: &crate::pe::Pe, table: u64) -> Vec<([f32; 4], [f32; 4])> {
+    let Some(at) = pe.offset(table) else { return Vec::new() };
+    let f = |o: usize| pe.data.get(o..o + 4).map(|b| f32::from_le_bytes(b.try_into().unwrap()));
+    (0..21)
+        .map_while(|k| {
+            let r = at + 32 * k;
+            let v: Vec<f32> = (0..8).map(|i| f(r + 4 * i)).collect::<Option<_>>()?;
+            Some(([v[0], v[1], v[2], v[3]], [v[4], v[5], v[6], v[7]]))
+        })
+        .collect()
+}
+
 pub fn sky_sets(pe: &crate::pe::Pe, table: u64) -> Vec<(String, String)> {
     let d = pe.data;
     let Some(at) = pe.offset(table) else { return Vec::new() };
