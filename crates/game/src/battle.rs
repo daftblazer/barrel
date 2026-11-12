@@ -87,6 +87,29 @@ pub fn encounter_monsters(group: &barrel_formats::battle_data::EncounterGroup, r
     out
 }
 
+/// Where the battle puts the monsters it places itself (`0x1401a3d00`; those whose setup
+/// position is (0, -1, 0)). They go largest first (`+0x358`; ties keep their setup order here,
+/// where the game's sort may not); the first stands at the centre, each other at a rolled angle
+/// (0 to 360°) and distance (200 plus 0 to 100 × 2): (d sin θ, 0, d cos θ). Each also gets a
+/// sector, its angle / 120 (the first's angle counts as 180). Returns, per monster in setup
+/// order, its spot and sector. The game then nudges each spot (`0x1401b53b0`, not read yet).
+pub fn scatter(sizes: &[f32], rng: &mut crate::rng::Rng) -> Vec<([f32; 3], i32)> {
+    let mut order: Vec<usize> = (0..sizes.len()).collect();
+    order.sort_by(|&a, &b| sizes[b].total_cmp(&sizes[a]));
+    let mut out = vec![([0.0; 3], 0); sizes.len()];
+    for (k, &i) in order.iter().enumerate() {
+        out[i] = if k == 0 {
+            ([0.0; 3], 180 / 120)
+        } else {
+            let angle = rng.range(0, 360);
+            let distance = 200.0 + rng.range(0, 100) as f32 * 200.0 / 100.0;
+            let t = (angle as f32).to_radians();
+            ([distance * t.sin(), 0.0, distance * t.cos()], angle / 120)
+        };
+    }
+    out
+}
+
 pub fn death_blocked(states: &[TimedState], immune: bool) -> bool {
     immune || states.iter().any(|s| s.state == 0x50)
 }
@@ -957,5 +980,18 @@ mod encounter_tests {
         // A count above the slots' sum stops at the sum.
         let g = EncounterGroup { count: (5, 5), monsters: vec![(1, 1), (2, 2)], ..g };
         assert_eq!(encounter_monsters(&g, &mut rng), [1, 2, 2]);
+    }
+
+    #[test]
+    fn monsters_scatter_round_the_largest() {
+        let mut rng = crate::rng::Rng::seeded(7);
+        let spots = scatter(&[1.0, 3.0, 2.0], &mut rng);
+        // The largest (second) at the centre, sector 1.
+        assert_eq!(spots[1], ([0.0; 3], 1));
+        for (k, (p, sector)) in spots.iter().enumerate().filter(|&(k, _)| k != 1) {
+            let d = (p[0] * p[0] + p[2] * p[2]).sqrt();
+            assert!((200.0..=400.01).contains(&d), "{k}: {d}");
+            assert!((0..=3).contains(sector) && p[1] == 0.0);
+        }
     }
 }

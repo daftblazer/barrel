@@ -781,8 +781,20 @@ enemy whose +0x20 is 1 is marked (+0x51) to fall to the strike without a battle.
 the script macro `wandHitEffect` (Escha) or `swordHitEffect` (Logy) by the chosen hero
 (`0x14035ebb0`), with the target and that mark (`0x140122170`).
 
-Still to read: where the field enemy entries come from, and the formation's places (how the
-battle arranges fighters whose position is (0, -1, 0)).
+**The formation** (`0x1401a3d00`, after the setup's fighters are made; a monster whose setup y
+is below 0 keeps no home spot of its own, `0x14019ddd0`). Everyone is first parked at
+(-100000, 0, 0). The monsters (fighter list 7) are sorted largest first (`+0x358`, comparator
+`0x1401a4a20`); the first stands at the centre, each other at an angle rolled from 0 to 360
+(degrees) and a distance of 200 plus a roll from 0 to 100, times 2: (d sin θ, 0, d cos θ), the
+angle rolled before the distance. Each spot then goes through `0x1401b53b0` (a nudge, not read
+yet) and becomes the monster's home (+0x3d8). Each monster also gets a sector, its angle / 120
+(+0x394; the centre one's angle counts as 180, so sector 1; an angle of 360 gives 3, as the game
+has it). The party (list 6) is not scattered: each member's sector is its index (+0x74) mod 3
+(+0x398) and its spot comes from the sector (`0x1401b0b40`, `0x1401b0df0`, `0x1401b0e30`):
+the game's "three positions around the enemy", front, side and back. `battle::scatter` does the
+monsters' part.
+
+Still to read: where the field enemy entries come from, the nudge, and the party's sector spots.
 
 ### A first duel
 
