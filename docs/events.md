@@ -737,7 +737,7 @@ body, over every event in Escha & Logy DX. 232 of the 238 commands are followed 
 number of words every time, which gives their operand count. The 6 that vary are listed
 with each count seen.
 
-The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` are in no switch found. The other groups' blanks were filled the same way, from every jump-table switch over command words in the executable (a range check, then a table of 4-byte offsets): the `q` commands' handlers are the field character listener and the field map's event object (`nspFM::clsFMWorldEvent`, vtable `0x1408f1390`, its slot 8 at `0x14028a700`, the lighting commands `q42` to `q57`), the `r` commands' `GameModeBattle` (`0x1401a0e90`, called from its slots 5 and 6), the `u` commands' `Event` itself (slot 8, `0x140050fa0`), `B3Balloon` and `IpuGallery`. Only `t1/0x30`, `t2/0x30` (operand prefixes), `u1/0x10` and `u6/0x40` are left without one.
+The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` fall to the default case of both character switches. The other groups' blanks were filled the same way, from every jump-table switch over command words in the executable (a range check, then a table of 4-byte offsets): the `q` commands' handlers are the field character listener and the field map's event object (`nspFM::clsFMWorldEvent`, vtable `0x1408f1390`, its slot 8 at `0x14028a700`, the lighting commands `q42` to `q57`), the `r` commands' `GameModeBattle` (`0x1401a0e90`, called from its slots 5 and 6), the `u` commands' `Event` itself (slot 8, `0x140050fa0`), `B3Balloon` and `IpuGallery`. Only `t1/0x30`, `t2/0x30` (operand prefixes), `u1/0x10` and `u6/0x40` are left without one.
 
 | Word | Short | Name | Handled by | Uses | Words after it (count) |
 |---|---|---|---|---|---|
@@ -847,8 +847,8 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `73000045` | `s69` | ECT_CHARA_NODECHARA_DETACHCHILD | EventExecChara | 8 | 2 (8) |
 | `73000046` | `s70` | ECT_CHARA_NODECHARA_DETACH | EventExecChara | 259 | 1 (259) |
 | `73000047` | `s71` | ECT_CHARA_SET_DISP | EventExecChara | 31 | 2 (31) |
-| `73000050` | `s80` | ECT_CHARA_SET_FLAG | (no handler found) | 6 | 3 (6) |
-| `73000051` | `s81` | ECT_CHARA_SET_PROGRAM_MOTION_WAIT | (no handler found) | 41 | 1 (41) |
+| `73000050` | `s80` | ECT_CHARA_SET_FLAG | none: the default case of both character switches (`0x1401efea0`'s table at RVA `0x1f2540`, `0x1401ddb70`'s at `0x1de210`), so presumably ignored | 6 | 3 (6) |
+| `73000051` | `s81` | ECT_CHARA_SET_PROGRAM_MOTION_WAIT | none, as `s80`: presumably ignored, so its wait does not happen | 41 | 1 (41) |
 | `73000053` | `s83` | ECT_CHARA_MULTI_MOTION_LOOP_CLEAR | EventExecChara | 1 | 1 (1) |
 | `73000054` | `s84` |  | EventExecChara | 405 | 7 (405) |
 | `73000055` | `s85` | ECT_CHARA_ROT_SET_COPY_TARGET_ALL | EventExecChara | 11 | 7 (11) |
