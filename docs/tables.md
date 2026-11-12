@@ -1674,8 +1674,9 @@ otherwise it takes the first empty slot within the limit, with the whole count w
 or with a count of 1 there and in each following empty slot, one per copy, when it does not.
 Units without a serial get the next (`0x14035cc30`: the counter at `0x14107c4c4`, saved as
 `item/ID`, given out then moved on by one, back to 0x3fff after 0x7fff), in lists of kinds 0
-to 4, 8 and 10; the item is then marked known (`0x140369840`, `0x140369520`).
-`barrel_game::inventory`.
+to 4, 8 and 10; the item is then marked known (`0x140369840`, `0x140369520`). Taking out
+(`0x14029f6f0`) moves the items after it up one and empties the last, so a list stays packed
+from its start. `barrel_game::inventory`.
 
 ## Monsters
 

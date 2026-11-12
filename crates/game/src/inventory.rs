@@ -98,6 +98,21 @@ impl ItemList {
     }
 }
 
+impl ItemList {
+    /// Takes out the item in slot `index` (`0x14029f6f0`): those after it move up one and the
+    /// last taken slot is emptied, so a list stays packed from its start. `None` past the items.
+    pub fn remove(&mut self, index: usize) -> Option<ItemUnit> {
+        let count = self.count();
+        if index >= count {
+            return None;
+        }
+        let taken = self.slots[index];
+        self.slots.copy_within(index + 1..count, index);
+        self.slots[count - 1] = None;
+        taken
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +136,18 @@ mod tests {
         let serials_given: Vec<u16> = basket.slots[..3].iter().map(|s| s.unwrap().serial).collect();
         assert_eq!(serials_given, vec![101, 102, 103]);
         assert_eq!(basket.room(), 57);
+    }
+
+    #[test]
+    fn taking_out_keeps_the_list_packed() {
+        let mut serials = Serials(1);
+        let mut basket = ItemList::new(0, 120);
+        for item in [10, 11, 12] {
+            basket.add(unit(item), 1, false, &mut serials);
+        }
+        assert_eq!(basket.remove(0).map(|u| u.item), Some(10));
+        assert_eq!(basket.slots[..3].iter().map(|s| s.map(|u| u.item)).collect::<Vec<_>>(), vec![Some(11), Some(12), None]);
+        assert_eq!(basket.remove(5), None);
     }
 
     #[test]
