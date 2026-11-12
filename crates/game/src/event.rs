@@ -30,9 +30,16 @@ pub const MARK_EVENT: u32 = 0x7500_0024;
 pub const SET_EVENT_FLAG: u32 = 0x7500_0022;
 /// `u38` (0x75000026, `{trophy}`): unlocks a Steam achievement once (`0x140168390`: the
 /// `TROPHY_*` table at `0x140d5fcf8`, 0x198 bytes a row, through the user-stats interface's
-/// `SetAchievement` and `StoreStats`). Barrel leaves it out on purpose: it never touches the
-/// player's Steam account.
+/// `SetAchievement` and `StoreStats`). Barrel leaves it out on purpose while it is being built
+/// and tested (it never touches the player's Steam account); a finished engine may offer it as
+/// an option.
 pub const TROPHY: u32 = 0x7500_0026;
+/// `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): binds a variable character slot
+/// (10028 ...) to a `Chara.xml` row (most often the position markers 590 to 603); commands then
+/// name the character by either (6,736 uses, 34 slots, 54 rows over the events).
+pub const SLOT_SET: u32 = 0x7430_0002;
+/// `t1/0x30` (`ECT_VARIINDEX_INDEX_START`): starts the bindings (no operands).
+pub const SLOT_START: u32 = 0x7430_0001;
 /// `p3` (`ECT_MACRO_CHARA_WAIT`): wait for a character (its number).
 pub const CHARA_WAIT: u32 = 0x7000_0003;
 /// `s3` (`ECT_CHARA_TIME_WAIT`): a character waits, `{character, hundredths}`.
@@ -290,6 +297,9 @@ pub struct Player<'a> {
     reading: Option<fn(&str) -> f32>,
     /// The motions' lengths for `s6`; without them `s6` takes no time.
     motion_length: Option<MotionLength<'a>>,
+    /// The variable slots `t2/0x30` binds (slot number, 10000 and up, to a `Chara.xml` row):
+    /// commands may name a character by its slot.
+    slots: HashMap<u32, u32>,
 }
 
 /// A reading time for unattended playback (not the game's: it waits for a button): one
@@ -313,7 +323,10 @@ impl<'a> Player<'a> {
         if let Some(s) = started.first_mut() {
             *s = true;
         }
-        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None })
+        // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
+        // setup binds them once, before anything names them).
+        let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots })
     }
 
     /// Holds each line for `time(text)` seconds in [`Player::schedule`] (the action showing
@@ -341,6 +354,19 @@ impl<'a> Player<'a> {
     }
 
     /// The name the executable gives a command word, if any.
+    /// A position whose anchor names a thing by a bound slot, read with the slot's row.
+    fn slot_position(&self, mut p: crate::camera::Position) -> crate::camera::Position {
+        if let crate::camera::Anchor::Thing { id, .. } = &mut p.anchor {
+            *id = self.slot(*id);
+        }
+        p
+    }
+
+    /// A character number with a bound slot (`SLOT_SET`) read as its row.
+    fn slot(&self, character: u32) -> u32 {
+        self.slots.get(&character).copied().unwrap_or(character)
+    }
+
     pub fn name(&self, word: u32) -> Option<&'static str> {
         self.names.get(&word).copied()
     }
@@ -361,32 +387,32 @@ impl<'a> Player<'a> {
             (SET_EVENT_FLAG, [flag, value, ..]) => out.push(Step::EventFlag { flag: *flag, value: *value as i32 }),
             (TROPHY, [trophy, ..]) => out.push(Step::Trophy { trophy: *trophy }),
             (MARK_EVENT, [event, rest @ ..]) => out.push(Step::MarkEvent { event: *event, seen: rest.first().is_some_and(|&v| v != 0) }),
-            (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: *character }),
+            (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: self.slot(*character) }),
             (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
-                out.push(Step::CharacterWait { action, character: *character, seconds: f(*hundredths) / 100.0 })
+                out.push(Step::CharacterWait { action, character: self.slot(*character), seconds: f(*hundredths) / 100.0 })
             }
             (CHARA_POS_SET, [character, _, _, _, x, y, z, ..]) => {
-                out.push(Step::Place { action, character: *character, position: [f(*x), f(*y), f(*z)] })
+                out.push(Step::Place { action, character: self.slot(*character), position: [f(*x), f(*y), f(*z)] })
             }
             (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
                 let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, division: None });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: None });
             }
             (CHARA_MOTION_SET, [character, motion, division, hundredths, ..]) => {
                 let blend = f(*hundredths) / 100.0;
-                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: false, division: Some(*division) });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: false, division: Some(*division) });
             }
-            (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: *character, division: *division }),
+            (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: self.slot(*character), division: *division }),
             (CHARA_MOTION_AUTO_LOOP, [character, motion, division, rest @ ..]) => {
                 let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, division: Some(*division) });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division) });
             }
             (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
-            (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),
+            (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: self.slot(*character) }),
             (FIELD_CHARA_DELETE_ALL, _) => out.push(Step::RemoveAll { action }),
             (FIELD_CHARA_COLLISION, [character, rest @ ..]) => out.push(Step::Collision {
                 action,
-                character: *character,
+                character: self.slot(*character),
                 solid: rest.first().is_none_or(|&v| v != 0),
                 flag: rest.get(1).is_none_or(|&v| v != 0),
             }),
@@ -400,12 +426,12 @@ impl<'a> Player<'a> {
             (SOUND_BG_FADEOUT, [hundredths, ..]) => out.push(Step::Music { action, track: None, volume: 0.0, fade: *hundredths as f32 / 100.0 }),
             (CHARA_HEAD_GESTURE, [character, segment, rest @ ..]) => out.push(Step::HeadGesture {
                 action,
-                character: *character,
+                character: self.slot(*character),
                 segment: *segment as i32,
                 rate: rest.first().map_or(1.0, |&v| v as i32 as f32 / 100.0),
                 weight: rest.get(1).map_or(1.0, |&v| v as i32 as f32 / 100.0),
             }),
-            (CHARA_HEAD_STOP, [character, ..]) => out.push(Step::HeadStop { action, character: *character }),
+            (CHARA_HEAD_STOP, [character, ..]) => out.push(Step::HeadStop { action, character: self.slot(*character) }),
             (STILL_SHOW, [picture, ..]) => out.push(Step::Still { action, picture: *picture, seconds: 0.0 }),
             (STILL_FADE, [picture, rest @ ..]) => {
                 out.push(Step::Still { action, picture: *picture, seconds: rest.first().map_or(0.0, |&h| h as i32 as f32 / 100.0) })
@@ -435,33 +461,44 @@ impl<'a> Player<'a> {
                 }
             }
             (FIELD_CHARA_ADD, [character, _, _, _, x, y, z, _, angle, ..]) => {
-                out.push(Step::Place { action, character: *character, position: [f(*x), f(*y), f(*z)] });
-                out.push(Step::Turn { action, character: *character, rotation: [0.0, f(*angle).to_radians(), 0.0] });
+                out.push(Step::Place { action, character: self.slot(*character), position: [f(*x), f(*y), f(*z)] });
+                out.push(Step::Turn { action, character: self.slot(*character), rotation: [0.0, f(*angle).to_radians(), 0.0] });
             }
             (CHARA_ROT_SET, [character, x, y, z, ..]) => {
                 let rotation = [*x, *y, *z].map(|v| (v as i32 as f32).to_radians());
-                out.push(Step::Turn { action, character: *character, rotation })
+                out.push(Step::Turn { action, character: self.slot(*character), rotation })
             }
             (CHARA_ROT_MOVE, [character, x, y, z, hundredths, curve, ..]) => {
                 let rotation = [*x, *y, *z].map(|v| (v as i32 as f32).to_radians());
                 let seconds = *hundredths as i32 as f32 / 100.0;
-                out.push(Step::TurnOver { action, character: *character, rotation, seconds, curve: *curve })
+                out.push(Step::TurnOver { action, character: self.slot(*character), rotation, seconds, curve: *curve })
             }
             (CHARA_ROT_SET_TARGET, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
                 let (toward, _) = crate::camera::Position::read(rest).unwrap();
-                out.push(Step::Face { action, character: *character, toward })
+                out.push(Step::Face { action, character: self.slot(*character), toward: self.slot_position(toward) })
             }
             (CHARA_MOVE, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
                 let (extra, movement) = crate::camera::Move::read_with_extra(rest).unwrap();
-                out.push(Step::CharacterMove { action, character: *character, extra, movement })
+                let mut movement = movement;
+                *movement.to_mut() = self.slot_position(*movement.to_mut());
+                out.push(Step::CharacterMove { action, character: self.slot(*character), extra, movement })
             }
             (word, operands) if crate::field_camera::Change::read(word, operands).is_some() => {
                 out.push(Step::FieldCamera { action, change: crate::field_camera::Change::read(word, operands).unwrap() })
             }
             (word, operands) if !crate::camera::changes(word, operands).is_empty() => {
-                out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| Step::Camera { action, part, change }))
+                out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| {
+                    let change = match change {
+                        crate::camera::Change::Set(p) => crate::camera::Change::Set(self.slot_position(p)),
+                        crate::camera::Change::Move(mut m) => {
+                            *m.to_mut() = self.slot_position(*m.to_mut());
+                            crate::camera::Change::Move(m)
+                        }
+                    };
+                    Step::Camera { action, part, change }
+                }))
             }
-            (word, _) if MARKERS.contains(&word) => {}
+            (word, _) if MARKERS.contains(&word) || word == SLOT_SET || word == SLOT_START => {}
             (word, operands) => out.push(Step::Command { action, word, name: self.name(word), operands }),
         }
         None

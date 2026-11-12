@@ -88,6 +88,13 @@ pub enum Move {
 }
 
 impl Move {
+    /// Where it goes.
+    pub fn to_mut(&mut self) -> &mut Position {
+        match self {
+            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Other { to, .. } => to,
+        }
+    }
+
     /// Reads `{position, type, ...}`.
     pub fn read(operands: &[u32]) -> Option<Move> {
         let (to, rest) = Position::read(operands)?;

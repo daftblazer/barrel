@@ -276,6 +276,16 @@ back to play, a fade in) to `u3 99` at the end: that part is reached some other 
 event's setup action (`u9`, start the setup with its preload `u2`, `u10`): taken to hold the
 event while it loads. They do nothing when run: the event handler's switch (`0x1400513b7` and on) has no case for group 0x40's `u8` to `u10` and its ready check (`0x140050d30`) passes them at once, so they only mark the script; `event::MARKERS` drops them (with `u8/0x40`, 134 uses).
 
+**Slots.** `t1/0x30` (`ECT_VARIINDEX_INDEX_START`) and `t2/0x30`
+(`ECT_VARIINDEX_INDEX_SETTING {slot, row}`) bind variable character slots (10028 to 10061) to
+`Chara.xml` rows, most often the position markers 590 to 603 (6,736 bindings over the events:
+34 slots, 54 rows); an event's setup binds them before anything names them, and later commands
+name the character by the slot or by the row, so one marker can appear under two numbers.
+`event::Player` reads every binding up front and gives the row for the slot wherever a command
+names a character: the one acting, the thing it faces or goes to, and the camera's anchors (in
+the openings, Escha and Logy face marker 590 where the script says 10028, and the camera aims
+at 611 and 616 for 10049 and 10054).
+
 **Waits and marks.** `u15` (no operands) waits 2 seconds (`0x140051412`, the constant at
 `0x14071c964`), as `u1` waits 0.3. `u36 {event, seen}` marks an event (its `EVENT_*` number)
 seen or not through `0x14035f480`, the record the save keeps (`docs/formats.md`, the events):
@@ -810,7 +820,7 @@ with each count seen.
 | `74200012` | `t18/0x20` |  | BucFrameGp | 3 | 1 (3) |
 | `74200013` | `t19/0x20` |  | BucFrameGp | 5 | 0 (5) |
 | `74300001` | `t1/0x30` | ECT_VARIINDEX_INDEX_START |  | 195 | 0 (195) |
-| `74300002` | `t2/0x30` | ECT_VARIINDEX_INDEX_SETTING |  | 6736 | 2 (6736) |
+| `74300002` | `t2/0x30` | ECT_VARIINDEX_INDEX_SETTING (slot to row, see Slots) |  | 6736 | 2 (6736) |
 | `75000001` | `u1` |  | Event | 596 | 0 (596) |
 | `75000002` | `u2` |  |  | 741 | 1 (741) |
 | `75000003` | `u3` |  |  | 1297 | 1 (1297) |
