@@ -22,19 +22,24 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod glow;
 mod present;
+mod shadow;
 mod text;
 mod window;
 
 const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
 const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
 const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
+const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
 const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 27 * 16;
+const LOOK_SIZE: u64 = 32 * 16;
+/// Half the side of the sun's shadow map square, in field units (calibrated against oracle
+/// frames; docs/renderer.md, "Shadows").
+const SHADOW_HALF: f32 = 1500.0;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 /// The scene's colour target: 8 bits a channel, as the game's (it draws at the HDR range's
@@ -1678,11 +1683,18 @@ fn main() -> Result<()> {
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+        // The sun's shadow map (binding 5).
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(5)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
     let inst_sizes = [
         vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 },
         vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 1 },
+        vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 },
     ];
     let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
     let inst_layouts = [instance_layout];
@@ -1693,6 +1705,11 @@ fn main() -> Result<()> {
     let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
     let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buf).offset(0).range(vk::WHOLE_SIZE)];
     let look_info = [vk::DescriptorBufferInfo::default().buffer(look_buf).offset(0).range(vk::WHOLE_SIZE)];
+    let shadow_target = shadow::ShadowTarget::new(&gpu)?;
+    let shadow_info = [vk::DescriptorImageInfo::default()
+        .sampler(shadow_target.sampler)
+        .image_view(shadow_target.view)
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
     unsafe {
         d.update_descriptor_sets(
             &[
@@ -1701,6 +1718,11 @@ fn main() -> Result<()> {
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(2).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&delta_info),
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(3).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&weight_info),
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(4).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&look_info),
+                vk::WriteDescriptorSet::default()
+                    .dst_set(instance_set)
+                    .dst_binding(5)
+                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                    .image_info(&shadow_info),
             ],
             &[],
         )
@@ -1901,6 +1923,22 @@ fn main() -> Result<()> {
     let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
     let outline_info = pipeline_info.rasterization_state(&outline_raster);
     let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
+
+    // The sun's shadow map pass: the same vertex shader from the sun, depth only (the alpha
+    // test kept), both faces, a little depth bias against acne.
+    let shadow_fs = module(SHADOW_FRAG)?;
+    let shadow_stages = [
+        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main"),
+        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(shadow_fs).name(c"main"),
+    ];
+    let shadow_raster = raster.cull_mode(vk::CullModeFlags::NONE).depth_bias_enable(true).depth_bias_constant_factor(1.5).depth_bias_slope_factor(2.0);
+    let shadow_blend = vk::PipelineColorBlendStateCreateInfo::default();
+    let shadow_info = pipeline_info
+        .stages(&shadow_stages)
+        .rasterization_state(&shadow_raster)
+        .color_blend_state(&shadow_blend)
+        .render_pass(shadow_target.pass);
+    let shadow_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[shadow_info], None).map_err(|(_, e)| e)?[0] };
 
     // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
     let (post_vs, post_fs) = (module(POST_VERT)?, module(POST_FRAG)?);
@@ -2624,6 +2662,22 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // The sun's shadow map (deliberately one square around the camera's target: the game's
+    // cascades are not read yet, docs/renderer.md "Shadows").
+    let sun_dir = field_looks
+        .get(current_field as usize)
+        .and_then(|l| l.as_ref())
+        .and_then(|l| {
+            l.lights.iter().find_map(|p| match *p {
+                barrel_formats::field_look::Light::Parallel { rot, .. } => {
+                    let (p, y) = (rot[0].to_radians(), rot[1].to_radians());
+Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
+                }
+                _ => None,
+            })
+        })
+        .unwrap_or(Vec3::NEG_Y);
+    let shadow_vp = shadow::sun_view_proj(target, sun_dir, SHADOW_HALF, 6000.0);
     // A cross-fade (u13 kind 3): the frame it starts on keeps the last frame as it was, then
     // the live scene fades in over it.
     let (freeze_now, frozen_weight) = match player.as_ref().and_then(|p| p.0.stage.screen_effect.map(|e| (e, p.0.stage.time))) {
@@ -2670,7 +2724,7 @@ fn main() -> Result<()> {
         });
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 27];
+        let mut look = [[0f32; 4]; 32];
         look[..5].copy_from_slice(&[m(c.light_dir), c.light_color, m(c.rim_light_dir), c.rim_light_color, [e.x, e.y, e.z, 1.0]]);
         // The field's first four point lights (metres to field units, x mirrored).
         let points = field_look.map_or(Vec::new(), |l| {
@@ -2704,6 +2758,15 @@ fn main() -> Result<()> {
             }
         }
         look[26] = field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]);
+        // The sun's shadow map: from the first directional light, over the camera's target.
+        // Off unless BARREL_SHADOWS is set: which models cast is not settled (with every model
+        // casting, the workshop's roof shades its whole floor; docs/renderer.md, "Shadows").
+        if !parallels.is_empty() && std::env::var("BARREL_SHADOWS").is_ok() {
+            for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
+                look[27 + k] = col;
+            }
+            look[31] = [1.0 / shadow::SIZE as f32, 1.0, 0.0, 0.0];
+        }
         for (k, (pos, color, ambient, att, range)) in points.iter().enumerate() {
             // The range in field units too (squared); the attenuation counts in field units.
             look[6 + k] = [-pos[0] * 100.0, pos[1] * 100.0, pos[2] * 100.0, (range * 100.0) * (range * 100.0)];
@@ -2728,6 +2791,37 @@ fn main() -> Result<()> {
             barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         } else if !frozen_ready {
             barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        }
+        // The sun's shadow map: every caster but the distant view, from the sun.
+        {
+            let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
+            let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow::SIZE, height: shadow::SIZE } };
+            d.cmd_begin_render_pass(
+                cb,
+                &vk::RenderPassBeginInfo::default().render_pass(shadow_target.pass).framebuffer(shadow_target.framebuffer).render_area(full).clear_values(&clear),
+                vk::SubpassContents::INLINE,
+            );
+            d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: shadow::SIZE as f32, height: shadow::SIZE as f32, min_depth: 0.0, max_depth: 1.0 }]);
+            d.cmd_set_scissor(cb, 0, &[full]);
+            d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
+            d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
+            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, shadow_pipeline);
+            let mut push = [0f32; 31];
+            push[..16].copy_from_slice(&shadow_vp.to_cols_array());
+            push[16] = alpha_cutoff;
+            let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+            d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+            for draw in draws.iter().filter(|d| !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
+                let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
+                let mut per_draw = [0u8; 8];
+                per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
+                per_draw[4..].copy_from_slice(&flags.to_le_bytes());
+                d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+            }
+            d.cmd_end_render_pass(cb);
         }
         let clear = [
             vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
@@ -2903,6 +2997,8 @@ fn main() -> Result<()> {
         d.destroy_sampler(post_sampler, None);
         d.destroy_render_pass(post_pass, None);
         d.destroy_pipeline(outline_pipeline, None);
+        d.destroy_pipeline(shadow_pipeline, None);
+        d.destroy_shader_module(shadow_fs, None);
         d.destroy_pipeline(sky_pipeline, None);
         d.destroy_pipeline(pipeline, None);
         d.destroy_pipeline_layout(pipeline_layout, None);
@@ -2932,6 +3028,9 @@ fn main() -> Result<()> {
         }
         d.destroy_buffer(look_buf, None);
         d.free_memory(look_mem, None);
+    }
+    shadow_target.destroy(&gpu);
+    unsafe {
         for (b, m) in [(instance_buf, instance_mem), (palette_buf, palette_mem), (delta_buf, delta_mem), (weight_buf, weight_mem)] {
             d.destroy_buffer(b, None);
             d.free_memory(m, None);

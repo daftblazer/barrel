@@ -258,6 +258,17 @@ and scales with the height, centred. Not yet as the game: the tag's slight tilt 
 and the small green fleur at the panel's lower right. `--size WxH` renders other shapes
 (1280x720 for comparing with oracle frames).
 
+**Shadows** (work in progress, off unless `BARREL_SHADOWS` is set). The sun's shadow map:
+one 2048² depth map from the field's first directional light, an orthographic square 3,000
+field units across around the camera's target (`shadow.rs`; the game's four cascades are
+not read: a deliberate difference meanwhile), every non-sky draw casting with the alpha
+test, and the field's models and terrain taking only the sun's part of their light through
+it, as `MapSTD` does (16 taps). Against the oracle frame of `EVENT_MM01_OP1_111` the shaded
+floor (centre, right) matches (61 against 65, 67 against 67) but the floor the game shows
+lit through the doorway is shaded too: whatever the sun's heading, the workshop's roof
+covers it, so the game cannot let every model cast. Which do (the materials whose shaders
+have a `*_shadowmap` variant in `shader.xml`?) is next.
+
 **Handedness.** The game's x is mirrored into render space (right-handed, like the vertices),
 and the projection mirrors clip-space x back, so the screen shows the scene left to right as
 the game does (checked against an oracle screenshot of `EVENT_MM01_OP1_111`'s first line:

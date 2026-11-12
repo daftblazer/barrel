@@ -30,6 +30,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 fill_dir;
     vec4 fill_color;
     vec4 ambient;
+    // The sun's shadow map: world (render space) to its clip space, and {texel size, on}.
+    mat4 shadow_vp;
+    vec4 shadow_info;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -38,6 +41,8 @@ layout(location = 2) in vec3 world;
 layout(location = 3) in vec3 scene_light;
 layout(location = 4) in vec3 field_light;
 layout(location = 5) in vec2 screen_uv;
+layout(location = 6) in vec3 sun_part;
+layout(set = 1, binding = 5) uniform sampler2DShadow shadow_map;
 layout(location = 0) out vec4 color;
 
 // The game's soft-light blend of a colour k over a, weighted by w (k first divided by its
@@ -51,11 +56,29 @@ vec3 soft_light(vec3 a, vec4 kw) {
     return mix(a, blended, kw.w);
 }
 
+// The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
+// and a half apart), 1 lit to 0 shadowed (atColor white: the full strength).
+float sun_shadow(vec3 p) {
+    if (look.shadow_info.y < 0.5) return 1.0;
+    vec4 c = look.shadow_vp * vec4(p, 1.0);
+    vec3 s = c.xyz / c.w;
+    vec2 at = s.xy * 0.5 + 0.5;
+    if (any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))) || s.z > 1.0) return 1.0;
+    float t = look.shadow_info.x, lit = 0.0;
+    for (int i = 0; i < 4; i++) {
+        vec2 o = vec2(float(i & 1) * 2.0 - 1.0, float(i >> 1) * 2.0 - 1.0) * t * 0.75;
+        for (int k = 0; k < 4; k++) {
+            vec2 q = vec2(float(k & 1), float(k >> 1)) * t * 0.5;
+            lit += texture(shadow_map, vec3(at + o + q, s.z));
+        }
+    }
+    return lit / 16.0;
+}
 void main() {
     vec4 c = texture(tex, uv);
     if ((pc.flags & 8u) != 0u) {
         // The distant view: unlit, blended by its alpha (clouds over the dome).
-        color = vec4(field_light * c.rgb * pc.params.w, c.a);
+        color = vec4((field_light + sun_part * sun_shadow(world)) * c.rgb * pc.params.w, c.a);
         return;
     }
     if (c.a < pc.params.x) discard;
@@ -63,7 +86,7 @@ void main() {
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the
         // light texture and shadows are not done yet, nor fog.
-        color = vec4(field_light * c.rgb * pc.params.w, 1.0);
+        color = vec4((field_light + sun_part * sun_shadow(world)) * c.rgb * pc.params.w, 1.0);
         return;
     }
     vec3 col;

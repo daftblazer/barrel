@@ -27,6 +27,8 @@ layout(location = 3) out vec3 scene_light;
 layout(location = 4) out vec3 field_light;
 // The outline texture's coordinates: the screen position over 5 (CharaFra*'s o1.zw).
 layout(location = 5) out vec2 screen_uv;
+// The sun's part of a field model's light, kept apart for its shadow (MapSTD's v6).
+layout(location = 6) out vec3 sun_part;
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 light_dir;
     vec4 light_color;
@@ -48,6 +50,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 fill_dir;
     vec4 fill_color;
     vec4 ambient;
+    // The sun's shadow map: world (render space) to its clip space, and {texel size, on}.
+    mat4 shadow_vp;
+    vec4 shadow_info;
 } look;
 void main() {
     Instance i = instances.inst[pc.instance];
@@ -97,10 +102,12 @@ void main() {
         }
     }
     vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
-    field_light = amb * in_color.rgb + in_color.rgb * diffuse + in_color.rgb * sun;
+    field_light = amb * in_color.rgb + in_color.rgb * diffuse;
+    sun_part = in_color.rgb * sun;
     // A distant view is not lit: its texture on its vertex colour.
     if ((pc.flags & 8u) != 0u) {
         field_light = in_color.rgb;
+        sun_part = vec3(0.0);
     }
     gl_Position = pc.view_proj * w;
     if ((pc.flags & 4u) != 0u) {

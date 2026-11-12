@@ -5,7 +5,7 @@ use std::process::Command;
 
 fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    for name in ["model.vert", "model.frag", "terrain.frag", "text.vert", "text.frag", "post.vert", "post.frag", "glow.frag"] {
+    for name in ["model.vert", "model.frag", "terrain.frag", "text.vert", "text.frag", "post.vert", "post.frag", "glow.frag", "shadow.frag"] {
         let src = PathBuf::from("shaders").join(name);
         println!("cargo:rerun-if-changed={}", src.display());
         let dst = out.join(format!("{name}.spv"));
