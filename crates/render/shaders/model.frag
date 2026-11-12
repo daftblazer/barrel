@@ -18,7 +18,7 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // x: the point lights' strength (atCharaPointLightStrength); y: how many point lights.
     vec4 misc;
     // Up to four point lights (render space, field units): position and range² (w), colour,
-    // attenuation {att0, att1, att2} per metre, and ambient.
+    // attenuation {att0, att1, att2} over field units, and ambient.
     vec4 point_pos[4];
     vec4 point_color[4];
     vec4 point_att[4];
@@ -57,7 +57,7 @@ void main() {
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the
         // light texture and shadows are not done yet, nor fog.
-        color = vec4(field_light * c.rgb, 1.0);
+        color = vec4(field_light * c.rgb * pc.params.w, 1.0);
         return;
     }
     // 1. The toon step on a half-Lambert term, toward the character light.
@@ -79,5 +79,6 @@ void main() {
     float w = max(max(L.r, L.g), L.b) * look.misc.x;
     col = clamp(col + w * (over - col), 0.0, 1.0);
     // (6. fog is not done yet; 7. atColor is 1 and the HDR range 1.)
-    color = vec4(col, 1.0);
+    // The scene is drawn at the HDR range's inverse (params.w), doubled back after.
+    color = vec4(col * pc.params.w, 1.0);
 }

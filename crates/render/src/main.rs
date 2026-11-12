@@ -36,6 +36,13 @@ const PUSH_INSTANCE: u32 = 112;
 const LOOK_SIZE: u64 = 27 * 16;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
+/// The scene's colour target: 8 bits a channel, as the game's (it draws at the HDR range's
+/// inverse and doubles the result after: `docs/shading.md`, "After the scene").
+const SCENE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+/// HdrRangeInv: the scene is drawn at half its brightness and doubled by the post pass.
+const HDR_RANGE_INV: f32 = 0.5;
+const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv"));
+const POST_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.frag.spv"));
 
 /// `FILE#N` is entry N of a container; a plain path is a loose file (Sophie 2 keeps its
 /// texture packs beside the model containers).
@@ -507,50 +514,76 @@ impl Scene {
 
 /// What a frame draws into besides the colour image: a depth image at the target's size and
 /// a framebuffer per colour image (one offscreen, or one per swapchain image).
+/// What the frames draw into, remade at a new size: the scene's colour (sampled by the post
+/// pass) and depth with their framebuffer, and one post framebuffer per output image (the
+/// offscreen image, or each swapchain image).
 struct Targets {
+    scene: vk::Image,
+    scene_memory: vk::DeviceMemory,
+    scene_view: vk::ImageView,
     depth: vk::Image,
     depth_memory: vk::DeviceMemory,
     depth_view: vk::ImageView,
+    scene_framebuffer: vk::Framebuffer,
     framebuffers: Vec<vk::Framebuffer>,
 }
 
 impl Targets {
-    fn new(gpu: &Gpu, render_pass: vk::RenderPass, colour: &[vk::ImageView], width: u32, height: u32) -> Result<Targets> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        gpu: &Gpu,
+        scene_pass: vk::RenderPass,
+        post_pass: vk::RenderPass,
+        output: &[vk::ImageView],
+        width: u32,
+        height: u32,
+        post_set: vk::DescriptorSet,
+        sampler: vk::Sampler,
+    ) -> Result<Targets> {
         let d = &gpu.device;
-        let (depth, depth_memory) = gpu.image(
-            &vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .format(DEPTH_FORMAT)
-                .extent(vk::Extent3D { width, height, depth: 1 })
-                .mip_levels(1)
-                .array_layers(1)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT),
-        )?;
-        let depth_view = unsafe {
+        let image = |format, usage| {
+            gpu.image(
+                &vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .format(format)
+                    .extent(vk::Extent3D { width, height, depth: 1 })
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .usage(usage),
+            )
+        };
+        let view = |image, format, aspect| unsafe {
             d.create_image_view(
                 &vk::ImageViewCreateInfo::default()
-                    .image(depth)
+                    .image(image)
                     .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(DEPTH_FORMAT)
-                    .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::DEPTH).level_count(1).layer_count(1)),
+                    .format(format)
+                    .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(aspect).level_count(1).layer_count(1)),
                 None,
-            )?
+            )
         };
-        let framebuffers = colour
-            .iter()
-            .map(|&view| unsafe {
-                let views = [view, depth_view];
-                d.create_framebuffer(
-                    &vk::FramebufferCreateInfo::default().render_pass(render_pass).attachments(&views).width(width).height(height).layers(1),
-                    None,
-                )
-            })
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let (scene, scene_memory) = image(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+        let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
+        let (depth, depth_memory) = image(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)?;
+        let depth_view = view(depth, DEPTH_FORMAT, vk::ImageAspectFlags::DEPTH)?;
+        let framebuffer = |pass, views: &[vk::ImageView]| unsafe {
+            d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(width).height(height).layers(1), None)
+        };
+        let scene_framebuffer = framebuffer(scene_pass, &[scene_view, depth_view])?;
+        let framebuffers = output.iter().map(|&v| framebuffer(post_pass, &[v])).collect::<std::result::Result<Vec<_>, _>>()?;
         if framebuffers.is_empty() {
             return Err("no target to draw into".into());
         }
-        Ok(Targets { depth, depth_memory, depth_view, framebuffers })
+        // The post pass samples the new scene image.
+        let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(scene_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        unsafe {
+            d.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)],
+                &[],
+            )
+        };
+        Ok(Targets { scene, scene_memory, scene_view, depth, depth_memory, depth_view, scene_framebuffer, framebuffers })
     }
 
     fn destroy(&mut self, gpu: &Gpu) {
@@ -560,6 +593,10 @@ impl Targets {
             for fb in self.framebuffers.drain(..) {
                 d.destroy_framebuffer(fb, None);
             }
+            d.destroy_framebuffer(self.scene_framebuffer, None);
+            d.destroy_image_view(self.scene_view, None);
+            d.destroy_image(self.scene, None);
+            d.free_memory(self.scene_memory, None);
             d.destroy_image_view(self.depth_view, None);
             d.destroy_image(self.depth, None);
             d.free_memory(self.depth_memory, None);
@@ -1549,14 +1586,15 @@ fn main() -> Result<()> {
     };
     let color_view = offscreen.map(|(color, _)| view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)).transpose()?;
 
+    // The scene pass: its colour ends ready to be sampled by the post pass.
     let attachments = [
         vk::AttachmentDescription::default()
-            .format(color_format)
+            .format(SCENE_FORMAT)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(if presenter.is_some() { vk::ImageLayout::PRESENT_SRC_KHR } else { vk::ImageLayout::TRANSFER_SRC_OPTIMAL }),
+            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
         vk::AttachmentDescription::default()
             .format(DEPTH_FORMAT)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -1571,7 +1609,49 @@ fn main() -> Result<()> {
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(&color_ref)
         .depth_stencil_attachment(&depth_ref)];
-    let render_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachments).subpasses(&subpass), None)? };
+    // The post pass reads what the scene pass wrote.
+    let scene_done = [vk::SubpassDependency::default()
+        .src_subpass(0)
+        .dst_subpass(vk::SUBPASS_EXTERNAL)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
+        .dst_access_mask(vk::AccessFlags::SHADER_READ)];
+    let render_pass = unsafe {
+        d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachments).subpasses(&subpass).dependencies(&scene_done), None)?
+    };
+    // The post pass: into the window's image or the offscreen one, no depth.
+    let post_attachment = [vk::AttachmentDescription::default()
+        .format(color_format)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .load_op(vk::AttachmentLoadOp::DONT_CARE)
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .final_layout(if presenter.is_some() { vk::ImageLayout::PRESENT_SRC_KHR } else { vk::ImageLayout::TRANSFER_SRC_OPTIMAL })];
+    let post_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
+    let post_subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&post_ref)];
+    let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass), None)? };
+    // The post pass's one texture: the scene.
+    let post_binding = [vk::DescriptorSetLayoutBinding::default()
+        .binding(0)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+    let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
+    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 }];
+    let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&post_sizes), None)? };
+    let post_layouts = [post_set_layout];
+    let post_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))?[0] };
+    let post_sampler = unsafe {
+        d.create_sampler(
+            &vk::SamplerCreateInfo::default()
+                .mag_filter(vk::Filter::LINEAR)
+                .min_filter(vk::Filter::LINEAR)
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
+            None,
+        )?
+    };
     // The depth image and one framebuffer per target image (the offscreen image, or each
     // swapchain image), remade at the new size when the window changes.
     let colour_views = |presenter: &Option<present::Presenter>| -> Vec<vk::ImageView> {
@@ -1581,7 +1661,7 @@ fn main() -> Result<()> {
             (None, None) => Vec::new(),
         }
     };
-    let mut targets = Targets::new(&gpu, render_pass, &colour_views(&presenter), width, height)?;
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -1645,6 +1725,30 @@ fn main() -> Result<()> {
     let pipeline = unsafe {
         d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
     };
+
+    // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
+    let (post_vs, post_fs) = (module(POST_VERT)?, module(POST_FRAG)?);
+    let post_stages = [
+        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
+        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
+    ];
+    let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts), None)? };
+    let no_input = vk::PipelineVertexInputStateCreateInfo::default();
+    let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
+    let post_raster = raster.cull_mode(vk::CullModeFlags::NONE);
+    let post_info = vk::GraphicsPipelineCreateInfo::default()
+        .stages(&post_stages)
+        .vertex_input_state(&no_input)
+        .input_assembly_state(&assembly)
+        .viewport_state(&vstate)
+        .rasterization_state(&post_raster)
+        .multisample_state(&msaa)
+        .depth_stencil_state(&post_depth)
+        .color_blend_state(&blend)
+        .dynamic_state(&dynamic_state)
+        .layout(post_layout)
+        .render_pass(post_pass);
+    let post_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[post_info], None).map_err(|(_, e)| e)?[0] };
 
     // Terrain: each field's own textures in a set of 2 blend maps + 6 layers, and one pipeline
     // with the terrain fragment shader.
@@ -1855,7 +1959,7 @@ fn main() -> Result<()> {
         match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(28))) {
             (Some(glyphs), Some(g), Some(window)) if !g.textures.is_empty() => {
                 let size = g.textures[0].width as f32;
-                text_layer = Some((text::Layer::new(&gpu, pool, render_pass, &[&g.textures[0], window])?, text::Font { glyphs, size }, None));
+                text_layer = Some((text::Layer::new(&gpu, pool, post_pass, &[&g.textures[0], window])?, text::Font { glyphs, size }, None));
             }
             _ => eprintln!("no text: the English executable's glyph table, the Font_EN atlas or WinXls_EN/a15_common.g1t is missing"),
         }
@@ -2106,7 +2210,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, &colour_views(&presenter), width, height)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -2172,7 +2276,8 @@ fn main() -> Result<()> {
         }
         look[26] = field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]);
         for (k, (pos, color, ambient, att, range)) in points.iter().enumerate() {
-            look[6 + k] = [-pos[0] * 100.0, pos[1] * 100.0, pos[2] * 100.0, range * range];
+            // The range in field units too (squared); the attenuation counts in field units.
+            look[6 + k] = [-pos[0] * 100.0, pos[1] * 100.0, pos[2] * 100.0, (range * 100.0) * (range * 100.0)];
             look[10 + k] = *color;
             look[14 + k] = [att[0], att[1], att[2], 0.0];
             look[18 + k] = *ambient;
@@ -2189,7 +2294,7 @@ fn main() -> Result<()> {
             cb,
             &vk::RenderPassBeginInfo::default()
                 .render_pass(render_pass)
-                .framebuffer(targets.framebuffers[image])
+                .framebuffer(targets.scene_framebuffer)
                 .render_area(area)
                 .clear_values(&clear),
             vk::SubpassContents::INLINE,
@@ -2203,6 +2308,7 @@ fn main() -> Result<()> {
         let mut push = [0f32; 30];
         push[..16].copy_from_slice(&mvp.to_cols_array());
         push[16] = alpha_cutoff;
+        push[19] = HDR_RANGE_INV;
         if let Some(tg) = &terrain_gpu {
             for g in tg.grounds.iter().filter(|g| g.field == current_field) {
                 push[17] = g.field_size;
@@ -2228,6 +2334,16 @@ fn main() -> Result<()> {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
         }
+        d.cmd_end_render_pass(cb);
+        // The post pass: the scene back to its range, then the text over it.
+        d.cmd_begin_render_pass(
+            cb,
+            &vk::RenderPassBeginInfo::default().render_pass(post_pass).framebuffer(targets.framebuffers[image]).render_area(area),
+            vk::SubpassContents::INLINE,
+        );
+        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
+        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[post_set], &[]);
+        d.cmd_draw(cb, 3, 1, 0, 0);
         if let Some((layer, ..)) = &text_layer {
             layer.record(d, cb, width, height);
         }
@@ -2299,6 +2415,14 @@ fn main() -> Result<()> {
                 d.free_memory(mem, None);
             }
         }
+        d.destroy_pipeline(post_pipeline, None);
+        d.destroy_pipeline_layout(post_layout, None);
+        d.destroy_shader_module(post_vs, None);
+        d.destroy_shader_module(post_fs, None);
+        d.destroy_descriptor_pool(post_pool, None);
+        d.destroy_descriptor_set_layout(post_set_layout, None);
+        d.destroy_sampler(post_sampler, None);
+        d.destroy_render_pass(post_pass, None);
         d.destroy_pipeline(pipeline, None);
         d.destroy_pipeline_layout(pipeline_layout, None);
         d.destroy_shader_module(vs, None);

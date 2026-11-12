@@ -34,7 +34,7 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // x: the point lights' strength (atCharaPointLightStrength); y: how many point lights.
     vec4 misc;
     // Up to four point lights (render space, field units): position and range² (w), colour,
-    // attenuation {att0, att1, att2} per metre, and ambient.
+    // attenuation {att0, att1, att2} over field units, and ambient.
     vec4 point_pos[4];
     vec4 point_color[4];
     vec4 point_att[4];
@@ -69,10 +69,11 @@ void main() {
     vec4 w = i.model * pos;
     world = w.xyz;
     // The point lights at this vertex, as the game's character vertex program sums them:
-    // (colour + ambient) × (1 - saturate(d² / range²)) / (att0 + att1·d + att2·d²), d in metres.
+    // (colour + ambient) × (1 - saturate(d² / range²)) / (att0 + att1·d + att2·d²), d in field
+    // units (centimetres) and the range scaled to them.
     vec3 sum = vec3(0.0);
     for (int k = 0; k < int(look.misc.y); k++) {
-        vec3 d = (look.point_pos[k].xyz - w.xyz) * 0.01;
+        vec3 d = look.point_pos[k].xyz - w.xyz;
         float d2 = dot(d, d);
         float falloff = look.point_pos[k].w > 0.00001 ? 1.0 - clamp(d2 / look.point_pos[k].w, 0.0, 1.0) : 0.0;
         float denom = look.point_att[k].x + look.point_att[k].y * sqrt(d2) + look.point_att[k].z * d2;
@@ -85,7 +86,7 @@ void main() {
     vec3 amb = look.ambient.rgb;
     vec3 diffuse = max(dot(wn, -normalize(look.fill_dir.xyz)), 0.0) * look.fill_color.rgb;
     for (int k = 0; k < int(look.misc.y); k++) {
-        vec3 d = (look.point_pos[k].xyz - w.xyz) * 0.01;
+        vec3 d = look.point_pos[k].xyz - w.xyz;
         float d2 = dot(d, d);
         if (d2 < look.point_pos[k].w) {
             float att = 1.0 / max(look.point_att[k].x + look.point_att[k].y * sqrt(d2) + look.point_att[k].z * d2, 0.00001);

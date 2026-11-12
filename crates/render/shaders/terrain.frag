@@ -21,5 +21,5 @@ void main() {
     c = total > 0.001 ? c / total : texture(layers[0], world * s[0]).rgb;
     vec3 n = normalize(normal);
     float light = 0.45 + 0.55 * max(dot(n, normalize(vec3(-0.3, 0.6, 0.7))), 0.0);
-    color = vec4(c * light, 1.0);
+    color = vec4(c * light * pc.params.w, 1.0);
 }

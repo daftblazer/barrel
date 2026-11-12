@@ -73,8 +73,9 @@ Point lights: for each of four, with d the vector from the vertex to `litPos[i]`
 adds `(litAmb[i] + litCol[nDirLit + i]) × (1 - saturate(d² / att.w)) / (att.x + att.y·|d| +
 att.z·d²)` (`litAtt[i]`; a range or divisor near zero drops it), and the sum is saturated:
 the pixel program's v2. The directional lights (`litCol[0 .. nDirLit]`) do not light
-characters. The renderer takes d in metres and `att.w` as the range squared (the field gives
-`range` in metres; the game's own conversion is not read).
+characters. The renderer takes d in field units (centimetres) and `att.w` as the range, scaled to field
+units, squared: with d in metres the town's street lamps (`TOWN_10`: ambient 4, `att0` 0.27)
+would light the whole street several times over, in centimetres they glow near the lamp.
 
 Fog and scattering: with e the vector from the vertex to the eye (`vEye`), the extinction is
 `min(exp((fog.x·|e| + fog.y) × Scat[0].xyz), 1)` (v4) and the in-scattered colour, with θ the
@@ -130,7 +131,19 @@ attenuation) on the vertex colour, and the vertex colour times the fill's and th
 lights' diffuse and the sun's diffuse; the pixel shader multiplies that by the texture. Taken
 for now: the material colours white and no specular, no light texture or shadow (1), the
 `PARALLEL` `rot` as pitch below level then yaw in degrees, and point light distances in
-metres. The fields' lights are authored for an HDR target: `TOWN_10`'s street lamps have
-ambients of 2.5 to 4 with `att0` 0.27, up to about 15 times near a lamp. The game writes
-`colour × HdrRangeInv` and expands and tone-maps it after; until the renderer does the same,
-such fields clip (the town at night turns yellow).
+metres. Point light distances are in field units, as for characters.
+
+## After the scene (`Data/x64/PostEffect/pe_pack.elixir.gz`, `PostEffectGlow.kps`)
+
+The post effects are `_SPK4100` packs of DXBC programs (`barrel g1s` reads them too). The glow
+pass is the game's whole HDR treatment: the scene is drawn at `HdrRangeInv` into an ordinary
+8-bit target; program 0 takes `saturate(scene - fHdrThreshold)`; programs 1 to 14 blur it in x
+and y over several smaller targets (7 taps, weights 0.0455, 0.0909, 0.1818, 0.3636, ...);
+program 15 finishes with `scene × 2 + glow × fGlowAddRate`. So the range is 2 (`HdrRangeInv`
+0.5) and there is no tone curve: values over 2 clip. The field's `<hdr threshold
+glow_add_rate>` are the two constants. `PostEffectGamma`, `Color`, `Hue`, `Sepia`, `Monotone`,
+`Fade`, `CrossFade`, `Blur`, `Wave` and others are separate effects the events can turn on.
+
+The renderer draws the scene into its own 8-bit target at half brightness (`HDR_RANGE_INV`)
+and a post pass doubles it into the window (or the offscreen image), with the text drawn over
+it in that pass. The glow is not done yet.
