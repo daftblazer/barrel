@@ -1180,9 +1180,17 @@ Read by `0x1400548f0` into a map at `0x140df9a10` keyed by event number
 (the record's +0x28 to +0x5c; word 1 is 10, 100 or 500 in the events looked at, a priority by
 the look of it; words 8 to 13 are -1 in most), a group count (613 events have 2, 309 none, 160
 have 3) and, per group, a word count and that many words (kept per group at the record's
-+0x60). The groups hold condition code: words `0x700000NN` followed by their operands (event 30:
-`0x7000001f 15 0x70000020 31 0x70000027 4 1` and `0x7000007f 0 4 0 5`), presumably the
-conditions an event needs to start, the groups alternatives or stages; their opcodes are not
-named yet. The file's 121,876 bytes read exactly so. `Event/eventprocess/EventProcessDataAll.epd`
++0x60). The groups hold commands: a code `0x70000000 + n` and its operands, sized by a 167-entry
+table at `0x140cf9640` (16 bytes each: word count with the code, trigger group or -1, name;
+`barrel_formats::event_check_codes`). Codes 0x00 to 0x7d are `EVENT_CONDITION_*` (event seen or
+not, event flag compares, items, friendship, dates, reclaim, DLC ...), 0x7e to 0xa6
+`EVENT_TRIGGER_*` (map change before/after, standing in a field map, talking to someone, mixing,
+sleeping, event end ...), each in one of 34 trigger groups (`EVENT_CHECK_TRIGGER_GROUP_*`), and
+`0x1400555d0` files each event under the groups of its triggers (map at `0x140df9a18`). Group 0
+holds conditions only; triggers sit in the later groups. Every group in the file splits exactly
+by the table. Most used: `EVENT_OCCURRENCE` (1,006), `EVENT_NOT_OCCURRENCE` (767),
+`EVENTFLAG_EQ` (391), `EVENTFLAG_MT` (279), `EVENT_PASSAGE_MT` (268), `TRIGGER_MAP_FROM_TO_AFTER`
+(253). Event 30, for one: `EVENT_OCCURRENCE 15`, `EVENT_NOT_OCCURRENCE 31`, `EVENTFLAG_MT 4 1`,
+then `TRIGGER_MAP_FROM_TO_AFTER 0 4 0 5`. The file's 121,876 bytes read exactly so. `Event/eventprocess/EventProcessDataAll.epd`
 (21,708 bytes, the same count first) is not read yet.
 

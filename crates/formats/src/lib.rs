@@ -16,6 +16,7 @@ pub mod ebm;
 mod ebd_tables;
 pub mod elixir;
 pub mod event_check;
+pub mod event_check_codes;
 pub mod font;
 pub mod field_look;
 pub mod g1a;

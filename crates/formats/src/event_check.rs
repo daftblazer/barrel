@@ -2,7 +2,8 @@
 //! at `0x140df9a10` keyed by event number): an i32 count (1,165, one per `EVENT_*`), then per
 //! event 14 i32 (kept at the record's +0x28 to +0x5c), a group count and, per group, a word count
 //! and that many words (kept per group at the record's +0x60). The groups hold condition code:
-//! words `0x700000NN` followed by their operands (`0x7000001f 15 0x70000020 31` ...).
+//! codes `0x70000000 + n` (`EVENT_CONDITION_*` up to 0x7d, `EVENT_TRIGGER_*` from 0x7e, see
+//! `event_check_codes`) each followed by its operands. Group 0 holds conditions only.
 
 use crate::Error;
 
@@ -38,8 +39,53 @@ pub fn parse(d: &[u8]) -> Result<Vec<EventCheck>, Error> {
     Ok(out)
 }
 
+/// One condition or trigger of a group: the code's index past `0x70000000` (a name in
+/// `event_check_codes::CODES`) and its operands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Command<'a> {
+    pub code: usize,
+    pub operands: &'a [i32],
+}
+
+impl Command<'_> {
+    pub fn name(&self) -> &'static str {
+        crate::event_check_codes::CODES[self.code].2
+    }
+    /// The trigger group (`EVENT_CHECK_TRIGGER_GROUP_*`) of a trigger; None for a condition.
+    pub fn trigger(&self) -> Option<u8> {
+        u8::try_from(crate::event_check_codes::CODES[self.code].1).ok()
+    }
+}
+
+/// Splits a group into its commands by the codes' word counts.
+pub fn commands(group: &[i32]) -> Result<Vec<Command<'_>>, Error> {
+    let codes = crate::event_check_codes::CODES;
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < group.len() {
+        let code = (group[i] as u32).wrapping_sub(0x7000_0000) as usize;
+        let n = codes.get(code).ok_or(Error::Corrupt("unknown event check code"))?.0 as usize;
+        let operands = group.get(i + 1..i + n).ok_or(Error::Corrupt("event check command cut short"))?;
+        out.push(Command { code, operands });
+        i += n;
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn splits_commands() {
+        let g = [0x7000001f, 15, 0x70000020, 31, 0x70000027, 4, 1];
+        let c = super::commands(&g).unwrap();
+        let names: Vec<_> = c.iter().map(|c| c.name()).collect();
+        assert_eq!(names, ["CONDITION_EVENT_OCCURRENCE", "CONDITION_EVENT_NOT_OCCURRENCE", "CONDITION_EVENTFLAG_MT"]);
+        assert_eq!((c[2].operands, c[2].trigger()), (&[4, 1][..], None));
+        let t = super::commands(&[0x7000007f, 0, 4, 0, 5]).unwrap();
+        assert_eq!((t[0].name(), t[0].trigger()), ("TRIGGER_MAP_FROM_TO_AFTER", Some(1)));
+        assert!(super::commands(&[0x7000001f]).is_err());
+    }
+
     #[test]
     fn reads_groups() {
         let mut d = Vec::new();
