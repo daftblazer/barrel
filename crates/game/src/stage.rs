@@ -183,6 +183,34 @@ pub enum Cue {
     Effect { effect: u32, volume: f32, pan: f32 },
 }
 
+/// What an event has set of the field's lights; `None` is the field's own.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EventLights {
+    /// The two sun lights: colour, pitch and yaw (degrees).
+    pub parallel: [Option<([f32; 3], f32, f32)>; 2],
+    pub ambient: Option<[f32; 3]>,
+    pub chara_color: Option<[f32; 4]>,
+    pub rim_color: Option<[f32; 4]>,
+    pub point_strength: Option<f32>,
+}
+
+impl EventLights {
+    pub fn apply(&mut self, change: crate::event::LightChange) {
+        use crate::event::LightChange::*;
+        match change {
+            Parallel { light, set } => {
+                if let Some(slot) = self.parallel.get_mut(light as usize) {
+                    *slot = set;
+                }
+            }
+            Ambient(v) => self.ambient = v,
+            CharaColor(v) => self.chara_color = v,
+            RimColor(v) => self.rim_color = v,
+            PointStrength(v) => self.point_strength = v,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Stage {
     /// The first voice clip of the event's lines (`voice::story_start`), when known: line k
@@ -212,6 +240,8 @@ pub struct Stage {
     pub screen_effect: Option<(u32, i32, f32, f32)>,
     /// The latest fade (`u22`): preset, seconds, and the stage time it started.
     pub fade: Option<(u32, f32, f32)>,
+    /// The event's changes to the field's lights (`q42` to `q57`).
+    pub lights: EventLights,
     /// The narration card on screen (`u55`) and its opacity (`u56`).
     pub telop: Option<u32>,
     /// The still picture shown (`u1/0x30`, `u2/0x30`): it, the one before it, the stage time it
@@ -366,6 +396,7 @@ impl Stage {
             }
             Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
+            Step::Light { change, .. } => self.lights.apply(*change),
             Step::Telop { card, .. } => self.telop = Some(*card),
             Step::Still { picture, seconds, .. } => self.still = Some((*picture, self.still.map(|s| s.0), self.time, *seconds)),
             Step::MotionDivision { character, division, .. } => {
@@ -536,6 +567,19 @@ impl<'a> Playback<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn event_lights_set_and_restore() {
+        use crate::event::LightChange;
+        let mut l = super::EventLights::default();
+        l.apply(LightChange::Parallel { light: 1, set: Some(([0.5, 0.5, 0.5], 20.0, 230.0)) });
+        l.apply(LightChange::Ambient(Some([0.2, 0.3, 0.2])));
+        l.apply(LightChange::Parallel { light: 7, set: Some(([1.0; 3], 0.0, 0.0)) });
+        assert_eq!(l.parallel, [None, Some(([0.5, 0.5, 0.5], 20.0, 230.0))]);
+        l.apply(LightChange::Parallel { light: 1, set: None });
+        l.apply(LightChange::Ambient(None));
+        assert_eq!(l, super::EventLights::default());
+    }
     use super::*;
     use crate::camera::Move;
 

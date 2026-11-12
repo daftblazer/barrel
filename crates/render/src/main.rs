@@ -3138,17 +3138,36 @@ fn main() -> Result<()> {
     }
     // The sun's shadow map (deliberately one square around the camera's target: the game's
     // cascades are not read yet, docs/renderer.md "Shadows").
-    let sun_dir = field_looks
-        .get(current_field as usize)
-        .and_then(|l| l.as_ref())
-        .and_then(|l| {
-            l.lights.iter().find_map(|p| match *p {
-                barrel_formats::field_look::Light::Parallel { rot, .. } => {
-                    let (p, y) = (rot[0].to_radians(), rot[1].to_radians());
-Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
+    // The event's changes to the field's lights (q42 to q57), over the field's own.
+    let event_lights = player.as_ref().map(|p| p.0.stage.lights).unwrap_or_default();
+    let parallels: Vec<([f32; 3], [f32; 4])> = {
+        let mut list: Vec<([f32; 3], [f32; 4])> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map_or(Vec::new(), |l| {
+            l.lights
+                .iter()
+                .filter_map(|p| match *p {
+                    barrel_formats::field_look::Light::Parallel { rot, color } => Some((rot, color)),
+                    _ => None,
+                })
+                .collect()
+        });
+        for (k, set) in event_lights.parallel.iter().enumerate() {
+            if let Some((rgb, pitch, yaw)) = *set {
+                let light = ([pitch, yaw, 0.0], [rgb[0], rgb[1], rgb[2], 1.0]);
+                if k < list.len() {
+                    list[k] = light;
+                } else {
+                    list.resize(k, ([90.0, 0.0, 0.0], [0.0; 4]));
+                    list.push(light);
                 }
-                _ => None,
-            })
+            }
+        }
+        list
+    };
+    let sun_dir = parallels
+        .first()
+        .map(|(rot, _)| {
+            let (p, y) = (rot[0].to_radians(), rot[1].to_radians());
+            Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos())
         })
         .unwrap_or(Vec3::NEG_Y);
     let shadow_vp = shadow::sun_view_proj(target, sun_dir, SHADOW_HALF, 6000.0);
@@ -3196,6 +3215,12 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             rim_light_color: [1.0, 1.0, 1.0, 0.0],
             point_light_strength: 0.0,
         });
+        let c = barrel_formats::field_look::CharaShader {
+            light_color: event_lights.chara_color.unwrap_or(c.light_color),
+            rim_light_color: event_lights.rim_color.unwrap_or(c.rim_light_color),
+            point_light_strength: event_lights.point_strength.unwrap_or(c.point_light_strength),
+            ..c
+        };
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
         let mut look = [[0f32; 4]; 48];
@@ -3230,15 +3255,6 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         // The field's two directional lights: rot is taken as pitch (down from level) then yaw,
         // in degrees, the light travelling along that direction (the game's convention is not
         // read).
-        let parallels: Vec<([f32; 3], [f32; 4])> = field_look.map_or(Vec::new(), |l| {
-            l.lights
-                .iter()
-                .filter_map(|p| match *p {
-                    barrel_formats::field_look::Light::Parallel { rot, color } => Some((rot, color)),
-                    _ => None,
-                })
-                .collect()
-        });
         for (k, slot) in [22usize, 24].into_iter().enumerate() {
             if let Some((rot, color)) = parallels.get(k) {
                 let (p, y) = (rot[0].to_radians(), rot[1].to_radians());
@@ -3246,7 +3262,10 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
                 look[slot + 1] = *color;
             }
         }
-        look[26] = field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]);
+        look[26] = match event_lights.ambient {
+            Some(rgb) => [rgb[0], rgb[1], rgb[2], 1.0],
+            None => field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]),
+        };
         // The fog, as the game turns the field's <fog> into its shader constants (read from
         // its memory: docs/shading.md, "Fog"); none: nothing taken off or added.
         if let Some(f) = field_look.and_then(|l| l.fog) {

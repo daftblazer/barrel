@@ -119,6 +119,33 @@ pub const GOTO_SUM: u32 = 0x7500_0006;
 /// screen's colour overlay moves from the preset's first colour to its second over the time
 /// (`docs/events.md`, "Fades").
 pub const EVENT_CONTRAST_SET_MIX: u32 = 0x7500_0016;
+/// `q42` to `q57`: the field's lights for a scene, each `_SET` with an `_ORG` that puts the
+/// field's own back (`docs/events.md`, "Lighting").
+pub const FIELDMAP_LIGHT_PARALLEL_SET: u32 = 0x7100_002a;
+pub const FIELDMAP_LIGHT_PARALLEL_ORG: u32 = 0x7100_002b;
+pub const FIELDMAP_LIGHT_AMBIENT_SET: u32 = 0x7100_002c;
+pub const FIELDMAP_LIGHT_AMBIENT_ORG: u32 = 0x7100_002d;
+pub const FIELDMAP_CHARA_LIGHT_COLOR_SET: u32 = 0x7100_0032;
+pub const FIELDMAP_CHARA_LIGHT_COLOR_ORG: u32 = 0x7100_0033;
+pub const FIELDMAP_CHARA_RIM_LIGHT_COLOR_SET: u32 = 0x7100_0034;
+pub const FIELDMAP_CHARA_RIM_LIGHT_COLOR_ORG: u32 = 0x7100_0035;
+pub const FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_SET: u32 = 0x7100_0038;
+pub const FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_ORG: u32 = 0x7100_0039;
+
+/// A change to the field's lights (`q42` to `q57`); `None` puts the field's own value back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LightChange {
+    /// Sun light `light` (0 or 1): its colour and its direction, (0, 0, 1) turned about x by
+    /// `pitch` and then about y by `yaw` (degrees), the field look's own convention.
+    Parallel { light: u32, set: Option<([f32; 3], f32, f32)> },
+    Ambient(Option<[f32; 3]>),
+    /// The characters' `atCharaLightColor`.
+    CharaColor(Option<[f32; 4]>),
+    /// The characters' `atCharaRimLightColor`.
+    RimColor(Option<[f32; 4]>),
+    /// `atCharaPointLightStrength` (the original's _ORG sets 0.3, its usual value).
+    PointStrength(Option<f32>),
+}
 /// `u55` (`EventTelop`): `{card}`: shows narration card `card` (the voiced lines of the
 /// openings, the ending), layout id `0x140d85ce0[card]` (960 + ...; `docs/events.md`, "Telops").
 pub const EVENT_TELOP: u32 = 0x7500_0037;
@@ -241,6 +268,8 @@ pub enum Step<'a> {
     ScreenEffect { action: usize, kind: u32, param: i32, seconds: f32 },
     /// The screen's colour overlay starts a fade (`u22`): preset `preset` over `seconds`.
     Fade { action: usize, preset: u32, seconds: f32 },
+    /// The field's lights change (`q42` to `q57`).
+    Light { action: usize, change: LightChange },
     /// A head gesture starts (`s116`): `segment` of [`HEAD_SEGMENTS`] played at `rate` (1 is
     /// real time; the events' 999 jumps to its end and holds it), laid over the body at
     /// `weight`. A segment outside the table ends the gesture.
@@ -493,6 +522,29 @@ impl<'a> Player<'a> {
                 to: *to as i32 as f32 / 100.0,
                 seconds: *hundredths as i32 as f32 / 100.0,
             }),
+            (FIELDMAP_LIGHT_PARALLEL_SET, [light, r, g, b, pitch, yaw, ..]) => {
+                let k = |v: &u32| *v as i32 as f32 / 128.0;
+                let set = Some(([k(r), k(g), k(b)], *pitch as i32 as f32 / 100.0, *yaw as i32 as f32 / 100.0));
+                out.push(Step::Light { action, change: LightChange::Parallel { light: *light, set } })
+            }
+            (FIELDMAP_LIGHT_PARALLEL_ORG, [light, ..]) => out.push(Step::Light { action, change: LightChange::Parallel { light: *light, set: None } }),
+            (FIELDMAP_LIGHT_AMBIENT_SET, [r, g, b, ..]) => {
+                let k = |v: &u32| *v as i32 as f32 / 128.0;
+                out.push(Step::Light { action, change: LightChange::Ambient(Some([k(r), k(g), k(b)])) })
+            }
+            (FIELDMAP_LIGHT_AMBIENT_ORG, _) => out.push(Step::Light { action, change: LightChange::Ambient(None) }),
+            (FIELDMAP_CHARA_LIGHT_COLOR_SET | FIELDMAP_CHARA_RIM_LIGHT_COLOR_SET, [r, g, b, w, ..]) => {
+                let k = |v: &u32| *v as i32 as f32 / 100.0;
+                let v = Some([k(r), k(g), k(b), k(w)]);
+                let change = if c.word == FIELDMAP_CHARA_LIGHT_COLOR_SET { LightChange::CharaColor(v) } else { LightChange::RimColor(v) };
+                out.push(Step::Light { action, change })
+            }
+            (FIELDMAP_CHARA_LIGHT_COLOR_ORG, _) => out.push(Step::Light { action, change: LightChange::CharaColor(None) }),
+            (FIELDMAP_CHARA_RIM_LIGHT_COLOR_ORG, _) => out.push(Step::Light { action, change: LightChange::RimColor(None) }),
+            (FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_SET, [v, ..]) => {
+                out.push(Step::Light { action, change: LightChange::PointStrength(Some(*v as i32 as f32 / 100.0)) })
+            }
+            (FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_ORG, _) => out.push(Step::Light { action, change: LightChange::PointStrength(None) }),
             (EVENT_CONTRAST_SET_MIX, [_, preset, hundredths, ..]) => out.push(Step::Fade { action, preset: *preset, seconds: *hundredths as i32 as f32 / 100.0 }),
             (EVENT_SET_POST_EFFECT, [_, param, hundredths, kind, ..]) => {
                 out.push(Step::ScreenEffect { action, kind: *kind, param: *param as i32, seconds: *hundredths as i32 as f32 / 100.0 })
@@ -937,6 +989,7 @@ mod tests {
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),
                 Step::Fade { preset, seconds, .. } => format!("fade {preset} over {seconds} s"),
+                Step::Light { change, .. } => format!("light {change:?}"),
                 Step::Telop { card, .. } => format!("narration card {card}"),
                 Step::Still { picture, seconds, .. } => format!("still {picture} over {seconds} s"),
                 Step::HeadGesture { character, segment, rate, weight, .. } => format!("{character} head gesture {segment} at {rate}× (weight {weight})"),

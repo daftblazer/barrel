@@ -649,8 +649,10 @@ unidentified angles, characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
 `0x14028a700`) changes the field's lights for a scene and puts them back. Each `_SET` has an
-`_ORG` that restores what the field had (kept at the object's +0x258 to +0x2c8). The stage
-does not play them yet.
+`_ORG` that restores what the field had (kept at the object's +0x258 to +0x2c8). The stage plays all but the point lights
+(`q54`, `q55`): `Stage::lights` holds what the event has set, and the renderer lays it over the
+field's own lights. The sun's direction is the field look's own convention (pitch, then yaw), so the event's angles go
+straight in.
 
 | Command | Operands | What |
 |---|---|---|
