@@ -507,3 +507,132 @@ pub fn encounter_groups(pe: &Pe, at: u64) -> Vec<EncounterGroup> {
         })
         .collect()
 }
+
+/// The field enemies' builder in Escha's English executable (`clsFMDataEnemy`'s second
+/// virtual, `0x14024a500`): it fills a table of 0x114 × 0x68 bytes on its stack field by
+/// field, with immediates, then copies it into the enemy data (`0x140dfc1f0` + 0x10).
+pub const FIELD_ENEMIES_BUILDER_EN: u64 = 0x1_4024_a500;
+const FIELD_ENEMY_COUNT: usize = 0x114;
+const FIELD_ENEMY_SIZE: usize = 0x68;
+
+/// One enemy on the field maps (`docs/tables.md`, "Field enemies").
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldEnemy {
+    /// The `Chara.xml` row it occupies on the map: a generic slot, "Enemy 1" (418) on, the
+    /// bosses' "Enemy 30" (448); its look comes from its group's monsters.
+    pub chara: i32,
+    /// Word +4 (meaning not read yet).
+    pub word4: i32,
+    /// +8: a scale, 1 for most.
+    pub scale: f32,
+    /// +0xc and +0x10: conditions (-1 none), checked with `0x14035f2d0` before it appears.
+    pub conditions: (i32, i32),
+    /// +0x14: the area it appears in.
+    pub area: i32,
+    /// +0x1c: its kind (0 for most; 3 and 5 on some).
+    pub kind: i32,
+    /// +0x38 and +0x40: its field AI scripts (`Script/<name>.nut`), the second presumably for
+    /// when it has noticed the player.
+    pub ai: (String, String),
+    /// +0x4c: the encounter group its battle draws from (`EncounterGroup::id`).
+    pub group: i32,
+    /// +0x50: where it stands.
+    pub position: [f32; 3],
+    /// The whole record's words, for the fields not named yet.
+    pub words: [u32; FIELD_ENEMY_SIZE / 4],
+}
+
+/// The field enemies, rebuilt by replaying the builder's stores (it uses six instruction
+/// forms: `mov dword [rsp+d], imm32`; `movss xmm0, [rip+r]`; `xorps xmm0, xmm0`;
+/// `movss [rsp+d], xmm0`; `lea rax, [rip+r]`; `mov [rsp+d], rax`). None if the code is not
+/// there.
+pub fn field_enemies(pe: &Pe, builder: u64) -> Option<Vec<FieldEnemy>> {
+    let start = pe.offset(builder)?;
+    let code = pe.data.get(start..)?;
+    let mut table = vec![0u32; FIELD_ENEMY_COUNT * FIELD_ENEMY_SIZE / 4];
+    let mut pointers: std::collections::HashMap<usize, u64> = Default::default();
+    let (mut xmm0, mut rax) = (0u32, 0u64);
+    let u32_at = |i: usize| code.get(i..i + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let rip = |i: usize, len: usize, rel: u32| (builder as i64 + i as i64 + len as i64 + rel as i32 as i64) as u64;
+    let store = |table: &mut Vec<u32>, d: u32, v: u32| {
+        if let Some(o) = (d as usize).checked_sub(0x30) {
+            if let Some(w) = table.get_mut(o / 4) {
+                *w = v;
+            }
+        }
+    };
+    let mut i = 0;
+    let mut started = false;
+    while i < code.len() {
+        let b = &code[i..];
+        match b {
+            [0xc7, 0x44, 0x24, d, ..] => {
+                store(&mut table, *d as u32, u32_at(i + 4)?);
+                i += 8;
+            }
+            [0xc7, 0x84, 0x24, ..] => {
+                store(&mut table, u32_at(i + 3)?, u32_at(i + 7)?);
+                i += 11;
+            }
+            [0xf3, 0x0f, 0x10, 0x05, ..] => {
+                let at = rip(i, 8, u32_at(i + 4)?);
+                xmm0 = u32_at(pe.offset(at)?.wrapping_sub(start))?;
+                i += 8;
+            }
+            [0x0f, 0x57, 0xc0, ..] => {
+                xmm0 = 0;
+                i += 3;
+            }
+            [0xf3, 0x0f, 0x11, 0x44, 0x24, d, ..] => {
+                store(&mut table, *d as u32, xmm0);
+                i += 6;
+            }
+            [0xf3, 0x0f, 0x11, 0x84, 0x24, ..] => {
+                store(&mut table, u32_at(i + 5)?, xmm0);
+                i += 9;
+            }
+            [0x48, 0x8d, 0x05, ..] => {
+                rax = rip(i, 7, u32_at(i + 3)?);
+                i += 7;
+            }
+            [0x48, 0x89, 0x44, 0x24, d, ..] => {
+                pointers.insert(*d as usize, rax);
+                i += 5;
+            }
+            [0x48, 0x89, 0x84, 0x24, ..] => {
+                pointers.insert(u32_at(i + 4)? as usize, rax);
+                i += 8;
+            }
+            _ if started => break,
+            _ => {
+                // The prologue (push, the stack probe, sub rsp): skip a byte at a time.
+                i += 1;
+                continue;
+            }
+        }
+        started = true;
+    }
+    let name = |d: usize| pointers.get(&d).and_then(|&va| pe.name_at(va)).unwrap_or("").to_string();
+    let f = |w: u32| f32::from_bits(w);
+    Some(
+        (0..FIELD_ENEMY_COUNT)
+            .map(|k| {
+                let w: [u32; FIELD_ENEMY_SIZE / 4] = table[k * FIELD_ENEMY_SIZE / 4..(k + 1) * FIELD_ENEMY_SIZE / 4].try_into().unwrap();
+                let base = 0x30 + k * FIELD_ENEMY_SIZE;
+                FieldEnemy {
+                    chara: w[0] as i32,
+                    word4: w[1] as i32,
+                    scale: f(w[2]),
+                    conditions: (w[3] as i32, w[4] as i32),
+                    area: w[5] as i32,
+                    kind: w[7] as i32,
+                    ai: (name(base + 0x38), name(base + 0x40)),
+                    group: w[0x13] as i32,
+                    position: [f(w[0x14]), f(w[0x15]), f(w[0x16])],
+                    words: w,
+                }
+            })
+            .filter(|e| e.chara != 0 || e.group != 0)
+            .collect(),
+    )
+}

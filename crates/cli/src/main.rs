@@ -124,6 +124,7 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["encounters", exe] => encounters(Path::new(exe)),
+        ["field-enemies", exe] => field_enemies(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["deliveries", install] => deliveries(Path::new(install)),
         ["quakes", install] => quakes(Path::new(install)),
@@ -1170,6 +1171,25 @@ fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
 
 /// Each party member's base stats at levels 1, 10, 50 and 99.
 /// Every monster: each stat block's level, HP/ATK/DEF/SPD and skills.
+/// Lists the field enemies: area, position, model row, AI scripts and the group they fight as.
+fn field_enemies(exe: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let enemies = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemy builder at the English executable's address")?;
+    let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
+    let monsters = bd::monsters(&pe, bd::MONSTERS_EN).unwrap_or_default();
+    let name = |m: i32| monsters.get(m as usize).map_or_else(|| format!("#{m}"), |x| x.name.clone());
+    for (k, e) in enemies.iter().enumerate() {
+        let fights: Vec<String> = groups.get(e.group as usize).map(|g| g.monsters.iter().map(|&(m, _)| name(m)).collect()).unwrap_or_default();
+        println!(
+            "{k:3} area {:3} at ({:.1}, {:.1}, {:.1}) chara {} kind {} ai {}/{}  group {}: {}",
+            e.area, e.position[0], e.position[1], e.position[2], e.chara, e.kind, e.ai.0, e.ai.1, e.group, fights.join(", ")
+        );
+    }
+    Ok(())
+}
+
 /// Lists the encounter groups: counts and monsters (by name) with their weights.
 fn encounters(exe: &Path) -> Result<()> {
     use barrel_formats::battle_data as bd;
