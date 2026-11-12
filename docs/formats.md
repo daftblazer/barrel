@@ -503,6 +503,12 @@ the array at `0x1410a42d0` saved whole: seen (+0, 94 in one save), the day it wa
 the calendar's daily rolls, `0x1410a42e0` + 0x24 × the event) and a value from 0 to 2
 (+0x14). `m_eventFlag` (604 bytes, 151 words, mostly 0 with a few 1s and a 5) is not read yet.
 
+`global` (68 bytes) is the block of globals at `0x141098a10` copied as it is (its writer,
+`0x14035e7b0`, found through the record-name table at `0x140753100`: name getter, write, read
+per record; the reset `0x14035e8e0` sets +0 to -1 and the rest to 0). At +0x38 is the
+protagonist the player chose, 0 Escha or 1 Logy: what "Master Character" (`Chara.xml` row
+749) stands for in events (`docs/events.md`; `Summary::hero`). The user's save says Escha.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0

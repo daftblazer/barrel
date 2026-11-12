@@ -894,6 +894,7 @@ fn save(file: &Path) -> Result<()> {
     }
     println!("squad {:?}", s.squad);
     println!("board seed {:?}, rank (rank, points) {:?}", s.board_seed, s.rank);
+    println!("hero {}", match s.hero { Some(0) => "Escha", Some(1) => "Logy", Some(_) => "?", None => "-" });
     for (k, shop) in s.shops.iter().enumerate() {
         let listed: Vec<String> = shop.iter().take(8).map(|w| format!("{}/{}/{}", w[0], w[1], w[2])).collect();
         println!("shop {k}: {} wares (count/days/state) {} ...", shop.len(), listed.join(" "));

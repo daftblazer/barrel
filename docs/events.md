@@ -208,8 +208,7 @@ resolved), each that equals 749 becomes what `0x14035ebb0` returns: the global `
 which the new game's choice screen sets (`0x1400ce4f3`: 1 if the choice is Logy, else 0). So
 749 is row 0, Escha, or row 1, Logy. `Player::hero` sets the choice (Escha by default;
 `barrel-view --hero logy`) and `Player::slot` swaps 749 for it, the camera's follow (`t18`)
-included. Where the save keeps the choice is still to find (the global sits in the block the
-game state's reset clears, `0x14035e8e0`).
+included. The save keeps the choice in its `global` record (+0x38; `docs/formats.md`, Saves).
 
 **Where the eye is** (`0x1401e68f0`, settled from the code). The point looked at is the
 target plus the offset (+0xd0 and virtual +0x70). The eye is `(0, 0, distance)` (virtual +0x68)

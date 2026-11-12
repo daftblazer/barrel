@@ -588,6 +588,9 @@ pub struct Summary {
     pub month_reports: Vec<Vec<u8>>,
     /// `quest/randseed`: the request board's seed offset (the calendar's `board_offset`).
     pub board_seed: Option<i32>,
+    /// `global` +0x38: the protagonist the player chose, 0 Escha or 1 Logy (`Chara.xml` row,
+    /// what "Master Character", row 749, stands for).
+    pub hero: Option<i32>,
     /// `subject/job_rank` and `job_point`: the rank and its points.
     pub rank: Option<(i32, i32)>,
     /// `shop/shop_data`: four shops, each a u32 and 50 wares' (count, days, state), the
@@ -624,6 +627,8 @@ pub fn summary(records: &[Record]) -> Summary {
             _ => Vec::new(),
         },
         board_seed: bytes(top("quest").and_then(|r| r.child("randseed"))).and_then(|d| i32_at(&d, 0)),
+        // The global block (0x141098a10, 68 bytes) as is; the hero at 0x141098a48.
+        hero: bytes(top("global")).and_then(|d| i32_at(&d, 0x38)),
         events: bytes(top("event").and_then(|r| r.child("m_eventListSaveData"))).map(|d| event_records(&d)).unwrap_or_default(),
         board: bytes(top("quest").and_then(|r| r.child("now"))).map(|d| board_slots(&d)).unwrap_or_default(),
         taken: bytes(top("quest").and_then(|r| r.child("player"))).map(|d| board_slots(&d)).unwrap_or_default(),
