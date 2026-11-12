@@ -813,7 +813,12 @@ fighters on the same spot part at an angle rolled from 0 to 360, rolled even whe
 overlap. Which of the two library calls there is sine and which cosine (`0x1405cc626`,
 `0x1405cc62c`) is taken from their order; it only matters for fighters on the same spot.
 
-Still to read: where the field enemy entries come from, and the arena's edge (`0x14019eab0`).
+The arena (`0x14019eab0`, `battle::arena_outside`) is a circle of radius 500 (`0x140804bb8`)
+about the centre: a spot's distance from it past 500, horizontally, else 0. So the scattered
+monsters (200 to 400 out, then nudged) stay within 500, while the party stands at 700 to 800,
+outside it (the party is not nudged).
+
+Still to read: where the field enemy entries come from.
 
 ### A first duel
 

@@ -87,15 +87,21 @@ pub fn encounter_monsters(group: &barrel_formats::battle_data::EncounterGroup, r
     out
 }
 
+/// How far a battle spot lies outside the arena (`0x14019eab0`): a circle of radius 500 about
+/// the centre, 0 inside.
+pub fn arena_outside(p: [f32; 3]) -> f32 {
+    ((p[0] * p[0] + p[2] * p[2]).sqrt() - 500.0).max(0.0)
+}
+
 /// Where the battle puts the monsters it places itself (`0x1401a3d00`; those whose setup
-/// position is (0, -1, 0)), given their sizes (`+0x358`) and how far a spot lies outside the
-/// arena (`0x14019eab0`; 0 inside). They go largest first (ties keep their setup order here,
+/// position is (0, -1, 0)), given their sizes (`+0x358`), kept inside the arena
+/// ([`arena_outside`]). They go largest first (ties keep their setup order here,
 /// where the game's sort may not); the first stands at the centre, each other at a rolled angle
 /// (0 to 360°) and distance (200 plus 0 to 100 × 2): (d sin θ, 0, d cos θ), then [`nudge`]d
 /// against those placed before it. Each also gets a sector, its angle / 120 (the first's angle
 /// counts as 180). Returns, per monster in setup order, its spot and sector. Fighters not yet
 /// placed wait at (-100000, 0, 0), too far to be in anyone's way, so only the placed count.
-pub fn scatter(sizes: &[f32], outside: impl Fn([f32; 3]) -> f32, rng: &mut crate::rng::Rng) -> Vec<([f32; 3], i32)> {
+pub fn scatter(sizes: &[f32], rng: &mut crate::rng::Rng) -> Vec<([f32; 3], i32)> {
     let mut order: Vec<usize> = (0..sizes.len()).collect();
     order.sort_by(|&a, &b| sizes[b].total_cmp(&sizes[a]));
     let mut out = vec![([0.0; 3], 0); sizes.len()];
@@ -109,7 +115,7 @@ pub fn scatter(sizes: &[f32], outside: impl Fn([f32; 3]) -> f32, rng: &mut crate
             let t = (angle as f32).to_radians();
             ([distance * t.sin(), 0.0, distance * t.cos()], angle)
         };
-        let spot = nudge(spot, sizes[i], &placed, &outside, rng);
+        let spot = nudge(spot, sizes[i], &placed, arena_outside, rng);
         placed.push((spot, sizes[i]));
         out[i] = (spot, angle / 120);
     }
@@ -1047,7 +1053,7 @@ mod encounter_tests {
     #[test]
     fn monsters_scatter_round_the_largest() {
         let mut rng = crate::rng::Rng::seeded(7);
-        let spots = scatter(&[1.0, 3.0, 2.0], |_| 0.0, &mut rng);
+        let spots = scatter(&[1.0, 3.0, 2.0], &mut rng);
         // The largest (second) at the centre, sector 1.
         assert_eq!(spots[1], ([0.0; 3], 1));
         for (k, (p, sector)) in spots.iter().enumerate().filter(|&(k, _)| k != 1) {
@@ -1076,9 +1082,8 @@ mod encounter_tests {
         // 100 from a fighter of size 80, itself size 50: pushed out by 30 along x.
         let p = nudge([100.0, 0.0, 0.0], 50.0, &[([0.0; 3], 80.0)], |_| 0.0, &mut rng);
         assert!((p[0] - 130.0).abs() < 1e-3 && p[2].abs() < 1e-3, "{p:?}");
-        // 500 out where the arena ends at 400: pulled in to 400.
-        let edge = |q: [f32; 3]| ((q[0] * q[0] + q[2] * q[2]).sqrt() - 400.0).max(0.0);
-        let p = nudge([500.0, 0.0, 0.0], 10.0, &[], edge, &mut rng);
-        assert!((p[0] - 400.0).abs() < 1e-3, "{p:?}");
+        // 600 out where the arena ends at 500: pulled in to 500.
+        let p = nudge([0.0, 0.0, 600.0], 10.0, &[], arena_outside, &mut rng);
+        assert!((p[2] - 500.0).abs() < 1e-3, "{p:?}");
     }
 }
