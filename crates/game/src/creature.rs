@@ -33,8 +33,9 @@ pub struct Creature {
     pub custom_rot: [f64; 3],
     pub custom_param: i64,
     pub judge_range: bool,
-    /// The player's place, which the stage keeps current.
+    /// The player's place and facing (radians), which the stage keeps current.
     pub player: [f64; 3],
+    pub player_facing: f64,
     /// The length a motion is taken to last when the host has none for it.
     pub motion_seconds: f64,
     pub rng: crate::rng::Rng,
@@ -46,7 +47,9 @@ pub struct Creature {
     pub reach: f64,
     pub view: f64,
     pub home: [f64; 3],
-    /// Whether it has noticed the player (its brain's +0xd4): it runs rather than walks.
+    /// Whether the player is in its sight (its brain's +0xd4, `setIsRange`/`getIsRange`, set by
+    /// `utility.nut`'s `isRangeInOut` when the sight check changes): it runs rather than walks,
+    /// and its brain plays its record's first script (`ai_*_in`) rather than its second.
     pub aware: bool,
     /// Take `wait_time` as it is rather than drawing (for tests).
     pub fixed_wait: bool,
@@ -75,6 +78,7 @@ impl Creature {
             custom_param: 0,
             judge_range: false,
             player: [0.0; 3],
+            player_facing: 0.0,
             motion_seconds: 1.0,
             rng,
             macros: Vec::new(),
@@ -150,6 +154,24 @@ impl Creature {
         let d = (dx * dx + dz * dz).sqrt().max(1e-6);
         let k = 100.0 + 200.0 * (self.rng.range(0, 10000) as f64 / 10000.0);
         [self.player[0] + dx / d * k, self.player[1], self.player[2] + dz / d * k]
+    }
+
+    /// A spot to flee to (`getPositionToPlayerEscape (angle)`, `0x140131720` → `0x140233240`):
+    /// from where it is, in a direction within `angle` degrees centred on the way the player
+    /// faces, a draw of distance up to its sight, kept when within its reach of where it is on
+    /// both axes; up to 64 draws. (The lower bound of the distance draw is not settled; 0 here.)
+    pub fn escape_spot(&mut self, angle: f64) -> [f64; 3] {
+        let (sight, reach) = (self.sight * 100.0, self.reach * 100.0);
+        let mut spot = self.position;
+        for _ in 0..64 {
+            let a = self.player_facing + (self.rng.range(0, 10000) as f64 / 10000.0 - 0.5) * angle.to_radians();
+            let d = sight * (self.rng.range(0, 10000) as f64 / 10000.0);
+            spot = [self.position[0] + a.sin() * d, self.position[1], self.position[2] + a.cos() * d];
+            if (spot[0] - self.position[0]).abs() <= reach && (spot[2] - self.position[2]).abs() <= reach {
+                break;
+            }
+        }
+        spot
     }
 
     /// Whether `p` is within its reach of where it stands (`isMaxRangeIn`, `0x140131a60` →
@@ -283,6 +305,11 @@ impl Host for Creature {
                 Value::Null
             }
             (SELF, "getCustomParam") => Value::Int(self.custom_param),
+            (SELF, "getIsRange") => Value::Bool(self.aware),
+            (SELF, "setIsRange") => {
+                self.aware = args.first().is_some_and(|a| a.truthy());
+                Value::Null
+            }
             (SELF, "setIsJudgeRange") => {
                 self.judge_range = args.first().is_some_and(|a| a.truthy());
                 Value::Null
@@ -317,6 +344,13 @@ mod tests {
             assert!((s[0] - 1000.0).abs() <= 800.0 && (s[2] - 1000.0).abs() <= 800.0);
         }
         c.player = [1000.0, 0.0, 2000.0];
+        c.player_facing = 0.0;
+        for _ in 0..50 {
+            // Facing +z with 90°: never more than 45° off +z.
+            let e = c.escape_spot(90.0);
+            let (dx, dz) = (e[0] - 1000.0, e[2] - 1000.0);
+            assert!(dz >= -1e-6 && dx.abs() <= dz + 1e-6, "{e:?}");
+        }
         let b = c.behind_player();
         assert!(b[2] >= 2100.0 && b[2] <= 2300.0 && (b[0] - 1000.0).abs() < 1e-6, "{b:?}");
     }

@@ -1134,8 +1134,15 @@ commands as the `.ebd` events.
   `getPositionToPlayerBehind` (`0x1402330d0`) is the player's place plus the direction from the
   creature through the player times a float draw of 1 to 3 (the function mixes the creature's
   metres with the player's field units, so the scale is not settled); float draws use a
-  generator of their own (`0x1404ca350`, an xorshift at `0x1410c2fd8`); `getPositionToPlayerEscape`
-  (`0x140233240`) is still a stand-in), and
+  generator of their own (`0x1404ca350`, an xorshift at `0x1410c2fd8`); `getPositionToPlayerEscape (angle)`
+  (`0x140233240`) goes from where the creature is in a direction within `angle` degrees centred
+  on the way the player faces (the `ai_*_in` scripts pass 90), up to its sight away, kept within
+  its reach (the distance draw's lower bound is not settled). Whether the player is in sight is
+  the brain's +0xd4 (`setIsRange`/`getIsRange`): `utility.nut`'s `isRangeInOut` tests the sight
+  cone each tick and, when the answer changes while range judging is on, sets it, zeroes the
+  timer and returns true, so the script starts over; the brain then plays the record's first
+  script (`ai_dog_in2`, the chase or flight) while it is set and the second (`ai_dog_out`, the
+  idle wandering) while it is not (`0x140233a27`), and `getMoveSpeed` gives the running speed), and
   `barrel nut-run ROOT FILE FRAMES` drives one 600 units from the player: the unaware dog
   waits (`F_WAIT`), plays one of its idle actions (`EX9`, `EX8`), and runs off (`B_RUN`) to a
   spot and waits again.
