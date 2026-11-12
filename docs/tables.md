@@ -608,7 +608,7 @@ them with the date is not read). `barrel_game::calendar` follows this, and `barr
 shows the dates.
 
 A new game sets the date to April 1st of school year 1 (`0x14035be60`, and `0x1410782e4` to
-0); the save holds both. Days pass only through `0x14035bf10 (days, reason)`, called with
+0); the save holds both. Days pass only through `0x14035bf10 (days, reason)` (world-map travel: reason 4 with the route's trip days, `days::World::travel`), called with
 reason 1 (`0x140052b5a` and two more), 2 (synthesis, its days, `0x14030d8a6`), 3 (one day,
 `0x14003412b`), 4 (a record's +0x24 days, `0x14007bf51`: world-map travel, presumably), 7 (one
 day, field code `0x1400795a8`, `0x14007ab66`) and 8 (one day, `0x14039b3d2`, `0x14039ba9c`).

@@ -24,7 +24,9 @@ pub enum Reason {
     Synthesis,
     /// 3: one day, `0x14003412b`.
     Three,
-    /// 4: world-map travel, presumably.
+    /// 4: world-map travel: a queued step (`0x14007bf40`) passes its days (+0x24); a trip
+    /// from the Southern Ruins to Colseit moved the running game from 8/20 to 8/24, the
+    /// route's four days.
     Travel,
     /// 7: one day, from field code.
     Field,
@@ -212,6 +214,13 @@ impl World {
         self.restock(days as i32, t)
     }
 
+    /// Travels a world-map route: its trip days (fewer once the events that shorten it have
+    /// been seen; `names` is the executable's `EVENT_*` enum, in order) pass.
+    pub fn travel(&mut self, route: &barrel_formats::world::Area, names: &[&str], t: &Tables) -> Vec<usize> {
+        let days = route.trip_days(|e| names.get(e as usize).is_some_and(|n| (t.seen)(n)));
+        self.advance(days.max(0) as u32, Reason::Travel, t)
+    }
+
     /// The shops after `days` days (`0x14035c560`): every ware whose event window is open
     /// counts the days; returns the wares refilled.
     fn restock(&mut self, days: i32, t: &Tables) -> Vec<usize> {
@@ -302,5 +311,25 @@ mod tests {
         assert!((w.friendship[1] - 30.0 * 0.11).abs() < 1e-3);
         assert!((w.friendship[2] - 30.0 * 0.03).abs() < 1e-3);
         assert_eq!(w.rolls.len(), calendar::DAILY_ROLLS);
+    }
+
+    #[test]
+    fn travel_passes_the_trip_days() {
+        let t = Tables {
+            requests: &[],
+            wares: &[],
+            ranks: &[],
+            recipe_cost: &|_| 0,
+            seen: &|n| n == "EVENT_XG03_130",
+            cleared: &|_| false,
+            known: &|_| false,
+            level: &|_| 1,
+        };
+        let r1 = barrel_formats::world::Area { id: "R1".into(), float: 1.5, days: [(4, -1), (3, 1), (2, 2)] };
+        let names = ["EVENT_A", "EVENT_XG03_130", "EVENT_XG03_140"];
+        let mut w = World::new_game(Rng::from_state([1, 2, 3, 4]), 0, &[]);
+        w.travel(&r1, &names, &t);
+        // _130 seen, _140 not: three days.
+        assert_eq!(w.date, 93);
     }
 }
