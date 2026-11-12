@@ -233,7 +233,8 @@ pub fn decode(coded: &[u8]) -> Result<Vec<u8>, Error> {
 
 /// A record of a save's state (after its 0x20-byte header): a little-endian u32 size counting
 /// itself, a NUL-terminated name, then one of
-/// - `Data`: a u32 length and that many bytes (most records);
+/// - `Data`: a u32 length and that many bytes (most records; little-endian in Escha & Logy,
+///   big-endian in Shallie);
 /// - `Group`: records that fill the rest exactly (`system_data`, `option`, ...), or a u32
 ///   count and that many records (`party`);
 /// - `Raw`: anything else, kept as it is (some records are written by their own code:
@@ -272,8 +273,13 @@ fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
         let z = rec.get(4..)?.iter().position(|&b| b == 0)? + 4;
         let name = std::str::from_utf8(&rec[4..z]).ok().filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))?;
         let rest = &rec[z + 1..];
-        let body = match rest.get(..4).map(|l| u32::from_le_bytes(l.try_into().unwrap()) as usize) {
-            Some(len) if len == rest.len() - 4 => Body::Data(&rest[4..]),
+        // The data length is little-endian in Escha's saves, big-endian in Shallie's.
+        let fits = |l: &[u8]| {
+            let l: [u8; 4] = l.try_into().unwrap();
+            [u32::from_le_bytes(l), u32::from_be_bytes(l)].iter().any(|&n| n as usize == rest.len() - 4)
+        };
+        let body = match rest.get(..4) {
+            Some(l) if fits(l) => Body::Data(&rest[4..]),
             _ => match records(rest) {
                 Some(children) if !rest.is_empty() => Body::Group(children),
                 // A u32 count, then that many records and maybe more (`party`: 11 `Party` records
@@ -647,5 +653,14 @@ mod tests {
         let e = event_records(&d);
         assert_eq!(e[0], EventRecord { seen: false, day: -31, count: 0, roll: 0, value: 0 });
         assert_eq!(e[1], EventRecord { seen: true, day: 90, count: 1, roll: 67, value: 0 });
+    }
+
+    #[test]
+    fn big_endian_lengths_read_too() {
+        let mut r = 15u32.to_le_bytes().to_vec();
+        r.extend_from_slice(b"bgm\0");
+        r.extend_from_slice(&[0, 0, 0, 3, 7, 8, 9]);
+        let rec = records(&r).unwrap();
+        assert_eq!(rec[0].body, Body::Data(&[7, 8, 9]));
     }
 }

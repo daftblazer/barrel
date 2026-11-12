@@ -442,7 +442,7 @@ read yet.
 
 **Records** (`save::state_records`): after the 0x20-byte header, each record is a
 little-endian u32 size counting itself and a NUL-terminated name, then most often a u32 length
-and that many bytes (`Body::Data`), or child records filling it exactly (`Body::Group`:
+and that many bytes (`Body::Data`; Shallie's saves, coded the same way, give that length big-endian), or child records filling it exactly (`Body::Group`:
 `system_data`, `option`, `event`, `knowledge`, `item`, ...; or a u32 count and at least that many
 records, `party`). Some are written by their own code
 and kept raw (`Body::Raw`: `FLAG` is two bytes and a `CLEAR` record of two bytes; `m_recipeData`

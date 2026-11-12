@@ -59,8 +59,8 @@ RTTI names 472 (Escha) and 546 (Shallie) classes.
 
 The save coding is the same too: Shallie's `SYSDATA.pcsave` decodes with `save::decode` (2,992
 bytes to 19,704, checksums matching) into the same record names (`system_data`, `ipu`, `bgm`,
-`eventData`, ...), though its leaf records do not follow Escha's u32-length form and read as
-raw (not looked into yet). What differs is the executable: every address in the docs is
+`eventData`, ...), its data lengths big-endian where Escha's are little-endian (both
+read); only the hand-written records stay raw, as in Escha, and the costume flag lists. What differs is the executable: every address in the docs is
 Escha's, and Shallie's game rules (its calendar works differently) need their own reading.
 
 ### Ayesha DX
