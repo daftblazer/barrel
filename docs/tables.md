@@ -1127,7 +1127,9 @@ alchemy level + 10 + the `INIT_COST_ADD` bonus + the first parameter of every le
 passive (Expert Skill, +15) cost points, at least 0 (`0x1400fe640`; `synthesis::start_cp`):
 22 for both in that save. `battle_data::mix_skills` reads the records.
 
-The property points (state +0x378, the budget for the traits carried over) start at 1 +
+The property points (state +0x3f8, the budget for the traits carried over; the setup
+`0x140302320` builds the first state at `rbp-0x80`, so its `rbp+0x378` is +0x3f8, and the
+running game's Craft by Escha at alchemy level 12 had 1 there) start at 1 +
 the first parameter of the user's learnt type-10 passives (Inherit Apprentice, Journeyman and
 Master: 4, 5 and 10, though their descriptions say 5, 10 and 20) + the `INIT_PP_ADD` bonus +
 the `GET_PP_ADD` bonuses of the made item's four categories (`synthesis::start_pp`). Just
