@@ -41,7 +41,8 @@ The engine has to run well across three tiers, set early so the design fits them
   such as a Snapdragon 8 Gen 2 handheld. Every game (the Dusk titles, Sophie 2, the Ryza
   trilogy).
 - **Handheld, low end: Mali GPUs** such as the RK3566's Mali-G52, aarch64 Linux, for the
-  older Dusk titles (Ayesha, Escha & Logy, Shallie).
+  older Dusk titles (Ayesha, Escha & Logy, Shallie), as far as its Vulkan driver allows: a
+  best effort, never a reason for a second backend.
 - **Desktop**, with newer features as options: upscaling (FSR), anti-aliasing (SMAA, FXAA,
   MSAA, TAA) and higher resolutions and rates.
 
@@ -60,9 +61,10 @@ What follows for the design:
   draw below native and the desktop above it; desktop upscalers (FSR 1 needs only the frame;
   FSR 2/3 and TAA need motion vectors and a jittered projection, kept in mind for the
   passes) and anti-aliasing are optional passes, off on the handhelds by default.
-- Vulkan 1.1 is the baseline today (`crates/render`); whether the RK3566's Mali drivers
-  give Vulkan (Mesa's PanVK on that Mali generation) or only OpenGL ES decides whether the
-  low tier needs a second backend. Not checked yet.
+- **Vulkan only**, written directly and tuned for Linux's Mesa drivers (Turnip, RADV and the
+  others): no OpenGL or OpenGL ES backend. Vulkan 1.1 is the baseline today
+  (`crates/render`). If a device's driver cannot run it (the RK3566 depends on Mesa's PanVK
+  for its Mali generation, not checked yet), that device goes without.
 - Measured on the devices themselves, one test at a time, bounded (the RP6 notes for Turnip
   apply).
 
