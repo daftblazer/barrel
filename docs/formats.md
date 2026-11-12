@@ -1093,6 +1093,21 @@ that place them are tables in the executable (English addresses; `crates/formats
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 
+## Costumes (`Saves/costume/*.xml`)
+
+An outfit is a body with a head and a face accessory. `CostumeBody.xml` (35 rows): its name,
+whose it is (`costume_chara`), its model (`chara_base`, a `CharaBase` tag: Escha's Colseit Uni
+is `PC20`, her Apple Pirate `PC20B` ...), a priority and the nodes the accessories hang from
+(`head_attach`, `face_attach`: `H_4_Acc_Head_Attach1`, `H_4_Acc_Face_Attach1`).
+`CostumeHead.xml` (38) and `CostumeFace.xml` (6): accessories, each a model name stem
+(`filename_base`, `HEAD00`; none for the first, "nothing"). `AccessoryAdjust.xml` (1,292 rows):
+for a body, part and accessory, the scale, rotation (degrees) and offset it is placed with.
+`PartsInvisible.xml` (90): the body's own parts hidden while an accessory is worn (Escha's
+default body hides `P_M_Acc_Hat1`, her hat, under any head accessory). `AccessoryChange.xml`
+(28): accessories swapped for another (`src` → `dst`) on a body. `CostumeChara.xml`: each
+character's default body, head and face. A save keeps the choices in `costumeData`.
+`barrel_formats::costume`, `barrel costumes ROOT`. Not yet used by the renderer.
+
 ## The message window's names
 
 An `ebm` line's second field (Escha) is the name the window shows: an index into the English

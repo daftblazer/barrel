@@ -5,6 +5,7 @@
 
 pub mod battle_data;
 pub mod bgm;
+pub mod costume;
 pub mod bc;
 pub mod chara_div;
 pub mod bc6h;

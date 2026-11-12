@@ -45,6 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel costumes ROOT          the outfits: each body's model and the accessories that can go on it
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
@@ -149,6 +150,7 @@ fn main() -> ExitCode {
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
+        ["costumes", root] => costumes(Path::new(root)),
         ["field-sim", root, area, frames] => field_sim(Path::new(root), area, frames.parse().unwrap_or(600)),
         ["nut-run", root, file, ticks] => nut_run(Path::new(root), file, ticks.parse().unwrap_or(1)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
@@ -3019,6 +3021,25 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+/// The costume tables (`Saves/costume`): each outfit's model and the accessories adjusted to it.
+fn costumes(root: &Path) -> Result<()> {
+    use barrel_formats::costume as c;
+    let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&read(&root.join("Saves/costume").join(n))?)?) };
+    let names = |n: &str| -> Option<barrel_formats::table::Element> { barrel_formats::table::parse(&read(&root.join("Saves_EN/costume").join(n)).ok()?).ok() };
+    let bodies = c::bodies(&table("CostumeBody.xml")?);
+    let en = names("CostumeBody.xml").map(|t| c::bodies(&t)).unwrap_or_default();
+    let heads = c::accessories(&table("CostumeHead.xml")?);
+    let faces = c::accessories(&table("CostumeFace.xml")?);
+    let adjusts = c::adjusts(&table("AccessoryAdjust.xml")?);
+    let hides = c::hides(&table("PartsInvisible.xml")?);
+    for (k, b) in bodies.iter().enumerate() {
+        let name = en.get(k).map_or(b.name.as_str(), |e| e.name.as_str());
+        println!("{k:2} {:<22} {:<10} model {:<7} head at {} face at {}", name, b.chara.trim_start_matches("COSTUME_CHARA_"), b.base, b.head_attach, b.face_attach);
+    }
+    println!("{} heads ({} with a model), {} faces, {} adjustments, {} hiding rules", heads.len(), heads.iter().filter(|h| !h.file.is_empty()).count(), faces.len(), adjusts.len(), hides.len());
     Ok(())
 }
 
