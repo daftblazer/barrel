@@ -1122,3 +1122,28 @@ mod reward_tests {
         assert_eq!(super::rewards(&monsters, &[0, 0, 1], 10, 10), (19, 37));
     }
 }
+
+/// The battle's reward bonuses in percent (`0x1401b4b60`): the largest among the party's
+/// fighters (their kind 0) of each one's experience (+0x108), money (+0x10c) and third (+0x110,
+/// kept at `0x141077de8`, not followed) bonus, none below 0; while the field's state is in mode 6
+/// (`0x1410783b0`, `gather::FieldState`) its first value adds to the experience bonus and its
+/// second to the third. Returns `(exp, money, third)`.
+pub fn reward_bonuses(fighters: &[(i32, i32, i32)], field: crate::gather::FieldState) -> (i32, i32, i32) {
+    let mut b = fighters.iter().fold((0, 0, 0), |b, &(e, m, t)| (b.0.max(e), b.1.max(m), b.2.max(t)));
+    if field.mode == 6 {
+        b.0 += field.values[0];
+        b.2 += field.values[1];
+    }
+    b
+}
+
+#[cfg(test)]
+mod reward_bonus_tests {
+    #[test]
+    fn the_best_fighter_sets_each_bonus() {
+        use crate::gather::FieldState;
+        let f = [(10, 0, 5), (20, 15, 0), (-5, 0, 0)];
+        assert_eq!(super::reward_bonuses(&f, FieldState::default()), (20, 15, 5));
+        assert_eq!(super::reward_bonuses(&f, FieldState { mode: 6, values: [30, 7, 0] }), (50, 15, 12));
+    }
+}

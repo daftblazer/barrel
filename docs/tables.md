@@ -1547,8 +1547,12 @@ its +0x10 method, is 1): the battle's experience (its +0x8) gains the monster's 
 (record +0x10) times 100 plus the experience bonus percent (`0x141077df8`) over 100, and its
 money (+0xc) likewise with the money bonus (`0x141077df4`), each cut toward zero per monster;
 then the monster's four drop slots are rolled through its +0x110 method into the spoils list
-(`0x140d8de30`). `barrel_game::battle::rewards`. Who sets the two bonuses (equipment, traits) is
-not read yet. The result screen (`0x1401d85b0`) then raises the experience by bonus value 1,
+(`0x140d8de30`). `barrel_game::battle::rewards`. The bonuses are set as the battle starts
+(`0x1401b4b60`): the largest among the party's fighters (their kind 0) of each one's +0x108
+(experience), +0x10c (money) and +0x110 (a third, kept at `0x141077de8`, not followed), none
+below 0; while the field's state (`0x1410783b0`, the gathering one) is in mode 6, its first value
+adds to the experience bonus and its second to the third (`battle::reward_bonuses`). What fills
+the fighters' three is not read (equipment or traits, presumably). The result screen (`0x1401d85b0`) then raises the experience by bonus value 1,
 the experience rate (`0x14002f2f0 (1)`: total × (100 + rate) / 100), and hands it and the
 money to the party's display (`0x1401ce940`).
 
