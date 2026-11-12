@@ -834,7 +834,11 @@ filled from `Chara.xml` itself (leftover XML text even sits at the start of the 
 is the row's `Radius` for all 192 records read (Escha 27, Logy 40, Awin 44 …), and the fields
 around it are the row's other columns (`Height`, `CamH`, `CamR`, `Size`, `Color`). Monster m is
 row 18 + m (row 18 the Poison Squirrel, monster 0; the names agree apart from spellings), so
-an Ore Rat is 55; party members are their own rows (the party order follows the rows,
+an Ore Rat is 55 (a second live run read the fighters themselves, found by their classes'
+vtables, `BtlCharaParty` `0x140808540` and `BtlCharaMonster` `0x1408083d0`: +0x358 held 27,
+28, 33, 44 and 40 for Escha, Katla, Wilbell, Awin and Logy and 77, 77, 46 for the three
+monsters, their rows' radii; +0x398 held each member's squad index mod 3 and +0x394 that plus
+3, the slot `battle::party_spot` turns by, as the formation code writes them); party members are their own rows (the party order follows the rows,
 except Nio, member 10, who is row 11 after Marion: `battle_data::party_size`).
 `battle_data::chara_radii`, `monster_size`; the skirmish scatters and spaces
 monsters by these sizes, the biggest at the centre (`barrel battle ... gN --from SAVE` prints
