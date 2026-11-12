@@ -749,9 +749,19 @@ The field's state machine (states registered by `0x140083e60` as pairs of an ent
 function) has a battle-start state, `0x140084710` (update `0x140084c20`): it builds the battle
 setup from an encounter group (its +0x1c, `0x1400502a0`), copies its +0x20 into the setup's
 +0x38 and the current area record's +0x14 (above) into the setup's +0x30, then makes the battle
-request (`0x140291b00`, `0x140291fd0`). What puts the field into that state when an enemy
-touches the player is not read yet (the scripts' `isHitCollision` is a wall check: on a hit
-they go back to waiting).
+request (`0x140291b00`, `0x140291fd0`). Those states belong to an encounter object (0x80
+bytes, `0x140081260 (group?, group, start, kind)` builds it: +0x18, +0x1c the encounter group,
++0x20 how it began, +0x24 a kind; state 0, `0x140084410`/`0x140084670`, blends +0x48 toward
++0x44 over +0x4c seconds and then moves to state 1). The field's contact check (`0x140270260`)
+makes one when the player's field strike, while out (`0x14026e2c0`), hits an enemy
+(`0x140270f50`; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
+they touch (`0x140270cc0`; 0); scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
+The scripts' `isHitCollision` is only a wall check (on a hit they go back to waiting).
+An encounter ends with no battle when the player struck first, the party's average level
+(`0x140330a10`, the party list at `0x141093530`) is at least 10 above the group's (the average of
+its three monster slots' levels), its kind is not 1 to 5, the player's +0x1e0 is 1 and a field
+check (`0x1402177c0`) says no (`barrel_game::encounter::skips_battle`): weak enemies are struck
+down on the field. What the field then does with them (drops, the enemy's removal) is not read.
 
 ### Encounter groups
 

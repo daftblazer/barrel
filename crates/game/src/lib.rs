@@ -12,6 +12,7 @@ pub mod delivery;
 pub mod duel;
 pub mod equipment;
 pub mod explore;
+pub mod encounter;
 pub mod field_ai;
 pub mod field_camera;
 pub mod fight;
