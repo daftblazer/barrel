@@ -5,6 +5,8 @@ layout(set = 0, binding = 1) uniform sampler2D layers[6];
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; } pc;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv; // 0..1 across the field
+// The field light at this vertex (model.vert).
+layout(location = 4) in vec3 field_light;
 layout(location = 0) out vec4 color;
 void main() {
     vec3 w0 = texture(blend[0], uv).rgb;
@@ -19,7 +21,8 @@ void main() {
         total += w[i];
     }
     c = total > 0.001 ? c / total : texture(layers[0], world * s[0]).rgb;
-    vec3 n = normalize(normal);
-    float light = 0.45 + 0.55 * max(dot(n, normalize(vec3(-0.3, 0.6, 0.7))), 0.0);
-    color = vec4(c * light * pc.params.w, 1.0);
+    // Lit as the field's own terrain program does (its pack's pixel program 9 in TOWN_10):
+    // the same per-vertex light as the field's models (the vertex colour white), on the
+    // blended layers; the light texture, shadow and specular are not done yet.
+    color = vec4(field_light * c * pc.params.w, 1.0);
 }

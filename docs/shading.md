@@ -154,3 +154,16 @@ The renderer draws the scene into its own 8-bit target at half brightness (`HDR_
 down through the five levels and back up, adding (the add is a blend, which the programs do
 not show; taken as plain addition), and the post pass doubles the scene, adds level 0 at the
 field's `glow_add_rate` and draws the text over it. A field without `<hdr>` gets no glow.
+
+## Terrain (the field's own `<AREA>.g1s`)
+
+The ground's programs are not in `Data/x64/Shader` (the engine's `CBlendMapTerrainShader`
+classes) but in each field's container, `<AREA>.g1s` beside its `.ktf` (`TOWN_10.g1s`: 16
+programs). Vertex program 2 lights the ground like `MapSTD`'s (`litDir`, `litCol`, `ambLit`,
+`cDiff`, `cAmb`, `cSpec`, the light texture's projection `mW2Pt`, the shadow map's `mW2S`,
+fog). Pixel programs 9 to 11 (two layers; 12 to 15 with a render-to-texture layer) take the
+same shadow lookup, `sLit`, and two layers `sLand0`/`sLand1` weighted by the blend map's red
+and green (each divided by their sum plus 1/1024), at the world position's x and z times
+`texsize0`; colour = `(v2 + s·lit·v6) × layers + (v8 + s·lit·v7) × layers.a`, then the fog,
+and × 0.5 written in (the HDR range's inverse). The renderer's terrain takes the same
+per-vertex light as the field's models (with a white vertex colour) on its blended layers.
