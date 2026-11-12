@@ -142,7 +142,7 @@ with `3791 0 2250 286 448 9983 383 11369 0 150 0`:
 
 | Operand | Example | Use (from the handler) |
 |---|---|---|
-| 1 | 37.91° | yaw, through the same setter as `t3` (0x74100003) |
+| 1 | 37.91° | yaw, through the same setter as `t3` (0x74100003; the setter `0x1401ec9e0` keeps it at +0x24/+0x28) |
 | 2 | 0° | an angle, stored where `t5` (0x74100005) stores |
 | 3 | 22.50° | pitch, through the same setter as `t7` (0x74100007) |
 | 4 | 2.86° | an angle, through `0x1401ec8f0` (not identified yet) |
@@ -160,13 +160,14 @@ view is not in the command (40° is used for now).
 on}`: the camera follows the character only when `on` is not 0, and otherwise follows nothing
 (`virtual +0x78(-1)`); the opening's `t18 0 0` turns following off, so `t20`'s target stands.
 
-Not settled: the sign of the yaw. With the camera placed at target + (sin yaw, ., -cos yaw)
-× distance before mirroring x, `EVENT_MM08_AS4_130` opens on its four characters but
-`EVENT_MM01_OP1_111` (yaw 137.89°, target (607, -21, 1808) + 150 up, distance 1000) frames a
-corner of the workshop with Escha about 30° off the view's centre; with the sign flipped,
-the opening frames the workshop and Escha (2° off centre) but `MM08_AS4_130` looks at empty
-grass. Something else in the field camera (the field's own camera data that `t19` selects,
-or operand 4's angle) presumably decides it.
+The yaw's sign: the camera sits at target + offset + (-sin yaw · cos pitch, sin pitch,
+-cos yaw · cos pitch) × distance in game space (then x is mirrored like the vertices). That was
+settled by the events rather than the code (the camera class builds its view without calling
+`sinf`/`cosf`, which is not read): over the 168 story events whose `t20` comes before anyone
+moves, this sign puts the nearest placed character a median 9.7° off the view's centre (112
+within 15°), the other sign 17.7° (74). `EVENT_MM01_OP1_111` then opens looking into the
+workshop at Escha and Clone. The field of view is still 40° (ours); the fields' own camera
+tables (`Saves/field/<FIELD>.xml`, `<camera>` points) use 22.5°, which events may share.
 
 **Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
 second (the unit is read from the values below; that the frame time it counts down by is in
