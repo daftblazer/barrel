@@ -7,6 +7,7 @@ pub mod clock;
 pub mod curve;
 pub mod days;
 pub mod duel;
+pub mod field_camera;
 pub mod fight;
 pub mod event;
 pub mod face;

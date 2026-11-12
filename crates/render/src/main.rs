@@ -1638,7 +1638,7 @@ fn main() -> Result<()> {
     // (arrows, + and -): `orbit` holds the turn (yaw, pitch in radians) and the zoom factor.
     let mut orbit = (0f32, 0f32, 1f32);
     // The projection follows the target's current aspect (the window can change size).
-    let view_proj = |width: u32, height: u32, (yaw, pitch, zoom): (f32, f32, f32)| {
+    let view_proj = |eye: Vec3, target: Vec3, dist: f32, width: u32, height: u32, (yaw, pitch, zoom): (f32, f32, f32)| {
         let offset = eye - target;
         let flat = offset.length();
         let turned = glam::Quat::from_rotation_y(yaw) * offset;
@@ -1873,6 +1873,13 @@ fn main() -> Result<()> {
                 }
             }
             let shown = barrel_game::stage::Snapshot::blend(before, after, f.alpha);
+            // The event's camera as the stage has it (game space, x mirrored like the
+            // vertices); the opening one until the event sets one.
+            if let (Some(e), Some(t), true) = (shown.eye, shown.target, use_event_camera) {
+                let mirror = Vec3::new(-1.0, 1.0, 1.0);
+                (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
+                dist = (eye - target).length().max(1.0);
+            }
             let since = ((clock.ticks - start_ticks) as f32 + f.alpha) / clock.rate() as f32;
             // The time on screen: the logic time less the part of the last tick not yet shown.
             let shown_time = play.stage.time - (1.0 - f.alpha) / clock.rate() as f32;
@@ -1973,7 +1980,7 @@ fn main() -> Result<()> {
         }
     }
     // The image to draw into: the window's next, or the offscreen one.
-    let target = match (&presenter, &sync) {
+    let image = match (&presenter, &sync) {
         (Some(p), Some((ready, _))) => match p.acquire(*ready)? {
             Some(i) => i as usize,
             None => {
@@ -1983,7 +1990,7 @@ fn main() -> Result<()> {
         },
         _ => 0,
     };
-    let mvp = view_proj(width, height, orbit);
+    let mvp = view_proj(eye, target, dist, width, height, orbit);
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
     let record = |cb: vk::CommandBuffer| unsafe {
         let clear = [
@@ -1994,7 +2001,7 @@ fn main() -> Result<()> {
             cb,
             &vk::RenderPassBeginInfo::default()
                 .render_pass(render_pass)
-                .framebuffer(targets.framebuffers[target])
+                .framebuffer(targets.framebuffers[image])
                 .render_area(area)
                 .clear_values(&clear),
             vk::SubpassContents::INLINE,
@@ -2050,7 +2057,7 @@ fn main() -> Result<()> {
                 &[vk::SubmitInfo::default().wait_semaphores(&waits).wait_dst_stage_mask(&stages).command_buffers(&cbs).signal_semaphores(&signals)],
                 fence,
             )?;
-            stale |= p.present(&gpu, target as u32, *done)?;
+            stale |= p.present(&gpu, image as u32, *done)?;
             d.wait_for_fences(&[fence], true, u64::MAX)?;
             d.destroy_fence(fence, None);
             d.free_command_buffers(pool, &cbs);

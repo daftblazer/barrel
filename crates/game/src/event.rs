@@ -111,6 +111,8 @@ pub enum Step<'a> {
     /// The event camera's eye or target is set or starts moving (`t3`, `t4`, `t6`, `t7`,
     /// `t9`; [`crate::camera`]).
     Camera { action: usize, part: crate::camera::Part, change: crate::camera::Change },
+    /// The field-map camera changes (`t3/0x10` to `t20/0x10`, [`crate::field_camera`]).
+    FieldCamera { action: usize, change: crate::field_camera::Change },
     /// A character's rotation is set (`s23`, `ECT_CHARA_ROT_SET`, `{character, x, y, z}` in
     /// degrees, here in radians): `rotation[1]` is the facing about the vertical axis, 0
     /// towards +z (the runner's +0x240, the same angle a move's facing writes).
@@ -245,6 +247,9 @@ impl<'a> Player<'a> {
             (CHARA_MOVE, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
                 let (extra, movement) = crate::camera::Move::read_with_extra(rest).unwrap();
                 out.push(Step::CharacterMove { action, character: *character, extra, movement })
+            }
+            (word, operands) if crate::field_camera::Change::read(word, operands).is_some() => {
+                out.push(Step::FieldCamera { action, change: crate::field_camera::Change::read(word, operands).unwrap() })
             }
             (word, operands) if !crate::camera::changes(word, operands).is_empty() => {
                 out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| Step::Camera { action, part, change }))
@@ -436,6 +441,7 @@ mod tests {
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
+                Step::FieldCamera { change, .. } => format!("field camera {change:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),

@@ -186,6 +186,10 @@ pub struct Stage {
     pub curves: BTreeMap<u32, crate::curve::Curve>,
     /// Sounds asked for and not yet taken (the player drains them).
     pub cues: Vec<Cue>,
+    /// The field-map camera, once an event's `t20` has set it; the latest of it and the
+    /// manual camera ([`Stage::eye`], [`Stage::target`]) is the one in use.
+    pub field_camera: Option<crate::field_camera::FieldCamera>,
+    pub manual_camera: bool,
     /// The latest line ([`Stage::line_shown`] says whether it is still up).
     pub line: Option<Line>,
     /// How long a line stays up, for playback nobody reads along with: the reading time the
@@ -296,7 +300,15 @@ impl Stage {
                 };
                 b.mover = Mover::new(b.position, to, movement, *extra);
             }
+            Step::FieldCamera { change, .. } => {
+                match self.field_camera.as_mut() {
+                    Some(c) => c.apply(change),
+                    None => self.field_camera = crate::field_camera::FieldCamera::new(change),
+                }
+                self.manual_camera = false;
+            }
             Step::Camera { part, change, .. } => {
+                self.manual_camera = true;
                 let (to, movement) = match change {
                     Change::Set(p) => (self.resolve(p), None),
                     Change::Move(m) => (self.resolve(m.to()), Some(*m)),
@@ -328,6 +340,9 @@ impl Stage {
 
     /// Runs the movers one frame of `dt` seconds.
     pub fn frame(&mut self, dt: f32) {
+        if let Some(c) = self.field_camera.as_mut() {
+            c.step(dt);
+        }
         for b in self.characters.values_mut() {
             if let Some((from, change, seconds, elapsed, curve)) = b.turn.as_mut() {
                 *elapsed += dt;
@@ -361,11 +376,15 @@ impl Stage {
 
     /// The state the screen needs now.
     pub fn snapshot(&self) -> Snapshot {
-        Snapshot {
-            characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(),
-            eye: self.eye.position,
-            target: self.target.position,
-        }
+        // The camera in use: the field camera unless the manual one was set after it.
+        let (eye, target) = match (&self.field_camera, self.manual_camera) {
+            (Some(c), false) => {
+                let (e, t) = c.eye_target();
+                (Some(e), Some(t))
+            }
+            _ => (self.eye.position, self.target.position),
+        };
+        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target }
     }
 
     /// Runs whole [`FRAME`]s until `time`.

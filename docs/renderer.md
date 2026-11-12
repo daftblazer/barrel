@@ -217,6 +217,11 @@ names) and the line spacing (53 atlas pixels) are ours: the game's layout code i
 `BARREL_TEXT_LOG=1` prints each line as it goes up. Frames written to files show the lines
 too.
 
+**The event camera in the window.** Each frame takes the camera from the stage's blended
+snapshot (the field camera or the manual one, whichever the event set last), mirrored into
+render space; until the event sets one, the opening camera stands. The arrow keys still turn
+and zoom about it.
+
 **Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
 mirrored into render space); the terrain is not culled (it winds the other way and is only seen
 from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are

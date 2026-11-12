@@ -169,6 +169,28 @@ within 15°), the other sign 17.7° (74). `EVENT_MM01_OP1_111` then opens lookin
 workshop at Escha and Clone. The field of view is still 40° (ours); the fields' own camera
 tables (`Saves/field/<FIELD>.xml`, `<camera>` points) use 22.5°, which events may share.
 
+**The field camera over time** (`barrel_game::field_camera`). Each of its values is held as
+`{start, goal, now, seconds}` (yaw at +0x20 to +0x2c, pitch +0x50, a fourth angle +0x80,
+distance +0x98; setters `0x1401eca20`, `0x1401ec7a0`, `0x1401ec940`, `0x1401ec890`): a
+command heads it from its value now to the goal over the seconds, at once for 0. The odd words
+set the goal, the even ones add to the value now (`t4` after `t3`'s `0x1401e7b01` branch):
+
+| Word | Changes | Operands |
+|---|---|---|
+| `t3`/`t4` | yaw | degrees, seconds |
+| `t5`/`t6` | an angle (`t20`'s second; not followed) | |
+| `t7`/`t8` | pitch | degrees, seconds |
+| `t9`/`t10` | the fourth angle (`t20`'s fourth; kept, not used) | degrees, seconds |
+| `t11`/`t12` | distance | units, seconds |
+| `t13`/`t14` | the target | x, y, z, seconds |
+| `t20` | everything at once | see above |
+
+How the values move between start and goal (the update) is not read: they move linearly here.
+The stage holds the field camera (`Stage::field_camera`) and its snapshot gives the eye and
+target of whichever camera was set last, the field camera or the manual one (`t3` ... without
+`/0x10`); the window follows it every frame. `EVENT_MM01_OP1_111`'s action 7 turns the camera
+from -176.96° to -163.97° over five seconds while it pulls toward Escha.
+
 **Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
 second (the unit is read from the values below; that the frame time it counts down by is in
 seconds is not yet confirmed from the code): `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and
