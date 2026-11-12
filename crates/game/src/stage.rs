@@ -189,6 +189,8 @@ pub struct Stage {
     /// The field-map camera, once an event's `t20` has set it; the latest of it and the
     /// manual camera ([`Stage::eye`], [`Stage::target`]) is the one in use.
     pub field_camera: Option<crate::field_camera::FieldCamera>,
+    /// The field map the event is in (its latest `FieldChange`).
+    pub field: Option<u32>,
     pub manual_camera: bool,
     /// The latest line ([`Stage::line_shown`] says whether it is still up).
     pub line: Option<Line>,
@@ -300,6 +302,7 @@ impl Stage {
                 };
                 b.mover = Mover::new(b.position, to, movement, *extra);
             }
+            Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::FieldCamera { change, .. } => {
                 match self.field_camera.as_mut() {
                     Some(c) => c.apply(change),

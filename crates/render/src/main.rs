@@ -81,6 +81,9 @@ struct Draw {
     overlay: Option<usize>,
     /// Which of [`Scene::instances`] places it.
     instance: u32,
+    /// The field (in the order the scene loaded them) it belongs to; None for what is drawn
+    /// in every field (the event's characters).
+    field: Option<u16>,
 }
 
 struct Gpu {
@@ -254,6 +257,26 @@ fn barrier(
     };
 }
 
+/// The terrain on the GPU: one pipeline, and each field's ground with its set of textures.
+struct TerrainGpu {
+    layout: vk::DescriptorSetLayout,
+    pool: vk::DescriptorPool,
+    pipeline_layout: vk::PipelineLayout,
+    shader: vk::ShaderModule,
+    pipeline: vk::Pipeline,
+    grounds: Vec<Ground>,
+}
+
+struct Ground {
+    field: u16,
+    set: vk::DescriptorSet,
+    textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    first_index: u32,
+    index_count: u32,
+    field_size: f32,
+    scales: [f32; 6],
+}
+
 /// The field's ground: a heightmap grid drawn with the terrain shader.
 struct TerrainDraw {
     first_index: u32,
@@ -270,7 +293,10 @@ struct Scene {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     draws: Vec<Draw>,
-    terrain: Option<TerrainDraw>,
+    /// Each field's ground, by field.
+    terrains: Vec<(u16, TerrainDraw)>,
+    /// The field geometry added now belongs to (see [`Draw::field`]).
+    field: Option<u16>,
     lo: Vec3,
     hi: Vec3,
     /// The next model's facial morph sets by vertex layout: each target's offset per vertex,
@@ -300,7 +326,8 @@ impl Scene {
             vertices: Vec::new(),
             indices: Vec::new(),
             draws: Vec::new(),
-            terrain: None,
+            terrains: Vec::new(),
+            field: None,
             instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, weights: 0, _pad: [0; 2] }],
             palette: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
@@ -428,7 +455,7 @@ impl Scene {
             let overlay = material
                 .filter(|m| m.textures.len() >= 4 && m.textures.iter().all(|t| t.subtype != 1))
                 .map(|m| (m.textures[1].index as usize).min(textures.saturating_sub(1)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, field: self.field });
         }
         Ok(())
     }
@@ -945,12 +972,23 @@ fn event_characters(
     Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
 }
 
-/// The field directory an event plays in (`docs/events.md`, "Which field").
-fn event_field(event_path: &Path) -> Result<PathBuf> {
+/// The fields an event plays in, in the order it first goes to each (`docs/events.md`, "Which
+/// field"): each field map number and its directory.
+fn event_fields(event_path: &Path) -> Result<Vec<(u32, PathBuf)>> {
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
     let event = barrel_formats::ebd::Ebd::parse(&std::fs::read(event_path)?)?;
     let steps = barrel_game::event::Player::escha(&event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
-    let map = barrel_game::event::first_field(&steps).ok_or("the event changes to no field; give --field DIR")?;
+    let mut maps: Vec<u32> = Vec::new();
+    for t in &steps {
+        if let barrel_game::event::Step::FieldChange { map, .. } = t.step {
+            if !maps.contains(&map) {
+                maps.push(map);
+            }
+        }
+    }
+    if maps.is_empty() {
+        return Err("the event changes to no field; give --field DIR".into());
+    }
     let names = std::fs::read_dir(root)?
         .flatten()
         .map(|e| e.path())
@@ -958,9 +996,13 @@ fn event_field(event_path: &Path) -> Result<PathBuf> {
         .filter_map(|p| std::fs::read(p).ok())
         .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::event::field_maps(&pe)).filter(|m| !m.is_empty()))
         .unwrap_or_default();
-    let name = names.get(map as usize).ok_or("field map number past the executable's list")?;
-    eprintln!("field {map}: {name}");
-    Ok(root.join("Data/x64/Field").join(name))
+    maps.into_iter()
+        .map(|map| {
+            let name = names.get(map as usize).ok_or("field map number past the executable's list")?;
+            eprintln!("field {map}: {name}");
+            Ok((map, root.join("Data/x64/Field").join(name)))
+        })
+        .collect()
 }
 
 /// Where in `anim` to sample at motion time `t`: looping motions wrap, others hold their end.
@@ -999,7 +1041,10 @@ fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
 }
 
 /// A field's placed objects and its shared texture pack.
-fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
+/// Adds a field's ground and objects to the scene, as field `scene.field`, its textures taken
+/// to start at `base` in the scene's list; returns its texture pack.
+fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
+    let first_draw = scene.draws.len();
     let area = dir.file_name().ok_or("field directory has no name")?.to_string_lossy().into_owned();
     let main_bytes = std::fs::read(dir.join(format!("{area}.elixir.gz")))?;
     let main = Elixir::parse(&main_bytes)?;
@@ -1026,13 +1071,10 @@ fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
             "{area}: terrain {}x{} cells of {}, heights {lo}..{hi}, {} layers, scales {scales:?}",
             h.cells_x, h.cells_z, h.cell_size, t.layers.textures.len()
         );
-        scene.terrain = Some(TerrainDraw {
-            first_index,
-            index_count,
-            field_size: h.cells_x as f32 * h.cell_size,
-            scales,
-            ktf: bytes.to_vec(),
-        });
+        scene.terrains.push((
+            scene.field.unwrap_or(0),
+            TerrainDraw { first_index, index_count, field_size: h.cells_x as f32 * h.cell_size, scales, ktf: bytes.to_vec() },
+        ));
     }
     let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
     let (mut placed, mut missing) = (0usize, 0usize);
@@ -1052,6 +1094,10 @@ fn field_scene(dir: &Path, scene: &mut Scene) -> Result<Vec<u8>> {
         }
     }
     eprintln!("{area}: {placed} objects placed, {missing} without a model");
+    for d in &mut scene.draws[first_draw..] {
+        d.texture += base;
+        d.overlay = d.overlay.map(|o| o + base);
+    }
     Ok(textures)
 }
 
@@ -1174,15 +1220,26 @@ fn main() -> Result<()> {
 
     // CPU side: the vertices and draws, and the texture pack.
     let mut scene = Scene::new();
-    let tex_bytes = if field {
-        // `--field auto` with an event: the field of the event's first field change.
-        let dir = if args[1] == "auto" {
+    // The field map numbers loaded, in scene order (empty for `--field DIR`).
+    let mut field_maps: Vec<u32> = Vec::new();
+    let mut pack_bytes = Vec::new();
+    if field {
+        // `--field auto` with an event: every field the event goes to.
+        let dirs = if args[1] == "auto" {
             let e = event_spec.as_ref().ok_or("--field auto needs --event")?;
-            event_field(Path::new(e))?
+            event_fields(Path::new(e))?
         } else {
-            PathBuf::from(&args[1])
+            vec![(u32::MAX, PathBuf::from(&args[1]))]
         };
-        field_scene(&dir, &mut scene)?
+        let mut base = 0;
+        for (k, (map, dir)) in dirs.iter().enumerate() {
+            scene.field = Some(k as u16);
+            let bytes = field_scene(dir, &mut scene, base)?;
+            base += G1t::parse(&bytes)?.textures.len();
+            pack_bytes.push(bytes);
+            field_maps.push(*map);
+        }
+        scene.field = None;
     } else {
         let model_bytes = entry_bytes(&args[0])?;
         let model = G1m::parse(&model_bytes)?;
@@ -1210,16 +1267,15 @@ fn main() -> Result<()> {
         let instance = if joints.is_some() || !scene.morph.is_empty() { scene.instance(Mat4::IDENTITY) } else { 0 };
         scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
         scene.morph.clear();
-        tex_bytes
-    };
-    let mut pack_bytes = vec![tex_bytes];
+        pack_bytes.push(tex_bytes);
+    }
     let mut focus = None;
     let mut event_camera: Option<EventCamera> = None;
     let mut actors: Vec<Actor> = Vec::new();
     // Characters loaded but not on the stage (yet, or any more): not drawn.
     let mut absent: std::collections::HashSet<u32> = Default::default();
     if let Some(e) = &event_spec {
-        let base = G1t::parse(&pack_bytes[0])?.textures.len();
+        let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
         let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent)?;
         pack_bytes.extend(packs);
         focus = centre;
@@ -1240,9 +1296,9 @@ fn main() -> Result<()> {
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
     if no_terrain {
-        scene.terrain = None;
+        scene.terrains.clear();
     }
-    let Scene { vertices, indices, mut draws, terrain, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
+    let Scene { vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
     let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
     for draw in &mut draws {
@@ -1539,37 +1595,10 @@ fn main() -> Result<()> {
         d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
     };
 
-    // Terrain: its own textures, a set of 2 blend maps + 6 layers, and a pipeline with the
-    // terrain fragment shader.
-    let mut terrain_gpu = None;
-    if let Some(t) = &terrain {
-        let bundle = barrel_formats::ktf::parse(&t.ktf)?;
-        let mut tex = Vec::new();
-        for b in bundle.blend.textures.iter().take(2) {
-            tex.push(upload_texture(&gpu, pool, b)?);
-        }
-        // A field with one blend map (TOWN_03) weights only the first three layers: the
-        // second map is black, so layers 4 to 6 get no weight.
-        let black = [0u8, 0, 0, 255];
-        while tex.len() < 2 && !tex.is_empty() {
-            let t = barrel_formats::g1t::Texture {
-                width: 1,
-                height: 1,
-                format: Format::Rgba8,
-                format_code: 1,
-                layers: 1,
-                volume: false,
-                levels: vec![&black[..]],
-            };
-            tex.push(upload_texture(&gpu, pool, &t)?);
-        }
-        let layer_count = bundle.layers.textures.len().clamp(1, 6);
-        for i in 0..6 {
-            tex.push(upload_texture(&gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
-        }
-        if tex.len() != 8 {
-            return Err("terrain needs two blend maps".into());
-        }
+    // Terrain: each field's own textures in a set of 2 blend maps + 6 layers, and one pipeline
+    // with the terrain fragment shader.
+    let mut terrain_gpu: Option<TerrainGpu> = None;
+    if !terrains.is_empty() {
         let bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
@@ -1583,20 +1612,10 @@ fn main() -> Result<()> {
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
         ];
         let tlayout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings), None)? };
-        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 }];
-        let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&sizes), None)? };
-        let tl = [tlayout];
+        let n = terrains.len() as u32;
+        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 * n }];
+        let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)? };
         let tpl_layouts = [tlayout, instance_layout];
-        let tset = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
-        let infos: Vec<vk::DescriptorImageInfo> = tex
-            .iter()
-            .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
-            .collect();
-        let writes = [
-            vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..2]),
-            vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
-        ];
-        unsafe { d.update_descriptor_sets(&writes, &[]) };
         let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
         let tfs = module(TERRAIN_FRAG)?;
         let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
@@ -1605,7 +1624,49 @@ fn main() -> Result<()> {
         let traster = raster.cull_mode(vk::CullModeFlags::NONE);
         let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster);
         let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
-        terrain_gpu = Some((tex, tlayout, tpool, tset, tpl, tfs, tpipe));
+        let mut grounds = Vec::new();
+        for (field, t) in &terrains {
+            let bundle = barrel_formats::ktf::parse(&t.ktf)?;
+            let mut tex = Vec::new();
+            for b in bundle.blend.textures.iter().take(2) {
+                tex.push(upload_texture(&gpu, pool, b)?);
+            }
+            // A field with one blend map (TOWN_03) weights only the first three layers: the
+            // second map is black, so layers 4 to 6 get no weight.
+            let black = [0u8, 0, 0, 255];
+            while tex.len() < 2 && !tex.is_empty() {
+                let t = barrel_formats::g1t::Texture {
+                    width: 1,
+                    height: 1,
+                    format: Format::Rgba8,
+                    format_code: 1,
+                    layers: 1,
+                    volume: false,
+                    levels: vec![&black[..]],
+                };
+                tex.push(upload_texture(&gpu, pool, &t)?);
+            }
+            let layer_count = bundle.layers.textures.len().clamp(1, 6);
+            for i in 0..6 {
+                tex.push(upload_texture(&gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
+            }
+            if tex.len() != 8 {
+                return Err("terrain needs two blend maps".into());
+            }
+            let tl = [tlayout];
+            let tset = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
+            let infos: Vec<vk::DescriptorImageInfo> = tex
+                .iter()
+                .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
+                .collect();
+            let writes = [
+                vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..2]),
+                vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
+            ];
+            unsafe { d.update_descriptor_sets(&writes, &[]) };
+            grounds.push(Ground { field: *field, set: tset, textures: tex, first_index: t.first_index, index_count: t.index_count, field_size: t.field_size, scales: t.scales });
+        }
+        terrain_gpu = Some(TerrainGpu { layout: tlayout, pool: tpool, pipeline_layout: tpl, shader: tfs, pipeline: tpipe, grounds });
     }
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
@@ -1745,6 +1806,13 @@ fn main() -> Result<()> {
             _ => eprintln!("no text: the English executable's glyph table, the Font_EN atlas or WinXls_EN/a15_common.g1t is missing"),
         }
     }
+    // The field drawn (its place in `field_maps`): where the event is when playback starts,
+    // else the first.
+    let mut current_field: u16 = player
+        .as_ref()
+        .and_then(|p| p.0.stage.field)
+        .and_then(|m| field_maps.iter().position(|&f| f == m))
+        .map_or(0, |k| k as u16);
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);
     let mut hidden = vec![false; instances.len()];
     for a in &actors {
@@ -1853,6 +1921,13 @@ fn main() -> Result<()> {
             }
             if let Some((out, mixer, ..)) = sound.as_mut() {
                 out.pump(mixer);
+            }
+            // The field the event is in now.
+            if let Some(k) = play.stage.field.and_then(|m| field_maps.iter().position(|&f| f == m)) {
+                if k as u16 != current_field {
+                    eprintln!("frame {frame}: field {}", field_maps[k]);
+                    current_field = k as u16;
+                }
             }
             if let Some((layer, font, last)) = text_layer.as_mut() {
                 let line = play.stage.line_shown().cloned();
@@ -2015,19 +2090,21 @@ fn main() -> Result<()> {
         let mut push = [0f32; 29];
         push[..16].copy_from_slice(&mvp.to_cols_array());
         push[16] = alpha_cutoff;
-        if let (Some(t), Some((_, _, _, tset, tpl, _, tpipe))) = (&terrain, &terrain_gpu) {
-            push[17] = t.field_size;
-            push[20..26].copy_from_slice(&t.scales);
-            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, *tpipe);
-            d.cmd_push_constants(cb, *tpl, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, *tpl, 0, &[*tset, instance_set], &[]);
-            d.cmd_draw_indexed(cb, t.index_count, 1, t.first_index, 0, 0);
+        if let Some(tg) = &terrain_gpu {
+            for g in tg.grounds.iter().filter(|g| g.field == current_field) {
+                push[17] = g.field_size;
+                push[20..26].copy_from_slice(&g.scales);
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
+                d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
+                d.cmd_draw_indexed(cb, g.index_count, 1, g.first_index, 0, 0);
+            }
         }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
         let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        for draw in draws.iter().filter(|d| !hidden[d.instance as usize]) {
+        for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &draw.instance.to_le_bytes());
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
@@ -2091,13 +2168,13 @@ fn main() -> Result<()> {
         if let Some((layer, ..)) = text_layer {
             layer.destroy(&gpu);
         }
-        if let Some((tex, tlayout, tpool, _, tpl, tfs, tpipe)) = terrain_gpu {
-            d.destroy_pipeline(tpipe, None);
-            d.destroy_pipeline_layout(tpl, None);
-            d.destroy_shader_module(tfs, None);
-            d.destroy_descriptor_pool(tpool, None);
-            d.destroy_descriptor_set_layout(tlayout, None);
-            for (image, mem, view) in tex {
+        if let Some(tg) = terrain_gpu {
+            d.destroy_pipeline(tg.pipeline, None);
+            d.destroy_pipeline_layout(tg.pipeline_layout, None);
+            d.destroy_shader_module(tg.shader, None);
+            d.destroy_descriptor_pool(tg.pool, None);
+            d.destroy_descriptor_set_layout(tg.layout, None);
+            for (image, mem, view) in tg.grounds.into_iter().flat_map(|g| g.textures) {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
                 d.free_memory(mem, None);

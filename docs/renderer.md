@@ -217,6 +217,12 @@ names) and the line spacing (53 atlas pixels) are ours: the game's layout code i
 `BARREL_TEXT_LOG=1` prints each line as it goes up. Frames written to files show the lines
 too.
 
+**Fields that change.** `--field auto` loads every field the event goes to (its
+`FieldChange` steps, in order; `EVENT_MM01_OP1_111` visits `TOWN_11`, `TOWN_10`, `TOWN_09`
+and `TOWN_04`), each with its own ground; every draw knows its field, and only the field the
+stage is in now (`Stage::field`) is drawn, with the event's characters. Each field's textures
+follow the last's in the one texture list.
+
 **The event camera in the window.** Each frame takes the camera from the stage's blended
 snapshot (the field camera or the manual one, whichever the event set last), mirrored into
 render space; until the event sets one, the opening camera stands. The arrow keys still turn
