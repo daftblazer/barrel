@@ -122,6 +122,19 @@ pin down before the renderer can follow it: the `rot` convention of the field's 
 lights, the fields' vertex colours (not read from the g1m yet), `cDiff`/`cAmb`/`cSpec` (the
 material's, presumably), and where the light texture and its projection come from.
 
+### The field constants as the game sets them
+
+Read live in `TOWN_02` (the R&D room, end of `EVENT_MM01_OP1_131`): the engine keeps each
+draw's shader parameters as a stream of `{id, values}` entries (the ids small integers, not
+names), found by the field's `<light ambient>` (0.4, 0.45, 0.3, 0.6). In order: `litCol[0]`
+(0.5, 0.3, 0.3, 1: the `PARALLEL` colour), the matrices, `cDiff` (1, 1, 1, 1), `cAmb` (1, 1,
+1), `cSpec` per material ((0.3, 0.3, 0.3) power 4 in one, (0, 0, 0) power 25.5 or 10 in
+others), `ambLit` (the `<light ambient>` itself, w included), `fog` (1/6800, -1200/6800),
+`vEye` (675.3, 110.9, 551), `Scat0` to `Scat3` (as "Fog" gives them) and `scSM` (1/1024,
+1/1024, 1024, 1024: the shadow map's texel and size). So the material colours are white: they
+do not darken the outdoor walls, whose ambient stays unexplained; the specular term (per
+material, not drawn yet) only adds light.
+
 ### Fields in the renderer
 
 Field models now carry their vertex colours (`g1m` colour attribute, layer 0; the workshop
