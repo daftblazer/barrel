@@ -87,8 +87,11 @@ and the post pass scales the scene to the output (bilinear, through the normaliz
 coordinates it already sampled by) while the text is drawn at the output's own size, so it
 stays sharp. Scale 1 renders exactly as before; 0.5 draws a quarter of the pixels (softer
 edges: 27 dB against scale 1 in the first opening) and 1.5 supersamples. The plain bilinear
-scale is where an upscaler (FSR 1's edge-adaptive scale and sharpening, which need only the
-frame) would go as an option.
+scale is where an upscaler goes as an option: FSR 1 (AMD FidelityFX Super Resolution 1.0, MIT;
+its notice kept in the shaders) is ported to plain GLSL, its edge-adaptive scale
+(`shaders/easu.frag`, 12 taps by `textureGather`) and its sharpening (`shaders/rcas.frag`),
+with their constants worked out in `fsr.rs`; both need only the finished frame. Not wired into
+the frame yet.
 
 ## Deliberate differences
 

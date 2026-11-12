@@ -20,6 +20,7 @@ use glam::{Mat4, Vec3};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+mod fsr;
 mod glow;
 mod present;
 mod shadow;
