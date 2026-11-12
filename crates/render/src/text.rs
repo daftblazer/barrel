@@ -461,15 +461,15 @@ mod tests {
     fn dialogue_box() {
         let f = font();
         let q = f.dialogue(Some("ab"), "abc<CR>d", 1920.0, 1080.0);
-        // Three window pieces and the strap, two name glyphs, four text glyphs.
-        assert_eq!(q.len(), 4 + 2 + 4);
-        assert!(q[..4].iter().all(|q| q.texture == UI));
-        assert!(q[4..].iter().all(|q| q.texture == FONT));
-        // The cap is mirrored, and the pieces meet.
-        assert!(q[2].uv[2] < q[2].uv[0]);
-        assert_eq!((q[0].rect[2], q[1].rect[2]), (q[1].rect[0], q[2].rect[0]));
-        // The text's lines are a line apart, inside the window.
-        assert_eq!(q[9].rect[1] - q[6].rect[1], LINE);
-        assert!(q[6].rect[1] > q[0].rect[1] && q[9].rect[3] < q[0].rect[3]);
+        // The panel, the cord and the tag, two name glyphs, four text glyphs.
+        assert_eq!(q.len(), 3 + 2 + 4);
+        assert!(q[..3].iter().all(|q| q.texture == UI));
+        assert!(q[3..].iter().all(|q| q.texture == FONT));
+        // At 1080 lines the 720 layout is 1.5 times as large: the panel from x 540 (360 × 1.5).
+        assert_eq!(q[0].rect[0], 540.0);
+        // The text's lines are a (scaled) line apart, inside the panel.
+        let scale = window::SAMPLE_WIDTH / f.width(window::SAMPLE) * 1.5;
+        assert!((q[8].rect[1] - q[5].rect[1] - LINE * scale).abs() < 1e-3);
+        assert!(q[5].rect[1] > q[0].rect[1] && q[8].rect[3] < q[0].rect[3]);
     }
 }
