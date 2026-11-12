@@ -208,7 +208,8 @@ vtables): 0 `PostEffectFade`, 1 and 12 `PostEffectBlur`, 2 `PostEffectSepiaOld`,
 `PostEffectSepia`, 14 `PostEffectMonotone`, 15 `PostEffectTexFilter`, 16 `PostEffectWave` (8
 none). Their programs are the `.kps` packs in `Data/x64/PostEffect/pe_pack.elixir.gz`.
 `EVENT_MM01_OP1_111`'s main action changes shots with `u13 -1 0 50 3` ... `u14`: a half-second
-cross-fade from the last shot to the new one.
+cross-fade from the last shot to the new one. The scheduler makes `u14` wait until the latest effect's time
+has run out (one effect at a time, as the game keeps one).
 
 **Telops** (narration cards: `u55`, `u56`, class `EventTelop`, handler `0x1402196f0`). The
 voiced narration of the openings (`EVENT_MM01_OP1_111` cards 38 to 44 with voices 12907 to

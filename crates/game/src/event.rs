@@ -61,6 +61,8 @@ pub const CHARA_VOICE_PLAY: u32 = 0x7300_0066;
 /// `u13` (`ECT_EVENT_SET_POST_EFFECT`): `{?, param, hundredths of a second, kind}`; the kinds
 /// are in `docs/events.md`, "Screen effects" (3: a cross-fade from the screen as it was).
 pub const EVENT_SET_POST_EFFECT: u32 = 0x7500_000d;
+/// `u14` (`ECT_EVENT_WAIT_POST_EFFECT`): the action waits for the screen effect to end.
+pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
 /// `u22` (`ECT_EVENT_CONTRAST_SET_MIX`): `{contrast id, preset, hundredths of a second}`: the
 /// screen's colour overlay moves from the preset's first colour to its second over the time
 /// (`docs/events.md`, "Fades").
@@ -367,6 +369,8 @@ impl<'a> Player<'a> {
         let mut steps = Vec::new();
         // Each character's motion: (motion, division, started at, whether the command loops it).
         let mut motions: HashMap<u32, (u32, Option<u32>, f32, bool)> = HashMap::new();
+        // When the latest screen effect (u13) ends: u14 waits for it.
+        let mut effect_end = 0.0f32;
         while let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len()).min_by(|&i, &j| {
             threads[i].0.partial_cmp(&threads[j].0).unwrap().then(i.cmp(&j))
         }) {
@@ -398,6 +402,8 @@ impl<'a> Player<'a> {
                             (m.1, m.2) = (Some(*division), threads[t].0);
                         }
                     }
+                    Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
+                    Step::Command { word: EVENT_WAIT_POST_EFFECT, .. } => threads[t].0 = threads[t].0.max(effect_end),
                     Step::Command { word: CHARA_MOTION_WAIT, operands: [character, ..], .. } => {
                         let end = motions.get(character).and_then(|&(motion, division, since, looping)| {
                             let (length, loops) = self.motion_length.as_ref()?(*character, motion, division)?;
@@ -494,6 +500,20 @@ mod tests {
             .collect();
         // Action 3 is never started, so it never runs.
         assert_eq!(steps, ["wait 0.1", "start 2", "wait 2", "wait 0.2", "start 1", "wait 1"]);
+    }
+
+    #[test]
+    fn effect_waits_for_the_effect() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        // u13 -1 0 50 3 (a half-second cross-fade), a 0.2 s wait, u14, then a wait to mark the time.
+        let event = Ebd {
+            actions: vec![act(vec![EVENT_SET_POST_EFFECT, u32::MAX, 0, 50, 3, TIME_WAIT, 20, EVENT_WAIT_POST_EFFECT, TIME_WAIT, 10, END])],
+            resources: vec![],
+        };
+        let table = OperandTable::new(&[(EVENT_SET_POST_EFFECT, Some(4)), (EVENT_WAIT_POST_EFFECT, Some(0)), (TIME_WAIT, Some(1))]);
+        let steps = Player::escha(&event, &[], &table).unwrap().schedule();
+        let waits: Vec<f32> = steps.iter().filter(|t| matches!(t.step, Step::Wait { .. })).map(|t| t.time).collect();
+        assert_eq!(waits, [0.0, 0.5]);
     }
 
     #[test]
