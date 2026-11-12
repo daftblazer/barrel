@@ -619,7 +619,10 @@ the random generator), then every character but one (`0x140330120 (0x141098a48)`
 leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
 `0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2
 (or not in the list), 0.08 in 3 to 5, 0.03 below, kept within 0 and 100 (`0x14032db60`;
-friendship points, presumably). The value picks one of three texts a member has
+friendship points, presumably). A member's +0x2a8 counts the field areas it has entered: each
+field load (`0x14028c850`) not into a town (the area's first word, its region, is not 0,
+`0x1402360f0`), while the flag at `0x141098a3c` is clear (`0x14035eb40`), adds one to every
+member of the team (`0x140361ba0`, `0x14032dbb0`); a status screen (`0x140213670`) shows it. The value picks one of three texts a member has
 (`0x14032cf00`: below 30 the first, below 60 the second, else the third; 11 records of 0x30
 bytes at `0x140d94a20`, the member then three text pointers, filled at run time;
 `growth::friendship_tier`); `0x140213670` (nine reads) and `0x1401378a0` read it too. On a month's first day (date divisible by 30) `0x140363860` closes the month just ended: the
@@ -1683,8 +1686,8 @@ nothing up; otherwise its uses left (+0x1c) drop by one, or to none with a trait
 every item's uses left back to its +0x1e plus +0x20 and returns the uses restored. Coming into
 field map 0 (`0x14028c850`, when `0x140236120` finds the map number 0: home) first restores
 every party member's HP and MP to their maxima (`0x140330840`: +0xc from +0x114, +0x10 from
-+0x118), then refills the basket and two more lists (`0x1410aedc0`, `0x1410aede0`;
-`0x14035dc40`); when any uses came back it queues message 0x1f with their number and counts up
++0x118), then refills the basket and the two exploration item boxes (`ItemBoxExplore`, two 0x20-byte
+lists at `0x1410aedc0`, saved as `explore_equip`; `0x14035dc40`); when any uses came back it queues message 0x1f with their number and counts up
 the month's report field +0x114 (at most 255). `barrel_game::inventory`.
 
 ## Monsters
