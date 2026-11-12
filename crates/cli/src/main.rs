@@ -1307,7 +1307,8 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
                 Vec::new()
             } else {
                 let path = exe.parent().ok_or("no install folder")?.join("Saves_EN/item/item_potential.xml");
-                let all = bd::traits(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
+                let tags: Vec<&str> = item_rows.iter().map(|r| r.tag.as_str()).collect();
+                let all = bd::traits(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?, &tags);
                 trait_ids.split(',').map(|t| t.parse::<usize>().ok().and_then(|k| all.get(k).cloned()).ok_or_else(|| format!("{item}: trait {t}"))).collect::<std::result::Result<Vec<_>, String>>()?
             };
             member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count, traits });
@@ -1322,7 +1323,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let acts = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
-    let rules = barrel_game::skirmish::ItemRules { acts: &acts, kinds: &kinds };
+    let rules = barrel_game::skirmish::ItemRules { acts: &acts, kinds: &kinds, effects: &item_rows };
     let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, rules, &mut rng, 1000);
     for e in &events {
         match e {

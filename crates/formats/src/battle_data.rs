@@ -402,9 +402,14 @@ pub struct TraitSlot {
     pub max: i32,
 }
 
-/// The rows of `item_potential.xml`, in order (the trait numbers items hold).
-pub fn traits(root: &crate::table::Element) -> Vec<Trait> {
-    let int = |e: &crate::table::Element, k: &str| e.attr(k).and_then(|v| v.trim().parse::<i32>().ok()).unwrap_or(0);
+/// The rows of `item_potential.xml`, in order (the trait numbers items hold). A slot's bounds
+/// are numbers, or for `ITEM_SUB_BTL_ADD_USEEFFECT` `item_effect` tags (`ITEM_EFF_YOBI_072`),
+/// read as their row numbers in `effect_tags` (-1 when not there).
+pub fn traits(root: &crate::table::Element, effect_tags: &[&str]) -> Vec<Trait> {
+    let int = |e: &crate::table::Element, k: &str| {
+        let v = e.attr(k).unwrap_or("").trim();
+        v.parse::<i32>().ok().or_else(|| v.starts_with("ITEM_EFF_").then(|| effect_tags.iter().position(|t| *t == v).map_or(-1, |i| i as i32))).unwrap_or(0)
+    };
     root.children
         .iter()
         .map(|row| Trait {

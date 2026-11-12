@@ -525,7 +525,12 @@ names an `item_effect` row (up to 0x2b9), whose used slots (act ≥ 0) follow in
 (`battle::item_action`). Two refinements are not followed yet: an override record some items
 have (`0x1400e3480` by item id: the first slot, or the slot equal to its +0x18, takes its +0x8
 instead), and traits of kind 7 (two 16-bit trait ids at +0x8 of the instance when +0xe is 0;
-the trait table's records +0x3c) adding effects through `0x1402a1e20`. The quality bonus of
+the trait table's records +0x3c) adding effects: each `ITEM_SUB_BTL_ADD_USEEFFECT` slot is
+rolled from its minimum to maximum (`0x1402a1e20` reads the slot's bounds and rolls them) and
+names an `item_effect` row whose used slots follow the item's own (`battle::trait_effects`).
+In `item_potential.xml` those bounds are effect tags (Fatal Blow: `ITEM_EFF_YOBI_072`, Mortal
+Blow, `ACT_PERCENT_DEATH` 100; Recycle: `ITEM_EFF_YOBI_104`, Reduce Gauge L), which
+`battle_data::traits` reads as row numbers. The quality bonus of
 flag 3 is not read yet
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 

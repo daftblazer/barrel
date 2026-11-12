@@ -51,6 +51,22 @@ pub fn item_action(name: &str, target: i32, wait: i32, effect_ids: &[i16], rows:
     barrel_formats::battle_data::Skill { name: name.to_string(), category: String::new(), wait, target, spread: 0, effects, description: String::new() }
 }
 
+/// The effects an item's traits add to its action (`0x14029d530`): each slot of kind
+/// `ITEM_SUB_BTL_ADD_USEEFFECT` rolled from its minimum to maximum (`0x1402a1e20`) names an
+/// `item_effect` row, whose used slots follow the item's own effects. The game does this only
+/// while the instance's +0xe is 0 (not read yet; taken as always).
+pub fn trait_effects(traits: &[&barrel_formats::battle_data::Trait], rows: &[barrel_formats::battle_data::ItemEffect], rng: &mut crate::rng::Rng) -> Vec<barrel_formats::battle_data::SkillEffect> {
+    traits
+        .iter()
+        .flat_map(|t| t.slots.iter())
+        .filter(|s| s.kind == "ITEM_SUB_BTL_ADD_USEEFFECT")
+        .map(|s| rng.range(s.min, s.max))
+        .filter(|&id| (0..=0x2b9).contains(&id))
+        .filter_map(|id| rows.get(id as usize))
+        .flat_map(|row| row.effects.iter().copied())
+        .collect()
+}
+
 /// What an item's traits give of one kind (`0x14029db00 (item, kind, average)`): over its
 /// traits (up to three, instance +0x8), each slot of that `ITEM_SUB_*` kind rolled from its
 /// minimum to maximum (`Rng::range`), or its middle when `average`, summed.
@@ -632,6 +648,19 @@ mod tests {
         assert_eq!(trait_value(&[&mixed], "ITEM_SUB_ITM_ADD_PRICE", false, &mut rng), 50);
         let rolled = trait_value(&[&mixed], "ITEM_SUB_ITM_CHANGE_POWER", false, &mut rng);
         assert!((4..=8).contains(&rolled));
+    }
+
+    #[test]
+    fn traits_add_their_effect_rows() {
+        use barrel_formats::battle_data::{ItemEffect, SkillEffect, Trait, TraitSlot};
+        let fx = |act| SkillEffect { act, element: None, min: 5, max: 5, min2: 0, max2: 0 };
+        let row = |act| ItemEffect { name: String::new(), tag: String::new(), group: String::new(), effects: vec![fx(act)] };
+        let rows = [row(0), row(9), row(21)];
+        let slot = |kind: &str, v| TraitSlot { kind: kind.into(), min: v, max: v };
+        let t = Trait { name: "Fatal Blow".into(), group: String::new(), slots: vec![slot("ITEM_SUB_ITM_ADD_EFFCRIT", 100), slot("ITEM_SUB_BTL_ADD_USEEFFECT", 2)] };
+        let none = Trait { name: String::new(), group: String::new(), slots: vec![slot("ITEM_SUB_BTL_ADD_USEEFFECT", -1)] };
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        assert_eq!(trait_effects(&[&t, &none], &rows, &mut rng), [fx(21)]);
     }
 
     #[test]

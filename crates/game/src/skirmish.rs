@@ -40,6 +40,8 @@ pub struct Held {
 pub struct ItemRules<'a> {
     pub acts: &'a [barrel_formats::battle_data::ActInfo],
     pub kinds: &'a [&'a str],
+    /// `item_effect.xml` rows, for the effects traits add.
+    pub effects: &'a [barrel_formats::battle_data::ItemEffect],
 }
 
 impl Held {
@@ -125,9 +127,11 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
                 } else {
                     // The bonus rolled for this use (a party target: no enemy-size terms; one target).
                     let traits: Vec<&barrel_formats::battle_data::Trait> = held.traits.iter().collect();
+                    let mut action = held.action.clone();
+                    action.effects.extend(battle::trait_effects(&traits, rules.effects, rng));
                     let inputs = battle::ItemBonusInputs::default().with_traits(&traits, rules.kinds, rng);
                     let boost = crate::fight::Boost { bonus: battle::item_bonus(&inputs), extra: inputs.sum.get(39).copied().unwrap_or(0), acts: rules.acts };
-                    events.extend(b.use_item_boosted(who, &held.action, held.power, boost, target, rng));
+                    events.extend(b.use_item_boosted(who, &action, held.power, boost, target, rng));
                 }
             } else {
                 let ((skill, cost), target) = heal.unwrap_or_else(|| (party[who].choose(b.fighters[who].mp()), n));
