@@ -284,7 +284,10 @@ name the character by the slot or by the row, so one marker can appear under two
 `event::Player` reads every binding up front and gives the row for the slot wherever a command
 names a character: the one acting, the thing it faces or goes to, and the camera's anchors (in
 the openings, Escha and Logy face marker 590 where the script says 10028, and the camera aims
-at 611 and 616 for 10049 and 10054).
+at 611 and 616 for 10049 and 10054). With the slots read as rows, the stage looks kind-3 anchors up as characters too
+(before, their ids were taken for something else): `EVENT_MM01_OP1_310`, whose camera and
+moves aim at markers through slots, went from 21 positions it could not place to 1 (an
+anchor on Logy, who is never placed in it); the other openings were at 0 and stay there.
 
 **Waits and marks.** `u15` (no operands) waits 2 seconds (`0x140051412`, the constant at
 `0x14071c964`), as `u1` waits 0.3. `u36 {event, seen}` marks an event (its `EVENT_*` number)

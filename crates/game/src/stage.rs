@@ -250,9 +250,9 @@ impl Stage {
     fn resolve(&self, p: &Position) -> Option<[f32; 3]> {
         match p.anchor {
             Anchor::World => Some(p.resolve(None)),
-            // Kind 3 names a thing whose character gives the point; its ids are not
-            // character numbers, so only the other kinds are looked up here.
-            Anchor::Thing { kind, id, point } if kind != 2 && kind != 3 && kind != 4 => {
+            // Kind 3 names a character by its row, or by a variable slot the event player has
+            // already turned into its row (`event::SLOT_SET`); kinds 2 and 4 are not looked up.
+            Anchor::Thing { kind, id, point } if kind != 2 && kind != 4 => {
                 let b = self.characters.get(&id)?;
                 let base = self.measures.get(&id).map_or(b.position, |m| m.point(point, b.position, b.facing));
                 Some(p.resolve(Some((base, b.facing))))
