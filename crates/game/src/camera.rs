@@ -206,6 +206,11 @@ impl Mover {
         self.facing
     }
 
+    /// Seconds left (the move's +0x28, which `s21` compares with).
+    pub fn seconds_left(&self) -> f32 {
+        self.left
+    }
+
     pub fn done(&self) -> bool {
         self.left <= 0.0
     }

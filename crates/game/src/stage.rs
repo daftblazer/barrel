@@ -250,6 +250,11 @@ impl Stage {
         self.line.as_ref().filter(|l| l.until.is_none_or(|u| self.time < u))
     }
 
+    /// How many seconds the character's move has left, while it moves.
+    pub fn move_left(&self, character: u32) -> Option<f32> {
+        self.characters.get(&character)?.mover.as_ref().map(Mover::seconds_left)
+    }
+
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {

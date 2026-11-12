@@ -103,6 +103,12 @@ pub const CHARA_ROT_SET: u32 = 0x7300_0017;
 pub const CHARA_ROT_SET_TARGET: u32 = 0x7300_0018;
 /// `s26` (`ECT_CHARA_ROT_MOVE_SET`): `{character, x, y, z, seconds ×100, curve}`.
 pub const CHARA_ROT_MOVE: u32 = 0x7300_001a;
+/// `s29` (`ECT_CHARA_ROT_MOVE_WAIT`): `{character}`: waits for its timed turn (`s26`) to end.
+pub const CHARA_ROT_MOVE_WAIT: u32 = 0x7300_001d;
+/// `s21` (`ECT_CHARA_MOVE_PRE_WAIT`): `{character, hundredths}`: waits until the character's
+/// move has that long or less left (the mover's +0x30 against its time left, +0x28;
+/// `0x1402f20d0`, checked in `0x1402f2894`).
+pub const CHARA_MOVE_PRE_WAIT: u32 = 0x7300_0015;
 /// `s18` (`ECT_CHARA_MOVE_SET`): `{character, position (6), extra, type, ...}`.
 pub const CHARA_MOVE: u32 = 0x7300_0012;
 /// `w1` (0x77000001): start action N (its operand) alongside the one running. Action 0 is the
@@ -371,6 +377,11 @@ impl<'a> Player<'a> {
         let mut motions: HashMap<u32, (u32, Option<u32>, f32, bool)> = HashMap::new();
         // When the latest screen effect (u13) ends: u14 waits for it.
         let mut effect_end = 0.0f32;
+        // A stage the steps are applied to, for where moves start and so how long they take;
+        // each character's move end and timed turn end (s21, s29 wait for them).
+        let mut scratch = crate::stage::Stage::default();
+        let mut move_end: HashMap<u32, f32> = HashMap::new();
+        let mut turn_end: HashMap<u32, f32> = HashMap::new();
         while let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len()).min_by(|&i, &j| {
             threads[i].0.partial_cmp(&threads[j].0).unwrap().then(i.cmp(&j))
         }) {
@@ -403,6 +414,27 @@ impl<'a> Player<'a> {
                         }
                     }
                     Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
+                    Step::CharacterMove { character, .. } => {
+                        scratch.apply(&s);
+                        match scratch.move_left(*character) {
+                            Some(left) => move_end.insert(*character, threads[t].0 + left),
+                            None => move_end.remove(character),
+                        };
+                    }
+                    Step::TurnOver { character, seconds, .. } => {
+                        turn_end.insert(*character, threads[t].0 + seconds.max(0.0));
+                    }
+                    Step::Command { word: CHARA_MOVE_PRE_WAIT, operands: [character, rest @ ..], .. } => {
+                        let before = rest.first().map_or(0.0, |&h| h as i32 as f32 / 100.0);
+                        if let Some(&end) = move_end.get(character) {
+                            threads[t].0 = threads[t].0.max(end - before);
+                        }
+                    }
+                    Step::Command { word: CHARA_ROT_MOVE_WAIT, operands: [character, ..], .. } => {
+                        if let Some(&end) = turn_end.get(character) {
+                            threads[t].0 = threads[t].0.max(end);
+                        }
+                    }
                     Step::Command { word: EVENT_WAIT_POST_EFFECT, .. } => threads[t].0 = threads[t].0.max(effect_end),
                     Step::Command { word: CHARA_MOTION_WAIT, operands: [character, ..], .. } => {
                         let end = motions.get(character).and_then(|&(motion, division, since, looping)| {
@@ -416,6 +448,9 @@ impl<'a> Player<'a> {
                         }
                     }
                     _ => {}
+                }
+                if !matches!(s, Step::CharacterMove { .. }) {
+                    scratch.apply(&s);
                 }
                 let shown_at = threads[t].0;
                 threads[t].0 += held;

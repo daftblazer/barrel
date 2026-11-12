@@ -336,6 +336,15 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
 
 **Motions and moves.** In the same runner switch:
 
+- **Move and turn waits.** `s21` (`ECT_CHARA_MOVE_PRE_WAIT`, `{character, hundredths}`,
+  case `0x1401f08af`) gives the character's mover (+0x608) a time (`0x1402f20d0`: +0x30, flag
+  +0x34); the mover's update (`0x1402f2894`) clears the flag once its time left (+0x28) is no
+  more than that, which ends the wait: the action goes on that long before the character
+  arrives (`s21 16 20` in `EVENT_MM01_OP1_111`: Clone's idle pose starts 0.2 s before the end
+  of her 3.09 s walk). `s29` (`ECT_CHARA_ROT_MOVE_WAIT`, `{character}`) waits for its timed
+  turn (`s26`). The scheduler runs the steps on a scratch stage to know where each move
+  starts, and so its length.
+
 - **Divisions.** The motion starter `0x1401f4c50(character, motion, division, blend)` plays
   one division of the motion: the records at the character's +0x110 + 8 × motion, 12 bytes
   `{f32 start, f32 end, u8 loops}`, filled from `Saves/chara/CharaDiv.xml` and
