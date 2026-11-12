@@ -102,4 +102,25 @@ mod tests {
         let e = super::parse(&d).unwrap();
         assert_eq!((e[0].words[1], e[0].groups.clone()), (500, vec![vec![0x7000001f, 15], vec![]]));
     }
+
+    /// The real file reads to its end and every group splits by the code table (`BARREL_ROOT` =
+    /// the game's folder; not in the repository).
+    #[test]
+    #[ignore]
+    fn the_real_file_splits() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let d = std::fs::read(std::path::Path::new(&root).join("Event/eventCheck/EventCheckDataAll.ecd")).unwrap();
+        let events = super::parse(&d).unwrap();
+        assert_eq!(events.len(), 1165);
+        let mut n = 4;
+        for e in &events {
+            n += 4 * 15;
+            for (k, g) in e.groups.iter().enumerate() {
+                n += 4 * (1 + g.len());
+                let cmds = super::commands(g).unwrap();
+                assert!(k > 0 || cmds.iter().all(|c| c.trigger().is_none()));
+            }
+        }
+        assert_eq!(n, d.len());
+    }
 }

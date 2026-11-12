@@ -1205,7 +1205,8 @@ Called from 31 places with a trigger group. Nothing starts in three cases:
 event, the group holding the trigger, 1, and priority (word 1). The list is built by
 `0x1400555d0`: a group goes under its first trigger code, found by a word-by-word scan for
 0x7000007e..0xa6. It is sorted highest priority first by the library sort `0x140057570`,
-which does not keep order among equals.
+which does not keep order among equals. Groups without a trigger, group 0 among them, are
+listed too, under key -1, which nothing fires.
 
 An entry passes when `0x140214c00` passes for group 0 and for its own group:
 
@@ -1240,33 +1241,40 @@ every group ends with `ECT_END`. Ten commands occur:
 | `0x77100002` | 1 | money down by the operand (`0x14036a8e0` of its negative) |
 | `0x77100004` | 2 | an item set (`0x1400d2ab0`) into the basket (where = 0) or the container (1) |
 | `0x77110001` | 1 | a character joins the 11-slot companion list (`0x140362030` → `0x140330220`) |
-| `0x7711000a` | 2 | not read yet |
+| `0x7711000a` | 2 | a character's level raised to the hero's level + the second operand, if lower (`0x14032daa0`: only ever up, to 99 at most, with the level's experience and the stats redone) |
 | `0x77120001` | 2 | an event marked seen or not (`0x14035f480`) |
 | `0x77130002` | 2 | event flag change (`0x14035f6b0`) |
 | `0x77130004` | 2 | event flag set (`0x14035f660`), the commonest command (41 uses) |
 | `0x77140002` | 2 | book knowledge level (`0x140369560`) |
 | `0x77140005` | 2 | a knowledge level in the table at `0x14107a8a0` (`0x140369460`) |
-| `0x77160002` | 1 | days pass (`0x14035bf10`) |
+| `0x77160002` | 1 | the command passed to the event listeners (`0x140296a60`); its numbers run from 101 to 210, and what answers is not read |
 
-The handler names more of the family:
+The handler names more of the family (its branches and two jump tables, at `0x140052e94` for
+`0x77110002`–`a` and `0x140052eb8` for `0x77160002`–`7`):
 
 - `0x77100001` raises money.
 - `0x77100003` goes through `0x14036a990` and `0x14036a960`.
-- `0x77110002` takes a character off the companion list.
-- `0x77110003`–`6` join or leave depending on whether the event in the second operand has
-  been seen.
-- `0x77130005` raises an item's knowledge (`0x1403692f0`).
-- `0x77140003` and `4` set map knowledge.
+- `0x77110002` takes a character off the companion list (`0x140362070` → `0x140330330`, never
+  the hero). `0x77110003` calls `0x140362090` (not read).
+- `0x77110004` and `5` join and leave if the event in the second operand has been seen; `6` and
+  `7` if it has not.
+- `0x77110008` and `9` raise levels through `0x14032daa0` like `0x7711000a`.
+- `0x77140001` raises an item's knowledge (`0x1403692f0`).
+- `0x77140003` and `4` set map knowledge (`0x140369660`).
 - `0x77141001` sets a place and `0x77141002` a route.
+- `0x77160003` moves the date on to a day of the month (`0x1402f07c0`), `0x77160004` by a
+  number of days (`0x14035bf10`, reason 1), `0x77160005` to a date.
 
 When the groups run (all three readers go through `0x14005a070 (event, group, out)`, which
 copies the group or gives a bare `ECT_END` if there is none):
 
 - **Group 0, when the event starts.** `0x1402178d0` builds the event runner and loads the
-  script by the name table at `0x140d809b0`. It then hands group 0 to the runner
-  (`0x140210710`) alongside the script.
-- **Group 1, when the script reaches `ECT_END`.** The handler (`0x140052c0b`) runs group
-  `[runner+0x60]` of event `[runner+0x58]`. Nothing runs if the runner has already ended,
+  script by the name table at `0x140d809b0`. It installs group 0 as action 998
+  (`0x140210710`), starts action 0 (the script) and then action 998, the latter only while
+  `0x141077ef0` is clear.
+- **Group 1, when the script reaches `ECT_END`.** The handler (`0x140052c0b`) installs group
+  `[runner+0x60]` of event `[runner+0x58]` as action 999 (`0x140210840`), starts it and sets
+  the runner's +0x6a. Nothing runs if the runner has already ended,
   if `0x141077ef0` is set, or if the runner's +0x68 or +0x6a is set. The runner's +0x58 holds
   the 16-byte pick result (`event_start`): event, trigger group, 1, priority. So +0x60 is
   the 1 every trigger list entry carries, which makes this group 1.

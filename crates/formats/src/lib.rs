@@ -40,6 +40,7 @@ pub mod pe;
 pub mod quake;
 pub mod png;
 pub mod recipe;
+pub mod salary;
 pub mod save;
 pub mod subject;
 pub mod table;

@@ -45,6 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel event-starts ROOT GAMEDATA GROUP [VALUES...]  the events a save would start when a trigger group fires
   barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
   barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
