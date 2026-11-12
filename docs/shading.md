@@ -128,8 +128,11 @@ Field models now carry their vertex colours (`g1m` colour attribute, layer 0; th
 floor averages (0.35, 0.39, 0.29)) and are lit per vertex as `MapSTD`'s vertex program does:
 ambient (the field's `<light ambient>`, plus each point light's ambient times its
 attenuation) on the vertex colour, and the vertex colour times the fill's and the point
-lights' diffuse and the sun's diffuse; the pixel shader multiplies that by the texture. Taken
-for now: the material colours white and no specular, no light texture or shadow (1), the
+lights' diffuse and the sun's diffuse; the pixel shader multiplies that by the texture. The field models' own parameter sets (106 looked at in `TOWN_10`, `TOWN_04` and
+`AREA_01_01`) hold only `atColor` (white), the wind's (`g_f3Wind`, `g_nWindFlag`,
+`g_fWindTime`, `g_fInvHeight`, `g_f3Shift`, `g_fRootHeight`: plants sway) and, twice,
+`emissiveColor`; `cDiff`, `cAmb` and `cSpec` are the engine's. Taken
+for now: the material colours white no light texture or shadow (1), the
 `PARALLEL` `rot` as pitch below level then yaw in degrees, and point light distances in
 metres. Point light distances are in field units, as for characters.
 
