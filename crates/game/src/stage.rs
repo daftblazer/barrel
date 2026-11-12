@@ -189,6 +189,8 @@ pub struct EventLights {
     /// The two sun lights: colour, pitch and yaw (degrees).
     pub parallel: [Option<([f32; 3], f32, f32)>; 2],
     pub ambient: Option<[f32; 3]>,
+    /// The four point lights, as field look `POINT`s.
+    pub points: [Option<barrel_formats::field_look::Light>; 4],
     pub chara_color: Option<[f32; 4]>,
     pub rim_color: Option<[f32; 4]>,
     pub point_strength: Option<f32>,
@@ -204,6 +206,11 @@ impl EventLights {
                 }
             }
             Ambient(v) => self.ambient = v,
+            Point { light, set } => {
+                if let Some(slot) = self.points.get_mut(light as usize) {
+                    *slot = set;
+                }
+            }
             CharaColor(v) => self.chara_color = v,
             RimColor(v) => self.rim_color = v,
             PointStrength(v) => self.point_strength = v,

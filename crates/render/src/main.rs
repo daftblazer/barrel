@@ -3251,6 +3251,19 @@ fn main() -> Result<()> {
                 .take(4)
                 .collect::<Vec<_>>()
         });
+        // The event's point lights take the field's slots (q54).
+        let mut points = points;
+        for (k, set) in event_lights.points.iter().enumerate() {
+            if let Some(barrel_formats::field_look::Light::Point { pos, color, ambient, att, range }) = *set {
+                let light = (pos, color, ambient, att, range);
+                if k < points.len() {
+                    points[k] = light;
+                } else {
+                    points.resize(k, ([0.0; 3], [0.0; 4], [0.0; 4], [1.0, 0.0, 0.0], 0.0));
+                    points.push(light);
+                }
+            }
+        }
         look[5] = [c.point_light_strength, points.len() as f32, 0.0, 0.0];
         // The field's two directional lights: rot is taken as pitch (down from level) then yaw,
         // in degrees, the light travelling along that direction (the game's convention is not

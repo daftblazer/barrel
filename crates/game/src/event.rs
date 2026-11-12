@@ -129,8 +129,30 @@ pub const FIELDMAP_CHARA_LIGHT_COLOR_SET: u32 = 0x7100_0032;
 pub const FIELDMAP_CHARA_LIGHT_COLOR_ORG: u32 = 0x7100_0033;
 pub const FIELDMAP_CHARA_RIM_LIGHT_COLOR_SET: u32 = 0x7100_0034;
 pub const FIELDMAP_CHARA_RIM_LIGHT_COLOR_ORG: u32 = 0x7100_0035;
+pub const FIELDMAP_POINT_LIGHT_SET: u32 = 0x7100_0036;
+pub const FIELDMAP_POINT_LIGHT_ORG: u32 = 0x7100_0037;
 pub const FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_SET: u32 = 0x7100_0038;
 pub const FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_ORG: u32 = 0x7100_0039;
+
+/// `q54`'s point light as a field look's `POINT` (`0x14028b1c9`): the place in field units,
+/// the colour and the ambient in 128ths, the constant and linear attenuation in thousandths,
+/// and the range in field units. The quadratic term comes from `fall` (thousandths): chosen so
+/// that, the linear term left out, the light is down to `fall` of itself at the range
+/// (1 / (att0 + att2 · range²) = fall).
+pub fn point_light(pos: [u32; 3], color: [u32; 3], ambient: [u32; 3], att: [u32; 3], range: u32) -> barrel_formats::field_look::Light {
+    let i = |v: u32| v as i32 as f32;
+    let c = |v: [u32; 3]| [i(v[0]) / 128.0, i(v[1]) / 128.0, i(v[2]) / 128.0, 1.0];
+    let (att0, att1, fall) = (i(att[0]) / 1000.0, i(att[1]) / 1000.0, i(att[2]) / 1000.0 + f32::EPSILON);
+    let range = i(range);
+    let att2 = (1.0 - fall * att0) / (fall * range * range);
+    barrel_formats::field_look::Light::Point {
+        pos: [i(pos[0]) / 100.0, i(pos[1]) / 100.0, i(pos[2]) / 100.0],
+        color: c(color),
+        ambient: c(ambient),
+        att: [att0, att1, att2],
+        range: range / 100.0,
+    }
+}
 
 /// A change to the field's lights (`q42` to `q57`); `None` puts the field's own value back.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -139,6 +161,8 @@ pub enum LightChange {
     /// `pitch` and then about y by `yaw` (degrees), the field look's own convention.
     Parallel { light: u32, set: Option<([f32; 3], f32, f32)> },
     Ambient(Option<[f32; 3]>),
+    /// Point light `light` (0 to 3), as a field look's `POINT` (metres).
+    Point { light: u32, set: Option<barrel_formats::field_look::Light> },
     /// The characters' `atCharaLightColor`.
     CharaColor(Option<[f32; 4]>),
     /// The characters' `atCharaRimLightColor`.
@@ -532,6 +556,11 @@ impl<'a> Player<'a> {
                 let k = |v: &u32| *v as i32 as f32 / 128.0;
                 out.push(Step::Light { action, change: LightChange::Ambient(Some([k(r), k(g), k(b)])) })
             }
+            (FIELDMAP_POINT_LIGHT_SET, [light, x, y, z, r, g, b, ar, ag, ab, att0, att1, fall, range, ..]) => {
+                let set = Some(point_light([*x, *y, *z], [*r, *g, *b], [*ar, *ag, *ab], [*att0, *att1, *fall], *range));
+                out.push(Step::Light { action, change: LightChange::Point { light: *light, set } })
+            }
+            (FIELDMAP_POINT_LIGHT_ORG, [light, ..]) => out.push(Step::Light { action, change: LightChange::Point { light: *light, set: None } }),
             (FIELDMAP_LIGHT_AMBIENT_ORG, _) => out.push(Step::Light { action, change: LightChange::Ambient(None) }),
             (FIELDMAP_CHARA_LIGHT_COLOR_SET | FIELDMAP_CHARA_RIM_LIGHT_COLOR_SET, [r, g, b, w, ..]) => {
                 let k = |v: &u32| *v as i32 as f32 / 100.0;
@@ -780,6 +809,20 @@ impl<'a> Iterator for Player<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn event_point_light() {
+        // EVENT_MQ09's commonest q54: {1, 2657, 180, 2865, 200, 128, 80, 150, 100, 30, 600, 12, 233, 1500}.
+        let barrel_formats::field_look::Light::Point { pos, color, att, range, .. } =
+            super::point_light([2657, 180, 2865], [200, 128, 80], [150, 100, 30], [600, 12, 233], 1500)
+        else {
+            panic!()
+        };
+        assert_eq!(pos, [26.57, 1.8, 28.65]);
+        assert_eq!(color, [200.0 / 128.0, 1.0, 80.0 / 128.0, 1.0]);
+        assert_eq!(range, 15.0);
+        assert!((1.0 / (att[0] + att[2] * 1500.0 * 1500.0) - 0.233).abs() < 1e-4);
+    }
 
     #[test]
     fn another_games_words_carry_over_by_name() {

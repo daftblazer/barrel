@@ -649,8 +649,7 @@ unidentified angles, characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
 `0x14028a700`) changes the field's lights for a scene and puts them back. Each `_SET` has an
-`_ORG` that restores what the field had (kept at the object's +0x258 to +0x2c8). The stage plays all but the point lights
-(`q54`, `q55`): `Stage::lights` holds what the event has set, and the renderer lays it over the
+`_ORG` that restores what the field had (kept at the object's +0x258 to +0x2c8). The stage plays them all: `Stage::lights` holds what the event has set, and the renderer lays it over the
 field's own lights. The sun's direction is the field look's own convention (pitch, then yaw), so the event's angles go
 straight in.
 
@@ -664,7 +663,7 @@ straight in.
 | `q51` | | its field value back |
 | `q52` `ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_SET` | `{r, g, b, w}` | the same for the rim light, `atCharaRimLightColor` |
 | `q53` | | its field value back |
-| `q54` | 14: `{light, x, y, z, ...}` | one of four point lights (0 to 3) at a place in field units, with two colours in 128ths, ranges in thousandths and a falloff (`0x1404d7300`) |
+| `q54` | `{light, x, y, z, r, g, b, ar, ag, ab, att0, att1, fall, range}` | one of four point lights (0 to 3) as the scene's lights hold a field's `POINT` (`0x1404d7300`): its place and range in field units, its colour and ambient in 128ths, the constant and linear attenuation in thousandths, and the quadratic term made from `fall` (thousandths) so that, the linear term left out, the light is down to `fall` at the range: (1 − fall·att0) / (fall·range²) |
 | `q55` | `{light}` | that point light back |
 | `q56` | `{strength}` | `atCharaPointLightStrength` in hundredths (30 most often) |
 | `q57` | | back to 0.3 |
