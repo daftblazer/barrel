@@ -234,7 +234,7 @@ set the goal, the even ones add to the value now (`t4` after `t3`'s `0x1401e7b01
 | Word | Changes | Operands |
 |---|---|---|
 | `t3`/`t4` | yaw | degrees, seconds |
-| `t5`/`t6` | an angle (`t20`'s second; not followed) | |
+| `t5`/`t6` | an angle (`t20`'s second; not followed: it is 0 in 4,481 of `t20`'s 4,484 uses, and the 7 `t5`s set 0) | |
 | `t7`/`t8` | field of view | degrees, seconds |
 | `t9`/`t10` | pitch (`t20`'s fourth) | degrees, seconds |
 | `t11`/`t12` | distance | units, seconds |
@@ -677,8 +677,8 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: the tilt of `s18`'s facing mode 2, the field camera's two
-unidentified angles, characters' motions during the event.
+Not yet: the tilt of `s18`'s facing mode 2, the field camera's
+unidentified angle (nearly always 0), characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
 `0x14028a700`) changes the field's lights for a scene and puts them back. Each `_SET` has an
