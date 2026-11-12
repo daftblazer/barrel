@@ -1576,8 +1576,12 @@ list's seventh member (`0x141093530` slot 6, `0x140330620 (6)`), each held withi
 (`0x14032dc20`); a member then goes up (`0x14032d8c0`: the level its experience reaches,
 `0x14005fc60`, the count of first-column totals it has within the limit, is above its own;
 `0x14032d790` sets it, adds the levels gained to +0x2a0, refreshes its stats with `0x14032d840`)
-unless the fighter's flag byte +0x286 is set (`0x1401ae380 (fighter, 6)`; not followed:
-presumably being down). `growth::Growth::gain`.
+unless the fighter's flag byte +0x286 is set (`0x1401ae380 (fighter, 6)`). A fighter's flag
+bytes +0x280 on are set by the battle's event commands, not by the fight itself: the
+`GameModeBattle` handler (`0x1401a0e90`, at `0x1401a20a2`) and `0x1401acb00` set flag k of a
+character to whether an operand is non-zero, `0x1401b33f0` sets one for every fighter of a side;
+so flag 6 is something a story battle sets on purpose (its name is not known). Flag 4 is not a
+byte: `0x1401ae380` answers it by the fighter's HP being at most 25% of its most. `growth::Growth::gain`.
 
 ### A party member's stats (executable)
 
