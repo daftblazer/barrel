@@ -572,6 +572,9 @@ struct Targets {
     frozen_memory: vk::DeviceMemory,
     frozen_view: vk::ImageView,
     frozen_ready: bool,
+    /// The scene's own size: the output's times the render scale (`--scale`); the post pass
+    /// scales it to the output, which keeps the text sharp.
+    scene_size: (u32, u32),
 }
 
 impl Targets {
@@ -583,17 +586,19 @@ impl Targets {
         output: &[vk::ImageView],
         width: u32,
         height: u32,
+        scene_size: (u32, u32),
         post_set: vk::DescriptorSet,
         sampler: vk::Sampler,
         glow_pipelines: &glow::Pipelines,
     ) -> Result<Targets> {
         let d = &gpu.device;
+        let (scene_width, scene_height) = scene_size;
         let image = |format, usage| {
             gpu.image(
                 &vk::ImageCreateInfo::default()
                     .image_type(vk::ImageType::TYPE_2D)
                     .format(format)
-                    .extent(vk::Extent3D { width, height, depth: 1 })
+                    .extent(vk::Extent3D { width: scene_width, height: scene_height, depth: 1 })
                     .mip_levels(1)
                     .array_layers(1)
                     .samples(vk::SampleCountFlags::TYPE_1)
@@ -618,15 +623,15 @@ impl Targets {
         // Depth is cleared and never stored (the scene pass): transient.
         let (depth, depth_memory) = image(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT)?;
         let depth_view = view(depth, DEPTH_FORMAT, vk::ImageAspectFlags::DEPTH)?;
-        let framebuffer = |pass, views: &[vk::ImageView]| unsafe {
-            d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(width).height(height).layers(1), None)
+        let framebuffer = |pass, views: &[vk::ImageView], (w, h): (u32, u32)| unsafe {
+            d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(w).height(h).layers(1), None)
         };
-        let scene_framebuffer = framebuffer(scene_pass, &[scene_view, depth_view])?;
-        let framebuffers = output.iter().map(|&v| framebuffer(post_pass, &[v])).collect::<std::result::Result<Vec<_>, _>>()?;
+        let scene_framebuffer = framebuffer(scene_pass, &[scene_view, depth_view], scene_size)?;
+        let framebuffers = output.iter().map(|&v| framebuffer(post_pass, &[v], (width, height))).collect::<std::result::Result<Vec<_>, _>>()?;
         if framebuffers.is_empty() {
             return Err("no target to draw into".into());
         }
-        let glow = glow::Targets::new(gpu, glow_pipelines, scene_view, sampler, width, height)?;
+        let glow = glow::Targets::new(gpu, glow_pipelines, scene_view, sampler, scene_width, scene_height)?;
         // The post pass samples the new scene image and the glow.
         let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(scene_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
@@ -642,6 +647,7 @@ impl Targets {
             )
         };
         Ok(Targets {
+            scene_size,
             scene,
             scene_memory,
             scene_view,
@@ -1392,6 +1398,8 @@ fn main() -> Result<()> {
     let mut alpha_cutoff = 0.3f32;
     // `--handheld`: the handheld settings (`docs/engine.md`, "Targets"): a smaller, 16-bit shadow map.
     let mut shadows = shadow::Shadows::DESKTOP;
+    // `--scale S`: the scene drawn at S times the output's size (0.25 to 2) and scaled to it.
+    let mut render_scale = 1.0f32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1417,6 +1425,7 @@ fn main() -> Result<()> {
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,
             "--handheld" => shadows = shadow::Shadows::HANDHELD,
+            "--scale" => render_scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
@@ -1902,7 +1911,7 @@ fn main() -> Result<()> {
         }
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler, &glow_pipelines)?;
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -2772,7 +2781,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler, &glow_pipelines)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -2928,6 +2937,8 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         gpu.upload(look_mem, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) })?;
     }
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
+    let (scene_width, scene_height) = targets.scene_size;
+    let scene_area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: scene_width, height: scene_height } };
     let frozen_ready = targets.frozen_ready;
     targets.frozen_ready = true;
     let record = |cb: vk::CommandBuffer| unsafe {
@@ -2937,7 +2948,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             barrier(d, cb, targets.scene, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
             barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
             let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
-            let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width, height, depth: 1 });
+            let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width: scene_width, height: scene_height, depth: 1 });
             d.cmd_copy_image(cb, targets.scene, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, targets.frozen, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
             barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
         } else if !frozen_ready {
@@ -2985,12 +2996,12 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             &vk::RenderPassBeginInfo::default()
                 .render_pass(render_pass)
                 .framebuffer(targets.scene_framebuffer)
-                .render_area(area)
+                .render_area(scene_area)
                 .clear_values(&clear),
             vk::SubpassContents::INLINE,
         );
-        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
-        d.cmd_set_scissor(cb, 0, &[area]);
+        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+        d.cmd_set_scissor(cb, 0, &[scene_area]);
         d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
@@ -3206,4 +3217,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
     }
     let _ = gpu.physical;
     Ok(())
+}
+
+/// The scene's size for an output of `width` × `height` at `scale` (at least 1 × 1).
+fn scene_size(width: u32, height: u32, scale: f32) -> (u32, u32) {
+    (((width as f32 * scale).round() as u32).max(1), ((height as f32 * scale).round() as u32).max(1))
 }

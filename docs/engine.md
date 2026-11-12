@@ -81,6 +81,15 @@ first opening (`EVENT_MM01_OP1_111` at 25 s, 640×360) the two differ in about 2
 pixels, one by more than 6%. Still to weigh: the glow's eleven passes, and a sunlit scene
 for the shadow comparison.
 
+**Render scale.** The scene, its depth, the frozen frame and the glow levels are drawn at the
+output size times a render scale (`barrel-view --scale S`, 0.25 to 2; `Targets::scene_size`),
+and the post pass scales the scene to the output (bilinear, through the normalized
+coordinates it already sampled by) while the text is drawn at the output's own size, so it
+stays sharp. Scale 1 renders exactly as before; 0.5 draws a quarter of the pixels (softer
+edges: 27 dB against scale 1 in the first opening) and 1.5 supersamples. The plain bilinear
+scale is where an upscaler (FSR 1's edge-adaptive scale and sharpening, which need only the
+frame) would go as an option.
+
 ## Deliberate differences
 
 - **Fixed tick.** The original updates by each frame's measured time
