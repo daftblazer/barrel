@@ -68,6 +68,16 @@ What follows for the design:
 - Measured on the devices themselves, one test at a time, bounded (the RP6 notes for Turnip
   apply).
 
+Where the renderer stands (audit of its passes): the scene draws into an 8-bit RGBA target
+(the 16-bit float format is only an output option); its colour is cleared and stored (the post
+pass and glow read it), its depth cleared and not stored, and the depth image is a transient
+attachment with lazily allocated memory where the driver has it, so on Turnip and Mali it
+should cost tile memory only (on RADV, which has no such memory, it falls back to device memory;
+renders are identical either way). The shadow map is cleared and stored (2048² of 32-bit
+depth, read by the scene pass); the glow levels are 8-bit; the final pass does not load the
+image it covers. Still to weigh for the handhelds: a 16-bit shadow map and a smaller one, and
+the glow's eleven passes.
+
 ## Deliberate differences
 
 - **Fixed tick.** The original updates by each frame's measured time

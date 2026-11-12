@@ -231,14 +231,16 @@ impl Gpu {
         let d = &self.device;
         let image = unsafe { d.create_image(info, None)? };
         let req = unsafe { d.get_image_memory_requirements(image) };
-        let mem = unsafe {
-            d.allocate_memory(
-                &vk::MemoryAllocateInfo::default()
-                    .allocation_size(req.size)
-                    .memory_type_index(self.memory_type(req.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL)?),
-                None,
-            )?
+        // A transient attachment (one whose contents never leave the render pass) takes lazily
+        // allocated memory where the driver has it: on tile-based GPUs (Turnip, Mali) it then
+        // lives in tile memory only and costs no real memory. Elsewhere, ordinary device memory.
+        let lazy = vk::MemoryPropertyFlags::DEVICE_LOCAL | vk::MemoryPropertyFlags::LAZILY_ALLOCATED;
+        let index = if info.usage.contains(vk::ImageUsageFlags::TRANSIENT_ATTACHMENT) {
+            self.memory_type(req.memory_type_bits, lazy).or_else(|_| self.memory_type(req.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL))?
+        } else {
+            self.memory_type(req.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL)?
         };
+        let mem = unsafe { d.allocate_memory(&vk::MemoryAllocateInfo::default().allocation_size(req.size).memory_type_index(index), None)? };
         unsafe { d.bind_image_memory(image, mem, 0)? };
         Ok((image, mem))
     }
@@ -613,7 +615,8 @@ impl Targets {
         let (frozen, frozen_memory) = image(SCENE_FORMAT, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
         let frozen_view = view(frozen, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
-        let (depth, depth_memory) = image(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)?;
+        // Depth is cleared and never stored (the scene pass): transient.
+        let (depth, depth_memory) = image(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT)?;
         let depth_view = view(depth, DEPTH_FORMAT, vk::ImageAspectFlags::DEPTH)?;
         let framebuffer = |pass, views: &[vk::ImageView]| unsafe {
             d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(width).height(height).layers(1), None)
