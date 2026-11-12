@@ -1099,8 +1099,8 @@ Water 40, Wind 20, Earth 40, giving Embedding Thorns, Bursting and Phy Damage L.
 finishes the item (`synthesis::finish`: quality, uses from the recipe's word 8, equip cost,
 the effects revealed on the recipe, the knowledge it teaches and the experience): that Craft
 comes out at quality 60 with 4 uses and an equip cost of 2, reveals effects 1, 3 and 5 of
-Craft's list, and gives 5 experience as a first synthesis. The days that count for the
-experience are the recipe's own (the bonuses that take days off are not applied yet).
+Craft's list, and gives 5 experience as a first synthesis (with no bonuses; `Finish` takes
+the bonus totals, the item's categories and what Quantity and Compression added).
 
 Without Freestyle ("allows materials to be added in any order"), the materials go in in
 slot order, each slot as many times as its count; `barrel_game::synthesis::order` lists
@@ -1189,7 +1189,12 @@ quality as it stands (+0xa94, copied from the result's +4 at `0x14030b457`): the
 materials, is a material's quality; the cap of 120 is the quality cap). It then adds, over
 the traits the result takes, each `ITEM_SUB_ITM_ADD_QUALITY` slot's amount (`0x1402a1fd0`,
 `0x1402a1ed0`) and keeps the sum within 0 and 120 (`0x1407272a0`) as the item's quality.
-`synthesis::finished_quality`.
+`synthesis::finished_quality`. Before that the result builder (`0x1402fa700`) has set the
+item's quality to the effect value plus the `PASSIVE_EFFECT_ADD` synthesis bonuses of the
+item's four categories (`itemData` row +0x5c), within 0 and 120; its extra uses (+0x20) to
+the Quantity skill's (state +0x4d4) plus the `USE_ITEM_ADD` bonuses of its categories; and
++0x1a, the equip cost reduction, to Compression's (state +0x4c8). The experience counts the
+recipe's days less `MIX_DAY_DEC`, at least 1.
 
 **The finished item's traits and counts.** The traits are the player's picks: the screen's
 list goes into the item's three trait slots (`0x1402fac00`, through `0x14029cfe0`, which also

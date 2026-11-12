@@ -408,6 +408,26 @@ pub struct Finish<'a> {
     /// Bonus value 3 (synthesis experience %) and the alchemy level.
     pub exp_rate: i32,
     pub alchemy_level: i32,
+    /// The made item's four category numbers (`itemData`'s `category_00`..`_03`, -1 none) and
+    /// the synthesis bonus totals (`bonus::State::mix`, empty for none).
+    pub categories: [i32; 4],
+    pub mix: &'a [i32],
+    /// What the Quantity skill added to the uses (state +0x4d4) and Compression to the cost
+    /// reduction (state +0x4c8).
+    pub extra_uses: i32,
+    pub compression: i32,
+}
+
+impl Finish<'_> {
+    /// A per-category synthesis bonus summed over the item's categories (`0x14036c3d0`).
+    fn per_category(&self, kind: usize) -> i32 {
+        self.categories
+            .iter()
+            .filter(|&&c| c >= 0)
+            .filter_map(|&c| crate::bonus::mix_slot(kind, c))
+            .filter_map(|slot| self.mix.get(slot))
+            .sum()
+    }
 }
 
 /// Finishes a synthesis: the made item (its effects from the recipe's lines at the
@@ -419,17 +439,22 @@ pub fn finish(s: &Synthesis, f: &Finish, serial: u16, k: &mut barrel_formats::sa
     let (r, recipe) = f.recipe;
     let picked: Vec<&barrel_formats::battle_data::Trait> = f.traits.iter().filter_map(|&t| usize::try_from(t).ok().and_then(|t| f.trait_table.get(t))).collect();
     let effects = s.effects(&recipe.lines).map(|e| e.map_or(-1, |e| e as i16));
+    // The result builder (`0x1402fa700`): the quality takes the PASSIVE_EFFECT_ADD bonuses of
+    // the item's categories (within 0 and 120), the extra uses Quantity's and the
+    // USE_ITEM_ADD bonuses', the cost reduction Compression's.
+    let base = (s.effect_value() + f.per_category(13) as f32).clamp(0.0, MAX_EFFECT);
     let uses = uses(recipe.uses, &picked, roll) as i16;
+    let extra = (f.extra_uses + f.per_category(12)) as i16;
     let unit = barrel_formats::save::ItemUnit {
         serial,
         item: recipe.item as i16,
-        quality: finished_quality(s.effect_value(), &picked, roll),
+        quality: finished_quality(base, &picked, roll),
         traits: f.traits,
         word_e: 0,
         effects,
-        equip_cost: equip_cost(f.equip_cost, &picked, 0, roll) as i16,
-        word_1a: 0,
-        counts: [uses, uses, 0, 0],
+        equip_cost: equip_cost(f.equip_cost, &picked, f.compression, roll) as i16,
+        word_1a: f.compression as i16,
+        counts: [uses + extra, uses, extra, 0],
     };
     for &t in &f.traits {
         if let Some(v) = usize::try_from(t).ok().and_then(|t| k.potential.get_mut(t)) {
@@ -444,6 +469,9 @@ pub fn finish(s: &Synthesis, f: &Finish, serial: u16, k: &mut barrel_formats::sa
         *v = (*v).max(6);
     }
     crate::library::learn_item(k, &unit, crate::library::KNOWN, false, [-1, -1]);
-    let exp = experience(f.level, recipe.days as i32, f.count, first, f.exp_rate, f.alchemy_level);
+    // The days less MIX_DAY_DEC, at least 1 (`0x1400fe4e0`).
+    let mix_days = crate::bonus::mix_slot(11, 0).and_then(|slot| f.mix.get(slot)).copied().unwrap_or(0);
+    let days = (recipe.days as i32 - mix_days).max(1);
+    let exp = experience(f.level, days, f.count, first, f.exp_rate, f.alchemy_level);
     (unit, exp)
 }
