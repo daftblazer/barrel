@@ -25,6 +25,7 @@ mod glow;
 mod present;
 mod settings;
 mod shadow;
+mod taa;
 mod text;
 mod upscale;
 mod window;
@@ -186,7 +187,9 @@ impl Gpu {
         }
         let priorities = [1.0f32];
         let queues = [vk::DeviceQueueCreateInfo::default().queue_family_index(queue_family).queue_priorities(&priorities)];
-        let enabled = vk::PhysicalDeviceFeatures::default().texture_compression_bc(true);
+        // Independent blending where there is one (desktop, Turnip and Mali all have it): the
+        // motion target is written unblended beside a blended colour.
+        let enabled = vk::PhysicalDeviceFeatures::default().texture_compression_bc(true).independent_blend(features.independent_blend != 0);
         let swapchain_ext = [ash::khr::swapchain::NAME.as_ptr()];
         let device = unsafe {
             instance.create_device(
@@ -582,6 +585,9 @@ struct Targets {
     glow: Option<glow::Targets>,
     /// FSR 1, when it is on and the scene is drawn below the output's size.
     upscale: Option<upscale::Targets>,
+    /// TAA (`--taa`), and whether its history is still empty (new targets: the first frame).
+    taa: Option<taa::Targets>,
+    taa_fresh: std::cell::Cell<bool>,
     /// The scene as it was when a cross-fade began (`u13` kind 3), faded out over the live one;
     /// whether it has been given a layout yet.
     frozen: vk::Image,
@@ -611,6 +617,7 @@ impl Targets {
         sampler: vk::Sampler,
         glow_pipelines: &glow::Pipelines,
         upscale_pipelines: Option<&upscale::Pipelines>,
+        taa_pipelines: Option<&taa::Pipelines>,
         samples: vk::SampleCountFlags,
         motion: bool,
         show_motion: bool,
@@ -675,14 +682,20 @@ impl Targets {
             return Err("no target to draw into".into());
         }
         let glow = glow::Targets::new(gpu, glow_pipelines, scene_view, sampler, scene_width, scene_height)?;
-        let upscale = match upscale_pipelines {
-            Some(p) if scene_size != (width, height) => Some(upscale::Targets::new(gpu, p, scene_view, sampler, scene_size, (width, height))?),
+        // TAA resolves the jittered scene (with its motion vectors) before anything scales it.
+        let taa = match (taa_pipelines, motion_target) {
+            (Some(p), Some((_, _, motion_view))) => Some(taa::Targets::new(gpu, p, scene_view, motion_view, sampler, scene_size)?),
             _ => None,
         };
-        // The post pass samples the new scene image (FSR's result when it scales it) and the glow.
+        let resolved = taa.as_ref().map_or(scene_view, taa::Targets::result);
+        let upscale = match upscale_pipelines {
+            Some(p) if scene_size != (width, height) => Some(upscale::Targets::new(gpu, p, resolved, sampler, scene_size, (width, height))?),
+            _ => None,
+        };
+        // The post pass samples the new scene image (TAA's, then FSR's when they run) and the glow.
         let shown = match (show_motion, motion_target) {
             (true, Some((_, _, motion_view))) => motion_view,
-            _ => upscale.as_ref().map_or(scene_view, upscale::Targets::result),
+            _ => upscale.as_ref().map_or(resolved, upscale::Targets::result),
         };
         let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(shown).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
@@ -711,6 +724,8 @@ impl Targets {
             framebuffers,
             glow: Some(glow),
             upscale,
+            taa,
+            taa_fresh: std::cell::Cell::new(true),
             frozen,
             frozen_memory,
             frozen_view,
@@ -731,6 +746,9 @@ impl Targets {
             d.free_memory(self.frozen_memory, None);
             if let Some(g) = self.glow.take() {
                 g.destroy(gpu);
+            }
+            if let Some(t) = self.taa.take() {
+                t.destroy(gpu);
             }
             if let Some(u) = self.upscale.take() {
                 u.destroy(gpu);
@@ -1502,6 +1520,7 @@ fn main() -> Result<()> {
             "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
             "--motion" => settings.motion = true,
             "--jitter" => settings.jitter = true,
+            "--taa" => settings.taa = true,
             "--show-motion" => {
                 settings.motion = true;
                 show_motion = true;
@@ -1930,6 +1949,8 @@ fn main() -> Result<()> {
     };
     let color_view = offscreen.map(|(color, _)| view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)).transpose()?;
 
+    // TAA brings the motion vectors and the jitter, and drops MSAA.
+    let settings = settings.resolved();
     // The scene's samples: the most the device allows for colour and depth, up to `--msaa`.
     let samples = {
         let limits = unsafe { gpu.instance.get_physical_device_properties(gpu.physical) }.limits;
@@ -2067,7 +2088,8 @@ fn main() -> Result<()> {
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
     let upscale_pipelines = if settings.fsr1() { Some(upscale::Pipelines::new(&gpu)?) } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+    let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -2114,6 +2136,9 @@ fn main() -> Result<()> {
     // The motion target, when there is one, takes the vectors unblended.
     let motion_blend = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G);
     let colour_targets = color_ref.len();
+    if colour_targets > 1 && unsafe { gpu.instance.get_physical_device_features(gpu.physical) }.independent_blend == 0 {
+        return Err("motion vectors need the device's independent blending".into());
+    }
     let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
     let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..colour_targets]);
     let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
@@ -2188,6 +2213,8 @@ fn main() -> Result<()> {
     let no_input = vk::PipelineVertexInputStateCreateInfo::default();
     let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
     let post_raster = raster.cull_mode(vk::CullModeFlags::NONE);
+    // The post pass has the one colour target.
+    let post_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..1]);
     let post_info = vk::GraphicsPipelineCreateInfo::default()
         .stages(&post_stages)
         .vertex_input_state(&no_input)
@@ -2196,7 +2223,7 @@ fn main() -> Result<()> {
         .rasterization_state(&post_raster)
         .multisample_state(&msaa)
         .depth_stencil_state(&post_depth)
-        .color_blend_state(&blend)
+        .color_blend_state(&post_blend)
         .dynamic_state(&dynamic_state)
         .layout(post_layout)
         .render_pass(post_pass);
@@ -2950,7 +2977,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), samples, settings.motion, show_motion)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -3267,6 +3294,10 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         if let Some(g) = &targets.glow {
             g.record(d, &glow_pipelines, cb, threshold);
         }
+        if let (Some(t), Some(p)) = (&targets.taa, &taa_pipelines) {
+            let fresh = targets.taa_fresh.replace(false);
+            t.record(d, p, cb, fresh, fresh);
+        }
         if let (Some(u), Some(p)) = (&targets.upscale, &upscale_pipelines) {
             u.record(d, p, cb);
         }
@@ -3379,6 +3410,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         targets.destroy(&gpu);
         glow_pipelines.destroy(&gpu);
         if let Some(p) = upscale_pipelines {
+            p.destroy(&gpu);
+        }
+        if let Some(p) = taa_pipelines {
             p.destroy(&gpu);
         }
         d.destroy_render_pass(render_pass, None);

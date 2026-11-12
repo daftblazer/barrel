@@ -28,25 +28,42 @@ pub struct RenderSettings {
     /// Whether the camera is shifted by a different sub-pixel offset each frame ([`jitter`]),
     /// which the temporal methods gather into more detail than one frame has.
     pub jitter: bool,
+    /// Temporal anti-aliasing (`taa.rs`): takes the motion vectors and the jitter, and
+    /// single-sampled drawing ([`RenderSettings::resolved`] sees to all three).
+    pub taa: bool,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
+    /// The desktop with TAA in MSAA's place.
+    pub const DESKTOP_TAA: RenderSettings = RenderSettings { taa: true, motion: true, jitter: true, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false };
 
-    /// A preset by name (`desktop`, `desktop-high`, `handheld`).
+    /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `handheld`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
         match name {
             "desktop" => Some(Self::DESKTOP),
             "desktop-high" => Some(Self::DESKTOP_HIGH),
+            "desktop-taa" => Some(Self::DESKTOP_TAA),
             "handheld" => Some(Self::HANDHELD),
             _ => None,
         }
+    }
+
+    /// These settings with what they need of each other: TAA turns on the motion vectors and
+    /// the jitter and takes single-sampled drawing.
+    pub fn resolved(mut self) -> RenderSettings {
+        if self.taa {
+            self.motion = true;
+            self.jitter = true;
+            self.msaa = 1;
+        }
+        self
     }
 
     /// Whether FSR 1 runs: chosen and the scene smaller than the output.

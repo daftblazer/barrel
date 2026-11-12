@@ -136,6 +136,24 @@ take this frame's unjittered view-projection from `Look` (entries 44 to 47) for 
 scene's vectors stay at zero while the frames differ (about 1% of pixels, along edges, from one
 jittered frame to the next in the first opening). With jitter off the frame is as before.
 
+**TAA.** `--taa` (preset `desktop-taa`) turns on the motion vectors and the jitter and
+drops MSAA (`RenderSettings::resolved`). After the scene pass, `taa.frag` blends the jittered
+scene into the history: the history is reprojected by the pixel's motion vector, clamped in
+YCoCg to the min/max of the current 3 × 3 neighbourhood (so what has left the pixel does not
+linger), and 10% of the new frame goes in (`taa::BLEND`). Pixels whose history falls off the
+screen take the new frame alone. The result lands in a fixed `resolved` image that the post pass
+(or FSR 1) reads, and is then copied into `history`, which keeps the descriptor sets fixed. The
+history starts empty when the targets are made (first frame, resize). The glow still reads
+the raw scene. In the first opening at 1080p, a still shot after 24 frames is about as smooth
+as 4× MSAA on geometry edges, and also smooths the alpha-tested edges (lashes, outline tips)
+that MSAA leaves. It is slightly softer, as TAA is. A camera pan with a character walking shows no
+trails. Not yet done: resetting the history on camera cuts (the clamp hides most of a cut
+already) and a sharpening pass after it (RCAS can serve).
+
+Validation (the Khronos layer, every mode): clean. The motion target needs the device's
+`independentBlend` (enabled when present; desktop, Turnip and Mali have it), and the post
+pipeline has its own one-target blend state.
+
 **Wide screens.** The projection keeps the vertical field of view and widens the horizontal
 one with the aspect, so 21:9 (3440×1440) and 32:9 (5120×1440) show more to the sides without
 stretching (`barrel-view --size` takes up to 8192 either way; the first opening at 5120×1440
