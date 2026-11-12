@@ -33,6 +33,39 @@ Why: the same inputs give the same run on every machine, so runs can be recorded
 and checked in lockstep against the original; and drawing never waits for, or speeds up,
 the game.
 
+## Targets
+
+The engine has to run well across three tiers, set early so the design fits them:
+
+- **Handheld, high end: Adreno GPUs on Mesa's Turnip driver**, aarch64 Linux (not Android),
+  such as a Snapdragon 8 Gen 2 handheld. Every game (the Dusk titles, Sophie 2, the Ryza
+  trilogy).
+- **Handheld, low end: Mali GPUs** such as the RK3566's Mali-G52, aarch64 Linux, for the
+  older Dusk titles (Ayesha, Escha & Logy, Shallie).
+- **Desktop**, with newer features as options: upscaling (FSR), anti-aliasing (SMAA, FXAA,
+  MSAA, TAA) and higher resolutions and rates.
+
+What follows for the design:
+
+- Both handheld GPUs are tile-based: render passes with clear or don't-care loads and
+  don't-care stores wherever a target is not read back, few passes and few full-screen
+  round trips through memory, no read-back of the frame in the middle of it.
+- Bandwidth is the scarce thing on Mali: the narrowest targets that hold the look
+  (`B10G11R11` or 8-bit over 16-bit float where it suffices), small shadow maps, mipmapped
+  and block-compressed textures (BC on desktop; the handhelds need what their drivers
+  sample: Turnip has BC, Mali needs ETC2/ASTC or a decode on load).
+- Shaders kept simple, with half precision where it is exact enough; no geometry or
+  tessellation shaders.
+- The scene drawn at an internal resolution and scaled to the screen, so the handhelds can
+  draw below native and the desktop above it; desktop upscalers (FSR 1 needs only the frame;
+  FSR 2/3 and TAA need motion vectors and a jittered projection, kept in mind for the
+  passes) and anti-aliasing are optional passes, off on the handhelds by default.
+- Vulkan 1.1 is the baseline today (`crates/render`); whether the RK3566's Mali drivers
+  give Vulkan (Mesa's PanVK on that Mali generation) or only OpenGL ES decides whether the
+  low tier needs a second backend. Not checked yet.
+- Measured on the devices themselves, one test at a time, bounded (the RP6 notes for Turnip
+  apply).
+
 ## Deliberate differences
 
 - **Fixed tick.** The original updates by each frame's measured time
