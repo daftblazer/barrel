@@ -816,7 +816,10 @@ overlap. Which of the two library calls there is sine and which cosine (`0x1405c
 The arena (`0x14019eab0`, `battle::arena_outside`) is a circle of radius 500 (`0x140804bb8`)
 about the centre: a spot's distance from it past 500, horizontally, else 0. So the scattered
 monsters (200 to 400 out, then nudged) stay within 500, while the party stands at 700 to 800,
-outside it (the party is not nudged).
+outside it (the party is not nudged). The skirmish (`skirmish::skirmish`, one monster against
+the party) now stands each member at its place and the monster at the centre, so the monster
+rules' nearest and farthest targets (`Battle::pick_target`) go by real distances; skills'
+spreads (several monsters) wait for battles with more than one.
 
 Still to read: where the field enemy entries come from.
 

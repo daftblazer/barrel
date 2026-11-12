@@ -96,10 +96,14 @@ impl<'a> Member<'a> {
 /// the monster n. Returns the events and the winning side (0 the party).
 pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
     let n = party.len();
+    // The formation (`battle::party_spot`, `battle::scatter`): each member at its sector's
+    // place (its index mod 3), the lone monster at the centre (the largest, and only, one).
     let mut fighters: Vec<Fighter> = party
         .iter()
-        .map(|m| {
+        .enumerate()
+        .map(|(k, m)| {
             let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
+            f.position = crate::battle::party_spot(k as i32, k as i32 % 3);
             if let Some((hp, mp)) = m.now {
                 f.stats[stat::HP] = hp.clamp(0, f.stats[stat::MAX_HP]);
                 f.stats[stat::MP] = mp.clamp(0, f.stats[stat::MAX_MP]);
