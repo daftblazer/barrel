@@ -726,7 +726,13 @@ one monster: the monster acts by its rules and target picks, and each member, st
 the player, uses the costliest learnt skill it can pay for that hits the foe, or its normal
 attack. Escha, Logy and Reyfer at level 20 beat a Howling Beast with Ether Shoot, Flash Cut and
 Dragon Breath until their MP runs out; the Beast spreads its hits by the weighted draw and
-fells Escha. A member with no affordable heal (or revive) skill uses a healing (or reviving) item it carries instead (`skirmish::Held`: the item as `battle::item_action`, its `item_power` and a count), through `Battle::use_item`. On the command line a member takes items as `p<member>:<level>+<effect id>[,<id>...]@<quality>x<count>` (effect ids are `item_effect` rows, `barrel item-effects`): `barrel battle EXE 2 p0:6 p1:6+167@50x2` has Logy use both HP Recovery S when the Golden Rat brings him low (the item's own action wait is not read yet: 600 is taken).
+fells Escha. A member with no affordable heal (or revive) skill uses a healing (or reviving) item it carries instead (`skirmish::Held`: the item as `battle::item_action`, its `item_power` and a count), through `Battle::use_item`. On the command line a member takes items as `p<member>:<level>+<effect id>[,<id>...]@<quality>x<count>` (effect ids are `item_effect` rows, `barrel item-effects`): `barrel battle EXE 2 p0:6 p1:6+167@50x2` has Logy use both HP Recovery S when the Golden Rat brings him low (without an item row the wait is the attack's 600). An item's row in the item table holds
+its battle words side by side (`battle_data::item_battle`, from `0x140d19c7c`, 288 bytes a
+row): the target word, the area kind and its action's wait (`0x1402a2620`: 300 to 900 on the
+battle items, 0 on the rest), which the item action's slot 6 (`0x1401bb310`) runs through the
+same speed formula as a skill's wait (`0x1401b9b70`), less stat 19 in percent; `+#<row>:...`
+gives an item its row (`p1:6+#35:167@50x2`: row 35, own side, wait 300). Slot 8 answers
+10,000 for any item, where a skill asks the user.
 
 `barrel_formats::battle_data` reads the monster and skill tables from the English
 executable, and `barrel_game::duel` puts the pieces above together: two monsters trading the

@@ -1256,7 +1256,12 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
         for item in parts {
             // <ids>@<quality>x<count>: heals and revives aim at the user's side, the rest at the
             // foe; the action's wait is not read yet (the normal attack's 600 is taken).
-            let (ids, rest) = item.split_once('@').ok_or_else(|| format!("{item}: write <id>[,<id>]@<quality>x<count>"))?;
+            // An optional item row first (#<row>:) gives its target and wait from the item table.
+            let (row, item) = match item.strip_prefix('#').and_then(|r| r.split_once(':')) {
+                Some((r, rest)) => (Some(r.parse::<usize>().map_err(|_| format!("{item}: item row"))?), rest),
+                None => (None, item),
+            };
+            let (ids, rest) = item.split_once('@').ok_or_else(|| format!("{item}: write [#<row>:]<id>[,<id>]@<quality>x<count>"))?;
             let (quality, count) = rest.split_once('x').unwrap_or((rest, "1"));
             let ids: Vec<i16> = ids.split(',').map(|v| v.parse().map_err(|_| format!("{item}: effect id"))).collect::<std::result::Result<_, String>>()?;
             let quality: f32 = quality.parse().map_err(|_| format!("{item}: quality"))?;
@@ -1265,6 +1270,9 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             let mut action = barrel_game::battle::item_action(&name, 2, 600, &ids, &item_rows);
             if action.effects.iter().any(|e| matches!(e.act, 19 | 21 | 81)) {
                 action.target = 1;
+            }
+            if let Some(b) = row.and_then(|r| bd::item_battle(&pe, bd::ITEM_BATTLE_EN, r)) {
+                (action.target, action.wait) = (b.target, b.wait);
             }
             member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count });
         }

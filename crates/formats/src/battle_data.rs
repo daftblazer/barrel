@@ -13,6 +13,11 @@ const BLOCK_WORDS: usize = 20;
 const MAX_BLOCKS: usize = 16;
 
 pub const SKILLS_EN: u64 = 0x1_40d5_1ed0;
+/// The battle words of the item table (`0x1402a25a0`, `0x1402a25e0`, `0x1402a2620`): 288-byte
+/// rows (by item row, `0x1400e31a0` maps an item id to it), each with its target word, area
+/// kind and action wait at this address + 288 × row.
+pub const ITEM_BATTLE_EN: u64 = 0x1_40d1_9c7c;
+pub const ITEM_RECORD: usize = 288;
 const SKILL_RECORD: usize = 96;
 const MAX_SKILLS: usize = 1024;
 
@@ -348,4 +353,21 @@ mod item_effect_tests {
         assert_eq!(rows[0].effects, [SkillEffect { act: 0, element: Some(0), min: 23, max: 31, min2: 0, max2: 0 }]);
         assert_eq!(rows[0].group, "ITEM_EFF_GROUP_DAMAGE");
     }
+}
+
+/// An item row's battle words: whom it is aimed at (as a skill's target word), its area kind
+/// (as a skill's +0x20) and its action's wait before speed (300 to 900 on battle items, 0 on
+/// the rest).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ItemBattle {
+    pub target: i32,
+    pub area: i32,
+    pub wait: i32,
+}
+
+/// Item row `row`'s battle words.
+pub fn item_battle(pe: &Pe, table: u64, row: usize) -> Option<ItemBattle> {
+    let at = pe.offset(table + (ITEM_RECORD * row) as u64)?;
+    let w = |k: usize| pe.data.get(at + 4 * k..at + 4 * k + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    Some(ItemBattle { target: w(0)?, area: w(1)?, wait: w(2)? })
 }
