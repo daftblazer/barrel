@@ -20,6 +20,7 @@ use glam::{Mat4, Vec3};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+mod glow;
 mod present;
 mod text;
 mod window;
@@ -526,6 +527,7 @@ struct Targets {
     depth_view: vk::ImageView,
     scene_framebuffer: vk::Framebuffer,
     framebuffers: Vec<vk::Framebuffer>,
+    glow: Option<glow::Targets>,
 }
 
 impl Targets {
@@ -539,6 +541,7 @@ impl Targets {
         height: u32,
         post_set: vk::DescriptorSet,
         sampler: vk::Sampler,
+        glow_pipelines: &glow::Pipelines,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let image = |format, usage| {
@@ -575,15 +578,20 @@ impl Targets {
         if framebuffers.is_empty() {
             return Err("no target to draw into".into());
         }
-        // The post pass samples the new scene image.
+        let glow = glow::Targets::new(gpu, glow_pipelines, scene_view, sampler, width, height)?;
+        // The post pass samples the new scene image and the glow.
         let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(scene_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         unsafe {
             d.update_descriptor_sets(
-                &[vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)],
+                &[
+                    vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info),
+                    vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&glow_info),
+                ],
                 &[],
             )
         };
-        Ok(Targets { scene, scene_memory, scene_view, depth, depth_memory, depth_view, scene_framebuffer, framebuffers })
+        Ok(Targets { scene, scene_memory, scene_view, depth, depth_memory, depth_view, scene_framebuffer, framebuffers, glow: Some(glow) })
     }
 
     fn destroy(&mut self, gpu: &Gpu) {
@@ -594,6 +602,9 @@ impl Targets {
                 d.destroy_framebuffer(fb, None);
             }
             d.destroy_framebuffer(self.scene_framebuffer, None);
+            if let Some(g) = self.glow.take() {
+                g.destroy(gpu);
+            }
             d.destroy_image_view(self.scene_view, None);
             d.destroy_image(self.scene, None);
             d.free_memory(self.scene_memory, None);
@@ -1632,13 +1643,15 @@ fn main() -> Result<()> {
     let post_subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&post_ref)];
     let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass), None)? };
     // The post pass's one texture: the scene.
-    let post_binding = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+    let post_binding = [0, 1].map(|b| {
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(b)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+    });
     let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
-    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 }];
+    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
     let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&post_sizes), None)? };
     let post_layouts = [post_set_layout];
     let post_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))?[0] };
@@ -1661,7 +1674,8 @@ fn main() -> Result<()> {
             (None, None) => Vec::new(),
         }
     };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler)?;
+    let glow_pipelines = glow::Pipelines::new(&gpu)?;
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler, &glow_pipelines)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -1732,7 +1746,8 @@ fn main() -> Result<()> {
         vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
         vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
     ];
-    let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts), None)? };
+    let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 4 }];
+    let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
     let no_input = vk::PipelineVertexInputStateCreateInfo::default();
     let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
     let post_raster = raster.cull_mode(vk::CullModeFlags::NONE);
@@ -2210,7 +2225,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, post_set, post_sampler, &glow_pipelines)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -2335,7 +2350,12 @@ fn main() -> Result<()> {
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
         }
         d.cmd_end_render_pass(cb);
-        // The post pass: the scene back to its range, then the text over it.
+        // The glow from the scene's bright parts (the field's <hdr>; none: no glow).
+        let (threshold, rate) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.hdr).unwrap_or((1.0, 0.0));
+        if let Some(g) = &targets.glow {
+            g.record(d, &glow_pipelines, cb, threshold);
+        }
+        // The post pass: the scene back to its range with the glow, then the text over it.
         d.cmd_begin_render_pass(
             cb,
             &vk::RenderPassBeginInfo::default().render_pass(post_pass).framebuffer(targets.framebuffers[image]).render_area(area),
@@ -2343,6 +2363,9 @@ fn main() -> Result<()> {
         );
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[post_set], &[]);
+        d.cmd_push_constants(cb, post_layout, vk::ShaderStageFlags::FRAGMENT, 0, &rate.to_le_bytes());
+        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+        d.cmd_set_scissor(cb, 0, &[area]);
         d.cmd_draw(cb, 3, 1, 0, 0);
         if let Some((layer, ..)) = &text_layer {
             layer.record(d, cb, width, height);
@@ -2428,6 +2451,7 @@ fn main() -> Result<()> {
         d.destroy_shader_module(vs, None);
         d.destroy_shader_module(fs, None);
         targets.destroy(&gpu);
+        glow_pipelines.destroy(&gpu);
         d.destroy_render_pass(render_pass, None);
         if let Some(v) = color_view {
             d.destroy_image_view(v, None);

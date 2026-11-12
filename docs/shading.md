@@ -144,6 +144,13 @@ program 15 finishes with `scene × 2 + glow × fGlowAddRate`. So the range is 2 
 glow_add_rate>` are the two constants. `PostEffectGamma`, `Color`, `Hue`, `Sepia`, `Monotone`,
 `Fade`, `CrossFade`, `Blur`, `Wave` and others are separate effects the events can turn on.
 
-The renderer draws the scene into its own 8-bit target at half brightness (`HDR_RANGE_INV`)
-and a post pass doubles it into the window (or the offscreen image), with the text drawn over
-it in that pass. The glow is not done yet.
+The glow's targets, from the blur programs' tap offsets (one texel each): level 0 is 480×272
+(a quarter of 1920×1088), then 240×136, 120×68, 60×34 and 30×17. Programs 1 to 10 blur across
+then down at each level (each level's first blur reads the level above, so it also halves);
+11 to 14 blur each level back up into the one above it.
+
+The renderer draws the scene into its own 8-bit target at half brightness (`HDR_RANGE_INV`);
+`glow.rs` then takes the bright parts into level 0 (a quarter of the screen), blurs across and
+down through the five levels and back up, adding (the add is a blend, which the programs do
+not show; taken as plain addition), and the post pass doubles the scene, adds level 0 at the
+field's `glow_add_rate` and draws the text over it. A field without `<hdr>` gets no glow.
