@@ -679,8 +679,8 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: the field camera's
-unidentified angle (nearly always 0), characters' motions during the event.
+Not yet: the field camera's unidentified angle (nearly always 0). The characters' motions
+during an event are played by the viewer (`docs/renderer.md`).
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
 `0x14028a700`) changes the field's lights for a scene and puts them back. Each `_SET` has an
