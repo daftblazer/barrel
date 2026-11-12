@@ -139,8 +139,7 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
                     let traits: Vec<&barrel_formats::battle_data::Trait> = held.traits.iter().collect();
                     let mut action = held.action.clone();
                     action.effects.extend(battle::trait_effects(&traits, rules.effects, rng));
-                    let inputs = battle::ItemBonusInputs::default().with_traits(&traits, rules.kinds, rng);
-                    let boost = crate::fight::Boost { bonus: battle::item_bonus(&inputs), extra: inputs.sum.get(39).copied().unwrap_or(0), acts: rules.acts };
+                    let boost = crate::fight::Boost { traits: &traits, kinds: rules.kinds, inputs: battle::ItemBonusInputs::default(), acts: rules.acts };
                     events.extend(b.use_item_boosted(who, &action, held.power, boost, target, rng));
                 }
             } else {

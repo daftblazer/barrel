@@ -73,6 +73,12 @@ pub fn death_blocked(states: &[TimedState], immune: bool) -> bool {
     immune || states.iter().any(|s| s.state == 0x50)
 }
 
+/// The traits' sum of `ITEM_SUB_*` kind number `k` (`kinds` names them in enum order;
+/// [`trait_value`], each slot rolled).
+pub fn kind_sum(traits: &[&barrel_formats::battle_data::Trait], kinds: &[&str], k: usize, rng: &mut crate::rng::Rng) -> i32 {
+    kinds.get(k).map_or(0, |name| trait_value(traits, name, false, rng))
+}
+
 /// The effects an item's traits add to its action (`0x14029d530`): each slot of kind
 /// `ITEM_SUB_BTL_ADD_USEEFFECT` rolled from its minimum to maximum (`0x1402a1e20`) names an
 /// `item_effect` row, whose used slots follow the item's own effects. The game does this only
@@ -110,18 +116,11 @@ pub fn guts_chance(stat25: i32, add_guts: bool, forced: bool) -> i32 {
     if add_guts || forced { 100 } else { stat25.min(75) }
 }
 
-/// What an item's trait bonus to its effects is worked from (`0x1401bd8ee` and on): the sums of
-/// its traits' values by `ITEM_SUB_*` kind (`0x14029db00 (item, kind, 0)`: each of its three
-/// traits' two slots of that kind, rolled from minimum to maximum; see [`ItemBonusInputs::sum`]),
-/// and the item's and battle's numbers the terms multiply.
+/// What an item's trait bonus to its effects is worked from (`0x1401bd8ee` and on) besides its
+/// traits' sums by `ITEM_SUB_*` kind ([`item_bonus`] asks for those): the item's and battle's
+/// numbers the terms multiply.
 #[derive(Clone, Copy, Debug)]
 pub struct ItemBonusInputs {
-    /// Trait sums by kind: 0 `ITM_CHANGE_POWER`, 25 `BTL_RANK_BONUS`, 26
-    /// `BTL_LARGE_ENEMYBONUS`, 27 `BTL_SHORT_ENEMYBONUS`, 28 `BTL_LAST_BONUS`, 29
-    /// `BTL_BIG_ENEMYBONUS`, 30 `BTL_SMALL_ENEMYBONUS`, 31 `BTL_COST_BONUS`, 34
-    /// `BTL_FORCED_LASTUSE`, 35 `BTL_COUNT_POWER`, 41 `COST_PROPORTION_BONUS`, 42
-    /// `WT_PROPORTION_BONUS`.
-    pub sum: [i32; 43],
     /// `0x14029dd10 (item)`, taken from 5 for the rank bonus (the item's rank, presumably).
     pub rank: i32,
     /// `0x14029dc50 (item)` (its cost, presumably).
@@ -142,30 +141,17 @@ pub struct ItemBonusInputs {
     pub wait_term: i32,
 }
 
-impl ItemBonusInputs {
-    /// The trait sums by kind for an item's traits: each `ITEM_SUB_*` kind's index in
-    /// `kinds` (the enum's names in order) gets [`trait_value`] of that kind. The game rolls
-    /// a kind's slots when it asks for it; summing them all here draws them in kind order,
-    /// which differs from the game's order of asking (0, 25, 31, 28, ...) only in which
-    /// random numbers go where.
-    pub fn with_traits(mut self, traits: &[&barrel_formats::battle_data::Trait], kinds: &[&str], rng: &mut crate::rng::Rng) -> Self {
-        for (k, name) in kinds.iter().enumerate().take(self.sum.len()) {
-            self.sum[k] = trait_value(traits, name, false, rng);
-        }
-        self
-    }
-}
-
 impl Default for ItemBonusInputs {
     fn default() -> Self {
-        ItemBonusInputs { sum: [0; 43], rank: 0, cost: 0, uses_left: 0, counts: 0, x18: 0, single_use: false, monster_size: None, targets: 1, wait_term: 0 }
+        ItemBonusInputs { rank: 0, cost: 0, uses_left: 0, counts: 0, x18: 0, single_use: false, monster_size: None, targets: 1, wait_term: 0 }
     }
 }
 
-/// An item action's bonus percentage (the sum `0x1401bd8ee` builds; cut to the act's bonus
-/// limit by [`boost_amounts`]).
-pub fn item_bonus(i: &ItemBonusInputs) -> i32 {
-    let s = |k: usize| i.sum[k];
+/// An item action's bonus percentage (the sum `0x1401bd8ee` builds for each flag-3 effect; cut
+/// to the act's bonus limit by [`boost_amounts`]). `sum(k)` is the traits' sum of kind `k`
+/// (`0x14029db00 (item, k, 0)`, [`kind_sum`]), asked for in the game's order (0, 25, 31, 28
+/// at the last use, 35, 34, 29 and 30 on a monster, 26, 27, 41, 42): each ask rolls.
+pub fn item_bonus(i: &ItemBonusInputs, mut s: impl FnMut(usize) -> i32) -> i32 {
     let mut b = s(0);
     b += s(25).wrapping_mul(5 - i.rank);
     b += s(31).wrapping_mul(i.cost);
@@ -766,13 +752,17 @@ mod tests {
 
     #[test]
     fn item_bonuses() {
-        let mut i = ItemBonusInputs { rank: 3, cost: 10, uses_left: 1, targets: 2, ..Default::default() };
-        i.sum[0] = 20;
-        i.sum[25] = 5;
-        i.sum[28] = 30;
-        i.sum[26] = 4;
+        let i = ItemBonusInputs { rank: 3, cost: 10, uses_left: 1, targets: 2, ..Default::default() };
+        let mut sums = [0; 43];
+        sums[0] = 20;
+        sums[25] = 5;
+        sums[28] = 30;
+        sums[26] = 4;
         // 20 + 5 × 2 + 30 (last use) + 4 × 2 targets.
-        assert_eq!(item_bonus(&i), 68);
+        let mut asked = Vec::new();
+        assert_eq!(item_bonus(&i, |k| { asked.push(k); sums[k] }), 68);
+        // Not on a monster: 29 and 30 are never asked for.
+        assert_eq!(asked, [0, 25, 31, 28, 35, 34, 26, 27, 41, 42]);
         assert_eq!(boost_amounts(100, 10, 68, 9999, 5), (173, 16));
         assert_eq!(boost_amounts(100, 10, 68, 50, 0), (150, 15));
         assert_eq!(actual_power_extra(20, 30), 30);

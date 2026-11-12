@@ -16,23 +16,25 @@ use barrel_formats::battle_data::{Skill, SkillEffect, StatBlock};
 
 pub type Stats = [i32; stat::COUNT];
 
-/// An item's trait bonus on its effects (`0x1401bd8ee` and on): `bonus` is
-/// `battle::item_bonus`, raising each flag-3 act's rolled amount and second value
-/// (`battle::boost_amounts`, cut to the act's limit); `extra` is its `CHANGE_ACTUAL_POWER` sum
-/// (kind 39), added on flag-4 acts as `battle::actual_power_extra`.
+/// An item's trait bonus on its effects (`0x1401bd8ee` and on), rolled for each effect right
+/// after its amounts: on a flag-3 act `battle::item_bonus` of its traits raises the amount and
+/// second value (`battle::boost_amounts`, cut to the act's limit); on a flag-4 act its
+/// `CHANGE_ACTUAL_POWER` sum (kind 39) is added as `battle::actual_power_extra`.
 #[derive(Clone, Copy)]
 pub struct Boost<'a> {
-    pub bonus: i32,
-    pub extra: i32,
+    pub traits: &'a [&'a barrel_formats::battle_data::Trait],
+    /// The `ITEM_SUB_*` names in enum order.
+    pub kinds: &'a [&'a str],
+    pub inputs: battle::ItemBonusInputs,
     pub acts: &'a [barrel_formats::battle_data::ActInfo],
 }
 
 impl Boost<'_> {
-    pub fn apply(&self, act: u32, amount: i32, second: i32) -> (i32, i32) {
+    pub fn apply(&self, act: u32, amount: i32, second: i32, rng: &mut Rng) -> (i32, i32) {
         let Some(info) = self.acts.get(act as usize) else { return (amount, second) };
-        let b = if info.flags[3] { self.bonus } else { 0 };
+        let b = if info.flags[3] { battle::item_bonus(&self.inputs, |k| battle::kind_sum(self.traits, self.kinds, k, rng)) } else { 0 };
         // Flag 4: the CHANGE_ACTUAL_POWER sum, full or v² / amount (`battle::actual_power_extra`).
-        let extra = if info.flags[4] { battle::actual_power_extra(amount, self.extra) } else { 0 };
+        let extra = if info.flags[4] { battle::actual_power_extra(amount, battle::kind_sum(self.traits, self.kinds, 39, rng)) } else { 0 };
         if b == 0 && extra == 0 {
             return (amount, second);
         }
@@ -272,16 +274,15 @@ impl Battle {
         if let Some(k) = slot.filter(|&k| k < 9) {
             self.fighters[who].uses[k] += 1;
         }
-        // The rolls first (`0x1401bd520`): each effect's amount, then its second value, raised by
-        // an item's bonus. (The game sums an item's trait bonus again for each flag-3 effect;
-        // here it is rolled once per use.)
+        // The rolls first (`0x1401bd520`): each effect's amount, then its second value, then an
+        // item's bonus for it.
         let rolled: Vec<(SkillEffect, i32, i32)> = skill
             .effects
             .iter()
             .map(|e| {
                 let amount = rng.range(e.min, e.max);
                 let second = rng.range(e.min2, e.max2);
-                let (amount, second) = boost.map_or((amount, second), |b| b.apply(e.act, amount, second));
+                let (amount, second) = boost.map_or((amount, second), |b| b.apply(e.act, amount, second, rng));
                 (*e, amount, second)
             })
             .collect();
@@ -499,11 +500,19 @@ mod tests {
         let mut flags = [false; 12];
         flags[3] = true;
         let acts = [ActInfo { flags, limit: 50, last: 0 }, ActInfo { flags: [false; 12], limit: 9999, last: 0 }];
-        let boost = Boost { bonus: 80, extra: 7, acts: &acts };
+        use barrel_formats::battle_data::{Trait, TraitSlot};
+        let slot = |kind: &str, v| TraitSlot { kind: kind.into(), min: v, max: v };
+        let t = Trait { name: String::new(), group: String::new(), slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 80), slot("ITEM_SUB_CHANGE_ACTUAL_POWER", 7)] };
+        let mut kinds = vec!["ITEM_SUB_ITM_CHANGE_POWER"];
+        kinds.resize(39, "");
+        kinds.push("ITEM_SUB_CHANGE_ACTUAL_POWER");
+        let traits = [&t];
+        let boost = Boost { traits: &traits, kinds: &kinds, inputs: battle::ItemBonusInputs::default(), acts: &acts };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
         // Act 0: the bonus cut to 50, no flag 4 so no extra.
-        assert_eq!(boost.apply(0, 100, 10), (150, 15));
+        assert_eq!(boost.apply(0, 100, 10, &mut rng), (150, 15));
         // Act 1: no flags, untouched.
-        assert_eq!(boost.apply(1, 100, 10), (100, 10));
+        assert_eq!(boost.apply(1, 100, 10, &mut rng), (100, 10));
     }
 
     #[test]
