@@ -463,3 +463,42 @@ pub fn trait_kinds<'a>(pe: &Pe<'a>) -> Vec<&'a str> {
         .map(|(names, first)| names[first..].iter().copied().take_while(|n| n.starts_with("ITEM_SUB_")).collect())
         .unwrap_or_default()
 }
+
+/// The encounter groups' table in Escha's English executable (`0x140754bc0`, 226 × 0x38
+/// bytes; `0x140050340` returns entry k, `0x1400501b0` lists the entries of a group).
+pub const ENCOUNTER_GROUPS_EN: u64 = 0x1407_54bc0;
+const ENCOUNTER_GROUP_COUNT: usize = 226;
+
+/// One encounter group: who a field enemy's battle brings (`docs/tables.md`, "Encounter
+/// groups").
+#[derive(Clone, Debug, PartialEq)]
+pub struct EncounterGroup {
+    pub id: i32,
+    /// Word 2: 0, 3 or 4 (meaning not read yet).
+    pub kind: i32,
+    /// How many monsters, at least and at most.
+    pub count: (i32, i32),
+    /// The monsters drawn from, with their weights.
+    pub monsters: Vec<(i32, i32)>,
+    /// Words 11 to 13: other monsters (bosses beside some groups; how they join is not read
+    /// yet).
+    pub extra: Vec<i32>,
+}
+
+/// The encounter groups (none if the table is not where `at` says).
+pub fn encounter_groups(pe: &Pe, at: u64) -> Vec<EncounterGroup> {
+    let Some(start) = pe.offset(at) else { return vec![] };
+    let data = pe.data;
+    (0..ENCOUNTER_GROUP_COUNT)
+        .map_while(|k| {
+            let w = |i: usize| data.get(start + 0x38 * k + 4 * i..start + 0x38 * k + 4 * i + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
+            Some(EncounterGroup {
+                id: w(0)?,
+                kind: w(2)?,
+                count: (w(3)?, w(4)?),
+                monsters: (0..3).filter_map(|s| Some((w(5 + 2 * s)?, w(6 + 2 * s)?))).filter(|&(m, _)| m >= 0).collect(),
+                extra: (11..14).filter_map(w).filter(|&m| m >= 0).collect(),
+            })
+        })
+        .collect()
+}

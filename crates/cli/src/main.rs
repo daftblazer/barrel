@@ -123,6 +123,7 @@ fn main() -> ExitCode {
         ["macros", root] => macros(Path::new(root)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
+        ["encounters", exe] => encounters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["deliveries", install] => deliveries(Path::new(install)),
         ["quakes", install] => quakes(Path::new(install)),
@@ -1169,6 +1170,21 @@ fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
 
 /// Each party member's base stats at levels 1, 10, 50 and 99.
 /// Every monster: each stat block's level, HP/ATK/DEF/SPD and skills.
+/// Lists the encounter groups: counts and monsters (by name) with their weights.
+fn encounters(exe: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
+    let name = |m: i32| monsters.get(m as usize).map_or_else(|| format!("#{m}"), |x| x.name.clone());
+    for g in bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN) {
+        let drawn: Vec<String> = g.monsters.iter().map(|&(m, w)| format!("{} ×{w}", name(m))).collect();
+        let extra: Vec<String> = g.extra.iter().map(|&m| name(m)).collect();
+        println!("{:3} kind {} {}..{}: {}{}", g.id, g.kind, g.count.0, g.count.1, drawn.join(", "), if extra.is_empty() { String::new() } else { format!("  + {}", extra.join(", ")) });
+    }
+    Ok(())
+}
+
 fn monsters(exe: &Path) -> Result<()> {
     use barrel_formats::battle_data as bd;
     let data = read(exe)?;

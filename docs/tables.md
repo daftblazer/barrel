@@ -741,6 +741,29 @@ centre ((sin, 0, cos) × distance, `0x140804bb4` = 200), the first at the centre
 and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
+### Encounter groups
+
+Who a field enemy's battle brings is a static table in the executable: 226 groups of 0x38
+bytes at `0x140754bc0` (English executable; `0x140050340` returns group k, `0x1400501b0`
+lists the groups with a given id; `battle_data::encounter_groups`, `barrel encounters EXE`).
+As 14 words:
+
+| word | meaning |
+|---|---|
+| 0 | the group's id (its index) |
+| 1 | always 1 |
+| 2 | 0, 3 or 4 (3 and 4 only on single bosses; not read yet) |
+| 3, 4 | how many monsters, at least and at most (1..2 for most, up to 4..5) |
+| 5, 6 / 7, 8 / 9, 10 | three (monster, weight) slots, -1 and 0 when empty |
+| 11 to 13 | other monsters, -1 for none (beside bosses: e.g. the Slayer Titan with Panzer, Howling Beast and Heavy Skin, reinforcements by the look of it; how they join is not read yet) |
+
+E.g. group 12: 3 or 4 monsters, Ore Rats and Stray Dogs equally likely; group 6: the Rampage
+Beast alone. The field's enemy data (`clsFMDataEnemy`, a 0x7030-byte singleton at
+`0x140dfc1f0`) holds entries of 0x68 bytes (up to 277, from +0x10) whose word at +0x4c is the
+group id (`0x140113470` walks them). Still to read: how the count and the monsters are drawn,
+where those entries come from, and the formation's places (the battle setup's 0x18-byte
+monster entries).
+
 ### A first duel
 
 `barrel_game::fight::Battle` holds a battle in progress (fighters with base and current stats,
