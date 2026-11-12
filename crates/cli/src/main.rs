@@ -848,6 +848,10 @@ fn save(file: &Path) -> Result<()> {
         .and_then(|d| barrel_formats::table::parse(&d).ok())
         .map(|t| t.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect())
         .unwrap_or_default();
+    for m in &s.party {
+        println!("character {}: level {} (exp {}), HP {}/{}, MP {}/{}", m.character, m.level, m.exp, m.hp, m.max_hp, m.mp, m.max_mp);
+    }
+    println!("squad {:?}", s.squad);
     for (label, list) in [("basket", &s.basket), ("container", &s.container), ("materials", &s.materials)] {
         let shown: Vec<String> = list.iter().take(12).map(|u| format!("{} q{}", names.get(u.item as usize).cloned().unwrap_or_else(|| format!("#{}", u.item)), u.quality)).collect();
         println!("{label} {}: {}{}", list.len(), shown.join(", "), if list.len() > 12 { ", ..." } else { "" });

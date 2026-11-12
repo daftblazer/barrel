@@ -234,7 +234,8 @@ pub fn decode(coded: &[u8]) -> Result<Vec<u8>, Error> {
 /// A record of a save's state (after its 0x20-byte header): a little-endian u32 size counting
 /// itself, a NUL-terminated name, then one of
 /// - `Data`: a u32 length and that many bytes (most records);
-/// - `Group`: records that fill the rest exactly (`system_data`, `option`, ...);
+/// - `Group`: records that fill the rest exactly (`system_data`, `option`, ...), or a u32
+///   count and that many records (`party`);
 /// - `Raw`: anything else, kept as it is (some records are written by their own code:
 ///   `FLAG` holds two bytes and a `CLEAR` record of two bytes, `m_recipeData` a byte and a
 ///   count of 265 entries, `costumeData` a count and length-value pairs).
@@ -275,7 +276,12 @@ fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
             Some(len) if len == rest.len() - 4 => Body::Data(&rest[4..]),
             _ => match records(rest) {
                 Some(children) if !rest.is_empty() => Body::Group(children),
-                _ => Body::Raw(rest),
+                // A u32 count, then that many records and maybe more (`party`: 11 `Party` records
+                // and `m_squad`).
+                _ => match rest.get(..4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).zip(rest.get(4..).and_then(records)) {
+                    Some((n, children)) if n > 0 && n <= children.len() => Body::Group(children),
+                    _ => Body::Raw(rest),
+                },
             },
         };
         out.push(Record { name, body });
@@ -321,6 +327,25 @@ pub fn item_units(d: &[u8]) -> Vec<ItemUnit> {
         .collect()
 }
 
+/// A character's record in `party` (a `Party` record, 698 bytes after its name): the
+/// character (+0), level (+4), experience (+8), a word (+0xc, 392 in every one seen), HP and
+/// MP now (+0x10, +0x14) and their maxima (+0x18, +0x1c); more stats follow (not read yet).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Member {
+    pub character: i32,
+    pub level: i32,
+    pub exp: i32,
+    pub hp: i32,
+    pub mp: i32,
+    pub max_hp: i32,
+    pub max_mp: i32,
+}
+
+pub fn member(d: &[u8]) -> Option<Member> {
+    let w = |k: usize| d.get(4 * k..4 * k + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
+    Some(Member { character: w(0)?, level: w(1)?, exp: w(2)?, hp: w(4)?, mp: w(5)?, max_hp: w(6)?, max_mp: w(7)? })
+}
+
 /// What a game save's state says in plain numbers (records read so far).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Summary {
@@ -336,6 +361,10 @@ pub struct Summary {
     pub basket: Vec<ItemUnit>,
     pub container: Vec<ItemUnit>,
     pub materials: Vec<ItemUnit>,
+    /// `party`'s `Party` records.
+    pub party: Vec<Member>,
+    /// `party/m_squad`: the characters in the squad, in order (-1 slots left out).
+    pub squad: Vec<i32>,
 }
 
 pub fn summary(records: &[Record]) -> Summary {
@@ -358,6 +387,16 @@ pub fn summary(records: &[Record]) -> Summary {
         basket: list("m_unitKago"),
         container: list("m_unitContainer"),
         materials: list("m_unitMaterial"),
+        party: match top("party").map(|r| &r.body) {
+            Some(Body::Group(c)) => c.iter().filter(|r| r.name == "Party").filter_map(|r| match &r.body {
+                Body::Data(d) | Body::Raw(d) => member(d),
+                Body::Group(_) => None,
+            }).collect(),
+            _ => Vec::new(),
+        },
+        squad: bytes(top("party").and_then(|r| r.child("m_squad")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
+            .unwrap_or_default(),
     }
 }
 

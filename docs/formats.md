@@ -439,10 +439,11 @@ read yet.
 **Records** (`save::state_records`): after the 0x20-byte header, each record is a
 little-endian u32 size counting itself and a NUL-terminated name, then most often a u32 length
 and that many bytes (`Body::Data`), or child records filling it exactly (`Body::Group`:
-`system_data`, `option`, `event`, `knowledge`, `item`, ...). Some are written by their own code
+`system_data`, `option`, `event`, `knowledge`, `item`, ...; or a u32 count and at least that many
+records, `party`). Some are written by their own code
 and kept raw (`Body::Raw`: `FLAG` is two bytes and a `CLEAR` record of two bytes; `m_recipeData`
 a byte and a count of 265 entries; `costumeData` a count and length-value pairs; `money` 4
-bytes; `party` 7,852). Encoding drops the state's trailing zeros, so `decode` pads the state
+bytes). Encoding drops the state's trailing zeros, so `decode` pads the state
 back until its top records are whole. A game save's top records: `dlc`, `event`
 (`m_eventListSaveData`, `m_eventFlag`, `m_isDoneToday`), `knowledge` (`item`, `recipe`, `book`,
 `fieldMap`, `monster`, `mixEsp`, `potential`, `eff`), `money`, `party`, `fieldmap`
@@ -461,7 +462,11 @@ a serial (+0; `item/ID` holds the next), the `itemData.xml` row (+2), the qualit
 (+4), three trait rows (+8), a word the battle code checks (+0xe), four effect rows (+0x10),
 a word (+0x18) and four counts (+0x1c ...: the battle code's uses left first); a serial of
 0xffff marks an empty slot. One save's basket reads Paper Scraps, Glass Core, Antique Stone, ...
-(`BARREL_ITEMS=itemData.xml` names them in `barrel save`).
+(`BARREL_ITEMS=itemData.xml` names them in `barrel save`). `party` is a u32 count (11) and that many `Party` records, then
+`m_squad` (11 i32 slots: the squad's characters in order, -1 empty; 5 used in one save). A
+`Party` record (698 bytes, `save::Member`) starts with the character (0 to 10), level,
+experience, a word (392 in every one), HP and MP now and their maxima (Escha in one save:
+level 12, 694 experience, HP 24 of 30, MP 43 of 47); more stats follow, not read yet.
 
 ## Voices (`Sound/Voice/Series*.fp`)
 
