@@ -43,8 +43,8 @@ The engine has to run well across three tiers, set early so the design fits them
 - **Handheld, low end: Mali GPUs** such as the RK3566's Mali-G52, aarch64 Linux, for the
   older Dusk titles (Ayesha, Escha & Logy, Shallie), as far as its Vulkan driver allows: a
   best effort, never a reason for a second backend.
-- **Desktop**, with newer features as options: upscaling (FSR), anti-aliasing (SMAA, FXAA,
-  MSAA, TAA) and higher resolutions and rates.
+- **Desktop**, with newer features as options: upscaling (FSR 1, 2, 3 and 4.x where it can
+  run), anti-aliasing (SMAA, FXAA, MSAA, TAA) and higher resolutions and rates.
 
 What follows for the design:
 
@@ -61,6 +61,15 @@ What follows for the design:
   draw below native and the desktop above it; desktop upscalers (FSR 1 needs only the frame;
   FSR 2/3 and TAA need motion vectors and a jittered projection, kept in mind for the
   passes) and anti-aliasing are optional passes, off on the handhelds by default.
+- **Temporal upscaling** (FSR 2, 3 and 4.x, all wanted, each kept unless one is not worth
+  keeping) and TAA need more from the frame than FSR 1: a per-pixel motion vector (each
+  pixel's movement since the last frame, so skinned characters need last frame's bone
+  matrices too, and moving objects last frame's transforms), a sub-pixel camera jitter that
+  changes every frame, the depth buffer kept (not transient) for the upscaler to read,
+  and masks for what it should not accumulate (particles, glow, transparent effects). The
+  scene pass is planned around those. FSR 2 and 3 are compute passes that run on any Vulkan
+  GPU (heavy for the handhelds); FSR 4 is a learned model for recent AMD GPUs, so it is a
+  desktop option where its runtime is available for Vulkan on Linux.
 - **Vulkan only**, written directly and tuned for Linux's Mesa drivers (Turnip, RADV and the
   others): no OpenGL or OpenGL ES backend. Vulkan 1.1 is the baseline today
   (`crates/render`). If a device's driver cannot run it (the RK3566 depends on Mesa's PanVK
