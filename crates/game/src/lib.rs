@@ -26,5 +26,6 @@ pub mod rank;
 pub mod rng;
 pub mod shop;
 pub mod skirmish;
+pub mod sophie2;
 pub mod stage;
 pub mod synthesis;

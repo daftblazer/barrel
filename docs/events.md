@@ -998,7 +998,16 @@ DLC packs) of `g1a` files named by six-digit numbers (`PC01A_000900.g1a`, `PC01A
 … 77 for `pc01a`), and the shared ones by body type hold the common motions (`cf00` 510,
 `cm00`, …: `CF00_172501.g1a`), so `s40`'s motion 1000 is `<model>_001000.g1a` and 172501 is
 `CF00_172501.g1a`. The third operand (0, 1,500, 3,000, …) is still to be read; the fifth is
-0 or -1. (`BARREL_GAME=sophie2 barrel ebd-ops DIR WORD` reads
+0 or -1.
+
+Which containers a character's motions are in comes from `saves/chara` (`PACK02.PAK`):
+`chara.xml` gives the row's `BaseTag` (`PC01A`), `charabase.xml` the base's two motion sets
+(`motset0="CHARA_MOTIONSET_PC01A"`, `motset1="CHARA_MOTIONSET_CF01"`: its own, then the shared
+one of its body type), `charamotionset.xml` each set's `Directory` and `BaseName`, and
+`charamotionconvert.xml` motion numbers a base swaps for others (`PC00A`: 0 → 800000). A motion
+is looked for in the first set's container, then the second's (`sophie2::Motions::files`).
+Over the `mm01` events every `s40` on a slot bound to row 1 (`PC01A`, 45 uses) finds its file
+in `pc01a_motion` or `cf01_motion`. (`BARREL_GAME=sophie2 barrel ebd-ops DIR WORD` reads
 operand values with Sophie 2's table.)
 
 ## Script macros (`Script/*.nut`)
