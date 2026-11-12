@@ -1186,3 +1186,15 @@ scores run from 100 to 3,000 (`DELIVERY_CARD_08_00`: a key item worth 650 plus f
 level 1 or more at 100 each). How a hand-in's score adds up (per item, per bonus, capped or
 not) is not read from the executable yet. `barrel_game::delivery` reads the table and
 `barrel deliveries INSTALL` lists the rows.
+
+## Attached props (`Saves/chara/CharaAddObj.xml`): unused
+
+71 rows `{BaseTag, GroupNo, Index, Node, Directory, File}`: a prop model hung on a named bone
+(`H_4_WepAttach` 26, `H_4_WepAAttach` 12, `H_4_LetterAttach`, `H_4_BookAttach`,
+`H_4_PenAttach`, `H_4_TobaccoAttach` ...), switched by `s66` (`ECT_CHARA_CHANGE_ADD_OBJ`, one
+use in all the events). It covers only `PC00` to `PC06` and four of `PC12` to `PC16`, not
+Escha (`PC20`) or Logy (`PC21`), and none of its files (`PC00WEAPON01`, `PC00BOOK` ...) are in
+the install: a table kept from the series' previous game. In Escha & Logy the weapons and
+props are part models in the character's own container (`<stem>_P_M_Wep_*`, `_Opt_*`),
+switched by `CharaPartsChange.xml`; accessories (`_P_M_Acc_*`) are always worn
+(`docs/renderer.md`, "Accessories").
