@@ -63,6 +63,14 @@ pub const CHARA_VOICE_PLAY: u32 = 0x7300_0066;
 pub const EVENT_SET_POST_EFFECT: u32 = 0x7500_000d;
 /// `u14` (`ECT_EVENT_WAIT_POST_EFFECT`): the action waits for the screen effect to end.
 pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
+/// `u3 {n}`: label `n` in its action (`0x14020fcd6` on: an action's labels are found by
+/// scanning its words when it starts; also `u73` when the global at `0x141077ef0` is set).
+pub const LABEL: u32 = 0x7500_0003;
+/// `u5 {n}`: the action goes on from label `n` (`0x140210be0` → `0x14020fd80`, which sets the
+/// running action's next command, +0x8, to the label's).
+pub const GOTO: u32 = 0x7500_0005;
+/// `u6 {a, b}`: the action goes on from label `a + b`.
+pub const GOTO_SUM: u32 = 0x7500_0006;
 /// `u22` (`ECT_EVENT_CONTRAST_SET_MIX`): `{contrast id, preset, hundredths of a second}`: the
 /// screen's colour overlay moves from the preset's first colour to its second over the time
 /// (`docs/events.md`, "Fades").
@@ -257,6 +265,16 @@ impl<'a> Player<'a> {
         self
     }
 
+    /// Where a jump command (`u5`, `u6`) in `action` sends it: the index of the label's command.
+    fn jump(&self, action: usize, c: ebd::Command<'a>) -> Option<usize> {
+        let target = match (c.word, c.operands) {
+            (GOTO, [n, ..]) => *n,
+            (GOTO_SUM, [a, b, ..]) => a.wrapping_add(*b),
+            _ => return None,
+        };
+        self.actions[action].iter().position(|l| l.word == LABEL && l.operands.first() == Some(&target))
+    }
+
     /// The name the executable gives a command word, if any.
     pub fn name(&self, word: u32) -> Option<&'static str> {
         self.names.get(&word).copied()
@@ -393,6 +411,10 @@ impl<'a> Player<'a> {
             let (now, action, pc) = threads[t];
             threads[t].2 = pc + 1;
             let c = self.actions[action][pc];
+            if let Some(to) = self.jump(action, c) {
+                threads[t].2 = to;
+                continue;
+            }
             steps.clear();
             if let Some(n) = self.translate(action, c, &mut steps) {
                 if n < self.actions.len() && !self.started[n] {
@@ -488,6 +510,12 @@ impl<'a> Iterator for Player<'a> {
                 continue;
             };
             *next += 1;
+            if let Some(to) = self.jump(action, c) {
+                if let Some(top) = self.running.last_mut() {
+                    top.1 = to;
+                }
+                continue;
+            }
             let mut steps = Vec::new();
             if let Some(n) = self.translate(action, c, &mut steps) {
                 if n < self.actions.len() && !self.started[n] {
