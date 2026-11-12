@@ -47,6 +47,7 @@ usage:
   barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
   barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
   barrel font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
+  barrel g1s FILE.g1s           a shader pack's programs: stage, inputs, outputs, constants, textures
   barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
@@ -113,6 +114,7 @@ fn main() -> ExitCode {
         ["quests", install] => quests(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["se-scan", wh2] => se_scan(Path::new(wh2)),
+        ["g1s", file] => g1s(Path::new(file)),
         ["font-text", exe, g1t, out, text] => font_text(Path::new(exe), Path::new(g1t), Path::new(out), text),
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
@@ -950,6 +952,28 @@ fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
     }
     std::fs::write(out, barrel_formats::png::encode_rgba(w as u32, h as u32, &img))?;
     println!("{} glyphs; line height {line}; {w}x{h}; {missing} characters missing", glyphs.len());
+    Ok(())
+}
+
+/// A shader pack's DXBC programs and what each reads and writes.
+fn g1s(file: &Path) -> Result<()> {
+    use barrel_formats::dxbc;
+    let data = read(file)?;
+    let mask = |m: u8| "xyzw".chars().enumerate().filter(|(i, _)| m >> i & 1 == 1).map(|(_, c)| c).collect::<String>();
+    for (k, r) in dxbc::find(&data).into_iter().enumerate() {
+        let p = dxbc::program(&data[r.clone()]).map_err(|e| format!("program {k}: {e}"))?;
+        println!("program {k} at {:#x}: {:?}, {} bytes of code", r.start, p.stage, p.code.len());
+        let io = |v: &[dxbc::Element]| v.iter().map(|e| format!("{}{} v{}.{}", e.semantic, e.index, e.register, mask(e.mask))).collect::<Vec<_>>().join(", ");
+        println!("  in:  {}", io(&p.inputs));
+        println!("  out: {}", io(&p.outputs));
+        for b in &p.bindings {
+            println!("  binding {} (kind {}) slot {}", b.name, b.kind, b.slot);
+        }
+        for c in &p.buffers {
+            let vars: Vec<String> = c.variables.iter().map(|v| format!("{}@{}", v.name, v.offset)).collect();
+            println!("  cbuffer {} ({} bytes): {}", c.name, c.size, vars.join(" "));
+        }
+    }
     Ok(())
 }
 

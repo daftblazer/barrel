@@ -337,6 +337,22 @@ becomes `(clamp(x, 0, 128) / 128 - 0.5) × 2` (`0x140160230`, the player's +0x19
 battle skill events) puts a character first; its numbers (151, 119, ...) look like another
 numbering, and its handler is not read. `barrel_audio::Library::effect` follows the player.
 
+## Shaders (`Data/x64/Shader/*.g1s`, `_S2G`)
+
+80 shader packs, one per material kind: `CharaMT*` (characters: `CharaMTC`, `CharaMTCN`,
+`CharaMTCNO`, `CharaMTSR`, ... and `CharaEYEL`/`EYER`, `CharaFraHAIR`/`BODY`/`SKIRT`),
+`MapSTD*` and `MapWater*` (fields), `STD*`, `SM*_Psm` (shadow maps), `E3dS*` (effects),
+`Ipu*`, `Contrast`, `Refraction*`, `VertexColor*`. A pack (`_S2G3000`, u32 size, a name such
+as `CharaMT-CP`, a table not read yet) holds Direct3D 11 programs as DXBC containers one after
+another (`barrel_formats::dxbc::find`): `CharaMTC.g1s` has 14, twelve vertex-shader variants
+and two pixel shaders. Each container reads with `dxbc::program`: its constant buffers
+(RDEF), bindings, inputs and outputs (ISGN/OSGN) and its code (SHEX, Shader Model 5).
+`CharaMTC`'s pixel shaders sample `sDiffuse` and `sMask` and read `$Globals` `{vATest (the
+alpha-tested variant only), atColor, HdrRangeInv, atCharaPointLightStrength,
+atCharaLightColor, atCharaRimLightColor}`; their vertex shaders carry `atCharaLightDir`,
+`atCharaRimLightDir`, the lights (`litPos`, `litCol`, `litDir`, `litAtt`, `litAmb`,
+`nDirLit`) and the skinning matrices. `barrel g1s FILE` lists a pack.
+
 ## Interface art (`Data/x64/WinXls*/`, `Data/x64/Ipu*/`)
 
 `WinXls` (and `_EN`, `_SC`, `_TC` for what has text) holds the interface textures as plain

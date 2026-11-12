@@ -8,6 +8,7 @@ pub mod bgm;
 pub mod bc;
 pub mod bc6h;
 pub mod bc7;
+pub mod dxbc;
 pub mod ebd;
 pub mod ebm;
 mod ebd_tables;
