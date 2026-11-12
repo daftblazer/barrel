@@ -1282,6 +1282,9 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 | `TRIGGER_MAP_FIELDMAP_BE m` | the fired map is `m` |
 
 | `MAP_FIELDMAP_BE m` | in a field (`0x1400546c0`) whose map (`0x140236160`: `[0x140df9968]+0x9a0`, or +0x998 when that is -1) is `m`; `0x60000001` and `0x60000002` as in the triggers |
+| `PLAYER_PARAM_MT/LT/EQ n v` | parameter `n` ≥ / ≤ / = `v`: 0 the money (`0x14036a990`), 1 the alchemy level (`0x14107c4c8`), any other `INT_MIN` |
+| `CHARA_FRIEND_POINT_MT/LT/EQ c v` | the character has a record (`0x140361ad0`) and its friendship (`0x14032dba0`, a float) ≥ / ≤ / = `v` |
+| `ITEM_QUALITY_HAVE_MT/LT/EQ i lo hi n` | the counts (+0x22) summed over the basket's and the container's slots of item `i` (`0x60000002`: any) found by the lists' finder (`[+0x28]`, quality `lo` to `hi`) ≥ / ≤ / = `n` |
 | `DATE_IS/BEFORE/AFTER y m d`, `DATE_BETWEEN y m d y m d` | today =, ≤, ≥ the date, or within both (inclusive) |
 | the 14 one-value triggers (`MAP_COLLECT`, `ITEM_GET`, `MIX_SUCCESS`, `MIX_FAILED`, `EVENT_END`, `OTHER_TALK_BEFORE/AFTER_IS`, `OTHER_PLAYER_PUSH_BUTTON`, `GIMMICK_ACCESS_BEFORE/AFTER`, `ENEMY_KILL_IS`, `RECLAIM_TARGET_CLEAR`, `RECLAIM_FACILITY_BUILT`, `SUBJECT_CLEAR`) | the first operand equals the fired value |
 | `MIX_HP_EMPTY`, `MIX_ACCESS`, `BATTLE_ANNIHILATION(_ATELIER)`, `RECLAIM_KINGDOM_LV_UP`, `ATELIER_RETURN`, `ATELIER_SLEEP_MIX`, `MAP_WORLDMAP_ROUTE_MOVE`, `MEMORIES_LV_UP` | always, once their trigger group fired |
@@ -1294,7 +1297,7 @@ so a -1 field is ignored and (-1, -1, -1) always matches. The gate's words 8–1
 are such dates (today from the one to the other); 1,139 events leave all six at -1.
 
 Not read yet, by uses in the data: `CHARA_FRIEND_POINT_MT` (36),
-`ITEM_QUALITY_HAVE_MT` (33), `MAP_FIELDAREA_BE` (27), the date triggers (20 each), `TRIGGER_PROGRAM_EXEC` (16), `PLAYER_PARAM_MT` and
+`ITEM_QUALITY_HAVE_MT` (33), `MAP_FIELDAREA_BE` (27), the date triggers (20 each), `TRIGGER_PROGRAM_EXEC` (16),
 `CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
 `CHARA_PARTY_IN` (6), and a few single uses.
 
@@ -1311,5 +1314,6 @@ The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired v
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
 The field map is taken as none and the day flag as clear. Commands not modelled yet count as
 failing and are tallied. On the oracle save (day 229), `ATELIER_SLEEP_MIX` (group 28, 129
-events listed) passes for one event, with `PLAYER_PARAM_MT` unmodelled in 4 of the checks.
+events listed) passes for one event (`EVENT_QC10_MAR_011`) with every command in its checks modelled. Friendship is
+not read from the save yet.
 

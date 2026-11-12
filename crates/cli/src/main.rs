@@ -3065,6 +3065,20 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         fn field_map(&self) -> Option<i32> {
             None
         }
+        fn money(&self) -> i32 {
+            self.0.money.unwrap_or(0)
+        }
+        fn alchemy_level(&self) -> i32 {
+            self.0.alchemy.map_or(0, |a| a.0)
+        }
+        fn friendship(&self, _: i32) -> Option<Option<f32>> {
+            None
+        }
+        fn item_count(&self, item: Option<i32>, low: f32, high: f32) -> Option<i32> {
+            let held = self.0.basket.iter().chain(&self.0.container);
+            let hit = |u: &&barrel_formats::save::ItemUnit| item.is_none_or(|i| i32::from(u.item) == i) && (low..=high).contains(&u.quality);
+            Some(held.filter(hit).map(|u| i32::from(u.counts[3])).sum())
+        }
     }
     let w = W(&sum);
     let mut unread: std::collections::BTreeMap<&str, usize> = Default::default();

@@ -97,6 +97,16 @@ pub trait World {
     /// The field map the player is in (`0x1400546c0` non-null, then `0x140236160`), None outside
     /// a field.
     fn field_map(&self) -> Option<i32>;
+    /// `PLAYER_PARAM` n: 0 the money (`0x14036a990`), 1 the alchemy level (`0x14107c4c8`).
+    fn money(&self) -> i32;
+    fn alchemy_level(&self) -> i32;
+    /// A character's friendship (`0x140361ad0` then `0x14032dba0`); None when the character has no
+    /// record (the condition fails) or it is not known here (not modelled).
+    fn friendship(&self, chara: i32) -> Option<Option<f32>>;
+    /// The count (each slot's +0x22 summed) of an item, or of any item for None, in the basket and
+    /// the container with quality from `low` to `high` (the lists' finder, `[+0x28]`); None when
+    /// not known here.
+    fn item_count(&self, item: Option<i32>, low: f32, high: f32) -> Option<i32>;
 }
 
 /// `0x1402f08a0` and its siblings: today against a (year, month, day) pattern, -1 fields
@@ -141,6 +151,26 @@ pub fn command(c: &Command, fired: (u8, &[i32]), w: &impl World) -> Option<bool>
             ANY => true,
             v => m == v,
         }),
+        0x39..=0x3b => cmp(
+            match op(0) {
+                0 => w.money(),
+                1 => w.alchemy_level(),
+                _ => i32::MIN,
+            },
+            c.code - 0x39,
+        ),
+        0x0f..=0x11 => match w.friendship(op(0))? {
+            None => false,
+            Some(f) => {
+                let v = op(1) as f32;
+                [f >= v, f <= v, f == v][c.code - 0x0f]
+            }
+        },
+        0x07..=0x09 => {
+            let item = (op(0) != ANY).then_some(op(0));
+            let n = w.item_count(item, op(1) as f32, op(2) as f32)?;
+            [n >= op(3), n <= op(3), n == op(3)][c.code - 0x07]
+        }
         0x3c => date_order(w.today(), date(0)) == 0,
         0x3d => date_order(w.today(), date(0)) >= 0 && date_order(w.today(), date(3)) <= 0,
         0x3e => date_order(w.today(), date(0)) <= 0,
@@ -274,6 +304,26 @@ mod tests {
         fn field_map(&self) -> Option<i32> {
             Some(4)
         }
+        fn money(&self) -> i32 {
+            500
+        }
+        fn alchemy_level(&self) -> i32 {
+            8
+        }
+        fn friendship(&self, c: i32) -> Option<Option<f32>> {
+            Some((c == 3).then_some(10.0))
+        }
+        fn item_count(&self, item: Option<i32>, low: f32, _: f32) -> Option<i32> {
+            Some(if item == Some(499) && low <= 40.0 { 2 } else { 0 })
+        }
+    }
+
+    #[test]
+    fn player_friendship_items() {
+        let g = [0x70000039, 1, 8, 0x7000003a, 0, 500, 0x7000000f, 3, 10, 0x70000007, 499, 0, 999, 1];
+        assert!(commands(&g).unwrap().iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        let no = [0x7000000f, 4, 0, 0x70000039, 2, -5, 0x70000007, ANY, 50, 999, 1];
+        assert!(commands(&no).unwrap().iter().all(|c| command(c, (0, &[]), &W) == Some(false)));
     }
 
     #[test]
