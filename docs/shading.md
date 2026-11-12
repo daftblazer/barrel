@@ -184,3 +184,18 @@ The renderer lays the iris over the white when it loads them (the iris's UVs are
 while the offset is 0 and the scale 1) and shades eyes (the `eye` flag) with the light colour
 and the highlights; the specular is not done (`atSpecularLightOffset` and `g_specularPower`
 are set by the engine, not read yet), nor the look-about offset.
+
+## Outlines (`CharaFraHAIR`, `CharaFraBODY`, `CharaFraSKIRT`)
+
+"Fra" is the characters' outline pass, not their shading: an inverted hull, the model drawn a
+second time pushed out along its normals. The vertex programs (24 variants: skinning, wind for
+hair and skirts) take the normal into clip space (through `mL2W` and `mW2P`), normalise it as
+a 4-vector and push the position out by it times `0.0025 × (1.75 - 0.75 × vertex colour red) ×
+min(w, 350) × (1 - 0.2 × saturate((distance - 190) × 0.05)) × g_outlineThickness` (y kept as
+the normal's): about a constant width on screen, thinner where the artists painted the vertex
+colour's red, and a little thinner far off. The pixel program colours it: the diffuse texture
+under the light colour's soft light, blended half multiply, half overlay with `sOutline`
+(`Data/x64/Shader/texture/outline.g1t`, at the second UV pair), its saturation pushed a little
+(the channels within 1/255 of the brightest kept, the rest lowered 10%), then the point lights,
+fog, `atColor` and the HDR range as for the body. `g_outlineThickness` is the engine's (not
+read yet).
