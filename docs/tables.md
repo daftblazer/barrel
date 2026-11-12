@@ -1439,6 +1439,13 @@ level 1 or more at 100 each). How a hand-in's score adds up (per item, per bonus
 not) is not read from the executable yet. `barrel_game::delivery` reads the table and
 `barrel deliveries INSTALL` lists the rows.
 
+The progress is saved as `delivery/delivery_data`: 71 pairs `{state, score}` at
+`0x141098160`, one per row. State 2 is a delivery passed (the script function at
+`0x140354dc0` counts those); the score is what has been handed in so far, and the progress
+shown is `min(score, pass) × 10000 / max(pass, 1)` (`0x140354d10`, the pass score read from
+the loaded rows, 0x78 bytes each, +0x20). One save has row 25 passed with 100, and rows 0, 26,
+27 and 66 to 70 at state 1 with no score (taken, presumably). `save::Summary::deliveries`.
+
 ## Attached props (`Saves/chara/CharaAddObj.xml`): unused
 
 71 rows `{BaseTag, GroupNo, Index, Node, Directory, File}`: a prop model hung on a named bone

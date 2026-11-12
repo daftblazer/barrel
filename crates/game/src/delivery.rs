@@ -6,6 +6,12 @@
 
 use barrel_formats::table::Element;
 
+/// The progress a hand-in shows, in hundredths of a percent (`0x140354d10`): the score so
+/// far, capped at the pass score, over the pass score.
+pub fn progress(score: i32, pass_score: i32) -> i32 {
+    score.min(pass_score) * 10000 / pass_score.max(1)
+}
+
 /// A bonus a delivered item can earn: the condition's value (a category tag, an effect tag,
 /// or a threshold) and the score it is worth.
 #[derive(Clone, Debug, PartialEq)]
@@ -74,5 +80,15 @@ mod tests {
         assert_eq!(d.category.as_deref(), Some("ITEM_CATEGORY_FOOD"));
         assert_eq!(d.level, Some(Bonus { value: 1, score: 10 }));
         assert_eq!((d.quality.clone(), d.elements), (None, None));
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    #[test]
+    fn progress_caps_at_the_pass_score() {
+        assert_eq!(super::progress(50, 200), 2500);
+        assert_eq!(super::progress(300, 200), 10000);
+        assert_eq!(super::progress(10, 0), 0);
     }
 }

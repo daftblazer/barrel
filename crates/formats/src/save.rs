@@ -621,6 +621,9 @@ pub struct Summary {
     /// `work/work_data_status`: per `WorkData.xml` row (103), -1 not open, 1 open and new, 0
     /// open, 2 done.
     pub work_status: Vec<i32>,
+    /// `delivery/delivery_data`: per `DeliveryData.xml` row (71), the state (2 passed) and the
+    /// score handed in so far.
+    pub deliveries: Vec<(i32, i32)>,
 }
 
 /// The `knowledge` record: the library's level (0 to 10) for every entry of its eight lists,
@@ -714,6 +717,9 @@ pub fn summary(records: &[Record]) -> Summary {
         month_reports: bytes(top("monthrep").and_then(|r| r.child("data"))).map(|d| d.chunks_exact(0x144).map(<[u8]>::to_vec).collect()).unwrap_or_default(),
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
+            .unwrap_or_default(),
+        deliveries: bytes(top("delivery").and_then(|r| r.child("delivery_data")))
+            .map(|d| d.chunks_exact(8).map(|c| (i32::from_le_bytes(c[..4].try_into().unwrap()), i32::from_le_bytes(c[4..].try_into().unwrap()))).collect())
             .unwrap_or_default(),
         work_status: bytes(top("work").and_then(|r| r.child("work_data_status")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
