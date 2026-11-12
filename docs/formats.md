@@ -337,6 +337,17 @@ becomes `(clamp(x, 0, 128) / 128 - 0.5) × 2` (`0x140160230`, the player's +0x19
 battle skill events) puts a character first; its numbers (151, 119, ...) look like another
 numbering, and its handler is not read. `barrel_audio::Library::effect` follows the player.
 
+## Interface art (`Data/x64/WinXls*/`, `Data/x64/Ipu*/`)
+
+`WinXls` (and `_EN`, `_SC`, `_TC` for what has text) holds the interface textures as plain
+g1t packs: `a15_common.g1t` (29 textures: button glyphs, menu words, frames, numbers, the
+message window pieces in texture 28, item and character icons), `a15_menu`, `a15_battle`,
+`a15_mix`, `a15_saveload`, the monster dictionary pages, help pages, posters, and
+`a15_telop_<event>` title cards for a few events (`mm01_op1_111`, `mm01_op1_212`, ...).
+`Ipu` holds full-screen images (event stills `ev_still_*`, tutorial stills, title
+backgrounds, logos). Where each piece of a texture is placed on screen is in the executable's
+interface code (not read).
+
 ## The font (`Data/x64/Font_EN/MainFont_x64_0.g1t` and a table in the executable)
 
 Each language has one atlas (`Font`, `Font_EN`, `Font_SC`, `Font_TC`): a 2048×2048 BC3 texture

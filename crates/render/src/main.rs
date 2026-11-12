@@ -1725,12 +1725,14 @@ fn main() -> Result<()> {
         let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
         let glyphs = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok().and_then(|pe| barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN)));
         let atlas = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok();
-        match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok())) {
-            (Some(glyphs), Some(g)) if !g.textures.is_empty() => {
+        let common = std::fs::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok();
+        let ui = common.as_ref().and_then(|c| barrel_formats::g1t::G1t::parse(c).ok());
+        match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(28))) {
+            (Some(glyphs), Some(g), Some(window)) if !g.textures.is_empty() => {
                 let size = g.textures[0].width as f32;
-                text_layer = Some((text::Layer::new(&gpu, pool, render_pass, &g.textures[0])?, text::Font { glyphs, size }, None));
+                text_layer = Some((text::Layer::new(&gpu, pool, render_pass, &[&g.textures[0], window])?, text::Font { glyphs, size }, None));
             }
-            _ => eprintln!("no font: the English executable's glyph table or Font_EN atlas is missing"),
+            _ => eprintln!("no text: the English executable's glyph table, the Font_EN atlas or WinXls_EN/a15_common.g1t is missing"),
         }
     }
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);

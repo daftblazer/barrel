@@ -196,7 +196,7 @@ pan law, the far side turned down linearly, is ours: the sound library's is not 
 `SDL_AUDIO_DRIVER=dummy`; `EVENT_MM08_AS4_130` starts track 105 at its first tick in a
 60-frame run under headless gamescope.
 
-**Dialogue.** An event's lines show in a box over the scene, in the game's English font
+**Dialogue.** An event's lines show in the message window over the scene, in the game's English font
 (`text.rs`, `barrel_formats::font`): the lines come from `Event_EN` (the original's when no
 translation exists) and the speakers' names from `Saves_EN/chara/Chara.xml`. The stage keeps
 the latest line (`Stage::line`) and, for unattended playback, takes it down after the same
@@ -205,9 +205,14 @@ markup (colours, inline icons) is left out for now, and long lines wrap at space
 in Japanese). The text layer is a second pipeline in the same render pass (no depth, alpha
 blending) drawing screen-pixel quads from one vertex buffer that is only rewritten when the
 line or the screen size changes; glyphs take their coverage from the atlas's alpha and the
-panel is a quad with no texture. Sizes are for a 1080-line screen, scaled. Ours, to be
-replaced by the game's: the panel's look (a dark translucent box, the name in a warm colour;
-the game's message window art is not read yet) and the line spacing (53 atlas pixels).
+panel is a quad with no texture. Sizes are for a 1080-line screen, scaled. The window is the game's own art,
+from `WinXls_EN/a15_common.g1t` texture 28 (1024²): the cream speech bubble (41,4)–(208,173),
+its tail on the left, drawn as its left part, a stretched slice of its middle (x 140–150) and
+the end cap (732,4)–(786,173) mirrored on the right; the name sits on the leather strap
+(14,188)–(344,252) over the window's left end. The same texture has the message log button,
+the voice icon and small faces. How the pieces are put together (the window 1.3 times the
+art, 12% to 88% of the width, 30 pixels up; the strap at 0.8 of that; dark brown text, cream
+names) and the line spacing (53 atlas pixels) are ours: the game's layout code is not read.
 `BARREL_TEXT_LOG=1` prints each line as it goes up. Frames written to files show the lines
 too.
 

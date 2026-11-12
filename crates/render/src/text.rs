@@ -2,8 +2,9 @@
 //! (plain code, tested without a GPU) and a layer that draws them over the scene, alpha
 //! blended, in screen pixels.
 //!
-//! The dialogue box is ours for now (a dark translucent panel with the speaker's name over
-//! the text); the game's own window art is not read yet.
+//! The dialogue window is drawn from the game's own pieces (`WinXls_EN/a15_common.g1t`,
+//! texture 28: a cream speech bubble, its end cap and a leather name strap); how they are put
+//! together (sizes, places, colours) is ours, as the game's layout code is not read.
 
 use std::collections::HashMap;
 
@@ -22,13 +23,34 @@ pub struct Font {
     pub size: f32,
 }
 
-/// One rectangle to draw: `rect` and `uv` are (left, top, right, bottom), in pixels and atlas
-/// coordinates; a negative `uv[0]` fills the rectangle with `color` alone.
+/// One rectangle to draw: `rect` and `uv` are (left, top, right, bottom), in pixels and
+/// texture coordinates (a right edge left of the left one mirrors it); a negative `uv[0]`
+/// fills the rectangle with `color` alone. `texture` is [`FONT`] or [`UI`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quad {
     pub rect: [f32; 4],
     pub uv: [f32; 4],
     pub color: [f32; 4],
+    pub texture: usize,
+}
+
+/// The layer's textures: the font atlas and the message window pieces.
+pub const FONT: usize = 0;
+pub const UI: usize = 1;
+
+/// The message window pieces' rectangles in `a15_common.g1t` texture 28 (1024 × 1024).
+pub mod window {
+    pub const SIZE: f32 = 1024.0;
+    /// The speech bubble (its tail on the left, 41 to 64) and its end cap (rounded on the
+    /// left; drawn mirrored as the right end; its last columns, 787 to 791, fade out and are
+    /// left off so the join does not show).
+    pub const BUBBLE: [f32; 4] = [41.0, 4.0, 208.0, 173.0];
+    pub const CAP: [f32; 4] = [732.0, 4.0, 786.0, 173.0];
+    /// Where the bubble's left part ends and a plain column of its middle (stretched).
+    pub const SPLIT: f32 = 140.0;
+    pub const FILL: [f32; 2] = [140.0, 150.0];
+    /// The leather strap the name sits on.
+    pub const STRAP: [f32; 4] = [14.0, 188.0, 344.0, 252.0];
 }
 
 impl Font {
@@ -81,32 +103,58 @@ impl Font {
                     rect: [left, top, left + gw * scale, top + gh * scale],
                     uv: [gx / self.size, gy / self.size, (gx + gw) / self.size, (gy + gh) / self.size],
                     color,
+                    texture: FONT,
                 });
             }
             pen += g.advance as f32 * scale;
         }
     }
 
-    /// The dialogue box for a line on a `width` × `height` screen: a panel across the lower
-    /// part, the speaker's name (if any) and the text, wrapped, under it.
+    /// The message window for a line on a `width` × `height` screen: the bubble across the
+    /// lower part (three lines tall, more if the text needs), the speaker's name on the strap
+    /// over its left end, and the text, wrapped, inside.
     pub fn dialogue(&self, speaker: Option<&str>, text: &str, width: f32, height: f32) -> Vec<Quad> {
+        use window::*;
         // Sized for 1080 lines and scaled to the screen.
         let scale = height / 1080.0;
-        let pad = 28.0 * scale;
         let (left, right) = (width * 0.12, width * 0.88);
-        let max = (right - left - 2.0 * pad) / scale;
+        // The bubble is drawn 1.3 times its size; the text sits inside its rounded edge.
+        let k = 1.3 * scale;
+        let inset_left = (SPLIT - BUBBLE[0]) * 0.55 * k;
+        let max = (right - left - inset_left - 40.0 * k) / scale;
         let lines: Vec<String> = plain_lines(text).iter().flat_map(|l| self.wrap(l, max)).collect();
-        let rows = lines.len().max(3) as f32 + if speaker.is_some() { 1.0 } else { 0.0 };
-        let bottom = height - 36.0 * scale;
-        let top = bottom - rows * LINE * scale - 2.0 * pad;
-        let mut out = vec![Quad { rect: [left, top, right, bottom], uv: [-1.0; 4], color: [0.04, 0.04, 0.07, 0.78] }];
-        let mut y = top + pad;
+        let text_height = lines.len().max(3) as f32 * LINE * scale;
+        let bubble_height = (BUBBLE[3] - BUBBLE[1]) * k;
+        let box_height = bubble_height.max(text_height + 40.0 * k);
+        let bottom = height - 30.0 * scale;
+        let top = bottom - box_height;
+        let uv = |r: [f32; 4]| r.map(|v| v / SIZE);
+        let white = [1.0; 4];
+        let left_end = left + (SPLIT - BUBBLE[0]) * k;
+        let right_start = right - (CAP[2] - CAP[0]) * k;
+        let mut out = vec![
+            Quad { rect: [left, top, left_end, bottom], uv: uv([BUBBLE[0], BUBBLE[1], SPLIT, BUBBLE[3]]), color: white, texture: UI },
+            Quad { rect: [left_end, top, right_start, bottom], uv: uv([FILL[0], BUBBLE[1], FILL[1], BUBBLE[3]]), color: white, texture: UI },
+            // The cap mirrored: its rounded side on the right.
+            Quad { rect: [right_start, top, right, bottom], uv: uv([CAP[2], CAP[1], CAP[0], CAP[3]]), color: white, texture: UI },
+        ];
+        let text_left = left + inset_left;
+        let mut y = top + (box_height - lines.len().max(1) as f32 * LINE * scale) * 0.5;
+        if lines.len() < 3 {
+            // Short lines start where the first of three would.
+            y = top + (box_height - text_height) * 0.5;
+        }
         if let Some(name) = speaker.filter(|n| !n.is_empty()) {
-            self.run(name, left + pad, y, scale, [1.0, 0.82, 0.55, 1.0], &mut out);
-            y += LINE * scale;
+            let sk = 0.8 * k;
+            let (sw, sh) = ((STRAP[2] - STRAP[0]) * sk, (STRAP[3] - STRAP[1]) * sk);
+            let (sx, sy) = (left + 30.0 * k, top - sh * 0.75);
+            out.push(Quad { rect: [sx, sy, sx + sw, sy + sh], uv: uv(STRAP), color: white, texture: UI });
+            let name_scale = scale * 0.85;
+            let name_top = sy + (sh - LINE * name_scale) * 0.5 + 4.0 * name_scale;
+            self.run(name, sx + 50.0 * sk, name_top, name_scale, [1.0, 0.95, 0.85, 1.0], &mut out);
         }
         for l in &lines {
-            self.run(l, left + pad, y, scale, [1.0, 1.0, 1.0, 1.0], &mut out);
+            self.run(l, text_left, y, scale, [0.27, 0.19, 0.12, 1.0], &mut out);
             y += LINE * scale;
         }
         out
@@ -148,14 +196,16 @@ struct Vertex {
     color: [f32; 4],
 }
 
-/// What draws text: the atlas, its pipeline (no depth, alpha blending) and a vertex buffer
-/// rewritten each frame.
+/// What draws text and the window: its textures ([`FONT`], [`UI`]), a pipeline (no depth,
+/// alpha blending) and a vertex buffer rewritten when what it shows changes.
 pub struct Layer {
-    atlas: (vk::Image, vk::DeviceMemory, vk::ImageView),
+    textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     sampler: vk::Sampler,
     set_layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
-    set: vk::DescriptorSet,
+    sets: Vec<vk::DescriptorSet>,
+    /// Runs of vertices by texture: (texture, first vertex, count).
+    runs: Vec<(usize, u32, u32)>,
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     modules: [vk::ShaderModule; 2],
@@ -164,9 +214,10 @@ pub struct Layer {
 }
 
 impl Layer {
-    pub fn new(gpu: &Gpu, pool: vk::CommandPool, render_pass: vk::RenderPass, atlas: &barrel_formats::g1t::Texture) -> Result<Layer> {
+    pub fn new(gpu: &Gpu, pool: vk::CommandPool, render_pass: vk::RenderPass, images: &[&barrel_formats::g1t::Texture]) -> Result<Layer> {
         let d = &gpu.device;
-        let atlas = upload_texture(gpu, pool, atlas)?;
+        let textures = images.iter().map(|t| upload_texture(gpu, pool, t)).collect::<Result<Vec<_>>>()?;
+        let n = textures.len() as u32;
         unsafe {
             let sampler = d.create_sampler(
                 &vk::SamplerCreateInfo::default()
@@ -182,15 +233,18 @@ impl Layer {
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
             let set_layout = d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)?;
-            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 }];
-            let dpool = d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&sizes), None)?;
+            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: n }];
+            let dpool = d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)?;
+            let layouts = vec![set_layout; textures.len()];
+            let sets = d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(dpool).set_layouts(&layouts))?;
+            for (set, t) in sets.iter().zip(&textures) {
+                let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(t.2).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+                d.update_descriptor_sets(
+                    &[vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)],
+                    &[],
+                );
+            }
             let layouts = [set_layout];
-            let set = d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(dpool).set_layouts(&layouts))?[0];
-            let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(atlas.2).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-            d.update_descriptor_sets(
-                &[vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)],
-                &[],
-            );
             let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX, offset: 0, size: 8 }];
             let layout = d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts).push_constant_ranges(&push), None)?;
             let module = |code: &[u8]| {
@@ -239,14 +293,20 @@ impl Layer {
                 .layout(layout)
                 .render_pass(render_pass);
             let pipeline = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0];
-            Ok(Layer { atlas, sampler, set_layout, pool: dpool, set, layout, pipeline, modules, buffer: None, count: 0 })
+            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, modules, buffer: None, count: 0 })
         }
     }
 
     /// Sets what the next frames draw (the buffer grows as needed).
     pub fn set(&mut self, gpu: &Gpu, quads: &[Quad]) -> Result<()> {
         let mut verts = Vec::with_capacity(quads.len() * 6);
+        self.runs.clear();
         for q in quads {
+            let texture = q.texture.min(self.textures.len().saturating_sub(1));
+            match self.runs.last_mut() {
+                Some((t, _, count)) if *t == texture => *count += 6,
+                _ => self.runs.push((texture, verts.len() as u32, 6)),
+            }
             let [l, t, r, b] = q.rect;
             let [u0, v0, u1, v1] = q.uv;
             let v = |x, y, u, w| Vertex { pos: [x, y], uv: [u, w], color: q.color };
@@ -284,9 +344,11 @@ impl Layer {
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
             let screen = [width as f32, height as f32];
             d.cmd_push_constants(cb, self.layout, vk::ShaderStageFlags::VERTEX, 0, std::slice::from_raw_parts(screen.as_ptr() as *const u8, 8));
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[self.set], &[]);
             d.cmd_bind_vertex_buffers(cb, 0, &[buf], &[0]);
-            d.cmd_draw(cb, self.count, 1, 0, 0);
+            for &(texture, first, count) in &self.runs {
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[self.sets[texture]], &[]);
+                d.cmd_draw(cb, count, 1, first, 0);
+            }
         }
     }
 
@@ -305,9 +367,11 @@ impl Layer {
             d.destroy_descriptor_pool(self.pool, None);
             d.destroy_descriptor_set_layout(self.set_layout, None);
             d.destroy_sampler(self.sampler, None);
-            d.destroy_image_view(self.atlas.2, None);
-            d.destroy_image(self.atlas.0, None);
-            d.free_memory(self.atlas.1, None);
+            for (image, mem, view) in self.textures {
+                d.destroy_image_view(view, None);
+                d.destroy_image(image, None);
+                d.free_memory(mem, None);
+            }
         }
     }
 }
@@ -343,10 +407,15 @@ mod tests {
     fn dialogue_box() {
         let f = font();
         let q = f.dialogue(Some("ab"), "abc<CR>d", 1920.0, 1080.0);
-        // The panel, two name glyphs, four text glyphs (spaces draw nothing).
-        assert_eq!(q.len(), 1 + 2 + 4);
-        assert!(q[0].uv[0] < 0.0);
-        // The name sits a line above the text.
-        assert_eq!(q[3].rect[1] - q[1].rect[1], LINE);
+        // Three window pieces and the strap, two name glyphs, four text glyphs.
+        assert_eq!(q.len(), 4 + 2 + 4);
+        assert!(q[..4].iter().all(|q| q.texture == UI));
+        assert!(q[4..].iter().all(|q| q.texture == FONT));
+        // The cap is mirrored, and the pieces meet.
+        assert!(q[2].uv[2] < q[2].uv[0]);
+        assert_eq!((q[0].rect[2], q[1].rect[2]), (q[1].rect[0], q[2].rect[0]));
+        // The text's lines are a line apart, inside the window.
+        assert_eq!(q[9].rect[1] - q[6].rect[1], LINE);
+        assert!(q[6].rect[1] > q[0].rect[1] && q[9].rect[3] < q[0].rect[3]);
     }
 }
