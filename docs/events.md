@@ -1251,6 +1251,19 @@ The handler names more of the family:
 - `0x77140003` and `4` set map knowledge.
 - `0x77141001` sets a place and `0x77141002` a route.
 
-Group 0 is presumably run when the event ends. When group 1 runs (40 events have commands
-there) is not read yet.
+When the groups run (all three readers go through `0x14005a070 (event, group, out)`, which
+copies the group or gives a bare `ECT_END` if there is none):
+
+- **Group 0, when the event starts.** `0x1402178d0` builds the event runner and loads the
+  script by the name table at `0x140d809b0`. It then hands group 0 to the runner
+  (`0x140210710`) alongside the script.
+- **Group 1, when the script reaches `ECT_END`.** The handler (`0x140052c0b`) runs group
+  `[runner+0x60]` of event `[runner+0x58]`. Nothing runs if the runner has already ended,
+  if `0x141077ef0` is set, or if the runner's +0x68 or +0x6a is set. The runner's +0x58 holds
+  the 16-byte pick result (`event_start`): event, trigger group, 1, priority. So +0x60 is
+  the 1 every trigger list entry carries, which makes this group 1.
+- **Both groups, without a script.** `0x1402130c0` (from `0x140212c60`) marks the event seen
+  (`0x14035f480`) and runs group 0, then group 1, in a scriptless runner.
+
+Most events keep their changes in group 0; 40 have any in group 1.
 
