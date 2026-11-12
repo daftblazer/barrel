@@ -556,8 +556,11 @@ written by `0x1403682b0`): a count of field maps (122), then per map a u32 384 a
 `{1, 0, 1}` everywhere. In the user's save every enemy entry is still the reset value, and a live run
 (2026-11-12) showed why: beating an ordinary field enemy in the Southern Ruins and leaving to
 the area map changed none of the 47,232 bytes at `0x141087bd0`, so ordinary enemies are not
-recorded there (they come back); what does write the block (unique or story enemies,
-presumably) is not read yet; the field's out-or-beaten check (`0x140075e10`) looks enemies up by area in a map kept
+recorded there (they come back). Nothing else does either: apart from the save's writer and
+reader and the two resets (`0x140368cf0`, and the new game's `0x140369090`, which reaches it
+as the image base + 0x1087bd8), no code refers to any address inside the array, directly or
+from the image base, so in the shipped game it always holds the reset values and Barrel only
+has to carry it through a save; the field's out-or-beaten check (`0x140075e10`) looks enemies up by area in a map kept
 at the field (+0x228, +0x40).
 
 **Knowledge** (`knowledge`, written by `0x140369970`): the library's levels, one i32 per
