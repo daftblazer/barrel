@@ -129,12 +129,17 @@ pub fn use_once(unit: &mut ItemUnit, traits: &[&barrel_formats::battle_data::Tra
 }
 
 impl ItemList {
-    /// Every item's uses left back to full (`0x1402a1300`, a list method): its recipe's and
-    /// traits' uses (+0x1e) plus its own extra (+0x20).
-    pub fn refill(&mut self) {
+    /// Every item's uses left back to full (`0x1402a1300`, the list's method at +0xa0): its
+    /// recipe's and traits' uses (+0x1e) plus its own extra (+0x20). Returns the uses restored
+    /// in all (each item that gained some is also passed to `0x140363930`).
+    pub fn refill(&mut self) -> i32 {
+        let mut restored = 0;
         for u in self.slots.iter_mut().flatten() {
+            let before = u.counts[0];
             u.counts[0] = u.counts[1] + u.counts[2];
+            restored += (u.counts[0] - before).max(0) as i32;
         }
+        restored
     }
 }
 
@@ -194,7 +199,7 @@ mod tests {
         assert_eq!(u.counts[0], 0);
         let mut list = ItemList::new(0, 4);
         list.slots[0] = Some(u);
-        list.refill();
+        assert_eq!(list.refill(), 3);
         assert_eq!(list.slots[0].unwrap().counts[0], 3);
     }
 

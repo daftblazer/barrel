@@ -1679,8 +1679,13 @@ to 4, 8 and 10; the item is then marked known (`0x140369840`, `0x140369520`). Ta
 from its start. Using an item once (`0x14029eca0`): while its +0xe word is 0, a roll in each
 of its traits' `ITEM_SUB_ITEM_PRESERV` slots (kind 43) adds to a percent chance of using
 nothing up; otherwise its uses left (+0x1c) drop by one, or to none with a trait of
-`ITEM_SUB_BTL_FORCED_LASTUSE` (kind 34, `0x14029e530`). A list's refill (`0x1402a1300`) puts
-every item's uses left back to its +0x1e plus +0x20. `barrel_game::inventory`.
+`ITEM_SUB_BTL_FORCED_LASTUSE` (kind 34, `0x14029e530`). A list's refill (`0x1402a1300`, its method at +0xa0) puts
+every item's uses left back to its +0x1e plus +0x20 and returns the uses restored. Coming into
+field map 0 (`0x14028c850`, when `0x140236120` finds the map number 0: home) first restores
+every party member's HP and MP to their maxima (`0x140330840`: +0xc from +0x114, +0x10 from
++0x118), then refills the basket and two more lists (`0x1410aedc0`, `0x1410aede0`;
+`0x14035dc40`); when any uses came back it queues message 0x1f with their number and counts up
+the month's report field +0x114 (at most 255). `barrel_game::inventory`.
 
 ## Monsters
 
