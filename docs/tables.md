@@ -757,7 +757,13 @@ makes one when the player's field strike, while out (`0x14026e2c0`), hits an ene
 (`0x140270f50`; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
 they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
 raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.5; the enemy's
-height is moved first by its monster row's +0x5c, +0x60 and +0x74, `encounter::touched`); scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
+height is moved first by its monster row's +0x5c, +0x60 and +0x74, `encounter::touched`);
+a field character's radius, +0x90, is set by `0x14026c3c0` from its `CharaBase.xml` row (its
++0x7c, rows of 0x1010 bytes at the battle data singleton's +0x19c80): the row's `FMrad`, which
+the loader (`0x1401edae0`) multiplies by 100 like `FMhig` and `FMslp`, so Escha and Logy
+(`PC20`, `PC21`, 0.48) touch at 48 field units; the lead's partner (by `0x14035ebb0`: Escha,
+then character 1, or Logy, then character 0) gets 0.4 of it. 87 of the 507 rows have 0.2,
+23 have 1, 11 have 2. scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
 The scripts' `isHitCollision` is only a wall check (on a hit they go back to waiting).
 An encounter ends with no battle when the player struck first, the party's average level
 (`0x140330a10`, the party list at `0x141093530`) is at least 10 above the group's (the average of
