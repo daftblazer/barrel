@@ -576,8 +576,20 @@ pub struct FieldEnemy {
     pub ai: (String, String),
     /// +0x4c: the encounter group its battle draws from (`EncounterGroup::id`).
     pub group: i32,
-    /// +0x50: where it stands.
+    /// +0x50: where it stands (and keeps to: `isMaxRangeIn`).
     pub position: [f32; 3],
+    /// +0x20 and +0x24: its walking and running speeds in metres a second (`getMoveSpeed`,
+    /// `0x1401314d0`, gives the running one ×100 once its brain's +0xd4 is set).
+    pub speeds: (f32, f32),
+    /// +0x28: its longest idle wait in seconds (`getWaitTime`, `0x140131900`: a random time
+    /// from half of it to all of it).
+    pub wait: f32,
+    /// +0x30: how far it sees (`isRangeIn`, `0x140131b60`, with half of +0x48 as the cone).
+    pub sight: f32,
+    /// +0x34: how far from where it stands it goes (`isMaxRangeIn`, `0x140131a60`).
+    pub reach: f32,
+    /// +0x48: its field of view in degrees.
+    pub view: f32,
     /// The whole record's words, for the fields not named yet.
     pub words: [u32; FIELD_ENEMY_SIZE / 4],
 }
@@ -669,6 +681,11 @@ pub fn field_enemies(pe: &Pe, builder: u64) -> Option<Vec<FieldEnemy>> {
                     ai: (name(base + 0x38), name(base + 0x40)),
                     group: w[0x13] as i32,
                     position: [f(w[0x14]), f(w[0x15]), f(w[0x16])],
+                    speeds: (f(w[8]), f(w[9])),
+                    wait: f(w[10]),
+                    sight: f(w[12]),
+                    reach: f(w[13]),
+                    view: f(w[0x12]),
                     words: w,
                 }
             })

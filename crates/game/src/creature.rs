@@ -38,6 +38,18 @@ pub struct Creature {
     /// The length a motion is taken to last when the host has none for it.
     pub motion_seconds: f64,
     pub rng: crate::rng::Rng,
+    /// Its field enemy record's numbers (`battle_data::FieldEnemy`): walking and running speed
+    /// (m/s), longest wait (s), sight and reach (m), field of view (degrees), and where it stands.
+    pub walk: f64,
+    pub run: f64,
+    pub sight: f64,
+    pub reach: f64,
+    pub view: f64,
+    pub home: [f64; 3],
+    /// Whether it has noticed the player (its brain's +0xd4): it runs rather than walks.
+    pub aware: bool,
+    /// Take `wait_time` as it is rather than drawing (for tests).
+    pub fixed_wait: bool,
     /// The game's named constants (`MOTION_*`, `EMOTION_ICON_*`, ...).
     pub constants: std::collections::HashMap<String, i64>,
     /// The macro calls it made (`SQ.execProgramMacro` and the like), for whoever plays them.
@@ -67,7 +79,56 @@ impl Creature {
             rng,
             macros: Vec::new(),
             constants: Default::default(),
+            walk: 1.5,
+            run: 1.5,
+            sight: 8.0,
+            reach: 20.0,
+            view: 180.0,
+            home: position,
+            aware: false,
+            fixed_wait: false,
         }
+    }
+
+    /// A creature for a field enemy record, standing where the record puts it (metres in the
+    /// record, field units here).
+    pub fn from_field_enemy(e: &barrel_formats::battle_data::FieldEnemy, rng: crate::rng::Rng) -> Creature {
+        let at = e.position.map(|v| v as f64 * 100.0);
+        Creature {
+            walk: e.speeds.0 as f64,
+            run: e.speeds.1 as f64,
+            wait_time: e.wait as f64,
+            sight: e.sight as f64,
+            reach: e.reach as f64,
+            view: e.view as f64,
+            ..Creature::new(at, rng)
+        }
+    }
+
+    /// Whether `p` is within its sight and inside half its field of view either side of its
+    /// facing (`isRangeIn`, `0x140131b60` → `0x140232c00`).
+    pub fn sees(&self, p: [f64; 3]) -> bool {
+        let (dx, dz) = (p[0] - self.position[0], p[2] - self.position[2]);
+        let d = (dx * dx + dz * dz).sqrt();
+        if d > self.sight * 100.0 {
+            return false;
+        }
+        if d == 0.0 || self.view >= 360.0 {
+            return true;
+        }
+        let toward = dx.atan2(dz);
+        let mut off = (toward - self.facing).abs() % std::f64::consts::TAU;
+        if off > std::f64::consts::PI {
+            off = std::f64::consts::TAU - off;
+        }
+        off.to_degrees() <= self.view * 0.5
+    }
+
+    /// Whether `p` is within its reach of where it stands (`isMaxRangeIn`, `0x140131a60` →
+    /// `0x140232e30`).
+    pub fn within_reach(&self, p: [f64; 3]) -> bool {
+        let (dx, dz) = (p[0] - self.home[0], p[2] - self.home[2]);
+        (dx * dx + dz * dz).sqrt() <= self.reach * 100.0
     }
 
     /// The frame's passing: the timer and the motion run down, a move goes on.
@@ -90,10 +151,6 @@ impl Creature {
         }
     }
 
-    fn distance_to_player(&self) -> f64 {
-        let (dx, dz) = (self.player[0] - self.position[0], self.player[2] - self.position[2]);
-        (dx * dx + dz * dz).sqrt()
-    }
 }
 
 fn vec(v: &Value) -> [f64; 3] {
@@ -145,8 +202,14 @@ impl Host for Creature {
                 Value::Null
             }
             (SELF, "getTimer") => Value::Float(self.timer),
-            (SELF, "getWaitTime") => Value::Float(self.wait_time),
-            (SELF, "getMoveSpeed") => Value::Float(self.move_speed),
+            // 0x140131900: a random time from half the record's wait to all of it.
+            (SELF, "getWaitTime") if self.fixed_wait => Value::Float(self.wait_time),
+            (SELF, "getWaitTime") => {
+                let w = self.wait_time;
+                Value::Float(w * 0.5 + w * 0.5 * (self.rng.range(0, 10000) as f64 / 10000.0))
+            }
+            // 0x1401314d0: running once aware, else walking; metres a second to field units.
+            (SELF, "getMoveSpeed") => Value::Float(if self.aware { self.run } else { self.walk } * 100.0),
             (SELF, "setMotionTag") => {
                 self.old_motion = self.motion;
                 self.motion = Some(num(args, 0) as i64);
@@ -197,9 +260,9 @@ impl Host for Creature {
                 Value::Null
             }
             (SELF, "getIsJudgeRange") => Value::Bool(self.judge_range),
-            // Stand-ins (not read yet): range checks against a radius given as the argument, the
-            // spots near the player 300 units off.
-            (SELF, "isRangeIn" | "isMaxRangeIn") => Value::Bool(self.distance_to_player() <= num(args, 0).max(1.0)),
+            // Stand-ins (not read yet): the spots near the player, 300 units off.
+            (SELF, "isRangeIn") => Value::Bool(self.sees(args.first().map_or(self.player, vec))),
+            (SELF, "isMaxRangeIn") => Value::Bool(self.within_reach(args.first().map_or(self.player, vec))),
             (SELF, "getPositionToPlayerBehind" | "getPositionToPlayerEscape" | "getRandomRangePosition") => {
                 let (dx, dz) = (self.position[0] - self.player[0], self.position[2] - self.player[2]);
                 let d = (dx * dx + dz * dz).sqrt().max(1.0);
@@ -217,6 +280,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sight_cone_and_reach() {
+        let mut c = Creature::new([0.0; 3], crate::rng::Rng::from_state([1, 2, 3, 4]));
+        c.sight = 12.0;
+        c.view = 220.0;
+        c.reach = 25.0;
+        // Facing +z: ahead within 12 m, beside within the 110° half-cone, not behind.
+        assert!(c.sees([0.0, 0.0, 1000.0]));
+        assert!(!c.sees([0.0, 0.0, 1300.0]));
+        assert!(c.sees([1000.0, 0.0, 0.0]));
+        assert!(!c.sees([0.0, 0.0, -500.0]));
+        assert!(c.within_reach([2400.0, 0.0, 0.0]) && !c.within_reach([2600.0, 0.0, 0.0]));
+    }
+
+    #[test]
     fn a_creature_waits_then_walks_to_its_spot() {
         let src = crate::squirrel::parse(
             r#"{
@@ -230,6 +307,8 @@ mod tests {
         )
         .unwrap();
         let mut c = Creature::new([0.0; 3], crate::rng::Rng::from_state([1, 2, 3, 4]));
+        c.wait_time = 2.0;
+        c.fixed_wait = true;
         let mut vm = crate::squirrel::Interp::new();
         let mut frames = 0;
         while c.state != 3 && frames < 600 {

@@ -877,9 +877,12 @@ or zero, and string pointers), then copies each record into the enemy data (`0x1
 | +0x14 | the area it appears in |
 | +0x18 | always 100 |
 | +0x1c | its kind: 0 for most, 3 and 5 on some (the bosses 5) |
-| +0x20 to +0x34 | floats (speeds and ranges, by the look of them; +0x28 always 6) |
+| +0x20, +0x24 | walking and running speed, metres a second (`getMoveSpeed`, `0x1401314d0`: the running one once the brain's +0xd4 is set, ×100 into field units); 1 and 1.5 for an Ore Rat, 1 and 4 for a Stray Dog |
+| +0x28 | the longest idle wait, seconds (always 6; `getWaitTime`, `0x140131900`: a random time from half of it to all of it) |
+| +0x30 | how far it sees, metres (5.5 to 15; `isRangeIn`, `0x140131b60`, inside half of +0x48 either side of its facing) |
+| +0x34 | how far from where it stands it goes, metres (12 to 30; `isMaxRangeIn`, `0x140131a60`) |
 | +0x38, +0x40 | its field AI scripts, `Script/<name>.nut` (`ai_tracking` and `ai_move`, `ai_dog_in2` and `ai_dog_out`, the bosses' `ai_wait`) |
-| +0x48 | a float: 180, 220 or 270 most often (an angle of view, perhaps) |
+| +0x48 | its field of view, degrees: 180, 220, 270 or 360 |
 | +0x4c | its encounter group |
 | +0x50 | where it stands (x, y, z) |
 

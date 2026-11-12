@@ -1126,7 +1126,9 @@ commands as the `.ebd` events.
   virtuals of the creature's class; positions travel as host `Vector3`s (`SQ.getVector3`,
   `SQ.getXByVector3`). `barrel_game::creature::Creature` plays a script's side of those (a
   timer counting down, motions that end after a set time, straight moves, emotion icons, the
-  custom slots; the spots near the player and the range checks are stand-ins until read), and
+  custom slots, and from the creature's field enemy record its speeds, wait, sight cone and
+  reach; the script object is its "brain", `nspFM::clsFMBrainEnemy` (vtable `0x1407cba38`) or
+  `clsFMBrainNpc`, whose +0x118 is the record; the spots near the player are stand-ins until read), and
   `barrel nut-run ROOT FILE FRAMES` drives one 600 units from the player: the unaware dog
   waits (`F_WAIT`), plays one of its idle actions (`EX9`, `EX8`), and runs off (`B_RUN`) to a
   spot and waits again.
