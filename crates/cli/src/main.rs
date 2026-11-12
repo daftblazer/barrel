@@ -1778,6 +1778,10 @@ fn gather(install: &Path, only: Option<u32>) -> Result<()> {
     let name = |n: usize| items.get(n).and_then(|r| r.attr("ItemName")).unwrap_or("?").to_string();
     let lists: std::collections::BTreeSet<u32> = rows.iter().map(|g| g.list).collect();
     println!("{} records in {} lists", rows.len(), lists.len());
+    let points = barrel_formats::gather::points(&pe, barrel_formats::gather::POINTS_EN).ok_or("no gathering points")?;
+    for (n, p) in points.iter().enumerate().filter(|(_, p)| only.is_none_or(|l| p.lists.contains(&l))) {
+        println!("point {n:3}: map {:3} at ({:.1}, {:.1}, {:.1}), lists {:?}", p.map, p.position[0], p.position[1], p.position[2], p.lists);
+    }
     for g in rows.iter().filter(|g| only.is_none_or(|l| g.list == l)) {
         let name = if g.item < 0 { "(none)".to_string() } else { name(g.item as usize) };
         let quality = if g.quality == (0, 0) { String::new() } else { format!(", quality {} to {}", g.quality.0, g.quality.1) };

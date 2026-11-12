@@ -1367,8 +1367,16 @@ The area map in the running game listed Southern Ruins Sector One's gatherables 
 Grass, Mountain Feather, Eagle Feather", and list 71 is Moss Grass (weight 50), Garden Stone
 (30, the one not yet seen), Mountain Feather (15) and Eagle Feather (5). Some lists give made
 items with traits (list 1: a Craft with trait 0; list 2: a Bomb with trait 3), chests by the look
-of them. `barrel gather INSTALL [LIST]` prints them (`barrel_formats::gather`). Which gathering
-point or gimmick draws from which list, and how the draw goes, is not read yet.
+of them. `barrel gather INSTALL [LIST]` prints them (`barrel_formats::gather`).
+
+**The gathering points** come just before, at `0x1408825a0`: 356 records of 88 bytes
+(`gather::points`; `0x14023b8f0` copies both tables into one object). A point holds up to seven
+list numbers (words 0 to 6, -1 for none; five in most, one list five times in some), two words
+that are 1 and 1 in most, its field map (word 9: 12 is `AREA_01_01`), 0, 100 and 0, then its
+place in metres and two float triples (0.01 three times, 2.0 three times). `AREA_01_01`'s four
+points draw from lists 0, 13, 17, 21, 25 and 51; 13, 17, 21 and 25 give the same plants a little
+better each time, so the list is most likely picked by the story's progress, which is not read
+yet, nor is the draw itself. The area map's list for Sector One (71) belongs to no point.
 
 What does not hold it: the data files (`Saves/field/AREA_*.xml`: camera, fog, light, sky, HDR
 and shaders; the area containers `Data/x64/Field/AREA_*`, whose placement lists hold scenery

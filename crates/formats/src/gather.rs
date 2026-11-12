@@ -49,3 +49,48 @@ pub fn gathering(pe: &Pe, table: u64) -> Option<Vec<Gather>> {
     }
     Some(out)
 }
+
+/// The gathering points (English Escha): 356 records of 88 bytes at [`POINTS_EN`], copied with
+/// the lists into one object by `0x14023b8f0`.
+pub const POINTS_EN: u64 = 0x1_4088_25a0;
+pub const POINT_COUNT: usize = 356;
+const POINT: usize = 88;
+
+/// A gathering point.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Point {
+    /// Up to seven lists it draws from (five in most, the same one five times in some): which
+    /// one applies when is not read yet (story stages, by the items: list 13, then 17, 21, 25
+    /// give the same plants a little better each time).
+    pub lists: Vec<u32>,
+    /// Words 7 and 8 (1 and 1 in most), not read yet.
+    pub flags: (i32, i32),
+    /// The field map it stands in (12 is `AREA_01_01`; -1 for some).
+    pub map: i32,
+    /// Where it stands (metres).
+    pub position: [f32; 3],
+    /// The two float triples after it (0.01 three times, then 2.0 three times, in most).
+    pub scale: [f32; 3],
+    pub size: [f32; 3],
+}
+
+pub fn points(pe: &Pe, table: u64) -> Option<Vec<Point>> {
+    let at = pe.offset(table)?;
+    let data = pe.data.get(at..at + POINT_COUNT * POINT)?;
+    Some(
+        data.chunks_exact(POINT)
+            .map(|r| {
+                let w = |k: usize| i32::from_le_bytes(r[4 * k..4 * k + 4].try_into().unwrap());
+                let f = |k: usize| f32::from_le_bytes(r[4 * k..4 * k + 4].try_into().unwrap());
+                Point {
+                    lists: (0..7).map(w).filter(|&l| l >= 0).map(|l| l as u32).collect(),
+                    flags: (w(7), w(8)),
+                    map: w(9),
+                    position: [f(13), f(14), f(15)],
+                    scale: [f(16), f(17), f(18)],
+                    size: [f(19), f(20), f(21)],
+                }
+            })
+            .collect(),
+    )
+}
