@@ -198,6 +198,18 @@ target of whichever camera was set last, the field camera or the manual one (`t3
 `/0x10`); the window follows it every frame. `EVENT_MM01_OP1_111`'s action 7 turns the camera
 from -176.96° to -163.97° over five seconds while it pulls toward Escha.
 
+**Screen effects** (`u13`, `ECT_EVENT_SET_POST_EFFECT`, 2,180 uses; `u14`,
+`ECT_EVENT_WAIT_POST_EFFECT`, waits for it). The handler (`0x140331bf0`) passes the second
+operand, the third divided by 100 (seconds) and the fourth (the kind) to `0x140331220`, which
+makes one of these by the kind (a 17-way jump table; class names from the constructors'
+vtables): 0 `PostEffectFade`, 1 and 12 `PostEffectBlur`, 2 `PostEffectSepiaOld`, 3
+`PostEffectCrossFade`, 4 `PostEffectBattleEnter`, 5 `PostEffectNegative`, 6 `PostEffectGlow`,
+7 `PostEffectRefraction`, 9 `PostEffectHue`, 10 `PostEffectGamma`, 11 `PostEffectColor`, 13
+`PostEffectSepia`, 14 `PostEffectMonotone`, 15 `PostEffectTexFilter`, 16 `PostEffectWave` (8
+none). Their programs are the `.kps` packs in `Data/x64/PostEffect/pe_pack.elixir.gz`.
+`EVENT_MM01_OP1_111`'s main action changes shots with `u13 -1 0 50 3` ... `u14`: a half-second
+cross-fade from the last shot to the new one.
+
 **Waits.** `p1` (`ECT_MACRO_TIME_WAIT`, 8,664 uses) waits its operand in hundredths of a
 second (the unit is read from the values below; that the frame time it counts down by is in
 seconds is not yet confirmed from the code): `Event`'s handler (`0x140050ff8` in the English executable) divides it by 100 and
