@@ -208,3 +208,189 @@ mod tests {
         assert_eq!(find(&d), [0..total]);
     }
 }
+
+/// Shader Model 4/5 instruction names by opcode (D3D's `D3D10_SB_OPCODE_TYPE` and the
+/// Shader Model 5 additions used here); the rest print as `op_N`.
+const NAMES: [&str; 112] = [
+    "add", "and", "break", "breakc", "call", "callc", "case", "continue", "continuec", "cut", "default", "deriv_rtx", "deriv_rty", "discard",
+    "div", "dp2", "dp3", "dp4", "else", "emit", "emitthencut", "endif", "endloop", "endswitch", "eq", "exp", "frc", "ftoi", "ftou", "ge",
+    "iadd", "if", "ieq", "ige", "ilt", "imad", "imax", "imin", "imul", "ine", "ineg", "ishl", "ishr", "itof", "label", "ld", "ld_ms", "log",
+    "loop", "lt", "mad", "min", "max", "customdata", "mov", "movc", "mul", "ne", "nop", "not", "or", "resinfo", "ret", "retc", "round_ne",
+    "round_ni", "round_pi", "round_z", "rsq", "sample", "sample_c", "sample_c_lz", "sample_l", "sample_d", "sample_b", "sqrt", "switch",
+    "sincos", "udiv", "ult", "uge", "umul", "umad", "umax", "umin", "ushr", "utof", "xor", "dcl_resource", "dcl_constantbuffer",
+    "dcl_sampler", "dcl_index_range", "dcl_gs_output_topology", "dcl_gs_input_primitive", "dcl_max_output_vertex_count", "dcl_input",
+    "dcl_input_sgv", "dcl_input_siv", "dcl_input_ps", "dcl_input_ps_sgv", "dcl_input_ps_siv", "dcl_output", "dcl_output_sgv",
+    "dcl_output_siv", "dcl_temps", "dcl_indexable_temp", "dcl_global_flags", "reserved", "lod", "gather4", "sample_pos", "sample_info",
+];
+
+/// One operand from `t` (at `*i`), moving `*i` past it.
+fn operand(t: &[u32], i: &mut usize) -> String {
+    let Some(&tok) = t.get(*i) else { return "?".into() };
+    *i += 1;
+    let comps = tok & 3;
+    let kind = (tok >> 12) & 0xff;
+    let dims = (tok >> 20) & 3;
+    let mut modifier = 0;
+    let mut ext = tok >> 31 == 1;
+    while ext {
+        let Some(&e) = t.get(*i) else { break };
+        *i += 1;
+        if e & 0x3f == 1 {
+            modifier = (e >> 6) & 0xff;
+        }
+        ext = e >> 31 == 1;
+    }
+    let xyzw = |n: u32| ['x', 'y', 'z', 'w'][(n & 3) as usize];
+    let select = if comps == 2 {
+        match (tok >> 2) & 3 {
+            0 => {
+                let m = (tok >> 4) & 0xf;
+                if m == 0 || m == 0xf { String::new() } else { format!(".{}", (0..4).filter(|k| m >> k & 1 == 1).map(xyzw).collect::<String>()) }
+            }
+            1 => {
+                let s = (tok >> 4) & 0xff;
+                let sw: String = (0..4).map(|k| xyzw(s >> (2 * k))).collect();
+                if sw == "xyzw" { String::new() } else { format!(".{sw}") }
+            }
+            _ => format!(".{}", xyzw((tok >> 4) & 3)),
+        }
+    } else {
+        String::new()
+    };
+    let body = match kind {
+        // Immediates: one or four 32-bit values.
+        4 => {
+            let n = if comps == 1 { 1 } else { 4 };
+            let vals: Vec<String> = (0..n)
+                .map(|_| {
+                    let v = t.get(*i).copied().unwrap_or(0);
+                    *i += 1;
+                    let f = f32::from_bits(v);
+                    if v != 0 && (f.abs() < 1e-6 || f.abs() > 1e7 || f.is_nan()) { format!("{v:#x}") } else { format!("{f}") }
+                })
+                .collect();
+            format!("l({})", vals.join(", "))
+        }
+        _ => {
+            let prefix = match kind {
+                0 => "r",
+                1 => "v",
+                2 => "o",
+                3 => "x",
+                6 => "s",
+                7 => "t",
+                8 => "cb",
+                9 => "icb",
+                0xc => "oDepth",
+                _ => "",
+            };
+            let prefix = if prefix.is_empty() { format!("type{kind}_") } else { prefix.to_string() };
+            let mut s = prefix;
+            for d in 0..dims {
+                let rep = (tok >> (22 + 3 * d)) & 7;
+                let mut idx = String::new();
+                if rep == 0 || rep == 3 {
+                    idx = t.get(*i).copied().unwrap_or(0).to_string();
+                    *i += 1;
+                }
+                if rep == 2 || rep == 3 {
+                    let r = operand(t, i);
+                    idx = if idx.is_empty() { r } else { format!("{r} + {idx}") };
+                }
+                if d == 0 {
+                    s.push_str(&idx);
+                } else {
+                    s.push_str(&format!("[{idx}]"));
+                }
+            }
+            s
+        }
+    };
+    let s = format!("{body}{select}");
+    match modifier {
+        1 => format!("-{s}"),
+        2 => format!("|{s}|"),
+        3 => format!("-|{s}|"),
+        _ => s,
+    }
+}
+
+/// The program's code (after its version and length tokens) as one line per instruction.
+pub fn disassemble(code: &[u8]) -> Vec<String> {
+    let t: Vec<u32> = code.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
+    let mut out = Vec::new();
+    let mut at = 0;
+    let mut depth = 0usize;
+    while at < t.len() {
+        let tok = t[at];
+        let op = tok & 0x7ff;
+        let mut len = ((tok >> 24) & 0x7f) as usize;
+        if op == 0x35 {
+            // customdata (an immediate constant buffer): its length is the next token.
+            len = t.get(at + 1).copied().unwrap_or(2) as usize;
+            out.push(format!("{}customdata ({} values)", "  ".repeat(depth), len.saturating_sub(2)));
+            at += len.max(1);
+            continue;
+        }
+        let len = len.max(1);
+        let end = (at + len).min(t.len());
+        let name = NAMES.get(op as usize).map_or_else(|| format!("op_{op}"), |n| n.to_string());
+        let mut i = at + 1;
+        // Extended opcode tokens (sample offsets, resource types).
+        let mut ext = tok >> 31 == 1;
+        while ext && i < end {
+            ext = t[i] >> 31 == 1;
+            i += 1;
+        }
+        let saturate = if tok >> 13 & 1 == 1 && op < 88 { "_sat" } else { "" };
+        let test = if matches!(op, 3 | 5 | 8 | 13 | 31 | 63) { if tok >> 18 & 1 == 1 { "_nz" } else { "_z" } } else { "" };
+        if matches!(op, 18 | 21 | 22 | 23) {
+            depth = depth.saturating_sub(1);
+        }
+        let line = if op >= 88 && !matches!(op, 108..=111) {
+            // Declarations: their first operand when they have one, then the rest raw.
+            let has_operand = !matches!(op, 104 | 106 | 92 | 93 | 94);
+            let mut s = name.clone();
+            if has_operand && i < end {
+                s.push(' ');
+                s.push_str(&operand(&t, &mut i));
+            }
+            let rest: Vec<String> = t[i.min(end)..end].iter().map(|v| v.to_string()).collect();
+            if !rest.is_empty() {
+                s.push_str(&format!(" {}", rest.join(" ")));
+            }
+            s
+        } else {
+            let mut ops = Vec::new();
+            while i < end {
+                ops.push(operand(&t, &mut i));
+            }
+            format!("{name}{saturate}{test} {}", ops.join(", ")).trim_end().to_string()
+        };
+        out.push(format!("{}{line}", "  ".repeat(depth)));
+        if matches!(op, 18 | 31 | 48 | 76) {
+            depth += 1;
+        }
+        at = end.max(at + 1);
+    }
+    out
+}
+
+#[cfg(test)]
+mod asm_tests {
+    use super::*;
+
+    #[test]
+    fn instructions() {
+        // mad r0.xyz, v1.xyzx, cb0[2].xxxx, l(1.0)
+        let words: [u32; 10] = [
+            (50 | (10 << 24)),
+            0x0010_0072, 0,             // r0.xyz
+            0x0010_1246, 1,             // v1.xyzx
+            0x0020_8006, 0, 2,          // cb0[2].xxxx
+            0x0000_4001, 1.0f32.to_bits(),
+        ];
+        let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        assert_eq!(disassemble(&code), ["mad r0.xyz, v1.xyzx, cb0[2].xxxx, l(1)"]);
+    }
+}
