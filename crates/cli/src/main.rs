@@ -1773,6 +1773,15 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
         let what = e.map_or("-".to_string(), |e| name(&effects, e as usize, "ItemEffectName"));
         println!("  {element:5} {:>3}: {what}", s.attributes[k] as i32);
     }
+    // The finished item (no traits picked, one made, a first synthesis at alchemy level 1).
+    let r = recipes.iter().position(|x| std::ptr::eq(x, recipe)).unwrap_or(0);
+    let int = |n: usize, attr: &str| items.get(n).and_then(|row| row.attr(attr)).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    let f = barrel_game::synthesis::Finish { recipe: (r, recipe), level: int(item, "level"), equip_cost: int(item, "EquipCost"), traits: [-1; 3], trait_table: &[], count: 1, exp_rate: 0, alchemy_level: 1 };
+    let mut k = barrel_formats::save::Knowledge { item: vec![0; 560], recipe: vec![0; 265], eff: vec![0; 698], potential: vec![0; 400], mix_esp: vec![0; 90], ..Default::default() };
+    let mut revealed = vec![[false; 10]; recipes.len()];
+    let (unit, exp) = barrel_game::synthesis::finish(&s, &f, 0, &mut k, &mut revealed, &mut |lo, _| lo);
+    let made: Vec<String> = unit.effects.iter().filter(|&&e| e >= 0).map(|&e| name(&effects, e as usize, "ItemEffectName")).collect();
+    println!("made: quality {}, uses {}, equip cost {}, effects {}; {exp} experience; recipe effects revealed {:?}", unit.quality, unit.counts[1], unit.equip_cost, made.join(", "), (0..10).filter(|&j| revealed[r][j]).collect::<Vec<_>>());
     Ok(())
 }
 

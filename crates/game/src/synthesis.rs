@@ -210,6 +210,7 @@ mod tests {
             kind: 1,
             cost: 600,
             days: 4.0,
+            uses: 1,
             slots: vec![
                 Slot { ingredient: Ingredient::Item(54), count: 2 },
                 Slot { ingredient: Ingredient::Category(31), count: 1 },
@@ -390,4 +391,59 @@ mod count_tests {
         assert_eq!(super::equip_cost(9, &[], 0, &mut roll), 5);
         assert_eq!(super::equip_cost(0, &[], 0, &mut roll), 0);
     }
+}
+
+/// What the finished synthesis needs besides the cauldron.
+pub struct Finish<'a> {
+    /// The recipe's number (its place in the recipe table) and record.
+    pub recipe: (usize, &'a Recipe),
+    /// The made item's `itemData` level and `EquipCost`.
+    pub level: i32,
+    pub equip_cost: i32,
+    /// The traits the player picked (up to three `item_potential` rows) and the trait table.
+    pub traits: [i16; 3],
+    pub trait_table: &'a [barrel_formats::battle_data::Trait],
+    /// How many items it makes.
+    pub count: i32,
+    /// Bonus value 3 (synthesis experience %) and the alchemy level.
+    pub exp_rate: i32,
+    pub alchemy_level: i32,
+}
+
+/// Finishes a synthesis: the made item (its effects from the recipe's lines at the
+/// attribute values, the picked traits, the quality, uses and equip cost), what it teaches
+/// (the traits' and effects' knowledge to 10, the effects revealed on the recipe, the item
+/// itself at 10 and the recipe raised to 6, made) and the alchemy experience. `serial` is
+/// the new item's serial number.
+pub fn finish(s: &Synthesis, f: &Finish, serial: u16, k: &mut barrel_formats::save::Knowledge, revealed: &mut [[bool; 10]], roll: &mut dyn FnMut(i32, i32) -> i32) -> (barrel_formats::save::ItemUnit, i32) {
+    let (r, recipe) = f.recipe;
+    let picked: Vec<&barrel_formats::battle_data::Trait> = f.traits.iter().filter_map(|&t| usize::try_from(t).ok().and_then(|t| f.trait_table.get(t))).collect();
+    let effects = s.effects(&recipe.lines).map(|e| e.map_or(-1, |e| e as i16));
+    let uses = uses(recipe.uses, &picked, roll) as i16;
+    let unit = barrel_formats::save::ItemUnit {
+        serial,
+        item: recipe.item as i16,
+        quality: finished_quality(s.effect_value(), &picked, roll),
+        traits: f.traits,
+        word_e: 0,
+        effects,
+        equip_cost: equip_cost(f.equip_cost, &picked, 0, roll) as i16,
+        word_1a: 0,
+        counts: [uses, uses, 0, 0],
+    };
+    for &t in &f.traits {
+        if let Some(v) = usize::try_from(t).ok().and_then(|t| k.potential.get_mut(t)) {
+            *v = (*v).max(crate::library::KNOWN);
+        }
+    }
+    for &e in &effects {
+        crate::library::reveal_effect(revealed, k, Some((r, recipe)), e.into());
+    }
+    let first = k.recipe.get(r).is_some_and(|&v| v < 6);
+    if let Some(v) = k.recipe.get_mut(r) {
+        *v = (*v).max(6);
+    }
+    crate::library::learn_item(k, &unit, crate::library::KNOWN, false, [-1, -1]);
+    let exp = experience(f.level, recipe.days as i32, f.count, first, f.exp_rate, f.alchemy_level);
+    (unit, exp)
 }

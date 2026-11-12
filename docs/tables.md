@@ -1095,7 +1095,12 @@ material's element value is `itemData`'s `value` (the loaded row keeps it at +0x
 `0x1402a1530`). `barrel synth INSTALL ITEM MATERIAL...` runs one with item numbers and
 prints each line's effect (names from `Saves_EN/item/item_effect.xml`, whose rows are the
 effect numbers): Craft from Buried Bomb, Bubbling Water and Dragon Core reaches Fire 60,
-Water 40, Wind 20, Earth 40, giving Embedding Thorns, Bursting and Phy Damage L.
+Water 40, Wind 20, Earth 40, giving Embedding Thorns, Bursting and Phy Damage L. It then
+finishes the item (`synthesis::finish`: quality, uses from the recipe's word 8, equip cost,
+the effects revealed on the recipe, the knowledge it teaches and the experience): that Craft
+comes out at quality 60 with 4 uses and an equip cost of 2, reveals effects 1, 3 and 5 of
+Craft's list, and gives 5 experience as a first synthesis. The days that count for the
+experience are the recipe's own (the bonuses that take days off are not applied yet).
 
 Without Freestyle ("allows materials to be added in any order"), the materials go in in
 slot order, each slot as many times as its count; `barrel_game::synthesis::order` lists

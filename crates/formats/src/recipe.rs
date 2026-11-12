@@ -54,6 +54,8 @@ pub struct Recipe {
     pub cost: u32,
     /// Synthesis time in days.
     pub days: f32,
+    /// How many uses an item made by it starts with (word 8, `0x1400e3220`).
+    pub uses: i32,
     /// The ingredients, unused slots left out.
     pub slots: Vec<Slot>,
     /// The four effect lines, one per element. The record keeps line k with ingredient
@@ -115,6 +117,7 @@ pub fn parse(data: &[u8], at: usize) -> Result<Vec<Recipe>, Error> {
             kind: kind as u32,
             cost: i32_at(data, r + 20)?.max(0) as u32,
             days: f32::from_bits(u32_at(data, r + 24)?),
+            uses: i32_at(data, r + 32)?,
             slots,
             lines,
         });

@@ -93,7 +93,7 @@ mod tests {
         let mut lines = [[none; 4]; 4];
         lines[0][0] = Step { effect: Some(7), up_to: 30 };
         lines[1][1] = Step { effect: Some(9), up_to: 60 };
-        let rec = Recipe { item: 195, kind: 0, cost: 0, days: 2.0, slots: Vec::new(), lines };
+        let rec = Recipe { item: 195, kind: 0, cost: 0, days: 2.0, uses: 1, slots: Vec::new(), lines };
         let mut flags = vec![[false; 10]; 2];
         let mut k = Knowledge { eff: vec![0; 12], ..Default::default() };
         reveal_effect(&mut flags, &mut k, Some((1, &rec)), 9);
