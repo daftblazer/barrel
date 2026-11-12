@@ -301,7 +301,7 @@ target, 29 `BTL_BIG_ENEMYBONUS` × s and 30 `BTL_SMALL_ENEMYBONUS` / s with s =
 `0x140111a80 (monster +0x78)` + 1; 26 `BTL_LARGE_ENEMYBONUS` × and 27 `BTL_SHORT_ENEMYBONUS` /
 (unsigned) the number of targets; 41 `COST_PROPORTION_BONUS` × +0x18; and 42
 `WT_PROPORTION_BONUS` × `0x140190b90 (timeline, user)` / 100 added in floats. Each trait slot
-is rolled as its kind is asked for, in that order. With a bonus b or an extra
+is rolled as its kind is asked for, in that order. `battle_data::traits` reads `item_potential.xml`'s rows (name, group and the two slots with their `ITEM_SUB_*` tags; `ITEM_SUB_BASE_NONE` left out) and `battle::trait_value` sums one kind over an item's traits as `0x14029db00` does. With a bonus b or an extra
 (`0x1401bdbcc`): b is cut to the act's bonus limit, and the amount becomes `trunc(amount ×
 (100 + b) / 100) + extra` and the second value `trunc(second × (100 + b) / 100)`
 (`battle::ItemBonusInputs`, `item_bonus`, `boost_amounts`, `actual_power_extra`; what

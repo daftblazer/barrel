@@ -51,6 +51,18 @@ pub fn item_action(name: &str, target: i32, wait: i32, effect_ids: &[i16], rows:
     barrel_formats::battle_data::Skill { name: name.to_string(), category: String::new(), wait, target, spread: 0, effects, description: String::new() }
 }
 
+/// What an item's traits give of one kind (`0x14029db00 (item, kind, average)`): over its
+/// traits (up to three, instance +0x8), each slot of that `ITEM_SUB_*` kind rolled from its
+/// minimum to maximum (`Rng::range`), or its middle when `average`, summed.
+pub fn trait_value(traits: &[&barrel_formats::battle_data::Trait], kind: &str, average: bool, rng: &mut crate::rng::Rng) -> i32 {
+    traits
+        .iter()
+        .flat_map(|t| t.slots.iter())
+        .filter(|s| s.kind == kind)
+        .map(|s| if average { (s.min + s.max) / 2 } else { rng.range(s.min, s.max) })
+        .sum()
+}
+
 /// A party member's chance to survive a fatal blow at 1 HP ("guts", the party character's
 /// virtual +0x130, `0x1401b8850`, run on each target after an effect): only when its HP is 0
 /// and guts has not already saved it since its last heal (+0x28d); stat 25 percent, at most
@@ -593,6 +605,19 @@ mod tests {
         let item = item_action("Salve", 1, 600, &[1, -1, 0, 0x300], &rows);
         assert_eq!(item.effects.iter().map(|e| (e.act, e.min)).collect::<Vec<_>>(), [(81, 20), (19, 5), (19, 30)]);
         assert_eq!((item.target, item.wait), (1, 600));
+    }
+
+    #[test]
+    fn trait_values_sum_the_kind_asked_for() {
+        use barrel_formats::battle_data::{Trait, TraitSlot};
+        let slot = |kind: &str, min, max| TraitSlot { kind: kind.into(), min, max };
+        let power = Trait { name: "Power+".into(), group: String::new(), slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 10, 10)] };
+        let mixed = Trait { name: "Mixed".into(), group: String::new(), slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 4, 8), slot("ITEM_SUB_ITM_ADD_PRICE", 50, 50)] };
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        assert_eq!(trait_value(&[&power, &mixed], "ITEM_SUB_ITM_CHANGE_POWER", true, &mut rng), 16);
+        assert_eq!(trait_value(&[&mixed], "ITEM_SUB_ITM_ADD_PRICE", false, &mut rng), 50);
+        let rolled = trait_value(&[&mixed], "ITEM_SUB_ITM_CHANGE_POWER", false, &mut rng);
+        assert!((4..=8).contains(&rolled));
     }
 
     #[test]

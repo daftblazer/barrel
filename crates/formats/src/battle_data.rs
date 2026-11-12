@@ -382,3 +382,41 @@ pub fn item_battles(pe: &Pe, table: u64, end: u64) -> Vec<ItemBattle> {
     }
     out
 }
+
+/// One trait (`item_potential.xml`, the 0x58-byte records `0x14029db00` reads): its name,
+/// group and two slots, each an `ITEM_SUB_*` kind (`PotBase`, `PotBase2`) with the range its
+/// value is rolled from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Trait {
+    pub name: String,
+    pub group: String,
+    pub slots: Vec<TraitSlot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TraitSlot {
+    /// The `ITEM_SUB_*` tag (`ITEM_SUB_ITM_CHANGE_POWER` ...); `ITEM_SUB_BASE_NONE` slots are
+    /// left out.
+    pub kind: String,
+    pub min: i32,
+    pub max: i32,
+}
+
+/// The rows of `item_potential.xml`, in order (the trait numbers items hold).
+pub fn traits(root: &crate::table::Element) -> Vec<Trait> {
+    let int = |e: &crate::table::Element, k: &str| e.attr(k).and_then(|v| v.trim().parse::<i32>().ok()).unwrap_or(0);
+    root.children
+        .iter()
+        .map(|row| Trait {
+            name: row.attr("PotName").unwrap_or("").to_string(),
+            group: row.attr("PotGrpTag").unwrap_or("").to_string(),
+            slots: [("PotBase", "min", "max"), ("PotBase2", "min2", "max2")]
+                .iter()
+                .filter_map(|&(k, lo, hi)| {
+                    let kind = row.attr(k).filter(|t| !t.is_empty() && *t != "ITEM_SUB_BASE_NONE")?;
+                    Some(TraitSlot { kind: kind.to_string(), min: int(row, lo), max: int(row, hi) })
+                })
+                .collect(),
+        })
+        .collect()
+}
