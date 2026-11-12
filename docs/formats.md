@@ -548,6 +548,16 @@ the readers are where to look for any field not yet mapped):
 
 `system` (the `GAMEDATA` stub; the real one is SYSDATA's `system_data`) has empty handlers.
 
+`fieldmap/m_userDataFieldMapEnemy` and `m_userDataFieldMapGimmick` (47,340 bytes each,
+written by `0x1403682b0`): a count of field maps (122), then per map a u32 384 and that map's
+384 bytes copied from a global array (the enemies' at `0x141087bd0`, the gimmicks' at
+`0x14107c4d0`, 0x180 bytes a map): 32 entries of 12 bytes. An enemy entry's reset value
+(`0x140368cf0`) is `{-1, -1, 1}` (an 8-byte -1, then 1); a gimmick's in the user's save is
+`{1, 0, 1}` everywhere. In the user's save every enemy entry is still the reset value, so what
+an entry holds once a field enemy is beaten (its record, the day, whether it is out) is not
+read yet; the field's out-or-beaten check (`0x140075e10`) looks enemies up by area in a map kept
+at the field (+0x228, +0x40).
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0
