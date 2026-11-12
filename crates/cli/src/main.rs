@@ -1256,9 +1256,14 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
         for item in parts {
             // <ids>@<quality>x<count>: heals and revives aim at the user's side, the rest at the
             // foe; the action's wait is not read yet (the normal attack's 600 is taken).
-            // An optional item row first (#<row>:) gives its target and wait from the item table.
+            // An optional item id first (#<item>:, its itemData.xml row) gives its target and wait
+            // from the battle item table.
             let (row, item) = match item.strip_prefix('#').and_then(|r| r.split_once(':')) {
-                Some((r, rest)) => (Some(r.parse::<usize>().map_err(|_| format!("{item}: item row"))?), rest),
+                Some((r, rest)) => {
+                    let id: i32 = r.parse().map_err(|_| format!("{item}: item id"))?;
+                    let table = bd::item_battles(&pe, bd::ITEM_BATTLE_EN, bd::ITEM_BATTLE_END_EN);
+                    (Some(*table.iter().find(|b| b.item == id).ok_or_else(|| format!("{item}: no battle item {id}"))?), rest)
+                }
                 None => (None, item),
             };
             let (ids, rest) = item.split_once('@').ok_or_else(|| format!("{item}: write [#<row>:]<id>[,<id>]@<quality>x<count>"))?;
@@ -1266,12 +1271,21 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             let ids: Vec<i16> = ids.split(',').map(|v| v.parse().map_err(|_| format!("{item}: effect id"))).collect::<std::result::Result<_, String>>()?;
             let quality: f32 = quality.parse().map_err(|_| format!("{item}: quality"))?;
             let count: u32 = count.parse().map_err(|_| format!("{item}: count"))?;
-            let name = ids.iter().filter_map(|&i| item_rows.get(i as usize)).map(|r| r.name.clone()).collect::<Vec<_>>().join(" + ");
+            let effect_names = ids.iter().filter_map(|&i| item_rows.get(i as usize)).map(|r| r.name.clone()).collect::<Vec<_>>().join(" + ");
+            // The item's own name (itemData.xml) when it is given, else its effects'.
+            let name = match row {
+                Some(b) => {
+                    let path = exe.parent().ok_or("no install folder")?.join("Saves_EN/item/itemData.xml");
+                    let data = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+                    data.children.get(b.item as usize).and_then(|r| r.attr("ItemName")).map_or(effect_names.clone(), str::to_string)
+                }
+                None => effect_names,
+            };
             let mut action = barrel_game::battle::item_action(&name, 2, 600, &ids, &item_rows);
             if action.effects.iter().any(|e| matches!(e.act, 19 | 21 | 81)) {
                 action.target = 1;
             }
-            if let Some(b) = row.and_then(|r| bd::item_battle(&pe, bd::ITEM_BATTLE_EN, r)) {
+            if let Some(b) = row {
                 (action.target, action.wait) = (b.target, b.wait);
             }
             member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count });

@@ -13,10 +13,12 @@ const BLOCK_WORDS: usize = 20;
 const MAX_BLOCKS: usize = 16;
 
 pub const SKILLS_EN: u64 = 0x1_40d5_1ed0;
-/// The battle words of the item table (`0x1402a25a0`, `0x1402a25e0`, `0x1402a2620`): 288-byte
-/// rows (by item row, `0x1400e31a0` maps an item id to it), each with its target word, area
-/// kind and action wait at this address + 288 × row.
-pub const ITEM_BATTLE_EN: u64 = 0x1_40d1_9c7c;
+/// The battle item table: 265 rows of 288 bytes from here to `0x140d2c690`, each starting with
+/// its item id (the `itemData.xml` row; `0x1400e31a0` finds a row by it), then at +0xc, +0x10
+/// and +0x14 its target word, area kind and action wait (`0x1402a25a0`, `0x1402a25e0`,
+/// `0x1402a2620`).
+pub const ITEM_BATTLE_EN: u64 = 0x1_40d1_9c70;
+pub const ITEM_BATTLE_END_EN: u64 = 0x1_40d2_c690;
 pub const ITEM_RECORD: usize = 288;
 const SKILL_RECORD: usize = 96;
 const MAX_SKILLS: usize = 1024;
@@ -360,14 +362,23 @@ mod item_effect_tests {
 /// the rest).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemBattle {
+    /// The item (its `itemData.xml` row).
+    pub item: i32,
     pub target: i32,
     pub area: i32,
     pub wait: i32,
 }
 
-/// Item row `row`'s battle words.
-pub fn item_battle(pe: &Pe, table: u64, row: usize) -> Option<ItemBattle> {
-    let at = pe.offset(table + (ITEM_RECORD * row) as u64)?;
-    let w = |k: usize| pe.data.get(at + 4 * k..at + 4 * k + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
-    Some(ItemBattle { target: w(0)?, area: w(1)?, wait: w(2)? })
+/// Every row of the battle item table, from `table` to `end`.
+pub fn item_battles(pe: &Pe, table: u64, end: u64) -> Vec<ItemBattle> {
+    let mut out = Vec::new();
+    let mut va = table;
+    while va + ITEM_RECORD as u64 <= end {
+        let Some(at) = pe.offset(va) else { break };
+        let w = |k: usize| pe.data.get(at + 4 * k..at + 4 * k + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+        let (Some(item), Some(target), Some(area), Some(wait)) = (w(0), w(3), w(4), w(5)) else { break };
+        out.push(ItemBattle { item, target, area, wait });
+        va += ITEM_RECORD as u64;
+    }
+    out
 }

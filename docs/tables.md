@@ -690,7 +690,7 @@ target word (`0x1402a25a0`: 288-byte item records, the word at `0x140d19c7c` + 2
 mapped by the same table, the sub-code from its effects, forced to 2 when `0x14029e320(item,
 0x18)` holds. Over the 274 rows: 226 own side (1), 33 the other side (2: the attack items, one
 target in the selection), 6 none (0), 4 either (4), 3 self (3) and 2 the whole-side pick (5,
-rows 34 and 38, names not matched yet). So bombs pick one foe here; if they spread, it is
+rows 34 and 38). So bombs pick one foe here; if they spread, it is
 decided later, and it is: by distance.
 
 **Areas.** The gatherer (`0x1401a4430(candidates, user, centre, kind, out)`) takes an area
@@ -726,12 +726,14 @@ one monster: the monster acts by its rules and target picks, and each member, st
 the player, uses the costliest learnt skill it can pay for that hits the foe, or its normal
 attack. Escha, Logy and Reyfer at level 20 beat a Howling Beast with Ether Shoot, Flash Cut and
 Dragon Breath until their MP runs out; the Beast spreads its hits by the weighted draw and
-fells Escha. A member with no affordable heal (or revive) skill uses a healing (or reviving) item it carries instead (`skirmish::Held`: the item as `battle::item_action`, its `item_power` and a count), through `Battle::use_item`. On the command line a member takes items as `p<member>:<level>+<effect id>[,<id>...]@<quality>x<count>` (effect ids are `item_effect` rows, `barrel item-effects`): `barrel battle EXE 2 p0:6 p1:6+167@50x2` has Logy use both HP Recovery S when the Golden Rat brings him low (without an item row the wait is the attack's 600). An item's row in the item table holds
-its battle words side by side (`battle_data::item_battle`, from `0x140d19c7c`, 288 bytes a
-row): the target word, the area kind and its action's wait (`0x1402a2620`: 300 to 900 on the
-battle items, 0 on the rest), which the item action's slot 6 (`0x1401bb310`) runs through the
+fells Escha. A member with no affordable heal (or revive) skill uses a healing (or reviving) item it carries instead (`skirmish::Held`: the item as `battle::item_action`, its `item_power` and a count), through `Battle::use_item`. On the command line a member takes items as `p<member>:<level>+<effect id>[,<id>...]@<quality>x<count>` (effect ids are `item_effect` rows, `barrel item-effects`): `barrel battle EXE 2 p0:6 p1:6+167@50x2` has Logy use both HP Recovery S when the Golden Rat brings him low (without an item row the wait is the attack's 600). The battle item table (`battle_data::item_battles`: 265 rows of 288
+bytes from `0x140d19c70`) starts each row with the item's id (its `itemData.xml` row;
+`0x1400e31a0` finds a row by id), then holds at +0xc, +0x10 and +0x14 the target word, the
+area kind (the Bomb: 1, radius 350; the Craft: 2) and its action's wait (`0x1402a2620`: 300 to
+900 on the battle items, 0 on the rest; Craft 500, Bomb 550, Healing Salve 500, Clear Jelly
+300), which the item action's slot 6 (`0x1401bb310`) runs through the
 same speed formula as a skill's wait (`0x1401b9b70`), less stat 19 in percent; `+#<row>:...`
-gives an item its row (`p1:6+#35:167@50x2`: row 35, own side, wait 300). Slot 8 answers
+gives an item by id (`p1:6+#234:167@50x2`: the Healing Salve, own side, wait 500, its effect the HP Recovery S row). Slot 8 answers
 10,000 for any item, where a skill asks the user.
 
 `barrel_formats::battle_data` reads the monster and skill tables from the English
