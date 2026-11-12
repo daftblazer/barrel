@@ -1172,9 +1172,12 @@ fn event_characters(
                 }
             }
         }
-        if let (Some(e), Some(t)) = (stage.eye.position, stage.target.position) {
+        // The camera in use at that time: the field camera unless a manual one was set after
+        // it (the stage's snapshot decides, as during playback).
+        let snap = stage.snapshot();
+        if let (Some(e), Some(t)) = (snap.eye, snap.target) {
             let (e, t) = (Vec3::from(e), Vec3::from(t));
-            camera = Some(EventCamera { eye: Some(e), target: t, distance: (e - t).length().max(1.0), yaw: 0.0, pitch: 0.0, fov: 40.0 });
+            camera = Some(EventCamera { eye: Some(e), target: t, distance: (e - t).length().max(1.0), yaw: 0.0, pitch: 0.0, fov: snap.fov.unwrap_or(40.0) });
         }
         eprintln!("at {at} s: {} characters on the stage, {} positions not placed", first.len(), stage.unresolved);
     }
