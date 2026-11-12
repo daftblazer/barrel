@@ -61,9 +61,15 @@ pub enum Change {
     Pitch { value: f32, relative: bool, seconds: f32 },
     Distance { value: f32, relative: bool, seconds: f32 },
     Target { value: [f32; 3], relative: bool, seconds: f32 },
+    /// `t19`: the field's camera data on or off (events turn it off at their start and back on
+    /// at their end, handing the camera back to play, so a scene never draws with it).
+    DataEffect { on: bool },
 }
 
 pub const FIRST: u32 = 0x7410_0003;
+/// `t19/0x10` (`ECT_FIELDMAP_CAMERA_DATA_EFFECT_SET`, `{on}`): whether the field's own camera
+/// data steers the camera (`docs/events.md`, "The event camera").
+pub const DATA_EFFECT: u32 = 0x7410_0013;
 pub const ALL: u32 = 0x7410_0014;
 
 impl Change {
@@ -99,6 +105,7 @@ impl Change {
                 let (value, seconds) = one(unit(0)?, 1);
                 Some(Change::Distance { value, relative, seconds })
             }
+            DATA_EFFECT => Some(Change::DataEffect { on: operands.first().is_some_and(|&v| v != 0) }),
             0x7410_000d | 0x7410_000e => Some(Change::Target { value: [unit(0)?, unit(1)?, unit(2)?], relative, seconds: v(3).unwrap_or(0.0) }),
             _ => None,
         }
@@ -114,13 +121,15 @@ pub struct FieldCamera {
     pub distance: Tween,
     pub target: [Tween; 3],
     pub offset: [f32; 3],
+    /// `t19`'s flag (+0x138), kept but not drawn: the camera data it switches on is not read.
+    pub data_effect: bool,
 }
 
 impl FieldCamera {
     /// A camera as `t20` sets it.
     pub fn new(change: &Change) -> Option<FieldCamera> {
         let Change::All { yaw, fov, pitch, distance, target, offset } = *change else { return None };
-        Some(FieldCamera { yaw: Tween::at(yaw), fov: Tween::at(fov), pitch: Tween::at(pitch), distance: Tween::at(distance), target: target.map(Tween::at), offset })
+        Some(FieldCamera { yaw: Tween::at(yaw), fov: Tween::at(fov), pitch: Tween::at(pitch), distance: Tween::at(distance), target: target.map(Tween::at), offset, data_effect: false })
     }
 
     pub fn apply(&mut self, change: &Change) {
@@ -134,6 +143,7 @@ impl FieldCamera {
             Change::Fov { value, relative, seconds } => go(&mut self.fov, value, relative, seconds),
             Change::Pitch { value, relative, seconds } => go(&mut self.pitch, value, relative, seconds),
             Change::Distance { value, relative, seconds } => go(&mut self.distance, value, relative, seconds),
+            Change::DataEffect { on } => self.data_effect = on,
             Change::Target { value, relative, seconds } => {
                 for (t, v) in self.target.iter_mut().zip(value) {
                     go(t, v, relative, seconds);

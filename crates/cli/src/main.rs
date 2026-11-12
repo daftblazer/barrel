@@ -2104,6 +2104,7 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                     C::Pitch { value, relative, seconds } => format!("pitch {} {value}° over {seconds} s", rel(relative)),
                     C::Distance { value, relative, seconds } => format!("distance {} {value} over {seconds} s", rel(relative)),
                     C::Target { value, relative, seconds } => format!("target {} {value:?} over {seconds} s", rel(relative)),
+                    C::DataEffect { on } => format!("the field's camera data {}", if on { "on (back to play)" } else { "off" }),
                 };
                 println!("{action:3} --- field camera: {what}");
             }

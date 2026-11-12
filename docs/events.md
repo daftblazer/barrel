@@ -140,6 +140,15 @@ Every operand is an integer divided by 100, and the angles are then turned from 
 radians. `t20/0x10` (0x74100014) sets the whole camera; in `EVENT_MM08_AS4_130` it opens
 with `3791 0 2250 286 448 9983 383 11369 0 150 0`:
 
+`t19/0x10` (`ECT_FIELDMAP_CAMERA_DATA_EFFECT_SET`, `{on}`, case `0x1401e81b1`) reloads the
+field's camera data (virtual +0xd8, `0x1401e6e10`, by the id at +0x13c, into +0x130) and sets
++0x138 (virtual +0x88, `0x1401ec650`). While it is on, the camera's update passes its target
+through that data (`0x140066f80`) and takes its angles from the result (`0x1401e7171`,
+`0x1401e748c`): the field's own camera rules, as in play. Every opening event turns it off
+first and on again as its last camera command (594 `t19 0`, 548 `t19 1` in all), handing the
+camera back to play, so a scene never draws with it; the stage keeps the flag
+(`FieldCamera::data_effect`) and the camera data itself is not read.
+
 | Operand | Example | Use (from the handler) |
 |---|---|---|
 | 1 | 37.91° | yaw, through the same setter as `t3` (0x74100003; the setter `0x1401ec9e0` keeps it at +0x24/+0x28) |

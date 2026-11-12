@@ -348,6 +348,12 @@ impl Stage {
             }
             Step::TelopAlpha { from, to, seconds, .. } => self.telop_alpha = crate::field_camera::Tween { from: *from, to: *to, seconds: *seconds, elapsed: 0.0 },
             Step::ScreenEffect { kind, param, seconds, .. } => self.screen_effect = Some((*kind, *param, *seconds, self.time)),
+            // t19 only flips a flag; it neither makes the field camera nor takes the view.
+            Step::FieldCamera { change: crate::field_camera::Change::DataEffect { on }, .. } => {
+                if let Some(c) = self.field_camera.as_mut() {
+                    c.data_effect = *on;
+                }
+            }
             Step::FieldCamera { change, .. } => {
                 match self.field_camera.as_mut() {
                     Some(c) => c.apply(change),
