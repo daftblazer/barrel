@@ -2945,19 +2945,20 @@ fn main() -> Result<()> {
             gpu.upload(palette_mem, palette_bytes(&palette))?;
             gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
             // The camera follows the player with the field's play-camera setting for where the
-            // player is (`barrel_game::play_camera`: its distance, pitch, field of view and look
-            // offset), from the `--yaw` side (the game's turning of it is not read yet).
+            // player is (`barrel_game::play_camera`): its distance, yaw, pitch, field of view and
+            // look offset, the eye built as the field camera builds it (in game space, then x
+            // mirrored like the vertices).
             let look_table = field_looks.first().and_then(|l| l.as_ref());
             let point = look_table
                 .and_then(|l| barrel_game::play_camera::setting(&l.camera_areas, &l.camera_points, player_at.map(|v| v as f32 / 100.0)))
                 .or_else(|| look_table.and_then(|l| l.camera_points.first().cloned()))
                 .unwrap_or_default();
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
-            let look = (Vec3::from(player_at.map(|v| v as f32)) + Vec3::from(point.diff) * 100.0) * mirror;
-            let (y, p) = (yaw.to_radians(), point.pitch.to_radians());
-            target = look;
+            let look = Vec3::from(player_at.map(|v| v as f32)) + Vec3::from(point.diff) * 100.0;
+            let (y, p) = (point.yaw.to_radians(), point.pitch.to_radians());
             dist = point.length.max(1.0) * 100.0;
-            eye = look + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
+            target = look * mirror;
+            eye = (look + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist) * mirror;
             fov = point.fov.clamp(10.0, 120.0).to_radians();
         }
     }

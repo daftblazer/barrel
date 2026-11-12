@@ -121,9 +121,11 @@ facing and switches to the motion its script plays. When one touches the player 
 stops there and the encounter group is printed (`AREA_01_01`: the first Ore Rat at frame 512,
 group 10, as `barrel field-sim` finds). `--save-every N` writes only every Nth frame and the
 last. The camera follows the player with the field's play-camera setting
-(`Saves/field/<FIELD>.xml`, `<camera><area><point>`: `length` metres away, `radian` degrees of
-pitch, `fov`, `diffPosition` metres added to the player's place; `field_look::CameraPoint`)
-places it, from the `--yaw` side; `AREA_01_01`'s first is 8 m, 21°, 40°, 0.5 m up. Each `<area>` is a
+(`Saves/field/<FIELD>.xml`, `<camera><area><point>`: `length` metres away, `radian` its yaw
+and `lookRad` its pitch in degrees (+0x20 and +0x80, which the eye builder `0x1401e68f0` turns
+about y and x), `fov`, `diffPosition` metres added to the player's place;
+`field_look::CameraPoint`) places it; `AREA_01_01`'s first is 8 m, yaw 21°, pitch 10°, 40°, 0.5 m
+up: the field camera keeps each area's own direction. Each `<area>` is a
 rectangle (`tlPosition`, `brPosition`, metres) of a kind, its `tag` (`FIELDMAP_CAMERA_DATA_*`,
 parsed at `0x140067f58`: `CLOSELY_X` 0, `CLOSELY_Y` 1, `CLOSELY_Z` 2, `CLOSELY_XZ` 3,
 `VERTEX_LENGTH` 4; the fields use 77 `CLOSELY_X`, 62 `CLOSELY_Z`, 2 `CLOSELY_Y`), holding points
@@ -133,7 +135,7 @@ lookup `0x140066f80`) takes the first area holding the player and blends that ar
 along its axis (`0x140069680`): the nearest point below the player on the axis and the nearest
 above, mixed linearly (`0x140066cb0`) by the player's distance from the lower over the gap; one
 alone when the player is beyond the last (`barrel_game::play_camera::setting`; `AREA_01_01`:
-8 m at 21° up to z 30 m, then towards 10 m at 7° at z 45 m). The viewer's creature mode uses it.
+8 m, yaw 21°, pitch 10° up to z 30 m, then towards 10 m, yaw 7°, pitch 20° at z 45 m). The viewer's creature mode uses it.
 
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a

@@ -41,8 +41,8 @@ fn mix(a: &CameraPoint, b: &CameraPoint, t: f32) -> CameraPoint {
     let l3 = |x: [f32; 3], y: [f32; 3]| [l(x[0], y[0]), l(x[1], y[1]), l(x[2], y[2])];
     CameraPoint {
         length: l(a.length, b.length),
+        yaw: l(a.yaw, b.yaw),
         pitch: l(a.pitch, b.pitch),
-        look_rad: l(a.look_rad, b.look_rad),
         fov: l(a.fov, b.fov),
         diff: l3(a.diff, b.diff),
         position: l3(a.position, b.position),
@@ -57,15 +57,15 @@ mod tests {
 
     #[test]
     fn blends_along_the_area_axis() {
-        // AREA_01_01's CLOSELY_Z area: 8 m at 21° at z 30, 10 m at 7° at z 45.
-        let p = |length, pitch, z| CameraPoint { length, pitch, fov: 40.0, position: [0.0, 0.0, z], ..Default::default() };
+        // AREA_01_01's CLOSELY_Z area: 8 m, yaw 21° at z 30; 10 m, yaw 7° at z 45.
+        let p = |length, yaw, z| CameraPoint { length, yaw, fov: 40.0, position: [0.0, 0.0, z], ..Default::default() };
         let points = vec![p(8.0, 21.0, 30.0), p(10.0, 7.0, 45.0)];
         let areas = vec![CameraArea { kind: 2, top_left: [-400.0, 0.0, -400.0], bottom_right: [400.0, 0.0, 400.0], points: 0..2 }];
         let at = |z| setting(&areas, &points, [40.0, 0.0, z]).unwrap();
         assert_eq!(at(20.0).length, 8.0);
-        assert_eq!(at(50.0).pitch, 7.0);
+        assert_eq!(at(50.0).yaw, 7.0);
         let mid = at(37.5);
-        assert!((mid.length - 9.0).abs() < 1e-4 && (mid.pitch - 14.0).abs() < 1e-4);
+        assert!((mid.length - 9.0).abs() < 1e-4 && (mid.yaw - 14.0).abs() < 1e-4);
         assert!(setting(&areas, &points, [500.0, 0.0, 0.0]).is_none());
     }
 }

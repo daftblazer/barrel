@@ -62,9 +62,11 @@ pub struct FieldLook {
     pub camera_areas: Vec<CameraArea>,
 }
 
-/// A play-camera setting of a field (`<point>`): `length` metres from what it looks at,
-/// `radian` (degrees, despite the name) its pitch, `look_rad` and `position` not read yet,
-/// `fov` in degrees, `diff` (metres) added to the player's place to give what it looks at.
+/// A play-camera setting of a field (`<point>`), as `CameraCFieldMap` takes it (`0x1401e71ad`
+/// on): `length` metres from what it looks at (its distance, +0x98), `radian` (degrees, despite
+/// the name) its yaw (+0x20, the eye builder's turn about y, `0x1401e68f0`), `lookRad` its
+/// pitch (+0x80), `fov` in degrees (+0x68), `diff` (metres) added to the player's place to give
+/// what it looks at, `position` where along its area's axis it applies.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CameraArea {
     /// Its `tag` (`FIELDMAP_CAMERA_DATA_*`, parsed at `0x140067f58`): `CLOSELY_X` 0,
@@ -81,8 +83,8 @@ pub const CAMERA_AREA_TAGS: [&str; 5] = ["CLOSELY_X", "CLOSELY_Y", "CLOSELY_Z", 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CameraPoint {
     pub length: f32,
+    pub yaw: f32,
     pub pitch: f32,
-    pub look_rad: f32,
     pub fov: f32,
     pub diff: [f32; 3],
     pub position: [f32; 3],
@@ -203,8 +205,8 @@ pub fn read(root: &Element) -> FieldLook {
                     for p in a.children.iter().filter(|p| p.name == "point") {
                         look.camera_points.push(CameraPoint {
                             length: number(p, "length").unwrap_or(8.0),
-                            pitch: number(p, "radian").unwrap_or(20.0),
-                            look_rad: number(p, "lookRad").unwrap_or(0.0),
+                            yaw: number(p, "radian").unwrap_or(0.0),
+                            pitch: number(p, "lookRad").unwrap_or(20.0),
                             fov: number(p, "fov").unwrap_or(40.0),
                             diff: numbers(p, "diffPosition").unwrap_or_default(),
                             position: numbers(p, "position").unwrap_or_default(),
