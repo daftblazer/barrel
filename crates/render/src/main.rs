@@ -112,6 +112,9 @@ struct Draw {
     /// The field (in the order the scene loaded them) it belongs to; None for what is drawn
     /// in every field (the event's characters).
     field: Option<u16>,
+    /// Drawn into the sun's shadow map: the characters, and the field objects marked `xDS_`
+    /// (in their name or their placement's tags; docs/renderer.md, "Shadows").
+    casts: bool,
 }
 
 struct Gpu {
@@ -497,7 +500,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true });
         }
         Ok(())
     }
@@ -1240,7 +1243,14 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
             // Scale, then rotate about x, y and z in that order, then move.
             let rotation = glam::Quat::from_euler(glam::EulerRot::ZYX, i.rotation[2], i.rotation[1], i.rotation[0]);
             let transform = Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position));
+            let before = scene.draws.len();
             scene.add(geometry, transform, texture_count)?;
+            // Only the objects marked xDS_ cast the sun's shadow (TOWN_11's workshop: its
+            // furniture and a second, xDS_ ceiling; the ceiling drawn does not cast).
+            let casts = t.name.contains("xDS_") || i.tags.contains("xDS_");
+            for d in &mut scene.draws[before..] {
+                d.casts = casts;
+            }
             placed += 1;
         }
     }
@@ -2759,9 +2769,8 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         }
         look[26] = field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]);
         // The sun's shadow map: from the first directional light, over the camera's target.
-        // Off unless BARREL_SHADOWS is set: which models cast is not settled (with every model
-        // casting, the workshop's roof shades its whole floor; docs/renderer.md, "Shadows").
-        if !parallels.is_empty() && std::env::var("BARREL_SHADOWS").is_ok() {
+        // On unless BARREL_NO_SHADOWS is set (for comparing).
+        if !parallels.is_empty() && std::env::var("BARREL_NO_SHADOWS").is_err() {
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
@@ -2812,7 +2821,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            for draw in draws.iter().filter(|d| !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
+            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
                 let mut per_draw = [0u8; 8];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());

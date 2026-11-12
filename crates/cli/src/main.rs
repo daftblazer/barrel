@@ -31,6 +31,7 @@ usage:
   barrel ebm FILE.ebm          print an event's messages
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR         read every field placement list in the containers
+  barrel opl2 FILE#N              a field's placements: each object, its instances and their tags
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a FILE#N            list an animation's tracks (bone, kind, values over time)
   barrel g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
@@ -98,6 +99,7 @@ fn main() -> ExitCode {
         ["ebm", file] => ebm(Path::new(file)),
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
+        ["opl2", file] => opl2_list(file),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a", file] => g1a(file),
         ["g1a-moves", file, rest @ ..] => g1a_moves(file, rest.first().copied()),
@@ -1777,6 +1779,19 @@ fn ebm_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some message files did not read".into()) }
+}
+
+/// A field's placement list: each object type, its instance count and their tags.
+fn opl2_list(spec: &str) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let p = barrel_formats::opl2::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    for t in &p.objects {
+        let mut tags: Vec<&str> = t.instances.iter().map(|i| i.tags.as_str()).collect();
+        tags.sort();
+        tags.dedup();
+        println!("{:4} {:40} tags {:?}", t.instances.len(), t.name, tags);
+    }
+    Ok(())
 }
 
 fn opl2_scan(dir: &Path) -> Result<()> {

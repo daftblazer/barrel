@@ -258,16 +258,18 @@ and scales with the height, centred. Not yet as the game: the tag's slight tilt 
 and the small green fleur at the panel's lower right. `--size WxH` renders other shapes
 (1280x720 for comparing with oracle frames).
 
-**Shadows** (work in progress, off unless `BARREL_SHADOWS` is set). The sun's shadow map:
-one 2048² depth map from the field's first directional light, an orthographic square 3,000
-field units across around the camera's target (`shadow.rs`; the game's four cascades are
-not read: a deliberate difference meanwhile), every non-sky draw casting with the alpha
-test, and the field's models and terrain taking only the sun's part of their light through
-it, as `MapSTD` does (16 taps). Against the oracle frame of `EVENT_MM01_OP1_111` the shaded
-floor (centre, right) matches (61 against 65, 67 against 67) but the floor the game shows
-lit through the doorway is shaded too: whatever the sun's heading, the workshop's roof
-covers it, so the game cannot let every model cast. Which do (the materials whose shaders
-have a `*_shadowmap` variant in `shader.xml`?) is next.
+**Shadows.** The sun's shadow map: one 2048² depth map from the field's first directional
+light, an orthographic square 3,000 field units across around the camera's target
+(`shadow.rs`; the game's four cascades are not read: a deliberate difference meanwhile).
+The casters are the characters and the field objects marked `xDS_`, in their name or their
+placement's tags (`barrel opl2 FILE#N` lists them): in `TOWN_11`'s workshop the furniture
+and a second ceiling, `obj-xDS_appletenjo`, cast; the ceiling drawn, `obj-appletenjo`, does
+not. The field's models and terrain take only the sun's part of their light through the map,
+as `MapSTD` does (16 taps, the full strength with `atColor` white). Against the oracle frame
+of `EVENT_MM01_OP1_111`'s first line, the floor's lit patch through the doorway and its
+shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67 (red, 0 to
+255). With every model casting, the drawn ceiling shaded the whole floor instead.
+`BARREL_NO_SHADOWS` turns them off.
 
 **Handedness.** The game's x is mirrored into render space (right-handed, like the vertices),
 and the projection mirrors clip-space x back, so the screen shows the scene left to right as
