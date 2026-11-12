@@ -520,7 +520,13 @@ attack: `0x14029d270`, which builds a held item's effect entries (0x34 bytes eac
 effect definitions (0x58-byte records, two slots 0x18 apart from +0x28), sets +0x18 to the
 item's value at +4 (a float after its 16-bit id at +2; its quality, presumably) × 0.5 + 75,
 truncated (`0x14071a9a0` = 0.5, `0x1407b9b04` = 75; `battle::item_power`: quality 50 gives
-100). The quality bonus of flag 3 is not read yet
+100). The entries come from the instance's four effect ids (16-bit at +0x10, -1 none): each
+names an `item_effect` row (up to 0x2b9), whose used slots (act ≥ 0) follow in order
+(`battle::item_action`). Two refinements are not followed yet: an override record some items
+have (`0x1400e3480` by item id: the first slot, or the slot equal to its +0x18, takes its +0x8
+instead), and traits of kind 7 (two 16-bit trait ids at +0x8 of the instance when +0xe is 0;
+the trait table's records +0x3c) adding effects through `0x1402a1e20`. The quality bonus of
+flag 3 is not read yet
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 
 `barrel_game::days::World` keeps what the days touch (the date, the main generator, the
