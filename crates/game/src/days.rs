@@ -15,6 +15,13 @@ use crate::rank::RankState;
 use crate::shop::{self, Stock, Ware};
 use crate::rng::Rng;
 
+/// The field time one gathering takes, in tenths of a day (`0x1402f3fe0 (0)`): 5, less the
+/// current region's reduction (a byte per region at `0x1410782e8`, `0x140236180` giving the
+/// region, 16 at most), at least 1.
+pub fn gather_tenths(reduction: i32) -> i32 {
+    (5 - reduction).max(1)
+}
+
 /// Why days pass (the second argument of `0x14035bf10`; names from the callers).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reason {
@@ -28,8 +35,8 @@ pub enum Reason {
     /// from the Southern Ruins to Colseit moved the running game from 8/20 to 8/24, the
     /// route's four days.
     Travel,
-    /// 5: field time spent (`0x1400a3bf0`, not followed).
-    Five,
+    /// 5: a gathering's field time ([`gather_tenths`], `0x1400a3bf0`).
+    Gather,
     /// 6: field time a battle spent (the battle setup's +0x18, `0x140084c50` and others).
     Battle,
     /// 7: one day, from field code: leaving a field with time carried, or moving between
@@ -331,6 +338,7 @@ mod tests {
         assert_eq!((w.date, w.tenths), (start + 3, 0));
         w.leave_field(&t);
         assert_eq!(w.date, start + 3);
+        assert_eq!((gather_tenths(0), gather_tenths(2), gather_tenths(9)), (5, 3, 1));
     }
 
     #[test]
