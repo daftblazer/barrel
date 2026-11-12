@@ -120,7 +120,11 @@ west at 2 m/s from 15 m east of the first enemy; each body follows its creature'
 facing and switches to the motion its script plays. When one touches the player everything
 stops there and the encounter group is printed (`AREA_01_01`: the first Ore Rat at frame 512,
 group 10, as `barrel field-sim` finds). `--save-every N` writes only every Nth frame and the
-last.
+last. The camera follows the player as the field's first play-camera setting
+(`Saves/field/<FIELD>.xml`, `<camera><area><point>`: `length` metres away, `radian` degrees of
+pitch, `fov`, `diffPosition` metres added to the player's place; `field_look::CameraPoint`)
+places it, from the `--yaw` side; `AREA_01_01`'s first is 8 m, 21°, 40°, 0.5 m up. How the game
+picks among the points (`position`, `lookRad`, the area's `tag` such as `CLOSELY_Z`) is not read.
 
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a

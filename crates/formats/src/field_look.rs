@@ -54,6 +54,22 @@ pub struct FieldLook {
     /// `<sphere offset>`: where the distant view sits from the camera (metres), when it
     /// follows the camera.
     pub sphere_offset: Option<[f32; 3]>,
+    /// `<camera><area><point>`: the play camera's settings, in table order (how the game picks
+    /// and blends them is not read yet).
+    pub camera_points: Vec<CameraPoint>,
+}
+
+/// A play-camera setting of a field (`<point>`): `length` metres from what it looks at,
+/// `radian` (degrees, despite the name) its pitch, `look_rad` and `position` not read yet,
+/// `fov` in degrees, `diff` (metres) added to the player's place to give what it looks at.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CameraPoint {
+    pub length: f32,
+    pub pitch: f32,
+    pub look_rad: f32,
+    pub fov: f32,
+    pub diff: [f32; 3],
+    pub position: [f32; 3],
 }
 
 /// Each field's distant view (sky, far ground, clouds: `Data/x64/Field/C_SPHERE/<set>`), by
@@ -162,6 +178,18 @@ pub fn read(root: &Element) -> FieldLook {
             }
             "hdr" => look.hdr = Some((number(e, "threshold").unwrap_or(1.0), number(e, "glow_add_rate").unwrap_or(0.0))),
             "sphere" if e.attr("tracking_camera") != Some("false") => look.sphere_offset = numbers(e, "offset"),
+            "camera" => {
+                for p in e.children.iter().flat_map(|a| a.children.iter()).filter(|p| p.name == "point") {
+                    look.camera_points.push(CameraPoint {
+                        length: number(p, "length").unwrap_or(8.0),
+                        pitch: number(p, "radian").unwrap_or(20.0),
+                        look_rad: number(p, "lookRad").unwrap_or(0.0),
+                        fov: number(p, "fov").unwrap_or(40.0),
+                        diff: numbers(p, "diffPosition").unwrap_or_default(),
+                        position: numbers(p, "position").unwrap_or_default(),
+                    });
+                }
+            }
             _ => {}
         }
     }
