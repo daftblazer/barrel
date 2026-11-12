@@ -249,6 +249,12 @@ over the scene by its opacity, under the text.
 the card is drawn at the stage's opacity, its 1920 × 1080 layout scaled to the height and
 centred.
 
+**Handedness.** The game's x is mirrored into render space (right-handed, like the vertices),
+and the projection mirrors clip-space x back, so the screen shows the scene left to right as
+the game does (checked against an oracle screenshot of `EVENT_MM01_OP1_111`'s first line:
+Escha left, Clone right, the drawers top left); the front faces then wind counter-clockwise
+again. Before this the whole picture was mirrored.
+
 **Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
 mirrored into render space); the terrain is not culled (it winds the other way and is only seen
 from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are

@@ -1839,9 +1839,10 @@ fn main() -> Result<()> {
         .polygon_mode(vk::PolygonMode::FILL)
         // Back faces are culled, as the game does: rooms are one-sided boxes the event camera
         // often looks into from outside, through walls and a ceiling that face away from it.
-        // The models' front faces wind clockwise once x is mirrored into render space.
+        // The models' front faces wind clockwise once x is mirrored into render space, and
+        // counter-clockwise again once the projection mirrors it back on screen.
         .cull_mode(vk::CullModeFlags::BACK)
-        .front_face(vk::FrontFace::CLOCKWISE)
+        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
         .line_width(1.0);
     let msaa = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
     let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
@@ -2038,6 +2039,9 @@ fn main() -> Result<()> {
         // Far enough for the distant view (its dome is about 35,000 units across).
         let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01 * zoom, (dist * 20.0 * zoom).max(80_000.0));
         proj.y_axis.y *= -1.0; // Vulkan's y points down.
+        // The game's x is mirrored into render space (right-handed); mirroring clip-space x back
+        // shows the scene as the game does (left to right as in its frames; oracle shot op111).
+        proj.x_axis.x *= -1.0;
         proj * view
     };
 
