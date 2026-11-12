@@ -726,7 +726,7 @@ one monster: the monster acts by its rules and target picks, and each member, st
 the player, uses the costliest learnt skill it can pay for that hits the foe, or its normal
 attack. Escha, Logy and Reyfer at level 20 beat a Howling Beast with Ether Shoot, Flash Cut and
 Dragon Breath until their MP runs out; the Beast spreads its hits by the weighted draw and
-fells Escha. A member with no affordable heal (or revive) skill uses a healing (or reviving) item it carries instead (`skirmish::Held`: the item as `battle::item_action`, its `item_power` and a count), through `Battle::use_item`.
+fells Escha. A member with no affordable heal (or revive) skill uses a healing (or reviving) item it carries instead (`skirmish::Held`: the item as `battle::item_action`, its `item_power` and a count), through `Battle::use_item`. On the command line a member takes items as `p<member>:<level>+<effect id>[,<id>...]@<quality>x<count>` (effect ids are `item_effect` rows, `barrel item-effects`): `barrel battle EXE 2 p0:6 p1:6+167@50x2` has Logy use both HP Recovery S when the Golden Rat brings him low (the item's own action wait is not read yet: 600 is taken).
 
 `barrel_formats::battle_data` reads the monster and skill tables from the English
 executable, and `barrel_game::duel` puts the pieces above together: two monsters trading the

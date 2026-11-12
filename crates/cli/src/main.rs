@@ -1236,12 +1236,39 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let member_names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
     let mut names = Vec::new();
     let mut members = Vec::new();
+    // Item effect rows, for members given items (`+<id>,<id>@<quality>x<count>`).
+    let item_rows = if party.iter().any(|s| s.contains('+')) {
+        let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+        let path = exe.parent().ok_or("no install folder")?.join("Saves_EN/item/item_effect.xml");
+        let root = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        bd::item_effects(&root, &acts)
+    } else {
+        Vec::new()
+    };
     for s in party {
+        let mut parts = s.split('+');
+        let s = parts.next().unwrap_or("");
         let (m, l) = s.strip_prefix('p').and_then(|r| r.split_once(':')).ok_or_else(|| format!("{s}: write p<member>:<level>"))?;
         let (m, l): (usize, usize) = (m.parse().map_err(|_| format!("{s}: member"))?, l.parse().map_err(|_| format!("{s}: level"))?);
         let stats = growth.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
         let block = barrel_game::duel::party_block(l as i32, stats);
-        members.push(barrel_game::skirmish::Member::new(block, stats.mp, &lists[m], &skills).ok_or("no party attack")?);
+        let mut member = barrel_game::skirmish::Member::new(block, stats.mp, &lists[m], &skills).ok_or("no party attack")?;
+        for item in parts {
+            // <ids>@<quality>x<count>: heals and revives aim at the user's side, the rest at the
+            // foe; the action's wait is not read yet (the normal attack's 600 is taken).
+            let (ids, rest) = item.split_once('@').ok_or_else(|| format!("{item}: write <id>[,<id>]@<quality>x<count>"))?;
+            let (quality, count) = rest.split_once('x').unwrap_or((rest, "1"));
+            let ids: Vec<i16> = ids.split(',').map(|v| v.parse().map_err(|_| format!("{item}: effect id"))).collect::<std::result::Result<_, String>>()?;
+            let quality: f32 = quality.parse().map_err(|_| format!("{item}: quality"))?;
+            let count: u32 = count.parse().map_err(|_| format!("{item}: count"))?;
+            let name = ids.iter().filter_map(|&i| item_rows.get(i as usize)).map(|r| r.name.clone()).collect::<Vec<_>>().join(" + ");
+            let mut action = barrel_game::battle::item_action(&name, 2, 600, &ids, &item_rows);
+            if action.effects.iter().any(|e| matches!(e.act, 19 | 21 | 81)) {
+                action.target = 1;
+            }
+            member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count });
+        }
+        members.push(member);
         names.push(format!("{} ({l})", member_names[m]));
     }
     let n: usize = monster.parse().map_err(|_| format!("{monster}: not a monster number"))?;
