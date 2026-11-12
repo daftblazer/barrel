@@ -58,7 +58,10 @@ pub struct FieldLook {
 
 /// Each field's distant view (sky, far ground, clouds: `Data/x64/Field/C_SPHERE/<set>`), by
 /// field name, from the English executable's table at `0x14076eff0`: 32-byte records `{u64
-/// field name, u64 set file name, f32 × 4 (not read)}`. Indoor fields have `set-black`.
+/// field name, u64 set file name, f32 × 4}`. Indoor fields have `set-black`. The game copies the
+/// table into the field object (+0x1a8); the first float (75 in all but a few) is the steepest
+/// slope in degrees a character walks, taken against its `CharaBase` `FMslp` (the larger wins,
+/// `0x14026c3c0`); the other three (1, 0, 1 in most; up to 100, 4, 120) are not read.
 pub const SKY_SETS_EN: u64 = 0x1407_6eff0;
 
 /// The screen fades' presets (`u22`, `ECT_EVENT_CONTRAST_SET_MIX`): 21 pairs of colours (with

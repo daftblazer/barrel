@@ -369,7 +369,10 @@ ground, stones, plants and clouds (`set-a15_01_sphere`: `obj-a15a01_Sphere_sky_h
 model with its own texture pack). Which set a field has is the executable's table at
 `0x14076eff0` (English): 122 records of 32 bytes, `{u64 field name, u64 set file, f32 × 4}`
 (`TOWN_07` the airship dock: `set-a15_01_sphere_tw07`; `TOWN_10` and `TOWN_04`:
-`set-a15_01_sphere`; indoors such as `TOWN_11`: `set-black`; the four floats are not read).
+`set-a15_01_sphere`; indoors such as `TOWN_11`: `set-black`; of the four floats the first, 75 in nearly every
+record, is the steepest walkable slope in degrees, whichever of it and the character's
+`CharaBase` `FMslp` is larger (`0x14026c3c0` on the copy at the field object's +0x1a8); the
+other three are not read).
 The field's table places it: `<sphere offset tracking_camera>` (metres from the camera,
 `TOWN_07` 20 below it). The renderer loads each event field's set into one instance that
 follows the eye, draws it first with no depth test or write, alpha-blended (the clouds are
