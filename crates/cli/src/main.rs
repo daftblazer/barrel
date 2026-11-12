@@ -2045,6 +2045,8 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
     let table = OperandTable::escha();
     let player = Player::escha(&event, &messages, &table)?;
     let steps: Vec<(Option<f32>, Step)> = if timed {
+        // BARREL_READ: hold each line its unattended reading time, as the viewer does.
+        let player = if std::env::var("BARREL_READ").is_ok() { player.reading_time(barrel_game::event::reading_time) } else { player };
         player.schedule().into_iter().map(|t| (Some(t.time), t.step)).collect()
     } else {
         player.map(|s| (None, s)).collect()

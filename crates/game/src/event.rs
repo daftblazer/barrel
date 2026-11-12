@@ -512,6 +512,11 @@ impl<'a> Player<'a> {
                 out.push(Timed { time: if held > 0.0 { shown_at } else { now }, action, step: s });
             }
         }
+        // In time order (stable: steps at the same moment keep their order). A thread that
+        // holds lines runs ahead of the others, so its later lines came out before their steps
+        // (event 212: action 20's camera cut, at line 2, came after lines 2 to 4 and was
+        // never reached while they showed).
+        out.sort_by(|a, b| a.time.total_cmp(&b.time));
         out
     }
 }

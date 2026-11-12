@@ -70,7 +70,11 @@ another action wherever a `w1` says (the game runs them at once; the player puts
 action's steps right where it starts, each tagged with its action); every other command is
 reported with its name and operands, for the systems that will handle it. `Player::schedule`
 (`play-event FILE [LANG] --timed`) runs the event on a clock instead: every started action
-at once, each held only by its own waits, and prints each step with its time. That each
+at once, each held only by its own waits, and prints each step with its time, in time order
+(`BARREL_READ=1` holds each line its unattended reading time, as the viewer does; a thread
+that holds lines runs ahead of the others, so the steps are sorted afterwards: before that,
+event 212's camera cut at its third line came out after lines 3 to 5, and the viewer, which
+applies steps in order up to its clock, never reached it while they showed). That each
 action has its own timer is an assumption, and a doubtful one: the timer is at +8 of the
 `Event` object (RTTI `Event`, vtable `0x140758188`, built by `0x140050560`), which holds the
 event's `EventData` at +0x70 (vtable `0x140847128`; `w1` queues action numbers in it), so
