@@ -170,6 +170,33 @@ impl ItemList {
     }
 }
 
+/// How many items have a name-sort place (`0x1400e8190` answers this for any item past them).
+pub const NAME_SORT_ITEMS: usize = 0x230;
+
+/// The items' name-sort places (`Saves[_EN]/item/itemNameSortData.xml`, loaded by `0x1400ea8c0`
+/// into `0x140dfccf0` by item number): `ItemTag`, `SortOrder` per row, a permutation of 0 to 559
+/// in both the Japanese and the English table, so the order of a sort by name never depends on
+/// the sort itself. `item_number` turns an `ITEM_*` tag into its number.
+pub fn name_orders(table: &barrel_formats::table::Element, item_number: impl Fn(&str) -> Option<usize>) -> Vec<i32> {
+    let mut out = vec![0; NAME_SORT_ITEMS];
+    for e in &table.children {
+        let (Some(tag), Some(order)) = (e.attr("ItemTag"), e.attr("SortOrder").and_then(|v| v.trim().parse().ok())) else {
+            continue;
+        };
+        if let Some(slot) = item_number(tag).and_then(|n| out.get_mut(n)) {
+            *slot = order;
+        }
+    }
+    out
+}
+
+/// An item's name-sort place (`0x1400e8190`): 560 past the table. The lists sort by it, lowest
+/// first (`0x1401207c0` through the recipe's item, `0x1402a9c70`, `0x1402b10e0` by a held item's
+/// +2).
+pub fn name_order(orders: &[i32], item: usize) -> i32 {
+    orders.get(item).copied().unwrap_or(NAME_SORT_ITEMS as i32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +285,14 @@ mod tests {
     fn serials_wrap() {
         let mut s = Serials(0x7ffe);
         assert_eq!((s.next(), s.next(), s.next()), (0x7ffe, 0x7fff, 0x3fff));
+    }
+
+    #[test]
+    fn name_sort() {
+        let t = barrel_formats::table::parse(br#"<Root><itemNameSortData ItemTag="ITEM_B" SortOrder="0"/><itemNameSortData ItemTag="ITEM_A" SortOrder="1"/></Root>"#).unwrap();
+        let o = name_orders(&t, |tag| ["ITEM_A", "ITEM_B"].iter().position(|t| *t == tag));
+        let mut items = vec![0, 1, 900];
+        items.sort_by_key(|&i| name_order(&o, i));
+        assert_eq!(items, [1, 0, 900]);
     }
 }

@@ -22,6 +22,7 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 | Table | Rows | What a row is |
 |---|---|---|
 | `item/itemData.xml` | 560 | an item: name, image, cost, use type, stacking, kind, level, effect value, element and element values, up to four categories |
+| `item/itemNameSortData.xml` | 560 | each item's place when a list is sorted by name (`ItemTag`, `SortOrder`): loaded by `0x1400ea8c0` into `0x140dfccf0` by item number, read by `0x1400e8190` (560 past the table); the comparators `0x1401207c0` (recipes, through their item, `0x1400e31d0`), `0x1402a9c70` and `0x1402b10e0` (held items) put the lowest first. Japanese and English each have their own order, both a permutation of 0 to 559, so the result never depends on the sort (`inventory::name_orders`, `name_order`) |
 | `item/item_status.xml` | 560 | the potentials (`POT_00`…) and effects (`ESP_00`…) an item starts with; row *n* is item *n* of `itemData`, many rows empty |
 | `item/item_effect.xml` | 698 | item effects: up to two battle effect slots each ("Item effects in battle") |
 | `item/item_potential.xml` | 400 | potentials (traits) |
