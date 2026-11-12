@@ -2082,6 +2082,7 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
             }
             Step::RemoveAll { action } => println!("{action:3} --- everyone leaves"),
             Step::Quake { action, quake, seconds } => println!("{action:3} --- camera quake {quake} for {seconds} s"),
+            Step::EventObjects { action, shown } => println!("{action:3} --- event objects (xEV_) {}", if shown { "shown" } else { "hidden" }),
             Step::QuakeStop { action } => println!("{action:3} --- camera quake stops"),
             Step::MapVisible { action, version, shown } => println!("{action:3} --- field objects of version {version} {}", if shown { "shown" } else { "hidden" }),
             Step::Remove { action, character } => {

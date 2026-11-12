@@ -2405,6 +2405,8 @@ fn main() -> Result<()> {
     let mut hidden = vec![false; instances.len()];
     // The field object versions shown (q15): none until the event shows one.
     let mut versions_shown = player.as_ref().map(|p| p.0.stage.versions_shown.clone()).unwrap_or_default();
+    // Whether the field's xEV_ objects show (q10): only while an event shows them.
+    let mut event_objects = player.as_ref().is_some_and(|p| p.0.stage.event_objects);
     for a in &actors {
         hidden[a.instance as usize] = match &player {
             Some((_, _, _, now)) => !now.characters.contains_key(&a.who),
@@ -2522,6 +2524,7 @@ fn main() -> Result<()> {
                 out.pump(mixer);
             }
             versions_shown.clone_from(&play.stage.versions_shown);
+            event_objects = play.stage.event_objects;
             // The field the event is in now.
             if let Some(k) = play.stage.field.and_then(|m| field_maps.iter().position(|&f| f == m)) {
                 if k as u16 != current_field {
@@ -2941,7 +2944,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && !hide_by_name(&d.name)) {
+            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
                 let mut per_draw = [0u8; 8];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
@@ -2993,7 +2996,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         // The current field's distant view first, then the rest over it.
         for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
-        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && !hide_by_name(&d.name)) {
+        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
             // The distant view's solid pieces (all but the dome and the clouds) are lit and

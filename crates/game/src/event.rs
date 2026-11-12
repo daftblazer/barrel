@@ -61,6 +61,11 @@ pub const FIELD_CHARA_COLLISION: u32 = 0x7100_0008;
 /// opening shows version 2 and hides the dock's version 3 parts). Read from the oracle frames,
 /// not the handler (not found yet).
 pub const FIELD_MAP_VISIBLE: u32 = 0x7100_000f;
+/// `q10` (`ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET`) and `q36`, one case (`0x14028a7a6`):
+/// `{shown}`: the field objects whose names hold `xEV_` (event-only props: TOWN_03's
+/// `obj-xEV_door_r`) shown or hidden (`0x140291860` with the string `xEV_`).
+pub const FIELD_EVENT_OBJECTS: u32 = 0x7100_000a;
+pub const FIELD_EVENT_OBJECTS_2: u32 = 0x7100_0024;
 /// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
 pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 /// `u31` (`ECT_EVENT_VOICE_PLAY`): `{clip}`, a voice clip number (`docs/formats.md`, "Voices").
@@ -192,6 +197,8 @@ pub enum Step<'a> {
     Collision { action: usize, character: u32, solid: bool, flag: bool },
     /// The field objects of a version shown or hidden ([`FIELD_MAP_VISIBLE`]).
     MapVisible { action: usize, version: u32, shown: bool },
+    /// The `xEV_` field objects shown or hidden ([`FIELD_EVENT_OBJECTS`]).
+    EventObjects { action: usize, shown: bool },
     /// A camera quake starts ([`CAMERA_QUAKE_SET`]) for `seconds`.
     Quake { action: usize, quake: u32, seconds: f32 },
     /// The camera quake ends ([`CAMERA_QUAKE_STOP`]).
@@ -357,6 +364,7 @@ impl<'a> Player<'a> {
             }),
             (CAMERA_QUAKE_SET, [quake, rest @ ..]) => out.push(Step::Quake { action, quake: *quake, seconds: rest.first().map_or(0.0, |&s| f(s) / 100.0) }),
             (CAMERA_QUAKE_STOP, _) => out.push(Step::QuakeStop { action }),
+            (FIELD_EVENT_OBJECTS | FIELD_EVENT_OBJECTS_2, rest) => out.push(Step::EventObjects { action, shown: rest.first().is_some_and(|&v| v != 0) }),
             (FIELD_MAP_VISIBLE, [version, shown, ..]) => out.push(Step::MapVisible { action, version: *version, shown: *shown != 0 }),
             (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
@@ -737,6 +745,7 @@ mod tests {
                 Step::RemoveAll { .. } => "everyone removed".to_string(),
                 Step::Collision { character, solid, .. } => format!("{character} solid {solid}"),
                 Step::MapVisible { version, shown, .. } => format!("version {version} shown {shown}"),
+                Step::EventObjects { shown, .. } => format!("event objects shown {shown}"),
                 Step::Quake { quake, seconds, .. } => format!("quake {quake} for {seconds} s"),
                 Step::QuakeStop { .. } => "quake stops".to_string(),
                 Step::Voice { clip, .. } => format!("voice {clip}"),

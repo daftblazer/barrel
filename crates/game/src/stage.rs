@@ -227,6 +227,8 @@ pub struct Stage {
     /// The camera quake running (`t14`): quake number, the stage time it started and its
     /// seconds; `t16` or the end of its time stops it.
     pub quake: Option<(u32, f32, f32)>,
+    /// Whether the field's `xEV_` objects show (`q10`/`q36`; hidden until an event shows them).
+    pub event_objects: bool,
 }
 
 /// A line of the event's text.
@@ -299,6 +301,7 @@ impl Stage {
             Step::RemoveAll { .. } => self.characters.clear(),
             Step::Quake { quake, seconds, .. } => self.quake = Some((*quake, self.time, *seconds)),
             Step::QuakeStop { .. } => self.quake = None,
+            Step::EventObjects { shown, .. } => self.event_objects = *shown,
             Step::MapVisible { version, shown, .. } => {
                 if *shown {
                     self.versions_shown.insert(*version);

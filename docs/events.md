@@ -4,6 +4,14 @@ What each event bytecode command is and how many operand words it takes. The bod
 itself is in `formats.md`, "Event bytecode".
 
 
+**Event objects (`q10`, `q36`).** `ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET` and `q36` share one
+case in the field command switch (`0x14028a700`, jump table at RVA `0x28b5a4`, case
+`0x14028a7a6`): `{shown}` (operand ≠ 0) goes to `0x140291860` with the name fragment `xEV_`,
+showing or hiding every field object whose name holds it (TOWN_03's `obj-xEV_door_r`,
+`_door_l`, `obj-xEV_kabe_etc`; TOWN_11 has one). The openings show them as they start
+(`q10 1`) and hide them at the end, so outside events they are hidden. `q15` is the next case
+(`0x14028a80c`): `{version, shown, flag}` to `0x140291600`.
+
 **Field object versions (`q15`).** `ECT_FIELDMAP_MAPVISIBLE_SET {version, shown, ...}` shows
 or hides the field objects whose placement tags carry that version (`xAM_balloon_ver<N>`:
 TOWN_07's airship dock is built in three versions, `obj-map08b_balloon_body` ver1,
