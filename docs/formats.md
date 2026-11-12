@@ -408,6 +408,18 @@ platform layer (`[0x1410c2ee8]` +0x108: `0x1403b8cb0`/`0x1403b8cd0` open, `0x140
 `0x1403be290`); the Windows paths are built from wide strings (`\SAVEDATA\`,
 `GAMEDATA%02u.pcsave`, `SYSDATA.pcsave`, around `0x140138730`). The cipher sits somewhere in
 that layer and is not found yet. `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
+
+Where it is not: the asynchronous file job (`0x1403c7980`) only copies bytes; the loader task
+(`0x140135ee0`, made by `0x140135820` from `0x140295205`) reads the whole file into a buffer
+its owner lends it (owner +0xd8, also handed to a second task, `0x140139890`, from
+`0x14029530a`) and sets a flag (`0x140e00f11`) when done; the flag's handler (`0x1400403b7`
+→ `0x140040f00` → `0x1400411d0`) gives each reader the plain state starting 0x20 bytes into
+its buffer, and the section functions (`0x14035b320` find, `0x14035b220` read, `0x14035b4b0`)
+read big-endian u32 lengths with no transform. The writer (`0x140136530`) writes the lent
+buffer unchanged. So the bytes are turned between the read's end and the readers, in code
+that owns those buffers; no function in the executable is dense in rotates or xors apart from
+runtime-library ones. Reading it from the running game (the plain buffer next to the file's
+bytes) would settle it, but test runs are on hold (they counted as Steam play time).
 `barrel_formats::save` reads the header and `barrel save FILE` prints it.
 
 ## Voices (`Sound/Voice/Series*.fp`)
