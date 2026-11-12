@@ -3,8 +3,6 @@
 //! `FsrEasuCon` and `FsrRcasCon` do. EASU scales the scene to the output, edge-adaptively; RCAS
 //! sharpens the result.
 
-// The passes that use these are wired in next (`docs/engine.md`, "Render scale").
-#![allow(dead_code)]
 
 /// EASU's four constant vectors for a scene of `input` pixels drawn to `output` pixels (the
 /// whole image is the viewport): output pixel to scene pixel (`con0`), scene pixel to texture

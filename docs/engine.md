@@ -90,8 +90,15 @@ edges: 27 dB against scale 1 in the first opening) and 1.5 supersamples. The pla
 scale is where an upscaler goes as an option: FSR 1 (AMD FidelityFX Super Resolution 1.0, MIT;
 its notice kept in the shaders) is ported to plain GLSL, its edge-adaptive scale
 (`shaders/easu.frag`, 12 taps by `textureGather`) and its sharpening (`shaders/rcas.frag`),
-with their constants worked out in `fsr.rs`; both need only the finished frame. Not wired into
-the frame yet.
+with their constants worked out in `fsr.rs`; both need only the finished frame. With
+`barrel-view --fsr` and a scale below 1, `upscale.rs` runs EASU (scene to an output-size
+target) and RCAS (0.2 stops below the sharpest) after the glow, and the post pass reads the
+sharpened image in the scene's place; the glow and the frozen frame stay at the scene's size.
+In the first opening at 1280×720 from half size, FSR reads visibly sharper than the bilinear
+scale (closer to the full-size frame by eye) though a little further by PSNR (29.4 against
+30.1 dB: sharpening adds edge contrast the measure counts as error); FSR expects an
+anti-aliased input, and the scene's hard edges come out crisper rather than smoother, so
+anti-aliasing is the next piece. At scale 1 `--fsr` changes nothing.
 
 ## Deliberate differences
 

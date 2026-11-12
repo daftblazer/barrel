@@ -25,6 +25,7 @@ mod glow;
 mod present;
 mod shadow;
 mod text;
+mod upscale;
 mod window;
 
 const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
@@ -567,6 +568,8 @@ struct Targets {
     scene_framebuffer: vk::Framebuffer,
     framebuffers: Vec<vk::Framebuffer>,
     glow: Option<glow::Targets>,
+    /// FSR 1, when it is on and the scene is drawn below the output's size.
+    upscale: Option<upscale::Targets>,
     /// The scene as it was when a cross-fade began (`u13` kind 3), faded out over the live one;
     /// whether it has been given a layout yet.
     frozen: vk::Image,
@@ -591,6 +594,7 @@ impl Targets {
         post_set: vk::DescriptorSet,
         sampler: vk::Sampler,
         glow_pipelines: &glow::Pipelines,
+        upscale_pipelines: Option<&upscale::Pipelines>,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let (scene_width, scene_height) = scene_size;
@@ -633,8 +637,13 @@ impl Targets {
             return Err("no target to draw into".into());
         }
         let glow = glow::Targets::new(gpu, glow_pipelines, scene_view, sampler, scene_width, scene_height)?;
-        // The post pass samples the new scene image and the glow.
-        let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(scene_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let upscale = match upscale_pipelines {
+            Some(p) if scene_size != (width, height) => Some(upscale::Targets::new(gpu, p, scene_view, sampler, scene_size, (width, height))?),
+            _ => None,
+        };
+        // The post pass samples the new scene image (FSR's result when it scales it) and the glow.
+        let shown = upscale.as_ref().map_or(scene_view, upscale::Targets::result);
+        let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(shown).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let frozen_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(frozen_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         unsafe {
@@ -658,6 +667,7 @@ impl Targets {
             scene_framebuffer,
             framebuffers,
             glow: Some(glow),
+            upscale,
             frozen,
             frozen_memory,
             frozen_view,
@@ -678,6 +688,9 @@ impl Targets {
             d.free_memory(self.frozen_memory, None);
             if let Some(g) = self.glow.take() {
                 g.destroy(gpu);
+            }
+            if let Some(u) = self.upscale.take() {
+                u.destroy(gpu);
             }
             d.destroy_image_view(self.scene_view, None);
             d.destroy_image(self.scene, None);
@@ -1401,6 +1414,9 @@ fn main() -> Result<()> {
     let mut shadows = shadow::Shadows::DESKTOP;
     // `--scale S`: the scene drawn at S times the output's size (0.25 to 2) and scaled to it.
     let mut render_scale = 1.0f32;
+    // `--fsr`: FSR 1 scales the scene to the output (when `--scale` is below 1) in place of the
+    // plain bilinear scale.
+    let mut fsr = false;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1426,6 +1442,7 @@ fn main() -> Result<()> {
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,
             "--handheld" => shadows = shadow::Shadows::HANDHELD,
+            "--fsr" => fsr = true,
             "--scale" => render_scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
@@ -1912,7 +1929,8 @@ fn main() -> Result<()> {
         }
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines)?;
+    let upscale_pipelines = if fsr { Some(upscale::Pipelines::new(&gpu)?) } else { None };
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref())?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -2782,7 +2800,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref())?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -3067,6 +3085,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         if let Some(g) = &targets.glow {
             g.record(d, &glow_pipelines, cb, threshold);
         }
+        if let (Some(u), Some(p)) = (&targets.upscale, &upscale_pipelines) {
+            u.record(d, p, cb);
+        }
         // The post pass: the scene back to its range with the glow, then the text over it.
         d.cmd_begin_render_pass(
             cb,
@@ -3174,6 +3195,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         d.destroy_shader_module(fs, None);
         targets.destroy(&gpu);
         glow_pipelines.destroy(&gpu);
+        if let Some(p) = upscale_pipelines {
+            p.destroy(&gpu);
+        }
         d.destroy_render_pass(render_pass, None);
         if let Some(v) = color_view {
             d.destroy_image_view(v, None);
