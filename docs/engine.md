@@ -75,8 +75,11 @@ attachment with lazily allocated memory where the driver has it, so on Turnip an
 should cost tile memory only (on RADV, which has no such memory, it falls back to device memory;
 renders are identical either way). The shadow map is cleared and stored (2048² of 32-bit
 depth, read by the scene pass); the glow levels are 8-bit; the final pass does not load the
-image it covers. Still to weigh for the handhelds: a 16-bit shadow map and a smaller one, and
-the glow's eleven passes.
+image it covers. `shadow::Shadows` sets the shadow map: `DESKTOP` (2048², 32-bit float) or `HANDHELD`
+(1024², 16-bit, a eighth of the memory and bandwidth; `barrel-view --handheld`). In the
+first opening (`EVENT_MM01_OP1_111` at 25 s, 640×360) the two differ in about 20 of 230,400
+pixels, one by more than 6%. Still to weigh: the glow's eleven passes, and a sunlit scene
+for the shadow comparison.
 
 ## Deliberate differences
 

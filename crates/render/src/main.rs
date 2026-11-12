@@ -1390,6 +1390,8 @@ fn main() -> Result<()> {
     let mut yaw = 0f32;
     let mut pitch = if field { 45f32 } else { 0f32 };
     let mut alpha_cutoff = 0.3f32;
+    // `--handheld`: the handheld settings (`docs/engine.md`, "Targets"): a smaller, 16-bit shadow map.
+    let mut shadows = shadow::Shadows::DESKTOP;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1414,6 +1416,7 @@ fn main() -> Result<()> {
             }
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,
+            "--handheld" => shadows = shadow::Shadows::HANDHELD,
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
@@ -1768,7 +1771,7 @@ fn main() -> Result<()> {
     let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
     let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buf).offset(0).range(vk::WHOLE_SIZE)];
     let look_info = [vk::DescriptorBufferInfo::default().buffer(look_buf).offset(0).range(vk::WHOLE_SIZE)];
-    let shadow_target = shadow::ShadowTarget::new(&gpu)?;
+    let shadow_target = shadow::ShadowTarget::new(&gpu, shadows)?;
     let shadow_info = [vk::DescriptorImageInfo::default()
         .sampler(shadow_target.sampler)
         .image_view(shadow_target.view)
@@ -2913,7 +2916,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
-            look[31] = [1.0 / shadow::SIZE as f32, 1.0, 0.0, 0.0];
+            look[31] = [1.0 / shadow_target.size as f32, 1.0, 0.0, 0.0];
         }
         for (k, (pos, color, ambient, att, range)) in points.iter().enumerate() {
             // The range in field units too (squared); the attenuation counts in field units.
@@ -2943,13 +2946,13 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         // The sun's shadow map: every caster but the distant view, from the sun.
         {
             let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
-            let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow::SIZE, height: shadow::SIZE } };
+            let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow_target.size, height: shadow_target.size } };
             d.cmd_begin_render_pass(
                 cb,
                 &vk::RenderPassBeginInfo::default().render_pass(shadow_target.pass).framebuffer(shadow_target.framebuffer).render_area(full).clear_values(&clear),
                 vk::SubpassContents::INLINE,
             );
-            d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: shadow::SIZE as f32, height: shadow::SIZE as f32, min_depth: 0.0, max_depth: 1.0 }]);
+            d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: shadow_target.size as f32, height: shadow_target.size as f32, min_depth: 0.0, max_depth: 1.0 }]);
             d.cmd_set_scissor(cb, 0, &[full]);
             d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
             d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);

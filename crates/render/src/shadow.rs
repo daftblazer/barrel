@@ -6,9 +6,18 @@ use ash::vk;
 
 use crate::{Gpu, Result};
 
-/// The map's size in texels (one cascade).
-pub const SIZE: u32 = 2048;
-pub const FORMAT: vk::Format = vk::Format::D32_SFLOAT;
+/// The map's size and depth format: 2048² of 32-bit float depth on the desktop; on the
+/// handhelds (`Shadows::HANDHELD`) a quarter the texels at 16 bits, for their bandwidth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shadows {
+    pub size: u32,
+    pub format: vk::Format,
+}
+
+impl Shadows {
+    pub const DESKTOP: Shadows = Shadows { size: 2048, format: vk::Format::D32_SFLOAT };
+    pub const HANDHELD: Shadows = Shadows { size: 1024, format: vk::Format::D16_UNORM };
+}
 
 pub struct ShadowTarget {
     pub image: vk::Image,
@@ -17,16 +26,18 @@ pub struct ShadowTarget {
     pub sampler: vk::Sampler,
     pub pass: vk::RenderPass,
     pub framebuffer: vk::Framebuffer,
+    pub size: u32,
 }
 
 impl ShadowTarget {
-    pub fn new(gpu: &Gpu) -> Result<ShadowTarget> {
+    pub fn new(gpu: &Gpu, shadows: Shadows) -> Result<ShadowTarget> {
+        let Shadows { size, format } = shadows;
         let d = &gpu.device;
         let (image, memory) = gpu.image(
             &vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
-                .format(FORMAT)
-                .extent(vk::Extent3D { width: SIZE, height: SIZE, depth: 1 })
+                .format(format)
+                .extent(vk::Extent3D { width: size, height: size, depth: 1 })
                 .mip_levels(1)
                 .array_layers(1)
                 .samples(vk::SampleCountFlags::TYPE_1)
@@ -37,7 +48,7 @@ impl ShadowTarget {
                 &vk::ImageViewCreateInfo::default()
                     .image(image)
                     .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(FORMAT)
+                    .format(format)
                     .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::DEPTH).level_count(1).layer_count(1)),
                 None,
             )?;
@@ -54,7 +65,7 @@ impl ShadowTarget {
                 None,
             )?;
             let attachment = [vk::AttachmentDescription::default()
-                .format(FORMAT)
+                .format(format)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -77,10 +88,10 @@ impl ShadowTarget {
             let pass = d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachment).subpasses(&subpass).dependencies(&deps), None)?;
             let views = [view];
             let framebuffer = d.create_framebuffer(
-                &vk::FramebufferCreateInfo::default().render_pass(pass).attachments(&views).width(SIZE).height(SIZE).layers(1),
+                &vk::FramebufferCreateInfo::default().render_pass(pass).attachments(&views).width(size).height(size).layers(1),
                 None,
             )?;
-            Ok(ShadowTarget { image, memory, view, sampler, pass, framebuffer })
+            Ok(ShadowTarget { image, memory, view, sampler, pass, framebuffer, size })
         }
     }
 
