@@ -19,6 +19,12 @@ pub const SHOW_MESSAGES: u32 = 0x7500_0012;
 pub const TIME_WAIT: u32 = 0x7000_0001;
 /// `u1` (0x75000001): wait 0.3 seconds (the event player's constant).
 pub const SHORT_WAIT: u32 = 0x7500_0001;
+/// `u15` (0x7500000f): wait 2 seconds (`0x140051412`, the constant at `0x14071c964`).
+pub const LONG_WAIT: u32 = 0x7500_000f;
+/// `u36` (0x75000024, `{event, seen}`): marks an event seen or not (`0x14035f480`: its record's
+/// flag; when seen, its count goes up and the day is stamped; `save::EventRecord`). The
+/// openings mark the event that has just played (`EVENT_*` number, 241 for example).
+pub const MARK_EVENT: u32 = 0x7500_0024;
 /// `p3` (`ECT_MACRO_CHARA_WAIT`): wait for a character (its number).
 pub const CHARA_WAIT: u32 = 0x7000_0003;
 /// `s3` (`ECT_CHARA_TIME_WAIT`): a character waits, `{character, hundredths}`.
@@ -174,6 +180,8 @@ pub enum Step<'a> {
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
     /// counts down by each frame's elapsed time).
     Wait { seconds: f32 },
+    /// `u36`: an event marked seen (or unseen), by its `EVENT_*` number.
+    MarkEvent { event: u32, seen: bool },
     /// Wait until a character (by `Chara.xml` row) is ready (`p3`); what "ready" means is
     /// still open (`docs/events.md`, "Waits").
     WaitForCharacter { character: u32 },
@@ -337,6 +345,8 @@ impl<'a> Player<'a> {
             (TIME_WAIT, [hundredths, ..]) => out.push(Step::Wait { seconds: f(*hundredths) / 100.0 }),
             (TIME_WAIT, []) => out.push(Step::Wait { seconds: 0.0 }),
             (SHORT_WAIT, _) => out.push(Step::Wait { seconds: 0.3 }),
+            (LONG_WAIT, _) => out.push(Step::Wait { seconds: 2.0 }),
+            (MARK_EVENT, [event, rest @ ..]) => out.push(Step::MarkEvent { event: *event, seen: rest.first().is_some_and(|&v| v != 0) }),
             (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: *character }),
             (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
                 out.push(Step::CharacterWait { action, character: *character, seconds: f(*hundredths) / 100.0 })
@@ -624,6 +634,12 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn mark_event_and_long_wait_read() {
+        assert_eq!(Step::MarkEvent { event: 241, seen: true }, Step::MarkEvent { event: 241, seen: true });
+        assert_eq!((LONG_WAIT, MARK_EVENT), (0x7500_000f, 0x7500_0024));
+    }
     use barrel_formats::ebd::{Action, END};
 
     #[test]
@@ -756,6 +772,7 @@ mod tests {
                 Step::StartAction { action } => format!("start {action}"),
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
+                Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),
                 Step::CharacterWait { character, seconds, .. } => format!("{character} waits {seconds}"),
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),

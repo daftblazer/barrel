@@ -276,6 +276,16 @@ back to play, a fade in) to `u3 99` at the end: that part is reached some other 
 event's setup action (`u9`, start the setup with its preload `u2`, `u10`): taken to hold the
 event while it loads. They do nothing when run: the event handler's switch (`0x1400513b7` and on) has no case for group 0x40's `u8` to `u10` and its ready check (`0x140050d30`) passes them at once, so they only mark the script; `event::MARKERS` drops them (with `u8/0x40`, 134 uses).
 
+**Waits and marks.** `u15` (no operands) waits 2 seconds (`0x140051412`, the constant at
+`0x14071c964`), as `u1` waits 0.3. `u36 {event, seen}` marks an event (its `EVENT_*` number)
+seen or not through `0x14035f480`, the record the save keeps (`docs/formats.md`, the events):
+the flag, and when seen the count raised, the day stamped (`0x1410a42cc`) and a word copied
+from `0x141098a2c` (+0xc); the openings mark the event that has just played. `u16`, `u47`,
+`u48`, `u67` and `u68` fall to the end of the event handler's switch (`u67`/`u68` are the
+balloon choice screen's, handled elsewhere). The waits on characters (`s6`, `s21`, `s29`) and
+`u14` (`ECT_EVENT_WAIT_POST_EFFECT`) are honoured by the schedule though `play-event` still
+lists them.
+
 **Telops** (narration cards: `u55`, `u56`, class `EventTelop`, handler `0x1402196f0`). The
 voiced narration of the openings (`EVENT_MM01_OP1_111` cards 38 to 44 with voices 12907 to
 12913, `_212` cards 45 to 50) and the ending is drawn as pre-rendered text, the textures
@@ -817,7 +827,7 @@ with each count seen.
 | `7500001f` | `u31` | ECT_EVENT_VOICE_PLAY |  | 400 | 1 (400) |
 | `75000022` | `u34` |  |  | 52 | 2 (52) |
 | `75000023` | `u35` |  |  | 79 | 2 (79) |
-| `75000024` | `u36` |  |  | 76 | 2 (76) |
+| `75000024` | `u36` | (marks an event seen: `{event, seen}`, `0x14035f480`) |  | 76 | 2 (76) |
 | `75000026` | `u38` |  |  | 50 | 1 (50) |
 | `7500002e` | `u46` |  |  | 18 | 3 (18) |
 | `7500002f` | `u47` |  | Movie | 18 | 0 (18) |
