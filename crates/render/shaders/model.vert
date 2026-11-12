@@ -6,6 +6,7 @@ layout(location = 3) in uvec4 in_joints;
 layout(location = 4) in vec4 in_weights;
 // Morph targets: where this vertex's offsets begin, and (count | weight offset << 16).
 layout(location = 5) in uvec2 in_morph;
+layout(location = 6) in vec4 in_color;
 // view_proj: the camera; instance: which of the instances places this draw.
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; } pc;
 // Each instance's model matrix (render space, x already mirrored) and where its joints'
@@ -21,6 +22,9 @@ layout(location = 0) out vec3 normal;
 layout(location = 1) out vec2 uv;
 layout(location = 2) out vec3 world;
 layout(location = 3) out vec3 scene_light;
+// A field model's light at this vertex (MapSTD's v1 + v6, with no light texture or shadow
+// yet: docs/shading.md, "Fields").
+layout(location = 4) out vec3 field_light;
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 light_dir;
     vec4 light_color;
@@ -29,11 +33,19 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 eye;
     // x: the point lights' strength (atCharaPointLightStrength); y: how many point lights.
     vec4 misc;
-    // Up to four point lights (render space, field units): position and range² (w), colour
-    // (its own plus its ambient), attenuation {att0, att1, att2} per metre.
+    // Up to four point lights (render space, field units): position and range² (w), colour,
+    // attenuation {att0, att1, att2} per metre, and ambient.
     vec4 point_pos[4];
     vec4 point_color[4];
     vec4 point_att[4];
+    vec4 point_ambient[4];
+    // The field's lights for its own models: the first directional light (the sun: direction,
+    // colour), the second (the fill), and the ambient.
+    vec4 sun_dir;
+    vec4 sun_color;
+    vec4 fill_dir;
+    vec4 fill_color;
+    vec4 ambient;
 } look;
 void main() {
     Instance i = instances.inst[pc.instance];
@@ -64,9 +76,25 @@ void main() {
         float d2 = dot(d, d);
         float falloff = look.point_pos[k].w > 0.00001 ? 1.0 - clamp(d2 / look.point_pos[k].w, 0.0, 1.0) : 0.0;
         float denom = look.point_att[k].x + look.point_att[k].y * sqrt(d2) + look.point_att[k].z * d2;
-        sum += denom > 0.00001 ? look.point_color[k].rgb * falloff / denom : vec3(0.0);
+        sum += denom > 0.00001 ? (look.point_color[k].rgb + look.point_ambient[k].rgb) * falloff / denom : vec3(0.0);
     }
     scene_light = clamp(sum, 0.0, 1.0);
+    // Fields: ambient (and each point light's ambient) on the vertex colour, the fill and the
+    // point lights' diffuse, and the sun's diffuse; the material colours are taken as white.
+    vec3 wn = normalize(mat3(i.model) * n);
+    vec3 amb = look.ambient.rgb;
+    vec3 diffuse = max(dot(wn, -normalize(look.fill_dir.xyz)), 0.0) * look.fill_color.rgb;
+    for (int k = 0; k < int(look.misc.y); k++) {
+        vec3 d = (look.point_pos[k].xyz - w.xyz) * 0.01;
+        float d2 = dot(d, d);
+        if (d2 < look.point_pos[k].w) {
+            float att = 1.0 / max(look.point_att[k].x + look.point_att[k].y * sqrt(d2) + look.point_att[k].z * d2, 0.00001);
+            diffuse += att * max(dot(wn, normalize(d)), 0.0) * look.point_color[k].rgb;
+            amb += att * look.point_ambient[k].rgb;
+        }
+    }
+    vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
+    field_light = amb * in_color.rgb + in_color.rgb * diffuse + in_color.rgb * sun;
     gl_Position = pc.view_proj * w;
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;

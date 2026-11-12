@@ -17,17 +17,26 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 eye;
     // x: the point lights' strength (atCharaPointLightStrength); y: how many point lights.
     vec4 misc;
-    // Up to four point lights (render space, field units): position and range² (w), colour
-    // (its own plus its ambient), attenuation {att0, att1, att2} per metre.
+    // Up to four point lights (render space, field units): position and range² (w), colour,
+    // attenuation {att0, att1, att2} per metre, and ambient.
     vec4 point_pos[4];
     vec4 point_color[4];
     vec4 point_att[4];
+    vec4 point_ambient[4];
+    // The field's lights for its own models: the first directional light (the sun: direction,
+    // colour), the second (the fill), and the ambient.
+    vec4 sun_dir;
+    vec4 sun_color;
+    vec4 fill_dir;
+    vec4 fill_color;
+    vec4 ambient;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
 layout(location = 2) in vec3 world;
 // The point lights' sum at this vertex (the vertex program's v2).
 layout(location = 3) in vec3 scene_light;
+layout(location = 4) in vec3 field_light;
 layout(location = 0) out vec4 color;
 
 // The game's soft-light blend of a colour k over a, weighted by w (k first divided by its
@@ -46,8 +55,9 @@ void main() {
     if (c.a < pc.params.x) discard;
     vec3 n = normalize(normal);
     if ((pc.flags & 1u) == 0u) {
-        float light = 0.45 + 0.55 * max(dot(n, normalize(vec3(-0.3, 0.6, 0.7))), 0.0);
-        color = vec4(c.rgb * light, 1.0);
+        // A field model: its light (from the vertex program) on its colour; specular, the
+        // light texture and shadows are not done yet, nor fog.
+        color = vec4(field_light * c.rgb, 1.0);
         return;
     }
     // 1. The toon step on a half-Lambert term, toward the character light.

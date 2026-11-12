@@ -120,3 +120,17 @@ unshadowed fill (the second), point lights and ambient, all on the vertex colour
 pin down before the renderer can follow it: the `rot` convention of the field's `PARALLEL`
 lights, the fields' vertex colours (not read from the g1m yet), `cDiff`/`cAmb`/`cSpec` (the
 material's, presumably), and where the light texture and its projection come from.
+
+### Fields in the renderer
+
+Field models now carry their vertex colours (`g1m` colour attribute, layer 0; the workshop
+floor averages (0.35, 0.39, 0.29)) and are lit per vertex as `MapSTD`'s vertex program does:
+ambient (the field's `<light ambient>`, plus each point light's ambient times its
+attenuation) on the vertex colour, and the vertex colour times the fill's and the point
+lights' diffuse and the sun's diffuse; the pixel shader multiplies that by the texture. Taken
+for now: the material colours white and no specular, no light texture or shadow (1), the
+`PARALLEL` `rot` as pitch below level then yaw in degrees, and point light distances in
+metres. The fields' lights are authored for an HDR target: `TOWN_10`'s street lamps have
+ambients of 2.5 to 4 with `att0` 0.27, up to about 15 times near a lamp. The game writes
+`colour × HdrRangeInv` and expands and tone-maps it after; until the renderer does the same,
+such fields clip (the town at night turns yellow).

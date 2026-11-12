@@ -1485,7 +1485,18 @@ fn g1m_materials(spec: &str) -> Result<()> {
     for (i, mat) in g.materials.iter().enumerate() {
         let users: Vec<usize> = g.submeshes.iter().enumerate().filter_map(|(k, s)| (g.simple_mesh(s).ok()?.material == i).then_some(k)).collect();
         let tex: Vec<String> = mat.textures.iter().map(|t| format!("#{} kind {} sub {} layer {}", t.index, t.kind, t.subtype, t.layer)).collect();
-        println!("material {i}: {} (submeshes {users:?})", tex.join(", "));
+        // Vertex colours over the material's submeshes: how many vertices have them, and their average.
+        let (mut n, mut sum) = (0usize, [0f32; 4]);
+        for s in g.submeshes.iter().filter_map(|s| g.simple_mesh(s).ok()).filter(|m| m.material == i) {
+            for c in &s.colors {
+                n += 1;
+                for k in 0..4 {
+                    sum[k] += c[k];
+                }
+            }
+        }
+        let colours = if n == 0 { String::new() } else { format!(", vertex colours on {n} vertices, average {:.2?}", sum.map(|v| v / n as f32)) };
+        println!("material {i}: {} (submeshes {users:?}){colours}", tex.join(", "));
     }
     Ok(())
 }
