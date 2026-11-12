@@ -92,17 +92,17 @@ impl<'a> Member<'a> {
     }
 }
 
-/// A stand-in for every monster's size (+0x358) until the real ones are read.
+/// The size a monster gets when its own is not given (`foe_sizes` shorter than `foes`).
 const MONSTER_SIZE: f32 = 100.0;
 
 /// Runs the battle until a side wins or `max_events` happened: the party are fighters 0..n,
-/// the monsters n and on, in `foes`' order. Returns the events and the winning side (0 the
-/// party).
-pub fn skirmish(party: &[Member], foes: &[Foe], rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
+/// the monsters n and on, in `foes`' order, each monster as big as its entry in `foe_sizes`
+/// (`battle_data::monster_size`, its `Chara.xml` radius). Returns the events and the winning
+/// side (0 the party).
+pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
     let n = party.len();
     // The formation (`battle::party_spot`, `battle::scatter`): each member at its sector's
-    // place (its index mod 3), the monsters scattered round the centre (their sizes are not
-    // read yet: all alike, so they go in order, the first at the centre).
+    // place (its index mod 3), the monsters scattered round the centre, the biggest there.
     let mut fighters: Vec<Fighter> = party
         .iter()
         .enumerate()
@@ -116,12 +116,12 @@ pub fn skirmish(party: &[Member], foes: &[Foe], rules: ItemRules, rng: &mut Rng,
             f
         })
         .collect();
-    let sizes = vec![MONSTER_SIZE; foes.len()];
+    let sizes: Vec<f32> = (0..foes.len()).map(|k| foe_sizes.get(k).copied().unwrap_or(MONSTER_SIZE)).collect();
     let spots = crate::battle::scatter(&sizes, rng);
-    for (foe, (spot, _)) in foes.iter().zip(spots) {
+    for (k, (foe, (spot, _))) in foes.iter().zip(spots).enumerate() {
         let mut f = Fighter::new(&foe.block, 1, 999_999);
         f.position = spot;
-        f.size = MONSTER_SIZE;
+        f.size = sizes[k];
         fighters.push(f);
     }
     let mut b = Battle::new(fighters);
@@ -216,7 +216,7 @@ mod tests {
         let claw = skill("Claw", 600, 1, 1);
         let foe = Foe { block: foe_block, normal: &claw, skills: None };
         let mut rng = Rng::from_state([1, 2, 3, 4]);
-        let (events, winner) = skirmish(&[m], std::slice::from_ref(&foe), ItemRules::default(), &mut rng, 60);
+        let (events, winner) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 60);
         assert!(events.iter().any(|e| matches!(e, Event::Felled { skill, .. } if skill == "Doom")));
         assert_eq!(winner, Some(0));
     }
@@ -249,7 +249,7 @@ mod tests {
         let claw = skill("Claw", 600, 30, 30);
         let foe = Foe { block: foe_block, normal: &claw, skills: None };
         let mut rng = Rng::from_state([5, 6, 7, 8]);
-        let (events, _) = skirmish(&[m], std::slice::from_ref(&foe), ItemRules::default(), &mut rng, 60);
+        let (events, _) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 60);
         let used = events.iter().filter(|e| matches!(e, Event::Healed { skill, .. } if skill == "Salve")).count();
         assert_eq!(used, 1);
     }

@@ -826,13 +826,17 @@ Dogs against Escha, Katla and Wilbell, who won. An action now reaches everyone i
 rolled once and then applied, in slot order, to each fighter on the centre's side within it
 (the centre first), each reported; the action's wait and count once. Kind 0 is the target alone
 (no two fighters stand within 50 in the game). Each fighter's size (`Fighter::size`, +0x358)
-adds to the reach (and the line's width and length), as in the game; monsters' real sizes are
-not read yet, so the skirmish gives each a stand-in 100, the same it spaces them by. Where they
-are: a fighter's size is copied, as it is made (`0x1401add2c`, `0x1401b89e1`), from the battle
-data singleton (`0x14017cde0`, at `0x141077ed0`, 0x216c88 bytes, its constructor `0x14017abc0`
-only setting up empty arrays) at its id × 0x80 + 0x64. What fills those 128-byte records is not
-found (no static table; likely per-character battle data loaded with the models), so a short
-live run reading them is the quicker way. Items
+adds to the reach (and the line's width and length), as in the game. A fighter's size is
+copied, as it is made (`0x1401add2c`, `0x1401b89e1`), from the battle data singleton
+(`0x14017cde0`, at `0x141077ed0`) at its id × 0x80 + 0x64, the id being its `Chara.xml` row.
+A live read (2026-11-12, a loaded save in the field, before any battle) shows the records
+filled from `Chara.xml` itself (leftover XML text even sits at the start of the first): +0x64
+is the row's `Radius` for all 192 records read (Escha 27, Logy 40, Awin 44 …), and the fields
+around it are the row's other columns (`Height`, `CamH`, `CamR`, `Size`, `Color`). Monster m is
+row 18 + m (row 18 the Poison Squirrel, monster 0; the names agree apart from spellings), so
+an Ore Rat is 55. `battle_data::chara_radii`, `monster_size`; the skirmish scatters and spaces
+monsters by these sizes, the biggest at the centre (`barrel battle ... gN --from SAVE` prints
+them). Items
 reach their record's area word (the word after the target, `0x1402a25e0`;
 `battle::item_action`'s `area`): Bomb, Ice Bomb, Living Bomb, Dire Bomb and Omega Craft 1 (350),
 Craft and the Dimension Bombs 2 (450), the Lightning Bomb 0 (one foe). Over the 265 battle items

@@ -1000,6 +1000,16 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
     Ok(())
 }
 
+/// The monsters' sizes (`Chara.xml` radii) from the install the executable is in, if found.
+fn chara_radii_near(exe: &Path) -> Vec<f32> {
+    exe.parent()
+        .map(|root| root.join("Saves/chara/Chara.xml"))
+        .and_then(|p| read(&p).ok())
+        .and_then(|b| barrel_formats::table::parse(&b).ok())
+        .map(|t| barrel_formats::battle_data::chara_radii(&t))
+        .unwrap_or_default()
+}
+
 /// A save's header.
 fn save(file: &Path) -> Result<()> {
     let data = read(file)?;
@@ -1717,7 +1727,9 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let acts = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
     let rules = barrel_game::skirmish::ItemRules { acts: &acts, kinds: &kinds, effects: &item_rows };
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, std::slice::from_ref(&foe), rules, &mut rng, 1000);
+    let radii = chara_radii_near(exe);
+    let sizes: Vec<f32> = barrel_formats::battle_data::monster_size(&radii, n).into_iter().collect();
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, std::slice::from_ref(&foe), &sizes, rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),
@@ -2884,7 +2896,10 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
     let acts_info = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
     let rules = barrel_game::skirmish::ItemRules { acts: &acts_info, kinds: &kinds, effects: &item_rows };
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foes, rules, &mut rng, 1000);
+    let radii = chara_radii_near(exe);
+    let sizes: Vec<f32> = drawn.iter().map(|&k| barrel_formats::battle_data::monster_size(&radii, k).unwrap_or(100.0)).collect();
+    println!("sizes {sizes:?}");
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foes, &sizes, rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),

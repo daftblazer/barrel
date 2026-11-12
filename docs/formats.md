@@ -553,9 +553,11 @@ written by `0x1403682b0`): a count of field maps (122), then per map a u32 384 a
 384 bytes copied from a global array (the enemies' at `0x141087bd0`, the gimmicks' at
 `0x14107c4d0`, 0x180 bytes a map): 32 entries of 12 bytes. An enemy entry's reset value
 (`0x140368cf0`) is `{-1, -1, 1}` (an 8-byte -1, then 1); a gimmick's in the user's save is
-`{1, 0, 1}` everywhere. In the user's save every enemy entry is still the reset value, so what
-an entry holds once a field enemy is beaten (its record, the day, whether it is out) is not
-read yet; the field's out-or-beaten check (`0x140075e10`) looks enemies up by area in a map kept
+`{1, 0, 1}` everywhere. In the user's save every enemy entry is still the reset value, and a live run
+(2026-11-12) showed why: beating an ordinary field enemy in the Southern Ruins and leaving to
+the area map changed none of the 47,232 bytes at `0x141087bd0`, so ordinary enemies are not
+recorded there (they come back); what does write the block (unique or story enemies,
+presumably) is not read yet; the field's out-or-beaten check (`0x140075e10`) looks enemies up by area in a map kept
 at the field (+0x228, +0x40).
 
 **Knowledge** (`knowledge`, written by `0x140369970`): the library's levels, one i32 per

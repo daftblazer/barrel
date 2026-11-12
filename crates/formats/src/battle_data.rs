@@ -677,3 +677,19 @@ pub fn mix_skills(pe: &Pe, table: u64) -> Option<Vec<MixSkill>> {
         })
         .collect()
 }
+
+/// The first `Chara.xml` row of the monsters: monster m (the monster table's order) is row
+/// `MONSTER_CHARA_FIRST + m` (row 18 is the Poison Squirrel, monster 0).
+pub const MONSTER_CHARA_FIRST: usize = 18;
+
+/// Every `Chara.xml` row's `Radius`, the size a fighter of that row has in battle: the battle
+/// data's 128-byte records (`0x141077ed0`, one per row) hold it at +0x64, where a fighter's
+/// size (+0x358) is copied from (read from a running game: all 192 records read matched).
+pub fn chara_radii(chara: &crate::table::Element) -> Vec<f32> {
+    chara.children.iter().map(|r| r.attr("Radius").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0)).collect()
+}
+
+/// A monster's size: its `Chara.xml` row's radius.
+pub fn monster_size(radii: &[f32], monster: usize) -> Option<f32> {
+    radii.get(MONSTER_CHARA_FIRST + monster).copied()
+}
