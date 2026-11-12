@@ -29,8 +29,10 @@ const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
 const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
-const PUSH_SIZE: u32 = 116;
+const PUSH_SIZE: u32 = 120;
 const PUSH_INSTANCE: u32 = 112;
+/// The field look's uniform block: light dir, light colour, rim dir, rim colour, eye (vec4s).
+const LOOK_SIZE: u64 = 80;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 
@@ -81,6 +83,8 @@ struct Draw {
     overlay: Option<usize>,
     /// Which of [`Scene::instances`] places it.
     instance: u32,
+    /// The material's mask (`docs/shading.md`, "Which texture is which"), if it has one.
+    mask: Option<usize>,
     /// The field (in the order the scene loaded them) it belongs to; None for what is drawn
     /// in every field (the event's characters).
     field: Option<u16>,
@@ -355,6 +359,7 @@ impl Scene {
         for d in &mut self.draws[first..] {
             d.texture += base;
             d.overlay = d.overlay.map(|o| o + base);
+            d.mask = d.mask.map(|m| m + base);
         }
         Ok(instance)
     }
@@ -455,7 +460,12 @@ impl Scene {
             let overlay = material
                 .filter(|m| m.textures.len() >= 4 && m.textures.iter().all(|t| t.subtype != 1))
                 .map(|m| (m.textures[1].index as usize).min(textures.saturating_sub(1)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, field: self.field });
+            // The mask: the first subtype-0 texture after the colour.
+            let mask = material.and_then(|m| {
+                let at = m.textures.iter().position(|t| t.index as usize == texture)?;
+                m.textures[at + 1..].iter().find(|t| t.subtype == 0).map(|t| (t.index as usize).min(textures.saturating_sub(1)))
+            });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, field: self.field });
         }
         Ok(())
     }
@@ -1097,6 +1107,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
     for d in &mut scene.draws[first_draw..] {
         d.texture += base;
         d.overlay = d.overlay.map(|o| o + base);
+        d.mask = d.mask.map(|m| m + base);
     }
     Ok(textures)
 }
@@ -1222,6 +1233,7 @@ fn main() -> Result<()> {
     let mut scene = Scene::new();
     // The field map numbers loaded, in scene order (empty for `--field DIR`).
     let mut field_maps: Vec<u32> = Vec::new();
+    let mut field_looks: Vec<Option<barrel_formats::field_look::FieldLook>> = Vec::new();
     let mut pack_bytes = Vec::new();
     if field {
         // `--field auto` with an event: every field the event goes to.
@@ -1233,6 +1245,14 @@ fn main() -> Result<()> {
         };
         let mut base = 0;
         for (k, (map, dir)) in dirs.iter().enumerate() {
+            // Its look, from the table of the same name (Saves/field/<FIELD>.xml).
+            let table = dir
+                .ancestors()
+                .find(|p| p.join("Saves").is_dir())
+                .zip(dir.file_name())
+                .and_then(|(root, name)| std::fs::read(root.join("Saves/field").join(name).with_extension("xml")).ok())
+                .and_then(|b| barrel_formats::table::parse(&b).ok());
+            field_looks.push(table.map(|t| barrel_formats::field_look::read(&t)));
             scene.field = Some(k as u16);
             let bytes = field_scene(dir, &mut scene, base)?;
             base += G1t::parse(&bytes)?.textures.len();
@@ -1380,6 +1400,14 @@ fn main() -> Result<()> {
     for t in &all_textures {
         textures.push(upload_texture(&gpu, pool, t)?);
     }
+    // White, for masks a material does not have.
+    let white_px = [255u8; 4];
+    let white = textures.len();
+    textures.push(upload_texture(
+        &gpu,
+        pool,
+        &barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&white_px[..]] },
+    )?);
     let sampler = unsafe {
         d.create_sampler(
             &vk::SamplerCreateInfo::default()
@@ -1447,9 +1475,24 @@ fn main() -> Result<()> {
     let wbytes = unsafe { std::slice::from_raw_parts(morph_weights.as_ptr() as *const u8, morph_weights.len() * 4) };
     let (weight_buf, weight_mem) = gpu.buffer(wbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
     gpu.upload(weight_mem, wbytes)?;
-    let inst_binding = [storage(0), storage(1), storage(2), storage(3)];
+    // And the field's character lighting (binding 4, for the fragment shader).
+    let (look_buf, look_mem) = gpu.buffer(LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER, true)?;
+    let inst_binding = [
+        storage(0),
+        storage(1),
+        storage(2),
+        storage(3),
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(4)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+    ];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-    let inst_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 }];
+    let inst_sizes = [
+        vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 },
+        vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 1 },
+    ];
     let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
     let inst_layouts = [instance_layout];
     let instance_set =
@@ -1458,6 +1501,7 @@ fn main() -> Result<()> {
     let pal_info = [vk::DescriptorBufferInfo::default().buffer(palette_buf).offset(0).range(vk::WHOLE_SIZE)];
     let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
     let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buf).offset(0).range(vk::WHOLE_SIZE)];
+    let look_info = [vk::DescriptorBufferInfo::default().buffer(look_buf).offset(0).range(vk::WHOLE_SIZE)];
     unsafe {
         d.update_descriptor_sets(
             &[
@@ -1465,6 +1509,7 @@ fn main() -> Result<()> {
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&pal_info),
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(2).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&delta_info),
                 vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(3).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&weight_info),
+                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(4).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&look_info),
             ],
             &[],
         )
@@ -1575,7 +1620,8 @@ fn main() -> Result<()> {
     let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA)];
     let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att);
     let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
-    let set_layouts = [set_layout, instance_layout];
+    // Set 0 the colour, 1 the instances (and the look), 2 the mask.
+    let set_layouts = [set_layout, instance_layout, set_layout];
     let pipeline_layout = unsafe {
         d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
     };
@@ -1697,7 +1743,8 @@ fn main() -> Result<()> {
     // (arrows, + and -): `orbit` holds the turn (yaw, pitch in radians) and the zoom factor.
     let mut orbit = (0f32, 0f32, 1f32);
     // The projection follows the target's current aspect (the window can change size).
-    let view_proj = |eye: Vec3, target: Vec3, dist: f32, fov: f32, width: u32, height: u32, (yaw, pitch, zoom): (f32, f32, f32)| {
+    // The eye after the window's own turning and zooming about the target.
+    let turned_eye = |eye: Vec3, target: Vec3, (yaw, pitch, zoom): (f32, f32, f32)| {
         let offset = eye - target;
         let flat = offset.length();
         let turned = glam::Quat::from_rotation_y(yaw) * offset;
@@ -1705,7 +1752,11 @@ fn main() -> Result<()> {
         let tilted = glam::Quat::from_axis_angle(right, pitch) * turned;
         // Do not tip over the top or under the bottom.
         let offset = if tilted.normalize_or_zero().y.abs() < 0.98 { tilted } else { turned };
-        let view = Mat4::look_at_rh(target + offset.normalize_or_zero() * flat * zoom, target, Vec3::Y);
+        target + offset.normalize_or_zero() * flat * zoom
+    };
+    let view_proj = |eye: Vec3, target: Vec3, dist: f32, fov: f32, width: u32, height: u32, orbit: (f32, f32, f32)| {
+        let zoom = orbit.2;
+        let view = Mat4::look_at_rh(turned_eye(eye, target, orbit), target, Vec3::Y);
         let mut proj = Mat4::perspective_rh(fov, width as f32 / height.max(1) as f32, dist * 0.01 * zoom, dist * 20.0 * zoom);
         proj.y_axis.y *= -1.0; // Vulkan's y points down.
         proj * view
@@ -2067,6 +2118,22 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // The field's character lighting, mirrored into render space, and the eye.
+    {
+        let chara = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.chara);
+        // A field with none: a light from above and in front, no colour or rim.
+        let c = chara.unwrap_or(barrel_formats::field_look::CharaShader {
+            light_dir: [0.0, -1.0, -1.0],
+            light_color: [1.0, 1.0, 1.0, 0.0],
+            rim_light_dir: [0.0, -1.0, 1.0],
+            rim_light_color: [1.0, 1.0, 1.0, 0.0],
+            point_light_strength: 0.0,
+        });
+        let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
+        let e = turned_eye(eye, target, orbit);
+        let look: [[f32; 4]; 5] = [m(c.light_dir), c.light_color, m(c.rim_light_dir), c.rim_light_color, [e.x, e.y, e.z, 1.0]];
+        gpu.upload(look_mem, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) })?;
+    }
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
     let record = |cb: vk::CommandBuffer| unsafe {
         let clear = [
@@ -2088,7 +2155,7 @@ fn main() -> Result<()> {
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         // view_proj, params, the terrain's scales; the instance number goes in per draw.
-        let mut push = [0f32; 29];
+        let mut push = [0f32; 30];
         push[..16].copy_from_slice(&mvp.to_cols_array());
         push[16] = alpha_cutoff;
         if let Some(tg) = &terrain_gpu {
@@ -2106,8 +2173,14 @@ fn main() -> Result<()> {
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
         for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
-            d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &draw.instance.to_le_bytes());
+            // The instance, and whether it is shaded as a character (not part of a field).
+            let flags = u32::from(draw.field.is_none());
+            let mut per_draw = [0u8; 8];
+            per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
+            per_draw[4..].copy_from_slice(&flags.to_le_bytes());
+            d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
         }
         if let Some((layer, ..)) = &text_layer {
@@ -2206,6 +2279,14 @@ fn main() -> Result<()> {
             d.destroy_image(image, None);
             d.free_memory(mem, None);
         }
+        d.destroy_buffer(look_buf, None);
+        d.free_memory(look_mem, None);
+        for (b, m) in [(instance_buf, instance_mem), (palette_buf, palette_mem), (delta_buf, delta_mem), (weight_buf, weight_mem)] {
+            d.destroy_buffer(b, None);
+            d.free_memory(m, None);
+        }
+        d.destroy_descriptor_pool(inst_pool, None);
+        d.destroy_descriptor_set_layout(instance_layout, None);
         d.destroy_buffer(vbuf, None);
         d.free_memory(vmem, None);
         d.destroy_buffer(ibuf, None);

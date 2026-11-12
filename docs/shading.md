@@ -54,3 +54,14 @@ with a cut-out alpha), #2 (1024×512, subtype 1: laid out for other UVs, presuma
 set) and #1 (1024², subtype 0: grey, the shape of the colour texture's islands: the mask that
 `CharaMTC`'s pixel program samples as `t1`). Taken for now: the colour is the material's
 first texture, the mask its first subtype-0 texture after it (none: full shading).
+
+## In the renderer
+
+`model.frag` shades characters (draws that belong to no field) with steps 1 to 4 and 7: the
+toon step toward the field's character light, the light colour's soft-light blend, the mask
+(set 2; white when the material has none), the rim light and its screen blend. The field's
+`<chara_shader>` values go to the fragment shader in a uniform block (set 1, binding 4) each
+frame, the directions mirrored into render space, with the camera's eye for the view
+direction; a field without them gets a light from above and in front and no colour or rim.
+Not done yet: step 5 (the scene's lights) and 6 (fog), `atColor` (taken as white) and the HDR
+range (1); fields' own shaders (`MapSTD*`).

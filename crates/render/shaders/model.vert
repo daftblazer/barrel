@@ -7,7 +7,7 @@ layout(location = 4) in vec4 in_weights;
 // Morph targets: where this vertex's offsets begin, and (count | weight offset << 16).
 layout(location = 5) in uvec2 in_morph;
 // view_proj: the camera; instance: which of the instances places this draw.
-layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; } pc;
+layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; } pc;
 // Each instance's model matrix (render space, x already mirrored) and where its joints'
 // matrices begin in the palette. Instance 0 is the identity, for geometry baked in place.
 struct Instance { mat4 model; uvec4 info; };
@@ -19,6 +19,7 @@ layout(std430, set = 1, binding = 2) readonly buffer Deltas { vec4 delta[]; } de
 layout(std430, set = 1, binding = 3) readonly buffer Weights { float weight[]; } weights;
 layout(location = 0) out vec3 normal;
 layout(location = 1) out vec2 uv;
+layout(location = 2) out vec3 world;
 void main() {
     Instance i = instances.inst[pc.instance];
     vec4 pos = vec4(in_pos, 1.0);
@@ -38,7 +39,9 @@ void main() {
         pos = skin * pos;
         n = mat3(skin) * n;
     }
-    gl_Position = pc.view_proj * i.model * pos;
+    vec4 w = i.model * pos;
+    world = w.xyz;
+    gl_Position = pc.view_proj * w;
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;
     uv = in_uv;
