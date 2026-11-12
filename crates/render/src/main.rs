@@ -579,6 +579,8 @@ struct Targets {
     /// The scene's own size: the output's times the render scale (`--scale`); the post pass
     /// scales it to the output, which keeps the text sharp.
     scene_size: (u32, u32),
+    /// The multisampled colour (`--msaa`), resolved into `scene` by the scene pass.
+    multisample: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
 }
 
 impl Targets {
@@ -595,10 +597,11 @@ impl Targets {
         sampler: vk::Sampler,
         glow_pipelines: &glow::Pipelines,
         upscale_pipelines: Option<&upscale::Pipelines>,
+        samples: vk::SampleCountFlags,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let (scene_width, scene_height) = scene_size;
-        let image = |format, usage| {
+        let image_with = |format, usage, samples| {
             gpu.image(
                 &vk::ImageCreateInfo::default()
                     .image_type(vk::ImageType::TYPE_2D)
@@ -606,10 +609,11 @@ impl Targets {
                     .extent(vk::Extent3D { width: scene_width, height: scene_height, depth: 1 })
                     .mip_levels(1)
                     .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .samples(samples)
                     .usage(usage),
             )
         };
+        let image = |format, usage| image_with(format, usage, vk::SampleCountFlags::TYPE_1);
         let view = |image, format, aspect| unsafe {
             d.create_image_view(
                 &vk::ImageViewCreateInfo::default()
@@ -626,12 +630,22 @@ impl Targets {
         let frozen_view = view(frozen, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         // Depth is cleared and never stored (the scene pass): transient.
-        let (depth, depth_memory) = image(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT)?;
+        let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
+        // With samples, the multisampled colour the pass resolves into the scene: transient too.
+        let multisample = if samples != vk::SampleCountFlags::TYPE_1 {
+            let (image, memory) = image_with(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
+            Some((image, memory, view(image, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?))
+        } else {
+            None
+        };
         let depth_view = view(depth, DEPTH_FORMAT, vk::ImageAspectFlags::DEPTH)?;
         let framebuffer = |pass, views: &[vk::ImageView], (w, h): (u32, u32)| unsafe {
             d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(w).height(h).layers(1), None)
         };
-        let scene_framebuffer = framebuffer(scene_pass, &[scene_view, depth_view], scene_size)?;
+        let scene_framebuffer = match multisample {
+            Some((_, _, msaa_view)) => framebuffer(scene_pass, &[msaa_view, depth_view, scene_view], scene_size)?,
+            None => framebuffer(scene_pass, &[scene_view, depth_view], scene_size)?,
+        };
         let framebuffers = output.iter().map(|&v| framebuffer(post_pass, &[v], (width, height))).collect::<std::result::Result<Vec<_>, _>>()?;
         if framebuffers.is_empty() {
             return Err("no target to draw into".into());
@@ -657,6 +671,7 @@ impl Targets {
             )
         };
         Ok(Targets {
+            multisample,
             scene_size,
             scene,
             scene_memory,
@@ -695,6 +710,11 @@ impl Targets {
             d.destroy_image_view(self.scene_view, None);
             d.destroy_image(self.scene, None);
             d.free_memory(self.scene_memory, None);
+            if let Some((image, memory, view)) = self.multisample.take() {
+                d.destroy_image_view(view, None);
+                d.destroy_image(image, None);
+                d.free_memory(memory, None);
+            }
             d.destroy_image_view(self.depth_view, None);
             d.destroy_image(self.depth, None);
             d.free_memory(self.depth_memory, None);
@@ -1417,6 +1437,9 @@ fn main() -> Result<()> {
     // `--fsr`: FSR 1 scales the scene to the output (when `--scale` is below 1) in place of the
     // plain bilinear scale.
     let mut fsr = false;
+    // `--msaa N`: the scene drawn with N samples a pixel (1, 2, 4 or 8; as many as the device
+    // allows), resolved in its pass.
+    let mut msaa_wanted = 1u32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1443,6 +1466,7 @@ fn main() -> Result<()> {
             "--no-alpha" => alpha_cutoff = -1.0,
             "--handheld" => shadows = shadow::Shadows::HANDHELD,
             "--fsr" => fsr = true,
+            "--msaa" => msaa_wanted = it.next().ok_or("--msaa N")?.parse()?,
             "--scale" => render_scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
@@ -1851,8 +1875,21 @@ fn main() -> Result<()> {
     };
     let color_view = offscreen.map(|(color, _)| view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)).transpose()?;
 
-    // The scene pass: its colour ends ready to be sampled by the post pass.
-    let attachments = [
+    // The scene's samples: the most the device allows for colour and depth, up to `--msaa`.
+    let samples = {
+        let limits = unsafe { gpu.instance.get_physical_device_properties(gpu.physical) }.limits;
+        let allowed = limits.framebuffer_color_sample_counts & limits.framebuffer_depth_sample_counts;
+        [8u32, 4, 2, 1]
+            .into_iter()
+            .map(|n| (n, vk::SampleCountFlags::from_raw(n)))
+            .find(|&(n, f)| n <= msaa_wanted.max(1) && allowed.contains(f))
+            .map_or(vk::SampleCountFlags::TYPE_1, |(_, f)| f)
+    };
+    let multisampled = samples != vk::SampleCountFlags::TYPE_1;
+    // The scene pass: its colour ends ready to be sampled by the post pass. Multisampled, it
+    // draws into a transient multisampled colour and depth and resolves into the scene image
+    // at the end of the pass (in tile memory on the handhelds).
+    let single_attachments = [
         vk::AttachmentDescription::default()
             .format(SCENE_FORMAT)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -1868,12 +1905,35 @@ fn main() -> Result<()> {
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
     ];
+    let multi_attachments = [
+        vk::AttachmentDescription::default()
+            .format(SCENE_FORMAT)
+            .samples(samples)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
+        single_attachments[1].samples(samples),
+        vk::AttachmentDescription::default()
+            .format(SCENE_FORMAT)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
+    ];
+    let attachments: &[vk::AttachmentDescription] = if multisampled { &multi_attachments } else { &single_attachments };
     let color_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
+    let resolve_ref = [vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
     let depth_ref = vk::AttachmentReference { attachment: 1, layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-    let subpass = [vk::SubpassDescription::default()
+    let mut subpass_desc = vk::SubpassDescription::default()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
         .color_attachments(&color_ref)
-        .depth_stencil_attachment(&depth_ref)];
+        .depth_stencil_attachment(&depth_ref);
+    if multisampled {
+        subpass_desc = subpass_desc.resolve_attachments(&resolve_ref);
+    }
+    let subpass = [subpass_desc];
     // The post pass reads what the scene pass wrote.
     let scene_done = [vk::SubpassDependency::default()
         .src_subpass(0)
@@ -1883,7 +1943,7 @@ fn main() -> Result<()> {
         .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
         .dst_access_mask(vk::AccessFlags::SHADER_READ)];
     let render_pass = unsafe {
-        d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachments).subpasses(&subpass).dependencies(&scene_done), None)?
+        d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(attachments).subpasses(&subpass).dependencies(&scene_done), None)?
     };
     // The post pass: into the window's image or the offscreen one, no depth.
     let post_attachment = [vk::AttachmentDescription::default()
@@ -1930,7 +1990,7 @@ fn main() -> Result<()> {
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
     let upscale_pipelines = if fsr { Some(upscale::Pipelines::new(&gpu)?) } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref())?;
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -1969,6 +2029,7 @@ fn main() -> Result<()> {
         .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
         .line_width(1.0);
     let msaa = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
+    let scene_msaa = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(samples);
     let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(true)
         .depth_write_enable(true)
@@ -1987,7 +2048,7 @@ fn main() -> Result<()> {
         .input_assembly_state(&assembly)
         .viewport_state(&vstate)
         .rasterization_state(&raster)
-        .multisample_state(&msaa)
+        .multisample_state(&scene_msaa)
         .depth_stencil_state(&depth_state)
         .color_blend_state(&blend)
         .dynamic_state(&dynamic_state)
@@ -2032,6 +2093,7 @@ fn main() -> Result<()> {
         .stages(&shadow_stages)
         .rasterization_state(&shadow_raster)
         .color_blend_state(&shadow_blend)
+        .multisample_state(&msaa)
         .render_pass(shadow_target.pass);
     let shadow_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[shadow_info], None).map_err(|(_, e)| e)?[0] };
 
@@ -2800,7 +2862,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref())?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }

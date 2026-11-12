@@ -100,6 +100,15 @@ scale (closer to the full-size frame by eye) though a little further by PSNR (29
 anti-aliased input, and the scene's hard edges come out crisper rather than smoother, so
 anti-aliasing is the next piece. At scale 1 `--fsr` changes nothing.
 
+**MSAA.** `barrel-view --msaa N` (1, 2, 4 or 8, capped at what the device allows for both
+colour and depth) draws the scene with N samples a pixel into a transient multisampled colour
+and depth, resolved into the scene image at the end of the scene pass (so on the handhelds the
+samples stay in tile memory and only the resolved image is written out); the scene pipelines
+take N samples, the shadow and post pipelines one. At 1 the frame is exactly as before; at 4 in
+the first opening (1280×720) about 1,300 pixels change, all along edges, which come out
+smooth. It suits FSR, which expects an anti-aliased input: from half size with 4× MSAA, FSR
+comes to 32.1 dB against the full-size 4× frame, where without it it came to 29.4.
+
 ## Deliberate differences
 
 - **Fixed tick.** The original updates by each frame's measured time
