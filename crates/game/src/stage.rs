@@ -288,14 +288,19 @@ pub struct Line {
 
 impl Stage {
     fn resolve(&self, p: &Position) -> Option<[f32; 3]> {
+        self.resolve_anchored(p).map(|(at, _)| at)
+    }
+
+    /// The point and the facing of what it is anchored to (0 for the world).
+    fn resolve_anchored(&self, p: &Position) -> Option<([f32; 3], f32)> {
         match p.anchor {
-            Anchor::World => Some(p.resolve(None)),
+            Anchor::World => Some((p.resolve(None), 0.0)),
             // Kind 3 names a character by its row, or by a variable slot the event player has
             // already turned into its row (`event::SLOT_SET`); kinds 2 and 4 are not looked up.
             Anchor::Thing { kind, id, point } if kind != 2 && kind != 4 => {
                 let b = self.characters.get(&id)?;
                 let base = self.measures.get(&id).map_or(b.position, |m| m.point(point, b.position, b.facing));
-                Some(p.resolve(Some((base, b.facing))))
+                Some((p.resolve(Some((base, b.facing))), b.facing))
             }
             _ => None,
         }
@@ -391,7 +396,7 @@ impl Stage {
                 b.facing = if dx == 0.0 && dz == 0.0 { 0.0 } else { dx.atan2(dz) };
             }
             Step::CharacterMove { character, extra, movement, .. } => {
-                let Some(to) = self.resolve(movement.to()) else {
+                let Some((to, yaw)) = self.resolve_anchored(movement.to()) else {
                     self.unresolved += 1;
                     return;
                 };
@@ -399,7 +404,7 @@ impl Stage {
                     self.unresolved += 1;
                     return;
                 };
-                b.mover = Mover::new(b.position, to, movement, *extra);
+                b.mover = Mover::anchored(b.position, to, yaw, movement, *extra);
             }
             Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),

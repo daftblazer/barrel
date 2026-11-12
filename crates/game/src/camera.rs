@@ -82,8 +82,13 @@ pub enum Move {
     /// out the velocity): `height` (50 to 300) is how high it rises; `first` (800 to 2,500
     /// in the events) is not named yet.
     Jump { to: Position, first: f32, height: f32 },
-    /// Types 1 and 2 (type 1: eight more operands, 129 of the 2,006 `t4`s and 63 `s18`s),
-    /// not read yet.
+    /// Type 1 (`MdCircle`, built by `0x1402f2e90`, updated by `0x1402f3090`): around the
+    /// position, in a plane turned by `turn` (degrees about x, y, z; the anchor's facing is
+    /// added to y), the angle going from `from` to `to` (degrees) at a turning speed going
+    /// evenly from `speed0` to `speed1` (degrees a second), the radius from `r0` to `r1` and
+    /// the height by `rise` (field units) in step with it.
+    Circle { to: Position, turn: [f32; 3], r0: f32, r1: f32, rise: f32, from: f32, until: f32, speed0: f32, speed1: f32 },
+    /// Type 2 (two operands, a handful of uses), not read yet.
     Other { to: Position, kind: u32 },
 }
 
@@ -91,7 +96,7 @@ impl Move {
     /// Where it goes.
     pub fn to_mut(&mut self) -> &mut Position {
         match self {
-            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Other { to, .. } => to,
+            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Circle { to, .. } | Move::Other { to, .. } => to,
         }
     }
 
@@ -118,13 +123,24 @@ impl Move {
             (0, [speed, x, y, z, ..]) => Move::Speed { to, speed: f(*speed), accel: [f(*x), f(*y), f(*z)] },
             (0, [speed]) => Move::Speed { to, speed: f(*speed), accel: [0.0; 3] },
             (3, [first, height, ..]) => Move::Jump { to, first: f(*first), height: f(*height) },
+            (1, [ax, ay, az, r0, r1, rise, from, until, speed0, speed1, ..]) => Move::Circle {
+                to,
+                turn: [f(*ax) / 100.0, f(*ay) / 100.0, f(*az) / 100.0],
+                r0: f(*r0),
+                r1: f(*r1),
+                rise: f(*rise),
+                from: f(*from),
+                until: f(*until),
+                speed0: f(*speed0) / 100.0,
+                speed1: f(*speed1) / 100.0,
+            },
             _ => Move::Other { to, kind },
         })
     }
 
     pub fn to(&self) -> &Position {
         match self {
-            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Other { to, .. } => to,
+            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Circle { to, .. } | Move::Other { to, .. } => to,
         }
     }
 }
@@ -160,13 +176,77 @@ pub struct Mover {
 enum MoverKind {
     Straight { seconds: f32, ease: i32 },
     Speed { velocity: [f32; 3], accel: [f32; 3] },
+    Circle(Circle),
+}
+
+/// A circle under way (`MdCircle`; angles in radians).
+#[derive(Clone, Debug, PartialEq)]
+struct Circle {
+    centre: [f32; 3],
+    turn: [f32; 3],
+    r0: f32,
+    r1: f32,
+    rise: f32,
+    from: f32,
+    until: f32,
+    angle: f32,
+    speed: f32,
+    accel: f32,
+}
+
+impl Circle {
+    /// The point at the current angle: (radius, height, 0) turned about y by the angle, then
+    /// about x, z and y by the plane's turns (the game's matrices, row vectors: y·x·z, then
+    /// the y turn), from the centre.
+    fn point(&self) -> [f32; 3] {
+        let span = self.until - self.from;
+        let f = if span == 0.0 { 1.0 } else { (self.angle - self.from) / span };
+        let r = self.r0 + (self.r1 - self.r0) * f;
+        let h = self.rise * f;
+        let yaw = |[x, y, z]: [f32; 3], a: f32| {
+            let (s, c) = a.sin_cos();
+            [x * c + z * s, y, z * c - x * s]
+        };
+        let pitch = |[x, y, z]: [f32; 3], a: f32| {
+            let (s, c) = a.sin_cos();
+            [x, y * c - z * s, y * s + z * c]
+        };
+        let roll = |[x, y, z]: [f32; 3], a: f32| {
+            let (s, c) = a.sin_cos();
+            [x * c - y * s, x * s + y * c, z]
+        };
+        let v = yaw(roll(pitch(yaw([r, h, 0.0], self.angle), self.turn[0]), self.turn[2]), self.turn[1]);
+        [self.centre[0] + v[0], self.centre[1] + v[1], self.centre[2] + v[2]]
+    }
 }
 
 impl Mover {
     /// A mover from `from` to `to` (the move's position, already resolved). `None` for the
-    /// types not read yet (jumps and types 1 and 2).
+    /// types not read yet (jumps and type 2).
     pub fn new(from: [f32; 3], to: [f32; 3], movement: &Move, face: u32) -> Option<Mover> {
+        Self::anchored(from, to, 0.0, movement, face)
+    }
+
+    /// The same, with the facing of the thing the position is anchored to (radians), which
+    /// turns a circle's plane.
+    pub fn anchored(from: [f32; 3], to: [f32; 3], anchor_yaw: f32, movement: &Move, face: u32) -> Option<Mover> {
         let (kind, left) = match *movement {
+            Move::Circle { turn, r0, r1, rise, from: a0, until: a1, speed0, speed1, .. } => {
+                // 0x1402f2e90: the time is the angle to go over the mean speed, the speed
+                // changing evenly over it; a time not above 0 leaves the speed as it is.
+                let (a0, a1, s0, s1) = (a0.to_radians(), a1.to_radians(), speed0.to_radians(), speed1.to_radians());
+                let mean = (s0 + s1) * 0.5;
+                let t = if mean == 0.0 { 0.0 } else { (a1 - a0) / mean };
+                let accel = if t > 0.0 { (s1 - s0) / t } else { 0.0 };
+                let turn = [turn[0].to_radians(), turn[1].to_radians() + anchor_yaw, turn[2].to_radians()];
+                let c = Circle { centre: to, turn, r0, r1, rise, from: a0, until: a1, angle: a0, speed: s0, accel };
+                let (start, end) = (c.point(), Circle { angle: a1, ..c.clone() }.point());
+                if t <= 0.0 {
+                    // The game's circle then never runs: the mover stays where it is.
+                    return Some(Mover::arrived(from, from, face));
+                }
+                return Some(Mover { from: start, to: end, kind: MoverKind::Circle(c), left: t, position: start, face, facing: None });
+            }
             Move::Straight { seconds, ease, .. } => (MoverKind::Straight { seconds, ease }, seconds),
             Move::Speed { speed, accel, .. } => {
                 // 0x1402f3720: the velocity is the direction times the speed, the time the
@@ -241,6 +321,16 @@ impl Mover {
                     velocity[i] -= accel[i] * dt;
                 }
             }
+            MoverKind::Circle(c) => {
+                // 0x1402f3090: the speed changes, then the angle moves on, stopping at the end.
+                c.speed += c.accel * dt;
+                c.angle += c.speed * dt;
+                if (c.until - c.from) * (c.angle - c.until) >= 0.0 {
+                    c.angle = c.until;
+                    self.left = 0.0;
+                }
+                self.position = c.point();
+            }
         }
         if self.left <= 0.0 {
             self.position = self.to;
@@ -303,6 +393,25 @@ pub fn changes(word: u32, operands: &[u32]) -> Vec<(Part, Change)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn circle_move() {
+        // A circle the events use (s18 around the hero): a half turn from 90° to 270° at
+        // radius 800, falling 2000, at 150 to 300 degrees a second (so 180 / 225 = 0.8 s).
+        let to = Position { anchor: Anchor::World, offset: [0.0; 3] };
+        let m = Move::read_type(to, &[1, 0, 0, 0, 800, 800, (-2000i32) as u32, 90, 270, 15000, 30000]).unwrap();
+        let mut c = Mover::new([5.0; 3], [100.0, 0.0, 0.0], &m, 0).unwrap();
+        // The start: (800, 0, 0) turned 90° about y is (0, 0, -800), from the centre.
+        let p = c.position();
+        assert!((p[0] - 100.0).abs() < 1e-3 && p[1].abs() < 1e-3 && (p[2] + 800.0).abs() < 1e-3, "{p:?}");
+        assert!((c.seconds_left() - 0.8).abs() < 1e-4);
+        for _ in 0..60 {
+            c.step(1.0 / 60.0);
+        }
+        assert!(c.done());
+        let p = c.position();
+        assert!((p[0] - 100.0).abs() < 1e-3 && (p[1] + 2000.0).abs() < 1e-3 && (p[2] - 800.0).abs() < 1e-3, "{p:?}");
+    }
     use super::*;
 
     #[test]

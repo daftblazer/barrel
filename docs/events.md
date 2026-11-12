@@ -552,13 +552,18 @@ position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand,
 
 Type 1 (`MdCircle`, vtable `0x140931560`, built by `0x1402f2e90`, updated by `0x1402f3090`)
 circles the position: `{ax, ay, az, r0, r1, rise, from, to, speed0, speed1}`. The circle's
-plane is turned by `ax`, `ay`, `az` (hundredths of a degree; the mover's own facing is added to
-`ay`); the angle runs from `from` to `to` (degrees; `to` defaults to 360) at a turning speed
+plane is turned by `ax`, `ay`, `az` (hundredths of a degree; the facing of what the position is
+anchored to is added to `ay`); the angle runs from `from` to `to` (degrees; `to` defaults to 360) at a turning speed
 that goes evenly from `speed0` to `speed1` (hundredths of a degree a second; 5 when missing),
 so the move takes (to − from) / ((speed0 + speed1) / 2). The radius goes from `r0` to `r1`
-and the height by `rise` (field units) in step with the angle's progress. `s18`'s commonest
-is a quarter or half turn at 300 to 800 units: `{0, 0, 0, 800, 300, −2000, 90, −90, 15000,
-30000}`.
+and the height by `rise` (field units) in step with the angle's progress. The time is not above 0 when the
+speeds' sign is against the way to go, and the game's circle then never runs. Around the hero
+(`s18`, kind 5 / 10000 at its feet): `{0, 0, 0, 800, 800, −2000, 90, 270, 15000, 30000}`, a half
+turn at 800 units, falling 2000, in 0.8 s; the camera's eye circles slowly (3 degrees a second
+and slowing) around a dummy marker. The point is (radius, height, 0) turned about y by the
+angle, then about x, z and y by the plane's turns, from the position (row vectors through the
+game's matrices `0x1400c2930`, `0x1402f4a70`, `0x140028ce0`); each frame the speed changes
+first, then the angle moves on, stopping at `to`. `camera::Mover` plays it.
 
 Type 0 heads for the position at `speed` field units a second (150, a walk, is the
 commonest in `s18`; 120 to 140 for the slower walkers): its velocity is the unit direction
@@ -654,7 +659,7 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: playing move type 1 (decoded above), move type 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
+Not yet: move type 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
