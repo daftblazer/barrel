@@ -22,6 +22,7 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 | Table | Rows | What a row is |
 |---|---|---|
 | `item/itemData.xml` | 560 | an item: name, image, cost, use type, stacking, kind, level, effect value, element and element values, up to four categories |
+| `item/item_give_eff.xml` | 53 | the synthesis bonuses' help texts: `No.`, `ItemGiveName`, the bonus kind (`skillType`, `MIX_SKILL_BASE_TYPE_*`: 19 `GET_PP_ADD` and 19 `PASSIVE_EFFECT_ADD` by item category, 11 `USE_ITEM_ADD`, one each of `INIT_COST_ADD`, `USE_SKILL_DEC`, `INIT_PP_ADD`, `MIX_DAY_DEC`), `ITEM_CATEGORY` for 49 and `text`; loaded by `0x1400ea5a0` (an item manager loader) as 0x48-byte rows (`barrel_formats::item_give`); which screen reads them is not read |
 | `item/itemNameSortData.xml` | 560 | each item's place when a list is sorted by name (`ItemTag`, `SortOrder`): loaded by `0x1400ea8c0` into `0x140dfccf0` by item number, read by `0x1400e8190` (560 past the table); the comparators `0x1401207c0` (recipes, through their item, `0x1400e31d0`), `0x1402a9c70` and `0x1402b10e0` (held items) put the lowest first. Japanese and English each have their own order, both a permutation of 0 to 559, so the result never depends on the sort (`inventory::name_orders`, `name_order`) |
 | `item/item_status.xml` | 560 | the potentials (`POT_00`…) and effects (`ESP_00`…) an item starts with; row *n* is item *n* of `itemData`, many rows empty |
 | `item/item_effect.xml` | 698 | item effects: up to two battle effect slots each ("Item effects in battle") |

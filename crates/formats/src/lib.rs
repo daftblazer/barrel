@@ -23,6 +23,7 @@ pub mod field_look;
 pub mod g1a;
 pub mod gather;
 pub mod gimmick;
+pub mod item_give;
 pub mod g1h;
 pub mod g1m;
 pub mod g1t;
