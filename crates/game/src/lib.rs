@@ -9,6 +9,7 @@ pub mod curve;
 pub mod days;
 pub mod delivery;
 pub mod duel;
+pub mod explore;
 pub mod field_camera;
 pub mod fight;
 pub mod event;

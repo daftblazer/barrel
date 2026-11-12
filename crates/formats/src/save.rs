@@ -568,6 +568,12 @@ pub struct Summary {
     /// `explore_equip/explore_item_escha` and `explore_item_logy`: the items each alchemist
     /// takes into battle (25 slots each).
     pub battle_items: [Vec<ItemUnit>; 2],
+    /// `explore_equip/explore_item_escha` and `_logy` as saved, empty slots kept (25 each):
+    /// the item list index is the item's first square on the equipment grid.
+    pub battle_item_slots: [Vec<Option<ItemUnit>>; 2],
+    /// `explore_equip/explore_slot_escha` and `_logy`: the 25 grid squares, each the index of
+    /// the item covering it, -1 free, 25 locked (past the capacity).
+    pub battle_grid: [Vec<i32>; 2],
     /// `party`'s `Party` records.
     pub party: Vec<Member>,
     /// `party/m_squad`: the characters in the squad, in order (-1 slots left out).
@@ -655,6 +661,16 @@ pub fn summary(records: &[Record]) -> Summary {
         basket: list("m_unitKago"),
         container: list("m_unitContainer"),
         materials: list("m_unitMaterial"),
+        battle_item_slots: ["explore_item_escha", "explore_item_logy"].map(|n| {
+            bytes(top("explore_equip").and_then(|r| r.child(n)))
+                .map(|d| d.chunks_exact(ITEM_UNIT).map(|c| item_units(c).into_iter().next()).collect())
+                .unwrap_or_default()
+        }),
+        battle_grid: ["explore_slot_escha", "explore_slot_logy"].map(|n| {
+            bytes(top("explore_equip").and_then(|r| r.child(n)))
+                .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+                .unwrap_or_default()
+        }),
         battle_items: ["explore_item_escha", "explore_item_logy"].map(|n| bytes(top("explore_equip").and_then(|r| r.child(n))).map(|d| item_units(&d)).unwrap_or_default()),
         party: match top("party").map(|r| &r.body) {
             Some(Body::Group(c)) => c.iter().filter(|r| r.name == "Party").filter_map(|r| match &r.body {

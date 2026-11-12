@@ -610,6 +610,17 @@ the +0x114 block of `Party`). One save has only `value[4]` = 5. These are the ga
 bonuses, granted by the rows of `bonus/Bonus.xml` through `0x14002f310` (docs/tables.md,
 "Bonuses", has which action adds to which value). `save::Summary::bonus_values`.
 
+**Battle items** (`explore_equip`, written by `0x140365640`): per alchemist,
+`explore_item_<name>` (25 item units, 900 bytes; Escha's at `0x1410ae6b0`, Logy's 0x384
+after), `explore_slot_<name>` (25 i32) and `explore_take_over_<name>` (25 item units, all
+empty in the save read; what carries over is not read yet). The items sit on a row of 25
+squares: an item's index in the list is the first square it covers, and it covers as many
+squares as its `EquipCost` in `itemData.xml`. `explore_slot` is that grid as saved: each
+square holds the index of the item over it, -1 when free, 25 when locked (past the
+capacity, 10 in the save read). Escha's there: a Bomb (cost 3) at 0, another at 5, a Healing
+Salve (1) at 8, so `0 0 0 -1 -1 5 5 5 8 -1` and 25 after. `explore::grid` rebuilds it, and
+`BARREL_ITEMS=itemData.xml barrel save` checks both alchemists' grids against the costs.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0

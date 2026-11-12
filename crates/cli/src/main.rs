@@ -914,6 +914,26 @@ fn save(file: &Path) -> Result<()> {
         }
         n.iter().map(|(l, c)| format!("{l}:{c}")).collect::<Vec<_>>().join(" ")
     };
+    // The battle item grids, checked against the items' equip costs (BARREL_ITEMS).
+    let costs: Vec<u32> = std::env::var("BARREL_ITEMS")
+        .ok()
+        .and_then(|p| read(Path::new(&p)).ok())
+        .and_then(|d| barrel_formats::table::parse(&d).ok())
+        .map(|t| t.children.iter().map(|r| r.attr("EquipCost").and_then(|v| v.trim().parse().ok()).unwrap_or(1)).collect())
+        .unwrap_or_default();
+    for (who, (slots, grid)) in ["Escha", "Logy"].iter().zip(s.battle_item_slots.iter().zip(&s.battle_grid)) {
+        let open = grid.iter().take_while(|&&g| g != barrel_game::explore::LOCKED).count();
+        let placed: Vec<(usize, u32)> = slots.iter().enumerate().filter_map(|(k, u)| Some((k, *costs.get(usize::try_from(u.as_ref()?.item).ok()?)?))).collect();
+        let check = if costs.is_empty() {
+            String::new()
+        } else {
+            match barrel_game::explore::grid(&placed, open) {
+                Some(g) if g[..] == grid[..] => ", rebuilt from the items' costs".into(),
+                _ => ", NOT what the items' costs give".into(),
+            }
+        };
+        println!("{who}'s battle grid ({open} open): {grid:?}{check}");
+    }
     let bonuses: Vec<String> = s.bonus_values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
     println!("bonus values {}", bonuses.join(" "));
     // BARREL_EXE=path/to/the executable: the recipes' revealed effects, by the recipe table.
