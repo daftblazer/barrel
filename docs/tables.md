@@ -1142,6 +1142,11 @@ the `GET_PP_ADD` bonuses of the made item's four categories (`synthesis::start_p
 before, each learnt skill's record +0x14 (0 in every record) is raised by the
 `USE_SKILL_DEC` bonus as a percentage (`0x14030251c`), which changes nothing as shipped.
 
+In the running game a Craft from two Spiky Buds (each carrying trait 22, `point` 2) and a
+Mixed Lubricant, made with 1 property point, went straight from "Synthesize" to the finished
+item with no trait screen: no trait could be paid for, which fits `point` being what a trait
+costs to carry over (the code that takes the points off is not found yet).
+
 **The synthesis state** (0x4e0 bytes, one per step):
 
 | Offset | What |
