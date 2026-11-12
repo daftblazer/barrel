@@ -425,13 +425,14 @@ reads it is not followed yet). `c` and `d` are not read there.
 | Operand | Values | What |
 |---|---|---|
 | 1 | character | `Chara.xml` row |
-| 2, 4, 14 | always 0 | |
-| 3 | 0, or 709 in 90 | not read by the character's runner (`0x1401efd72`), which reads operands 8 to 13 |
-| 5, 6, 7 | x, y, z | position in field units |
+| 2 | always 0 | operands 2 to 7 are an event position `{kind, id, point, x, y, z}` (below), read by `0x1402f13f0` in the character's command player `0x14026b230`; kind 0 is a point in the field |
+| 4, 14 | always 0 | (4 is the position's `point`) |
+| 3 | 0, or 709 in 90 | the position's `id`, unused with kind 0, so 709 changes nothing |
+| 5, 6, 7 | x, y, z | the position's offset, in field units |
 | 8, 10 | always 0 | the x and z turns, in degrees, beside operand 9's |
 | 9 | angle in degrees | facing (the y turn; operands 8 to 10 become the character's +0x240 in radians) |
 | 11 | a motion number (played when below 96, through the motion starter `0x1401f4c50`): 31 (`F_WAIT`) in 2,353, 32 `WALK`, 34 `SIT_DOWN`, 33 `RUN`, 67 `EV_ACT_12` | the motion it starts in (the `MOTION_*` enum) |
-| 12 | always 0 | the motion's blend in hundredths of a second |
+| 12 | always 0 | the motion's blend in hundredths of a second, and the field character's +0x148 (the listener `0x140071160`) |
 | 13 | 1 in 2,166, 2 in 230 | sets the character's +0x5c flag when not 0 (always, in Escha) |
 
 **`s116` and `s117`.** The character's own command runner (`EventExecChara`, vtable
