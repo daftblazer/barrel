@@ -1170,3 +1170,30 @@ mod drop_tests {
         assert_eq!(super::monster_drops(&m, 100, 0, &mut rng).len(), 2);
     }
 }
+
+/// A battle's music track (`0x1401a0000`, kept at the battle's +0x1448, played through
+/// `0x1401602f0`; the numbers are the music table's, `bgm::tracks`): the encounter group's word 2
+/// (the setup's +0x3c, kept at `0x141077dd4`) 1, 3, 4 or 5 plays the boss theme, track 9
+/// (`bt_boss_hanyou01`); 0 plays the vocal song, track 25 (`song_shade01`), once
+/// `EVENT_FLAG_SOUND_QUEST_FLAG` (149) is set, else the lead's battle theme, 14 for Logy
+/// (`bt_boy01`), 15 for Escha (`bt_girl01`). Any other value leaves the music as it is (`None`).
+pub fn music(group_kind: i32, sound_quest: bool, logy_leads: bool) -> Option<u32> {
+    match group_kind {
+        1 | 3 | 4 | 5 => Some(9),
+        0 if sound_quest => Some(25),
+        0 => Some(if logy_leads { 14 } else { 15 }),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod music_tests {
+    #[test]
+    fn battle_music() {
+        assert_eq!(super::music(4, false, false), Some(9));
+        assert_eq!(super::music(0, false, false), Some(15));
+        assert_eq!(super::music(0, false, true), Some(14));
+        assert_eq!(super::music(0, true, true), Some(25));
+        assert_eq!(super::music(2, false, false), None);
+    }
+}

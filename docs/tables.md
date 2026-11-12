@@ -835,7 +835,7 @@ As 14 words:
 |---|---|
 | 0 | the group's id (its index) |
 | 1 | always 1 |
-| 2 | 0, 3 or 4 (3 and 4 only on single bosses), kept by the battle setup at +0x3c (not read yet) |
+| 2 | 0, 3 or 4 (3 and 4 only on single bosses), kept by the battle setup at +0x3c and then at `0x141077dd4` (`0x14019f4d0`): it picks the battle music (`0x1401a0000`: 1, 3, 4 or 5 the boss theme, track 9; 0 the lead's theme, 14 for Logy, 15 for Escha, or track 25, a vocal song, once `EVENT_FLAG_SOUND_QUEST_FLAG` is set; `battle::music`), and 4 also changes two battle menus (`0x1401c015b`, `0x1401c470e`, beside the flag at `0x141077ddc`; not followed) |
 | 3, 4 | how many monsters, at least and at most (1..2 for most, up to 4..5) |
 | 5, 6 / 7, 8 / 9, 10 | three (monster, most of it) slots, -1 and 0 when empty |
 | 11 to 13 | other monsters, -1 for none, listed apart in the setup at +0x48 (beside bosses: e.g. the Slayer Titan with Panzer, Howling Beast and Heavy Skin, reinforcements by the look of it; how they join is not read yet) |
