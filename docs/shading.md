@@ -44,3 +44,13 @@ colour (0.9, 0.9, 0) at 0.25); `<light ambient>` with `PARALLEL` (`rot` in degre
 and `POINT` (`pos` in metres, `color`, `ambient`, `att0..2`, `range`) params is the scene's
 lights; `<fog start end ...>` (metres; with Mie and Rayleigh scattering terms) and `<hdr
 threshold glow_add_rate>` the fog and glow.
+
+## Which texture is which
+
+Neither the model nor the tables name a material's shader (no shader names in the g1m, none
+in `CharaBase.xml`); the executable picks it, not read yet. Escha's body material (`PC20_MODEL`
+material 0, `barrel g1m-materials FILE#N`) lists textures #0 (2048², subtype 1: the colour,
+with a cut-out alpha), #2 (1024×512, subtype 1: laid out for other UVs, presumably the second
+set) and #1 (1024², subtype 0: grey, the shape of the colour texture's islands: the mask that
+`CharaMTC`'s pixel program samples as `t1`). Taken for now: the colour is the material's
+first texture, the mask its first subtype-0 texture after it (none: full shading).

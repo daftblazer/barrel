@@ -23,6 +23,7 @@ usage:
   barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
   barrel g1t-scan DIR          read every texture, loose and in containers
   barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
+  barrel g1m-materials FILE#N  a model's materials: each texture's index, kind and subtype, and which submeshes use it
   barrel g1h FILE#N            list a morph file's sets and targets
   barrel g1h-scan DIR          read every morph file in the containers under DIR
   barrel g1m-scan DIR          read every model in the containers under DIR
@@ -87,6 +88,7 @@ fn main() -> ExitCode {
         ["g1t", file, out] => g1t(file, Path::new(out)),
         ["g1t-scan", dir] => g1t_scan(Path::new(dir)),
         ["g1m-obj", file, out] => g1m_obj(file, Path::new(out)),
+        ["g1m-materials", file] => g1m_materials(file),
         ["g1h", file] => g1h(file),
         ["g1h-scan", dir] => g1h_scan(Path::new(dir)),
         ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
@@ -1474,6 +1476,18 @@ fn g1t_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some textures did not read".into()) }
+}
+
+fn g1m_materials(spec: &str) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let m = barrel_formats::g1m::G1m::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    let g = m.geometry.as_ref().ok_or("model has no geometry")?;
+    for (i, mat) in g.materials.iter().enumerate() {
+        let users: Vec<usize> = g.submeshes.iter().enumerate().filter_map(|(k, s)| (g.simple_mesh(s).ok()?.material == i).then_some(k)).collect();
+        let tex: Vec<String> = mat.textures.iter().map(|t| format!("#{} kind {} sub {} layer {}", t.index, t.kind, t.subtype, t.layer)).collect();
+        println!("material {i}: {} (submeshes {users:?})", tex.join(", "));
+    }
+    Ok(())
 }
 
 fn g1m_obj(spec: &str, out: &Path) -> Result<()> {
