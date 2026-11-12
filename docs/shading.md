@@ -193,10 +193,17 @@ receivers' lookup (`MapSTD` pixel program 36, the terrain's alike) divides `v2.x
 `mW2S`) by `v2.w`, so the map's projection may be perspective; clamps the depth to 0..1; and
 takes four bilinear 2 × 2 depth comparisons (`sample < depth` is shadowed) at the coordinates
 plus the four offsets in `scSM2` (xy, zw and their mixes), with `scSM` = (texel size x, y,
-map size x, y) placing the bilinear weights: 16 taps, averaged. The constants are set by id
-from the name table at `0x140952cc0` (16-byte `{name, u32 id}`: `mW2S` `0x4070b`, `mP2S`
-`0x40703`, `mW2P` `0x71f`, `scSM`/`scSM2` `0x402`), so the code that builds `mW2S` has to be
-found through that id.
+map size x, y) placing the bilinear weights: 16 taps, averaged. The shader parameters' names are
+in one table from `0x140952ca0`, 16-byte `{name, u32 type}` rows, split into groups by
+`{u32, count, u64 rows}` records at `0x140953130` on (group 0: `mL2W`, `mW2P`, `mW2S`,
+`mP2S`, `mL2WPrev`; `fog`, `litDir`, `vEye`, `Scat`, `scSM` ... in later ones). The type packs
+`{array count, kind, flags}` bytes from the top: `mW2S` (`0x4070b`) and `mP2S` (`0x40703`) are
+**arrays of four matrices**, so the game's shadows are cascaded (up to four cascades; the
+engine's `CCascadedLSPShadowMapperImpl` is the likely mapper), `fog` (`0x433`) and `Scat`
+(`0x40433`, four rows) vectors. The renderer object built at `0x140404500` on keeps each
+group's values in blocks (`0x1403f9d20` lays them out: +0x3d0 group 0, +0x670, +0x9f0,
++0xec0, +0x1010 ...), so the code computing `mW2S` and `Scat` is what writes into those blocks
+(not found yet).
 
 ## Eyes (`CharaEYEL.g1s`/`CharaEYER.g1s`, pixel program 12)
 
