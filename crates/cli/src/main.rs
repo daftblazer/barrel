@@ -897,6 +897,22 @@ fn save(file: &Path) -> Result<()> {
         }
         n.iter().map(|(l, c)| format!("{l}:{c}")).collect::<Vec<_>>().join(" ")
     };
+    // BARREL_EXE=path/to/the executable: the recipes' revealed effects, by the recipe table.
+    let recipes = std::env::var("BARREL_EXE").ok().and_then(|p| read(Path::new(&p)).ok()).and_then(|d| {
+        let at = barrel_formats::recipe::find(&d, ESCHA_FIRST_RECIPE)?;
+        barrel_formats::recipe::parse(&d, at).ok()
+    });
+    for (r, flags) in s.recipe_effects.iter().enumerate().filter(|(_, f)| f.iter().any(|&b| b)) {
+        let shown: Vec<usize> = (0..10).filter(|&j| flags[j]).collect();
+        match recipes.as_ref().and_then(|l| l.get(r)) {
+            Some(rec) => {
+                let list = rec.effect_list();
+                let names: Vec<String> = list.iter().enumerate().map(|(j, e)| if flags[j] { e.to_string() } else { "???".into() }).collect();
+                println!("recipe {r} (item {}): effects {}", rec.item, names.join(" "));
+            }
+            None => println!("recipe {r}: effects revealed {shown:?}"),
+        }
+    }
     for (name, v) in [("item", &k.item), ("recipe", &k.recipe), ("book", &k.book), ("fieldMap", &k.field_map), ("monster", &k.monster), ("mixEsp", &k.mix_esp), ("potential", &k.potential), ("eff", &k.eff)] {
         println!("knowledge {name} ({}): {}", v.len(), levels(v));
     }

@@ -598,6 +598,11 @@ pub struct Summary {
     pub shops: Vec<Vec<[i32; 3]>>,
     /// `knowledge`: how well the library knows each entry.
     pub knowledge: Knowledge,
+    /// `mix_recipe`: per recipe (265, the recipe table's order), ten flags, one per effect
+    /// in [`crate::recipe::Recipe::effect_list`]'s order: whether that effect is revealed. Kept
+    /// at `0x1410993a0`, 10 bytes a recipe; saved as a count, then a length (10) and the bytes
+    /// for each.
+    pub recipe_effects: Vec<[bool; 10]>,
 }
 
 /// The `knowledge` record: the library's level (0 to 10) for every entry of its eight lists,
@@ -682,6 +687,7 @@ pub fn summary(records: &[Record]) -> Summary {
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
             .unwrap_or_default(),
+        recipe_effects: bytes(top("mix_recipe")).map(|d| recipe_flags(&d)).unwrap_or_default(),
         knowledge: {
             let k = top("knowledge");
             let levels = |n: &str| bytes(k.and_then(|r| r.child(n))).map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect()).unwrap_or_default();
@@ -697,6 +703,21 @@ pub fn summary(records: &[Record]) -> Summary {
             }
         },
     }
+}
+
+/// `mix_recipe`'s body: a u32 count, then per recipe a u32 length (10) and that many flag
+/// bytes.
+fn recipe_flags(d: &[u8]) -> Vec<[bool; 10]> {
+    let Some(n) = d.get(..4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize) else { return Vec::new() };
+    let mut out = Vec::with_capacity(n.min(1024));
+    let mut o = 4;
+    while out.len() < n {
+        let Some(len) = d.get(o..o + 4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize) else { break };
+        let Some(b) = d.get(o + 4..o + 4 + len) else { break };
+        out.push(std::array::from_fn(|k| b.get(k).is_some_and(|&v| v != 0)));
+        o += 4 + len;
+    }
+    out
 }
 
 /// The top records of a decoded state ([`decode`]'s output): its header skipped, records read
@@ -791,6 +812,19 @@ mod tests {
         assert_eq!(r[0].name, "system_data");
         assert_eq!(r[0].child("ipu").unwrap().body, Body::Data(&[7, 8]));
         assert_eq!(r[0].child("FLAG").unwrap().body, Body::Raw(&[0, 0, 9]));
+    }
+
+    #[test]
+    fn recipe_flags_read() {
+        let mut d = 2u32.to_le_bytes().to_vec();
+        for flags in [[0u8; 10], [1, 0, 1, 0, 0, 0, 0, 0, 0, 0]] {
+            d.extend(10u32.to_le_bytes());
+            d.extend(flags);
+        }
+        let f = recipe_flags(&d);
+        assert_eq!(f.len(), 2);
+        assert!(!f[0].iter().any(|&b| b));
+        assert_eq!(&f[1][..3], &[true, false, true]);
     }
 
     #[test]

@@ -61,6 +61,16 @@ pub struct Recipe {
     pub lines: [Line; 4],
 }
 
+impl Recipe {
+    /// The recipe's effects in the game's order (`0x1400e32d0`): line by line, step by step,
+    /// the steps with an effect. The save's `mix_recipe` flags (`save::Summary::recipe_effects`)
+    /// follow this order: flag j says whether the j-th effect is revealed (its name shown, else
+    /// "???").
+    pub fn effect_list(&self) -> Vec<u16> {
+        self.lines.iter().flatten().filter_map(|s| s.effect).collect()
+    }
+}
+
 fn i32_at(data: &[u8], at: usize) -> Result<i32, Error> {
     u32_at(data, at).map(|v| v as i32)
 }

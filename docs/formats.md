@@ -585,6 +585,18 @@ the item levels: a synthesis request needs its item at 6 or more, a battle reque
 entry at 2 or more (which list is not read yet). The engine's rule is `library::learn_item`; `barrel save` counts the
 levels.
 
+**Revealed recipe effects** (`mix_recipe`, written by `0x140367e50`, kept at
+`0x1410993a0`): a u32 count (265, the recipe table's order), then per recipe a u32 length
+(10) and ten flag bytes. Flag j belongs to the recipe's j-th effect, counted over its four
+effect lines step by step, skipping steps with no effect (`0x1400e32d0`;
+`recipe::Recipe::effect_list`). The recipe screen's name for it (`0x140367ba0`) is the
+effect's name when the flag is set, "????" when not, and "None" past the last effect;
+`0x140367d70` says whether all of a recipe's effects are revealed. One save at alchemy level
+12 has flags on only four recipes (Craft's sixth effect; item 196's first and third, and
+so on), so they track effects actually reached, not recipes known. Which code sets a flag is
+not found yet (no direct stores into the block). `BARREL_EXE=... barrel save FILE` prints
+them.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0
