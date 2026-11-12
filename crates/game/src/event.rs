@@ -85,6 +85,10 @@ pub const CAMERA_QUAKE_STOP: u32 = 0x7400_0010;
 /// `u3 {n}`: label `n` in its action (`0x14020fcd6` on: an action's labels are found by
 /// scanning its words when it starts; also `u73` when the global at `0x141077ef0` is set).
 pub const LABEL: u32 = 0x7500_0003;
+/// `u8/0x40`, `u9/0x40`, `u10/0x40` (134, 3,628 and 3,628 uses, no operands): the event
+/// handler (`0x1400513b7` and on) does nothing for them and its ready check (`0x140050d30`)
+/// passes them at once, so they only mark the script (`u9`/`u10` bracket each setup action).
+pub const MARKERS: [u32; 3] = [0x7540_0008, 0x7540_0009, 0x7540_000a];
 /// `u5 {n}`: the action goes on from label `n` (`0x140210be0` → `0x14020fd80`, which sets the
 /// running action's next command, +0x8, to the label's).
 pub const GOTO: u32 = 0x7500_0005;
@@ -433,6 +437,7 @@ impl<'a> Player<'a> {
             (word, operands) if !crate::camera::changes(word, operands).is_empty() => {
                 out.extend(crate::camera::changes(word, operands).into_iter().map(|(part, change)| Step::Camera { action, part, change }))
             }
+            (word, _) if MARKERS.contains(&word) => {}
             (word, operands) => out.push(Step::Command { action, word, name: self.name(word), operands }),
         }
         None

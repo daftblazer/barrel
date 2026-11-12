@@ -274,7 +274,7 @@ from label `a + b`. `EVENT_MM01_OP1_111` ends with a fade to black, everyone rem
 back to play, a fade in) to `u3 99` at the end: that part is reached some other way
 (skipping the event, presumably). `u9`/`u10/0x40` (3,628 uses each, no operands) bracket each
 event's setup action (`u9`, start the setup with its preload `u2`, `u10`): taken to hold the
-event while it loads, which the viewer does not need (not read).
+event while it loads. They do nothing when run: the event handler's switch (`0x1400513b7` and on) has no case for group 0x40's `u8` to `u10` and its ready check (`0x140050d30`) passes them at once, so they only mark the script; `event::MARKERS` drops them (with `u8/0x40`, 134 uses).
 
 **Telops** (narration cards: `u55`, `u56`, class `EventTelop`, handler `0x1402196f0`). The
 voiced narration of the openings (`EVENT_MM01_OP1_111` cards 38 to 44 with voices 12907 to
