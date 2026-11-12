@@ -1367,7 +1367,7 @@ The area map in the running game listed Southern Ruins Sector One's gatherables 
 Grass, Mountain Feather, Eagle Feather", and list 71 is Moss Grass (weight 50), Garden Stone
 (30, the one not yet seen), Mountain Feather (15) and Eagle Feather (5). Some lists give made
 items with traits (list 1: a Craft with trait 0; list 2: a Bomb with trait 3), chests by the look
-of them. `barrel gather INSTALL [LIST]` prints them (`barrel_formats::gather`).
+of them. `barrel gather INSTALL [LIST]` prints them (`barrel_formats::gather`); `barrel gather-sim INSTALL POINT [SAVE]` runs one gather at a point (the tier from `BARREL_TABLE_LEVEL`, `BARREL_PICKS` picks, the save's item knowledge for the boosts).
 
 **The gathering points** come just before, at `0x1408825a0`: 356 records of 88 bytes
 (`gather::points`; `0x14023b8f0` copies both tables into one object). A point holds up to seven

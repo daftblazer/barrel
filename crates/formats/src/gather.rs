@@ -23,6 +23,8 @@ pub struct Gather {
     pub weight: i32,
     /// The traits it comes with (`item_potential.xml` rows), up to four.
     pub traits: Vec<i32>,
+    /// Word 13: -1 in all but two; random traits are drawn only when it is -1 (`0x14023d8c0`).
+    pub word13: i32,
 }
 
 /// The records, from the table's start while they look like records (list number not
@@ -44,6 +46,7 @@ pub fn gathering(pe: &Pe, table: u64) -> Option<Vec<Gather>> {
             unread: [w(5), w(6), w(7)],
             weight: w(8),
             traits: (9..13).map(w).filter(|&t| t >= 0).collect(),
+            word13: w(13),
         });
         at += RECORD;
     }
@@ -67,6 +70,9 @@ pub struct Point {
     pub flags: (i32, i32),
     /// The field map it stands in (12 is `AREA_01_01`; -1 for some).
     pub map: i32,
+    /// Its byte +0x30 (word 12): set, its list goes by the alchemy table level, else by the
+    /// gathering one (`0x1400d3160`).
+    pub alchemy: bool,
     /// Where it stands (metres).
     pub position: [f32; 3],
     /// The two float triples after it (0.01 three times, then 2.0 three times, in most).
@@ -86,6 +92,7 @@ pub fn points(pe: &Pe, table: u64) -> Option<Vec<Point>> {
                     lists: (0..7).map(w).filter(|&l| l >= 0).map(|l| l as u32).collect(),
                     flags: (w(7), w(8)),
                     map: w(9),
+                    alchemy: r[0x30] != 0,
                     position: [f(13), f(14), f(15)],
                     scale: [f(16), f(17), f(18)],
                     size: [f(19), f(20), f(21)],

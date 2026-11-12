@@ -120,7 +120,7 @@ mod tests {
     use barrel_formats::gather::Gather;
 
     fn g(item: i32, weight: i32) -> Gather {
-        Gather { list: 71, item, quality: (0, 0), unread: [0; 3], weight, traits: Vec::new() }
+        Gather { list: 71, item, quality: (0, 0), unread: [0; 3], weight, traits: Vec::new(), word13: -1 }
     }
 
     #[test]
