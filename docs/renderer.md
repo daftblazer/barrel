@@ -271,6 +271,13 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
+**Accessories.** A character's container holds its body (`<stem>_default.g1m`), its skeleton
+(`<stem>.g1m`) and part models (`<stem>_P_M_*.g1m`). The parts named in
+`CharaPartsChange.xml` (weapons, options: `P_M_Wep_*`, `P_M_Opt_*`) are switched on by group
+and left off here; the accessories (`P_M_Acc_*`, Escha's hat `PC20_MODEL_P_M_Acc_Hat1`) are
+not listed there and are always worn, so they are drawn with the body, on its skeleton and
+instance (missing before: the oracle close-up of `EVENT_MM01_OP1_111` showed the hat).
+
 **Finding objects.** `BARREL_HIDE=a,b` leaves out the draws whose object name holds any of
 the strings (field objects by placement name, the distant view as `sky:<model>`): hiding
 `sky:obj-a15a01_Sphere_ground` showed that the dark band behind `TOWN_10`'s street was the

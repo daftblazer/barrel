@@ -1112,6 +1112,22 @@ fn event_characters(
             actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take(), head: None, division: None, last_division_column: String::new() });
         }
         scene.morph.clear();
+        // The accessories always worn (<stem>_P_M_Acc_*: Escha's hat), on the body's skeleton
+        // and instance; the weapons and options (CharaPartsChange groups) are left off.
+        let accessory = format!("{stem}_P_M_Acc_");
+        let first = scene.draws.len();
+        for e in container.entries.iter().filter(|e| e.name.starts_with(&accessory) && e.name.ends_with(".g1m")) {
+            let Some(bytes) = named(&container, &e.name) else { continue };
+            let part = G1m::parse(bytes)?;
+            if let Some(pg) = part.geometry.as_ref() {
+                scene.add_posed(pg, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
+            }
+        }
+        for d in &mut scene.draws[first..] {
+            d.texture += tex_base;
+            d.overlay = d.overlay.map(|o| o + tex_base);
+            d.mask = d.mask.map(|m| m + tex_base);
+        }
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
         placed += 1.0;
