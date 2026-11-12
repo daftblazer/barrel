@@ -3068,6 +3068,15 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         fn money(&self) -> i32 {
             self.0.money.unwrap_or(0)
         }
+        fn field_area(&self) -> Option<i32> {
+            None
+        }
+        fn level(&self, c: i32) -> Option<i32> {
+            (0..=10).contains(&c).then(|| self.0.party.iter().find(|m| m.character == c)).flatten().map(|m| m.level)
+        }
+        fn squad(&self) -> &[i32] {
+            &self.0.squad_slots
+        }
         fn alchemy_level(&self) -> i32 {
             self.0.alchemy.map_or(0, |a| a.0)
         }

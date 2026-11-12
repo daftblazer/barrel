@@ -97,6 +97,13 @@ pub trait World {
     /// The field map the player is in (`0x1400546c0` non-null, then `0x140236160`), None outside
     /// a field.
     fn field_map(&self) -> Option<i32>;
+    /// The field area the player is in (`0x140236180`: `[0x140df9968]+0x9a4`, or +0x99c when that
+    /// is -1), None outside a field.
+    fn field_area(&self) -> Option<i32>;
+    /// A character's level (its record's +4), None when it has no record (`0x140361ad0`).
+    fn level(&self, chara: i32) -> Option<i32>;
+    /// The 11-slot companion list at `0x141093530` (-1 empty; the save's `party/m_squad`).
+    fn squad(&self) -> &[i32];
     /// `PLAYER_PARAM` n: 0 the money (`0x14036a990`), 1 the alchemy level (`0x14107c4c8`).
     fn money(&self) -> i32;
     fn alchemy_level(&self) -> i32;
@@ -182,6 +189,14 @@ pub fn command(c: &Command, fired: &Fired, w: &impl World) -> Option<bool> {
             let item = (op(0) != ANY).then_some(op(0));
             let n = w.item_count(item, op(1) as f32, op(2) as f32)?;
             [n >= op(3), n <= op(3), n == op(3)][c.code - 0x07]
+        }
+        0x02 => w.field_area() == Some(op(0)),
+        0x16..=0x18 => w.level(op(0)).is_some_and(|l| cmp(l, c.code - 0x16)),
+        // 0x140361fd0: the character's slot number (0x140330120, -1 past 10) in the list, so a
+        // number past 10 finds an empty slot.
+        0x0d | 0x0e => {
+            let k = if (0..=10).contains(&op(0)) { op(0) } else { -1 };
+            w.squad().contains(&k) == (c.code == 0x0d)
         }
         0x3c => date_order(w.today(), date(0)) == 0,
         0x3d => date_order(w.today(), date(0)) >= 0 && date_order(w.today(), date(3)) <= 0,
@@ -326,6 +341,15 @@ mod tests {
         fn money(&self) -> i32 {
             500
         }
+        fn field_area(&self) -> Option<i32> {
+            Some(12)
+        }
+        fn level(&self, c: i32) -> Option<i32> {
+            (c == 1).then_some(20)
+        }
+        fn squad(&self) -> &[i32] {
+            &[0, 1, -1]
+        }
         fn alchemy_level(&self) -> i32 {
             8
         }
@@ -383,6 +407,10 @@ mod tests {
         assert!(field.iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
         let after = commands(&[0x7000003c, -1, 1, 14, 0x7000003e, -1, 1, 20]).unwrap();
         assert!(after.iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
+        let more = commands(&[0x70000002, 12, 0x70000016, 1, 20, 0x7000000d, 1, 0x7000000e, 5, 0x7000000d, 40]).unwrap();
+        assert!(more.iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
+        let not = commands(&[0x70000016, 2, 1, 0x7000000d, 5]).unwrap();
+        assert!(not.iter().all(|c| command(c, &f(0, &[]), &W) == Some(false)));
         let over = commands(&[0x70000091, 1, 4, 10, 0x70000094, 15, 90]).unwrap();
         assert!(over.iter().all(|c| command(c, &f(17, &[]), &W) == Some(true)));
         let exec = commands(&[0x700000a0]).unwrap();

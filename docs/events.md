@@ -1285,6 +1285,9 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 | `PLAYER_PARAM_MT/LT/EQ n v` | parameter `n` ≥ / ≤ / = `v`: 0 the money (`0x14036a990`), 1 the alchemy level (`0x14107c4c8`), any other `INT_MIN` |
 | `CHARA_FRIEND_POINT_MT/LT/EQ c v` | the character has a record (`0x140361ad0`) and its friendship (`0x14032dba0`, a float) ≥ / ≤ / = `v` |
 | `ITEM_QUALITY_HAVE_MT/LT/EQ i lo hi n` | the counts (+0x22) summed over the basket's and the container's slots of item `i` (`0x60000002`: any) found by the lists' finder (`[+0x28]`, quality `lo` to `hi`) ≥ / ≤ / = `n` |
+| `MAP_FIELDAREA_BE a` | in a field whose area (`0x140236180`: `[0x140df9968]+0x9a4`, or +0x99c when -1) is `a` |
+| `CHARA_ADVENTURE_LV_MT/LT/EQ c v` | the character has a record and its level (+4) ≥ / ≤ / = `v` |
+| `CHARA_PARTY_IN/NOT_IN c` | `c`'s slot number (`0x140330120`: itself up to 10, else -1) is / is not in the 11-slot list at `0x141093530` (`party/m_squad`). A number past 10 therefore finds an empty slot |
 | `DATE_IS/BEFORE/AFTER y m d`, `DATE_BETWEEN y m d y m d` | today =, ≤, ≥ the date, or within both (inclusive) |
 | `DATE_SLEEP/MIX/WORLDMOVE_IS_OVER y m d` | the day the sleep, mix or trip ends on (context +0x38) is on or after the date (`0x1402f08a0`, -1 fields ignored) |
 | `DATE_EVENT_SLEEP/MIX/WORLD_IS_OVER e n` | `e` seen and the day it was seen + `n` ≤ that day |
@@ -1299,8 +1302,8 @@ wherever the pattern has -1. Both sides then count -1 as 1 and encode as `0x1402
 so a -1 field is ignored and (-1, -1, -1) always matches. The gate's words 8–10 and 11–13
 are such dates (today from the one to the other); 1,139 events leave all six at -1.
 
-Not read yet, by uses in the data: `MAP_FIELDAREA_BE` (27), `CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
-`CHARA_PARTY_IN` (6), and a few single uses.
+Not read yet, by uses in the data: `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
+and a few single uses (the world-map pointer triggers, `KNOWLEDGE_ITEM_MT`, `INVENTORY_*` ...).
 
 The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired values at
 `ctx+8`:
