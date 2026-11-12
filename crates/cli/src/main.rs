@@ -45,7 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
-  barrel costumes ROOT          the outfits: each body's model and the accessories that can go on it
+  barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
@@ -150,7 +150,8 @@ fn main() -> ExitCode {
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
-        ["costumes", root] => costumes(Path::new(root)),
+        ["costumes", root] => costumes(Path::new(root), None),
+        ["costumes", root, sysdata] => costumes(Path::new(root), Some(Path::new(sysdata))),
         ["field-sim", root, area, frames] => field_sim(Path::new(root), area, frames.parse().unwrap_or(600)),
         ["nut-run", root, file, ticks] => nut_run(Path::new(root), file, ticks.parse().unwrap_or(1)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
@@ -3025,7 +3026,7 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
 }
 
 /// The costume tables (`Saves/costume`): each outfit's model and the accessories adjusted to it.
-fn costumes(root: &Path) -> Result<()> {
+fn costumes(root: &Path, sysdata: Option<&Path>) -> Result<()> {
     use barrel_formats::costume as c;
     let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&read(&root.join("Saves/costume").join(n))?)?) };
     let names = |n: &str| -> Option<barrel_formats::table::Element> { barrel_formats::table::parse(&read(&root.join("Saves_EN/costume").join(n)).ok()?).ok() };
@@ -3040,6 +3041,24 @@ fn costumes(root: &Path) -> Result<()> {
         println!("{k:2} {:<22} {:<10} model {:<7} head at {} face at {}", name, b.chara.trim_start_matches("COSTUME_CHARA_"), b.base, b.head_attach, b.face_attach);
     }
     println!("{} heads ({} with a model), {} faces, {} adjustments, {} hiding rules", heads.len(), heads.iter().filter(|h| !h.file.is_empty()).count(), faces.len(), adjusts.len(), hides.len());
+    if let Some(path) = sysdata {
+        let state = barrel_formats::save::decode(&read(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        let records = barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?;
+        fn find<'a>(rs: &'a [barrel_formats::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
+            use barrel_formats::save::Body;
+            rs.iter().find_map(|r| match &r.body {
+                Body::Raw(d) | Body::Data(d) if r.name == name => Some(*d),
+                Body::Group(g) => find(g, name),
+                _ => None,
+            })
+        }
+        let head_en = names("CostumeHead.xml").map(|t| c::accessories(&t)).unwrap_or_default();
+        for (k, [b, h, f]) in find(&records, "costumeData").map(c::choices).unwrap_or_default().into_iter().enumerate() {
+            let body = en.get(b as usize).or(bodies.get(b as usize)).map_or("?", |x| x.name.as_str());
+            let head = head_en.get(h as usize).or(heads.get(h as usize)).map_or("?", |x| x.name.as_str());
+            println!("character {k}: body {b} {body}, head {h} {head}, face {f}");
+        }
+    }
     Ok(())
 }
 

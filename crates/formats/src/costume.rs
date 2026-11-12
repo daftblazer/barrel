@@ -125,9 +125,31 @@ pub fn charas(t: &Element) -> Vec<Chara> {
         .collect()
 }
 
+/// The settings save's `costumeData` (`SYSDATA`): an i32 count, then that many characters'
+/// choices, each three values (body, head and face rows of `CostumeBody`, `CostumeHead` and
+/// `CostumeFace`), every value written as a length (4) and the i32.
+pub fn choices(raw: &[u8]) -> Vec<[i32; 3]> {
+    let i32_at = |o: usize| raw.get(o..o + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
+    let count = i32_at(0).unwrap_or(0).clamp(0, 64) as usize;
+    (0..count).map_while(|k| {
+        let v = |j: usize| i32_at(4 + (3 * k + j) * 8 + 4);
+        Some([v(0)?, v(1)?, v(2)?])
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_choices() {
+        let mut raw = 2i32.to_le_bytes().to_vec();
+        for v in [8, 0, 0, 16, 30, 0] {
+            raw.extend(4i32.to_le_bytes());
+            raw.extend((v as i32).to_le_bytes());
+        }
+        assert_eq!(choices(&raw), vec![[8, 0, 0], [16, 30, 0]]);
+    }
 
     #[test]
     fn reads_rows() {

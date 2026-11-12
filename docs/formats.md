@@ -1105,8 +1105,12 @@ for a body, part and accessory, the scale, rotation (degrees) and offset it is p
 `PartsInvisible.xml` (90): the body's own parts hidden while an accessory is worn (Escha's
 default body hides `P_M_Acc_Hat1`, her hat, under any head accessory). `AccessoryChange.xml`
 (28): accessories swapped for another (`src` → `dst`) on a body. `CostumeChara.xml`: each
-character's default body, head and face. A save keeps the choices in `costumeData`.
-`barrel_formats::costume`, `barrel costumes ROOT`. Not yet used by the renderer.
+character's default body, head and face. The settings save (`SYSDATA`) keeps the choices:
+`costumeData`, an i32 count (5: Escha, Logy, Wilbell, Linca, Awin by the bodies worn) then each
+character's body, head and face rows, every value written as a length (4) and the i32
+(`costume::choices`; the oracle save: Escha in the Colseit Uni with the Fluffy Hat, the others
+in theirs); `cosBodyFlag` (34 bytes) and `cosHeadFlag` (38) mark the bodies and heads unlocked,
+one byte each. `barrel_formats::costume`, `barrel costumes ROOT [SYSDATA]`. Not yet used by the renderer.
 
 ## The message window's names
 
