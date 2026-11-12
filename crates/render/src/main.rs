@@ -975,7 +975,11 @@ fn event_characters(
         // The same schedule playback uses: the event's lines, each held for a reading time.
         let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
-        let lines = std::fs::read(&ebm).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).unwrap_or_default();
+        // The English lines when there are (as playback reads them: the reading times follow the
+        // text, so other lines would put the stage out of step with what is shown).
+        let english = event_path.strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
+        let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
+        let lines = english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default();
         let steps = barrel_game::event::Player::escha(&event, &lines, &ops)?.reading_time(barrel_game::event::reading_time).schedule();
         let upto: Vec<_> = steps.into_iter().filter(|t| t.time <= at).collect();
         let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
@@ -1186,8 +1190,16 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
     let objects = Elixir::parse(&obj_bytes)?;
     let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
     let texture_count = G1t::parse(&textures)?.textures.len();
-    if let Some(bytes) = named(&main, &format!("{area}.ktf")) {
-        let t = barrel_formats::ktf::parse(bytes)?;
+    // A flat placeholder terrain (every height 0, one layer: TOWN_03, TOWN_07) is not drawn: the
+    // town's ground is its models, and events stand characters below it (TOWN_07's at y -255).
+    let terrain = named(&main, &format!("{area}.ktf")).map(|b| barrel_formats::ktf::parse(b).map(|t| (b, t))).transpose()?.filter(|(_, t)| {
+        let flat = t.heightmap.heights.iter().all(|&v| v == 0.0) && t.layers.textures.len() <= 1;
+        if flat {
+            eprintln!("{area}: flat placeholder terrain, not drawn");
+        }
+        !flat
+    });
+    if let Some((bytes, t)) = terrain {
         let h = &t.heightmap;
         let (first_index, index_count) = scene.add_heightmap(h);
         let mut scales = [0.01f32; 6];

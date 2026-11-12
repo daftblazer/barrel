@@ -151,7 +151,13 @@ look right yet: `TOWN_03` is a small round room near the field's origin (67 obje
 flat placeholder terrain (64×64 cells of 100, every height 0, one layer, drawn black), and
 the event's camera sees only a large surface close in front, with no characters in view,
 with or without the terrain (`--no-terrain` leaves it out). The field loader prints each
-terrain's height range to tell such placeholders apart.
+terrain's height range to tell such placeholders apart. Such a flat placeholder (every height 0, at most one layer)
+is now not drawn: in `EVENT_MM01_OP1_212`, on `TOWN_07`'s (64 × 64 cells of 500), the
+event's characters stand at y -255 on the town's own wooden decks, under where the
+placeholder would be, so the game cannot be drawing it either (how it decides is not read).
+`--at` also schedules the event with the same (English) lines as playback: the reading times
+follow the text, and the Japanese lines put the starting stage ahead of the dialogue (Awin
+walking off while still talking).
 
 **Faces.** Facial morph targets are on the GPU too. Every target of a character's `g1h`
 sets goes to a storage buffer of offsets (set 1, binding 2: each morphed vertex's offset in
