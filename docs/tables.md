@@ -857,7 +857,7 @@ or zero, and string pointers), then copies each record into the enemy data (`0x1
 | +0 | the `Chara.xml` row it takes on the map: generic slots "Enemy 1" (418) to "Enemy 3", the bosses' "Enemy 30" (448) |
 | +4 | not read yet (66, 63, 44... most often) |
 | +8 | a scale, 1 for most |
-| +0xc, +0x10 | conditions (-1 none; 753, 532, 763... otherwise) that `0x14035f2d0` checks before it appears |
+| +0xc, +0x10 | event records (-1 none): it appears once the first has been seen and until the second has (`0x14035f2d0`, on the event records at `0x1410a42d0`, 36 bytes each, byte 0 "seen", the save's `event` records; `battle::field_enemy_appears`) |
 | +0x14 | the area it appears in |
 | +0x18 | always 100 |
 | +0x1c | its kind: 0 for most, 3 and 5 on some (the bosses 5) |
@@ -872,8 +872,9 @@ conditions hold and which is not already out or beaten (`0x140075e10`), through 
 (its +0, +4 and +0x1c). The area is the field map's number (`FIELDMAP_*`: towns 0 to 11, then `AREA_01_01` = 12 and
 on), so area 12 is `AREA_01_01`, with Ore Rats (group 10) and Stray Dogs (11) near (40, 0, 40);
 area 107's single record is the Ancient Beast King (group 220). `barrel encounter EXE AREA
---from SAVE [N]` lists an area's enemies and fights the Nth's group with the save's party (the
-appearing conditions are not checked yet): `AREA_01_01`'s Stray Dog enemy drew three Stray Dogs.
+--from SAVE [N]` lists an area's enemies and fights the Nth's group with the save's party, listing only those out at the save's point in the
+story: `AREA_01_01`'s Stray Dog enemy drew three Stray Dogs; in the user's save
+`AREA_01_01` has all 3 of its enemies out, `AREA_01_07` none of its 11, `AREA_07_06` 3 of 6.
 
 ### A first duel
 

@@ -179,6 +179,14 @@ pub fn party_spot(index: i32, sector: i32) -> [f32; 3] {
     [base[0] * c + base[2] * s, base[1], -base[0] * s + base[2] * c]
 }
 
+/// Whether a field enemy with `conditions` appears (`0x14035f2d0`): after its first event has
+/// been seen and until its second has (either -1 for none). `seen(k)`: whether event record k
+/// (the saved event records, `EVENT_*` order) is marked seen.
+pub fn field_enemy_appears(conditions: (i32, i32), seen: impl Fn(i32) -> bool) -> bool {
+    let (after, until) = conditions;
+    (after == -1 || seen(after)) && (until == -1 || !seen(until))
+}
+
 pub fn death_blocked(states: &[TimedState], immune: bool) -> bool {
     immune || states.iter().any(|s| s.state == 0x50)
 }
@@ -1086,5 +1094,15 @@ mod encounter_tests {
         // 600 out where the arena ends at 500: pulled in to 500.
         let p = nudge([0.0, 0.0, 600.0], 10.0, &[], arena_outside, &mut rng);
         assert!((p[2] - 500.0).abs() < 1e-3, "{p:?}");
+    }
+
+    #[test]
+    fn field_enemies_come_and_go_with_events() {
+        let seen = |k: i32| k == 532;
+        assert!(field_enemy_appears((-1, -1), seen));
+        assert!(field_enemy_appears((532, -1), seen));
+        assert!(!field_enemy_appears((753, -1), seen));
+        assert!(!field_enemy_appears((-1, 532), seen));
+        assert!(field_enemy_appears((532, 753), seen));
     }
 }

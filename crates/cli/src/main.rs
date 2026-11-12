@@ -1203,9 +1203,17 @@ fn encounter(exe: &Path, area: &str, which: &str, save: &Path) -> Result<()> {
         Ok(n) => n,
         Err(_) => maps.iter().position(|m| m == area).ok_or_else(|| format!("{area}: no such field map"))? as i32,
     };
-    let here: Vec<bd::FieldEnemy> = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
+    // The save's seen events decide who is out (`battle::field_enemy_appears`).
+    let save_data = read(save)?;
+    let body = barrel_formats::save::parse(&save_data).map_err(|e| format!("{}: {e}", save.display()))?.body;
+    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
+    let summary = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", save.display()))?);
+    let seen = |k: i32| usize::try_from(k).ok().and_then(|k| summary.events.get(k)).is_some_and(|e| e.seen);
+    let all: Vec<bd::FieldEnemy> = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
+    let total = all.len();
+    let here: Vec<bd::FieldEnemy> = all.into_iter().filter(|e| barrel_game::battle::field_enemy_appears(e.conditions, seen)).collect();
     let map = maps.get(area as usize).map_or("?", String::as_str);
-    println!("{map} (field map {area}): {} enemies (their appearing conditions not checked)", here.len());
+    println!("{map} (field map {area}): {} of its {total} enemies out at this point of the save", here.len());
     for (k, e) in here.iter().enumerate() {
         println!("  {k}: group {} at ({:.1}, {:.1}, {:.1})", e.group, e.position[0], e.position[1], e.position[2]);
     }
