@@ -16,6 +16,30 @@ use barrel_formats::battle_data::{Skill, StatBlock};
 
 pub type Stats = [i32; stat::COUNT];
 
+/// An item's trait bonus on its effects (`0x1401bd8ee` and on): `bonus` is
+/// `battle::item_bonus`, raising each flag-3 act's rolled amount and second value
+/// (`battle::boost_amounts`, cut to the act's limit); `extra` is its `CHANGE_ACTUAL_POWER` sum
+/// (kind 39), added on flag-4 acts as `battle::actual_power_extra`.
+#[derive(Clone, Copy)]
+pub struct Boost<'a> {
+    pub bonus: i32,
+    pub extra: i32,
+    pub acts: &'a [barrel_formats::battle_data::ActInfo],
+}
+
+impl Boost<'_> {
+    pub fn apply(&self, act: u32, amount: i32, second: i32) -> (i32, i32) {
+        let Some(info) = self.acts.get(act as usize) else { return (amount, second) };
+        let b = if info.flags[3] { self.bonus } else { 0 };
+        // Flag 4: the CHANGE_ACTUAL_POWER sum, full or v² / amount (`battle::actual_power_extra`).
+        let extra = if info.flags[4] { battle::actual_power_extra(amount, self.extra) } else { 0 };
+        if b == 0 && extra == 0 {
+            return (amount, second);
+        }
+        battle::boost_amounts(amount, second, b, info.limit, extra)
+    }
+}
+
 /// One fighter.
 #[derive(Clone, Debug)]
 pub struct Fighter {
@@ -225,7 +249,7 @@ impl Battle {
     /// `who` uses `skill` on `target` (its foe; own-side skills put their states on `who`), then
     /// gets its next wait and counts the action. `slot` is the monster action slot it came from.
     pub fn act(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, rng: &mut Rng) -> Vec<Event> {
-        self.act_with(who, skill, slot, target, None, rng)
+        self.act_with(who, skill, slot, target, None, None, rng)
     }
 
     /// An item used by `who` on `target` (`BtlCharaActionItem`): its effects, in a skill's
@@ -234,14 +258,21 @@ impl Battle {
     /// (`0x1401bdf23`: any action kind but 0). Not in yet: the flag 3 and 4 bonuses from the
     /// item's traits, and using the item up.
     pub fn use_item(&mut self, who: usize, item: &Skill, power: i32, target: usize, rng: &mut Rng) -> Vec<Event> {
-        self.act_with(who, item, None, target, Some(power), rng)
+        self.act_with(who, item, None, target, Some(power), None, rng)
     }
 
-    fn act_with(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, power: Option<i32>, rng: &mut Rng) -> Vec<Event> {
+    /// [`Battle::use_item`] with the item's trait bonus ([`Boost`]).
+    pub fn use_item_boosted(&mut self, who: usize, item: &Skill, power: i32, boost: Boost, target: usize, rng: &mut Rng) -> Vec<Event> {
+        self.act_with(who, item, None, target, Some(power), Some(boost), rng)
+    }
+
+    fn act_with(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, power: Option<i32>, boost: Option<Boost>, rng: &mut Rng) -> Vec<Event> {
+        let boosted = |act: u32, amount: i32, second: i32| boost.map_or((amount, second), |b| b.apply(act, amount, second));
         // Poison (`DAMAGE_HP_TURN`, act 16) on the target.
         if let Some(e) = skill.effects.iter().find(|e| e.act == 16) {
             let value = rng.range(e.min, e.max);
             let second = rng.range(e.min2, e.max2);
+            let (value, second) = boosted(e.act, value, second);
             battle::add_state(&mut self.fighters[target].states, 0x34, value, second);
         }
         // Stat buffs and debuffs on the skill's side: its own for target kinds 1 and 3.
@@ -249,6 +280,7 @@ impl Battle {
             if let Some((state, minus)) = battle::stat_state(e.act) {
                 let value = rng.range(e.min, e.max);
                 let second = rng.range(e.min2, e.max2);
+                let (value, second) = boosted(e.act, value, second);
                 let on = if matches!(skill.target, 1 | 3) { who } else { target };
                 self.fighters[on].add_state(state, if minus { -value } else { value }, second);
             }
@@ -264,7 +296,8 @@ impl Battle {
             let mut total = 0;
             for effect in heals {
                 let amount = rng.range(effect.min, effect.max);
-                rng.range(effect.min2, effect.max2);
+                let second = rng.range(effect.min2, effect.max2);
+                let (amount, _) = boosted(effect.act, amount, second);
                 let t = &self.fighters[target];
                 let has = |state| t.states.iter().any(|s| s.state == state);
                 let (amount, blocked) = match effect.act {
@@ -292,6 +325,7 @@ impl Battle {
                 // The roll (`0x1401bd520`): the amount, then the second value.
                 let amount = rng.range(effect.min, effect.max);
                 let second = rng.range(effect.min2, effect.max2);
+                let (amount, second) = boosted(effect.act, amount, second);
                 let (user, foe) = (&self.fighters[who].stats, &self.fighters[target].stats);
                 let amount = if effect.act == 8 {
                     battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
@@ -414,6 +448,19 @@ mod tests {
         assert_eq!(hit(None), battle::skill_damage(100, 30, level, 0, false, 1.0));
         assert_eq!(hit(Some(battle::item_power(50.0))), battle::skill_damage(100, 100, level, 0, false, 1.0));
         assert!(hit(Some(100)) > hit(None));
+    }
+
+    #[test]
+    fn a_boost_raises_flag_3_acts_up_to_their_limit() {
+        use barrel_formats::battle_data::ActInfo;
+        let mut flags = [false; 12];
+        flags[3] = true;
+        let acts = [ActInfo { flags, limit: 50, last: 0 }, ActInfo { flags: [false; 12], limit: 9999, last: 0 }];
+        let boost = Boost { bonus: 80, extra: 7, acts: &acts };
+        // Act 0: the bonus cut to 50, no flag 4 so no extra.
+        assert_eq!(boost.apply(0, 100, 10), (150, 15));
+        // Act 1: no flags, untouched.
+        assert_eq!(boost.apply(1, 100, 10), (100, 10));
     }
 
     #[test]

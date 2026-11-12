@@ -104,6 +104,20 @@ pub struct ItemBonusInputs {
     pub wait_term: i32,
 }
 
+impl ItemBonusInputs {
+    /// The trait sums by kind for an item's traits: each `ITEM_SUB_*` kind's index in
+    /// `kinds` (the enum's names in order) gets [`trait_value`] of that kind. The game rolls
+    /// a kind's slots when it asks for it; summing them all here draws them in kind order,
+    /// which differs from the game's order of asking (0, 25, 31, 28, ...) only in which
+    /// random numbers go where.
+    pub fn with_traits(mut self, traits: &[&barrel_formats::battle_data::Trait], kinds: &[&str], rng: &mut crate::rng::Rng) -> Self {
+        for (k, name) in kinds.iter().enumerate().take(self.sum.len()) {
+            self.sum[k] = trait_value(traits, name, false, rng);
+        }
+        self
+    }
+}
+
 impl Default for ItemBonusInputs {
     fn default() -> Self {
         ItemBonusInputs { sum: [0; 43], rank: 0, cost: 0, uses_left: 0, counts: 0, x18: 0, single_use: false, monster_size: None, targets: 1, wait_term: 0 }
