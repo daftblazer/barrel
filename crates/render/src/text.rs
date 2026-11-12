@@ -67,19 +67,30 @@ fn colour(rgb: [u8; 3]) -> [f32; 4] {
 pub const FONT: usize = 0;
 pub const UI: usize = 1;
 
-/// The message window pieces' rectangles in `a15_common.g1t` texture 28 (1024 × 1024).
+/// The message window pieces' rectangles in `a15_common.g1t` texture 4 (1024 × 1024), and
+/// where the game draws them on a 1280 × 720 screen (measured from an oracle frame of
+/// `EVENT_MM01_OP1_111`, `docs/renderer.md`, "Dialogue").
 pub mod window {
     pub const SIZE: f32 = 1024.0;
-    /// The speech bubble (its tail on the left, 41 to 64) and its end cap (rounded on the
-    /// left; drawn mirrored as the right end; its last columns, 787 to 791, fade out and are
-    /// left off so the join does not show).
-    pub const BUBBLE: [f32; 4] = [41.0, 4.0, 208.0, 173.0];
-    pub const CAP: [f32; 4] = [732.0, 4.0, 786.0, 173.0];
-    /// Where the bubble's left part ends and a plain column of its middle (stretched).
-    pub const SPLIT: f32 = 140.0;
-    pub const FILL: [f32; 2] = [140.0, 150.0];
-    /// The leather strap the name sits on.
-    pub const STRAP: [f32; 4] = [14.0, 188.0, 344.0, 252.0];
+    /// The framed parchment panel.
+    pub const PANEL: [f32; 4] = [0.0, 532.0, 757.0, 738.0];
+    /// The brown name tag with its grommet.
+    pub const TAG: [f32; 4] = [0.0, 298.0, 408.0, 372.0];
+    /// The cord hanging from the tag's grommet.
+    pub const CORD: [f32; 4] = [585.0, 2.0, 635.0, 260.0];
+    /// On the 1280 × 720 screen: the panel, the tag (drawn level; the game tilts it about 5°),
+    /// the cord, the text's left edge and first line's top, the text's widest line, and the
+    /// name's centre.
+    pub const AT_PANEL: [f32; 4] = [360.0, 562.0, 960.0, 710.0];
+    pub const AT_TAG: [f32; 4] = [352.0, 535.0, 627.0, 585.0];
+    pub const AT_CORD: [f32; 4] = [340.0, 548.0, 374.0, 722.0];
+    pub const AT_TEXT: [f32; 2] = [409.0, 596.0];
+    pub const TEXT_WIDTH: f32 = 521.0;
+    pub const AT_NAME: [f32; 2] = [505.0, 560.0];
+    /// The game's first line, "You haven't forgotten anything, have you, Escha?", spans 482
+    /// pixels there: the text is sized to match.
+    pub const SAMPLE: &str = "You haven't forgotten anything, have you, Escha?";
+    pub const SAMPLE_WIDTH: f32 = 482.0;
 }
 
 impl Font {
@@ -149,53 +160,33 @@ impl Font {
         }
     }
 
-    /// The message window for a line on a `width` × `height` screen: the bubble across the
-    /// lower part (three lines tall, more if the text needs), the speaker's name on the strap
-    /// over its left end, and the text, wrapped, inside.
+    /// The message window for a line on a `width` × `height` screen, as the game lays it out
+    /// (`window`): the parchment panel, the name tag and its cord, the name, and the text,
+    /// wrapped to the panel. The 1280 × 720 layout is scaled to the height and centred.
     pub fn dialogue(&self, speaker: Option<&str>, text: &str, width: f32, height: f32) -> Vec<Quad> {
         use window::*;
-        // Sized for 1080 lines and scaled to the screen.
-        let scale = height / 1080.0;
-        let (left, right) = (width * 0.12, width * 0.88);
-        // The bubble is drawn 1.3 times its size; the text sits inside its rounded edge.
-        let k = 1.3 * scale;
-        let inset_left = (SPLIT - BUBBLE[0]) * 0.55 * k;
-        let max = (right - left - inset_left - 40.0 * k) / scale;
-        let lines: Vec<String> = plain_lines(text).iter().flat_map(|l| self.wrap(l, max)).collect();
-        let text_height = lines.len().max(3) as f32 * LINE * scale;
-        let bubble_height = (BUBBLE[3] - BUBBLE[1]) * k;
-        let box_height = bubble_height.max(text_height + 40.0 * k);
-        let bottom = height - 30.0 * scale;
-        let top = bottom - box_height;
+        let k = height / 720.0;
+        let dx = (width - 1280.0 * k) / 2.0;
+        let place = |r: [f32; 4]| [dx + r[0] * k, r[1] * k, dx + r[2] * k, r[3] * k];
         let uv = |r: [f32; 4]| r.map(|v| v / SIZE);
         let white = [1.0; 4];
-        let left_end = left + (SPLIT - BUBBLE[0]) * k;
-        let right_start = right - (CAP[2] - CAP[0]) * k;
-        let mut out = vec![
-            Quad { rect: [left, top, left_end, bottom], uv: uv([BUBBLE[0], BUBBLE[1], SPLIT, BUBBLE[3]]), color: white, texture: UI },
-            Quad { rect: [left_end, top, right_start, bottom], uv: uv([FILL[0], BUBBLE[1], FILL[1], BUBBLE[3]]), color: white, texture: UI },
-            // The cap mirrored: its rounded side on the right.
-            Quad { rect: [right_start, top, right, bottom], uv: uv([CAP[2], CAP[1], CAP[0], CAP[3]]), color: white, texture: UI },
-        ];
-        let text_left = left + inset_left;
-        let mut y = top + (box_height - lines.len().max(1) as f32 * LINE * scale) * 0.5;
-        if lines.len() < 3 {
-            // Short lines start where the first of three would.
-            y = top + (box_height - text_height) * 0.5;
-        }
+        // Text at the size the game's sample line has (in screen pixels per atlas pixel).
+        let text_scale = SAMPLE_WIDTH / self.width(SAMPLE).max(1.0) * k;
+        let lines: Vec<String> = plain_lines(text).iter().flat_map(|l| self.wrap(l, TEXT_WIDTH * k / text_scale)).collect();
+        let mut out = vec![Quad { rect: place(AT_PANEL), uv: uv(PANEL), color: white, texture: UI }];
         if let Some(name) = speaker.filter(|n| !n.is_empty()) {
-            let sk = 0.8 * k;
-            let (sw, sh) = ((STRAP[2] - STRAP[0]) * sk, (STRAP[3] - STRAP[1]) * sk);
-            let (sx, sy) = (left + 30.0 * k, top - sh * 0.75);
-            out.push(Quad { rect: [sx, sy, sx + sw, sy + sh], uv: uv(STRAP), color: white, texture: UI });
-            let name_scale = scale * 0.85;
-            let name_top = sy + (sh - LINE * name_scale) * 0.5 + 4.0 * name_scale;
-            self.run(name, sx + 50.0 * sk, name_top, name_scale, [1.0, 0.95, 0.85, 1.0], &mut out);
+            out.push(Quad { rect: place(AT_CORD), uv: uv(CORD), color: white, texture: UI });
+            out.push(Quad { rect: place(AT_TAG), uv: uv(TAG), color: white, texture: UI });
+            let name_scale = text_scale * 0.95;
+            let (cx, cy) = (dx + AT_NAME[0] * k, AT_NAME[1] * k);
+            let w = self.width(name) * name_scale;
+            self.run(name, cx - w / 2.0, cy - LINE * name_scale * 0.5, name_scale, [0.96, 0.93, 0.86, 1.0], &mut out);
         }
+        let mut y = AT_TEXT[1] * k;
         for l in &lines {
-            // The game's brown (`BR`) on the cream window.
-            self.run(l, text_left, y, scale, colour(COLOURS[10].1), &mut out);
-            y += LINE * scale;
+            // The game's brown (`BR`) on the parchment.
+            self.run(l, dx + AT_TEXT[0] * k, y, text_scale, colour(COLOURS[10].1), &mut out);
+            y += LINE * text_scale;
         }
         out
     }

@@ -1325,6 +1325,7 @@ fn main() -> Result<()> {
     }
     let out_path = if field { args[2].clone() } else { args[2].clone() };
     let mut size = 768u32;
+    let mut size_h = 768u32;
     let mut yaw = 0f32;
     let mut pitch = if field { 45f32 } else { 0f32 };
     let mut alpha_cutoff = 0.3f32;
@@ -1343,7 +1344,13 @@ fn main() -> Result<()> {
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--size" => size = it.next().ok_or("--size N")?.parse::<u32>()?.clamp(64, 1280),
+            // N (square) or WxH, at most 1280 either way.
+            "--size" => {
+                let v = it.next().ok_or("--size N|WxH")?;
+                let (w, h) = v.split_once('x').unwrap_or((v, v));
+                size = w.parse::<u32>()?.clamp(64, 1280);
+                size_h = h.parse::<u32>()?.clamp(64, 1280);
+            }
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
@@ -1548,7 +1555,7 @@ fn main() -> Result<()> {
         }
         _ => None,
     };
-    let (mut width, mut height) = presenter.as_ref().map_or((size, size), |p| (p.extent.width, p.extent.height));
+    let (mut width, mut height) = presenter.as_ref().map_or((size, size_h), |p| (p.extent.width, p.extent.height));
     let color_format = presenter.as_ref().map_or(COLOR_FORMAT, |p| p.format);
     if let Some(p) = &presenter {
         eprintln!("window: {width}x{height}, {:?}, {} swapchain images", p.format, p.images.len());
@@ -2236,7 +2243,7 @@ fn main() -> Result<()> {
         let still_g1t: Vec<Option<barrel_formats::g1t::G1t>> = still_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
         let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|n| std::fs::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
         let sheets: Vec<Option<barrel_formats::g1t::G1t>> = sheet_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
-        match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(28))) {
+        match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(4))) {
             (Some(glyphs), Some(g), Some(window)) if !g.textures.is_empty() => {
                 let size = g.textures[0].width as f32;
                 let mut images = vec![&g.textures[0], window];

@@ -249,6 +249,15 @@ over the scene by its opacity, under the text.
 the card is drawn at the stage's opacity, its 1920 × 1080 layout scaled to the height and
 centred.
 
+**Dialogue window.** The window is the game's: `a15_common.g1t` texture 4's framed parchment
+panel, the brown name tag and the cord from its grommet (texture 28, used before, holds the
+message log's bubbles). The layout was measured from an oracle frame of
+`EVENT_MM01_OP1_111` at 1280 × 720 (`text::window`: panel 360..960 × 562..710, tag, cord,
+text from (409, 596), 521 pixels wide, sized so the game's first line spans its 482 pixels)
+and scales with the height, centred. Not yet as the game: the tag's slight tilt (about 5°)
+and the small green fleur at the panel's lower right. `--size WxH` renders other shapes
+(1280x720 for comparing with oracle frames).
+
 **Handedness.** The game's x is mirrored into render space (right-handed, like the vertices),
 and the projection mirrors clip-space x back, so the screen shows the scene left to right as
 the game does (checked against an oracle screenshot of `EVENT_MM01_OP1_111`'s first line:
