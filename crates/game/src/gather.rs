@@ -16,6 +16,31 @@ pub fn weights(records: &[&Gather], knowledge: impl Fn(i32) -> i32, rng: &mut cr
         .collect()
 }
 
+/// The field's gathering state (`0x1410783b0`: a mode, then three values), which some field
+/// effects set.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FieldState {
+    pub mode: i32,
+    pub values: [i32; 3],
+}
+
+/// One of the gathering bonuses (`0x1400d3030 (kind, gather_type, cleared)`): kind 0, the extra
+/// picks, is the field's first value for a type-0 gather while its mode is 3 (nothing when
+/// `cleared`); kinds 1, 2 and 3 (the random traits' levels, a third not followed yet, the
+/// quality percentage) are its second, third and first values for a type-1 gather while its mode
+/// is 5; kinds 4 and 5 are the gathering and alchemy table levels. Anything else is 0.
+pub fn bonus(kind: u32, gather_type: i32, cleared: bool, field: FieldState, gat_level: i32, alc_level: i32) -> i32 {
+    match kind {
+        0 if gather_type == 0 && !cleared && field.mode == 3 => field.values[0],
+        1 if gather_type == 1 && field.mode == 5 => field.values[1],
+        2 if gather_type == 1 && field.mode == 5 => field.values[2],
+        3 if gather_type == 1 && field.mode == 5 => field.values[0],
+        4 => gat_level,
+        5 => alc_level,
+        _ => 0,
+    }
+}
+
 /// Which of a point's lists it draws from (`0x1400d3160`): the level of a "table level-up"
 /// effect on one of two items the game keeps (item units at `0x140dfc8d4` and `0x140dfc8b0`),
 /// at most 4. A point whose byte +0x30 is set takes `ACT_ALC_TABLE_LEVELUP` (215) of the first;
@@ -96,6 +121,17 @@ mod tests {
         assert_eq!(list_index(false, 0, 2, 1), 3);
         assert_eq!(list_index(false, 0, 9, 0), 4);
         assert_eq!(list_index(true, 2, 4, 0), 2);
+    }
+
+    #[test]
+    fn bonuses_follow_the_field_mode() {
+        let field = FieldState { mode: 5, values: [20, 3, 7] };
+        assert_eq!(bonus(3, 1, false, field, 0, 0), 20);
+        assert_eq!(bonus(1, 1, false, field, 0, 0), 3);
+        assert_eq!(bonus(0, 0, false, field, 0, 0), 0);
+        assert_eq!(bonus(0, 0, false, FieldState { mode: 3, ..field }, 0, 0), 20);
+        assert_eq!(bonus(0, 0, true, FieldState { mode: 3, ..field }, 0, 0), 0);
+        assert_eq!((bonus(4, 0, false, field, 2, 1), bonus(5, 0, false, field, 2, 1)), (2, 1));
     }
 
     #[test]

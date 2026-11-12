@@ -1394,8 +1394,15 @@ weight above 0, else the last. Each pick's item (`0x14023c883`): its quality is 
 `ITEM_STACK_TYPE_STACK`, +0x2c; the Spiky Buds in the running game had 60, their `effect`),
 else a roll between the record's bounds (words 3 and 4) raised by a percentage of itself
 (`0x1400d3030 (3, ...)`), within 0 and 120 (`gather::quality`); then the record's traits
-(words 9 to 12) are put on it (`0x14029e290`), and words 6 and 7 go to `0x14023d8c0` (not read
-yet) with it. (The shipped `itemData.xml` writes the other stack type as
+(words 9 to 12) are put on it (`0x14029e290`), and words 6 and 7 go to `0x14023d8c0`: for an item whose
+row +0x30 is set and a record without a fixed trait in word 13, it draws random traits through
+`0x1402a26a0 (item, word 6 + b, word 7 + b)` with b the trait bonus, so words 6 and 7 are the
+random traits' level range (1 to 10, then 4 to 20, where set). The bonuses are
+`0x1400d3030 (kind, gather type, cleared)` (`gather::bonus`): kind 0, the extra picks, is the
+field state's first value (`0x1410783b4`) for a type-0 gather while its mode (`0x1410783b0`) is
+3; kinds 1, 2 and 3 (the traits' levels, one not followed, the quality percentage) are its second,
+third and first values for a type-1 gather while the mode is 5; kinds 4 and 5 are the two table
+levels. (The shipped `itemData.xml` writes the other stack type as
 `ITEM_STACK_TYPE_NONE_STACK`, a name the enum does not have: it holds `_NON_STACK`.) The area map's list for Sector One (71) belongs to no point.
 
 What does not hold it: the data files (`Saves/field/AREA_*.xml`: camera, fog, light, sky, HDR
