@@ -787,7 +787,14 @@ its three monster slots' levels), its kind is not 1 to 5, the strike's stage is 
 check (`0x1402177c0`) says no (`barrel_game::encounter::skips_battle`): weak enemies are struck
 down on the field. The battle start then (`0x1400847fe`) draws the group's monsters as a
 battle would and takes each one's drop slots in turn by their chances (`0x1404ca5f0`;
-`encounter::struck_down_drops`); items numbered 560 and up go through `0x140113810` (not read).
+`encounter::struck_down_drops`); items numbered 560 to 599 name
+one of the 40 drop pools at `0x140d31b70` (ten 28-byte entries each: item, weight, the quality
+range, three words `0x140113e30` gives the item, not read), drawn by weight among the eligible
+entries (`0x140113810`: the low 31 bits modulo the total, then the first entry whose weight the
+roll does not exceed, taking each passed weight off; an item of `itemData` kind 2 must pass
+`0x140113bb0` first), the quality then a roll in the range within 0 and 120
+(`battle_data::drop_pools`, `encounter::pick_pool`). Pool 0 gives items 364, 369, 374 and 379 at
+quality 50 with weights 15, 15, 14 and 14 ....
 The stage-1 strike needs event 733, `EVENT_XG05_100`. The enemy's removal is not read.
 
 ### Encounter groups

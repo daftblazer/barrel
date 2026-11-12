@@ -31,8 +31,8 @@ pub fn skips_battle(start: Start, party_level: i32, group_level: i32, kind: i32,
 /// What a group struck down on the field gives (`0x1400847fe`, the battle start when the
 /// encounter's +0x51 is set): its monsters drawn as for a battle ([`crate::battle::encounter_monsters`]),
 /// then for each, in order, each of its drop slots in order taken with its chance
-/// (`0x1404ca5f0`). Returns `(item, count)`; items numbered 560 and up take a further roll
-/// (`0x140113810`, not read yet) that is left out.
+/// (`0x1404ca5f0`). Returns `(item, count)`; an item numbered 560 and up names a drop pool,
+/// which [`pick_pool`] then draws from.
 pub fn struck_down_drops(
     group: &barrel_formats::battle_data::EncounterGroup,
     monsters: &[barrel_formats::battle_data::Monster],
@@ -47,6 +47,30 @@ pub fn struck_down_drops(
         }
     }
     out
+}
+
+/// One draw from a drop pool (`0x140113810`): among the entries `eligible` allows (an item
+/// whose `itemData` kind, the row's +0x28, is 2 must pass `0x140113bb0`, not read yet), a roll
+/// of the low 31 bits modulo their total weight, then the first entry, in order, whose weight
+/// the roll does not exceed, the roll going down by each weight passed.
+pub fn pick_pool<'a>(
+    pool: &'a [barrel_formats::battle_data::PoolEntry],
+    eligible: impl Fn(i32) -> bool,
+    rng: &mut crate::rng::Rng,
+) -> Option<&'a barrel_formats::battle_data::PoolEntry> {
+    let ok: Vec<&barrel_formats::battle_data::PoolEntry> = pool.iter().filter(|e| eligible(e.item)).collect();
+    let total: i32 = ok.iter().map(|e| e.weight).sum();
+    if total <= 0 {
+        return None;
+    }
+    let mut roll = rng.next_31() % total;
+    for e in &ok {
+        if roll <= e.weight {
+            return Some(e);
+        }
+        roll -= e.weight;
+    }
+    None
 }
 
 /// The touch check (`0x140270cc0`): the enemy nearest the player whose distance (3D, from the
@@ -122,6 +146,21 @@ mod tests {
         assert_eq!(struck([0.0; 3], std::f64::consts::FRAC_PI_2, 1, 30.0, &enemies), None);
         assert_eq!((strike(false, false), strike(true, true)), ((0, 130.0), (1, 210.0)));
         assert!(strike_out(0.4) && !strike_out(0.2) && !strike_out(0.7));
+    }
+
+    #[test]
+    fn pool_draws_by_weight() {
+        use barrel_formats::battle_data::PoolEntry;
+        let e = |item, weight| PoolEntry { item, weight, quality: (50, 50), rest: [1, 5, 1] };
+        let pool = [e(364, 15), e(369, 15), e(374, 70)];
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        let mut n = [0; 3];
+        for _ in 0..10_000 {
+            let got = pick_pool(&pool, |_| true, &mut rng).unwrap();
+            n[pool.iter().position(|p| p == got).unwrap()] += 1;
+        }
+        assert!((1300..1700).contains(&n[0]) && (6700..7300).contains(&n[2]), "{n:?}");
+        assert_eq!(pick_pool(&pool, |i| i == 369, &mut rng).unwrap().item, 369);
     }
 
     #[test]

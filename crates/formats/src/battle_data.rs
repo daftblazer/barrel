@@ -254,6 +254,41 @@ pub struct Drop {
     pub count: i32,
 }
 
+/// The drop pools (English Escha): a drop slot's item 560 to 599 is pool `item - 560`, of 40
+/// at [`DROP_POOLS_EN`], each ten 28-byte entries (item -1 for none).
+pub const DROP_POOLS_EN: u64 = 0x1_40d3_1b70;
+pub const DROP_POOL_FIRST: i32 = 560;
+pub const DROP_POOL_COUNT: usize = 40;
+
+/// An entry of a drop pool.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PoolEntry {
+    pub item: i32,
+    /// Its weight in the pool's draw.
+    pub weight: i32,
+    /// The quality it comes at, drawn between these.
+    pub quality: (i32, i32),
+    /// Words 4 to 6 (1, 5, 1 and the like), which `0x140113e30` gives the made item; not read yet.
+    pub rest: [i32; 3],
+}
+
+pub fn drop_pools(pe: &Pe, table: u64) -> Option<Vec<Vec<PoolEntry>>> {
+    let at = pe.offset(table)?;
+    let d = pe.data;
+    (0..DROP_POOL_COUNT)
+        .map(|p| {
+            (0..10)
+                .map(|i| {
+                    let r = at + (p * 10 + i) * 0x1c;
+                    let w = |k: usize| i32_at(d, r + 4 * k);
+                    Some(PoolEntry { item: w(0)?, weight: w(1)?, quality: (w(2)?, w(3)?), rest: [w(4)?, w(5)?, w(6)?] })
+                })
+                .filter(|e| e.is_none_or(|e| e.item != -1))
+                .collect()
+        })
+        .collect()
+}
+
 /// The skills, by `SKILL_*` number, up to the record without a name.
 pub fn skills(pe: &Pe, table: u64) -> Option<Vec<Skill>> {
     let at = pe.offset(table)?;
