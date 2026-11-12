@@ -17,7 +17,8 @@ use crate::rng::Rng;
 
 /// The field time one gathering takes, in tenths of a day (`0x1402f3fe0 (0)`): 5, less the
 /// current region's reduction (a byte per region at `0x1410782e8`, `0x140236180` giving the
-/// region, 16 at most), at least 1.
+/// region, 16 at most: `bonus::BonusState::collect_time`, raised by the `Reduce_Collect_Time`
+/// bonuses), at least 1.
 pub fn gather_tenths(reduction: i32) -> i32 {
     (5 - reduction).max(1)
 }

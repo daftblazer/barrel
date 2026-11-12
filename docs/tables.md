@@ -617,7 +617,8 @@ carried (`0x1410782e4`), passes a day for each whole ten and keeps the rest; bat
 theirs that way (reason 6, +0x18 of the object the encounter keeps at +0x30 and hands to the
 battle request, filled by the battle, not followed; `0x140084c50` and three more), as does a
 gathering (`0x1400a3bf0`, reason 5: 5 tenths less the current region's reduction, a byte per
-region at `0x1410782e8`, at least 1, `0x1402f3fe0`; `days::gather_tenths`) and `0x1400c1760` (one tenth, reason 0). Leaving a field that is not a
+region at `0x1410782e8`, the save's `bonus/collectTimeBonus`, which the `Reduce_Collect_Time`
+bonuses raise, at least 1, `0x1402f3fe0`; `days::gather_tenths`) and `0x1400c1760` (one tenth, reason 0). Leaving a field that is not a
 town with tenths carried passes a whole day and drops them (`0x14007ab30`, reason 7;
 `0x14035bef0` clears the carry, as does a new game, `0x14035be60`), and so does moving between
 areas of different regions (`0x140079540`: the areas' first words differ). `days::World::
