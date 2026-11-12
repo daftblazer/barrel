@@ -670,7 +670,18 @@ mode (+0x1e8) from the skill's target word by a table (0 → 2, 1 → 1, 2 → 0
 effect is act 81 (revive), 2 when it revives and does more. So the whole-list pick is mode 5,
 target word 5, which no skill has (they use 0 to 4): one-target skills, and the area case
 belongs to another action kind (items, presumably: the bombs); the revive sub-codes pick
-among the fallen (0x40a) or everyone (0x408). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
+among the fallen (0x40a) or everyone (0x408).
+
+The action factory (`0x1401b9f70`, kinds by the jump table at `0x1401ba2a8`) builds
+`BtlCharaActionSkill` for kinds 0, 3 and 4, `BtlCharaActionItem` for 1, `Move` 5, `Wait` 6,
+`Change` 7 and `Escape` 8 (vtables `0x140808b18` to `0x140808c48`). The item action's slot 1
+(`0x1401ba830`) works as the skill's: the held item (+0x31c/+0x31e of the fighter) gives a
+target word (`0x1402a25a0`: 288-byte item records, the word at `0x140d19c7c` + 288 × row)
+mapped by the same table, the sub-code from its effects, forced to 2 when `0x14029e320(item,
+0x18)` holds. Over the 274 rows: 226 own side (1), 33 the other side (2: the attack items, one
+target in the selection), 6 none (0), 4 either (4), 3 self (3) and 2 the whole-side pick (5,
+rows 34 and 38, names not matched yet). So bombs pick one foe here; if they spread, it is
+decided later (by distance from the target, presumably: fighters have positions). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
 and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
