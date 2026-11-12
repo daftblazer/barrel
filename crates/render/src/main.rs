@@ -382,6 +382,9 @@ struct Scene {
     /// another; an instance's `palette` is where its own begin. Never empty (the GPU buffer
     /// needs a size), so it starts with one identity.
     palette: Vec<Mat4>,
+    /// While set, geometry without skin weights is bound wholly to this joint of the pose
+    /// (an accessory hung from a node: its vertices are already in that joint's bind frame).
+    rigid_joint: Option<u16>,
 }
 
 impl Scene {
@@ -399,6 +402,7 @@ impl Scene {
             palette: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
+            rigid_joint: None,
         }
     }
 
@@ -487,6 +491,13 @@ impl Scene {
                 // The joints and weights, for the GPU (joints past the pose's count or weights of
                 // 0 are dropped); the bounds use the CPU's own skinning of the point.
                 let (mut joint_ix, mut weight_q, mut skinned) = ([0u16; 4], [0u8; 4], pos);
+                if let (None, Some(j), Some(joints)) = (&skin, self.rigid_joint, joints) {
+                    if (j as usize) < joints.len() {
+                        joint_ix[0] = j;
+                        weight_q[0] = 255;
+                        skinned = joints[j as usize].transform_point3(pos);
+                    }
+                }
                 if let (Some(skin), Some(joints)) = (&skin, joints) {
                     let (j, w) = skin[i];
                     let total: f32 = (0..4).filter(|&k| w[k] > 0.0 && (j[k] as usize) < joints.len()).map(|k| w[k]).sum();
@@ -929,10 +940,20 @@ struct Actor {
 /// A character's body as loaded: its texture pack, the pack's texture count, its instance, and
 /// what playback moves it with (skeleton, motions, the motion and its start) when found.
 struct Body {
-    pack: Vec<u8>,
+    /// Its texture packs (the body's, then an accessory's), and their textures in all.
+    packs: Vec<Vec<u8>>,
     count: usize,
     instance: u32,
     rig: Option<(barrel_formats::g1m::Skeleton, Motions, barrel_formats::g1a::Animation, f32)>,
+}
+
+/// An outfit's parts on a body (`barrel_formats::costume::resolve`): the body's own nodes to
+/// leave off (`P_M_Acc_Hat1` ...), and an accessory hung from a node: its file stem in
+/// `Data/x64/Accessory` (`HEAD01`), the node's name and its placement there (`AccessoryAdjust`).
+#[derive(Clone, Debug, Default)]
+struct Wear {
+    hidden: Vec<String>,
+    accessory: Option<(String, String, Mat4)>,
 }
 
 /// Loads `row`'s model (a `CharaBase` row) into the scene at `pos` turned `angle` degrees,
@@ -950,6 +971,7 @@ fn add_body<F>(
     angle: f32,
     column: &str,
     motion_time: Option<(f32, bool)>,
+    wear: Option<&Wear>,
     face: impl FnOnce(&mut Scene, &Elixir, &str, &str) -> Result<Option<F>>,
 ) -> Result<Option<(Body, Option<F>)>> {
     let Some(model) = row.attr("Model") else { return Ok(None) };
@@ -985,7 +1007,8 @@ fn add_body<F>(
     // and instance; the weapons and options (CharaPartsChange groups) are left off.
     let accessory = format!("{stem}_P_M_Acc_");
     let first = scene.draws.len();
-    for e in container.entries.iter().filter(|e| e.name.starts_with(&accessory) && e.name.ends_with(".g1m")) {
+    let hidden = |name: &str| wear.is_some_and(|w| w.hidden.iter().any(|h| name.contains(h.as_str())));
+    for e in container.entries.iter().filter(|e| e.name.starts_with(&accessory) && e.name.ends_with(".g1m") && !hidden(&e.name)) {
         let Some(bytes) = named(&container, &e.name) else { continue };
         let part = G1m::parse(bytes)?;
         if let Some(pg) = part.geometry.as_ref() {
@@ -997,7 +1020,84 @@ fn add_body<F>(
         d.overlay = d.overlay.map(|o| o + tex_base);
         d.mask = d.mask.map(|m| m + tex_base);
     }
-    Ok(Some((Body { pack: tex.to_vec(), count, instance, rig }, face)))
+    let mut packs = vec![tex.to_vec()];
+    let mut count = count;
+    // The outfit's accessory, hung from its node: its vertices are moved into the node's bind
+    // frame (and by the table's placement) and bound wholly to that joint, so the pose carries
+    // them as the body moves.
+    if let (Some((stem_a, node, adjust)), Some((skeleton, ..)), Some(j)) = (wear.and_then(|w| w.accessory.as_ref()), rig.as_ref(), joints.as_ref()) {
+        let names = named(&container, &format!("{stem}Oid.bin")).and_then(|b| barrel_formats::oid::parse(b).ok()).unwrap_or_default();
+        let joint = names.iter().position(|n| n == node);
+        let acc_bytes = std::fs::read(root.join("Data/x64/Accessory").join(format!("{stem_a}.elixir.gz"))).ok();
+        let acc = acc_bytes.as_deref().and_then(|b| Elixir::parse(b).ok());
+        if let (Some(joint), Some(acc)) = (joint, acc) {
+            let (mesh, atex) = (named(&acc, &format!("{stem_a}_MODEL.g1m")), named(&acc, &format!("{stem_a}_MODEL.g1t")));
+            if let (Some(mesh), Some(atex)) = (mesh, atex) {
+                let g = G1m::parse(mesh)?;
+                if let Some(geometry) = g.geometry.as_ref() {
+                    let bind = bind_world(skeleton);
+                    let first = scene.draws.len();
+                    scene.rigid_joint = Some(joint as u16);
+                    scene.add_posed(geometry, bind[joint] * *adjust, G1t::parse(atex)?.textures.len(), Some(j), instance)?;
+                    scene.rigid_joint = None;
+                    for d in &mut scene.draws[first..] {
+                        d.texture += tex_base + count;
+                        d.overlay = d.overlay.map(|o| o + tex_base + count);
+                        d.mask = d.mask.map(|m| m + tex_base + count);
+                    }
+                    count += G1t::parse(atex)?.textures.len();
+                    packs.push(atex.to_vec());
+                    eprintln!("character {who}: {stem_a} at {node} (joint {joint})");
+                }
+            }
+        }
+    }
+    Ok(Some((Body { packs, count, instance, rig }, face)))
+}
+
+/// Outfit `body` (a `CostumeBody` row) with head accessory `head` (a `CostumeHead` row): the
+/// body's model tag and what it wears (`costume::resolve`; the accessory placed by its
+/// `AccessoryAdjust` row: offset, then the rotation in degrees about x, y, z, then the scale).
+fn outfit(root: &Path, body: usize, head: usize) -> Result<Option<(String, Wear)>> {
+    use barrel_formats::costume as c;
+    let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join("Saves/costume").join(n))?)?) };
+    let bodies = c::bodies(&table("CostumeBody.xml")?);
+    let heads = c::accessories(&table("CostumeHead.xml")?);
+    let (Some(b), Some(h)) = (bodies.get(body), heads.get(head)) else { return Ok(None) };
+    // The rows are named by tag in the other tables: the tags follow the rows (`COSTUME_HEAD_` and
+    // the model stem, `COSTUME_HEAD_NONE` for none); a body by the tag the other tables give it.
+    let head_tag = if h.file.is_empty() { "COSTUME_HEAD_NONE".to_string() } else { format!("COSTUME_HEAD_{}", h.file) };
+    let adjusts = c::adjusts(&table("AccessoryAdjust.xml")?);
+    // The body's tag: the `COSTUME_BODY_*` name of its row, in the executable's enum order.
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let body_tag = pe
+        .enum_names("COSTUME_BODY_ESCHA_DEFAULT")
+        .and_then(|(names, first)| names[first..].iter().take_while(|n| n.starts_with("COSTUME_BODY_")).nth(body).map(|n| n.to_string()))
+        .unwrap_or_default();
+    let (attached, hidden) = c::resolve(&body_tag, "COSTUME_PARTS_HEAD", &head_tag, &c::changes(&table("AccessoryChange.xml")?), &c::hides(&table("PartsInvisible.xml")?));
+    let accessory = attached.and_then(|tag| {
+        let a = adjusts.iter().find(|a| a.body == body_tag && a.parts == "COSTUME_PARTS_HEAD" && a.accessory == tag)?;
+        let r = glam::Quat::from_euler(glam::EulerRot::XYZ, a.rotation[0].to_radians(), a.rotation[1].to_radians(), a.rotation[2].to_radians());
+        let m = Mat4::from_scale_rotation_translation(Vec3::from(a.scale), r, Vec3::from(a.offset));
+        Some((tag.trim_start_matches("COSTUME_HEAD_").to_string(), b.head_attach.clone(), m))
+    });
+    eprintln!("outfit: body {body} {} ({body_tag}), head {head_tag}, hidden {hidden:?}, accessory {:?}", b.base, accessory.as_ref().map(|a| &a.0));
+    Ok(Some((b.base.clone(), Wear { hidden, accessory })))
+}
+
+/// A skeleton's joints in their bind pose, in model space.
+fn bind_world(skeleton: &barrel_formats::g1m::Skeleton) -> Vec<Mat4> {
+    let mut out = vec![Mat4::IDENTITY; skeleton.joints.len()];
+    for i in skeleton.order() {
+        let j = &skeleton.joints[i];
+        let local = Mat4::from_scale_rotation_translation(Vec3::from(j.scale), glam::Quat::from_array(j.rotation).normalize(), Vec3::from(j.position));
+        out[i] = match j.parent {
+            Some(p) => out[p] * local,
+            None => local,
+        };
+    }
+    out
 }
 
 /// A field enemy the frame loop moves: its place in the field's enemies, its instance, and its
@@ -1038,10 +1138,10 @@ fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Re
         };
         let c = &field.mobs[k].creature;
         let pos = c.position.map(|v| v as f32);
-        let Some((body, _)) = add_body(root, scene, tex_base, row, 10_000 + k as u32, pos, c.facing.to_degrees() as f32, "F_WAIT", None, |_, _, _, _| Ok(None::<()>))? else { continue };
+        let Some((body, _)) = add_body(root, scene, tex_base, row, 10_000 + k as u32, pos, c.facing.to_degrees() as f32, "F_WAIT", None, None, |_, _, _, _| Ok(None::<()>))? else { continue };
         eprintln!("enemy {k} ({}) as {:?} at {pos:?}", e.ai.1, row.attr("BaseTag"));
         tex_base += body.count;
-        packs.push(body.pack);
+        packs.extend(body.packs);
         if let Some((skeleton, motions, anim, _)) = body.rig {
             bodies.push(FieldBody { mob: k, instance: body.instance, skeleton, motions, column: "F_WAIT".into(), anim, since: 0.0 });
         }
@@ -1051,8 +1151,8 @@ fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Re
     let at = [start[0] + 1500.0, start[1], start[2]];
     let escha = charas.children.first().and_then(|c| c.attr("BaseTag")).and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
     if let Some(row) = escha {
-        if let Some((body, _)) = add_body(root, scene, tex_base, row, 0, at.map(|v| v as f32), -90.0, "WALK", None, |_, _, _, _| Ok(None::<()>))? {
-            packs.push(body.pack);
+        if let Some((body, _)) = add_body(root, scene, tex_base, row, 0, at.map(|v| v as f32), -90.0, "WALK", None, None, |_, _, _, _| Ok(None::<()>))? {
+            packs.extend(body.packs);
             if let Some((skeleton, motions, anim, _)) = body.rig {
                 bodies.push(FieldBody { mob: usize::MAX, instance: body.instance, skeleton, motions, column: "WALK".into(), anim, since: 0.0 });
             }
@@ -1181,6 +1281,7 @@ fn event_characters(
     at: Option<f32>,
     actors: &mut Vec<Actor>,
     absent_out: &mut std::collections::HashSet<u32>,
+    costumes: &[(u32, usize, usize)],
 ) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
@@ -1323,6 +1424,16 @@ fn event_characters(
     let mut placed = 0.0f32;
     for (who, pos, angle) in first {
         let Some(tag) = charas.children.get(who as usize).and_then(|c| c.attr("BaseTag")) else { continue };
+        // A chosen outfit (`--costume`): its body's model, and its head accessory and the
+        // body's nodes hidden for it, by the costume tables.
+        let (tag, wear) = match costumes.iter().find(|c| c.0 == who) {
+            Some(&(_, b, h)) => match outfit(root, b, h)? {
+                Some((body_tag, wear)) => (body_tag, Some(wear)),
+                None => (tag.to_string(), None),
+            },
+            None => (tag.to_string(), None),
+        };
+        let tag = tag.as_str();
         let Some(row_index) = bases.children.iter().position(|b| b.attr("BaseTag") == Some(tag)) else { continue };
         let row = &bases.children[row_index];
         // The body motion: the speaker's gesture at this line if any (its main motion's
@@ -1375,7 +1486,7 @@ fn event_characters(
             drop(facials);
             Ok(Some(FaceRig { row: row_index as u32, head: head.to_string(), facials: fbytes, sets, loaded: Default::default() }))
         };
-        let Some((body, face_rig)) = add_body(root, scene, tex_base, row, who, pos, angle, &column, motion_time, face)? else { continue };
+        let Some((body, face_rig)) = add_body(root, scene, tex_base, row, who, pos, angle, &column, motion_time, wear.as_ref(), face)? else { continue };
         if let Some((skeleton, motions, anim, start)) = body.rig {
             actors.push(Actor { who, instance: body.instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig, head: None, division: None, last_division_column: String::new() });
         }
@@ -1383,7 +1494,7 @@ fn event_characters(
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
         placed += 1.0;
         tex_base += body.count;
-        packs.push(body.pack);
+        packs.extend(body.packs);
     }
     Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
 }
@@ -1641,6 +1752,9 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
+    // --costume WHO:BODY:HEAD (repeatable): an event character in outfit BODY with head HEAD
+    // (rows of CostumeBody.xml and CostumeHead.xml).
+    let mut costumes: Vec<(u32, usize, usize)> = Vec::new();
     // --save-every N: of several frames, write only every Nth and the last.
     let mut save_every = 1u32;
     let mut event_line = None::<usize>;
@@ -1714,6 +1828,12 @@ fn main() -> Result<()> {
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
             "--save-every" => save_every = it.next().ok_or("--save-every N")?.parse::<u32>()?.max(1),
+            "--costume" => {
+                let v = it.next().ok_or("--costume WHO:BODY:HEAD")?;
+                let p: Vec<&str> = v.split(':').collect();
+                let [w, b, h] = p[..] else { return Err("--costume WHO:BODY:HEAD".into()) };
+                costumes.push((w.parse()?, b.parse()?, h.parse()?));
+            }
             "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
@@ -1832,7 +1952,7 @@ fn main() -> Result<()> {
     let mut absent: std::collections::HashSet<u32> = Default::default();
     if let Some(e) = &event_spec {
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent)?;
+        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent, &costumes)?;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
