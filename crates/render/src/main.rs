@@ -21,6 +21,7 @@ use glam::{Mat4, Vec3};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod present;
+mod text;
 mod window;
 
 const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
@@ -1645,11 +1646,14 @@ fn main() -> Result<()> {
     // (docs/engine.md, "Timing"), each frame draws the last two ticks blended, and only the
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
+    // The text layer, the font, and the line it was last given (rebuilt when that changes).
+    let mut text_layer: Option<(text::Layer, text::Font, Option<(barrel_game::stage::Line, u32, u32)>)> = None;
     // The event's music and voices, in a window only (frames written to files are silent):
     // the output, the mixer, the library, and the music now playing.
     let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
     let mut motion_names: Vec<String> = Vec::new();
     let messages: Vec<barrel_formats::ebm::Message>;
+    let mut speaker_names: Vec<String> = Vec::new();
     let mut face_tables_play: Option<barrel_game::face::Tables> = None;
     let mut gestures_play: Vec<[Option<barrel_game::gesture::Form>; 2]> = Vec::new();
     let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
@@ -1662,12 +1666,19 @@ fn main() -> Result<()> {
         let curves = xml("Saves/curve/curve_data.xml").map(|t| barrel_game::curve::Curve::table(&t)).unwrap_or_default();
         let stem = Path::new(e).file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = Path::new(e).with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
-        messages = std::fs::read(&ebm).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).unwrap_or_default();
+        // The English lines (Event_EN mirrors Event), else the original's.
+        let english = Path::new(e).strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
+        let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
+        messages = english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default();
+        speaker_names = xml("Saves_EN/chara/Chara.xml")
+            .or_else(|| xml("Saves/chara/Chara.xml"))
+            .map(|t| t.children.iter().map(|c| c.attr("Name").unwrap_or("").to_string()).collect())
+            .unwrap_or_default();
         // Lines held for a reading time, as nobody presses a button here.
         let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?
             .reading_time(barrel_game::event::reading_time)
             .schedule();
-        let mut play = Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
+        let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_game::event::reading_time), ..Stage::default() }, steps);
         motion_names = std::fs::read_dir(root)?
             .flatten()
             .map(|e| e.path())
@@ -1709,6 +1720,17 @@ fn main() -> Result<()> {
                 Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice", tracks), None)),
                 Err(e) => eprintln!("no sound: {e}"),
             }
+        }
+        // The event's lines in the game's English font.
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
+        let glyphs = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok().and_then(|pe| barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN)));
+        let atlas = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok();
+        match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok())) {
+            (Some(glyphs), Some(g)) if !g.textures.is_empty() => {
+                let size = g.textures[0].width as f32;
+                text_layer = Some((text::Layer::new(&gpu, pool, render_pass, &g.textures[0])?, text::Font { glyphs, size }, None));
+            }
+            _ => eprintln!("no font: the English executable's glyph table or Font_EN atlas is missing"),
         }
     }
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);
@@ -1819,6 +1841,24 @@ fn main() -> Result<()> {
             }
             if let Some((out, mixer, ..)) = sound.as_mut() {
                 out.pump(mixer);
+            }
+            if let Some((layer, font, last)) = text_layer.as_mut() {
+                let line = play.stage.line_shown().cloned();
+                let now = line.clone().map(|l| (l, width, height));
+                if now != *last {
+                    let quads = match &line {
+                        Some(l) => {
+                            let name = usize::try_from(l.speaker).ok().and_then(|k| speaker_names.get(k)).map(String::as_str);
+                            if std::env::var("BARREL_TEXT_LOG").is_ok() {
+                                eprintln!("frame {frame}: line {:?}: {}", name, l.text);
+                            }
+                            font.dialogue(name, &l.text, width as f32, height as f32)
+                        }
+                        None => Vec::new(),
+                    };
+                    layer.set(&gpu, &quads)?;
+                    *last = now;
+                }
             }
             let shown = barrel_game::stage::Snapshot::blend(before, after, f.alpha);
             let since = ((clock.ticks - start_ticks) as f32 + f.alpha) / clock.rate() as f32;
@@ -1973,6 +2013,9 @@ fn main() -> Result<()> {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
         }
+        if let Some((layer, ..)) = &text_layer {
+            layer.record(d, cb, width, height);
+        }
         d.cmd_end_render_pass(cb);
         if let Some((color, _)) = offscreen {
             let region = vk::BufferImageCopy::default()
@@ -2026,6 +2069,9 @@ fn main() -> Result<()> {
         d.device_wait_idle()?;
         d.destroy_buffer(readback, None);
         d.free_memory(rmem, None);
+        if let Some((layer, ..)) = text_layer {
+            layer.destroy(&gpu);
+        }
         if let Some((tex, tlayout, tpool, _, tpl, tfs, tpipe)) = terrain_gpu {
             d.destroy_pipeline(tpipe, None);
             d.destroy_pipeline_layout(tpl, None);
