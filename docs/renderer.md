@@ -275,6 +275,12 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
+**Finding a moment.** `BARREL_SCHEDULE_LOG=1` prints when playback shows each narration card,
+line and field, to pair the viewer's frames with oracle shots by what is on screen. Escha's
+town tour (`EVENT_MM01_OP1_111`, cards 42 to 44 from 100.5, 111.2 and 120.9 s) matches the game
+card for card in framing and cast; the differences left are the sky (a bright sunset there,
+dull here) and the glowing lamp on the bureau's dome (emissive, not drawn).
+
 **Distant view order.** The distant view draws without depth, so its models go back to
 front by kind: the dome (`Sphere_sky`), the clouds (`xEF_`), then everything else (ground,
 stones, `ns_` trees, `xS3_` cliffs) in file order. In file order the clouds came after

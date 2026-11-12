@@ -2263,6 +2263,19 @@ fn main() -> Result<()> {
             .reading_time(barrel_game::event::reading_time)
             .motion_length(Box::new(move |c, m, d| lengths.get(&(c, m, d)).copied()))
             .schedule();
+        // BARREL_SCHEDULE_LOG: the times this playback shows each narration card, line and field
+        // (they differ from `barrel play-event --timed`, which has no motion lengths).
+        if std::env::var("BARREL_SCHEDULE_LOG").is_ok() {
+            use barrel_game::event::Step;
+            for t in &steps {
+                match &t.step {
+                    Step::Telop { card, .. } => eprintln!("{:8.2} card {card}", t.time),
+                    Step::Message { index, .. } => eprintln!("{:8.2} line {index}", t.time),
+                    Step::FieldChange { map, .. } => eprintln!("{:8.2} field {map}", t.time),
+                    _ => {}
+                }
+            }
+        }
         still_pictures = steps
             .iter()
             .filter_map(|t| match t.step {
