@@ -24,6 +24,8 @@ pub struct Member<'a> {
     pub items: Vec<Held>,
     /// HP and MP to start with when below their maxima (a save's current values).
     pub now: Option<(i32, i32)>,
+    /// Its size in battle (its `Chara.xml` radius: `battle_data::party_size`); 0 when unknown.
+    pub size: f32,
 }
 
 /// A carried item.
@@ -70,7 +72,7 @@ impl<'a> Member<'a> {
             .filter(|e| (1..=3).contains(&e.command) && e.level.is_some_and(|l| i32::from(l) <= level))
             .filter_map(|e| Some((skill(e)?, battle::party_mp_cost(e.mp, 0, 0, 0))))
             .collect();
-        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None })
+        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0 })
     }
 
     /// The costliest affordable heal aimed at its own side (one that revives, when `revive`).
@@ -109,6 +111,7 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
         .map(|(k, m)| {
             let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
             f.position = crate::battle::party_spot(k as i32, k as i32 % 3);
+            f.size = m.size;
             if let Some((hp, mp)) = m.now {
                 f.stats[stat::HP] = hp.clamp(0, f.stats[stat::MAX_HP]);
                 f.stats[stat::MP] = mp.clamp(0, f.stats[stat::MAX_MP]);

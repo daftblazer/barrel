@@ -1658,6 +1658,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
         let stats = growth.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
         let block = barrel_game::duel::party_block(l as i32, stats);
         let mut member = barrel_game::skirmish::Member::new(block, stats.mp, &lists[m], &skills).ok_or("no party attack")?;
+        member.size = barrel_formats::battle_data::party_size(&chara_radii_near(exe), m).unwrap_or(0.0);
         for item in parts {
             // <ids>@<quality>x<count>: heals and revives aim at the user's side, the rest at the
             // foe; the action's wait is not read yet (the normal attack's 600 is taken).
@@ -2863,6 +2864,7 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
         let [max_hp, max_mp, attack, defense, speed] = saved.equipped;
         (block.hp, block.attack, block.defense, block.speed) = (max_hp, attack, defense, speed);
         let mut member = barrel_game::skirmish::Member::new(block, max_mp, &lists[c], &skills).ok_or("no party attack")?;
+        member.size = barrel_formats::battle_data::party_size(&chara_radii_near(exe), c).unwrap_or(0.0);
         member.now = Some((saved.hp, saved.mp));
         for u in s.battle_items.get(c).into_iter().flatten() {
             let Some(row) = table.iter().find(|b| b.item == u.item as i32) else { continue };

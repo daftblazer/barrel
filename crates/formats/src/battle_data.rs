@@ -693,3 +693,10 @@ pub fn chara_radii(chara: &crate::table::Element) -> Vec<f32> {
 pub fn monster_size(radii: &[f32], monster: usize) -> Option<f32> {
     radii.get(MONSTER_CHARA_FIRST + monster).copied()
 }
+
+/// A party member's size: its `Chara.xml` row's radius. The party tables' order (Escha, Logy,
+/// Awin, Threia, Reyfer, Lucille, Linca, Wilbell, Micie, Katla, Nio) follows the rows, except
+/// that Nio (member 10) is row 11, after Marion.
+pub fn party_size(radii: &[f32], member: usize) -> Option<f32> {
+    radii.get(if member >= 10 { member + 1 } else { member }).copied()
+}
