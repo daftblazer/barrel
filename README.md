@@ -80,6 +80,7 @@ sources (`crates/render/shaders/`):
 
 - AMD FidelityFX Super Resolution 1.0 (`easu.frag`, `rcas.frag`): Copyright (c) 2021 Advanced
   Micro Devices, Inc., MIT License.
-- Snapdragon Game Super Resolution 1 (`gsr1.frag`): Copyright (c) 2023, Qualcomm Innovation
-  Center, Inc., BSD 3-Clause License. Binary builds reproduce its notice, conditions and
-  disclaimer as given in that file.
+- Snapdragon Game Super Resolution 1 and 2 (`gsr1.frag`, `gsr2_convert.frag`,
+  `gsr2_upscale.frag`): Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc., BSD 3-Clause
+  License. Binary builds reproduce its notice, conditions and
+  disclaimer as given in those files.

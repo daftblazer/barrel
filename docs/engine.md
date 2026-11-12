@@ -174,6 +174,26 @@ into 1080p it is far sharper than bilinear and cleaner than FSR 1 (less ringing,
 crisp). Which one the handheld preset uses is decided by timing both on the RP6. FSR 1 and the
 default frame are byte-identical to before.
 
+**GSR 2.** `--gsr2` (`RenderSettings::gsr2`, with `--scale` below 1) is Snapdragon GSR 2's
+2-pass fragment variant, Qualcomm's choice for mobile, in `gsr2.rs`: `gsr2_convert.frag`
+writes each render pixel's motion (NDC) and depth clip (how far its depth stands out from the
+nearest of its 4 × 4 neighbourhood) into an RGBA16F image. `gsr2_upscale.frag` then
+upsamples the jittered scene with a 5-tap Lanczos-like kernel, clamps the reprojected history
+to the taps' variance-narrowed box and blends them into `result` (RGBA16F, output size), which
+is copied into `history`. It turns on the motion vectors and the jitter and turns off TAA,
+MSAA, FSR 1/GSR 1 and RCAS (`RenderSettings::resolved`). Depth is then sampled, stored and left
+in `SHADER_READ_ONLY_OPTIMAL` by the scene pass (transient otherwise). It is read through a
+nearest sampler, as D32 need not filter. Changes from Qualcomm's shaders: the motion comes
+from Barrel's own vectors (×2 into NDC), which already hold the camera's movement, not from a
+depth reprojection of static pixels. The taps' texel positions are clamped to the render. The
+corner taps the original disables are left out. The constants follow the compute variant
+(kernel bias = output/render width, at most 1.99; box scale = min(20, area ratio³)).
+`minLerpContribution`, left to the caller, is 0.3 for a still camera and 0 otherwise.
+History resets share TAA's cut detection. From half scale into 1080p in the first opening it is
+the only upscaler without stair-stepped edges, near native and slightly soft; the walk and
+camera pan at 6.4 s show no trails. Validation clean. Still to do: time it on the RP6 against
+FSR 1 and GSR 1; ping-pong the history instead of copying it (one output-sized copy a frame).
+
 **FSR 2, 3 and 4: plan** (researched 2026-11-12).
 
 - *FSR 2 and FSR 3.1's upscaler* are one algorithm line, open under MIT: FSR 2.2's own

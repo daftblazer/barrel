@@ -22,6 +22,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod fsr;
 mod glow;
+mod gsr2;
 mod present;
 mod settings;
 mod shadow;
@@ -585,9 +586,12 @@ struct Targets {
     glow: Option<glow::Targets>,
     /// FSR 1, when it is on and the scene is drawn below the output's size.
     upscale: Option<upscale::Targets>,
-    /// TAA (`--taa`), and whether its history is still empty (new targets: the first frame).
+    /// TAA (`--taa`), and whether its (or GSR 2's) history is still empty (new targets: the
+    /// first frame; a cut).
     taa: Option<taa::Targets>,
-    taa_fresh: std::cell::Cell<bool>,
+    /// GSR 2 (`--gsr2`): the temporal upscaler.
+    gsr2: Option<gsr2::Targets>,
+    history_fresh: std::cell::Cell<bool>,
     /// The scene as it was when a cross-fade began (`u13` kind 3), faded out over the live one;
     /// whether it has been given a layout yet.
     frozen: vk::Image,
@@ -618,6 +622,7 @@ impl Targets {
         glow_pipelines: &glow::Pipelines,
         upscale_pipelines: Option<&upscale::Pipelines>,
         taa_pipelines: Option<&taa::Pipelines>,
+        gsr2_pipelines: Option<&gsr2::Pipelines>,
         samples: vk::SampleCountFlags,
         motion: bool,
         show_motion: bool,
@@ -653,7 +658,9 @@ impl Targets {
         let frozen_view = view(frozen, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         // Depth is cleared and never stored (the scene pass): transient.
-        let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
+        // Depth is transient unless GSR 2 reads it (then the scene pass stores it).
+        let depth_usage = if gsr2_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::TRANSIENT_ATTACHMENT };
+        let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | depth_usage, samples)?;
         // With samples, the multisampled colour the pass resolves into the scene: transient too.
         let multisample = if samples != vk::SampleCountFlags::TYPE_1 {
             let (image, memory) = image_with(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
@@ -688,6 +695,12 @@ impl Targets {
             _ => None,
         };
         let resolved = taa.as_ref().map_or(scene_view, taa::Targets::result);
+        // GSR 2 upscales the jittered scene with its depth and motion vectors.
+        let gsr2 = match (gsr2_pipelines, motion_target) {
+            (Some(p), Some((_, _, motion_view))) => Some(gsr2::Targets::new(gpu, p, scene_view, depth_view, motion_view, sampler, scene_size, (width, height))?),
+            _ => None,
+        };
+        let resolved = gsr2.as_ref().map_or(resolved, gsr2::Targets::result);
         let upscale = match upscale_pipelines {
             // FSR 1 when the scene is smaller; RCAS alone (`--sharpen`) when it is not.
             Some(p) => Some(upscale::Targets::new(gpu, p, resolved, sampler, scene_size, (width, height))?),
@@ -726,7 +739,8 @@ impl Targets {
             glow: Some(glow),
             upscale,
             taa,
-            taa_fresh: std::cell::Cell::new(true),
+            gsr2,
+            history_fresh: std::cell::Cell::new(true),
             frozen,
             frozen_memory,
             frozen_view,
@@ -750,6 +764,9 @@ impl Targets {
             }
             if let Some(t) = self.taa.take() {
                 t.destroy(gpu);
+            }
+            if let Some(g) = self.gsr2.take() {
+                g.destroy(gpu);
             }
             if let Some(u) = self.upscale.take() {
                 u.destroy(gpu);
@@ -1523,6 +1540,7 @@ fn main() -> Result<()> {
             "--motion" => settings.motion = true,
             "--jitter" => settings.jitter = true,
             "--taa" => settings.taa = true,
+            "--gsr2" => settings.gsr2 = true,
             "--sharpen" => settings.sharpen = true,
             "--show-motion" => {
                 settings.motion = true;
@@ -1980,9 +1998,10 @@ fn main() -> Result<()> {
             .format(DEPTH_FORMAT)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            // Kept for GSR 2 to read, else never stored.
+            .store_op(if settings.gsr2 { vk::AttachmentStoreOp::STORE } else { vk::AttachmentStoreOp::DONT_CARE })
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
+            .final_layout(if settings.gsr2 { vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL } else { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL }),
     ];
     let multi_attachments = [
         vk::AttachmentDescription::default()
@@ -2093,7 +2112,8 @@ fn main() -> Result<()> {
     let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
     let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode)?) } else { None };
     let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+    let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -2657,6 +2677,7 @@ fn main() -> Result<()> {
     let mut last_effect: Option<f32> = None;
     let mut prev_mvp: Option<Mat4> = None;
     let mut jitter_index = 0u32;
+    let mut frame_jitter = (0f32, 0f32);
     let mut last_shot: Option<taa::Shot> = None;
     let mut shot_field = u16::MAX;
     for frame in 0..frames {
@@ -2983,7 +3004,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), samples, settings.motion, show_motion)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -3007,11 +3028,13 @@ fn main() -> Result<()> {
         if last_shot.is_some() {
             eprintln!("frame {frame}: camera cut");
             prev_mvp = None;
-            targets.taa_fresh.set(true);
+            targets.history_fresh.set(true);
         }
         shot_field = current_field;
     }
     last_shot = Some(shot);
+    // A camera that has not moved since the last frame (GSR 2 keeps more of its history then).
+    let same_camera = prev_mvp.is_some_and(|p| p.abs_diff_eq(mvp, 1e-5));
     if std::env::var_os("BARREL_SHOTS").is_some() {
         eprintln!("frame {frame}: shot {shot:?}");
     }
@@ -3020,6 +3043,7 @@ fn main() -> Result<()> {
     // size), the plain one otherwise.
     let draw_vp = if settings.jitter {
         let (jx, jy) = settings::jitter(jitter_index);
+        frame_jitter = (jx, jy);
         let (sw, sh) = targets.scene_size;
         let mut j = Mat4::IDENTITY;
         j.w_axis.x = 2.0 * jx / sw as f32;
@@ -3316,8 +3340,13 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             g.record(d, &glow_pipelines, cb, threshold);
         }
         if let (Some(t), Some(p)) = (&targets.taa, &taa_pipelines) {
-            let fresh = targets.taa_fresh.replace(false);
+            let fresh = targets.history_fresh.replace(false);
             t.record(d, p, cb, fresh, fresh);
+        }
+        if let (Some(g), Some(p)) = (&targets.gsr2, &gsr2_pipelines) {
+            let fresh = targets.history_fresh.replace(false);
+            let frame = gsr2::Frame { jitter: frame_jitter, fov, reset: fresh, same_camera };
+            g.record(d, p, cb, frame, fresh);
         }
         if let (Some(u), Some(p)) = (&targets.upscale, &upscale_pipelines) {
             u.record(d, p, cb);
@@ -3434,6 +3463,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             p.destroy(&gpu);
         }
         if let Some(p) = taa_pipelines {
+            p.destroy(&gpu);
+        }
+        if let Some(p) = gsr2_pipelines {
             p.destroy(&gpu);
         }
         d.destroy_render_pass(render_pass, None);

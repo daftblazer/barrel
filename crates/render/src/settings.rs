@@ -36,18 +36,21 @@ pub struct RenderSettings {
     /// RCAS on the scene at the output's size too (FSR 1 always sharpens when it scales):
     /// offsets TAA's softness.
     pub sharpen: bool,
+    /// Snapdragon GSR 2, the temporal upscaler (`gsr2.rs`): takes the motion vectors, the jitter
+    /// and the depth, and replaces TAA, MSAA and the spatial upscalers.
+    pub gsr2: bool,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
     /// The desktop with TAA in MSAA's place.
     pub const DESKTOP_TAA: RenderSettings = RenderSettings { taa: true, motion: true, jitter: true, sharpen: true, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false };
 
     /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `handheld`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
@@ -63,10 +66,18 @@ impl RenderSettings {
     /// These settings with what they need of each other: TAA turns on the motion vectors and
     /// the jitter and takes single-sampled drawing.
     pub fn resolved(mut self) -> RenderSettings {
+        if self.gsr2 {
+            self.taa = true;
+        }
         if self.taa {
             self.motion = true;
             self.jitter = true;
             self.msaa = 1;
+        }
+        if self.gsr2 {
+            self.taa = false;
+            self.sharpen = false;
+            self.upscaler = Upscaler::Bilinear;
         }
         self
     }
