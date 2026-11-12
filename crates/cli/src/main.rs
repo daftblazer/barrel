@@ -840,7 +840,11 @@ fn save(file: &Path) -> Result<()> {
         show(r, 0);
     }
     let s = barrel_formats::save::summary(&records);
-    println!("money {:?}, alchemy (level, exp) {:?}, day {:?}, sizes {:?}", s.money, s.alchemy, s.day, s.limits);
+    let date = s.day.map(|d| {
+        let c = barrel_game::calendar::Date::of(d);
+        format!("{d} (year {}, {}/{})", c.year, c.month, c.day)
+    });
+    println!("money {:?}, alchemy (level, exp) {:?}, day {}, sizes {:?}", s.money, s.alchemy, date.unwrap_or_else(|| "?".into()), s.limits);
     // BARREL_ITEMS=path/to/itemData.xml names the items.
     let names: Vec<String> = std::env::var("BARREL_ITEMS")
         .ok()

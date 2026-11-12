@@ -396,7 +396,11 @@ The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its
 the load screen shows: i32s from +0x28 (5, 28, 34, 2954, 12, 0, 1, 29, ... in one save; the
 last two read as u16 pairs, 12 and 14, 12 and 15), -1 padding from +0x74, and at +0xa4 the time
 of saving as a Windows `SYSTEMTIME` (year, month, day of the week, day, hour, minute, second,
-milliseconds). The coded game state follows. `SYSDATA.pcsave`, the settings, is coded whole.
+milliseconds). The summary's words match the state: +0x28.. play time, presumably (5, 28,
+34: hours, minutes, seconds), then the money (2954) and the alchemy level (12), and from the
+eleventh word the squad as the leader's level (12) and (character, level) pairs (9 and 11, 7
+and 15, 2 and 12, 1 and 12; the last two levels' high halves hold 14 and 15, not read).
+The coded game state follows. `SYSDATA.pcsave`, the settings, is coded whole.
 
 **The coding** (`0x1400219a0 (codec, buffer, length, &coded_length, encode)`, in place; the
 settings writer `0x14015d380` calls it with encode 1 and `fwrite`s the result). Decoding
@@ -455,7 +459,8 @@ the record tree (`BARREL_SAVE_BYTES=n` adds each record's first bytes).
 
 Fields read so far (`save::summary`): `money` an i32 (the header's fourth summary value),
 `mix_lv/m_lv` and `m_exp` the alchemy level (the header's fifth value) and experience, `date`
-a u32 first (229 in one save; a day count, presumably), `item/limitSize` the basket's and the
+a u32 first, the game's day number (`calendar::Date::of`: 229 is 20 August of school year 1,
+139 days after a new game's 1 April), `item/limitSize` the basket's and the
 container's sizes (60, 999). The item lists (`m_unitKago` 120 slots, `m_unitContainer` 999,
 `m_unitMaterial` 200, the `...Important` pair 100 each) are 36-byte units (`save::ItemUnit`):
 a serial (+0; `item/ID` holds the next), the `itemData.xml` row (+2), the quality as a float
