@@ -134,6 +134,8 @@ pub struct Body {
     pub talking: bool,
     /// The gesture its latest line set (a gesture number, `docs/events.md`) and when.
     pub gesture: Option<(i32, f32)>,
+    /// Its head gesture (`s116`): segment, rate, weight, and the stage time it started.
+    pub head: Option<(usize, f32, f32, f32)>,
     /// A timed turn: (from, change, seconds, elapsed, curve).
     turn: Option<(f32, f32, f32, f32, u32)>,
 }
@@ -248,7 +250,7 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None, head: None });
                 b.position = *position;
                 b.mover = None;
             }
@@ -319,6 +321,17 @@ impl Stage {
             Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
             Step::Telop { card, .. } => self.telop = Some(*card),
+            Step::HeadGesture { character, segment, rate, weight, .. } => {
+                let now = self.time;
+                if let Some(b) = self.characters.get_mut(character) {
+                    b.head = usize::try_from(*segment).ok().filter(|&s| s < crate::event::HEAD_SEGMENTS.len()).map(|s| (s, *rate, *weight, now));
+                }
+            }
+            Step::HeadStop { character, .. } => {
+                if let Some(b) = self.characters.get_mut(character) {
+                    b.head = None;
+                }
+            }
             Step::TelopAlpha { from, to, seconds, .. } => self.telop_alpha = crate::field_camera::Tween { from: *from, to: *to, seconds: *seconds, elapsed: 0.0 },
             Step::ScreenEffect { kind, param, seconds, .. } => self.screen_effect = Some((*kind, *param, *seconds, self.time)),
             Step::FieldCamera { change, .. } => {

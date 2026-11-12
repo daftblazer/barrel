@@ -751,6 +751,8 @@ struct Actor {
     face: Option<FaceRig>,
     /// The time shown at the last frame, in the current motion.
     last_t: f32,
+    /// The head gestures' clip and the joints it turns (`s116`).
+    head: Option<(barrel_formats::g1a::Animation, Vec<usize>)>,
 }
 
 /// What a character's face needs to change during playback: its rows, its facial
@@ -806,9 +808,31 @@ struct Motions {
     /// The `CharaBase` row's columns (`F_WAIT` → `ACT_DEF`, ...).
     columns: std::collections::HashMap<String, String>,
     loaded: std::collections::HashMap<String, Option<barrel_formats::g1a::Animation>>,
+    /// The `Neck` container (`<FileHead>_NECK`), with the head gestures' clip.
+    neck: Option<String>,
 }
 
 impl Motions {
+    /// The head gestures' clip (`<FileHead>_M_HEAD.g1a` in the `Neck` container) and the joints
+    /// it turns (more than half a degree anywhere in it): `s116` lays only those over the body.
+    fn head_gestures(&self) -> Option<(barrel_formats::g1a::Animation, Vec<usize>)> {
+        let bytes = std::fs::read(self.char_dir.join(format!("{}.elixir.gz", self.neck.as_ref()?))).ok()?;
+        let c = Elixir::parse(&bytes).ok()?;
+        let anim = barrel_formats::g1a::parse(named(&c, &format!("{}_M_HEAD.g1a", self.head))?).ok()?;
+        let frames = (anim.duration * 30.0).round() as usize;
+        let moving = anim
+            .tracks
+            .iter()
+            .filter(|t| {
+                let Some((first, ..)) = t.pose(0.0) else { return false };
+                let first = glam::Quat::from_array(first).normalize();
+                (0..=frames).filter_map(|f| t.pose(f as f32 / 30.0)).any(|(q, ..)| glam::Quat::from_array(q).normalize().angle_between(first) > 0.5f32.to_radians())
+            })
+            .map(|t| t.bone as usize)
+            .collect();
+        Some((anim, moving))
+    }
+
     fn new(root: &Path, model: &str, row: &barrel_formats::table::Element) -> Option<Motions> {
         let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
         Some(Motions {
@@ -817,6 +841,7 @@ impl Motions {
             container: row.attr("Motion1")?.to_string(),
             columns: row.attributes.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             loaded: Default::default(),
+            neck: row.attr("Neck").map(str::to_string),
         })
     }
 
@@ -1065,7 +1090,7 @@ fn event_characters(
         }
         let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
         if let Some((skeleton, motions, anim, start)) = rig {
-            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take() });
+            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take(), head: None });
         }
         scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
@@ -2380,6 +2405,23 @@ fn main() -> Result<()> {
                     }
                     (Some(_), false) => a.previous = None,
                     _ => {}
+                }
+                // A head gesture (s116): its segment's pose laid over the joints it turns, at its
+                // weight (the game lerps the joints' transforms, 0x1404177a0).
+                if let Some((segment, rate, w, since)) = play.stage.characters.get(&a.who).and_then(|b| b.head) {
+                    if a.head.is_none() {
+                        a.head = a.motions.head_gestures();
+                    }
+                    if let Some((clip, joints)) = &a.head {
+                        let (from, to) = barrel_game::event::HEAD_SEGMENTS[segment];
+                        let at = (from / 30.0 + ((shown_time - since).max(0.0) * rate)).min(to / 30.0);
+                        let over = local_pose(&a.skeleton, clip, at);
+                        for &j in joints {
+                            if let (Some(base), Some(top)) = (locals.get(j).copied(), over.get(j)) {
+                                locals[j] = (base.0.lerp(top.0, w), base.1.slerp(top.1, w), base.2.lerp(top.2, w));
+                            }
+                        }
+                    }
                 }
                 let joints = skin(&a.skeleton, &locals);
                 // The face the stage gives the character now (a talking mouth moves).

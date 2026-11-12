@@ -64,6 +64,16 @@ pub const SOUND_SE_PLAY: u32 = 0x7510_0001;
 /// (18 uses, all in battle skill events, where the effect looks like another numbering: 151
 /// would be the rain loop; its handler is not read).
 pub const CHARA_SE_PLAY: u32 = 0x7300_003e;
+/// `s116`: `{character, segment, rate, weight}` (the last two in hundredths): a head gesture,
+/// one segment of the character's `M_HEAD` clip (`docs/events.md`, "`s116` and `s117`").
+pub const CHARA_HEAD_GESTURE: u32 = 0x7300_0074;
+/// `s117`: `{character}`: the head gesture ends.
+pub const CHARA_HEAD_STOP: u32 = 0x7300_0075;
+
+/// The head gesture segments' frame ranges at 30 frames a second (`0x140037a10`, tables at
+/// `0x140726730` and `0x140726750`).
+pub const HEAD_SEGMENTS: [(f32, f32); 8] =
+    [(0.0, 39.0), (54.0, 88.0), (103.0, 137.0), (147.0, 181.0), (192.0, 223.0), (237.0, 267.0), (282.0, 312.0), (327.0, 360.0)];
 /// `ECT_SOUND_BG_PLAY`: `{track, volume (percent), 0, 0}`; the track is a number in the
 /// executable's music list (`barrel_formats::bgm`).
 pub const SOUND_BG_PLAY: u32 = 0x7510_0003;
@@ -124,6 +134,12 @@ pub enum Step<'a> {
     ScreenEffect { action: usize, kind: u32, param: i32, seconds: f32 },
     /// The screen's colour overlay starts a fade (`u22`): preset `preset` over `seconds`.
     Fade { action: usize, preset: u32, seconds: f32 },
+    /// A head gesture starts (`s116`): `segment` of [`HEAD_SEGMENTS`] played at `rate` (1 is
+    /// real time; the events' 999 jumps to its end and holds it), laid over the body at
+    /// `weight`. A segment outside the table ends the gesture.
+    HeadGesture { action: usize, character: u32, segment: i32, rate: f32, weight: f32 },
+    /// The head gesture ends (`s117`).
+    HeadStop { action: usize, character: u32 },
     /// A narration card is chosen (`u55`).
     Telop { action: usize, card: u32 },
     /// The narration card's opacity moves from `from` to `to` (0 to 1) over `seconds` (`u56`).
@@ -241,6 +257,14 @@ impl<'a> Player<'a> {
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
             (SOUND_BG_FADEOUT, [hundredths, ..]) => out.push(Step::Music { action, track: None, volume: 0.0, fade: *hundredths as f32 / 100.0 }),
+            (CHARA_HEAD_GESTURE, [character, segment, rest @ ..]) => out.push(Step::HeadGesture {
+                action,
+                character: *character,
+                segment: *segment as i32,
+                rate: rest.first().map_or(1.0, |&v| v as i32 as f32 / 100.0),
+                weight: rest.get(1).map_or(1.0, |&v| v as i32 as f32 / 100.0),
+            }),
+            (CHARA_HEAD_STOP, [character, ..]) => out.push(Step::HeadStop { action, character: *character }),
             (EVENT_TELOP, [card, ..]) => out.push(Step::Telop { action, card: *card }),
             (EVENT_TELOP_ALPHA, [from, to, hundredths, ..]) => out.push(Step::TelopAlpha {
                 action,
@@ -487,6 +511,8 @@ mod tests {
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),
                 Step::Fade { preset, seconds, .. } => format!("fade {preset} over {seconds} s"),
                 Step::Telop { card, .. } => format!("narration card {card}"),
+                Step::HeadGesture { character, segment, rate, weight, .. } => format!("{character} head gesture {segment} at {rate}× (weight {weight})"),
+                Step::HeadStop { character, .. } => format!("{character} head gesture ends"),
                 Step::TelopAlpha { from, to, seconds, .. } => format!("narration card {from} -> {to} over {seconds} s"),
                 Step::Music { track, fade, .. } => match track {
                     Some(t) => format!("music {t}"),

@@ -316,17 +316,22 @@ reads it is not followed yet). `c` and `d` are not read there.
 its slot +0x28 is what a `p3` on that character asks) runs both, in its switch at
 `0x1401eff04`:
 
-- `s116` (0x73000074, `{character, segment, duration, blend}`, 1,604 uses) plays one segment
-  of a motion clip on the character's motion player (+0x38, `0x1404ee950`): `0x140037a10`
-  turns the segment (0 to 7) into a frame range at 30 frames a second, 0-39, 54-88, 103-137,
-  147-181, 192-223, 237-267, 282-312 or 327-360; duration and blend are hundredths of a
-  second. The events use segments 4 and 6, a duration of 99900 (999 s, so it holds) and a
-  blend of 20 to 40 (0.2 to 0.4 s). Which clip the segments are cut from is not read yet
-  (`0x1404ee950` only stores the range, duration and blend at player +0x44 to +0x50 when the
-  player has a clip). One candidate by length: Escha's `PC20_ACT_MIX` (synthesis) is 12.03 s,
-  361 frames, the only one of her clips that long, matching the table's last frame 360; not
-  confirmed.
-- `s117` (0x73000075, `{character}`, 1,632 uses) clears the character's +0x8d, ending it.
+- `s116` (0x73000074, `{character, segment, rate, weight}`, 1,604 uses) plays a **head
+  gesture**: one segment of the character's `<FileHead>_M_HEAD.g1a` (in the container its
+  `CharaBase` row's `Neck` column names, e.g. `PC20_NECK`; 12.03 s, 361 frames), on the
+  character's second motion player (+0x38, `0x1404ee950`). `0x140037a10` turns the segment
+  (0 to 7) into a frame range at 30 frames a second: 0-39, 54-88, 103-137, 147-181, 192-223,
+  237-267, 282-312 or 327-360 (tables `0x140726730`, `0x140726750`); -1 (or anything else)
+  ends it. Rate and weight are hundredths (`0x140202920`): the player's time moves by
+  dt × rate (+0x4c) from the segment's start and stops at its end (+0x44 clamped to +0x48,
+  `0x1404ed1e0`), so the events' rate 999 jumps to the end pose and holds it, 1 plays it in
+  real time; the pose is laid over the body motion's at the weight (+0x50; `0x1404177a0`
+  lerps the joints' transforms, `(1 - w) base + w gesture`), the events using 0.2 to 0.4. Only
+  the joints the player's list (+0x110) marks take it; `M_HEAD` turns `B_0_Neck` (up to 18°),
+  `B_0_Head` (51°) and the side hair, and the renderer takes the joints it turns (a guess
+  where the list is not read). The events mostly hold segments 4 and 6.
+- `s117` (0x73000075, `{character}`, 1,632 uses) clears the character's +0x8d, ending the head
+  gesture.
 
 **Motions and moves.** In the same runner switch:
 
@@ -497,7 +502,7 @@ That gives a place for 61 of the 106 unnamed commands. The ones that matter most
 |---|---|---|---|
 | `u18` | 4,990 | `B3Balloon` | show a speech balloon (a message line) |
 | `t20/0x10` and the other `t…/0x10` | 4,484 | `CameraCFieldMap`, `EventExecCamera` | field-map camera |
-| `s116`, `s117` | 1,604, 1,632 | `EventExecChara` | play a segment of a motion, and stop it ("`s116` and `s117`" below) |
+| `s116`, `s117` | 1,604, 1,632 | `EventExecChara` | a head gesture (a segment of `M_HEAD` laid over the body), and its end ("`s116` and `s117`" below) |
 | `u9/0x40`, `u10/0x40` | 3,628 each | `Event` | event flow; always together, with no operands |
 | `u67`, `u68`, `u16` | 294, 194, 98 | `B3Balloon` | balloon variants |
 | `u1/0x30`, `u2/0x30` | 243, 84 | `IpuGallery` | still pictures (Ipu are the CG images) |

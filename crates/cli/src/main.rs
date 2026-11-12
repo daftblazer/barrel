@@ -33,6 +33,7 @@ usage:
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a FILE#N            list an animation's tracks (bone, kind, values over time)
+  barrel g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
   barrel g1a-scan DIR          read every animation in the containers
   barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
   barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
@@ -99,6 +100,7 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a", file] => g1a(file),
+        ["g1a-moves", file, rest @ ..] => g1a_moves(file, rest.first().copied()),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
@@ -1579,6 +1581,33 @@ fn g1a(spec: &str) -> Result<()> {
     Ok(())
 }
 
+/// Which bones an animation turns, and by how much at most (degrees from their first frame),
+/// named from a bone list (`*Oid.bin`) when one is given.
+fn g1a_moves(spec: &str, oid: Option<&str>) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let a = barrel_formats::g1a::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    let names = match oid {
+        Some(o) => barrel_formats::oid::parse(&file_or_entry(o)?).map_err(|e| format!("{o}: {e}"))?,
+        None => Vec::new(),
+    };
+    let frames = (a.duration * 30.0).round() as usize;
+    for t in &a.tracks {
+        let Some((first, ..)) = t.pose(0.0) else { continue };
+        let most = (0..=frames)
+            .filter_map(|f| t.pose(f as f32 / 30.0))
+            .map(|(q, ..)| {
+                let dot: f32 = q.iter().zip(&first).map(|(a, b)| a * b).sum::<f32>().abs().min(1.0);
+                2.0 * dot.acos().to_degrees()
+            })
+            .fold(0.0f32, f32::max);
+        if most > 0.5 {
+            let name = names.get(t.bone as usize).map_or("", String::as_str);
+            println!("  bone {:4} {name:24} turns up to {most:.1}°", t.bone);
+        }
+    }
+    Ok(())
+}
+
 fn g1h(spec: &str) -> Result<()> {
     let bytes = file_or_entry(spec)?;
     let sets = barrel_formats::g1h::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
@@ -2049,6 +2078,8 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("      (wait for {who})");
             }
+            Step::HeadGesture { action, character, segment, rate, weight } => println!("{action:3} {} head gesture {segment} at {rate}x, weight {weight}", names.get(character as usize).map_or("?", String::as_str)),
+            Step::HeadStop { action, character } => println!("{action:3} {} head gesture ends", names.get(character as usize).map_or("?", String::as_str)),
             Step::Telop { action, card } => println!("{action:3} --- narration card {card}"),
             Step::TelopAlpha { action, from, to, seconds } => println!("{action:3} --- narration card opacity {from} -> {to} over {seconds} s"),
             Step::Fade { action, preset, seconds } => println!("{action:3} --- fade (preset {preset}) over {seconds} s"),
