@@ -97,6 +97,11 @@ impl Names {
 
 impl Names {
     /// A name's value.
+    /// Every name and its value.
+    pub fn all(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.values.iter().map(|(n, &v)| (n.as_str(), v))
+    }
+
     pub fn value(&self, name: &str) -> Option<u32> {
         self.values.get(name).copied()
     }

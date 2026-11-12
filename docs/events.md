@@ -1118,6 +1118,18 @@ commands as the `.ebd` events.
   name, its native function and the stub that converts its arguments; `setMotionTag` is
   `0x140231fa0`, `isEndMotin` `0x140232360`, `movePosition` `0x140232000`, `setState`
   `0x140131f60`), which is where each method's meaning is to be read.
+  Read so far: `setMotionTag (tag, division, blend, speed, a, b)` starts the motion on the
+  character's motion object (+0xc0, virtual +0x48) and then sets its speed when it differs;
+  `isEndMotin` is true once no motion is queued (+0x90 equals +0x98) or the done flag (+0x5e)
+  is set; `movePosition (to, speed)` builds a straight mover from where the character stands
+  (+0x230, `0x1402f1710`) and starts it (`0x1402f25b0`); `getWaitTime` and `getMoveSpeed` are
+  virtuals of the creature's class; positions travel as host `Vector3`s (`SQ.getVector3`,
+  `SQ.getXByVector3`). `barrel_game::creature::Creature` plays a script's side of those (a
+  timer counting down, motions that end after a set time, straight moves, emotion icons, the
+  custom slots; the spots near the player and the range checks are stand-ins until read), and
+  `barrel nut-run ROOT FILE FRAMES` drives one 600 units from the player: the unaware dog
+  waits (`F_WAIT`), plays one of its idle actions (`EX9`, `EX8`), and runs off (`B_RUN`) to a
+  spot and waits again.
 
 `macros::read` reads them without a Squirrel VM (the arrays are literal): each function's name,
 parameters and array; `Macro::words` resolves the array into an event action's words, with the

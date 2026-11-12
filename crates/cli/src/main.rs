@@ -44,7 +44,7 @@ usage:
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
-  barrel nut-run ROOT FILE.nut TICKS  run a creature script on a stand-in creature, logging what it asks for
+  barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
   barrel gimmicks EXE [AREA]   each field area's gimmicks: kind, place, size, event window
@@ -2946,72 +2946,34 @@ fn acts(exe: &Path) -> Result<()> {
 /// Reads every command macro in ROOT/Script/macro_*.nut, resolves it with placeholder
 /// arguments and decodes it as an event action, listing its commands or what it names that is
 /// not known.
-/// A stand-in host for `nut-run`: `SQ` is object 0, the creature 1, the player 2; constants from
-/// the executable's names; the creature keeps its state and timer and answers the rest with 0.
-struct LogHost {
-    names: barrel_game::macros::Names,
-    state: i64,
-    timer: f64,
-    log: Vec<String>,
-}
-
-impl barrel_game::squirrel::Host for LogHost {
-    fn global(&mut self, name: &str) -> Option<barrel_game::squirrel::Value> {
-        use barrel_game::squirrel::Value;
-        match name {
-            "SQ" => Some(Value::Host(0)),
-            _ => self.names.value(name).map(|v| Value::Int(v as i32 as i64)),
-        }
-    }
-    fn call(&mut self, object: u32, name: &str, args: &[barrel_game::squirrel::Value]) -> std::result::Result<barrel_game::squirrel::Value, barrel_game::squirrel::Error> {
-        use barrel_game::squirrel::Value;
-        let shown: Vec<String> = args.iter().map(|a| match a {
-            Value::Int(i) => i.to_string(),
-            Value::Float(f) => format!("{f}"),
-            Value::Bool(b) => b.to_string(),
-            Value::Host(h) => format!("#{h}"),
-            other => format!("{other:?}"),
-        }).collect();
-        self.log.push(format!("{}.{name}({})", ["SQ", "self", "player"].get(object as usize).unwrap_or(&"?"), shown.join(", ")));
-        Ok(match (object, name) {
-            (0, "getPlayer") => Value::Host(2),
-            (0, "getActiveChara") => Value::Host(1),
-            (0, "randRange") => args.first().cloned().unwrap_or(Value::Int(0)),
-            (1, "getState") => Value::Int(self.state),
-            (1, "setState") => {
-                self.state = args.first().map_or(0, |a| a.as_int());
-                Value::Null
-            }
-            (1, "setTimer") => {
-                self.timer = args.first().and_then(|a| a.number()).unwrap_or(0.0);
-                Value::Null
-            }
-            (1, "getTimer") => Value::Float(self.timer),
-            (_, n) if n.starts_with("is") => Value::Bool(false),
-            (_, n) if n.starts_with("get") => Value::Float(0.0),
-            _ => Value::Null,
-        })
-    }
-}
-
-/// Runs a creature script TICKS times on the stand-in host and prints its calls.
+/// Runs a creature script for TICKS frames (1/60 s) on a `Creature` 600 units from the player,
+/// printing what changes.
 fn nut_run(root: &Path, file: &str, ticks: usize) -> Result<()> {
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
-    let names = barrel_game::macros::Names::escha(&barrel_game::gesture::motions(&pe));
+    let motions = barrel_game::gesture::motions(&pe);
+    let names = barrel_game::macros::Names::escha(&motions);
     let load = |name: &str| -> Result<Vec<barrel_game::squirrel::Stmt>> {
         let bytes = read(&root.join("Script").join(name))?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
         barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}").into())
     };
-    let mut host = LogHost { names, state: 0, timer: 0.0, log: Vec::new() };
+    let mut c = barrel_game::creature::Creature::new([0.0; 3], barrel_game::rng::Rng::from_state([1, 2, 3, 4]));
+    c.player = [600.0, 0.0, 0.0];
+    c.constants = names.all().map(|(n, v)| (n.to_string(), v as i32 as i64)).collect();
     let mut vm = barrel_game::squirrel::Interp::new();
-    vm.run(&load("utility.nut")?, &mut host).map_err(|e| format!("utility.nut: {e}"))?;
+    vm.run(&load("utility.nut")?, &mut c).map_err(|e| format!("utility.nut: {e}"))?;
     let script = load(file)?;
+    let mut last = String::new();
     for tick in 0..ticks {
-        host.log.clear();
-        vm.run(&script, &mut host).map_err(|e| format!("{file}, tick {tick}: {e}"))?;
-        println!("tick {tick}: state {} | {}", host.state, host.log.join("; "));
+        vm.run(&script, &mut c).map_err(|e| format!("{file}, frame {tick}: {e}"))?;
+        c.frame(1.0 / 60.0);
+        let motion = c.motion.and_then(|m| motions.get(m as usize)).map_or("-", |m| m.as_str());
+        let now = format!("state {} motion {motion} emotion {:?} moving {}", c.state, c.emotion, c.moving.is_some());
+        if now != last {
+            println!("{:6.2} s: {now} at ({:.0}, {:.0})", tick as f64 / 60.0, c.position[0], c.position[2]);
+            last = now;
+        }
     }
     Ok(())
 }

@@ -567,6 +567,8 @@ pub enum Value {
     Table(Rc<RefCell<HashMap<String, Value>>>),
     /// An object the host owns (`SQ`, a character), by the host's number.
     Host(u32),
+    /// A host `Vector3` (`SQ.getVector3`), passed through scripts whole.
+    Vec3([f64; 3]),
     Function(Rc<(Vec<String>, Vec<Stmt>)>),
 }
 
@@ -577,6 +579,7 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Host(a), Value::Host(b)) => a == b,
+            (Value::Vec3(a), Value::Vec3(b)) => a == b,
             (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
             (Value::Table(a), Value::Table(b)) => Rc::ptr_eq(a, b),
             (a, b) => match (a.number(), b.number()) {
