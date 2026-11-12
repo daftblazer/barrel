@@ -22,6 +22,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod fsr;
 mod glow;
+mod fsr3;
 mod gsr2;
 mod present;
 mod settings;

@@ -201,8 +201,22 @@ permutation is LDR colour, full-size motion vectors without the jitter, depth no
 the LUT Lanczos for reprojection, and no sharpening inside the accumulate pass (RCAS as its own
 pass). The SDK's host code (`ffx_fsr3upscaler.cpp`, not vendored) dispatches: prepare inputs →
 luma pyramid (SPD) → shading-change pyramid → shading change → prepare reactivity → luma
-instability → accumulate → RCAS. Barrel's host side for them (resources, the constant buffer,
-the dispatches) is the next step.
+instability → accumulate → RCAS. `fsr3.rs` has the CPU side, ported from that host code: the main constant buffer
+(`Constants`, std140, 148 bytes) and its per-frame update, the Lanczos-2 table (128 × R16_SNORM),
+the jitter phase count (8 × upscale ratio², so 32 phases from half scale; Barrel's jitter has to
+follow it when FSR 3 runs), SPD's setup and RCAS's constants. Barrel's motion vectors are
+current minus previous in texture units, so the motion vector scale is -1.
+
+The GPU side still to write (all at render size unless noted): dilated motion (RG16F), dilated
+depth (R32F) and the reconstructed previous nearest depth (R32UI, cleared to 1.0's bits each
+frame); luma 1/2 (R16F, swapped each frame); luma history 1/2 (RGBA16F); accumulation 1/2
+(R8); internal upscaled 1/2 (RGBA16F, output size); new locks (R8, output size); the SPD mips
+(RG16F, half size, 6 levels) and its atomic counter (R32UI, cleared each frame); farthest-depth
+mip 1 (R16F, half); shading change (R8, half); dilated reactive masks (RGBA8); an R16F
+intermediate shared by farthest depth and luma instability; frame info (RGBA32F 1 × 1); 1 × 1
+defaults for exposure (RG32F) and the reactive and transparency masks (R8). Two samplers
+(point and linear clamp) at bindings 1000/1001. On a reset, accumulation, the SPD mips and frame
+info (-1, 1) are cleared.
 
 **FSR 2, 3 and 4: plan** (researched 2026-11-12).
 
