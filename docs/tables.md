@@ -1380,8 +1380,13 @@ point's byte +0x30 (word 12) chooses the rule, and the result, at most 4, indexe
 words. Set: the level of `ACT_ALC_TABLE_LEVELUP` (act 215) on the item unit at `0x140dfc8d4`;
 clear: the level of `ACT_GAT_TABLE_LEVELUP` (216) on the unit at `0x140dfc8b0`, plus
 `0x1410783b4` while `0x1410783b0` is 4 (both read through `0x14029e8d0 (item, act)`). So a
-point's five lists are tiers that a gathering "table" upgrade raises (`gather::list_index`);
-which items those two units hold is not read yet.
+point's five lists are tiers that a gathering "table" upgrade raises (`gather::list_index`).
+In the running game with the user's save (alchemy level 12) both units were empty (no item) and
+the field state at `0x1410783b0` read mode 4 with value 2, so its ordinary points drew from tier 2
+(lists 21 and the like at `AREA_01_01`). That state (a mode, then values at +4 to +0x10) is copied
+in from an effect object by `0x140283d16`, and the code tests it for modes 3 to 8 in several
+places (gathering's 3 to 5 above; 6 in battle, 7 and 8 elsewhere): a field effect, not followed
+further yet.
 
 **The draw** (`0x14023c210 (lists, list, ...)`, `barrel_game::gather`): the list's records are
 gathered in table order; each gets a weight, its own plus a roll of 30 to 100 when the player
