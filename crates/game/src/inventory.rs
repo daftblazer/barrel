@@ -128,6 +128,18 @@ impl ItemList {
     }
 }
 
+/// The squares an item takes on an exploration grid (`0x14029f030`, kept at the unit's +0x18):
+/// its `itemData` `EquipCost` (the row's +0x3c), less a roll in each of its traits'
+/// `ITEM_SUB_EQUIP_COST` slots (kind 37, `0x1402a1ed0`), less its own +0x1a, then at least 1 and
+/// at most 5; an item whose `EquipCost` is 0 or less takes none (materials).
+pub fn equip_cost(base: i32, unit: &ItemUnit, traits: &[&barrel_formats::battle_data::Trait], kinds: &[&str], rng: &mut crate::rng::Rng) -> i32 {
+    if base <= 0 {
+        return 0;
+    }
+    let cost = base - crate::battle::kind_sum(traits, kinds, 37, rng) - unit.word_1a as i32;
+    cost.clamp(1, 5)
+}
+
 /// Using an item once (`0x14029eca0`): while its +0xe word is 0, a roll in each of its
 /// traits' `ITEM_SUB_ITEM_PRESERV` slots (kind 43) adds to a chance in percent, and on a roll
 /// under that nothing is used up; otherwise its uses left (+0x1c, `counts[0]`) drop by one, or
@@ -226,6 +238,20 @@ mod tests {
         b.slots[7] = Some(u);
         assert_eq!((b.count(), b.holds(40), b.holds(41)), (1, true, false));
         assert_eq!(b.refill(), 3);
+    }
+
+    #[test]
+    fn equip_costs() {
+        use barrel_formats::battle_data::{Trait, TraitSlot};
+        let mut kinds = vec!["ITEM_SUB_X"; 40];
+        kinds[37] = "ITEM_SUB_EQUIP_COST";
+        let light = Trait { name: String::new(), group: String::new(), level: 0, point: 0, kinds: [true; 9], slots: vec![TraitSlot { kind: "ITEM_SUB_EQUIP_COST".into(), min: 2, max: 2 }] };
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        let u = unit(5);
+        assert_eq!(equip_cost(3, &u, &[], &kinds, &mut rng), 3);
+        assert_eq!(equip_cost(3, &u, &[&light, &light], &kinds, &mut rng), 1);
+        assert_eq!(equip_cost(9, &u, &[], &kinds, &mut rng), 5);
+        assert_eq!(equip_cost(0, &u, &[], &kinds, &mut rng), 0);
     }
 
     #[test]

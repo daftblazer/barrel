@@ -1696,7 +1696,10 @@ every party member's HP and MP to their maxima (`0x140330840`: +0xc from +0x114,
 +0x118), then refills the basket and the two exploration item boxes (`ItemBoxExplore`, two 0x20-byte
 lists at `0x1410aedc0`, saved as `explore_equip`: each a 5 × 5 grid of 25 slots that may have
 gaps, so its count, `0x1402a5240`, its holds-item check, `0x1402a5d70`, and its refill,
-`0x1402a5f10`, look at all 25 where the base list stops at its first gap; `0x14035dc40`); when any uses came back it queues message 0x1f with their number and counts up
+`0x1402a5f10`, look at all 25 where the base list stops at its first gap; an item takes
+`0x14029f030` squares there, kept at its +0x18: its `itemData` `EquipCost` (+0x3c) less each
+`ITEM_SUB_EQUIP_COST` trait slot's amount (kind 37) less its +0x1a, at least 1 and at most 5,
+or none when `EquipCost` is 0, `inventory::equip_cost`; `0x14035dc40`); when any uses came back it queues message 0x1f with their number and counts up
 the month's report field +0x114 (at most 255). `barrel_game::inventory`.
 
 ## Monsters
