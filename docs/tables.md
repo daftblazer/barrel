@@ -663,9 +663,14 @@ selection (an object at +0xab8 of the battle, a vector of fighter pointers from 
 the hit loop from `0x1401bb956`) walks the whole vector. So one action can hit several
 fighters, and how many is decided where that selection is filled. One filler: `0x140189d50`,
 when the selection's state (+0x1e8) is 5, has `0x1401a4430` gather fighters into it (+0x1f8)
-by a pick code from +0x1ec: 0 and 3 give 0x409, 1 gives 0x40a, anything else 0x408 (presumably
-whole-side picks, foes, allies or everyone; what sets +0x1e8 and +0x1ec, the skill or the
-menu, is not read yet). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
+by a pick code from +0x1ec: 0 and 3 give 0x409, 1 gives 0x40a, anything else 0x408. Both
+come from the action (virtual slot 1, for a skill `0x1401bb4d0`, through `0x140189650`): the
+mode (+0x1e8) from the skill's target word by a table (0 → 2, 1 → 1, 2 → 0, 3 → 2, 4 → 4, 5
+→ 5), the sub-code (+0x1ec) from its effects (0x34-byte entries): 0, or 1 when its only
+effect is act 81 (revive), 2 when it revives and does more. So the whole-list pick is mode 5,
+target word 5, which no skill has (they use 0 to 4): one-target skills, and the area case
+belongs to another action kind (items, presumably: the bombs); the revive sub-codes pick
+among the fallen (0x40a) or everyone (0x408). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
 and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
