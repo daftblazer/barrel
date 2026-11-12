@@ -797,7 +797,11 @@ roll does not exceed, taking each passed weight off; an item of `itemData` kind 
 `0x140113bb0` first), the quality then a roll in the range within 0 and 120
 (`battle_data::drop_pools`, `encounter::pick_pool`). Pool 0 gives items 364, 369, 374 and 379 at
 quality 50 with weights 15, 15, 14 and 14 ....
-The stage-1 strike needs event 733, `EVENT_XG05_100`. The enemy's removal is not read.
+The stage-1 strike needs event 733, `EVENT_XG05_100`. The encounter's states 2 to 5 are
+`0x140084c50` (the return from battle), `0x140084e10`, `0x140084e90` and `0x140084ef0`; state 3
+looks up an event for the group (`0x140216950` by its id, else `0x140215ae0`, a kind-5 lookup)
+and, when there is one, starts it (`0x140076760`, `0x140081080`): the story's scripted fights
+lead on into their scenes. The enemy's removal is not read.
 
 ### Encounter groups
 
