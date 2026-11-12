@@ -547,6 +547,18 @@ the list in slot order) with every shop emptied at the start, and prints each bo
 4) are the trip object's +0x24 (vtable `0x140772c48`, built by `0x14007b920` with 1 there);
 what sets it is still not read.
 
+`World::from_save` sets the calendar from a save (`docs/formats.md`, "Saves"): the date, the
+board's offset (`quest/randseed`), each character's friendship (its `Party` record), the
+11-slot list (`party/m_squad`, whose characters are also those the daily gain goes over, its
+first the leader), the rank with its points by period (`subject/job_rank`, `job_point`,
+`job_point_interval`, which sum to the points), the month reports (`monthrep/data`) and the
+shops' stock (`shop/shop_data`, each ware found by its shop's order of first appearance in
+the ware table and its place among that shop's wares). The main generator is not in the save;
+the board's ten slots (`quest/now`) are not read yet and stay empty until the next redraw.
+`barrel days INSTALL N --from SAVE` runs the days from a save: from one at 20 August of year 1
+the board is redrawn on the 21st and on 1 September, August's report closes that day, and the
+friendship gains follow each character's squad slot (0.08 a day in slot 4, 0.11 in slot 2).
+
 ### The adventurer rank
 
 `Saves/rank/RankData.xml` has 21 rows (`point`, `coal`, `percent`, the rates `c_btl`, `c_gat`,

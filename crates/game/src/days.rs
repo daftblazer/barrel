@@ -122,6 +122,80 @@ impl World {
         }
     }
 
+    /// The calendar as a save left it (`barrel_formats::save::summary`): the date, the board's
+    /// seed offset, each character's friendship (its `Party` record), the squad (`m_squad`) as
+    /// the 11-slot list, its characters as those the daily gain goes over and its first as the
+    /// leader, the rank, the month reports and the shops' stock (each ware found by its shop,
+    /// in the order the shops first appear in the ware table, and its place among that shop's
+    /// wares). `rng` is the main generator, which the save does not hold. Not read yet: the
+    /// board's ten slots (`quest/now`, left empty until the next redraw) and the last day's
+    /// rolls.
+    pub fn from_save(s: &barrel_formats::save::Summary, rng: Rng, wares: &[Ware]) -> World {
+        let mut friendship = [0.0; MEMBERS];
+        for m in &s.party {
+            if let Some(f) = friendship.get_mut(m.character as usize) {
+                *f = m.friendship;
+            }
+        }
+        let mut slot = [None; MEMBERS];
+        for (k, &c) in s.squad_slots.iter().enumerate() {
+            if let Some(sl) = usize::try_from(c).ok().and_then(|c| slot.get_mut(c)) {
+                *sl = Some(k);
+            }
+        }
+        let joined: Vec<usize> = s.squad.iter().filter_map(|&c| usize::try_from(c).ok()).filter(|&c| c < MEMBERS).collect();
+        let leader = joined.first().copied().unwrap_or(0);
+        let (rank, points) = s.rank.unwrap_or((0, 0));
+        let mut by_period = [0; 9];
+        for (b, &v) in by_period.iter_mut().zip(&s.points_by_period) {
+            *b = v;
+        }
+        let i32_at = |d: &[u8], o: usize| i32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+        let mut months: Vec<MonthReport> = s
+            .month_reports
+            .iter()
+            .map(|d| MonthReport {
+                recipes: d[..RECIPES].to_vec(),
+                counts: std::array::from_fn(|k| i32_at(d, 0x10c + 4 * k)),
+                total: i32_at(d, 0x134),
+                points: i32_at(d, 0x138),
+                rank: i32_at(d, 0x13c),
+                state: d[0x140],
+            })
+            .collect();
+        months.resize(MONTHS, MonthReport::default());
+        // Each ware's (shop, place) in the save's 4 × 50 stock.
+        let mut shops: Vec<&str> = Vec::new();
+        let mut placed = vec![0usize; 0];
+        let stock = wares
+            .iter()
+            .map(|w| {
+                let k = shops.iter().position(|&n| n == w.shop).unwrap_or_else(|| {
+                    shops.push(&w.shop);
+                    placed.push(0);
+                    shops.len() - 1
+                });
+                let j = placed[k];
+                placed[k] += 1;
+                s.shops.get(k).and_then(|shop| shop.get(j)).map_or(Stock::new(w), |&[count, days, state]| Stock { count, days, state })
+            })
+            .collect();
+        World {
+            date: s.day.unwrap_or_else(calendar::first_day),
+            rng,
+            board_offset: s.board_seed.unwrap_or(0),
+            friendship,
+            slot,
+            joined,
+            leader,
+            rank: RankState { points, rank, by_period },
+            months,
+            board: [None; 10],
+            rolls: Vec::new(),
+            stock,
+        }
+    }
+
     /// The month report now being filled.
     pub fn month(&mut self) -> &mut MonthReport {
         let k = calendar::month_index(self.date) as usize;
@@ -175,6 +249,31 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_save_sets_the_calendar() {
+        use barrel_formats::save::{Member, Summary};
+        let member = |c, f| Member { character: c, level: 1, exp: 0, hp: 1, mp: 1, max_hp: 1, max_mp: 1, attack: 1, defense: 1, speed: 1, equipped: [1; 5], skills: [-1; 10], friendship: f };
+        let mut month = vec![0u8; 0x144];
+        month[0x13c] = 3;
+        month[0x140] = 2;
+        let s = Summary {
+            day: Some(229),
+            board_seed: Some(77),
+            rank: Some((3, 1565)),
+            points_by_period: vec![1539, 26],
+            party: vec![member(0, 0.0), member(2, 14.5)],
+            squad: vec![0, 2],
+            squad_slots: vec![0, 2, -1],
+            month_reports: vec![month],
+            ..Summary::default()
+        };
+        let w = World::from_save(&s, Rng::from_state([1, 2, 3, 4]), &[]);
+        assert_eq!((w.date, w.board_offset, w.leader, w.joined.clone()), (229, 77, 0, vec![0, 2]));
+        assert_eq!((w.friendship[2], w.slot[2], w.slot[0], w.slot[1]), (14.5, Some(1), Some(0), None));
+        assert_eq!((w.rank.rank, w.rank.points, w.rank.by_period[..2].to_vec()), (3, 1565, vec![1539, 26]));
+        assert_eq!((w.months.len(), w.months[0].rank, w.months[0].state), (MONTHS, 3, 2));
+    }
 
     #[test]
     fn a_month_goes_by() {

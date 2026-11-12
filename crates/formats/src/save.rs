@@ -393,6 +393,14 @@ pub struct Summary {
     pub party: Vec<Member>,
     /// `party/m_squad`: the characters in the squad, in order (-1 slots left out).
     pub squad: Vec<i32>,
+    /// `party/m_squad` as saved: its 11 slots (-1 empty), the list the daily friendship gain
+    /// reads.
+    pub squad_slots: Vec<i32>,
+    /// `subject/job_point_interval`: the rank points made in each of the nine periods (they
+    /// sum to `job_point`).
+    pub points_by_period: Vec<i32>,
+    /// `monthrep/data`: the month reports, 0x144 bytes each (60).
+    pub month_reports: Vec<Vec<u8>>,
     /// `quest/randseed`: the request board's seed offset (the calendar's `board_offset`).
     pub board_seed: Option<i32>,
     /// `subject/job_rank` and `job_point`: the rank and its points.
@@ -441,6 +449,13 @@ pub fn summary(records: &[Record]) -> Summary {
                     .collect()
             })
             .unwrap_or_default(),
+        squad_slots: bytes(top("party").and_then(|r| r.child("m_squad")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+            .unwrap_or_default(),
+        points_by_period: bytes(top("subject").and_then(|r| r.child("job_point_interval")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+            .unwrap_or_default(),
+        month_reports: bytes(top("monthrep").and_then(|r| r.child("data"))).map(|d| d.chunks_exact(0x144).map(<[u8]>::to_vec).collect()).unwrap_or_default(),
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
             .unwrap_or_default(),

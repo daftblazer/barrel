@@ -136,8 +136,9 @@ fn main() -> ExitCode {
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
-        ["days", install, n] => days(Path::new(install), n, false),
-        ["days", install, n, "--events"] => days(Path::new(install), n, true),
+        ["days", install, n] => days(Path::new(install), n, false, None),
+        ["days", install, n, "--events"] => days(Path::new(install), n, true, None),
+        ["days", install, n, "--from", save] => days(Path::new(install), n, false, Some(Path::new(save))),
         ["board", install, day, rest @ ..] if rest.iter().all(|a| *a == "--events" || a.starts_with("--offset=")) => {
             board(Path::new(install), day, rest.contains(&"--events"), rest.iter().find_map(|a| a.strip_prefix("--offset=")))
         }
@@ -736,7 +737,7 @@ fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Resul
 
 /// A new game's first `n` days on `barrel_game::days::World` (fixed generator state, everyone in
 /// the list in slot order, no assignment cleared, the item states taken as high enough).
-fn days(install: &Path, n: &str, events: bool) -> Result<()> {
+fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()> {
     use barrel_game::days::{Reason, Tables, World};
     use barrel_game::quest::{requests, Kind};
     let n: u32 = n.parse().map_err(|_| format!("{n}: not a number of days"))?;
@@ -765,16 +766,30 @@ fn days(install: &Path, n: &str, events: bool) -> Result<()> {
     let path = install.join("Saves/shop/ShopData.xml");
     let wares = barrel_game::shop::wares(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
     let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &|_| true, level: &|_| 0 };
-    let mut w = World::new_game(barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]), 0, &wares);
-    // A buyer who empties every shop on the first day.
-    for s in &mut w.stock {
-        s.count = 0;
-    }
-    w.joined = (0..barrel_game::days::MEMBERS).collect();
-    for (k, s) in w.slot.iter_mut().enumerate() {
-        *s = Some(k);
-    }
-    println!("new game: day {}, board offset {}", w.date, w.board_offset);
+    let rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
+    let mut w = if let Some(file) = from {
+        // A save's calendar (the main generator is not saved: a fixed one stands in).
+        let data = read(file)?;
+        let body = &barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+        let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+        let records = barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
+        let w = World::from_save(&barrel_formats::save::summary(&records), rng, &wares);
+        let d = barrel_game::calendar::Date::of(w.date);
+        println!("from {}: day {} (Y{} {}/{}), rank {} ({} points), squad {:?}", file.display(), w.date, d.year, d.month, d.day, w.rank.rank, w.rank.points, w.joined);
+        w
+    } else {
+        let mut w = World::new_game(rng, 0, &wares);
+        // A buyer who empties every shop on the first day.
+        for s in &mut w.stock {
+            s.count = 0;
+        }
+        w.joined = (0..barrel_game::days::MEMBERS).collect();
+        for (k, s) in w.slot.iter_mut().enumerate() {
+            *s = Some(k);
+        }
+        println!("new game: day {}, board offset {}", w.date, w.board_offset);
+        w
+    };
     for _ in 0..n {
         let board = w.board;
         let closed: Vec<u8> = w.months.iter().map(|m| m.state).collect();
