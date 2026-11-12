@@ -2944,10 +2944,14 @@ fn main() -> Result<()> {
             gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
             gpu.upload(palette_mem, palette_bytes(&palette))?;
             gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
-            // The camera follows the player as the field's first play-camera setting places it
-            // (`<camera><point>`: its distance, pitch, field of view and look offset), from the
-            // `--yaw` side (the game's choice and blending of settings is not read yet).
-            let point = field_looks.first().and_then(|l| l.as_ref()).and_then(|l| l.camera_points.first().cloned()).unwrap_or_default();
+            // The camera follows the player with the field's play-camera setting for where the
+            // player is (`barrel_game::play_camera`: its distance, pitch, field of view and look
+            // offset), from the `--yaw` side (the game's turning of it is not read yet).
+            let look_table = field_looks.first().and_then(|l| l.as_ref());
+            let point = look_table
+                .and_then(|l| barrel_game::play_camera::setting(&l.camera_areas, &l.camera_points, player_at.map(|v| v as f32 / 100.0)))
+                .or_else(|| look_table.and_then(|l| l.camera_points.first().cloned()))
+                .unwrap_or_default();
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
             let look = (Vec3::from(player_at.map(|v| v as f32)) + Vec3::from(point.diff) * 100.0) * mirror;
             let (y, p) = (yaw.to_radians(), point.pitch.to_radians());

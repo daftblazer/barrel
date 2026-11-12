@@ -15,6 +15,7 @@ pub mod explore;
 pub mod encounter;
 pub mod field_ai;
 pub mod field_camera;
+pub mod play_camera;
 pub mod fight;
 pub mod event;
 pub mod face;
