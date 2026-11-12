@@ -31,6 +31,7 @@ pub mod oid;
 pub mod opl2;
 pub mod pak;
 pub mod pe;
+pub mod quake;
 pub mod png;
 pub mod recipe;
 pub mod save;

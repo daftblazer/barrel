@@ -121,6 +121,7 @@ fn main() -> ExitCode {
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
         ["deliveries", install] => deliveries(Path::new(install)),
+        ["quakes", install] => quakes(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["se-scan", wh2] => se_scan(Path::new(wh2)),
         ["g1s", file] => g1s(Path::new(file), None),
@@ -2217,5 +2218,22 @@ fn deliveries(install: &Path) -> Result<()> {
         println!("{:<24} pass {:>4}  {}  {}", d.tag, d.pass_score, items.join(", "), extra.join("; "));
     }
     println!("{} deliveries ({} tests not shown)", all.len(), all.iter().filter(|d| d.tag.starts_with("DELIVERY_TEST")).count());
+    Ok(())
+}
+
+/// The camera quakes (`barrel_formats::quake`): each one's six tracks, key by key.
+fn quakes(install: &Path) -> Result<()> {
+    let path = install.join("Saves/cameraQuake/camera_quake_data.xml");
+    let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut all = barrel_formats::quake::read(&table);
+    all.sort_by_key(|q| q.number());
+    for q in &all {
+        let tracks: Vec<String> = q.tracks.iter().map(|t| {
+            let keys: Vec<String> = t.keys.iter().map(|k| format!("{}@{}", k.value, k.frame)).collect();
+            format!("[{}{}]", keys.join(" "), if t.looping { " loop" } else { "" })
+        }).collect();
+        println!("{:<11} {}", q.id, tracks.join(" "));
+    }
+    println!("{} quakes", all.len());
     Ok(())
 }

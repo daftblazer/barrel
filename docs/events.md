@@ -843,3 +843,17 @@ with each count seen.
 | `7540000a` | `u10/0x40` |  | Event | 3628 | 0 (3628) |
 | `77000001` | `w1` |  | Event | 47448 | 1 (47448) |
 | `77000004` | `w4` |  | Event | 206 | 1 (206) |
+
+### Camera quakes (`t14`, `t16`)
+
+`t14` (`ECT_CAMERA_QUAKE_SET`, 268 uses) is `{quake, seconds × 100}`: `EventExecCamera`'s
+case (`0x1401e102d`) takes the number and the second operand over 100 (`0x14071a9b0`) and
+starts quake `cq_obj_<quake>` on the camera's quake player (+0x1c8, set up by
+`0x140035ba0`: the seconds at +8, six envelope players built). The events use 99900 (999 s,
+the "until stopped" value); `t16` (`ECT_CAMERA_QUAKE_STOP`) clears the player (+0x1d0,
++0x1d8). The quakes are `Saves/cameraQuake/camera_quake_data.xml` (`barrel_formats::quake`,
+`barrel quakes INSTALL`): 61, each six tracks of up to 16 keys `{value, frame}` at 60 frames
+a second, linear between keys, held or looped. The tracks come in opposite-signed pairs
+(`cq_obj_001`: 0 to -0.3 and 0 to +0.3 over two seconds; `cq_obj_031`: ±0.01 on two pairs),
+taken as each axis's bounds for a random shake; which camera values they move is not read
+yet.
