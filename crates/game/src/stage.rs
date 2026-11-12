@@ -118,6 +118,9 @@ pub struct Playing {
     pub since: f32,
     pub looping: bool,
     pub blend: f32,
+    /// The division of the motion it plays (`s5`, `s11`; `barrel_formats::chara_div`), or the
+    /// whole clip.
+    pub division: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -254,8 +257,8 @@ impl Stage {
                 b.position = *position;
                 b.mover = None;
             }
-            Step::Motion { character, motion, looping, blend, .. } => match self.characters.get_mut(character) {
-                Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0) }),
+            Step::Motion { character, motion, looping, blend, division, .. } => match self.characters.get_mut(character) {
+                Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0), division: *division }),
                 None => self.unresolved += 1,
             },
             // A line: its speaker talks (and takes the line's expression, if it sets one); the

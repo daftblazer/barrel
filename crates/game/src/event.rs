@@ -27,6 +27,9 @@ pub const CHARA_TIME_WAIT: u32 = 0x7300_0003;
 pub const CHARA_POS_SET: u32 = 0x7300_0004;
 /// `s10` (`ECT_CHARA_MOTION_SET_LOOP`): `{character, motion, blend (hundredths), flag}`.
 pub const CHARA_MOTION_LOOP: u32 = 0x7300_000a;
+/// `s11` (`ECT_CHARA_MOTION_SET_AUTO_LOOP`): `{character, motion, division, flag, blend
+/// (hundredths)}`; the runner's +0x5c is set when division equals flag (not read further).
+pub const CHARA_MOTION_AUTO_LOOP: u32 = 0x7300_000b;
 /// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
 /// operands): adds the character there, facing `angle` degrees.
 pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
@@ -116,10 +119,11 @@ pub enum Step<'a> {
     Place { action: usize, character: u32, position: [f32; 3] },
     /// A character plays a looping motion (`s10`; a `MOTION_*` number), blending over `blend`
     /// seconds.
-    /// `s10` loops it from its start (`0x1402036d0` with -1, -1 clears the play range); `s5`
-    /// (`ECT_CHARA_MOTION_SET`, `{character, motion, variant, blend}`) plays it with
-    /// `variant` (0 to 7, kept at the runner's +0x828; not read) and leaves the range as is.
-    Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, variant: u32 },
+    /// `s10` loops the whole clip (`0x1402036d0` with -1, -1 clears the play range); `s5`
+    /// (`ECT_CHARA_MOTION_SET`, `{character, motion, division, blend}`) and `s11`
+    /// (`ECT_CHARA_MOTION_SET_AUTO_LOOP`, `{character, motion, division, flag, blend}`) play
+    /// one of its divisions (`barrel_formats::chara_div`), which says whether it loops.
+    Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, division: Option<u32> },
     /// The event moves to a field map (`q12`, `ECT_FIELDMAP_CHANGE_NOT_BGM`, `{map}`; `q2`,
     /// `ECT_FIELDMAP_CHANGE`, likewise): `map` is a `FIELDMAP_*` number ([`field_maps`]).
     FieldChange { action: usize, map: u32 },
@@ -244,11 +248,15 @@ impl<'a> Player<'a> {
             }
             (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
                 let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, variant: 0 });
+                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, division: None });
             }
-            (CHARA_MOTION_SET, [character, motion, variant, hundredths, ..]) => {
+            (CHARA_MOTION_SET, [character, motion, division, hundredths, ..]) => {
                 let blend = f(*hundredths) / 100.0;
-                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: false, variant: *variant });
+                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: false, division: Some(*division) });
+            }
+            (CHARA_MOTION_AUTO_LOOP, [character, motion, division, rest @ ..]) => {
+                let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
+                out.push(Step::Motion { action, character: *character, motion: *motion, blend, looping: true, division: Some(*division) });
             }
             (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
             (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),

@@ -335,6 +335,20 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
 
 **Motions and moves.** In the same runner switch:
 
+- **Divisions.** The motion starter `0x1401f4c50(character, motion, division, blend)` plays
+  one division of the motion: the records at the character's +0x110 + 8 × motion, 12 bytes
+  `{f32 start, f32 end, u8 loops}`, filled from `Saves/chara/CharaDiv.xml` and
+  `SubCharaDiv.xml` (rows `{BaseTag = FileHead, MotionTag = the MOTION_* name, DivN = "start,
+  end, loops"}` in seconds, end -1 the clip's end; `crates/formats/src/chara_div.rs`); without
+  one it plays `{-1, -1, 1}`, the whole clip. `s5` (`{character, motion, division, blend}`,
+  case `0x1401eff27`) and `s11` (`ECT_CHARA_MOTION_SET_AUTO_LOOP`, `{character, motion,
+  division, flag, blend}`, case `0x1401f0171`; +0x5c = division == flag) pass theirs; `s10`
+  passes 0 and then clears the range (`0x1402036d0` with -1, -1), so it plays the whole clip.
+  So a seated townsperson's `s11 … SIT_DOWN 1` loops 1.0 to 3.97 s, the sitting, and an
+  `EV_ACT_1` division 1 its 0.67 to 4.67 s loop, not the whole clip. `s13`
+  (`ECT_CHARA_MOTION_SET_OFFSET_ONLY`, `{character, motion, flag}`, case `0x1401f0211`) calls
+  `0x1401f6830` (not read).
+
 - `s10` (`ECT_CHARA_MOTION_SET_LOOP`, `{character, motion, blend, flag}`) plays the motion
   (a `MOTION_*` number, e.g. 32 `WALK`) through `0x1401f4c50`, blending over `blend` / 100
   seconds, and sets the runner's +0x5c from `flag` (not zero: what it switches is not read).

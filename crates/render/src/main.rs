@@ -753,6 +753,10 @@ struct Actor {
     last_t: f32,
     /// The head gestures' clip and the joints it turns (`s116`).
     head: Option<(barrel_formats::g1a::Animation, Vec<usize>)>,
+    /// The division of the motion it plays (`s5`, `s11`), when one is set and found.
+    division: Option<barrel_formats::chara_div::Division>,
+    /// The motion whose division was last logged.
+    last_division_column: String,
 }
 
 /// What a character's face needs to change during playback: its rows, its facial
@@ -1090,7 +1094,7 @@ fn event_characters(
         }
         let instance = scene.add_with_pack(geometry, transform, tex_base, count, joints.as_deref())?;
         if let Some((skeleton, motions, anim, start)) = rig {
-            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take(), head: None });
+            actors.push(Actor { who, instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig.take(), head: None, division: None, last_division_column: String::new() });
         }
         scene.morph.clear();
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
@@ -2043,6 +2047,8 @@ fn main() -> Result<()> {
     let mut speaker_names: Vec<String> = Vec::new();
     let mut face_tables_play: Option<barrel_game::face::Tables> = None;
     let mut gestures_play: Vec<[Option<barrel_game::gesture::Form>; 2]> = Vec::new();
+    // The motions' divisions (s5, s11), from Saves/chara.
+    let mut divisions = barrel_formats::chara_div::Divisions::new();
     let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
@@ -2080,6 +2086,11 @@ fn main() -> Result<()> {
             .filter_map(|p| std::fs::read(p).ok())
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::gesture::motions(&pe)).filter(|m| !m.is_empty()))
             .unwrap_or_default();
+        for name in ["CharaDiv.xml", "SubCharaDiv.xml"] {
+            if let Some(t) = std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok()) {
+                barrel_formats::chara_div::read(&t, &mut divisions);
+            }
+        }
         face_tables_play = std::fs::read_dir(root)?
             .flatten()
             .map(|e| e.path())
@@ -2363,7 +2374,7 @@ fn main() -> Result<()> {
                 // on (until the next motion command or gesture), looping.
                 let gestured = play.stage.characters.get(&a.who).and_then(|b| b.gesture).and_then(|(g, since)| {
                     let form = gestures_play.get(usize::try_from(g).ok()?)?[0].as_ref()?;
-                    Some(barrel_game::stage::Playing { motion: form.main_motion(), since, looping: true, blend: 0.2 })
+                    Some(barrel_game::stage::Playing { motion: form.main_motion(), since, looping: true, blend: 0.2, division: None })
                 });
                 let staged = match (staged, gestured) {
                     (Some(m), Some(g)) if g.since > m.since => Some(g),
@@ -2385,6 +2396,14 @@ fn main() -> Result<()> {
                             a.looping = m.looping;
                         }
                         t = shown_time - m.since;
+                        // Its division, if the command names one the tables have.
+                        a.division = m.division.and_then(|k| {
+                            *divisions.get(&(a.motions.head.clone(), column.clone()))?.get(k as usize)?
+                        });
+                        if let (Some(k), true) = (m.division, *column != a.last_division_column) {
+                            eprintln!("frame {frame}: character {} {column} division {k}: {:?}", a.who, a.division);
+                            a.last_division_column = column.clone();
+                        }
                         if m.blend > 0.0 {
                             weight = (t / m.blend).clamp(0.0, 1.0);
                         }
@@ -2396,7 +2415,11 @@ fn main() -> Result<()> {
                         render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(facing), Vec3::from(pos)));
                 }
                 let base = instances[a.instance as usize].palette as usize;
-                let mut locals = local_pose(&a.skeleton, &a.anim, motion_clock(&a.anim, t, a.looping));
+                let clock = match a.division {
+                    Some(d) => d.clock(t, a.anim.duration),
+                    None => motion_clock(&a.anim, t, a.looping),
+                };
+                let mut locals = local_pose(&a.skeleton, &a.anim, clock);
                 match (&a.previous, weight < 1.0) {
                     // The old motion runs on from where it was while the new one fades in.
                     (Some((old, at_switch, old_loops)), true) => {
