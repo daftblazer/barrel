@@ -2958,7 +2958,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
             for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
-                let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
+                // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
+            // 32: their texture on their vertex colour, as the distant view's clouds.
+            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
                 let mut per_draw = [0u8; 8];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
                 per_draw[4..].copy_from_slice(&flags.to_le_bytes());
@@ -3015,7 +3017,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             // The distant view's solid pieces (all but the dome and the clouds) are lit and
             // alpha-tested like the field's models (docs/renderer.md, "Distant view").
             let solid = draw.sky && !draw.name.contains("Sphere_sky") && !draw.name.contains("xEF_");
-            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4;
+            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5;
             let mut per_draw = [0u8; 8];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
             per_draw[4..].copy_from_slice(&flags.to_le_bytes());

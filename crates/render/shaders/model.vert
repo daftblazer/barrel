@@ -125,8 +125,9 @@ void main() {
     field_light = amb * in_color.rgb + in_color.rgb * diffuse;
     sun_part = in_color.rgb * sun;
     // The distant view's dome and clouds are not lit: their texture on their vertex colour
-    // (flag 16: its solid pieces, lit as the field's models are).
-    if ((pc.flags & 24u) == 8u) {
+    // (flag 16: its solid pieces, lit as the field's models are); nor are the field's xEF_
+    // models (flag 32: window light).
+    if ((pc.flags & 24u) == 8u || (pc.flags & 32u) != 0u) {
         field_light = in_color.rgb;
         sun_part = vec3(0.0);
     }

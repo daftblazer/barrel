@@ -275,6 +275,14 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
+**`xEF_` models are not lit.** Field objects whose names hold `xEF_` (TOWN_03's
+`obj-xEF_windows_tw03`, the light through the bureau's windows; TOWN_11's `obj-xEF_einn`,
+`_eine`, `_einw`) are drawn as the distant view's clouds are: their texture on their vertex
+colour, no field light. The bureau's window (event `EVENT_MM01_OP1_121`) goes from 93, 123, 92
+to 186, 189, 184 (game 224, 220, 197); Escha's workshop is unchanged. The desk lamps (TOWN_03:
+145 in the game, 75 here) are still dull: neither an emissive parameter, a placed effect nor
+point light units (metres blow the workshop out, clamped or not) explain them.
+
 **Finding a moment.** `BARREL_SCHEDULE_LOG=1` prints when playback shows each narration card,
 line and field, to pair the viewer's frames with oracle shots by what is on screen. Escha's
 town tour (`EVENT_MM01_OP1_111`, cards 42 to 44 from 100.5, 111.2 and 120.9 s) matches the game
