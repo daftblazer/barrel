@@ -88,7 +88,10 @@ pub struct CameraPoint {
     pub fov: f32,
     pub diff: [f32; 3],
     pub position: [f32; 3],
-    /// `bumper_follow_speed`, `bumper_max_distance`, `zoom_time`, `zoom_distance` (not read).
+    /// `bumper_follow_speed`, `bumper_max_distance`, `zoom_time`, `zoom_distance`: the setting's
+    /// +0x30 to +0x3c, which the camera keeps as tweens at its +0x150, +0x168, +0x1b0 and +0x1c8
+    /// (`0x1401e7321`); what moves them is not read. Missing, they are -1, 1, 2 and 0 (and the
+    /// field of view 22.5; `0x14006d7e0` builds a setting, angles in radians).
     pub bumper: (f32, f32),
     pub zoom: (f32, f32),
 }
@@ -207,11 +210,11 @@ pub fn read(root: &Element) -> FieldLook {
                             length: number(p, "length").unwrap_or(8.0),
                             yaw: number(p, "radian").unwrap_or(0.0),
                             pitch: number(p, "lookRad").unwrap_or(20.0),
-                            fov: number(p, "fov").unwrap_or(40.0),
+                            fov: number(p, "fov").unwrap_or(22.5),
                             diff: numbers(p, "diffPosition").unwrap_or_default(),
                             position: numbers(p, "position").unwrap_or_default(),
-                            bumper: (number(p, "bumper_follow_speed").unwrap_or(0.0), number(p, "bumper_max_distance").unwrap_or(0.0)),
-                            zoom: (number(p, "zoom_time").unwrap_or(0.0), number(p, "zoom_distance").unwrap_or(0.0)),
+                            bumper: (number(p, "bumper_follow_speed").unwrap_or(-1.0), number(p, "bumper_max_distance").unwrap_or(1.0)),
+                            zoom: (number(p, "zoom_time").unwrap_or(2.0), number(p, "zoom_distance").unwrap_or(0.0)),
                         });
                     }
                     let tag = a.attr("tag").unwrap_or("");

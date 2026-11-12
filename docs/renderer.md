@@ -135,7 +135,11 @@ lookup `0x140066f80`) takes the first area holding the player and blends that ar
 along its axis (`0x140069680`): the nearest point below the player on the axis and the nearest
 above, mixed linearly (`0x140066cb0`) by the player's distance from the lower over the gap; one
 alone when the player is beyond the last (`barrel_game::play_camera::setting`; `AREA_01_01`:
-8 m, yaw 21°, pitch 10° up to z 30 m, then towards 10 m, yaw 7°, pitch 20° at z 45 m). The viewer's creature mode uses it.
+8 m, yaw 21°, pitch 10° up to z 30 m, then towards 10 m, yaw 7°, pitch 20° at z 45 m). The viewer's creature mode uses it. A setting is 0x40 bytes (`0x14006d7e0`): length, yaw, pitch and field
+of view (the angles kept in radians), the look offset, the position, then `bumper_follow_speed`,
+`bumper_max_distance`, `zoom_time`, `zoom_distance` (-1, 1, 2 and 0 when missing; the field of
+view 22.5). The camera keeps the last four as tweens (+0x150, +0x168, +0x1b0, +0x1c8); nothing
+in `CameraCFieldMap`'s own code reads them back, so what they do is not found.
 
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a
