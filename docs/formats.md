@@ -683,13 +683,29 @@ to n × 1000 + 999. Some clips are named outright: events play them with `u31`
 `SKILL_COMMON_ITEM_AT_DREAM_BOOK_01`, 14235 ...) and `s102` (`ECT_CHARA_VOICE_PLAY`,
 `{character, clip}`, 12 uses), and the tables have a `VoiceNo` column (`SubjectTalkData`:
 11083, 11084 ...; `SysMess`, -1 for none). Only 16 story events use the two commands, and
-the small script a dialogue line runs (`0x140184060`) plays no voice, so how a story line
-picks its clip is still open (the event's resource list names no voice either).
+the small script a dialogue line runs (`0x140184060`) plays no voice; how a story line picks
+its clip was found by watching the game (below).
 `barrel play-event` prints the voice commands with their bank and clip. By what names them, the banks
 divide by use: 10 and 11 hold the system and field voices of every character (`SysMess`:
 Escha and Logy 45 each in bank 10, 22 each in 11, and the others in 11; `SubjectTalkData`:
 Marion's in 11), 14 and 15 the battle voices (the skill events' `u31`), and 17 a few more of
 Nio's; nothing names a clip in banks 0 to 9, which leaves those 10,000 for the story lines.
+
+**Story lines' voices** (an oracle run, 2026-11-12: a preload library, `tools/oracle/readlog.c`,
+logged every read the game made from the voice banks while the opening played). In English
+the first opening scene's lines are read from `Voice_EN/Series12000.fp`, one clip after another
+as each line comes up: line k of `EVENT_MESSAGE_MM01_OP1_111` is clip 12900 + k (a message's
+fifth field is its index k in the event, 0 up). Matching clip sizes to line lengths over the
+opening's events (sizes follow lengths closely, correlation 0.9 and more) gives each event's
+first clip, and they run on without gaps: 111 at 12900 (14 lines), 212 at 12914 (13), 121 at
+12927 (19), 222 at 12946 (16), 131 at 12962 (44), 232 at 13006 (41), 300 at 13047 (32), 310
+at 13079. The game itself read 12927 for 121's first line. Events whose lines are the same
+scene for the other alchemist share the clips (021 with 121, 022 with 222, 040 with 300), and
+some (011, 012, 031, 032) match nothing well, so they are unvoiced or voiced elsewhere. So a
+story line's clip is its scene's first clip plus its index, the scenes laid end to end in a
+fixed order that is not the files' and not the executable's event list; where that order
+lives in the game is not found yet. Matching sizes to lengths finds it without the game for
+any event with enough lines.
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone

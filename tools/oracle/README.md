@@ -17,6 +17,9 @@ scene really looks like, and values the game only computes while running.
   takes it as its controller. It is visible system-wide while it exists.
 - `xkey.c`: key taps through XTest (`cc -O2 -o work/xkey xkey.c -lX11 -lXtst`), to the run's
   X display (`DISPLAY=:2`).
+- `readlog.c`: a preload library that logs the game's file reads (path, offset, length, time)
+  for files matching `READLOG_MATCH` (the voice banks by default):
+  `LD_PRELOAD=$PWD/work/readlog.so READLOG_FILE=$PWD/work/oracle/reads.log tools/oracle/run.sh ...`.
 - `peek.sh ADDR LEN OUT`, `scan.py VALUE [MAX_MB]`: read memory, find a pointer.
 
 To the opening, with the pad: A at the title, A (New Game), A on Escha's card, A, D-pad left
