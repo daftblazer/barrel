@@ -547,3 +547,649 @@ mod tests {
         assert!(matches!(&s[2], Stmt::Function(n, p, _) if n == "f" && p.len() == 2));
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// The evaluator: a tree walker over the parsed statements.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+#[derive(Clone, Debug)]
+pub enum Value {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(Rc<str>),
+    Array(Rc<RefCell<Vec<Value>>>),
+    /// A class of static members (or any table).
+    Table(Rc<RefCell<HashMap<String, Value>>>),
+    /// An object the host owns (`SQ`, a character), by the host's number.
+    Host(u32),
+    Function(Rc<(Vec<String>, Vec<Stmt>)>),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Str(a), Value::Str(b)) => a == b,
+            (Value::Host(a), Value::Host(b)) => a == b,
+            (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
+            (Value::Table(a), Value::Table(b)) => Rc::ptr_eq(a, b),
+            (a, b) => match (a.number(), b.number()) {
+                (Some(x), Some(y)) => x == y,
+                _ => false,
+            },
+        }
+    }
+}
+
+impl Value {
+    pub fn number(&self) -> Option<f64> {
+        match *self {
+            Value::Int(v) => Some(v as f64),
+            Value::Float(v) => Some(v),
+            Value::Bool(b) => Some(b as i64 as f64),
+            _ => None,
+        }
+    }
+
+    pub fn truthy(&self) -> bool {
+        match self {
+            Value::Null => false,
+            Value::Bool(b) => *b,
+            Value::Int(v) => *v != 0,
+            Value::Float(v) => *v != 0.0,
+            _ => true,
+        }
+    }
+
+    pub fn as_int(&self) -> i64 {
+        match *self {
+            Value::Int(v) => v,
+            Value::Float(v) => v as i64,
+            Value::Bool(b) => b as i64,
+            _ => 0,
+        }
+    }
+}
+
+/// What a script reaches outside itself: the host's objects and its named constants.
+pub trait Host {
+    /// A name the script does not define (`SQ`, `MOTION_F_WAIT`, `ECT_...`), or `None`.
+    fn global(&mut self, name: &str) -> Option<Value>;
+    /// Calls method `name` of host object `object`.
+    fn call(&mut self, object: u32, name: &str, args: &[Value]) -> Result<Value, Error>;
+}
+
+enum Flow {
+    Normal,
+    Break,
+    Continue,
+    Return(Value),
+}
+
+/// A script world: the root table (`::name`, functions, classes) and the call stack's scopes.
+#[derive(Default)]
+pub struct Interp {
+    pub root: HashMap<String, Value>,
+    scopes: Vec<HashMap<String, Value>>,
+    /// Statements run, to stop a runaway script.
+    pub budget: u64,
+}
+
+fn rt<T>(message: impl Into<String>) -> Result<T, Error> {
+    Err(Error { line: 0, message: message.into() })
+}
+
+impl Interp {
+    pub fn new() -> Interp {
+        Interp { budget: 1_000_000, ..Interp::default() }
+    }
+
+    /// Runs top-level statements (a script file): functions and classes go into the root
+    /// table, a bare block runs. Returns what a top-level `return` gave.
+    pub fn run(&mut self, stmts: &[Stmt], host: &mut dyn Host) -> Result<Value, Error> {
+        self.scopes.push(HashMap::new());
+        let mut out = Value::Null;
+        for s in stmts {
+            if let Flow::Return(v) = self.exec(s, host)? {
+                out = v;
+                break;
+            }
+        }
+        self.scopes.pop();
+        Ok(out)
+    }
+
+    fn lookup(&mut self, name: &str, host: &mut dyn Host) -> Result<Value, Error> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(v) = scope.get(name) {
+                return Ok(v.clone());
+            }
+        }
+        if let Some(v) = self.root.get(name) {
+            return Ok(v.clone());
+        }
+        match host.global(name) {
+            Some(v) => Ok(v),
+            None => rt(format!("unknown name {name}")),
+        }
+    }
+
+    fn assign_name(&mut self, name: &str, v: Value) {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(slot) = scope.get_mut(name) {
+                *slot = v;
+                return;
+            }
+        }
+        self.root.insert(name.to_string(), v);
+    }
+
+    fn exec(&mut self, s: &Stmt, host: &mut dyn Host) -> Result<Flow, Error> {
+        if self.budget == 0 {
+            return rt("the script ran too long");
+        }
+        self.budget -= 1;
+        match s {
+            Stmt::Local(vars) => {
+                for (name, e) in vars {
+                    let v = match e {
+                        Some(e) => self.eval(e, host)?,
+                        None => Value::Null,
+                    };
+                    self.scopes.last_mut().unwrap().insert(name.clone(), v);
+                }
+            }
+            Stmt::Const(name, e) => {
+                let v = self.eval(e, host)?;
+                self.scopes.last_mut().unwrap().insert(name.clone(), v);
+            }
+            Stmt::Expr(e) => {
+                self.eval(e, host)?;
+            }
+            Stmt::If(c, a, b) => {
+                if self.eval(c, host)?.truthy() {
+                    return self.exec(a, host);
+                } else if let Some(b) = b {
+                    return self.exec(b, host);
+                }
+            }
+            Stmt::While(c, body) => {
+                while self.eval(c, host)?.truthy() {
+                    match self.exec(body, host)? {
+                        Flow::Break => break,
+                        Flow::Return(v) => return Ok(Flow::Return(v)),
+                        _ => {}
+                    }
+                }
+            }
+            Stmt::For(init, c, step, body) => {
+                self.scopes.push(HashMap::new());
+                if let Some(i) = init {
+                    self.exec(i, host)?;
+                }
+                let flow = loop {
+                    if let Some(c) = c {
+                        if !self.eval(c, host)?.truthy() {
+                            break Flow::Normal;
+                        }
+                    }
+                    match self.exec(body, host)? {
+                        Flow::Break => break Flow::Normal,
+                        Flow::Return(v) => break Flow::Return(v),
+                        _ => {}
+                    }
+                    if let Some(st) = step {
+                        self.eval(st, host)?;
+                    }
+                };
+                self.scopes.pop();
+                return Ok(flow);
+            }
+            Stmt::Foreach(key, value, over, body) => {
+                let items: Vec<(Value, Value)> = match self.eval(over, host)? {
+                    Value::Array(a) => a.borrow().iter().enumerate().map(|(i, v)| (Value::Int(i as i64), v.clone())).collect(),
+                    Value::Table(t) => t.borrow().iter().map(|(k, v)| (Value::Str(k.as_str().into()), v.clone())).collect(),
+                    _ => return rt("foreach over something that is not an array or table"),
+                };
+                for (k, v) in items {
+                    self.scopes.push(HashMap::new());
+                    if let Some(key) = key {
+                        self.scopes.last_mut().unwrap().insert(key.clone(), k);
+                    }
+                    self.scopes.last_mut().unwrap().insert(value.clone(), v);
+                    let flow = self.exec(body, host)?;
+                    self.scopes.pop();
+                    match flow {
+                        Flow::Break => break,
+                        Flow::Return(v) => return Ok(Flow::Return(v)),
+                        _ => {}
+                    }
+                }
+            }
+            Stmt::Switch(v, cases) => {
+                let v = self.eval(v, host)?;
+                // Squirrel switches fall through from the first matching case (or default).
+                let mut start = None;
+                for (i, (label, _)) in cases.iter().enumerate() {
+                    if let Some(l) = label {
+                        if self.eval(l, host)? == v {
+                            start = Some(i);
+                            break;
+                        }
+                    }
+                }
+                let start = start.or_else(|| cases.iter().position(|(l, _)| l.is_none()));
+                if let Some(start) = start {
+                    for (_, body) in &cases[start..] {
+                        for st in body {
+                            match self.exec(st, host)? {
+                                Flow::Break => return Ok(Flow::Normal),
+                                Flow::Normal => {}
+                                other => return Ok(other),
+                            }
+                        }
+                    }
+                }
+            }
+            Stmt::Break => return Ok(Flow::Break),
+            Stmt::Continue => return Ok(Flow::Continue),
+            Stmt::Return(e) => {
+                let v = match e {
+                    Some(e) => self.eval(e, host)?,
+                    None => Value::Null,
+                };
+                return Ok(Flow::Return(v));
+            }
+            Stmt::Block(body) => {
+                self.scopes.push(HashMap::new());
+                for st in body {
+                    let flow = self.exec(st, host)?;
+                    if !matches!(flow, Flow::Normal) {
+                        self.scopes.pop();
+                        return Ok(flow);
+                    }
+                }
+                self.scopes.pop();
+            }
+            Stmt::Function(name, params, body) => {
+                self.root.insert(name.clone(), Value::Function(Rc::new((params.clone(), body.clone()))));
+            }
+            Stmt::Class(name, members) => {
+                let mut t = HashMap::new();
+                for (m, e) in members {
+                    let v = self.eval(e, host)?;
+                    t.insert(m.clone(), v);
+                }
+                self.root.insert(name.clone(), Value::Table(Rc::new(RefCell::new(t))));
+            }
+        }
+        Ok(Flow::Normal)
+    }
+
+    fn call_function(&mut self, f: &(Vec<String>, Vec<Stmt>), args: Vec<Value>, host: &mut dyn Host) -> Result<Value, Error> {
+        let (params, body) = f;
+        let mut scope = HashMap::new();
+        let mut rest = Vec::new();
+        for (i, a) in args.into_iter().enumerate() {
+            match params.get(i) {
+                Some(p) if p != "..." => {
+                    scope.insert(p.clone(), a);
+                }
+                _ => rest.push(a),
+            }
+        }
+        for p in params.iter().filter(|p| *p != "...") {
+            scope.entry(p.clone()).or_insert(Value::Null);
+        }
+        scope.insert("vargc".into(), Value::Int(rest.len() as i64));
+        scope.insert("vargv".into(), Value::Array(Rc::new(RefCell::new(rest))));
+        // A function sees its own scope and the root, not its caller's locals.
+        let saved = std::mem::replace(&mut self.scopes, vec![scope]);
+        let mut out = Ok(Value::Null);
+        for st in body {
+            match self.exec(st, host) {
+                Ok(Flow::Return(v)) => {
+                    out = Ok(v);
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    out = Err(e);
+                    break;
+                }
+            }
+        }
+        self.scopes = saved;
+        out
+    }
+
+    pub fn eval(&mut self, e: &Expr, host: &mut dyn Host) -> Result<Value, Error> {
+        Ok(match e {
+            Expr::Int(v) => Value::Int(*v),
+            Expr::Float(v) => Value::Float(*v),
+            Expr::Str(s) => Value::Str(s.as_str().into()),
+            Expr::Bool(b) => Value::Bool(*b),
+            Expr::Null => Value::Null,
+            Expr::Name(n) => self.lookup(n, host)?,
+            Expr::Root(n) => match self.root.get(n) {
+                Some(v) => v.clone(),
+                None => host.global(n).map_or_else(|| rt(format!("unknown name ::{n}")), Ok)?,
+            },
+            Expr::Array(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for i in items {
+                    out.push(self.eval(i, host)?);
+                }
+                Value::Array(Rc::new(RefCell::new(out)))
+            }
+            Expr::Member(obj, name) => match self.eval(obj, host)? {
+                Value::Table(t) => t.borrow().get(name).cloned().map_or_else(|| rt(format!("no member {name}")), Ok)?,
+                other => return rt(format!("member {name} of {other:?}")),
+            },
+            Expr::Index(obj, i) => {
+                let i = self.eval(i, host)?;
+                match self.eval(obj, host)? {
+                    Value::Array(a) => a.borrow().get(i.as_int() as usize).cloned().map_or_else(|| rt("index out of range"), Ok)?,
+                    Value::Table(t) => match i {
+                        Value::Str(k) => t.borrow().get(&*k).cloned().unwrap_or(Value::Null),
+                        _ => Value::Null,
+                    },
+                    other => return rt(format!("indexing {other:?}")),
+                }
+            }
+            Expr::Call(callee, args) => {
+                let mut vals = Vec::with_capacity(args.len());
+                for a in args {
+                    vals.push(self.eval(a, host)?);
+                }
+                match &**callee {
+                    Expr::Member(obj, name) => {
+                        let target = self.eval(obj, host)?;
+                        self.method(target, name, vals, host)?
+                    }
+                    other => match self.eval(other, host)? {
+                        Value::Function(f) => self.call_function(&f, vals, host)?,
+                        v => return rt(format!("calling {v:?}")),
+                    },
+                }
+            }
+            Expr::Unary(op, x) => {
+                let v = self.eval(x, host)?;
+                match (*op, v) {
+                    ("-", Value::Int(i)) => Value::Int(-i),
+                    ("-", Value::Float(f)) => Value::Float(-f),
+                    ("!", v) => Value::Bool(!v.truthy()),
+                    ("~", v) => Value::Int(!v.as_int()),
+                    (op, v) => return rt(format!("{op} on {v:?}")),
+                }
+            }
+            Expr::Binary(op, a, b) => {
+                if *op == "&&" {
+                    let a = self.eval(a, host)?;
+                    return Ok(if a.truthy() { self.eval(b, host)? } else { a });
+                }
+                if *op == "||" {
+                    let a = self.eval(a, host)?;
+                    return Ok(if a.truthy() { a } else { self.eval(b, host)? });
+                }
+                let (a, b) = (self.eval(a, host)?, self.eval(b, host)?);
+                binary(op, &a, &b)?
+            }
+            Expr::Ternary(c, a, b) => {
+                if self.eval(c, host)?.truthy() {
+                    self.eval(a, host)?
+                } else {
+                    self.eval(b, host)?
+                }
+            }
+            Expr::Assign(op, target, value) => {
+                let v = self.eval(value, host)?;
+                let v = match *op {
+                    "=" | "<-" => v,
+                    _ => {
+                        let old = self.eval(target, host)?;
+                        binary(&op[..1], &old, &v)?
+                    }
+                };
+                self.store(target, v.clone(), host)?;
+                v
+            }
+            Expr::Step(target, by, prefix) => {
+                let old = self.eval(target, host)?;
+                let new = binary("+", &old, &Value::Int(*by))?;
+                self.store(target, new.clone(), host)?;
+                if *prefix { new } else { old }
+            }
+        })
+    }
+
+    fn store(&mut self, target: &Expr, v: Value, host: &mut dyn Host) -> Result<(), Error> {
+        match target {
+            Expr::Name(n) => self.assign_name(n, v),
+            Expr::Root(n) => {
+                self.root.insert(n.clone(), v);
+            }
+            Expr::Index(obj, i) => {
+                let i = self.eval(i, host)?;
+                match self.eval(obj, host)? {
+                    Value::Array(a) => {
+                        let mut a = a.borrow_mut();
+                        let k = i.as_int() as usize;
+                        if k >= a.len() {
+                            return rt("index out of range");
+                        }
+                        a[k] = v;
+                    }
+                    Value::Table(t) => {
+                        if let Value::Str(k) = i {
+                            t.borrow_mut().insert(k.to_string(), v);
+                        }
+                    }
+                    other => return rt(format!("storing into {other:?}")),
+                }
+            }
+            Expr::Member(obj, name) => match self.eval(obj, host)? {
+                Value::Table(t) => {
+                    t.borrow_mut().insert(name.clone(), v);
+                }
+                other => return rt(format!("storing member {name} of {other:?}")),
+            },
+            other => return rt(format!("cannot assign to {other:?}")),
+        }
+        Ok(())
+    }
+
+    fn method(&mut self, target: Value, name: &str, args: Vec<Value>, host: &mut dyn Host) -> Result<Value, Error> {
+        match (&target, name) {
+            (Value::Host(h), _) => host.call(*h, name, &args),
+            (Value::Array(a), "len") => Ok(Value::Int(a.borrow().len() as i64)),
+            (Value::Array(a), "append" | "push") => {
+                a.borrow_mut().extend(args);
+                Ok(Value::Null)
+            }
+            (Value::Str(s), "len") => Ok(Value::Int(s.len() as i64)),
+            (_, "tofloat") => Ok(Value::Float(target.number().unwrap_or(0.0))),
+            (_, "tointeger") => Ok(Value::Int(target.as_int())),
+            (Value::Table(t), _) => {
+                let f = t.borrow().get(name).cloned();
+                match f {
+                    Some(Value::Function(f)) => self.call_function(&f, args, host),
+                    _ => rt(format!("no method {name}")),
+                }
+            }
+            _ => rt(format!("method {name} of {target:?}")),
+        }
+    }
+}
+
+fn binary(op: &str, a: &Value, b: &Value) -> Result<Value, Error> {
+    if op == "==" {
+        return Ok(Value::Bool(a == b));
+    }
+    if op == "!=" {
+        return Ok(Value::Bool(a != b));
+    }
+    if op == "+" {
+        if let (Value::Str(x), y) | (y, Value::Str(x)) = (a, b) {
+            let y = match y {
+                Value::Str(s) => s.to_string(),
+                Value::Int(i) => i.to_string(),
+                Value::Float(f) => f.to_string(),
+                other => format!("{other:?}"),
+            };
+            return Ok(Value::Str(if matches!(a, Value::Str(_)) { format!("{x}{y}") } else { format!("{y}{x}") }.into()));
+        }
+    }
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => {
+            let (x, y) = (*x, *y);
+            Ok(match op {
+                "+" => Value::Int(x.wrapping_add(y)),
+                "-" => Value::Int(x.wrapping_sub(y)),
+                "*" => Value::Int(x.wrapping_mul(y)),
+                "/" => {
+                    if y == 0 {
+                        return rt("division by zero");
+                    }
+                    Value::Int(x / y)
+                }
+                "%" => {
+                    if y == 0 {
+                        return rt("division by zero");
+                    }
+                    Value::Int(x % y)
+                }
+                "<" => Value::Bool(x < y),
+                "<=" => Value::Bool(x <= y),
+                ">" => Value::Bool(x > y),
+                ">=" => Value::Bool(x >= y),
+                "&" => Value::Int(x & y),
+                "|" => Value::Int(x | y),
+                "^" => Value::Int(x ^ y),
+                "<<" => Value::Int(x << (y & 63)),
+                ">>" => Value::Int(x >> (y & 63)),
+                _ => return rt(format!("{op} on integers")),
+            })
+        }
+        _ => {
+            let (Some(x), Some(y)) = (a.number(), b.number()) else { return rt(format!("{op} on {a:?} and {b:?}")) };
+            Ok(match op {
+                "+" => Value::Float(x + y),
+                "-" => Value::Float(x - y),
+                "*" => Value::Float(x * y),
+                "/" => Value::Float(x / y),
+                "%" => Value::Float(x % y),
+                "<" => Value::Bool(x < y),
+                "<=" => Value::Bool(x <= y),
+                ">" => Value::Bool(x > y),
+                ">=" => Value::Bool(x >= y),
+                _ => return rt(format!("{op} on numbers")),
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod eval_tests {
+    use super::*;
+
+    /// A host with `SQ` (object 0) and one creature (object 1), logging every call.
+    struct Mock {
+        log: Vec<String>,
+        state: i64,
+        motion_ended: bool,
+    }
+
+    impl Host for Mock {
+        fn global(&mut self, name: &str) -> Option<Value> {
+            match name {
+                "SQ" => Some(Value::Host(0)),
+                "MOTION_F_WAIT" => Some(Value::Int(31)),
+                _ => None,
+            }
+        }
+        fn call(&mut self, object: u32, name: &str, args: &[Value]) -> Result<Value, Error> {
+            self.log.push(format!("{object}.{name}{:?}", args.iter().map(|a| a.number().unwrap_or(-1.0)).collect::<Vec<_>>()));
+            Ok(match (object, name) {
+                (0, "getPlayer") => Value::Host(2),
+                (0, "getActiveChara") => Value::Host(1),
+                (1, "getState") => Value::Int(self.state),
+                (1, "setState") => {
+                    self.state = args[0].as_int();
+                    Value::Null
+                }
+                (1, "isEndMotin") => Value::Bool(self.motion_ended),
+                (1, "getOldMotionTag") => Value::Int(31),
+                _ => Value::Null,
+            })
+        }
+    }
+
+    #[test]
+    fn runs_a_wait_script() {
+        let utility = parse(
+            r#"
+            class Val { static MOTION_BLEND_FRAME = 0.2; static MOTION_SPEED = 1.0; };
+            class Enum { static STATE_SELECT = 0; static STATE_WAIT = 1; };
+            function isRangeInOut(a, b) { return false; }
+        "#,
+        )
+        .unwrap();
+        let wait = parse(
+            r#"{
+            local pcPlayer = SQ.getPlayer();
+            local pcOwn = SQ.getActiveChara();
+            pcOwn.stopMovePosition();
+            if (pcOwn.isEndMotin()) {
+                local s32MotionTag = MOTION_F_WAIT;
+                pcOwn.setMotionTag(s32MotionTag, 0, Val.MOTION_BLEND_FRAME, Val.MOTION_SPEED, false, true);
+                if (s32MotionTag != pcOwn.getOldMotionTag()) { pcOwn.setRandomMotion(); }
+            }
+            switch (pcOwn.getState()) {
+                case Enum.STATE_SELECT: pcOwn.setState(Enum.STATE_WAIT);
+                case 5: pcOwn.fellThrough();
+                break;
+                default: pcOwn.never();
+            }
+            if (::isRangeInOut(pcOwn, pcPlayer)) { pcOwn.setState(Enum.STATE_SELECT); }
+            return;
+        }"#,
+        )
+        .unwrap();
+        let mut host = Mock { log: Vec::new(), state: 0, motion_ended: true };
+        let mut vm = Interp::new();
+        vm.run(&utility, &mut host).unwrap();
+        vm.run(&wait, &mut host).unwrap();
+        assert_eq!(host.state, 1);
+        assert!(host.log.contains(&"1.setMotionTag[31.0, 0.0, 0.2, 1.0, 0.0, 1.0]".to_string()), "{:?}", host.log);
+        assert!(host.log.iter().any(|l| l.starts_with("1.fellThrough")), "a case falls through to the next");
+        assert!(!host.log.iter().any(|l| l.starts_with("1.never") || l.starts_with("1.setRandomMotion")));
+    }
+
+    #[test]
+    fn functions_loops_and_arrays() {
+        let s = parse(
+            r#"
+            function sum(a) { local t = 0; foreach (v in a) { t += v; } return t; }
+            {
+                local a = [1, 2, 3];
+                local n = 0;
+                for (local i = 0; i < 4; i++) { n += i; }
+                local w = 0;
+                while (w < 3) { w++; }
+                return sum(a) * 100 + n * 10 + w + a.len() * 1000;
+            }
+        "#,
+        )
+        .unwrap();
+        let mut host = Mock { log: Vec::new(), state: 0, motion_ended: false };
+        let v = Interp::new().run(&s, &mut host).unwrap();
+        assert_eq!(v.as_int(), 3000 + 600 + 60 + 3);
+    }
+}

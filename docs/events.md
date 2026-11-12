@@ -1099,8 +1099,14 @@ commands as the `.ebd` events.
   icons on the creature, with `Val`'s constants (`MOTION_BLEND_FRAME` 0.2, `CHARA_ROT_LIFE`
   0.35, ...). `barrel_game::squirrel` parses the subset the 36 scripts use (locals, constants,
   `if`/`switch`/`for`/`foreach`/`while`, functions with `...`, classes of static members,
-  arrays, calls and members): `barrel nut-parse ROOT` parses all 36. Running them needs the
-  host objects (`SQ.*` and the creature's methods), not written yet.
+  arrays, calls and members): `barrel nut-parse ROOT` parses all 36. `squirrel::Interp` runs
+  them as a tree walker (switches fall through to the next case until a `break`; a function sees
+  its own scope and the root table, not its caller's locals), the game's side behind a `Host`
+  trait (its objects' methods and the named constants). `barrel nut-run ROOT FILE TICKS` runs one
+  on a stand-in creature (state and timer kept, every other question answered with 0 or false)
+  after `utility.nut`: `ai_dog_out.nut`, the dog not yet aware of the player, goes from select to
+  wait (motion 31, `F_WAIT`, blend 0.35), then to waiting until its timer runs out, then draws one
+  of its four patterns (`SQ.randRange(0, 3)`; the first, state 102, barks with motion 26).
 
 `macros::read` reads them without a Squirrel VM (the arrays are literal): each function's name,
 parameters and array; `Macro::words` resolves the array into an event action's words, with the
