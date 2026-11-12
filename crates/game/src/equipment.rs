@@ -233,7 +233,7 @@ mod tests {
             group: String::new(),
             effects: vec![SkillEffect { act: 1, element: None, min: 10, max: 10, min2: 0, max2: 0 }, SkillEffect { act: 2, element: None, min: 1, max: 1, min2: 7, max2: 7 }],
         }];
-        let traits = vec![Trait { name: "Power".into(), group: String::new(), slots: vec![barrel_formats::battle_data::TraitSlot { kind: "ITEM_SUB_EVOLVE_STATUS".into(), min: 10, max: 10 }] }];
+        let traits = vec![Trait { name: "Power".into(), group: String::new(), level: 0, point: 0, slots: vec![barrel_formats::battle_data::TraitSlot { kind: "ITEM_SUB_EVOLVE_STATUS".into(), min: 10, max: 10 }] }];
         let items = vec![ItemRow { equip: true, stats: [0, 0, 20, 0, 0, 0, 0, 0, 0] }];
         let t = Tables { items: &items, effects: &effects, traits: &traits, acts: &acts };
         let unit = ItemUnit { serial: 1, item: 0, quality: 50.0, traits: [0, -1, -1], word_e: 0, effects: [0, -1, -1, -1], equip_cost: 0, word_1a: 0, counts: [0; 4] };

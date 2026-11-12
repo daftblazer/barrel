@@ -354,8 +354,8 @@ mod quality_tests {
 
     #[test]
     fn quality_traits_add_and_cap_at_120() {
-        let t = Trait { name: "Quality+".into(), group: String::new(), slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_ADD_QUALITY".into(), min: 15, max: 15 }] };
-        let other = Trait { name: "Power".into(), group: String::new(), slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_CHANGE_POWER".into(), min: 30, max: 30 }] };
+        let t = Trait { name: "Quality+".into(), group: String::new(), level: 0, point: 0, slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_ADD_QUALITY".into(), min: 15, max: 15 }] };
+        let other = Trait { name: "Power".into(), group: String::new(), level: 0, point: 0, slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_CHANGE_POWER".into(), min: 30, max: 30 }] };
         let mut roll = |lo: i32, _: i32| lo;
         assert_eq!(super::finished_quality(50.0, &[&t, &other], &mut roll), 65.0);
         assert_eq!(super::finished_quality(110.0, &[&t], &mut roll), 120.0);
@@ -391,7 +391,7 @@ mod count_tests {
 
     #[test]
     fn traits_add_uses_and_take_off_cost() {
-        let t = |kind: &str, v| Trait { name: String::new(), group: String::new(), slots: vec![TraitSlot { kind: kind.into(), min: v, max: v }] };
+        let t = |kind: &str, v| Trait { name: String::new(), group: String::new(), level: 0, point: 0, slots: vec![TraitSlot { kind: kind.into(), min: v, max: v }] };
         let (more, light) = (t("ITEM_SUB_ITM_ADD_USECOUNT", 1), t("ITEM_SUB_EQUIP_COST", 2));
         let mut roll = |lo: i32, _: i32| lo;
         assert_eq!(super::uses(3, &[&more], &mut roll), 4);
@@ -570,7 +570,7 @@ mod price_tests {
 
     #[test]
     fn price_traits_compound() {
-        let t = Trait { name: "High Price".into(), group: String::new(), slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_ADD_PRICE".into(), min: 50, max: 50 }] };
+        let t = Trait { name: "High Price".into(), group: String::new(), level: 0, point: 0, slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_ADD_PRICE".into(), min: 50, max: 50 }] };
         assert_eq!(super::price_traits(100, &[&t, &t]), 225);
         // Quality 50, cost 46: 46 × 150 / 200 = 34.5 → 34.
         assert_eq!(super::worth(46, 50.0, &[]), 34);

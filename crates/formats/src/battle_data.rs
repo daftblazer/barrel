@@ -395,6 +395,10 @@ pub fn item_battles(pe: &Pe, table: u64, end: u64) -> Vec<ItemBattle> {
 pub struct Trait {
     pub name: String,
     pub group: String,
+    /// `potLv` (the record's +0x20): the level the Cost Bonus effect sums over an item's traits.
+    pub level: i32,
+    /// `point` (+0x24): the cost the trait screens show for it.
+    pub point: i32,
     pub slots: Vec<TraitSlot>,
 }
 
@@ -420,6 +424,8 @@ pub fn traits(root: &crate::table::Element, effect_tags: &[&str]) -> Vec<Trait> 
         .map(|row| Trait {
             name: row.attr("PotName").unwrap_or("").to_string(),
             group: row.attr("PotGrpTag").unwrap_or("").to_string(),
+            level: int(row, "potLv"),
+            point: int(row, "point"),
             slots: [("PotBase", "min", "max"), ("PotBase2", "min2", "max2")]
                 .iter()
                 .filter_map(|&(k, lo, hi)| {
