@@ -746,6 +746,18 @@ pub fn chara_radii(chara: &crate::table::Element) -> Vec<f32> {
     chara.children.iter().map(|r| r.attr("Radius").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0)).collect()
 }
 
+/// Each `Chara.xml` row's field radius: its `BaseTag`'s `CharaBase.xml` `FMrad` times 100, as the
+/// loader (`0x1401edae0`) keeps it and a field character's +0x90 takes it (`0x14026c3c0`); 0 for
+/// a tag without a row.
+pub fn field_radii(chara: &crate::table::Element, base: &crate::table::Element) -> Vec<f32> {
+    let by_tag: std::collections::HashMap<&str, f32> = base
+        .children
+        .iter()
+        .filter_map(|r| Some((r.attr("BaseTag")?, r.attr("FMrad").and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * 100.0)))
+        .collect();
+    chara.children.iter().map(|r| r.attr("BaseTag").and_then(|t| by_tag.get(t)).copied().unwrap_or(0.0)).collect()
+}
+
 /// A monster's size: its `Chara.xml` row's radius.
 pub fn monster_size(radii: &[f32], monster: usize) -> Option<f32> {
     radii.get(MONSTER_CHARA_FIRST + monster).copied()

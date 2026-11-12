@@ -763,7 +763,11 @@ a field character's radius, +0x90, is set by `0x14026c3c0` from its `CharaBase.x
 the loader (`0x1401edae0`) multiplies by 100 like `FMhig` and `FMslp`, so Escha and Logy
 (`PC20`, `PC21`, 0.48) touch at 48 field units; the lead's partner (by `0x14035ebb0`: Escha,
 then character 1, or Logy, then character 0) gets 0.4 of it. 87 of the 507 rows have 0.2,
-23 have 1, 11 have 2. scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
+23 have 1, 11 have 2. A field enemy's own `Chara.xml` row (418 to 420, "zako enemy slot" 1 to 3, all
+`PUNI`) is a stand-in whose model its group fills, so `barrel field-sim` takes the radius of the
+group's first monster's row (`battle_data::field_radii`; the Ore Rat 60, the Stray Dog 70; not
+checked against a live +0x90). At `AREA_01_01` the stand-in player walking west touches the
+first Ore Rat after 8.5 s, which starts encounter group 10. scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
 The scripts' `isHitCollision` is only a wall check (on a hit they go back to waiting).
 An encounter ends with no battle when the player struck first, the party's average level
 (`0x140330a10`, the party list at `0x141093530`) is at least 10 above the group's (the average of

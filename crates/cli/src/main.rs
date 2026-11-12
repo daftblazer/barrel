@@ -3008,12 +3008,34 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
         let scripts = (std::rc::Rc::new(load(&e.ai.0)?), std::rc::Rc::new(load(&e.ai.1)?));
         mobs.push(barrel_game::field_ai::Mob::new(c, &utility, scripts).map_err(|e| e.to_string())?);
     }
+    // Each enemy's field radius: its group's first monster's Chara.xml row's CharaBase FMrad
+    // (the enemy's own row, 418 to 420, is a stand-in "slot" whose model the group fills).
+    let xml = |name: &str| read(&root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let radii = match (xml("Chara.xml"), xml("CharaBase.xml")) {
+        (Some(c), Some(b)) => bd::field_radii(&c, &b),
+        _ => Vec::new(),
+    };
+    let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
+    let enemy_radius: Vec<f64> = enemies
+        .iter()
+        .map(|e| {
+            let m = groups.iter().find(|g| g.id == e.group).and_then(|g| g.monsters.first()).map(|m| m.0);
+            m.and_then(|m| radii.get(bd::MONSTER_CHARA_FIRST + m as usize)).copied().unwrap_or(50.0) as f64
+        })
+        .collect();
+    let player_radius = radii.first().copied().unwrap_or(48.0) as f64;
+    println!("radii: player {player_radius}, enemies {enemy_radius:?}");
     let start = mobs[0].creature.position;
     let mut player = [start[0] + 1500.0, start[1], start[2]];
     let facing = -std::f64::consts::FRAC_PI_2;
     let mut last: Vec<String> = vec![String::new(); mobs.len()];
-    for f in 0..frames {
+    'frames: for f in 0..frames {
         player[0] -= 200.0 / 60.0;
+        let placed: Vec<([f64; 3], f64)> = mobs.iter().zip(&enemy_radius).map(|(m, &r)| (m.creature.position, r)).collect();
+        if let Some(k) = barrel_game::encounter::touched(player, player_radius, &placed) {
+            println!("{:6.2} s  #{k} touches the player at ({:.0}, {:.0}): encounter group {}", f as f64 / 60.0, player[0], player[2], enemies[k].group);
+            break 'frames;
+        }
         for (k, m) in mobs.iter_mut().enumerate() {
             m.tick(player, facing, 1.0 / 60.0).map_err(|e| format!("enemy {k}, frame {f}: {e}"))?;
             let c = &m.creature;
