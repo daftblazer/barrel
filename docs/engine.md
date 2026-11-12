@@ -194,6 +194,16 @@ the only upscaler without stair-stepped edges, near native and slightly soft; th
 camera pan at 6.4 s show no trails. Validation clean. Still to do: time it on the RP6 against
 FSR 1 and GSR 1; ping-pong the history instead of copying it (one output-sized copy a frame).
 
+**FSR 3.1** (in progress). The upscaler's shaders are vendored unchanged from the FidelityFX
+SDK v1.1.4 into `crates/render/shaders/ffx/` (the GPU headers and the Vulkan GLSL pass entry
+points, 32 files, all MIT) and compiled by `build.rs` as compute shaders with glslc. The
+permutation is LDR colour, full-size motion vectors without the jitter, depth not inverted,
+the LUT Lanczos for reprojection, and no sharpening inside the accumulate pass (RCAS as its own
+pass). The SDK's host code (`ffx_fsr3upscaler.cpp`, not vendored) dispatches: prepare inputs →
+luma pyramid (SPD) → shading-change pyramid → shading change → prepare reactivity → luma
+instability → accumulate → RCAS. Barrel's host side for them (resources, the constant buffer,
+the dispatches) is the next step.
+
 **FSR 2, 3 and 4: plan** (researched 2026-11-12).
 
 - *FSR 2 and FSR 3.1's upscaler* are one algorithm line, open under MIT: FSR 2.2's own
