@@ -1196,8 +1196,12 @@ then `TRIGGER_MAP_FROM_TO_AFTER 0 4 0 5`. The file's 121,876 bytes read exactly 
 
 ### Which event starts (`0x140214d70`, `barrel_game::event_start`)
 
-Called from 31 places with a trigger group. Nothing starts while `0x141077ef0` or `0x141077ef1`
-is set or `0x1402969b0` says no. Otherwise it walks the group's list. Each entry is 16 bytes:
+Called from 31 places with a trigger group. Nothing starts in three cases:
+
+- `0x141077ef0` is set. It has no direct writer.
+- `0x141077ef1` is set. It is written only by the setter `0x140214f10 (on)`, from two
+  places, one of which sets it alongside a runner's +0x60 = -1.
+- `0x1402969b0` says yes: it calls `[0x1400fc0a0()+0x58]` through `0x1402177b0`. Otherwise it walks the group's list. Each entry is 16 bytes:
 event, the group holding the trigger, 1, and priority (word 1). The list is built by
 `0x1400555d0`: a group goes under its first trigger code, found by a word-by-word scan for
 0x7000007e..0xa6. It is sorted highest priority first by the library sort `0x140057570`,
@@ -1206,7 +1210,11 @@ which does not keep order among equals.
 An entry passes when `0x140214c00` passes for group 0 and for its own group:
 
 - **Gate:**
-  - Word 0 = 1 fails while `0x1410782e2` is set (cleared at day end).
+  - Word 0 = 1 fails while `0x1410782e2` is set. That flag is saved as
+    `event/m_isDoneToday`. It is cleared at day end (`0x14035be27`) and on reset
+    (`0x14035f24a`), and loaded with the save (`0x14035f1aa`). No code in the English
+    executable sets it, so the check never fails unless a save brings a 1 (the oracle save
+    has 0).
   - A seen event (`0x14035f270`) needs word 2 (repeatable).
   - Word 4 set needs event flag 1.
   - Today must lie from the date in words 8–10 to the one in words 11–13, both inclusive
