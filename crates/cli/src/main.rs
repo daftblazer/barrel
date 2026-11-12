@@ -142,6 +142,7 @@ fn main() -> ExitCode {
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
+        ["bonuses", file] => bonuses(Path::new(file)),
         ["days", install, n] => days(Path::new(install), n, false, None),
         ["days", install, n, "--events"] => days(Path::new(install), n, true, None),
         ["days", install, n, "--from", save] => days(Path::new(install), n, false, Some(Path::new(save))),
@@ -834,6 +835,22 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         }
     }
     println!("day {}: friendship {:?}", w.date, w.friendship.iter().map(|f| (f * 100.0).round() / 100.0).collect::<Vec<_>>());
+    Ok(())
+}
+
+/// `Bonus.xml`'s rows and their actions.
+fn bonuses(file: &Path) -> Result<()> {
+    use barrel_game::bonus::{self, KINDS};
+    let table = barrel_formats::table::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    let list = bonus::bonuses(&table);
+    let mut values = bonus::State::default();
+    for (i, b) in list.iter().enumerate() {
+        let acts: Vec<String> = b.actions.iter().map(|a| format!("{}({})", KINDS[a.kind], a.params.iter().flatten().cloned().collect::<Vec<_>>().join(","))).collect();
+        println!("{i} {}: {}", b.name, acts.join(" "));
+        bonus::apply(&mut values, b);
+    }
+    let all: Vec<String> = values.values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
+    println!("{} bonuses; all of them together: values {}, gathering {:?}", list.len(), all.join(" "), values.collect_time);
     Ok(())
 }
 

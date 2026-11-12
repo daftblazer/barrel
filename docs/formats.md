@@ -607,7 +607,7 @@ them: `value[1]` and `value[0x28]` as percentages on top of 100 (`0x1401d8600`, 
 `value[3]` added as a float in the synthesis code (`0x14030f029`), `value[0x11]` taken off a
 cost (`0x14032f2ce`), a run of them added to the characters' equipped stats (`0x14032df23`,
 the +0x114 block of `Party`). One save has only `value[4]` = 5. These are the game's lasting
-bonuses (rewards), presumably granted through the reward action table at `0x14002f310` (247
+bonuses (rewards), granted by `bonus/Bonus.xml` through `0x14002f310` (docs/tables.md, "Bonuses"; 247
 records of 0xb0 bytes behind `0x140df9998`, each a list of actions in 55 kinds: flags,
 events, items, achievements, ...), not read yet. `save::Summary::bonus_values`.
 

@@ -1,6 +1,7 @@
 //! Barrel's game logic.
 
 pub mod battle;
+pub mod bonus;
 pub mod calendar;
 pub mod camera;
 pub mod clock;

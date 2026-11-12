@@ -1439,3 +1439,35 @@ the install: a table kept from the series' previous game. In Escha & Logy the we
 props are part models in the character's own container (`<stem>_P_M_Wep_*`, `_Opt_*`),
 switched by `CharaPartsChange.xml`; accessories (`_P_M_Acc_*`) are always worn
 (`docs/renderer.md`, "Accessories").
+
+## Bonuses
+
+`bonus/Bonus.xml` (245 rows; `Saves_EN` has the English names) is what completing
+assignments grants: an assignment's `Bonus` names a row. A row has a `Name`, a `Text` and up to
+five actions, `BonusEntryN` (a `BonusEntry_*` name) with `EntryNPrm1` to `Prm3`. Once loaded
+each row is 0xb0 bytes (behind `0x140df9998`) with the five actions at +0x20, 16 bytes each:
+the kind, then the three parameters resolved to numbers. `0x14002f310(row)` runs them, a
+switch over 55 kinds in the order of the executable's `BonusEntry_*` names
+(`bonus::KINDS`):
+
+| kinds | what they do |
+|---|---|
+| 0 `GetMoney` | money (`0x14036a8e0`) |
+| 1 to 3 `Event_Tag_On`, `Event_Flag_On`, `Event_Flag_Add` | event state (`0x14035f480`, `f660`, `f6b0`) |
+| 4 `Get_Trophy` | a Steam achievement (`0x140168390`); no row uses it |
+| 5 `Add_Basket`, 6 `Add_Work_Point` | basket size (`0x14029f3b0`), work points (`0x14035fc90`) |
+| 7 to 9 | bonus value 1 (adventure experience %), 2 (adventure level limit: read as 50 + it, capped at 99), 3 (synthesis experience %) |
+| 10 `Get_Recipe`, 11 `Get_Mix_Skill`, 12 `Get_Mix_Bonus` | recipe book level (`0x140369560`), synthesis skill (`0x14036c470`), synthesis bonus (`0x14036c400`, three parameters) |
+| 13 `Add_Status_ALL` | values 4 to 8 at once (from fields past the actions; no row uses it) |
+| 14 to 45 | bonus value kind − 10: HP, MP, attack, defense, speed (4 to 8), the four element and the condition resistances, corrections, critical rates, the element damages, death avoidance, the five ailments, experience, money and drop rates |
+| 46 `Add_Item_Slot` | `0x1403654f0` |
+| 47 `Reduce_Collect_Time` | adds Prm2 to gathering slot Prm1 of the 17 (`bonus/collectTimeBonus`), or to all 17 when Prm1 is -1 |
+| 48 `Reduce_Move_Time` | nothing (falls through) |
+| 49 to 51 | values 39 (move fatigue), 40 (sell price %), 41 (buy cost) |
+| 52 `GetGift`, 53 `Get_Explore_Equip`, 54 `Get_Costume` | gifts (`0x14002f950`), explore equipment (`0x14002fad0`), costumes (`0x140017000`) |
+
+After each action the hero's record is refreshed, and HP and MP gains raise the current HP
+and MP as well. All 332 actions in the table resolve. Taken together the rows add 100% to
+both experience rates, 49 to the level limit (so 99), 50 HP, 40 MP, 15 to each other stat,
+and 4 to every gathering slot. `barrel bonuses Bonus.xml` lists them; `bonus::apply` runs the
+value actions and hands the rest back to their systems.
