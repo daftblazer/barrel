@@ -1296,6 +1296,33 @@ value 4 at 5 and no HP from equipment; Logy, with no bonus, has the same max HP 
 saved record keeps the in-use block, so battles started from a save (`barrel battle ... --from`)
 already include the bonuses.
 
+What an equipped item gives (`0x14029dda0 (item, stat, base)`): for the first nine stats and
+an item whose row's +0x28 is 2 (equipment), the item row's own value for that stat (+0x78 +
+4 × stat); plus, for each of the item's four effects, the amount of each of the effect's
+slots whose act is one the stat takes (`0x1402a20f0`: a roll between the slot's min and max,
+`0x1404ca660`, which is the value itself when they are equal); that sum times
+`(quality × 0.5 + 75) / 100` (the same scale as an item's battle power), truncated. Then, unless
+the item's +0xe is set, each of its three traits adds the amounts of its slots whose kind the
+stat takes by a second list (`0x1402b4770`, not read yet; kind 0x2c is a percentage of `base`,
+the stat's base value). The acts each stat takes (`0x1402b4560`):
+
+| stat | acts |
+|---|---|
+| 0 to 4 (max HP, max MP, attack, defense, speed) | `ACT_EQUIP_ADD_PARAM_HP`, `_MP`, `_ATK`, `_DEF`, `_SPD` |
+| 5 to 9 | `ACT_EQUIP_ADD_RESIST` (special-cased: by its element, presumably) |
+| 10 | `ACT_PASSIVE_CRITICAL`, `ACT_EQUIP_ADD_CRITICAL` |
+| 11, 12 | `ACT_EQUIP_ADD_CRITBONUS`; `ACT_EQUIP_ADD_POWER` |
+| 13 | `ACT_PASSIVE_CHANGE_SUPPORTGAUGE`, `ACT_ADD_SUPGAUGE` |
+| 15, 16, 17 | `ACT_AUTO_DODGE`; `ACT_PASSIVE_REDUCE_WT_SKILL`; `ACT_EQUIP_ADD_DMGCONVERT` |
+| 18 to 20 | `ACT_EQUIP_ADD_FIRE_DMG`, `_ICE_DMG`, `_THUN_DMG` |
+| 22, 23 | `ACT_EQUIP_GUTS_POWER`; `ACT_EQUIP_ADD_PERCENT` |
+| 24 to 28 | `ACT_BAD_POISON`, `ACT_BAD_SLEEP`, `ACT_BAD_BLIND`, `ACT_BAD_CURSE`, `ACT_BAD_SLOW` (resistances) |
+| 29, 30, 31 | `ACT_EQUIP_BONUS_EXP`; `ACT_EQUIP_BONUS_MONEY`; `ACT_PASSIVE_LUCKY_STAR`, `ACT_EQUIP_ADD_DROPRATE` |
+| 14, 21 | none |
+
+The last three agree with the bonuses: `Add_Exp_Rate`, `Add_Money_Rate` and `Add_Drop_Rate`
+are bonus values 33 to 35, stat 29 to 31 + 4.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
