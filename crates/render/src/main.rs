@@ -811,8 +811,8 @@ fn event_characters(
                     target: Vec3::new(i(5) + i(8), i(6) + i(9), i(7) + i(10)),
                     distance: i(4),
                     yaw: i(0) / 100.0,
-                    pitch: i(2) / 100.0,
-                    fov: 40.0,
+                    pitch: i(3) / 100.0,
+                    fov: i(2) / 100.0,
                 });
             }
             let place = match c.word {
@@ -1699,7 +1699,7 @@ fn main() -> Result<()> {
     // (arrows, + and -): `orbit` holds the turn (yaw, pitch in radians) and the zoom factor.
     let mut orbit = (0f32, 0f32, 1f32);
     // The projection follows the target's current aspect (the window can change size).
-    let view_proj = |eye: Vec3, target: Vec3, dist: f32, width: u32, height: u32, (yaw, pitch, zoom): (f32, f32, f32)| {
+    let view_proj = |eye: Vec3, target: Vec3, dist: f32, fov: f32, width: u32, height: u32, (yaw, pitch, zoom): (f32, f32, f32)| {
         let offset = eye - target;
         let flat = offset.length();
         let turned = glam::Quat::from_rotation_y(yaw) * offset;
@@ -1954,6 +1954,9 @@ fn main() -> Result<()> {
                 let mirror = Vec3::new(-1.0, 1.0, 1.0);
                 (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
                 dist = (eye - target).length().max(1.0);
+                if let Some(f) = shown.fov {
+                    fov = f.clamp(5.0, 120.0).to_radians();
+                }
             }
             let since = ((clock.ticks - start_ticks) as f32 + f.alpha) / clock.rate() as f32;
             // The time on screen: the logic time less the part of the last tick not yet shown.
@@ -2065,7 +2068,7 @@ fn main() -> Result<()> {
         },
         _ => 0,
     };
-    let mvp = view_proj(eye, target, dist, width, height, orbit);
+    let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
     let record = |cb: vk::CommandBuffer| unsafe {
         let clear = [

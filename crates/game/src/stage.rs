@@ -26,6 +26,8 @@ pub struct Snapshot {
     pub characters: BTreeMap<u32, ([f32; 3], f32)>,
     pub eye: Option<[f32; 3]>,
     pub target: Option<[f32; 3]>,
+    /// The field camera's field of view (degrees), when it is the camera in use.
+    pub fov: Option<f32>,
 }
 
 impl Snapshot {
@@ -49,7 +51,11 @@ impl Snapshot {
                 (n, v)
             })
             .collect();
-        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target) }
+        let fov = match (before.fov, after.fov) {
+            (Some(a), Some(b)) => Some(a + (b - a) * alpha),
+            (_, b) => b,
+        };
+        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target), fov }
     }
 }
 
@@ -380,14 +386,14 @@ impl Stage {
     /// The state the screen needs now.
     pub fn snapshot(&self) -> Snapshot {
         // The camera in use: the field camera unless the manual one was set after it.
-        let (eye, target) = match (&self.field_camera, self.manual_camera) {
+        let (eye, target, fov) = match (&self.field_camera, self.manual_camera) {
             (Some(c), false) => {
                 let (e, t) = c.eye_target();
-                (Some(e), Some(t))
+                (Some(e), Some(t), Some(c.fov.now()))
             }
-            _ => (self.eye.position, self.target.position),
+            _ => (self.eye.position, self.target.position, None),
         };
-        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target }
+        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target, fov }
     }
 
     /// Runs whole [`FRAME`]s until `time`.
@@ -518,11 +524,12 @@ mod tests {
 
     #[test]
     fn ticks_blend_for_the_screen() {
-        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]) };
+        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]), fov: None };
         let b = Snapshot {
             characters: BTreeMap::from([(1, ([10.0, 0.0, 0.0], 10f32.to_radians())), (2, ([5.0; 3], 0.0))]),
             eye: Some([1.0; 3]),
             target: Some([4.0, 0.0, 0.0]),
+            fov: None,
         };
         let m = Snapshot::blend(&a, &b, 0.25);
         let (p, f) = m.characters[&1];

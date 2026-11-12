@@ -1972,10 +1972,10 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 use barrel_game::field_camera::Change as C;
                 let rel = |r: bool| if r { "by" } else { "to" };
                 let what = match change {
-                    C::All { yaw, pitch, distance, target, offset, .. } => format!("yaw {yaw}°, pitch {pitch}°, {distance} away from {target:?} + {offset:?}"),
+                    C::All { yaw, fov, pitch, distance, target, offset } => format!("yaw {yaw}°, pitch {pitch}°, field of view {fov}°, {distance} away from {target:?} + {offset:?}"),
                     C::Yaw { value, relative, seconds } => format!("yaw {} {value}° over {seconds} s", rel(relative)),
+                    C::Fov { value, relative, seconds } => format!("field of view {} {value}° over {seconds} s", rel(relative)),
                     C::Pitch { value, relative, seconds } => format!("pitch {} {value}° over {seconds} s", rel(relative)),
-                    C::Angle { value, relative, seconds } => format!("angle 4 {} {value}° over {seconds} s", rel(relative)),
                     C::Distance { value, relative, seconds } => format!("distance {} {value} over {seconds} s", rel(relative)),
                     C::Target { value, relative, seconds } => format!("target {} {value:?} over {seconds} s", rel(relative)),
                 };

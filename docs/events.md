@@ -144,8 +144,8 @@ with `3791 0 2250 286 448 9983 383 11369 0 150 0`:
 |---|---|---|
 | 1 | 37.91° | yaw, through the same setter as `t3` (0x74100003; the setter `0x1401ec9e0` keeps it at +0x24/+0x28) |
 | 2 | 0° | an angle, stored where `t5` (0x74100005) stores |
-| 3 | 22.50° | pitch, through the same setter as `t7` (0x74100007) |
-| 4 | 2.86° | an angle, through `0x1401ec8f0` (not identified yet) |
+| 3 | 22.50° | the field of view (see below), through the same setter as `t7` (0x74100007) |
+| 4 | 2.86° | the pitch (see below), through `0x1401ec8f0` (the immediate form of `t9`'s setter) |
 | 5 | 448 | distance (divided by 100, then multiplied back) |
 | 6..8 | (9983, 383, 11369) | the target point, in field units |
 | 9..11 | (0, 150, 0) | an offset added to the target: the look-at point sits 150 units up, about head height |
@@ -169,6 +169,18 @@ within 15°), the other sign 17.7° (74). `EVENT_MM01_OP1_111` then opens lookin
 workshop at Escha and Clone. The field of view is still 40° (ours); the fields' own camera
 tables (`Saves/field/<FIELD>.xml`, `<camera>` points) use 22.5°, which events may share.
 
+**Field of view and pitch.** Which `t20` operand is which was read from the events, and is
+not settled by the code yet (the value at +0x50..+0x58 is read back by the getter
+`0x1401ec4f0`; who uses it is next). Operand 3 is 22.5° in 140 of the 168 story events' first
+`t20` (else 30°, 45°, 40°, 21.5°), the value the fields' own camera tables give as `fov`
+(`Saves/field/<FIELD>.xml`, `<point ... fov="22.5">`), so it is taken as the field of view and
+operand 4 (0° to about 30°, sometimes negative) as the pitch. Operand 2 is 0 in all but one of
+1,450 `t20`s. The framing test (the nearest placed character's angle off the view's axis) can
+not tell pitches apart well, since the view always passes through the target: no pitch scores
+a median 4.98°, operand 4 as the pitch 6.73°, operand 4 negated 5.16°, operand 3 as the pitch
+9.7°. Some shots of `EVENT_MM01_OP1_111` look at the floor from close by or from inside a wall
+this way; screenshots from the game would settle it.
+
 **The field camera over time** (`barrel_game::field_camera`). Each of its values is held as
 `{start, goal, now, seconds}` (yaw at +0x20 to +0x2c, pitch +0x50, a fourth angle +0x80,
 distance +0x98; setters `0x1401eca20`, `0x1401ec7a0`, `0x1401ec940`, `0x1401ec890`): a
@@ -179,8 +191,8 @@ set the goal, the even ones add to the value now (`t4` after `t3`'s `0x1401e7b01
 |---|---|---|
 | `t3`/`t4` | yaw | degrees, seconds |
 | `t5`/`t6` | an angle (`t20`'s second; not followed) | |
-| `t7`/`t8` | pitch | degrees, seconds |
-| `t9`/`t10` | the fourth angle (`t20`'s fourth; kept, not used) | degrees, seconds |
+| `t7`/`t8` | field of view | degrees, seconds |
+| `t9`/`t10` | pitch (`t20`'s fourth) | degrees, seconds |
 | `t11`/`t12` | distance | units, seconds |
 | `t13`/`t14` | the target | x, y, z, seconds |
 | `t20` | everything at once | see above |
