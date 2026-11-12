@@ -34,6 +34,13 @@ pub const CHARA_MOTION_AUTO_LOOP: u32 = 0x7300_000b;
 /// playing moves to another of its divisions, from that division's start, without a blend
 /// (`0x1401f6830`).
 pub const CHARA_MOTION_DIVISION: u32 = 0x7300_000d;
+/// `s6` (`ECT_CHARA_MOTION_WAIT`): `{character}`: the action waits for the character's motion
+/// (or division) to play out, when it does not loop.
+pub const CHARA_MOTION_WAIT: u32 = 0x7300_0006;
+
+/// How long a character's motion (a division of it, when given) plays and whether it loops:
+/// what [`Player::schedule`] needs for `s6`. The player knows no clips; whoever does supplies it.
+pub type MotionLength<'a> = Box<dyn Fn(u32, u32, Option<u32>) -> Option<(f32, bool)> + 'a>;
 /// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
 /// operands): adds the character there, facing `angle` degrees.
 pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
@@ -195,6 +202,8 @@ pub struct Player<'a> {
     /// How long [`Player::schedule`] holds each line: none by default, since the game waits
     /// for the player; [`Player::reading_time`] sets one for unattended playback.
     reading: Option<fn(&str) -> f32>,
+    /// The motions' lengths for `s6`; without them `s6` takes no time.
+    motion_length: Option<MotionLength<'a>>,
 }
 
 /// A reading time for unattended playback (not the game's: it waits for a button): one
@@ -218,13 +227,20 @@ impl<'a> Player<'a> {
         if let Some(s) = started.first_mut() {
             *s = true;
         }
-        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None })
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None })
     }
 
     /// Holds each line for `time(text)` seconds in [`Player::schedule`] (the action showing
     /// it waits that long), as an unattended playback would.
     pub fn reading_time(mut self, time: fn(&str) -> f32) -> Self {
         self.reading = Some(time);
+        self
+    }
+
+    /// Makes `s6` wait in [`Player::schedule`] for the motion's length (`length(character,
+    /// motion, division)`: seconds and whether it loops; a looping one is not waited for).
+    pub fn motion_length(mut self, length: MotionLength<'a>) -> Self {
+        self.motion_length = Some(length);
         self
     }
 
@@ -349,6 +365,8 @@ impl<'a> Player<'a> {
         }
         let mut out = Vec::new();
         let mut steps = Vec::new();
+        // Each character's motion: (motion, division, started at, whether the command loops it).
+        let mut motions: HashMap<u32, (u32, Option<u32>, f32, bool)> = HashMap::new();
         while let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len()).min_by(|&i, &j| {
             threads[i].0.partial_cmp(&threads[j].0).unwrap().then(i.cmp(&j))
         }) {
@@ -371,6 +389,28 @@ impl<'a> Player<'a> {
                     (Step::Message { text, .. }, Some(f)) => f(&text.replace("<CR>", "")).max(0.0),
                     _ => 0.0,
                 };
+                match &s {
+                    Step::Motion { character, motion, division, looping, .. } => {
+                        motions.insert(*character, (*motion, *division, threads[t].0, *looping));
+                    }
+                    Step::MotionDivision { character, division, .. } => {
+                        if let Some(m) = motions.get_mut(character) {
+                            (m.1, m.2) = (Some(*division), threads[t].0);
+                        }
+                    }
+                    Step::Command { word: CHARA_MOTION_WAIT, operands: [character, ..], .. } => {
+                        let end = motions.get(character).and_then(|&(motion, division, since, looping)| {
+                            let (length, loops) = self.motion_length.as_ref()?(*character, motion, division)?;
+                            // A division says whether it loops; a whole clip loops as its command said.
+                            let loops = if division.is_some() { loops } else { looping };
+                            (!loops).then_some(since + length)
+                        });
+                        if let Some(end) = end {
+                            threads[t].0 = threads[t].0.max(end);
+                        }
+                    }
+                    _ => {}
+                }
                 let shown_at = threads[t].0;
                 threads[t].0 += held;
                 out.push(Timed { time: if held > 0.0 { shown_at } else { now }, action, step: s });
@@ -454,6 +494,39 @@ mod tests {
             .collect();
         // Action 3 is never started, so it never runs.
         assert_eq!(steps, ["wait 0.1", "start 2", "wait 2", "wait 0.2", "start 1", "wait 1"]);
+    }
+
+    #[test]
+    fn motion_waits_last_the_division() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        // s11 0 76 0 1 40, s6 0, s13 0 1 1, s6 0, then a wait to mark the time.
+        let event = Ebd {
+            actions: vec![act(vec![
+                CHARA_MOTION_AUTO_LOOP, 0, 76, 0, 1, 40,
+                CHARA_MOTION_WAIT, 0,
+                CHARA_MOTION_DIVISION, 0, 1, 1,
+                CHARA_MOTION_WAIT, 0,
+                TIME_WAIT, 10,
+                END,
+            ])],
+            resources: vec![],
+        };
+        let table = OperandTable::new(&[
+            (CHARA_MOTION_AUTO_LOOP, Some(5)),
+            (CHARA_MOTION_WAIT, Some(1)),
+            (CHARA_MOTION_DIVISION, Some(3)),
+            (TIME_WAIT, Some(1)),
+        ]);
+        // Division 0 plays 0.5 s once; division 1 loops (not waited for).
+        let steps = Player::escha(&event, &[], &table)
+            .unwrap()
+            .motion_length(Box::new(|_, _, d| match d {
+                Some(0) => Some((0.5, false)),
+                _ => Some((2.0, true)),
+            }))
+            .schedule();
+        let wait = steps.iter().find(|t| matches!(t.step, Step::Wait { .. })).unwrap();
+        assert_eq!(wait.time, 0.5);
     }
 
     #[test]

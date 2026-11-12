@@ -351,7 +351,12 @@ its slot +0x28 is what a `p3` on that character asks) runs both, in its switch a
   range set from the division, its time to the start, no blend; +0x828 keeps the division,
   +0x5c = flag ≠ 0). `EVENT_MM01_OP1_121` starts Escha's `EV_ACT_21` at division 0 (`s11`)
   and steps it through 2, 1, 2, 1, 3, an `s6` (`ECT_CHARA_MOTION_WAIT`) after each one that
-  does not loop.
+  does not loop. `s6` (`{character}`) holds the action until the character's motion
+  (its division, when one was given) has played out; a looping one is not waited for. The
+  scheduler (`Player::schedule`) does this when given the lengths
+  (`Player::motion_length`): the viewer measures every motion and division the event plays
+  from the clips and `CharaDiv` before scheduling; the CLI has no clips, so there `s6` takes
+  no time.
 
 - `s10` (`ECT_CHARA_MOTION_SET_LOOP`, `{character, motion, blend, flag}`) plays the motion
   (a `MOTION_*` number, e.g. 32 `WALK`) through `0x1401f4c50`, blending over `blend` / 100

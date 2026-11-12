@@ -2067,18 +2067,6 @@ fn main() -> Result<()> {
             .or_else(|| xml("Saves/chara/Chara.xml"))
             .map(|t| t.children.iter().map(|c| c.attr("Name").unwrap_or("").to_string()).collect())
             .unwrap_or_default();
-        // Lines held for a reading time, as nobody presses a button here.
-        let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?
-            .reading_time(barrel_game::event::reading_time)
-            .schedule();
-        telop_cards = steps
-            .iter()
-            .filter_map(|t| match t.step {
-                barrel_game::event::Step::Telop { card, .. } => Some(card),
-                _ => None,
-            })
-            .collect();
-        let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_game::event::reading_time), ..Stage::default() }, steps);
         motion_names = std::fs::read_dir(root)?
             .flatten()
             .map(|e| e.path())
@@ -2091,6 +2079,52 @@ fn main() -> Result<()> {
                 barrel_formats::chara_div::read(&t, &mut divisions);
             }
         }
+        // The motions' lengths for s6 (wait for a motion): every (character, motion, division)
+        // the event plays, measured from the clips and the divisions before scheduling.
+        let mut lengths: std::collections::HashMap<(u32, u32, Option<u32>), (f32, bool)> = Default::default();
+        {
+            use barrel_game::event::Step;
+            let mut current: std::collections::HashMap<u32, u32> = Default::default();
+            let mut wanted = Vec::new();
+            for step in barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())? {
+                match step {
+                    Step::Motion { character, motion, division, .. } => {
+                        current.insert(character, motion);
+                        wanted.push((character, motion, division));
+                    }
+                    Step::MotionDivision { character, division, .. } => {
+                        if let Some(&motion) = current.get(&character) {
+                            wanted.push((character, motion, Some(division)));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for (character, motion, division) in wanted {
+                let Some(a) = actors.iter_mut().find(|a| a.who == character) else { continue };
+                let Some(column) = motion_names.get(motion as usize) else { continue };
+                let Some(duration) = a.motions.get(column).map(|c| c.duration) else { continue };
+                let found = division.and_then(|k| *divisions.get(&(a.motions.head.clone(), column.clone()))?.get(k as usize)?);
+                let length = match found {
+                    Some(d) => (d.end.unwrap_or(duration).min(duration) - d.start).max(0.0),
+                    None => duration,
+                };
+                lengths.insert((character, motion, division), (length, found.is_some_and(|d| d.loops)));
+            }
+        }
+        // Lines held for a reading time, as nobody presses a button here.
+        let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?
+            .reading_time(barrel_game::event::reading_time)
+            .motion_length(Box::new(move |c, m, d| lengths.get(&(c, m, d)).copied()))
+            .schedule();
+        telop_cards = steps
+            .iter()
+            .filter_map(|t| match t.step {
+                barrel_game::event::Step::Telop { card, .. } => Some(card),
+                _ => None,
+            })
+            .collect();
+        let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_game::event::reading_time), ..Stage::default() }, steps);
         face_tables_play = std::fs::read_dir(root)?
             .flatten()
             .map(|e| e.path())
