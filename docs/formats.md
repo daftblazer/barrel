@@ -423,6 +423,13 @@ settings writer `0x14015d380` calls it with encode 1 and `fwrite`s the result). 
 7. a byte substitution (`0x140020740`): a count `n` (0 for 256), `n` table bytes, a big-endian
    u32 length and that many indices into the table.
 
+`save::encode (state, seed)` codes a state the other way (the steps in reverse: the state's
+trailing zeros dropped, a byte table of the distinct bytes most frequent first, the
+Exp-Golomb packing, padding to 16, the seeded byte runs, the trailer, the word pass adding `r`
+before the conditional xor, the bit swaps). Decoding gives the state back, for the settings
+file and for a 300,868-byte game state, whose coding comes out 66,368 bytes, the size of the
+game's own file (the game's table order is likely the same: most frequent first).
+
 The stream is `b = a × b + 0x2f09` (u32), its value `b >> 16`, with `a` = 0x3b9a73c9 (plus the
 seed for step 5) and `b` set to each step's key (0x3745d, 0xd727, the three run keys). When
 encoding, the seed is `0x1403b7390`'s value (so two saves of one state differ).

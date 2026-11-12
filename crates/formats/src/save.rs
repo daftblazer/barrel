@@ -231,6 +231,120 @@ pub fn decode(coded: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(state)
 }
 
+/// Packs bytes as [`ungamma`] reads them: a big-endian u32 count, then each byte `b` as
+/// `v = b + 1` in `floor(log2 v)` zeros and `v`'s bits from the top (0xff as eight zeros).
+fn gamma(d: &[u8]) -> Vec<u8> {
+    let mut out = (d.len() as u32).to_be_bytes().to_vec();
+    let (mut byte, mut used) = (0u8, 0u32);
+    let mut put = |bit: u32, out: &mut Vec<u8>| {
+        byte |= (bit as u8) << (7 - used);
+        used += 1;
+        if used == 8 {
+            out.push(byte);
+            (byte, used) = (0, 0);
+        }
+    };
+    for &b in d {
+        if b == 0xff {
+            for _ in 0..8 {
+                put(0, &mut out);
+            }
+            continue;
+        }
+        let v = b as u32 + 1;
+        let k = 31 - v.leading_zeros();
+        for _ in 0..k {
+            put(0, &mut out);
+        }
+        for i in (0..=k).rev() {
+            put((v >> i) & 1, &mut out);
+        }
+    }
+    if used > 0 {
+        out.push(byte);
+    }
+    out
+}
+
+/// Writes bytes as [`unsubstitute`] reads them: a table of the distinct bytes, most frequent
+/// first (so they get the shortest codes; the game's own order is not read), then each byte
+/// as its place in the table.
+fn substitute(d: &[u8]) -> Vec<u8> {
+    let mut count = [0usize; 256];
+    for &b in d {
+        count[b as usize] += 1;
+    }
+    let mut table: Vec<u8> = (0..=255u8).filter(|&b| count[b as usize] > 0).collect();
+    table.sort_by_key(|&b| std::cmp::Reverse(count[b as usize]));
+    let mut place = [0u8; 256];
+    for (i, &b) in table.iter().enumerate() {
+        place[b as usize] = i as u8;
+    }
+    let mut out = vec![if table.len() == 256 { 0 } else { table.len() as u8 }];
+    out.extend_from_slice(&table);
+    out.extend_from_slice(&(d.len() as u32).to_be_bytes());
+    out.extend(d.iter().map(|&b| place[b as usize]));
+    out
+}
+
+/// Codes a state as the game does when saving (`0x1400219a0` with encode 1), the inverse of
+/// [`decode`]: trailing zero bytes dropped, [`substitute`] and [`gamma`], padded to 16 with a
+/// 16-byte trailer (0xff, then big-endian the xor and the sum of the data's big-endian u32s
+/// and `seed`), the data xored in the seeded runs, the words' `r` added (then the xor where
+/// it applies) and the last `min(P, 0x800)` bytes' bit pairs swapped. `seed` stands for the
+/// game's `0x1403b7390` value (any value reads back). The output differs from the game's for
+/// one state (its table order), but [`decode`] gives the state back.
+pub fn encode(state: &[u8], seed: u32) -> Vec<u8> {
+    let len = state.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    let mut d = gamma(&substitute(&state[..len]));
+    // The data must end on a non-zero byte for its own trailing zeros not to move the length;
+    // the trailer that follows makes that so, and the data is padded to 16.
+    d.resize((d.len() + 15) & !15, 0);
+    let data_len = d.len();
+    let (mut sum, mut xor) = (0u32, 0u32);
+    for c in d.chunks_exact(4) {
+        let v = u32::from_be_bytes(c.try_into().unwrap());
+        sum = sum.wrapping_add(v);
+        xor ^= v;
+    }
+    let mut s = Stream { a: seed.wrapping_add(SEED), b: 0 };
+    let mut keys = [0xa22fu32, 0xa129, 0x394d];
+    let (mut at, mut round, mut k) = (0usize, 0usize, 0usize);
+    while at < data_len {
+        s.b = keys[k];
+        for _ in 0..round + [7, 13, 23][k] {
+            if at == data_len {
+                break;
+            }
+            d[at] ^= s.next() as u8;
+            at += 1;
+        }
+        keys[k] = s.b;
+        k += 1;
+        if k == 3 {
+            k = 0;
+            round += 1;
+        }
+    }
+    d.extend_from_slice(&[0xff, 0, 0, 0]);
+    d.extend_from_slice(&xor.to_be_bytes());
+    d.extend_from_slice(&sum.to_be_bytes());
+    d.extend_from_slice(&seed.to_be_bytes());
+    let p = d.len();
+    let mut s = Stream { a: SEED, b: 0xd727 };
+    for w in d.chunks_exact_mut(2) {
+        let r = s.next() & 0x7fff;
+        let mut v = (u16::from_be_bytes([w[0], w[1]]) as u32).wrapping_add(r) & 0xffff;
+        if r % 0xec2 >= 0x761 {
+            v ^= s.next() & 0x7fff;
+        }
+        w.copy_from_slice(&(v as u16).to_be_bytes());
+    }
+    let m = p.min(0x800);
+    swap_bits(&mut s, &mut d[p - m..], 0x3745d);
+    d
+}
+
 /// A record of a save's state (after its 0x20-byte header): a little-endian u32 size counting
 /// itself, a NUL-terminated name, then one of
 /// - `Data`: a u32 length and that many bytes (most records; little-endian in Escha & Logy,
@@ -662,5 +776,34 @@ mod tests {
         r.extend_from_slice(&[0, 0, 0, 3, 7, 8, 9]);
         let rec = records(&r).unwrap();
         assert_eq!(rec[0].body, Body::Data(&[7, 8, 9]));
+    }
+
+    #[test]
+    fn encode_decodes_back() {
+        // A state: header, a record, trailing zeros (dropped and restored).
+        let mut state = vec![0u8; 0x20];
+        state[0..4].copy_from_slice(&20130322u32.to_le_bytes());
+        let mut rec = 20u32.to_le_bytes().to_vec();
+        rec.extend_from_slice(b"ipu\0");
+        rec.extend_from_slice(&8u32.to_le_bytes());
+        rec.extend_from_slice(&[1, 2, 3, 0xff, 0, 0, 7, 0]);
+        state.extend_from_slice(&rec);
+        for seed in [0, 1, 0x1234_5678] {
+            let coded = encode(&state, seed);
+            assert_eq!(coded.len() % 16, 0);
+            assert_eq!(decode(&coded).unwrap(), state);
+        }
+        assert_eq!(ungamma(&gamma(&[0, 1, 2, 254, 255, 0])).unwrap(), [0, 1, 2, 254, 255, 0]);
+        assert_eq!(unsubstitute(&substitute(b"abracadabra")).unwrap(), b"abracadabra");
+    }
+
+    /// A real settings state coded again and decoded back (`BARREL_SYSDATA`, not in the
+    /// repository).
+    #[test]
+    #[ignore]
+    fn a_real_state_codes_back() {
+        let Ok(f) = std::env::var("BARREL_SYSDATA") else { return };
+        let state = decode(&std::fs::read(f).unwrap()).unwrap();
+        assert_eq!(decode(&encode(&state, 0xdead_beef)).unwrap(), state);
     }
 }
