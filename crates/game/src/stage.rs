@@ -166,6 +166,8 @@ pub enum Cue {
     Music { track: Option<u32>, volume: f32, fade: f32 },
     /// A voice clip plays.
     Voice { clip: u32 },
+    /// A sound effect plays at `volume` and `pan` (-1 to 1).
+    Effect { effect: u32, volume: f32, pan: f32 },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -293,6 +295,9 @@ impl Stage {
             }
             Step::Music { track, volume, fade, .. } => self.cues.push(Cue::Music { track: *track, volume: *volume, fade: *fade }),
             Step::Voice { clip, .. } => self.cues.push(Cue::Voice { clip: *clip }),
+            // Only the event-wide command: `s62`'s numbers are not read (in battle skill events it
+            // names 151, an ambience loop, which looks like another numbering).
+            Step::Effect { character: None, effect, volume, pan, .. } => self.cues.push(Cue::Effect { effect: *effect, volume: *volume, pan: *pan }),
             _ => {}
         }
     }

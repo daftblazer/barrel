@@ -95,6 +95,8 @@ struct Voice {
     loop_from: Option<usize>,
     /// While fading out: the gain taken off per output frame (it stops at 0).
     fading: Option<f32>,
+    /// The left and right gains from its pan (1 each in the centre).
+    sides: (f32, f32),
 }
 
 /// What a [`Mixer::play`] returns, to stop or change the sound later.
@@ -121,7 +123,7 @@ impl Mixer {
         self.next += 1;
         let loop_from = loop_from.filter(|&f| f < sound.frames());
         let rate = sound.rate;
-        self.voices.push(Voice { id: self.next, source: Source::Clip(sound), rate, at: 0.0, gain, loop_from, fading: None });
+        self.voices.push(Voice { id: self.next, source: Source::Clip(sound), rate, at: 0.0, gain, loop_from, fading: None, sides: (1.0, 1.0) });
         Playing(self.next)
     }
 
@@ -132,7 +134,7 @@ impl Mixer {
         let loop_from = loop_from.filter(|&f| f < stream.frames());
         let rate = stream.id().rate;
         let s = Streamed { stream, ahead: Default::default(), loop_from, ended: false };
-        self.voices.push(Voice { id: self.next, source: Source::Stream(Box::new(s)), rate, at: 0.0, gain, loop_from: None, fading: None });
+        self.voices.push(Voice { id: self.next, source: Source::Stream(Box::new(s)), rate, at: 0.0, gain, loop_from: None, fading: None, sides: (1.0, 1.0) });
         Playing(self.next)
     }
 
@@ -143,6 +145,15 @@ impl Mixer {
     pub fn set_gain(&mut self, p: Playing, gain: f32) {
         if let Some(v) = self.voices.iter_mut().find(|v| v.id == p.0) {
             v.gain = gain;
+        }
+    }
+
+    /// Places a sound from -1 (left) to 1 (right): the far side is turned down linearly and
+    /// the near side kept (the game's sound library's own pan law is not read).
+    pub fn set_pan(&mut self, p: Playing, pan: f32) {
+        if let Some(v) = self.voices.iter_mut().find(|v| v.id == p.0) {
+            let pan = pan.clamp(-1.0, 1.0);
+            v.sides = ((1.0 - pan).min(1.0), (1.0 + pan).min(1.0));
         }
     }
 
@@ -167,7 +178,7 @@ impl Mixer {
         let frames = out.len() / 2;
         for v in &mut self.voices {
             let step = f64::from(v.rate) / f64::from(RATE);
-            let level = Level { gain: &mut v.gain, fading: v.fading };
+            let level = Level { gain: &mut v.gain, fading: v.fading, sides: v.sides };
             let out = &mut out[..2 * frames];
             match &mut v.source {
                 Source::Clip(sound) => mix_clip(sound, &mut v.at, v.loop_from, step, level, out),
@@ -192,13 +203,14 @@ impl Mixer {
 struct Level<'a> {
     gain: &'a mut f32,
     fading: Option<f32>,
+    sides: (f32, f32),
 }
 
 impl Level<'_> {
     /// Adds output frame `f` at the gain and moves the fade on; false once it has faded out.
     fn add(&mut self, out: &mut [f32], f: usize, (l, r): (f32, f32)) -> bool {
-        out[2 * f] += l * *self.gain;
-        out[2 * f + 1] += r * *self.gain;
+        out[2 * f] += l * *self.gain * self.sides.0;
+        out[2 * f + 1] += r * *self.gain * self.sides.1;
         if let Some(d) = self.fading {
             *self.gain -= d;
             if *self.gain <= 0.0 {
@@ -269,7 +281,25 @@ pub struct Library {
     voices: String,
     tracks: Vec<barrel_formats::bgm::Track>,
     banks: std::collections::HashMap<u32, Option<(Vec<Option<(usize, usize)>>, Vec<u8>)>>,
+    /// The sound effect bank (`Sound/SE/A15_bank_se`): each sound's first block and the data.
+    effects: Option<Option<(Vec<Option<barrel_formats::kwb::Block>>, Vec<u8>)>>,
 }
+
+/// A sound effect ready to play.
+pub enum Effect {
+    /// One of the bank's sounds.
+    Clip(Arc<Sound>),
+    /// An ambience loop (`Sound/SE/env/`), with its loop start.
+    Stream(barrel_formats::vorbis::Stream, Option<u64>),
+}
+
+/// The ambience loops for effects 128 to 151 (`0x140d5fb10`), in order.
+pub const AMBIENCE: [&str; 24] = [
+    "00ENV_CAVE01", "01ENV_FOREST01", "02ENV_FOREST02", "03ENV_FOREST03", "04ENV_LAKE01", "05ENV_RIVER01",
+    "06ENV_RUIN01", "07ENV_STORM01", "08ENV_TOWN01", "09ENV_WATER01", "10ENV_WHEEL01", "11ENV_WIND01",
+    "12ENV_WIND02", "13ENV_MOB01", "14ENV_MOB02", "15ENV_KOUJI01", "16ENV_SEA01", "17ENV_SEA02",
+    "18ENV_SHORE01", "19ENV_LAVA01", "20ENV_LAVA02", "21ENV_MOB03", "22ENV_PLAIN01", "23ENV_RAIN01",
+];
 
 /// A music track ready to play.
 pub struct Music {
@@ -283,7 +313,7 @@ impl Library {
     /// `install` is the game's folder; `voices` the voice folder under `Sound/` (`Voice` for
     /// Japanese, `Voice_EN` for English); `tracks` from `barrel_formats::bgm::tracks`.
     pub fn new(install: &std::path::Path, voices: &str, tracks: Vec<barrel_formats::bgm::Track>) -> Library {
-        Library { sound: install.join("Data/x64/Sound"), voices: voices.to_string(), tracks, banks: Default::default() }
+        Library { sound: install.join("Data/x64/Sound"), voices: voices.to_string(), tracks, banks: Default::default(), effects: None }
     }
 
     pub fn voice(&mut self, clip: u32) -> Option<Arc<Sound>> {
@@ -297,6 +327,32 @@ impl Library {
         let (off, size) = list.get((clip - bank) as usize).copied().flatten()?;
         let ogg = barrel_formats::voice::ogg(fp.get(off..off + size)?).ok()?;
         Sound::from_ogg(&ogg).ok().map(Arc::new)
+    }
+
+    /// Effect `n` the way the game's player (`0x140160070`) takes it: 0 to 127 the bank's
+    /// sounds by number, 128 to 151 the ambience loops, anything else nothing.
+    pub fn effect(&mut self, n: u32) -> Option<Effect> {
+        match n {
+            0..=127 => {
+                let sound = &self.sound;
+                let bank = self.effects.get_or_insert_with(|| {
+                    let wb2 = std::fs::read(sound.join("SE/A15_bank_se.wb2")).ok()?;
+                    let sounds = barrel_formats::kwb::sounds(&std::fs::read(sound.join("SE/A15_bank_se.wh2")).ok()?, wb2.len()).ok()?;
+                    Some((sounds.into_iter().map(|b| b.first().copied()).collect(), wb2))
+                });
+                let (blocks, wb2) = bank.as_ref()?;
+                let block = (*blocks.get(n as usize)?)?;
+                let channels = barrel_formats::kwb::pcm(wb2, &block).ok()?;
+                Some(Effect::Clip(Arc::new(Sound { rate: block.rate, channels })))
+            }
+            128..=151 => {
+                let kovs = std::fs::read(self.sound.join("SE/env").join(format!("{}.kvs", AMBIENCE[(n - 128) as usize]))).ok()?;
+                let looping = barrel_formats::voice::looping(&kovs).ok()?;
+                let stream = barrel_formats::vorbis::Stream::open(&barrel_formats::voice::ogg(&kovs).ok()?).ok()?;
+                Some(Effect::Stream(stream, (!looping.once).then_some(u64::from(looping.start))))
+            }
+            _ => None,
+        }
     }
 
     pub fn music(&self, track: u32) -> Option<Music> {
@@ -370,6 +426,16 @@ mod tests {
             b.mix(&mut y);
             assert_eq!(x, y);
         }
+    }
+
+    #[test]
+    fn panning() {
+        let mut m = Mixer::new();
+        let p = m.play(tone(2, 1.0), 1.0, None);
+        m.set_pan(p, -0.5);
+        let mut out = [0f32; 4];
+        m.mix(&mut out);
+        assert_eq!(out, [1.0, 0.5, 1.0, 0.5]);
     }
 
     #[test]

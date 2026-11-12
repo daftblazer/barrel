@@ -1892,6 +1892,15 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 }
                 None => println!("{action:3} --- music stops over {fade} s"),
             },
+            Step::Effect { action, character, effect, volume, pan } => {
+                let who = character.map_or("", |c| names.get(c as usize).map_or("?", String::as_str));
+                let what = match effect {
+                    0..=127 => format!("bank sound {effect}"),
+                    128..=151 => format!("ambience {}", effect - 128),
+                    _ => "nothing (past the player's 152)".to_string(),
+                };
+                println!("{action:3} {who} effect {effect}: {what} at {:.0}%, pan {pan:+.2}", volume * 100.0);
+            }
             Step::Voice { action, character, clip } => {
                 let who = character.map_or("", |c| names.get(c as usize).map_or("?", String::as_str));
                 println!("{action:3} {who} voice {clip} (bank Series{:04}, clip {})", clip / 1000 * 1000, clip % 1000);

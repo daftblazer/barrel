@@ -41,6 +41,14 @@ pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 pub const EVENT_VOICE_PLAY: u32 = 0x7500_001f;
 /// `s102` (`ECT_CHARA_VOICE_PLAY`): `{character, clip}`.
 pub const CHARA_VOICE_PLAY: u32 = 0x7300_0066;
+/// `ECT_SOUND_SE_PLAY`: `{effect, a, volume %, pan ×100, d}` (`0x14005210c`): the volume and
+/// pan (0 left, 64 centre, 128 right) are divided by 100; `a` and `d` go to settings not named
+/// yet. The effect is a number for `0x140160070` (`barrel_audio::Library::effect`).
+pub const SOUND_SE_PLAY: u32 = 0x7510_0001;
+/// `s62` (`ECT_CHARA_SE_PLAY`): `{character, effect, a, volume %, pan ×100, d}` from a character
+/// (18 uses, all in battle skill events, where the effect looks like another numbering: 151
+/// would be the rain loop; its handler is not read).
+pub const CHARA_SE_PLAY: u32 = 0x7300_003e;
 /// `ECT_SOUND_BG_PLAY`: `{track, volume (percent), 0, 0}`; the track is a number in the
 /// executable's music list (`barrel_formats::bgm`).
 pub const SOUND_BG_PLAY: u32 = 0x7510_0003;
@@ -94,6 +102,9 @@ pub enum Step<'a> {
     Remove { action: usize, character: u32 },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
     Voice { action: usize, character: Option<u32>, clip: u32 },
+    /// A sound effect plays (`ECT_SOUND_SE_PLAY`, or `s62` from a character) at `volume`
+    /// (0 to 1) and `pan` (-1 left to 1 right).
+    Effect { action: usize, character: Option<u32>, effect: u32, volume: f32, pan: f32 },
     /// The music changes: a track starts at `volume` percent, or (`track` None) stops, fading
     /// over `fade` seconds (0 at once).
     Music { action: usize, track: Option<u32>, volume: f32, fade: f32 },
@@ -134,6 +145,12 @@ pub struct Player<'a> {
 
 /// A reading time for unattended playback (not the game's: it waits for a button): one
 /// second plus 0.08 s a character, newlines and spaces not counted.
+/// An effect's pan operand (hundredths of 0 left to 128 right) as -1 to 1 (`0x140160230`:
+/// `(clamp(x, 0, 128) / 128 - 0.5) × 2`).
+fn se_pan(hundredths: u32) -> f32 {
+    ((hundredths as i32 as f32 / 100.0).clamp(0.0, 128.0) / 128.0 - 0.5) * 2.0
+}
+
 pub fn reading_time(text: &str) -> f32 {
     1.0 + 0.08 * text.chars().filter(|c| !c.is_whitespace()).count() as f32
 }
@@ -195,6 +212,10 @@ impl<'a> Player<'a> {
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
             (SOUND_BG_FADEOUT, [hundredths, ..]) => out.push(Step::Music { action, track: None, volume: 0.0, fade: *hundredths as f32 / 100.0 }),
+            (SOUND_SE_PLAY, [effect, _, volume, pan, ..]) => out.push(Step::Effect { action, character: None, effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) }),
+            (CHARA_SE_PLAY, [character, effect, _, volume, pan, ..]) => {
+                out.push(Step::Effect { action, character: Some(*character), effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) })
+            }
             (CHARA_VOICE_PLAY, [character, clip, ..]) => out.push(Step::Voice { action, character: Some(*character), clip: *clip }),
             (SHOW_MESSAGES, [first, last]) => {
                 for i in *first as usize..=(*last as usize) {
@@ -314,6 +335,16 @@ impl<'a> Iterator for Player<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn effect_pan() {
+        assert_eq!(se_pan(6400), 0.0);
+        assert_eq!(se_pan(0), -1.0);
+        assert_eq!(se_pan(12800), 1.0);
+        assert_eq!(se_pan(99999), 1.0);
+        assert_eq!(se_pan(u32::MAX), -1.0);
+    }
+
     use super::*;
     use barrel_formats::ebd::{Action, END};
 
@@ -407,6 +438,7 @@ mod tests {
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
+                Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::Music { track, fade, .. } => match track {
                     Some(t) => format!("music {t}"),
                     None => format!("music stops over {fade} s"),

@@ -1799,6 +1799,15 @@ fn main() -> Result<()> {
                                     mixer.fade_out(m, fade);
                                 }
                             }
+                            barrel_game::stage::Cue::Effect { effect, volume, pan } => {
+                                if let Some(e) = library.effect(effect) {
+                                    let p = match e {
+                                        barrel_audio::Effect::Clip(s) => mixer.play(s, volume, None),
+                                        barrel_audio::Effect::Stream(s, from) => mixer.play_stream(s, volume, from),
+                                    };
+                                    mixer.set_pan(p, pan);
+                                }
+                            }
                             barrel_game::stage::Cue::Voice { clip } => {
                                 if let Some(v) = library.voice(clip) {
                                     mixer.play(v, 1.0, None);

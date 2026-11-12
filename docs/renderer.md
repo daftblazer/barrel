@@ -190,8 +190,9 @@ offscreen image (pixel-identical to before). In headless gamescope at 30 Hz,
 silent): the stage turns the music and voice steps into cues (`stage::Cue`), and after each
 tick the viewer takes them: a track starts at its listed volume times the event's, looping from
 its loop point unless it plays once (`barrel_audio::Library::music`; music is decoded as it plays, see `docs/engine.md`, "Sound"), a stop or fade-out fades
-the playing track (`Mixer::fade_out`), and voice clips play once (`Library::voice`, from
-`Sound/Voice`). Every frame tops the SDL3 stream up to a tenth of a second. Test runs use
+the playing track (`Mixer::fade_out`), voice clips play once (`Library::voice`, from
+`Sound/Voice`), and event-wide sound effects play at their volume and pan (`Library::effect`; the
+pan law, the far side turned down linearly, is ours: the sound library's is not read). Every frame tops the SDL3 stream up to a tenth of a second. Test runs use
 `SDL_AUDIO_DRIVER=dummy`; `EVENT_MM08_AS4_130` starts track 105 at its first tick in a
 60-frame run under headless gamescope.
 

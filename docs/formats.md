@@ -317,15 +317,25 @@ the data size, a 1.0, and at +0x24 one u32 offset per sound) and a data file (`.
 by that shape in its span (`barrel_formats::kwb`). `A15_bank_se`, the only bank on disk, has
 127 sounds in 226 blocks, all codec 2 (16-bit PCM), mono, 48 kHz, 284 seconds in all; most
 sounds have two blocks with the same samples (what the second is for is not read).
-`Sound/SE/env/` (`00ENV_CAVE01.kvs` ...) and `Sound/SE/stream/` are KOVS like the music. The
-events' `ECT_SOUND_SE_PLAY` `{sound, 0, volume %, ...}` names sounds up to 244, more than this
-bank has. It is the only bank: the executable names just `DISC:Sound/SE/A15_bank_se.wh2`
-(the sound library's `KTSL_SE_NUM_BANK_MAX` allows more), and no container holds one (`barrel
-scan`: no sound entries in the 1,580 containers). The entries refer to one another: the first
-starts with the offsets of the last three, so some entries are groups or cues over others,
-and the event numbers presumably go through that layer; it is not read yet (only 5
-`ECT_SOUND_SE_PLAY` uses exist in all the events). The executable also has 38 `SE_*` tags
-(`SE_JUMP01`, `SE_HIT01`, ...). `barrel se-scan BANK.wh2` lists a bank.
+`Sound/SE/env/` (`00ENV_CAVE01.kvs` ...) and `Sound/SE/stream/` are KOVS like the music.
+`A15_bank_se` is the only bank: the executable names just `DISC:Sound/SE/A15_bank_se.wh2` (the
+sound library's `KTSL_SE_NUM_BANK_MAX` allows more), and no container holds one (`barrel scan`:
+no sound entries in the 1,580 containers). The first entry starts with the offsets of the last
+three (what for is not read). The executable also has 38 `SE_*` tags (`SE_JUMP01`,
+`SE_HIT01`, ...). `barrel se-scan BANK.wh2` lists a bank.
+
+**Effect numbers.** The player (`0x140160070`) takes a number up to 151 and looks up its group
+(`0x1407e96a0`, one i32 per number) and its index within the group: 0 to 127 are group 0, the
+bank's sounds by number (`0x140501330`); 128 to 151 are group 2, the 24 ambience loops by the
+pointer list at `0x140d5fb10` (`RES:Sound/SE/env/00ENV_CAVE01.kvs` to `23ENV_RAIN01.kvs`,
+`0x1405014e0`); group 1 (`0x140501540`) has no numbers. Above 151 it plays nothing.
+`ECT_SOUND_SE_PLAY` (`0x75100001`, handler `0x14005210c`) is `{effect, a, volume %, pan ×100,
+d}`: volume and pan are divided by 100; the pan (0 left, 64 centre, 128 right, 64 by default)
+becomes `(clamp(x, 0, 128) / 128 - 0.5) × 2` (`0x140160230`, the player's +0x19a0); `a` goes to
+`0x1410c8428` and `d` to +0x199c (neither named). Its five uses (the `BSP_EV_SE_*` parts) name
+113 (a door opening) and 236 to 244, which play nothing. `ECT_CHARA_SE_PLAY` (`s62`, 18 uses in
+battle skill events) puts a character first; its numbers (151, 119, ...) look like another
+numbering, and its handler is not read. `barrel_audio::Library::effect` follows the player.
 
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
