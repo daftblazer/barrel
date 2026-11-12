@@ -681,7 +681,7 @@ body, over every event in Escha & Logy DX. 232 of the 238 commands are followed 
 number of words every time, which gives their operand count. The 6 that vary are listed
 with each count seen.
 
-The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` are in no switch found.
+The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` are in no switch found. The other groups' blanks were filled the same way, from every jump-table switch over command words in the executable (a range check, then a table of 4-byte offsets): the `q` commands' handlers are the field character listener and the world map's event object (`nspFM::clsFMWorldEvent`, vtable `0x1408f1390`, its slot 8 at `0x14028a700`, the `q42` to `q57` group), the `r` commands' `GameModeBattle` (`0x1401a0e90`, called from its slots 5 and 6), the `u` commands' `Event` itself (slot 8, `0x140050fa0`), `B3Balloon` and `IpuGallery`. Only `t1/0x30`, `t2/0x30` (operand prefixes), `u1/0x10` and `u6/0x40` are left without one.
 
 | Word | Short | Name | Handled by | Uses | Words after it (count) |
 |---|---|---|---|---|---|
@@ -693,34 +693,34 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `71000003` | `q3` | ECT_FIELDMAP_CHARA_ADDITION | WMResMgr | 5895 | 2 (5895) |
 | `71000004` | `q4` | ECT_FIELDMAP_CHARA_ADDITION_EX | EventExecChara | 2398 | 14 (2398) |
 | `71000005` | `q5` | ECT_FIELDMAP_CHARA_DELETE | WMResMgr | 41 | 1 (41) |
-| `71000006` | `q6` | ECT_FIELDMAP_CHARA_DELETE_ALL |  | 1109 | 0 (1109) |
-| `71000007` | `q7` | ECT_FIELDMAP_CHARA_SET_EVENT_MODE |  | 5895 | 1 (5895) |
+| `71000006` | `q6` | ECT_FIELDMAP_CHARA_DELETE_ALL | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 1109 | 0 (1109) |
+| `71000007` | `q7` | ECT_FIELDMAP_CHARA_SET_EVENT_MODE | field characters (`0x140071160`) | 5895 | 1 (5895) |
 | `71000008` | `q8` | ECT_FIELDMAP_CHARA_COLLISION_FLAG | (field character in or out of the physics world, `0x140071348`) | 8081 | 5 (8081) |
 | `7100000a` | `q10` | ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET | (no handler found: not in `0x140071030`'s, `0x14007119f`'s or `0x1401ddb80`'s switches) | 771 | 1 (771) |
 | `7100000b` | `q11` | ECT_FIELDMAP_NPC_ENEMY_RESET | (no handler found, like `q10`) | 526 | 0 (526) |
-| `7100000c` | `q12` | ECT_FIELDMAP_CHANGE_NOT_BGM |  | 621 | 1 (621) |
-| `7100000d` | `q13` | ECT_FIELDMAP_GIMMICK_RESET |  | 17 | 0 (17) |
-| `7100000f` | `q15` | ECT_FIELDMAP_MAPVISIBLE_SET |  | 53 | 3 (53) |
-| `71000010` | `q16` | ECT_FIELDMAP_MAPANIMATION_EXEC |  | 2 | 6 (2) |
-| `71000020` | `q32` | ECT_FIELDMAP_CHARA_TRANSPARENT_FOCUS |  | 249 | 5 (249) |
-| `71000021` | `q33` | ECT_FIELDMAP_SET_FIELD_COLOR |  | 1 | 4 (1) |
-| `71000024` | `q36` |  |  | 147 | 1 (147) |
-| `7100002a` | `q42` | ECT_FIELDMAP_LIGHT_PARALLEL_SET |  | 15 | 6 (15) |
-| `7100002b` | `q43` | ECT_FIELDMAP_LIGHT_PARALLEL_ORG |  | 18 | 1 (18) |
-| `7100002c` | `q44` | ECT_FIELDMAP_LIGHT_AMBIENT_SET |  | 50 | 3 (50) |
-| `7100002d` | `q45` | ECT_FIELDMAP_LIGHT_AMBIENT_ORG |  | 57 | 0 (57) |
-| `71000032` | `q50` | ECT_FIELDMAP_CHARA_LIGHT_COLOR_SET |  | 34 | 4 (34) |
-| `71000033` | `q51` | ECT_FIELDMAP_CHARA_LIGHT_COLOR_ORG |  | 38 | 0 (38) |
-| `71000034` | `q52` | ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_SET |  | 16 | 4 (16) |
-| `71000035` | `q53` | ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_ORG |  | 23 | 0 (23) |
-| `71000036` | `q54` |  |  | 108 | 14 (108) |
-| `71000037` | `q55` |  |  | 112 | 1 (112) |
-| `71000038` | `q56` |  |  | 44 | 1 (44) |
-| `71000039` | `q57` |  |  | 42 | 0 (42) |
-| `72000004` | `r4` | ECT_BATTLE_ADD_EFFECT_ID |  | 1117 | 2 (1117) |
-| `72000008` | `r8` |  |  | 1095 | 1 (1095) |
-| `7200000d` | `r13` |  |  | 340 | 4 (340) |
-| `7200000e` | `r14` |  |  | 681 | 6 (681) |
+| `7100000c` | `q12` | ECT_FIELDMAP_CHANGE_NOT_BGM | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 621 | 1 (621) |
+| `7100000d` | `q13` | ECT_FIELDMAP_GIMMICK_RESET | field characters (`0x140071160`) | 17 | 0 (17) |
+| `7100000f` | `q15` | ECT_FIELDMAP_MAPVISIBLE_SET | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 53 | 3 (53) |
+| `71000010` | `q16` | ECT_FIELDMAP_MAPANIMATION_EXEC | nspFM::clsFMWorldEvent | 2 | 6 (2) |
+| `71000020` | `q32` | ECT_FIELDMAP_CHARA_TRANSPARENT_FOCUS | field characters (`0x140071160`) | 249 | 5 (249) |
+| `71000021` | `q33` | ECT_FIELDMAP_SET_FIELD_COLOR | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 1 | 4 (1) |
+| `71000024` | `q36` |  | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 147 | 1 (147) |
+| `7100002a` | `q42` | ECT_FIELDMAP_LIGHT_PARALLEL_SET | nspFM::clsFMWorldEvent | 15 | 6 (15) |
+| `7100002b` | `q43` | ECT_FIELDMAP_LIGHT_PARALLEL_ORG | nspFM::clsFMWorldEvent | 18 | 1 (18) |
+| `7100002c` | `q44` | ECT_FIELDMAP_LIGHT_AMBIENT_SET | nspFM::clsFMWorldEvent | 50 | 3 (50) |
+| `7100002d` | `q45` | ECT_FIELDMAP_LIGHT_AMBIENT_ORG | nspFM::clsFMWorldEvent | 57 | 0 (57) |
+| `71000032` | `q50` | ECT_FIELDMAP_CHARA_LIGHT_COLOR_SET | nspFM::clsFMWorldEvent | 34 | 4 (34) |
+| `71000033` | `q51` | ECT_FIELDMAP_CHARA_LIGHT_COLOR_ORG | nspFM::clsFMWorldEvent | 38 | 0 (38) |
+| `71000034` | `q52` | ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_SET | nspFM::clsFMWorldEvent | 16 | 4 (16) |
+| `71000035` | `q53` | ECT_FIELDMAP_CHARA_LIM_LIGHT_COLOR_ORG | nspFM::clsFMWorldEvent | 23 | 0 (23) |
+| `71000036` | `q54` |  | nspFM::clsFMWorldEvent | 108 | 14 (108) |
+| `71000037` | `q55` |  | nspFM::clsFMWorldEvent | 112 | 1 (112) |
+| `71000038` | `q56` |  | nspFM::clsFMWorldEvent | 44 | 1 (44) |
+| `71000039` | `q57` |  | nspFM::clsFMWorldEvent | 42 | 0 (42) |
+| `72000004` | `r4` | ECT_BATTLE_ADD_EFFECT_ID | GameModeBattle (`0x1401a0e90`) | 1117 | 2 (1117) |
+| `72000008` | `r8` |  | GameModeBattle (`0x1401a0e90`) | 1095 | 1 (1095) |
+| `7200000d` | `r13` |  | GameModeBattle (`0x1401a0e90`) | 340 | 4 (340) |
+| `7200000e` | `r14` |  | GameModeBattle (`0x1401a0e90`) | 681 | 6 (681) |
 | `7200000f` | `r15` |  | Event, GameModeBattle | 191 | 0 (191) |
 | `72000010` | `r16` |  | Event | 60 | 14 (60) |
 | `72000011` | `r17` |  | Event | 76 | 2 (76) |
@@ -729,15 +729,15 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `72000014` | `r20` |  | Event | 693 | 2 (693) |
 | `72000016` | `r22` |  | Event | 30 | 6 (30) |
 | `72000018` | `r24` |  | Event | 12 | 4 (12) |
-| `7200001b` | `r27` |  |  | 3 | 1 (3) |
-| `7200001c` | `r28` |  |  | 8 | 3 (8) |
-| `7200001d` | `r29` |  |  | 3 | 1 (3) |
-| `7200001e` | `r30` |  |  | 6 | 3 (6) |
-| `7200001f` | `r31` |  |  | 1 | 4 (1) |
-| `72000020` | `r32` |  |  | 13 | 6 (13) |
-| `72000021` | `r33` |  |  | 1 | 1 (1) |
-| `72000022` | `r34` |  |  | 2 | 3 (2) |
-| `72000023` | `r35` |  |  | 41 | 2 (41) |
+| `7200001b` | `r27` |  | GameModeBattle (`0x1401a0e90`) | 3 | 1 (3) |
+| `7200001c` | `r28` |  | GameModeBattle (`0x1401a0e90`) | 8 | 3 (8) |
+| `7200001d` | `r29` |  | GameModeBattle (`0x1401a0e90`) | 3 | 1 (3) |
+| `7200001e` | `r30` |  | GameModeBattle (`0x1401a0e90`) | 6 | 3 (6) |
+| `7200001f` | `r31` |  | GameModeBattle (`0x1401a0e90`) | 1 | 4 (1) |
+| `72000020` | `r32` |  | GameModeBattle (`0x1401a0e90`) | 13 | 6 (13) |
+| `72000021` | `r33` |  | GameModeBattle (`0x1401a0e90`) | 1 | 1 (1) |
+| `72000022` | `r34` |  | GameModeBattle (`0x1401a0e90`) | 2 | 3 (2) |
+| `72000023` | `r35` |  | GameModeBattle (`0x1401a0e90`) | 41 | 2 (41) |
 | `73000001` | `s1` | ECT_CHARA_SET_MARKER | EventExecBtlChara | 998 | 5 (998) |
 | `73000002` | `s2` | ECT_CHARA_CAMERA_QUAKE_SET | battle character code (`0x1401ae66a`) | 665 | 3 (665) |
 | `73000003` | `s3` | ECT_CHARA_TIME_WAIT | EventExecChara | 3849 | 2 (3849) |
@@ -849,16 +849,16 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `74300001` | `t1/0x30` | ECT_VARIINDEX_INDEX_START |  | 195 | 0 (195) |
 | `74300002` | `t2/0x30` | ECT_VARIINDEX_INDEX_SETTING (slot to row, see Slots) |  | 6736 | 2 (6736) |
 | `75000001` | `u1` |  | Event | 596 | 0 (596) |
-| `75000002` | `u2` |  |  | 741 | 1 (741) |
-| `75000003` | `u3` |  |  | 1297 | 1 (1297) |
-| `75000005` | `u5` |  |  | 806 | 1 (806) |
-| `75000007` | `u7` |  |  | 199 | 1 (199) |
-| `75000008` | `u8` |  |  | 99 | 3 (99) |
-| `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT |  | 339 | 6 (339) |
+| `75000002` | `u2` |  | Event | 741 | 1 (741) |
+| `75000003` | `u3` |  | Event | 1297 | 1 (1297) |
+| `75000005` | `u5` |  | Event | 806 | 1 (806) |
+| `75000007` | `u7` |  | Event | 199 | 1 (199) |
+| `75000008` | `u8` |  | Event | 99 | 3 (99) |
+| `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event | 339 | 6 (339) |
 | `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event | 66 | 1 (66) |
-| `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT |  | 2180 | 8 (1319), 4 (861) |
-| `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT |  | 637 | 0 (637) |
-| `7500000f` | `u15` |  |  | 81 | 0 (81) |
+| `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | Event | 2180 | 8 (1319), 4 (861) |
+| `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event | 637 | 0 (637) |
+| `7500000f` | `u15` |  | Event | 81 | 0 (81) |
 | `75000010` | `u16` |  | B3Balloon | 98 | 2 (98) |
 | `75000011` | `u17` |  | B3Balloon | 2 | 0 (2) |
 | `75000012` | `u18` |  | B3Balloon | 4990 | 2 (4990) |
@@ -866,50 +866,50 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000016` | `u22` | ECT_EVENT_CONTRAST_SET_MIX | Contrast | 3159 | 3 (3159) |
 | `75000019` | `u25` |  | B3Balloon | 2 | 3 (2) |
 | `7500001a` | `u26` |  | BalloonSelectMode | 93 | 4 (93) |
-| `7500001b` | `u27` |  |  | 2 | 5 (2) |
-| `7500001d` | `u29` |  |  | 24 | 5 (24) |
-| `7500001e` | `u30` |  |  | 2 | 1 (2) |
-| `7500001f` | `u31` | ECT_EVENT_VOICE_PLAY |  | 400 | 1 (400) |
-| `75000022` | `u34` |  |  | 52 | 2 (52) |
-| `75000023` | `u35` |  |  | 79 | 2 (79) |
-| `75000024` | `u36` | (marks an event seen: `{event, seen}`, `0x14035f480`) |  | 76 | 2 (76) |
-| `75000026` | `u38` |  |  | 50 | 1 (50) |
-| `7500002e` | `u46` |  |  | 18 | 3 (18) |
+| `7500001b` | `u27` |  | B3Balloon, Event | 2 | 5 (2) |
+| `7500001d` | `u29` |  | B3Balloon, Event | 24 | 5 (24) |
+| `7500001e` | `u30` |  | B3Balloon, Event | 2 | 1 (2) |
+| `7500001f` | `u31` | ECT_EVENT_VOICE_PLAY | B3Balloon, Event | 400 | 1 (400) |
+| `75000022` | `u34` |  | B3Balloon, Event | 52 | 2 (52) |
+| `75000023` | `u35` |  | B3Balloon, Event | 79 | 2 (79) |
+| `75000024` | `u36` | (marks an event seen: `{event, seen}`, `0x14035f480`) | B3Balloon, Event | 76 | 2 (76) |
+| `75000026` | `u38` |  | B3Balloon, Event | 50 | 1 (50) |
+| `7500002e` | `u46` |  | B3Balloon, Event | 18 | 3 (18) |
 | `7500002f` | `u47` |  | Movie | 18 | 0 (18) |
-| `75000030` | `u48` |  |  | 18 | 0 (18) |
+| `75000030` | `u48` |  | B3Balloon, Event | 18 | 0 (18) |
 | `75000033` | `u51` |  | ClearSaveGameMode | 2 | 1 (2) |
 | `75000034` | `u52` |  | ClearSaveGameMode | 7 | 0 (7) |
-| `75000035` | `u53` |  |  | 2 | 0 (2) |
+| `75000035` | `u53` |  | B3Balloon, Event | 2 | 0 (2) |
 | `75000037` | `u55` |  | EventTelop | 63 | 1 (63) |
 | `75000038` | `u56` |  | EventTelop | 126 | 3 (126) |
 | `75000043` | `u67` |  | B3Balloon | 294 | 1 (294) |
 | `75000044` | `u68` |  | B3Balloon | 194 | 0 (194) |
-| `7500004f` | `u79` |  |  | 3 | 0 (3) |
+| `7500004f` | `u79` |  | Event | 3 | 0 (3) |
 | `75000061` | `u97` |  | EventTelop | 65 | 3 (65) |
-| `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET |  | 862 | 6 (862) |
-| `75000069` | `u105` |  |  | 2 | 0 (2) |
-| `7500006a` | `u106` |  |  | 2 | 0 (2) |
-| `7500006b` | `u107` |  |  | 9 | 1 (9) |
-| `7500006c` | `u108` |  |  | 9 | 0 (9) |
-| `75000082` | `u130` |  |  | 2 | 2 (2) |
-| `75000086` | `u134` |  |  | 22 | 1 (22) |
-| `75000087` | `u135` |  |  | 5 | 0 (5) |
-| `75000088` | `u136` |  |  | 5 | 0 (5) |
-| `7500008b` | `u139` | ECT_EVENT_DEL_POST_EFFECT_ALL |  | 148 | 0 (148) |
+| `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET | Event | 862 | 6 (862) |
+| `75000069` | `u105` |  | Event | 2 | 0 (2) |
+| `7500006a` | `u106` |  | Event | 2 | 0 (2) |
+| `7500006b` | `u107` |  | Event | 9 | 1 (9) |
+| `7500006c` | `u108` |  | Event | 9 | 0 (9) |
+| `75000082` | `u130` |  | Event | 2 | 2 (2) |
+| `75000086` | `u134` |  | Event | 22 | 1 (22) |
+| `75000087` | `u135` |  | Event | 5 | 0 (5) |
+| `75000088` | `u136` |  | Event | 5 | 0 (5) |
+| `7500008b` | `u139` | ECT_EVENT_DEL_POST_EFFECT_ALL | Event | 148 | 0 (148) |
 | `75000091` | `u145` |  | BalloonSelectMode, Event | 4 | 7 (4) |
-| `75000092` | `u146` | ECT_EVENT_VOICE_PLAY_TRACK |  | 2 | 2 (2) |
+| `75000092` | `u146` | ECT_EVENT_VOICE_PLAY_TRACK | Event | 2 | 2 (2) |
 | `75100001` | `u1/0x10` | ECT_SOUND_SE_PLAY |  | 5 | 5 (5) |
-| `75100003` | `u3/0x10` | ECT_SOUND_BG_PLAY |  | 805 | 4 (805) |
-| `75100004` | `u4/0x10` | ECT_SOUND_BG_STOP |  | 19 | 1 (19) |
-| `75100005` | `u5/0x10` | ECT_SOUND_BG_FADEOUT |  | 1220 | 2 (1220) |
-| `75100008` | `u8/0x10` | (sound effect, `0x14005210c`) |  | 234 | 5 (234) |
+| `75100003` | `u3/0x10` | ECT_SOUND_BG_PLAY | Event | 805 | 4 (805) |
+| `75100004` | `u4/0x10` | ECT_SOUND_BG_STOP | Event | 19 | 1 (19) |
+| `75100005` | `u5/0x10` | ECT_SOUND_BG_FADEOUT | Event | 1220 | 2 (1220) |
+| `75100008` | `u8/0x10` | (sound effect, `0x14005210c`) | Event | 234 | 5 (234) |
 | `75200001` | `u1/0x20` | ECT_CONTRAST_SET | Contrast | 515 | 3 (515) |
 | `75200003` | `u3/0x20` | ECT_CONTRAST_WAIT | Contrast | 141 | 1 (141) |
 | `75200004` | `u4/0x20` | ECT_CONTRAST_SET_MIX | Contrast | 8 | 3 (8) |
 | `75300001` | `u1/0x30` |  | IpuGallery | 243 | 1 (243) |
-| `75300002` | `u2/0x30` |  |  | 84 | 2 (84) |
-| `75300004` | `u4/0x30` |  |  | 3 | 1 (3) |
-| `75300007` | `u7/0x30` |  |  | 14 | 7 (14) |
+| `75300002` | `u2/0x30` |  | IpuGallery | 84 | 2 (84) |
+| `75300004` | `u4/0x30` |  | IpuGallery | 3 | 1 (3) |
+| `75300007` | `u7/0x30` |  | IpuGallery | 14 | 7 (14) |
 | `75350001` | `u1/0x35` |  | Event, WMResMgr | 17 | 1 (17) |
 | `75400001` | `u1/0x40` |  | MessageItemGp | 29 | 4 (29) |
 | `75400002` | `u2/0x40` |  | MessageItemGp | 29 | 3 (29) |
