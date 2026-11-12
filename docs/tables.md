@@ -1178,6 +1178,16 @@ each element the finished item has gives 1 point. Then up to two of the state's 
 
 Finally each point count is kept between 0 and 5.
 
+**Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
+`itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:
+`0x14036c3d0(12)`, at least 1) and N the number of items made (state +0x98), the first item
+gives `2 × trunc(L × (trunc(D / 10) + 1) / 3)`; each further one half what the one before
+gave, or the full amount again once half would be below a tenth of it. A recipe made for the
+first time (its knowledge level below 6) is raised to 6 and adds L. The sum is scaled by
+`(100 + bonus value 3) / 100` (the `Get_Mix_Exp_Rate` bonuses), truncated, kept at least N,
+and is 0 once the alchemy level (`0x14107c4c8`, whose reaching 50 also unlocks `SYSTEM_010`)
+is 50. `synthesis::experience`. So recipe knowledge 5 is a recipe known and 6 one made.
+
 ## Field areas
 
 The `FIELDMAP_AREA_*` enum has 86 tags (`FIELDMAP_AREA_01_01` to `_13_05`); a field's files

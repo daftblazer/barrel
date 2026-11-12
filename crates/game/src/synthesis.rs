@@ -276,3 +276,49 @@ mod tests {
         assert_eq!(s.points[1], MAX_POINTS);
     }
 }
+
+/// The alchemy experience a finished synthesis gives (`0x14030ef30`). `level` is the made
+/// item's `itemData` level, `days` the recipe's synthesis time less the days bonuses take off
+/// (`0x1400fe4e0`, at least 1), `count` how many items it made, `first` whether the recipe
+/// had never been made (its knowledge below 6; the game raises it to 6 then), `rate` the
+/// synthesis experience bonus (bonus value 3, a percentage) and `alchemy_level` the current
+/// level: at 50 no more experience comes.
+///
+/// The first item gives `2 × trunc(level × (trunc(days / 10) + 1) / 3)`; each further item
+/// half what the one before gave, back to the full amount once that would fall below a tenth
+/// of it; a first synthesis adds `level`. The sum is scaled by `(100 + rate) / 100`
+/// (truncated) and is at least `count`.
+pub fn experience(level: i32, days: i32, count: i32, first: bool, rate: i32, alchemy_level: i32) -> i32 {
+    let full = level * (days / 10 + 1) / 3 * 2;
+    let mut sum = full;
+    let mut step = full;
+    for _ in 1..count {
+        let half = step / 2;
+        step = if half < full / 10 { full } else { half };
+        sum += step;
+    }
+    if first {
+        sum += level;
+    }
+    let exp = ((rate as f32 + 100.0) / 100.0 * sum as f32) as i32;
+    if alchemy_level >= 50 { 0 } else { exp.max(count) }
+}
+
+#[cfg(test)]
+mod experience_tests {
+    use super::experience;
+
+    #[test]
+    fn experience_halves_per_copy_and_rewards_a_first_synthesis() {
+        // Level 6, 2 days: 2 × trunc(6 / 3) = 4 for the first item.
+        assert_eq!(experience(6, 2, 1, false, 0, 12), 4);
+        // Three items: 4 + 2 + 1.
+        assert_eq!(experience(6, 2, 3, false, 0, 12), 7);
+        // Level 60, 1 day: 40, then 20, 10, 5, and 2 is below 4, so 40 again.
+        assert_eq!(experience(60, 1, 5, false, 0, 12), 40 + 20 + 10 + 5 + 40);
+        assert_eq!(experience(6, 2, 1, true, 0, 12), 10);
+        assert_eq!(experience(6, 2, 1, true, 25, 12), 12);
+        assert_eq!(experience(1, 1, 3, false, 0, 12), 3);
+        assert_eq!(experience(30, 5, 1, false, 0, 50), 0);
+    }
+}

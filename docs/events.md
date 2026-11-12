@@ -311,7 +311,7 @@ purpose (it never touches the player's Steam account; listed under `docs/engine.
 `SYSTEM_001`–`004`, `SUBJECT_001`–`009`, `EVENT_001`–`018`, `ENDING_001`–`009`,
 `SYSTEM_005`–`010`, `BATTLE_001`–`006`) are unlocked by number from five places besides
 `u38`: the bonus action `Get_Trophy` (`0x14002f3ed`; no row of `Bonus.xml` uses it), a
-character reaching level 99 (`0x14032d815`: 45, `SYSTEM_009`), a count kept at `0x14107c4c8`
+character reaching level 99 (`0x14032d815`: 45, `SYSTEM_009`), the alchemy level (`0x14107c4c8`)
 reaching 50 (`0x14036a6d9`: 46, `SYSTEM_010`), and the battle code (`0x140188390`, from
 `0x1401d7b70`): when a battle value at +0x14 of its argument is 0x4a to 0x56 it unlocks
 `BATTLE_001` to `006` (0x4a: 48, 0x4c: 47, 0x4e: 49, 0x50: 50, 0x52: 51, 0x53 to 0x56: 51
