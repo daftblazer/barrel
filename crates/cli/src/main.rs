@@ -43,6 +43,7 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
@@ -118,6 +119,11 @@ fn main() -> ExitCode {
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
         ["enum", exe, name] => enum_list(Path::new(exe), name),
+        ["gather", install] => gather(Path::new(install), None),
+        ["gather", install, list] => match list.parse() {
+            Ok(n) => gather(Path::new(install), Some(n)),
+            Err(_) => Err("the list is a number".into()),
+        },
         ["routes", exe] => routes(Path::new(exe), None),
         ["routes", exe, save] => routes(Path::new(exe), Some(Path::new(save))),
         ["gestures", exe, numbers @ ..] => gestures(Path::new(exe), numbers),
@@ -1758,6 +1764,24 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
         Some(0) => println!("the party wins"),
         Some(_) => println!("{} wins", m.name),
         None => println!("no winner after {} events", events.len()),
+    }
+    Ok(())
+}
+
+/// Lists the gathering lists (or one): each item with its weight, quality range and traits.
+fn gather(install: &Path, only: Option<u32>) -> Result<()> {
+    let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
+    let data = read(&exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let rows = barrel_formats::gather::gathering(&pe, barrel_formats::gather::GATHER_EN).ok_or("no gathering table")?;
+    let items = table_rows(&install.join("Saves_EN/item/itemData.xml"))?;
+    let name = |n: usize| items.get(n).and_then(|r| r.attr("ItemName")).unwrap_or("?").to_string();
+    let lists: std::collections::BTreeSet<u32> = rows.iter().map(|g| g.list).collect();
+    println!("{} records in {} lists", rows.len(), lists.len());
+    for g in rows.iter().filter(|g| only.is_none_or(|l| g.list == l)) {
+        let name = if g.item < 0 { "(none)".to_string() } else { name(g.item as usize) };
+        let quality = if g.quality == (0, 0) { String::new() } else { format!(", quality {} to {}", g.quality.0, g.quality.1) };
+        println!("{:4} {:4} {name}: weight {}{quality}, traits {:?}, unread {:?}", g.list, g.item, g.weight, g.traits, g.unread);
     }
     Ok(())
 }

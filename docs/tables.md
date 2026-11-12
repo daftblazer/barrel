@@ -1346,16 +1346,33 @@ The links agree with the area names: Colseit's are areas 0 to 3 (R0 to R3, the f
 whose names start at Colseit), the Upland Forest's are R3, R7, R13 and R6. One link is out of
 the area range: the Withering Plains' 208, still to be explained.
 
-### Gathering (not found yet)
+### Gathering
 
-What each field's gathering points give is in none of the data files: not in
-`Saves/field/AREA_*.xml` (camera, fog, light, sky, HDR and shader settings only), not in the
-area containers (`Data/x64/Field/AREA_*/AREA_*.elixir.gz` and `_Obj`: terrain, textures,
-placements, collision), whose placement lists hold scenery models only, and not in
-`Script/` (36 Squirrel scripts for monster behaviour, `ai_*_in.nut` and `_out.nut`). Like
-the recipes and monsters, it is most likely compiled into the executable.
+What gathering gives is compiled into the executable: at `0x14088a060` (English Escha), 2,055
+records of 64 bytes, one per item a gathering list can give, in 696 lists (0 to 695), each list's
+records together:
 
-In the executable, field objects that do things are "gimmicks", of the types in the
+| Words | What |
+|---|---|
+| 0 | the list |
+| 1 | the item (`itemData` row) |
+| 2 | -1 (0 in three) |
+| 3, 4 | a quality range where set (60 to 70, 50 to 60, 70 to 80, ...), else 0 and 0 |
+| 5, 6, 7 | not read yet (0 to 3, then 1 to 10, then 4 to 20 where set) |
+| 8 | the item's weight in the list's draw |
+| 9 to 12 | up to four traits (`item_potential.xml` rows), -1 for none |
+| 13 to 15 | -1 |
+
+The area map in the running game listed Southern Ruins Sector One's gatherables as "????, Moss
+Grass, Mountain Feather, Eagle Feather", and list 71 is Moss Grass (weight 50), Garden Stone
+(30, the one not yet seen), Mountain Feather (15) and Eagle Feather (5). Some lists give made
+items with traits (list 1: a Craft with trait 0; list 2: a Bomb with trait 3), chests by the look
+of them. `barrel gather INSTALL [LIST]` prints them (`barrel_formats::gather`). Which gathering
+point or gimmick draws from which list, and how the draw goes, is not read yet.
+
+What does not hold it: the data files (`Saves/field/AREA_*.xml`: camera, fog, light, sky, HDR
+and shaders; the area containers `Data/x64/Field/AREA_*`, whose placement lists hold scenery
+models only; `Script/`, monster behaviour). The field objects that do things are "gimmicks", of the types in the
 `FIELDMAP_GIMMICK_TYPE_*` enum: `ITEM_D`, `ITEM_D_MULTIPLE`, `ITEM_D_MULTIPLE_PROGRAM` and
 `ITEM_D_MULTIPLE_RARE_PROGRAM` (gathering points, by the names), `ITEM_BOX`, `ITEM_TRADE`,
 `ROCK`, `TARU` (barrels), `BREAKABLE_OBJECT`, `WATER`, `WELL_WATER`, `APPLE`, `SHOP`, `MIX`,
