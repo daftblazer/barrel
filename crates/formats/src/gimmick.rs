@@ -1,11 +1,18 @@
-//! Each field area's gimmicks (English Escha executable): a table of 96 records of 0x40 bytes
-//! at [`AREAS_EN`], one per field area (record 0 is `AREA_01_01`, the Twilight Forest's
-//! entrance), each pointing to a -1-ended list of 0x60-byte gimmicks. The field copies them
-//! into its runtime object (+0x10e8 + 0x40 × area). See docs/tables.md, "Gimmicks".
+//! Each map's gimmicks (English Escha executable): a table of 122 records of 0x40 bytes at
+//! [`MAPS_EN`], one per map number: the 12 town maps first ([`TOWN_MAPS`], region 0: the
+//! atelier to the hallway), then the 96 field areas from [`AREAS_EN`] (map 12 is `AREA_01_01`,
+//! the Twilight Forest's entrance), ten placeholders, the world map and three test maps. Each
+//! points to a -1-ended list of 0x60-byte gimmicks. The field's runtime object holds them by map
+//! number (+0x10e8 + 0x40 × map). See docs/tables.md, "Gimmicks".
 
 use crate::pe::Pe;
 
-pub const AREAS_EN: u64 = 0x1_4077_0230;
+pub const MAPS_EN: u64 = 0x1_4076_ff30;
+pub const MAP_COUNT: usize = 122;
+/// The town maps (0 to 11), whose region (the record's first word) is 0.
+pub const TOWN_MAPS: usize = 12;
+/// The first field area's record (map [`TOWN_MAPS`]).
+pub const AREAS_EN: u64 = MAPS_EN + (TOWN_MAPS * AREA) as u64;
 pub const AREA_COUNT: usize = 96;
 const AREA: usize = 0x40;
 const GIMMICK: usize = 0x60;
@@ -58,7 +65,9 @@ impl Gimmick {
     }
 }
 
-pub fn areas(pe: &Pe, table: u64) -> Option<Vec<Area>> {
+/// `count` records from `table` ([`MAPS_EN`] with [`MAP_COUNT`] for every map, [`AREAS_EN`] with
+/// [`AREA_COUNT`] for the field areas).
+pub fn areas(pe: &Pe, table: u64, count: usize) -> Option<Vec<Area>> {
     let at = pe.offset(table)?;
     let text = |va: u64| -> String {
         if va == 0 {
@@ -69,7 +78,7 @@ pub fn areas(pe: &Pe, table: u64) -> Option<Vec<Area>> {
         String::from_utf8_lossy(&pe.data[o..o + end]).into_owned()
     };
     let mut out = Vec::new();
-    for k in 0..AREA_COUNT {
+    for k in 0..count {
         let r = pe.data.get(at + AREA * k..at + AREA * (k + 1))?;
         let q = |o: usize| u64::from_le_bytes(r[o..o + 8].try_into().unwrap());
         let words: [i32; 6] = std::array::from_fn(|i| i32::from_le_bytes(r[4 * i..4 * i + 4].try_into().unwrap()));

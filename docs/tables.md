@@ -1550,17 +1550,26 @@ models only; `Script/`, monster behaviour). The field objects that do things are
 (`FIELDMAP_CHANGE`, `WORLDMAP_CHANGE`, `IN_CHANGE`, ...), messages and events. Twelve
 gimmicks have their own tags, named by area and event (`FIELDMAP_GIMMICK_ENUM_AREA_03_07_MS01_070`).
 
-**Gimmicks** are compiled in too: at `0x140770230` (English Escha) 110 records of 0x40 bytes (96
-field areas, then ten `Reserve Frame 11`–`20` placeholders of region 1, the `World Map` and three
-test maps of region 14; the town maps, 110 to 121 in the runtime's 122 records, are not in it),
-for the 96 field areas
-one per field area in `AREA_*` order (record 0 is `AREA_01_01`, "Twilight Forest 1", the Forest
-Entrance; its gimmicks stand around its gathering points), each six words (the first is the
-region: 1 the Twilight Forest, 2 the Old Highway, 3 the Southern Ruins ...; the sixth, +0x14,
-is what the field's battle start puts into the battle setup's +0x30: 19 for the Twilight Forest's
-areas, 7 for the Southern Ruins', the battle stage by the look of it), a pointer to the
-area's gimmick list (+0x20), a word, and pointers to its place and area names (+0x30, +0x38).
-The field copies each into its runtime object (+0x10e8 + 0x40 × area) and walks the list from
+**Gimmicks** are compiled in too: at `0x14076ff30` (English Escha) 122 records of 0x40 bytes,
+one per map number (`barrel_formats::gimmick`, `MAPS_EN`):
+
+- **Maps 0–11:** the town, region 0: the Atelier, Marion's office, the Administration
+  Office, the Hall, the Town Entrance, the Plaza, the Balloon Docks, the Tavern, the Urban
+  Area, the Apple Orchard, the Apple House and an events-only hallway. The Atelier's list holds
+  the synthesis, refining, save, calendar and budget gimmicks; the Town Entrance's the world
+  map exit.
+- **Maps 12–107:** the 96 field areas in `AREA_*` order, from `0x140770230` (map 12 is
+  `AREA_01_01`, "Twilight Forest 1", the Forest Entrance; its gimmicks stand around its
+  gathering points).
+- **Maps 108 onwards:** ten `Reserve Frame 11`–`20` placeholders (region 1), the `World Map`
+  and three test maps (region 14).
+
+Each record holds six words. The first is the region: 0 the town, 1 the Twilight Forest, 2
+the Old Highway, 3 the Southern Ruins ... The sixth, +0x14, is what the field's battle start
+puts into the battle setup's +0x30: 19 for the Twilight Forest's areas, 7 for the Southern
+Ruins', the battle stage by the look of it. Then come a pointer to the map's gimmick list
+(+0x20), a word, and pointers to its place and area names (+0x30, +0x38). The field's runtime
+object keeps one record per map (+0x10e8 + 0x40 × map, 122 of them) and walks the list from
 there. A list is 0x60-byte gimmicks ended by -1:
 
 | Bytes | What |

@@ -1873,7 +1873,7 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
 fn gimmicks(exe: &Path, only: Option<usize>) -> Result<()> {
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::AREAS_EN).ok_or("no gimmick table")?;
+    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::AREAS_EN, barrel_formats::gimmick::AREA_COUNT).ok_or("no gimmick table")?;
     for (k, a) in areas.iter().enumerate().filter(|(k, _)| only.is_none_or(|o| o == *k)) {
         println!("{k:2} {} ({}), words {:?}: {} gimmicks", a.name, a.place, a.words, a.gimmicks.len());
         if only.is_some() {
@@ -3060,8 +3060,8 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         fn flag(&self, f: i32) -> i32 {
             usize::try_from(f).ok().and_then(|f| self.0.event_flags.get(f)).copied().unwrap_or(0)
         }
-        fn region_zero(&self, _: i32) -> bool {
-            false
+        fn region_zero(&self, map: i32) -> bool {
+            usize::try_from(map).is_ok_and(|m| m < barrel_formats::gimmick::TOWN_MAPS)
         }
         fn field_map(&self) -> Option<i32> {
             None

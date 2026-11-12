@@ -92,8 +92,8 @@ pub trait World {
     /// An event flag (`0x14035f460`).
     fn flag(&self, flag: i32) -> i32;
     /// `0x140236070`: the first word of the map's runtime record (`[0x140df9a08]+0x10e8+0x40×map`,
-    /// the region for a field area) is 0. All 110 compiled records have a region of 1 or more, so
-    /// this is presumably true for maps 110 to 121 only (the towns; not checked).
+    /// its region) is 0: true exactly for the twelve town maps, 0 to 11
+    /// (`barrel_formats::gimmick::TOWN_MAPS`).
     fn region_zero(&self, map: i32) -> bool;
     /// The field map the player is in (`0x1400546c0` non-null, then `0x140236160`), None outside
     /// a field.
@@ -136,7 +136,7 @@ pub fn date_order(today: i32, pattern: [i32; 3]) -> i32 {
 
 /// Matches anything in a trigger's operands.
 pub const ANY: i32 = 0x6000_0002;
-/// "Not a region-0 map" in a map trigger's operands.
+/// "Not a town map" in a map trigger's operands.
 pub const NOT_REGION_ZERO: i32 = 0x6000_0001;
 
 /// What fired (`0x140214d70`'s context): the trigger group, its values (+8), the day the
