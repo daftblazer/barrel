@@ -110,6 +110,24 @@ pub fn scatter(sizes: &[f32], rng: &mut crate::rng::Rng) -> Vec<([f32; 3], i32)>
     out
 }
 
+/// A party member's place (`0x1401b0b90`): a base offset by its index (0: 800 behind the
+/// centre; 1 and 2: 700 behind and 200 to either side; any other: 1,200 behind), turned about
+/// the vertical by the angle of its slot, the member's sector + 3 wrapped to 0..5 (slot angles
+/// 60, 180, 300, 240, 0 and 120 degrees). In battle a member's sector is its index mod 3
+/// (`0x1401a3d00`), so the three in front stand 120 degrees apart round the centre.
+pub fn party_spot(index: i32, sector: i32) -> [f32; 3] {
+    const ANGLES: [f32; 6] = [60.0, 180.0, 300.0, 240.0, 0.0, 120.0];
+    let base: [f32; 3] = match index {
+        0 => [0.0, 0.0, -800.0],
+        1 => [200.0, 0.0, -700.0],
+        2 => [-200.0, 0.0, -700.0],
+        _ => [0.0, 0.0, -1200.0],
+    };
+    let slot = (sector + 3).rem_euclid(6) as usize;
+    let (s, c) = ANGLES[slot].to_radians().sin_cos();
+    [base[0] * c + base[2] * s, base[1], -base[0] * s + base[2] * c]
+}
+
 pub fn death_blocked(states: &[TimedState], immune: bool) -> bool {
     immune || states.iter().any(|s| s.state == 0x50)
 }
@@ -993,5 +1011,18 @@ mod encounter_tests {
             assert!((200.0..=400.01).contains(&d), "{k}: {d}");
             assert!((0..=3).contains(sector) && p[1] == 0.0);
         }
+    }
+
+    #[test]
+    fn the_party_stands_round_the_centre() {
+        // Member 1, sector 1: slot 4, no turn.
+        assert_eq!(party_spot(1, 1), [200.0, 0.0, -700.0]);
+        // Member 0, sector 0: slot 3, turned 240 degrees: (sin 240 × -800, 0, cos 240 × -800).
+        let p = party_spot(0, 0);
+        assert!((p[0] - 692.82).abs() < 0.01 && (p[2] - 400.0).abs() < 0.01, "{p:?}");
+        // The three are about 120 degrees apart.
+        let a = |p: [f32; 3]| p[0].atan2(p[2]).to_degrees();
+        let (a0, a1, a2) = (a(party_spot(0, 0)), a(party_spot(1, 1)), a(party_spot(2, 2)));
+        assert!((a0 - a1).abs() > 90.0 && (a1 - a2).abs() > 90.0, "{a0} {a1} {a2}");
     }
 }

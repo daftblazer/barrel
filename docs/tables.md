@@ -791,10 +791,18 @@ yet) and becomes the monster's home (+0x3d8). Each monster also gets a sector, i
 (+0x394; the centre one's angle counts as 180, so sector 1; an angle of 360 gives 3, as the game
 has it). The party (list 6) is not scattered: each member's sector is its index (+0x74) mod 3
 (+0x398) and its spot comes from the sector (`0x1401b0b40`, `0x1401b0df0`, `0x1401b0e30`):
-the game's "three positions around the enemy", front, side and back. `battle::scatter` does the
-monsters' part.
+the game's "three positions around the enemy". `battle::scatter` does the monsters' part.
 
-Still to read: where the field enemy entries come from, the nudge, and the party's sector spots.
+A member's place (`0x1401b0b90(slot, index)`, `battle::party_spot`): a base offset by its
+index, member 0 (0, 0, -800), members 1 and 2 (±200, 0, -700), any other (0, 0, -1200), turned
+about the vertical by its slot's angle (`0x1400c2930`, from sin and cos), the slot being its
+sector + 3 wrapped to 0..5 and the six slots' angles 60, 180, 300, 240, 0 and 120 degrees (a
+jump table at `0x1401b0d20`). So the three in front stand 700 to 800 from the centre and about
+120 degrees apart (member 1 straight behind at (200, 0, -700)). `0x1401b0e30` turns each to face
+by its slot (six directions, `0x140804f40` and on, into +0x240). The rotation's sense (which
+way is "turned") is read from the matrix's layout and wants a look at a real battle.
+
+Still to read: where the field enemy entries come from, and the monsters' nudge (`0x1401b53b0`).
 
 ### A first duel
 
