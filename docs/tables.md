@@ -1172,3 +1172,17 @@ Field NPCs are not in the field tables: `Saves/field/<FIELD>.xml` holds the fiel
 fog, light, wind and shader settings, and the field's `.opl2` only its objects. Where a
 town's own NPCs (character numbers 10048 and up, which events put in event mode with `q7`)
 come from is still open.
+
+## Deliveries (`Saves/delivery/DeliveryData.xml`)
+
+71 rows (25 `DELIVERY_TEST_*` the developers' own), one per hand-in an assignment card or a
+character's request asks for (`DELIVERY_CARD_<card>_<n>`, `DELIVERY_QC<..>_<who>_<n>`,
+`DELIVERY_MM<..>`). Each row: `DeliveryTag`, `SubjectName` (the card's subject, Japanese),
+`PassScore`, up to three `ItemTag<n>`/`ItemScore<n>` (the items asked for and what each is
+worth), and optional bonuses: `CategoryTag` (an item category, no score of its own),
+`AtVal`/`AtScore` (an effect level at least `AtVal`, 20 rows), `Effect`/`EffScore` (5),
+`Quality`/`QualityScore` (3) and `Fire`/`Water`/`Wind`/`Earth` (4, element values). The pass
+scores run from 100 to 3,000 (`DELIVERY_CARD_08_00`: a key item worth 650 plus food of effect
+level 1 or more at 100 each). How a hand-in's score adds up (per item, per bonus, capped or
+not) is not read from the executable yet. `barrel_game::delivery` reads the table and
+`barrel deliveries INSTALL` lists the rows.

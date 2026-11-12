@@ -120,6 +120,7 @@ fn main() -> ExitCode {
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
+        ["deliveries", install] => deliveries(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["se-scan", wh2] => se_scan(Path::new(wh2)),
         ["g1s", file] => g1s(Path::new(file), None),
@@ -2197,5 +2198,24 @@ fn gestures(exe: &Path, numbers: &[&str]) -> Result<()> {
             println!("{n:3}.{k}: {} {} end {}", name(f.first), steps.join(" "), f.end);
         }
     }
+    Ok(())
+}
+
+/// The delivery table (`barrel_game::delivery`): each assignment card's items and bonuses.
+fn deliveries(install: &Path) -> Result<()> {
+    let path = install.join("Saves/delivery/DeliveryData.xml");
+    let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let all = barrel_game::delivery::deliveries(&table);
+    for d in all.iter().filter(|d| !d.tag.starts_with("DELIVERY_TEST")) {
+        let items: Vec<String> = d.items.iter().map(|(t, s)| format!("{t} {s}")).collect();
+        let mut extra = Vec::new();
+        if let Some(c) = &d.category { extra.push(c.clone()); }
+        if let Some(b) = &d.effect { extra.push(format!("effect {} {}", b.value, b.score)); }
+        if let Some(b) = &d.level { extra.push(format!("level>={} {}", b.value, b.score)); }
+        if let Some(b) = &d.quality { extra.push(format!("quality>={} {}", b.value, b.score)); }
+        if let Some(e) = d.elements { extra.push(format!("elements {e:?}")); }
+        println!("{:<24} pass {:>4}  {}  {}", d.tag, d.pass_score, items.join(", "), extra.join("; "));
+    }
+    println!("{} deliveries ({} tests not shown)", all.len(), all.iter().filter(|d| d.tag.starts_with("DELIVERY_TEST")).count());
     Ok(())
 }
