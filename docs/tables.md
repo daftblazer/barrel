@@ -681,7 +681,18 @@ mapped by the same table, the sub-code from its effects, forced to 2 when `0x140
 0x18)` holds. Over the 274 rows: 226 own side (1), 33 the other side (2: the attack items, one
 target in the selection), 6 none (0), 4 either (4), 3 self (3) and 2 the whole-side pick (5,
 rows 34 and 38, names not matched yet). So bombs pick one foe here; if they spread, it is
-decided later (by distance from the target, presumably: fighters have positions). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
+decided later, and it is: by distance.
+
+**Areas.** The gatherer (`0x1401a4430(candidates, user, centre, kind, out)`) takes an area
+kind from the action (virtual +0x10: a skill's record +0x20, `0x14015f840`; an item's word after
+its target word, `0x1402a25e0`). Kind 6 builds a shape from the user towards the centre
+(`0x1401bc5c0`, constants at `0x140805500`: ±150 across, 2,000 long) and keeps the candidates
+inside it (`0x1401bc700`, their size +0x358 allowed for): a line. Any other kind keeps the
+candidates whose distance from the centre on the ground (x and z of +0x230) is less than
+their size (+0x358) plus `RADIUS[kind]` (`0x1408041d8`: 50, 350, 450, 650, 900, 1000, 150).
+Over the 532 skills: kind 0 (50, the target alone in practice) 353, 1 (350) 6, 2 (450) 117, 3
+(650) 3, 5 (1000) 49, 6 (a line) 4. So many skills hit everyone near the target; the battle
+loop here keeps one target until fighters have positions (`fight::Fighter::position`, all 0). Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
 and `0x14018e520` after placing the fighters. `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
