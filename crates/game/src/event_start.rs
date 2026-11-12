@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use barrel_formats::event_check::{commands, EventCheck};
+use barrel_formats::event_check::{commands, Command, EventCheck};
 
 use crate::rng::Rng;
 
@@ -75,6 +75,66 @@ pub fn pick(list: &[Listed], mut passes: impl FnMut(usize, usize) -> bool, rng: 
     Some(found[n].event)
 }
 
+/// The game state the modelled conditions read.
+pub trait World {
+    /// The event has been seen (`0x14035f270`).
+    fn seen(&self, event: i32) -> bool;
+    /// The day an event was seen (`0x14035f3a0`).
+    fn seen_day(&self, event: i32) -> i32;
+    /// Today (`0x14035c040`).
+    fn today(&self) -> i32;
+    /// An event flag (`0x14035f460`).
+    fn flag(&self, flag: i32) -> i32;
+    /// `0x140236070`: the first word of the map's runtime record (`[0x140df9a08]+0x10e8+0x40×map`,
+    /// the region for a field area) is 0.
+    fn region_zero(&self, map: i32) -> bool;
+}
+
+/// Matches anything in a trigger's operands.
+pub const ANY: i32 = 0x6000_0002;
+/// "Not a region-0 map" in a map trigger's operands.
+pub const NOT_REGION_ZERO: i32 = 0x6000_0001;
+
+/// One command of a group (`0x140213670`). `fired` is the trigger group that fired and its
+/// values. None for the codes not read yet. `MT` and `LT` include equality.
+pub fn command(c: &Command, fired: (u8, &[i32]), w: &impl World) -> Option<bool> {
+    if let Some(t) = c.trigger() {
+        if t != fired.0 {
+            return Some(false);
+        }
+    }
+    let op = |i: usize| c.operands.get(i).copied().unwrap_or(0);
+    let cmp = |v: i32, kind: usize| match kind {
+        0 => v >= op(1),
+        1 => v <= op(1),
+        _ => v == op(1),
+    };
+    Some(match c.code {
+        0x1f => w.seen(op(0)),
+        0x20 => !w.seen(op(0)),
+        0x24..=0x26 => w.seen(op(0)) && cmp(w.today() - w.seen_day(op(0)), c.code - 0x24),
+        0x27..=0x29 => cmp(w.flag(op(0)), c.code - 0x27),
+        0x7e | 0x7f => trigger_values(c.operands, fired.1, 4, true, w),
+        0x80 => trigger_values(c.operands, fired.1, 1, false, w),
+        _ => return None,
+    })
+}
+
+/// `0x140213540`: the first `count` operands against the fired values. `ANY` matches anything.
+/// `NOT_REGION_ZERO` matches a map that is not region 0. For the from-to triggers it applies only
+/// at operands 1 and 3 after a kind operand of 0.
+fn trigger_values(ops: &[i32], fired: &[i32], count: usize, from_to: bool, w: &impl World) -> bool {
+    if ops.len() < count || fired.len() < count {
+        return false;
+    }
+    (0..count).all(|i| match ops[i] {
+        ANY => true,
+        NOT_REGION_ZERO if from_to => (i == 1 || i == 3) && ops[i - 1] == 0 && !w.region_zero(fired[i]),
+        NOT_REGION_ZERO => !w.region_zero(fired[i]),
+        v => fired[i] == v,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +173,40 @@ mod tests {
         assert!(!gate_open(&w, &Gate { day_flag: true, ..Gate::default() }));
         w[4] = 1;
         assert!(!gate_open(&w, &Gate::default()));
+    }
+
+    struct W;
+    impl World for W {
+        fn seen(&self, e: i32) -> bool {
+            e == 15
+        }
+        fn seen_day(&self, _: i32) -> i32 {
+            10
+        }
+        fn today(&self) -> i32 {
+            13
+        }
+        fn flag(&self, f: i32) -> i32 {
+            f
+        }
+        fn region_zero(&self, map: i32) -> bool {
+            map == 9
+        }
+    }
+
+    #[test]
+    fn conditions_and_map_triggers() {
+        let group = [0x7000001f, 15, 0x70000020, 31, 0x70000027, 4, 4, 0x70000025, 15, 3];
+        let cmds = commands(&group).unwrap();
+        assert!(cmds.iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        let lt = commands(&[0x70000028, 4, 3]).unwrap();
+        assert_eq!(command(&lt[0], (0, &[]), &W), Some(false));
+        let t = commands(&[0x7000007f, 0, 4, 0, 5]).unwrap();
+        assert_eq!(command(&t[0], (1, &[0, 4, 0, 5]), &W), Some(true));
+        assert_eq!(command(&t[0], (1, &[0, 4, 0, 6]), &W), Some(false));
+        assert_eq!(command(&t[0], (0, &[0, 4, 0, 5]), &W), Some(false));
+        let any = commands(&[0x7000007f, 0, NOT_REGION_ZERO, 0, ANY]).unwrap();
+        assert_eq!(command(&any[0], (1, &[0, 4, 0, 77]), &W), Some(true));
+        assert_eq!(command(&any[0], (1, &[0, 9, 0, 77]), &W), Some(false));
     }
 }

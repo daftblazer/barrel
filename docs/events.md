@@ -1267,3 +1267,26 @@ copies the group or gives a bare `ECT_END` if there is none):
 
 Most events keep their changes in group 0; 40 have any in group 1.
 
+#### One command (`0x140213670`, `event_start::command`)
+
+A trigger code fails unless its trigger group is the one that fired. Then a byte-indexed jump
+table picks the case: index bytes at `0x14021486c` (one per code), targets at `0x140214724`
+(82 cases). Read so far:
+
+| Code | Passes when |
+|---|---|
+| `EVENT_OCCURRENCE e` / `EVENT_NOT_OCCURRENCE e` | event `e` seen / not seen (`0x14035f270`) |
+| `EVENT_PASSAGE_MT/LT/EQ e n` | `e` seen and today − the day it was seen (`0x14035c040` − `0x14035f3a0`) ≥ / ≤ / = `n` |
+| `EVENTFLAG_MT/LT/EQ f v` | flag `f` ≥ / ≤ / = `v` (MT and LT include equality) |
+| `TRIGGER_MAP_FROM_TO_BEFORE/AFTER a b c d` | all four equal the fired values (from kind, from map, to kind, to map by event 30's `0 4 0 5`) |
+| `TRIGGER_MAP_FIELDMAP_BE m` | the fired map is `m` |
+
+The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired values at
+`ctx+8`:
+
+- `0x60000002` matches anything.
+- `0x60000001` matches a map for which `0x140236070` is false. That function tests the first
+  word of the map's runtime record, `[0x140df9a08]+0x10e8+0x40×map`, which is the region for a
+  field area, for 0.
+- In the from-to triggers, `0x60000001` counts only at operands 1 and 3 after a kind of 0.
+
