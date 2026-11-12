@@ -280,7 +280,15 @@ event while it loads. They do nothing when run: the event handler's switch (`0x1
 `0x14071c964`), as `u1` waits 0.3. `u36 {event, seen}` marks an event (its `EVENT_*` number)
 seen or not through `0x14035f480`, the record the save keeps (`docs/formats.md`, the events):
 the flag, and when seen the count raised, the day stamped (`0x1410a42cc`) and a word copied
-from `0x141098a2c` (+0xc); the openings mark the event that has just played. `u16`, `u47`,
+from `0x141098a2c` (+0xc); the openings mark the event that has just played. `u34 {flag, value}` sets one of 151 event flags (`0x14035f660`,
+the words at `0x1410932d0`; the save's `event/m_eventFlag`). `u38 {trophy}` unlocks a Steam
+achievement once (`0x140168390`: a byte per trophy at `0x140e05408`, the `TROPHY_*` names in
+0x198-byte rows at `0x140d5fcf8`, then the user-stats interface's +0x38 and +0x50,
+`SetAchievement` and `StoreStats`); the openings unlock 1 and 2. Barrel leaves that out on
+purpose (it never touches the player's Steam account; listed under `docs/engine.md`'s deliberate differences).
+`u26 {n, ...}` stores `n` in the action list's +0xe8 and broadcasts (`0x140296a60`; what reads
+it is not known), `u46 {id, flag}` sends the event's interface object (+0x1a0) a message of type
+0xd with them (not read further). `u16`, `u47`,
 `u48`, `u67` and `u68` fall to the end of the event handler's switch (`u67`/`u68` are the
 balloon choice screen's, handled elsewhere). The waits on characters (`s6`, `s21`, `s29`) and
 `u14` (`ECT_EVENT_WAIT_POST_EFFECT`) are honoured by the schedule though `play-event` still

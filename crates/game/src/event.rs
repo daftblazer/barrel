@@ -25,6 +25,14 @@ pub const LONG_WAIT: u32 = 0x7500_000f;
 /// flag; when seen, its count goes up and the day is stamped; `save::EventRecord`). The
 /// openings mark the event that has just played (`EVENT_*` number, 241 for example).
 pub const MARK_EVENT: u32 = 0x7500_0024;
+/// `u34` (0x75000022, `{flag, value}`): sets one of the 151 event flags (`0x14035f660`: the
+/// words at `0x1410932d0`, saved as `event/m_eventFlag`).
+pub const SET_EVENT_FLAG: u32 = 0x7500_0022;
+/// `u38` (0x75000026, `{trophy}`): unlocks a Steam achievement once (`0x140168390`: the
+/// `TROPHY_*` table at `0x140d5fcf8`, 0x198 bytes a row, through the user-stats interface's
+/// `SetAchievement` and `StoreStats`). Barrel leaves it out on purpose: it never touches the
+/// player's Steam account.
+pub const TROPHY: u32 = 0x7500_0026;
 /// `p3` (`ECT_MACRO_CHARA_WAIT`): wait for a character (its number).
 pub const CHARA_WAIT: u32 = 0x7000_0003;
 /// `s3` (`ECT_CHARA_TIME_WAIT`): a character waits, `{character, hundredths}`.
@@ -182,6 +190,10 @@ pub enum Step<'a> {
     Wait { seconds: f32 },
     /// `u36`: an event marked seen (or unseen), by its `EVENT_*` number.
     MarkEvent { event: u32, seen: bool },
+    /// `u34`: an event flag set.
+    EventFlag { flag: u32, value: i32 },
+    /// `u38`: the game would unlock this Steam achievement here (Barrel does not).
+    Trophy { trophy: u32 },
     /// Wait until a character (by `Chara.xml` row) is ready (`p3`); what "ready" means is
     /// still open (`docs/events.md`, "Waits").
     WaitForCharacter { character: u32 },
@@ -346,6 +358,8 @@ impl<'a> Player<'a> {
             (TIME_WAIT, []) => out.push(Step::Wait { seconds: 0.0 }),
             (SHORT_WAIT, _) => out.push(Step::Wait { seconds: 0.3 }),
             (LONG_WAIT, _) => out.push(Step::Wait { seconds: 2.0 }),
+            (SET_EVENT_FLAG, [flag, value, ..]) => out.push(Step::EventFlag { flag: *flag, value: *value as i32 }),
+            (TROPHY, [trophy, ..]) => out.push(Step::Trophy { trophy: *trophy }),
             (MARK_EVENT, [event, rest @ ..]) => out.push(Step::MarkEvent { event: *event, seen: rest.first().is_some_and(|&v| v != 0) }),
             (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: *character }),
             (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
@@ -773,6 +787,8 @@ mod tests {
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
+                Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
+                Step::Trophy { trophy } => format!("trophy {trophy}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),
                 Step::CharacterWait { character, seconds, .. } => format!("{character} waits {seconds}"),
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),

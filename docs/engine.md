@@ -41,6 +41,10 @@ the game.
   differently (a bowed walk adds its velocity before taking off its push each frame, so the
   path depends on the step lengths). Barrel's results are those of a steady 60 fps. Lockstep
   checks compare against the original running at a steady 60 fps.
+- **No Steam achievements.** The original unlocks Steam achievements from events (`u38`,
+  `docs/events.md`) and elsewhere; Barrel never touches the player's Steam account, so the
+  event step (`event::Step::Trophy`) does nothing. Lockstep checks skip it (it changes no
+  game state).
 
 ## Sound
 

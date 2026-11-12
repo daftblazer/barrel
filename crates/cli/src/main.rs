@@ -2238,6 +2238,8 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 println!("  [{index:3}] {who:>10}: {}", text.replace("<CR>", " "));
             }
             Step::Wait { seconds } => println!("      (wait {seconds:.2} s)"),
+            Step::EventFlag { flag, value } => println!("      (event flag {flag} = {value})"),
+            Step::Trophy { trophy } => println!("      (achievement {trophy}: left out)"),
             Step::MarkEvent { event, seen } => println!("      (event {event} marked {})", if seen { "seen" } else { "unseen" }),
             Step::CharacterWait { action, character, seconds } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
