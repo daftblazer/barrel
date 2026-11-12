@@ -869,8 +869,11 @@ or zero, and string pointers), then copies each record into the enemy data (`0x1
 
 The field (`0x140072980`) spawns, for its area, each record whose area matches (or is -1), whose
 conditions hold and which is not already out or beaten (`0x140075e10`), through `0x14026fc20`
-(its +0, +4 and +0x1c). E.g. area 12 has Ore Rats (group 10) and Stray Dogs (11) near (40, 0,
-40); area 107's single record is the Ancient Beast King (group 220).
+(its +0, +4 and +0x1c). The area is the field map's number (`FIELDMAP_*`: towns 0 to 11, then `AREA_01_01` = 12 and
+on), so area 12 is `AREA_01_01`, with Ore Rats (group 10) and Stray Dogs (11) near (40, 0, 40);
+area 107's single record is the Ancient Beast King (group 220). `barrel encounter EXE AREA
+--from SAVE [N]` lists an area's enemies and fights the Nth's group with the save's party (the
+appearing conditions are not checked yet): `AREA_01_01`'s Stray Dog enemy drew three Stray Dogs.
 
 ### A first duel
 

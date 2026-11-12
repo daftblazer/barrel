@@ -125,6 +125,8 @@ fn main() -> ExitCode {
         ["monsters", exe] => monsters(Path::new(exe)),
         ["encounters", exe] => encounters(Path::new(exe)),
         ["field-enemies", exe] => field_enemies(Path::new(exe)),
+        ["encounter", exe, area, "--from", save] => encounter(Path::new(exe), area, "0", Path::new(save)),
+        ["encounter", exe, area, "--from", save, which] => encounter(Path::new(exe), area, which, Path::new(save)),
         ["quests", install] => quests(Path::new(install)),
         ["deliveries", install] => deliveries(Path::new(install)),
         ["quakes", install] => quakes(Path::new(install)),
@@ -1188,6 +1190,28 @@ fn field_enemies(exe: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Fights field enemy WHICH (counting from 0) of AREA (a field map number or name, e.g. 12 or
+/// AREA_01_01) with SAVE's party: its encounter group's draw (`battle_from_save`).
+fn encounter(exe: &Path, area: &str, which: &str, save: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let maps = barrel_game::event::field_maps(&pe);
+    let area: i32 = match area.parse() {
+        Ok(n) => n,
+        Err(_) => maps.iter().position(|m| m == area).ok_or_else(|| format!("{area}: no such field map"))? as i32,
+    };
+    let here: Vec<bd::FieldEnemy> = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
+    let map = maps.get(area as usize).map_or("?", String::as_str);
+    println!("{map} (field map {area}): {} enemies (their appearing conditions not checked)", here.len());
+    for (k, e) in here.iter().enumerate() {
+        println!("  {k}: group {} at ({:.1}, {:.1}, {:.1})", e.group, e.position[0], e.position[1], e.position[2]);
+    }
+    let k: usize = which.parse().map_err(|_| format!("{which}: enemy number"))?;
+    let e = here.get(k).ok_or("no such enemy here")?;
+    battle_from_save(exe, &format!("g{}", e.group), save)
 }
 
 /// Lists the encounter groups: counts and monsters (by name) with their weights.
