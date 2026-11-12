@@ -1285,6 +1285,17 @@ out:
 
 `barrel_game::battle::equipment_stat` is step 2's formula.
 
+**The stats in use** (`0x14032de50`, run whenever a character's equipment or bonuses
+change): for each of the 32 stats from max HP on, the value in use (+0x114 of the character's
+record) is the base (+0x14) plus a second block (+0x94), plus what each of the four equipped
+items gives (`0x14029dda0` per item and stat, items at +0x194, 0x24 bytes each), and, for the
+protagonist alone (the record's character equal to `global` +0x38, `0x14035ebb0`), bonus
+value 4 + k for stat k (the `Add_Status_*` bonuses and the 27 after them, "Bonuses"). One save
+bears it out: Escha (the protagonist there) has max HP 30 at base and 35 in use, with bonus
+value 4 at 5 and no HP from equipment; Logy, with no bonus, has the same max HP in both. The
+saved record keeps the in-use block, so battles started from a save (`barrel battle ... --from`)
+already include the bonuses.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from
