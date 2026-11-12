@@ -52,6 +52,10 @@ pub const FIELD_CHARA_DELETE: u32 = 0x7100_0005;
 /// `q6` (`ECT_FIELDMAP_CHARA_DELETE_ALL`): every field character is removed (an action usually
 /// starts with it before placing the scene's cast).
 pub const FIELD_CHARA_DELETE_ALL: u32 = 0x7100_0006;
+/// `q8` (`ECT_FIELDMAP_CHARA_COLLISION_FLAG`): `{character, solid, flag, ...}`: whether the
+/// field character's body is in the physics world (`0x14026c570`, +0x128) and a second flag
+/// (`0x14026c5d0`, +0x129, not read further); case `0x140071348`.
+pub const FIELD_CHARA_COLLISION: u32 = 0x7100_0008;
 /// `s5` (`ECT_CHARA_MOTION_SET`): `{character, motion, variant, blend ×100}`.
 pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 /// `u31` (`ECT_EVENT_VOICE_PLAY`): `{clip}`, a voice clip number (`docs/formats.md`, "Voices").
@@ -171,6 +175,8 @@ pub enum Step<'a> {
     Remove { action: usize, character: u32 },
     /// Every field character is removed (`q6`).
     RemoveAll { action: usize },
+    /// A field character's collision (`q8`): solid or not, and the second flag.
+    Collision { action: usize, character: u32, solid: bool, flag: bool },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
     Voice { action: usize, character: Option<u32>, clip: u32 },
     /// A screen effect starts (`u13`): `kind` (`docs/events.md`, "Screen effects"), its
@@ -324,6 +330,12 @@ impl<'a> Player<'a> {
             (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
             (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: *character }),
             (FIELD_CHARA_DELETE_ALL, _) => out.push(Step::RemoveAll { action }),
+            (FIELD_CHARA_COLLISION, [character, rest @ ..]) => out.push(Step::Collision {
+                action,
+                character: *character,
+                solid: rest.first().is_none_or(|&v| v != 0),
+                flag: rest.get(1).is_none_or(|&v| v != 0),
+            }),
             (EVENT_VOICE_PLAY, [clip, ..]) => out.push(Step::Voice { action, character: None, clip: *clip }),
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
@@ -696,6 +708,7 @@ mod tests {
                 Step::FieldCamera { change, .. } => format!("field camera {change:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),
                 Step::RemoveAll { .. } => "everyone removed".to_string(),
+                Step::Collision { character, solid, .. } => format!("{character} solid {solid}"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),

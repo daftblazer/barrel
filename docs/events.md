@@ -597,7 +597,7 @@ with each count seen.
 | `71000005` | `q5` | ECT_FIELDMAP_CHARA_DELETE | WMResMgr | 41 | 1 (41) |
 | `71000006` | `q6` | ECT_FIELDMAP_CHARA_DELETE_ALL |  | 1109 | 0 (1109) |
 | `71000007` | `q7` | ECT_FIELDMAP_CHARA_SET_EVENT_MODE |  | 5895 | 1 (5895) |
-| `71000008` | `q8` | ECT_FIELDMAP_CHARA_COLLISION_FLAG |  | 8081 | 5 (8081) |
+| `71000008` | `q8` | ECT_FIELDMAP_CHARA_COLLISION_FLAG | (field character in or out of the physics world, `0x140071348`) | 8081 | 5 (8081) |
 | `7100000a` | `q10` | ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET | (no handler found: not in `0x140071030`'s, `0x14007119f`'s or `0x1401ddb80`'s switches) | 771 | 1 (771) |
 | `7100000b` | `q11` | ECT_FIELDMAP_NPC_ENEMY_RESET |  | 526 | 0 (526) |
 | `7100000c` | `q12` | ECT_FIELDMAP_CHANGE_NOT_BGM |  | 621 | 1 (621) |

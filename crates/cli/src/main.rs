@@ -2044,6 +2044,9 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let name = fields.get(map as usize).map_or("?", String::as_str);
                 println!("{action:3} --- field {map} ({name})");
             }
+            Step::Collision { action, character, solid, flag } => {
+                println!("{action:3} {} {} (flag {flag})", names.get(character as usize).map_or("?", String::as_str), if solid { "collides" } else { "passes through" })
+            }
             Step::RemoveAll { action } => println!("{action:3} --- everyone leaves"),
             Step::Remove { action, character } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);

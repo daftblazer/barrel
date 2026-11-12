@@ -139,6 +139,8 @@ pub struct Body {
     pub gesture: Option<(i32, f32)>,
     /// Its head gesture (`s116`): segment, rate, weight, and the stage time it started.
     pub head: Option<(usize, f32, f32, f32)>,
+    /// Whether it collides (`q8`; kept, not acted on: scenes move characters on set paths).
+    pub solid: bool,
     /// A timed turn: (from, change, seconds, elapsed, curve).
     turn: Option<(f32, f32, f32, f32, u32)>,
 }
@@ -261,7 +263,7 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None, head: None });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None, head: None, solid: true });
                 b.position = *position;
                 b.mover = None;
             }
@@ -287,6 +289,11 @@ impl Stage {
                 }
             }
             Step::RemoveAll { .. } => self.characters.clear(),
+            Step::Collision { character, solid, .. } => {
+                if let Some(b) = self.characters.get_mut(character) {
+                    b.solid = *solid;
+                }
+            }
             Step::Remove { character, .. } => {
                 self.characters.remove(character);
             }
