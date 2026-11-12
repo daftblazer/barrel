@@ -12,6 +12,13 @@ showing or hiding every field object whose name holds it (TOWN_03's `obj-xEV_doo
 (`q10 1`) and hide them at the end, so outside events they are hidden. `q15` is the next case
 (`0x14028a80c`): `{version, shown, flag}` to `0x140291600`.
 
+**Other field and screen commands.** `q11` (`ECT_FIELDMAP_NPC_ENEMY_RESET`, no operands) is case
+`0x14028a7fa` of the field switch: it clears a global list (`0x141077eb0`, `0x1401fa830`) and
+rebuilds the field's people and monsters (`0x14028d190`): nothing an event's frames show.
+`u68` (no operands, `B3Balloon` slots 4 and 8) follows `u67 0` at the end of events 515 and
+516, before their fade: the balloon choice screen (`Event/balloonsel/balloonseldata.bsb`),
+interactive, not played by the viewer.
+
 **Field object versions (`q15`).** `ECT_FIELDMAP_MAPVISIBLE_SET {version, shown, ...}` shows
 or hides the field objects whose placement tags carry that version (`xAM_balloon_ver<N>`:
 TOWN_07's airship dock is built in three versions, `obj-map08b_balloon_body` ver1,
