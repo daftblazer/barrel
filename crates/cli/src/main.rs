@@ -150,6 +150,8 @@ fn main() -> ExitCode {
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
         }
+        ["play-macro", script, name, "--timed", args @ ..] => play_macro(Path::new(script), name, args, true),
+        ["play-macro", script, name, args @ ..] => play_macro(Path::new(script), name, args, false),
         ["play-event", file, "--stage"] => stage_event(Path::new(file), None),
         ["play-event", file, "--stage", "--fps", hz] => stage_event(Path::new(file), Some(hz)),
         ["play-event", file] => play_event(Path::new(file), None, false),
@@ -2174,8 +2176,29 @@ fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
 }
 
 fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
-    use barrel_game::event::{Player, Step};
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    play(file, event, lang, timed)
+}
+
+/// Plays a script macro (ROOT/Script/FILE.nut's function NAME) as an event with one action,
+/// its parameters given the characters ARGS (Chara.xml rows).
+fn play_macro(script: &Path, name: &str, args: &[&str], timed: bool) -> Result<()> {
+    let root = script.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("no game root above the script")?;
+    let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
+    let names = barrel_game::macros::Names::escha(&barrel_game::gesture::motions(&pe));
+    let bytes = read(script)?;
+    let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+    let m = barrel_game::macros::read(&text).into_iter().find(|m| m.name == name).ok_or_else(|| format!("{name}: no such macro"))?;
+    let args: Vec<u32> = args.iter().map(|a| a.parse()).collect::<std::result::Result<_, _>>()?;
+    let words = m.words(&names, &args).map_err(|u| format!("{name}: {} unknown (arguments: {})", u.0, m.params.join(", ")))?;
+    let event = Ebd { actions: vec![barrel_formats::ebd::Action { flags: 0, name: name.as_bytes().to_vec(), description: vec![], words }], resources: vec![] };
+    play(script, event, None, timed)
+}
+
+/// Prints an event's steps (FILE: where it came from, to find the game's tables).
+fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> {
+    use barrel_game::event::{Player, Step};
     let messages = match message_file(file, lang) {
         Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).map_err(|e| format!("{}: {e}", m.display()))?,
         _ => Vec::new(),

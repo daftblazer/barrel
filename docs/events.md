@@ -963,7 +963,12 @@ lea rdx, name; call 0x14012d910`) and the motions by name (`MOTION_` + the execu
 table). `barrel macros ROOT` checks them all: 32 of the 36 macros read and decode, all eleven
 encounters among them. Four compute words in the function body, which a literal reader cannot
 (`setCommandMove`'s local `s32XAccel`, `setTargetCameraCraneShot`'s `s32IsUp ? 800 : 200`,
-`setTornadoRolling`, `fieldEventRaidEnd`). Five commands appear only in the macros, never in the
+`setTornadoRolling`, `fieldEventRaidEnd`). `barrel play-macro ROOT/Script/FILE.nut NAME [--timed] ARGS...` plays one
+through the event player as a one-action event, its parameters given as `Chara.xml` rows:
+`forceEncount` with Escha (0) and a stand-in target (1) takes both out of play, moves the
+camera onto the target and back to 700, waits half a second, plays the target's roar (`EX10`)
+and turns it to the player, plays Escha's `MIX_ERU`, then gives both their collisions back.
+Five commands appear only in the macros, never in the
 events; their operand counts come from every use there (`ebd_tables.rs`):
 `FIELDMAP_CHARA_SET_BRAIN_MODE` 2, `SET_DEFCHARA_BCID` 1, `CHARA_SET_PROGRAM_ROT` 1,
 `CHARA_LOOK_SET_TARGET` 7, `CHARA_LOOK_MOVE_WAIT` 1.
