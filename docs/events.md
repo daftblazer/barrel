@@ -752,8 +752,8 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `71000006` | `q6` | ECT_FIELDMAP_CHARA_DELETE_ALL | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 1109 | 0 (1109) |
 | `71000007` | `q7` | ECT_FIELDMAP_CHARA_SET_EVENT_MODE | field characters (`0x140071160`) | 5895 | 1 (5895) |
 | `71000008` | `q8` | ECT_FIELDMAP_CHARA_COLLISION_FLAG | (field character in or out of the physics world, `0x140071348`) | 8081 | 5 (8081) |
-| `7100000a` | `q10` | ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET | (no handler found: not in `0x140071030`'s, `0x14007119f`'s or `0x1401ddb80`'s switches) | 771 | 1 (771) |
-| `7100000b` | `q11` | ECT_FIELDMAP_NPC_ENEMY_RESET | (no handler found, like `q10`) | 526 | 0 (526) |
+| `7100000a` | `q10` | ECT_FIELDMAP_EVENT_OBJECT_VISIBLE_SET | the field command switch (`0x14028a700`, case `0x14028a7a6`, shared with `q36`): the field's `xEV_` objects shown or hidden (`0x140291860`) | 771 | 1 (771) |
+| `7100000b` | `q11` | ECT_FIELDMAP_NPC_ENEMY_RESET | the field command switch (case `0x14028a7fa`): clears the list at `0x141077eb0` (`0x1401fa830`) and rebuilds the field's people and monsters (`0x14028d190`) | 526 | 0 (526) |
 | `7100000c` | `q12` | ECT_FIELDMAP_CHANGE_NOT_BGM | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 621 | 1 (621) |
 | `7100000d` | `q13` | ECT_FIELDMAP_GIMMICK_RESET | field characters (`0x140071160`) | 17 | 0 (17) |
 | `7100000f` | `q15` | ECT_FIELDMAP_MAPVISIBLE_SET | field characters (`0x140071160`), nspFM::clsFMWorldEvent | 53 | 3 (53) |
@@ -1192,7 +1192,7 @@ by the table. Most used: `EVENT_OCCURRENCE` (1,006), `EVENT_NOT_OCCURRENCE` (767
 `EVENTFLAG_EQ` (391), `EVENTFLAG_MT` (279), `EVENT_PASSAGE_MT` (268), `TRIGGER_MAP_FROM_TO_AFTER`
 (253). Event 30, for one: `EVENT_OCCURRENCE 15`, `EVENT_NOT_OCCURRENCE 31`, `EVENTFLAG_MT 4 1`,
 then `TRIGGER_MAP_FROM_TO_AFTER 0 4 0 5`. The file's 121,876 bytes read exactly so. `Event/eventprocess/EventProcessDataAll.epd`
-(21,708 bytes, the same count first) is not read yet.
+is read below ("What events change").
 
 ### Which event starts (`0x140214d70`, `barrel_game::event_start`)
 
