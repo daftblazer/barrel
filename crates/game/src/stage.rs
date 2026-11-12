@@ -228,6 +228,8 @@ pub struct Stage {
 pub struct Line {
     /// The character number of whoever says it (-1 for none: narration, system text).
     pub speaker: i32,
+    /// The name shown (an entry of the speaker-name table), when the message gives one.
+    pub name: Option<i32>,
     /// As the message file has it (markup included).
     pub text: String,
     /// The stage time it goes down at, if it does before the next line.
@@ -273,10 +275,10 @@ impl Stage {
             },
             // A line: its speaker talks (and takes the line's expression, if it sets one); the
             // others fall quiet and keep their faces.
-            Step::Message { speaker, text, expression, gesture, .. } => {
+            Step::Message { speaker, name, text, expression, gesture, .. } => {
                 let now = self.time;
                 let until = self.reading.map(|f| now + f(&text.replace("<CR>", "")).max(0.0));
-                self.line = Some(Line { speaker: *speaker, text: text.clone(), until });
+                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until });
                 for (&n, b) in self.characters.iter_mut() {
                     let speaking = i64::from(n) == i64::from(*speaker);
                     b.talking = speaking;
@@ -550,12 +552,12 @@ mod tests {
     #[test]
     fn lines_set_faces() {
         let mut stage = Stage::default();
-        let line = |speaker: i32, expression: Option<i32>| Step::Message { index: 0, speaker, text: String::new(), expression, gesture: None };
+        let line = |speaker: i32, expression: Option<i32>| Step::Message { index: 0, speaker, name: None, text: String::new(), expression, gesture: None };
         stage.apply(&Step::Place { action: 0, character: 0, position: [0.0; 3] });
         stage.apply(&Step::Place { action: 0, character: 1, position: [0.0; 3] });
         stage.apply(&line(0, Some(4)));
         assert_eq!((stage.characters[&0].expression, stage.characters[&0].talking), (Some(4), true));
-        stage.apply(&Step::Message { index: 1, speaker: 0, text: String::new(), expression: None, gesture: Some(7) });
+        stage.apply(&Step::Message { index: 1, speaker: 0, name: None, text: String::new(), expression: None, gesture: Some(7) });
         assert_eq!((stage.characters[&0].expression, stage.characters[&0].gesture), (Some(4), Some((7, 0.0))));
         stage.apply(&line(1, None));
         assert_eq!((stage.characters[&0].expression, stage.characters[&0].talking), (Some(4), false));
@@ -565,7 +567,7 @@ mod tests {
     #[test]
     fn lines_stay_up_for_their_reading_time() {
         let mut stage = Stage { reading: Some(|t: &str| t.len() as f32), ..Stage::default() };
-        stage.apply(&Step::Message { index: 0, speaker: 3, text: "ab<CR>c".into(), expression: None, gesture: None });
+        stage.apply(&Step::Message { index: 0, speaker: 3, name: None, text: "ab<CR>c".into(), expression: None, gesture: None });
         // "abc" reads in 3 seconds.
         assert_eq!(stage.line_shown().map(|l| (l.speaker, l.until)), Some((3, Some(3.0))));
         stage.time = 2.9;
@@ -574,7 +576,7 @@ mod tests {
         assert!(stage.line_shown().is_none());
         // With no reading time a line stays until the next.
         let mut stage = Stage::default();
-        stage.apply(&Step::Message { index: 0, speaker: 3, text: "ab".into(), expression: None, gesture: None });
+        stage.apply(&Step::Message { index: 0, speaker: 3, name: None, text: "ab".into(), expression: None, gesture: None });
         stage.time = 100.0;
         assert!(stage.line_shown().is_some());
     }

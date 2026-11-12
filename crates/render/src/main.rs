@@ -2061,6 +2061,8 @@ fn main() -> Result<()> {
     let mut motion_names: Vec<String> = Vec::new();
     let messages: Vec<barrel_formats::ebm::Message>;
     let mut speaker_names: Vec<String> = Vec::new();
+    // The message window's names (the executable's speaker-name table).
+    let mut window_names: Vec<String> = Vec::new();
     let mut face_tables_play: Option<barrel_game::face::Tables> = None;
     let mut gestures_play: Vec<[Option<barrel_game::gesture::Form>; 2]> = Vec::new();
     // The motions' divisions (s5, s11), from Saves/chara.
@@ -2079,6 +2081,10 @@ fn main() -> Result<()> {
         let english = Path::new(e).strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
         let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
         messages = english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default();
+        window_names = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+            .ok()
+            .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_formats::layout::speaker_names(&pe)))
+            .unwrap_or_default();
         speaker_names = xml("Saves_EN/chara/Chara.xml")
             .or_else(|| xml("Saves/chara/Chara.xml"))
             .map(|t| t.children.iter().map(|c| c.attr("Name").unwrap_or("").to_string()).collect())
@@ -2425,7 +2431,14 @@ fn main() -> Result<()> {
                     }
                     quads.extend(match &line {
                         Some(l) => {
-                            let name = usize::try_from(l.speaker).ok().and_then(|k| speaker_names.get(k)).map(String::as_str);
+                            // The name the line gives (the speaker-name table: "???" before a
+                            // character is introduced), else the speaker's own.
+                            let name = l
+                                .name
+                                .and_then(|k| usize::try_from(k).ok())
+                                .and_then(|k| window_names.get(k))
+                                .or_else(|| usize::try_from(l.speaker).ok().and_then(|k| speaker_names.get(k)))
+                                .map(String::as_str);
                             if std::env::var("BARREL_TEXT_LOG").is_ok() {
                                 eprintln!("frame {frame}: line {:?}: {}", name, l.text);
                             }

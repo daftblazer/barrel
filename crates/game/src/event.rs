@@ -148,7 +148,10 @@ pub enum Step<'a> {
     /// A line of dialogue (or system text) to show.
     /// `expression` is the speaker's face from this line on and `gesture` a body gesture to
     /// play, when the line sets them (the message's fourth and third fields; -1 leaves them).
-    Message { index: usize, speaker: i32, text: String, expression: Option<i32>, gesture: Option<i32> },
+    /// `name` is the name the window shows (the message's second field: an entry of the
+    /// executable's speaker-name table, `barrel_formats::layout::speaker_names`; "???" before a
+    /// character is introduced).
+    Message { index: usize, speaker: i32, name: Option<i32>, text: String, expression: Option<i32>, gesture: Option<i32> },
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
     /// counts down by each frame's elapsed time).
     Wait { seconds: f32 },
@@ -372,7 +375,7 @@ impl<'a> Player<'a> {
                 for i in *first as usize..=(*last as usize) {
                     if let Some(m) = self.messages.get(i) {
                         let field = |k: usize| m.fields.get(k).copied().filter(|&v| v >= 0);
-                        out.push(Step::Message { index: i, speaker: m.speaker, text: m.repaired_text(), expression: field(3), gesture: field(2) });
+                        out.push(Step::Message { index: i, speaker: m.speaker, name: field(1), text: m.repaired_text(), expression: field(3), gesture: field(2) });
                     }
                 }
             }

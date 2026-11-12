@@ -119,3 +119,18 @@ pub fn still(pe: &Pe, n: u32) -> Option<Still> {
     let file = text_at(pe, u64_at(pe, rec + 24)?)?;
     Some(Still { folder: folder.trim_end_matches('/').to_string(), file, size: [w as f32 * sx, h as f32 * sy] })
 }
+
+/// The names the message window shows (an `ebm` line's second field indexes it): 40-byte records
+/// `{u64 name, i32 3, i32 -1, u32 0, f32 × 4 (255)}` from `0x1408117a0` in the English
+/// executable: the cast (0 Escha to 17 Flameu, as `Chara.xml`), then names for those not
+/// introduced or not named (19 "Gloomy Man" ... 59 "???", 60 "!!!", 62 "Everyone" ...).
+pub const SPEAKER_NAMES_EN: u64 = 0x1_4081_17a0;
+
+pub fn speaker_names(pe: &Pe) -> Vec<String> {
+    let mut out = Vec::new();
+    for k in 0..4096u64 {
+        let Some(name) = u64_at(pe, SPEAKER_NAMES_EN + 40 * k).and_then(|p| text_at(pe, p)) else { break };
+        out.push(name);
+    }
+    out
+}

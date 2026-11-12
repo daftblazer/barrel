@@ -794,3 +794,12 @@ that place them are tables in the executable (English addresses; `crates/formats
 
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
+
+## The message window's names
+
+An `ebm` line's second field (Escha) is the name the window shows: an index into the English
+executable's speaker-name table at `0x1408117a0` (40-byte records `{u64 name, i32 3, i32 -1,
+u32 0, f32 × 4 255}`; `layout::speaker_names`). Entries 0 to 17 are the cast as in `Chara.xml`;
+the rest name those not yet introduced or never named: 59 "???" (Clone's first lines in
+`EVENT_MM01_OP1_111`, as the game shows them), 60 "!!!", 62 "Everyone", 19 "Gloomy Man" and
+the like. The field is usually the speaker's own number (Clone: 16 in 365 lines, 59 in 5).
