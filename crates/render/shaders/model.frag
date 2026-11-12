@@ -60,6 +60,17 @@ void main() {
         color = vec4(field_light * c.rgb * pc.params.w, 1.0);
         return;
     }
+    vec3 col;
+    if ((pc.flags & 2u) != 0u) {
+        // An eye (CharaEYE): the white and iris (already laid together, the iris by its
+        // alpha; the specular is not done) under the light colour at 0.65 of its weight, then
+        // the highlights (the mask slot) tinted by the rim colour at up to 0.2, by their alpha.
+        vec4 kw = look.light_color;
+        vec3 lit = soft_light(c.rgb, vec4(kw.rgb, kw.w * 0.65));
+        vec4 hl = texture(mask, uv);
+        vec4 rw = look.rim_color;
+        col = mix(lit, soft_light(hl.rgb, vec4(rw.rgb, min(rw.w, 0.2))), hl.a);
+    } else {
     // 1. The toon step on a half-Lambert term, toward the character light.
     float h = clamp((dot(n, -normalize(look.light_dir.xyz)) + 1.0) * 0.5, 0.0, 1.0);
     float t = clamp((h - 0.546875) * 10.66667, 0.0, 1.0);
@@ -71,7 +82,8 @@ void main() {
     float r = max((1.0 - abs(dot(n, v))) * clamp((dot(n, -normalize(look.rim_dir.xyz)) + 1.0) * 0.5, 0.0, 1.0), 0.0);
     r = clamp((r - 0.3) * 32.0, 0.0, 1.0) * 0.8;
     vec3 rim = clamp(soft_light(c.rgb * r, look.rim_color), 0.0, 1.0);
-    vec3 col = 1.0 - (1.0 - lit) * (1.0 - rim);
+    col = 1.0 - (1.0 - lit) * (1.0 - rim);
+    }
     // 5. The point lights, laid over (overlay blend), weighted by their brightest channel
     // times the field's point light strength.
     vec3 L = scene_light;

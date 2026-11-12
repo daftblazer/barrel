@@ -167,3 +167,20 @@ and green (each divided by their sum plus 1/1024), at the world position's x and
 `texsize0`; colour = `(v2 + s·lit·v6) × layers + (v8 + s·lit·v7) × layers.a`, then the fog,
 and × 0.5 written in (the HDR range's inverse). The renderer's terrain takes the same
 per-vertex light as the field's models (with a white vertex colour) on its blended layers.
+
+## Eyes (`CharaEYEL.g1s`/`CharaEYER.g1s`, pixel program 12)
+
+Four textures: `sDiffusePupWH` (the white, at the model's UVs), `sDiffusePup` (the iris, at
+UVs moved by `g_UVOffsetScaleL`/`R`: `(uv - offset - 0.5) / scale + 0.5`, how the eyes look
+about), `sSpecularPup` and `sDiffusePupHI` (the highlights, at the iris's UVs). The iris plus
+`specular × sSpecularPup` (Blinn-Phong toward the view turned by `atSpecularLightOffset`, power
+`g_specularPower`, only where the character light reaches) is laid over the white by the
+iris's alpha; the light colour's soft light follows at 0.65 of its weight; the highlights,
+under the rim colour's soft light at no more than 0.2, are laid over by their alpha; then the
+point lights, fog, `atColor` and the HDR range as for the body. An eye material's textures are
+in that order (white, iris, specular, highlights).
+
+The renderer lays the iris over the white when it loads them (the iris's UVs are the white's
+while the offset is 0 and the scale 1) and shades eyes (the `eye` flag) with the light colour
+and the highlights; the specular is not done (`atSpecularLightOffset` and `g_specularPower`
+are set by the engine, not read yet), nor the look-about offset.

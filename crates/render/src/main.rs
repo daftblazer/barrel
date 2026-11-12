@@ -94,8 +94,11 @@ struct Draw {
     overlay: Option<usize>,
     /// Which of [`Scene::instances`] places it.
     instance: u32,
-    /// The material's mask (`docs/shading.md`, "Which texture is which"), if it has one.
+    /// The material's mask (`docs/shading.md`, "Which texture is which"), if it has one; for
+    /// an eye, its highlights.
     mask: Option<usize>,
+    /// Shaded as an eye (`CharaEYE`: `docs/shading.md`, "Eyes").
+    eye: bool,
     /// The field (in the order the scene loaded them) it belongs to; None for what is drawn
     /// in every field (the event's characters).
     field: Option<u16>,
@@ -473,11 +476,17 @@ impl Scene {
                 .filter(|m| m.textures.len() >= 4 && m.textures.iter().all(|t| t.subtype != 1))
                 .map(|m| (m.textures[1].index as usize).min(textures.saturating_sub(1)));
             // The mask: the first subtype-0 texture after the colour.
-            let mask = material.and_then(|m| {
-                let at = m.textures.iter().position(|t| t.index as usize == texture)?;
-                m.textures[at + 1..].iter().find(|t| t.subtype == 0).map(|t| (t.index as usize).min(textures.saturating_sub(1)))
-            });
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, field: self.field });
+            // An eye's highlights are its fourth texture.
+            let eye = overlay.is_some();
+            let mask = if eye {
+                material.and_then(|m| m.textures.get(3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)))
+            } else {
+                material.and_then(|m| {
+                    let at = m.textures.iter().position(|t| t.index as usize == texture)?;
+                    m.textures[at + 1..].iter().find(|t| t.subtype == 0).map(|t| (t.index as usize).min(textures.saturating_sub(1)))
+                })
+            };
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, field: self.field });
         }
         Ok(())
     }
@@ -2339,8 +2348,9 @@ fn main() -> Result<()> {
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
         for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
-            // The instance, and whether it is shaded as a character (not part of a field).
-            let flags = u32::from(draw.field.is_none());
+            // The instance, and whether it is shaded as a character (not part of a field) and
+            // as an eye.
+            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
             let mut per_draw = [0u8; 8];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
             per_draw[4..].copy_from_slice(&flags.to_le_bytes());
