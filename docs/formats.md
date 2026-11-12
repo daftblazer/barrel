@@ -450,7 +450,18 @@ back until its top records are whole. A game save's top records: `dlc`, `event`
 `item` (`m_unitKago` the basket, `m_unitContainer`, the `...Important` pair, `m_unitMaterial`,
 `limitSize`, `ID`), `time`, `fieldmap_effect`, `event_check`, `date`, `global`, `mix_lv`
 (`m_lv`, `m_exp`), `explore_equip`, `worldmap`, ... `barrel save FILE` prints the header and
-the record tree.
+the record tree (`BARREL_SAVE_BYTES=n` adds each record's first bytes).
+
+Fields read so far (`save::summary`): `money` an i32 (the header's fourth summary value),
+`mix_lv/m_lv` and `m_exp` the alchemy level (the header's fifth value) and experience, `date`
+a u32 first (229 in one save; a day count, presumably), `item/limitSize` the basket's and the
+container's sizes (60, 999). The item lists (`m_unitKago` 120 slots, `m_unitContainer` 999,
+`m_unitMaterial` 200, the `...Important` pair 100 each) are 36-byte units (`save::ItemUnit`):
+a serial (+0; `item/ID` holds the next), the `itemData.xml` row (+2), the quality as a float
+(+4), three trait rows (+8), a word the battle code checks (+0xe), four effect rows (+0x10),
+a word (+0x18) and four counts (+0x1c ...: the battle code's uses left first); a serial of
+0xffff marks an empty slot. One save's basket reads Paper Scraps, Glass Core, Antique Stone, ...
+(`BARREL_ITEMS=itemData.xml` names them in `barrel save`).
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

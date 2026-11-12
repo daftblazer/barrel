@@ -812,12 +812,21 @@ fn save(file: &Path) -> Result<()> {
     };
     let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
     println!("{} coded bytes → {} bytes of state", body.len(), state.len());
+    // BARREL_SAVE_BYTES=n: the first n bytes of each record as well.
+    fn peek(d: &[u8]) -> String {
+        let n: usize = std::env::var("BARREL_SAVE_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        if n == 0 {
+            return String::new();
+        }
+        let hex: Vec<String> = d.iter().take(n).map(|b| format!("{b:02x}")).collect();
+        format!(" {}", hex.join(""))
+    }
     fn show(r: &barrel_formats::save::Record, depth: usize) {
         use barrel_formats::save::Body;
         let pad = "  ".repeat(depth);
         match &r.body {
-            Body::Data(d) => println!("{pad}{} [{}]", r.name, d.len()),
-            Body::Raw(d) => println!("{pad}{} raw {}", r.name, d.len()),
+            Body::Data(d) => println!("{pad}{} [{}]{}", r.name, d.len(), peek(d)),
+            Body::Raw(d) => println!("{pad}{} raw {}{}", r.name, d.len(), peek(d)),
             Body::Group(c) => {
                 println!("{pad}{} {{{}}}", r.name, c.len());
                 for x in c {
@@ -826,8 +835,22 @@ fn save(file: &Path) -> Result<()> {
             }
         }
     }
-    for r in barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))? {
-        show(&r, 0);
+    let records = barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
+    for r in &records {
+        show(r, 0);
+    }
+    let s = barrel_formats::save::summary(&records);
+    println!("money {:?}, alchemy (level, exp) {:?}, day {:?}, sizes {:?}", s.money, s.alchemy, s.day, s.limits);
+    // BARREL_ITEMS=path/to/itemData.xml names the items.
+    let names: Vec<String> = std::env::var("BARREL_ITEMS")
+        .ok()
+        .and_then(|p| read(Path::new(&p)).ok())
+        .and_then(|d| barrel_formats::table::parse(&d).ok())
+        .map(|t| t.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect())
+        .unwrap_or_default();
+    for (label, list) in [("basket", &s.basket), ("container", &s.container), ("materials", &s.materials)] {
+        let shown: Vec<String> = list.iter().take(12).map(|u| format!("{} q{}", names.get(u.item as usize).cloned().unwrap_or_else(|| format!("#{}", u.item)), u.quality)).collect();
+        println!("{label} {}: {}{}", list.len(), shown.join(", "), if list.len() > 12 { ", ..." } else { "" });
     }
     Ok(())
 }

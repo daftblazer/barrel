@@ -284,6 +284,83 @@ fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
     Some(out)
 }
 
+/// One held item (36 bytes; the basket, container and material lists are runs of these):
+/// a serial number (+0; the `item/ID` record holds the next), the `itemData.xml` row (+2),
+/// the quality as a float (+4), three trait rows (+8, -1 none), a word the battle code checks
+/// (+0xe), four effect rows (+0x10), a word (+0x18) and the use counts (+0x1c, +0x1e, +0x20,
+/// +0x22; the battle code reads +0x1c as the uses left). A serial of 0xffff is an empty slot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemUnit {
+    pub serial: u16,
+    pub item: i16,
+    pub quality: f32,
+    pub traits: [i16; 3],
+    pub word_e: u16,
+    pub effects: [i16; 4],
+    pub word_18: u32,
+    pub counts: [i16; 4],
+}
+
+pub const ITEM_UNIT: usize = 36;
+
+/// The items of a list record (empty slots left out).
+pub fn item_units(d: &[u8]) -> Vec<ItemUnit> {
+    let i16_at = |c: &[u8], o: usize| i16::from_le_bytes([c[o], c[o + 1]]);
+    d.chunks_exact(ITEM_UNIT)
+        .filter(|c| u16::from_le_bytes([c[0], c[1]]) != 0xffff)
+        .map(|c| ItemUnit {
+            serial: u16::from_le_bytes([c[0], c[1]]),
+            item: i16_at(c, 2),
+            quality: f32::from_le_bytes(c[4..8].try_into().unwrap()),
+            traits: [i16_at(c, 8), i16_at(c, 10), i16_at(c, 12)],
+            word_e: u16::from_le_bytes([c[14], c[15]]),
+            effects: [i16_at(c, 16), i16_at(c, 18), i16_at(c, 20), i16_at(c, 22)],
+            word_18: u32::from_le_bytes(c[24..28].try_into().unwrap()),
+            counts: [i16_at(c, 28), i16_at(c, 30), i16_at(c, 32), i16_at(c, 34)],
+        })
+        .collect()
+}
+
+/// What a game save's state says in plain numbers (records read so far).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Summary {
+    /// `money` (the header's fourth summary value too).
+    pub money: Option<i32>,
+    /// `mix_lv/m_lv`, `m_exp`: the alchemy level (the header's fifth value) and experience.
+    pub alchemy: Option<(i32, i32)>,
+    /// `date`'s first u32 (229 in one save: a day count, presumably).
+    pub day: Option<u32>,
+    /// `item/limitSize`: the basket's and the container's sizes (60, 999).
+    pub limits: Option<(i32, i32)>,
+    /// `item/m_unitKago`, `m_unitContainer`, `m_unitMaterial`.
+    pub basket: Vec<ItemUnit>,
+    pub container: Vec<ItemUnit>,
+    pub materials: Vec<ItemUnit>,
+}
+
+pub fn summary(records: &[Record]) -> Summary {
+    let top = |n: &str| records.iter().find(|r| r.name == n);
+    let bytes = |r: Option<&Record<'_>>| -> Option<Vec<u8>> {
+        match &r?.body {
+            Body::Data(d) | Body::Raw(d) => Some(d.to_vec()),
+            Body::Group(_) => None,
+        }
+    };
+    let i32_at = |d: &[u8], o: usize| d.get(o..o + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
+    let item = top("item");
+    let list = |n: &str| bytes(item.and_then(|r| r.child(n))).map(|d| item_units(&d)).unwrap_or_default();
+    let mix = top("mix_lv");
+    Summary {
+        money: bytes(top("money")).and_then(|d| i32_at(&d, 0)),
+        alchemy: (|| Some((i32_at(&bytes(mix?.child("m_lv"))?, 0)?, i32_at(&bytes(mix?.child("m_exp"))?, 0)?)))(),
+        day: bytes(top("date")).and_then(|d| i32_at(&d, 0)).map(|v| v as u32),
+        limits: bytes(item.and_then(|r| r.child("limitSize"))).and_then(|d| Some((i32_at(&d, 0)?, i32_at(&d, 4)?))),
+        basket: list("m_unitKago"),
+        container: list("m_unitContainer"),
+        materials: list("m_unitMaterial"),
+    }
+}
+
 /// The top records of a decoded state ([`decode`]'s output): its header skipped, records read
 /// until the zero padding.
 pub fn state_records(state: &[u8]) -> Result<Vec<Record<'_>>, Error> {
@@ -376,5 +453,16 @@ mod tests {
         assert_eq!(r[0].name, "system_data");
         assert_eq!(r[0].child("ipu").unwrap().body, Body::Data(&[7, 8]));
         assert_eq!(r[0].child("FLAG").unwrap().body, Body::Raw(&[0, 0, 9]));
+    }
+
+    #[test]
+    fn item_units_skip_empty_slots() {
+        let mut d = vec![0xffu8; ITEM_UNIT * 2];
+        let unit: [u8; 36] = [0x13, 1, 0x0b, 0, 0, 0, 0x20, 0x42, 0x37, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0];
+        d[ITEM_UNIT..].copy_from_slice(&unit);
+        let u = item_units(&d);
+        assert_eq!(u.len(), 1);
+        assert_eq!((u[0].serial, u[0].item, u[0].quality, u[0].traits), (0x113, 11, 40.0, [0x37, -1, -1]));
+        assert_eq!((u[0].effects, u[0].counts), ([-1; 4], [1, 1, 0, 1]));
     }
 }
