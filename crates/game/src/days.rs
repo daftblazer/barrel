@@ -28,7 +28,12 @@ pub enum Reason {
     /// from the Southern Ruins to Colseit moved the running game from 8/20 to 8/24, the
     /// route's four days.
     Travel,
-    /// 7: one day, from field code.
+    /// 5: field time spent (`0x1400a3bf0`, not followed).
+    Five,
+    /// 6: field time a battle spent (the battle setup's +0x18, `0x140084c50` and others).
+    Battle,
+    /// 7: one day, from field code: leaving a field with time carried, or moving between
+    /// regions.
     Field,
     /// 8: one day, `0x14039b3d2`.
     Eight,
@@ -88,6 +93,8 @@ pub struct World {
     pub rolls: Vec<i32>,
     /// Each ware's stock, in the wares' order.
     pub stock: Vec<Stock>,
+    /// Field time carried, in tenths of a day (`0x1410782e4`).
+    pub tenths: i32,
 }
 
 /// What the days need to look up.
@@ -121,6 +128,7 @@ impl World {
             board: [None; 10],
             rolls: Vec::new(),
             stock: wares.iter().map(Stock::new).collect(),
+            tenths: 0,
         }
     }
 
@@ -183,6 +191,9 @@ impl World {
             })
             .collect();
         World {
+            // The carried field time is not read from the save yet (presumably its `time`
+            // record): it starts at none.
+            tenths: 0,
             date: s.day.unwrap_or_else(calendar::first_day),
             rng,
             board_offset: s.board_seed.unwrap_or(0),
@@ -216,6 +227,28 @@ impl World {
 
     /// Travels a world-map route: its trip days (fewer once the events that shorten it have
     /// been seen; `names` is the executable's `EVENT_*` enum, in order) pass.
+    /// Field time spent (`0x14035bff0 (tenths, reason)`): added to the tenths carried, each whole
+    /// ten passing a day for `reason`, the rest carried on.
+    pub fn spend_time(&mut self, tenths: i32, reason: Reason, t: &Tables) -> Vec<usize> {
+        let total = self.tenths + tenths;
+        let days = total / 10;
+        self.tenths = total - days * 10;
+        if days > 0 { self.advance(days as u32, reason, t) } else { Vec::new() }
+    }
+
+    /// Leaving a field (`0x14007ab30`, when the area left is not a town): any tenths carried
+    /// make a whole day pass (reason 7) and are dropped. Moving between areas of different
+    /// regions (`0x140079540`: the areas' first words differ) also passes a day, through
+    /// [`World::advance`] with [`Reason::Field`].
+    pub fn leave_field(&mut self, t: &Tables) -> Vec<usize> {
+        if self.tenths > 0 {
+            self.tenths = 0;
+            self.advance(1, Reason::Field, t)
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn travel(&mut self, route: &barrel_formats::world::Area, names: &[&str], t: &Tables) -> Vec<usize> {
         let days = route.trip_days(|e| names.get(e as usize).is_some_and(|n| (t.seen)(n)));
         self.advance(days.max(0) as u32, Reason::Travel, t)
@@ -282,6 +315,22 @@ mod tests {
         assert_eq!((w.friendship[2], w.slot[2], w.slot[0], w.slot[1]), (14.5, Some(1), Some(0), None));
         assert_eq!((w.rank.rank, w.rank.points, w.rank.by_period[..2].to_vec()), (3, 1565, vec![1539, 26]));
         assert_eq!((w.months.len(), w.months[0].rank, w.months[0].state), (MONTHS, 3, 2));
+    }
+
+    #[test]
+    fn field_time_in_tenths() {
+        let ranks = [crate::rank::Rank { points: 0, coal: 300, percent: 10, rates: [0; 7], number: 1 }];
+        let t = Tables { requests: &[], wares: &[], ranks: &ranks, recipe_cost: &|_| 100, seen: &|_| true, cleared: &|_| true, known: &|_| true, level: &|_| 1 };
+        let mut w = World::new_game(Rng::from_state([1, 2, 3, 4]), 0, &[]);
+        let start = w.date;
+        w.spend_time(7, Reason::Battle, &t);
+        assert_eq!((w.date, w.tenths), (start, 7));
+        w.spend_time(15, Reason::Battle, &t);
+        assert_eq!((w.date, w.tenths), (start + 2, 2));
+        w.leave_field(&t);
+        assert_eq!((w.date, w.tenths), (start + 3, 0));
+        w.leave_field(&t);
+        assert_eq!(w.date, start + 3);
     }
 
     #[test]

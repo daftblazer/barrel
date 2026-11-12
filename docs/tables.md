@@ -612,7 +612,14 @@ A new game sets the date to April 1st of school year 1 (`0x14035be60`, and `0x14
 reason 1 (`0x140052b5a` and two more), 2 (synthesis, its days, `0x14030d8a6`), 3 (one day,
 `0x14003412b`), 4 (a record's +0x24 days, `0x14007bf51`: world-map travel, presumably), 7 (one
 day, field code `0x1400795a8`, `0x14007ab66`) and 8 (one day, `0x14039b3d2`, `0x14039ba9c`).
-For each day it adds one (`0x1402f03a0`), works the new day (`0x14035bb50`) and queues a
+Field time is counted in tenths of a day: `0x14035bff0 (tenths, reason)` adds to the tenths
+carried (`0x1410782e4`), passes a day for each whole ten and keeps the rest; battles spend
+theirs that way (reason 6, the battle setup's +0x18, `0x140084c50` and three more), as does
+`0x1400a3bf0` (reason 5) and `0x1400c1760` (one tenth, reason 0). Leaving a field that is not a
+town with tenths carried passes a whole day and drops them (`0x14007ab30`, reason 7;
+`0x14035bef0` clears the carry, as does a new game, `0x14035be60`), and so does moving between
+areas of different regions (`0x140079540`: the areas' first words differ). `days::World::
+spend_time`, `leave_field`. For each day it adds one (`0x1402f03a0`), works the new day (`0x14035bb50`) and queues a
 message (kind 8, the reason) at `0x140df9988`; then `0x14035b930 (days, reason)`. A new day:
 1165 records of 0x24 bytes from `0x1410a42e0`, one per event (`EVENT_*` order; the saved event records, `docs/formats.md`), each get a roll from 0 to 100 (each a draw from
 the random generator), then every character but one (`0x140330120 (0x141098a48)`, the
