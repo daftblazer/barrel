@@ -1684,10 +1684,8 @@ fn main() -> Result<()> {
     if let (Some(c), true) = (event_camera, use_event_camera) {
         // Game space: yaw about y from -z, pitch up; then mirror x like the vertices.
         let (yw, pt) = (c.yaw.to_radians(), c.pitch.to_radians());
-        // The camera sits at target + (-sin yaw, ., -cos yaw) × distance in game space: over
-        // the 168 story events whose camera is set before anyone moves, that sign puts the nearest
-        // character a median 9.7° off the view's centre (the other sign: 17.7°).
-        let back = Vec3::new(-yw.sin() * pt.cos(), pt.sin(), -yw.cos() * pt.cos());
+        // As the field camera builds it (barrel_game::field_camera::FieldCamera::eye_target).
+        let back = Vec3::new(yw.sin() * pt.cos(), pt.sin(), yw.cos() * pt.cos());
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
         target = c.target * mirror;
         eye = c.eye.unwrap_or(c.target + back * c.distance) * mirror;

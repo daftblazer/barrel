@@ -148,13 +148,14 @@ impl FieldCamera {
     }
 
     /// The point looked at (target + offset) and the eye, in game space: the eye sits at
-    /// (-sin yaw · cos pitch, sin pitch, -cos yaw · cos pitch) × distance from it (the yaw's
-    /// sign is settled in `docs/events.md`).
+    /// (sin yaw · cos pitch, sin pitch, cos yaw · cos pitch) × distance from it, as
+    /// `0x1401e68f0` builds it (`(0, 0, distance)` turned by the angles `{x: -pitch, y: yaw}`,
+    /// `0x14004fbd0`, row vectors).
     pub fn eye_target(&self) -> ([f32; 3], [f32; 3]) {
         let at: [f32; 3] = std::array::from_fn(|i| self.target[i].now() + self.offset[i]);
         let (yaw, pitch) = (self.yaw.now().to_radians(), self.pitch.now().to_radians());
         let d = self.distance.now();
-        let back = [-yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos()];
+        let back = [yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos()];
         (std::array::from_fn(|i| at[i] + back[i] * d), at)
     }
 }
@@ -173,6 +174,8 @@ mod tests {
         assert_eq!(at, [825.0, -95.0, 1660.0]);
         assert_eq!(c.fov.now(), 17.5);
         assert!((eye[1] - (-95.0 + 1000.0 * 29.72f32.to_radians().sin())).abs() < 1e-2);
+        // Yaw -176.96°: the eye is behind the target along -z (cos < 0), a little to the -x side.
+        assert!(eye[2] < 1660.0 - 800.0 && eye[0] < 825.0);
         c.apply(&Change::read(0x7410_0003, &ops(&[-16397, 500])).unwrap());
         c.apply(&Change::read(0x7410_000b, &ops(&[1000, 500])).unwrap());
         c.apply(&Change::read(0x7410_000d, &ops(&[1077, -245, 1815, 500])).unwrap());

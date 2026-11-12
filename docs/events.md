@@ -160,26 +160,20 @@ view is not in the command (40° is used for now).
 on}`: the camera follows the character only when `on` is not 0, and otherwise follows nothing
 (`virtual +0x78(-1)`); the opening's `t18 0 0` turns following off, so `t20`'s target stands.
 
-The yaw's sign: the camera sits at target + offset + (-sin yaw · cos pitch, sin pitch,
--cos yaw · cos pitch) × distance in game space (then x is mirrored like the vertices). That was
-settled by the events rather than the code (the camera class builds its view without calling
-`sinf`/`cosf`, which is not read): over the 168 story events whose `t20` comes before anyone
-moves, this sign puts the nearest placed character a median 9.7° off the view's centre (112
-within 15°), the other sign 17.7° (74). `EVENT_MM01_OP1_111` then opens looking into the
-workshop at Escha and Clone. The field of view is still 40° (ours); the fields' own camera
-tables (`Saves/field/<FIELD>.xml`, `<camera>` points) use 22.5°, which events may share.
+**Where the eye is** (`0x1401e68f0`, settled from the code). The point looked at is the
+target plus the offset (+0xd0 and virtual +0x70). The eye is `(0, 0, distance)` (virtual +0x68)
+turned by the angles `{x: -pitch, y: yaw}` (virtual +0x60 and +0x58; `0x14004fbd0`, then
+`0x140029050`, row vectors) and added to it: target + (sin yaw · cos pitch, sin pitch,
+cos yaw · cos pitch) × distance, in game space (the renderer then mirrors x like the
+vertices). The field of view is `t20`'s third operand: the camera hands it to the view
+(`0x140415ba0`, +0x140), which halves it and takes its tangent for the projection
+(`0x1404142d5`). The pitch is the fourth. With these, `EVENT_MM01_OP1_111` shows Clone and
+Escha over the shoulder in the workshop, then Escha close up and walking through town.
 
-**Field of view and pitch.** Which `t20` operand is which was read from the events, and is
-not settled by the code yet (the value at +0x50..+0x58 is read back by the getter
-`0x1401ec4f0`; who uses it is next). Operand 3 is 22.5° in 140 of the 168 story events' first
-`t20` (else 30°, 45°, 40°, 21.5°), the value the fields' own camera tables give as `fov`
-(`Saves/field/<FIELD>.xml`, `<point ... fov="22.5">`), so it is taken as the field of view and
-operand 4 (0° to about 30°, sometimes negative) as the pitch. Operand 2 is 0 in all but one of
-1,450 `t20`s. The framing test (the nearest placed character's angle off the view's axis) can
-not tell pitches apart well, since the view always passes through the target: no pitch scores
-a median 4.98°, operand 4 as the pitch 6.73°, operand 4 negated 5.16°, operand 3 as the pitch
-9.7°. Some shots of `EVENT_MM01_OP1_111` look at the floor from close by or from inside a wall
-this way; screenshots from the game would settle it.
+Two guesses were made before the code was read, by checking which way of placing the eye
+put the event's characters nearest the centre of its first shot over the 168 story events
+(taking operand 3 as the pitch, and the yaw's sign in x only); both were wrong in ways that
+measure could not see, since the view always passes through the target.
 
 **The field camera over time** (`barrel_game::field_camera`). Each of its values is held as
 `{start, goal, now, seconds}` (yaw at +0x20 to +0x2c, pitch +0x50, a fourth angle +0x80,
