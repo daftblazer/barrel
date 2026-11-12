@@ -233,6 +233,30 @@ defaults for exposure (RG32F) and the reactive and transparency masks (R8). Two 
 (point and linear clamp) at bindings 1000/1001. On a reset, accumulation, the SPD mips and frame
 info (-1, 1) are cleared.
 
+**Timings** (`barrel-view --timings`: GPU timestamps at the stage boundaries, medians after 3
+warm-up frames). The first opening's still shot at 25 s, 30 frames, on the desktop's RDNA 4
+Radeon (Navi 48), in ms; "AA/up" includes the glow:
+
+| mode | 1080p scene | AA/up | 4K scene | AA/up |
+|---|---|---|---|---|
+| native | 1.00 | 0.09 | 2.24 | 0.14 |
+| MSAA 4× | 1.02 | 0.08 | 2.06 | 0.13 |
+| TAA + RCAS | 1.08 | 0.23 | 2.12 | 0.64 |
+| FSR 1 from 0.67 | 0.79 | 0.25 | 1.26 | 0.74 |
+| GSR 1 from 0.67 | 0.79 | 0.11 | 1.37 | 0.25 |
+| GSR 2 from 0.67 | 0.82 | 0.22 | 1.41 | 0.71 |
+| FSR 3.1 from 0.67 | 0.83 | 0.64 | 1.40 | 2.09 |
+| FSR 3.1 from 0.5 | 0.69 | 0.57 | 1.07 | 1.78 |
+| FSR 3.1 at 1.0 (native AA) | 1.08 | 0.82 | | |
+
+The shadow map is a steady 0.34 ms and the post pass 0.03 to 0.2. Escha's scenes are light: on
+this GPU no upscaler earns back its cost at 4K. FSR 3.1 costs more than the scene time it saves,
+and MSAA 4× costs about nothing. So the desktop presets keep full resolution and choose an
+anti-aliasing: `desktop-high` (MSAA 4×), `desktop-taa` (TAA + RCAS), `desktop-fsr3` (FSR 3.1 as
+native AA: the cleanest edges, at about 0.8 ms at 1080p). Upscalers are for weak GPUs:
+`handheld` (FSR 1 from 0.75) and `handheld-gsr2` (GSR 2 from two thirds), to be chosen
+between by timing them on the RP6.
+
 **FSR 2, 3 and 4: plan** (researched 2026-11-12).
 
 - *FSR 2 and FSR 3.1's upscaler* are one algorithm line, open under MIT: FSR 2.2's own

@@ -48,18 +48,24 @@ impl RenderSettings {
     pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
+    /// The desktop with FSR 3.1 as anti-aliasing at full resolution (its "native AA").
+    pub const DESKTOP_FSR3: RenderSettings = RenderSettings { fsr3: true, ..Self::DESKTOP };
+    /// The handhelds with GSR 2 from two thirds instead of FSR 1 from three quarters.
+    pub const HANDHELD_GSR2: RenderSettings = RenderSettings { scale: 2.0 / 3.0, upscaler: Upscaler::Bilinear, gsr2: true, ..Self::HANDHELD };
     /// The desktop with TAA in MSAA's place.
     pub const DESKTOP_TAA: RenderSettings = RenderSettings { taa: true, motion: true, jitter: true, sharpen: true, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
     pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false };
 
-    /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `handheld`).
+    /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `desktop-fsr3`, `handheld`, `handheld-gsr2`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
         match name {
             "desktop" => Some(Self::DESKTOP),
             "desktop-high" => Some(Self::DESKTOP_HIGH),
             "desktop-taa" => Some(Self::DESKTOP_TAA),
+            "desktop-fsr3" => Some(Self::DESKTOP_FSR3),
+            "handheld-gsr2" => Some(Self::HANDHELD_GSR2),
             "handheld" => Some(Self::HANDHELD),
             _ => None,
         }

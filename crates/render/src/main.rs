@@ -28,6 +28,7 @@ mod present;
 mod settings;
 mod shadow;
 mod taa;
+mod timing;
 mod text;
 mod upscale;
 mod window;
@@ -1525,6 +1526,8 @@ fn main() -> Result<()> {
     let mut settings = settings::RenderSettings::DESKTOP;
     // `--show-motion`: the motion vectors shown in place of the frame (red across, green down).
     let mut show_motion = false;
+    // Print the GPU's time per stage at the end (--timings).
+    let mut timings = false;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1561,6 +1564,7 @@ fn main() -> Result<()> {
             "--taa" => settings.taa = true,
             "--gsr2" => settings.gsr2 = true,
             "--fsr3" => settings.fsr3 = true,
+            "--timings" => timings = true,
             "--sharpen" => settings.sharpen = true,
             "--show-motion" => {
                 settings.motion = true;
@@ -2134,6 +2138,7 @@ fn main() -> Result<()> {
     let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
     let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
     let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
+    let mut timer = if timings { timing::Timer::new(&gpu)? } else { None };
     let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
@@ -3236,6 +3241,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
     let frozen_ready = targets.frozen_ready;
     targets.frozen_ready = true;
     let record = |cb: vk::CommandBuffer| unsafe {
+        if let Some(t) = &timer {
+            t.begin(d, cb);
+        }
         // The frozen frame: copied from the last frame's scene when a cross-fade starts; given
         // its layout once otherwise.
         if freeze_now {
@@ -3280,6 +3288,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
             }
             d.cmd_end_render_pass(cb);
+        }
+        if let Some(t) = &timer {
+            t.mark(d, cb, 1);
         }
         let clear = [
             vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
@@ -3357,6 +3368,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             }
         }
         d.cmd_end_render_pass(cb);
+        if let Some(t) = &timer {
+            t.mark(d, cb, 2);
+        }
         // The glow from the scene's bright parts (the field's <hdr>; none: no glow).
         let (threshold, rate) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.hdr).unwrap_or((1.0, 0.0));
         if let Some(g) = &targets.glow {
@@ -3391,6 +3405,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         if let (Some(u), Some(p)) = (&targets.upscale, &upscale_pipelines) {
             u.record(d, p, cb);
         }
+        if let Some(t) = &timer {
+            t.mark(d, cb, 3);
+        }
         // The post pass: the scene back to its range with the glow, then the text over it.
         d.cmd_begin_render_pass(
             cb,
@@ -3414,6 +3431,9 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             layer.record(d, cb, width, height);
         }
         d.cmd_end_render_pass(cb);
+        if let Some(t) = &timer {
+            t.mark(d, cb, 4);
+        }
         if let Some((color, _)) = offscreen {
             let region = vk::BufferImageCopy::default()
                 .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
@@ -3440,9 +3460,15 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             d.destroy_fence(fence, None);
             d.free_command_buffers(pool, &cbs);
         }
+        if let Some(t) = timer.as_mut() {
+            t.collect(&gpu)?;
+        }
         continue;
     }
     gpu.submit(pool, record)?;
+    if let Some(t) = timer.as_mut() {
+        t.collect(&gpu)?;
+    }
     let mut pixels = vec![0u8; bytes as usize];
     unsafe {
         let p = d.map_memory(rmem, 0, bytes, vk::MemoryMapFlags::empty())? as *const u8;
@@ -3510,6 +3536,10 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         }
         if let Some(p) = fsr3_pipelines {
             p.destroy(&gpu);
+        }
+        if let Some(t) = timer.take() {
+            t.report();
+            t.destroy(&gpu);
         }
         d.destroy_render_pass(render_pass, None);
         if let Some(v) = color_view {
