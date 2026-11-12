@@ -587,7 +587,9 @@ time is the distance over their mean (`0x1402f2e00`).
 The extra operand of `s18` (the move's +0x38) is how the mover faces while it goes
 (`0x1402f21a0`, once it has moved more than 0.01 across the ground): 0 keeps its facing, 1 turns it
 to the way it goes on the ground, 2 along the way in all three directions, tilting it up or down
-(the jumps and flights around the hero). The stage turns it for 1 and 2; the tilt is not played yet.
+(the jumps and flights around the hero): it turns +z onto the way it goes, which is the facing
+and then a turn about the mover's own x axis by minus the climb's angle. The stage plays both
+(`Body::tilt`, the snapshot's `tilts`); `s23` sets the tilt back with the rest of the rotation.
 
 Type 4 goes straight from where the thing is when the command runs to the position, in the
 given time (`0x1402f3530` updates it). With u the part of the time gone, the distance covered
@@ -677,7 +679,7 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: the tilt of `s18`'s facing mode 2, the field camera's
+Not yet: the field camera's
 unidentified angle (nearly always 0), characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at

@@ -176,6 +176,8 @@ pub struct Mover {
     /// along the way in all three directions (`0x1402f21a0`; the tilt is not played yet).
     face: u32,
     facing: Option<f32>,
+    /// The tilt (radians about the mover's own x axis) in facing mode 2.
+    tilt: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -283,7 +285,7 @@ impl Mover {
                     // The game's circle then never runs: the mover stays where it is.
                     return Some(Mover::arrived(from, from, face));
                 }
-                return Some(Mover { from: start, to: end, kind: MoverKind::Circle(c), left: t, position: start, face, facing: None });
+                return Some(Mover { from: start, to: end, kind: MoverKind::Circle(c), left: t, position: start, face, facing: None, tilt: None });
             }
             Move::Straight { seconds, ease, .. } => (MoverKind::Straight { seconds, ease }, seconds),
             Move::Speed { speed, accel, .. } => {
@@ -313,11 +315,11 @@ impl Mover {
             // The game's move is never started then; snapping to the end is assumed here.
             return Some(Mover::arrived(from, to, face));
         }
-        Some(Mover { from, to, kind, left, position: from, face, facing: None })
+        Some(Mover { from, to, kind, left, position: from, face, facing: None, tilt: None })
     }
 
     fn arrived(from: [f32; 3], to: [f32; 3], face: u32) -> Mover {
-        Mover { from, to, kind: MoverKind::Straight { seconds: 0.0, ease: 0 }, left: 0.0, position: to, face, facing: None }
+        Mover { from, to, kind: MoverKind::Straight { seconds: 0.0, ease: 0 }, left: 0.0, position: to, face, facing: None, tilt: None }
     }
 
     pub fn position(&self) -> [f32; 3] {
@@ -329,6 +331,12 @@ impl Mover {
     /// (`0x1402f21a0`: more than 0.01 along x or z).
     pub fn facing(&self) -> Option<f32> {
         self.facing
+    }
+
+    /// The tilt from the last frame's travel in facing mode 2 (radians about the mover's x
+    /// axis, after its facing).
+    pub fn tilt(&self) -> Option<f32> {
+        self.tilt
     }
 
     /// Seconds left (the move's +0x28, which `s21` compares with).
@@ -391,6 +399,11 @@ impl Mover {
         let d = sub(self.position, before);
         if (self.face == 1 || self.face == 2) && (d[0].abs() >= 0.01 || d[2].abs() >= 0.01) {
             self.facing = Some(d[0].atan2(d[2]));
+            if self.face == 2 {
+                // Mode 2 turns +z onto the way it goes: the yaw, then a turn about x by minus
+                // the climb's angle (the game's x turn takes +z to (0, -sin a, cos a)).
+                self.tilt = Some(-d[1].atan2((d[0] * d[0] + d[2] * d[2]).sqrt()));
+            }
         }
     }
 }
@@ -445,6 +458,20 @@ pub fn changes(word: u32, operands: &[u32]) -> Vec<(Part, Change)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn facing_mode_two_tilts() {
+        // Up a 45° slope: mode 2 faces the way and tilts by minus the climb; mode 1 only faces.
+        let to = Position { anchor: Anchor::World, offset: [0.0; 3] };
+        let m = Move::Speed { to, speed: 150.0, accel: [0.0; 3] };
+        let mut two = Mover::new([0.0; 3], [0.0, 100.0, 100.0], &m, 2).unwrap();
+        let mut one = Mover::new([0.0; 3], [0.0, 100.0, 100.0], &m, 1).unwrap();
+        two.step(0.1);
+        one.step(0.1);
+        assert_eq!(two.facing(), Some(0.0));
+        assert!((two.tilt().unwrap() + std::f32::consts::FRAC_PI_4).abs() < 1e-5);
+        assert_eq!(one.tilt(), None);
+    }
 
     #[test]
     fn jump_move() {

@@ -30,6 +30,8 @@ pub struct Snapshot {
     pub fov: Option<f32>,
     /// The manual camera's roll about its line of sight (radians; `t10`).
     pub roll: f32,
+    /// The characters that are tilted (radians about their own x axis, after the facing).
+    pub tilts: BTreeMap<u32, f32>,
 }
 
 impl Snapshot {
@@ -58,7 +60,8 @@ impl Snapshot {
             (_, b) => b,
         };
         let roll = before.roll + (after.roll - before.roll) * alpha;
-        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target), fov, roll }
+        let tilts = after.tilts.iter().map(|(&n, &t)| (n, before.tilts.get(&n).map_or(t, |&t0| t0 + short_way(t0, t) * alpha))).collect();
+        Snapshot { characters, eye: point(before.eye, after.eye), target: point(before.target, after.target), fov, roll, tilts }
     }
 }
 
@@ -131,6 +134,8 @@ pub struct Body {
     pub position: [f32; 3],
     /// Radians about the vertical axis, 0 towards +z.
     pub facing: f32,
+    /// Radians about its own x axis, after the facing: a mover's tilt in facing mode 2.
+    pub tilt: f32,
     mover: Option<Mover>,
     /// The motion it plays; `None` until a command sets one.
     pub motion: Option<Playing>,
@@ -338,7 +343,7 @@ impl Stage {
     pub fn apply(&mut self, step: &Step) {
         match step {
             Step::Place { character, position, .. } => {
-                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None, head: None, solid: true });
+                let b = self.characters.entry(*character).or_insert(Body { position: *position, facing: 0.0, tilt: 0.0, mover: None, turn: None, motion: None, expression: None, talking: false, gesture: None, head: None, solid: true });
                 b.position = *position;
                 b.mover = None;
             }
@@ -396,6 +401,7 @@ impl Stage {
             Step::Turn { character, rotation, .. } => match self.characters.get_mut(character) {
                 Some(b) => {
                     b.facing = rotation[1];
+                    b.tilt = rotation[0];
                     b.turn = None;
                 }
                 None => self.unresolved += 1,
@@ -527,6 +533,9 @@ impl Stage {
                 if let Some(f) = m.facing() {
                     b.facing = f;
                 }
+                if let Some(t) = m.tilt() {
+                    b.tilt = t;
+                }
             }
         }
         for p in [&mut self.eye, &mut self.target] {
@@ -579,7 +588,8 @@ impl Stage {
             }
             _ => (self.eye.position, self.target.position, None, self.roll.to_radians()),
         };
-        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target, fov, roll }
+        let tilts = self.characters.iter().filter(|(_, b)| b.tilt != 0.0).map(|(&n, b)| (n, b.tilt)).collect();
+        Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target, fov, roll, tilts }
     }
 
     /// Runs whole [`FRAME`]s until `time`.
@@ -741,13 +751,14 @@ mod tests {
 
     #[test]
     fn ticks_blend_for_the_screen() {
-        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]), fov: None, roll: 0.0 };
+        let a = Snapshot { characters: BTreeMap::from([(1, ([0.0; 3], 350f32.to_radians()))]), eye: None, target: Some([0.0; 3]), fov: None, roll: 0.0, tilts: BTreeMap::new() };
         let b = Snapshot {
             characters: BTreeMap::from([(1, ([10.0, 0.0, 0.0], 10f32.to_radians())), (2, ([5.0; 3], 0.0))]),
             eye: Some([1.0; 3]),
             target: Some([4.0, 0.0, 0.0]),
             fov: None,
             roll: 0.0,
+            tilts: BTreeMap::new(),
         };
         let m = Snapshot::blend(&a, &b, 0.25);
         let (p, f) = m.characters[&1];

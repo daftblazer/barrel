@@ -3017,8 +3017,10 @@ fn main() -> Result<()> {
                 }
                 a.last_t = t;
                 if let Some(&(pos, facing)) = shown.characters.get(&a.who) {
-                    instances[a.instance as usize].model =
-                        render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(facing), Vec3::from(pos)));
+                    // The facing, then the tilt about the character's own x axis (s18 mode 2).
+                    let tilt = shown.tilts.get(&a.who).copied().unwrap_or(0.0);
+                    let turn = glam::Quat::from_rotation_y(facing) * glam::Quat::from_rotation_x(tilt);
+                    instances[a.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(pos)));
                 }
                 let base = instances[a.instance as usize].palette as usize;
                 let clock = match a.division {
