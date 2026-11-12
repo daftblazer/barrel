@@ -133,7 +133,11 @@ pub struct Skill {
     /// 1 and 3 a character on the user's side (3: Howling's self-buff, heals are 1), 2 one on
     /// the other side (attacks, debuffs), 0 (passives) and 4 no side.
     pub target: i32,
-    /// Record +0x14: 1 only on the Floating Alchemy bombs (an area, presumably; not read).
+    /// The area kind (record +0x20, read by `0x14015f840` for the gatherer `0x1401a4430`):
+    /// 0 the target alone, 1 to 5 circles of 350 to 1,000 about it, 6 a line from the user
+    /// (`fight::Battle::area`). Over the 577 records: 0 361, 2 117, 5 50, 1 9, 3 4, 6 4.
+    /// (Word +0x14, read here before by mistake, is something else: 1 on the Floating
+    /// Alchemy bombs.)
     pub spread: i32,
     pub effects: Vec<SkillEffect>,
     pub description: String,
@@ -247,7 +251,8 @@ pub fn skills(pe: &Pe, table: u64) -> Option<Vec<Skill>> {
             category: u64_at(d, r + 8).and_then(|p| text(pe, p)).unwrap_or_default(),
             wait: v(2)?,
             target: v(0)?,
-            spread: v(1)?,
+            // The area kind (`0x14015f840` reads +0x20; word 1, +0x14, is something else).
+            spread: v(4)?,
             effects,
             description: u64_at(d, r + 88).and_then(|p| text(pe, p)).unwrap_or_default(),
         });

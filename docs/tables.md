@@ -822,7 +822,12 @@ not read yet, so all alike: they keep their order, the first at the centre), so 
 rules' nearest and farthest targets (`Battle::pick_target`) go by real distances. The party's
 stand-in works down the line (the first monster standing). `barrel battle EXE gN --from SAVE`
 fights encounter group N's draw with the save's party: group 12 drew two Ore Rats and two Stray
-Dogs against Escha, Katla and Wilbell, who won. Skills' spreads over several monsters are next.
+Dogs against Escha, Katla and Wilbell, who won. An action now reaches everyone its area holds (`Battle::area`, `act_with`): its effects are
+rolled once and then applied, in slot order, to each fighter on the centre's side within it
+(the centre first), each reported; the action's wait and count once. Kind 0 is the target alone
+(no two fighters stand within 50 in the game). Sizes are not carried yet (taken as 0). The
+skills' area word is record +0x20 (`battle_data::Skill::spread`; it had been read from +0x14,
+another word).
 
 Still to read: where the field enemy entries come from.
 

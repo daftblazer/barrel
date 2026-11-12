@@ -286,11 +286,15 @@ impl Battle {
                 (*e, amount, second)
             })
             .collect();
-        // Then each effect in its slot's order (`0x1401bde10`).
+        // Then, on each fighter in the skill's area (`Battle::area`), each effect in its slot's
+        // order (`0x1401bde10`), the same rolled amounts for all.
         // Fellings, reported after the action itself.
         let mut felled = Vec::new();
-        let (mut damage, mut healed, mut heals, mut hits) = (0, 0, false, 0);
-        for (e, amount, second) in rolled {
+        let mut events = Vec::new();
+        let mut hits = 0;
+        for target in self.area(who, target, skill.spread) {
+        let (mut damage, mut healed, mut heals) = (0, 0, false);
+        for &(e, amount, second) in &rolled {
             match e.act {
                 // Poison (`DAMAGE_HP_TURN`) on the target.
                 16 => battle::add_state(&mut self.fighters[target].states, 0x34, amount, second),
@@ -353,16 +357,56 @@ impl Battle {
                 }
             }
         }
-        let mut events = Vec::new();
         if heals {
             events.push(Event::Healed { who, skill: skill.name.clone(), target, amount: healed, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
         } else {
             self.after_effect(target, rng);
             events.push(Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
         }
+        }
         events.append(&mut felled);
         self.end_action(who, skill, rng);
         events
+    }
+
+    /// Who an action on `centre` reaches (`0x1401a4430`): the fighters on the centre's side still
+    /// standing (and the centre itself, standing or not) within the area `kind` gives. Kind 6 is a
+    /// line from `who` towards the centre, 150 either side and 2,000 long (`0x1401bc5c0`,
+    /// `0x1401bc700`); any other a circle about the centre on the ground of radius
+    /// `RADIUS[kind]` (`0x1408041d8`). The game also allows for each fighter's size (+0x358),
+    /// which Barrel's fighters do not carry yet (taken as 0).
+    /// Kind 0 (radius 50) is taken as the centre alone: in the game no two fighters stand that
+    /// close (the nudge parts monsters by their sizes; the party's places are hundreds apart),
+    /// and fighters built without places all stand at the origin.
+    pub fn area(&self, who: usize, centre: usize, kind: i32) -> Vec<usize> {
+        if kind <= 0 {
+            return vec![centre];
+        }
+        const RADIUS: [f32; 7] = [50.0, 350.0, 450.0, 650.0, 900.0, 1000.0, 150.0];
+        let c = self.fighters[centre].position;
+        let side = self.fighters[centre].side;
+        let reaches = |k: usize| {
+            let p = self.fighters[k].position;
+            if kind == 6 {
+                let u = self.fighters[who].position;
+                let (dx, dz) = (c[0] - u[0], c[2] - u[2]);
+                let len = (dx * dx + dz * dz).sqrt();
+                if len == 0.0 {
+                    return k == centre;
+                }
+                let (fx, fz) = (dx / len, dz / len);
+                let (px, pz) = (p[0] - u[0], p[2] - u[2]);
+                let along = px * fx + pz * fz;
+                let across = (px * fz - pz * fx).abs();
+                (0.0..=2000.0).contains(&along) && across <= 150.0
+            } else {
+                let r = RADIUS.get(kind.max(0) as usize).copied().unwrap_or(50.0);
+                ((p[0] - c[0]).powi(2) + (p[2] - c[2]).powi(2)).sqrt() < r
+            }
+        };
+        let mut out = vec![centre];
+        out.extend((0..self.fighters.len()).filter(|&k| k != centre && self.fighters[k].side == side && !self.fighters[k].down() && reaches(k)));
+        out
     }
 
     /// What happens to a target after an effect (`0x1401c0676` and on): a party member's guts
@@ -533,5 +577,21 @@ mod tests {
         let mut check = Rng::from_state([1, 2, 3, 4]);
         let r = check.next_31() % 120;
         assert_eq!(b.pick_target(0, 3, &c, &mut rng), Some(c[(r / 40) as usize]));
+    }
+
+    #[test]
+    fn areas_reach_by_distance() {
+        let block = StatBlock { level: 10, hp: 100, attack: 10, defense: 10, speed: 10, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let mut fighters: Vec<Fighter> = (0..4).map(|k| Fighter::new(&block, (k > 0) as u8, 999)).collect();
+        // The user at (0, 0, -800); monsters at the centre, 300 and 500 to the side.
+        fighters[0].position = [0.0, 0.0, -800.0];
+        fighters[2].position = [300.0, 0.0, 0.0];
+        fighters[3].position = [500.0, 0.0, 0.0];
+        let b = Battle::new(fighters);
+        assert_eq!(b.area(0, 1, 0), [1]);
+        assert_eq!(b.area(0, 1, 1), [1, 2]);
+        assert_eq!(b.area(0, 1, 5), [1, 2, 3]);
+        // A line from the user through the centre catches neither of those beside it.
+        assert_eq!(b.area(0, 1, 6), [1]);
     }
 }
