@@ -1676,7 +1676,11 @@ Units without a serial get the next (`0x14035cc30`: the counter at `0x14107c4c4`
 `item/ID`, given out then moved on by one, back to 0x3fff after 0x7fff), in lists of kinds 0
 to 4, 8 and 10; the item is then marked known (`0x140369840`, `0x140369520`). Taking out
 (`0x14029f6f0`) moves the items after it up one and empties the last, so a list stays packed
-from its start. `barrel_game::inventory`.
+from its start. Using an item once (`0x14029eca0`): while its +0xe word is 0, a roll in each
+of its traits' `ITEM_SUB_ITEM_PRESERV` slots (kind 43) adds to a percent chance of using
+nothing up; otherwise its uses left (+0x1c) drop by one, or to none with a trait of
+`ITEM_SUB_BTL_FORCED_LASTUSE` (kind 34, `0x14029e530`). A list's refill (`0x1402a1300`) puts
+every item's uses left back to its +0x1e plus +0x20. `barrel_game::inventory`.
 
 ## Monsters
 

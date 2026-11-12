@@ -113,6 +113,31 @@ impl ItemList {
     }
 }
 
+/// Using an item once (`0x14029eca0`): while its +0xe word is 0, a roll in each of its
+/// traits' `ITEM_SUB_ITEM_PRESERV` slots (kind 43) adds to a chance in percent, and on a roll
+/// under that nothing is used up; otherwise its uses left (+0x1c, `counts[0]`) drop by one, or
+/// to none when a trait has `ITEM_SUB_BTL_FORCED_LASTUSE` (kind 34, `0x14029e530`). Returns
+/// whether a use was spent.
+pub fn use_once(unit: &mut ItemUnit, traits: &[&barrel_formats::battle_data::Trait], kinds: &[&str], rng: &mut crate::rng::Rng) -> bool {
+    let preserve = if unit.word_e == 0 { crate::battle::kind_sum(traits, kinds, 43, rng) } else { 0 };
+    if rng.chance(preserve) {
+        return false;
+    }
+    let last_use = unit.word_e == 0 && kinds.get(34).is_some_and(|k| traits.iter().any(|t| t.slots.iter().any(|s| s.kind == *k)));
+    unit.counts[0] = if last_use { 0 } else { unit.counts[0] - 1 };
+    true
+}
+
+impl ItemList {
+    /// Every item's uses left back to full (`0x1402a1300`, a list method): its recipe's and
+    /// traits' uses (+0x1e) plus its own extra (+0x20).
+    pub fn refill(&mut self) {
+        for u in self.slots.iter_mut().flatten() {
+            u.counts[0] = u.counts[1] + u.counts[2];
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,6 +173,29 @@ mod tests {
         assert_eq!(basket.remove(0).map(|u| u.item), Some(10));
         assert_eq!(basket.slots[..3].iter().map(|s| s.map(|u| u.item)).collect::<Vec<_>>(), vec![Some(11), Some(12), None]);
         assert_eq!(basket.remove(5), None);
+    }
+
+    #[test]
+    fn uses_run_down_and_refill() {
+        use barrel_formats::battle_data::{Trait, TraitSlot};
+        let mut kinds = vec!["ITEM_SUB_X"; 44];
+        kinds[34] = "ITEM_SUB_BTL_FORCED_LASTUSE";
+        kinds[43] = "ITEM_SUB_ITEM_PRESERV";
+        let t = |kind: &str, v| Trait { name: String::new(), group: String::new(), level: 0, point: 0, kinds: [true; 9], slots: vec![TraitSlot { kind: kind.into(), min: v, max: v }] };
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        let mut u = unit(12);
+        u.counts = [3, 3, 0, 1];
+        assert!(use_once(&mut u, &[], &kinds, &mut rng));
+        assert_eq!(u.counts[0], 2);
+        let keep = t("ITEM_SUB_ITEM_PRESERV", 100);
+        assert!(!use_once(&mut u, &[&keep], &kinds, &mut rng));
+        let last = t("ITEM_SUB_BTL_FORCED_LASTUSE", 1);
+        assert!(use_once(&mut u, &[&last], &kinds, &mut rng));
+        assert_eq!(u.counts[0], 0);
+        let mut list = ItemList::new(0, 4);
+        list.slots[0] = Some(u);
+        list.refill();
+        assert_eq!(list.slots[0].unwrap().counts[0], 3);
     }
 
     #[test]
