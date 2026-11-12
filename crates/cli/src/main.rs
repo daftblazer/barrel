@@ -1268,7 +1268,18 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             };
             let (ids, rest) = item.split_once('@').ok_or_else(|| format!("{item}: write [#<row>:]<id>[,<id>]@<quality>x<count>"))?;
             let (quality, count) = rest.split_once('x').unwrap_or((rest, "1"));
-            let ids: Vec<i16> = ids.split(',').map(|v| v.parse().map_err(|_| format!("{item}: effect id"))).collect::<std::result::Result<_, String>>()?;
+            // Either effect ids, or ~fire,water,wind,earth: the effects the item's recipe lines give
+            // at those element values (`recipe::effect_at`), as synthesis would make it.
+            let ids: Vec<i16> = if let Some(values) = ids.strip_prefix('~') {
+                let b = row.ok_or_else(|| format!("{item}: ~ needs the item id (#<item>:)"))?;
+                let values: Vec<i32> = values.split(',').map(|v| v.parse().map_err(|_| format!("{item}: element value"))).collect::<std::result::Result<_, String>>()?;
+                let at = barrel_formats::recipe::find(&data, ESCHA_FIRST_RECIPE).ok_or("no recipe table found")?;
+                let recipes = barrel_formats::recipe::parse(&data, at).map_err(|e| format!("recipes: {e}"))?;
+                let r = recipes.iter().find(|r| i32::from(r.item) == b.item).ok_or_else(|| format!("{item}: no recipe makes item {}", b.item))?;
+                (0..4).filter_map(|k| barrel_formats::recipe::effect_at(&r.lines[k], values.get(k).copied().unwrap_or(0))).map(|e| e as i16).collect()
+            } else {
+                ids.split(',').map(|v| v.parse().map_err(|_| format!("{item}: effect id"))).collect::<std::result::Result<_, String>>()?
+            };
             let quality: f32 = quality.parse().map_err(|_| format!("{item}: quality"))?;
             let count: u32 = count.parse().map_err(|_| format!("{item}: count"))?;
             let effect_names = ids.iter().filter_map(|&i| item_rows.get(i as usize)).map(|r| r.name.clone()).collect::<Vec<_>>().join(" + ");
