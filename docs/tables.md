@@ -1557,7 +1557,8 @@ one per map number (`barrel_formats::gimmick`, `MAPS_EN`):
   Office, the Hall, the Town Entrance, the Plaza, the Balloon Docks, the Tavern, the Urban
   Area, the Apple Orchard, the Apple House and an events-only hallway. The Atelier's list holds
   the synthesis, refining, save, calendar and budget gimmicks; the Town Entrance's the world
-  map exit.
+  map exit. The refining device (`TRAIN`) has the event window (66, -1), from
+  `EVENT_MM04_SYS_040` on, the event the month report's "refining low" comment also waits for.
 - **Maps 12–107:** the 96 field areas in `AREA_*` order, from `0x140770230` (map 12 is
   `AREA_01_01`, "Twilight Forest 1", the Forest Entrance; its gimmicks stand around its
   gathering points).
@@ -1587,7 +1588,7 @@ there. A list is 0x60-byte gimmicks ended by -1:
 
 The Forest Entrance has its two exits (each a `WORLDMAP_CHANGE_EX` with a `MAP_CHANGE_INFO`
 at the same place) and three breakable objects; most areas have 4 or 5 gimmicks. Gathering
-points are not among them: they are the points table above. `barrel gimmicks EXE [AREA]`
+points are not among them: they are the points table above. `barrel gimmicks EXE [MAP]` (by map number: towns 0 to 11, the field areas from 12)
 lists them (`barrel_formats::gimmick`).
 
 ## Party growth

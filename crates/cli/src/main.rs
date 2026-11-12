@@ -51,7 +51,7 @@ usage:
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
-  barrel gimmicks EXE [AREA]   each field area's gimmicks: kind, place, size, event window
+  barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
@@ -1869,13 +1869,13 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-/// Lists each field area's gimmicks (or one area's).
+/// Lists each map's gimmicks (or one map's), by map number.
 fn gimmicks(exe: &Path, only: Option<usize>) -> Result<()> {
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::AREAS_EN, barrel_formats::gimmick::AREA_COUNT).ok_or("no gimmick table")?;
+    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT).ok_or("no gimmick table")?;
     for (k, a) in areas.iter().enumerate().filter(|(k, _)| only.is_none_or(|o| o == *k)) {
-        println!("{k:2} {} ({}), words {:?}: {} gimmicks", a.name, a.place, a.words, a.gimmicks.len());
+        println!("{k:3} {} ({}), words {:?}: {} gimmicks", a.name, a.place, a.words, a.gimmicks.len());
         if only.is_some() {
             for g in &a.gimmicks {
                 let [x, y, z] = g.position;
