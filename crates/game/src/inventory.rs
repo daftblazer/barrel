@@ -99,6 +99,21 @@ impl ItemList {
 }
 
 impl ItemList {
+    /// An exploration item box (`ItemBoxExplore`, vtable `0x14093a740`, two at `0x1410aedc0`,
+    /// saved as `explore_equip`): a 5 × 5 grid of 25 slots that may have gaps. It overrides the
+    /// count (`0x1402a5240`: the taken slots among all 25, row by row), the holds-item check
+    /// (`0x1402a5d70`: all 25 slots) and the refill (`0x1402a5f10`: empty slots skipped), which
+    /// [`ItemList`]'s own already do for any slot.
+    pub fn explore_box() -> ItemList {
+        ItemList::new(-1, 25)
+    }
+
+    /// Whether it holds item `item` (`0x1402a0c60`, the method at +0x80: the base list looks
+    /// through its packed items, the exploration box through all 25 slots).
+    pub fn holds(&self, item: i16) -> bool {
+        self.slots.iter().flatten().any(|u| u.item == item)
+    }
+
     /// Takes out the item in slot `index` (`0x14029f6f0`): those after it move up one and the
     /// last taken slot is emptied, so a list stays packed from its start. `None` past the items.
     pub fn remove(&mut self, index: usize) -> Option<ItemUnit> {
@@ -201,6 +216,16 @@ mod tests {
         list.slots[0] = Some(u);
         assert_eq!(list.refill(), 3);
         assert_eq!(list.slots[0].unwrap().counts[0], 3);
+    }
+
+    #[test]
+    fn exploration_boxes_keep_their_gaps() {
+        let mut b = ItemList::explore_box();
+        let mut u = unit(40);
+        u.counts = [0, 2, 1, 1];
+        b.slots[7] = Some(u);
+        assert_eq!((b.count(), b.holds(40), b.holds(41)), (1, true, false));
+        assert_eq!(b.refill(), 3);
     }
 
     #[test]
