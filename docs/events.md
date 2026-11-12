@@ -1286,6 +1286,9 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 | `CHARA_FRIEND_POINT_MT/LT/EQ c v` | the character has a record (`0x140361ad0`) and its friendship (`0x14032dba0`, a float) ≥ / ≤ / = `v` |
 | `ITEM_QUALITY_HAVE_MT/LT/EQ i lo hi n` | the counts (+0x22) summed over the basket's and the container's slots of item `i` (`0x60000002`: any) found by the lists' finder (`[+0x28]`, quality `lo` to `hi`) ≥ / ≤ / = `n` |
 | `DATE_IS/BEFORE/AFTER y m d`, `DATE_BETWEEN y m d y m d` | today =, ≤, ≥ the date, or within both (inclusive) |
+| `DATE_SLEEP/MIX/WORLDMOVE_IS_OVER y m d` | the day the sleep, mix or trip ends on (context +0x38) is on or after the date (`0x1402f08a0`, -1 fields ignored) |
+| `DATE_EVENT_SLEEP/MIX/WORLD_IS_OVER e n` | `e` seen and the day it was seen + `n` ≤ that day |
+| `PROGRAM_EXEC` | the first fired value is the event being checked (code asking for one event) |
 | the 14 one-value triggers (`MAP_COLLECT`, `ITEM_GET`, `MIX_SUCCESS`, `MIX_FAILED`, `EVENT_END`, `OTHER_TALK_BEFORE/AFTER_IS`, `OTHER_PLAYER_PUSH_BUTTON`, `GIMMICK_ACCESS_BEFORE/AFTER`, `ENEMY_KILL_IS`, `RECLAIM_TARGET_CLEAR`, `RECLAIM_FACILITY_BUILT`, `SUBJECT_CLEAR`) | the first operand equals the fired value |
 | `MIX_HP_EMPTY`, `MIX_ACCESS`, `BATTLE_ANNIHILATION(_ATELIER)`, `RECLAIM_KINGDOM_LV_UP`, `ATELIER_RETURN`, `ATELIER_SLEEP_MIX`, `MAP_WORLDMAP_ROUTE_MOVE`, `MEMORIES_LV_UP` | always, once their trigger group fired |
 | 41 codes on the switch's default (`CHIMU_*`, `MAP_TRAVERSAL_RITU_*`, `LICENSE_RANK_*`, `QUEST_ACCEPT_NUM_*`, the `RECLAIM_*` conditions, the `DLC_*` ones but `DLC`, `CHARA_WMPOINTER_BE_WITH_PLAYER`, `QUEST_(NOT_)OCCURRENCE`, `TRIGGER_ATELIER_ITEM_RETURN`) | never; the check data uses none of them |
@@ -1296,8 +1299,7 @@ wherever the pattern has -1. Both sides then count -1 as 1 and encode as `0x1402
 so a -1 field is ignored and (-1, -1, -1) always matches. The gate's words 8–10 and 11–13
 are such dates (today from the one to the other); 1,139 events leave all six at -1.
 
-Not read yet, by uses in the data: `MAP_FIELDAREA_BE` (27), the date triggers (20 each), `TRIGGER_PROGRAM_EXEC` (16),
-`CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
+Not read yet, by uses in the data: `MAP_FIELDAREA_BE` (27), `CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
 `CHARA_PARTY_IN` (6), and a few single uses.
 
 The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired values at

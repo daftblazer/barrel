@@ -3091,7 +3091,7 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         }
         let Some(words) = check.groups.get(g) else { return false };
         let Ok(cmds) = barrel_formats::event_check::commands(words) else { return false };
-        cmds.iter().all(|c| match es::command(c, (group, &fired), &w) {
+        cmds.iter().all(|c| match es::command(c, &es::Fired { group, values: &fired, day: w.today(), event: event as i32 }, &w) {
             Some(ok) => ok,
             None => {
                 *unread.entry(c.name()).or_default() += 1;

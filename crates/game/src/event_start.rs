@@ -131,11 +131,22 @@ pub const ANY: i32 = 0x6000_0002;
 /// "Not a region-0 map" in a map trigger's operands.
 pub const NOT_REGION_ZERO: i32 = 0x6000_0001;
 
+/// What fired (`0x140214d70`'s context): the trigger group, its values (+8), the day the
+/// sleep, mix or trip ends on (+0x38) and the event being checked (`0x140213670`'s third
+/// argument).
+#[derive(Clone, Copy, Debug)]
+pub struct Fired<'a> {
+    pub group: u8,
+    pub values: &'a [i32],
+    pub day: i32,
+    pub event: i32,
+}
+
 /// One command of a group (`0x140213670`). `fired` is the trigger group that fired and its
 /// values. None for the codes not read yet. `MT` and `LT` include equality.
-pub fn command(c: &Command, fired: (u8, &[i32]), w: &impl World) -> Option<bool> {
+pub fn command(c: &Command, fired: &Fired, w: &impl World) -> Option<bool> {
     if let Some(t) = c.trigger() {
-        if t != fired.0 {
+        if t != fired.group {
             return Some(false);
         }
     }
@@ -180,15 +191,18 @@ pub fn command(c: &Command, fired: (u8, &[i32]), w: &impl World) -> Option<bool>
         0x20 => !w.seen(op(0)),
         0x24..=0x26 => w.seen(op(0)) && cmp(w.today() - w.seen_day(op(0)), c.code - 0x24),
         0x27..=0x29 => cmp(w.flag(op(0)), c.code - 0x27),
-        0x7e | 0x7f => trigger_values(c.operands, fired.1, 4, Mode::FromTo, w),
-        0x80 => trigger_values(c.operands, fired.1, 1, Mode::Region, w),
+        0x7e | 0x7f => trigger_values(c.operands, fired.values, 4, Mode::FromTo, w),
+        0x80 => trigger_values(c.operands, fired.values, 1, Mode::Region, w),
+        0x91..=0x93 => date_order(fired.day, date(0)) >= 0,
+        0x94..=0x96 => w.seen(op(0)) && w.seen_day(op(0)) + op(1) <= fired.day,
+        0xa0 => fired.values.first() == Some(&fired.event),
         _ => match c.name() {
             "TRIGGER_MAP_COLLECT" | "TRIGGER_ITEM_GET" | "TRIGGER_MIX_SUCCESS" | "TRIGGER_MIX_FAILED"
             | "TRIGGER_EVENT_END" | "TRIGGER_OTHER_TALK_BEFORE_IS" | "TRIGGER_OTHER_TALK_AFTER_IS"
             | "TRIGGER_OTHER_PLAYER_PUSH_BUTTON" | "TRIGGER_GIMMICK_ACCESS_BEFORE"
             | "TRIGGER_GIMMICK_ACCESS_AFTER" | "TRIGGER_ENEMY_KILL_IS" | "TRIGGER_RECLAIM_TARGET_CLEAR"
             | "TRIGGER_RECLAIM_FACILITY_BUILT" | "TRIGGER_SUBJECT_CLEAR" => {
-                trigger_values(c.operands, fired.1, 1, Mode::Plain, w)
+                trigger_values(c.operands, fired.values, 1, Mode::Plain, w)
             }
             "TRIGGER_MIX_HP_EMPTY" | "TRIGGER_MIX_ACCESS" | "TRIGGER_BATTLE_ANNIHILATION"
             | "TRIGGER_BATTLE_ANNIHILATION_ATELIER" | "TRIGGER_RECLAIM_KINGDOM_LV_UP"
@@ -247,6 +261,10 @@ fn trigger_values(ops: &[i32], fired: &[i32], count: usize, mode: Mode, w: &impl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn f(group: u8, values: &[i32]) -> Fired<'_> {
+        Fired { group, values, day: 100, event: 7 }
+    }
 
     fn check(priority: i32, groups: Vec<Vec<i32>>) -> EventCheck {
         let mut words = [0; 14];
@@ -322,9 +340,9 @@ mod tests {
     #[test]
     fn player_friendship_items() {
         let g = [0x70000039, 1, 8, 0x7000003a, 0, 500, 0x7000000f, 3, 10, 0x70000007, 499, 0, 999, 1];
-        assert!(commands(&g).unwrap().iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        assert!(commands(&g).unwrap().iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
         let no = [0x7000000f, 4, 0, 0x70000039, 2, -5, 0x70000007, ANY, 50, 999, 1];
-        assert!(commands(&no).unwrap().iter().all(|c| command(c, (0, &[]), &W) == Some(false)));
+        assert!(commands(&no).unwrap().iter().all(|c| command(c, &f(0, &[]), &W) == Some(false)));
     }
 
     #[test]
@@ -346,26 +364,31 @@ mod tests {
     fn conditions_and_map_triggers() {
         let group = [0x7000001f, 15, 0x70000020, 31, 0x70000027, 4, 4, 0x70000025, 15, 3];
         let cmds = commands(&group).unwrap();
-        assert!(cmds.iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        assert!(cmds.iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
         let lt = commands(&[0x70000028, 4, 3]).unwrap();
-        assert_eq!(command(&lt[0], (0, &[]), &W), Some(false));
+        assert_eq!(command(&lt[0], &f(0, &[]), &W), Some(false));
         let t = commands(&[0x7000007f, 0, 4, 0, 5]).unwrap();
-        assert_eq!(command(&t[0], (1, &[0, 4, 0, 5]), &W), Some(true));
-        assert_eq!(command(&t[0], (1, &[0, 4, 0, 6]), &W), Some(false));
-        assert_eq!(command(&t[0], (0, &[0, 4, 0, 5]), &W), Some(false));
+        assert_eq!(command(&t[0], &f(1, &[0, 4, 0, 5]), &W), Some(true));
+        assert_eq!(command(&t[0], &f(1, &[0, 4, 0, 6]), &W), Some(false));
+        assert_eq!(command(&t[0], &f(0, &[0, 4, 0, 5]), &W), Some(false));
         let any = commands(&[0x7000007f, 0, NOT_REGION_ZERO, 0, ANY]).unwrap();
-        assert_eq!(command(&any[0], (1, &[0, 4, 0, 77]), &W), Some(true));
-        assert_eq!(command(&any[0], (1, &[0, 9, 0, 77]), &W), Some(false));
+        assert_eq!(command(&any[0], &f(1, &[0, 4, 0, 77]), &W), Some(true));
+        assert_eq!(command(&any[0], &f(1, &[0, 9, 0, 77]), &W), Some(false));
         let talk = commands(&[0x7000008c, 10050]).unwrap();
-        assert_eq!(command(&talk[0], (12, &[10050]), &W), Some(true));
-        assert_eq!(command(&talk[0], (12, &[10051]), &W), Some(false));
+        assert_eq!(command(&talk[0], &f(12, &[10050]), &W), Some(true));
+        assert_eq!(command(&talk[0], &f(12, &[10051]), &W), Some(false));
         let sleep = commands(&[0x7000009f]).unwrap();
-        assert_eq!(command(&sleep[0], (28, &[]), &W), Some(true));
+        assert_eq!(command(&sleep[0], &f(28, &[]), &W), Some(true));
         let field = commands(&[0x70000000, 4, 0x70000000, ANY]).unwrap();
-        assert!(field.iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        assert!(field.iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
         let after = commands(&[0x7000003c, -1, 1, 14, 0x7000003e, -1, 1, 20]).unwrap();
-        assert!(after.iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        assert!(after.iter().all(|c| command(c, &f(0, &[]), &W) == Some(true)));
+        let over = commands(&[0x70000091, 1, 4, 10, 0x70000094, 15, 90]).unwrap();
+        assert!(over.iter().all(|c| command(c, &f(17, &[]), &W) == Some(true)));
+        let exec = commands(&[0x700000a0]).unwrap();
+        assert_eq!(command(&exec[0], &f(29, &[7]), &W), Some(true));
+        assert_eq!(command(&exec[0], &f(29, &[8]), &W), Some(false));
         let quest = commands(&[0x70000075, 3]).unwrap();
-        assert_eq!(command(&quest[0], (0, &[]), &W), Some(false));
+        assert_eq!(command(&quest[0], &f(0, &[]), &W), Some(false));
     }
 }
