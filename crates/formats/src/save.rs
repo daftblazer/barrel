@@ -331,9 +331,10 @@ pub fn item_units(d: &[u8]) -> Vec<ItemUnit> {
 /// character (+0), level (+4), experience (+8), a word (+0xc, 392 in every one seen), HP and
 /// MP now (+0x10, +0x14), then the base stats: max HP, max MP, attack, defense, speed
 /// (+0x18 to +0x28), five small values (+0x2c, resistances presumably) and two constants (5,
-/// 25); the same block with equipment applied at +0x114 (max HP from +0x118); twelve 12-byte
-/// entries from +0x230 (a serial and a 1: the equipment, presumably); and a float at +0x2b0
-/// (0 for the leader, 15.02 and 14.69 for two companions: the friendship, presumably).
+/// 25); the same block with equipment applied at +0x114 (max HP from +0x118); the skills in
+/// command order from +0x230 (ten 12-byte entries: skill row, 0, 1), the Move skill
+/// (+0x2a8), the level again (+0x2ac) and the friendship float (+0x2b0, the calendar's daily
+/// gain; the record is the runtime one, whose +0x2a4 it is, with 12 bytes in front).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Member {
     pub character: i32,
@@ -348,6 +349,8 @@ pub struct Member {
     pub speed: i32,
     /// Max HP, max MP, attack, defense, speed with equipment.
     pub equipped: [i32; 5],
+    /// The skill rows of commands 0 to 9.
+    pub skills: [i32; 10],
     pub friendship: f32,
 }
 
@@ -366,6 +369,7 @@ pub fn member(d: &[u8]) -> Option<Member> {
         defense: w(9)?,
         speed: w(10)?,
         equipped: [w(0x46)?, w(0x47)?, w(0x48)?, w(0x49)?, w(0x4a)?],
+        skills: std::array::from_fn(|k| w(0x8c + 3 * k).unwrap_or(-1)),
         friendship: f,
     })
 }

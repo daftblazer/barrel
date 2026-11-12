@@ -473,10 +473,14 @@ a word (+0x18) and four counts (+0x1c ...: the battle code's uses left first); a
 experience, a word (392 in every one), HP and MP now and their maxima (Escha in one save:
 level 12, 694 experience, HP 24 and MP 43 now, base max HP 30 and MP 47), then base attack,
 defense and speed (8, 8, 13), five small values (resistances, presumably) and two constants
-(5 and 25), the same block with equipment applied from +0x114 (max HP 35, attack 13), twelve
-12-byte entries from +0x230 (an increasing serial and a 1; the equipment, presumably) and a
-float at +0x2b0: 0 for Escha, 15.02 and 14.69 for two companions, 0.99 for others (the
-friendship the calendar raises daily, presumably).
+(5 and 25), the same block with equipment applied from +0x114 (max HP 35, attack 13), the
+character's skills from +0x230 in command order (`barrel party-skills`), ten 12-byte entries
+of the skill row, 0 and 1 (Escha: 147 Attack, 148 Ether Shoot, 149 Protection, 150 Ether
+Spear, 156 Ether Mark, 151 Super Energetic, ...), then the Move skill (+0x2a8, 157), the level
+again (+0x2ac) and the **friendship** float (+0x2b0): 0 for Escha, 15.02 and 14.69 for two
+companions, 0.99 for others. That is the calendar's daily gain (`days::World::friendship`,
+the runtime record's +0x2a4: the save's record is the runtime one with 12 bytes in front):
+139 days at most 0.11 a day give at most 15.29, nine days 0.99, and the leader none.
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

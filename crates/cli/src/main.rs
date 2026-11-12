@@ -812,6 +812,10 @@ fn save(file: &Path) -> Result<()> {
     };
     let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
     println!("{} coded bytes → {} bytes of state", body.len(), state.len());
+    // BARREL_SAVE_STATE=path: write the decoded state there.
+    if let Ok(out) = std::env::var("BARREL_SAVE_STATE") {
+        std::fs::write(&out, &state)?;
+    }
     // BARREL_SAVE_BYTES=n: the first n bytes of each record as well.
     fn peek(d: &[u8]) -> String {
         let n: usize = std::env::var("BARREL_SAVE_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
