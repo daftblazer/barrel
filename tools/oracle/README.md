@@ -12,10 +12,13 @@ scene really looks like, and values the game only computes while running.
   device: without one its effect player reads a sound bank that was never made and crashes.
 - `stop.sh`: ends exactly the run's session.
 - `shot.sh OUT.png`: a screenshot through `gamescopectl` (absolute paths only reach it).
+- `pad.py` (in the background, started before the game) and `pad.sh "tap A" "dpad LEFT" "stick L 0 -1 800" ...`:
+  a virtual Xbox 360 pad through uinput (python-evdev), named "Barrel oracle pad"; the game
+  takes it as its controller. It is visible system-wide while it exists.
 - `xkey.c`: key taps through XTest (`cc -O2 -o work/xkey xkey.c -lX11 -lXtst`), to the run's
   X display (`DISPLAY=:2`).
 - `peek.sh ADDR LEN OUT`, `scan.py VALUE [MAX_MB]`: read memory, find a pointer.
 
-Keys: any key at the title; `k` confirms, the arrow keys move. New Game, `k` on the
-character card, Left (Yes), `k`; the opening movie shows Proton's colour bars and `k` skips
-it, and `EVENT_MM01_OP1_111` begins.
+To the opening, with the pad: A at the title, A (New Game), A on Escha's card, A, D-pad left
+(Yes), A; the opening movie shows Proton's colour bars and A skips it, and
+`EVENT_MM01_OP1_111` begins. On the keyboard: `k` confirms, the arrow keys move.
