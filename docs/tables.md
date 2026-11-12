@@ -33,7 +33,7 @@ and lists the rows. All 312 of Escha & Logy DX's tables read.
 | `quest/QuestAlc.xml` | 93 | synthesis requests: the item wanted, points, prizes, the days it is open (`StartDate`, `EndDate`), priority |
 | `quest/QuestBtl.xml` | 124 | monster-hunting requests |
 | `quest/QuestGat.xml` | 305 | gathering requests |
-| `subject/SubjectData.xml` | 457 | assignments: name, category, score, the card and square they sit on, the condition and its parameters, the two help texts |
+| `subject/SubjectData.xml` | 457 | assignments: name, category (`Type`), `Score`, the card and square they sit on (`CardTag`, `Pos`), what they count (`WorkCond`, `SUBJECT_WORK_COND_*`, 125 kinds in the executable; most used `NPC_DELIVERY_TOTAL` 38, `BTL_WIN_ENCOUNT_TOTAL` 14) and its parameters (`Prm1`..`Prm5`, `Prm1` the target or a tag), the event before which it stays hidden (`isHiddenEvent`), its `Bonus`, `Renew`, the help texts; the game save keeps 20 bytes a row in `subject/subject_save`, the first word the count so far (`barrel_formats::subject`, `barrel subjects ROOT [GAMEDATA]`) |
 | `field/AREA_*.xml` | one per area | field settings: camera, fog, light, wind and the like |
 
 What is not in the tables: the synthesis recipes and the monsters. Both are compiled into

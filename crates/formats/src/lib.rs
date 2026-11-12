@@ -38,6 +38,7 @@ pub mod quake;
 pub mod png;
 pub mod recipe;
 pub mod save;
+pub mod subject;
 pub mod table;
 pub mod voice;
 pub mod world;

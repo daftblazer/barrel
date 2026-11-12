@@ -45,6 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
   barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
@@ -150,6 +151,8 @@ fn main() -> ExitCode {
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
+        ["subjects", root] => subjects(Path::new(root), None),
+        ["subjects", root, save] => subjects(Path::new(root), Some(Path::new(save))),
         ["costumes", root] => costumes(Path::new(root), None),
         ["costumes", root, sysdata] => costumes(Path::new(root), Some(Path::new(sysdata))),
         ["field-sim", root, area, frames] => field_sim(Path::new(root), area, frames.parse().unwrap_or(600)),
@@ -3021,6 +3024,38 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
                 last[k] = now;
             }
         }
+    }
+    Ok(())
+}
+
+/// The assignments (`Saves/subject/SubjectData.xml`, English names from `Saves_EN`), with a game
+/// save's `subject_save` state of each.
+fn subjects(root: &Path, save: Option<&Path>) -> Result<()> {
+    use barrel_formats::subject as sb;
+    let rows = sb::subjects(&barrel_formats::table::parse(&read(&root.join("Saves/subject/SubjectData.xml"))?)?);
+    let en = read(&root.join("Saves_EN/subject/SubjectData.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| sb::subjects(&t)).unwrap_or_default();
+    let state = match save {
+        Some(p) => {
+            let data = read(p)?;
+            let s = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", p.display()))?;
+            let st = barrel_formats::save::decode(s.body).map_err(|e| e.to_string())?;
+            let recs = barrel_formats::save::state_records(&st).map_err(|e| e.to_string())?;
+            fn find<'a>(rs: &'a [barrel_formats::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
+                use barrel_formats::save::Body;
+                rs.iter().find_map(|r| match &r.body {
+                    Body::Raw(d) | Body::Data(d) if r.name == name => Some(*d),
+                    Body::Group(g) => find(g, name),
+                    _ => None,
+                })
+            }
+            find(&recs, "subject_save").map(sb::saved).unwrap_or_default()
+        }
+        None => Vec::new(),
+    };
+    for (k, r) in rows.iter().enumerate() {
+        let name = en.get(k).map_or(r.name.as_str(), |e| e.name.as_str());
+        let st = state.get(k).map_or(String::new(), |s| format!("  [{} {:?}]", s.progress, s.words));
+        println!("{k:3} {:<8} {:<3} {:>3} {:<34} {} {}{st}", r.card.trim_start_matches("CARD_"), r.square, r.score, name, r.condition.trim_start_matches("SUBJECT_WORK_COND_"), r.params.join(","));
     }
     Ok(())
 }
