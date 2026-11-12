@@ -1861,7 +1861,9 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
     };
     println!("{} ({item})", name(&items, item, "ItemName"));
     let wanted = barrel_game::synthesis::order(recipe);
-    let mut s = Synthesis::new();
+    // The cost points to spend: BARREL_CP, or 99 (more than any alchemist starts with).
+    let cp = std::env::var("BARREL_CP").ok().and_then(|v| v.parse().ok()).unwrap_or(99);
+    let mut s = Synthesis::with_cp(cp);
     for (i, m) in materials.iter().enumerate() {
         let m = number(m)?;
         let row = items.get(m).ok_or_else(|| format!("no item {m}"))?;
@@ -1875,8 +1877,12 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
             Some(w) => println!("  ! material {} does not fit {w:?} (the game takes them in order without Freestyle)", i + 1),
             None => println!("  ! material {} is one more than the recipe takes ({})", i + 1, wanted.len()),
         }
-        s.add(&Material::from_item(row));
-        println!("  + {} ({m}): attributes {:?}, effect value {}", name(&items, m, "ItemName"), s.attributes, s.effect_value());
+        let material = Material::from_item(row);
+        if !s.add(&material) {
+            println!("  ! {} ({m}) costs {} CP, {} left: not taken", name(&items, m, "ItemName"), material.cp, s.cp);
+            continue;
+        }
+        println!("  + {} ({m}, {} CP, {} left): attributes {:?}, effect value {}", name(&items, m, "ItemName"), material.cp, s.cp, s.attributes, s.effect_value());
     }
     if materials.len() < wanted.len() {
         println!("  ! the recipe takes {} materials", wanted.len());

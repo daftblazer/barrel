@@ -1144,6 +1144,18 @@ before, each learnt skill's record +0x14 (0 in every record) is raised by the
 | +0x5c + 20 × e | attribute value e (Fire, Water, Wind, Earth) as a float, at most 999, then the last change |
 | +0x4b8 + 4 × e | element point count e, at most 5 |
 
+**The slots at the start** (read from the running game: a Craft from two Spiky Buds and a
+Mixed Lubricant, by Escha at alchemy level 12). Each of the state's 40-byte slot entries
+(+0x418 + 40 × slot) is set before the first material goes in: the item (a pointer to its
+unit in the save's item list), its cost points, which are its `itemData` row's `level` (6 for
+a Spiky Bud, 5 for the Lubricant), its effect value as a float, which is the item's own
+quality (the unit's +4: 68.5 for that Lubricant, whose row says 50), its element count (the
+row's element flags: 2 and 1), its element value (the row's `value`: 10 and 20) and a bonus
+(0). The screen started at 22 CP, `synthesis::start_cp`'s figure, and showed what would be
+left after the material under the cursor: 16, then 10 after the first Spiky Bud went in.
+`synthesis::Material::from_item` takes the cost from the level; `with_quality` puts the
+item's own quality in.
+
 **Adding a material** (`0x140304eb0`, called with the state and the material's item
 instance):
 

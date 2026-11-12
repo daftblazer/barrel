@@ -26,30 +26,38 @@ pub const MAX_EFFECT: f32 = 120.0;
 /// Each element's point count stays between 0 and this.
 pub const MAX_POINTS: i32 = 5;
 
-/// What a material brings to the cauldron.
+/// What a material brings to the cauldron: the synthesis state's slot entry (+0x418 + 40 ×
+/// slot: the item, its cost points, its effect value, its element count, its element value and
+/// a bonus), as read from the running game at the start of a synthesis.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Material {
     /// Which elements it has (`itemData` columns `fire`, `water`, `wind`, `soil`).
     pub elements: [bool; 4],
-    /// Its element value (starts from `itemData`'s `value`).
+    /// Its element value (`itemData`'s `value`).
     pub element_value: i32,
-    /// Its effect value (starts from `itemData`'s `effect`).
+    /// Its effect value: the item's own quality (the save's item unit +4).
     pub effect: f32,
-    /// The cost points it uses up (where the game takes this from is still open).
+    /// The cost points it uses up: `itemData`'s `level`.
     pub cp: i32,
 }
 
 impl Material {
-    /// A material as an `itemData.xml` row describes it, before quality or traits change
-    /// it. Missing or unreadable numbers count as 0.
+    /// A material as an `itemData.xml` row describes it, its effect value the row's `effect`
+    /// (an item's own quality replaces it: [`Material::with_quality`]). Missing or unreadable
+    /// numbers count as 0.
     pub fn from_item(row: &barrel_formats::table::Element) -> Material {
         let num = |name: &str| row.attr(name).and_then(|v| v.trim().parse::<i32>().ok()).unwrap_or(0);
         Material {
             elements: ["fire", "water", "wind", "soil"].map(|e| num(e) > 0),
             element_value: num("value"),
             effect: num("effect") as f32,
-            cp: 0,
+            cp: num("level"),
         }
+    }
+
+    /// The same material with an item's own quality as its effect value.
+    pub fn with_quality(self, quality: f32) -> Material {
+        Material { effect: quality, ..self }
     }
 }
 
@@ -225,11 +233,13 @@ mod tests {
     #[test]
     fn from_item_row() {
         let root = barrel_formats::table::parse_str(
-            r#"<Root><itemData effect="50" attribute="ELEMENT_FIRE" value="10" fire="1" water="0" wind="2" soil="0"/></Root>"#,
+            r#"<Root><itemData level="6" effect="50" attribute="ELEMENT_FIRE" value="10" fire="1" water="0" wind="2" soil="0"/></Root>"#,
         )
         .unwrap();
         let m = Material::from_item(&root.children[0]);
-        assert_eq!(m, Material { elements: [true, false, true, false], element_value: 10, effect: 50.0, cp: 0 });
+        // The game's slot for a Spiky Bud (level 6) costs 6 CP.
+        assert_eq!(m, Material { elements: [true, false, true, false], element_value: 10, effect: 50.0, cp: 6 });
+        assert_eq!(m.with_quality(68.5).effect, 68.5);
     }
 
     #[test]
