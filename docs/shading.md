@@ -185,8 +185,18 @@ lists `standard_shadowmap`, `terrain_shadowmap` and the character variants `b0_s
 `EXShadowMapShader` (`0x14095dec8`) and `CBlendMapTerrainShadowMapShaderBase` for the
 ground. The engine (`ktgl`) carries cascaded, light-space-perspective, cube, dual-paraboloid
 and plain depth mappers (their names are in the executable, no vtables are referenced from
-code by RTTI), so which one the game runs, and how `mW2S` (its extent, the `scSM`/`scSM2`
-constants) is built, are not read yet.
+code by RTTI), so which one the game runs, and how `mW2S` is built, are not read yet.
+
+The casters (`SM_Psm.g1s`, `SM-B0_Psm.g1s` ...: "Psm", perspective shadow maps) write depth
+only, through `mL2P` (statics) or `mW2P` and the skinning palette `mL2W` (characters). The
+receivers' lookup (`MapSTD` pixel program 36, the terrain's alike) divides `v2.xyz` (from
+`mW2S`) by `v2.w`, so the map's projection may be perspective; clamps the depth to 0..1; and
+takes four bilinear 2 × 2 depth comparisons (`sample < depth` is shadowed) at the coordinates
+plus the four offsets in `scSM2` (xy, zw and their mixes), with `scSM` = (texel size x, y,
+map size x, y) placing the bilinear weights: 16 taps, averaged. The constants are set by id
+from the name table at `0x140952cc0` (16-byte `{name, u32 id}`: `mW2S` `0x4070b`, `mP2S`
+`0x40703`, `mW2P` `0x71f`, `scSM`/`scSM2` `0x402`), so the code that builds `mW2S` has to be
+found through that id.
 
 ## Eyes (`CharaEYEL.g1s`/`CharaEYER.g1s`, pixel program 12)
 
