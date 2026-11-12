@@ -1209,8 +1209,8 @@ An entry passes when `0x140214c00` passes for group 0 and for its own group:
   - Word 0 = 1 fails while `0x1410782e2` is set (cleared at day end).
   - A seen event (`0x14035f270`) needs word 2 (repeatable).
   - Word 4 set needs event flag 1.
-  - Words 8–10 and 11–13 are checked against the date by `0x14035c140` and `0x14035c160`,
-    a range going by the names.
+  - Today must lie from the date in words 8–10 to the one in words 11–13, both inclusive
+    (`0x14035c140`, `0x14035c160`; see the dates below).
 - **Group:** every command must pass, in order (`0x140214920` stops at the first failure;
   `0x140213670` evaluates one).
 
@@ -1281,13 +1281,20 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 | `TRIGGER_MAP_FROM_TO_BEFORE/AFTER a b c d` | all four equal the fired values (from kind, from map, to kind, to map by event 30's `0 4 0 5`) |
 | `TRIGGER_MAP_FIELDMAP_BE m` | the fired map is `m` |
 
+| `MAP_FIELDMAP_BE m` | in a field (`0x1400546c0`) whose map (`0x140236160`: `[0x140df9968]+0x9a0`, or +0x998 when that is -1) is `m`; `0x60000001` and `0x60000002` as in the triggers |
+| `DATE_IS/BEFORE/AFTER y m d`, `DATE_BETWEEN y m d y m d` | today =, ≤, ≥ the date, or within both (inclusive) |
 | the 14 one-value triggers (`MAP_COLLECT`, `ITEM_GET`, `MIX_SUCCESS`, `MIX_FAILED`, `EVENT_END`, `OTHER_TALK_BEFORE/AFTER_IS`, `OTHER_PLAYER_PUSH_BUTTON`, `GIMMICK_ACCESS_BEFORE/AFTER`, `ENEMY_KILL_IS`, `RECLAIM_TARGET_CLEAR`, `RECLAIM_FACILITY_BUILT`, `SUBJECT_CLEAR`) | the first operand equals the fired value |
 | `MIX_HP_EMPTY`, `MIX_ACCESS`, `BATTLE_ANNIHILATION(_ATELIER)`, `RECLAIM_KINGDOM_LV_UP`, `ATELIER_RETURN`, `ATELIER_SLEEP_MIX`, `MAP_WORLDMAP_ROUTE_MOVE`, `MEMORIES_LV_UP` | always, once their trigger group fired |
 | 41 codes on the switch's default (`CHIMU_*`, `MAP_TRAVERSAL_RITU_*`, `LICENSE_RANK_*`, `QUEST_ACCEPT_NUM_*`, the `RECLAIM_*` conditions, the `DLC_*` ones but `DLC`, `CHARA_WMPOINTER_BE_WITH_PLAYER`, `QUEST_(NOT_)OCCURRENCE`, `TRIGGER_ATELIER_ITEM_RETURN`) | never; the check data uses none of them |
 
-Not read yet, by uses in the data: `CONDITION_MAP_FIELDMAP_BE` (176), `CHARA_FRIEND_POINT_MT` (36),
-`ITEM_QUALITY_HAVE_MT` (33), `MAP_FIELDAREA_BE` (27), the date triggers and `DATE_AFTER` (20
-each), `TRIGGER_PROGRAM_EXEC` (16), `EVENTFLAG_LT`'s siblings are done, `PLAYER_PARAM_MT` and
+Dates compare through `0x1402f08a0` (≥), `0x1402f0800` (=) and `0x1402f0950` (≤), all
+against the date global. `0x1402f0a00` turns today into (school year, month, day) and puts -1
+wherever the pattern has -1. Both sides then count -1 as 1 and encode as `0x1402f02d0` does,
+so a -1 field is ignored and (-1, -1, -1) always matches. The gate's words 8–10 and 11–13
+are such dates (today from the one to the other); 1,139 events leave all six at -1.
+
+Not read yet, by uses in the data: `CHARA_FRIEND_POINT_MT` (36),
+`ITEM_QUALITY_HAVE_MT` (33), `MAP_FIELDAREA_BE` (27), the date triggers (20 each), `TRIGGER_PROGRAM_EXEC` (16), `PLAYER_PARAM_MT` and
 `CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
 `CHARA_PARTY_IN` (6), and a few single uses.
 

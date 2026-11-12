@@ -45,13 +45,19 @@ pub struct Gate {
     pub seen: bool,
     /// Event flag 1 (`0x14035f460(1)`).
     pub flag_1: i32,
+    /// Today's day number.
+    pub today: i32,
 }
 
 /// The gate's word checks: word 0 = 1 needs the day flag clear, a seen event needs word 2 set
-/// (repeatable), word 4 set needs event flag 1. Words 8-10 and 11-13 are then a date range
-/// (`0x14035c140`/`0x14035c160` against the date), not modelled here.
+/// (repeatable), word 4 set needs event flag 1, and today must lie from words 8-10 to words 11-13
+/// (`0x14035c140`, `0x14035c160`, both inclusive; all -1 in most events).
 pub fn gate_open(words: &[i32; 14], g: &Gate) -> bool {
-    !(words[0] == 1 && g.day_flag) && (!g.seen || words[2] != 0) && (words[4] == 0 || g.flag_1 != 0)
+    !(words[0] == 1 && g.day_flag)
+        && (!g.seen || words[2] != 0)
+        && (words[4] == 0 || g.flag_1 != 0)
+        && date_order(g.today, [words[8], words[9], words[10]]) >= 0
+        && date_order(g.today, [words[11], words[12], words[13]]) <= 0
 }
 
 /// Picks the event to start from a trigger group's list. `passes(event, group)` is the full
@@ -88,6 +94,25 @@ pub trait World {
     /// `0x140236070`: the first word of the map's runtime record (`[0x140df9a08]+0x10e8+0x40×map`,
     /// the region for a field area) is 0.
     fn region_zero(&self, map: i32) -> bool;
+    /// The field map the player is in (`0x1400546c0` non-null, then `0x140236160`), None outside
+    /// a field.
+    fn field_map(&self) -> Option<i32>;
+}
+
+/// `0x1402f08a0` and its siblings: today against a (year, month, day) pattern, -1 fields
+/// ignored (`0x1402f0a00` masks today's same fields, then both sides count -1 as 1 and encode
+/// as `0x1402f02d0` does). Returns today's masked number minus the pattern's.
+pub fn date_order(today: i32, pattern: [i32; 3]) -> i32 {
+    let d = crate::calendar::Date::of(today.max(0) as u32);
+    let now = [d.year as i32, d.month as i32, d.day as i32];
+    let fix = |v: i32| if v < 0 { 1 } else { v };
+    let enc = |t: [i32; 3]| {
+        let (y, m, dd) = (fix(t[0]), fix(t[1]), fix(t[2]));
+        let y = y + i32::from(m < 4 || (m == 4 && dd < 1));
+        (y * 12 + m) * 30 + dd - 391
+    };
+    let masked = [0, 1, 2].map(|i| if pattern[i] < 0 { -1 } else { now[i] });
+    enc(masked) - enc(pattern)
 }
 
 /// Matches anything in a trigger's operands.
@@ -109,7 +134,17 @@ pub fn command(c: &Command, fired: (u8, &[i32]), w: &impl World) -> Option<bool>
         1 => v <= op(1),
         _ => v == op(1),
     };
+    let date = |i: usize| [op(i), op(i + 1), op(i + 2)];
     Some(match c.code {
+        0x00 => w.field_map().is_some_and(|m| match op(0) {
+            NOT_REGION_ZERO => !w.region_zero(m),
+            ANY => true,
+            v => m == v,
+        }),
+        0x3c => date_order(w.today(), date(0)) == 0,
+        0x3d => date_order(w.today(), date(0)) >= 0 && date_order(w.today(), date(3)) <= 0,
+        0x3e => date_order(w.today(), date(0)) <= 0,
+        0x3f => date_order(w.today(), date(0)) >= 0,
         0x1f => w.seen(op(0)),
         0x20 => !w.seen(op(0)),
         0x24..=0x26 => w.seen(op(0)) && cmp(w.today() - w.seen_day(op(0)), c.code - 0x24),
@@ -208,6 +243,7 @@ mod tests {
     #[test]
     fn gate() {
         let mut w = [0; 14];
+        w[8..14].copy_from_slice(&[-1; 6]);
         assert!(gate_open(&w, &Gate::default()));
         assert!(!gate_open(&w, &Gate { seen: true, ..Gate::default() }));
         w[2] = 1;
@@ -235,6 +271,24 @@ mod tests {
         fn region_zero(&self, map: i32) -> bool {
             map == 9
         }
+        fn field_map(&self) -> Option<i32> {
+            Some(4)
+        }
+    }
+
+    #[test]
+    fn dates() {
+        // April 1st of year 1 is day 90; March 30th of year 1 is day 449.
+        assert_eq!(date_order(90, [-1, -1, -1]), 0);
+        assert_eq!(date_order(90, [1, 4, 1]), 0);
+        assert!(date_order(90, [1, 3, 30]) < 0);
+        assert_eq!(date_order(449, [1, 3, 30]), 0);
+        // Day of month only: the 15th of any month.
+        assert!(date_order(90 + 20, [-1, -1, 15]) > 0);
+        let mut w = [0; 14];
+        w[8..14].copy_from_slice(&[1, 5, 1, 1, 6, 30]);
+        assert!(!gate_open(&w, &Gate { today: 90, ..Gate::default() }));
+        assert!(gate_open(&w, &Gate { today: 125, ..Gate::default() }));
     }
 
     #[test]
@@ -256,6 +310,10 @@ mod tests {
         assert_eq!(command(&talk[0], (12, &[10051]), &W), Some(false));
         let sleep = commands(&[0x7000009f]).unwrap();
         assert_eq!(command(&sleep[0], (28, &[]), &W), Some(true));
+        let field = commands(&[0x70000000, 4, 0x70000000, ANY]).unwrap();
+        assert!(field.iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
+        let after = commands(&[0x7000003c, -1, 1, 14, 0x7000003e, -1, 1, 20]).unwrap();
+        assert!(after.iter().all(|c| command(c, (0, &[]), &W) == Some(true)));
         let quest = commands(&[0x70000075, 3]).unwrap();
         assert_eq!(command(&quest[0], (0, &[]), &W), Some(false));
     }
