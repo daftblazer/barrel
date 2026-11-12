@@ -120,7 +120,12 @@ accessory (`Data/x64/Accessory/<HEADnn>.elixir.gz`, an unskinned model) hangs fr
 `head_attach` (a face accessory from `face_attach`) node (its index in the body's `Oid.bin` names): its vertices are moved into that
 joint's bind frame and by its `AccessoryAdjust` row (offset, then the rotation in degrees about
 x, y, z, then the scale; the order is taken, not read) and bound wholly to the joint, so the pose
-carries them. Escha with `--costume 0:0:2:1` wears the Flowery Hat in place of her own and the eyepatch.
+carries them. Escha with `--costume 0:0:2:1` wears the Flowery Hat in place of her own and the eyepatch. `--costumes SYSDATA` dresses every
+costumed character as a settings save has them: `costumeData` entry k is `CostumeChara.xml` row
+k, whose `target_chara` (`CHARA_*`, in party order) names the character, its `Chara.xml` row the
+same number but for Nio (10), row 11 (the oracle save: Escha, Logy, Linca, Wilbell and Nio, rows
+0, 1, 6, 7 and 11; Escha's uniform with her own Fluffy Hat attaches nothing, the hat built into
+the body showing).
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its

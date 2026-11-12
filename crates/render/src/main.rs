@@ -1093,6 +1093,37 @@ fn outfit(root: &Path, body: usize, head: usize, face: usize) -> Result<Option<(
     Ok(Some((b.base.clone(), wear)))
 }
 
+/// The outfits the settings save (`SYSDATA`) has chosen, as `(Chara.xml row, body, head, face)`:
+/// its `costumeData` entry k is `CostumeChara.xml` row k, whose `target_chara` (`CHARA_*`, the
+/// party order) is the character: its `Chara.xml` row is the same number, but for Nio (10), who
+/// is row 11 (`battle_data::party_size`).
+fn saved_costumes(root: &Path, sys: &Path) -> Result<Vec<(u32, usize, usize, usize)>> {
+    use barrel_formats::costume as c;
+    let state = barrel_formats::save::decode(&std::fs::read(sys)?)?;
+    let records = barrel_formats::save::state_records(&state)?;
+    fn find<'a>(rs: &'a [barrel_formats::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
+        use barrel_formats::save::Body;
+        rs.iter().find_map(|r| match &r.body {
+            Body::Raw(d) | Body::Data(d) if r.name == name => Some(*d),
+            Body::Group(g) => find(g, name),
+            _ => None,
+        })
+    }
+    let choices = find(&records, "costumeData").map(c::choices).unwrap_or_default();
+    let charas = c::charas(&barrel_formats::table::parse(&std::fs::read(root.join("Saves/costume/CostumeChara.xml"))?)?);
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let names: Vec<&str> = pe.enum_names("CHARA_ESCHA").map(|(n, first)| n[first..].iter().copied().take_while(|x| x.starts_with("CHARA_")).collect()).unwrap_or_default();
+    let mut out = Vec::new();
+    for (k, [b, h, f]) in choices.into_iter().enumerate() {
+        let Some(member) = charas.get(k).and_then(|ch| names.iter().position(|n| *n == ch.target)) else { continue };
+        let row = if member >= 10 { member + 1 } else { member };
+        out.push((row as u32, b.max(0) as usize, h.max(0) as usize, f.max(0) as usize));
+    }
+    eprintln!("costumes from the settings save: {out:?}");
+    Ok(out)
+}
+
 /// A skeleton's joints in their bind pose, in model space.
 fn bind_world(skeleton: &barrel_formats::g1m::Skeleton) -> Vec<Mat4> {
     let mut out = vec![Mat4::IDENTITY; skeleton.joints.len()];
@@ -1762,6 +1793,7 @@ fn main() -> Result<()> {
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
     // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
     let mut costumes: Vec<(u32, usize, usize, usize)> = Vec::new();
+    let mut costumes_from = None::<PathBuf>;
     // --save-every N: of several frames, write only every Nth and the last.
     let mut save_every = 1u32;
     let mut event_line = None::<usize>;
@@ -1835,6 +1867,8 @@ fn main() -> Result<()> {
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
             "--save-every" => save_every = it.next().ok_or("--save-every N")?.parse::<u32>()?.max(1),
+            // --costumes SYSDATA: every costumed character dressed as the settings save has them.
+            "--costumes" => costumes_from = Some(PathBuf::from(it.next().ok_or("--costumes SYSDATA")?)),
             "--costume" => {
                 let v = it.next().ok_or("--costume WHO:BODY:HEAD[:FACE]")?;
                 let p: Vec<usize> = v.split(':').map(str::parse).collect::<std::result::Result<_, _>>()?;
@@ -1954,6 +1988,10 @@ fn main() -> Result<()> {
         scene.add_posed(geometry, Mat4::IDENTITY, count, joints.as_deref(), instance)?;
         scene.morph.clear();
         pack_bytes.push(tex_bytes);
+    }
+    if let (Some(sys), Some(e)) = (&costumes_from, &event_spec) {
+        let root = Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--costumes: the event is not inside a game install")?;
+        costumes.extend(saved_costumes(root, sys)?);
     }
     let mut focus = None;
     let mut event_camera: Option<EventCamera> = None;
