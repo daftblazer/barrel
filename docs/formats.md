@@ -396,48 +396,45 @@ The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its
 the load screen shows: i32s from +0x28 (5, 28, 34, 2954, 12, 0, 1, 29, ... in one save; the
 last two read as u16 pairs, 12 and 14, 12 and 15), -1 padding from +0x74, and at +0xa4 the time
 of saving as a Windows `SYSTEMTIME` (year, month, day of the week, day, hour, minute, second,
-milliseconds). The game state follows, encrypted (a 66,624-byte save has 66,368 bytes of
-it; how is not read yet). It is not compressed (no zlib, raw deflate or gzip stream at any
-of the first offsets), not a short repeating XOR (no period up to 8,192 repeats bytes more
-than chance), and the executable holds none of the usual cipher constants (Blowfish, AES,
-TEA, MD5, SHA-256; only zlib's CRC table). The loader (`0x140135ee0`) reads the file into a
-0x64000-byte buffer; once decrypted, the state is a stream of named, u32-length-prefixed
-sections (`0x14035b320` finds a section by name, `0x14035b220` reads from it). The files go through the
-platform layer (`[0x1410c2ee8]` +0x108: `0x1403b8cb0`/`0x1403b8cd0` open, `0x1403b8d00` read,
-`0x1403b8de0` write, `0x1403b8a40` close, handed on to asynchronous jobs at `0x1403bcb40` and
-`0x1403be290`); the Windows paths are built from wide strings (`\SAVEDATA\`,
-`GAMEDATA%02u.pcsave`, `SYSDATA.pcsave`, around `0x140138730`). The cipher sits somewhere in
-that layer and is not found yet. `SYSDATA.pcsave`, the settings, is encrypted from its first byte.
+milliseconds). The coded game state follows. `SYSDATA.pcsave`, the settings, is coded whole.
 
-Where it is not: the asynchronous file job (`0x1403c7980`) only copies bytes; the loader task
-(`0x140135ee0`, made by `0x140135820` from `0x140295205`) reads the whole file into a buffer
-its owner lends it (owner +0xd8, also handed to a second task, `0x140139890`, from
-`0x14029530a`) and sets a flag (`0x140e00f11`) when done; the flag's handler (`0x1400403b7`
-→ `0x140040f00` → `0x1400411d0`) gives each reader the plain state starting 0x20 bytes into
-its buffer, and the section functions (`0x14035b320` find, `0x14035b220` read, `0x14035b4b0`)
-read big-endian u32 lengths with no transform. The writer (`0x140136530`) writes the lent
-buffer unchanged. So the bytes are turned between the read's end and the readers, in code
-that owns those buffers; no function in the executable is dense in rotates or xors apart from
-runtime-library ones. Reading it from the running game (the plain buffer next to the file's
-bytes) would settle it, but test runs are on hold (they counted as Steam play time).
+**The coding** (`0x1400219a0 (codec, buffer, length, &coded_length, encode)`, in place; the
+settings writer `0x14015d380` calls it with encode 1 and `fwrite`s the result). Decoding
+(`barrel_formats::save::decode`) undoes, in order:
 
-**The codec, found from a memory read.** A short run dumped the game at its title screen. The
-decrypted `SYSDATA.pcsave` sat in the global save buffer (`[0x140e00f30]`, a vector of 0x5000
-bytes): a 0x20-byte header starting with the i32 20130322 (a date, 2013-03-22), then a u32
-length (0x4a6c), the name `system_data`, and named sections, each a NUL-terminated name and a
-little-endian u32 length (`ipu`, `bgm`, `movie`, `buc`, `eventData`, ...), mostly zeros. The file is
-2,912 bytes for 19,052 of state: it is **compressed**, then encrypted. The settings writer
-(`0x14015d380`) codes the buffer in place with `0x1400219a0 (codec = 0x14001ef90(), buffer,
-length, &coded_length, encode = 1)` and writes `coded_length` bytes with `fwrite`
-(`0x140138890` task, state 2 at `0x140138a70`, `0x140138580`). The codec trims trailing zero
-bytes, pads to 16, and works on 16-bit words with a multiply-add stream (`state = state ×
-key + 0x2f09`, the word xored with `(state >> 16) & 0x7fff` on some steps and less a running
-value), seeded from `0x3b9a73c9` (plus `0x1403b7390`'s value when encoding), with
-`0x140020340`/`0x140020840` (compression, encode side) and `0x14001fe10` (keyed with
-`0x3745d`, decode side) around it. Translating it is static work; the pair from the run (the
-file and its decrypted state) is the test.
+1. trailing zero bytes are dropped and the rest padded to 16 (`P` bytes);
+2. a bit shuffle over the last `min(P, 0x800)` bytes (`0x14001fe10`): the indices of their
+   bits are drawn out one at a time from a stream, entry `(s & 0x7fff) % left` of those
+   left, and each two drawn in a row swap bits (its own inverse);
+3. each big-endian u16 word: `r = s & 0x7fff` drawn; when `r % 0xec2 ≥ 0x761` the word is
+   xored with the next draw `& 0x7fff`; then `r` is taken off;
+4. the 16-byte trailer: byte `P - 0x10` is 0xff, then big-endian u32s: `P - 0xc` the xor and
+   `P - 8` the sum of the data's big-endian u32s, `P - 4` a seed;
+5. the data bytes (`P - 0x10`) xored with the stream's low byte in runs: keys 0xa22f, 0xa129,
+   0x394d in turn for 7, 13 and 23 bytes plus the round number, each key carrying on where its
+   last run stopped; the sums are checked after;
+6. an Exp-Golomb byte code (`0x140020a80`): a big-endian u32 count, then per byte, from the
+   top bit down, `k` zeros and the `k + 1` bits from the next one give `v`, the byte `v - 1`
+   (a lone one is 0, eight zeros 0xff);
+7. a byte substitution (`0x140020740`): a count `n` (0 for 256), `n` table bytes, a big-endian
+   u32 length and that many indices into the table.
 
-`barrel_formats::save` reads the header and `barrel save FILE` prints it.
+The stream is `b = a × b + 0x2f09` (u32), its value `b >> 16`, with `a` = 0x3b9a73c9 (plus the
+seed for step 5) and `b` set to each step's key (0x3745d, 0xd727, the three run keys). When
+encoding, the seed is `0x1403b7390`'s value (so two saves of one state differ).
+
+The state is the save buffer the game reads (`[0x140e00f30]`, 0x5000 bytes for the
+settings): a 0x20-byte header starting with the i32 20130322 (a date stamp, 2013-03-22),
+then a u32 length and a name (`system_data`), then named sections, each a NUL-terminated name
+and a little-endian u32 length. The settings hold `ipu`, `bgm`, `movie`, `buc`, `eventData`,
+`eventFlag`, `item`, `recipe`, `book`, `monster`, `fieldMap`, ..., `costumeData`, `option`,
+`saveData` (2,912 bytes coded, 19,137 decoded); a game save `dlc`, `event`
+(`m_eventListSaveData`, `m_eventFlag`, ...), `knowledge`, `item`, `recipe`, `book`,
+`fieldMap`, `monster`, `mixEsp`, `potential`, `money`, `party`, `m_squad`, ... (66,368 bytes
+coded, 300,855 decoded). The coding was found from a memory read of a short test run: the
+decoded settings sat in the save buffer at the title screen, and the code that fills it led
+to the codec; the decoder reproduces that memory byte for byte. The sections' fields are not
+read yet. `barrel save FILE` prints a save's header and its section names.
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

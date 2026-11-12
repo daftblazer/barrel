@@ -800,11 +800,32 @@ fn days(install: &Path, n: &str, events: bool) -> Result<()> {
 /// A save's header.
 fn save(file: &Path) -> Result<()> {
     let data = read(file)?;
-    let s = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?;
-    let t = s.saved_at;
-    println!("saved {:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
-    println!("summary {:?}", s.summary);
-    println!("{} encrypted bytes follow", s.body.len());
+    // SYSDATA (the settings) is coded whole; a GAMEDATA file after its plain header.
+    let body = if file.file_name().is_some_and(|n| n.to_string_lossy().starts_with("SYSDATA")) {
+        &data[..]
+    } else {
+        let s = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?;
+        let t = s.saved_at;
+        println!("saved {:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
+        println!("summary {:?}", s.summary);
+        s.body
+    };
+    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+    println!("{} coded bytes → {} bytes of state", body.len(), state.len());
+    // The section names: NUL-terminated runs of 2 to 31 name characters after a u32 length.
+    let mut names = Vec::new();
+    let mut i = 4;
+    while i < state.len() {
+        let start = i;
+        while i < state.len() && (state[i].is_ascii_alphanumeric() || state[i] == b'_') {
+            i += 1;
+        }
+        if i < state.len() && state[i] == 0 && (2..32).contains(&(i - start)) {
+            names.push(String::from_utf8_lossy(&state[start..i]).into_owned());
+        }
+        i += 1;
+    }
+    println!("names: {}", names.join(" "));
     Ok(())
 }
 
