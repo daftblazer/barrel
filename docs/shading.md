@@ -134,7 +134,12 @@ lights' diffuse and the sun's diffuse; the pixel shader multiplies that by the t
 `emissiveColor`; `cDiff`, `cAmb` and `cSpec` are the engine's. Taken
 for now: the material colours white no light texture or shadow (1), the
 `PARALLEL` `rot` as pitch below level then yaw in degrees, and point light distances in
-metres. Point light distances are in field units, as for characters.
+metres. Point light distances are in field units, as for characters. Checked again against
+TOWN_03 (Colland's office, event `EVENT_MM01_OP1_222`): taking metres there makes the desk
+lamp glow as in the game but blows Escha's workshop out to white (101, 65, 67 become 255,
+242, 254), so field units stand; the lamp's glow in the game (its shade 145, 142, 116 against
+75, 76, 54 here, the room otherwise matching to a few levels) comes from something not done
+yet: an emissive material or the light texture.
 
 ### Wind (plants swaying)
 
