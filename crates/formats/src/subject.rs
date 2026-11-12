@@ -58,8 +58,15 @@ pub struct SavedSubject {
 }
 
 impl SavedSubject {
+    /// Cleared (state 8).
     pub fn cleared(&self) -> bool {
         self.state == 8
+    }
+
+    /// Achieved but not yet cleared on the card screen (state 7): `0x140357620` takes such a
+    /// square, every half-second while the card is shown, to 8 and adds its score.
+    pub fn achieved(&self) -> bool {
+        self.state == 7
     }
 }
 
