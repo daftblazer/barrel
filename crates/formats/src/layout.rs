@@ -89,3 +89,33 @@ pub fn pieces(pe: &Pe, id: u32) -> Vec<Piece> {
     }
     out
 }
+
+/// The event still pictures (`u1/0x30`, `IpuGallery`): 32-byte records `{i32 width, height, f32
+/// scale x, scale y, u64 folder ("Ipu/"), u64 file}` from `0x1408f3d00` in the English
+/// executable, indexed by the command's number (`0x140299209`: up to 0xfe). Pictures 0 and 1
+/// have no file (nothing shown); 2 is `bg_black` (64 × 64 scaled 32 × 18 over the screen), 3
+/// `bg_white`, then logos, title screens and the `ev_still_*` event pictures.
+pub const STILLS_EN: u64 = 0x1_408f_3d00;
+
+/// One still: its file in `Data/x64/<folder>` and its size on the 1920 × 1080 screen.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Still {
+    pub folder: String,
+    pub file: String,
+    pub size: [f32; 2],
+}
+
+/// Still `n`, if it shows a picture.
+pub fn still(pe: &Pe, n: u32) -> Option<Still> {
+    if n > 0xfe {
+        return None;
+    }
+    let rec = STILLS_EN + 32 * u64::from(n);
+    let o = pe.offset(rec)?;
+    let f = |i: usize| pe.data.get(o + 4 * i..o + 4 * i + 4).map(|b| [b[0], b[1], b[2], b[3]]);
+    let (w, h) = (i32::from_le_bytes(f(0)?), i32::from_le_bytes(f(1)?));
+    let (sx, sy) = (f32::from_le_bytes(f(2)?), f32::from_le_bytes(f(3)?));
+    let folder = text_at(pe, u64_at(pe, rec + 16)?)?;
+    let file = text_at(pe, u64_at(pe, rec + 24)?)?;
+    Some(Still { folder: folder.trim_end_matches('/').to_string(), file, size: [w as f32 * sx, h as f32 * sy] })
+}

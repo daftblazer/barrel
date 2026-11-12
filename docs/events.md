@@ -220,6 +220,15 @@ none). Their programs are the `.kps` packs in `Data/x64/PostEffect/pe_pack.elixi
 cross-fade from the last shot to the new one. The scheduler makes `u14` wait until the latest effect's time
 has run out (one effect at a time, as the game keeps one).
 
+**Still pictures** (`u1/0x30`, `IpuGallery`, 243 uses; case `0x14029b95f` → `0x14029b1f0`):
+`{picture}` shows still `picture` over the scene from the table at `0x1408f3d00`
+(`crates/formats/src/layout.rs`, `layout::still`: `{width, height, scale x, scale y, folder,
+file}`; files in `Data/x64/Ipu_EN`, else `Ipu`). 0 and 1 show none (most uses: 105 of
+`u1/0x30 1`), 2 is a black screen (63 uses), 3 white; the rest are logos, title screens and
+the `ev_still_*` event pictures. `EVENT_MM01_OP1_111` holds the black one from 0 to 1.5 s,
+under its first fade. The viewer draws the still under the window and the text, scaled to the
+height and centred; how the game fades a picture in or out (`u2/0x30`?) is not read.
+
 **Labels and jumps.** `u3 {n}` marks label `n` in its action (an action's labels are found
 by scanning its words, `0x14020fcd6`); `u5 {n}` goes on from label `n` at once
 (`0x140210be0` → `0x14020fd80` sets the running action's next command, +0x8), `u6 {a, b}`

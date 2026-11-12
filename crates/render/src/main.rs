@@ -2034,10 +2034,14 @@ fn main() -> Result<()> {
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
     // The text layer, the font, and the line it was last given (rebuilt when that changes).
-    let mut text_layer: Option<(text::Layer, text::Font, Option<(Option<barrel_game::stage::Line>, u32, u32, Option<u32>, u16)>)> = None;
+    let mut text_layer: Option<(text::Layer, text::Font, Option<(Option<barrel_game::stage::Line>, u32, u32, Option<u32>, u16, Option<u32>)>)> = None;
     // The narration cards the event shows (u55), and each one's pieces once the layer has
     // their textures: (texture slot, uv, rectangle on a 1920 × 1080 screen).
     let telop_cards: Vec<u32>;
+    // The still pictures the event shows (u1/0x30), and each one's texture slot and size on a
+    // 1920 × 1080 screen once the layer has them.
+    let still_pictures: Vec<u32>;
+    let mut still_slots: std::collections::HashMap<u32, (usize, [f32; 2])> = std::collections::HashMap::new();
     let mut telop_pieces: std::collections::HashMap<u32, Vec<(usize, [f32; 4], [f32; 4])>> = std::collections::HashMap::new();
     // The event's music and voices, in a window only (frames written to files are silent):
     // the output, the mixer, the library, and the music now playing.
@@ -2117,6 +2121,13 @@ fn main() -> Result<()> {
             .reading_time(barrel_game::event::reading_time)
             .motion_length(Box::new(move |c, m, d| lengths.get(&(c, m, d)).copied()))
             .schedule();
+        still_pictures = steps
+            .iter()
+            .filter_map(|t| match t.step {
+                barrel_game::event::Step::Still { picture, .. } => Some(picture),
+                _ => None,
+            })
+            .collect();
         telop_cards = steps
             .iter()
             .filter_map(|t| match t.step {
@@ -2182,6 +2193,25 @@ fn main() -> Result<()> {
                 card_pieces.push((card, pieces));
             }
         }
+        // The still pictures: Data/x64/Ipu_EN first (the English ones), else Ipu.
+        let mut still_list: Vec<(u32, barrel_formats::layout::Still)> = Vec::new();
+        if let Some(pe) = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok()) {
+            for &n in &still_pictures {
+                if let Some(st) = barrel_formats::layout::still(&pe, n) {
+                    if !still_list.iter().any(|(k, _)| *k == n) {
+                        still_list.push((n, st));
+                    }
+                }
+            }
+        }
+        let still_bytes: Vec<Option<Vec<u8>>> = still_list
+            .iter()
+            .map(|(_, st)| {
+                let x64 = root.join("Data/x64");
+                std::fs::read(x64.join(format!("{}_EN", st.folder)).join(&st.file)).or_else(|_| std::fs::read(x64.join(&st.folder).join(&st.file))).ok()
+            })
+            .collect();
+        let still_g1t: Vec<Option<barrel_formats::g1t::G1t>> = still_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
         let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|n| std::fs::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
         let sheets: Vec<Option<barrel_formats::g1t::G1t>> = sheet_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
         match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(28))) {
@@ -2197,6 +2227,12 @@ fn main() -> Result<()> {
                             images.push(t);
                         }
                         None => slots.push(None),
+                    }
+                }
+                for ((n, st), g) in still_list.iter().zip(&still_g1t) {
+                    if let Some(t) = g.as_ref().and_then(|g| g.textures.first()) {
+                        still_slots.insert(*n, (images.len(), st.size));
+                        images.push(t);
                     }
                 }
                 for (card, pieces) in &card_pieces {
@@ -2353,9 +2389,18 @@ fn main() -> Result<()> {
                 // The narration card and its opacity (in 1/1000ths, so a fade redraws each step).
                 let card = play.stage.telop.filter(|_| play.stage.telop_alpha.now() > 0.0);
                 let card_alpha = (play.stage.telop_alpha.now().clamp(0.0, 1.0) * 1000.0) as u16;
-                let now = Some((line.clone(), width, height, card, card_alpha));
+                let still = play.stage.still.filter(|n| still_slots.contains_key(n));
+                let now = Some((line.clone(), width, height, card, card_alpha, still));
                 if now != *last {
-                    let mut quads = match &line {
+                    // The still picture first (under the window and the text): its size on a
+                    // 1920 × 1080 screen, scaled to the height and centred.
+                    let mut quads = Vec::new();
+                    if let Some(&(texture, [w, h])) = still.and_then(|n| still_slots.get(&n)) {
+                        let k = height as f32 / 1080.0;
+                        let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
+                        quads.push(text::Quad { rect: [cx - w * k / 2.0, cy - h * k / 2.0, cx + w * k / 2.0, cy + h * k / 2.0], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture });
+                    }
+                    quads.extend(match &line {
                         Some(l) => {
                             let name = usize::try_from(l.speaker).ok().and_then(|k| speaker_names.get(k)).map(String::as_str);
                             if std::env::var("BARREL_TEXT_LOG").is_ok() {
@@ -2364,7 +2409,7 @@ fn main() -> Result<()> {
                             font.dialogue(name, &l.text, width as f32, height as f32)
                         }
                         None => Vec::new(),
-                    };
+                    });
                     // The card: the 1920 × 1080 layout scaled to the height and centred.
                     if let Some(pieces) = card.and_then(|c| telop_pieces.get(&c)) {
                         let k = height as f32 / 1080.0;
