@@ -621,6 +621,20 @@ capacity, 10 in the save read). Escha's there: a Bomb (cost 3) at 0, another at 
 Salve (1) at 8, so `0 0 0 -1 -1 5 5 5 8 -1` and 25 after. `explore::grid` rebuilds it, and
 `BARREL_ITEMS=itemData.xml barrel save` checks both alchemists' grids against the costs.
 
+**World map** (`worldmap`, written by `0x14035dd00`, one block from `0x141098b70`):
+`knowledgeRoute`, an i32 per area record (85, docs/tables.md "Field areas"), and
+`knowledgePointer`, an i32 per place (96, "Places"), at +0x154: the map's knowledge levels,
+0 nothing, 10 new, 15 all (the executable's "Knowledge: nothing / open wait / new / all"; -1
+is checked for too, "open wait" presumably). `0x14035e3e0(place, level)` sets a place (a
+notice, message 0x18, at 10 or more) and passes it on to the world-map place it belongs to
+(`0x140171ad0`, `0x1401719d0`); `0x14035e3a0(area, level)` sets a route; the reset
+(`0x14035e2c0`) zeroes the block and sets the town to 15. `chara` (two i32 at `0x141098e44`,
+29 and 0 in the save read) is where the party stands, presumably. `pointerStatus`, 96 × 12
+bytes at `0x141098e4c`: per place an i32 taken from the place record's +0x4c at reset (its
++0x48 decides), a byte flag and an i32; in the save read the field places hold 30 to 200 in
+steps of 10 and flags of 1, which looks like a per-place amount, not read yet.
+`save::Summary::route_knowledge`, `place_knowledge`, `world_position`.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0

@@ -612,6 +612,12 @@ pub struct Summary {
     /// `bonus/value`: 128 bonus values (`0x141079de0`, read through `0x14002f2f0`), mostly
     /// percentages added to 100 where they are used (docs/formats.md, "Bonuses").
     pub bonus_values: Vec<i32>,
+    /// `worldmap/knowledgeRoute` (the 85 area records) and `knowledgePointer` (the 96
+    /// places): 0 nothing, 10 new, 15 all (the game's "Knowledge: ..." levels).
+    pub route_knowledge: Vec<i32>,
+    pub place_knowledge: Vec<i32>,
+    /// `worldmap/chara`: two i32 (29 and 0 in one save: the place the party is at, presumably).
+    pub world_position: Option<(i32, i32)>,
 }
 
 /// The `knowledge` record: the library's level (0 to 10) for every entry of its eight lists,
@@ -706,6 +712,13 @@ pub fn summary(records: &[Record]) -> Summary {
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
             .unwrap_or_default(),
+        route_knowledge: bytes(top("worldmap").and_then(|r| r.child("knowledgeRoute")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+            .unwrap_or_default(),
+        place_knowledge: bytes(top("worldmap").and_then(|r| r.child("knowledgePointer")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+            .unwrap_or_default(),
+        world_position: bytes(top("worldmap").and_then(|r| r.child("chara"))).and_then(|d| Some((i32_at(&d, 0)?, i32_at(&d, 4)?))),
         bonus_values: bytes(top("bonus").and_then(|r| r.child("value")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
             .unwrap_or_default(),
