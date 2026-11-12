@@ -123,8 +123,14 @@ group 10, as `barrel field-sim` finds). `--save-every N` writes only every Nth f
 last. The camera follows the player as the field's first play-camera setting
 (`Saves/field/<FIELD>.xml`, `<camera><area><point>`: `length` metres away, `radian` degrees of
 pitch, `fov`, `diffPosition` metres added to the player's place; `field_look::CameraPoint`)
-places it, from the `--yaw` side; `AREA_01_01`'s first is 8 m, 21°, 40°, 0.5 m up. How the game
-picks among the points (`position`, `lookRad`, the area's `tag` such as `CLOSELY_Z`) is not read.
+places it, from the `--yaw` side; `AREA_01_01`'s first is 8 m, 21°, 40°, 0.5 m up. Each `<area>` is a
+rectangle (`tlPosition`, `brPosition`, metres) of a kind, its `tag` (`FIELDMAP_CAMERA_DATA_*`,
+parsed at `0x140067f58`: `CLOSELY_X` 0, `CLOSELY_Y` 1, `CLOSELY_Z` 2, `CLOSELY_XZ` 3,
+`VERTEX_LENGTH` 4; the fields use 77 `CLOSELY_X`, 62 `CLOSELY_Z`, 2 `CLOSELY_Y`), holding points
+that also carry `bumper_follow_speed`, `bumper_max_distance`, `zoom_time` and `zoom_distance`
+(`field_look::CameraArea`, `CameraPoint`). The kinds and the points' `position` (30 then 45 along
+z in `AREA_01_01`'s `CLOSELY_Z` area) suggest the camera blends between an area's points by the
+player's place along that axis; the code that does so is not found yet.
 
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a

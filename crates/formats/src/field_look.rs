@@ -57,11 +57,27 @@ pub struct FieldLook {
     /// `<camera><area><point>`: the play camera's settings, in table order (how the game picks
     /// and blends them is not read yet).
     pub camera_points: Vec<CameraPoint>,
+    /// `<camera><area>`: each area's kind and rectangle (`tlPosition`, `brPosition`, metres) and
+    /// the indices of its points in `camera_points`.
+    pub camera_areas: Vec<CameraArea>,
 }
 
 /// A play-camera setting of a field (`<point>`): `length` metres from what it looks at,
 /// `radian` (degrees, despite the name) its pitch, `look_rad` and `position` not read yet,
 /// `fov` in degrees, `diff` (metres) added to the player's place to give what it looks at.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CameraArea {
+    /// Its `tag` (`FIELDMAP_CAMERA_DATA_*`, parsed at `0x140067f58`): `CLOSELY_X` 0,
+    /// `CLOSELY_Y` 1, `CLOSELY_Z` 2, `CLOSELY_XZ` 3, `VERTEX_LENGTH` 4.
+    pub kind: u32,
+    pub top_left: [f32; 3],
+    pub bottom_right: [f32; 3],
+    pub points: std::ops::Range<usize>,
+}
+
+/// The area kinds' tag names, by number.
+pub const CAMERA_AREA_TAGS: [&str; 5] = ["CLOSELY_X", "CLOSELY_Y", "CLOSELY_Z", "CLOSELY_XZ", "VERTEX_LENGTH"];
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CameraPoint {
     pub length: f32,
@@ -70,6 +86,9 @@ pub struct CameraPoint {
     pub fov: f32,
     pub diff: [f32; 3],
     pub position: [f32; 3],
+    /// `bumper_follow_speed`, `bumper_max_distance`, `zoom_time`, `zoom_distance` (not read).
+    pub bumper: (f32, f32),
+    pub zoom: (f32, f32),
 }
 
 /// Each field's distant view (sky, far ground, clouds: `Data/x64/Field/C_SPHERE/<set>`), by
@@ -179,14 +198,26 @@ pub fn read(root: &Element) -> FieldLook {
             "hdr" => look.hdr = Some((number(e, "threshold").unwrap_or(1.0), number(e, "glow_add_rate").unwrap_or(0.0))),
             "sphere" if e.attr("tracking_camera") != Some("false") => look.sphere_offset = numbers(e, "offset"),
             "camera" => {
-                for p in e.children.iter().flat_map(|a| a.children.iter()).filter(|p| p.name == "point") {
-                    look.camera_points.push(CameraPoint {
-                        length: number(p, "length").unwrap_or(8.0),
-                        pitch: number(p, "radian").unwrap_or(20.0),
-                        look_rad: number(p, "lookRad").unwrap_or(0.0),
-                        fov: number(p, "fov").unwrap_or(40.0),
-                        diff: numbers(p, "diffPosition").unwrap_or_default(),
-                        position: numbers(p, "position").unwrap_or_default(),
+                for a in e.children.iter().filter(|a| a.name == "area") {
+                    let first = look.camera_points.len();
+                    for p in a.children.iter().filter(|p| p.name == "point") {
+                        look.camera_points.push(CameraPoint {
+                            length: number(p, "length").unwrap_or(8.0),
+                            pitch: number(p, "radian").unwrap_or(20.0),
+                            look_rad: number(p, "lookRad").unwrap_or(0.0),
+                            fov: number(p, "fov").unwrap_or(40.0),
+                            diff: numbers(p, "diffPosition").unwrap_or_default(),
+                            position: numbers(p, "position").unwrap_or_default(),
+                            bumper: (number(p, "bumper_follow_speed").unwrap_or(0.0), number(p, "bumper_max_distance").unwrap_or(0.0)),
+                            zoom: (number(p, "zoom_time").unwrap_or(0.0), number(p, "zoom_distance").unwrap_or(0.0)),
+                        });
+                    }
+                    let tag = a.attr("tag").unwrap_or("");
+                    look.camera_areas.push(CameraArea {
+                        kind: CAMERA_AREA_TAGS.iter().position(|t| *t == tag).unwrap_or(0) as u32,
+                        top_left: numbers(a, "tlPosition").unwrap_or_default(),
+                        bottom_right: numbers(a, "brPosition").unwrap_or_default(),
+                        points: first..look.camera_points.len(),
                     });
                 }
             }
