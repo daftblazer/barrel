@@ -483,8 +483,15 @@ the runtime record's +0x2a4: the save's record is the runtime one with 12 bytes 
 139 days at most 0.11 a day give at most 15.29, nine days 0.99, and the leader none.
 
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
-seed offset, `days::World::board_offset`), `quest/now` and `next` (ten 52-byte board slots;
-`player` likewise), `quest/count`; `subject/job_rank` and `job_point` (rank 3, 1,565 points in
+seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
+(the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0
+synthesis, 1 monster, 2 gathering), the target as a number (an `itemData` row, the item enum's
+order; or a monster counted from the first `MONSTER_` name), the state (0 empty, 1 posted, 2
+taken), the day posted (220, the 11th, a redraw day) and a later day (329, the deadline
+presumably), a count, a float (6 where the table's points are 5.12) and two prizes as item row
+and rolled count. The slots hold rolled values, not request numbers: `quest::board_from_save`
+finds each slot's request by kind, target and prize items (the first such; two Craft
+requests differ only in a prize count and a condition). `quest/count`; `subject/job_rank` and `job_point` (rank 3, 1,565 points in
 one save); `shop/shop_data`, the four shops' stock exactly as the game keeps it at
 `0x141078e14` (a u32 and 50 wares of count, days and state each, 604 bytes a shop:
 `shop::Stock`); `monthrep/data` (19,440 bytes: sixty 0x144-byte month reports, presumably,

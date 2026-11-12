@@ -553,8 +553,9 @@ board's offset (`quest/randseed`), each character's friendship (its `Party` reco
 first the leader), the rank with its points by period (`subject/job_rank`, `job_point`,
 `job_point_interval`, which sum to the points), the month reports (`monthrep/data`) and the
 shops' stock (`shop/shop_data`, each ware found by its shop's order of first appearance in
-the ware table and its place among that shop's wares). The main generator is not in the save;
-the board's ten slots (`quest/now`) are not read yet and stay empty until the next redraw.
+the ware table and its place among that shop's wares). The main generator is not in the save.
+The board comes from `quest/now` through `quest::board_from_save` (Craft, Healing Salve and a
+Minidragon request in one save, slots 0, 1 and 6).
 `barrel days INSTALL N --from SAVE` runs the days from a save: from one at 20 August of year 1
 the board is redrawn on the 21st and on 1 September, August's report closes that day, and the
 friendship gains follow each character's squad slot (0.08 a day in slot 4, 0.11 in slot 2).
