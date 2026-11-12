@@ -1346,7 +1346,7 @@ The links agree with the area names: Colseit's are areas 0 to 3 (R0 to R3, the f
 whose names start at Colseit), the Upland Forest's are R3, R7, R13 and R6. One link is out of
 the area range: the Withering Plains' 208, still to be explained.
 
-### Gathering
+### Gathering and gimmicks
 
 What gathering gives is compiled into the executable: at `0x14088a060` (English Escha), 2,055
 records of 64 bytes, one per item a gathering list can give, in 696 lists (0 to 695), each list's
@@ -1422,7 +1422,30 @@ models only; `Script/`, monster behaviour). The field objects that do things are
 `POSTER`, `CALENDAR`, `BUDGET`, `SAVE_AND_LOAD`, `WARP`, `TRAIN`, the map changes
 (`FIELDMAP_CHANGE`, `WORLDMAP_CHANGE`, `IN_CHANGE`, ...), messages and events. Twelve
 gimmicks have their own tags, named by area and event (`FIELDMAP_GIMMICK_ENUM_AREA_03_07_MS01_070`).
-Where the gimmicks of each area are listed is still to be found.
+
+**Gimmicks** are compiled in too: at `0x140770230` (English Escha) 96 records of 0x40 bytes,
+one per field area in `AREA_*` order (record 0 is `AREA_01_01`, "Twilight Forest 1", the Forest
+Entrance; its gimmicks stand around its gathering points), each six words (the first is the
+region: 1 the Twilight Forest, 2 the Old Highway, 3 the Southern Ruins ...), a pointer to the
+area's gimmick list (+0x20), a word, and pointers to its place and area names (+0x30, +0x38).
+The field copies each into its runtime object (+0x10e8 + 0x40 × area) and walks the list from
+there. A list is 0x60-byte gimmicks ended by -1:
+
+| Bytes | What |
+|---|---|
+| 0 | the `FIELDMAP_GIMMICK_TYPE_*` number (0 `ITEM_BOX`, 19 `MAP_CHANGE_INFO`, 26 `FIELDMAP_CHANGE_EX`, 27 `WORLDMAP_CHANGE_EX`, 36 `BREAKABLE_OBJECT`, ...) |
+| 4 | -1 in most |
+| 8 | a float: a turn in degrees, by the values |
+| 0xc | 100 in most |
+| 0x10 | where it stands (metres) |
+| 0x1c | three floats: its size (3, 10, 3 for an exit; 1.5, 2, 1.5 for a breakable) |
+| 0x28, 0x2c | the events it appears after and until (-1 for none; `0x14035f2d0`) |
+| 0x30 to 0x5f | by type, not read yet: pointers among them (a map change's at +0x50, its list walked at +0x48 by `0x14006e1e4`) |
+
+The Forest Entrance has its two exits (each a `WORLDMAP_CHANGE_EX` with a `MAP_CHANGE_INFO`
+at the same place) and three breakable objects; most areas have 4 or 5 gimmicks. Gathering
+points are not among them: they are the points table above. `barrel gimmicks EXE [AREA]`
+lists them (`barrel_formats::gimmick`).
 
 ## Party growth
 

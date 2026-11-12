@@ -45,6 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
+  barrel gimmicks EXE [AREA]   each field area's gimmicks: kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
@@ -127,6 +128,11 @@ fn main() -> ExitCode {
         },
         ["gather-sim", install, point] => gather_sim(Path::new(install), point, None),
         ["gather-sim", install, point, save] => gather_sim(Path::new(install), point, Some(Path::new(save))),
+        ["gimmicks", exe] => gimmicks(Path::new(exe), None),
+        ["gimmicks", exe, area] => match area.parse() {
+            Ok(n) => gimmicks(Path::new(exe), Some(n)),
+            Err(_) => Err("the area is a number".into()),
+        },
         ["routes", exe] => routes(Path::new(exe), None),
         ["routes", exe, save] => routes(Path::new(exe), Some(Path::new(save))),
         ["gestures", exe, numbers @ ..] => gestures(Path::new(exe), numbers),
@@ -1844,6 +1850,23 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
         }
         let names: Vec<&str> = got.iter().filter_map(|&t| traits.get(t)).map(|t| t.name.as_str()).collect();
         println!("  {} at quality {quality}, traits {names:?}", row.attr("ItemName").unwrap_or("?"));
+    }
+    Ok(())
+}
+
+/// Lists each field area's gimmicks (or one area's).
+fn gimmicks(exe: &Path, only: Option<usize>) -> Result<()> {
+    let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::AREAS_EN).ok_or("no gimmick table")?;
+    for (k, a) in areas.iter().enumerate().filter(|(k, _)| only.is_none_or(|o| o == *k)) {
+        println!("{k:2} {} ({}), words {:?}: {} gimmicks", a.name, a.place, a.words, a.gimmicks.len());
+        if only.is_some() {
+            for g in &a.gimmicks {
+                let [x, y, z] = g.position;
+                println!("    {:20} at ({x:.1}, {y:.1}, {z:.1}) turned {}, size {:?}, events {:?}, id {}", g.kind_name(), g.angle, g.size, g.events, g.id);
+            }
+        }
     }
     Ok(())
 }
