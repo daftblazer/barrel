@@ -173,13 +173,17 @@ fog   = (1 / (end - start), -start / (end - start))    start, end × 100 (field 
 Scat0 = -(βR + βM) × log2 e                            (0.000323, -0.6129) / (-0.144, -0.433, -1.010)
 Scat1 = <light ambient> × ambient                      (0.45, 0.5, 0.3)
 Scat2 = 3 / (16π) × rayleighPow × E × βR / (βR + βM), w = -2g     (0.8356, 0.1989, 0.4775, -1)
-Scat3 = E × βM / (βR + βM) × (1 + g²) / π, w = 1 + g²             (0, 0.1326, 0, 1.25)
+Scat3 = E × βM / (βR + βM) × rayleighPow × (1 - g)² / (4π), w = 1 + g²   (0, 0.1326, 0, 1.25)
 ```
 
 so the extinction is `exp(-(βR + βM) s)` with s the eye distance over the fog's span (0 at
 the start), Rayleigh in-scattering `(1 + cos² θ) Scat2`, Mie (Henyey-Greenstein)
-`Scat3 (1 + g² - 2g cos θ)^-1.5`, and the ambient. Scat3's `1 + g²` factor equals 1.25
-here only; one field with another `mieG` would confirm it. The renderer computes these per
+`Scat3 (1 + g² - 2g cos θ)^-1.5`, and the ambient. Checked in a second field, `TOWN_10` (g 0, rayleighPow 15, E
+(0.3, 0.2, 0), light ambient (0.7, 0.6, 0.6, 0.5), fog ambient 0.6): Scat0 (-6.059, -10.96,
+-8.656), Scat1 (0.42, 0.36, 0.36, 0.5: Scat1.w is the light ambient's w), Scat2 (0.0767,
+0.0141, 0, -0), Scat3 (0.2558, 0.2199, 0, 1): Mie's factor is rayleighPow (1 - g)² / 4π
+(Henyey-Greenstein's numerator, with the same sun strength as Rayleigh's), 3.75/π there and
+1.25/π in `TOWN_11`. The renderer computes these per
 vertex for the field's models, the terrain, the characters and the distant view (θ taken
 between the way to the eye and the sun), and mixes each colour toward the in-scattered light
 by the extinction. In `TOWN_10`'s town shot the distance turns warm as in the game, if

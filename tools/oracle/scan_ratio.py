@@ -25,7 +25,7 @@ for line in open(f"/proc/{pid}/maps"):
             f = array.array("f"); f.frombytes(open(tmp, "rb").read()[: n // 4 * 4])
             for i in range(len(f) - 3):
                 x = f[i]
-                if 1e-6 < x < 1e6 and abs(f[i + 1] - ry * x) < 1e-4 * x and abs(f[i + 2] - rz * x) < 1e-4 * x:
+                if 1e-6 < abs(x) < 1e6 and abs(f[i + 1] - ry * x) < 1e-4 * abs(x) and abs(f[i + 2] - rz * x) < 1e-4 * abs(x):
                     print(f"{a + 4 * i:x} {f[i]:.6g} {f[i+1]:.6g} {f[i+2]:.6g} {f[i+3]:.6g}", flush=True)
         a += n
 print(f"scanned {total >> 20} MB", file=sys.stderr)

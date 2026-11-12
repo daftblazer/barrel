@@ -2783,7 +2783,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             look[34] = [look[26][0] * f.ambient, look[26][1] * f.ambient, look[26][2] * f.ambient, 1.0];
             let k = 3.0 / (16.0 * pi) * f.rayleigh_pow;
             look[35] = [k * sun[0] * part(r[0], 0), k * sun[1] * part(r[1], 1), k * sun[2] * part(r[2], 2), -2.0 * g];
-            let h = (1.0 + g * g) / pi;
+            let h = f.rayleigh_pow * (1.0 - g) * (1.0 - g) / (4.0 * pi);
             look[36] = [h * sun[0] * part(m[0], 0), h * sun[1] * part(m[1], 1), h * sun[2] * part(m[2], 2), 1.0 + g * g];
         }
         // The sun's shadow map: from the first directional light, over the camera's target.
