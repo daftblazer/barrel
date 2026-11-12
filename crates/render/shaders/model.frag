@@ -83,7 +83,12 @@ float sun_shadow(vec3 p) {
 void main() {
     vec4 c = texture(tex, uv);
     if ((pc.flags & 8u) != 0u) {
-        // The distant view: unlit, blended by its alpha (clouds over the dome).
+        // The distant view, blended by its alpha (clouds over the dome); its solid pieces
+        // (flag 16: ground, stones, trees, cliffs) alpha-tested like the field's models.
+        if ((pc.flags & 16u) != 0u) {
+            if (c.a < pc.params.x) discard;
+            c.a = 1.0;
+        }
         color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world)) * c.rgb, fog_keep) * pc.params.w, c.a);
         return;
     }

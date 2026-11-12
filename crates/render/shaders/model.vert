@@ -124,8 +124,9 @@ void main() {
     vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
     field_light = amb * in_color.rgb + in_color.rgb * diffuse;
     sun_part = in_color.rgb * sun;
-    // A distant view is not lit: its texture on its vertex colour.
-    if ((pc.flags & 8u) != 0u) {
+    // The distant view's dome and clouds are not lit: their texture on their vertex colour
+    // (flag 16: its solid pieces, lit as the field's models are).
+    if ((pc.flags & 24u) == 8u) {
         field_light = in_color.rgb;
         sun_part = vec3(0.0);
     }

@@ -278,7 +278,16 @@ front by kind: the dome (`Sphere_sky`), the clouds (`xEF_`), then everything els
 stones, `ns_` trees, `xS3_` cliffs) in file order. In file order the clouds came after
 `obj-ns_a15_obj_objtree_leaf_a` and the cliffs and veiled them: the dark bush and spires in
 front of the green ruins at TOWN_07's airship dock (event `MM01_OP1_212`) were missing. How
-much fog those near pieces get is still open (the game's are darker than `s = 1` makes them).
+much fog those near pieces get is still open.
+
+The dome (`Sphere_sky`) and the clouds (`xEF_`) are drawn unlit (texture × vertex colour) and
+alpha-blended; the solid pieces are lit like the field's models (field light on the vertex
+colour) and alpha-tested. All are fogged as at the fog's end (`s = 1`). Lighting the pieces
+brings TOWN_07's ruins from 107 to 96 (game 93, 97, 87) and leaves TOWN_10's street as it was
+(the shader packs agree: `MapSTDNA`, texture × `atColor` only, fits the dome; the others are
+lit). Still open: TOWN_07's `ns_` bush is dark in the game (52) and pale here, as if it took
+less fog (fogged by its own distance it turns dark, but TOWN_10's distant trees then lose
+their haze); and the fogged dome is 1.3 times too dark (176 against 243).
 
 **Accessories.** A character's container holds its body (`<stem>_default.g1m`), its skeleton
 (`<stem>.g1m`) and part models (`<stem>_P_M_*.g1m`). The parts named in

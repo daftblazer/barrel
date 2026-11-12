@@ -2940,7 +2940,10 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && !hide_by_name(&d.name)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
-            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3;
+            // The distant view's solid pieces (all but the dome and the clouds) are lit and
+            // alpha-tested like the field's models (docs/renderer.md, "Distant view").
+            let solid = draw.sky && !draw.name.contains("Sphere_sky") && !draw.name.contains("xEF_");
+            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4;
             let mut per_draw = [0u8; 8];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
             per_draw[4..].copy_from_slice(&flags.to_le_bytes());
