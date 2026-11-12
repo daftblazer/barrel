@@ -35,6 +35,42 @@ pub fn value_slot(kind: usize) -> Option<usize> {
     }
 }
 
+/// The synthesis bonus kinds (`MIX_SKILL_BASE_TYPE_*`, in the executable's order), the first
+/// parameter of `Get_Mix_Bonus`.
+pub const MIX_TYPES: [&str; 26] = [
+    "FIELD_ADD", "EFFECT_ADD", "ATT_ADD", "ADD_CARD", "RESET", "EXP_ADD", "ATT_CHANGE", "INIT_COST_ADD", "USE_SKILL_DEC",
+    "GET_PP_ADD", "INIT_PP_ADD", "MIX_DAY_DEC", "USE_ITEM_ADD", "PASSIVE_EFFECT_ADD", "INSERT_MAT_POSSIBLE",
+    "FIELD_ELEM_POSSIBLE", "BATON_POSSIBLE", "POT_LEVEL_POSSIBLE", "CUT_ITEM_COST_DATE", "EFFECT_FORCE_ADD",
+    "CUT_COST_POINT", "COUNT_USE_ADD", "ADD_COST_POINT", "ADD_ALL", "ADD_ITEM_ALL", "CONVERT_ATT_TO_EFF",
+];
+
+/// The slot of the 544 synthesis bonus values (`bonus/mixvalue`, `0x1410799a0`) a kind (and,
+/// for the per-category kinds, an item category number) keeps its total in (`0x14036b870`).
+pub fn mix_slot(kind: usize, category: i32) -> Option<usize> {
+    let slot = match kind {
+        0 => 0,
+        1 => 1,
+        2 => 3,
+        5 => 4,
+        7 => 5,
+        8 => 6,
+        9 => 7 + category,
+        10 => 0x87,
+        11 => 0x88,
+        12 => 0x89 + category,
+        13 => 0x189 + category,
+        _ => return None,
+    };
+    usize::try_from(slot).ok().filter(|&s| s < 0x220)
+}
+
+/// Whether a kind is kept per item category (`GET_PP_ADD`, `USE_ITEM_ADD`,
+/// `PASSIVE_EFFECT_ADD`): then `Get_Mix_Bonus`'s second parameter is the category and the
+/// third the amount (`0x14036c400`), else the second is the amount.
+pub fn mix_per_category(kind: usize) -> bool {
+    matches!(kind, 9 | 12 | 13)
+}
+
 /// One action: its kind (an index into [`KINDS`]) and parameters as written (numbers, or
 /// tags the game resolves through its enums).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,14 +120,20 @@ pub struct State {
     pub values: Vec<i32>,
     /// The 17 gathering-time reductions (`bonus/collectTimeBonus`).
     pub collect_time: Vec<u8>,
+    /// The 544 synthesis bonus values (`bonus/mixvalue`), read through `0x14036c3d0`.
+    pub mix: Vec<i32>,
 }
 
 /// Applies `bonus`'s value-type actions to `state` and returns the others for the caller
 /// (money, flags, items: the systems that own them). `Reduce_Collect_Time` adds its second
 /// parameter to one gathering slot (its first), or to all 17 when that is -1.
 /// `Reduce_Move_Time` does nothing in the game (its case falls through).
-pub fn apply<'b>(state: &mut State, bonus: &'b Bonus) -> Vec<&'b Action> {
+///
+/// `Get_Mix_Bonus` adds to a synthesis bonus value; `categories` names the item category
+/// numbers (the `ITEM_CATEGORY_*` enum from `ITEM_CATEGORY_PLANT` on).
+pub fn apply<'b>(state: &mut State, bonus: &'b Bonus, categories: &[&str]) -> Vec<&'b Action> {
     state.values.resize(state.values.len().max(128), 0);
+    state.mix.resize(state.mix.len().max(0x220), 0);
     state.collect_time.resize(state.collect_time.len().max(17), 0);
     let mut rest = Vec::new();
     for a in &bonus.actions {
@@ -106,6 +148,22 @@ pub fn apply<'b>(state: &mut State, bonus: &'b Bonus) -> Vec<&'b Action> {
                         *t = t.wrapping_add(add);
                     }
                 }
+            }
+        } else if KINDS[a.kind] == "Get_Mix_Bonus" {
+            let Some(kind) = a.params[0].as_deref().and_then(|t| t.strip_prefix("MIX_SKILL_BASE_TYPE_")).and_then(|t| MIX_TYPES.iter().position(|m| *m == t)) else {
+                // The six "Synth Skill Frame" rows name no kind (what the game reads then is not
+                // checked; one save's FIELD_ADD total of 2 suggests 1 each).
+                rest.push(a);
+                continue;
+            };
+            let (category, amount) = if mix_per_category(kind) {
+                let c = a.params[1].as_deref().and_then(|t| categories.iter().position(|c| *c == t)).map_or(-1, |c| c as i32);
+                (c, a.number(2).unwrap_or(0))
+            } else {
+                (0, a.number(1).unwrap_or(0))
+            };
+            if let Some(slot) = mix_slot(kind, category).filter(|_| category >= 0) {
+                state.mix[slot] += amount;
             }
         } else if KINDS[a.kind] != "Reduce_Move_Time" {
             rest.push(a);
@@ -125,11 +183,21 @@ mod tests {
         let list = bonuses(&table);
         assert_eq!(list[0].actions.len(), 3);
         let mut s = State::default();
-        let rest = apply(&mut s, &list[0]);
+        let rest = apply(&mut s, &list[0], &[]);
         assert_eq!(s.values[4], 5);
         assert!(s.collect_time.iter().all(|&t| t == 2));
         assert_eq!(rest.len(), 1);
         assert_eq!(KINDS[rest[0].kind], "GetMoney");
         assert_eq!(value_slot(51), Some(41));
+    }
+
+    #[test]
+    fn synthesis_bonuses_fill_their_slots() {
+        let xml = br#"<Root><Bonus Name="Bomb Study" BonusEntry1="BonusEntry_Get_Mix_Bonus" Entry1Prm1="MIX_SKILL_BASE_TYPE_USE_ITEM_ADD" Entry1Prm2="ITEM_CATEGORY_BOMB" Entry1Prm3="1" BonusEntry2="BonusEntry_Get_Mix_Bonus" Entry2Prm1="MIX_SKILL_BASE_TYPE_INIT_COST_ADD" Entry2Prm2="10"/></Root>"#;
+        let table = barrel_formats::table::parse(xml).unwrap();
+        let mut s = State::default();
+        apply(&mut s, &bonuses(&table)[0], &["ITEM_CATEGORY_PLANT", "ITEM_CATEGORY_BOMB"]);
+        assert_eq!(s.mix[0x89 + 1], 1);
+        assert_eq!(s.mix[5], 10);
     }
 }

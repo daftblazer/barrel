@@ -142,7 +142,8 @@ fn main() -> ExitCode {
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
-        ["bonuses", file] => bonuses(Path::new(file)),
+        ["bonuses", file] => bonuses(Path::new(file), None),
+        ["bonuses", file, exe] => bonuses(Path::new(file), Some(Path::new(exe))),
         ["days", install, n] => days(Path::new(install), n, false, None),
         ["days", install, n, "--events"] => days(Path::new(install), n, true, None),
         ["days", install, n, "--from", save] => days(Path::new(install), n, false, Some(Path::new(save))),
@@ -839,18 +840,23 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
 }
 
 /// `Bonus.xml`'s rows and their actions.
-fn bonuses(file: &Path) -> Result<()> {
+fn bonuses(file: &Path, exe: Option<&Path>) -> Result<()> {
     use barrel_game::bonus::{self, KINDS};
+    // The item categories, for the synthesis bonuses kept per category (from the executable).
+    let data = exe.map(read).transpose()?;
+    let pe = data.as_deref().map(barrel_formats::pe::Pe::parse).transpose().map_err(|e| format!("{e}"))?;
+    let categories: Vec<&str> = pe.as_ref().and_then(|pe| pe.enum_names("ITEM_CATEGORY_PLANT")).map(|(n, first)| n[first..].to_vec()).unwrap_or_default();
     let table = barrel_formats::table::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     let list = bonus::bonuses(&table);
     let mut values = bonus::State::default();
     for (i, b) in list.iter().enumerate() {
         let acts: Vec<String> = b.actions.iter().map(|a| format!("{}({})", KINDS[a.kind], a.params.iter().flatten().cloned().collect::<Vec<_>>().join(","))).collect();
         println!("{i} {}: {}", b.name, acts.join(" "));
-        bonus::apply(&mut values, b);
+        bonus::apply(&mut values, b, &categories);
     }
     let all: Vec<String> = values.values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
-    println!("{} bonuses; all of them together: values {}, gathering {:?}", list.len(), all.join(" "), values.collect_time);
+    let mix: Vec<String> = values.mix.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
+    println!("{} bonuses; all of them together: values {}, gathering {:?}, synthesis {}", list.len(), all.join(" "), values.collect_time, mix.join(" "));
     Ok(())
 }
 

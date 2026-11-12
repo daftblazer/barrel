@@ -1554,6 +1554,21 @@ switch over 55 kinds in the order of the executable's `BonusEntry_*` names
 | 49 to 51 | values 39 (move fatigue), 40 (sell price %), 41 (buy cost) |
 | 52 `GetGift`, 53 `Get_Explore_Equip`, 54 `Get_Costume` | gifts (`0x14002f950`), explore equipment (`0x14002fad0`), costumes (`0x140017000`) |
 
+**Synthesis bonuses** (`Get_Mix_Bonus`, `0x14036c400 (kind, p2, p3)`): the kind is a
+`MIX_SKILL_BASE_TYPE_*` (in enum order: `FIELD_ADD`, `EFFECT_ADD`, `ATT_ADD`, `ADD_CARD`, `RESET`,
+`EXP_ADD`, `ATT_CHANGE`, `INIT_COST_ADD`, `USE_SKILL_DEC`, `GET_PP_ADD`, `INIT_PP_ADD`,
+`MIX_DAY_DEC`, `USE_ITEM_ADD`, `PASSIVE_EFFECT_ADD`, ...). The total goes into one of 544 u16
+(`bonus/mixvalue`, `0x1410799a0`) at the slot `0x14036b870` gives: 0 `FIELD_ADD`, 1
+`EFFECT_ADD`, 3 `ATT_ADD`, 4 `EXP_ADD`, 5 `INIT_COST_ADD`, 6 `USE_SKILL_DEC`, 7 + category
+`GET_PP_ADD`, 0x87 `INIT_PP_ADD`, 0x88 `MIX_DAY_DEC`, 0x89 + category `USE_ITEM_ADD`, 0x189 +
+category `PASSIVE_EFFECT_ADD` (the category an `ITEM_CATEGORY_*` number); the other kinds have
+none. For the three per-category kinds p2 is the category and p3 the amount, for the rest p2
+is the amount. `0x14036c3d0 (kind, category)` reads a total back: the synthesis days count less
+`MIX_DAY_DEC` (`0x1400fe4e0`). All rows together give 30 starting cost points, 18 starting
+PP, 3 to 15 per category for the others. The six "Synth Skill Frame" rows name no kind; one
+save's `FIELD_ADD` total of 2 suggests each adds 1 there, not checked. `bonus::mix_slot`,
+`bonus::apply` (with the categories; `barrel bonuses Bonus.xml EXE` totals them).
+
 After each action the hero's record is refreshed, and HP and MP gains raise the current HP
 and MP as well. All 332 actions in the table resolve. Taken together the rows add 100% to
 both experience rates, 49 to the level limit (so 99), 50 HP, 40 MP, 15 to each other stat,
