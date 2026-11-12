@@ -1000,6 +1000,54 @@ fn add_body<F>(
     Ok(Some((Body { pack: tex.to_vec(), count, instance, rig }, face)))
 }
 
+/// A field enemy the frame loop moves: its place in the field's enemies, its instance, and its
+/// rig and motion (a `CharaBase` column) with when that started.
+struct FieldBody {
+    mob: usize,
+    instance: u32,
+    skeleton: barrel_formats::g1m::Skeleton,
+    motions: Motions,
+    column: String,
+    anim: barrel_formats::g1a::Animation,
+    since: f32,
+}
+
+/// Field area `area`'s enemies (`barrel_game::field_ai::build`), each drawn as its group's first
+/// monster in its field wait, added to the scene; returns the field, the bodies, their texture
+/// packs and the motion names.
+fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>)> {
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let script = |name: &str| -> std::result::Result<Vec<barrel_game::squirrel::Stmt>, String> {
+        let bytes = std::fs::read(root.join("Script").join(format!("{name}.nut"))).map_err(|e| format!("{name}: {e}"))?;
+        let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+        barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}"))
+    };
+    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
+    let (field, enemies) = barrel_game::field_ai::build(&pe, area, script, Some(&charas), Some(&bases))?;
+    let groups = barrel_formats::battle_data::encounter_groups(&pe, barrel_formats::battle_data::ENCOUNTER_GROUPS_EN);
+    let (mut bodies, mut packs, mut tex_base) = (Vec::new(), Vec::new(), base);
+    for (k, e) in enemies.iter().enumerate() {
+        let Some(row) = barrel_game::field_ai::body_row(&groups, e)
+            .and_then(|r| charas.children.get(r)?.attr("BaseTag"))
+            .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
+        else {
+            continue;
+        };
+        let c = &field.mobs[k].creature;
+        let pos = c.position.map(|v| v as f32);
+        let Some((body, _)) = add_body(root, scene, tex_base, row, 10_000 + k as u32, pos, c.facing.to_degrees() as f32, "F_WAIT", None, |_, _, _, _| Ok(None::<()>))? else { continue };
+        eprintln!("enemy {k} ({}) as {:?} at {pos:?}", e.ai.1, row.attr("BaseTag"));
+        tex_base += body.count;
+        packs.push(body.pack);
+        if let Some((skeleton, motions, anim, _)) = body.rig {
+            bodies.push(FieldBody { mob: k, instance: body.instance, skeleton, motions, column: "F_WAIT".into(), anim, since: 0.0 });
+        }
+    }
+    Ok((field, bodies, packs, barrel_game::gesture::motions(&pe)))
+}
+
 /// What a character's face needs to change during playback: its rows, its facial
 /// animations (loaded by name, kept), and its morph sets' places in the weight buffer.
 struct FaceRig {
@@ -1579,6 +1627,7 @@ fn main() -> Result<()> {
     let mut hero = 0u32;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
+    let mut creatures_area = None::<i32>;
     let mut event_line = None::<usize>;
     let mut event_at = None::<f32>;
     let (mut frames, mut fps) = (1u32, 60f64);
@@ -1648,6 +1697,8 @@ fn main() -> Result<()> {
             "--window" => window_frames = Some(it.next().ok_or("--window FRAMES")?.parse::<u32>()?.clamp(1, 100_000)),
             "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
+            // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
+            "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -1781,6 +1832,17 @@ fn main() -> Result<()> {
                 fov: 30.0,
             });
         }
+    }
+    let mut creatures = None;
+    if let Some(area) = creatures_area {
+        let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--creatures: the field is not inside a game install")?.to_path_buf();
+        let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
+        let (field, bodies, packs, names) = field_creatures(&root, area, &mut scene, base)?;
+        pack_bytes.extend(packs);
+        if focus.is_none() {
+            focus = field.mobs.first().map(|m| Vec3::from(m.creature.position.map(|v| v as f32)) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
+        }
+        creatures = Some((field, bodies, names, 0.0f32));
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
@@ -2824,6 +2886,41 @@ fn main() -> Result<()> {
         orbit.1 = (orbit.1 + axis(KeyCode::ArrowDown, KeyCode::ArrowUp) * 1.0 * frame_dt).clamp(-1.2, 1.2);
         let zoom_in = axis(KeyCode::Minus, KeyCode::Equal) + axis(KeyCode::NumpadSubtract, KeyCode::NumpadAdd);
         orbit.2 = (orbit.2 * (1.0 - zoom_in * 1.2 * frame_dt)).clamp(0.1, 10.0);
+    }
+    // The field's enemies: a step of their scripts (the player far off, so they keep to their
+    // idle wandering), then each body placed, turned and posed in its current motion.
+    if let Some((field, bodies, names, time)) = creatures.as_mut() {
+        let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        if frame > 0 && dt > 0.0 {
+            field.step([1.0e7, 0.0, 1.0e7], 0.0, dt as f64).map_err(|e| format!("creatures: {e}"))?;
+            *time += dt;
+        }
+        for b in bodies.iter_mut() {
+            let c = &field.mobs[b.mob].creature;
+            if let Some(column) = c.motion.and_then(|m| names.get(m as usize)) {
+                if *column != b.column {
+                    if let Some(anim) = b.motions.get(column).cloned() {
+                        b.anim = anim;
+                        b.since = *time;
+                    }
+                    b.column = column.clone();
+                }
+            }
+            let turn = glam::Quat::from_rotation_y(c.facing as f32);
+            instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(c.position.map(|v| v as f32))));
+            let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, *time - b.since, true));
+            let base = instances[b.instance as usize].palette as usize;
+            for (k, m) in joints.iter().enumerate() {
+                if let Some(slot) = palette.get_mut(base + k) {
+                    *slot = render_space(*m);
+                }
+            }
+        }
+        if player.is_none() {
+            gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
+            gpu.upload(palette_mem, palette_bytes(&palette))?;
+            gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
+        }
     }
     // The view's up: the event camera's roll turns it (t10).
     let mut up = Vec3::Y;

@@ -112,6 +112,13 @@ palette, a new place a new instance matrix; the vertex buffer never changes. Che
 the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by more than 8
 (from the 8-bit weights), the same picture.
 
+**Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
+area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its
+encounter group's first monster (`AREA_01_01`: two `MOB15A`, one `MOB01A`) in its `CharaBase`
+motions, and steps their scripts each frame with the player far away, so they keep to their
+idle wandering; each body follows its creature's place and facing and switches to the motion
+its script plays.
+
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a
 `stage::Playback` stepped by a `clock::Clock` fed 1/HZ a frame, each frame drawing the last
