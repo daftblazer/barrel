@@ -681,6 +681,8 @@ body, over every event in Escha & Logy DX. 232 of the 238 commands are followed 
 number of words every time, which gives their operand count. The 6 that vary are listed
 with each count seen.
 
+The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`) switches on the word through a jump table over `0x73000003` to `0x7300007b` (at RVA `0x1f2540`), and every word whose entry is not the default case is listed as its. `s80` and `s81` are in no switch found.
+
 | Word | Short | Name | Handled by | Uses | Words after it (count) |
 |---|---|---|---|---|---|
 | `70000001` | `p1` | ECT_MACRO_TIME_WAIT | Event | 8664 | 1 (8664) |
@@ -737,69 +739,69 @@ with each count seen.
 | `72000022` | `r34` |  |  | 2 | 3 (2) |
 | `72000023` | `r35` |  |  | 41 | 2 (41) |
 | `73000001` | `s1` | ECT_CHARA_SET_MARKER | EventExecBtlChara | 998 | 5 (998) |
-| `73000002` | `s2` | ECT_CHARA_CAMERA_QUAKE_SET |  | 665 | 3 (665) |
+| `73000002` | `s2` | ECT_CHARA_CAMERA_QUAKE_SET | battle character code (`0x1401ae66a`) | 665 | 3 (665) |
 | `73000003` | `s3` | ECT_CHARA_TIME_WAIT | EventExecChara | 3849 | 2 (3849) |
-| `73000004` | `s4` | ECT_CHARA_POS_SET |  | 20753 | 7 (20753) |
-| `73000005` | `s5` | ECT_CHARA_MOTION_SET |  | 4435 | 4 (4435) |
-| `73000006` | `s6` | ECT_CHARA_MOTION_WAIT |  | 2966 | 1 (2966) |
-| `73000007` | `s7` | ECT_CHARA_MOTION_SET_DIRECT |  | 24 | 2 (24) |
-| `73000008` | `s8` | ECT_CHARA_MOTION_SET_DIV |  | 858 | 4 (858) |
-| `73000009` | `s9` | ECT_CHARA_MOTION_SET_SPEED |  | 1504 | 2 (1504) |
-| `7300000a` | `s10` | ECT_CHARA_MOTION_SET_LOOP |  | 1604 | 4 (1604) |
-| `7300000b` | `s11` | ECT_CHARA_MOTION_SET_AUTO_LOOP |  | 133 | 5 (133) |
-| `7300000c` | `s12` | ECT_CHARA_MOTION_SPEED_MOVE_SET |  | 31 | 4 (31) |
-| `7300000d` | `s13` | ECT_CHARA_MOTION_SET_OFFSET_ONLY |  | 68 | 3 (68) |
-| `7300000e` | `s14` | ECT_CHARA_MOTION_SET_OFFSET_AUTO_LOOP |  | 44 | 3 (44) |
-| `7300000f` | `s15` | ECT_CHARA_COLOR_SET |  | 908 | 5 (908) |
-| `73000010` | `s16` | ECT_CHARA_COLOR_MOVE_SET |  | 533 | 7 (533) |
-| `73000011` | `s17` | ECT_CHARA_COLOR_MOVE_WAIT |  | 83 | 1 (83) |
-| `73000012` | `s18` | ECT_CHARA_MOVE_SET |  | 1717 | 13 (950), 11 (704), 19 (63) |
-| `73000013` | `s19` | ECT_CHARA_MOVE_WAIT |  | 717 | 1 (717) |
-| `73000014` | `s20` | ECT_CHARA_MOVE_SET_WAIT |  | 48 | 13 (48) |
-| `73000015` | `s21` | ECT_CHARA_MOVE_PRE_WAIT |  | 741 | 2 (741) |
-| `73000017` | `s23` | ECT_CHARA_ROT_SET |  | 4668 | 4 (4668) |
-| `73000018` | `s24` | ECT_CHARA_ROT_SET_TARGET |  | 6809 | 7 (6809) |
-| `73000019` | `s25` | ECT_CHARA_ROT_SET_TARGET_ALL |  | 100 | 7 (100) |
-| `7300001a` | `s26` | ECT_CHARA_ROT_MOVE_SET |  | 1305 | 6 (1305) |
-| `7300001b` | `s27` | ECT_CHARA_ROT_MOVE_SET_TARGET |  | 21 | 9 (21) |
-| `7300001c` | `s28` | ECT_CHARA_ROT_MOVE_SET_TARGET_ALL |  | 8 | 9 (8) |
-| `7300001d` | `s29` | ECT_CHARA_ROT_MOVE_WAIT |  | 174 | 1 (174) |
-| `73000021` | `s33` | ECT_CHARA_ROT_STOP |  | 25 | 1 (25) |
-| `73000022` | `s34` | ECT_CHARA_OFFSET_ROT_MOVE |  | 39 | 6 (39) |
-| `73000023` | `s35` | ECT_CHARA_SCALE_SET |  | 762 | 4 (762) |
-| `73000024` | `s36` | ECT_CHARA_SCALE_MOVE_SET |  | 246 | 6 (246) |
-| `73000025` | `s37` | ECT_CHARA_SCALE_MOVE_WAIT |  | 55 | 1 (55) |
-| `73000026` | `s38` | ECT_CHARA_EFF_ADD |  | 12013 | 25 (12013) |
-| `73000027` | `s39` | ECT_CHARA_EFF_WAIT |  | 15 | 2 (15) |
-| `73000029` | `s41` | ECT_CHARA_EFF_MOVE_SET |  | 245 | 14 (132), 12 (100), 20 (13) |
-| `7300002a` | `s42` | ECT_CHARA_EFF_MOVE_WAIT |  | 158 | 2 (158) |
+| `73000004` | `s4` | ECT_CHARA_POS_SET | EventExecChara | 20753 | 7 (20753) |
+| `73000005` | `s5` | ECT_CHARA_MOTION_SET | EventExecChara | 4435 | 4 (4435) |
+| `73000006` | `s6` | ECT_CHARA_MOTION_WAIT | EventExecChara | 2966 | 1 (2966) |
+| `73000007` | `s7` | ECT_CHARA_MOTION_SET_DIRECT | EventExecChara | 24 | 2 (24) |
+| `73000008` | `s8` | ECT_CHARA_MOTION_SET_DIV | EventExecChara | 858 | 4 (858) |
+| `73000009` | `s9` | ECT_CHARA_MOTION_SET_SPEED | EventExecChara | 1504 | 2 (1504) |
+| `7300000a` | `s10` | ECT_CHARA_MOTION_SET_LOOP | EventExecChara | 1604 | 4 (1604) |
+| `7300000b` | `s11` | ECT_CHARA_MOTION_SET_AUTO_LOOP | EventExecChara | 133 | 5 (133) |
+| `7300000c` | `s12` | ECT_CHARA_MOTION_SPEED_MOVE_SET | EventExecChara | 31 | 4 (31) |
+| `7300000d` | `s13` | ECT_CHARA_MOTION_SET_OFFSET_ONLY | EventExecChara | 68 | 3 (68) |
+| `7300000e` | `s14` | ECT_CHARA_MOTION_SET_OFFSET_AUTO_LOOP | EventExecChara | 44 | 3 (44) |
+| `7300000f` | `s15` | ECT_CHARA_COLOR_SET | EventExecChara | 908 | 5 (908) |
+| `73000010` | `s16` | ECT_CHARA_COLOR_MOVE_SET | EventExecChara | 533 | 7 (533) |
+| `73000011` | `s17` | ECT_CHARA_COLOR_MOVE_WAIT | EventExecChara | 83 | 1 (83) |
+| `73000012` | `s18` | ECT_CHARA_MOVE_SET | EventExecChara | 1717 | 13 (950), 11 (704), 19 (63) |
+| `73000013` | `s19` | ECT_CHARA_MOVE_WAIT | EventExecChara | 717 | 1 (717) |
+| `73000014` | `s20` | ECT_CHARA_MOVE_SET_WAIT | EventExecChara | 48 | 13 (48) |
+| `73000015` | `s21` | ECT_CHARA_MOVE_PRE_WAIT | EventExecChara | 741 | 2 (741) |
+| `73000017` | `s23` | ECT_CHARA_ROT_SET | EventExecChara | 4668 | 4 (4668) |
+| `73000018` | `s24` | ECT_CHARA_ROT_SET_TARGET | EventExecChara | 6809 | 7 (6809) |
+| `73000019` | `s25` | ECT_CHARA_ROT_SET_TARGET_ALL | EventExecChara | 100 | 7 (100) |
+| `7300001a` | `s26` | ECT_CHARA_ROT_MOVE_SET | EventExecChara | 1305 | 6 (1305) |
+| `7300001b` | `s27` | ECT_CHARA_ROT_MOVE_SET_TARGET | EventExecChara | 21 | 9 (21) |
+| `7300001c` | `s28` | ECT_CHARA_ROT_MOVE_SET_TARGET_ALL | EventExecChara | 8 | 9 (8) |
+| `7300001d` | `s29` | ECT_CHARA_ROT_MOVE_WAIT | EventExecChara | 174 | 1 (174) |
+| `73000021` | `s33` | ECT_CHARA_ROT_STOP | EventExecChara | 25 | 1 (25) |
+| `73000022` | `s34` | ECT_CHARA_OFFSET_ROT_MOVE | EventExecChara | 39 | 6 (39) |
+| `73000023` | `s35` | ECT_CHARA_SCALE_SET | EventExecChara | 762 | 4 (762) |
+| `73000024` | `s36` | ECT_CHARA_SCALE_MOVE_SET | EventExecChara | 246 | 6 (246) |
+| `73000025` | `s37` | ECT_CHARA_SCALE_MOVE_WAIT | EventExecChara | 55 | 1 (55) |
+| `73000026` | `s38` | ECT_CHARA_EFF_ADD | EventExecChara | 12013 | 25 (12013) |
+| `73000027` | `s39` | ECT_CHARA_EFF_WAIT | EventExecChara | 15 | 2 (15) |
+| `73000029` | `s41` | ECT_CHARA_EFF_MOVE_SET | EventExecChara | 245 | 14 (132), 12 (100), 20 (13) |
+| `7300002a` | `s42` | ECT_CHARA_EFF_MOVE_WAIT | EventExecChara | 158 | 2 (158) |
 | `7300002c` | `s44` | ECT_CHARA_EFF_PRE_WAIT | EventExecBtlChara | 130 | 3 (130) |
-| `7300002d` | `s45` | ECT_CHARA_EFF_STOP |  | 228 | 2 (228) |
-| `7300002e` | `s46` | ECT_CHARA_EFF_KILL |  | 1406 | 2 (1406) |
-| `7300002f` | `s47` |  |  | 19 | 17 (19) |
-| `73000030` | `s48` | ECT_CHARA_NODEEFF_STOP |  | 2018 | 2 (2018) |
-| `73000031` | `s49` | ECT_CHARA_NODEEFF_KILL |  | 1980 | 2 (1980) |
-| `73000033` | `s51` | ECT_CHARA_LOOK_SET |  | 4 | 4 (4) |
-| `73000035` | `s53` | ECT_CHARA_LOOK_MOVE_SET |  | 2 | 6 (2) |
-| `73000039` | `s57` | ECT_CHARA_LOOK_CLEAR |  | 41 | 1 (41) |
-| `7300003e` | `s62` | ECT_CHARA_SE_PLAY |  | 18 | 6 (18) |
-| `73000040` | `s64` | ECT_CHARA_CHANGE_PARTS |  | 49 | 3 (49) |
-| `73000042` | `s66` | ECT_CHARA_CHANGE_ADD_OBJ |  | 1 | 4 (1) |
-| `73000044` | `s68` | ECT_CHARA_NODECHARA_ADD |  | 269 | 12 (269) |
-| `73000045` | `s69` | ECT_CHARA_NODECHARA_DETACHCHILD |  | 8 | 2 (8) |
-| `73000046` | `s70` | ECT_CHARA_NODECHARA_DETACH |  | 259 | 1 (259) |
+| `7300002d` | `s45` | ECT_CHARA_EFF_STOP | EventExecChara | 228 | 2 (228) |
+| `7300002e` | `s46` | ECT_CHARA_EFF_KILL | EventExecChara | 1406 | 2 (1406) |
+| `7300002f` | `s47` |  | EventExecChara | 19 | 17 (19) |
+| `73000030` | `s48` | ECT_CHARA_NODEEFF_STOP | EventExecChara | 2018 | 2 (2018) |
+| `73000031` | `s49` | ECT_CHARA_NODEEFF_KILL | EventExecChara | 1980 | 2 (1980) |
+| `73000033` | `s51` | ECT_CHARA_LOOK_SET | EventExecChara | 4 | 4 (4) |
+| `73000035` | `s53` | ECT_CHARA_LOOK_MOVE_SET | EventExecChara | 2 | 6 (2) |
+| `73000039` | `s57` | ECT_CHARA_LOOK_CLEAR | EventExecChara | 41 | 1 (41) |
+| `7300003e` | `s62` | ECT_CHARA_SE_PLAY | EventExecChara | 18 | 6 (18) |
+| `73000040` | `s64` | ECT_CHARA_CHANGE_PARTS | EventExecChara | 49 | 3 (49) |
+| `73000042` | `s66` | ECT_CHARA_CHANGE_ADD_OBJ | EventExecChara | 1 | 4 (1) |
+| `73000044` | `s68` | ECT_CHARA_NODECHARA_ADD | EventExecChara | 269 | 12 (269) |
+| `73000045` | `s69` | ECT_CHARA_NODECHARA_DETACHCHILD | EventExecChara | 8 | 2 (8) |
+| `73000046` | `s70` | ECT_CHARA_NODECHARA_DETACH | EventExecChara | 259 | 1 (259) |
 | `73000047` | `s71` | ECT_CHARA_SET_DISP | EventExecChara | 31 | 2 (31) |
-| `73000050` | `s80` | ECT_CHARA_SET_FLAG |  | 6 | 3 (6) |
-| `73000051` | `s81` | ECT_CHARA_SET_PROGRAM_MOTION_WAIT |  | 41 | 1 (41) |
-| `73000053` | `s83` | ECT_CHARA_MULTI_MOTION_LOOP_CLEAR |  | 1 | 1 (1) |
-| `73000054` | `s84` |  |  | 405 | 7 (405) |
-| `73000055` | `s85` | ECT_CHARA_ROT_SET_COPY_TARGET_ALL |  | 11 | 7 (11) |
-| `73000056` | `s86` | ECT_CHARA_ROT_MOVE_SET_COPY_TARGET |  | 2 | 9 (2) |
-| `73000058` | `s88` | ECT_CHARA_FACIAL_MOTION_SET |  | 17 | 4 (17) |
-| `7300005f` | `s95` | ECT_CHARA_LOAD_ONE_MOTION |  | 2 | 2 (2) |
-| `73000062` | `s98` | ECT_CHARA_NODEEFF_ADD2 |  | 3896 | 19 (3896) |
-| `73000063` | `s99` | ECT_CHARA_SE_NON_STREAM_PLAY |  | 4344 | 6 (4344) |
-| `73000066` | `s102` | ECT_CHARA_VOICE_PLAY |  | 12 | 2 (12) |
+| `73000050` | `s80` | ECT_CHARA_SET_FLAG | (no handler found) | 6 | 3 (6) |
+| `73000051` | `s81` | ECT_CHARA_SET_PROGRAM_MOTION_WAIT | (no handler found) | 41 | 1 (41) |
+| `73000053` | `s83` | ECT_CHARA_MULTI_MOTION_LOOP_CLEAR | EventExecChara | 1 | 1 (1) |
+| `73000054` | `s84` |  | EventExecChara | 405 | 7 (405) |
+| `73000055` | `s85` | ECT_CHARA_ROT_SET_COPY_TARGET_ALL | EventExecChara | 11 | 7 (11) |
+| `73000056` | `s86` | ECT_CHARA_ROT_MOVE_SET_COPY_TARGET | EventExecChara | 2 | 9 (2) |
+| `73000058` | `s88` | ECT_CHARA_FACIAL_MOTION_SET | EventExecChara | 17 | 4 (17) |
+| `7300005f` | `s95` | ECT_CHARA_LOAD_ONE_MOTION | EventExecChara | 2 | 2 (2) |
+| `73000062` | `s98` | ECT_CHARA_NODEEFF_ADD2 | EventExecChara | 3896 | 19 (3896) |
+| `73000063` | `s99` | ECT_CHARA_SE_NON_STREAM_PLAY | EventExecChara | 4344 | 6 (4344) |
+| `73000066` | `s102` | ECT_CHARA_VOICE_PLAY | EventExecChara | 12 | 2 (12) |
 | `73000070` | `s112` |  | EventExecChara | 1 | 1 (1) |
 | `73000071` | `s113` | ECT_CHARA_EFF_FADEOUT | EventExecChara | 10 | 2 (10) |
 | `73000072` | `s114` | ECT_CHARA_NODEEFF_FADEOUT | EventExecChara | 115 | 2 (115) |
