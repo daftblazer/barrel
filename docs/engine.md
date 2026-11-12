@@ -165,6 +165,31 @@ Validation (the Khronos layer, every mode): clean. The motion target needs the d
 `independentBlend` (enabled when present; desktop, Turnip and Mali have it), and the post
 pipeline has its own one-target blend state.
 
+**FSR 2, 3 and 4: plan** (researched 2026-11-12).
+
+- *FSR 2 and FSR 3.1's upscaler* are one algorithm line, open under MIT: FSR 2.2's own
+  repository had GLSL shaders and a Vulkan backend, and the FidelityFX SDK carries the 3.1
+  upscaler (now 3.1.6) with DirectX 12 and Vulkan backends. The SDK builds for Windows only
+  (CMake, batch scripts), so Barrel ports the upscaler's compute passes into its own Vulkan
+  code, as with FSR 1, rather than linking the SDK. Its inputs are the ones the renderer already
+  has: jittered colour, depth, motion vectors (with the jitter left out), the jitter offset,
+  a reset flag on cuts, plus a reactive mask for transparencies and the glow. 3.1 is FSR 2's
+  successor (less ghosting and shimmer, same inputs), so 2.2 is kept only if it is
+  noticeably cheaper on the handhelds, as a separate preset, once both are measured on the RP6.
+  Depth must be stored for it (the scene pass's depth is transient now): a sampled depth
+  target only when FSR 2/3 is on.
+- *FSR 3 frame generation* (interpolated frames) is a separate piece: it needs the swapchain's
+  pacing and adds latency. Later, desktop only, off by default.
+- *FSR 4* (ML-based; 4.1.2 now also on older Radeons) is binary only. The SDK 2.4 Vulkan
+  runtime is a Windows DLL, and the DLL itself decides which GPUs get it. AMD has said nothing
+  of Linux; the Linux routes so far load third-party builds through `dlopen`. So Barrel keeps
+  FSR 4 as an optional runtime-loaded backend behind the same inputs as 3.1, used only when a
+  native Linux library is present. It is never shipped, never required, and 3.1 is the
+  fallback. Nothing to build for it until AMD ships one.
+
+Order: store depth, port the 3.1 upscaler passes, a reactive mask, then (desktop) frame
+generation.
+
 **Wide screens.** The projection keeps the vertical field of view and widens the horizontal
 one with the aspect, so 21:9 (3440×1440) and 32:9 (5120×1440) show more to the sides without
 stretching (`barrel-view --size` takes up to 8192 either way; the first opening at 5120×1440
