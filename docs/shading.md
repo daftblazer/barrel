@@ -33,3 +33,14 @@ The steps, with n the normalised normal and c the diffuse texture's colour:
 6. **Fog.** lerp(v3, colour, v4).
 7. **Colour and range.** result × saturate(atColor) + saturate(atColor - 1), then × the HDR
    range's inverse; alpha from the same.
+
+## Where the constants come from
+
+Each field's table (`Saves/field/<FIELD>.xml`; 114 of the 144 have one) gives its look
+(`barrel_formats::field_look`): `<chara_shader light_dir light_color rim_light_dir
+rim_light_color point_light_strength>` is the character shader's constants (the colours'
+fourth value is their weight: `TOWN_11` has light colour (0.65, 0.4, 0.3) at 0.3 and rim
+colour (0.9, 0.9, 0) at 0.25); `<light ambient>` with `PARALLEL` (`rot` in degrees, `color`)
+and `POINT` (`pos` in metres, `color`, `ambient`, `att0..2`, `range`) params is the scene's
+lights; `<fog start end ...>` (metres; with Mie and Rayleigh scattering terms) and `<hdr
+threshold glow_add_rate>` the fog and glow.

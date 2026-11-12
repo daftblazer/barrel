@@ -14,6 +14,7 @@ pub mod ebm;
 mod ebd_tables;
 pub mod elixir;
 pub mod font;
+pub mod field_look;
 pub mod g1a;
 pub mod g1h;
 pub mod g1m;
