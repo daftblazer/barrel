@@ -350,3 +350,44 @@ mod quality_tests {
         assert_eq!(super::finished_quality(110.0, &[&t], &mut roll), 120.0);
     }
 }
+
+/// The sum of a kind's amounts over an item's traits (each trait's two slots), as
+/// `0x14029ef10` and `0x14029f030` add them up.
+fn trait_sum(traits: &[&barrel_formats::battle_data::Trait], kind: &str, roll: &mut dyn FnMut(i32, i32) -> i32) -> i32 {
+    traits.iter().flat_map(|t| t.slots.iter().take(2)).filter(|s| s.kind == kind).map(|s| roll(s.min, s.max)).sum()
+}
+
+/// A made item's uses (`0x14029ef10`, the unit's +0x1e): its recipe's use count (record word
+/// 8, +0x20; 0 for an item no recipe makes) plus its `ITEM_SUB_ITM_ADD_USECOUNT` traits, at
+/// least 1. The uses left (+0x1c) are this plus +0x20.
+pub fn uses(recipe_uses: i32, traits: &[&barrel_formats::battle_data::Trait], roll: &mut dyn FnMut(i32, i32) -> i32) -> i32 {
+    (recipe_uses + trait_sum(traits, "ITEM_SUB_ITM_ADD_USECOUNT", roll)).max(1)
+}
+
+/// A made item's equip cost (`0x14029f030`, the unit's +0x18, the squares it takes on the
+/// battle item grid): `itemData`'s `EquipCost` less its `ITEM_SUB_EQUIP_COST` traits and the
+/// unit's +0x1a, kept within 1 and 5; 0 for an item whose `EquipCost` is 0.
+pub fn equip_cost(item_cost: i32, traits: &[&barrel_formats::battle_data::Trait], less: i32, roll: &mut dyn FnMut(i32, i32) -> i32) -> i32 {
+    if item_cost <= 0 {
+        return 0;
+    }
+    (item_cost - trait_sum(traits, "ITEM_SUB_EQUIP_COST", roll) - less).clamp(1, 5)
+}
+
+#[cfg(test)]
+mod count_tests {
+    use barrel_formats::battle_data::{Trait, TraitSlot};
+
+    #[test]
+    fn traits_add_uses_and_take_off_cost() {
+        let t = |kind: &str, v| Trait { name: String::new(), group: String::new(), slots: vec![TraitSlot { kind: kind.into(), min: v, max: v }] };
+        let (more, light) = (t("ITEM_SUB_ITM_ADD_USECOUNT", 1), t("ITEM_SUB_EQUIP_COST", 2));
+        let mut roll = |lo: i32, _: i32| lo;
+        assert_eq!(super::uses(3, &[&more], &mut roll), 4);
+        assert_eq!(super::uses(0, &[], &mut roll), 1);
+        assert_eq!(super::equip_cost(3, &[&light], 0, &mut roll), 1);
+        assert_eq!(super::equip_cost(3, &[&light, &light], 0, &mut roll), 1);
+        assert_eq!(super::equip_cost(9, &[], 0, &mut roll), 5);
+        assert_eq!(super::equip_cost(0, &[], 0, &mut roll), 0);
+    }
+}

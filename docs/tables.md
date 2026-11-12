@@ -1186,6 +1186,15 @@ the traits the result takes, each `ITEM_SUB_ITM_ADD_QUALITY` slot's amount (`0x1
 `0x1402a1ed0`) and keeps the sum within 0 and 120 (`0x1407272a0`) as the item's quality.
 `synthesis::finished_quality`.
 
+**The finished item's traits and counts.** The traits are the player's picks: the screen's
+list goes into the item's three trait slots (`0x1402fac00`, through `0x14029cfe0`, which also
+raises the trait's knowledge to 10). Then `0x14029f190` works out the counts: the uses
+(+0x1e, `0x14029ef10`) are the recipe's use count (record word 8) plus the
+`ITEM_SUB_ITM_ADD_USECOUNT` traits, at least 1; the equip cost (+0x18, `0x14029f030`) is
+`itemData`'s `EquipCost` less the `ITEM_SUB_EQUIP_COST` traits and the unit's +0x1a, kept
+within 1 and 5 (0 when `EquipCost` is 0); the uses left (+0x1c) are +0x20 plus the uses.
+`synthesis::uses`, `synthesis::equip_cost`.
+
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
 `itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:
 `0x14036c3d0(12)`, at least 1) and N the number of items made (state +0x98), the first item

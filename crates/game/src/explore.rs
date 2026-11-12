@@ -1,6 +1,6 @@
 //! The battle item grid (`explore_equip`): each alchemist takes items into the field on a
 //! row of 25 squares, as many open as the capacity allows. An item covers as many squares as
-//! its `EquipCost` (`itemData.xml`), starting at its own square: the saved item list is
+//! its equip cost (the unit's +0x18), starting at its own square: the saved item list is
 //! indexed by that first square. See docs/formats.md, "Battle items".
 
 /// The grid's squares.

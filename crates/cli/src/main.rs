@@ -974,12 +974,13 @@ fn save(file: &Path) -> Result<()> {
         .unwrap_or_default();
     for (who, (slots, grid)) in ["Escha", "Logy"].iter().zip(s.battle_item_slots.iter().zip(&s.battle_grid)) {
         let open = grid.iter().take_while(|&&g| g != barrel_game::explore::LOCKED).count();
-        let placed: Vec<(usize, u32)> = slots.iter().enumerate().filter_map(|(k, u)| Some((k, *costs.get(usize::try_from(u.as_ref()?.item).ok()?)?))).collect();
+        // Each item's own equip cost (unit +0x18), which traits can lower from itemData's.
+        let placed: Vec<(usize, u32)> = slots.iter().enumerate().filter_map(|(k, u)| Some((k, u.as_ref()?.equip_cost.max(0) as u32))).collect();
         let check = if costs.is_empty() {
             String::new()
         } else {
             match barrel_game::explore::grid(&placed, open) {
-                Some(g) if g[..] == grid[..] => ", rebuilt from the items' costs".into(),
+                Some(g) if g[..] == grid[..] => ", rebuilt from the items' equip costs".into(),
                 _ => ", NOT what the items' costs give".into(),
             }
         };
@@ -1469,7 +1470,7 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         // The item as made at that quality, with no effects or traits (equipment::item_stat).
         let items: Vec<barrel_game::equipment::ItemRow> = table.children.iter().map(barrel_game::equipment::ItemRow::from_row).collect();
         let t = barrel_game::equipment::Tables { items: &items, effects: &[], traits: &[], acts: &[] };
-        let unit = barrel_formats::save::ItemUnit { serial: 0, item: k as i16, quality, traits: [-1; 3], word_e: 0, effects: [-1; 4], word_18: 0, counts: [0; 4] };
+        let unit = barrel_formats::save::ItemUnit { serial: 0, item: k as i16, quality, traits: [-1; 3], word_e: 0, effects: [-1; 4], equip_cost: 0, word_1a: 0, counts: [0; 4] };
         let mut roll = |lo: i32, _hi: i32| lo;
         let mut add = |stat: usize, base: i32| base + barrel_game::equipment::item_stat(&t, &unit, stat, base, &mut roll);
         ba.hp = add(0, ba.hp);

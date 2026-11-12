@@ -413,8 +413,10 @@ fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
 /// One held item (36 bytes; the basket, container and material lists are runs of these):
 /// a serial number (+0; the `item/ID` record holds the next), the `itemData.xml` row (+2),
 /// the quality as a float (+4), three trait rows (+8, -1 none), a word the battle code checks
-/// (+0xe), four effect rows (+0x10), a word (+0x18) and the use counts (+0x1c, +0x1e, +0x20,
-/// +0x22; the battle code reads +0x1c as the uses left). A serial of 0xffff is an empty slot.
+/// (+0xe), four effect rows (+0x10), the equip cost (+0x18: the squares it takes on the battle
+/// item grid, `0x14029f030`), a word (+0x1a, taken off the cost) and the use counts (+0x1c the
+/// uses left, which the battle code reads, = +0x20 + +0x1e; +0x1e the uses from its recipe and
+/// traits, `0x14029ef10`; +0x20, +0x22). A serial of 0xffff is an empty slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemUnit {
     pub serial: u16,
@@ -423,7 +425,8 @@ pub struct ItemUnit {
     pub traits: [i16; 3],
     pub word_e: u16,
     pub effects: [i16; 4],
-    pub word_18: u32,
+    pub equip_cost: i16,
+    pub word_1a: i16,
     pub counts: [i16; 4],
 }
 
@@ -441,7 +444,8 @@ pub fn item_units(d: &[u8]) -> Vec<ItemUnit> {
             traits: [i16_at(c, 8), i16_at(c, 10), i16_at(c, 12)],
             word_e: u16::from_le_bytes([c[14], c[15]]),
             effects: [i16_at(c, 16), i16_at(c, 18), i16_at(c, 20), i16_at(c, 22)],
-            word_18: u32::from_le_bytes(c[24..28].try_into().unwrap()),
+            equip_cost: i16_at(c, 24),
+            word_1a: i16_at(c, 26),
             counts: [i16_at(c, 28), i16_at(c, 30), i16_at(c, 32), i16_at(c, 34)],
         })
         .collect()

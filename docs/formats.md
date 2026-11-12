@@ -617,7 +617,8 @@ bonuses, granted by the rows of `bonus/Bonus.xml` through `0x14002f310` (docs/ta
 after), `explore_slot_<name>` (25 i32) and `explore_take_over_<name>` (25 item units, all
 empty in the save read; what carries over is not read yet). The items sit on a row of 25
 squares: an item's index in the list is the first square it covers, and it covers as many
-squares as its `EquipCost` in `itemData.xml`. `explore_slot` is that grid as saved: each
+squares as its own equip cost (item unit +0x18: `itemData.xml`'s `EquipCost` less its
+`ITEM_SUB_EQUIP_COST` traits, 1 to 5, `synthesis::equip_cost`). `explore_slot` is that grid as saved: each
 square holds the index of the item over it, -1 when free, 25 when locked (past the
 capacity, 10 in the save read). Escha's there: a Bomb (cost 3) at 0, another at 5, a Healing
 Salve (1) at 8, so `0 0 0 -1 -1 5 5 5 8 -1` and 25 after. `explore::grid` rebuilds it, and

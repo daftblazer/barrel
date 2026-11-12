@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn taking_an_item_teaches_its_parts() {
         let mut k = Knowledge { item: vec![0; 4], eff: vec![0; 8], potential: vec![0; 8], mix_esp: vec![0; 4], ..Default::default() };
-        let unit = ItemUnit { serial: 1, item: 2, quality: 30.0, traits: [3, -1, -1], word_e: 0, effects: [5, -1, -1, -1], word_18: 0, counts: [0; 4] };
+        let unit = ItemUnit { serial: 1, item: 2, quality: 30.0, traits: [3, -1, -1], word_e: 0, effects: [5, -1, -1, -1], equip_cost: 0, word_1a: 0, counts: [0; 4] };
         assert!(learn_item(&mut k, &unit, level_for(8), false, [1, -1]));
         assert_eq!((k.item[2], k.eff[5], k.potential[3], k.mix_esp[1]), (SEEN, SEEN, SEEN, SEEN));
         assert!(learn_item(&mut k, &unit, level_for(0), true, [-1, -1]));

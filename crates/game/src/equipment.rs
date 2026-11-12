@@ -236,7 +236,7 @@ mod tests {
         let traits = vec![Trait { name: "Power".into(), group: String::new(), slots: vec![barrel_formats::battle_data::TraitSlot { kind: "ITEM_SUB_EVOLVE_STATUS".into(), min: 10, max: 10 }] }];
         let items = vec![ItemRow { equip: true, stats: [0, 0, 20, 0, 0, 0, 0, 0, 0] }];
         let t = Tables { items: &items, effects: &effects, traits: &traits, acts: &acts };
-        let unit = ItemUnit { serial: 1, item: 0, quality: 50.0, traits: [0, -1, -1], word_e: 0, effects: [0, -1, -1, -1], word_18: 0, counts: [0; 4] };
+        let unit = ItemUnit { serial: 1, item: 0, quality: 50.0, traits: [0, -1, -1], word_e: 0, effects: [0, -1, -1, -1], equip_cost: 0, word_1a: 0, counts: [0; 4] };
         let mut roll = |lo: i32, _hi: i32| lo;
         // Attack: (20 + 10) × (50 × 0.5 + 75) / 100 = 30, plus 10% of a base of 40.
         assert_eq!(item_stat(&t, &unit, 2, 40, &mut roll), 34);
