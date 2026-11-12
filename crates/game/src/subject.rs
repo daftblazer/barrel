@@ -20,14 +20,15 @@ pub fn lines(cleared: &[bool; 25]) -> u32 {
 /// What reaching `lines` pays on a card whose lines already paid number `paid` (`0x1403604d0`,
 /// the save's `subject/bingo_num` byte for the card): each newly reached step k, from `paid` up
 /// to `lines` (at most 9), its `(lineBonus, lineScore)` pair from the card's record (+0x20 + 8k):
-/// the bonus row applied when not -1 and the score added to the job points when above 0.
+/// the bonus row applied when not -1 and the score added to the job points when above 0
+/// (`barrel_formats::subject::Card::steps`).
 /// Returns the steps' pairs and the new count paid; nothing when `lines` is not above `paid`.
-pub fn pay(lines: u32, paid: u32, steps: &[(i32, i32)]) -> (Vec<(i32, i32)>, u32) {
+pub fn pay<T: Clone>(lines: u32, paid: u32, steps: &[T]) -> (Vec<T>, u32) {
     let lines = lines.min(9);
     if lines <= paid {
         return (Vec::new(), paid);
     }
-    (steps.iter().copied().skip(paid as usize).take((lines - paid) as usize).collect(), lines)
+    (steps.iter().cloned().skip(paid as usize).take((lines - paid) as usize).collect(), lines)
 }
 
 #[cfg(test)]

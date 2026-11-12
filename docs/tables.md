@@ -581,7 +581,9 @@ of its inner 3 × 3 squares, 6 to 8, 11 to 13 and 16 to 18, whose squares are al
 8, or 9 with all 25 cleared; each step newly reached past the card's count already paid, its
 byte at `0x141099e00` + card + 0xa4c0 and the save's `subject/bingo_num`, pays the card record's
 pair at +0x20 + 8 × step: `lineBonus` applied through `0x14002f310` when not -1 and `lineScore`
-added; `barrel_game::subject`), event commands
+added, step k being `SubjectCardData`'s `lineBonus`/`lineScore` k + 1 for k up to 7 (some
+absent: card 0 pays 50, 60, 70, 80 and 90 for its first five lines, nothing for six and seven,
+150 for eight) and `allBonus`/`allScore` for step 8; `subject::cards`, `barrel_game::subject`), event commands
 (`0x14002f410`), and are taken back by the negated sum of 25 assignments' scores
 (`0x1400cd9a2`). The other columns are the **month's pay** (the report screen, `0x140114530`;
 rows loaded as `point` +0, `coal` +4, `percent` +8, `c_btl` ... `c_que` +0xc to +0x24): a base of

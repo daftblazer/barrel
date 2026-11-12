@@ -43,6 +43,39 @@ pub fn subjects(t: &Element) -> Vec<Subject> {
         .collect()
 }
 
+/// An assignment card (`SubjectCardData.xml`, nine, a four-month period each).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Card {
+    pub name: String,
+    /// What each line count pays (`0x1403604d0`, the record's +0x20 + 8 × step): steps 0 to 7
+    /// are `lineBonusN`/`lineScoreN` for N = 1 to 8, step 8 (every square) `allBonus`/`allScore`;
+    /// a `Bonus` row tag (empty for none) and the job points.
+    pub steps: [(String, i32); 9],
+    /// `score`, and the event it is tied to (`event`).
+    pub score: i32,
+    pub event: String,
+}
+
+pub fn cards(t: &Element) -> Vec<Card> {
+    let text = |e: &Element, n: &str| e.attr(n).unwrap_or("").to_string();
+    let int = |e: &Element, n: &str| e.attr(n).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    t.children
+        .iter()
+        .map(|e| Card {
+            name: text(e, "Name"),
+            steps: std::array::from_fn(|k| {
+                if k < 8 {
+                    (text(e, &format!("lineBonus{}", k + 1)), int(e, &format!("lineScore{}", k + 1)))
+                } else {
+                    (text(e, "allBonus"), int(e, "allScore"))
+                }
+            }),
+            score: int(e, "score"),
+            event: text(e, "event"),
+        })
+        .collect()
+}
+
 /// An assignment's saved state: five i32 (`subject/subject_save`, 20 bytes a row, at
 /// `0x141099e08` in the running game, after the active card at `0x141099e00`): its count so far
 /// (not held at the target: 4 on "synthesize one Neutralizer"), its completion in hundredths of
@@ -84,6 +117,13 @@ pub fn saved(raw: &[u8]) -> Vec<SavedSubject> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_cards() {
+        let x = br#"<Root><SubjectCardData Name="c" lineBonus1="B0" lineScore1="50" lineBonus8="B5" lineScore8="150" allBonus="BA" allScore="0" score="1000" event="E"/></Root>"#;
+        let c = &cards(&crate::table::parse(x).unwrap())[0];
+        assert_eq!((c.steps[0].clone(), c.steps[1].clone(), c.steps[7].1, c.steps[8].0.as_str(), c.score), (("B0".into(), 50), (String::new(), 0), 150, "BA", 1000));
+    }
 
     #[test]
     fn reads() {
