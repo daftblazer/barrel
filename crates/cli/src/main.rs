@@ -15,6 +15,7 @@ usage:
   barrel ls FILE.elixir.gz     list a container's entries
   barrel unpack FILE.elixir.gz OUTDIR
   barrel scan DIR              read every container under DIR and count what they hold
+  barrel pak-extract PAK PART OUTDIR  write the entries whose names contain PART under OUTDIR
   barrel ebd FILE.ebd          print an event's actions as words
   barrel ebd-scan DIR          read every event under DIR and count its commands
   barrel ebd-decode DIR        decode every event under DIR into commands (Escha's table)
@@ -83,6 +84,7 @@ fn main() -> ExitCode {
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
+        ["ebd-measure", dir] => ebd_measure(Path::new(dir)),
         ["voice-scan", dir] => voice_scan(Path::new(dir)),
         ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word, None),
         ["ebd-ops", dir, word, filter] => ebd_ops(Path::new(dir), word, Some(filter)),
@@ -106,6 +108,7 @@ fn main() -> ExitCode {
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
+        ["pak-extract", file, part, out] => pak_extract(Path::new(file), part, Path::new(out)),
         ["pak-scan", files @ ..] if !files.is_empty() => pak_scan(files),
         ["pak-bc6h", files @ ..] if !files.is_empty() => pak_bc6h(files),
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
@@ -368,6 +371,30 @@ fn scan(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Measure an operand table from every event under `dir` (another game's) and print it as a
+/// Rust table, with how many bodies it decodes.
+fn ebd_measure(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".ebd", &mut files)?;
+    files.sort();
+    let events: Vec<Ebd> = files.iter().filter_map(|p| read(p).ok()).filter_map(|b| Ebd::parse(&b).ok()).collect();
+    let table = OperandTable::measure(events.iter().flat_map(|e| e.actions.iter().map(|a| &a.words[..])));
+    let (mut ok, mut bad) = (0, 0);
+    for e in &events {
+        for a in &e.actions {
+            if ebd::decode(&a.words, &table).is_ok() { ok += 1 } else { bad += 1 }
+        }
+    }
+    let entries = table.entries();
+    let varying = entries.iter().filter(|e| e.1.is_none()).count();
+    eprintln!("{} events, {} commands ({varying} varying); {ok} bodies decode, {bad} do not", events.len(), entries.len());
+    for (w, c) in entries {
+        let short = Word::classify(w).to_string();
+        println!("    (0x{w:08x}, {}), // {short}", c.map_or("None".to_string(), |n| format!("Some({n})")));
+    }
+    Ok(())
+}
+
 fn ebd_decode(dir: &Path) -> Result<()> {
     let table = OperandTable::escha();
     let mut files = Vec::new();
@@ -545,6 +572,26 @@ fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
     let entry = pak.entries.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or("no such file in the archive")?;
     let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{}: {e}", file.display()))?;
     std::fs::write(out, &data).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(())
+}
+
+/// Every entry whose name contains `part` (any case), written under `out` by its path in the
+/// archive.
+fn pak_extract(file: &Path, part: &str, out: &Path) -> Result<()> {
+    let (mut f, pak) = open_pak(file)?;
+    let part = part.to_ascii_lowercase();
+    let mut n = 0;
+    for entry in pak.entries.iter().filter(|e| e.name.to_ascii_lowercase().contains(&part)) {
+        let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{}: {e}", file.display()))?;
+        let rel: PathBuf = entry.name.split(['\\', '/']).filter(|c| !c.is_empty() && *c != "..").collect();
+        let path = out.join(rel);
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&path, &data).map_err(|e| format!("{}: {e}", path.display()))?;
+        n += 1;
+    }
+    println!("{n} files written under {}", out.display());
     Ok(())
 }
 

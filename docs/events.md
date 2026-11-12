@@ -944,6 +944,23 @@ seconds (or wraps, with +0x10 set); the envelopes advance by the frame time over
 Deliberate difference: the viewer's shake draws from its own generator (the game's kind,
 seeded apart), not the game's shared one, so the jitter differs frame by frame.
 
+## Atelier Sophie 2's events
+
+Sophie 2 keeps its events in `PACK01.PAK` (`event/event_jp/<group>/event_*.ebd`, plus `parts`
+and `skill`; `barrel pak-extract PACK01.PAK .ebd DIR` writes them out): 2,780 files, 45,074
+action bodies, 1.3 million words, and the container is Escha's (every file reads). The
+command words are the same kind (top byte 0x70 to 0x7f, a group, flags and a number) but the
+set is larger: 361 commands against Escha's 238, the commonest `w1` (the step marks, as in
+Escha), `s40`, `p1`, `t12`, `s36`, `u17`.
+
+`barrel ebd-measure DIR` measures an operand table from a game's own bodies (the words up to
+the next command word; `None` where that varies) and prints it: over Escha's events it gives
+exactly the hand-checked table, less the five commands only the script macros use, which is
+what makes it trustworthy as a first draft. Over Sophie 2's it gives 339 fixed counts and 22
+varying, and all 45,074 bodies decode with it (`OperandTable::sophie2`,
+`ebd_tables::SOPHIE2`). Names and handlers for Sophie 2's commands are still to be read from
+its executable.
+
 ## Script macros (`Script/*.nut`)
 
 Escha's `Script` folder is 36 plain Squirrel sources (Shift-JIS, CRLF, Japanese comments). Some

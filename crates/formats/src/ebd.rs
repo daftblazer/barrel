@@ -196,6 +196,41 @@ impl OperandTable {
         Self::new(crate::ebd_tables::ESCHA)
     }
 
+    /// Atelier Sophie 2's (measured, `ebd_tables::SOPHIE2`).
+    pub fn sophie2() -> Self {
+        Self::new(crate::ebd_tables::SOPHIE2)
+    }
+
+    /// The table measured from a game's own bodies: for each command, the number of words up
+    /// to the next command word (or `END`); a command always followed by the same number gets
+    /// that count, one seen with several gets `None` (runs to the next command). Operands that
+    /// look like command words make a count look smaller, so a measured table is a first
+    /// draft to check against the executable's handlers, as Escha's was.
+    pub fn measure<'a>(bodies: impl IntoIterator<Item = &'a [u32]>) -> Self {
+        let mut seen: std::collections::HashMap<u32, std::collections::BTreeSet<usize>> = std::collections::HashMap::new();
+        for body in bodies {
+            let idx: Vec<usize> = (0..body.len()).filter(|&k| is_command_word(body[k])).collect();
+            for pair in idx.windows(2) {
+                let w = body[pair[0]];
+                if matches!(Word::classify(w), Word::Command { .. }) {
+                    seen.entry(w).or_default().insert(pair[1] - pair[0] - 1);
+                }
+            }
+        }
+        let counts = seen
+            .into_iter()
+            .map(|(w, c)| (w, if c.len() == 1 { c.first().and_then(|&n| u8::try_from(n).ok()) } else { None }))
+            .collect();
+        OperandTable { counts }
+    }
+
+    /// The entries, sorted by word.
+    pub fn entries(&self) -> Vec<(u32, Option<u8>)> {
+        let mut v: Vec<_> = self.counts.iter().map(|(&w, &c)| (w, c)).collect();
+        v.sort();
+        v
+    }
+
     /// `Some(Some(n))` for a fixed count, `Some(None)` for a command whose count varies,
     /// `None` for a word this game does not use.
     pub fn get(&self, word: u32) -> Option<Option<u8>> {
@@ -258,6 +293,9 @@ mod decode_tests {
         assert_eq!(cmds.len(), 4);
         assert_eq!(cmds[1], Command { word: 0x7300_0012, operands: &[5, 6, 7] });
         assert_eq!(cmds[2].operands, &[] as &[u32]);
+        let measured = OperandTable::measure([&body[..], &[0x7300_0012, 1, END][..]]);
+        assert_eq!(measured.get(0x7700_0001), Some(Some(1)));
+        assert_eq!(measured.get(0x7300_0012), Some(None));
         assert_eq!(cmds[3].operands, &[2]);
     }
 
