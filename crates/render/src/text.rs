@@ -85,7 +85,7 @@ pub mod window {
     pub const AT_TAG: [f32; 4] = [352.0, 535.0, 627.0, 585.0];
     pub const AT_CORD: [f32; 4] = [340.0, 548.0, 374.0, 722.0];
     pub const AT_TEXT: [f32; 2] = [409.0, 596.0];
-    pub const TEXT_WIDTH: f32 = 490.0;
+    pub const TEXT_WIDTH: f32 = 540.0;
     pub const AT_NAME: [f32; 2] = [505.0, 560.0];
     /// The game's first line, "You haven't forgotten anything, have you, Escha?", spans 482
     /// pixels there: the text is sized to match.

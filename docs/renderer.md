@@ -256,7 +256,8 @@ message log's bubbles). The layout was measured from an oracle frame of
 text from (409, 596), broken at spaces into lines of at most 48 characters (`LINE_CHARS`), whatever their
 width: the game keeps "…, have you, Escha?" (48 characters, 480 pixels) on one line but
 moves "trip," after "…in for a long" (54 characters, 464 pixels) down; seven lines of the
-two openings agree. A 490-pixel width only guards wide glyphs, sized so the game's first line spans its 482 pixels)
+two openings agree (the widest, "…Do you know where", 47 characters, is 498 pixels). A
+540-pixel width only guards wide glyphs)
 and scales with the height, centred. Not yet as the game: the tag's slight tilt (about 5°)
 and the small green fleur at the panel's lower right. `--size WxH` renders other shapes
 (1280x720 for comparing with oracle frames).
