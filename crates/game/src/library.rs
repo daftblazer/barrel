@@ -49,6 +49,26 @@ pub fn learn_item(k: &mut Knowledge, unit: &ItemUnit, level: i32, traits_hidden:
     noticed
 }
 
+/// Giving an item an effect reveals it on the item's recipe (`0x14029d010`, and
+/// `0x14029d080` for all four slots at once): the effect's place in the recipe's effect list
+/// (`recipe::Recipe::effect_list`, capped at 9) gets its `mix_recipe` flag, and the effect's
+/// knowledge rises to 10 (`0x140367ad0`). `recipe` is the item's recipe (the first recipe
+/// table record whose item it is, `0x1400e31a0`); an item with none reveals nothing.
+///
+/// When the effect is not one of the recipe's, the game's lookup gives -1 and it sets the flag
+/// one byte before the recipe's own, the previous recipe's tenth: Barrel leaves the flags alone
+/// then (docs/engine.md, "Deliberate differences"); the effect's knowledge still rises.
+pub fn reveal_effect(flags: &mut [[bool; 10]], k: &mut Knowledge, recipe: Option<(usize, &barrel_formats::recipe::Recipe)>, effect: i32) {
+    let Some((r, rec)) = recipe else { return };
+    let Ok(e) = u16::try_from(effect) else { return };
+    if let Some(j) = rec.effect_list().iter().position(|&x| x == e) {
+        if let Some(f) = flags.get_mut(r) {
+            f[j.min(9)] = true;
+        }
+    }
+    raise(&mut k.eff, effect, KNOWN);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +84,24 @@ mod tests {
         // Levels never fall, and a known item posts no second notice.
         assert!(!learn_item(&mut k, &unit, SEEN, false, [-1, -1]));
         assert_eq!(k.item[2], KNOWN);
+    }
+
+    #[test]
+    fn an_effect_is_revealed_on_its_recipe() {
+        use barrel_formats::recipe::{Recipe, Step};
+        let none = Step { effect: None, up_to: -1 };
+        let mut lines = [[none; 4]; 4];
+        lines[0][0] = Step { effect: Some(7), up_to: 30 };
+        lines[1][1] = Step { effect: Some(9), up_to: 60 };
+        let rec = Recipe { item: 195, kind: 0, cost: 0, days: 2.0, slots: Vec::new(), lines };
+        let mut flags = vec![[false; 10]; 2];
+        let mut k = Knowledge { eff: vec![0; 12], ..Default::default() };
+        reveal_effect(&mut flags, &mut k, Some((1, &rec)), 9);
+        assert!(flags[1][1] && !flags[1][0] && !flags[0][9]);
+        assert_eq!(k.eff[9], KNOWN);
+        // Not one of the recipe's effects: no flag (the game's would land on recipe 0's tenth).
+        reveal_effect(&mut flags, &mut k, Some((1, &rec)), 11);
+        assert!(!flags[0][9]);
+        assert_eq!(k.eff[11], KNOWN);
     }
 }

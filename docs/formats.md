@@ -593,8 +593,10 @@ effect lines step by step, skipping steps with no effect (`0x1400e32d0`;
 effect's name when the flag is set, "????" when not, and "None" past the last effect;
 `0x140367d70` says whether all of a recipe's effects are revealed. One save at alchemy level
 12 has flags on only four recipes (Craft's sixth effect; item 196's first and third, and
-so on), so they track effects actually reached, not recipes known. Which code sets a flag is
-not found yet (no direct stores into the block). `BARREL_EXE=... barrel save FILE` prints
+so on), so they track effects actually reached, not recipes known. The flags are set when an
+item gets an effect (`0x14029d010` for one slot, `0x14029d080` for all four, through
+`0x140367ad0`, which also raises the effect's knowledge to 10): its place in the item's
+recipe's list, capped at 9 (`library::reveal_effect`). `BARREL_EXE=... barrel save FILE` prints
 them.
 
 **Bonuses** (`bonus`, written by `0x14036b940`): four blocks copied from memory as they are.

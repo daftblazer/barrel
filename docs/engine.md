@@ -333,6 +333,12 @@ comes to 32.1 dB against the full-size 4× frame, where without it it came to 29
   nothing; once the engine is finished, unlocking them could become an option the player turns
   on. Lockstep checks skip the step (it changes no game state).
 
+- **Recipe effect flags.** When an item gains an effect that is not one of its recipe's, the
+  original's lookup comes back -1 and it marks the previous recipe's tenth effect as revealed
+  (one byte before the right recipe's flags, `0x140367ad0`). That is corruption of another
+  recipe's state, so Barrel sets no flag then (`library::reveal_effect`). Lockstep checks of
+  `mix_recipe` skip that byte.
+
 ## Sound
 
 `barrel-audio` keeps sound apart from the renderer. `Mixer` adds the playing sounds (each a
