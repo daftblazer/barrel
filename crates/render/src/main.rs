@@ -36,7 +36,7 @@ const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 37 * 16;
+const LOOK_SIZE: u64 = 40 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 const SHADOW_HALF: f32 = 1500.0;
@@ -77,6 +77,9 @@ struct Vertex {
     morph: [u32; 2],
     /// The vertex colour (field models bake their light into it); white when it has none.
     color: [u8; 4],
+    /// A billboard corner (`MapSTD-B*`, PSIZE): the vertex is its quad's centre and this
+    /// offset, already scaled with the model, turns to face the camera; zero otherwise.
+    corner: [f32; 3],
 }
 
 /// A model's placement on the GPU (std430: 80 bytes): its matrix and where its joints'
@@ -474,7 +477,11 @@ impl Scene {
                 self.lo = self.lo.min(w);
                 self.hi = self.hi.max(w);
                 let color = mesh.colors.get(i).map_or([255; 4], |c| c.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q, morph: morph_ref, color });
+                // The game's mBbL2W: the camera's axes times the model's scale.
+                let corner = mesh.corners.get(i).map_or([0.0; 3], |c| (Vec3::from(*c) * transform.x_axis.truncate().length()).into());
+                // A billboard's normal stays in its own frame, for the camera's axes to turn.
+                let n = if corner == [0.0; 3] { n } else { nrm };
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q, morph: morph_ref, color, corner });
             }
             let first_index = self.indices.len() as u32;
             for t in &mesh.triangles {
@@ -524,7 +531,7 @@ impl Scene {
                 self.lo = self.lo.min(p);
                 self.hi = self.hi.max(p);
                 let uv = [x as f32 / h.cells_x as f32, z as f32 / h.cells_z as f32];
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4] });
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [0.0; 3] });
             }
         }
         let first_index = self.indices.len() as u32;
@@ -1888,6 +1895,7 @@ fn main() -> Result<()> {
         vk::VertexInputAttributeDescription { location: 4, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 40 },
         vk::VertexInputAttributeDescription { location: 5, binding: 0, format: vk::Format::R32G32_UINT, offset: 44 },
         vk::VertexInputAttributeDescription { location: 6, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 52 },
+        vk::VertexInputAttributeDescription { location: 7, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 56 },
     ];
     let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
     let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
@@ -2759,7 +2767,14 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         });
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 37];
+        let mut look = [[0f32; 4]; 40];
+        // The billboards' axes (docs/shading.md, "Billboards"): the camera's right as the screen
+        // shows it (render space is mirrored, so the view's -x), up, and back toward the eye.
+        let cam = Mat4::look_at_rh(e, target, Vec3::Y);
+        let row = |k: usize, sign: f32| [sign * cam.row(k).x, sign * cam.row(k).y, sign * cam.row(k).z, 0.0];
+        look[37] = row(0, -1.0);
+        look[38] = row(1, 1.0);
+        look[39] = row(2, 1.0);
         look[..5].copy_from_slice(&[m(c.light_dir), c.light_color, m(c.rim_light_dir), c.rim_light_color, [e.x, e.y, e.z, 1.0]]);
         // The field's first four point lights (metres to field units, x mirrored).
         let points = field_look.map_or(Vec::new(), |l| {

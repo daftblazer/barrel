@@ -199,6 +199,10 @@ joints needs the index map; that is still to be worked out.
 
 ### Skinning
 
+The semantics are Direct3D's declaration usages: 0 position, 1 blend weights, 2 blend
+indices, 3 normal, 4 PSIZE (billboard corners, `docs/shading.md`, "Billboards"), 5 texture
+coordinates, 10 colour.
+
 A vertex's bone-index byte (semantic 2) divided by 3 is a slot in the bone palette its
 submesh names (submesh word 2); the slot's joint word, without its top bit, is the joint
 number in the skeleton. The top bit marks a joint of the base model's skeleton, which is

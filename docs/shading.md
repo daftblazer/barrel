@@ -189,6 +189,25 @@ between the way to the eye and the sun), and mixes each colour toward the in-sca
 by the extinction. In `TOWN_10`'s town shot the distance turns warm as in the game, if
 duller.
 
+## Billboards (`MapSTD-B0.g1s`, `-B1`, `-B2`)
+
+Leaf sprays (`obj-xN1_a15_05tree_a_b`, `obj-a15a01_balloon_space_low_town07_leaf` in TOWN_07)
+are billboards: their layout has a PSIZE attribute (g1m semantic 4: the codes are Direct3D's
+declaration usages, so 4 is PSIZE, not a tangent), every quad's four vertices sit at its
+centre and PSIZE holds each corner's offset in the quad's own plane (±199.7, ±199.7, 0), with
+the normal (0, 0, 1). `MapSTD-B0`'s vertex program 0 places them:
+
+```text
+world  = mL2W · position + mBbL2W · psize        (cb0[29..31], cb0[32..34])
+normal = mBbL2W · normal
+```
+
+`mBbL2W` comes from the engine: the renderer takes it as the camera's right, up and back times
+the model's scale, so each quad faces the camera. `-B1` reads the same constants (another
+facing, likely upright only, not seen yet); `-B2` builds an axis billboard in the shader from
+`BbPos`, `BbAxisY` and `BbL2WScl`. Drawn as stored, every quad collapses to a point, which is
+why trees looked bare before (TOWN_07, TOWN_10).
+
 ## After the scene (`Data/x64/PostEffect/pe_pack.elixir.gz`, `PostEffectGlow.kps`)
 
 The post effects are `_SPK4100` packs of DXBC programs (`barrel g1s` reads them too). The glow

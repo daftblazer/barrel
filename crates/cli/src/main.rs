@@ -1517,6 +1517,14 @@ fn g1m_materials(spec: &str) -> Result<()> {
         let colours = if n == 0 { String::new() } else { format!(", vertex colours on {n} vertices, average {:.2?}", sum.map(|v| v / n as f32)) };
         println!("material {i}: {} (submeshes {users:?}){colours}", tex.join(", "));
     }
+    for (k, m) in g.submeshes.iter().filter_map(|s| g.simple_mesh(s).ok()).enumerate().filter(|(_, m)| !m.corners.is_empty()) {
+        let first: Vec<String> = m.corners.iter().take(4).map(|c| format!("{c:.1?}")).collect();
+        println!("submesh {k}: billboard, {} corners, first quad {}", m.corners.len(), first.join(" "));
+    }
+    for (k, l) in g.layouts.iter().enumerate() {
+        let attrs: Vec<String> = l.attributes.iter().map(|a| format!("{:?}{} {:?} @{}:{}", a.semantic, a.layer, a.kind, a.buffer, a.offset)).collect();
+        println!("layout {k} (buffers {:?}): {}", l.buffers, attrs.join(", "));
+    }
     for (k, set) in g.shader_params.iter().enumerate() {
         let ps: Vec<String> = set.iter().map(|p| format!("{}={:?}", p.name, p.values)).collect();
         println!("shader parameters {k}: {}", ps.join(" "));

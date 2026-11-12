@@ -78,7 +78,9 @@ pub enum Semantic {
     Weights,
     BoneIndices,
     Normal,
-    Tangent,
+    /// Direct3D's PSIZE (the codes are its declaration usages): on billboard models
+    /// (`MapSTD-B*`) each vertex's corner offset from its quad's centre, in billboard space.
+    PointSize,
     TexCoord,
     Color,
     Other(u8),
@@ -91,7 +93,7 @@ impl Semantic {
             1 => Semantic::Weights,
             2 => Semantic::BoneIndices,
             3 => Semantic::Normal,
-            4 => Semantic::Tangent,
+            4 => Semantic::PointSize,
             5 => Semantic::TexCoord,
             10 => Semantic::Color,
             other => Semantic::Other(other),
@@ -607,6 +609,10 @@ pub struct SimpleMesh {
     /// Vertex colours (0 to 1), when the layout has them (field models do: the light baked
     /// into them, `docs/shading.md`).
     pub colors: Vec<[f32; 4]>,
+    /// Billboard corners (PSIZE), when the layout has them: the vertex sits at its quad's
+    /// centre (`positions`) and this offset turns with the camera (`docs/shading.md`,
+    /// "Billboards").
+    pub corners: Vec<[f32; 3]>,
     pub triangles: Vec<[u32; 3]>,
     pub material: usize,
     /// The layout vertex the first of `positions` is (morph targets count from the
@@ -726,6 +732,7 @@ impl Geometry<'_> {
         let nrm = find(Semantic::Normal).filter(|a| a.kind == AttrType::Float3);
         let uv = find(Semantic::TexCoord).filter(|a| a.kind == AttrType::Float2);
         let color = find(Semantic::Color).filter(|a| matches!(a.kind, AttrType::UNorm4 | AttrType::Float4));
+        let corner = find(Semantic::PointSize).filter(|a| a.kind == AttrType::Float3);
         let ib = &self.index_buffers[s.index_buffer][s.index_start..s.index_start + s.index_count];
         let lo = ib.iter().copied().min().unwrap_or(0) as usize;
         let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
@@ -738,6 +745,9 @@ impl Geometry<'_> {
             if let Some(a) = uv {
                 let t = read(v, a, 2)?;
                 m.uvs.push([t[0], t[1]]);
+            }
+            if let Some(a) = corner {
+                m.corners.push(read(v, a, 3)?);
             }
             if let Some(a) = color {
                 let vb = &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];

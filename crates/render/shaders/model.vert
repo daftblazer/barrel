@@ -7,6 +7,8 @@ layout(location = 4) in vec4 in_weights;
 // Morph targets: where this vertex's offsets begin, and (count | weight offset << 16).
 layout(location = 5) in uvec2 in_morph;
 layout(location = 6) in vec4 in_color;
+// A billboard corner (MapSTD-B*'s PSIZE), turned by the camera's axes below; zero otherwise.
+layout(location = 7) in vec3 in_corner;
 // view_proj: the camera; instance: which of the instances places this draw.
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour; } pc;
 // Each instance's model matrix (render space, x already mirrored) and where its joints'
@@ -61,6 +63,10 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // scattering constants (docs/shading.md, "Fog": read from the game's memory).
     vec4 fog;
     vec4 scat[4];
+    // The billboards' axes (MapSTD-B0's mBbL2W): the camera's right, up and back.
+    vec4 bb_right;
+    vec4 bb_up;
+    vec4 bb_back;
 } look;
 void main() {
     Instance i = instances.inst[pc.instance];
@@ -82,6 +88,12 @@ void main() {
         n = mat3(skin) * n;
     }
     vec4 w = i.model * pos;
+    // Billboards: the corner, and the normal, in the camera's frame (MapSTD-B0 program 0).
+    mat3 bb = mat3(look.bb_right.xyz, look.bb_up.xyz, look.bb_back.xyz);
+    if (in_corner != vec3(0.0)) {
+        w.xyz += bb * in_corner;
+        n = bb * n;
+    }
     world = w.xyz;
     // The point lights at this vertex, as the game's character vertex program sums them:
     // (colour + ambient) × (1 - saturate(d² / range²)) / (att0 + att1·d + att2·d²), d in field
