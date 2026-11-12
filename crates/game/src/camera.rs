@@ -89,7 +89,10 @@ pub enum Move {
     /// evenly from `speed0` to `speed1` (degrees a second), the radius from `r0` to `r1` and
     /// the height by `rise` (field units) in step with it.
     Circle { to: Position, turn: [f32; 3], r0: f32, r1: f32, rise: f32, from: f32, until: f32, speed0: f32, speed1: f32 },
-    /// Type 2 (two operands, a handful of uses), not read yet.
+    /// Type 2 (`MdAccel`, `0x1402f2af0`, update `0x1402f2bb0`; four uses): straight to the
+    /// position, the speed going evenly from `speed0` to `speed1` (field units a second).
+    Accel { to: Position, speed0: f32, speed1: f32 },
+    /// A type no event uses.
     Other { to: Position, kind: u32 },
 }
 
@@ -97,7 +100,7 @@ impl Move {
     /// Where it goes.
     pub fn to_mut(&mut self) -> &mut Position {
         match self {
-            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Circle { to, .. } | Move::Other { to, .. } => to,
+            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Circle { to, .. } | Move::Accel { to, .. } | Move::Other { to, .. } => to,
         }
     }
 
@@ -109,7 +112,7 @@ impl Move {
 
     /// Reads `{position, extra, type, ...}`, the form of `s18` (`ECT_CHARA_MOVE_SET`), `s20` and
     /// `s41`: the extra operand (0, 1 or 2 in `s18`) goes to the move's +0x38, which its update
-    /// checks (what it switches is not read yet).
+    /// checks: 1 faces the way it goes on the ground, 2 along the way, tilting too (`0x1402f21a0`).
     pub fn read_with_extra(operands: &[u32]) -> Option<(u32, Move)> {
         let (to, rest) = Position::read(operands)?;
         let (&extra, rest) = rest.split_first()?;
@@ -123,6 +126,7 @@ impl Move {
             (4, [hundredths, ease, ..]) => Move::Straight { to, seconds: f(*hundredths) / 100.0, ease: *ease as i32 },
             (0, [speed, x, y, z, ..]) => Move::Speed { to, speed: f(*speed), accel: [f(*x), f(*y), f(*z)] },
             (0, [speed]) => Move::Speed { to, speed: f(*speed), accel: [0.0; 3] },
+            (2, [speed0, speed1, ..]) => Move::Accel { to, speed0: f(*speed0), speed1: f(*speed1) },
             (3, [speed, height, ..]) => Move::Jump { to, speed: f(*speed), height: f(*height) },
             (1, [ax, ay, az, r0, r1, rise, from, until, speed0, speed1, ..]) => Move::Circle {
                 to,
@@ -141,7 +145,7 @@ impl Move {
 
     pub fn to(&self) -> &Position {
         match self {
-            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Circle { to, .. } | Move::Other { to, .. } => to,
+            Move::Straight { to, .. } | Move::Speed { to, .. } | Move::Jump { to, .. } | Move::Circle { to, .. } | Move::Accel { to, .. } | Move::Other { to, .. } => to,
         }
     }
 }
@@ -168,7 +172,8 @@ pub struct Mover {
     /// Seconds left (the move's +0x28).
     left: f32,
     position: [f32; 3],
-    /// The extra operand of `s18`: 1 turns the mover to face the way it goes (on the ground).
+    /// The extra operand of `s18`: 1 turns the mover to face the way it goes on the ground, 2
+    /// along the way in all three directions (`0x1402f21a0`; the tilt is not played yet).
     face: u32,
     facing: Option<f32>,
 }
@@ -178,6 +183,7 @@ enum MoverKind {
     Straight { seconds: f32, ease: i32 },
     Speed { velocity: [f32; 3], accel: [f32; 3] },
     Jump { velocity: [f32; 3], gravity: f32 },
+    Accel { dir: [f32; 3], speed: f32, accel: f32 },
     Circle(Circle),
 }
 
@@ -224,7 +230,7 @@ impl Circle {
 
 impl Mover {
     /// A mover from `from` to `to` (the move's position, already resolved). `None` for the
-    /// type not read yet (type 2).
+    /// types no event uses.
     pub fn new(from: [f32; 3], to: [f32; 3], movement: &Move, face: u32) -> Option<Mover> {
         Self::anchored(from, to, 0.0, movement, face)
     }
@@ -233,6 +239,17 @@ impl Mover {
     /// turns a circle's plane.
     pub fn anchored(from: [f32; 3], to: [f32; 3], anchor_yaw: f32, movement: &Move, face: u32) -> Option<Mover> {
         let (kind, left) = match *movement {
+            Move::Accel { speed0, speed1, .. } => {
+                // 0x1402f2e00: the time is the distance over the mean speed, the change in
+                // speed spread evenly over it; no time and it never runs.
+                let d = sub(to, from);
+                let distance = len(d);
+                let t = distance / ((speed0 + speed1) * 0.5);
+                if !(t > 0.0) {
+                    return Some(Mover::arrived(from, from, face));
+                }
+                (MoverKind::Accel { dir: d.map(|v| v / distance), speed: speed0, accel: (speed1 - speed0) / t }, t)
+            }
             Move::Jump { speed, height, .. } => {
                 // 0x1402f28f0: with D the distance across the ground and dy the rise to the
                 // point, the launch angle is atan(2 (√H·√(H − dy) + H) / D) for a peak H above
@@ -342,6 +359,13 @@ impl Mover {
                     velocity[i] -= accel[i] * dt;
                 }
             }
+            MoverKind::Accel { dir, speed, accel } => {
+                // 0x1402f2bb0: the speed changes, then the point moves on along the way.
+                *speed += *accel * dt;
+                for i in 0..3 {
+                    self.position[i] += dir[i] * *speed * dt;
+                }
+            }
             MoverKind::Jump { velocity, gravity } => {
                 // 0x1402f2760: gravity on the climb first, then the move.
                 velocity[1] -= *gravity * dt;
@@ -365,7 +389,7 @@ impl Mover {
             self.left = 0.0;
         }
         let d = sub(self.position, before);
-        if self.face == 1 && (d[0].abs() >= 0.01 || d[2].abs() >= 0.01) {
+        if (self.face == 1 || self.face == 2) && (d[0].abs() >= 0.01 || d[2].abs() >= 0.01) {
             self.facing = Some(d[0].atan2(d[2]));
         }
     }

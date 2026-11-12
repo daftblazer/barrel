@@ -548,7 +548,7 @@ position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand,
 | 0 | speed, then x, y, z (mostly 0) | 27 / 19 / 950 | `0x1402f3720` |
 | 3 | two: a speed (800 to 2,500), then a height (50 to 300) | a few / 13 / 131 | `0x1402f2680` |
 | 1 | ten: a circle (below) | 129 / 5 / 63 | `0x1402f1cd9` |
-| 2 | two | 1 / 1 / 2 | `0x1402f18a0` |
+| 2 | two: a starting and an ending speed | 1 / 1 / 2 | `0x1402f18a0` |
 
 Type 1 (`MdCircle`, vtable `0x140931560`, built by `0x1402f2e90`, updated by `0x1402f3090`)
 circles the position: `{ax, ay, az, r0, r1, rise, from, to, speed0, speed1}`. The circle's
@@ -579,6 +579,15 @@ distance across the ground, dy the rise to the point and H the height, and sets 
 the speed across the ground: the jump peaks H above where it starts and lands on the point. A
 peak below the point, or no distance across, and the jump never runs. Each frame the gravity
 comes off the climb, then the point moves.
+
+Type 2 (`MdAccel`, `0x1402f2af0`, update `0x1402f2bb0`; four uses) goes straight to the point
+with the speed going evenly from the first operand to the second (field units a second): the
+time is the distance over their mean (`0x1402f2e00`).
+
+The extra operand of `s18` (the move's +0x38) is how the mover faces while it goes
+(`0x1402f21a0`, once it has moved more than 0.01 across the ground): 0 keeps its facing, 1 turns it
+to the way it goes on the ground, 2 along the way in all three directions, tilting it up or down
+(the jumps and flights around the hero). The stage turns it for 1 and 2; the tilt is not played yet.
 
 Type 4 goes straight from where the thing is when the command runs to the position, in the
 given time (`0x1402f3530` updates it). With u the part of the time gone, the distance covered
@@ -664,7 +673,7 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: move type 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
+Not yet: the tilt of `s18`'s facing mode 2, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at

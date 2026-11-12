@@ -492,6 +492,7 @@ fn describe_move(m: &barrel_game::camera::Move) -> String {
         Move::Circle { r0, r1, rise, from, until, speed0, speed1, .. } => {
             format!("circles {to} from {from}° to {until}°, radius {r0} to {r1}, rising {rise}, at {speed0} to {speed1}°/s")
         }
+        Move::Accel { speed0, speed1, .. } => format!("goes to {to} speeding from {speed0} to {speed1}/s"),
         Move::Other { kind, .. } => format!("moves (type {kind}) to {to}"),
     }
 }
