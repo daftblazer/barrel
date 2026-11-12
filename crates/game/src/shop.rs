@@ -126,6 +126,13 @@ pub fn sale_total(items: &[(i32, i32)], sell_bonus: i32) -> i32 {
     sum * (100 + sell_bonus) / 100
 }
 
+/// A ware's price for one in the shop's list (`0x140340600`): its `Cost`, at least 1. The game
+/// reads the buy-cost bonus (bonus value 41) just before and drops it, so that bonus changes
+/// nothing; Barrel keeps it so.
+pub fn list_price(w: &Ware) -> i32 {
+    w.cost.max(1)
+}
+
 /// What buying `count` of a ware costs (`0x140346ff0`): the shop list's price for one times
 /// the count.
 pub fn purchase_cost(price: i32, count: i32) -> i32 {
@@ -142,6 +149,10 @@ mod tests {
         assert_eq!(super::sale_total(&[(w, 2)], 0), 44);
         assert_eq!(super::sale_total(&[(w, 2), (5, 3)], 10), 64);
         assert_eq!(super::purchase_cost(70, 3), 210);
+        let mut w = super::wares(&barrel_formats::table::parse_str(r#"<Root><ShopData ShopTag="SHOP_NIO" ItemTag="ITEM_X" Cost="0"/></Root>"#).unwrap()).remove(0);
+        assert_eq!(super::list_price(&w), 1);
+        w.cost = 70;
+        assert_eq!(super::list_price(&w), 70);
     }
 
     use super::*;

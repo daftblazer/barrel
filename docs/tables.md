@@ -1268,7 +1268,9 @@ sold, `0x14029dce0 (item)` (which is `0x1402a3130`, the worth, when above 0, els
 count, then takes `trunc(sum × (100 + bonus value 40) / 100)` (the sell-price bonus) and pays
 it (`0x14036a8e0`, the money at `0x1410989f4`, a gain capped at 999,999). **Buying**
 (`0x140346ff0`) takes the count times the shop list entry's price for one (+0x2c) off the
-money; the list's prices start from `ShopData`'s `Cost`. `shop::sale_total` and
+money; each list entry's price is the ware's `Cost` (+0x5c), at least 1 (`0x140340600`). The
+buy-cost bonus (bonus value 41) is fetched there and then dropped (its result is overwritten
+by the cost), so as shipped it changes nothing. `shop::sale_total` and
 `purchase_cost` follow them.
 
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
