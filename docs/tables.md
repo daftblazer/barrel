@@ -1554,8 +1554,9 @@ below 0; while the field's state (`0x1410783b0`, the gathering one) is in mode 6
 adds to the experience bonus and its second to the third (`battle::reward_bonuses`). The drop
 bonus raises every drop slot's chance: a defeated monster's roll (`0x1401b76e0`) takes a slot
 when a percent roll falls under its chance plus that bonus plus the monster's own (+0x2a8),
-and makes the item with two more battle values (`0x141077dec`, `0x141077df0`, not followed;
-`battle::monster_drops`). What fills
+and makes the item (`0x140111bc0`: a drop pool's draw for items 560 and up, else the item as it
+is; it is also handed two battle values, `0x141077dec` and `0x141077df0`, which it never reads
+and nothing writes; `battle::monster_drops`). What fills
 the fighters' three is not read (equipment or traits, presumably). The result screen (`0x1401d85b0`) then raises the experience by bonus value 1,
 the experience rate (`0x14002f2f0 (1)`: total × (100 + rate) / 100), and hands it and the
 money to the party's display (`0x1401ce940`).

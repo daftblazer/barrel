@@ -1152,8 +1152,9 @@ mod reward_bonus_tests {
 /// slots 0 to 3): each slot taken when a percent roll (`0x1404ca5f0`) falls under its chance
 /// plus the battle's drop bonus (the third reward bonus, `0x141077de8`) plus the monster's own
 /// (+0x2a8). Returns `(item, count)` for the slots taken; an item numbered 560 and up names a
-/// drop pool (`encounter::pick_pool`), and the made item gets two more battle values
-/// (`0x141077dec`, `0x141077df0`, not followed).
+/// drop pool (`encounter::pick_pool`); any other is made as it is (`0x14029ceb0`). The roll
+/// also hands two battle values (`0x141077dec`, `0x141077df0`) to the maker, which never reads
+/// them, and nothing writes them: they change nothing.
 pub fn monster_drops(monster: &barrel_formats::battle_data::Monster, drop_bonus: i32, own_bonus: i32, rng: &mut crate::rng::Rng) -> Vec<(i32, i32)> {
     monster.drops.iter().filter(|d| rng.chance(d.chance + drop_bonus + own_bonus)).map(|d| (d.item, d.count)).collect()
 }
