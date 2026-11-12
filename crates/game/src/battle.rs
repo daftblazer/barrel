@@ -88,26 +88,70 @@ pub fn encounter_monsters(group: &barrel_formats::battle_data::EncounterGroup, r
 }
 
 /// Where the battle puts the monsters it places itself (`0x1401a3d00`; those whose setup
-/// position is (0, -1, 0)). They go largest first (`+0x358`; ties keep their setup order here,
+/// position is (0, -1, 0)), given their sizes (`+0x358`) and how far a spot lies outside the
+/// arena (`0x14019eab0`; 0 inside). They go largest first (ties keep their setup order here,
 /// where the game's sort may not); the first stands at the centre, each other at a rolled angle
-/// (0 to 360°) and distance (200 plus 0 to 100 × 2): (d sin θ, 0, d cos θ). Each also gets a
-/// sector, its angle / 120 (the first's angle counts as 180). Returns, per monster in setup
-/// order, its spot and sector. The game then nudges each spot (`0x1401b53b0`, not read yet).
-pub fn scatter(sizes: &[f32], rng: &mut crate::rng::Rng) -> Vec<([f32; 3], i32)> {
+/// (0 to 360°) and distance (200 plus 0 to 100 × 2): (d sin θ, 0, d cos θ), then [`nudge`]d
+/// against those placed before it. Each also gets a sector, its angle / 120 (the first's angle
+/// counts as 180). Returns, per monster in setup order, its spot and sector. Fighters not yet
+/// placed wait at (-100000, 0, 0), too far to be in anyone's way, so only the placed count.
+pub fn scatter(sizes: &[f32], outside: impl Fn([f32; 3]) -> f32, rng: &mut crate::rng::Rng) -> Vec<([f32; 3], i32)> {
     let mut order: Vec<usize> = (0..sizes.len()).collect();
     order.sort_by(|&a, &b| sizes[b].total_cmp(&sizes[a]));
     let mut out = vec![([0.0; 3], 0); sizes.len()];
+    let mut placed: Vec<([f32; 3], f32)> = Vec::new();
     for (k, &i) in order.iter().enumerate() {
-        out[i] = if k == 0 {
-            ([0.0; 3], 180 / 120)
+        let (spot, angle) = if k == 0 {
+            ([0.0; 3], 180)
         } else {
             let angle = rng.range(0, 360);
             let distance = 200.0 + rng.range(0, 100) as f32 * 200.0 / 100.0;
             let t = (angle as f32).to_radians();
-            ([distance * t.sin(), 0.0, distance * t.cos()], angle / 120)
+            ([distance * t.sin(), 0.0, distance * t.cos()], angle)
         };
+        let spot = nudge(spot, sizes[i], &placed, &outside, rng);
+        placed.push((spot, sizes[i]));
+        out[i] = (spot, angle / 120);
     }
     out
+}
+
+/// Moves a spot for a fighter of `size` clear of the arena's edge and of `others` (spots and
+/// sizes), as `0x1401b53b0` does: up to two passes, each first pulling the spot in by however
+/// far it lies outside (scaling it towards the centre), then pushing it straight away from each
+/// other fighter it overlaps (sizes added, minus their horizontal distance) by the overlap; a
+/// fighter exactly on top of another goes off at a rolled angle. A second pass only if the first
+/// moved it.
+pub fn nudge(mut p: [f32; 3], size: f32, others: &[([f32; 3], f32)], outside: impl Fn([f32; 3]) -> f32, rng: &mut crate::rng::Rng) -> [f32; 3] {
+    for _ in 0..2 {
+        let mut moved = false;
+        let length = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+        let out = outside(p);
+        if out != 0.0 && length != 0.0 {
+            let scale = (length - out) / length;
+            p = p.map(|v| v * scale);
+            moved = true;
+        }
+        for &(q, other) in others {
+            let (dx, dz) = (p[0] - q[0], p[2] - q[2]);
+            let d = (dx * dx + dz * dz).sqrt();
+            let overlap = size + other - d;
+            let dir = if d > 0.0 {
+                [dx / d, 0.0, dz / d]
+            } else {
+                let t = (rng.range(0, 360) as f32).to_radians();
+                [t.sin(), 0.0, t.cos()]
+            };
+            if overlap > 0.0 {
+                p = [p[0] + dir[0] * overlap, p[1], p[2] + dir[2] * overlap];
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    p
 }
 
 /// A party member's place (`0x1401b0b90`): a base offset by its index (0: 800 behind the
@@ -1003,7 +1047,7 @@ mod encounter_tests {
     #[test]
     fn monsters_scatter_round_the_largest() {
         let mut rng = crate::rng::Rng::seeded(7);
-        let spots = scatter(&[1.0, 3.0, 2.0], &mut rng);
+        let spots = scatter(&[1.0, 3.0, 2.0], |_| 0.0, &mut rng);
         // The largest (second) at the centre, sector 1.
         assert_eq!(spots[1], ([0.0; 3], 1));
         for (k, (p, sector)) in spots.iter().enumerate().filter(|&(k, _)| k != 1) {
@@ -1024,5 +1068,17 @@ mod encounter_tests {
         let a = |p: [f32; 3]| p[0].atan2(p[2]).to_degrees();
         let (a0, a1, a2) = (a(party_spot(0, 0)), a(party_spot(1, 1)), a(party_spot(2, 2)));
         assert!((a0 - a1).abs() > 90.0 && (a1 - a2).abs() > 90.0, "{a0} {a1} {a2}");
+    }
+
+    #[test]
+    fn nudges_clear_overlaps_and_the_edge() {
+        let mut rng = crate::rng::Rng::seeded(3);
+        // 100 from a fighter of size 80, itself size 50: pushed out by 30 along x.
+        let p = nudge([100.0, 0.0, 0.0], 50.0, &[([0.0; 3], 80.0)], |_| 0.0, &mut rng);
+        assert!((p[0] - 130.0).abs() < 1e-3 && p[2].abs() < 1e-3, "{p:?}");
+        // 500 out where the arena ends at 400: pulled in to 400.
+        let edge = |q: [f32; 3]| ((q[0] * q[0] + q[2] * q[2]).sqrt() - 400.0).max(0.0);
+        let p = nudge([500.0, 0.0, 0.0], 10.0, &[], edge, &mut rng);
+        assert!((p[0] - 400.0).abs() < 1e-3, "{p:?}");
     }
 }

@@ -802,7 +802,18 @@ jump table at `0x1401b0d20`). So the three in front stand 700 to 800 from the ce
 by its slot (six directions, `0x140804f40` and on, into +0x240). The rotation's sense (which
 way is "turned") is read from the matrix's layout and wants a look at a real battle.
 
-Still to read: where the field enemy entries come from, and the monsters' nudge (`0x1401b53b0`).
+**The nudge** (`0x1401b53b0`, run on each monster's spot right after its two rolls, so its own
+rolls fall between those of the next monster; `battle::nudge`, inside `battle::scatter`): up
+to two passes, the second only if the first moved the spot. Each pulls the spot in by however
+far it lies outside the arena (`0x14019eab0` on the battle stage, 0 when inside: the spot is
+scaled by (length - outside) / length), then, for each other fighter in play (alive and placed:
+the unplaced wait at (-100000, 0, 0), out of reach), pushes it straight away from that one by
+their overlap (both sizes, `+0x358`, minus their horizontal distance) when positive. Two
+fighters on the same spot part at an angle rolled from 0 to 360, rolled even when they do not
+overlap. Which of the two library calls there is sine and which cosine (`0x1405cc626`,
+`0x1405cc62c`) is taken from their order; it only matters for fighters on the same spot.
+
+Still to read: where the field enemy entries come from, and the arena's edge (`0x14019eab0`).
 
 ### A first duel
 
