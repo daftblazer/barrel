@@ -1890,7 +1890,15 @@ fn town_people(exe: &Path, only: Option<i32>) -> Result<()> {
     };
     for (k, p) in places.iter().enumerate().filter(|(_, p)| only.is_none_or(|m| m == p.map)) {
         let lists: Vec<String> = p.conditions.iter().map(|l| l.iter().map(show).collect::<Vec<_>>().join(" ")).collect();
-        println!("{k:3} map {:3} chara {:4} value {:3}  any of: {}  none of: {}", p.map, p.chara, p.value, lists[0], lists[1..].iter().filter(|l| !l.is_empty()).cloned().collect::<Vec<_>>().join(" | "));
+        let [x, y, z] = p.position;
+        println!(
+            "{k:3} map {:3} chara {:4} at ({x:.1}, {y:.1}, {z:.1}) facing {:.0}  any of: {}  none of: {}",
+            p.map,
+            p.chara,
+            p.angle,
+            lists[0],
+            lists[1..].iter().filter(|l| !l.is_empty()).cloned().collect::<Vec<_>>().join(" | ")
+        );
     }
     Ok(())
 }

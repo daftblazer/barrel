@@ -28,7 +28,21 @@ pub struct Place {
     pub chara: i32,
     /// +0x34, handed to the builder (not read yet).
     pub value: i32,
-    /// +0x38 to the end, not read yet (+0x50 to +0x5c look like a position and an angle).
+    /// +0x40: 31, 79, 34 or 80 in most (a motion or kind, not read).
+    pub word_40: i32,
+    /// +0x44: -1 in all but three (0, 1, 6); `0x14026c610` switches on it (0 to 6).
+    pub mode: i32,
+    /// +0x50 to +0x58: where the character stands, in metres by the values (x 2 to 161, y -7 to
+    /// 30, z 3 to 241 over all records).
+    pub position: [f32; 3],
+    /// +0x5c: the facing, in degrees by the values (-313 to 342).
+    pub angle: f32,
+    /// +0x60: four flag bytes (`00 00 00 01` in 591 records).
+    pub flags: [u8; 4],
+    /// +0x80: a number, mostly different per record (202, 1003 ...: a message or talk id
+    /// presumably).
+    pub id: i32,
+    /// +0x38 to the end as stored (+0x64 to +0x74 are 1, 1, 3, 10 and 90 in every record).
     pub rest: Vec<u8>,
 }
 
@@ -55,11 +69,18 @@ pub fn places(pe: &Pe) -> Option<Vec<Place>> {
             let r = pe.data.get(at + PLACE * k..at + PLACE * (k + 1))?;
             let w = |o: usize| i32::from_le_bytes(r[o..o + 4].try_into().unwrap());
             let q = |o: usize| u64::from_le_bytes(r[o..o + 8].try_into().unwrap());
+            let f = |o: usize| f32::from_le_bytes(r[o..o + 4].try_into().unwrap());
             Some(Place {
                 map: w(0),
                 conditions: std::array::from_fn(|i| list(pe, q(8 + 8 * i))),
                 chara: w(0x30),
                 value: w(0x34),
+                word_40: w(0x40),
+                mode: w(0x44),
+                position: [f(0x50), f(0x54), f(0x58)],
+                angle: f(0x5c),
+                flags: r[0x60..0x64].try_into().unwrap(),
+                id: w(0x80),
                 rest: r[0x38..].to_vec(),
             })
         })

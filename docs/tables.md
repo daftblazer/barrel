@@ -1899,9 +1899,18 @@ filled by `0x14023e440`) copies three tables out of the executable:
   been seen and none of its second.
 - **A second table:** 1,494 entries of 0x40 bytes from `0x1408ab750` (to +0xbf0), not read.
 - **Placements:** 841 records of 0x98 bytes from `0x1408c2cd0` (to +0xc08). Each holds a map
-  (+0), five pointers to -1-ended condition lists (+8 to +0x28), a `Chara.xml` row (+0x30), a
-  value passed to the builder (+0x34), and more not read (+0x50 to +0x5c look like a position
-  and an angle). Most are on the town maps: 154 on map 3, 114 on map 9, 104 on map 4.
+  (+0), five pointers to -1-ended condition lists (+8 to +0x28), a `Chara.xml` row (+0x30) and a
+  value passed to the builder (+0x34). Then, by the values:
+  - +0x40: 31, 79, 34 or 80 in most, not read.
+  - +0x44: -1 in all but three; `0x14026c610` switches on it (0 to 6).
+  - +0x50 to +0x58: where the character stands, in metres (x 2–161, y −7–30, z 3–241).
+  - +0x5c: the facing, in degrees.
+  - +0x60: four flag bytes.
+  - +0x64 to +0x74: 1, 1, 3, 10 and 90 in every record.
+  - +0x80: a number mostly different per record (202, 1003 …), a talk or message id
+    presumably.
+
+  `0x1400728c0 (field, chara)` finds the record of a character placed on this load. Most are on the town maps: 154 on map 3, 114 on map 9, 104 on map 4.
 
 When a map loads, `0x140071d00 (manager, map)` walks its placements. One passes when its first
 list is empty or one of its conditions holds, and no condition in the other four does. A
