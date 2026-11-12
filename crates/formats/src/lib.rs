@@ -8,6 +8,7 @@ pub mod bgm;
 pub mod costume;
 pub mod bc;
 pub mod chara_div;
+pub mod chara_effect;
 pub mod bc6h;
 pub mod bc7;
 pub mod dxbc;
