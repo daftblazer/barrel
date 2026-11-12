@@ -148,8 +148,41 @@ pub fn item_stat(t: &Tables, unit: &ItemUnit, stat: usize, base: i32, roll: &mut
     total
 }
 
+/// What a character's passive skills add (`0x14032e080`): every skill of the character's
+/// list learnt by now (its level byte at or below `level`) whose record's target word is 0
+/// (a passive) adds its effect slots to the stats that take their acts. An
+/// `ACT_EQUIP_ADD_RESIST` slot adds its second range to the resistance its first range names,
+/// once for each of stats 5 to 9 that takes the act, so five times: the game's loop, kept.
+pub fn passives(t: &Tables, list: &[barrel_formats::battle_data::PartySkill], skills: &[barrel_formats::battle_data::Skill], level: i32, stats: &mut [i32; STATS], roll: &mut dyn FnMut(i32, i32) -> i32) {
+    for p in list {
+        let Some(need) = p.level else { continue };
+        if level < i32::from(need) {
+            continue;
+        }
+        let Some(skill) = skills.get(p.skill as usize).filter(|s| s.target == 0) else { continue };
+        for slot in &skill.effects {
+            let Some(act) = t.acts.get(slot.act as usize) else { continue };
+            for k in 0..STATS {
+                if !stat_acts(k).contains(act) {
+                    continue;
+                }
+                if *act == "ACT_EQUIP_ADD_RESIST" {
+                    let element = roll(slot.min, slot.max);
+                    let amount = roll(slot.min2, slot.max2);
+                    if let Some(s) = usize::try_from(element + 5).ok().and_then(|i| stats.get_mut(i)) {
+                        *s += amount;
+                    }
+                } else {
+                    stats[k] += roll(slot.min, slot.max);
+                }
+            }
+        }
+    }
+}
+
 /// The stats in use (`0x14032de50`): base + second block + what the equipped items add +
-/// (for the protagonist) the bonus values from 4 on.
+/// (for the protagonist) the bonus values from 4 on. The passives come after
+/// ([`passives`]).
 pub fn in_use(t: &Tables, base: &[i32; STATS], extra: &[i32; STATS], equipped: &[ItemUnit], bonus: Option<&[i32]>, roll: &mut dyn FnMut(i32, i32) -> i32) -> [i32; STATS] {
     std::array::from_fn(|k| {
         let mut v = base[k] + extra[k];
@@ -187,5 +220,21 @@ mod tests {
         // Water resistance (stat 6, element 1): 7 × 1.0.
         assert_eq!(item_stat(&t, &unit, 6, 0, &mut roll), 7);
         assert_eq!(item_stat(&t, &unit, 5, 0, &mut roll), 0);
+    }
+
+    #[test]
+    fn learnt_passives_add_their_effects() {
+        use barrel_formats::battle_data::{PartySkill, Skill};
+        let acts = ["ACT_NONE", "ACT_EQUIP_BONUS_MONEY"];
+        let t = Tables { items: &[], effects: &[], traits: &[], acts: &acts };
+        let skill = |target| Skill { name: String::new(), category: String::new(), wait: 0, target, spread: 0, effects: vec![SkillEffect { act: 1, element: None, min: 15, max: 15, min2: 0, max2: 0 }], description: String::new() };
+        let skills = vec![skill(0), skill(2)];
+        let at = |skill, level| PartySkill { skill, order: -1, command: 5, level, mp: 0 };
+        let list = [at(0, Some(10)), at(0, Some(30)), at(1, Some(1)), at(0, None)];
+        let mut stats = [0; STATS];
+        passives(&t, &list, &skills, 12, &mut stats, &mut |lo, _| lo);
+        // Only the passive learnt by level 12 counts.
+        assert_eq!(stats[30], 15);
+        assert_eq!(stats.iter().sum::<i32>(), 15);
     }
 }

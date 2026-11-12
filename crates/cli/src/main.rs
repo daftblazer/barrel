@@ -870,6 +870,8 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
     let traits = bd::traits(&table("item_potential.xml")?, &tags);
     let items: Vec<ItemRow> = table("itemData.xml")?.children.iter().map(ItemRow::from_row).collect();
     let t = Tables { items: &items, effects: &effects, traits: &traits, acts: &acts };
+    let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table")?;
+    let lists = bd::party_skills(&pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists")?;
     let Some(party) = records.iter().find(|r| r.name == "party") else { return Err("no party record".into()) };
     let barrel_formats::save::Body::Group(children) = &party.body else { return Err("party is not a group".into()) };
     let words = |d: &[u8], at: usize| -> [i32; STATS] { std::array::from_fn(|k| d.get(at + 4 * k..at + 4 * k + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()))) };
@@ -882,8 +884,13 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
         let hero = s.hero.is_some_and(|h| h == who);
         let mut lo = |a: i32, _b: i32| a;
         let mut hi = |_a: i32, b: i32| b;
-        let low = equipment::in_use(&t, &base, &extra, &equipped, hero.then_some(&s.bonus_values[..]), &mut lo);
-        let high = equipment::in_use(&t, &base, &extra, &equipped, hero.then_some(&s.bonus_values[..]), &mut hi);
+        let mut low = equipment::in_use(&t, &base, &extra, &equipped, hero.then_some(&s.bonus_values[..]), &mut lo);
+        let mut high = equipment::in_use(&t, &base, &extra, &equipped, hero.then_some(&s.bonus_values[..]), &mut hi);
+        if let Some(list) = usize::try_from(who).ok().and_then(|w| lists.get(w)) {
+            let level = words(d, 0)[1];
+            equipment::passives(&t, list, &skills, level, &mut low, &mut lo);
+            equipment::passives(&t, list, &skills, level, &mut high, &mut hi);
+        }
         let off: Vec<String> = (0..STATS).filter(|&k| !(low[k].min(high[k])..=low[k].max(high[k])).contains(&saved[k])).map(|k| format!("{k}: {} (rule {}..{})", saved[k], low[k], high[k])).collect();
         all += 1;
         if off.is_empty() {

@@ -1336,9 +1336,18 @@ the amount in its second. Stats 5 to 8 are the element resistances (the item row
 rebuilds every character's block and compares: in one save all 11 characters' max HP, max
 MP, attack, defense, speed and resistances come out exactly (the equipped items sit at +0x19c
 of the saved `Party` record, after base +0x18, a second block +0x98 and the block in use
-+0x118). What still differs are a few of stats 10 to 31 (10, 11, 12, 15, 22, 30, 31: 5 to 35
-more in the save), which the three calls after the bonuses add (`0x14032e080`, `0x14032e580`,
-`0x14032e670`; the characters' passive skills, presumably), not ported yet.
++0x118). After the bonuses come the passive skills (`0x14032e080`): each skill on the character's
+list (the party skill lists, `0x140d96f90`) learnt by its level byte at or below the
+character's level, whose skill record has target word 0 (the passives), adds its two effect
+slots (record +0x28, 0x18 apart) to every stat whose act list has the slot's act (a roll
+between the slot's bounds); an `ACT_EQUIP_ADD_RESIST` slot adds its second range to
+resistance 5 + its first, and since stats 5 to 9 all take that act it is added five times
+(kept as the game does it). `equipment::passives`. With them every one of the 32 stats of all
+11 characters in the save read comes out as saved. Two more passes follow, which nothing
+in that save uses: `0x14032e580` sums `ACT_EQUIP_PARAM_LEVEL_PROPOTION` (0xa8) over the third
+and fourth equipped items (`0x14029e7e0`) and adds level × it × the base attack, defense and
+speed / 1000 to those three; `0x14032e670` asks the same items for act 0x99
+(`ACT_PASSIVE_CHANGE_HP_MP`) and only answers whether any has it.
 
 ## Monsters
 
