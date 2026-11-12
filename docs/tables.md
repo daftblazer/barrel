@@ -789,7 +789,9 @@ down on the field. The battle start then (`0x1400847fe`) draws the group's monst
 battle would and takes each one's drop slots in turn by their chances (`0x1404ca5f0`;
 `encounter::struck_down_drops`); items numbered 560 to 599 name
 one of the 40 drop pools at `0x140d31b70` (ten 28-byte entries each: item, weight, the quality
-range, three words `0x140113e30` gives the item, not read), drawn by weight among the eligible
+range, then the random traits: a `potLv`
+range and a count, drawn as gathering's are, `0x140113e30` with `0x1402a26a0`, leaving out
+traits the item has and filling its free slots of three, `encounter::pool_traits`), drawn by weight among the eligible
 entries (`0x140113810`: the low 31 bits modulo the total, then the first entry whose weight the
 roll does not exceed, taking each passed weight off; an item of `itemData` kind 2 must pass
 `0x140113bb0` first), the quality then a roll in the range within 0 and 120

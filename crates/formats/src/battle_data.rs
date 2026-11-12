@@ -268,8 +268,10 @@ pub struct PoolEntry {
     pub weight: i32,
     /// The quality it comes at, drawn between these.
     pub quality: (i32, i32),
-    /// Words 4 to 6 (1, 5, 1 and the like), which `0x140113e30` gives the made item; not read yet.
-    pub rest: [i32; 3],
+    /// The random traits it comes with (`0x140113e30`): how many, drawn from those whose
+    /// `potLv` lies in `trait_levels` and that fit the item (as gathering's, `0x1402a26a0`).
+    pub trait_levels: (i32, i32),
+    pub trait_count: i32,
 }
 
 pub fn drop_pools(pe: &Pe, table: u64) -> Option<Vec<Vec<PoolEntry>>> {
@@ -281,7 +283,7 @@ pub fn drop_pools(pe: &Pe, table: u64) -> Option<Vec<Vec<PoolEntry>>> {
                 .map(|i| {
                     let r = at + (p * 10 + i) * 0x1c;
                     let w = |k: usize| i32_at(d, r + 4 * k);
-                    Some(PoolEntry { item: w(0)?, weight: w(1)?, quality: (w(2)?, w(3)?), rest: [w(4)?, w(5)?, w(6)?] })
+                    Some(PoolEntry { item: w(0)?, weight: w(1)?, quality: (w(2)?, w(3)?), trait_levels: (w(4)?, w(5)?), trait_count: w(6)? })
                 })
                 .filter(|e| e.is_none_or(|e| e.item != -1))
                 .collect()

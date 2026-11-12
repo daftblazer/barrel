@@ -73,6 +73,18 @@ pub fn pick_pool<'a>(
     None
 }
 
+/// The traits a pool's item comes with (`0x140113e30`): [`crate::gather::random_traits`] over
+/// the entry's level range and count (the item made fresh, so none it has to avoid; the game
+/// leaves out traits it already has and fills its free slots of three).
+pub fn pool_traits(
+    entry: &barrel_formats::battle_data::PoolEntry,
+    traits: &[barrel_formats::battle_data::Trait],
+    fits: impl Fn(usize) -> bool,
+    rng: &mut crate::rng::Rng,
+) -> Vec<usize> {
+    crate::gather::random_traits(traits, entry.trait_levels, entry.trait_count.min(3), fits, rng)
+}
+
 /// The touch check (`0x140270cc0`): the enemy nearest the player whose distance (3D, from the
 /// player's place raised by 100 to the enemy's) is at most the enemy's radius × 1.1 plus the
 /// player's × 1.5 (both the field character's +0x90). Enemies are `(place, radius)`; the
@@ -151,7 +163,7 @@ mod tests {
     #[test]
     fn pool_draws_by_weight() {
         use barrel_formats::battle_data::PoolEntry;
-        let e = |item, weight| PoolEntry { item, weight, quality: (50, 50), rest: [1, 5, 1] };
+        let e = |item, weight| PoolEntry { item, weight, quality: (50, 50), trait_levels: (1, 5), trait_count: 1 };
         let pool = [e(364, 15), e(369, 15), e(374, 70)];
         let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
         let mut n = [0; 3];
