@@ -840,7 +840,11 @@ an Ore Rat is 55 (a second live run read the fighters themselves, found by their
 vtables, `BtlCharaParty` `0x140808540` and `BtlCharaMonster` `0x1408083d0`: +0x358 held 27,
 28, 33, 44 and 40 for Escha, Katla, Wilbell, Awin and Logy and 77, 77, 46 for the three
 monsters, their rows' radii; +0x398 held each member's squad index mod 3 and +0x394 that plus
-3, the slot `battle::party_spot` turns by, as the formation code writes them); party members are their own rows (the party order follows the rows,
+3, the slot `battle::party_spot` turns by, as the formation code writes them; a third run read
+the home spots from each fighter's model, the fighter's +0x10, then +0x3d8: (0, 0, −800),
+(506.2, 0, 523.2), (−506.2, 0, 523.2), (0, 0, −1200) and (1039.2, 0, 600), exactly
+`party_spot`'s for those indices and sectors, so the layout is not mirrored; the largest monster
+stood at the centre, as `battle::scatter` puts it); party members are their own rows (the party order follows the rows,
 except Nio, member 10, who is row 11 after Marion: `battle_data::party_size`).
 `battle_data::chara_radii`, `monster_size`; the skirmish scatters and spaces
 monsters by these sizes, the biggest at the centre (`barrel battle ... gN --from SAVE` prints
