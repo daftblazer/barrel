@@ -554,7 +554,7 @@ first the leader), the rank with its points by period (`subject/job_rank`, `job_
 `job_point_interval`, which sum to the points), the month reports (`monthrep/data`) and the
 shops' stock (`shop/shop_data`, each ware found by its shop's order of first appearance in
 the ware table and its place among that shop's wares). The main generator is not in the save.
-The board comes from `quest/now` through `quest::board_from_save` (Craft, Healing Salve and a
+The last day's rolls come from the event records, and `barrel days --from` takes the save's seen events for the event windows (with 94 seen, the redrawn boards hold monster and gathering requests too). The board comes from `quest/now` through `quest::board_from_save` (Craft, Healing Salve and a
 Minidragon request in one save, slots 0, 1 and 6).
 `barrel days INSTALL N --from SAVE` runs the days from a save: from one at 20 August of year 1
 the board is redrawn on the 21st and on 1 September, August's report closes that day, and the
@@ -612,7 +612,7 @@ reason 1 (`0x140052b5a` and two more), 2 (synthesis, its days, `0x14030d8a6`), 3
 day, field code `0x1400795a8`, `0x14007ab66`) and 8 (one day, `0x14039b3d2`, `0x14039ba9c`).
 For each day it adds one (`0x1402f03a0`), works the new day (`0x14035bb50`) and queues a
 message (kind 8, the reason) at `0x140df9988`; then `0x14035b930 (days, reason)`. A new day:
-1165 records of 0x24 bytes from `0x1410a42e0` each get a roll from 0 to 100 (each a draw from
+1165 records of 0x24 bytes from `0x1410a42e0`, one per event (`EVENT_*` order; the saved event records, `docs/formats.md`), each get a roll from 0 to 100 (each a draw from
 the random generator), then every character but one (`0x140330120 (0x141098a48)`, the
 leader presumably) adds to its record's float +0x2a4 (records of 0x2b0 bytes at
 `0x1410bcb60`) a gain by its place in the 11-slot list at `0x141093530`: 0.11 in slots 0 to 2

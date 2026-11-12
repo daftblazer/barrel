@@ -762,23 +762,33 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         data.get(o..o + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap())).and_then(|i| costs.get(i as usize)).copied().unwrap_or(0)
     };
     let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
-    let seen = |e: &str| events && starts.contains(e);
+    // From a save: the events it has seen (its event records, in EVENT_* order).
+    let saved = from.map(|file| -> Result<barrel_formats::save::Summary> {
+        let data = read(file)?;
+        let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+        let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+        Ok(barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?))
+    }).transpose()?;
+    let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
+    let exe_data = read(&exe)?;
+    let exe_pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let seen_events: std::collections::HashSet<&str> = match (&saved, exe_pe.enum_names("EVENT_MM01_OP1_111")) {
+        (Some(s), Some((names, _))) => s.events.iter().zip(names).filter(|(e, _)| e.seen).map(|(_, n)| n).collect(),
+        _ => Default::default(),
+    };
+    let seen = |e: &str| if saved.is_some() { seen_events.contains(e) } else { events && starts.contains(e) };
     let path = install.join("Saves/shop/ShopData.xml");
     let wares = barrel_game::shop::wares(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
     let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &|_| true, level: &|_| 0 };
     let rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-    let mut w = if let Some(file) = from {
+    let mut w = if let (Some(file), Some(summary)) = (from, &saved) {
         // A save's calendar (the main generator is not saved: a fixed one stands in).
-        let data = read(file)?;
-        let body = &barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
-        let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
-        let records = barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
-        let summary = barrel_formats::save::summary(&records);
         let (items, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
         let (names, _) = pe.enum_names("MONSTER_ROCKRAT_00").ok_or("no MONSTER_* enum")?;
         let monsters = &names[names.iter().position(|t| t.starts_with("MONSTER_")).unwrap_or(0)..];
         let board = barrel_game::quest::board_from_save(&summary.board, &all, &items, monsters);
-        let w = World::from_save(&summary, rng, &wares, board);
+        let w = World::from_save(summary, rng, &wares, board);
+        println!("{} of {} events seen", seen_events.len(), summary.events.len());
         let posted: Vec<&str> = w.board.iter().map(|s| s.map_or("-", |i| all[i].target.as_str())).collect();
         println!("board as saved: {}", posted.join(", "));
         let d = barrel_game::calendar::Date::of(w.date);

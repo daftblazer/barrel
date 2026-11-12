@@ -63,7 +63,8 @@ pub fn period_days(k: u32) -> (u32, u32) {
 }
 
 /// How many records get a fresh roll from 0 to 100 at the start of each new day (`0x14035bb50`:
-/// 0x24-byte records from `0x1410a42e0` to `0x1410ae6b4`; what they are is not read). Each roll
+/// 0x24-byte records from `0x1410a42e0` to `0x1410ae6b4`, one per `EVENT_*`: the events'
+/// records, saved whole, `barrel_formats::save::EventRecord`). Each roll
 /// draws a number from the battle's generator, so a day costs this many draws first.
 pub const DAILY_ROLLS: usize = 1165;
 

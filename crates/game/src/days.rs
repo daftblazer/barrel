@@ -128,7 +128,8 @@ impl World {
     /// leader, the rank, the month reports and the shops' stock (each ware found by its shop,
     /// in the order the shops first appear in the ware table, and its place among that shop's
     /// wares), and the board as `quest::board_from_save` found it. `rng` is the main
-    /// generator, which the save does not hold. Not read yet: the last day's rolls.
+    /// generator, which the save does not hold (`Rng::seeded`); the last day's rolls are the
+    /// events' (`EventRecord::roll`).
     pub fn from_save(s: &barrel_formats::save::Summary, rng: Rng, wares: &[Ware], board: [Option<usize>; 10]) -> World {
         let mut friendship = [0.0; MEMBERS];
         for m in &s.party {
@@ -190,7 +191,7 @@ impl World {
             rank: RankState { points, rank, by_period },
             months,
             board,
-            rolls: Vec::new(),
+            rolls: s.events.iter().map(|e| e.roll).collect(),
             stock,
         }
     }

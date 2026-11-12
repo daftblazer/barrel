@@ -482,6 +482,13 @@ companions, 0.99 for others. That is the calendar's daily gain (`days::World::fr
 the runtime record's +0x2a4: the save's record is the runtime one with 12 bytes in front):
 139 days at most 0.11 a day give at most 15.29, nine days 0.99, and the leader none.
 
+The events (`event/m_eventListSaveData`, `save::EventRecord`): 1,165 records of 36 bytes, one
+per `EVENT_*` name in the executable's enum order (`EVENT_AA01_010`, `EVENT_MM01_OP1_011`, ...),
+the array at `0x1410a42d0` saved whole: seen (+0, 94 in one save), the day it was seen (+4,
+-31 never; 90 for the new game's first events), how many times (+8), the day's roll (+0x10:
+the calendar's daily rolls, `0x1410a42e0` + 0x24 × the event) and a value from 0 to 2
+(+0x14). `m_eventFlag` (604 bytes, 151 words, mostly 0 with a few 1s and a 5) is not read yet.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0

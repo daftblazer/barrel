@@ -411,6 +411,25 @@ pub fn board_slots(d: &[u8]) -> Vec<Option<BoardSlot>> {
         .collect()
 }
 
+/// An event's record (`event/m_eventListSaveData`: 1,165 of 36 bytes, one per `EVENT_*` name
+/// in the executable's enum order; at runtime from `0x1410a42d0`): whether it has been seen
+/// (+0), the day it was (+4, -31 never), how many times (+8), the day's roll from 0 to 100
+/// (+0x10, `0x1410a42e0` + 0x24 × the event: the calendar's daily rolls) and a value (+0x14,
+/// 0 to 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EventRecord {
+    pub seen: bool,
+    pub day: i32,
+    pub count: i32,
+    pub roll: i32,
+    pub value: i32,
+}
+
+pub fn event_records(d: &[u8]) -> Vec<EventRecord> {
+    let i = |c: &[u8], k: usize| i32::from_le_bytes(c[4 * k..4 * k + 4].try_into().unwrap());
+    d.chunks_exact(36).map(|c| EventRecord { seen: i(c, 0) != 0, day: i(c, 1), count: i(c, 2), roll: i(c, 4), value: i(c, 5) }).collect()
+}
+
 /// What a game save's state says in plain numbers (records read so far).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Summary {
@@ -433,6 +452,8 @@ pub struct Summary {
     /// `party/m_squad` as saved: its 11 slots (-1 empty), the list the daily friendship gain
     /// reads.
     pub squad_slots: Vec<i32>,
+    /// `event/m_eventListSaveData`: the events, in `EVENT_*` order.
+    pub events: Vec<EventRecord>,
     /// `quest/now`: the request board's ten slots.
     pub board: Vec<Option<BoardSlot>>,
     /// `quest/player`: the requests taken.
@@ -479,6 +500,7 @@ pub fn summary(records: &[Record]) -> Summary {
             _ => Vec::new(),
         },
         board_seed: bytes(top("quest").and_then(|r| r.child("randseed"))).and_then(|d| i32_at(&d, 0)),
+        events: bytes(top("event").and_then(|r| r.child("m_eventListSaveData"))).map(|d| event_records(&d)).unwrap_or_default(),
         board: bytes(top("quest").and_then(|r| r.child("now"))).map(|d| board_slots(&d)).unwrap_or_default(),
         taken: bytes(top("quest").and_then(|r| r.child("player"))).map(|d| board_slots(&d)).unwrap_or_default(),
         rank: (|| {
@@ -608,5 +630,18 @@ mod tests {
         assert_eq!(u.len(), 1);
         assert_eq!((u[0].serial, u[0].item, u[0].quality, u[0].traits), (0x113, 11, 40.0, [0x37, -1, -1]));
         assert_eq!((u[0].effects, u[0].counts), ([-1; 4], [1, 1, 0, 1]));
+    }
+
+    #[test]
+    fn event_records_read() {
+        let mut d = vec![0u8; 72];
+        d[36..40].copy_from_slice(&1i32.to_le_bytes());
+        d[40..44].copy_from_slice(&90i32.to_le_bytes());
+        d[44..48].copy_from_slice(&1i32.to_le_bytes());
+        d[52..56].copy_from_slice(&67i32.to_le_bytes());
+        d[4..8].copy_from_slice(&(-31i32).to_le_bytes());
+        let e = event_records(&d);
+        assert_eq!(e[0], EventRecord { seen: false, day: -31, count: 0, roll: 0, value: 0 });
+        assert_eq!(e[1], EventRecord { seen: true, day: 90, count: 1, roll: 67, value: 0 });
     }
 }
