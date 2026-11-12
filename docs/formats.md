@@ -710,8 +710,12 @@ lives in the game is not found yet. Matching sizes to lengths finds it without t
 any event with enough lines: `voice::story_start`, and `barrel voice-map INSTALL` runs it over
 every English event (520 with 3 lines or more; 192 match at correlation 0.85 or more, the
 opening's chain among them exactly as the game read it). The weaker matches need checking
-(by chaining: a scene's start should be the previous scene's end) before the engine relies
-on them.
+before the engine relies on them. Chaining helps only a little: of the 192 strong ones, 99
+start or end where another strong one does, and growing chains from them (the best-fitting
+event at each chain's end, correlation 0.7 or more) places 13 more, 205 in all of the 521
+events with three lines or more; the strong matches sit in banks 0 to 3 and 10 to 17. Many
+of the rest are unvoiced, and a few placements look doubtful (`MM01_OP1_011` at 10804,
+`_012` at 3153), so another read-log run over other scenes is the way to firm the table up.
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone
