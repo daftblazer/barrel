@@ -1147,3 +1147,25 @@ mod reward_bonus_tests {
         assert_eq!(super::reward_bonuses(&f, FieldState { mode: 6, values: [30, 7, 0] }), (50, 15, 12));
     }
 }
+
+/// A defeated monster's drops (`0x1401b76e0`, its +0x110 method, called by `0x140192f10` for
+/// slots 0 to 3): each slot taken when a percent roll (`0x1404ca5f0`) falls under its chance
+/// plus the battle's drop bonus (the third reward bonus, `0x141077de8`) plus the monster's own
+/// (+0x2a8). Returns `(item, count)` for the slots taken; an item numbered 560 and up names a
+/// drop pool (`encounter::pick_pool`), and the made item gets two more battle values
+/// (`0x141077dec`, `0x141077df0`, not followed).
+pub fn monster_drops(monster: &barrel_formats::battle_data::Monster, drop_bonus: i32, own_bonus: i32, rng: &mut crate::rng::Rng) -> Vec<(i32, i32)> {
+    monster.drops.iter().filter(|d| rng.chance(d.chance + drop_bonus + own_bonus)).map(|d| (d.item, d.count)).collect()
+}
+
+#[cfg(test)]
+mod drop_tests {
+    #[test]
+    fn the_drop_bonus_raises_every_slot() {
+        use barrel_formats::battle_data::{Drop, Monster};
+        let m = Monster { name: String::new(), family: 0, boss: false, exp: 0, money: 0, blocks: Vec::new(), drops: vec![Drop { item: 55, chance: 0, count: 1 }, Drop { item: 57, chance: 100, count: 1 }] };
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        assert_eq!(super::monster_drops(&m, 0, 0, &mut rng), vec![(57, 1)]);
+        assert_eq!(super::monster_drops(&m, 100, 0, &mut rng).len(), 2);
+    }
+}
