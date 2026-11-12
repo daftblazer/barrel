@@ -2602,11 +2602,20 @@ fn main() -> Result<()> {
                 // The stage's motion for the character, by its MOTION_* name; a new one is
                 // loaded (once) and played from the time the stage started it.
                 let staged = play.stage.characters.get(&a.who).and_then(|b| b.motion);
-                // A line's gesture, when newer than the motion: its main motion plays from then
-                // on (until the next motion command or gesture), looping.
+                // A line's gesture, when newer than the motion: its chain of motion divisions
+                // plays from then on (until the next motion command or gesture), the last (or a
+                // looping one) held.
                 let gestured = play.stage.characters.get(&a.who).and_then(|b| b.gesture).and_then(|(g, since)| {
                     let form = gestures_play.get(usize::try_from(g).ok()?)?[0].as_ref()?;
-                    Some(barrel_game::stage::Playing { motion: form.main_motion(), since, looping: true, blend: 0.2, division: None })
+                    let ((motion, division), began) = form.at(shown_time - since, |m, d| {
+                        let column = motion_names.get(m as usize)?;
+                        let clip = a.motions.get(column)?.duration;
+                        match d.and_then(|k| *divisions.get(&(a.motions.head.clone(), column.clone()))?.get(k as usize)?) {
+                            Some(div) => Some((div.end.unwrap_or(clip) - div.start, div.loops)),
+                            None => Some((clip, false)),
+                        }
+                    });
+                    Some(barrel_game::stage::Playing { motion, since: since + began, looping: true, blend: 0.2, division })
                 });
                 let staged = match (staged, gestured) {
                     (Some(m), Some(g)) if g.since > m.since => Some(g),

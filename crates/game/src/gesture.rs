@@ -3,7 +3,10 @@
 //!
 //! A gesture is a chain of body motions. The executable keeps them as a table of 438
 //! entries, each two forms of 17 i32: a first motion, up to 15 steps (under 10,000: switch to
-//! that motion; 10,000 + n: play the current one n more times; -1: unused) and an end type.
+//! that motion; 10,000 + n: play division n of the current one, `SubCharaDiv`/`CharaDiv`;
+//! -1: unused) and an end type. Logy's line gestures 196 (`EV_ACT_6` division 0, raising his
+//! hand to his chin, then 1, holding it: a looping division the chain stays in) and 198
+//! (division 5, lowering it, then `F_WAIT`) match the oracle frames of his opening.
 //! Motion numbers are the `MOTION_*` enum; the tag without `MOTION_` is a `CharaBase` column.
 
 use barrel_formats::pe::Pe;
@@ -15,7 +18,8 @@ const ENTRY: usize = 0x88;
 pub enum Step {
     /// Switch to this motion.
     Motion(u32),
-    /// Play the current motion this many more times.
+    /// Play this division of the current motion (`Repeat` for its number in the table: the
+    /// steps were first read as repeat counts).
     Repeat(u32),
 }
 
@@ -85,9 +89,70 @@ impl Form {
     }
 }
 
+impl Form {
+    /// The chain's segments in order: (motion, division), a motion with no division step
+    /// playing whole.
+    pub fn segments(&self) -> Vec<(u32, Option<u32>)> {
+        let mut out = Vec::new();
+        let (mut current, mut played) = (self.first, false);
+        for s in &self.steps {
+            match *s {
+                Step::Motion(m) => {
+                    if !played {
+                        out.push((current, None));
+                    }
+                    (current, played) = (m, false);
+                }
+                Step::Repeat(n) => {
+                    out.push((current, Some(n)));
+                    played = true;
+                }
+            }
+        }
+        if !played {
+            out.push((current, None));
+        }
+        out
+    }
+
+    /// Where the chain is `elapsed` seconds in: its segment and the seconds that segment began
+    /// after the gesture did. `length` gives a segment's seconds and whether it loops (None:
+    /// unknown, taken as the last). A looping segment holds the chain, as does the last.
+    pub fn at(&self, elapsed: f32, mut length: impl FnMut(u32, Option<u32>) -> Option<(f32, bool)>) -> ((u32, Option<u32>), f32) {
+        let segments = self.segments();
+        let mut began = 0.0;
+        for (k, &seg) in segments.iter().enumerate() {
+            if k + 1 == segments.len() {
+                return (seg, began);
+            }
+            let Some((seconds, loops)) = length(seg.0, seg.1) else { return (seg, began) };
+            if loops || elapsed < began + seconds {
+                return (seg, began);
+            }
+            began += seconds;
+        }
+        ((self.first, None), 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chains_play_divisions_in_turn() {
+        // 198: division 5 of motion 61 (0.83 s), then 31 whole.
+        let lower = Form { first: 61, steps: vec![Step::Repeat(5), Step::Motion(31), Step::Repeat(0)], end: 1 };
+        assert_eq!(lower.segments(), [(61, Some(5)), (31, Some(0))]);
+        let len = |_m: u32, d: Option<u32>| Some(if d == Some(5) { (0.83, false) } else { (4.0, false) });
+        assert_eq!(lower.at(0.5, len), ((61, Some(5)), 0.0));
+        assert_eq!(lower.at(4.0, len), ((31, Some(0)), 0.83));
+        // 196: division 0 (0.97 s), then 1, which loops and so holds.
+        let raise = Form { first: 61, steps: vec![Step::Repeat(0), Step::Repeat(1)], end: 1 };
+        let len = |_m: u32, d: Option<u32>| Some(if d == Some(1) { (4.0, true) } else { (0.97, false) });
+        assert_eq!(raise.at(30.0, len), ((61, Some(1)), 0.97));
+        assert_eq!(Form { first: 31, steps: vec![], end: 1 }.segments(), [(31, None)]);
+    }
 
     #[test]
     fn finds_and_reads_the_table() {

@@ -549,7 +549,11 @@ prints where everyone is each time the clock moves on: in `EVENT_MM01_OP1_111` c
 walks from (506, 0, 1061) to (891, 0, 1320) between 3.5 and about 7.5 s, ending up facing
 56°. Each line shown sets its speaker talking (the others fall quiet) and, when the line gives
 one, the speaker's expression from then on (the message's fourth field; its third is a
-gesture); `--stage` prints them (`face 4, talking`). `q4` (adding a field character) places it and turns it to its angle there too, `q5`
+gesture: an entry of the executable's gesture table, a chain of motion divisions, each step
+10000 + n playing division n of the current motion from `SubCharaDiv`/`CharaDiv`, a looping
+division or the last holding the chain: Logy's 196 raises his hand to his chin and holds it,
+198 lowers it and returns to `F_WAIT`, as the oracle frames show; `barrel gestures EXE [N...]`
+prints them); `--stage` prints them (`face 4, talking`). `q4` (adding a field character) places it and turns it to its angle there too, `q5`
 removes it, and `s5`/`s10` set the motion it plays. `s5` (`ECT_CHARA_MOTION_SET`,
 `{character, motion, variant, blend ×100}`, 4,435 uses; `0x1401eff27`) goes through the same
 `0x1401f4c50` as `s10` with `variant` (0 to 7) as its third argument, kept at the runner's

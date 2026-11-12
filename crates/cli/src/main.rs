@@ -111,6 +111,7 @@ fn main() -> ExitCode {
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
+        ["gestures", exe, numbers @ ..] => gestures(Path::new(exe), numbers),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
         ["battle", exe, monster, party @ ..] if !party.is_empty() => battle(Path::new(exe), monster, party),
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
@@ -2172,6 +2173,28 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let short = Word::classify(word).to_string();
                 println!("{action:3} {short:<10} {:<40} {}", name.unwrap_or(""), ops.join(" "));
             }
+        }
+    }
+    Ok(())
+}
+
+/// Message gestures (`barrel_game::gesture`): each entry's two forms as motion names.
+fn gestures(exe: &Path, numbers: &[&str]) -> Result<()> {
+    let data = read(exe)?;
+    let table = barrel_game::gesture::read(&data).ok_or("gesture table not found")?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{e}"))?;
+    let names = barrel_game::gesture::motions(&pe);
+    let name = |m: u32| names.get(m as usize).cloned().unwrap_or_else(|| m.to_string());
+    let picked: Vec<usize> = if numbers.is_empty() { (0..table.len()).collect() } else { numbers.iter().filter_map(|n| n.parse().ok()).collect() };
+    for n in picked {
+        let Some(entry) = table.get(n) else { continue };
+        for (k, form) in entry.iter().enumerate() {
+            let Some(f) = form else { continue };
+            let steps: Vec<String> = f.steps.iter().map(|s| match s {
+                barrel_game::gesture::Step::Motion(m) => name(*m),
+                barrel_game::gesture::Step::Repeat(r) => format!("x{r}"),
+            }).collect();
+            println!("{n:3}.{k}: {} {} end {}", name(f.first), steps.join(" "), f.end);
         }
     }
     Ok(())
