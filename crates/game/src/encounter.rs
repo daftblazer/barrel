@@ -24,8 +24,8 @@ pub fn average_level(levels: &[i32]) -> i32 {
 /// party's average level is at least 10 above the group's, the encounter's +0x24 (the contact
 /// check's third output; a forced encounter's is 1) is not 1 to 5, the player's +0x1e0 is 1, and
 /// a field check (`0x1402177c0` on the field object's +0x58, not read yet) says no.
-pub fn skips_battle(start: Start, party_level: i32, group_level: i32, kind: i32, player_state: i32, field_check: bool) -> bool {
-    start == Start::Struck && party_level - group_level >= 10 && !(1..=5).contains(&kind) && player_state == 1 && !field_check
+pub fn skips_battle(start: Start, party_level: i32, group_level: i32, kind: i32, strike_stage: usize, field_check: bool) -> bool {
+    start == Start::Struck && party_level - group_level >= 10 && !(1..=5).contains(&kind) && strike_stage == 1 && !field_check
 }
 
 /// The touch check (`0x140270cc0`): the enemy nearest the player whose distance (3D, from the
@@ -45,9 +45,26 @@ pub fn touched(player: [f64; 3], player_radius: f64, enemies: &[([f64; 3], f64)]
     best.map(|(k, _)| k)
 }
 
-/// How far ahead of the player the field strike's centre sits, by the player's +0x1e0
-/// (`0x1408edd58`; 0 to 5).
-pub const STRIKE_REACH: [f64; 6] = [120.0, 160.0, 130.0, 190.0, 150.0, 210.0];
+/// The field strike by its stage, the player's +0x1e0 (`0x14026e350`: 1 once event 733 has
+/// been seen, `0x14035f270 (0x2dd)`, else 0): how far ahead of the player its centre sits
+/// (`0x1408edd58`), its radius, the player's +0x1e4, for Escha (`0x1408edd60`) and for Logy
+/// (`0x1408edd68`), and the part of the strike's motion, in seconds, when it can hit
+/// (`0x14026e2c0`: from 0.35 to 0.6, `0x1408edd70`, `0x1408edd78`).
+pub const STRIKE_REACH: [f64; 2] = [120.0, 160.0];
+pub const STRIKE_RADIUS_ESCHA: [f64; 2] = [130.0, 190.0];
+pub const STRIKE_RADIUS_LOGY: [f64; 2] = [150.0, 210.0];
+pub const STRIKE_WINDOW: (f64, f64) = (0.35, 0.6);
+
+/// The strike's stage and radius for the lead (`logy`) once event 733 is seen or not.
+pub fn strike(logy: bool, upgraded: bool) -> (usize, f64) {
+    let stage = upgraded as usize;
+    (stage, if logy { STRIKE_RADIUS_LOGY[stage] } else { STRIKE_RADIUS_ESCHA[stage] })
+}
+
+/// Whether the strike can hit `t` seconds into its motion.
+pub fn strike_out(t: f64) -> bool {
+    (STRIKE_WINDOW.0..=STRIKE_WINDOW.1).contains(&t)
+}
 
 /// The strike check (`0x140270f50`): its centre is the player's point 2 (`0x1401f3b80`) moved
 /// ahead along the player's facing (radians, 0 = +z) by [`STRIKE_REACH`]`[stage]`; the enemy
@@ -82,6 +99,8 @@ mod tests {
         assert_eq!(struck([0.0; 3], 0.0, 1, 30.0, &enemies), Some(0));
         assert_eq!(struck([0.0; 3], std::f64::consts::PI, 1, 30.0, &enemies), Some(1));
         assert_eq!(struck([0.0; 3], std::f64::consts::FRAC_PI_2, 1, 30.0, &enemies), None);
+        assert_eq!((strike(false, false), strike(true, true)), ((0, 130.0), (1, 210.0)));
+        assert!(strike_out(0.4) && !strike_out(0.2) && !strike_out(0.7));
     }
 
     #[test]

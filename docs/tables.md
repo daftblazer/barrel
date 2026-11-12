@@ -755,8 +755,11 @@ bytes, `0x140081260 (group?, group, start, kind)` builds it: +0x18, +0x1c the en
 +0x44 over +0x4c seconds and then moves to state 1). The field's contact check (`0x140270260`)
 makes one when the player's field strike, while out (`0x14026e2c0`), hits an enemy
 (`0x140270f50`: the nearest active enemy within its radius plus the strike's, the player's
-+0x1e4, of a point ahead of the player's point 2 along its facing by 120, 160, 130, 190, 150 or
-210 by the player's +0x1e0 (`0x1408edd58`, `encounter::struck`); the hit plays sound 0x20 for
++0x1e4, of a point ahead of the player's point 2 along its facing by 120, or 160 at stage 1
+(`0x1408edd58`, `encounter::struck`); the player's +0x1e0 is that stage, 1 once event 733 has
+been seen (`0x14026e350`, `0x14035f270 (0x2dd)`), and its +0x1e4 the strike's radius, 130 or
+190 for Escha and 150 or 210 for Logy (`0x1408edd60`, `0x1408edd68`); the strike can hit from
+0.35 to 0.6 s into its motion (`0x14026e2c0`, `0x1408edd70`, `0x1408edd78`); the hit plays sound 0x20 for
 Escha in the lead, 0x24 for Logy (`0x140160070`), and hands on the enemy's +0x178; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
 they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
 raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.5; the enemy's
@@ -780,7 +783,7 @@ first Ore Rat after 8.5 s, which starts encounter group 10. scripts' `forceEncou
 The scripts' `isHitCollision` is only a wall check (on a hit they go back to waiting).
 An encounter ends with no battle when the player struck first, the party's average level
 (`0x140330a10`, the party list at `0x141093530`) is at least 10 above the group's (the average of
-its three monster slots' levels), its kind is not 1 to 5, the player's +0x1e0 is 1 and a field
+its three monster slots' levels), its kind is not 1 to 5, the strike's stage is 1 (so only once event 733 is seen) and a field
 check (`0x1402177c0`) says no (`barrel_game::encounter::skips_battle`): weak enemies are struck
 down on the field. What the field then does with them (drops, the enemy's removal) is not read.
 
