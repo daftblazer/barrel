@@ -118,6 +118,7 @@ fn main() -> ExitCode {
         ["party", exe] => party(Path::new(exe)),
         ["item-effects", exe] => item_effects(Path::new(exe)),
         ["acts", exe] => acts(Path::new(exe)),
+        ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
         ["quests", install] => quests(Path::new(install)),
@@ -1268,6 +1269,8 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
                 None => (None, item),
             };
             let (ids, rest) = item.split_once('@').ok_or_else(|| format!("{item}: write [#<row>:]<id>[,<id>]@<quality>x<count>"))?;
+            // ...x<count>[t<trait>,<trait>]: traits by item_potential.xml row.
+            let (rest, trait_ids) = rest.split_once('t').unwrap_or((rest, ""));
             let (quality, count) = rest.split_once('x').unwrap_or((rest, "1"));
             // Either effect ids, or ~fire,water,wind,earth: the effects the item's recipe lines give
             // at those element values (`recipe::effect_at`), as synthesis would make it.
@@ -1300,7 +1303,14 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             if let Some(b) = row {
                 (action.target, action.wait) = (b.target, b.wait);
             }
-            member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count });
+            let traits = if trait_ids.is_empty() {
+                Vec::new()
+            } else {
+                let path = exe.parent().ok_or("no install folder")?.join("Saves_EN/item/item_potential.xml");
+                let all = bd::traits(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
+                trait_ids.split(',').map(|t| t.parse::<usize>().ok().and_then(|k| all.get(k).cloned()).ok_or_else(|| format!("{item}: trait {t}"))).collect::<std::result::Result<Vec<_>, String>>()?
+            };
+            member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count, traits });
         }
         members.push(member);
         names.push(format!("{} ({l})", member_names[m]));
@@ -1310,7 +1320,10 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     names.push(m.name.clone());
     let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) };
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, &mut rng, 1000);
+    let acts = bd::acts(&pe, bd::ACTS_EN);
+    let kinds = bd::trait_kinds(&pe);
+    let rules = barrel_game::skirmish::ItemRules { acts: &acts, kinds: &kinds };
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Poisoned { who, damage, hp_left } => println!("{} takes {damage} poison damage ({hp_left} HP left)", names[*who]),
@@ -2314,6 +2327,15 @@ fn acts(exe: &Path) -> Result<()> {
     for (k, a) in barrel_formats::battle_data::acts(&pe, barrel_formats::battle_data::ACTS_EN).iter().enumerate() {
         let flags: Vec<String> = a.flags.iter().enumerate().filter(|(_, f)| **f).map(|(i, _)| i.to_string()).collect();
         println!("{k:3} {:32} flags {:20} limit {} last {}", names.get(k).map_or("?".to_string(), |n| n.to_string()), flags.join(","), a.limit, a.last);
+    }
+    Ok(())
+}
+
+fn trait_kinds(exe: &Path) -> Result<()> {
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    for (k, n) in barrel_formats::battle_data::trait_kinds(&pe).iter().enumerate() {
+        println!("{k:3} {n}");
     }
     Ok(())
 }

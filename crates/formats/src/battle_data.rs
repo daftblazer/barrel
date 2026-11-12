@@ -450,3 +450,11 @@ pub fn acts(pe: &Pe, table: u64) -> Vec<ActInfo> {
         })
         .collect()
 }
+
+/// The `ITEM_SUB_*` names in enum order (trait kinds: 0 `ITEM_SUB_ITM_CHANGE_POWER`, 25
+/// `ITEM_SUB_BTL_RANK_BONUS`, 39 `ITEM_SUB_CHANGE_ACTUAL_POWER` ...), from the executable.
+pub fn trait_kinds<'a>(pe: &Pe<'a>) -> Vec<&'a str> {
+    pe.enum_names("ITEM_SUB_ITM_CHANGE_POWER")
+        .map(|(names, first)| names[first..].iter().copied().take_while(|n| n.starts_with("ITEM_SUB_")).collect())
+        .unwrap_or_default()
+}

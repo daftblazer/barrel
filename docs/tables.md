@@ -733,7 +733,7 @@ area kind (the Bomb: 1, radius 350; the Craft: 2) and its action's wait (`0x1402
 900 on the battle items, 0 on the rest; Craft 500, Bomb 550, Healing Salve 500, Clear Jelly
 300), which the item action's slot 6 (`0x1401bb310`) runs through the
 same speed formula as a skill's wait (`0x1401b9b70`), less stat 19 in percent; `+#<row>:...`
-gives an item by id (`p1:6+#234:167@50x2`: the Healing Salve, own side, wait 500, its effect the HP Recovery S row). In place of effect ids, `~<fire>,<water>,<wind>,<earth>` takes the effects the item's recipe lines give at those element values (`recipe::effect_at`), as synthesis would: `p1:6+#234:~0,60,0,0@50x2` is a Healing Salve made at water 60 (its stronger heal; at 10 or 30 the weaker). Slot 8 answers
+gives an item by id (`p1:6+#234:167@50x2`: the Healing Salve, own side, wait 500, its effect the HP Recovery S row). In place of effect ids, `~<fire>,<water>,<wind>,<earth>` takes the effects the item's recipe lines give at those element values (`recipe::effect_at`), as synthesis would: `p1:6+#234:~0,60,0,0@50x2` is a Healing Salve made at water 60 (its stronger heal; at 10 or 30 the weaker). Traits follow the count as `t<row>,<row>` (`item_potential.xml` rows; `barrel trait-kinds EXE` lists the `ITEM_SUB_*` kinds in enum order, 46 of them): each use rolls the item's bonus (`ItemBonusInputs::with_traits`, `item_bonus`, the kind-39 extra) and acts through `use_item_boosted`; `p1:15+#234:~0,10,0,0@50x3t38` (Extreme Healing, +50) heals about half again as much (21 → 30, 17 → 25). Slot 8 answers
 10,000 for any item, where a skill asks the user.
 
 `barrel_formats::battle_data` reads the monster and skill tables from the English

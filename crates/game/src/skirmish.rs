@@ -30,6 +30,16 @@ pub struct Held {
     pub action: Skill,
     pub power: i32,
     pub count: u32,
+    /// Its traits (`item_potential.xml` rows), whose bonus each use rolls.
+    pub traits: Vec<barrel_formats::battle_data::Trait>,
+}
+
+/// What item bonuses need: the act table and the `ITEM_SUB_*` names in enum order (empty: no
+/// bonuses).
+#[derive(Clone, Copy, Default)]
+pub struct ItemRules<'a> {
+    pub acts: &'a [barrel_formats::battle_data::ActInfo],
+    pub kinds: &'a [&'a str],
 }
 
 impl Held {
@@ -75,7 +85,7 @@ impl<'a> Member<'a> {
 
 /// Runs the battle until a side wins or `max_events` happened: the party are fighters 0..n,
 /// the monster n. Returns the events and the winning side (0 the party).
-pub fn skirmish(party: &[Member], foe: &Foe, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
+pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
     let n = party.len();
     let mut fighters: Vec<Fighter> = party.iter().map(|m| Fighter::new(&m.block, 0, 999).with_mp(m.mp)).collect();
     fighters.push(Fighter::new(&foe.block, 1, 999_999));
@@ -110,7 +120,15 @@ pub fn skirmish(party: &[Member], foe: &Foe, rng: &mut Rng, max_events: usize) -
             if let Some((i, target)) = item {
                 left[who][i] -= 1;
                 let held = &party[who].items[i];
-                events.extend(b.use_item(who, &held.action, held.power, target, rng));
+                if held.traits.is_empty() || rules.kinds.is_empty() {
+                    events.extend(b.use_item(who, &held.action, held.power, target, rng));
+                } else {
+                    // The bonus rolled for this use (a party target: no enemy-size terms; one target).
+                    let traits: Vec<&barrel_formats::battle_data::Trait> = held.traits.iter().collect();
+                    let inputs = battle::ItemBonusInputs::default().with_traits(&traits, rules.kinds, rng);
+                    let boost = crate::fight::Boost { bonus: battle::item_bonus(&inputs), extra: inputs.sum.get(39).copied().unwrap_or(0), acts: rules.acts };
+                    events.extend(b.use_item_boosted(who, &held.action, held.power, boost, target, rng));
+                }
             } else {
                 let ((skill, cost), target) = heal.unwrap_or_else(|| (party[who].choose(b.fighters[who].mp()), n));
                 b.pay_mp(who, cost);
@@ -162,13 +180,13 @@ mod tests {
         let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
         let mut m = Member::new(block.clone(), 0, &list, &table).unwrap();
         let salve = Skill { name: "Salve".into(), category: String::new(), wait: 600, target: 1, spread: 0, effects: vec![SkillEffect { act: 19, element: None, min: 40, max: 40, min2: 0, max2: 0 }], description: String::new() };
-        m.items.push(Held { action: salve, power: 100, count: 1 });
+        m.items.push(Held { action: salve, power: 100, count: 1, traits: Vec::new() });
         // A monster that hits hard and never dies quickly.
         let foe_block = StatBlock { hp: 100_000, attack: 40, ..block };
         let claw = skill("Claw", 600, 30, 30);
         let foe = Foe { block: foe_block, normal: &claw, skills: None };
         let mut rng = Rng::from_state([5, 6, 7, 8]);
-        let (events, _) = skirmish(&[m], &foe, &mut rng, 60);
+        let (events, _) = skirmish(&[m], &foe, ItemRules::default(), &mut rng, 60);
         let used = events.iter().filter(|e| matches!(e, Event::Healed { skill, .. } if skill == "Salve")).count();
         assert_eq!(used, 1);
     }
