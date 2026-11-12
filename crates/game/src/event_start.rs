@@ -100,7 +100,8 @@ pub trait World {
     /// `PLAYER_PARAM` n: 0 the money (`0x14036a990`), 1 the alchemy level (`0x14107c4c8`).
     fn money(&self) -> i32;
     fn alchemy_level(&self) -> i32;
-    /// A character's friendship (`0x140361ad0` then `0x14032dba0`); None when the character has no
+    /// A character's friendship (`0x140361ad0` then `0x14032dba0`; characters 0 to 10 are the
+    /// records' indices, `0x140330120`); None when the character has no
     /// record (the condition fails) or it is not known here (not modelled).
     fn friendship(&self, chara: i32) -> Option<Option<f32>>;
     /// The count (each slot's +0x22 summed) of an item, or of any item for None, in the basket and

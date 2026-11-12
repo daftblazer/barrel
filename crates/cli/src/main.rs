@@ -3071,8 +3071,9 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         fn alchemy_level(&self) -> i32 {
             self.0.alchemy.map_or(0, |a| a.0)
         }
-        fn friendship(&self, _: i32) -> Option<Option<f32>> {
-            None
+        fn friendship(&self, c: i32) -> Option<Option<f32>> {
+            // 0x140330120: characters 0-10 are the records' own indices, any other has none.
+            Some((0..=10).contains(&c).then(|| self.0.party.iter().find(|m| m.character == c)).flatten().map(|m| m.friendship))
         }
         fn item_count(&self, item: Option<i32>, low: f32, high: f32) -> Option<i32> {
             let held = self.0.basket.iter().chain(&self.0.container);

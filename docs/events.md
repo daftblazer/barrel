@@ -1313,6 +1313,6 @@ The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired v
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
 The field map is taken as none and the day flag as clear. Commands not modelled yet count as
 failing and are tallied. On the oracle save (day 229), `ATELIER_SLEEP_MIX` (group 28, 129
-events listed) passes for one event (`EVENT_QC10_MAR_011`) with every command in its checks modelled. Friendship is
-not read from the save yet.
+events listed) passes for one event (`EVENT_QC10_MAR_011`) with every command in its checks modelled. Friendship comes from the save's `Party`
+records (by their character number, 0 to 10 as `0x140330120` allows).
 
