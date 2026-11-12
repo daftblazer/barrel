@@ -76,7 +76,8 @@ impl Creature {
             custom_pos: position,
             custom_rot: [0.0; 3],
             custom_param: 0,
-            judge_range: false,
+            // 0x140235b74 starts a brain with its sight flag clear and range judging on.
+            judge_range: true,
             player: [0.0; 3],
             player_facing: 0.0,
             motion_seconds: 1.0,

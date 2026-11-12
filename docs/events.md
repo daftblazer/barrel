@@ -1142,7 +1142,15 @@ commands as the `.ebd` events.
   cone each tick and, when the answer changes while range judging is on, sets it, zeroes the
   timer and returns true, so the script starts over; the brain then plays the record's first
   script (`ai_dog_in2`, the chase or flight) while it is set and the second (`ai_dog_out`, the
-  idle wandering) while it is not (`0x140233a27`), and `getMoveSpeed` gives the running speed), and
+  idle wandering) while it is not (`0x140233a27`), and `getMoveSpeed` gives the running speed)
+  A new brain starts with that flag clear and range judging on (`0x140235b74` writes 0x100 over
+  +0xd4 and +0xd5). `barrel_game::field_ai::Mob` is one field enemy so: its `Creature`, its own
+  script world with `utility.nut` loaded, and its two scripts, one of them run each frame by the
+  flag. `barrel field-sim ROOT AREA FRAMES` runs an area's enemies while a stand-in player walks
+  west through them: at `AREA_01_01` the Ore Rats (`ai_move` idle, `ai_tracking` aware) walk off
+  to wander and wait, the Stray Dog (`ai_dog_out`) waits, barks and runs about, and the Ore Rat
+  the player passes behind notices it there (its 180° view), then follows it, turning toward it
+  again every tenth of a second or so (`Val.CHARA_TRACKING_TIME`, 0.1)., and
   `barrel nut-run ROOT FILE FRAMES` drives one 600 units from the player: the unaware dog
   waits (`F_WAIT`), plays one of its idle actions (`EX9`, `EX8`), and runs off (`B_RUN`) to a
   spot and waits again.

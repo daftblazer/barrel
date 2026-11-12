@@ -45,6 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
   barrel gimmicks EXE [AREA]   each field area's gimmicks: kind, place, size, event window
@@ -148,6 +149,7 @@ fn main() -> ExitCode {
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
+        ["field-sim", root, area, frames] => field_sim(Path::new(root), area, frames.parse().unwrap_or(600)),
         ["nut-run", root, file, ticks] => nut_run(Path::new(root), file, ticks.parse().unwrap_or(1)),
         ["party-skills", exe] => party_skills(Path::new(exe)),
         ["monsters", exe] => monsters(Path::new(exe)),
@@ -2973,6 +2975,54 @@ fn nut_run(root: &Path, file: &str, ticks: usize) -> Result<()> {
         if now != last {
             println!("{:6.2} s: {now} at ({:.0}, {:.0})", tick as f64 / 60.0, c.position[0], c.position[2]);
             last = now;
+        }
+    }
+    Ok(())
+}
+
+/// Runs field area AREA's enemies (by the field enemy table) under their scripts for FRAMES
+/// frames while a stand-in player walks west through them from 15 m east of the first,
+/// printing each creature's changes.
+fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
+    let motions = barrel_game::gesture::motions(&pe);
+    let names = barrel_game::macros::Names::escha(&motions);
+    let constants: std::collections::HashMap<String, i64> = names.all().map(|(n, v)| (n.to_string(), v as i32 as i64)).collect();
+    let load = |name: &str| -> Result<Vec<barrel_game::squirrel::Stmt>> {
+        let bytes = read(&root.join("Script").join(format!("{name}.nut")))?;
+        let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+        barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}").into())
+    };
+    let utility = load("utility")?;
+    let area: i32 = area.parse().map_err(|_| "the area is a field map number (12 is AREA_01_01)")?;
+    let enemies: Vec<bd::FieldEnemy> = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
+    if enemies.is_empty() {
+        return Err("no field enemies in that area".into());
+    }
+    let mut mobs = Vec::new();
+    for (k, e) in enemies.iter().enumerate() {
+        let mut c = barrel_game::creature::Creature::from_field_enemy(e, barrel_game::rng::Rng::from_state([1 + k as u32, 2, 3, 4]));
+        c.constants = constants.clone();
+        let scripts = (std::rc::Rc::new(load(&e.ai.0)?), std::rc::Rc::new(load(&e.ai.1)?));
+        mobs.push(barrel_game::field_ai::Mob::new(c, &utility, scripts).map_err(|e| e.to_string())?);
+    }
+    let start = mobs[0].creature.position;
+    let mut player = [start[0] + 1500.0, start[1], start[2]];
+    let facing = -std::f64::consts::FRAC_PI_2;
+    let mut last: Vec<String> = vec![String::new(); mobs.len()];
+    for f in 0..frames {
+        player[0] -= 200.0 / 60.0;
+        for (k, m) in mobs.iter_mut().enumerate() {
+            m.tick(player, facing, 1.0 / 60.0).map_err(|e| format!("enemy {k}, frame {f}: {e}"))?;
+            let c = &m.creature;
+            let motion = c.motion.and_then(|v| motions.get(v as usize)).map_or("-", |v| v.as_str());
+            let now = format!("{} state {} motion {motion}", if c.aware { "aware" } else { "idle " }, c.state);
+            if now != last[k] {
+                println!("{:6.2} s  #{k} {:<12} at ({:6.0}, {:6.0}), player at ({:6.0}, {:6.0}): {now}", f as f64 / 60.0, enemies[k].ai.1, c.position[0], c.position[2], player[0], player[2]);
+                last[k] = now;
+            }
         }
     }
     Ok(())
