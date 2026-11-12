@@ -50,6 +50,11 @@ layout(location = 7) in vec3 fog_add;
 layout(location = 8) in vec3 fog_keep;
 layout(set = 1, binding = 5) uniform sampler2DShadow shadow_map;
 layout(location = 0) out vec4 color;
+// The motion vector (`--motion`): how far this point moved on screen since the last frame, in
+// texture coordinates (no attachment takes it when motion is off).
+layout(location = 9) in vec4 cur_clip;
+layout(location = 10) in vec4 prev_clip;
+layout(location = 1) out vec2 motion;
 
 // The game's soft-light blend of a colour k over a, weighted by w (k first divided by its
 // largest channel, at least 1).
@@ -81,6 +86,7 @@ float sun_shadow(vec3 p) {
     return lit / 16.0;
 }
 void main() {
+    motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec4 c = texture(tex, uv);
     if ((pc.flags & 8u) != 0u) {
         // The distant view, blended by its alpha (clouds over the dome); its solid pieces

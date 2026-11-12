@@ -67,7 +67,12 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 bb_right;
     vec4 bb_up;
     vec4 bb_back;
+    // Last frame's view-projection (this frame's when there was none), for motion vectors.
+    mat4 prev_view_proj;
 } look;
+// This frame's and last frame's clip positions, for the motion vectors (`--motion`).
+layout(location = 9) out vec4 cur_clip;
+layout(location = 10) out vec4 prev_clip;
 void main() {
     Instance i = instances.inst[pc.instance];
     vec4 pos = vec4(in_pos, 1.0);
@@ -132,6 +137,8 @@ void main() {
         sun_part = vec3(0.0);
     }
     gl_Position = pc.view_proj * w;
+    cur_clip = gl_Position;
+    prev_clip = look.prev_view_proj * w;
     // Fog: extinction exp2(s × Scat0) (Scat0 holds -(βR + βM) log2 e), s the eye distance mapped
     // over the fog's start and end; in-scattering Mie (Henyey-Greenstein) plus Rayleigh plus
     // the ambient, θ between the way to the eye and the sun.

@@ -39,7 +39,7 @@ const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 40 * 16;
+const LOOK_SIZE: u64 = 44 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 const SHADOW_HALF: f32 = 1500.0;
@@ -48,6 +48,8 @@ const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 /// The scene's colour target: 8 bits a channel, as the game's (it draws at the HDR range's
 /// inverse and doubles the result after: `docs/shading.md`, "After the scene").
 const SCENE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+/// The motion vectors' format (`--motion`): x and y in texture coordinates.
+const MOTION_FORMAT: vk::Format = vk::Format::R16G16_SFLOAT;
 /// HdrRangeInv: the scene is drawn at half its brightness and doubled by the post pass.
 const HDR_RANGE_INV: f32 = 0.5;
 const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv"));
@@ -582,6 +584,8 @@ struct Targets {
     scene_size: (u32, u32),
     /// The multisampled colour (`--msaa`), resolved into `scene` by the scene pass.
     multisample: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    /// The motion vectors (`--motion`).
+    motion: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
 }
 
 impl Targets {
@@ -599,6 +603,8 @@ impl Targets {
         glow_pipelines: &glow::Pipelines,
         upscale_pipelines: Option<&upscale::Pipelines>,
         samples: vk::SampleCountFlags,
+        motion: bool,
+        show_motion: bool,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let (scene_width, scene_height) = scene_size;
@@ -643,9 +649,17 @@ impl Targets {
         let framebuffer = |pass, views: &[vk::ImageView], (w, h): (u32, u32)| unsafe {
             d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(w).height(h).layers(1), None)
         };
-        let scene_framebuffer = match multisample {
-            Some((_, _, msaa_view)) => framebuffer(scene_pass, &[msaa_view, depth_view, scene_view], scene_size)?,
-            None => framebuffer(scene_pass, &[scene_view, depth_view], scene_size)?,
+        // The motion vectors (`--motion`), read by the temporal methods (and `--show-motion`).
+        let motion_target = if motion && multisample.is_none() {
+            let (image, memory) = image(MOTION_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+            Some((image, memory, view(image, MOTION_FORMAT, vk::ImageAspectFlags::COLOR)?))
+        } else {
+            None
+        };
+        let scene_framebuffer = match (multisample, motion_target) {
+            (Some((_, _, msaa_view)), _) => framebuffer(scene_pass, &[msaa_view, depth_view, scene_view], scene_size)?,
+            (None, Some((_, _, motion_view))) => framebuffer(scene_pass, &[scene_view, depth_view, motion_view], scene_size)?,
+            (None, None) => framebuffer(scene_pass, &[scene_view, depth_view], scene_size)?,
         };
         let framebuffers = output.iter().map(|&v| framebuffer(post_pass, &[v], (width, height))).collect::<std::result::Result<Vec<_>, _>>()?;
         if framebuffers.is_empty() {
@@ -657,7 +671,10 @@ impl Targets {
             _ => None,
         };
         // The post pass samples the new scene image (FSR's result when it scales it) and the glow.
-        let shown = upscale.as_ref().map_or(scene_view, upscale::Targets::result);
+        let shown = match (show_motion, motion_target) {
+            (true, Some((_, _, motion_view))) => motion_view,
+            _ => upscale.as_ref().map_or(scene_view, upscale::Targets::result),
+        };
         let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(shown).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let frozen_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(frozen_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
@@ -672,6 +689,7 @@ impl Targets {
             )
         };
         Ok(Targets {
+            motion: motion_target,
             multisample,
             scene_size,
             scene,
@@ -711,6 +729,11 @@ impl Targets {
             d.destroy_image_view(self.scene_view, None);
             d.destroy_image(self.scene, None);
             d.free_memory(self.scene_memory, None);
+            if let Some((image, memory, view)) = self.motion.take() {
+                d.destroy_image_view(view, None);
+                d.destroy_image(image, None);
+                d.free_memory(memory, None);
+            }
             if let Some((image, memory, view)) = self.multisample.take() {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
@@ -1436,6 +1459,8 @@ fn main() -> Result<()> {
     // S times the output's size, 0.25 to 2), `--fsr` (FSR 1 instead of the bilinear scale),
     // `--msaa N` (samples a pixel, resolved in the scene pass), `--shadows desktop|handheld`.
     let mut settings = settings::RenderSettings::DESKTOP;
+    // `--show-motion`: the motion vectors shown in place of the frame (red across, green down).
+    let mut show_motion = false;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1466,6 +1491,11 @@ fn main() -> Result<()> {
             }
             "--handheld" => settings = settings::RenderSettings::HANDHELD,
             "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
+            "--motion" => settings.motion = true,
+            "--show-motion" => {
+                settings.motion = true;
+                show_motion = true;
+            }
             "--msaa" => settings.msaa = it.next().ok_or("--msaa N")?.parse()?,
             "--scale" => settings.scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
             "--shadows" => {
@@ -1889,7 +1919,7 @@ fn main() -> Result<()> {
         [8u32, 4, 2, 1]
             .into_iter()
             .map(|n| (n, vk::SampleCountFlags::from_raw(n)))
-            .find(|&(n, f)| n <= settings.msaa.max(1) && allowed.contains(f))
+            .find(|&(n, f)| n <= if settings.motion { 1 } else { settings.msaa.max(1) } && allowed.contains(f))
             .map_or(vk::SampleCountFlags::TYPE_1, |(_, f)| f)
     };
     let multisampled = samples != vk::SampleCountFlags::TYPE_1;
@@ -1929,13 +1959,35 @@ fn main() -> Result<()> {
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
     ];
-    let attachments: &[vk::AttachmentDescription] = if multisampled { &multi_attachments } else { &single_attachments };
-    let color_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
+    // With motion vectors (single-sampled only): a second colour target after depth.
+    let motion_attachments = [
+        single_attachments[0],
+        single_attachments[1],
+        vk::AttachmentDescription::default()
+            .format(MOTION_FORMAT)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
+    ];
+    let attachments: &[vk::AttachmentDescription] = if multisampled {
+        &multi_attachments
+    } else if settings.motion {
+        &motion_attachments
+    } else {
+        &single_attachments
+    };
+    let color_refs = [
+        vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
+        vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
+    ];
+    let color_ref = &color_refs[..if settings.motion && !multisampled { 2 } else { 1 }];
     let resolve_ref = [vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
     let depth_ref = vk::AttachmentReference { attachment: 1, layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
     let mut subpass_desc = vk::SubpassDescription::default()
         .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(&color_ref)
+        .color_attachments(color_ref)
         .depth_stencil_attachment(&depth_ref);
     if multisampled {
         subpass_desc = subpass_desc.resolve_attachments(&resolve_ref);
@@ -1997,7 +2049,7 @@ fn main() -> Result<()> {
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
     let upscale_pipelines = if settings.fsr1() { Some(upscale::Pipelines::new(&gpu)?) } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -2041,8 +2093,11 @@ fn main() -> Result<()> {
         .depth_test_enable(true)
         .depth_write_enable(true)
         .depth_compare_op(vk::CompareOp::LESS);
-    let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA)];
-    let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att);
+    // The motion target, when there is one, takes the vectors unblended.
+    let motion_blend = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G);
+    let colour_targets = color_ref.len();
+    let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
+    let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..colour_targets]);
     let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
     // Set 0 the colour, 1 the instances (and the look), 2 the mask.
     let set_layouts = [set_layout, instance_layout, set_layout];
@@ -2076,8 +2131,8 @@ fn main() -> Result<()> {
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
         .alpha_blend_op(vk::BlendOp::ADD)
-        .color_write_mask(vk::ColorComponentFlags::RGBA)];
-    let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att);
+        .color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
+    let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att[..colour_targets]);
     let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
     let sky_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_info], None).map_err(|(_, e)| e)?[0] };
 
@@ -2551,6 +2606,7 @@ fn main() -> Result<()> {
         .unwrap_or_default();
     // The start time of the last screen effect seen (a new one starts a cross-fade).
     let mut last_effect: Option<f32> = None;
+    let mut prev_mvp: Option<Mat4> = None;
     for frame in 0..frames {
     // The real time since the last frame (a window's frames are real time).
     let now = std::time::Instant::now();
@@ -2869,7 +2925,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples, settings.motion, show_motion)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -2948,7 +3004,11 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         });
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 40];
+        let mut look = [[0f32; 4]; 44];
+        // Last frame's view-projection (this frame's on the first), for the motion vectors.
+        for (k, col) in prev_mvp.unwrap_or(mvp).to_cols_array_2d().into_iter().enumerate() {
+            look[40 + k] = col;
+        }
         // The billboards' axes (docs/shading.md, "Billboards"): the camera's right as the screen
         // shows it (render space is mirrored, so the view's -x), up, and back toward the eye.
         let cam = Mat4::look_at_rh(e, target, Vec3::Y);
@@ -3024,6 +3084,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         }
         gpu.upload(look_mem, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) })?;
     }
+    prev_mvp = Some(mvp);
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
     let (scene_width, scene_height) = targets.scene_size;
     let scene_area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: scene_width, height: scene_height } };
@@ -3078,6 +3139,8 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         let clear = [
             vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
             vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
+            // The motion target's (no movement), when there is one.
+            vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
         ];
         d.cmd_begin_render_pass(
             cb,
@@ -3168,6 +3231,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         let mut post_push = [0u8; 32];
         post_push[..4].copy_from_slice(&rate.to_le_bytes());
         post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
+        post_push[8..12].copy_from_slice(&(if show_motion { 1.0f32 } else { 0.0 }).to_le_bytes());
         for (k, v) in overlay.iter().enumerate() {
             post_push[16 + 4 * k..20 + 4 * k].copy_from_slice(&v.to_le_bytes());
         }

@@ -61,7 +61,13 @@ float sun_shadow(vec3 p) {
 }
 
 layout(location = 0) out vec4 color;
+// The motion vector (`--motion`): how far this point moved on screen since the last frame, in
+// texture coordinates (no attachment takes it when motion is off).
+layout(location = 9) in vec4 cur_clip;
+layout(location = 10) in vec4 prev_clip;
+layout(location = 1) out vec2 motion;
 void main() {
+    motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec3 w0 = texture(blend[0], uv).rgb;
     vec3 w1 = texture(blend[1], uv).rgb;
     float w[6] = float[6](w0.r, w0.g, w0.b, w1.r, w1.g, w1.b);

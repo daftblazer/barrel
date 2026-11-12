@@ -10,6 +10,12 @@ layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; 
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
 void main() {
+    // pad.x 1: the motion vectors shown instead (`--show-motion`: binding 0 holds them),
+    // their size times 40 in red and green.
+    if (pc.pad.x > 0.5) {
+        color = vec4(abs(texture(scene, uv).rg) * 40.0, 0.0, 1.0);
+        return;
+    }
     vec3 live = texture(scene, uv).rgb * 2.0 + texture(glow, uv).rgb * pc.rate;
     vec3 before = texture(frozen, uv).rgb * 2.0;
     vec3 c = mix(live, before, pc.frozen_weight);

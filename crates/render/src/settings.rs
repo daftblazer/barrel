@@ -21,16 +21,20 @@ pub struct RenderSettings {
     /// Samples a pixel the scene asks for (1, 2, 4 or 8; the device may allow fewer).
     pub msaa: u32,
     pub shadows: Shadows,
+    /// Whether the scene pass also writes motion vectors (a second colour target, `R16G16`:
+    /// each pixel's movement since the last frame in texture coordinates), which the temporal
+    /// methods read; it takes single-sampled drawing.
+    pub motion: bool,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false };
 
     /// A preset by name (`desktop`, `desktop-high`, `handheld`).
     pub fn preset(name: &str) -> Option<RenderSettings> {

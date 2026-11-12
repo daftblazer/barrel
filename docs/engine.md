@@ -109,6 +109,19 @@ scale (closer to the full-size frame by eye) though a little further by PSNR (29
 anti-aliased input, and the scene's hard edges come out crisper rather than smoother, so
 anti-aliasing is the next piece. At scale 1 `--fsr` changes nothing.
 
+**Motion vectors.** With `motion` on (`barrel-view --motion`, `--show-motion` to see them as
+red and green, 40 times their size) the scene pass writes a second colour target
+(`R16G16_SFLOAT`, single-sampled: motion turns MSAA off): each pixel's movement since the last
+frame in texture coordinates, `(this clip position − last frame's) / 2` from the vertex shader,
+last frame's view-projection riding in the `Look` block (entries 40 to 43). So far only the
+camera's movement is in it: objects and skinned characters move with this frame's transforms
+and pose on both sides (their last frame's are the next step). In the first opening's camera
+move (2.5 s on, a 5-second turn and dolly) the vectors come to about 0.0014 across and 0.0008
+down a frame at 60 Hz, a smooth field over the screen, as the move works out to; a still
+camera gives zero. The viewer's seek to `--at` falls between its first two frames, which the
+temporal methods have to treat as a cut (they drop their history there). With motion off the
+frame is exactly as before.
+
 **Settings.** `settings::RenderSettings` holds the scale, the upscaler (bilinear or FSR 1), the
 MSAA samples and the shadow map, with presets: `DESKTOP` (full size, no MSAA, the large shadow
 map: the renderer as it was), `DESKTOP_HIGH` (4× MSAA) and `HANDHELD` (three-quarter scale
