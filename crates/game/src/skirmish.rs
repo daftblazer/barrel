@@ -49,6 +49,11 @@ impl Held {
         let e = &self.action.effects;
         matches!(self.action.target, 1 | 3 | 4) && if revive { e.iter().any(|e| e.act == 81) } else { e.iter().any(|e| e.act == 19 || e.act == 21) }
     }
+
+    /// Thrown at the other side: damage (acts 0, 8) or instant death (80, 176, 195).
+    fn attacks(&self) -> bool {
+        !matches!(self.action.target, 1 | 3 | 4) && self.action.effects.iter().any(|e| matches!(e.act, 0 | 8 | 80 | 176 | 195))
+    }
 }
 
 impl<'a> Member<'a> {
@@ -117,7 +122,12 @@ pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, ma
                     let i = (0..party[who].items.len()).find(|&i| left[who][i] > 0 && party[who].items[i].heals(revive))?;
                     Some((i, k))
                 };
-                pick(true, fallen).or_else(|| pick(false, weakest.filter(|&k| share(k) <= 0.5)))
+                // Else an attack item on the monster, the first one left (a player's choice; this
+                // stand-in throws them before skills).
+                pick(true, fallen).or_else(|| pick(false, weakest.filter(|&k| share(k) <= 0.5))).or_else(|| {
+                    let i = (0..party[who].items.len()).find(|&i| left[who][i] > 0 && party[who].items[i].attacks())?;
+                    Some((i, n))
+                })
             };
             if let Some((i, target)) = item {
                 left[who][i] -= 1;
@@ -160,6 +170,24 @@ mod tests {
 
     fn skill(name: &str, wait: i32, lo: i32, hi: i32) -> Skill {
         Skill { name: name.into(), category: String::new(), wait, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: lo, max: hi, min2: 0, max2: 0 }], description: String::new() }
+    }
+
+    #[test]
+    fn members_throw_attack_items() {
+        let table = [skill("Attack", 600, 1, 1)];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }];
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let mut m = Member::new(block.clone(), 0, &list, &table).unwrap();
+        let mut doom = skill("Doom", 600, 0, 0);
+        doom.effects[0].act = 195;
+        m.items.push(Held { action: doom, power: 100, count: 1, traits: Vec::new() });
+        let foe_block = StatBlock { hp: 5000, speed: 1, ..block };
+        let claw = skill("Claw", 600, 1, 1);
+        let foe = Foe { block: foe_block, normal: &claw, skills: None };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let (events, winner) = skirmish(&[m], &foe, ItemRules::default(), &mut rng, 60);
+        assert!(events.iter().any(|e| matches!(e, Event::Felled { skill, .. } if skill == "Doom")));
+        assert_eq!(winner, Some(0));
     }
 
     #[test]

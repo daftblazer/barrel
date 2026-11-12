@@ -806,7 +806,7 @@ one when the target's HP × 100 / max(max HP, 1) is at most the amount, else non
 `ABSOLUTE_DEATH` (195, `0x1401bfdfe`) builds the event already landed. The event
 (`0x1401c1340`, vtable `0x140809170`) misses under state 0x50 or when the target's virtual
 +0x40 says so (not read yet), else rolls its chance (`0x1404ca5f0`, `Rng::chance`). A landed
-one leaves the target at 0 HP (`fight::Event::Felled`).
+one leaves the target at 0 HP (`fight::Event::Felled`). In `barrel battle` a member with an attack item (damage or death acts, not aimed at its own side) throws it at the monster when no heal is due, before its skills (a stand-in for the player): Logy at level 5 with three Crafts (`p1:5+#195:~10,0,0,0@50x3`) loses to the Flesh Eater (5); with Fatal Blow (`…x3t50`) the second Craft fells it.
 
 ### Battle stats (executable)
 
