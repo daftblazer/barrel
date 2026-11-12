@@ -1257,8 +1257,13 @@ compare items by (`synthesis::worth`); and two reached through tables (callers n
 `0x14029e030`'s figure for the item: `trunc(quality / 3 × 2)`, plus (unless the unit's +0xe
 is set) each trait record's +0x28 and each effect record's +0x24. The trait's +0x28 is
 `valuePoint` (read from the running game's table: a column the shipped `item_potential.xml`
-never sets, so 0 for every trait); which column the effect's +0x24 is, is not settled.
-Which is the shop's buying price and which its selling price is still to be checked.
+never sets, so 0 for every trait), and the effect's +0x24 is 0 in all 698 records of the
+running game's effect table (no column of `item_effect.xml` lands there). So as shipped q is
+`trunc(quality / 3 × 2)` alone.
+In `0x1402a2fa0` the traits come before the bounds; an item with no cost gives 0 there and
+100 in `0x1402a3070`. `synthesis::price_figure`, `table_price_a` and `table_price_b` follow
+them (a Craft, cost 30, at quality 50: 65 and 598). Which is the shop's buying price and which
+its selling price is still to be checked.
 
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
 `itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:

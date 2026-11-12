@@ -564,8 +564,46 @@ pub fn worth(cost: i32, quality: f32, traits: &[&barrel_formats::battle_data::Tr
     price_traits(((quality + 100.0) * cost as f32 / 200.0) as i32, traits).max(1)
 }
 
+/// The figure the two table prices start from (`0x14029e030`): two thirds of the quality,
+/// cut to a whole number. (The game adds each trait record's `valuePoint` and each effect
+/// record's +0x24; both are 0 in every shipped record.)
+pub fn price_figure(quality: f32) -> i32 {
+    (quality / 3.0 * 2.0) as i32
+}
+
+/// One of the two prices reached through tables (`0x1402a2fa0`; which of buying and selling
+/// it is, is still open): `2 × trunc((2q + 100) / 100) × cost + 5`, then the price traits,
+/// within 10 and 9,999; 0 for an item with no cost.
+pub fn table_price_a(cost: i32, quality: f32, traits: &[&barrel_formats::battle_data::Trait]) -> i32 {
+    if cost <= 0 {
+        return 0;
+    }
+    let q = price_figure(quality);
+    price_traits((2 * q + 100) / 100 * cost * 2 + 5, traits).max(10).min(9999)
+}
+
+/// The other (`0x1402a3070`): `100 + trunc(2 × cost × (q + 50) / 10)`, then the price traits,
+/// within 100 and 9,999; 100 for an item with no cost.
+pub fn table_price_b(cost: i32, quality: f32, traits: &[&barrel_formats::battle_data::Trait]) -> i32 {
+    if cost <= 0 {
+        return 100;
+    }
+    let q = price_figure(quality);
+    price_traits(100 + 2 * cost * (q + 50) / 10, traits).min(9999).max(100)
+}
+
 #[cfg(test)]
 mod price_tests {
+    #[test]
+    fn table_prices() {
+        // Craft (cost 30) at quality 50: q 33.
+        assert_eq!(super::price_figure(50.0), 33);
+        assert_eq!(super::table_price_a(30, 50.0, &[]), 65);
+        assert_eq!(super::table_price_b(30, 50.0, &[]), 598);
+        assert_eq!((super::table_price_a(0, 50.0, &[]), super::table_price_b(0, 50.0, &[])), (0, 100));
+        assert_eq!(super::table_price_b(999, 120.0, &[]), 9999);
+    }
+
     use barrel_formats::battle_data::{Trait, TraitSlot};
 
     #[test]
