@@ -597,6 +597,32 @@ gathering ones (`rel`), +0x124 from requests done (`0x14033b387`)), all added; t
 report keeps the base (+0x128) and the bonus (+0x12c) and is marked paid (+0x140 = 2)
 (`rank::ranks`, `tier_top`, `promote`, `RankState`, `request_points`, `pay`).
 
+### The month report's comment
+
+`Saves/rank/SalaryMessData.xml` (22 rows, `barrel_formats::salary`) is loaded by `0x14014f6c0`
+(one of the rank manager's five loaders, called through a table from `0x14014e360`) as 0x88-byte
+rows at `[0x140e00f00]` +0x30. A row holds `group` (+0x20), `start` (+0x24), `end` (+0x28) and
+seven pairs from +0x2c, each a count and a flag that is set when the word is `MORE`: `battle`,
+`gather`, `item`, `mix`, `train`, `artifact` and `quest`, in the order of the report's counts
+(+0x10c to +0x124).
+
+The report screen (`0x140114e20`) keeps the comment already chosen, the report's +0x130,
+unless that is -1. Otherwise it picks one (`barrel_game::rank::comment`):
+
+- **Month:** the report's number m (the screen's +0x80, from 0) must satisfy
+  `start - 1 ≤ m < end`. So rows 1–48 cover the first four years of months, `ゲーム開始直後`
+  (start = end = 1) only the first, and `新人よろしく` (13) the thirteenth.
+- **Counts:** each count above 0 must hold: with MORE the month's count is at least it, with
+  LESS at most it. A count of 0 asks nothing, so the "LESS 0" rows (`錬成回数少ない`, the
+  balance-low row) always fit.
+- **Refining:** row 9 (`錬成回数少ない`) also needs event 66, `EVENT_MM04_SYS_040`, seen.
+- **Group:** while scanning, a row below the highest group seen so far is skipped. At the end
+  every row below the final highest group is dropped.
+- **Pick:** one of the rest is picked with `0x1404ca660 (0, n - 1)` and stored in +0x130.
+
+`0x1401155d0`, the other report screen (the ending's), stores the first row with start = end =
+100 instead.
+
 ### The calendar
 
 The date is one integer, the global at `0x1410a42cc` (read by `0x14035c050`; English Escha

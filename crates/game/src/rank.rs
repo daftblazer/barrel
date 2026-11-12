@@ -114,6 +114,49 @@ pub fn request_points(get_point: f32) -> i32 {
     if get_point > 0.0 { get_point as i32 } else { 0 }
 }
 
+/// The event that opens refining (`EVENT_MM04_SYS_040`, 66): row 9 of the comments (refining
+/// done little) is only offered once it has been seen.
+pub const REFINING_EVENT: usize = 66;
+
+/// The month report's comment (`0x140114e20`, when the report's +0x130 is still -1): the rows
+/// whose start to end takes in month `month + 1` (`month` the report's number, from 0), whose
+/// counts each hold (a count above 0 asks for the month's count to be at least it with MORE,
+/// at most it with LESS; 0 asks nothing, so "LESS 0" never bites), row 9 only once
+/// `REFINING_EVENT` is seen; of those, the ones in the highest group, one picked with
+/// `0x1404ca660 (0, n - 1)`. `counts` are the month's battles, gatherings, items, syntheses,
+/// refinings, artifacts and requests (the report's +0x10c to +0x124). The pick is kept in the
+/// report (+0x130). None when no row fits (no generator number is drawn then either).
+pub fn comment(
+    rows: &[barrel_formats::salary::Comment],
+    month: i32,
+    counts: [i32; 7],
+    refining_seen: bool,
+    rng: &mut crate::rng::Rng,
+) -> Option<usize> {
+    let mut found: Vec<usize> = Vec::new();
+    let mut top = 0;
+    for (k, r) in rows.iter().enumerate() {
+        if r.start - 1 > month || r.end <= month || r.group < top {
+            continue;
+        }
+        let holds = r.counts.iter().zip(counts).all(|(c, n)| match *c {
+            Some((v, more)) if v > 0 => if more { n >= v } else { n <= v },
+            _ => true,
+        });
+        if !holds || (k == 9 && !refining_seen) {
+            continue;
+        }
+        found.push(k);
+        top = top.max(r.group);
+    }
+    found.retain(|&k| rows[k].group >= top);
+    if found.is_empty() {
+        return None;
+    }
+    let n = rng.range(0, found.len() as i32 - 1);
+    Some(found[n as usize])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +191,25 @@ mod tests {
         assert_eq!(tier_top(1), 3);
         assert_eq!(promote(&t, 1, 5000), (4, true));
         assert_eq!(promote(&t, 3, 0), (3, false));
+    }
+
+    #[test]
+    fn month_comment() {
+        use barrel_formats::salary::Comment;
+        let row = |group, start, end, counts: [Option<(i32, bool)>; 7]| Comment { name: String::new(), group, start, end, counts, text: String::new() };
+        let none = [None; 7];
+        let mut many_battles = none;
+        many_battles[0] = Some((5, true));
+        let mut few_battles = none;
+        few_battles[0] = Some((2, false));
+        let rows = vec![row(1, 1, 48, none), row(3, 1, 48, many_battles), row(2, 1, 48, few_battles), row(5, 1, 1, none)];
+        let mut rng = crate::rng::Rng::seeded(3);
+        // The first month: the game-start row (group 5) beats everything.
+        assert_eq!(comment(&rows, 0, [9, 0, 0, 0, 0, 0, 0], true, &mut rng), Some(3));
+        // Later: 9 battles fit "many" (group 3) over the general row (group 1).
+        assert_eq!(comment(&rows, 4, [9, 0, 0, 0, 0, 0, 0], true, &mut rng), Some(1));
+        assert_eq!(comment(&rows, 4, [1, 0, 0, 0, 0, 0, 0], true, &mut rng), Some(2));
+        assert_eq!(comment(&rows, 4, [3, 0, 0, 0, 0, 0, 0], true, &mut rng), Some(0));
+        assert_eq!(comment(&rows, 60, [3, 0, 0, 0, 0, 0, 0], true, &mut rng), None);
     }
 }

@@ -3,8 +3,8 @@
 //! for the two ending rows) and up to seven counts each with its own MORE or LESS: battles
 //! (`battle`/`btlmore`), gathering (`gather`/`gthmore`), items supplied (`item`/`itmmore`),
 //! synthesis (`mix`/`mixmore`), refining (`train`/`trnmore`), artifacts (`artifact`/`atfmore`)
-//! and requests (`quest`/`qstmore`), then the text. How a month picks its comment is not read
-//! yet.
+//! and requests (`quest`/`qstmore`), then the text (0x88-byte rows at `[0x140e00f00]` +0x30;
+//! the pick is `barrel_game::rank::comment`).
 
 use crate::table::Element;
 
