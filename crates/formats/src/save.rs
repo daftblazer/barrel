@@ -618,6 +618,9 @@ pub struct Summary {
     pub place_knowledge: Vec<i32>,
     /// `worldmap/chara`: two i32 (29 and 0 in one save: the place the party is at, presumably).
     pub world_position: Option<(i32, i32)>,
+    /// `work/work_data_status`: per `WorkData.xml` row (103), -1 not open, 1 open and new, 0
+    /// open, 2 done.
+    pub work_status: Vec<i32>,
 }
 
 /// The `knowledge` record: the library's level (0 to 10) for every entry of its eight lists,
@@ -711,6 +714,9 @@ pub fn summary(records: &[Record]) -> Summary {
         month_reports: bytes(top("monthrep").and_then(|r| r.child("data"))).map(|d| d.chunks_exact(0x144).map(<[u8]>::to_vec).collect()).unwrap_or_default(),
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
+            .unwrap_or_default(),
+        work_status: bytes(top("work").and_then(|r| r.child("work_data_status")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
             .unwrap_or_default(),
         route_knowledge: bytes(top("worldmap").and_then(|r| r.child("knowledgeRoute")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())

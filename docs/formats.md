@@ -635,6 +635,15 @@ bytes at `0x141098e4c`: per place an i32 taken from the place record's +0x4c at 
 steps of 10 and flags of 1, which looks like a per-place amount, not read yet.
 `save::Summary::route_knowledge`, `place_knowledge`, `world_position`.
 
+**Research** (`work`, written by `0x140366440`): `work_data_status`, an i32 per row of
+`work/WorkData.xml` (103: the research projects bought with money, `cost`, from a rank,
+`exe_Rank`, after an event, `openEventTag`, and after another project, `WorkTag_exe`; each
+grants a `Bonus.xml` row) at `0x141079800`, and `work_data_new`, one byte (`0x14107999c`).
+The list (`0x140179170` and on) leaves out projects at -1 (not open) and 2 (done), shows a
+project only when its `WorkTag_exe` project is at 2, and marks it new when its status is not
+0: so -1 not open, 1 open and new, 0 open and seen, 2 done. The save read has four at 1 and
+seven at 0, none done. `save::Summary::work_status`.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0
