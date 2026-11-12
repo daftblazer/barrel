@@ -547,8 +547,18 @@ position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand,
 | 4 | seconds ×100, ease | 1,876 / 1,735 / 571 | `0x1402f3480` |
 | 0 | speed, then x, y, z (mostly 0) | 27 / 19 / 950 | `0x1402f3720` |
 | 3 | two: 800 to 2,500, then a height (50 to 300) | a few / 13 / 131 | `0x1402f2680` |
-| 1 | eight more (a point and angles, by the look of them) | 129 / 5 / 63 | `0x1402f1cd9` |
+| 1 | ten: a circle (below) | 129 / 5 / 63 | `0x1402f1cd9` |
 | 2 | two | 1 / 1 / 2 | `0x1402f18a0` |
+
+Type 1 (`MdCircle`, vtable `0x140931560`, built by `0x1402f2e90`, updated by `0x1402f3090`)
+circles the position: `{ax, ay, az, r0, r1, rise, from, to, speed0, speed1}`. The circle's
+plane is turned by `ax`, `ay`, `az` (hundredths of a degree; the mover's own facing is added to
+`ay`); the angle runs from `from` to `to` (degrees; `to` defaults to 360) at a turning speed
+that goes evenly from `speed0` to `speed1` (hundredths of a degree a second; 5 when missing),
+so the move takes (to − from) / ((speed0 + speed1) / 2). The radius goes from `r0` to `r1`
+and the height by `rise` (field units) in step with the angle's progress. `s18`'s commonest
+is a quarter or half turn at 300 to 800 units: `{0, 0, 0, 800, 300, −2000, 90, −90, 15000,
+30000}`.
 
 Type 0 heads for the position at `speed` field units a second (150, a walk, is the
 commonest in `s18`; 120 to 140 for the slower walkers): its velocity is the unit direction
@@ -644,7 +654,7 @@ stage's camera when the event has set its eye and target (the skill camera), oth
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
 number their characters by `Chara.xml` row, so `--stage` takes the measures from there.
 
-Not yet: move types 1 and 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
+Not yet: playing move type 1 (decoded above), move type 2 and `s18`'s extra operand, `t10`/`t12`'s mover, the field camera's two
 unidentified angles, characters' motions during the event.
 
 **Lighting.** The field map's event object (`nspFM::clsFMWorldEvent`, slot 8 at
