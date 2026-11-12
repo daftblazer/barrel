@@ -1463,12 +1463,17 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         let root = exe.parent().ok_or("no install folder")?;
         let path = root.join("Saves_EN/item/itemData.xml");
         let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
-        let row = table.children.iter().find(|r| r.attr("ItemName") == Some(name)).ok_or_else(|| format!("no item named {name}"))?;
-        let n = |k: &str| row.attr(k).and_then(|v| v.parse().ok()).unwrap_or(0);
-        let e = barrel_game::duel::Equipment {
-            hp: n("HP"), mp: n("MP"), attack: n("ATK"), defense: n("DEF"), speed: n("SPD"), quality,
-        };
-        ba = barrel_game::duel::equip(&ba, &[e]);
+        let k = table.children.iter().position(|r| r.attr("ItemName") == Some(name)).ok_or_else(|| format!("no item named {name}"))?;
+        // The item as made at that quality, with no effects or traits (equipment::item_stat).
+        let items: Vec<barrel_game::equipment::ItemRow> = table.children.iter().map(barrel_game::equipment::ItemRow::from_row).collect();
+        let t = barrel_game::equipment::Tables { items: &items, effects: &[], traits: &[], acts: &[] };
+        let unit = barrel_formats::save::ItemUnit { serial: 0, item: k as i16, quality, traits: [-1; 3], word_e: 0, effects: [-1; 4], word_18: 0, counts: [0; 4] };
+        let mut roll = |lo: i32, _hi: i32| lo;
+        let mut add = |stat: usize, base: i32| base + barrel_game::equipment::item_stat(&t, &unit, stat, base, &mut roll);
+        ba.hp = add(0, ba.hp);
+        ba.attack = add(2, ba.attack);
+        ba.defense = add(3, ba.defense);
+        ba.speed = add(4, ba.speed);
         println!("{na} equips {name} (quality {quality}): attack {}, defence {}, speed {}", ba.attack, ba.defense, ba.speed);
     }
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);

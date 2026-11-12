@@ -20,13 +20,6 @@ pub mod stat {
     pub const COUNT: usize = 35;
 }
 
-/// The first part of what an equipped item adds to one of the first nine stats
-/// (`0x14029dda0`): the item's own stat (the item table's equipment columns) plus its traits'
-/// shares, scaled by its quality: quality 50 gives the stat as it is, 100 gives 125%.
-pub fn equipment_stat(item_stat: i32, traits: i32, quality: f32) -> i32 {
-    ((item_stat + traits) as f32 * ((quality * 0.5 + 75.0) / 100.0)) as i32
-}
-
 /// The power an item's effect deals with, in place of the user's attack (the effect entry's
 /// +0x18, filled by `0x14029d270` when it builds an item's effects): the value at +4 of the
 /// held item (a float, presumably its quality) halved, plus 75, truncated: quality 50 gives
@@ -978,9 +971,6 @@ mod tests {
 
     #[test]
     fn equipment() {
-        assert_eq!(equipment_stat(20, 0, 50.0), 20);
-        assert_eq!(equipment_stat(20, 4, 100.0), 30);
-        assert_eq!(equipment_stat(7, 0, 0.0), 5);
     }
 
     #[test]

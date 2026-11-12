@@ -10,7 +10,7 @@
 //! action's float (taken as 1.0), item and party code, death checks beyond HP 0, and the
 //! battle's other random draws.
 
-use crate::battle::{self, stat};
+use crate::battle::stat;
 use crate::rng::Rng;
 use barrel_formats::battle_data::{Skill, StatBlock};
 
@@ -28,32 +28,6 @@ pub struct Hit {
 /// A party member's base stats at a level as a stat block (no resistances, no equipment).
 pub fn party_block(level: i32, s: &barrel_formats::battle_data::LevelStats) -> StatBlock {
     StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] }
-}
-
-/// What an equipped item adds (`docs/tables.md`, "A party member's stats"): its HP, MP,
-/// attack, defence and speed columns, at a quality. Which item column goes to which battle stat
-/// is taken by name; the executable reads them as an array (item row +0x78) not mapped yet.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Equipment {
-    pub hp: i32,
-    pub mp: i32,
-    pub attack: i32,
-    pub defense: i32,
-    pub speed: i32,
-    pub quality: f32,
-}
-
-/// `block` with each item's share added (traits and potentials not counted).
-pub fn equip(block: &StatBlock, items: &[Equipment]) -> StatBlock {
-    let mut b = block.clone();
-    for e in items {
-        let add = |v: i32| battle::equipment_stat(v, 0, e.quality);
-        b.hp += add(e.hp);
-        b.attack += add(e.attack);
-        b.defense += add(e.defense);
-        b.speed += add(e.speed);
-    }
-    b
 }
 
 /// One side of a duel: its stat block, its normal attack, and (for a monster) the skill
