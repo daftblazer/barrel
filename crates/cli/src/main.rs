@@ -151,6 +151,7 @@ fn main() -> ExitCode {
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
+        ["event-starts", root, save, group, values @ ..] => event_starts(Path::new(root), Path::new(save), group, values),
         ["subjects", root] => subjects(Path::new(root), None),
         ["subjects", root, save] => subjects(Path::new(root), Some(Path::new(save))),
         ["costumes", root] => costumes(Path::new(root), None),
@@ -3030,6 +3031,73 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
 
 /// The assignments (`Saves/subject/SubjectData.xml`, English names from `Saves_EN`), with a game
 /// save's `subject_save` state of each.
+/// Which events the save would start when trigger group GROUP fires with VALUES (in the town or
+/// a field nobody is in; the commands not modelled yet count as failing and are tallied).
+fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Result<()> {
+    use barrel_game::event_start::{self as es, World as _};
+    let group: u8 = group.parse().map_err(|_| "GROUP is a number")?;
+    let fired: Vec<i32> = values.iter().map(|v| v.parse()).collect::<std::result::Result<_, _>>().map_err(|_| "VALUES are numbers")?;
+    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let data = read(save)?;
+    let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", save.display()))?.body;
+    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
+    let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
+    let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
+    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
+    struct W<'a>(&'a barrel_formats::save::Summary);
+    impl es::World for W<'_> {
+        fn seen(&self, e: i32) -> bool {
+            usize::try_from(e).ok().and_then(|e| self.0.events.get(e)).is_some_and(|r| r.seen)
+        }
+        fn seen_day(&self, e: i32) -> i32 {
+            usize::try_from(e).ok().and_then(|e| self.0.events.get(e)).map_or(0, |r| r.day)
+        }
+        fn today(&self) -> i32 {
+            self.0.day.unwrap_or(0) as i32
+        }
+        fn flag(&self, f: i32) -> i32 {
+            usize::try_from(f).ok().and_then(|f| self.0.event_flags.get(f)).copied().unwrap_or(0)
+        }
+        fn region_zero(&self, _: i32) -> bool {
+            false
+        }
+        fn field_map(&self) -> Option<i32> {
+            None
+        }
+    }
+    let w = W(&sum);
+    let mut unread: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut passes = |event: usize, g: usize| -> bool {
+        let check = &checks[event];
+        let gate = es::Gate { day_flag: false, seen: w.seen(event as i32), flag_1: w.flag(1), today: w.today() };
+        if !es::gate_open(&check.words, &gate) {
+            return false;
+        }
+        let Some(words) = check.groups.get(g) else { return false };
+        let Ok(cmds) = barrel_formats::event_check::commands(words) else { return false };
+        cmds.iter().all(|c| match es::command(c, (group, &fired), &w) {
+            Some(ok) => ok,
+            None => {
+                *unread.entry(c.name()).or_default() += 1;
+                false
+            }
+        })
+    };
+    let lists = es::listings(&checks);
+    let list = lists.get(&group).map_or(&[][..], |l| l.as_slice());
+    println!("day {}, {} events listed under group {group}", w.today(), list.len());
+    for l in list {
+        if passes(l.event, 0) && passes(l.event, l.group) {
+            println!("  passes: {} (priority {}, group {})", names.get(l.event).unwrap_or(&"?"), l.priority, l.group);
+        }
+    }
+    for (n, k) in unread {
+        println!("  not modelled: {n} ({k}×)");
+    }
+    Ok(())
+}
+
 fn subjects(root: &Path, save: Option<&Path>) -> Result<()> {
     use barrel_formats::subject as sb;
     let rows = sb::subjects(&barrel_formats::table::parse(&read(&root.join("Saves/subject/SubjectData.xml"))?)?);

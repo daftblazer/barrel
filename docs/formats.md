@@ -501,7 +501,8 @@ per `EVENT_*` name in the executable's enum order (`EVENT_AA01_010`, `EVENT_MM01
 the array at `0x1410a42d0` saved whole: seen (+0, 94 in one save), the day it was seen (+4,
 -31 never; 90 for the new game's first events), how many times (+8), the day's roll (+0x10:
 the calendar's daily rolls, `0x1410a42e0` + 0x24 × the event) and a value from 0 to 2
-(+0x14). `m_eventFlag` (604 bytes, 151 words, mostly 0 with a few 1s and a 5) is not read yet.
+(+0x14). `m_eventFlag` (604 bytes) is the 151 event flags at `0x1410932d0`, as words
+(`Summary::event_flags`; mostly 0 with a few 1s and a 5).
 
 `global` (68 bytes) is the block of globals at `0x141098a10` copied as it is (its writer,
 `0x14035e7b0`, found through the record-name table at `0x140753100`: name getter, write, read

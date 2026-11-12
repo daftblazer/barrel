@@ -1307,3 +1307,9 @@ The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired v
   field area, for 0.
 - In the from-to triggers, `0x60000001` counts only at operands 1 and 3 after a kind of 0.
 
+`barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
+under the trigger group that pass with the save's seen events, days seen, event flags and date.
+The field map is taken as none and the day flag as clear. Commands not modelled yet count as
+failing and are tallied. On the oracle save (day 229), `ATELIER_SLEEP_MIX` (group 28, 129
+events listed) passes for one event, with `PLAYER_PARAM_MT` unmodelled in 4 of the checks.
+

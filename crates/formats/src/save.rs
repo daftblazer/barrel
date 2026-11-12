@@ -587,6 +587,8 @@ pub struct Summary {
     pub squad_slots: Vec<i32>,
     /// `event/m_eventListSaveData`: the events, in `EVENT_*` order.
     pub events: Vec<EventRecord>,
+    /// `event/m_eventFlag`: the 151 event flags (`0x1410932d0`, read by `0x14035f460`).
+    pub event_flags: Vec<i32>,
     /// `quest/now`: the request board's ten slots.
     pub board: Vec<Option<BoardSlot>>,
     /// `quest/player`: the requests taken.
@@ -704,6 +706,9 @@ pub fn summary(records: &[Record]) -> Summary {
         // The global block (0x141098a10, 68 bytes) as is; the hero at 0x141098a48.
         hero: bytes(top("global")).and_then(|d| i32_at(&d, 0x38)),
         events: bytes(top("event").and_then(|r| r.child("m_eventListSaveData"))).map(|d| event_records(&d)).unwrap_or_default(),
+        event_flags: bytes(top("event").and_then(|r| r.child("m_eventFlag")))
+            .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+            .unwrap_or_default(),
         board: bytes(top("quest").and_then(|r| r.child("now"))).map(|d| board_slots(&d)).unwrap_or_default(),
         taken: bytes(top("quest").and_then(|r| r.child("player"))).map(|d| board_slots(&d)).unwrap_or_default(),
         rank: (|| {
