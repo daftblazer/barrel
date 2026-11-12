@@ -225,6 +225,19 @@ impl Battle {
     /// `who` uses `skill` on `target` (its foe; own-side skills put their states on `who`), then
     /// gets its next wait and counts the action. `slot` is the monster action slot it came from.
     pub fn act(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, rng: &mut Rng) -> Vec<Event> {
+        self.act_with(who, skill, slot, target, None, rng)
+    }
+
+    /// An item used by `who` on `target` (`BtlCharaActionItem`): its effects, in a skill's
+    /// shape, act as a skill's do, except that its power (`battle::item_power` of the held
+    /// item's value: the effect entry's +0x18) stands in for the user's stat 5 in the damage
+    /// (`0x1401bdf23`: any action kind but 0). Not in yet: the flag 3 and 4 bonuses from the
+    /// item's traits, and using the item up.
+    pub fn use_item(&mut self, who: usize, item: &Skill, power: i32, target: usize, rng: &mut Rng) -> Vec<Event> {
+        self.act_with(who, item, None, target, Some(power), rng)
+    }
+
+    fn act_with(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, power: Option<i32>, rng: &mut Rng) -> Vec<Event> {
         // Poison (`DAMAGE_HP_TURN`, act 16) on the target.
         if let Some(e) = skill.effects.iter().find(|e| e.act == 16) {
             let value = rng.range(e.min, e.max);
@@ -284,7 +297,7 @@ impl Battle {
                     battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
                 } else {
                     // Elemental damage skips defence and meets the target's resistance.
-                    let damage = battle::skill_damage(amount, user[stat::ATTACK], user[stat::LEVEL], foe[stat::DEFENSE], effect.element.is_none(), 1.0);
+                    let damage = battle::skill_damage(amount, power.unwrap_or(user[stat::ATTACK]), user[stat::LEVEL], foe[stat::DEFENSE], effect.element.is_none(), 1.0);
                     let mut resist = [0; 4];
                     resist.copy_from_slice(&foe[stat::RESIST..stat::RESIST + 4]);
                     battle::reduce(damage, effect.element, &Defender { resist, ..Defender::default() })
@@ -380,6 +393,27 @@ mod tests {
             who == 1
         });
         assert!(came_up);
+    }
+
+    #[test]
+    fn an_item_hits_with_its_power_in_place_of_stat_5() {
+        use barrel_formats::battle_data::SkillEffect;
+        let bomb = Skill { name: "Bomb".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: Some(0), min: 100, max: 100, min2: 0, max2: 0 }], description: String::new() };
+        let hit = |power: Option<i32>| {
+            let mut b = Battle::new(vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(5000), 1, 999_999)]);
+            let mut rng = Rng::from_state([1, 2, 3, 4]);
+            match power {
+                Some(p) => b.use_item(0, &bomb, p, 1, &mut rng),
+                None => b.act(0, &bomb, None, 1, &mut rng),
+            };
+            5000 - b.fighters[1].hp()
+        };
+        // Stat 5 is 30 for the user; an item of quality 50 hits with 100 instead, the
+        // same formula otherwise (elemental: no defence).
+        let level = block(100).level;
+        assert_eq!(hit(None), battle::skill_damage(100, 30, level, 0, false, 1.0));
+        assert_eq!(hit(Some(battle::item_power(50.0))), battle::skill_damage(100, 100, level, 0, false, 1.0));
+        assert!(hit(Some(100)) > hit(None));
     }
 
     #[test]

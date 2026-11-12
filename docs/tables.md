@@ -714,7 +714,7 @@ and `0x14018e520` after placing the fighters. `Skill::target` and
 side, timed states, action count and slot uses; the timeline) and its steps: `next` (whose
 turn), `start_turn` (the netted HP change and the states' ageing) and `act` (a skill on a
 target: its poison and stat states, its damage, the next wait, the action counted), reporting
-`Event`s. The duel drives it for two fighters. `barrel_game::skirmish` (`barrel battle EXE MONSTER p<member>:<level>...`) puts party
+`Event`s. The duel drives it for two fighters. `use_item` acts an item's effects (in a skill's shape) the same way with the item's power (`battle::item_power`) in place of the user's stat 5, as the damage handler does for any action kind but 0 (`0x1401bdf23`); the trait bonuses (flags 3 and 4) and using the item up are not in yet. `barrel_game::skirmish` (`barrel battle EXE MONSTER p<member>:<level>...`) puts party
 members (base stats at their level, MP, the skills learnt by then at their listed cost) against
 one monster: the monster acts by its rules and target picks, and each member, standing in for
 the player, uses the costliest learnt skill it can pay for that hits the foe, or its normal
