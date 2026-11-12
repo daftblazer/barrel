@@ -2509,8 +2509,10 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
         .and_then(|exe| read(&exe).ok())
         .and_then(|data| barrel_formats::pe::Pe::parse(&data).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
         .unwrap_or_default();
-    let table = OperandTable::escha();
-    let player = Player::escha(&event, &messages, &table)?;
+    // BARREL_GAME=sophie2: an Atelier Sophie 2 event, carried over to Escha's commands by name.
+    let sophie2 = std::env::var("BARREL_GAME").is_ok_and(|g| g == "sophie2");
+    let table = if sophie2 { OperandTable::sophie2() } else { OperandTable::escha() };
+    let player = if sophie2 { Player::translated(&event, &messages, &table, barrel_game::names::SOPHIE2)? } else { Player::escha(&event, &messages, &table)? };
     let steps: Vec<(Option<f32>, Step)> = if timed {
         // BARREL_READ: hold each line its unattended reading time, as the viewer does.
         let player = if std::env::var("BARREL_READ").is_ok() { player.reading_time(barrel_game::event::reading_time) } else { player };

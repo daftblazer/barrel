@@ -18,7 +18,7 @@ pub mod face;
 pub mod gesture;
 pub mod library;
 pub mod monster_ai;
-mod names;
+pub mod names;
 pub mod macros;
 pub mod sq_consts;
 pub mod quest;

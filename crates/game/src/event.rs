@@ -311,6 +311,9 @@ pub struct Player<'a> {
 /// new game's choice screen sets that to 1 for Logy and 0 for Escha (`0x1400ce4f3`).
 pub const MASTER_CHARACTER: u32 = 749;
 
+/// Marks a translated command that has no Escha counterpart ([`Player::translated`]).
+pub const UNMAPPED: u32 = 0x0080_0000;
+
 /// A reading time for unattended playback (not the game's: it waits for a button): one
 /// second plus 0.08 s a character, newlines and spaces not counted.
 /// An effect's pan operand (hundredths of 0 left to 128 right) as -1 to 1 (`0x140160230`:
@@ -336,6 +339,31 @@ impl<'a> Player<'a> {
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
         Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0 })
+    }
+
+    /// A player for another game's event (decoded with that game's `table`), its commands
+    /// carried over to Escha's words by name (`game_names`, the game's word → `ECT_*` name) where
+    /// both games give the name the same operand count; the others stay as they are, which
+    /// the player does not know and passes over.
+    pub fn translated(event: &'a Ebd, messages: &'a [Message], table: &OperandTable, game_names: &[(u32, &str)]) -> Result<Self, Error> {
+        let escha = OperandTable::escha();
+        let by_name: HashMap<&str, u32> = crate::names::ESCHA.iter().map(|&(w, n)| (n, w)).collect();
+        let theirs: HashMap<u32, &str> = game_names.iter().copied().collect();
+        let mut p = Self::escha(event, messages, table)?;
+        let escha_named: std::collections::HashSet<u32> = crate::names::ESCHA.iter().map(|&(w, _)| w).collect();
+        for c in p.actions.iter_mut().flatten() {
+            match theirs.get(&c.word).and_then(|n| by_name.get(n)) {
+                Some(&w) if escha.get(w) == table.get(c.word) => c.word = w,
+                // Named in neither game (`w1`, the step marks, and the like) with the same
+                // operand count in both: taken as the same command.
+                None if !theirs.contains_key(&c.word) && !escha_named.contains(&c.word) && escha.get(c.word).is_some() && escha.get(c.word) == table.get(c.word) => {}
+                // No name, a name Escha lacks, or other operands: kept off Escha's words (the
+                // same word can mean something else there), with a flag bit no Escha word has.
+                _ => c.word |= UNMAPPED,
+            }
+        }
+        p.slots = p.actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
+        Ok(p)
     }
 
     /// Plays as `hero` (`Chara.xml` row: 0 Escha, the default, or 1 Logy), whom
@@ -700,6 +728,20 @@ impl<'a> Iterator for Player<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn another_games_words_carry_over_by_name() {
+        use barrel_formats::ebd::{Action, Ebd, END};
+        // A game where ECT_MACRO_TIME_WAIT is word 0x7000_0009 and an unnamed 0x7f00_0000 means
+        // something Escha has no word for.
+        let names = [(0x7000_0009u32, "ECT_MACRO_TIME_WAIT")];
+        let table = OperandTable::new(&[(0x7000_0009, Some(1)), (0x7400_0007, Some(0))]);
+        let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words: vec![0x7000_0009, 150, 0x7400_0007, END] }], resources: vec![] };
+        let p = Player::translated(&event, &[], &table, &names).unwrap();
+        assert_eq!(p.actions[0][0].word, TIME_WAIT);
+        // 0x7400_0007 is a camera command in Escha: the stranger's word is kept off it.
+        assert_eq!(p.actions[0][1].word, 0x7400_0007 | UNMAPPED);
+    }
 
     #[test]
     fn effect_pan() {

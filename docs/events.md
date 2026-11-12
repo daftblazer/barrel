@@ -972,6 +972,15 @@ varying, `_SET_LOOP` 4 → 5, `ECT_CHARA_VOICE_PLAY` 2 → 3, `ECT_CHARA_SET_MAR
 `ECT_CHARA_CAMERA_QUAKE_SET` 3 → varying, `ECT_CHARA_SET_FLAG` 3 → 2, and
 `ECT_CAMERA_C_TYPE_SET` varying → 1.
 
+`event::Player::translated` plays another game's event with Escha's player: it decodes with
+that game's table, then carries each command over to Escha's word by name where both games
+give the name the same operand count; a command named in neither game keeps its word when
+both tables agree on its count (`w1`, the step marks; the still-picture and fade commands).
+Every other command gets a flag bit no Escha word has (`event::UNMAPPED`), so a renumbered
+word is never read as the Escha command that happens to sit on it. `BARREL_GAME=sophie2
+barrel play-event FILE.ebd` runs a Sophie 2 event so: its first, `event_mm01_010`, plays its
+fades, stills, waits and the music stop; the commands left unmapped are what to read next.
+
 ## Script macros (`Script/*.nut`)
 
 Escha's `Script` folder is 36 plain Squirrel sources (Shift-JIS, CRLF, Japanese comments). Some
