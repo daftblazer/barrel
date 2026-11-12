@@ -760,7 +760,16 @@ As 14 words:
 E.g. group 12: 3 or 4 monsters, Ore Rats and Stray Dogs equally likely; group 6: the Rampage
 Beast alone. The field's enemy data (`clsFMDataEnemy`, a 0x7030-byte singleton at
 `0x140dfc1f0`) holds entries of 0x68 bytes (up to 277, from +0x10) whose word at +0x4c is the
-group id (`0x140113470` walks them). Still to read: how the count and the monsters are drawn,
+group id (`0x140113470` walks them). **Field strikes.** When the hero swings at a field enemy (`0x140084410`), the game averages
+the group's monster levels (each monster's from `0x140111a30`) and the squad's (the eleven
+slots at `0x141093530`, each member's level at +4, `0x140330a10`). If the squad is 10 or more
+levels above the group, the field is not in a state that forbids it (`0x1402177c0`), the
+enemy's kind (+0x24) is not 1 to 5, and an option is on (a global's +0x1e0 == 1), then an
+enemy whose +0x20 is 1 is marked (+0x51) to fall to the strike without a battle. The hit plays
+the script macro `wandHitEffect` (Escha) or `swordHitEffect` (Logy) by the chosen hero
+(`0x14035ebb0`), with the target and that mark (`0x140122170`).
+
+Still to read: how the count and the monsters are drawn,
 where those entries come from, and the formation's places (the battle setup's 0x18-byte
 monster entries).
 
