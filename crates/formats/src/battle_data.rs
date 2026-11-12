@@ -830,3 +830,14 @@ pub fn monster_size(radii: &[f32], monster: usize) -> Option<f32> {
 pub fn party_size(radii: &[f32], member: usize) -> Option<f32> {
     radii.get(if member >= 10 { member + 1 } else { member }).copied()
 }
+
+/// The experience table (English Escha): 99 rows of two i32 at [`EXP_TABLE_EN`], one per level
+/// from 1. The first is the party experience a level needs in all (0, 10, 20, 40, 70, ... 999,999
+/// at 99); the second is a table of its own for levels up to 50 (0, 0, 0, 4, 9, ... 9,999 at
+/// 50; `0x14005fb40 (1, level)`, not followed yet).
+pub const EXP_TABLE_EN: u64 = 0x1_40cf_c760;
+
+pub fn exp_table(pe: &Pe, table: u64) -> Option<Vec<(i32, i32)>> {
+    let at = pe.offset(table)?;
+    (0..99).map(|k| Some((i32_at(pe.data, at + 8 * k)?, i32_at(pe.data, at + 8 * k + 4)?))).collect()
+}

@@ -1547,8 +1547,22 @@ its +0x10 method, is 1): the battle's experience (its +0x8) gains the monster's 
 (record +0x10) times 100 plus the experience bonus percent (`0x141077df8`) over 100, and its
 money (+0xc) likewise with the money bonus (`0x141077df4`), each cut toward zero per monster;
 then the monster's four drop slots are rolled through its +0x110 method into the spoils list
-(`0x140d8de30`). `barrel_game::battle::rewards`. Who sets the two bonuses (equipment, traits)
-and how the experience is shared out and turned into levels are not read yet.
+(`0x140d8de30`). `barrel_game::battle::rewards`. Who sets the two bonuses (equipment, traits) is
+not read yet. The result screen (`0x1401d85b0`) then raises the experience by bonus value 1,
+the experience rate (`0x14002f2f0 (1)`: total × (100 + rate) / 100), and hands it and the
+money to the party's display (`0x1401ce940`).
+
+### Experience and levels (executable)
+
+The experience table is at `0x140cfc760` (English): 99 rows of two i32, one per level from 1
+(`0x14005fb40 (column, level)`). The first column is the experience a level needs in all (0,
+10, 20, 40, 70, 110 ... 89,620 at 49, 99,999 at 50, 999,999 at 99); the second, read only for
+levels up to 50, is another table (0, 0, 0, 4, 9, 15 ... 9,999 at 50) not followed yet. A party
+member's record keeps its level at +4 and its experience at +8; what it still needs
+(`0x14032dc50`) is the first column at one level past its own, held at the limit of 50 plus
+bonus value 2 (`0x14002f2f0 (2)`, raised by the bonuses), less its experience, at least 0
+(`battle_data::exp_table`, `barrel_game::growth`). How the battle's experience reaches each
+member's record (shared or whole, the members out of battle) is not read yet.
 
 ### A party member's stats (executable)
 
