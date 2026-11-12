@@ -891,6 +891,8 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
             equipment::passives(&t, list, &skills, level, &mut low, &mut lo);
             equipment::passives(&t, list, &skills, level, &mut high, &mut hi);
         }
+        equipment::clamp(&mut low);
+        equipment::clamp(&mut high);
         let off: Vec<String> = (0..STATS).filter(|&k| !(low[k].min(high[k])..=low[k].max(high[k])).contains(&saved[k])).map(|k| format!("{k}: {} (rule {}..{})", saved[k], low[k], high[k])).collect();
         all += 1;
         if off.is_empty() {

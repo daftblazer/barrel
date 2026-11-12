@@ -180,6 +180,29 @@ pub fn passives(t: &Tables, list: &[barrel_formats::battle_data::PartySkill], sk
     }
 }
 
+/// Each stat's limit (the table built from `0x140935180` at the end of `0x14032de50`): 999 for
+/// stats 0 to 9 and 30, 100 for the rest (rates and percentages).
+pub const LIMITS: [i32; STATS] = {
+    let mut l = [100; STATS];
+    let mut k = 0;
+    while k < 10 {
+        l[k] = 999;
+        k += 1;
+    }
+    l[30] = 999;
+    l
+};
+
+/// The last step of the refresh, after the passives: every stat kept at or below its limit,
+/// and at or above 1 for the first five, minus the limit for the others. (The game then keeps
+/// the current HP within 1 and max HP and the current MP within 0 and max MP.)
+pub fn clamp(stats: &mut [i32; STATS]) {
+    for (k, v) in stats.iter_mut().enumerate() {
+        let low = if k < 5 { 1 } else { -LIMITS[k] };
+        *v = (*v).min(LIMITS[k]).max(low);
+    }
+}
+
 /// The stats in use (`0x14032de50`): base + second block + what the equipped items add +
 /// (for the protagonist) the bonus values from 4 on. The passives come after
 /// ([`passives`]).
@@ -236,5 +259,15 @@ mod tests {
         // Only the passive learnt by level 12 counts.
         assert_eq!(stats[30], 15);
         assert_eq!(stats.iter().sum::<i32>(), 15);
+    }
+
+    #[test]
+    fn stats_are_kept_within_their_limits() {
+        let mut s = [0; STATS];
+        s[0] = 1200;
+        s[12] = 150;
+        s[13] = -150;
+        clamp(&mut s);
+        assert_eq!((s[0], s[1], s[12], s[13], s[14]), (999, 1, 100, -100, 0));
     }
 }

@@ -1265,9 +1265,10 @@ at level 99), Threia the most MP (290), Lucille is the fastest (208); Escha star
 
 A party member's record keeps three arrays of 32 stats: the base (+0x14, from the growth table
 above), a second block (+0x94) and the stats in use (+0x114). `0x14032de50` works them out as
-below; last, every stat is kept within the limits of a table at `0x140935180` (999 for most):
-at least 1 for the first five, at least minus the limit for the others (`equipment::in_use`
-does not clamp yet).
+below; last (after the passives), every stat is kept within its limit, a table built from
+`0x140935180`: 999 for stats 0 to 9 and 30, 100 for the others; at least 1 for the first five,
+at least minus the limit for the others. Then the current HP is kept within 1 and max HP and
+the current MP within 0 and max MP (`equipment::clamp`).
 
 **The stats in use** (`0x14032de50`, run whenever a character's equipment or bonuses
 change): for each of the 32 stats from max HP on, the value in use (+0x114 of the character's
