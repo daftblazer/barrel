@@ -598,6 +598,8 @@ struct Targets {
     taa: Option<taa::Targets>,
     /// GSR 2 (`--gsr2`): the temporal upscaler.
     gsr2: Option<gsr2::Targets>,
+    /// The post pass's sets: the one to bind is [`Targets::post_set`].
+    post_sets: [vk::DescriptorSet; 2],
     /// FSR 3.1 (`--fsr3`): the desktop's temporal upscaler (its state changes as it records).
     fsr3: std::cell::RefCell<Option<fsr3::Targets>>,
     history_fresh: std::cell::Cell<bool>,
@@ -617,6 +619,11 @@ struct Targets {
 }
 
 impl Targets {
+    /// The post pass's set for this frame: the one reading GSR 2's output just written.
+    fn post_set(&self) -> vk::DescriptorSet {
+        self.post_sets[self.gsr2.as_ref().map_or(0, gsr2::Targets::written)]
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         gpu: &Gpu,
@@ -626,7 +633,7 @@ impl Targets {
         width: u32,
         height: u32,
         scene_size: (u32, u32),
-        post_set: vk::DescriptorSet,
+        post_sets: [vk::DescriptorSet; 2],
         sampler: vk::Sampler,
         glow_pipelines: &glow::Pipelines,
         upscale_pipelines: Option<&upscale::Pipelines>,
@@ -710,7 +717,7 @@ impl Targets {
             (Some(p), Some((_, _, motion_view))) => Some(gsr2::Targets::new(gpu, p, scene_view, depth_view, motion_view, sampler, scene_size, (width, height))?),
             _ => None,
         };
-        let resolved = gsr2.as_ref().map_or(resolved, gsr2::Targets::result);
+        // GSR 2's output alternates: post set k reads its output k.
         // FSR 3.1 likewise.
         let fsr3 = match (fsr3_pipelines, motion_target) {
             (Some(p), Some((_, _, motion_view))) => Some(fsr3::Targets::new(gpu, p, scene_view, depth_view, motion_view, scene_size, (width, height))?),
@@ -722,25 +729,32 @@ impl Targets {
             Some(p) => Some(upscale::Targets::new(gpu, p, resolved, sampler, scene_size, (width, height))?),
             _ => None,
         };
-        // The post pass samples the new scene image (TAA's, then FSR's when they run) and the glow.
-        let shown = match (show_motion, motion_target) {
-            (true, Some((_, _, motion_view))) => motion_view,
-            _ => upscale.as_ref().map_or(resolved, upscale::Targets::result),
-        };
-        let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(shown).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        // The post pass samples the new scene image (TAA's, GSR 2's or FSR's when they run) and
+        // the glow.
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let frozen_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(frozen_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-        unsafe {
-            d.update_descriptor_sets(
-                &[
-                    vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info),
-                    vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&glow_info),
-                    vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&frozen_info),
-                ],
-                &[],
-            )
-        };
+        for (k, &post_set) in post_sets.iter().enumerate() {
+            let shown = match (show_motion, motion_target) {
+                (true, Some((_, _, motion_view))) => motion_view,
+                _ => match &gsr2 {
+                    Some(g) => g.result(k),
+                    None => upscale.as_ref().map_or(resolved, upscale::Targets::result),
+                },
+            };
+            let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(shown).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+            unsafe {
+                d.update_descriptor_sets(
+                    &[
+                        vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info),
+                        vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&glow_info),
+                        vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&frozen_info),
+                    ],
+                    &[],
+                )
+            };
+        }
         Ok(Targets {
+            post_sets,
             motion: motion_target,
             multisample,
             scene_size,
@@ -2118,10 +2132,13 @@ fn main() -> Result<()> {
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
     });
     let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
-    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 3 }];
-    let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&post_sizes), None)? };
-    let post_layouts = [post_set_layout];
-    let post_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))?[0] };
+    // Two sets: GSR 2 swaps its output each frame, and the post pass reads the one just written.
+    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 6 }];
+    let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&post_sizes), None)? };
+    let post_layouts = [post_set_layout, post_set_layout];
+    let post_sets: [vk::DescriptorSet; 2] = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))? }
+        .try_into()
+        .unwrap();
     let post_sampler = unsafe {
         d.create_sampler(
             &vk::SamplerCreateInfo::default()
@@ -2148,7 +2165,7 @@ fn main() -> Result<()> {
     let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
     let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
     let mut timer = if timings { timing::Timer::new(&gpu)? } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -3040,7 +3057,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -3425,7 +3442,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             vk::SubpassContents::INLINE,
         );
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
-        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[post_set], &[]);
+        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[targets.post_set()], &[]);
         let mut post_push = [0u8; 32];
         post_push[..4].copy_from_slice(&rate.to_le_bytes());
         post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());

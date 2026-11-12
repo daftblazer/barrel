@@ -179,8 +179,11 @@ default frame are byte-identical to before.
 writes each render pixel's motion (NDC) and depth clip (how far its depth stands out from the
 nearest of its 4 × 4 neighbourhood) into an RGBA16F image. `gsr2_upscale.frag` then
 upsamples the jittered scene with a 5-tap Lanczos-like kernel, clamps the reprojected history
-to the taps' variance-narrowed box and blends them into `result` (RGBA16F, output size), which
-is copied into `history`. It turns on the motion vectors and the jitter and turns off TAA,
+to the taps' variance-narrowed box and blends them into one of two RGBA16F output-size images,
+reading the other as history: they swap roles each frame, with no copy (the handhelds are short
+of bandwidth; a copy was one output-sized read and write a frame). The post pass has two
+descriptor sets, one per output, and binds the one just written (`Targets::post_set`). The
+frames are byte-identical to the copying version's. It turns on the motion vectors and the jitter and turns off TAA,
 MSAA, FSR 1/GSR 1 and RCAS (`RenderSettings::resolved`). Depth is then sampled, stored and left
 in `SHADER_READ_ONLY_OPTIMAL` by the scene pass (transient otherwise). It is read through a
 nearest sampler, as D32 need not filter. Changes from Qualcomm's shaders: the motion comes
@@ -192,7 +195,7 @@ corner taps the original disables are left out. The constants follow the compute
 History resets share TAA's cut detection. From half scale into 1080p in the first opening it is
 the only upscaler without stair-stepped edges, near native and slightly soft; the walk and
 camera pan at 6.4 s show no trails. Validation clean. Still to do: time it on the RP6 against
-FSR 1 and GSR 1; ping-pong the history instead of copying it (one output-sized copy a frame).
+FSR 1 and GSR 1.
 
 **FSR 3.1.** The upscaler's shaders are vendored unchanged from the FidelityFX
 SDK v1.1.4 into `crates/render/shaders/ffx/` (the GPU headers and the Vulkan GLSL pass entry

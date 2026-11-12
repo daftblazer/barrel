@@ -1,9 +1,10 @@
 //! Snapdragon GSR 2, the temporal upscaler (`settings::RenderSettings::gsr2`; `docs/engine.md`,
 //! "GSR 2"): after the scene pass, `gsr2_convert.frag` turns the motion vectors and depth into
 //! `motion_depth_clip` at the render's size, then `gsr2_upscale.frag` upsamples the jittered
-//! scene and blends it with the reprojected history into `result` at the output's size, which
-//! the post pass reads; `result` is then copied into `history` for the next frame. Both are
-//! 16-bit float so the accumulation does not band.
+//! scene and blends it with the reprojected history into one of two output images, reading the
+//! other as last frame's history; they swap roles each frame (no copy: the handhelds are short
+//! of bandwidth), and the post pass reads the one just written ([`Targets::written`]). Both
+//! are 16-bit float so the accumulation does not band.
 
 use ash::vk;
 
@@ -64,14 +65,16 @@ struct Image {
 pub struct Targets {
     pool: vk::DescriptorPool,
     convert_set: vk::DescriptorSet,
-    upscale_set: vk::DescriptorSet,
+    /// Upscale set `k` writes output `k` and reads the other as history.
+    upscale_sets: [vk::DescriptorSet; 2],
     motion_depth_clip: Image,
-    result: Image,
-    history: Image,
+    outputs: [Image; 2],
     convert_fb: vk::Framebuffer,
-    upscale_fb: vk::Framebuffer,
+    upscale_fbs: [vk::Framebuffer; 2],
     render: (u32, u32),
     output: (u32, u32),
+    /// The output this frame writes (and the post pass reads).
+    current: std::cell::Cell<usize>,
 }
 
 fn render_pass(d: &ash::Device, final_layout: vk::ImageLayout, dst_stage: vk::PipelineStageFlags, dst_access: vk::AccessFlags) -> Result<vk::RenderPass> {
@@ -120,7 +123,7 @@ impl Pipelines {
     pub fn new(gpu: &Gpu) -> Result<Pipelines> {
         let d = &gpu.device;
         let convert_pass = render_pass(d, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::AccessFlags::SHADER_READ)?;
-        let upscale_pass = render_pass(d, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::PipelineStageFlags::TRANSFER, vk::AccessFlags::TRANSFER_READ)?;
+        let upscale_pass = render_pass(d, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::AccessFlags::SHADER_READ)?;
         let convert_layout = set_layout(d, 2)?;
         let upscale_layout = set_layout(d, 3)?;
         let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
@@ -228,23 +231,25 @@ impl Targets {
             Ok(Image { image, memory, view })
         };
         let motion_depth_clip = image(render, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
-        let result = image(output, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)?;
-        let history = image(output, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
-        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 5 }];
-        let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&sizes), None)? };
+        let outputs = [image(output, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?, image(output, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?];
+        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 }];
+        let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(3).pool_sizes(&sizes), None)? };
         let alloc = |layout| -> Result<vk::DescriptorSet> {
             let layouts = [layout];
             Ok(unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(pool).set_layouts(&layouts))?[0] })
         };
         let convert_set = alloc(p.convert_layout)?;
-        let upscale_set = alloc(p.upscale_layout)?;
+        let upscale_sets = [alloc(p.upscale_layout)?, alloc(p.upscale_layout)?];
         let info = |sampler, view| [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let infos = [
             (convert_set, 0, info(p.nearest, depth)),
             (convert_set, 1, info(p.nearest, motion)),
-            (upscale_set, 0, info(sampler, history.view)),
-            (upscale_set, 1, info(sampler, motion_depth_clip.view)),
-            (upscale_set, 2, info(sampler, scene)),
+            (upscale_sets[0], 0, info(sampler, outputs[1].view)),
+            (upscale_sets[0], 1, info(sampler, motion_depth_clip.view)),
+            (upscale_sets[0], 2, info(sampler, scene)),
+            (upscale_sets[1], 0, info(sampler, outputs[0].view)),
+            (upscale_sets[1], 1, info(sampler, motion_depth_clip.view)),
+            (upscale_sets[1], 2, info(sampler, scene)),
         ];
         let writes: Vec<_> = infos
             .iter()
@@ -258,34 +263,29 @@ impl Targets {
             unsafe { d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(&views).width(size.0).height(size.1).layers(1), None) }
         };
         let convert_fb = framebuffer(p.convert_pass, motion_depth_clip.view, render)?;
-        let upscale_fb = framebuffer(p.upscale_pass, result.view, output)?;
-        Ok(Targets { pool, convert_set, upscale_set, motion_depth_clip, result, history, convert_fb, upscale_fb, render, output })
+        let upscale_fbs = [framebuffer(p.upscale_pass, outputs[0].view, output)?, framebuffer(p.upscale_pass, outputs[1].view, output)?];
+        Ok(Targets { pool, convert_set, upscale_sets, motion_depth_clip, outputs, convert_fb, upscale_fbs, render, output, current: std::cell::Cell::new(1) })
     }
 
-    /// The upscaled scene, for the post pass to read.
-    pub fn result(&self) -> vk::ImageView {
-        self.result.view
+    /// Output `k`, for the post pass's set `k` to read.
+    pub fn result(&self, k: usize) -> vk::ImageView {
+        self.outputs[k].view
     }
 
-    /// Records both passes and the copy into the history. `first`: the history has no layout
-    /// yet.
+    /// The output the last recorded frame wrote.
+    pub fn written(&self) -> usize {
+        self.current.get()
+    }
+
+    /// Records both passes into the output not written last frame, which reads the other as
+    /// its history. `first`: the outputs have no layout yet.
     ///
     /// # Safety
     /// `cb` is recording outside a render pass, after the scene's pass (depth and motion ready
     /// to sample).
     pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, frame: Frame, first: bool) {
-        let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
-        let barrier = |image, old, new, src_access, dst_access| {
-            vk::ImageMemoryBarrier::default()
-                .image(image)
-                .old_layout(old)
-                .new_layout(new)
-                .src_access_mask(src_access)
-                .dst_access_mask(dst_access)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .subresource_range(range)
-        };
+        let k = 1 - self.current.get();
+        self.current.set(k);
         let push: Vec<u8> = push(self.render, self.output, frame).iter().flat_map(|v| v.to_le_bytes()).collect();
         let run = |pass, fb, (w, h): (u32, u32), pipeline, layout, set| unsafe {
             let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: w, height: h } };
@@ -300,43 +300,20 @@ impl Targets {
         };
         unsafe {
             if first {
-                d.cmd_pipeline_barrier(
-                    cb,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[],
-                    &[barrier(self.history.image, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::AccessFlags::empty(), vk::AccessFlags::SHADER_READ)],
-                );
+                // The history the first frame reads (and ignores: it resets) needs a layout.
+                let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
+                let barrier = vk::ImageMemoryBarrier::default()
+                    .image(self.outputs[1 - k].image)
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .subresource_range(range);
+                d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::DependencyFlags::empty(), &[], &[], &[barrier]);
             }
             run(p.convert_pass, self.convert_fb, self.render, p.convert, p.layouts[0], self.convert_set);
-            run(p.upscale_pass, self.upscale_fb, self.output, p.upscale, p.layouts[1], self.upscale_set);
-            d.cmd_pipeline_barrier(
-                cb,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier(self.history.image, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::AccessFlags::SHADER_READ, vk::AccessFlags::TRANSFER_WRITE)],
-            );
-            let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
-            let (w, h) = self.output;
-            let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width: w, height: h, depth: 1 });
-            d.cmd_copy_image(cb, self.result.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, self.history.image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
-            d.cmd_pipeline_barrier(
-                cb,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[
-                    barrier(self.result.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::AccessFlags::TRANSFER_READ, vk::AccessFlags::SHADER_READ),
-                    barrier(self.history.image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::AccessFlags::TRANSFER_WRITE, vk::AccessFlags::SHADER_READ),
-                ],
-            );
+            run(p.upscale_pass, self.upscale_fbs[k], self.output, p.upscale, p.layouts[1], self.upscale_sets[k]);
         }
     }
 
@@ -345,8 +322,11 @@ impl Targets {
         unsafe {
             let _ = d.device_wait_idle();
             d.destroy_framebuffer(self.convert_fb, None);
-            d.destroy_framebuffer(self.upscale_fb, None);
-            for i in [self.motion_depth_clip, self.result, self.history] {
+            for fb in self.upscale_fbs {
+                d.destroy_framebuffer(fb, None);
+            }
+            let [a, b] = self.outputs;
+            for i in [self.motion_depth_clip, a, b] {
                 d.destroy_image_view(i.view, None);
                 d.destroy_image(i.image, None);
                 d.free_memory(i.memory, None);
