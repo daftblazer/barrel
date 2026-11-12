@@ -290,11 +290,13 @@ one of A's values 0x6f, 0x70 or 0xde when the skill's kind (+0xc) matches. With 
 an item adds `extra`: its value 0x27 if the amount is at most that, else 0x27² / amount.
 
 The item's "values" are its traits' (`0x14029db00 (item, kind, average)`: over its three
-traits, item +0x8, each a 0x58-byte record of `item_potential.xml` with two slots {`PotBase`
+traits, item +0x8, each a 0x58-byte record of `item_potential.xml` (the table at
+`[0x140dfcce0]+0x48`; matched against the running game's copy: `potLv` at +0x20, `point` at
++0x24, a `valuePoint` the shipped XML never sets at +0x28) with two slots {`PotBase`
 kind, `min`, `max`} at +0x3c, the slots of that `ITEM_SUB_*` kind summed, each rolled from
 minimum to maximum, or their middle when `average`). Kind 39 (`CHANGE_ACTUAL_POWER`) is the
 flag-4 value. The flag-3 bonus (`0x1401bd8ee`) is the sum of: kind 0 `ITM_CHANGE_POWER`; 25
-`BTL_RANK_BONUS` × (5 − `0x14029dd10 (item)`); 31 `BTL_COST_BONUS` × `0x14029dc50 (item)`; 28
+`BTL_RANK_BONUS` × (5 − `0x14029dd10 (item)`); 31 `BTL_COST_BONUS` × `0x14029dc50 (item)` (the sum of its traits' `potLv`); 28
 `BTL_LAST_BONUS` when the item's i16 +0x1c is 1 or under `FIELD_ITEM_SINGLE_USE` (state 0x4f);
 35 `BTL_COUNT_POWER` × (+0x1e + +0x20); 34 `BTL_FORCED_LASTUSE` × +0x1c; against a monster
 target, 29 `BTL_BIG_ENEMYBONUS` × s and 30 `BTL_SMALL_ENEMYBONUS` / s with s =
