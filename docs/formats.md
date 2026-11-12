@@ -705,7 +705,11 @@ some (011, 012, 031, 032) match nothing well, so they are unvoiced or voiced els
 story line's clip is its scene's first clip plus its index, the scenes laid end to end in a
 fixed order that is not the files' and not the executable's event list; where that order
 lives in the game is not found yet. Matching sizes to lengths finds it without the game for
-any event with enough lines.
+any event with enough lines: `voice::story_start`, and `barrel voice-map INSTALL` runs it over
+every English event (520 with 3 lines or more; 192 match at correlation 0.85 or more, the
+opening's chain among them exactly as the game read it). The weaker matches need checking
+(by chaining: a scene's start should be the previous scene's end) before the engine relies
+on them.
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone

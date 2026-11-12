@@ -99,6 +99,7 @@ fn main() -> ExitCode {
         ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
         ["oid-scan", dir] => oid_scan(Path::new(dir)),
         ["ebm", file] => ebm(Path::new(file)),
+        ["voice-map", install] => voice_map(Path::new(install)),
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["opl2", file] => opl2_list(file),
@@ -904,6 +905,40 @@ fn bonuses(file: &Path, exe: Option<&Path>) -> Result<()> {
     let all: Vec<String> = values.values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
     let mix: Vec<String> = values.mix.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
     println!("{} bonuses; all of them together: values {}, gathering {:?}, synthesis {}", list.len(), all.join(" "), values.collect_time, mix.join(" "));
+    Ok(())
+}
+
+/// Each English event's first voice clip, by matching clip sizes to line lengths
+/// (`voice::story_start`), with the correlation and whether the next event in clip order
+/// starts right after it.
+fn voice_map(install: &Path) -> Result<()> {
+    let voice = install.join("Data/x64/Sound/Voice_EN");
+    let mut sizes: Vec<u32> = Vec::new();
+    for bank in 0..18 {
+        let list = barrel_formats::voice::list(&read(&voice.join(format!("Series{:04}.fpl", bank * 1000)))?).map_err(|e| format!("bank {bank}: {e}"))?;
+        let mut b: Vec<u32> = list.iter().map(|c| c.map_or(0, |(_, s)| s as u32)).collect();
+        b.resize(1000, 0);
+        sizes.extend(b);
+    }
+    let mut files = Vec::new();
+    files_ending(&install.join("Event_EN"), ".ebm", &mut files)?;
+    files.sort();
+    let mut found: Vec<(usize, usize, f32, String)> = Vec::new();
+    for f in &files {
+        let Ok(msgs) = barrel_formats::ebm::parse(&read(f)?) else { continue };
+        let lengths: Vec<usize> = msgs.iter().map(|m| m.repaired_text().chars().count()).collect();
+        if let Some((start, r)) = barrel_formats::voice::story_start(&sizes, &lengths) {
+            let name = f.file_stem().map(|s| s.to_string_lossy().trim_start_matches("EVENT_MESSAGE_").to_string()).unwrap_or_default();
+            found.push((start, lengths.len(), r, name));
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0).then(b.2.total_cmp(&a.2)));
+    let good = found.iter().filter(|f| f.2 >= 0.85).count();
+    for (k, (start, n, r, name)) in found.iter().enumerate() {
+        let chained = found.get(k + 1).is_some_and(|next| next.0 == start + n);
+        println!("{start:>6} {n:>3} {r:.3} {}{name}", if chained { "+ " } else { "  " });
+    }
+    eprintln!("{} events, {good} at correlation 0.85 or more", found.len());
     Ok(())
 }
 
