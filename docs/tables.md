@@ -827,7 +827,12 @@ rolled once and then applied, in slot order, to each fighter on the centre's sid
 (the centre first), each reported; the action's wait and count once. Kind 0 is the target alone
 (no two fighters stand within 50 in the game). Each fighter's size (`Fighter::size`, +0x358)
 adds to the reach (and the line's width and length), as in the game; monsters' real sizes are
-not read yet, so the skirmish gives each a stand-in 100, the same it spaces them by. Items
+not read yet, so the skirmish gives each a stand-in 100, the same it spaces them by. Where they
+are: a fighter's size is copied, as it is made (`0x1401add2c`, `0x1401b89e1`), from the battle
+data singleton (`0x14017cde0`, at `0x141077ed0`, 0x216c88 bytes, its constructor `0x14017abc0`
+only setting up empty arrays) at its id × 0x80 + 0x64. What fills those 128-byte records is not
+found (no static table; likely per-character battle data loaded with the models), so a short
+live run reading them is the quicker way. Items
 reach their record's area word (the word after the target, `0x1402a25e0`;
 `battle::item_action`'s `area`): Bomb, Ice Bomb, Living Bomb, Dire Bomb and Omega Craft 1 (350),
 Craft and the Dimension Bombs 2 (450), the Lightning Bomb 0 (one foe). Over the 265 battle items
