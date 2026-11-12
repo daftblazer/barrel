@@ -14,8 +14,9 @@
 //! 40°), the fields' own camera tables give `fov="22.5"`, and taking the fourth as the pitch
 //! frames the nearest character a median 6.7° off centre (9.7° the other way round).
 //!
-//! Ours until the game's update is read: values move linearly; the angle `t5` and `t20`'s
-//! second operand set is ignored.
+//! The values move linearly: each frame the update (`0x1401e6ee0`) moves the value now by
+//! `(goal - now) × dt / time left` and counts the time left down, landing on the goal when it
+//! runs out. The angle `t5` and `t20`'s second operand set (+0x38..+0x44) is ignored.
 
 /// A value on its way to a goal.
 #[derive(Clone, Copy, Debug, PartialEq)]

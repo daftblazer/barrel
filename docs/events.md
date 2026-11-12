@@ -191,7 +191,8 @@ set the goal, the even ones add to the value now (`t4` after `t3`'s `0x1401e7b01
 | `t13`/`t14` | the target | x, y, z, seconds |
 | `t20` | everything at once | see above |
 
-How the values move between start and goal (the update) is not read: they move linearly here.
+The update (`0x1401e6ee0`, each frame) moves every value now by `(goal - now) × dt / time
+left` and counts the time left down, landing on the goal when it runs out: linear in time.
 The stage holds the field camera (`Stage::field_camera`) and its snapshot gives the eye and
 target of whichever camera was set last, the field camera or the manual one (`t3` ... without
 `/0x10`); the window follows it every frame. `EVENT_MM01_OP1_111`'s action 7 turns the camera
