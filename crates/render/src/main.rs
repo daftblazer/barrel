@@ -115,6 +115,9 @@ struct Draw {
     /// Drawn into the sun's shadow map: the characters, and the field objects marked `xDS_`
     /// (in their name or their placement's tags; docs/renderer.md, "Shadows").
     casts: bool,
+    /// What it is part of, for `BARREL_HIDE` (a field object's placement name, `sky:<model>`
+    /// for the distant view, empty for characters).
+    name: String,
 }
 
 struct Gpu {
@@ -500,7 +503,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new() });
         }
         Ok(())
     }
@@ -1250,6 +1253,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
             let casts = t.name.contains("xDS_") || i.tags.contains("xDS_");
             for d in &mut scene.draws[before..] {
                 d.casts = casts;
+                d.name = t.name.clone();
             }
             placed += 1;
         }
@@ -1444,6 +1448,7 @@ fn main() -> Result<()> {
                         d.overlay = d.overlay.map(|o| o + base);
                         d.mask = d.mask.map(|m| m + base);
                         d.sky = true;
+                        d.name = format!("sky:{stem}");
                     }
                     base += count;
                     pack_bytes.push(tex.to_vec());
@@ -2088,6 +2093,10 @@ fn main() -> Result<()> {
         let offset = if tilted.normalize_or_zero().y.abs() < 0.98 { tilted } else { turned };
         target + offset.normalize_or_zero() * flat * zoom
     };
+    // BARREL_HIDE=a,b: leave out the draws whose name holds any of these (finding which object
+    // is which against an oracle frame).
+    let hide_names: Vec<String> = std::env::var("BARREL_HIDE").map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect()).unwrap_or_default();
+    let hide_by_name = |name: &str| !name.is_empty() && hide_names.iter().any(|h| name.contains(h.as_str()));
     let view_proj = |eye: Vec3, target: Vec3, dist: f32, fov: f32, width: u32, height: u32, orbit: (f32, f32, f32)| {
         let zoom = orbit.2;
         let view = Mat4::look_at_rh(turned_eye(eye, target, orbit), target, Vec3::Y);
@@ -2839,7 +2848,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
+            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && !hide_by_name(&d.name)) {
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
                 let mut per_draw = [0u8; 8];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
@@ -2891,7 +2900,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         // The current field's distant view first, then the rest over it.
         for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
-        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field)) {
+        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && !hide_by_name(&d.name)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
             let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3;

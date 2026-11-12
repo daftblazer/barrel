@@ -271,6 +271,17 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
+**Finding objects.** `BARREL_HIDE=a,b` leaves out the draws whose object name holds any of
+the strings (field objects by placement name, the distant view as `sky:<model>`): hiding
+`sky:obj-a15a01_Sphere_ground` showed that the dark band behind `TOWN_10`'s street was the
+distant view's ground ring.
+
+**Distant view and fog.** The distant view stands in for what lies beyond the field: it takes
+the fog as at the fog's full span (s = 1, nearly all in-scattered light), not at its own
+distance (it is drawn around the camera). The street's background then turns the hazy
+yellow of the oracle frame (`EVENT_MM01_OP1_111` at the narration); as fogged by its own
+distance it stayed dark (80 against the game's 119 in red).
+
 **Handedness.** The game's x is mirrored into render space (right-handed, like the vertices),
 and the projection mirrors clip-space x back, so the screen shows the scene left to right as
 the game does (checked against an oracle screenshot of `EVENT_MM01_OP1_111`'s first line:
