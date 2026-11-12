@@ -755,7 +755,9 @@ bytes, `0x140081260 (group?, group, start, kind)` builds it: +0x18, +0x1c the en
 +0x44 over +0x4c seconds and then moves to state 1). The field's contact check (`0x140270260`)
 makes one when the player's field strike, while out (`0x14026e2c0`), hits an enemy
 (`0x140270f50`; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
-they touch (`0x140270cc0`; 0); scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
+they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
+raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.5; the enemy's
+height is moved first by its monster row's +0x5c, +0x60 and +0x74, `encounter::touched`); scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
 The scripts' `isHitCollision` is only a wall check (on a hit they go back to waiting).
 An encounter ends with no battle when the player struck first, the party's average level
 (`0x140330a10`, the party list at `0x141093530`) is at least 10 above the group's (the average of

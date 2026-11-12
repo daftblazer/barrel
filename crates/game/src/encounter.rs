@@ -28,9 +28,33 @@ pub fn skips_battle(start: Start, party_level: i32, group_level: i32, kind: i32,
     start == Start::Struck && party_level - group_level >= 10 && !(1..=5).contains(&kind) && player_state == 1 && !field_check
 }
 
+/// The touch check (`0x140270cc0`): the enemy nearest the player whose distance (3D, from the
+/// player's place raised by 100 to the enemy's) is at most the enemy's radius × 1.1 plus the
+/// player's × 1.5 (both the field character's +0x90). Enemies are `(place, radius)`; the
+/// enemy's height is first moved by its monster row's +0x5c/+0x60/+0x74 (×1.3 for some kinds),
+/// left out here. Returns the index of the one touched.
+pub fn touched(player: [f64; 3], player_radius: f64, enemies: &[([f64; 3], f64)]) -> Option<usize> {
+    let p = [player[0], player[1] + 100.0, player[2]];
+    let mut best: Option<(usize, f64)> = None;
+    for (k, (e, r)) in enemies.iter().enumerate() {
+        let d = ((p[0] - e[0]).powi(2) + (p[1] - e[1]).powi(2) + (p[2] - e[2]).powi(2)).sqrt();
+        if r * 1.1 + player_radius * 1.5 >= d && best.is_none_or(|(_, b)| d < b) {
+            best = Some((k, d));
+        }
+    }
+    best.map(|(k, _)| k)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_nearest_touching_enemy() {
+        let enemies = [([0.0, 100.0, 120.0], 50.0), ([0.0, 100.0, 90.0], 50.0), ([0.0, 100.0, 400.0], 50.0)];
+        assert_eq!(touched([0.0; 3], 40.0, &enemies), Some(1));
+        assert_eq!(touched([0.0, 0.0, 500.0], 40.0, &enemies[..2]), None);
+    }
 
     #[test]
     fn strong_parties_strike_weak_enemies_down() {
