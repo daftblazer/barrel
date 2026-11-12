@@ -2653,6 +2653,8 @@ fn main() -> Result<()> {
     let mut last_effect: Option<f32> = None;
     let mut prev_mvp: Option<Mat4> = None;
     let mut jitter_index = 0u32;
+    let mut last_shot: Option<taa::Shot> = None;
+    let mut shot_field = u16::MAX;
     for frame in 0..frames {
     // Last frame's transforms and joints, before this frame moves anything (motion vectors).
     for i in &mut instances {
@@ -2994,6 +2996,21 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // A camera cut (or a new field): the last frame's view says nothing about this one, so TAA
+    // starts its history afresh and the motion vectors take this frame's view for the last.
+    let shot = taa::Shot { eye, target, fov };
+    if last_shot.is_some_and(|before| taa::is_cut(before, shot)) || shot_field != current_field {
+        if last_shot.is_some() {
+            eprintln!("frame {frame}: camera cut");
+            prev_mvp = None;
+            targets.taa_fresh.set(true);
+        }
+        shot_field = current_field;
+    }
+    last_shot = Some(shot);
+    if std::env::var_os("BARREL_SHOTS").is_some() {
+        eprintln!("frame {frame}: shot {shot:?}");
+    }
     // The view-projection drawn with: shifted by this frame's sub-pixel jitter when it is on
     // (`settings::jitter`, a clip-space translation by the offset in pixels × 2 / the scene's
     // size), the plain one otherwise.

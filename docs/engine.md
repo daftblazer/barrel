@@ -147,8 +147,14 @@ history starts empty when the targets are made (first frame, resize). The glow s
 the raw scene. In the first opening at 1080p, a still shot after 24 frames is about as smooth
 as 4× MSAA on geometry edges, and also smooths the alpha-tested edges (lashes, outline tips)
 that MSAA leaves. It is slightly softer, as TAA is. A camera pan with a character walking shows no
-trails. Not yet done: resetting the history on camera cuts (the clamp hides most of a cut
-already) and a sharpening pass after it (RCAS can serve).
+trails. On a camera cut the history starts afresh and the motion vectors take this frame's view
+for the last (`taa::is_cut`: the eye jumps by more than a fifth of its distance to the target,
+the view turns more than 10° or the field of view changes by more than 5° in one frame; a new
+field counts too). Event tweens move a few hundredths of that per frame. After the jump that
+`--at` makes on its first frame, TAA's next frame differs from the plain frame in 0.15% of
+pixels (the jitter), against 0.55% without the reset (the old shot leaking through the clamp).
+`BARREL_SHOTS=1` prints each frame's camera. Still to do: a sharpening pass after TAA (RCAS can
+serve).
 
 Validation (the Khronos layer, every mode): clean. The motion target needs the device's
 `independentBlend` (enabled when present; desktop, Turnip and Mali have it), and the post

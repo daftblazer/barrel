@@ -5,6 +5,7 @@
 //! copied into `history` for the next frame. Both are the scene's size and format.
 
 use ash::vk;
+use glam::Vec3;
 
 use crate::{Gpu, Result};
 
@@ -13,6 +14,24 @@ const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv
 const TAA_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/taa.frag.spv"));
 /// How much of each new frame goes into the history.
 pub const BLEND: f32 = 0.1;
+
+/// One frame's camera, as far as cuts go: where it is, where it looks, its field of view (in
+/// radians).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shot {
+    pub eye: Vec3,
+    pub target: Vec3,
+    pub fov: f32,
+}
+
+/// Whether the camera cut between two frames rather than moved: it jumped by more than a fifth
+/// of its distance to what it looks at, turned more than 10°, or zoomed by more than 5°. Event
+/// tweens move a few hundredths of that a frame; the history is no use across a cut.
+pub fn is_cut(before: Shot, now: Shot) -> bool {
+    let dist = (now.target - now.eye).length().max(1e-3);
+    let turned = (before.target - before.eye).normalize_or_zero().dot((now.target - now.eye).normalize_or_zero());
+    (now.eye - before.eye).length() > 0.2 * dist || turned < 10f32.to_radians().cos() || (now.fov - before.fov).abs() > 5f32.to_radians()
+}
 
 pub struct Pipelines {
     pass: vk::RenderPass,
@@ -258,5 +277,23 @@ impl Targets {
             }
             d.destroy_descriptor_pool(self.pool, None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cuts() {
+        let a = Shot { eye: Vec3::new(0.0, 0.0, 1000.0), target: Vec3::ZERO, fov: 22.5f32.to_radians() };
+        // A tween's frame: a little along and round.
+        let step = Shot { eye: Vec3::new(5.0, 0.0, 1000.0), target: Vec3::new(3.0, 0.0, 0.0), ..a };
+        assert!(!is_cut(a, step));
+        assert!(!is_cut(a, a));
+        // A new shot elsewhere, turned round, or zoomed.
+        assert!(is_cut(a, Shot { eye: Vec3::new(600.0, 0.0, 1000.0), target: Vec3::new(600.0, 0.0, 0.0), ..a }));
+        assert!(is_cut(a, Shot { target: Vec3::new(0.0, 0.0, 2000.0), ..a }));
+        assert!(is_cut(a, Shot { fov: 40f32.to_radians(), ..a }));
     }
 }
