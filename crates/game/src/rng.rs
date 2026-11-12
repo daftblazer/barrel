@@ -14,6 +14,20 @@ impl Rng {
         Rng { state }
     }
 
+    /// The generator as the game seeds it at startup (`0x1404ca4a0`, once, from
+    /// `0x1406e5059`): `seed` is the low 32 bits of `_time64(NULL)`, the wall-clock time, and
+    /// each state word follows from the one before by Mersenne Twister's initialisation,
+    /// `s[i] = 1812433253 × (s[i-1] ^ (s[i-1] >> 30)) + i`, `s[-1]` being the seed. The state
+    /// is not saved: a loaded game carries on from wherever the generator stands since boot.
+    pub fn seeded(seed: u32) -> Rng {
+        let mut prev = seed;
+        let state = std::array::from_fn(|i| {
+            prev = 1_812_433_253u32.wrapping_mul(prev ^ (prev >> 30)).wrapping_add(i as u32 + 1);
+            prev
+        });
+        Rng { state }
+    }
+
     pub fn state(&self) -> [u32; 4] {
         self.state
     }
@@ -63,6 +77,15 @@ impl Rng {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seeding_from_the_clock() {
+        // s[0] = 1812433253 × (0 ^ 0) + 1 for a seed of 0, then on from there.
+        let r = Rng::seeded(0);
+        assert_eq!(r.state()[0], 1);
+        assert_eq!(r.state()[1], 1_812_433_253u32.wrapping_mul(1).wrapping_add(2));
+        assert_ne!(Rng::seeded(1_700_000_000).state(), Rng::seeded(1_700_000_001).state());
+    }
 
     const SEED: [u32; 4] = [123456789, 362436069, 521288629, 88675123];
 

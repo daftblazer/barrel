@@ -793,8 +793,11 @@ at `0x1410c2fd8`. A number from `a` to `b` (`0x1404ca660`, both included, in eit
 `low + (w & 0x7fffffff) % (high - low + 1)`, and draws nothing when `a == b`; a number below
 `n` (`0x1404ca740`) is `(w & 0x7fffffff) % n` and always draws; `0x1404ca7a0` returns
 `w & 0x7fffffff`; a chance of p percent (`0x1404ca5f0`) is `(w & 0x7fffffff) % 100 < p`. The state is not
-in the file, and the code that seeds it is still to be found. `barrel_game::rng` is the same
-generator.
+in the file: `0x1404ca4a0`, run once at startup (from `0x1406e5059`), seeds it from the clock,
+`_time64(NULL)`'s low 32 bits as `s[-1]` and each word `1812433253 × (s[i-1] ^ (s[i-1] >> 30))
++ i` (Mersenne Twister's initialisation; `Rng::seeded`). Saves do not hold it either, so a
+loaded game draws on from wherever the generator stands since boot. (`0x1404ca510 (n)` draws
+from `-n` to `n`.) `barrel_game::rng` is the same generator.
 
 ### Applying effects (executable)
 
