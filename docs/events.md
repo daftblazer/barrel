@@ -1281,6 +1281,16 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 | `TRIGGER_MAP_FROM_TO_BEFORE/AFTER a b c d` | all four equal the fired values (from kind, from map, to kind, to map by event 30's `0 4 0 5`) |
 | `TRIGGER_MAP_FIELDMAP_BE m` | the fired map is `m` |
 
+| the 14 one-value triggers (`MAP_COLLECT`, `ITEM_GET`, `MIX_SUCCESS`, `MIX_FAILED`, `EVENT_END`, `OTHER_TALK_BEFORE/AFTER_IS`, `OTHER_PLAYER_PUSH_BUTTON`, `GIMMICK_ACCESS_BEFORE/AFTER`, `ENEMY_KILL_IS`, `RECLAIM_TARGET_CLEAR`, `RECLAIM_FACILITY_BUILT`, `SUBJECT_CLEAR`) | the first operand equals the fired value |
+| `MIX_HP_EMPTY`, `MIX_ACCESS`, `BATTLE_ANNIHILATION(_ATELIER)`, `RECLAIM_KINGDOM_LV_UP`, `ATELIER_RETURN`, `ATELIER_SLEEP_MIX`, `MAP_WORLDMAP_ROUTE_MOVE`, `MEMORIES_LV_UP` | always, once their trigger group fired |
+| 41 codes on the switch's default (`CHIMU_*`, `MAP_TRAVERSAL_RITU_*`, `LICENSE_RANK_*`, `QUEST_ACCEPT_NUM_*`, the `RECLAIM_*` conditions, the `DLC_*` ones but `DLC`, `CHARA_WMPOINTER_BE_WITH_PLAYER`, `QUEST_(NOT_)OCCURRENCE`, `TRIGGER_ATELIER_ITEM_RETURN`) | never; the check data uses none of them |
+
+Not read yet, by uses in the data: `CONDITION_MAP_FIELDMAP_BE` (176), `CHARA_FRIEND_POINT_MT` (36),
+`ITEM_QUALITY_HAVE_MT` (33), `MAP_FIELDAREA_BE` (27), the date triggers and `DATE_AFTER` (20
+each), `TRIGGER_PROGRAM_EXEC` (16), `EVENTFLAG_LT`'s siblings are done, `PLAYER_PARAM_MT` and
+`CHARA_ADVENTURE_LV_MT` (10), `TRIGGER_MAP_FIELDMAP_RECT` and `TRIGGER_MAP_FIELDAREA_BE` (6),
+`CHARA_PARTY_IN` (6), and a few single uses.
+
 The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired values at
 `ctx+8`:
 

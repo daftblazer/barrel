@@ -114,23 +114,66 @@ pub fn command(c: &Command, fired: (u8, &[i32]), w: &impl World) -> Option<bool>
         0x20 => !w.seen(op(0)),
         0x24..=0x26 => w.seen(op(0)) && cmp(w.today() - w.seen_day(op(0)), c.code - 0x24),
         0x27..=0x29 => cmp(w.flag(op(0)), c.code - 0x27),
-        0x7e | 0x7f => trigger_values(c.operands, fired.1, 4, true, w),
-        0x80 => trigger_values(c.operands, fired.1, 1, false, w),
-        _ => return None,
+        0x7e | 0x7f => trigger_values(c.operands, fired.1, 4, Mode::FromTo, w),
+        0x80 => trigger_values(c.operands, fired.1, 1, Mode::Region, w),
+        _ => match c.name() {
+            "TRIGGER_MAP_COLLECT" | "TRIGGER_ITEM_GET" | "TRIGGER_MIX_SUCCESS" | "TRIGGER_MIX_FAILED"
+            | "TRIGGER_EVENT_END" | "TRIGGER_OTHER_TALK_BEFORE_IS" | "TRIGGER_OTHER_TALK_AFTER_IS"
+            | "TRIGGER_OTHER_PLAYER_PUSH_BUTTON" | "TRIGGER_GIMMICK_ACCESS_BEFORE"
+            | "TRIGGER_GIMMICK_ACCESS_AFTER" | "TRIGGER_ENEMY_KILL_IS" | "TRIGGER_RECLAIM_TARGET_CLEAR"
+            | "TRIGGER_RECLAIM_FACILITY_BUILT" | "TRIGGER_SUBJECT_CLEAR" => {
+                trigger_values(c.operands, fired.1, 1, Mode::Plain, w)
+            }
+            "TRIGGER_MIX_HP_EMPTY" | "TRIGGER_MIX_ACCESS" | "TRIGGER_BATTLE_ANNIHILATION"
+            | "TRIGGER_BATTLE_ANNIHILATION_ATELIER" | "TRIGGER_RECLAIM_KINGDOM_LV_UP"
+            | "TRIGGER_ATELIER_RETURN" | "TRIGGER_ATELIER_SLEEP_MIX" | "TRIGGER_MAP_WORLDMAP_ROUTE_MOVE"
+            | "TRIGGER_MEMORIES_LV_UP" => true,
+            // The codes the switch sends to its default (license, reclaim, DLC, quests ...):
+            // always false, and the check data never uses them.
+            n if DEFAULT_FALSE.contains(&n) => false,
+            _ => return None,
+        },
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Plain,
+    FromTo,
+    Region,
+}
+
+const DEFAULT_FALSE: &[&str] = &[
+    "CONDITION_CHIMU_IS_COLLECTTING", "CONDITION_CHIMU_IS_NOT_COLLECTTING",
+    "CONDITION_MAP_TRAVERSAL_RITU_MT", "CONDITION_MAP_TRAVERSAL_RITU_LT", "CONDITION_MAP_TRAVERSAL_RITU_EQ",
+    "CONDITION_LICENSE_RANK_MT", "CONDITION_LICENSE_RANK_LT", "CONDITION_LICENSE_RANK_EQ",
+    "CONDITION_LICENSE_RANK_UP_OK", "CONDITION_QUEST_ACCEPT_NUM_MT", "CONDITION_QUEST_ACCEPT_NUM_LT",
+    "CONDITION_QUEST_ACCEPT_NUM_EQ", "CONDITION_RECLAIM_BONUS_ENTRY_MT", "CONDITION_RECLAIM_BONUS_ENTRY_LT",
+    "CONDITION_RECLAIM_BONUS_ENTRY_EQ", "CONDITION_RECLAIM_TARGET_CLEAR", "CONDITION_RECLAIM_TARGET_NOT_CLEAR",
+    "CONDITION_RECLAIM_FACILITY_BUILT", "CONDITION_RECLAIM_FACILITY_NOT_BUILT",
+    "CONDITION_RECLAIM_POPULARITY_MT", "CONDITION_RECLAIM_POPULARITY_LT", "CONDITION_RECLAIM_POPULARITY_EQ",
+    "CONDITION_RECLAIM_KINGDOM_LV_MT", "CONDITION_RECLAIM_KINGDOM_LV_LT", "CONDITION_RECLAIM_KINGDOM_LV_EQ",
+    "CONDITION_RECLAIM_KINGDOM_LV_UP_OK", "CONDITION_RECLAIM_SEED_UNKNOWN", "CONDITION_RECLAIM_SEED_FIND",
+    "CONDITION_RECLAIM_SEED_OPEN", "CONDITION_RECLAIM_POPULATION_MT", "CONDITION_RECLAIM_POPULATION_LT",
+    "CONDITION_RECLAIM_POPULATION_EQ", "CONDITION_DLC_NO", "CONDITION_DLC_PARTY_MARION",
+    "CONDITION_DLC_PARTY_ODILEIA", "CONDITION_DLC_EXTRA_MAP_00", "CONDITION_DLC_EXTRA_MAP_01",
+    "CONDITION_CHARA_WMPOINTER_BE_WITH_PLAYER", "CONDITION_QUEST_OCCURRENCE",
+    "CONDITION_QUEST_NOT_OCCURRENCE", "TRIGGER_ATELIER_ITEM_RETURN",
+];
+
 /// `0x140213540`: the first `count` operands against the fired values. `ANY` matches anything.
 /// `NOT_REGION_ZERO` matches a map that is not region 0. For the from-to triggers it applies only
-/// at operands 1 and 3 after a kind operand of 0.
-fn trigger_values(ops: &[i32], fired: &[i32], count: usize, from_to: bool, w: &impl World) -> bool {
+/// at operands 1 and 3 after a kind operand of 0; in the plain triggers it is an ordinary value.
+fn trigger_values(ops: &[i32], fired: &[i32], count: usize, mode: Mode, w: &impl World) -> bool {
     if ops.len() < count || fired.len() < count {
         return false;
     }
     (0..count).all(|i| match ops[i] {
         ANY => true,
-        NOT_REGION_ZERO if from_to => (i == 1 || i == 3) && ops[i - 1] == 0 && !w.region_zero(fired[i]),
-        NOT_REGION_ZERO => !w.region_zero(fired[i]),
+        NOT_REGION_ZERO if mode == Mode::FromTo => {
+            (i == 1 || i == 3) && ops[i - 1] == 0 && !w.region_zero(fired[i])
+        }
+        NOT_REGION_ZERO if mode == Mode::Region => !w.region_zero(fired[i]),
         v => fired[i] == v,
     })
 }
@@ -208,5 +251,12 @@ mod tests {
         let any = commands(&[0x7000007f, 0, NOT_REGION_ZERO, 0, ANY]).unwrap();
         assert_eq!(command(&any[0], (1, &[0, 4, 0, 77]), &W), Some(true));
         assert_eq!(command(&any[0], (1, &[0, 9, 0, 77]), &W), Some(false));
+        let talk = commands(&[0x7000008c, 10050]).unwrap();
+        assert_eq!(command(&talk[0], (12, &[10050]), &W), Some(true));
+        assert_eq!(command(&talk[0], (12, &[10051]), &W), Some(false));
+        let sleep = commands(&[0x7000009f]).unwrap();
+        assert_eq!(command(&sleep[0], (28, &[]), &W), Some(true));
+        let quest = commands(&[0x70000075, 3]).unwrap();
+        assert_eq!(command(&quest[0], (0, &[]), &W), Some(false));
     }
 }
