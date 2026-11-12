@@ -20,6 +20,21 @@ layout(std430, set = 1, binding = 3) readonly buffer Weights { float weight[]; }
 layout(location = 0) out vec3 normal;
 layout(location = 1) out vec2 uv;
 layout(location = 2) out vec3 world;
+layout(location = 3) out vec3 scene_light;
+layout(std140, set = 1, binding = 4) uniform Look {
+    vec4 light_dir;
+    vec4 light_color;
+    vec4 rim_dir;
+    vec4 rim_color;
+    vec4 eye;
+    // x: the point lights' strength (atCharaPointLightStrength); y: how many point lights.
+    vec4 misc;
+    // Up to four point lights (render space, field units): position and range² (w), colour
+    // (its own plus its ambient), attenuation {att0, att1, att2} per metre.
+    vec4 point_pos[4];
+    vec4 point_color[4];
+    vec4 point_att[4];
+} look;
 void main() {
     Instance i = instances.inst[pc.instance];
     vec4 pos = vec4(in_pos, 1.0);
@@ -41,6 +56,17 @@ void main() {
     }
     vec4 w = i.model * pos;
     world = w.xyz;
+    // The point lights at this vertex, as the game's character vertex program sums them:
+    // (colour + ambient) × (1 - saturate(d² / range²)) / (att0 + att1·d + att2·d²), d in metres.
+    vec3 sum = vec3(0.0);
+    for (int k = 0; k < int(look.misc.y); k++) {
+        vec3 d = (look.point_pos[k].xyz - w.xyz) * 0.01;
+        float d2 = dot(d, d);
+        float falloff = look.point_pos[k].w > 0.00001 ? 1.0 - clamp(d2 / look.point_pos[k].w, 0.0, 1.0) : 0.0;
+        float denom = look.point_att[k].x + look.point_att[k].y * sqrt(d2) + look.point_att[k].z * d2;
+        sum += denom > 0.00001 ? look.point_color[k].rgb * falloff / denom : vec3(0.0);
+    }
+    scene_light = clamp(sum, 0.0, 1.0);
     gl_Position = pc.view_proj * w;
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;

@@ -31,8 +31,8 @@ const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.fr
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
 const PUSH_SIZE: u32 = 120;
 const PUSH_INSTANCE: u32 = 112;
-/// The field look's uniform block: light dir, light colour, rim dir, rim colour, eye (vec4s).
-const LOOK_SIZE: u64 = 80;
+/// The field look's uniform block (see `model.frag`): 6 vec4s, then 4 point lights × 3 vec4s.
+const LOOK_SIZE: u64 = 18 * 16;
 const COLOR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 
@@ -1486,7 +1486,7 @@ fn main() -> Result<()> {
             .binding(4)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
     ];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
     let inst_sizes = [
@@ -2120,7 +2120,8 @@ fn main() -> Result<()> {
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
     // The field's character lighting, mirrored into render space, and the eye.
     {
-        let chara = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.chara);
+        let field_look = field_looks.get(current_field as usize).and_then(|l| l.as_ref());
+        let chara = field_look.and_then(|l| l.chara);
         // A field with none: a light from above and in front, no colour or rim.
         let c = chara.unwrap_or(barrel_formats::field_look::CharaShader {
             light_dir: [0.0, -1.0, -1.0],
@@ -2131,7 +2132,25 @@ fn main() -> Result<()> {
         });
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let look: [[f32; 4]; 5] = [m(c.light_dir), c.light_color, m(c.rim_light_dir), c.rim_light_color, [e.x, e.y, e.z, 1.0]];
+        let mut look = [[0f32; 4]; 18];
+        look[..5].copy_from_slice(&[m(c.light_dir), c.light_color, m(c.rim_light_dir), c.rim_light_color, [e.x, e.y, e.z, 1.0]]);
+        // The field's first four point lights (metres to field units, x mirrored).
+        let points = field_look.map_or(Vec::new(), |l| {
+            l.lights
+                .iter()
+                .filter_map(|p| match *p {
+                    barrel_formats::field_look::Light::Point { pos, color, ambient, att, range } => Some((pos, color, ambient, att, range)),
+                    _ => None,
+                })
+                .take(4)
+                .collect::<Vec<_>>()
+        });
+        look[5] = [c.point_light_strength, points.len() as f32, 0.0, 0.0];
+        for (k, (pos, color, ambient, att, range)) in points.iter().enumerate() {
+            look[6 + k] = [-pos[0] * 100.0, pos[1] * 100.0, pos[2] * 100.0, range * range];
+            look[10 + k] = [color[0] + ambient[0], color[1] + ambient[1], color[2] + ambient[2], 1.0];
+            look[14 + k] = [att[0], att[1], att[2], 0.0];
+        }
         gpu.upload(look_mem, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) })?;
     }
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };

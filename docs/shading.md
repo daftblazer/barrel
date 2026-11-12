@@ -63,5 +63,21 @@ toon step toward the field's character light, the light colour's soft-light blen
 `<chara_shader>` values go to the fragment shader in a uniform block (set 1, binding 4) each
 frame, the directions mirrored into render space, with the camera's eye for the view
 direction; a field without them gets a light from above and in front and no colour or rim.
-Not done yet: step 5 (the scene's lights) and 6 (fog), `atColor` (taken as white) and the HDR
-range (1); fields' own shaders (`MapSTD*`).
+Step 5's point lights are summed per vertex as the game's vertex program does (below), from
+the field's first four `POINT` lights. Not done yet: step 6 (fog), `atColor` (taken as white)
+and the HDR range (1); fields' own shaders (`MapSTD*`).
+
+## The character vertex program (`CharaMTC.g1s` program 0)
+
+Point lights: for each of four, with d the vector from the vertex to `litPos[i]`, the light
+adds `(litAmb[i] + litCol[nDirLit + i]) × (1 - saturate(d² / att.w)) / (att.x + att.y·|d| +
+att.z·d²)` (`litAtt[i]`; a range or divisor near zero drops it), and the sum is saturated:
+the pixel program's v2. The directional lights (`litCol[0 .. nDirLit]`) do not light
+characters. The renderer takes d in metres and `att.w` as the range squared (the field gives
+`range` in metres; the game's own conversion is not read).
+
+Fog and scattering: with e the vector from the vertex to the eye (`vEye`), the extinction is
+`min(exp((fog.x·|e| + fog.y) × Scat[0].xyz), 1)` (v4) and the in-scattered colour, with θ the
+angle between the view direction and `litDir[0]`, is `Scat[3].xyz × (Scat[2].w·cos θ +
+Scat[3].w)^-1.5 + (1 + cos² θ) × Scat[2].xyz + Scat[1].xyz` (v3): Mie and Rayleigh terms.
+How `fog` and `Scat` come from the field's `<fog>` is not read yet.
