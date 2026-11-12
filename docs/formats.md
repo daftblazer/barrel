@@ -644,6 +644,15 @@ project only when its `WorkTag_exe` project is at 2, and marks it new when its s
 0: so -1 not open, 1 open and new, 0 open and seen, 2 done. The save read has four at 1 and
 seven at 0, none done. `save::Summary::work_status`.
 
+**Library marks** (`library`): bitsets, bit i (byte i / 8, bit i % 8 from the low end) for
+entry i of a knowledge list: `new_item` (61 bytes, items 0 to 487), `new_eff` (88, the 698
+effects), `new_potential` (50, the 400 traits), `new_property` (12, the 90 synthesis skills),
+`new_book` (10, 73 books), `new_monster` (20, 153 monsters), and `new_help`, `new_memo`,
+`notice_help`, `notice_memo` for the help and memo pages. A clear bit marks an entry as new
+(known, not yet looked at in the library); the bits past each list's end are clear too. In
+the save read every bit is set except four items (364, 369, 417, 438, all at knowledge 10:
+recently made) and bit 487. Not checked against the library screen's code.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0
