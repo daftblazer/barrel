@@ -30,7 +30,7 @@ const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
 const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
-const PUSH_SIZE: u32 = 120;
+const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
@@ -99,6 +99,9 @@ struct Draw {
     mask: Option<usize>,
     /// Shaded as an eye (`CharaEYE`: `docs/shading.md`, "Eyes").
     eye: bool,
+    /// The outline pass's colour (the material's `atOutCol`, grey), when the material has an
+    /// outline (an `atEdge` parameter).
+    outline: Option<f32>,
     /// The field (in the order the scene loaded them) it belongs to; None for what is drawn
     /// in every field (the event's characters).
     field: Option<u16>,
@@ -486,7 +489,8 @@ impl Scene {
                     m.textures[at + 1..].iter().find(|t| t.subtype == 0).map(|t| (t.index as usize).min(textures.saturating_sub(1)))
                 })
             };
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, field: self.field });
+            let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, outline, field: self.field });
         }
         Ok(())
     }
@@ -1461,6 +1465,18 @@ fn main() -> Result<()> {
     for t in &all_textures {
         textures.push(upload_texture(&gpu, pool, t)?);
     }
+    // The characters' outline texture (`Data/x64/Shader/texture/outline.g1t`), if found.
+    let outline_tex = {
+        let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
+        let bytes = root.and_then(|r| std::fs::read(r.join("Data/x64/Shader/texture/outline.g1t")).ok());
+        match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(&gpu, pool, &t))) {
+            Some(t) => {
+                textures.push(t?);
+                Some(textures.len() - 1)
+            }
+            None => None,
+        }
+    };
     // White, for masks a material does not have.
     let white_px = [255u8; 4];
     let white = textures.len();
@@ -1748,6 +1764,12 @@ fn main() -> Result<()> {
     let pipeline = unsafe {
         d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
     };
+
+    // The characters' outline pass: the same shaders in outline mode, front faces culled (an
+    // inverted hull: only the pushed-out back faces show, as a rim).
+    let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
+    let outline_info = pipeline_info.rasterization_state(&outline_raster);
+    let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
 
     // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
     let (post_vs, post_fs) = (module(POST_VERT)?, module(POST_FRAG)?);
@@ -2329,9 +2351,10 @@ fn main() -> Result<()> {
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         // view_proj, params, the terrain's scales; the instance number goes in per draw.
-        let mut push = [0f32; 30];
+        let mut push = [0f32; 31];
         push[..16].copy_from_slice(&mvp.to_cols_array());
         push[16] = alpha_cutoff;
+        push[18] = width as f32 / height.max(1) as f32;
         push[19] = HDR_RANGE_INV;
         if let Some(tg) = &terrain_gpu {
             for g in tg.grounds.iter().filter(|g| g.field == current_field) {
@@ -2358,6 +2381,22 @@ fn main() -> Result<()> {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+        }
+        // The outlines: the outlined materials again, pushed out, with the outline texture.
+        if let Some(outline_tex) = outline_tex {
+            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex]], &[]);
+            for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none() && !d.eye) {
+                let Some(colour) = draw.outline else { continue };
+                let mut per_draw = [0u8; 12];
+                per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
+                per_draw[4..8].copy_from_slice(&(1u32 | 4).to_le_bytes());
+                per_draw[8..].copy_from_slice(&colour.to_le_bytes());
+                d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+            }
         }
         d.cmd_end_render_pass(cb);
         // The glow from the scene's bright parts (the field's <hdr>; none: no glow).
@@ -2456,6 +2495,7 @@ fn main() -> Result<()> {
         d.destroy_descriptor_set_layout(post_set_layout, None);
         d.destroy_sampler(post_sampler, None);
         d.destroy_render_pass(post_pass, None);
+        d.destroy_pipeline(outline_pipeline, None);
         d.destroy_pipeline(pipeline, None);
         d.destroy_pipeline_layout(pipeline_layout, None);
         d.destroy_shader_module(vs, None);

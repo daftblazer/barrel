@@ -5,7 +5,7 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 // The character's mask (its red channel says how much of the shading applies; white when the
 // material has none).
 layout(set = 2, binding = 0) uniform sampler2D mask;
-layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; } pc;
+layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour; } pc;
 // The field's character lighting (barrel_formats::field_look), in render space: the
 // directions as the field gives them (the shader uses their negation), the colours with their
 // weight in w; the camera's eye.
@@ -37,6 +37,7 @@ layout(location = 2) in vec3 world;
 // The point lights' sum at this vertex (the vertex program's v2).
 layout(location = 3) in vec3 scene_light;
 layout(location = 4) in vec3 field_light;
+layout(location = 5) in vec2 screen_uv;
 layout(location = 0) out vec4 color;
 
 // The game's soft-light blend of a colour k over a, weighted by w (k first divided by its
@@ -61,7 +62,18 @@ void main() {
         return;
     }
     vec3 col;
-    if ((pc.flags & 2u) != 0u) {
+    if ((pc.flags & 4u) != 0u) {
+        // An outline (CharaFra*'s pixel program): the colour under the light colour, half
+        // multiplied and half overlaid with the outline texture, its saturation pushed (the
+        // channels below the brightest lowered 10%), times the material's outline colour.
+        vec3 a = soft_light(c.rgb, look.light_color);
+        vec3 o = texture(mask, screen_uv).rgb;
+        vec3 ovl = mix(2.0 * a * o, 1.0 - 2.0 * (1.0 - a) * (1.0 - o), round(o));
+        vec3 b = mix(ovl, a * o, 0.5);
+        float top = max(max(b.r, b.g), b.b) - 0.003921569;
+        b = b * 0.9 + b * clamp((b - top) * 255.0, 0.0, 1.0) * 0.1;
+        col = b * pc.outline_colour;
+    } else if ((pc.flags & 2u) != 0u) {
         // An eye (CharaEYE): the white and iris (already laid together, the iris by its
         // alpha; the specular is not done) under the light colour at 0.65 of its weight, then
         // the highlights (the mask slot) tinted by the rim colour at up to 0.2, by their alpha.

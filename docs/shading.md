@@ -198,7 +198,16 @@ under the light colour's soft light, blended half multiply, half overlay with `s
 (`Data/x64/Shader/texture/outline.g1t`, at the second UV pair), its saturation pushed a little
 (the channels within 1/255 of the brightest kept, the rest lowered 10%), then the point lights,
 fog, `atColor` and the HDR range as for the body. `g_outlineThickness` is the engine's (not
-read yet).
+read yet). In full, the push is `(n.x·0.0025, n.y·0.0044, n.z·0.0025, n.w·0.0025) × k` added to
+the clip position, with n the normalised clip-space normal and k the factor above: the y
+scale is 0.0025 × 16/9, so the width is even on a 16:9 screen, and with w capped at 350 it is
+2.4 to 4.2 pixels at 1080 lines (times the thickness). The outline texture is sampled at the
+clip position's x and y over 5w: a pattern fixed to the screen.
+
+The renderer draws the outlines after the scene's models with a second pipeline that culls
+front faces, for every character material with an `atEdge` parameter (not the eyes), in
+outline mode (flag bit 2), coloured by the material's `atOutCol`, the y scale following the
+screen's own aspect, and `g_outlineThickness` taken as 1.
 
 ## The materials' own parameters (`g1m` section 0x10003)
 

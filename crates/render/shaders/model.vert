@@ -8,7 +8,7 @@ layout(location = 4) in vec4 in_weights;
 layout(location = 5) in uvec2 in_morph;
 layout(location = 6) in vec4 in_color;
 // view_proj: the camera; instance: which of the instances places this draw.
-layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; } pc;
+layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour; } pc;
 // Each instance's model matrix (render space, x already mirrored) and where its joints'
 // matrices begin in the palette. Instance 0 is the identity, for geometry baked in place.
 struct Instance { mat4 model; uvec4 info; };
@@ -25,6 +25,8 @@ layout(location = 3) out vec3 scene_light;
 // A field model's light at this vertex (MapSTD's v1 + v6, with no light texture or shadow
 // yet: docs/shading.md, "Fields").
 layout(location = 4) out vec3 field_light;
+// The outline texture's coordinates: the screen position over 5 (CharaFra*'s o1.zw).
+layout(location = 5) out vec2 screen_uv;
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 light_dir;
     vec4 light_color;
@@ -97,6 +99,18 @@ void main() {
     vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
     field_light = amb * in_color.rgb + in_color.rgb * diffuse + in_color.rgb * sun;
     gl_Position = pc.view_proj * w;
+    if ((pc.flags & 4u) != 0u) {
+        // The outline pass (CharaFra*): pushed out along the clip-space normal, about the same
+        // width on screen (w capped at 350), thinner where the vertex colour's red says and a
+        // little beyond 190 units from the eye; g_outlineThickness taken as 1.
+        vec4 cn = pc.view_proj * vec4(mat3(i.model) * n, 0.0);
+        cn = cn / max(length(cn), 0.00001);
+        float clip_w = gl_Position.w;
+        float dist = length(look.eye.xyz - w.xyz);
+        float k = (1.75 - 0.75 * in_color.r) * sign(clip_w) * min(abs(clip_w), 350.0) * (1.0 - 0.2 * clamp((dist - 190.0) * 0.05, 0.0, 1.0));
+        gl_Position += vec4(cn.x * 0.0025, cn.y * 0.0025 * pc.params.z, cn.z * 0.0025, cn.w * 0.0025) * k;
+    }
+    screen_uv = gl_Position.xy / (gl_Position.w * 5.0);
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;
     uv = in_uv;
