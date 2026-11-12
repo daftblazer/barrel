@@ -652,7 +652,11 @@ picker (`0x1401abf70`) turns it into a side, comparing with each candidate's sid
 Over the 534 skills: 0 on passives (64), 1 on heals and Wind Shell (28), 2 on attacks and
 debuffs (most), 3 on Howling-like self-buffs (49), 4 on Lucille's Vital Check (a heal that also
 revives: either side, fallen or not, presumably). The next word (+0x14) is 1 on 21
-skills, among them the Floating Alchemy bombs (an area, presumably; not read). `Skill::target` and
+skills, among them the Floating Alchemy bombs (an area, presumably). No code reads it through
+the skill table (`0x140d51ed0`, 96-byte records): its ten references read +0x8, +0x10, +0x18,
++0x1c, +0x20, +0x24, +0x58 and the effect list from +0x28 (`0x14015f620`, `0x14015faea`), never
++0x14, so it may be unused in this game; how many targets an action hits has to come from
+elsewhere (the action or its effects). `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
 ### A first duel
