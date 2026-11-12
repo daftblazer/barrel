@@ -41,6 +41,32 @@ pub fn bonus(kind: u32, gather_type: i32, cleared: bool, field: FieldState, gat_
     }
 }
 
+/// The random traits a gathered item gets (`0x14023d8c0`; only for an item whose row +0x30 is
+/// set and a record without a fixed trait in word 13): `count` (the record's word 5, 0 to 3, plus
+/// bonus kind 2) traits drawn without repeats, each uniformly from the traits whose `potLv` lies
+/// within `low` (at most 98, at least 0) and `high` (at most 99, at least the low) and that `fit`
+/// the item (`0x1402a26a0`, `0x1400e2f60`). Returns trait numbers in the order drawn.
+pub fn random_traits(
+    traits: &[barrel_formats::battle_data::Trait],
+    (low, high): (i32, i32),
+    count: i32,
+    fits: impl Fn(usize) -> bool,
+    rng: &mut crate::rng::Rng,
+) -> Vec<usize> {
+    let low = low.min(98).max(0);
+    let high = high.min(99).max(low);
+    let mut pool: Vec<usize> = (0..traits.len().min(400)).filter(|&t| (low..=high).contains(&traits[t].level) && fits(t)).collect();
+    let mut out = Vec::new();
+    for _ in 0..count.max(0) {
+        if pool.is_empty() {
+            break;
+        }
+        let k = rng.range(0, pool.len() as i32 - 1) as usize;
+        out.push(pool.remove(k));
+    }
+    out
+}
+
 /// Which of a point's lists it draws from (`0x1400d3160`): the level of a "table level-up"
 /// effect on one of two items the game keeps (item units at `0x140dfc8d4` and `0x140dfc8b0`),
 /// at most 4. A point whose byte +0x30 is set takes `ACT_ALC_TABLE_LEVELUP` (215) of the first;
@@ -132,6 +158,18 @@ mod tests {
         assert_eq!(bonus(0, 0, false, FieldState { mode: 3, ..field }, 0, 0), 20);
         assert_eq!(bonus(0, 0, true, FieldState { mode: 3, ..field }, 0, 0), 0);
         assert_eq!((bonus(4, 0, false, field, 2, 1), bonus(5, 0, false, field, 2, 1)), (2, 1));
+    }
+
+    #[test]
+    fn random_traits_come_from_the_level_range_without_repeats() {
+        let t = |level| barrel_formats::battle_data::Trait { name: String::new(), group: String::new(), level, point: 1, slots: Vec::new() };
+        let traits = vec![t(1), t(4), t(5), t(12), t(6)];
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        let got = random_traits(&traits, (4, 6), 5, |_| true, &mut rng);
+        let mut sorted = got.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 4]);
+        assert!(random_traits(&traits, (4, 6), 2, |t| t != 2, &mut rng).iter().all(|&x| x == 1 || x == 4));
     }
 
     #[test]

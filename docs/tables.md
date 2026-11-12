@@ -1397,7 +1397,11 @@ else a roll between the record's bounds (words 3 and 4) raised by a percentage o
 (words 9 to 12) are put on it (`0x14029e290`), and words 6 and 7 go to `0x14023d8c0`: for an item whose
 row +0x30 is set and a record without a fixed trait in word 13, it draws random traits through
 `0x1402a26a0 (item, word 6 + b, word 7 + b)` with b the trait bonus, so words 6 and 7 are the
-random traits' level range (1 to 10, then 4 to 20, where set). The bonuses are
+random traits' level range (1 to 10, then 4 to 20, where set). `0x1402a26a0` gathers the
+candidates: every trait whose `potLv` lies within the range (the low end kept within 0 and 98,
+the high end at most 99 and not below the low) and that fits the item (`0x1400e2f60`); then word
+5 (0 to 3) plus bonus kind 2 traits are drawn, each uniformly from what is left and taken out
+(`gather::random_traits`). The bonuses are
 `0x1400d3030 (kind, gather type, cleared)` (`gather::bonus`): kind 0, the extra picks, is the
 field state's first value (`0x1410783b4`) for a type-0 gather while its mode (`0x1410783b0`) is
 3; kinds 1, 2 and 3 (the traits' levels, one not followed, the quality percentage) are its second,
