@@ -1107,6 +1107,17 @@ commands as the `.ebd` events.
   after `utility.nut`: `ai_dog_out.nut`, the dog not yet aware of the player, goes from select to
   wait (motion 31, `F_WAIT`, blend 0.35), then to waiting until its timer runs out, then draws one
   of its four patterns (`SQ.randRange(0, 3)`; the first, state 102, barks with motion 26).
+  All 29 `ai_*` scripts run 30 ticks that way without an error. What they ask of the game:
+  the creature's `setState` (544 calls in the sources), `setMotionTag` (238), `isEndMotin`
+  (sic, 169), `moveRotation`, `stopMovePosition`, `isMovePosition`, `getPosition`,
+  `getMoveSpeed`, `movePosition`, emotion icons, `isHitCollision`, a timer, custom position,
+  rotation and parameter slots, range checks (`setIsJudgeRange`, `isMaxRangeIn`, `isRangeIn`)
+  and spots near the player (`getPositionToPlayerBehind`, `getPositionToPlayerEscape`,
+  `getRandomRangePosition`); and of `SQ`: `getPlayer`, `getActiveChara`, `randRange`/`randRangeF`
+  and the macro calls. The executable binds 175 names in all (`tools/sq_binds.py EXE ASM`: each
+  name, its native function and the stub that converts its arguments; `setMotionTag` is
+  `0x140231fa0`, `isEndMotin` `0x140232360`, `movePosition` `0x140232000`, `setState`
+  `0x140131f60`), which is where each method's meaning is to be read.
 
 `macros::read` reads them without a Squirrel VM (the arrays are literal): each function's name,
 parameters and array; `Macro::words` resolves the array into an event action's words, with the
