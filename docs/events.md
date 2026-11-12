@@ -1172,3 +1172,17 @@ Five commands appear only in the macros, never in the
 events; their operand counts come from every use there (`ebd_tables.rs`):
 `FIELDMAP_CHARA_SET_BRAIN_MODE` 2, `SET_DEFCHARA_BCID` 1, `CHARA_SET_PROGRAM_ROT` 1,
 `CHARA_LOOK_SET_TARGET` 7, `CHARA_LOOK_MOVE_WAIT` 1.
+
+## When events play (`Event/eventCheck/EventCheckDataAll.ecd`)
+
+Read by `0x1400548f0` into a map at `0x140df9a10` keyed by event number
+(`barrel_formats::event_check`): an i32 count (1,165, one per `EVENT_*`), then per event 14 i32
+(the record's +0x28 to +0x5c; word 1 is 10, 100 or 500 in the events looked at, a priority by
+the look of it; words 8 to 13 are -1 in most), a group count (613 events have 2, 309 none, 160
+have 3) and, per group, a word count and that many words (kept per group at the record's
++0x60). The groups hold condition code: words `0x700000NN` followed by their operands (event 30:
+`0x7000001f 15 0x70000020 31 0x70000027 4 1` and `0x7000007f 0 4 0 5`), presumably the
+conditions an event needs to start, the groups alternatives or stages; their opcodes are not
+named yet. The file's 121,876 bytes read exactly so. `Event/eventprocess/EventProcessDataAll.epd`
+(21,708 bytes, the same count first) is not read yet.
+
