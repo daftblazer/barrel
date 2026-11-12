@@ -1178,7 +1178,7 @@ fn encounters(exe: &Path) -> Result<()> {
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
     let name = |m: i32| monsters.get(m as usize).map_or_else(|| format!("#{m}"), |x| x.name.clone());
     for g in bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN) {
-        let drawn: Vec<String> = g.monsters.iter().map(|&(m, w)| format!("{} ×{w}", name(m))).collect();
+        let drawn: Vec<String> = g.monsters.iter().map(|&(m, most)| format!("{} up to {most}", name(m))).collect();
         let extra: Vec<String> = g.extra.iter().map(|&m| name(m)).collect();
         println!("{:3} kind {} {}..{}: {}{}", g.id, g.kind, g.count.0, g.count.1, drawn.join(", "), if extra.is_empty() { String::new() } else { format!("  + {}", extra.join(", ")) });
     }

@@ -69,6 +69,24 @@ pub fn death_chance(act: u32, amount: i32, user_level: i32, target: &crate::figh
 /// Whether a death event misses its target (`0x1401c1340`): under state 0x50, or when the
 /// target's virtual +0x40 says so (not read yet; `immune`). Otherwise it rolls its chance
 /// ([`crate::rng::Rng::chance`]).
+/// The monsters an encounter group brings (`0x14019da40`): a count rolled between its least and
+/// most, then its slots in order, each giving its monster up to its own most until the count is
+/// reached (so later slots fill only what earlier ones leave). The game places them itself (each
+/// comes with the position (0, -1, 0), "place it").
+pub fn encounter_monsters(group: &barrel_formats::battle_data::EncounterGroup, rng: &mut crate::rng::Rng) -> Vec<i32> {
+    let mut left = rng.range(group.count.0, group.count.1);
+    let mut out = Vec::new();
+    for &(monster, most) in &group.monsters {
+        let mut n = most;
+        while n > 0 && left > 0 {
+            out.push(monster);
+            n -= 1;
+            left -= 1;
+        }
+    }
+    out
+}
+
 pub fn death_blocked(states: &[TimedState], immune: bool) -> bool {
     immune || states.iter().any(|s| s.state == 0x50)
 }
@@ -919,5 +937,25 @@ mod tests {
         assert_eq!(reduce(200, None, &d), 180);
         let d = Defender { absorb: Some(50), ..none };
         assert_eq!(reduce(201, Some(1), &d), -100);
+    }
+}
+
+#[cfg(test)]
+mod encounter_tests {
+    use super::*;
+    use barrel_formats::battle_data::EncounterGroup;
+
+    #[test]
+    fn slots_fill_in_order() {
+        // Group 12: 3 or 4, Ore Rats (36) up to 2 then Stray Dogs (4) up to 2.
+        let g = EncounterGroup { id: 12, kind: 0, count: (3, 4), monsters: vec![(36, 2), (4, 2)], extra: vec![] };
+        let mut rng = crate::rng::Rng::seeded(1);
+        for _ in 0..50 {
+            let m = encounter_monsters(&g, &mut rng);
+            assert!(m == [36, 36, 4] || m == [36, 36, 4, 4], "{m:?}");
+        }
+        // A count above the slots' sum stops at the sum.
+        let g = EncounterGroup { count: (5, 5), monsters: vec![(1, 1), (2, 2)], ..g };
+        assert_eq!(encounter_monsters(&g, &mut rng), [1, 2, 2]);
     }
 }

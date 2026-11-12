@@ -474,14 +474,14 @@ const ENCOUNTER_GROUP_COUNT: usize = 226;
 #[derive(Clone, Debug, PartialEq)]
 pub struct EncounterGroup {
     pub id: i32,
-    /// Word 2: 0, 3 or 4 (meaning not read yet).
+    /// Word 2: 0, 3 or 4, which the battle setup keeps at +0x3c (meaning not read yet).
     pub kind: i32,
-    /// How many monsters, at least and at most.
+    /// How many monsters, at least and at most (the battle rolls between them).
     pub count: (i32, i32),
-    /// The monsters drawn from, with their weights.
+    /// Up to three (monster, most of it) slots, filled in order until the count is reached.
     pub monsters: Vec<(i32, i32)>,
-    /// Words 11 to 13: other monsters (bosses beside some groups; how they join is not read
-    /// yet).
+    /// Words 11 to 13: other monsters, which the battle setup lists apart at +0x48
+    /// (reinforcements beside some bosses, by the look of it; how they join is not read yet).
     pub extra: Vec<i32>,
 }
 
