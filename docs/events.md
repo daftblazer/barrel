@@ -991,8 +991,14 @@ commands need its own tables (its characters, its motions) rather than Escha's, 
 translation is right to leave them out. The characters at least work as in Escha: they are
 slots, bound by `t2/0x30` (`{slot, row}`, Escha's `ECT_VARIINDEX_INDEX_SETTING`, same word)
 in the event's setup (`event_mm01_*`: 10029 → row 0, 10030 → 1, 10032 → 3, 10033 → 4, 10028 →
-420), which the player already reads through its slots. The motions and the third operand
-are what need Sophie 2's own tables. (`BARREL_GAME=sophie2 barrel ebd-ops DIR WORD` reads
+420), which the player already reads through its slots. The motions are simpler than Escha's
+too: no motion table, the number names an animation file. Each character has a motion
+container (`data/x64/character/<model>/<model>_motion.elixir.gz`, in `PACK00_02.PAK` and the
+DLC packs) of `g1a` files named by six-digit numbers (`PC01A_000900.g1a`, `PC01A_001000.g1a`
+… 77 for `pc01a`), and the shared ones by body type hold the common motions (`cf00` 510,
+`cm00`, …: `CF00_172501.g1a`), so `s40`'s motion 1000 is `<model>_001000.g1a` and 172501 is
+`CF00_172501.g1a`. The third operand (0, 1,500, 3,000, …) is still to be read; the fifth is
+0 or -1. (`BARREL_GAME=sophie2 barrel ebd-ops DIR WORD` reads
 operand values with Sophie 2's table.)
 
 ## Script macros (`Script/*.nut`)
