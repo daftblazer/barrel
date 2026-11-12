@@ -37,6 +37,7 @@ pub mod recipe;
 pub mod save;
 pub mod table;
 pub mod voice;
+pub mod world;
 pub mod vorbis;
 pub mod xml_e;
 

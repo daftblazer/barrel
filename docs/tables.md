@@ -1286,16 +1286,23 @@ one, -1 none), one per tag in order; `tools/areas.py EXE` lists them.
 | 24, 28 | i32 -1, or small numbers in a few |
 | 32 | i32 -1, or 181 in one |
 | 36 | f32: 1.5 in most; 1.0 to 3.5 among the R records |
-| 40 to 60 | six i32: on the R records three pairs (2 to 7, 688 to 692) and a 0 or 1; 0 and -1 on the others |
+| 40 to 60 | six i32: the trip's days, then (event, days) twice and a 0 or 1 on the R records; 0 and -1 on the others |
 | 64 to 87 | three pointers, 0 in the file: filled at run time (+0x48 and +0x50 point to the two places' objects) |
 
 So the R records join two places on the world map (Colseit and "the forest that welcomes
-twilight" for R0), and the float is most likely the days the trip takes; the lettered
+twilight" for R0). **The trip's days** are bytes 40 to 60, not the float: `0x140171d80`
+gives the days at +0x38 once the event at +0x34 has been seen (byte 0 of its record at
+`0x1410a42d0`, the save's event list), else those at +0x30 once the event at +0x2c has, else
+those at +0x28. R1, Colseit to the Southern Ruins, takes 4 days, 3 after `EVENT_XG03_130`
+and 2 after `EVENT_XG03_140` (the routes out of Colseit and the old road) or `_160`/`_170`
+(those beyond the Upland Forest); the running game's trip from the ruins to Colseit took 4,
+which `barrel routes EXE SAVE` gives for that save (`world::Area::trip_days`). The float
+(1.5 in most) is still unexplained; the lettered
 records (A0 the forest's, A1 the old road's, ...) join two parts of one field ("A0R1: the
 forest entrance to the path to the settlement"). `0x14037f650` (which takes an area number) confirms the joining: it takes the two place
 objects from +0x48 and +0x50, and looks the short id up by name (`0x1404f14d0`) in the map
-object, the route's path. The float's meaning is still a reading from the values; no
-reader of +0x24 has been found yet. Record 85, past the
+object, the route's path. No
+reader of the float (+0x24) has been found yet. Record 85, past the
 table, is something else (pointers to "Knowledge: nothing", "Knowledge: new", ...).
 
 ### Places

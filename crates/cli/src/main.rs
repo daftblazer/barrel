@@ -43,6 +43,8 @@ usage:
   barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
+  barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
   barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
@@ -115,6 +117,9 @@ fn main() -> ExitCode {
         ["xml-e", file, out] => xml_e(Path::new(file), Path::new(out)),
         ["pak-xml-e", file] => pak_xml_e(Path::new(file)),
         ["faces", exe] => faces(Path::new(exe)),
+        ["enum", exe, name] => enum_list(Path::new(exe), name),
+        ["routes", exe] => routes(Path::new(exe), None),
+        ["routes", exe, save] => routes(Path::new(exe), Some(Path::new(save))),
         ["gestures", exe, numbers @ ..] => gestures(Path::new(exe), numbers),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
         ["battle", exe, monster, "--from", save] => battle_from_save(Path::new(exe), monster, Path::new(save)),
@@ -1753,6 +1758,44 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
         Some(0) => println!("the party wins"),
         Some(_) => println!("{} wins", m.name),
         None => println!("no winner after {} events", events.len()),
+    }
+    Ok(())
+}
+
+/// Lists the routes between world-map places and their trip days: with a save, the days now
+/// (the shorter times whose events the save has seen).
+fn routes(exe: &Path, save: Option<&Path>) -> Result<()> {
+    let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let areas = barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no area table")?;
+    let events = pe.enum_names("EVENT_MM01_OP1_111").map(|(n, _)| n).unwrap_or_default();
+    let seen: Vec<bool> = match save {
+        Some(file) => {
+            let data = read(file)?;
+            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+            let summary = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?);
+            summary.events.iter().map(|e| e.seen).collect()
+        }
+        None => Vec::new(),
+    };
+    for (n, a) in areas.iter().enumerate().filter(|(_, a)| a.id.starts_with('R')) {
+        let event = |e: i32| events.get(e as usize).copied().unwrap_or("?");
+        let [(base, _), (fewer, after), (fewest, last)] = a.days;
+        let now = if save.is_some() { format!(", now {}", a.trip_days(|e| seen.get(e as usize).copied().unwrap_or(false))) } else { String::new() };
+        let days = |d: i32| if d == 1 { "1 day".to_string() } else { format!("{d} days") };
+        println!("{n:3} {:4} {}, {} after {}, {} after {}{now}", a.id, days(base), days(fewer), event(after), days(fewest), event(last));
+    }
+    Ok(())
+}
+
+/// Numbers the names of the executable's enum that holds `name`, in order.
+fn enum_list(exe: &Path, name: &str) -> Result<()> {
+    let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let (names, _) = pe.enum_names(name).ok_or_else(|| format!("no enum holds {name}"))?;
+    for (i, n) in names.iter().enumerate() {
+        println!("{i:5} {n}");
     }
     Ok(())
 }
