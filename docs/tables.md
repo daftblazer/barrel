@@ -1440,7 +1440,9 @@ there. A list is 0x60-byte gimmicks ended by -1:
 | 0x10 | where it stands (metres) |
 | 0x1c | three floats: its size (3, 10, 3 for an exit; 1.5, 2, 1.5 for a breakable) |
 | 0x28, 0x2c | the events it appears after and until (-1 for none; `0x14035f2d0`) |
-| 0x30 to 0x5f | by type, not read yet: pointers among them (a map change's at +0x50, its list walked at +0x48 by `0x14006e1e4`) |
+| 0x30, 0x34 | -1; 256 on the chests, 0 on the others |
+| 0x38, 0x40, 0x48, 0x50 | four pointers, each type using its own: +0x38 the breakables', chests' and forced fights' records (pairs of numbers such as 448/449 and 345, and for a chest 24, 664, 99, not read yet), +0x48 a field map change's arrival (`FIELDMAP_CHANGE_EX`: the target map, 17 or 18, then floats; walked by `0x14006e1e4`), +0x50 the map change infos', message icons' and boxes' pairs of pointers (not followed yet) |
+| 0x58 | -1, 0 or 1 |
 
 The Forest Entrance has its two exits (each a `WORLDMAP_CHANGE_EX` with a `MAP_CHANGE_INFO`
 at the same place) and three breakable objects; most areas have 4 or 5 gimmicks. Gathering
