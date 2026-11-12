@@ -27,6 +27,15 @@ pub fn equipment_stat(item_stat: i32, traits: i32, quality: f32) -> i32 {
     ((item_stat + traits) as f32 * ((quality * 0.5 + 75.0) / 100.0)) as i32
 }
 
+/// The power an item's effect deals with, in place of the user's attack (the effect entry's
+/// +0x18, filled by `0x14029d270` when it builds an item's effects): the value at +4 of the
+/// held item (a float, presumably its quality) halved, plus 75, truncated: quality 50 gives
+/// 100, quality 100 gives 125.
+pub fn item_power(value: f32) -> i32 {
+    // The game divides by 100 and multiplies back before truncating; the same number.
+    (value * 0.5 + 75.0) as i32
+}
+
 /// A party member's chance to survive a fatal blow at 1 HP ("guts", the party character's
 /// virtual +0x130, `0x1401b8850`, run on each target after an effect): only when its HP is 0
 /// and guts has not already saved it since its last heal (+0x28d); stat 25 percent, at most
@@ -557,6 +566,11 @@ pub fn knockback(amount: i32, times: i32, resist: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn item_power_from_quality() {
+        assert_eq!((item_power(0.0), item_power(50.0), item_power(100.0), item_power(999.0)), (75, 100, 125, 574));
+    }
 
     #[test]
     fn states_count_and_replace() {

@@ -516,7 +516,11 @@ A battle item's effects are the item effects its synthesis gave it, and each row
 design columns (`Lv想定`, `コスト`, ...) are not read. Element tags are Fire, Water, Wind and
 Earth (0 to 3), anything else physical; 613 rows have no second act. For an item action the
 damage leaves out attack and defence and puts the effect entry's +0x18 in place of the user's
-attack (what fills it, and the quality bonus of flag 3, are not read yet)
+attack: `0x14029d270`, which builds a held item's effect entries (0x34 bytes each) from the
+effect definitions (0x58-byte records, two slots 0x18 apart from +0x28), sets +0x18 to the
+item's value at +4 (a float after its 16-bit id at +2; its quality, presumably) × 0.5 + 75,
+truncated (`0x14071a9a0` = 0.5, `0x1407b9b04` = 75; `battle::item_power`: quality 50 gives
+100). The quality bonus of flag 3 is not read yet
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 
 `barrel_game::days::World` keeps what the days touch (the date, the main generator, the
