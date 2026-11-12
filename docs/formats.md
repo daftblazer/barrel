@@ -337,6 +337,19 @@ becomes `(clamp(x, 0, 128) / 128 - 0.5) × 2` (`0x140160230`, the player's +0x19
 battle skill events) puts a character first; its numbers (151, 119, ...) look like another
 numbering, and its handler is not read. `barrel_audio::Library::effect` follows the player.
 
+## The font (`Data/x64/Font_EN/MainFont_x64_0.g1t` and a table in the executable)
+
+Each language has one atlas (`Font`, `Font_EN`, `Font_SC`, `Font_TC`): a 2048×2048 BC3 texture
+with the glyphs white in its alpha, packed in no grid. Where each glyph is comes from the
+executable: just before the file name (`0x14079ee58` in the English one) a descriptor ends
+with a pointer to the name and the glyph count (2,947); after the name's 0x18 bytes come the
+glyphs, 28 bytes each: `{u32 code, u16 x, u16 y, u16 width, u16 height, i32 x offset, i32 y
+offset (from the line's top to the glyph's), u32 advance, u32 0}`, in rising code order. Codes
+0 to 126 are ASCII by number (0 to 31 are 3×3 blanks); the rest are the character's UTF-8 bytes
+read as a big-endian number (`0xc2a2` ¢, `0xe280a6` …). The Latin glyphs reach 53 pixels below
+the line's top; a space advances 10, `A` 23 (`barrel_formats::font`; `barrel font-text EXE
+FONT.g1t OUT.png TEXT` lays out a line from both). The other languages' tables are not read yet.
+
 ## Saves (`GAMEDATA<NN>.pcsave`)
 
 The game saves to `Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/` (its

@@ -46,6 +46,7 @@ usage:
   barrel vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
   barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
   barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
+  barrel font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
   barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
@@ -112,6 +113,7 @@ fn main() -> ExitCode {
         ["quests", install] => quests(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["se-scan", wh2] => se_scan(Path::new(wh2)),
+        ["font-text", exe, g1t, out, text] => font_text(Path::new(exe), Path::new(g1t), Path::new(out), text),
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
@@ -896,6 +898,58 @@ fn stream_check(kvs: &Path) -> Result<()> {
         let worst = got.iter().zip(&want).flat_map(|(g, w)| g.iter().zip(w.iter()).map(|(a, b)| (a - b).abs())).fold(0f32, f32::max);
         println!("from frame {from}: {} frames (want {}), largest difference {worst:e}, {:?} (whole decode {whole_time:?})", got[0].len(), want[0].len(), t.elapsed());
     }
+    Ok(())
+}
+
+/// Writes `text` in the English font, white on dark gray, to a PNG (a check of the glyph
+/// table against the atlas).
+fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
+    use barrel_formats::{font, g1t as tex};
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let glyphs = font::glyphs(&pe, font::FONT_EN).ok_or("no font table at the English executable's address")?;
+    let atlas_data = read(g1t)?;
+    let atlas = tex::G1t::parse(&atlas_data).map_err(|e| format!("{}: {e}", g1t.display()))?;
+    let t = atlas.textures.first().ok_or("no texture")?;
+    let rgba = t.to_rgba8();
+    let line = glyphs.values().filter(|g| g.width > 3).map(|g| g.y_offset + i32::from(g.height)).max().unwrap_or(48);
+    let lines: Vec<&str> = text.split("\\n").collect();
+    let width = lines.iter().map(|l| l.chars().filter_map(|c| glyphs.get(&c)).map(|g| g.advance as i32).sum::<i32>()).max().unwrap_or(0) + 16;
+    let height = line * lines.len() as i32 + 16;
+    let (w, h) = (width.max(1) as usize, height.max(1) as usize);
+    let mut img = vec![0u8; w * h * 4];
+    for px in img.chunks_exact_mut(4) {
+        px.copy_from_slice(&[40, 40, 48, 255]);
+    }
+    let mut missing = 0;
+    for (k, l) in lines.iter().enumerate() {
+        let mut pen = 8;
+        let top = 8 + k as i32 * line;
+        for c in l.chars() {
+            let Some(g) = glyphs.get(&c) else {
+                missing += 1;
+                continue;
+            };
+            for gy in 0..i32::from(g.height) {
+                for gx in 0..i32::from(g.width) {
+                    let (x, y) = (pen + g.x_offset + gx, top + g.y_offset + gy);
+                    if x < 0 || y < 0 || x as usize >= w || y as usize >= h {
+                        continue;
+                    }
+                    let s = ((usize::from(g.y) + gy as usize) * t.width as usize + usize::from(g.x) + gx as usize) * 4;
+                    let a = u32::from(rgba[s + 3]);
+                    let d = (y as usize * w + x as usize) * 4;
+                    for ch in 0..3 {
+                        let src = u32::from(rgba[s + ch]);
+                        img[d + ch] = ((src * a + u32::from(img[d + ch]) * (255 - a)) / 255) as u8;
+                    }
+                }
+            }
+            pen += g.advance as i32;
+        }
+    }
+    std::fs::write(out, barrel_formats::png::encode_rgba(w as u32, h as u32, &img))?;
+    println!("{} glyphs; line height {line}; {w}x{h}; {missing} characters missing", glyphs.len());
     Ok(())
 }
 
