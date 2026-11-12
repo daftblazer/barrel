@@ -1220,6 +1220,17 @@ raises the trait's knowledge to 10). Then `0x14029f190` works out the counts: th
 within 1 and 5 (0 when `EquipCost` is 0); the uses left (+0x1c) are +0x20 plus the uses.
 `synthesis::uses`, `synthesis::equip_cost`.
 
+**Prices.** A trait of kind `ITEM_SUB_ITM_ADD_PRICE` ("High Price", +50 / +100 / +150)
+raises a price by `trunc(price / 100 × amount)` per slot, each from the raised price
+(`0x1402a2ef0`, its slots' upper bounds; `synthesis::price_traits`). Three formulas apply it
+over an item's three traits, all from `itemData`'s `cost` (row +0x24):
+`0x1402a3130`, `trunc(cost × (quality + 100) / 200)`, at least 1, which the item lists
+compare items by (`synthesis::worth`); and two reached through tables (callers not found):
+`0x1402a2fa0`, `2 × trunc((2q + 100) / 100) × cost + 5`, kept within 10 and 9,999, and
+`0x1402a3070`, `100 + trunc(2 × cost × (q + 50) / 10)`, within 100 and 9,999, where q is
+`0x14029e030`'s figure for the item (its quality / 3 × 2 to start with, and more not read).
+Which is the shop's buying price and which its selling price is still to be checked.
+
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
 `itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:
 `0x14036c3d0(12)`, at least 1) and N the number of items made (state +0x98), the first item

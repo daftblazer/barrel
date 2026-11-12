@@ -531,3 +531,40 @@ mod pp_tests {
         assert_eq!(super::start_pp(1, &[], &[false; 3], &skills, &[-1; 4]), 1);
     }
 }
+
+/// An item's price traits applied to a price (`0x1402a2ef0`): each `ITEM_SUB_ITM_ADD_PRICE`
+/// slot of each trait in turn adds `trunc(price / 100 × amount)` (its upper bound), the next
+/// one working from the raised price.
+pub fn price_traits(mut price: i32, traits: &[&barrel_formats::battle_data::Trait]) -> i32 {
+    for t in traits {
+        for s in t.slots.iter().take(2).filter(|s| s.kind == "ITEM_SUB_ITM_ADD_PRICE") {
+            price += (price as f32 / 100.0 * s.max as f32) as i32;
+        }
+    }
+    price
+}
+
+/// An item's worth by its quality (`0x1402a3130`, which the item lists compare items by):
+/// `trunc(cost × (quality + 100) / 200)` (`itemData`'s `cost`), then its price traits, at
+/// least 1; 0 for an item with no cost.
+pub fn worth(cost: i32, quality: f32, traits: &[&barrel_formats::battle_data::Trait]) -> i32 {
+    if cost <= 0 {
+        return 0;
+    }
+    price_traits(((quality + 100.0) * cost as f32 / 200.0) as i32, traits).max(1)
+}
+
+#[cfg(test)]
+mod price_tests {
+    use barrel_formats::battle_data::{Trait, TraitSlot};
+
+    #[test]
+    fn price_traits_compound() {
+        let t = Trait { name: "High Price".into(), group: String::new(), slots: vec![TraitSlot { kind: "ITEM_SUB_ITM_ADD_PRICE".into(), min: 50, max: 50 }] };
+        assert_eq!(super::price_traits(100, &[&t, &t]), 225);
+        // Quality 50, cost 46: 46 × 150 / 200 = 34.5 → 34.
+        assert_eq!(super::worth(46, 50.0, &[]), 34);
+        assert_eq!(super::worth(46, 50.0, &[&t]), 51);
+        assert_eq!(super::worth(0, 50.0, &[]), 0);
+    }
+}
