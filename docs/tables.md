@@ -1572,7 +1572,14 @@ money to the party's display (`0x1401ce940`).
 The experience table is at `0x140cfc760` (English): 99 rows of two i32, one per level from 1
 (`0x14005fb40 (column, level)`). The first column is the experience a level needs in all (0,
 10, 20, 40, 70, 110 ... 89,620 at 49, 99,999 at 50, 999,999 at 99); the second, read only for
-levels up to 50, is another table (0, 0, 0, 4, 9, 15 ... 9,999 at 50) not followed yet. A party
+levels up to 50, is the alchemy level's: the level (`0x14107c4c8`) is how many of its totals in
+the first 50 rows the alchemy experience (`0x14109355c`) has (`0x14005fd20`; never below 3, as
+rows 1 to 3 are 0), a new game starting at level 3 with 4 experience (`0x14036a660`), and what
+the next level needs is the column at one level past it less the experience (`0x14036a700`).
+The synthesis result screen hands out a synthesis's experience (`synthesis::experience`) 3 a
+frame while more than 20 remain and then 1, checking for a new level after each step
+(`0x14036a690`: message 0x13 with the level; 50 unlocks an achievement, a no-op here).
+`growth::alchemy_level`, `alchemy_to_next`. A party
 member's record keeps its level at +4 and its experience at +8; what it still needs
 (`0x14032dc50`) is the first column at one level past its own, held at the limit of 50 plus
 bonus value 2 (`0x14002f2f0 (2)`, raised by the bonuses), less its experience, at least 0

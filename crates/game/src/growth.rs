@@ -85,6 +85,23 @@ mod tests {
     }
 }
 
+/// The alchemy level an alchemy experience reaches (`0x14005fd20`): how many of the experience
+/// table's second-column totals, in its first 50 rows, it has; as rows 1 to 3 need 0, never
+/// below 3, and 50 at most. A new game starts at level 3 with that row's 4 (`0x14036a660`; the
+/// level is kept at `0x14107c4c8`, the experience at `0x14109355c`).
+pub fn alchemy_level(table: &[(i32, i32)], exp: i32) -> i32 {
+    table.iter().take(50).take_while(|&&(_, need)| exp >= need).count() as i32
+}
+
+/// The alchemy experience still needed for the next level (`0x14036a700`): the second column at
+/// one level past `level`, less `exp`; `None` from level 50 (the column ends there).
+pub fn alchemy_to_next(table: &[(i32, i32)], level: i32, exp: i32) -> Option<i32> {
+    if level + 1 > 50 {
+        return None;
+    }
+    table.get(usize::try_from(level).ok()?).map(|&(_, need)| need - exp)
+}
+
 /// Which of a party member's three texts its friendship value (record +0x2a4, 0 to 100, raised
 /// each day by its place in the party list) shows (`0x14032cf00`): below 30 the first, below 60
 /// the second, else the third (from a table of 11 records of 0x30 bytes at `0x140d94a20`,
@@ -96,6 +113,19 @@ pub fn friendship_tier(friendship: f32) -> usize {
         1
     } else {
         2
+    }
+}
+
+#[cfg(test)]
+mod alchemy_tests {
+    #[test]
+    fn alchemy_levels() {
+        let table: Vec<(i32, i32)> = [0, 0, 0, 4, 9, 15].iter().map(|&n| (0, n)).chain((6..99).map(|k| (0, if k < 50 { 15 + 10 * (k - 5) } else { 0 }))).collect();
+        assert_eq!(super::alchemy_level(&table, 0), 3);
+        assert_eq!(super::alchemy_level(&table, 4), 4);
+        assert_eq!(super::alchemy_level(&table, 14), 5);
+        assert_eq!(super::alchemy_to_next(&table, 4, 4), Some(5));
+        assert_eq!(super::alchemy_to_next(&table, 50, 0), None);
     }
 }
 
