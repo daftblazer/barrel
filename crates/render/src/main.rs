@@ -1519,6 +1519,7 @@ fn main() -> Result<()> {
             }
             "--handheld" => settings = settings::RenderSettings::HANDHELD,
             "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
+            "--gsr" => settings.upscaler = settings::Upscaler::Gsr1,
             "--motion" => settings.motion = true,
             "--jitter" => settings.jitter = true,
             "--taa" => settings.taa = true,
@@ -2089,7 +2090,8 @@ fn main() -> Result<()> {
         }
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
-    let upscale_pipelines = if settings.fsr1() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu)?) } else { None };
+    let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
+    let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode)?) } else { None };
     let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
     let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 

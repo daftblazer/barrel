@@ -11,6 +11,8 @@ pub enum Upscaler {
     Bilinear,
     /// FSR 1: its edge-adaptive scale and sharpening (`upscale.rs`), when the scene is smaller.
     Fsr1,
+    /// Snapdragon GSR 1: one pass that scales and sharpens (`upscale.rs`, `gsr1.frag`).
+    Gsr1,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,12 +73,13 @@ impl RenderSettings {
 
     /// Whether RCAS runs on its own: sharpening asked for, the scene at the output's size.
     pub fn sharpen_only(&self) -> bool {
-        self.sharpen && !self.fsr1()
+        self.sharpen && !self.upscales()
     }
 
-    /// Whether FSR 1 runs: chosen and the scene smaller than the output.
-    pub fn fsr1(&self) -> bool {
-        self.upscaler == Upscaler::Fsr1 && self.scale < 1.0
+    /// Whether a spatial upscaler (FSR 1 or GSR 1) runs: chosen and the scene smaller than the
+    /// output.
+    pub fn upscales(&self) -> bool {
+        self.upscaler != Upscaler::Bilinear && self.scale < 1.0
     }
 
     /// The scene's size for an output of `width` × `height` (at least 1 × 1).
@@ -109,7 +112,7 @@ mod tests {
     fn presets() {
         assert_eq!(RenderSettings::preset("handheld"), Some(RenderSettings::HANDHELD));
         assert_eq!(RenderSettings::HANDHELD.scene_size(1920, 1080), (1440, 810));
-        assert!(RenderSettings::HANDHELD.fsr1() && !RenderSettings::DESKTOP.fsr1());
+        assert!(RenderSettings::HANDHELD.upscales() && !RenderSettings::DESKTOP.upscales());
         assert_eq!(RenderSettings::DESKTOP.scene_size(1280, 720), (1280, 720));
         // Halton 2, 3 from 1: (1/2, 1/3), (1/4, 2/3), (3/4, 1/9), ...
         assert_eq!(jitter(0), (0.0, 1.0 / 3.0 - 0.5));

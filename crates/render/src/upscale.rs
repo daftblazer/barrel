@@ -12,6 +12,16 @@ const FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv"));
 const EASU_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/easu.frag.spv"));
 const RCAS_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/rcas.frag.spv"));
+const GSR1_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/gsr1.frag.spv"));
+
+/// What the upscaler's passes do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// FSR 1: EASU scales, RCAS sharpens (RCAS alone when the sizes match).
+    Fsr1,
+    /// Snapdragon GSR 1: one pass that scales and sharpens.
+    Gsr1,
+}
 /// RCAS's sharpness in stops below the sharpest (FSR's samples use 0.2).
 pub const SHARPNESS_STOPS: f32 = 0.2;
 
@@ -20,9 +30,11 @@ pub struct Pipelines {
     pass: vk::RenderPass,
     set_layout: vk::DescriptorSetLayout,
     layout: vk::PipelineLayout,
-    modules: [vk::ShaderModule; 3],
+    modules: [vk::ShaderModule; 4],
     easu: vk::Pipeline,
     rcas: vk::Pipeline,
+    gsr1: vk::Pipeline,
+    mode: Mode,
 }
 
 struct Target {
@@ -42,10 +54,11 @@ pub struct Targets {
     sharp: Target,
     input: (u32, u32),
     output: (u32, u32),
+    mode: Mode,
 }
 
 impl Pipelines {
-    pub fn new(gpu: &Gpu) -> Result<Pipelines> {
+    pub fn new(gpu: &Gpu, mode: Mode) -> Result<Pipelines> {
         let d = &gpu.device;
         let attachment = [vk::AttachmentDescription::default()
             .format(FORMAT)
@@ -88,7 +101,7 @@ impl Pipelines {
                 let words: Vec<u32> = code.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
                 d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None)
             };
-            let modules = [module(POST_VERT)?, module(EASU_FRAG)?, module(RCAS_FRAG)?];
+            let modules = [module(POST_VERT)?, module(EASU_FRAG)?, module(RCAS_FRAG)?, module(GSR1_FRAG)?];
             let input = vk::PipelineVertexInputStateCreateInfo::default();
             let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
             let viewport = vk::PipelineViewportStateCreateInfo::default().viewport_count(1).scissor_count(1);
@@ -120,7 +133,8 @@ impl Pipelines {
             };
             let easu = make(modules[1])?;
             let rcas = make(modules[2])?;
-            Ok(Pipelines { pass, set_layout, layout, modules, easu, rcas })
+            let gsr1 = make(modules[3])?;
+            Ok(Pipelines { pass, set_layout, layout, modules, easu, rcas, gsr1, mode })
         }
     }
 
@@ -129,6 +143,7 @@ impl Pipelines {
         unsafe {
             d.destroy_pipeline(self.easu, None);
             d.destroy_pipeline(self.rcas, None);
+            d.destroy_pipeline(self.gsr1, None);
             for m in self.modules {
                 d.destroy_shader_module(m, None);
             }
@@ -142,6 +157,7 @@ impl Pipelines {
 impl Targets {
     /// Targets for a scene of `input` pixels scaled to an output of `output` pixels.
     pub fn new(gpu: &Gpu, p: &Pipelines, scene: vk::ImageView, sampler: vk::Sampler, input: (u32, u32), output: (u32, u32)) -> Result<Targets> {
+        let mode = p.mode;
         let d = &gpu.device;
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&sizes), None)? };
@@ -183,7 +199,7 @@ impl Targets {
         };
         // EASU's target only when it scales; RCAS then reads that, else the scene itself.
         let scene_set = set_for(scene)?;
-        let (upscaled, upscaled_set) = if input != output {
+        let (upscaled, upscaled_set) = if input != output && mode == Mode::Fsr1 {
             let t = target()?;
             let set = set_for(t.view)?;
             (Some(t), set)
@@ -191,7 +207,7 @@ impl Targets {
             (None, scene_set)
         };
         let sharp = target()?;
-        Ok(Targets { pool, scene_set, upscaled_set, upscaled, sharp, input, output })
+        Ok(Targets { pool, scene_set, upscaled_set, upscaled, sharp, input, output, mode })
     }
 
     /// The upscaled, sharpened scene, for the post pass to read.
@@ -217,6 +233,11 @@ impl Targets {
             d.cmd_draw(cb, 3, 1, 0, 0);
             d.cmd_end_render_pass(cb);
         };
+        if self.mode == Mode::Gsr1 {
+            let (w, h) = (self.input.0 as f32, self.input.1 as f32);
+            run(&self.sharp, p.gsr1, self.scene_set, &[1.0 / w, 1.0 / h, w, h]);
+            return;
+        }
         if let Some(upscaled) = &self.upscaled {
             let con: Vec<f32> = fsr::easu_constants(self.input, self.output).concat();
             run(upscaled, p.easu, self.scene_set, &con);

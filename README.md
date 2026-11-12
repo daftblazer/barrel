@@ -72,3 +72,14 @@ test runs with `SDL_AUDIO_DRIVER=dummy cargo test -p barrel-audio -- --ignored`.
 Extracted data goes in `work/`, which git ignores. No game data belongs in the repository.
 
 The name comes from the series' running "Barrel!" joke.
+
+## Third-party code
+
+Barrel's renderer carries ports of two upscalers' shaders, with their notices in the shader
+sources (`crates/render/shaders/`):
+
+- AMD FidelityFX Super Resolution 1.0 (`easu.frag`, `rcas.frag`): Copyright (c) 2021 Advanced
+  Micro Devices, Inc., MIT License.
+- Snapdragon Game Super Resolution 1 (`gsr1.frag`): Copyright (c) 2023, Qualcomm Innovation
+  Center, Inc., BSD 3-Clause License. Binary builds reproduce its notice, conditions and
+  disclaimer as given in that file.

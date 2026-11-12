@@ -165,6 +165,15 @@ Validation (the Khronos layer, every mode): clean. The motion target needs the d
 `independentBlend` (enabled when present; desktop, Turnip and Mali have it), and the post
 pipeline has its own one-target blend state.
 
+**GSR 1.** `--gsr` (`Upscaler::Gsr1`) scales the scene with Snapdragon GSR 1 instead of FSR 1:
+one pass (`gsr1.frag`, from `sgsr1_shader_mobile.frag` in RGBA mode with green as the luma;
+edge threshold 8/255, sharpness 2) straight into the upscaler's output, against FSR 1's two.
+Precision qualifiers stay as in the original (mediump colour maths, which Adreno runs at half
+precision); desktop GLSL refuses them on constructors, so those were dropped. At 0.75 scale
+into 1080p it is far sharper than bilinear and cleaner than FSR 1 (less ringing, a little less
+crisp). Which one the handheld preset uses is decided by timing both on the RP6. FSR 1 and the
+default frame are byte-identical to before.
+
 **FSR 2, 3 and 4: plan** (researched 2026-11-12).
 
 - *FSR 2 and FSR 3.1's upscaler* are one algorithm line, open under MIT: FSR 2.2's own
