@@ -41,6 +41,9 @@ pub const CHARA_MOTION_SET: u32 = 0x7300_0005;
 pub const EVENT_VOICE_PLAY: u32 = 0x7500_001f;
 /// `s102` (`ECT_CHARA_VOICE_PLAY`): `{character, clip}`.
 pub const CHARA_VOICE_PLAY: u32 = 0x7300_0066;
+/// `u13` (`ECT_EVENT_SET_POST_EFFECT`): `{?, param, hundredths of a second, kind}`; the kinds
+/// are in `docs/events.md`, "Screen effects" (3: a cross-fade from the screen as it was).
+pub const EVENT_SET_POST_EFFECT: u32 = 0x7500_000d;
 /// `ECT_SOUND_SE_PLAY`: `{effect, a, volume %, pan ×100, d}` (`0x14005210c`): the volume and
 /// pan (0 left, 64 centre, 128 right) are divided by 100; `a` and `d` go to settings not named
 /// yet. The effect is a number for `0x140160070` (`barrel_audio::Library::effect`).
@@ -102,6 +105,9 @@ pub enum Step<'a> {
     Remove { action: usize, character: u32 },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
     Voice { action: usize, character: Option<u32>, clip: u32 },
+    /// A screen effect starts (`u13`): `kind` (`docs/events.md`, "Screen effects"), its
+    /// parameter, over `seconds`.
+    ScreenEffect { action: usize, kind: u32, param: i32, seconds: f32 },
     /// A sound effect plays (`ECT_SOUND_SE_PLAY`, or `s62` from a character) at `volume`
     /// (0 to 1) and `pan` (-1 left to 1 right).
     Effect { action: usize, character: Option<u32>, effect: u32, volume: f32, pan: f32 },
@@ -214,6 +220,9 @@ impl<'a> Player<'a> {
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
             (SOUND_BG_FADEOUT, [hundredths, ..]) => out.push(Step::Music { action, track: None, volume: 0.0, fade: *hundredths as f32 / 100.0 }),
+            (EVENT_SET_POST_EFFECT, [_, param, hundredths, kind, ..]) => {
+                out.push(Step::ScreenEffect { action, kind: *kind, param: *param as i32, seconds: *hundredths as i32 as f32 / 100.0 })
+            }
             (SOUND_SE_PLAY, [effect, _, volume, pan, ..]) => out.push(Step::Effect { action, character: None, effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) }),
             (CHARA_SE_PLAY, [character, effect, _, volume, pan, ..]) => {
                 out.push(Step::Effect { action, character: Some(*character), effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) })
@@ -445,6 +454,7 @@ mod tests {
                 Step::Remove { character, .. } => format!("{character} removed"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
+                Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),
                 Step::Music { track, fade, .. } => match track {
                     Some(t) => format!("music {t}"),
                     None => format!("music stops over {fade} s"),

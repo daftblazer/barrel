@@ -228,6 +228,12 @@ snapshot (the field camera or the manual one, whichever the event set last), mir
 render space; until the event sets one, the opening camera stands. The arrow keys still turn
 and zoom about it.
 
+**Cross-fades.** `u13` kind 3 (`docs/events.md`, "Screen effects") changes shots with a
+cross-fade: the stage keeps the latest screen effect and when it started; on the frame a new
+one starts, the last frame's scene image is copied into a "frozen" image before the new frame
+is drawn, and the post pass lays the frozen frame over the live one, its weight falling from
+1 to 0 over the effect's seconds. The other kinds are kept on the stage but not drawn yet.
+
 **Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
 mirrored into render space); the terrain is not culled (it winds the other way and is only seen
 from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are

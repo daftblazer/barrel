@@ -2033,6 +2033,14 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("      (wait for {who})");
             }
+            Step::ScreenEffect { action, kind, param, seconds } => {
+                const KINDS: [&str; 17] = [
+                    "fade", "blur", "old sepia", "cross-fade", "battle start", "negative", "glow", "refraction", "?", "hue", "gamma", "colour",
+                    "blur", "sepia", "monotone", "texture filter", "wave",
+                ];
+                let name = KINDS.get(kind as usize).copied().unwrap_or("?");
+                println!("{action:3} --- screen effect {kind} ({name}), {param}, over {seconds} s");
+            }
             Step::FieldCamera { action, change } => {
                 use barrel_game::field_camera::Change as C;
                 let rel = |r: bool| if r { "by" } else { "to" };

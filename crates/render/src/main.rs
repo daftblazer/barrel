@@ -543,6 +543,12 @@ struct Targets {
     scene_framebuffer: vk::Framebuffer,
     framebuffers: Vec<vk::Framebuffer>,
     glow: Option<glow::Targets>,
+    /// The scene as it was when a cross-fade began (`u13` kind 3), faded out over the live one;
+    /// whether it has been given a layout yet.
+    frozen: vk::Image,
+    frozen_memory: vk::DeviceMemory,
+    frozen_view: vk::ImageView,
+    frozen_ready: bool,
 }
 
 impl Targets {
@@ -581,7 +587,10 @@ impl Targets {
                 None,
             )
         };
-        let (scene, scene_memory) = image(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+        let (scene, scene_memory) =
+            image(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)?;
+        let (frozen, frozen_memory) = image(SCENE_FORMAT, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
+        let frozen_view = view(frozen, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
         let (depth, depth_memory) = image(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)?;
         let depth_view = view(depth, DEPTH_FORMAT, vk::ImageAspectFlags::DEPTH)?;
@@ -597,16 +606,32 @@ impl Targets {
         // The post pass samples the new scene image and the glow.
         let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(scene_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let frozen_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(frozen_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         unsafe {
             d.update_descriptor_sets(
                 &[
                     vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info),
                     vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&glow_info),
+                    vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&frozen_info),
                 ],
                 &[],
             )
         };
-        Ok(Targets { scene, scene_memory, scene_view, depth, depth_memory, depth_view, scene_framebuffer, framebuffers, glow: Some(glow) })
+        Ok(Targets {
+            scene,
+            scene_memory,
+            scene_view,
+            depth,
+            depth_memory,
+            depth_view,
+            scene_framebuffer,
+            framebuffers,
+            glow: Some(glow),
+            frozen,
+            frozen_memory,
+            frozen_view,
+            frozen_ready: false,
+        })
     }
 
     fn destroy(&mut self, gpu: &Gpu) {
@@ -617,6 +642,9 @@ impl Targets {
                 d.destroy_framebuffer(fb, None);
             }
             d.destroy_framebuffer(self.scene_framebuffer, None);
+            d.destroy_image_view(self.frozen_view, None);
+            d.destroy_image(self.frozen, None);
+            d.free_memory(self.frozen_memory, None);
             if let Some(g) = self.glow.take() {
                 g.destroy(gpu);
             }
@@ -1706,7 +1734,7 @@ fn main() -> Result<()> {
     let post_subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&post_ref)];
     let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass), None)? };
     // The post pass's one texture: the scene.
-    let post_binding = [0, 1].map(|b| {
+    let post_binding = [0, 1, 2].map(|b| {
         vk::DescriptorSetLayoutBinding::default()
             .binding(b)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -1714,7 +1742,7 @@ fn main() -> Result<()> {
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)
     });
     let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
-    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
+    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 3 }];
     let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&post_sizes), None)? };
     let post_layouts = [post_set_layout];
     let post_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))?[0] };
@@ -1831,7 +1859,7 @@ fn main() -> Result<()> {
         vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
         vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
     ];
-    let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 4 }];
+    let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 8 }];
     let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
     let no_input = vk::PipelineVertexInputStateCreateInfo::default();
     let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
@@ -2093,6 +2121,8 @@ fn main() -> Result<()> {
     let mut last_frame = std::time::Instant::now();
     let mut stale = false;
     let mut paused = false;
+    // The start time of the last screen effect seen (a new one starts a cross-fade).
+    let mut last_effect: Option<f32> = None;
     for frame in 0..frames {
     // The real time since the last frame (a window's frames are real time).
     let now = std::time::Instant::now();
@@ -2328,6 +2358,20 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // A cross-fade (u13 kind 3): the frame it starts on keeps the last frame as it was, then
+    // the live scene fades in over it.
+    let (freeze_now, frozen_weight) = match player.as_ref().and_then(|p| p.0.stage.screen_effect.map(|e| (e, p.0.stage.time))) {
+        Some(((3, _, seconds, since), now)) => {
+            let fresh = last_effect != Some(since);
+            if fresh {
+                eprintln!("frame {frame}: cross-fade over {seconds} s");
+            }
+            last_effect = Some(since);
+            let t = if seconds > 0.0 { ((now - since) / seconds).clamp(0.0, 1.0) } else { 1.0 };
+            (fresh && frame > 0, 1.0 - t)
+        }
+        _ => (false, 0.0),
+    };
     // The current field's distant view follows the eye (plus the field's sphere offset).
     if let Some(Some(inst)) = sky_instances.get(current_field as usize) {
         let offset = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.sphere_offset).unwrap_or([0.0; 3]);
@@ -2393,7 +2437,21 @@ fn main() -> Result<()> {
         gpu.upload(look_mem, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) })?;
     }
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
+    let frozen_ready = targets.frozen_ready;
+    targets.frozen_ready = true;
     let record = |cb: vk::CommandBuffer| unsafe {
+        // The frozen frame: copied from the last frame's scene when a cross-fade starts; given
+        // its layout once otherwise.
+        if freeze_now {
+            barrier(d, cb, targets.scene, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
+            barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+            let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
+            let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width, height, depth: 1 });
+            d.cmd_copy_image(cb, targets.scene, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, targets.frozen, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
+            barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        } else if !frozen_ready {
+            barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        }
         let clear = [
             vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
             vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
@@ -2478,7 +2536,10 @@ fn main() -> Result<()> {
         );
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[post_set], &[]);
-        d.cmd_push_constants(cb, post_layout, vk::ShaderStageFlags::FRAGMENT, 0, &rate.to_le_bytes());
+        let mut post_push = [0u8; 8];
+        post_push[..4].copy_from_slice(&rate.to_le_bytes());
+        post_push[4..].copy_from_slice(&frozen_weight.to_le_bytes());
+        d.cmd_push_constants(cb, post_layout, vk::ShaderStageFlags::FRAGMENT, 0, &post_push);
         d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
         d.cmd_set_scissor(cb, 0, &[area]);
         d.cmd_draw(cb, 3, 1, 0, 0);
