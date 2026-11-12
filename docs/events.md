@@ -340,7 +340,12 @@ each character runs them on its own:
 - `s4` (`ECT_CHARA_POS_SET`) places it (see "Placing characters").
 
 That a `p3` (`ECT_MACRO_CHARA_WAIT`) waits until a character has done what it was told (its
-timer and queued commands) would fit, but is not read yet.
+timer and queued commands) would fit, but is not read yet. The oracle agrees: in
+`EVENT_MM01_OP1_131` the main action starts Escha's walk (`w1 12`: `s18` to the desk, `s21 0
+30`), then `p3 0`, then the first line, and the game shows the line with Escha already at
+Marion's side; in 212 Logy's first line comes once he has stopped. The scheduler holds a `p3 c`
+while any other running action still has character commands (`0x73…`) for `c` to run, so the
+line waits for the walk (131: 14.0 → 17.5 s; 212: 8.0 → 11.5 s; 111 and 222 unchanged).
 
 Events also add invisible markers as characters: `Chara.xml` rows 590 to 603 are
 `ID_DUMMY_POS_000` to `_013`; rows 591 to 602 (`_001` to `_012`) are added (`q3`) and set up

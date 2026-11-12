@@ -466,6 +466,23 @@ impl<'a> Player<'a> {
             let (now, action, pc) = threads[t];
             threads[t].2 = pc + 1;
             let c = self.actions[action][pc];
+            // p3: wait while another running action still has commands for that character (its
+            // command runner busy, `docs/events.md`, "Waiting for a character"): retry once the
+            // earliest of them has moved on.
+            if let (CHARA_WAIT, [character, ..]) = (c.word, c.operands) {
+                let busy = (0..threads.len())
+                    .filter(|&k| k != t)
+                    .filter(|&k| {
+                        let (_, a, from) = threads[k];
+                        self.actions[a].get(from..).is_some_and(|rest| rest.iter().any(|r| r.word >> 24 == 0x73 && r.operands.first() == Some(character)))
+                    })
+                    .map(|k| threads[k].0)
+                    .fold(None, |m: Option<f32>, v| Some(m.map_or(v, |m| m.min(v))));
+                if let Some(ready) = busy {
+                    threads[t] = (ready.max(now) + 1e-4, action, pc);
+                    continue;
+                }
+            }
             if let Some(to) = self.jump(action, c) {
                 threads[t].2 = to;
                 continue;
