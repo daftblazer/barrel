@@ -113,6 +113,7 @@ fn main() -> ExitCode {
         ["faces", exe] => faces(Path::new(exe)),
         ["gestures", exe, numbers @ ..] => gestures(Path::new(exe), numbers),
         ["duel", exe, a, b] => duel(Path::new(exe), a, b, None),
+        ["battle", exe, monster, "--from", save] => battle_from_save(Path::new(exe), monster, Path::new(save)),
         ["battle", exe, monster, party @ ..] if !party.is_empty() => battle(Path::new(exe), monster, party),
         ["duel", exe, a, b, "--equip", item] => duel(Path::new(exe), a, b, Some(item)),
         ["party", exe] => party(Path::new(exe)),
@@ -2435,5 +2436,76 @@ fn trait_kinds(exe: &Path) -> Result<()> {
     for (k, n) in barrel_formats::battle_data::trait_kinds(&pe).iter().enumerate() {
         println!("{k:3} {n}");
     }
+    Ok(())
+}
+
+/// A battle with a save's squad (its first three: levels, equipped stats, HP and MP now, skills)
+/// and the alchemists' battle items, against a monster.
+fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
+    use barrel_formats::battle_data as bd;
+    use barrel_game::fight::Event;
+    let data = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table")?;
+    let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table")?;
+    let lists = bd::party_skills(&pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists")?;
+    let growth = bd::party_growth(&pe, bd::PARTY_GROWTH_EN).ok_or("no party growth table")?;
+    let install = exe.parent().ok_or("no install folder")?;
+    let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+    let item_rows = bd::item_effects(&barrel_formats::table::parse(&read(&install.join("Saves_EN/item/item_effect.xml"))?).map_err(|e| e.to_string())?, &acts);
+    let tags: Vec<&str> = item_rows.iter().map(|r| r.tag.as_str()).collect();
+    let traits = bd::traits(&barrel_formats::table::parse(&read(&install.join("Saves_EN/item/item_potential.xml"))?).map_err(|e| e.to_string())?, &tags);
+    let item_names: Vec<String> = barrel_formats::table::parse(&read(&install.join("Saves_EN/item/itemData.xml"))?)
+        .map_err(|e| e.to_string())?
+        .children
+        .iter()
+        .map(|r| r.attr("ItemName").unwrap_or("?").to_string())
+        .collect();
+    let table = bd::item_battles(&pe, bd::ITEM_BATTLE_EN, bd::ITEM_BATTLE_END_EN);
+    let save_data = read(file)?;
+    let body = barrel_formats::save::parse(&save_data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+    let s = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?);
+    let member_names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
+    let mut names = Vec::new();
+    let mut members = Vec::new();
+    for &c in s.squad.iter().take(3) {
+        let saved = s.party.iter().find(|m| m.character == c).ok_or_else(|| format!("character {c}: no party record"))?;
+        let c = c as usize;
+        let stats = growth.get(c).and_then(|l| l.get((saved.level as usize).wrapping_sub(1))).ok_or_else(|| format!("character {c}: no growth row"))?;
+        let mut block = barrel_game::duel::party_block(saved.level, stats);
+        let [max_hp, max_mp, attack, defense, speed] = saved.equipped;
+        (block.hp, block.attack, block.defense, block.speed) = (max_hp, attack, defense, speed);
+        let mut member = barrel_game::skirmish::Member::new(block, max_mp, &lists[c], &skills).ok_or("no party attack")?;
+        member.now = Some((saved.hp, saved.mp));
+        for u in s.battle_items.get(c).into_iter().flatten() {
+            let Some(row) = table.iter().find(|b| b.item == u.item as i32) else { continue };
+            let name = item_names.get(u.item as usize).cloned().unwrap_or_default();
+            let action = barrel_game::battle::item_action(&name, row.target, row.wait, &u.effects, &item_rows);
+            let held_traits = u.traits.iter().filter_map(|&t| usize::try_from(t).ok().and_then(|t| traits.get(t)).cloned()).collect();
+            member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(u.quality), count: u.counts[0].max(0) as u32, traits: held_traits });
+        }
+        let items: Vec<String> = member.items.iter().map(|h| format!("{} ×{}", h.action.name, h.count)).collect();
+        println!("{} level {}: HP {}/{}, MP {}/{}, attack {} defense {} speed {}{}", member_names.get(c).unwrap_or(&"?"), saved.level, saved.hp, max_hp, saved.mp, max_mp, attack, defense, speed, if items.is_empty() { String::new() } else { format!(", items {}", items.join(", ")) });
+        names.push(format!("{} ({})", member_names.get(c).unwrap_or(&"?"), saved.level));
+        members.push(member);
+    }
+    let m = monsters.get(monster.parse::<usize>().map_err(|_| format!("{monster}: monster number"))?).filter(|m| !m.blocks.is_empty()).ok_or("no such monster")?;
+    let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) };
+    names.push(m.name.clone());
+    let acts_info = bd::acts(&pe, bd::ACTS_EN);
+    let kinds = bd::trait_kinds(&pe);
+    let rules = barrel_game::skirmish::ItemRules { acts: &acts_info, kinds: &kinds, effects: &item_rows };
+    let mut rng = barrel_game::rng::Rng::seeded(1);
+    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foe, rules, &mut rng, 1000);
+    for e in &events {
+        match e {
+            Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),
+            Event::Poisoned { who, damage, hp_left } => println!("{} takes {damage} poison damage ({hp_left} HP left)", names[*who]),
+            Event::Acted { who, skill, target, damage, hp_left, .. } => println!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left)", names[*who], names[*target]),
+            Event::Healed { who, skill, target, amount, hp_left, .. } => println!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", names[*who], names[*target]),
+        }
+    }
+    println!("{}", match winner { Some(0) => "the party wins".to_string(), Some(_) => format!("{} wins", m.name), None => format!("no winner after {} events", events.len()) });
     Ok(())
 }

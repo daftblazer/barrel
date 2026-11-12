@@ -22,6 +22,8 @@ pub struct Member<'a> {
     /// Items it carries: each as a battle action (`battle::item_action`), its power
     /// (`battle::item_power`) and how many.
     pub items: Vec<Held>,
+    /// HP and MP to start with when below their maxima (a save's current values).
+    pub now: Option<(i32, i32)>,
 }
 
 /// A carried item.
@@ -68,7 +70,7 @@ impl<'a> Member<'a> {
             .filter(|e| (1..=3).contains(&e.command) && e.level.is_some_and(|l| i32::from(l) <= level))
             .filter_map(|e| Some((skill(e)?, battle::party_mp_cost(e.mp, 0, 0, 0))))
             .collect();
-        Some(Member { block, mp, attack, skills, items: Vec::new() })
+        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None })
     }
 
     /// The costliest affordable heal aimed at its own side (one that revives, when `revive`).
@@ -94,7 +96,17 @@ impl<'a> Member<'a> {
 /// the monster n. Returns the events and the winning side (0 the party).
 pub fn skirmish(party: &[Member], foe: &Foe, rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
     let n = party.len();
-    let mut fighters: Vec<Fighter> = party.iter().map(|m| Fighter::new(&m.block, 0, 999).with_mp(m.mp)).collect();
+    let mut fighters: Vec<Fighter> = party
+        .iter()
+        .map(|m| {
+            let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
+            if let Some((hp, mp)) = m.now {
+                f.stats[stat::HP] = hp.clamp(0, f.stats[stat::MAX_HP]);
+                f.stats[stat::MP] = mp.clamp(0, f.stats[stat::MAX_MP]);
+            }
+            f
+        })
+        .collect();
     fighters.push(Fighter::new(&foe.block, 1, 999_999));
     let mut b = Battle::new(fighters);
     let mut events = Vec::new();

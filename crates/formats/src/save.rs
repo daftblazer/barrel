@@ -445,6 +445,9 @@ pub struct Summary {
     pub basket: Vec<ItemUnit>,
     pub container: Vec<ItemUnit>,
     pub materials: Vec<ItemUnit>,
+    /// `explore_equip/explore_item_escha` and `explore_item_logy`: the items each alchemist
+    /// takes into battle (25 slots each).
+    pub battle_items: [Vec<ItemUnit>; 2],
     /// `party`'s `Party` records.
     pub party: Vec<Member>,
     /// `party/m_squad`: the characters in the squad, in order (-1 slots left out).
@@ -492,6 +495,7 @@ pub fn summary(records: &[Record]) -> Summary {
         basket: list("m_unitKago"),
         container: list("m_unitContainer"),
         materials: list("m_unitMaterial"),
+        battle_items: ["explore_item_escha", "explore_item_logy"].map(|n| bytes(top("explore_equip").and_then(|r| r.child(n))).map(|d| item_units(&d)).unwrap_or_default()),
         party: match top("party").map(|r| &r.body) {
             Some(Body::Group(c)) => c.iter().filter(|r| r.name == "Party").filter_map(|r| match &r.body {
                 Body::Data(d) | Body::Raw(d) => member(d),

@@ -482,6 +482,13 @@ companions, 0.99 for others. That is the calendar's daily gain (`days::World::fr
 the runtime record's +0x2a4: the save's record is the runtime one with 12 bytes in front):
 139 days at most 0.11 a day give at most 15.29, nine days 0.99, and the leader none.
 
+The alchemists' battle items (`explore_equip/explore_item_escha`, `explore_item_logy`, 25
+item units each; `Summary::battle_items`), with their uses left in the first count (2 of 3 for
+a Bomb; 0 for a spent one). `barrel battle EXE MONSTER --from SAVE` fights with the save's
+squad, its first three (each at its level's growth row with the saved equipped max HP, attack,
+defense and speed, starting at its HP and MP now) and those items (quality, effects, traits and
+uses as saved, target and wait from the battle item table).
+
 The events (`event/m_eventListSaveData`, `save::EventRecord`): 1,165 records of 36 bytes, one
 per `EVENT_*` name in the executable's enum order (`EVENT_AA01_010`, `EVENT_MM01_OP1_011`, ...),
 the array at `0x1410a42d0` saved whole: seen (+0, 94 in one save), the day it was seen (+4,
