@@ -1659,6 +1659,24 @@ and fourth equipped items (`0x14029e7e0`) and adds level × it × the base attac
 speed / 1000 to those three; `0x14032e670` asks the same items for act 0x99
 (`ACT_PASSIVE_CHANGE_HP_MP`) and only answers whether any has it.
 
+## Item lists (executable)
+
+The held items (`docs/formats.md`, "Saves": 36-byte units) live in lists of one class (vtable
+`0x1408f7cb8`, set up by `0x14029f310 (list, kind, size, slots)` from `0x14035cb10`): the basket
+(kind 0, 120 slots, `0x1410bcab0` over `0x1410af510`), the container (1, 999), two lists of
+important items (2 and 3, 100 each), the materials (4, 200) and the battle's spoils (8, 40,
+`0x140d8de30`). A list keeps its kind (+8), its limit (+0xc, how many slots count; `0x14029f3b0`
+sets it, never past the size: the basket's 60 from the save's `item/limitSize`) and its size
+(+0x10); its room is the limit less the slots taken (`0x14029f410`). Adding (`0x14029f440`,
+method 3): in the materials list an item that stacks (`itemData` `isStack` 1, the loaded row's
++0x2c) joins the first slot within the limit holding the same item, its count (+0x22) going up;
+otherwise it takes the first empty slot within the limit, with the whole count when it stacks
+or with a count of 1 there and in each following empty slot, one per copy, when it does not.
+Units without a serial get the next (`0x14035cc30`: the counter at `0x14107c4c4`, saved as
+`item/ID`, given out then moved on by one, back to 0x3fff after 0x7fff), in lists of kinds 0
+to 4, 8 and 10; the item is then marked known (`0x140369840`, `0x140369520`).
+`barrel_game::inventory`.
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from

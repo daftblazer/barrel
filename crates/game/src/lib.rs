@@ -20,6 +20,7 @@ pub mod fight;
 pub mod event;
 pub mod face;
 pub mod gather;
+pub mod inventory;
 pub mod growth;
 pub mod gesture;
 pub mod library;
