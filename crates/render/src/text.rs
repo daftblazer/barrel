@@ -85,7 +85,7 @@ pub mod window {
     pub const AT_TAG: [f32; 4] = [352.0, 535.0, 627.0, 585.0];
     pub const AT_CORD: [f32; 4] = [340.0, 548.0, 374.0, 722.0];
     pub const AT_TEXT: [f32; 2] = [409.0, 596.0];
-    pub const TEXT_WIDTH: f32 = 521.0;
+    pub const TEXT_WIDTH: f32 = 482.0;
     pub const AT_NAME: [f32; 2] = [505.0, 560.0];
     /// The game's first line, "You haven't forgotten anything, have you, Escha?", spans 482
     /// pixels there: the text is sized to match.
@@ -102,14 +102,17 @@ impl Font {
         s.chars().map(|c| self.advance(c)).sum()
     }
 
-    /// Breaks `line` into lines no wider than `max` (atlas pixels): at spaces, or anywhere in
-    /// a word longer than a line (Japanese has no spaces).
+    /// Breaks `line` into lines no wider than `max` (atlas pixels), closing punctuation allowed to
+    /// hang past it: at spaces, or anywhere in a word longer than a line (Japanese has no spaces).
     pub fn wrap(&self, line: &str, max: f32) -> Vec<String> {
         let mut out = Vec::new();
         let mut cur = String::new();
         for word in line.split(' ') {
             let candidate = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
-            if self.width(&candidate) <= max {
+            // Closing punctuation may hang past the edge (the game keeps "…, have you, Escha?"
+            // on one line yet moves "no" after "…like a child," to the next).
+            let body = candidate.trim_end_matches(['?', '!', '.', ',', '…', '"', '。', '、', '」', '』', '！', '？']);
+            if self.width(body) <= max {
                 cur = candidate;
                 continue;
             }
