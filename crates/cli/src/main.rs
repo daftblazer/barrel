@@ -860,6 +860,11 @@ fn save(file: &Path) -> Result<()> {
         println!("character {}: level {} (exp {}), HP {}/{}, MP {}/{}, attack {} defense {} speed {}, equipped {:?}, friendship {:.2}", m.character, m.level, m.exp, m.hp, m.max_hp, m.mp, m.max_mp, m.attack, m.defense, m.speed, m.equipped, m.friendship);
     }
     println!("squad {:?}", s.squad);
+    println!("board seed {:?}, rank (rank, points) {:?}", s.board_seed, s.rank);
+    for (k, shop) in s.shops.iter().enumerate() {
+        let listed: Vec<String> = shop.iter().take(8).map(|w| format!("{}/{}/{}", w[0], w[1], w[2])).collect();
+        println!("shop {k}: {} wares (count/days/state) {} ...", shop.len(), listed.join(" "));
+    }
     for (label, list) in [("basket", &s.basket), ("container", &s.container), ("materials", &s.materials)] {
         let shown: Vec<String> = list.iter().take(12).map(|u| format!("{} q{}", names.get(u.item as usize).cloned().unwrap_or_else(|| format!("#{}", u.item)), u.quality)).collect();
         println!("{label} {}: {}{}", list.len(), shown.join(", "), if list.len() > 12 { ", ..." } else { "" });

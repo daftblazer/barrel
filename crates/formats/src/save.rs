@@ -393,6 +393,13 @@ pub struct Summary {
     pub party: Vec<Member>,
     /// `party/m_squad`: the characters in the squad, in order (-1 slots left out).
     pub squad: Vec<i32>,
+    /// `quest/randseed`: the request board's seed offset (the calendar's `board_offset`).
+    pub board_seed: Option<i32>,
+    /// `subject/job_rank` and `job_point`: the rank and its points.
+    pub rank: Option<(i32, i32)>,
+    /// `shop/shop_data`: four shops, each a u32 and 50 wares' (count, days, state), the
+    /// calendar's `Stock`.
+    pub shops: Vec<Vec<[i32; 3]>>,
 }
 
 pub fn summary(records: &[Record]) -> Summary {
@@ -422,6 +429,18 @@ pub fn summary(records: &[Record]) -> Summary {
             }).collect(),
             _ => Vec::new(),
         },
+        board_seed: bytes(top("quest").and_then(|r| r.child("randseed"))).and_then(|d| i32_at(&d, 0)),
+        rank: (|| {
+            let sub = top("subject")?;
+            Some((i32_at(&bytes(sub.child("job_rank"))?, 0)?, i32_at(&bytes(sub.child("job_point"))?, 0)?))
+        })(),
+        shops: bytes(top("shop").and_then(|r| r.child("shop_data")))
+            .map(|d| {
+                d.chunks_exact(4 + 50 * 12)
+                    .map(|shop| shop[4..].chunks_exact(12).map(|w| std::array::from_fn(|k| i32::from_le_bytes(w[4 * k..4 * k + 4].try_into().unwrap()))).collect())
+                    .collect()
+            })
+            .unwrap_or_default(),
         squad: bytes(top("party").and_then(|r| r.child("m_squad")))
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).filter(|&v| v >= 0).collect())
             .unwrap_or_default(),
