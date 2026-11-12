@@ -760,8 +760,8 @@ mod tests {
     fn trait_values_sum_the_kind_asked_for() {
         use barrel_formats::battle_data::{Trait, TraitSlot};
         let slot = |kind: &str, min, max| TraitSlot { kind: kind.into(), min, max };
-        let power = Trait { name: "Power+".into(), group: String::new(), level: 0, point: 0, slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 10, 10)] };
-        let mixed = Trait { name: "Mixed".into(), group: String::new(), level: 0, point: 0, slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 4, 8), slot("ITEM_SUB_ITM_ADD_PRICE", 50, 50)] };
+        let power = Trait { name: "Power+".into(), group: String::new(), level: 0, point: 0, kinds: [false; 9], slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 10, 10)] };
+        let mixed = Trait { name: "Mixed".into(), group: String::new(), level: 0, point: 0, kinds: [false; 9], slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 4, 8), slot("ITEM_SUB_ITM_ADD_PRICE", 50, 50)] };
         let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
         assert_eq!(trait_value(&[&power, &mixed], "ITEM_SUB_ITM_CHANGE_POWER", true, &mut rng), 16);
         assert_eq!(trait_value(&[&mixed], "ITEM_SUB_ITM_ADD_PRICE", false, &mut rng), 50);
@@ -776,8 +776,8 @@ mod tests {
         let row = |act| ItemEffect { name: String::new(), tag: String::new(), group: String::new(), effects: vec![fx(act)] };
         let rows = [row(0), row(9), row(21)];
         let slot = |kind: &str, v| TraitSlot { kind: kind.into(), min: v, max: v };
-        let t = Trait { name: "Fatal Blow".into(), group: String::new(), level: 0, point: 0, slots: vec![slot("ITEM_SUB_ITM_ADD_EFFCRIT", 100), slot("ITEM_SUB_BTL_ADD_USEEFFECT", 2)] };
-        let none = Trait { name: String::new(), group: String::new(), level: 0, point: 0, slots: vec![slot("ITEM_SUB_BTL_ADD_USEEFFECT", -1)] };
+        let t = Trait { name: "Fatal Blow".into(), group: String::new(), level: 0, point: 0, kinds: [false; 9], slots: vec![slot("ITEM_SUB_ITM_ADD_EFFCRIT", 100), slot("ITEM_SUB_BTL_ADD_USEEFFECT", 2)] };
+        let none = Trait { name: String::new(), group: String::new(), level: 0, point: 0, kinds: [false; 9], slots: vec![slot("ITEM_SUB_BTL_ADD_USEEFFECT", -1)] };
         let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
         assert_eq!(trait_effects(&[&t, &none], &rows, &mut rng), [fx(21)]);
     }

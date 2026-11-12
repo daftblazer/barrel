@@ -349,6 +349,22 @@ pub fn item_effects(root: &crate::table::Element, acts: &[&str]) -> Vec<ItemEffe
 }
 
 #[cfg(test)]
+mod trait_kind_tests {
+    #[test]
+    fn a_trait_fits_the_kinds_its_columns_name() {
+        let root = crate::table::parse_str(
+            r#"<Root><item_potential PotName="x" PotGrpTag="G" potLv="2" point="3" atk="-1" heal="-1" PotBase="ITEM_SUB_ITM_ADD_PRICE" min="50" max="50"/></Root>"#,
+        )
+        .unwrap();
+        let t = &super::traits(&root, &[])[0];
+        assert_eq!((t.level, t.point), (2, 3));
+        assert_eq!(t.kinds, [false, true, true, false, false, false, false, false, false]);
+        // atk is attack items (2), heal healing items (3); not weapons (10).
+        assert!(t.fits(2) && t.fits(3) && !t.fits(10) && !t.fits(1));
+    }
+}
+
+#[cfg(test)]
 mod item_effect_tests {
     use super::*;
 
@@ -399,6 +415,10 @@ pub struct Trait {
     pub level: i32,
     /// `point` (+0x24): the cost the trait screens show for it.
     pub point: i32,
+    /// Which kinds of item it can go on (+0x2c, nine flags: `mix`, `atk`, `heal`, `supEne`,
+    /// `supPar`, `wep`, `arm`, `acc`, `etc`): set when the row has the column at all, whatever its
+    /// value (the shipped rows write -1).
+    pub kinds: [bool; 9],
     pub slots: Vec<TraitSlot>,
 }
 
@@ -409,6 +429,19 @@ pub struct TraitSlot {
     pub kind: String,
     pub min: i32,
     pub max: i32,
+}
+
+/// The item kind (`itemData` `base`, the loaded row's +0x30) each of a trait's nine kind flags
+/// stands for (`0x1402a2e40`): mix 1, atk 2, heal 3, supEne 2, supPar 4, wep 10, arm 11, acc 12,
+/// etc 5.
+pub const TRAIT_KIND_ITEMS: [i32; 9] = [1, 2, 3, 2, 4, 10, 11, 12, 5];
+
+impl Trait {
+    /// Whether it can go on an item of kind `base` (`0x1400e2f60`): one of its set flags stands
+    /// for that kind.
+    pub fn fits(&self, base: i32) -> bool {
+        self.kinds.iter().zip(TRAIT_KIND_ITEMS).any(|(&on, kind)| on && kind == base)
+    }
 }
 
 /// The rows of `item_potential.xml`, in order (the trait numbers items hold). A slot's bounds
@@ -426,6 +459,7 @@ pub fn traits(root: &crate::table::Element, effect_tags: &[&str]) -> Vec<Trait> 
             group: row.attr("PotGrpTag").unwrap_or("").to_string(),
             level: int(row, "potLv"),
             point: int(row, "point"),
+            kinds: ["mix", "atk", "heal", "supEne", "supPar", "wep", "arm", "acc", "etc"].map(|k| row.attr(k).is_some()),
             slots: [("PotBase", "min", "max"), ("PotBase2", "min2", "max2")]
                 .iter()
                 .filter_map(|&(k, lo, hi)| {

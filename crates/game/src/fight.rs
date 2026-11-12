@@ -548,7 +548,7 @@ mod tests {
         let acts = [ActInfo { flags, limit: 50, last: 0 }, ActInfo { flags: [false; 12], limit: 9999, last: 0 }];
         use barrel_formats::battle_data::{Trait, TraitSlot};
         let slot = |kind: &str, v| TraitSlot { kind: kind.into(), min: v, max: v };
-        let t = Trait { name: String::new(), group: String::new(), level: 0, point: 0, slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 80), slot("ITEM_SUB_CHANGE_ACTUAL_POWER", 7)] };
+        let t = Trait { name: String::new(), group: String::new(), level: 0, point: 0, kinds: [false; 9], slots: vec![slot("ITEM_SUB_ITM_CHANGE_POWER", 80), slot("ITEM_SUB_CHANGE_ACTUAL_POWER", 7)] };
         let mut kinds = vec!["ITEM_SUB_ITM_CHANGE_POWER"];
         kinds.resize(39, "");
         kinds.push("ITEM_SUB_CHANGE_ACTUAL_POWER");

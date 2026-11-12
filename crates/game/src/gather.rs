@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn random_traits_come_from_the_level_range_without_repeats() {
-        let t = |level| barrel_formats::battle_data::Trait { name: String::new(), group: String::new(), level, point: 1, slots: Vec::new() };
+        let t = |level| barrel_formats::battle_data::Trait { name: String::new(), group: String::new(), level, point: 1, kinds: [true; 9], slots: Vec::new() };
         let traits = vec![t(1), t(4), t(5), t(12), t(6)];
         let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
         let got = random_traits(&traits, (4, 6), 5, |_| true, &mut rng);

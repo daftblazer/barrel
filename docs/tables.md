@@ -1399,7 +1399,11 @@ row +0x30 is set and a record without a fixed trait in word 13, it draws random 
 `0x1402a26a0 (item, word 6 + b, word 7 + b)` with b the trait bonus, so words 6 and 7 are the
 random traits' level range (1 to 10, then 4 to 20, where set). `0x1402a26a0` gathers the
 candidates: every trait whose `potLv` lies within the range (the low end kept within 0 and 98,
-the high end at most 99 and not below the low) and that fits the item (`0x1400e2f60`); then word
+the high end at most 99 and not below the low) and that fits the item (`0x1400e2f60`: the trait's nine kind flags at +0x2c, one per column
+`mix`, `atk`, `heal`, `supEne`, `supPar`, `wep`, `arm`, `acc`, `etc`, stand for item kinds
+(`itemData` `base`, row +0x30) 1, 2, 3, 2, 4, 10, 11, 12 and 5 (`0x1402a2e40`), and one of the
+set ones must be the item's; a flag is set when the row has the column at all, whatever its
+value, so the shipped rows' -1s mean yes; `Trait::fits`); then word
 5 (0 to 3) plus bonus kind 2 traits are drawn, each uniformly from what is left and taken out
 (`gather::random_traits`). The bonuses are
 `0x1400d3030 (kind, gather type, cleared)` (`gather::bonus`): kind 0, the extra picks, is the
