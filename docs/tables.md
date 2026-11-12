@@ -1890,13 +1890,29 @@ is not traced yet. These are not `s116`'s segments, which are fixed frame ranges
 (`docs/events.md`).
 
 Field NPCs are not in the field tables: `Saves/field/<FIELD>.xml` holds the field's camera,
-fog, light, wind and shader settings, and the field's `.opl2` only its objects. Where a
-town's own NPCs come from is still open. There are ten: character numbers 10048 to 10057, all
-of them put in event mode with `q7` by 201 events (most in the `QC*` chapters). No event adds
-them with `q3` or `q4` (only `EVENT_YY10_024` adds any number above 10000), so the field
-places them itself. The field-character manager finds a character by its number at +0x78
-(`0x1400760c0`, two lists at +0x10 and +0x28, then `0x140270230`), and no code builds the
-numbers from 10048 directly, so they presumably come from data.
+fog, light, wind and shader settings, and the field's `.opl2` only its objects. The town's people are placed from compiled data (`barrel_formats::npc`, `barrel
+town-people EXE [MAP]`). `nspFM::clsFMDataNpc` (built by `0x140236db0` into `[0x140dfc1f8]`,
+filled by `0x14023e440`) copies three tables out of the executable:
+
+- **Conditions:** 190 pairs of list pointers from `0x1408aab70`. Condition `i` is pair `i - 1`
+  (read at +0x10 + 16 × `i`). It holds (`0x14035f320`) when every event of its first list has
+  been seen and none of its second.
+- **A second table:** 1,494 entries of 0x40 bytes from `0x1408ab750` (to +0xbf0), not read.
+- **Placements:** 841 records of 0x98 bytes from `0x1408c2cd0` (to +0xc08). Each holds a map
+  (+0), five pointers to -1-ended condition lists (+8 to +0x28), a `Chara.xml` row (+0x30), a
+  value passed to the builder (+0x34), and more not read (+0x50 to +0x5c look like a position
+  and an angle). Most are on the town maps: 154 on map 3, 114 on map 9, 104 on map 4.
+
+When a map loads, `0x140071d00 (manager, map)` walks its placements. One passes when its first
+list is empty or one of its conditions holds, and no condition in the other four does. A
+passing placement adds its character, a `nspFM::clsFMNpc` (`0x14026f700` → `0x14026e7e0`) whose
+number (+0x78) is the `Chara` row, unless that character is already there. Rows 318 to 322
+instead pick a random companion from the party list (`0x140330540`, at most five).
+
+The events' town characters 10048 to 10057 (put in event mode with `q7` by 201 events, mostly in
+the `QC*` chapters, never added with `q3` or `q4`) are a different numbering. The event command
+handler remaps number ranges (`0x1401ddc71`: 825 to 10,000 by +9,175, and a range from 10,026),
+which is presumably how they reach these rows; that is not read yet.
 
 ## Deliveries (`Saves/delivery/DeliveryData.xml`)
 
