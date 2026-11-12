@@ -210,6 +210,21 @@ none). Their programs are the `.kps` packs in `Data/x64/PostEffect/pe_pack.elixi
 `EVENT_MM01_OP1_111`'s main action changes shots with `u13 -1 0 50 3` ... `u14`: a half-second
 cross-fade from the last shot to the new one.
 
+**Telops** (narration cards: `u55`, `u56`, class `EventTelop`, handler `0x1402196f0`). The
+voiced narration of the openings (`EVENT_MM01_OP1_111` cards 38 to 44 with voices 12907 to
+12913, `_212` cards 45 to 50) and the ending is drawn as pre-rendered text, the textures
+`WinXls_EN/a15_telop_<event>_NN.g1t` (texture indices 151 to 163 in the UI table at
+`0x140db9520`, 16-byte `{name, index << 32}` records). `u55 {card}` picks the card: layout id
+`0x140d85ce0[card]` (51 entries, 960 to 1010; the opening's 986 to 998). `u56 {from, to,
+hundredths}` (all hundredths) moves its opacity (+0x2d8 start, +0x2dc goal, +0x2e0 now, +0x2e4
+time left; `0x140219240` moves it linearly each frame); events fade a card in over 1 s with
+the voice and out over 0.5 s.
+
+The layout ids index `0x140dd9080` (16 bytes from id 0x165 on: `{node pointer, x, y}`;
+`0x140373f40`), the cards at (180, 390). The nodes are the UI layouts compiled into the
+executable (the `WinXls` sheets ship no data files): 0x28-byte records starting `{u32 part,
+u32 cut, ...}` (part 0x128 on for the telops), their cut rectangles not yet found.
+
 **Fades** (`u22`, `ECT_EVENT_CONTRAST_SET_MIX`, 3,159 uses). The command goes to the `Contrast`
 objects (vtable `0x1407275f8`; virtual +0x20 `0x14003d3f0`): `{id, preset, hundredths of a
 second}`, the id matching the object's +0x58 (1 in the story events). `0x14003ce20` takes

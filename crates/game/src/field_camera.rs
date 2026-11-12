@@ -19,7 +19,7 @@
 //! runs out. The angle `t5` and `t20`'s second operand set (+0x38..+0x44) is ignored.
 
 /// A value on its way to a goal.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Tween {
     pub from: f32,
     pub to: f32,

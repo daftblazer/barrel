@@ -202,6 +202,9 @@ pub struct Stage {
     pub screen_effect: Option<(u32, i32, f32, f32)>,
     /// The latest fade (`u22`): preset, seconds, and the stage time it started.
     pub fade: Option<(u32, f32, f32)>,
+    /// The narration card on screen (`u55`) and its opacity (`u56`).
+    pub telop: Option<u32>,
+    pub telop_alpha: crate::field_camera::Tween,
     /// The latest line ([`Stage::line_shown`] says whether it is still up).
     pub line: Option<Line>,
     /// How long a line stays up, for playback nobody reads along with: the reading time the
@@ -315,6 +318,8 @@ impl Stage {
             }
             Step::FieldChange { map, .. } => self.field = Some(*map),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
+            Step::Telop { card, .. } => self.telop = Some(*card),
+            Step::TelopAlpha { from, to, seconds, .. } => self.telop_alpha = crate::field_camera::Tween { from: *from, to: *to, seconds: *seconds, elapsed: 0.0 },
             Step::ScreenEffect { kind, param, seconds, .. } => self.screen_effect = Some((*kind, *param, *seconds, self.time)),
             Step::FieldCamera { change, .. } => {
                 match self.field_camera.as_mut() {
@@ -387,6 +392,7 @@ impl Stage {
                 p.position = Some(m.position());
             }
         }
+        self.telop_alpha.step(dt);
         self.time += dt;
     }
 

@@ -2034,6 +2034,8 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("      (wait for {who})");
             }
+            Step::Telop { action, card } => println!("{action:3} --- narration card {card}"),
+            Step::TelopAlpha { action, from, to, seconds } => println!("{action:3} --- narration card opacity {from} -> {to} over {seconds} s"),
             Step::Fade { action, preset, seconds } => println!("{action:3} --- fade (preset {preset}) over {seconds} s"),
             Step::ScreenEffect { action, kind, param, seconds } => {
                 const KINDS: [&str; 17] = [

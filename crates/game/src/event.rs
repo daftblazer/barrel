@@ -51,6 +51,11 @@ pub const EVENT_SET_POST_EFFECT: u32 = 0x7500_000d;
 /// screen's colour overlay moves from the preset's first colour to its second over the time
 /// (`docs/events.md`, "Fades").
 pub const EVENT_CONTRAST_SET_MIX: u32 = 0x7500_0016;
+/// `u55` (`EventTelop`): `{card}`: shows narration card `card` (the voiced lines of the
+/// openings, the ending), layout id `0x140d85ce0[card]` (960 + ...; `docs/events.md`, "Telops").
+pub const EVENT_TELOP: u32 = 0x7500_0037;
+/// `u56`: `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to`.
+pub const EVENT_TELOP_ALPHA: u32 = 0x7500_0038;
 /// `ECT_SOUND_SE_PLAY`: `{effect, a, volume %, pan ×100, d}` (`0x14005210c`): the volume and
 /// pan (0 left, 64 centre, 128 right) are divided by 100; `a` and `d` go to settings not named
 /// yet. The effect is a number for `0x140160070` (`barrel_audio::Library::effect`).
@@ -119,6 +124,10 @@ pub enum Step<'a> {
     ScreenEffect { action: usize, kind: u32, param: i32, seconds: f32 },
     /// The screen's colour overlay starts a fade (`u22`): preset `preset` over `seconds`.
     Fade { action: usize, preset: u32, seconds: f32 },
+    /// A narration card is chosen (`u55`).
+    Telop { action: usize, card: u32 },
+    /// The narration card's opacity moves from `from` to `to` (0 to 1) over `seconds` (`u56`).
+    TelopAlpha { action: usize, from: f32, to: f32, seconds: f32 },
     /// A sound effect plays (`ECT_SOUND_SE_PLAY`, or `s62` from a character) at `volume`
     /// (0 to 1) and `pan` (-1 left to 1 right).
     Effect { action: usize, character: Option<u32>, effect: u32, volume: f32, pan: f32 },
@@ -232,6 +241,13 @@ impl<'a> Player<'a> {
             (SOUND_BG_PLAY, [track, volume, ..]) => out.push(Step::Music { action, track: Some(*track), volume: *volume as f32 / 100.0, fade: 0.0 }),
             (SOUND_BG_STOP, _) => out.push(Step::Music { action, track: None, volume: 0.0, fade: 0.0 }),
             (SOUND_BG_FADEOUT, [hundredths, ..]) => out.push(Step::Music { action, track: None, volume: 0.0, fade: *hundredths as f32 / 100.0 }),
+            (EVENT_TELOP, [card, ..]) => out.push(Step::Telop { action, card: *card }),
+            (EVENT_TELOP_ALPHA, [from, to, hundredths, ..]) => out.push(Step::TelopAlpha {
+                action,
+                from: *from as i32 as f32 / 100.0,
+                to: *to as i32 as f32 / 100.0,
+                seconds: *hundredths as i32 as f32 / 100.0,
+            }),
             (EVENT_CONTRAST_SET_MIX, [_, preset, hundredths, ..]) => out.push(Step::Fade { action, preset: *preset, seconds: *hundredths as i32 as f32 / 100.0 }),
             (EVENT_SET_POST_EFFECT, [_, param, hundredths, kind, ..]) => {
                 out.push(Step::ScreenEffect { action, kind: *kind, param: *param as i32, seconds: *hundredths as i32 as f32 / 100.0 })
@@ -470,6 +486,8 @@ mod tests {
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),
                 Step::Fade { preset, seconds, .. } => format!("fade {preset} over {seconds} s"),
+                Step::Telop { card, .. } => format!("narration card {card}"),
+                Step::TelopAlpha { from, to, seconds, .. } => format!("narration card {from} -> {to} over {seconds} s"),
                 Step::Music { track, fade, .. } => match track {
                     Some(t) => format!("music {t}"),
                     None => format!("music stops over {fade} s"),
