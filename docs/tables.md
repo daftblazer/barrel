@@ -656,7 +656,12 @@ skills, among them the Floating Alchemy bombs (an area, presumably). No code rea
 the skill table (`0x140d51ed0`, 96-byte records): its ten references read +0x8, +0x10, +0x18,
 +0x1c, +0x20, +0x24, +0x58 and the effect list from +0x28 (`0x14015f620`, `0x14015faea`), never
 +0x14, so it may be unused in this game; how many targets an action hits has to come from
-elsewhere (the action or its effects). `Skill::target` and
+elsewhere (the action or its effects). The skill action (vtable `0x140808ba8`, its execute in
+slot 5, `0x1401bb650`) takes its targets as a list: `0x140189fc0` copies the battle's current
+selection (an object at +0xab8 of the battle, a vector of fighter pointers from its +0x1f8 to
++0x200) into a local vector, and every step after that (the turn mark at the fighter's +0x29c,
+the hit loop from `0x1401bb956`) walks the whole vector. So one action can hit several
+fighters, and how many is decided where that selection is filled (not read yet). `Skill::target` and
 `spread` hold them, and the duel puts stat states on the target's side.
 
 ### A first duel
