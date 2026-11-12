@@ -1128,7 +1128,14 @@ commands as the `.ebd` events.
   timer counting down, motions that end after a set time, straight moves, emotion icons, the
   custom slots, and from the creature's field enemy record its speeds, wait, sight cone and
   reach; the script object is its "brain", `nspFM::clsFMBrainEnemy` (vtable `0x1407cba38`) or
-  `clsFMBrainNpc`, whose +0x118 is the record; the spots near the player are stand-ins until read), and
+  `clsFMBrainNpc`, whose +0x118 is the record. Its spots: `getRandomRangePosition` (`0x140232f30`)
+  moves where it stands on x and z each by a draw of -32768 to 32767 over 32767 times its sight,
+  keeping the first spot within its reach of home on both axes (up to 64 draws);
+  `getPositionToPlayerBehind` (`0x1402330d0`) is the player's place plus the direction from the
+  creature through the player times a float draw of 1 to 3 (the function mixes the creature's
+  metres with the player's field units, so the scale is not settled); float draws use a
+  generator of their own (`0x1404ca350`, an xorshift at `0x1410c2fd8`); `getPositionToPlayerEscape`
+  (`0x140233240`) is still a stand-in), and
   `barrel nut-run ROOT FILE FRAMES` drives one 600 units from the player: the unaware dog
   waits (`F_WAIT`), plays one of its idle actions (`EX9`, `EX8`), and runs off (`B_RUN`) to a
   spot and waits again.

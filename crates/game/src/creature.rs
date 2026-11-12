@@ -124,6 +124,34 @@ impl Creature {
         off.to_degrees() <= self.view * 0.5
     }
 
+    /// A spot to wander to (`getRandomRangePosition`, `0x1401317f0` → `0x140232f30`): where it
+    /// stands, moved on x and z each by a draw of -32768 to 32767 over 32767 times its sight,
+    /// kept when both are within its reach of where it stands; up to 64 draws, the last kept.
+    pub fn random_spot(&mut self) -> [f64; 3] {
+        let (sight, reach) = (self.sight * 100.0, self.reach * 100.0);
+        let mut spot = self.home;
+        for _ in 0..64 {
+            let dx = self.rng.range(-32768, 32767) as f64 / 32767.0 * sight;
+            let dz = self.rng.range(-32768, 32767) as f64 / 32767.0 * sight;
+            spot = [self.home[0] + dx, self.home[1], self.home[2] + dz];
+            if (spot[0] - self.home[0]).abs() <= reach && (spot[2] - self.home[2]).abs() <= reach {
+                break;
+            }
+        }
+        spot
+    }
+
+    /// A spot just past the player, on the far side from the creature (`getPositionToPlayerBehind`,
+    /// `0x140131690` → `0x1402330d0`): the player's place plus the direction from the creature to
+    /// the player times a draw of 1 to 3 (taken as metres; the function mixes the creature's
+    /// metres with the player's field units, not settled).
+    pub fn behind_player(&mut self) -> [f64; 3] {
+        let (dx, dz) = (self.player[0] - self.position[0], self.player[2] - self.position[2]);
+        let d = (dx * dx + dz * dz).sqrt().max(1e-6);
+        let k = 100.0 + 200.0 * (self.rng.range(0, 10000) as f64 / 10000.0);
+        [self.player[0] + dx / d * k, self.player[1], self.player[2] + dz / d * k]
+    }
+
     /// Whether `p` is within its reach of where it stands (`isMaxRangeIn`, `0x140131a60` →
     /// `0x140232e30`).
     pub fn within_reach(&self, p: [f64; 3]) -> bool {
@@ -278,6 +306,20 @@ impl Host for Creature {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spots() {
+        let mut c = Creature::new([1000.0, 0.0, 1000.0], crate::rng::Rng::from_state([1, 2, 3, 4]));
+        c.sight = 8.0;
+        c.reach = 5.0;
+        for _ in 0..50 {
+            let s = c.random_spot();
+            assert!((s[0] - 1000.0).abs() <= 800.0 && (s[2] - 1000.0).abs() <= 800.0);
+        }
+        c.player = [1000.0, 0.0, 2000.0];
+        let b = c.behind_player();
+        assert!(b[2] >= 2100.0 && b[2] <= 2300.0 && (b[0] - 1000.0).abs() < 1e-6, "{b:?}");
+    }
 
     #[test]
     fn sight_cone_and_reach() {
