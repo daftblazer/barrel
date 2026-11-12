@@ -769,9 +769,12 @@ then character 1, or Logy, then character 0) gets 0.4 of it. 87 of the 507 rows 
 23 have 1, 11 have 2. A field character's +0x7c is its `CharaBase` row (the radius reads it directly);
 `0x1402025a0` finds the first of the 825 `Chara` records (0x80 bytes each, their +0 the base row)
 with that base, and both checks read heights from that record only for characters whose own
-number, +0x78, is 418 to 466. A field enemy's own `Chara.xml` row (418 to 420, "zako enemy slot" 1 to 3, all
-`PUNI`) is a stand-in whose model its group fills, so `barrel field-sim` takes the radius of the
-group's first monster's row (`battle_data::field_radii`; the Ore Rat 60, the Stray Dog 70; not
+number, +0x78, is 418 to 466. Field characters are built by `0x14026b860 (chara, base, ...)` or `0x1402712d0`; one made
+with base -1 takes, when placed (`0x14026d4c0`), `0x1401fab40 (chara, Chara record[chara]+0)`,
+its `Chara` record's base row as resolved there. A field enemy's own `Chara.xml` row (418 to 420, "zako enemy slot" 1 to 3, all
+`PUNI`) is a stand-in whose model its group fills, and the records 418 to 420 must be rewritten
+with the area's monsters at run time (not found yet), so `barrel field-sim` takes the radius of
+the group's first monster's row (`battle_data::field_radii`; the Ore Rat 60, the Stray Dog 70; not
 checked against a live +0x90). At `AREA_01_01` the stand-in player walking west touches the
 first Ore Rat after 8.5 s, which starts encounter group 10. scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
 The scripts' `isHitCollision` is only a wall check (on a hit they go back to waiting).
