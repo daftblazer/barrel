@@ -752,13 +752,25 @@ As 14 words:
 |---|---|
 | 0 | the group's id (its index) |
 | 1 | always 1 |
-| 2 | 0, 3 or 4 (3 and 4 only on single bosses; not read yet) |
+| 2 | 0, 3 or 4 (3 and 4 only on single bosses), kept by the battle setup at +0x3c (not read yet) |
 | 3, 4 | how many monsters, at least and at most (1..2 for most, up to 4..5) |
-| 5, 6 / 7, 8 / 9, 10 | three (monster, weight) slots, -1 and 0 when empty |
-| 11 to 13 | other monsters, -1 for none (beside bosses: e.g. the Slayer Titan with Panzer, Howling Beast and Heavy Skin, reinforcements by the look of it; how they join is not read yet) |
+| 5, 6 / 7, 8 / 9, 10 | three (monster, most of it) slots, -1 and 0 when empty |
+| 11 to 13 | other monsters, -1 for none, listed apart in the setup at +0x48 (beside bosses: e.g. the Slayer Titan with Panzer, Howling Beast and Heavy Skin, reinforcements by the look of it; how they join is not read yet) |
 
-E.g. group 12: 3 or 4 monsters, Ore Rats and Stray Dogs equally likely; group 6: the Rampage
-Beast alone. The field's enemy data (`clsFMDataEnemy`, a 0x7030-byte singleton at
+**The draw** (`0x14019da40`): a count is rolled from the least to the most (`0x1404ca660`,
+`Rng::range`), then the slots are filled in order, each giving its monster up to its own most,
+until the count is reached; later slots get only what the earlier ones leave
+(`battle::encounter_monsters`). So group 12 (3 or 4; Ore Rats up to 2, then Stray Dogs up to 2)
+is always two Ore Rats and one or two Stray Dogs; group 6 is the Rampage Beast alone. Each
+monster goes into the battle setup as a 0x18-byte entry `{monster, flag 0, position (0, -1,
+0, 0)}`, the position meaning "place it": the battle arranges them itself.
+
+**The battle setup** (0x60 bytes; `0x1400502a0(group)`: `0x14019d6c0` initialises it,
+`0x14019d860` adds the party, `0x14019da40` the group): the party as up to six 8-byte entries
+`{character, slot}` from the squad (`0x140330660`), the monsters as above from +0x18, the group's
+word 2 at +0x3c, its extra monsters from +0x48. The encounter (`0x140084730`) then sets +0x38
+from the field enemy (+0x20) and +0x30 from a per-area value, and hands the setup to the scene
+request (`0x140291b00`, `0x140291fd0`) that starts the battle. The field's enemy data (`clsFMDataEnemy`, a 0x7030-byte singleton at
 `0x140dfc1f0`) holds entries of 0x68 bytes (up to 277, from +0x10) whose word at +0x4c is the
 group id (`0x140113470` walks them). **Field strikes.** When the hero swings at a field enemy (`0x140084410`), the game averages
 the group's monster levels (each monster's from `0x140111a30`) and the squad's (the eleven
@@ -769,9 +781,8 @@ enemy whose +0x20 is 1 is marked (+0x51) to fall to the strike without a battle.
 the script macro `wandHitEffect` (Escha) or `swordHitEffect` (Logy) by the chosen hero
 (`0x14035ebb0`), with the target and that mark (`0x140122170`).
 
-Still to read: how the count and the monsters are drawn,
-where those entries come from, and the formation's places (the battle setup's 0x18-byte
-monster entries).
+Still to read: where the field enemy entries come from, and the formation's places (how the
+battle arranges fighters whose position is (0, -1, 0)).
 
 ### A first duel
 
