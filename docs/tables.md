@@ -806,7 +806,7 @@ one when the target's HP × 100 / max(max HP, 1) is at most the amount, else non
 `ABSOLUTE_DEATH` (195, `0x1401bfdfe`) builds the event already landed. The event
 (`0x1401c1340`, vtable `0x140809170`) misses under state 0x50 or when the target's virtual
 +0x40 says so (not read yet), else rolls its chance (`0x1404ca5f0`, `Rng::chance`). A landed
-one leaves the target at 0 HP (`fight::Event::Felled`). In `barrel battle` a member with an attack item (damage or death acts, not aimed at its own side) throws it at the monster when no heal is due, before its skills (a stand-in for the player): Logy at level 5 with three Crafts (`p1:5+#195:~10,0,0,0@50x3`) loses to the Flesh Eater (5); with Fatal Blow (`…x3t50`) the second Craft fells it.
+one leaves the target at 0 HP (`fight::Event::Felled`). In `barrel battle` a member with an attack item (damage or death acts, not aimed at its own side) throws it at the monster when no heal is due, before its skills (a stand-in for the player): Logy at level 5 with three Crafts (`p1:5+#195:~10,0,0,0@50x3`) loses to the Flesh Eater (5); with Fatal Blow (`…x3t50`) the first Craft hits for 18 and then fells it (the trait's effect follows the item's own). `fight::Battle` acts as the game does: every effect's amounts rolled first, in slot order (`0x1401bd520`), then each applied in slot order (`0x1401bde10`): poison, stat states, instant death, heals and revives, damage (the first hit drawing for its sound). One difference left: the game sums an item's trait bonus again for each flag-3 effect, `fight` rolls it once per use.
 
 ### Battle stats (executable)
 

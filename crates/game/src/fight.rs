@@ -12,7 +12,7 @@
 
 use crate::battle::{self, stat, Defender, Timeline, TimedState};
 use crate::rng::Rng;
-use barrel_formats::battle_data::{Skill, StatBlock};
+use barrel_formats::battle_data::{Skill, SkillEffect, StatBlock};
 
 pub type Stats = [i32; stat::COUNT];
 
@@ -269,99 +269,97 @@ impl Battle {
     }
 
     fn act_with(&mut self, who: usize, skill: &Skill, slot: Option<usize>, target: usize, power: Option<i32>, boost: Option<Boost>, rng: &mut Rng) -> Vec<Event> {
-        let boosted = |act: u32, amount: i32, second: i32| boost.map_or((amount, second), |b| b.apply(act, amount, second));
-        // Poison (`DAMAGE_HP_TURN`, act 16) on the target.
-        if let Some(e) = skill.effects.iter().find(|e| e.act == 16) {
-            let value = rng.range(e.min, e.max);
-            let second = rng.range(e.min2, e.max2);
-            let (value, second) = boosted(e.act, value, second);
-            battle::add_state(&mut self.fighters[target].states, 0x34, value, second);
-        }
-        // Stat buffs and debuffs on the skill's side: its own for target kinds 1 and 3.
-        for e in &skill.effects {
-            if let Some((state, minus)) = battle::stat_state(e.act) {
-                let value = rng.range(e.min, e.max);
-                let second = rng.range(e.min2, e.max2);
-                let (value, second) = boosted(e.act, value, second);
-                let on = if matches!(skill.target, 1 | 3) { who } else { target };
-                self.fighters[on].add_state(state, if minus { -value } else { value }, second);
-            }
-        }
         if let Some(k) = slot.filter(|&k| k < 9) {
             self.fighters[who].uses[k] += 1;
         }
-        // Instant death (`battle::death_chance`): the target's HP to 0 when it lands.
+        // The rolls first (`0x1401bd520`): each effect's amount, then its second value, raised by
+        // an item's bonus. (The game sums an item's trait bonus again for each flag-3 effect;
+        // here it is rolled once per use.)
+        let rolled: Vec<(SkillEffect, i32, i32)> = skill
+            .effects
+            .iter()
+            .map(|e| {
+                let amount = rng.range(e.min, e.max);
+                let second = rng.range(e.min2, e.max2);
+                let (amount, second) = boost.map_or((amount, second), |b| b.apply(e.act, amount, second));
+                (*e, amount, second)
+            })
+            .collect();
+        // Then each effect in its slot's order (`0x1401bde10`).
+        // Fellings, reported after the action itself.
         let mut felled = Vec::new();
-        for e in skill.effects.iter().filter(|e| matches!(e.act, 80 | 176 | 195)) {
-            let amount = rng.range(e.min, e.max);
-            let second = rng.range(e.min2, e.max2);
-            let (amount, _) = boosted(e.act, amount, second);
-            let t = &self.fighters[target];
-            let Some(chance) = battle::death_chance(e.act, amount, self.fighters[who].stats[stat::LEVEL], &t.stats) else { continue };
-            let lands = if e.act == 195 { true } else { !battle::death_blocked(&t.states, false) && rng.chance(chance) };
-            if lands && !t.down() {
-                self.fighters[target].stats[stat::HP] = 0;
-                felled.push(Event::Felled { who, skill: skill.name.clone(), target });
-            }
-        }
-        // Heals (`HEAL_HP`, act 19; `HEAL_HP_BY_ATK`, 21) through the heal event
-        // (`0x1401c1d00`) and revives (`CURE_REVIVE`, 81, the revive event `0x1401c1e90`), each
-        // effect in its slot's order.
-        let heals: Vec<_> = skill.effects.iter().filter(|e| matches!(e.act, 19 | 21 | 81)).copied().collect();
-        if !heals.is_empty() {
-            let mut total = 0;
-            for effect in heals {
-                let amount = rng.range(effect.min, effect.max);
-                let second = rng.range(effect.min2, effect.max2);
-                let (amount, _) = boosted(effect.act, amount, second);
-                let t = &self.fighters[target];
-                let has = |state| t.states.iter().any(|s| s.state == state);
-                let (amount, blocked) = match effect.act {
-                    81 => (battle::revive_amount(t.stats[stat::MAX_HP], amount, has(0x4d), has(0x4e), !t.down()), false),
-                    21 => (battle::heal_by_attack(self.fighters[who].stats[stat::ATTACK], amount, 1.0), has(0x4e)),
-                    _ => (amount, has(0x4e)),
-                };
-                let was_down = self.fighters[target].down();
-                total += battle::heal(&mut self.fighters[target].stats, amount, blocked);
-                self.fighters[target].guts_used = false;
-                // Raised again (virtual +0xf0, `0x1401b7ed0`): its states cleared; it is back
-                // in the running on the timeline at the wait it has.
-                if was_down && !self.fighters[target].down() {
-                    self.fighters[target].states.clear();
-                    self.fighters[target].restat();
+        let (mut damage, mut healed, mut heals, mut hits) = (0, 0, false, 0);
+        for (e, amount, second) in rolled {
+            match e.act {
+                // Poison (`DAMAGE_HP_TURN`) on the target.
+                16 => battle::add_state(&mut self.fighters[target].states, 0x34, amount, second),
+                // Instant death (`battle::death_chance`): the target's HP to 0 when it lands.
+                80 | 176 | 195 => {
+                    let t = &self.fighters[target];
+                    let Some(chance) = battle::death_chance(e.act, amount, self.fighters[who].stats[stat::LEVEL], &t.stats) else { continue };
+                    let lands = e.act == 195 || (!battle::death_blocked(&t.states, false) && rng.chance(chance));
+                    if lands && !t.down() {
+                        self.fighters[target].stats[stat::HP] = 0;
+                        felled.push(Event::Felled { who, skill: skill.name.clone(), target });
+                    }
+                }
+                // Heals (`HEAL_HP`, 19; `HEAL_HP_BY_ATK`, 21) through the heal event
+                // (`0x1401c1d00`) and revives (`CURE_REVIVE`, 81, the revive event `0x1401c1e90`).
+                19 | 21 | 81 => {
+                    heals = true;
+                    let t = &self.fighters[target];
+                    let has = |state| t.states.iter().any(|s| s.state == state);
+                    let (amount, blocked) = match e.act {
+                        81 => (battle::revive_amount(t.stats[stat::MAX_HP], amount, has(0x4d), has(0x4e), !t.down()), false),
+                        21 => (battle::heal_by_attack(self.fighters[who].stats[stat::ATTACK], amount, 1.0), has(0x4e)),
+                        _ => (amount, has(0x4e)),
+                    };
+                    let was_down = self.fighters[target].down();
+                    healed += battle::heal(&mut self.fighters[target].stats, amount, blocked);
+                    self.fighters[target].guts_used = false;
+                    // Raised again (virtual +0xf0, `0x1401b7ed0`): its states cleared; it is
+                    // back in the running on the timeline at the wait it has.
+                    if was_down && !self.fighters[target].down() {
+                        self.fighters[target].states.clear();
+                        self.fighters[target].restat();
+                    }
+                }
+                0 | 8 => {
+                    let (user, foe) = (&self.fighters[who].stats, &self.fighters[target].stats);
+                    let amount = if e.act == 8 {
+                        battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
+                    } else {
+                        // Elemental damage skips defence and meets the target's resistance.
+                        let d = battle::skill_damage(amount, power.unwrap_or(user[stat::ATTACK]), user[stat::LEVEL], foe[stat::DEFENSE], e.element.is_none(), 1.0);
+                        let mut resist = [0; 4];
+                        resist.copy_from_slice(&foe[stat::RESIST..stat::RESIST + 4]);
+                        battle::reduce(d, e.element, &Defender { resist, ..Defender::default() })
+                    };
+                    let amount = battle::hit_amount(amount, 0);
+                    // The first hit of an action draws for its sound (`0x1401af770`).
+                    if hits == 0 {
+                        rng.next_31();
+                    }
+                    hits += 1;
+                    damage += battle::take_hp_damage(&mut self.fighters[target].stats, amount, None, None);
+                }
+                act => {
+                    // Stat buffs and debuffs on the skill's side: its own for target kinds 1 and 3.
+                    if let Some((state, minus)) = battle::stat_state(act) {
+                        let on = if matches!(skill.target, 1 | 3) { who } else { target };
+                        self.fighters[on].add_state(state, if minus { -amount } else { amount }, second);
+                    }
                 }
             }
-            let event = Event::Healed { who, skill: skill.name.clone(), target, amount: total, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() };
-            self.end_action(who, skill, rng);
-            felled.push(event);
-            return felled;
         }
-        let damage = match skill.effects.iter().find(|e| e.act == 0 || e.act == 8) {
-            None => 0,
-            Some(effect) => {
-                // The roll (`0x1401bd520`): the amount, then the second value.
-                let amount = rng.range(effect.min, effect.max);
-                let second = rng.range(effect.min2, effect.max2);
-                let (amount, second) = boosted(effect.act, amount, second);
-                let (user, foe) = (&self.fighters[who].stats, &self.fighters[target].stats);
-                let amount = if effect.act == 8 {
-                    battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
-                } else {
-                    // Elemental damage skips defence and meets the target's resistance.
-                    let damage = battle::skill_damage(amount, power.unwrap_or(user[stat::ATTACK]), user[stat::LEVEL], foe[stat::DEFENSE], effect.element.is_none(), 1.0);
-                    let mut resist = [0; 4];
-                    resist.copy_from_slice(&foe[stat::RESIST..stat::RESIST + 4]);
-                    battle::reduce(damage, effect.element, &Defender { resist, ..Defender::default() })
-                };
-                let amount = battle::hit_amount(amount, 0);
-                // The first hit of an action draws for its sound (`0x1401af770`).
-                rng.next_31();
-                battle::take_hp_damage(&mut self.fighters[target].stats, amount, None, None)
-            }
-        };
-        self.after_effect(target, rng);
-        let mut events = felled;
-        events.push(Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
+        let mut events = Vec::new();
+        if heals {
+            events.push(Event::Healed { who, skill: skill.name.clone(), target, amount: healed, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
+        } else {
+            self.after_effect(target, rng);
+            events.push(Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
+        }
+        events.append(&mut felled);
         self.end_action(who, skill, rng);
         events
     }
@@ -475,7 +473,7 @@ mod tests {
         let doom = Skill { name: "Doom".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 195, element: None, min: 0, max: 0, min2: 0, max2: 0 }], description: String::new() };
         let mut rng = Rng::from_state([1, 2, 3, 4]);
         let events = b.use_item(0, &doom, 100, 1, &mut rng);
-        assert_eq!(events[0], Event::Felled { who: 0, skill: "Doom".into(), target: 1 });
+        assert_eq!(events[1], Event::Felled { who: 0, skill: "Doom".into(), target: 1 });
         assert!(b.fighters[1].down());
         assert_eq!(b.winner(), Some(0));
     }
