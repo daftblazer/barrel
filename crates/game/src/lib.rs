@@ -15,6 +15,7 @@ pub mod field_camera;
 pub mod fight;
 pub mod event;
 pub mod face;
+pub mod gather;
 pub mod gesture;
 pub mod library;
 pub mod monster_ai;

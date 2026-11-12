@@ -1376,7 +1376,15 @@ that are 1 and 1 in most, its field map (word 9: 12 is `AREA_01_01`), 0, 100 and
 place in metres and two float triples (0.01 three times, 2.0 three times). `AREA_01_01`'s four
 points draw from lists 0, 13, 17, 21, 25 and 51; 13, 17, 21 and 25 give the same plants a little
 better each time, so the list is most likely picked by the story's progress, which is not read
-yet, nor is the draw itself. The area map's list for Sector One (71) belongs to no point.
+yet.
+
+**The draw** (`0x14023c210 (lists, list, ...)`, `barrel_game::gather`): the list's records are
+gathered in table order; each gets a weight, its own plus a roll of 30 to 100 when the player
+knows its item at level 2 or less (the item knowledge list at `0x141079fe0`), so unknown items
+turn up more. Then for each pick (a count passed in, plus a bonus from `0x1400d3030` unless a
+flag clears it): a roll of 0 to 100, and the records in order, those whose own weight is above
+0 each adding weight × 100 / total, the first to reach the roll; if none does, the first with a
+weight above 0, else the last. The area map's list for Sector One (71) belongs to no point.
 
 What does not hold it: the data files (`Saves/field/AREA_*.xml`: camera, fog, light, sky, HDR
 and shaders; the area containers `Data/x64/Field/AREA_*`, whose placement lists hold scenery
