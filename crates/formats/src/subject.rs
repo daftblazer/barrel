@@ -45,14 +45,16 @@ pub fn subjects(t: &Element) -> Vec<Subject> {
 
 /// An assignment's saved state: five i32 (`subject/subject_save`, 20 bytes a row, at
 /// `0x141099e08` in the running game, after the active card at `0x141099e00`): its count so far
-/// (not held at the target: 4 on "synthesize one Neutralizer"), a word that is 10000 on the
-/// counting ones, its state (8 cleared: `0x1403569d0` counts the active card's 25 squares whose
+/// (not held at the target: 4 on "synthesize one Neutralizer"), its completion in hundredths of
+/// a percent (10000 done: `0x14034f1d0` marks an assignment in state 3, 5 or 6 met once it
+/// reaches 10000), its state (8 cleared: `0x1403569d0` counts the active card's 25 squares whose
 /// assignment is at 8; "Alpha Wolf", cleared by its battle, has a count of 0 and state 8), and two
 /// more (0 and 1 on most).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SavedSubject {
     pub progress: i32,
-    pub word1: i32,
+    /// Completion, 10000 for done.
+    pub completion: i32,
     pub state: i32,
     pub rest: [i32; 2],
 }
@@ -74,7 +76,7 @@ pub fn saved(raw: &[u8]) -> Vec<SavedSubject> {
     raw.chunks_exact(20)
         .map(|c| {
             let w = |k: usize| i32::from_le_bytes(c[4 * k..4 * k + 4].try_into().unwrap());
-            SavedSubject { progress: w(0), word1: w(1), state: w(2), rest: [w(3), w(4)] }
+            SavedSubject { progress: w(0), completion: w(1), state: w(2), rest: [w(3), w(4)] }
         })
         .collect()
 }
