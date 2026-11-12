@@ -1104,7 +1104,12 @@ is `PC20`, her Apple Pirate `PC20B` ...), a priority and the nodes the accessori
 for a body, part and accessory, the scale, rotation (degrees) and offset it is placed with.
 `PartsInvisible.xml` (90): the body's own parts hidden while an accessory is worn (Escha's
 default body hides `P_M_Acc_Hat1`, her hat, under any head accessory). `AccessoryChange.xml`
-(28): accessories swapped for another (`src` → `dst`) on a body. `CostumeChara.xml`: each
+(28): accessories swapped for another (`src` → `dst`) on a body: each body's own hat for none.
+Every body has one `PartsInvisible` row with `exclude="true"`, naming that same hat: its nodes
+are hidden under every head accessory but that one, so wearing a body's own hat shows the hat
+built into the body with nothing attached; rows without it hide their nodes only under the
+accessory they name (the maid's `P_M_Acc_Hat2` under each of the hats). Read from the tables'
+patterns (`costume::resolve`), not yet from the code. `CostumeChara.xml`: each
 character's default body, head and face. The settings save (`SYSDATA`) keeps the choices:
 `costumeData`, an i32 count (5: Escha, Logy, Wilbell, Linca, Awin by the bodies worn) then each
 character's body, head and face rows, every value written as a length (4) and the i32

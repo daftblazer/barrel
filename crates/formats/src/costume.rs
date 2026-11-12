@@ -125,6 +125,41 @@ pub fn charas(t: &Element) -> Vec<Chara> {
         .collect()
 }
 
+/// `AccessoryChange.xml`: an accessory worn on a body as another (`src` → `dst`; each body's
+/// own hat becomes none, as the body's built-in hat shows instead).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Change {
+    pub body: String,
+    pub parts: String,
+    pub from: String,
+    pub to: String,
+}
+
+pub fn changes(t: &Element) -> Vec<Change> {
+    t.children.iter().map(|e| Change { body: text(e, "body"), parts: text(e, "parts"), from: text(e, "src"), to: text(e, "dst") }).collect()
+}
+
+/// What an outfit shows for one part (`COSTUME_PARTS_HEAD` or `_FACE`) with accessory
+/// `worn` (tags such as `COSTUME_HEAD_HEAD00`): the accessory actually attached (after
+/// `AccessoryChange`; `None` for none) and the body's own nodes hidden. A `PartsInvisible` row
+/// with `exclude` hides its nodes under every accessory but the one it names (each body's own
+/// hat, which shows its built-in one); without it, only under the one it names. (Read from the
+/// tables' patterns, not from the code that applies them.)
+pub fn resolve(body: &str, part: &str, worn: &str, changes: &[Change], hides: &[Hide]) -> (Option<String>, Vec<String>) {
+    let attached = changes
+        .iter()
+        .find(|c| c.body == body && c.parts == part && c.from == worn)
+        .map_or(worn.to_string(), |c| c.to.clone());
+    let attached = (!attached.ends_with("_NONE") && !attached.is_empty()).then_some(attached);
+    let mut hidden = Vec::new();
+    for h in hides.iter().filter(|h| h.body == body && h.parts == part) {
+        if (h.exclude && h.accessory != worn) || (!h.exclude && h.accessory == worn) {
+            hidden.extend(h.hidden.iter().cloned());
+        }
+    }
+    (attached, hidden)
+}
+
 /// The settings save's `costumeData` (`SYSDATA`): an i32 count, then that many characters'
 /// choices, each three values (body, head and face rows of `CostumeBody`, `CostumeHead` and
 /// `CostumeFace`), every value written as a length (4) and the i32.
@@ -140,6 +175,17 @@ pub fn choices(raw: &[u8]) -> Vec<[i32; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_hat_shows_the_built_in_one() {
+        let ch = vec![Change { body: "D".into(), parts: "P".into(), from: "H0".into(), to: "COSTUME_HEAD_NONE".into() }];
+        let hide = vec![Hide { body: "D".into(), parts: "P".into(), accessory: "H0".into(), exclude: true, hidden: vec!["Hat1".into()] }];
+        assert_eq!(resolve("D", "P", "H0", &ch, &hide), (None, vec![]));
+        assert_eq!(resolve("D", "P", "H5", &ch, &hide), (Some("H5".into()), vec!["Hat1".into()]));
+        let maid = vec![Hide { body: "M".into(), parts: "P".into(), accessory: "H1".into(), exclude: false, hidden: vec!["Hat2".into()] }];
+        assert_eq!(resolve("M", "P", "H1", &[], &maid).1, vec!["Hat2".to_string()]);
+        assert!(resolve("M", "P", "H2", &[], &maid).1.is_empty());
+    }
 
     #[test]
     fn reads_choices() {
