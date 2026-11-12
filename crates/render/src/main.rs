@@ -23,6 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 mod fsr;
 mod glow;
 mod present;
+mod settings;
 mod shadow;
 mod text;
 mod upscale;
@@ -1430,16 +1431,11 @@ fn main() -> Result<()> {
     let mut yaw = 0f32;
     let mut pitch = if field { 45f32 } else { 0f32 };
     let mut alpha_cutoff = 0.3f32;
-    // `--handheld`: the handheld settings (`docs/engine.md`, "Targets"): a smaller, 16-bit shadow map.
-    let mut shadows = shadow::Shadows::DESKTOP;
-    // `--scale S`: the scene drawn at S times the output's size (0.25 to 2) and scaled to it.
-    let mut render_scale = 1.0f32;
-    // `--fsr`: FSR 1 scales the scene to the output (when `--scale` is below 1) in place of the
-    // plain bilinear scale.
-    let mut fsr = false;
-    // `--msaa N`: the scene drawn with N samples a pixel (1, 2, 4 or 8; as many as the device
-    // allows), resolved in its pass.
-    let mut msaa_wanted = 1u32;
+    // The render settings (`settings.rs`): `--preset desktop|desktop-high|handheld` (`--handheld`
+    // for the last), then single fields over it, in the order given: `--scale S` (the scene at
+    // S times the output's size, 0.25 to 2), `--fsr` (FSR 1 instead of the bilinear scale),
+    // `--msaa N` (samples a pixel, resolved in the scene pass), `--shadows desktop|handheld`.
+    let mut settings = settings::RenderSettings::DESKTOP;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut event_line = None::<usize>;
@@ -1464,10 +1460,21 @@ fn main() -> Result<()> {
             }
             "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
             "--no-alpha" => alpha_cutoff = -1.0,
-            "--handheld" => shadows = shadow::Shadows::HANDHELD,
-            "--fsr" => fsr = true,
-            "--msaa" => msaa_wanted = it.next().ok_or("--msaa N")?.parse()?,
-            "--scale" => render_scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
+            "--preset" => {
+                let name = it.next().ok_or("--preset desktop|desktop-high|handheld")?;
+                settings = settings::RenderSettings::preset(name).ok_or_else(|| format!("{name}: no such preset"))?;
+            }
+            "--handheld" => settings = settings::RenderSettings::HANDHELD,
+            "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
+            "--msaa" => settings.msaa = it.next().ok_or("--msaa N")?.parse()?,
+            "--scale" => settings.scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
+            "--shadows" => {
+                settings.shadows = match it.next().map(String::as_str) {
+                    Some("desktop") => shadow::Shadows::DESKTOP,
+                    Some("handheld") => shadow::Shadows::HANDHELD,
+                    _ => return Err("--shadows desktop|handheld".into()),
+                }
+            }
             "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
             "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
             "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
@@ -1822,7 +1829,7 @@ fn main() -> Result<()> {
     let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
     let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buf).offset(0).range(vk::WHOLE_SIZE)];
     let look_info = [vk::DescriptorBufferInfo::default().buffer(look_buf).offset(0).range(vk::WHOLE_SIZE)];
-    let shadow_target = shadow::ShadowTarget::new(&gpu, shadows)?;
+    let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
     let shadow_info = [vk::DescriptorImageInfo::default()
         .sampler(shadow_target.sampler)
         .image_view(shadow_target.view)
@@ -1882,7 +1889,7 @@ fn main() -> Result<()> {
         [8u32, 4, 2, 1]
             .into_iter()
             .map(|n| (n, vk::SampleCountFlags::from_raw(n)))
-            .find(|&(n, f)| n <= msaa_wanted.max(1) && allowed.contains(f))
+            .find(|&(n, f)| n <= settings.msaa.max(1) && allowed.contains(f))
             .map_or(vk::SampleCountFlags::TYPE_1, |(_, f)| f)
     };
     let multisampled = samples != vk::SampleCountFlags::TYPE_1;
@@ -1989,8 +1996,8 @@ fn main() -> Result<()> {
         }
     };
     let glow_pipelines = glow::Pipelines::new(&gpu)?;
-    let upscale_pipelines = if fsr { Some(upscale::Pipelines::new(&gpu)?) } else { None };
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
+    let upscale_pipelines = if settings.fsr1() { Some(upscale::Pipelines::new(&gpu)?) } else { None };
+    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
 
     // Pipeline.
     let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -2862,7 +2869,7 @@ fn main() -> Result<()> {
             p.rebuild(&gpu, size.width, size.height)?;
             targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, scene_size(width, height, render_scale), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
+            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_set, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), samples)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
@@ -3304,9 +3311,4 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
     }
     let _ = gpu.physical;
     Ok(())
-}
-
-/// The scene's size for an output of `width` × `height` at `scale` (at least 1 × 1).
-fn scene_size(width: u32, height: u32, scale: f32) -> (u32, u32) {
-    (((width as f32 * scale).round() as u32).max(1), ((height as f32 * scale).round() as u32).max(1))
 }

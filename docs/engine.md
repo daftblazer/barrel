@@ -85,7 +85,7 @@ should cost tile memory only (on RADV, which has no such memory, it falls back t
 renders are identical either way). The shadow map is cleared and stored (2048² of 32-bit
 depth, read by the scene pass); the glow levels are 8-bit; the final pass does not load the
 image it covers. `shadow::Shadows` sets the shadow map: `DESKTOP` (2048², 32-bit float) or `HANDHELD`
-(1024², 16-bit, a eighth of the memory and bandwidth; `barrel-view --handheld`). In the
+(1024², 16-bit, an eighth of the memory and bandwidth; part of the handheld preset). In the
 first opening (`EVENT_MM01_OP1_111` at 25 s, 640×360) the two differ in about 20 of 230,400
 pixels, one by more than 6%. Still to weigh: the glow's eleven passes, and a sunlit scene
 for the shadow comparison.
@@ -108,6 +108,14 @@ scale (closer to the full-size frame by eye) though a little further by PSNR (29
 30.1 dB: sharpening adds edge contrast the measure counts as error); FSR expects an
 anti-aliased input, and the scene's hard edges come out crisper rather than smoother, so
 anti-aliasing is the next piece. At scale 1 `--fsr` changes nothing.
+
+**Settings.** `settings::RenderSettings` holds the scale, the upscaler (bilinear or FSR 1), the
+MSAA samples and the shadow map, with presets: `DESKTOP` (full size, no MSAA, the large shadow
+map: the renderer as it was), `DESKTOP_HIGH` (4× MSAA) and `HANDHELD` (three-quarter scale
+through FSR 1, no MSAA, the small 16-bit shadow map). `barrel-view --preset NAME` picks one and
+the single options (`--scale`, `--fsr`, `--msaa`, `--shadows`) change fields over it. In the
+first opening the desktop preset matches the earlier plain frame and desktop-high the earlier
+4× MSAA frame pixel for pixel; the handheld preset comes to 31.1 dB against the full frame.
 
 **MSAA.** `barrel-view --msaa N` (1, 2, 4 or 8, capped at what the device allows for both
 colour and depth) draws the scene with N samples a pixel into a transient multisampled colour
