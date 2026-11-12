@@ -80,4 +80,11 @@ Fog and scattering: with e the vector from the vertex to the eye (`vEye`), the e
 `min(exp((fog.x·|e| + fog.y) × Scat[0].xyz), 1)` (v4) and the in-scattered colour, with θ the
 angle between the view direction and `litDir[0]`, is `Scat[3].xyz × (Scat[2].w·cos θ +
 Scat[3].w)^-1.5 + (1 + cos² θ) × Scat[2].xyz + Scat[1].xyz` (v3): Mie and Rayleigh terms.
-How `fog` and `Scat` come from the field's `<fog>` is not read yet.
+How `fog` and `Scat` come from the field's `<fog>` is not read yet. The field loader
+(`0x140068566` on) reads `start` and `end` (both scaled, to field units), `ambient`, `mieG`,
+`rayleighPow`, `mieRGB` and `rayleighRGB` and stores them by field (`0x1404d6df0`, a map entry:
++0x20 start, +0x24 end, +0x28 ambient, +0x2c mieG, +0x30 rayleighPow, +0x38 mieRGB, +0x48
+rayleighRGB); the shader constants are filled through the engine's parameter-name table
+(`Scat` at `0x140953378`), whose code is not found yet. The pixel program's form is
+Henyey-Greenstein for Mie (`Scat[2].w` and `Scat[3].w` presumably -2g and 1 + g²) and
+`1 + cos² θ` for Rayleigh.
