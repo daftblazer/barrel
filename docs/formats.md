@@ -509,6 +509,45 @@ per record; the reset `0x14035e8e0` sets +0 to -1 and the rest to 0). At +0x38 i
 protagonist the player chose, 0 Escha or 1 Logy: what "Master Character" (`Chara.xml` row
 749) stands for in events (`docs/events.md`; `Summary::hero`). The user's save says Escha.
 
+**The record handlers.** Each top-level record has a small object in the executable's data:
+a vtable, a helper, the name getter, the write and read functions, then the name inline.
+`tools/save_records.py` lists them from the English executable (the writers fill each record;
+the readers are where to look for any field not yet mapped):
+
+| record | write | read |
+|---|---|---|
+| `event` | `0x14035ebc0` | `0x14035ee90` |
+| `global` | `0x14035e7b0` | `0x14035e840` |
+| `dlc` | `0x140168680` | `0x1401686b0` |
+| `knowledge` | `0x140369970` | `0x14036a250` |
+| `money` | `0x14036a9a0` | `0x14036a9f0` |
+| `party` | `0x1403625d0` | `0x140362700` |
+| `fieldmap` | `0x1403682b0` | `0x140368740` |
+| `fieldmap_effect` | `0x1403648f0` | `0x140364b50` |
+| `library` | `0x140366870` | `0x140366c60` |
+| `item` | `0x14035ccc0` | `0x14035d360` |
+| `date` | `0x14035c180` | `0x14035c1f0` |
+| `time` | `0x14036ad40` | `0x14036adb0` |
+| `worldmap` | `0x14035dd00` | `0x14035e0c0` |
+| `shop` | `0x14035c2e0` | `0x14035c420` |
+| `explore_equip` | `0x140365640` | `0x140365be0` |
+| `dlcbgm` | `0x14036cea0` | `0x14036cfd0` |
+| `event_check` | `0x140368150` | `0x1403681b0` |
+| `mix_lv` | `0x14036a730` | `0x14036a830` |
+| `mix_recipe` | `0x140367e50` | `0x140367f10` |
+| `subject` | `0x140360760` | `0x140361190` |
+| `quest` | `0x140363cf0` | `0x140364130` |
+| `bonus` | `0x14036b940` | `0x14036bce0` |
+| `delivery` | `0x14036c4c0` | `0x14036c5f0` |
+| `poster` | `0x14036b400` | `0x14036b4d0` |
+| `monthrep` | `0x1403634b0` | `0x1403635f0` |
+| `work` | `0x140366440` | `0x1403665f0` |
+| `system_data` | `0x1401622d0` | `0x140162700` |
+| `hom` | `0x1401688e0` | `0x140168930` |
+| `option` | `0x140164190` | `0x1401641b0` |
+
+`system` (the `GAMEDATA` stub; the real one is SYSDATA's `system_data`) has empty handlers.
+
 The calendar's other state: `quest/randseed` (a positive 31-bit value, the request board's
 seed offset, `days::World::board_offset`), `quest/now` (the board's ten slots), `player`
 (the requests taken) and `next`, ten 52-byte slots each (`save::BoardSlot`): the kind (0
