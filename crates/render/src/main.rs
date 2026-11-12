@@ -39,7 +39,7 @@ const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 44 * 16;
+const LOOK_SIZE: u64 = 48 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 const SHADOW_HALF: f32 = 1500.0;
@@ -1501,6 +1501,7 @@ fn main() -> Result<()> {
             "--handheld" => settings = settings::RenderSettings::HANDHELD,
             "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
             "--motion" => settings.motion = true,
+            "--jitter" => settings.jitter = true,
             "--show-motion" => {
                 settings.motion = true;
                 show_motion = true;
@@ -2624,6 +2625,7 @@ fn main() -> Result<()> {
     // The start time of the last screen effect seen (a new one starts a cross-fade).
     let mut last_effect: Option<f32> = None;
     let mut prev_mvp: Option<Mat4> = None;
+    let mut jitter_index = 0u32;
     for frame in 0..frames {
     // Last frame's transforms and joints, before this frame moves anything (motion vectors).
     for i in &mut instances {
@@ -2965,6 +2967,20 @@ fn main() -> Result<()> {
         _ => 0,
     };
     let mvp = view_proj(eye, target, dist, fov, width, height, orbit);
+    // The view-projection drawn with: shifted by this frame's sub-pixel jitter when it is on
+    // (`settings::jitter`, a clip-space translation by the offset in pixels × 2 / the scene's
+    // size), the plain one otherwise.
+    let draw_vp = if settings.jitter {
+        let (jx, jy) = settings::jitter(jitter_index);
+        let (sw, sh) = targets.scene_size;
+        let mut j = Mat4::IDENTITY;
+        j.w_axis.x = 2.0 * jx / sw as f32;
+        j.w_axis.y = 2.0 * jy / sh as f32;
+        jitter_index += 1;
+        j * mvp
+    } else {
+        mvp
+    };
     // With motion vectors, this frame's and last frame's transforms and joints every frame (a
     // frame that moves nothing still has last frame's movement to forget).
     if settings.motion {
@@ -3034,10 +3050,14 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         });
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 44];
+        let mut look = [[0f32; 4]; 48];
         // Last frame's view-projection (this frame's on the first), for the motion vectors.
         for (k, col) in prev_mvp.unwrap_or(mvp).to_cols_array_2d().into_iter().enumerate() {
             look[40 + k] = col;
+        }
+        // This frame's view-projection without the jitter, for the motion vectors.
+        for (k, col) in mvp.to_cols_array_2d().into_iter().enumerate() {
+            look[44 + k] = col;
         }
         // The billboards' axes (docs/shading.md, "Billboards"): the camera's right as the screen
         // shows it (render space is mirrored, so the view's -x), up, and back toward the eye.
@@ -3188,7 +3208,7 @@ Some(Vec3::new(-(p.cos() * y.sin()), -p.sin(), p.cos() * y.cos()))
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         // view_proj, params, the terrain's scales; the instance number goes in per draw.
         let mut push = [0f32; 31];
-        push[..16].copy_from_slice(&mvp.to_cols_array());
+        push[..16].copy_from_slice(&draw_vp.to_cols_array());
         push[16] = alpha_cutoff;
         push[18] = width as f32 / height.max(1) as f32;
         push[19] = HDR_RANGE_INV;

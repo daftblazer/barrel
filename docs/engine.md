@@ -128,6 +128,14 @@ camera gives zero. The viewer's seek to `--at` falls between its first two frame
 temporal methods have to treat as a cut (they drop their history there). With motion off the
 frame is exactly as before.
 
+**Jitter.** With `jitter` on (`barrel-view --jitter`) each frame's drawn view-projection is
+shifted by a sub-pixel offset, the Halton sequence in bases 2 and 3 over 16 frames
+(`settings::jitter`, -0.5 to 0.5 pixel), applied as a clip-space translation (2 × offset /
+the scene's size) so it holds for any projection. The motion vectors leave it out: the shaders
+take this frame's unjittered view-projection from `Look` (entries 44 to 47) for them, so a still
+scene's vectors stay at zero while the frames differ (about 1% of pixels, along edges, from one
+jittered frame to the next in the first opening). With jitter off the frame is as before.
+
 **Wide screens.** The projection keeps the vertical field of view and widens the horizontal
 one with the aspect, so 21:9 (3440×1440) and 32:9 (5120×1440) show more to the sides without
 stretching (`barrel-view --size` takes up to 8192 either way; the first opening at 5120×1440

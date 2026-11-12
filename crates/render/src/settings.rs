@@ -25,16 +25,19 @@ pub struct RenderSettings {
     /// each pixel's movement since the last frame in texture coordinates), which the temporal
     /// methods read; it takes single-sampled drawing.
     pub motion: bool,
+    /// Whether the camera is shifted by a different sub-pixel offset each frame ([`jitter`]),
+    /// which the temporal methods gather into more detail than one frame has.
+    pub jitter: bool,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false };
 
     /// A preset by name (`desktop`, `desktop-high`, `handheld`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
@@ -57,6 +60,22 @@ impl RenderSettings {
     }
 }
 
+/// Frame `n`'s sub-pixel offset, in pixels from -0.5 to 0.5 each way: the Halton sequence in
+/// bases 2 and 3 over a cycle of 16 (as FSR 2 and most TAA use).
+pub fn jitter(n: u32) -> (f32, f32) {
+    let halton = |mut i: u32, base: u32| {
+        let (mut f, mut r) = (1.0f32, 0.0f32);
+        while i > 0 {
+            f /= base as f32;
+            r += f * (i % base) as f32;
+            i /= base;
+        }
+        r
+    };
+    let i = n % 16 + 1;
+    (halton(i, 2) - 0.5, halton(i, 3) - 0.5)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +86,9 @@ mod tests {
         assert_eq!(RenderSettings::HANDHELD.scene_size(1920, 1080), (1440, 810));
         assert!(RenderSettings::HANDHELD.fsr1() && !RenderSettings::DESKTOP.fsr1());
         assert_eq!(RenderSettings::DESKTOP.scene_size(1280, 720), (1280, 720));
+        // Halton 2, 3 from 1: (1/2, 1/3), (1/4, 2/3), (3/4, 1/9), ...
+        assert_eq!(jitter(0), (0.0, 1.0 / 3.0 - 0.5));
+        assert_eq!(jitter(1), (-0.25, 2.0 / 3.0 - 0.5));
+        assert_eq!(jitter(16), jitter(0));
     }
 }
