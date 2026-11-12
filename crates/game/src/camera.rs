@@ -78,10 +78,11 @@ pub enum Move {
     /// second (150 the commonest, a walk), its velocity the unit direction times the speed,
     /// plus `accel` (mostly zero) turned to the direction of travel (`0x1402f3720`).
     Speed { to: Position, speed: f32, accel: [f32; 3] },
-    /// Type 3: a jump to the position with gravity 9.8 (`0x1402f2680`; `0x1402f28f0` works
-    /// out the velocity): `height` (50 to 300) is how high it rises; `first` (800 to 2,500
-    /// in the events) is not named yet.
-    Jump { to: Position, first: f32, height: f32 },
+    /// Type 3: a jump to the position (`0x1402f2680`; `0x1402f28f0` works out the launch):
+    /// launched at `speed` (800 to 2,500 field units a second in the events) at the angle and
+    /// with the gravity that make it peak `height` (50 to 300) above where it starts and come
+    /// down on the position.
+    Jump { to: Position, speed: f32, height: f32 },
     /// Type 1 (`MdCircle`, built by `0x1402f2e90`, updated by `0x1402f3090`): around the
     /// position, in a plane turned by `turn` (degrees about x, y, z; the anchor's facing is
     /// added to y), the angle going from `from` to `to` (degrees) at a turning speed going
@@ -122,7 +123,7 @@ impl Move {
             (4, [hundredths, ease, ..]) => Move::Straight { to, seconds: f(*hundredths) / 100.0, ease: *ease as i32 },
             (0, [speed, x, y, z, ..]) => Move::Speed { to, speed: f(*speed), accel: [f(*x), f(*y), f(*z)] },
             (0, [speed]) => Move::Speed { to, speed: f(*speed), accel: [0.0; 3] },
-            (3, [first, height, ..]) => Move::Jump { to, first: f(*first), height: f(*height) },
+            (3, [speed, height, ..]) => Move::Jump { to, speed: f(*speed), height: f(*height) },
             (1, [ax, ay, az, r0, r1, rise, from, until, speed0, speed1, ..]) => Move::Circle {
                 to,
                 turn: [f(*ax) / 100.0, f(*ay) / 100.0, f(*az) / 100.0],
@@ -176,6 +177,7 @@ pub struct Mover {
 enum MoverKind {
     Straight { seconds: f32, ease: i32 },
     Speed { velocity: [f32; 3], accel: [f32; 3] },
+    Jump { velocity: [f32; 3], gravity: f32 },
     Circle(Circle),
 }
 
@@ -222,7 +224,7 @@ impl Circle {
 
 impl Mover {
     /// A mover from `from` to `to` (the move's position, already resolved). `None` for the
-    /// types not read yet (jumps and type 2).
+    /// type not read yet (type 2).
     pub fn new(from: [f32; 3], to: [f32; 3], movement: &Move, face: u32) -> Option<Mover> {
         Self::anchored(from, to, 0.0, movement, face)
     }
@@ -231,6 +233,25 @@ impl Mover {
     /// turns a circle's plane.
     pub fn anchored(from: [f32; 3], to: [f32; 3], anchor_yaw: f32, movement: &Move, face: u32) -> Option<Mover> {
         let (kind, left) = match *movement {
+            Move::Jump { speed, height, .. } => {
+                // 0x1402f28f0: with D the distance across the ground and dy the rise to the
+                // point, the launch angle is atan(2 (√H·√(H − dy) + H) / D) for a peak H above
+                // the start; the time is D over the speed across the ground, and the gravity
+                // brings the climb to a stop at the peak, after √H / (√H + √(H − dy)) of it.
+                // A peak below the point, or no distance across, and the jump never runs.
+                let d = sub(to, from);
+                let across = (d[0] * d[0] + d[2] * d[2]).sqrt();
+                if height - d[1] < 0.0 || across == 0.0 {
+                    return Some(Mover::arrived(from, from, face));
+                }
+                let (rise, fall) = (height.sqrt(), (height - d[1]).sqrt());
+                let angle = (2.0 * (rise * fall + height) / across).atan();
+                let (ground, up) = (angle.cos() * speed, angle.sin() * speed);
+                let t = across / ground;
+                let gravity = up / (t * rise / (rise + fall));
+                let velocity = [d[0] / across * ground, up, d[2] / across * ground];
+                (MoverKind::Jump { velocity, gravity }, t)
+            }
             Move::Circle { turn, r0, r1, rise, from: a0, until: a1, speed0, speed1, .. } => {
                 // 0x1402f2e90: the time is the angle to go over the mean speed, the speed
                 // changing evenly over it; a time not above 0 leaves the speed as it is.
@@ -321,6 +342,13 @@ impl Mover {
                     velocity[i] -= accel[i] * dt;
                 }
             }
+            MoverKind::Jump { velocity, gravity } => {
+                // 0x1402f2760: gravity on the climb first, then the move.
+                velocity[1] -= *gravity * dt;
+                for i in 0..3 {
+                    self.position[i] += velocity[i] * dt;
+                }
+            }
             MoverKind::Circle(c) => {
                 // 0x1402f3090: the speed changes, then the angle moves on, stopping at the end.
                 c.speed += c.accel * dt;
@@ -393,6 +421,25 @@ pub fn changes(word: u32, operands: &[u32]) -> Vec<(Part, Change)> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn jump_move() {
+        // A jump 300 across and 50 down, peaking 100 above the start, launched at 800.
+        let to = Position { anchor: Anchor::World, offset: [0.0; 3] };
+        let m = Move::read_type(to, &[3, 800, 100]).unwrap();
+        let mut j = Mover::new([0.0; 3], [300.0, -50.0, 0.0], &m, 0).unwrap();
+        let mut top = 0f32;
+        for _ in 0..600 {
+            j.step(1.0 / 600.0);
+            top = top.max(j.position()[1]);
+        }
+        assert!(j.done());
+        assert!((top - 100.0).abs() < 1.0, "{top}");
+        assert_eq!(j.position(), [300.0, -50.0, 0.0]);
+        // A peak below the point: it never runs.
+        let m = Move::read_type(to, &[3, 800, 10]).unwrap();
+        assert!(Mover::new([0.0; 3], [300.0, 50.0, 0.0], &m, 0).unwrap().done());
+    }
 
     #[test]
     fn circle_move() {

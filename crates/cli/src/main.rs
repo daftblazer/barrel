@@ -488,7 +488,7 @@ fn describe_move(m: &barrel_game::camera::Move) -> String {
         Move::Straight { seconds, ease, .. } => format!("moves to {to} in {seconds:.2} s (ease {ease})"),
         Move::Speed { speed, accel, .. } if accel == [0.0; 3] => format!("goes to {to} at {speed}/s"),
         Move::Speed { speed, accel, .. } => format!("goes to {to} at {speed}/s, accelerating {accel:?}"),
-        Move::Jump { first, height, .. } => format!("jumps to {to}, {height} high ({first})"),
+        Move::Jump { speed, height, .. } => format!("jumps to {to}, {height} high at {speed}/s"),
         Move::Circle { r0, r1, rise, from, until, speed0, speed1, .. } => {
             format!("circles {to} from {from}° to {until}°, radius {r0} to {r1}, rising {rise}, at {speed0} to {speed1}°/s")
         }

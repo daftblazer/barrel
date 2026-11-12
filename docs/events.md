@@ -546,7 +546,7 @@ position, then (for `s18`, `0x73000014` and `0x73000029` only) one more operand,
 |---|---|---|---|
 | 4 | seconds ×100, ease | 1,876 / 1,735 / 571 | `0x1402f3480` |
 | 0 | speed, then x, y, z (mostly 0) | 27 / 19 / 950 | `0x1402f3720` |
-| 3 | two: 800 to 2,500, then a height (50 to 300) | a few / 13 / 131 | `0x1402f2680` |
+| 3 | two: a speed (800 to 2,500), then a height (50 to 300) | a few / 13 / 131 | `0x1402f2680` |
 | 1 | ten: a circle (below) | 129 / 5 / 63 | `0x1402f1cd9` |
 | 2 | two | 1 / 1 / 2 | `0x1402f18a0` |
 
@@ -572,8 +572,13 @@ acceleration; mostly zero). Its time is the distance over the speed; the extra v
 off the velocity every second, and half of it times the time is added at the start, so
 the move bows (up, or to a side) and still ends on the point (`0x1402f3720`, update
 `0x1402f3a70`). Every move's update takes the frame time off the time left first, then
-moves the point, and puts it on the end once the time is used up. Type 3 is a jump: the move keeps a gravity of 9.8 (+0x8c) and
-`0x1402f28f0` works out the velocity from the height; the first operand is not named yet.
+moves the point, and puts it on the end once the time is used up. Type 3 is a jump `{speed, height}` (`0x1402f2680`, update `0x1402f2760`): `0x1402f28f0` launches
+it at `speed` (field units a second) at the angle atan(2 (√H·√(H − dy) + H) / D), with D the
+distance across the ground, dy the rise to the point and H the height, and sets the gravity
+(+0x8c, 9.8 until then) so that the climb stops after √H / (√H + √(H − dy)) of the time, D over
+the speed across the ground: the jump peaks H above where it starts and lands on the point. A
+peak below the point, or no distance across, and the jump never runs. Each frame the gravity
+comes off the climb, then the point moves.
 
 Type 4 goes straight from where the thing is when the command runs to the position, in the
 given time (`0x1402f3530` updates it). With u the part of the time gone, the distance covered
