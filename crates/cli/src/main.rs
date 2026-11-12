@@ -3054,7 +3054,7 @@ fn subjects(root: &Path, save: Option<&Path>) -> Result<()> {
     };
     for (k, r) in rows.iter().enumerate() {
         let name = en.get(k).map_or(r.name.as_str(), |e| e.name.as_str());
-        let st = state.get(k).map_or(String::new(), |s| format!("  [{} {:?}]", s.progress, s.words));
+        let st = state.get(k).map_or(String::new(), |s| format!("  count {}{}", s.progress, if s.cleared() { ", cleared" } else { "" }));
         println!("{k:3} {:<8} {:<3} {:>3} {:<34} {} {}{st}", r.card.trim_start_matches("CARD_"), r.square, r.score, name, r.condition.trim_start_matches("SUBJECT_WORK_COND_"), r.params.join(","));
     }
     Ok(())

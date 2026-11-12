@@ -43,21 +43,31 @@ pub fn subjects(t: &Element) -> Vec<Subject> {
         .collect()
 }
 
-/// An assignment's saved state: five i32 (`subject/subject_save`, 20 bytes a row). The first is
-/// its count so far, not held at the target (the oracle save: 8 on "adventurer level 8", 4 on
-/// "synthesize one Neutralizer"); the other four read (10000, 8, 0, 1) on every counting
-/// assignment and (0, 1, 0, 0) on one an event clears ("Fix the Windmill!"); not named.
+/// An assignment's saved state: five i32 (`subject/subject_save`, 20 bytes a row, at
+/// `0x141099e08` in the running game, after the active card at `0x141099e00`): its count so far
+/// (not held at the target: 4 on "synthesize one Neutralizer"), a word that is 10000 on the
+/// counting ones, its state (8 cleared: `0x1403569d0` counts the active card's 25 squares whose
+/// assignment is at 8; "Alpha Wolf", cleared by its battle, has a count of 0 and state 8), and two
+/// more (0 and 1 on most).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SavedSubject {
     pub progress: i32,
-    pub words: [i32; 4],
+    pub word1: i32,
+    pub state: i32,
+    pub rest: [i32; 2],
+}
+
+impl SavedSubject {
+    pub fn cleared(&self) -> bool {
+        self.state == 8
+    }
 }
 
 pub fn saved(raw: &[u8]) -> Vec<SavedSubject> {
     raw.chunks_exact(20)
         .map(|c| {
             let w = |k: usize| i32::from_le_bytes(c[4 * k..4 * k + 4].try_into().unwrap());
-            SavedSubject { progress: w(0), words: [w(1), w(2), w(3), w(4)] }
+            SavedSubject { progress: w(0), word1: w(1), state: w(2), rest: [w(3), w(4)] }
         })
         .collect()
 }
@@ -75,6 +85,7 @@ mod tests {
         for v in [8, 10000, 8, 0, 1] {
             raw.extend((v as i32).to_le_bytes());
         }
-        assert_eq!(saved(&raw), vec![SavedSubject { progress: 8, words: [10000, 8, 0, 1] }]);
+        let s = saved(&raw)[0];
+        assert_eq!((s.progress, s.state, s.cleared()), (8, 8, true));
     }
 }
