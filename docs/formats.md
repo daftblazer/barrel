@@ -774,3 +774,23 @@ by the look of it); which voice a message line plays is not in the line (its fie
 speaker, gesture, expression and line number) and is still open, as are
 `ECT_EVENT_VOICE_PLAY` (`u31`, 400 uses, a voice number such as 14235) and
 `ECT_CHARA_VOICE_PLAY`.
+
+## Interface layouts (compiled into the executable)
+
+The `WinXls` sheets ship as textures only (`Data/x64/WinXls_<lang>/a15_*.g1t`); the layouts
+that place them are tables in the executable (English addresses; `crates/formats/src/layout.rs`):
+
+- **Layouts** `0x140dd9080`, ids from 0x165: 16 bytes `{u64 nodes, i32 x, i32 y}`
+  (`0x140373f40`, `0x140373ca0`). The nodes are 0x28 bytes, `{i32 part, i32 cut, i32 x, i32
+  y, i32 kind, ...}`, ending with part -1, each placed from the layout's (x, y)
+  (`0x140374260`; kind picks the widget, `0x14037ace0`, `0x14037a400`, ...).
+- **Sprites**: a part below 0x164 is a sprite sheet, `u64 cuts = [0x140db9f70 + 8 part]`;
+  each cut is 20 bytes `{i32 texture, u16 x0, y0, x1, y1, 8 bytes}`, the rectangle in the
+  texture's pixels.
+- **Textures**: ids from 583 name `WinXls` files, `[0x140db5c50 + 8 (id - 583)]` (303 names;
+  `a15_telop_mm01_op1_111_01.g1t` is 736). Lower ids, and parts from 0x164 on, are other
+  kinds (not read yet).
+- Coordinates are on a 1920 × 1080 screen.
+
+The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
+1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.

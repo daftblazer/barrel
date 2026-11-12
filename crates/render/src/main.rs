@@ -2005,7 +2005,11 @@ fn main() -> Result<()> {
     // characters' instance matrices and joint palettes change between frames.
     let mut player = None;
     // The text layer, the font, and the line it was last given (rebuilt when that changes).
-    let mut text_layer: Option<(text::Layer, text::Font, Option<(barrel_game::stage::Line, u32, u32)>)> = None;
+    let mut text_layer: Option<(text::Layer, text::Font, Option<(Option<barrel_game::stage::Line>, u32, u32, Option<u32>, u16)>)> = None;
+    // The narration cards the event shows (u55), and each one's pieces once the layer has
+    // their textures: (texture slot, uv, rectangle on a 1920 × 1080 screen).
+    let telop_cards: Vec<u32>;
+    let mut telop_pieces: std::collections::HashMap<u32, Vec<(usize, [f32; 4], [f32; 4])>> = std::collections::HashMap::new();
     // The event's music and voices, in a window only (frames written to files are silent):
     // the output, the mixer, the library, and the music now playing.
     let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
@@ -2036,6 +2040,13 @@ fn main() -> Result<()> {
         let steps = barrel_game::event::Player::escha(event, &messages, &barrel_formats::ebd::OperandTable::escha())?
             .reading_time(barrel_game::event::reading_time)
             .schedule();
+        telop_cards = steps
+            .iter()
+            .filter_map(|t| match t.step {
+                barrel_game::event::Step::Telop { card, .. } => Some(card),
+                _ => None,
+            })
+            .collect();
         let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_game::event::reading_time), ..Stage::default() }, steps);
         motion_names = std::fs::read_dir(root)?
             .flatten()
@@ -2085,10 +2096,52 @@ fn main() -> Result<()> {
         let atlas = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok();
         let common = std::fs::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok();
         let ui = common.as_ref().and_then(|c| barrel_formats::g1t::G1t::parse(c).ok());
+        // The narration cards' pieces and their WinXls_EN textures (slots after the font and
+        // the window).
+        let mut sheet_names: Vec<String> = Vec::new();
+        let mut card_pieces: Vec<(u32, Vec<barrel_formats::layout::Piece>)> = Vec::new();
+        if let Some(pe) = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok()) {
+            for &card in &telop_cards {
+                let Some(id) = barrel_formats::layout::telop_layout(&pe, card) else { continue };
+                let pieces = barrel_formats::layout::pieces(&pe, id);
+                for p in &pieces {
+                    if !sheet_names.contains(&p.texture) {
+                        sheet_names.push(p.texture.clone());
+                    }
+                }
+                card_pieces.push((card, pieces));
+            }
+        }
+        let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|n| std::fs::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
+        let sheets: Vec<Option<barrel_formats::g1t::G1t>> = sheet_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
         match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(28))) {
             (Some(glyphs), Some(g), Some(window)) if !g.textures.is_empty() => {
                 let size = g.textures[0].width as f32;
-                text_layer = Some((text::Layer::new(&gpu, pool, post_pass, &[&g.textures[0], window])?, text::Font { glyphs, size }, None));
+                let mut images = vec![&g.textures[0], window];
+                // Each sheet's slot in the layer (None: missing).
+                let mut slots = Vec::new();
+                for sheet in &sheets {
+                    match sheet.as_ref().and_then(|s| s.textures.first()) {
+                        Some(t) => {
+                            slots.push(Some((images.len(), t.width as f32, t.height as f32)));
+                            images.push(t);
+                        }
+                        None => slots.push(None),
+                    }
+                }
+                for (card, pieces) in &card_pieces {
+                    let list = pieces
+                        .iter()
+                        .filter_map(|p| {
+                            let (slot, w, h) = slots[sheet_names.iter().position(|n| *n == p.texture)?]?;
+                            let [l, t, r, b] = p.src.map(f32::from);
+                            let [x, y] = p.at.map(|v| v as f32);
+                            Some((slot, [l / w, t / h, r / w, b / h], [x, y, x + r - l, y + b - t]))
+                        })
+                        .collect();
+                    telop_pieces.insert(*card, list);
+                }
+                text_layer = Some((text::Layer::new(&gpu, pool, post_pass, &images)?, text::Font { glyphs, size }, None));
             }
             _ => eprintln!("no text: the English executable's glyph table, the Font_EN atlas or WinXls_EN/a15_common.g1t is missing"),
         }
@@ -2227,9 +2280,12 @@ fn main() -> Result<()> {
             }
             if let Some((layer, font, last)) = text_layer.as_mut() {
                 let line = play.stage.line_shown().cloned();
-                let now = line.clone().map(|l| (l, width, height));
+                // The narration card and its opacity (in 1/1000ths, so a fade redraws each step).
+                let card = play.stage.telop.filter(|_| play.stage.telop_alpha.now() > 0.0);
+                let card_alpha = (play.stage.telop_alpha.now().clamp(0.0, 1.0) * 1000.0) as u16;
+                let now = Some((line.clone(), width, height, card, card_alpha));
                 if now != *last {
-                    let quads = match &line {
+                    let mut quads = match &line {
                         Some(l) => {
                             let name = usize::try_from(l.speaker).ok().and_then(|k| speaker_names.get(k)).map(String::as_str);
                             if std::env::var("BARREL_TEXT_LOG").is_ok() {
@@ -2239,6 +2295,18 @@ fn main() -> Result<()> {
                         }
                         None => Vec::new(),
                     };
+                    // The card: the 1920 × 1080 layout scaled to the height and centred.
+                    if let Some(pieces) = card.and_then(|c| telop_pieces.get(&c)) {
+                        let k = height as f32 / 1080.0;
+                        let dx = (width as f32 - 1920.0 * k) / 2.0;
+                        let a = card_alpha as f32 / 1000.0;
+                        if std::env::var("BARREL_TEXT_LOG").is_ok() {
+                            eprintln!("frame {frame}: narration card {:?} at {a:.2}", card);
+                        }
+                        for &(texture, uv, [l, t, r, b]) in pieces {
+                            quads.push(text::Quad { rect: [dx + l * k, t * k, dx + r * k, b * k], uv, color: [1.0, 1.0, 1.0, a], texture });
+                        }
+                    }
                     layer.set(&gpu, &quads)?;
                     *last = now;
                 }

@@ -48,6 +48,7 @@ usage:
   barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
   barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
   barrel font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
+  barrel telops EXE             the narration cards (u55): each one's layout and texture pieces
   barrel g1s FILE.g1s [N]       a shader pack's programs: stage, inputs, outputs, constants, textures (N: program N's code)
   barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
   barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
@@ -121,6 +122,7 @@ fn main() -> ExitCode {
             Ok(n) => g1s(Path::new(file), Some(n)),
             Err(_) => Err("g1s: the program number is a number".into()),
         },
+        ["telops", exe] => telops(Path::new(exe)),
         ["font-text", exe, g1t, out, text] => font_text(Path::new(exe), Path::new(g1t), Path::new(out), text),
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
@@ -911,6 +913,19 @@ fn stream_check(kvs: &Path) -> Result<()> {
 
 /// Writes `text` in the English font, white on dark gray, to a PNG (a check of the glyph
 /// table against the atlas).
+/// Every narration card (`u55`): its layout and the texture pieces it shows.
+fn telops(exe: &Path) -> Result<()> {
+    let bytes = std::fs::read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    for card in 0..=50 {
+        let Some(id) = barrel_formats::layout::telop_layout(&pe, card) else { continue };
+        let pieces = barrel_formats::layout::pieces(&pe, id);
+        let list: Vec<String> = pieces.iter().map(|p| format!("{} {:?} at {:?}", p.texture, p.src, p.at)).collect();
+        println!("card {card:2} layout {id}: {}", list.join("; "));
+    }
+    Ok(())
+}
+
 fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
     use barrel_formats::{font, g1t as tex};
     let data = read(exe)?;
