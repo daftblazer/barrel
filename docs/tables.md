@@ -1228,7 +1228,10 @@ over an item's three traits, all from `itemData`'s `cost` (row +0x24):
 compare items by (`synthesis::worth`); and two reached through tables (callers not found):
 `0x1402a2fa0`, `2 × trunc((2q + 100) / 100) × cost + 5`, kept within 10 and 9,999, and
 `0x1402a3070`, `100 + trunc(2 × cost × (q + 50) / 10)`, within 100 and 9,999, where q is
-`0x14029e030`'s figure for the item (its quality / 3 × 2 to start with, and more not read).
+`0x14029e030`'s figure for the item: `trunc(quality / 3 × 2)`, plus (unless the unit's +0xe
+is set) each trait record's +0x28 and each effect record's +0x24 (which table columns those
+are, `potLv`/`point` or the effects' `value`, is not settled: the loaders' schema offsets are
+not the records').
 Which is the shop's buying price and which its selling price is still to be checked.
 
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
