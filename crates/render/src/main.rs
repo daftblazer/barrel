@@ -1013,9 +1013,10 @@ struct FieldBody {
 }
 
 /// Field area `area`'s enemies (`barrel_game::field_ai::build`), each drawn as its group's first
-/// monster in its field wait, added to the scene; returns the field, the bodies, their texture
-/// packs and the motion names.
-fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>)> {
+/// monster in its field wait, and Escha as a stand-in player walking west through them (`mob`
+/// `usize::MAX`), added to the scene; returns the field, the bodies, their texture packs, the
+/// motion names and where the player starts.
+fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let script = |name: &str| -> std::result::Result<Vec<barrel_game::squirrel::Stmt>, String> {
@@ -1045,7 +1046,19 @@ fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Re
             bodies.push(FieldBody { mob: k, instance: body.instance, skeleton, motions, column: "F_WAIT".into(), anim, since: 0.0 });
         }
     }
-    Ok((field, bodies, packs, barrel_game::gesture::motions(&pe)))
+    // The stand-in player: Escha (Chara row 0) walking west from 15 m east of the first enemy.
+    let start = field.mobs.first().map_or([0.0; 3], |m| m.creature.position);
+    let at = [start[0] + 1500.0, start[1], start[2]];
+    let escha = charas.children.first().and_then(|c| c.attr("BaseTag")).and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
+    if let Some(row) = escha {
+        if let Some((body, _)) = add_body(root, scene, tex_base, row, 0, at.map(|v| v as f32), -90.0, "WALK", None, |_, _, _, _| Ok(None::<()>))? {
+            packs.push(body.pack);
+            if let Some((skeleton, motions, anim, _)) = body.rig {
+                bodies.push(FieldBody { mob: usize::MAX, instance: body.instance, skeleton, motions, column: "WALK".into(), anim, since: 0.0 });
+            }
+        }
+    }
+    Ok((field, bodies, packs, barrel_game::gesture::motions(&pe), at))
 }
 
 /// What a character's face needs to change during playback: its rows, its facial
@@ -1628,6 +1641,8 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
+    // --save-every N: of several frames, write only every Nth and the last.
+    let mut save_every = 1u32;
     let mut event_line = None::<usize>;
     let mut event_at = None::<f32>;
     let (mut frames, mut fps) = (1u32, 60f64);
@@ -1698,6 +1713,7 @@ fn main() -> Result<()> {
             "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
+            "--save-every" => save_every = it.next().ok_or("--save-every N")?.parse::<u32>()?.max(1),
             "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
@@ -1837,12 +1853,12 @@ fn main() -> Result<()> {
     if let Some(area) = creatures_area {
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--creatures: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (field, bodies, packs, names) = field_creatures(&root, area, &mut scene, base)?;
+        let (field, bodies, packs, names, player_at) = field_creatures(&root, area, &mut scene, base)?;
         pack_bytes.extend(packs);
         if focus.is_none() {
             focus = field.mobs.first().map(|m| Vec3::from(m.creature.position.map(|v| v as f32)) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
-        creatures = Some((field, bodies, names, 0.0f32));
+        creatures = Some((field, bodies, names, 0.0f32, player_at, false));
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
@@ -2887,27 +2903,35 @@ fn main() -> Result<()> {
         let zoom_in = axis(KeyCode::Minus, KeyCode::Equal) + axis(KeyCode::NumpadSubtract, KeyCode::NumpadAdd);
         orbit.2 = (orbit.2 * (1.0 - zoom_in * 1.2 * frame_dt)).clamp(0.1, 10.0);
     }
-    // The field's enemies: a step of their scripts (the player far off, so they keep to their
-    // idle wandering), then each body placed, turned and posed in its current motion.
-    if let Some((field, bodies, names, time)) = creatures.as_mut() {
+    // The field's enemies: a step of their scripts while the stand-in player walks west at 2 m/s
+    // (until one touches it: then all stop, as the field turns to the encounter), then each
+    // body placed, turned and posed in its current motion.
+    if let Some((field, bodies, names, time, player_at, stopped)) = creatures.as_mut() {
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
-        if frame > 0 && dt > 0.0 {
-            field.step([1.0e7, 0.0, 1.0e7], 0.0, dt as f64).map_err(|e| format!("creatures: {e}"))?;
+        if frame > 0 && dt > 0.0 && !*stopped {
+            player_at[0] -= 200.0 * dt as f64;
+            if let Some(t) = field.step(*player_at, -std::f64::consts::FRAC_PI_2, dt as f64).map_err(|e| format!("creatures: {e}"))? {
+                eprintln!("frame {frame}: enemy {} touches the player: encounter group {}", t.enemy, t.group);
+                *stopped = true;
+            }
             *time += dt;
         }
         for b in bodies.iter_mut() {
-            let c = &field.mobs[b.mob].creature;
-            if let Some(column) = c.motion.and_then(|m| names.get(m as usize)) {
-                if *column != b.column {
-                    if let Some(anim) = b.motions.get(column).cloned() {
+            let (position, facing, motion) = match field.mobs.get(b.mob) {
+                Some(m) => (m.creature.position, m.creature.facing, m.creature.motion.and_then(|m| names.get(m as usize)).cloned()),
+                None => (*player_at, -std::f64::consts::FRAC_PI_2, Some(if *stopped { "F_WAIT" } else { "WALK" }.to_string())),
+            };
+            if let Some(column) = motion {
+                if column != b.column {
+                    if let Some(anim) = b.motions.get(&column).cloned() {
                         b.anim = anim;
                         b.since = *time;
                     }
-                    b.column = column.clone();
+                    b.column = column;
                 }
             }
-            let turn = glam::Quat::from_rotation_y(c.facing as f32);
-            instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(c.position.map(|v| v as f32))));
+            let turn = glam::Quat::from_rotation_y(facing as f32);
+            instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(position.map(|v| v as f32))));
             let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, *time - b.since, true));
             let base = instances[b.instance as usize].palette as usize;
             for (k, m) in joints.iter().enumerate() {
@@ -3695,7 +3719,10 @@ fn main() -> Result<()> {
         std::ptr::copy_nonoverlapping(p, pixels.as_mut_ptr(), pixels.len());
         d.unmap_memory(rmem);
     }
-    // One frame: OUT.png; several: OUT_000.png, OUT_001.png, ...
+    // One frame: OUT.png; several: OUT_000.png, OUT_001.png, ... (with --save-every, only some).
+    if frames > 1 && (frame + 1) % save_every != 0 && frame + 1 != frames {
+        continue;
+    }
     let path = if frames > 1 {
         let p = Path::new(&out_path);
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("frame");

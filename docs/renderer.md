@@ -115,9 +115,12 @@ the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its
 encounter group's first monster (`AREA_01_01`: two `MOB15A`, one `MOB01A`) in its `CharaBase`
-motions, and steps their scripts each frame with the player far away, so they keep to their
-idle wandering; each body follows its creature's place and facing and switches to the motion
-its script plays.
+motions, and steps their scripts each frame while a stand-in player (Escha, walking) goes
+west at 2 m/s from 15 m east of the first enemy; each body follows its creature's place and
+facing and switches to the motion its script plays. When one touches the player everything
+stops there and the encounter group is printed (`AREA_01_01`: the first Ore Rat at frame 512,
+group 10, as `barrel field-sim` finds). `--save-every N` writes only every Nth frame and the
+last.
 
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a
