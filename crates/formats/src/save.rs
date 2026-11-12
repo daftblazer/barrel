@@ -374,6 +374,43 @@ pub fn member(d: &[u8]) -> Option<Member> {
     })
 }
 
+/// A request board slot (`quest/now`, `player`, `next`: ten 52-byte slots each): the kind (+0:
+/// 0 synthesis, 1 monster, 2 gathering), the target (+4: an `itemData` row, or a monster
+/// number counted from the first `MONSTER_` name), the state (+0xc: 0 empty, 1 posted, 2
+/// taken), the day posted and a later day (+0x14, +0x18, the deadline presumably), a count
+/// (+0x1c), a float (+0x20: 6 where the table's points are 5.12) and two prizes as an item row
+/// and a rolled count (+0x24 .. +0x30).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoardSlot {
+    pub kind: i32,
+    pub target: i32,
+    pub state: i32,
+    pub posted: i32,
+    pub until: i32,
+    pub count: i32,
+    pub value: f32,
+    pub prizes: [(i32, f32); 2],
+}
+
+pub fn board_slots(d: &[u8]) -> Vec<Option<BoardSlot>> {
+    let i = |c: &[u8], k: usize| i32::from_le_bytes(c[4 * k..4 * k + 4].try_into().unwrap());
+    let f = |c: &[u8], k: usize| f32::from_le_bytes(c[4 * k..4 * k + 4].try_into().unwrap());
+    d.chunks_exact(52)
+        .map(|c| {
+            (i(c, 3) != 0).then(|| BoardSlot {
+                kind: i(c, 0),
+                target: i(c, 1),
+                state: i(c, 3),
+                posted: i(c, 5),
+                until: i(c, 6),
+                count: i(c, 7),
+                value: f(c, 8),
+                prizes: [(i(c, 9), f(c, 10)), (i(c, 11), f(c, 12))],
+            })
+        })
+        .collect()
+}
+
 /// What a game save's state says in plain numbers (records read so far).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Summary {
@@ -396,6 +433,10 @@ pub struct Summary {
     /// `party/m_squad` as saved: its 11 slots (-1 empty), the list the daily friendship gain
     /// reads.
     pub squad_slots: Vec<i32>,
+    /// `quest/now`: the request board's ten slots.
+    pub board: Vec<Option<BoardSlot>>,
+    /// `quest/player`: the requests taken.
+    pub taken: Vec<Option<BoardSlot>>,
     /// `subject/job_point_interval`: the rank points made in each of the nine periods (they
     /// sum to `job_point`).
     pub points_by_period: Vec<i32>,
@@ -438,6 +479,8 @@ pub fn summary(records: &[Record]) -> Summary {
             _ => Vec::new(),
         },
         board_seed: bytes(top("quest").and_then(|r| r.child("randseed"))).and_then(|d| i32_at(&d, 0)),
+        board: bytes(top("quest").and_then(|r| r.child("now"))).map(|d| board_slots(&d)).unwrap_or_default(),
+        taken: bytes(top("quest").and_then(|r| r.child("player"))).map(|d| board_slots(&d)).unwrap_or_default(),
         rank: (|| {
             let sub = top("subject")?;
             Some((i32_at(&bytes(sub.child("job_rank"))?, 0)?, i32_at(&bytes(sub.child("job_point"))?, 0)?))

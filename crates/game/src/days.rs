@@ -127,10 +127,9 @@ impl World {
     /// the 11-slot list, its characters as those the daily gain goes over and its first as the
     /// leader, the rank, the month reports and the shops' stock (each ware found by its shop,
     /// in the order the shops first appear in the ware table, and its place among that shop's
-    /// wares). `rng` is the main generator, which the save does not hold. Not read yet: the
-    /// board's ten slots (`quest/now`, left empty until the next redraw) and the last day's
-    /// rolls.
-    pub fn from_save(s: &barrel_formats::save::Summary, rng: Rng, wares: &[Ware]) -> World {
+    /// wares), and the board as `quest::board_from_save` found it. `rng` is the main
+    /// generator, which the save does not hold. Not read yet: the last day's rolls.
+    pub fn from_save(s: &barrel_formats::save::Summary, rng: Rng, wares: &[Ware], board: [Option<usize>; 10]) -> World {
         let mut friendship = [0.0; MEMBERS];
         for m in &s.party {
             if let Some(f) = friendship.get_mut(m.character as usize) {
@@ -190,7 +189,7 @@ impl World {
             leader,
             rank: RankState { points, rank, by_period },
             months,
-            board: [None; 10],
+            board,
             rolls: Vec::new(),
             stock,
         }
@@ -268,7 +267,7 @@ mod tests {
             month_reports: vec![month],
             ..Summary::default()
         };
-        let w = World::from_save(&s, Rng::from_state([1, 2, 3, 4]), &[]);
+        let w = World::from_save(&s, Rng::from_state([1, 2, 3, 4]), &[], [None; 10]);
         assert_eq!((w.date, w.board_offset, w.leader, w.joined.clone()), (229, 77, 0, vec![0, 2]));
         assert_eq!((w.friendship[2], w.slot[2], w.slot[0], w.slot[1]), (14.5, Some(1), Some(0), None));
         assert_eq!((w.rank.rank, w.rank.points, w.rank.by_period[..2].to_vec()), (3, 1565, vec![1539, 26]));

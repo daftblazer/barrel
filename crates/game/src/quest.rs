@@ -228,9 +228,51 @@ pub fn board_pick(chances: &[f32], rng: &mut BoardRng) -> Option<usize> {
     Some(order[0])
 }
 
+/// The requests a save's board slots hold (`barrel_formats::save::BoardSlot`), as indices into
+/// `requests`: each slot's target named through `items` (the `ITEM_*` names, item rows) or
+/// `monsters` (the names from the first `MONSTER_` on), then the first request of that kind,
+/// target and prize items. The slot keeps only rolled values, so requests that differ in
+/// nothing else (two Craft requests differ in a prize count and a condition) fall on the first.
+pub fn board_from_save(slots: &[Option<barrel_formats::save::BoardSlot>], requests: &[Request], items: &[&str], monsters: &[&str]) -> [Option<usize>; 10] {
+    let mut board = [None; 10];
+    for (b, s) in board.iter_mut().zip(slots) {
+        let Some(s) = s else { continue };
+        let kind = match s.kind {
+            0 => Kind::Synthesis,
+            1 => Kind::Monster,
+            _ => Kind::Gathering,
+        };
+        let name = |n: i32| usize::try_from(n).ok();
+        let target = if kind == Kind::Monster { name(s.target).and_then(|n| monsters.get(n)) } else { name(s.target).and_then(|n| items.get(n)) };
+        let Some(&target) = target else { continue };
+        let prize = |k: usize| name(s.prizes[k].0).and_then(|n| items.get(n)).copied();
+        let same_prizes = |r: &Request| (0..2).all(|k| r.prizes.get(k).map(|p| p.0.as_str()) == prize(k));
+        *b = requests
+            .iter()
+            .position(|r| r.kind == kind && r.target == target && same_prizes(r))
+            .or_else(|| requests.iter().position(|r| r.kind == kind && r.target == target));
+    }
+    board
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_board_finds_its_requests() {
+        use barrel_formats::save::BoardSlot;
+        let req = |kind, target: &str, prize: &str| Request { kind, target: target.into(), points: 5.12, prizes: vec![(prize.into(), 2.0)], from_event: None, until_event: None, from_day: 0, to_day: 0, priority: 0.0, table: 0, num: 1, clear_subject: None };
+        let requests = [req(Kind::Synthesis, "ITEM_MIX_CRAFT", "ITEM_A"), req(Kind::Synthesis, "ITEM_MIX_CRAFT", "ITEM_B"), req(Kind::Monster, "MONSTER_X", "ITEM_A")];
+        let items = ["ITEM_A", "ITEM_B", "ITEM_MIX_CRAFT"];
+        let slot = |kind, target, prize| Some(BoardSlot { kind, target, state: 1, posted: 220, until: 329, count: 1, value: 6.0, prizes: [(prize, 2.0), (-1, 0.0)] });
+        let mut slots = vec![None; 10];
+        slots[0] = slot(0, 2, 1);
+        slots[6] = slot(1, 0, 0);
+        let b = board_from_save(&slots, &requests, &items, &["MONSTER_X"]);
+        // The Craft request with ITEM_B as its prize, and the monster one.
+        assert_eq!((b[0], b[6], b[1]), (Some(1), Some(2), None));
+    }
 
     #[test]
     fn reads_requests() {

@@ -773,7 +773,14 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         let body = &barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
         let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
         let records = barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
-        let w = World::from_save(&barrel_formats::save::summary(&records), rng, &wares);
+        let summary = barrel_formats::save::summary(&records);
+        let (items, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
+        let (names, _) = pe.enum_names("MONSTER_ROCKRAT_00").ok_or("no MONSTER_* enum")?;
+        let monsters = &names[names.iter().position(|t| t.starts_with("MONSTER_")).unwrap_or(0)..];
+        let board = barrel_game::quest::board_from_save(&summary.board, &all, &items, monsters);
+        let w = World::from_save(&summary, rng, &wares, board);
+        let posted: Vec<&str> = w.board.iter().map(|s| s.map_or("-", |i| all[i].target.as_str())).collect();
+        println!("board as saved: {}", posted.join(", "));
         let d = barrel_game::calendar::Date::of(w.date);
         println!("from {}: day {} (Y{} {}/{}), rank {} ({} points), squad {:?}", file.display(), w.date, d.year, d.month, d.day, w.rank.rank, w.rank.points, w.joined);
         w
