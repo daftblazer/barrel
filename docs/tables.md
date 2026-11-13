@@ -567,8 +567,8 @@ rolled from its minimum to maximum (`0x1402a1e20` reads the slot's bounds and ro
 names an `item_effect` row whose used slots follow the item's own (`battle::trait_effects`).
 In `item_potential.xml` those bounds are effect tags (Fatal Blow: `ITEM_EFF_YOBI_072`, Mortal
 Blow, `ACT_PERCENT_DEATH` 100; Recycle: `ITEM_EFF_YOBI_104`, Reduce Gauge L), which
-`battle_data::traits` reads as row numbers. The quality bonus of
-flag 3 is not read yet
+`battle_data::traits` reads as row numbers. The bonus flag 3 adds is under "Rolling the amounts"
+(`0x1401bd8ee`, the item's trait values)
 (`battle_data::item_effects`, `barrel item-effects EXE`).
 
 `barrel_game::days::World` keeps what the days touch (the date, the main generator, the
