@@ -881,6 +881,24 @@ The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x140
 largest), `0x14066fb10`, `0x14066fad0`, `0x14066fba0`, `0x14066f250`, `0x14066f2b0` and four
 more. Most are thin wrappers over deeper calls, not followed yet.
 
+### Effects (`*.g1e`)
+
+The game's 536 effects are in `Data/x64/Effect/000_All.elixir.gz`, one `.g1e` each named
+`<number>_<NAME>.g1e` (the numbers of `Saves/effect/eff_pack_list.xml`, 0 to 715), with one
+shared texture pack, `eff_texture.g1t`. All 536 begin the same way:
+
+| Offset | What |
+|---|---|
+| 0 | `XF1G` |
+| 4 | the version, `5200` in all |
+| 8 | u32 file size (matches in all) |
+| 0xc | u32 9 in all |
+
+Further in, the devil aura (`701_FE_DEVIL_AURA_01`, 5,008 bytes) has 4 × 4 matrices (identity,
+then one with -1 on the axis) and, at 0x110, a list of increasing offsets (0x20, 0x24c, 0x478,
+0x6e4, 0x950, 0xddc), presumably its parts. Colours and sizes follow (runs of 1.0, 0.1, 40.0).
+The parts' layout is not decoded yet.
+
 ### Placement lists (`*.opl2`)
 
 Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 effects.
