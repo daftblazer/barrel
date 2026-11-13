@@ -40,7 +40,7 @@ usage:
   barrel opl2-scan DIR         read every field placement list in the containers
   barrel opl2 FILE#N              a field's placements: each object, its instances and their tags
   barrel ktf-scan DIR          read every field terrain in the containers
-  barrel g1a FILE#N            list an animation's tracks (bone, kind, values over time)
+  barrel g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
   barrel g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
   barrel g1a-scan DIR          read every animation in the containers
   barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
@@ -135,7 +135,8 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["opl2", file] => opl2_list(file),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
-        ["g1a", file] => g1a(file),
+        ["g1a", file] => g1a(file, None),
+        ["g1a", file, bone] => bone.parse().map_err(|_| format!("{bone}: not a bone number").into()).and_then(|b| g1a(file, Some(b))),
         ["g1a-moves", file, rest @ ..] => g1a_moves(file, rest.first().copied()),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
@@ -2856,10 +2857,23 @@ fn g1m_obj(spec: &str, out: &Path) -> Result<()> {
     Ok(())
 }
 
-fn g1a(spec: &str) -> Result<()> {
+fn g1a(spec: &str, bone: Option<u32>) -> Result<()> {
     let bytes = file_or_entry(spec)?;
     let a = barrel_formats::g1a::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
     println!("{:.3} s, {} tracks", a.duration, a.tracks.len());
+    if let Some(bone) = bone {
+        for t in a.tracks.iter().filter(|t| t.bone == bone) {
+            let mut x = 0.0;
+            while x <= a.duration + 1e-4 {
+                match t.pose(x) {
+                    Some((r, p, s)) => println!("  {x:5.2} s  position {p:8.2?}  rotation {r:6.3?}  scale {s:5.2?}"),
+                    None => println!("  {x:5.2} s  rotation {:6.3?}", t.rotation(x)),
+                }
+                x += 0.1;
+            }
+        }
+        return Ok(());
+    }
     for t in &a.tracks {
         let times = [0.0, a.duration * 0.25, a.duration * 0.5, a.duration * 0.75, a.duration];
         match t.scalar(0.0) {

@@ -366,8 +366,12 @@ Logy and sets the chance back to 5, a miss raises it by 10 (`game::walk::JumpVoi
 timed at +0x124 (and +0x128, against 1.7 s); on landing (`0x140234e12`) the motion turns to 4
 with a landing sound picked by the ground under her (the map's 64-byte record at the field's
 +0x10e8, its word +0x10 a material from 0 to 9, whose sound is the first word of a 16-byte entry
-at +0x2f68). How high and how far she goes (the rise itself) is not read; the viewer does not
-jump yet.
+at +0x2f68). The motion carries a rise of its own: in `PC20_ACT_JUMP` (1.93 s) her
+hips (bone 4; the root and the next two stay at the origin) go from 88 units up to 111 by 0.5 s,
+hold near 95 from 1.0 to 1.5 s (the pose in the air), drop to a 52-unit crouch at 1.7 s and are
+back at 88 at the end (`barrel g1a FILE#N 4` samples a bone). Whether the code also lifts her,
+and what ends the jump (landing on ground, or the timers), is not read; the viewer does not jump
+yet.
 
 ## Movies (open)
 
