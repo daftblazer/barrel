@@ -182,11 +182,19 @@ area_height>`** (`TOWN_10`: -0.005, 0.01, 200, 200). The field loader (`0x140069
 them (missing: speeds 0.0777 and 0.0333, sizes 50) and scales the sizes to field units
 (`0x1404f1990`: +0x14 speed u, +0x18 speed v, +0x1c width, +0x20 height). Each frame
 (`0x1404f1890`, the step in seconds) the offsets move by step × speed and keep their
-fraction (+0xc u, +0x10 v), and the matrix is rebuilt (`0x1405eb280`): a view from
-(0, 1000, 0) towards the origin with +z up (`0x1405c83d0`), then a projection scaling by
-1 / width and 1 / -height and moving by u + 0.5 and v + 0.5: the texture lies flat over the
-field, one repeat per area, drifting. Which way x runs (the view's handedness) is not read
-yet, nor drawn.
+fraction (+0xc u, +0x10 v), and the matrix is rebuilt (`0x1405eb280`) as three, multiplied
+in turn (`D3DXMatrixMultiply`, row vectors):
+
+1. `D3DXMatrixLookAtRH` from (0, 1000, 0) to the origin, +z up: a point goes to
+   (−x, z, y − 1000).
+2. A shear along the light (the direction the object was given, `0x1404f1980`; the sun's):
+   rows (−1, 0, 0), (0, −1, 0), (l.x / l.z, l.y / l.z, ±1) with l the direction in the view's
+   space, so each point slides along the light onto the plane 1000 units up.
+3. Scale by 1 / width and 1 / −height, then add u + 0.5 and v + 0.5.
+
+In the field's own space, d the sun's direction: U = (x − (y − 1000)·d.x / d.y) / width + u +
+0.5 and V = (z − (y − 1000)·d.z / d.y) / height + v + 0.5. The cloud shadows fall along the
+sunlight, one repeat of the texture per area, drifting at the speeds. Not drawn yet.
 
 ### Wind (plants swaying)
 
