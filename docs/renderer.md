@@ -266,7 +266,8 @@ event every 1.6 s, the actor in its `ATTACK00` motion and the target in `DAMAGE`
 member `DOWN` then `DOWN_LOOP`, a fallen monster gone once its damage motion ends), each back
 to `WAIT` when its motion ends, the event's line on the console. Not yet the game's: the
 timing, one motion for every action, no one running to their target, no effects, numbers or
-sounds, no results.
+sounds, no results. The battle HUD (`battlehud`, layout 886) is drawn over it: each member's
+plate with their portrait and their HP and MP bars cut to what is left, following the events.
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the

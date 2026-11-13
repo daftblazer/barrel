@@ -62,6 +62,8 @@ pub enum Element {
     Dim { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite mirrored left to right (node kind 2).
     Mirrored { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite's left `fill` (0 to 1) only: a bar.
+    Cropped { part: i32, cut: i32, at: [i32; 2], fill: f32 },
     /// A whole picture of a pack chosen at run time (an item's picture), `size` on the
     /// 1920 × 1080 screen, at half strength when `dim`.
     Picture { pack: String, index: u32, size: [f32; 2], at: [i32; 2], dim: bool },
@@ -82,7 +84,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } | Element::Cropped { part, cut, at, .. } => Some((part, cut, at)),
             Element::Label(_) | Element::Picture { .. } => None,
         }
     }
@@ -168,6 +170,15 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     color: [1.0, 1.0, 1.0, alpha],
                     texture: sheets.first + slot,
                 });
+            }
+            &Element::Cropped { part, cut, at, fill } => {
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let r = l + (r - l) * fill.clamp(0.0, 1.0);
+                let [x, y] = piece.at.map(|v| v as f32);
+                out.push(Quad { rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             Element::Picture { pack, index, size, at, dim } => {
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };

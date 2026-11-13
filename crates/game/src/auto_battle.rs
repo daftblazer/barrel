@@ -56,6 +56,8 @@ impl Tables {
 #[derive(Clone, Debug)]
 pub struct Outcome {
     pub names: Vec<String>,
+    /// Each fighter's HP and MP as the battle starts (all full): HP, max HP, MP, max MP.
+    pub start: Vec<[i32; 4]>,
     pub events: Vec<Event>,
     pub winner: Option<u8>,
 }
@@ -101,6 +103,7 @@ pub fn fight(t: &Tables, party: &[(usize, i32)], group: i32, rng: &mut Rng) -> R
 /// (`battle::scatter`), so a copy of `rng` taken now places them where the battle does.
 pub fn fight_drawn(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng) -> Result<Outcome, String> {
     let mut names = Vec::new();
+    let mut start = Vec::new();
     let mut members = Vec::new();
     for &(c, level) in party {
         let stats = t.growth.get(c).and_then(|l| l.get((level as usize).wrapping_sub(1))).ok_or_else(|| format!("character {c}: no growth row for level {level}"))?;
@@ -108,6 +111,7 @@ pub fn fight_drawn(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mu
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
         let mut member = crate::skirmish::Member::new(block, stats.mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);
+        start.push([stats.hp, stats.hp, stats.mp, stats.mp]);
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
     }
@@ -117,12 +121,13 @@ pub fn fight_drawn(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mu
         let m = t.monsters.get(k).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("monster {k}: none"))?;
         foes.push(crate::duel::Fighter { block: m.blocks[0].clone(), normal, skills: Some(&t.skills[..]), death_immune: m.death_immune, chara: bd::MONSTER_CHARA_FIRST as i32 + k as i32 });
         names.push(m.name.clone());
+        start.push([m.blocks[0].hp, m.blocks[0].hp, 0, 0]);
     }
     let sizes: Vec<f32> = drawn.iter().map(|&k| bd::monster_size(&t.radii, k).unwrap_or(MONSTER_SIZE)).collect();
     let kinds: Vec<&str> = t.kinds.iter().map(String::as_str).collect();
     let rules = crate::skirmish::ItemRules { acts: &t.acts, kinds: &kinds, effects: &t.effects };
     let (events, winner) = crate::skirmish::skirmish(&members, &foes, &sizes, rules, rng, MAX_EVENTS);
-    Ok(Outcome { names, events, winner })
+    Ok(Outcome { names, start, events, winner })
 }
 
 #[cfg(test)]
@@ -133,6 +138,7 @@ mod tests {
     fn lines_name_the_fighters() {
         let o = Outcome {
             names: vec!["Escha".into(), "Puni".into()],
+            start: vec![[10; 4], [10; 4]],
             events: vec![Event::Acted { who: 0, skill: "Attack".into(), target: 1, damage: 12, hp_left: 0, mp_left: 0 }],
             winner: Some(0),
         };

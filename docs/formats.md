@@ -1415,3 +1415,14 @@ channel's keys are in order with a value for each.
 
 Materials are not read yet, nor how the game blends the keys (linear, presumably, with the
 rotations slerped).
+
+**The battle HUD** is layout 886 on `a15_battle.g1t` (the battle's layouts are 854 to 929):
+the turn order along the top (layout 864: fifteen face frames and "Action"), the party's
+plates (layout 878: three of layout 870 at x 424, 798 and 1168, y 796; the reserve row, three
+of layout 868, at y 966), the battle cries' speech bubbles over each (layout 882, kind 22
+"…!!" texts), the action banner (885), the Support gauge with "Fast Forward(×1.5)" (884) and
+the target panel (877: a plate and the state icons). A plate (870): its frame (part 0xee cut
+5), the portrait (layout 869: part 0xf2, cut = the member's number, 0 Escha to 10 Nio, under a
+ring, part 0xee cut 4), the HP bar (part 0xee cut 11, 124 × 16 at [126, 54]) and the MP bar
+(cut 10 at [126, 104]), numbers (parts 0xde and 0xdf, kind 28) and state icons (layouts 873,
+875). Layout 910 is the party's formation screen (six plates, layout 905).

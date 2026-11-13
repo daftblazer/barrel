@@ -32,6 +32,7 @@ mod menu;
 mod status;
 mod basket;
 mod assignment;
+mod battlehud;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -1456,6 +1457,45 @@ fn battle_tables(root: &Path) -> Result<barrel_game::auto_battle::Tables> {
     Ok(barrel_game::auto_battle::Tables::load(&pe, &effects, chara.as_ref())?)
 }
 
+/// The battle HUD's layer (`battlehud`, layout 886) and what redrawing it needs: the font, the
+/// sheets, the placed nodes and the executable's bytes (for its texts).
+struct BattleHud {
+    layer: text::Layer,
+    font: text::Font,
+    sheets: hud::Sheets,
+    nodes: Vec<barrel_formats::layout::Placed>,
+    exe: Vec<u8>,
+    /// What it shows now, and at what size.
+    shown: Option<(Vec<battlehud::Member>, u32, u32)>,
+}
+
+fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("battle HUD: no glyph table")?;
+    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas = G1t::parse(&atlas_bytes)?;
+    let nodes = barrel_formats::layout::placed(&pe, battlehud::LAYOUT);
+    // Every picture it may show: each member's portrait, the bars.
+    let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
+    let mut every = battlehud::elements(&nodes, |p| barrel_formats::layout::text(&pe, p), &members);
+    every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
+    let keys = screen::sheet_keys(&pe, every);
+    let packs = screen::read_packs(root, &keys)?;
+    let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
+    let mut images = vec![atlas.textures.first().ok_or("battle HUD: an empty font atlas")?];
+    let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
+    for (name, index) in keys {
+        let Some(t) = parsed.iter().find(|(n, _)| *n == name).and_then(|(_, g)| g.textures.get(index as usize)) else { continue };
+        sheets.sizes.push([t.width as f32, t.height as f32]);
+        sheets.keys.push((name, index));
+        images.push(t);
+    }
+    let size = images[0].width as f32;
+    let layer = text::Layer::new(gpu, pool, pass, &images)?;
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, exe, shown: None })
+}
+
 /// The centre of a battle stage (`BF_POINT*`, 16 × 16 cells of 400: taken as the middle of its
 /// ground; not yet read from the game).
 const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
@@ -1506,7 +1546,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: u
             bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
     }
-    Ok((packs, bodies, BattlePlay { fighters, outcome, next: 0, time: 0.0, until: BATTLE_FIRST_STEP }))
+    Ok((packs, bodies, BattlePlay { fighters, now: outcome.start.clone(), charas: party.iter().map(|p| p.0).collect(), outcome, next: 0, time: 0.0, until: BATTLE_FIRST_STEP }))
 }
 
 /// Seconds before the battle's first step, and between steps.
@@ -1522,6 +1562,10 @@ struct BattlePlay {
     /// Per fighter (the party, then the monsters, as the battle numbers them).
     fighters: Vec<Option<BattleFighter>>,
     outcome: barrel_game::auto_battle::Outcome,
+    /// Each fighter's HP, max HP, MP and max MP now.
+    now: Vec<[i32; 4]>,
+    /// The party's character numbers (the first fighters).
+    charas: Vec<usize>,
     next: usize,
     time: f32,
     until: f32,
@@ -1538,6 +1582,24 @@ struct BattleFighter {
 }
 
 impl BattlePlay {
+    fn set(&mut self, k: usize, field: usize, value: i32) {
+        if let Some(v) = self.now.get_mut(k) {
+            v[field] = value;
+        }
+    }
+
+    /// The party as the HUD shows it.
+    fn members(&self) -> Vec<battlehud::Member> {
+        self.charas
+            .iter()
+            .enumerate()
+            .filter_map(|(k, &chara)| {
+                let v = self.now.get(k)?;
+                Some(battlehud::Member { chara, hp: (v[0], v[1]), mp: (v[2], v[3]) })
+            })
+            .collect()
+    }
+
     /// Plays `column` on fighter `k` once, from the start.
     fn play(&mut self, bodies: &mut [TownBody], k: usize, column: &str) {
         let time = self.time;
@@ -1589,6 +1651,14 @@ impl BattlePlay {
         }
         self.next += 1;
         use barrel_game::fight::Event;
+        match event {
+            Event::Acted { who, target, hp_left, mp_left, .. } | Event::Healed { who, target, hp_left, mp_left, .. } => {
+                self.set(target, 0, hp_left);
+                self.set(who, 2, mp_left);
+            }
+            Event::Felled { target, .. } => self.set(target, 0, 0),
+            Event::Poisoned { who, hp_left, .. } => self.set(who, 0, hp_left),
+        }
         let (who, target, fell) = match event {
             Event::Acted { who, target, hp_left, .. } => (Some(who), Some(target), hp_left <= 0),
             Event::Healed { who, target, .. } => (Some(who), Some(target).filter(|&t| t != who), false),
@@ -3987,6 +4057,20 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             None => eprintln!("no HUD: the English executable, the font or a WinXls pack is missing"),
         }
     }
+    let mut battle_layer = match battle_play.as_ref() {
+        Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
+            let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
+            match root.map(|r| battle_hud(&gpu, pool, post_pass, &r)) {
+                Some(Ok(h)) => Some(h),
+                Some(Err(e)) => {
+                    eprintln!("no battle HUD: {e}");
+                    None
+                }
+                None => None,
+            }
+        }
+        _ => None,
+    };
     // The field drawn (its place in `field_maps`): where the event is when playback starts,
     // else the first.
     let mut current_field: u16 = player
@@ -5274,6 +5358,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
                 *last = Some((v, width, height));
             }
     }
+    // The battle HUD with the party's HP and MP, rebuilt when they change.
+    if let (Some(h), Some(play)) = (battle_layer.as_mut(), battle_play.as_ref()) {
+        let members = play.members();
+        if h.shown.as_ref() != Some(&(members.clone(), width, height))
+            && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
+                let elements = battlehud::elements(&h.nodes, |p| barrel_formats::layout::text(&pe, p), &members);
+                h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
+                h.shown = Some((members, width, height));
+            }
+    }
     let record = |cb: vk::CommandBuffer| unsafe {
         if let Some(t) = &timer {
             t.begin(d, cb);
@@ -5478,6 +5572,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
         if let Some((layer, ..)) = &field_hud {
             layer.record(d, cb, width, height);
         }
+        if let Some(h) = &battle_layer {
+            h.layer.record(d, cb, width, height);
+        }
         d.cmd_end_render_pass(cb);
         if let Some(t) = &timer {
             t.mark(d, cb, 4);
@@ -5546,6 +5643,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     }
     if let Some((layer, ..)) = field_hud.take() {
         layer.destroy(&gpu);
+    }
+    if let Some(h) = battle_layer.take() {
+        h.layer.destroy(&gpu);
     }
     unsafe {
         d.destroy_buffer(readback, None);
