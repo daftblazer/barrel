@@ -2073,6 +2073,12 @@ overlay modifiers 2 and 3, not read). `barrel-view --field .../A15_WMAP OUT --pl
 draws it with Escha standing on it. The places on it are not in these files: the executable
 names them `WM_POINTER_LP_T0`, `WM_POINTER_LP_A0` to `_F2` (a large point per place, by the
 names) and `WM_POINTER_SP_A0P0` ... (small points along the routes), parsed from names with the
-`WM_POINTER_` prefix at `0x14003e11e`; where their positions live is not read yet. The routes
+`WM_POINTER_` prefix at `0x14003e11e`. In the executable's name array (from `0x140cf8bd0`) they
+are 96, numbered in this order: 0 `LP_T0`, 1 to 13 `LP_A0`, `A1`, `A2`, `C2`, `B1`, `B2`, `D2`,
+`E1`, `C1`, `D1`, `E2`, `F1`, `F2`; then per region its `SP_<region>` and `SP_<region>P0` on (14
+`SP_A0`, 15 to 19 `SP_A0P0` to `P4`, 20 `SP_A1` ... 93 `SP_E2P7`, a few numbers skipped:
+`SP_A2P5`, `SP_D2P6`); last 94 `LP_G1` and 95 `LP_G2`. Where their positions live is not read
+yet; the lead is `u135`'s path (`0x14016e7a0` gives the world map's current point, `0x1400f18c0`
+the field for it). The routes
 and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
 part).
