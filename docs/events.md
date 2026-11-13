@@ -1596,4 +1596,9 @@ also `u141` to `u143`. That points to the same numbering, but Ayesha's code is c
 differently enough that matching the cases by their instructions (as for Shallie) finds no
 confident pair either way, so only the switch's layout says so. Its other switches: `s` at
 `0x1400decf8` (from `0x73000003`, 111 entries, RVA `0xe10b0`) and `q` at `0x140495ba5` (from
-`0x71000002`, 40 entries, RVA `0x49672c`), not compared yet.
+`0x71000002`, 40 entries, RVA `0x49672c`). The `s` switch passes by exactly
+Escha's set (`s22`, `s31`, `s32`, `s63`, `s72` to `s81`, `s105`; Escha's `s121` lies past
+Ayesha's 111 entries), so the `s` numbers line up too. The `q` switch does not: it passes by
+`q4` to `q7`, `q9` to `q11`, `q16`, `q17`, `q20` to `q22`, `q32`, `q35`, `q38`, `q40`, where Escha
+passes by `q3` to `q5`, `q7` to `q9`, `q13`, `q14`, `q17` to `q19`, `q29`, `q32`, `q35`, `q37`,
+`q39`: as between Escha and Shallie, the `q` group is the one that was renumbered.
