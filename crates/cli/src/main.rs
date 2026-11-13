@@ -65,6 +65,7 @@ usage:
   barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
   barrel world-points EXE       the world map's points and the field maps they open
   barrel world-routes EXE       the world map's routes and the marks at their ends
+  barrel world-places EXE       the world map's places: tags, route links, names, descriptions
   barrel travel EXE FROM TO     a trip on the world map between two marks (T0, A0, A0p0 ...): routes, days, fields
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
@@ -177,6 +178,7 @@ fn main() -> ExitCode {
         },
         ["world-points", exe] => world_points(Path::new(exe)),
         ["world-routes", exe] => world_routes(Path::new(exe)),
+        ["world-places", exe] => world_places(Path::new(exe)),
         ["travel", exe, from, to] => travel(Path::new(exe), from, to),
         ["gimmicks", exe] => gimmicks(Path::new(exe), None),
         ["gimmicks", exe, area] => match area.parse() {
@@ -725,6 +727,17 @@ fn world_points(exe: &Path) -> Result<()> {
         let after = if event >= 0 { format!(" after event {event}") } else { String::new() };
         let at = placements.as_ref().and_then(|p| barrel_formats::world::point_position(p, name)).map(|p| format!(" at ({:.0}, {:.0}, {:.0})", p[0], p[1], p[2])).unwrap_or_default();
         println!("point {point:3} {name:10} -> map {map:3} {field}{after}{at}");
+    }
+    Ok(())
+}
+
+/// Lists the world map's places (`world::places`): tag, kind, links (route numbers by way:
+/// right, left, down, up, two more), the two words at +0x48, name and description.
+fn world_places(exe: &Path) -> Result<()> {
+    let bytes = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    for (k, p) in barrel_formats::world::places(&pe, barrel_formats::world::PLACES_EN).ok_or("no place table")?.iter().enumerate() {
+        println!("{k:2} {:6} kind {} links {:?} extra {:?} {} | {}", p.tag, p.kind, p.links, p.extra, p.name, p.description.replace('\n', " "));
     }
     Ok(())
 }

@@ -2364,7 +2364,14 @@ panel line ("A path leading into the ruins."; none for the town and the regions'
 The slots are the directions on the map: right (+x), left (-x), down (+z) and up (-z), then
 two more (one route in the whole table uses slot 4): Sector One (26800, 31300) has Sector
 Two (27500, 31300) in slot 0, the Ruins Entrance (26250, 30750) in slot 1 and Sector Three
-(26800, 32000) in slot 2 (`game::area_map::step`). The area map is the world map's own terrain
+(26800, 32000) in slot 2 (`game::area_map::step`). The two words at +0x48 look like a place's opening condition (`barrel world-places` lists
+them): `[-1, 0]` for most, `[0, N]` where N is another place's index (Fruitful, 39: `[0, 37]`,
+the Garden; the Wasteland, 48: `[0, 45]`, the Frontier: open once that place is, presumably)
+and `[1, N]` with N from 30 to 150 (Sector Three `[1, 30]`, the Upland places 40 to 60, the
+Burning one 150: not a percentage, not read). The recording at the user's 8/20 shows Sector One
+with no way down to Sector Three, so the route is drawn only once its place is open. The slots
+4 and 5 hold other numbers (177, 191, 208, 337 ...) past the route table's 85: not routes, not
+read. The area map is the world map's own terrain
 (no other field and no game mode of its own); its panels are layouts 636 (the buttons), 637
 (the place name, top right), 638 (a point's label), 639 (the travel panel, "Time", "Date"),
 641 (a sector's panel: the description, the "Items to gather" tab the game titles "Gatherable
