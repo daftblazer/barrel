@@ -2368,7 +2368,12 @@ Two (27500, 31300) in slot 0, the Ruins Entrance (26250, 30750) in slot 1 and Se
 (no other field and no game mode of its own); its panels are layouts 636 (the buttons), 637
 (the place name, top right), 638 (a point's label), 639 (the travel panel, "Time", "Date"),
 641 (a sector's panel: the description, the "Items to gather" tab the game titles "Gatherable
-Items", ten item lines) and 642 (a region's "Map" list, ten lines). The route records
+Items", ten item lines) and 642 (a region's "Map" list, ten lines). None has a place of its
+own on the screen; the recording puts 637 at (1434, 61) (its texts right-aligned, so the
+region's name ends at x 1838), 641 at (1450, 143) and 640, the tab with the gathering level
+icon, at (1448, 305) in 641's own tab's stead. 641's first text (60, 76) is the place's
+description, broken into lines of about 330 pixels; the place's name stands centred on the
+scroll's top at (1673, 158), the scroll itself in no layout read. The route records
 (`barrel_formats::world::areas`, `R0` ..., `A0R0` ...: the ids the `R*` and `A0r*` dots carry)
 hold, besides their days, an event number at +0x14 (46 for `R0`, 171 for `R1`, 628 for `A0R1`)
 and at +0x18 and +0x20 (`A0R1`: 50 and 171), presumably when each opens. Which points a route joins is not in them; the game's own table

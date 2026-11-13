@@ -36,6 +36,7 @@ mod battlehud;
 mod result;
 mod shopping;
 mod equipping;
+mod area_panel;
 mod drops;
 mod mix;
 mod fsr3;
@@ -1076,8 +1077,7 @@ fn equip_visit(
 }
 
 /// The area map on the world map (`game::area_map`): the places, their marks, the routes'
-/// tags, the field each opens, where the player stands, and the panel (the place's name and
-/// description; not yet the game's layout 641: plain text at its place).
+/// tags, the field each opens, where the player stands, and its panels (`area_panel`).
 struct AreaMap {
     places: Vec<barrel_formats::world::Place>,
     marks: Vec<Option<[f32; 3]>>,
@@ -1087,6 +1087,7 @@ struct AreaMap {
     at: usize,
     layer: text::Layer,
     font: text::Font,
+    sheets: hud::Sheets,
     shown: Option<(usize, u32, u32)>,
     pe_bytes: Vec<u8>,
 }
@@ -1121,8 +1122,28 @@ impl AreaMap {
         let atlas = G1t::parse(&atlas_bytes)?;
         let image = atlas.textures.first().ok_or("an empty font atlas")?;
         let font = text::Font { glyphs, size: image.width as f32 };
-        let layer = text::Layer::new(gpu, pool, pass, &[image])?;
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, shown: None, pe_bytes })
+        // The panels' sheets, as any place's panels use them.
+        let keys = screen::sheet_keys(&pe, area_panel::elements(&pe, "", "", "", |_, _| 0.0));
+        let packs = screen::read_packs(root, &keys)?;
+        let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
+        let mut images = vec![image];
+        let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
+        for (name, index) in keys {
+            let Some(t) = parsed.iter().find(|(n, _)| *n == name).and_then(|(_, g)| g.textures.get(index as usize)) else { continue };
+            sheets.sizes.push([t.width as f32, t.height as f32]);
+            sheets.keys.push((name, index));
+            images.push(t);
+        }
+        let layer = text::Layer::new(gpu, pool, pass, &images)?;
+        drop(images);
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes })
+    }
+
+    /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
+    fn region_name(&self, at: usize) -> &str {
+        let tag = &self.places[at].tag;
+        let region = tag.split_once('p').map_or(tag.as_str(), |(r, _)| r);
+        self.places.iter().find(|p| p.tag == region).map_or("", |p| p.name.as_str())
     }
 
     /// A button: a direction goes along that way's route (the dots queued as the walker's
@@ -1156,16 +1177,9 @@ impl AreaMap {
         }
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
         let p = &self.places[self.at];
-        let label = |text: &str, at: [i32; 2], size: f32| hud::Element::Label(barrel_formats::layout::Text { at, size, colour: [0xff, 0x30, 0x24, 0x18], text: text.to_string(), kind: 21 });
-        let mut e = vec![label(&p.name, [1500, 170], 36.0)];
-        if !p.description.is_empty() {
-            e.push(label(p.description.trim(), [1500, 230], 30.0));
-        }
-        if self.fields[self.at].is_some() {
-            e.push(label("Enter: go in", [1500, 290], 30.0));
-        }
-        let sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
-        self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &sheets, &e, width as f32, height as f32))?;
+        let font = &self.font;
+        let e = area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, |s, size| font.width_of(s) * size / text::LINE * 1.47);
+        self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &self.sheets, &e, width as f32, height as f32))?;
         self.shown = Some((self.at, width, height));
         Ok(())
     }
