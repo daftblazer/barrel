@@ -31,7 +31,7 @@ pub fn listings(checks: &[EventCheck]) -> HashMap<u8, Vec<Listed>> {
         }
     }
     for list in out.values_mut() {
-        list.sort_by(|a, b| b.priority.cmp(&a.priority));
+        list.sort_by_key(|a| std::cmp::Reverse(a.priority));
     }
     out
 }
@@ -153,10 +153,10 @@ pub struct Fired<'a> {
 /// One command of a group (`0x140213670`). `fired` is the trigger group that fired and its
 /// values. None for the codes not read yet. `MT` and `LT` include equality.
 pub fn command(c: &Command, fired: &Fired, w: &impl World) -> Option<bool> {
-    if let Some(t) = c.trigger() {
-        if t != fired.group {
-            return Some(false);
-        }
+    if let Some(t) = c.trigger()
+        && t != fired.group
+    {
+        return Some(false);
     }
     let op = |i: usize| c.operands.get(i).copied().unwrap_or(0);
     let cmp = |v: i32, kind: usize| match kind {
