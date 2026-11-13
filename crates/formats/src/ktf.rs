@@ -99,6 +99,8 @@ pub struct Patch {
     pub first_draw: u32,
     pub draws: u16,
     pub first_vertex: u32,
+    /// Its first index in [`Mesh::indices`] (a draw's `first_index` counts from it).
+    pub first_index: u32,
     pub low: f32,
     pub high: f32,
     /// Whether its node has no children: the finest level of detail over its ground (a coarse
@@ -174,7 +176,7 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
     let mut m = Mesh { cell_size, ..Default::default() };
     for k in 0..patches {
         let o = at + 16 * k;
-        m.patches.push(Patch { first_draw: w(o), draws: u16_at(o + 4), first_vertex: 0, low: bounds[k].0, high: bounds[k].1, leaf: leaves[k] });
+        m.patches.push(Patch { first_draw: w(o), draws: u16_at(o + 4), first_vertex: 0, first_index: 0, low: bounds[k].0, high: bounds[k].1, leaf: leaves[k] });
     }
     at += 16 * patches;
     for k in 0..draws {
@@ -191,17 +193,17 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
             indices: w(o + 20),
         });
     }
-    at += 24 * draws + 8 * patches;
-    // A patch's vertices end where its farthest-reaching draw does.
-    let mut next = 0u32;
-    for p in &mut m.patches {
-        p.first_vertex = next;
-        let range = m.draws.get(p.first_draw as usize..(p.first_draw as usize + usize::from(p.draws))).ok_or(Error::Corrupt("ktf patch draws"))?;
-        next += range.iter().map(|d| d.first_vertex + d.vertices).max().unwrap_or(0);
+    at += 24 * draws;
+    // Per patch: its vertices' and its indices' byte offsets into the two lists.
+    for (k, p) in m.patches.iter_mut().enumerate() {
+        let o = at + 8 * k;
+        p.first_vertex = w(o) / 16;
+        p.first_index = w(o + 4) / 2;
+        if p.first_vertex as usize > vbytes / 16 || p.first_index as usize > ibytes / 2 {
+            return Err(Error::Corrupt("ktf patch offsets"));
+        }
     }
-    if next as usize != vbytes / 16 {
-        return Err(Error::Corrupt("ktf patch vertices"));
-    }
+    at += 8 * patches;
     for k in 0..vbytes / 16 {
         let o = at + 16 * k;
         let s = |i: usize| u16_at(o + i) as i16;
@@ -221,13 +223,17 @@ impl Mesh {
     }
 }
 
-/// A draw's triangles from its index strip (the game draws terrain as strips, repeated
-/// indices joining the runs): index triples into the patch's vertices (the indices count from
-/// the patch's first vertex; the draw's vertex range only bounds them), the degenerate ones
-/// left out.
-pub fn strip_triangles(m: &Mesh, draw: &Draw) -> Vec<[u32; 3]> {
-    let start = draw.first_index as usize;
+/// Draw `draw` of patch `patch`'s triangles from its index strip (the game draws terrain as
+/// strips, repeated indices joining the runs): index triples into the patch's vertices, the
+/// degenerate ones left out. A draw's indices start at the patch's first index and count from
+/// the patch's first vertex (its vertex range only bounds them).
+pub fn patch_triangles(m: &Mesh, patch: &Patch, draw: &Draw) -> Vec<[u32; 3]> {
+    let start = patch.first_index as usize + draw.first_index as usize;
     let Some(strip) = m.indices.get(start..start + draw.indices as usize) else { return Vec::new() };
+    strip_of(strip)
+}
+
+fn strip_of(strip: &[u16]) -> Vec<[u32; 3]> {
     strip
         .windows(3)
         .enumerate()

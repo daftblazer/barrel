@@ -958,30 +958,43 @@ executable reads them as a 16-byte and an 8-byte part):
 |---|---|
 | 0 | the program within the pass kind (below) |
 | 1 | the pass kind: 0x00 the depth pass (key `00 ff ff ff`), 0x10 one layer painted alone (the bake programs 5–7: byte 0 is 0, 1, 2), 0x20 the lit ground |
-| 2, 3 | 4 or 6, and 0 or 1 (not settled: 4 with programs 9–11, 6 with 13–15, so presumably which blend map) |
+| 2 | 4 or 6 in the lit draws (6 with programs 13–15), 4 in the bakes; meaning not settled |
+| 3 | the blend map (0 in AREA_01_01's lit pairs, 1 in its bakes) |
 | 4 | the number of layers drawn (0, 1 or 2) |
 | 5, 6 | those layers (0xff where none) |
 | 8–23 | first vertex, vertex count, first index, index count |
 
 In the lit kind byte 0 + 8 is the shader pack's program: 0 is one tile (program 8), 1–3 two
-tiles under the first map's channel pairs (programs 9–11), 5–7 the same with the second map
-(13–15). Program 9 reads the map's red and green, divides each by their sum (plus 1/1024) and
+tiles under a map's channel pairs (programs 9–11), 4 one tile plus the bake (12) and 5–7 two
+tiles plus the bake (13–15). **The bake:** the one-layer draws (kind 0x10, programs 5–7 by
+byte 0: red, green, blue) paint each of their layer's tile times its map channel, alpha half
+the weight, added together into a screen-sized target (`sRtt`, read at the projected
+position). Program 13 then takes its pair's two weights plus twice the bake's alpha as the
+whole weight, adds the bake's colour to its two tiles and divides by that whole; program 12
+weighs its one tile by 1 − 2 × the bake's alpha (at least 0) the same way. So a patch with
+more layers than one map holds blends three of them through a map's pairs and the rest (under
+the second map) through the bake. Program 9 reads the map's red and green, divides each by their sum (plus 1/1024) and
 mixes its two tiles by them; the tile's alpha (0 in the files read) scales the specular term,
 and the result is halved. The pairs follow one channel per layer: in AREA_01_01's first patch
-the draws `0 2` (program 9: red, green), `2 1` (10: green, blue) and `1 0` (11: blue, red)
-give the first map's red to layer 0, green to layer 2 and blue to layer 1. So a patch is drawn
+the draws `0 2` (program 9: red, green), `2 1` (10: green, blue) and `1 0` (11: blue, red:
+it reads red and blue and swaps them) give the first map's red to layer 0, green to layer 2
+and blue to layer 1. The layer numbers in the bakes (`0 1 2` in patch 0, `0 1 3` in patch 1)
+do not fit the same layers under a second map, so a draw's layer numbers presumably count in a
+per-patch texture list (the patch record's 4 or 5), which is not found yet. So a patch is drawn
 as the overlaps of its layers two at a time, each overlap its own index range. TOWN_01 (one
 layer): a depth draw and one lit draw of one tile.
 
-**Vertices and indices.** After the draws: 8 bytes per patch (`fba0`), then the vertices
+**Vertices and indices.** After the draws: 8 bytes per patch (`fba0`: the patch's first
+vertex and first index as byte offsets into the two lists below; the second is divided by the
+index size, a byte of the terrain object, as it is read), then the vertices
 (the byte count at 0x40, 16 bytes each) and the indices (u16, the byte count at 0x44); they
 end exactly at the layer textures' offset (0x10) in TOWN_01, AREA_08_02 and AREA_01_01, so the
 block is read whole. A vertex is `{s16 x, s16 height, s16 z, s16 0, u8 × 4 normal, u8 × 4
 colour}`: x and z count cells (times the cell size at 0x84: 100 in AREA_01_01 over 0 to 64,
 250 in AREA_08_02 over 4 to 20 and 0 to 60), the colour is white (`ff ff ff 80`) in all read. The patches' vertices follow each other
-(a patch's count is where its farthest-reaching draw ends; they add up to the whole), and a
-draw's indices count from its patch's first vertex (its vertex range is only the lowest and
-the span its indices use). The indices are triangle strips, repeated indices joining the runs. The height spreads the
+(a patch's count is where its farthest-reaching draw ends; they add up to the whole). A draw's
+first index counts from its patch's first index and its indices from its patch's first vertex
+(its vertex range is only the lowest and the span its indices use). The indices are triangle strips, repeated indices joining the runs. The height spreads the
 s16 range over a node's height bounds: low + (stored + 32768) / 65535 × (high − low), the
 bounds being those of the topmost ancestor that holds a patch too (fields with levels of
 detail, such as AREA_04_01, have coarse patches whose children are finer patches over the same

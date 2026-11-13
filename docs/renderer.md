@@ -11,15 +11,14 @@ objects (126 draws, 52,089 triangles), and they come out where they belong: a ri
 cliffs around a valley of trees, rocks and flowers. Under them it draws the
 terrain from the field's `.ktf`: the terrain's own mesh (`ktf::mesh`, docs/formats.md
 "Patches and their draws"), its finest patches' lit draws, each triangle carrying its draw's
-one or two layers and its blend map and channel pair. `terrain.frag` mixes the two layers by
-that pair, each divided by their sum, as the field's own programs 9 to 15 do; a one-layer draw
-is that layer alone. Each layer is tiled every n cells (its record's repeat). In AREA_01_01
+one or two layers and its blend map (the draw's fourth byte) and channel pair. `terrain.frag`
+mixes the two layers by that pair, each divided by their sum, as the field's own programs 9 to
+11 do; a one-layer draw is that layer alone. Each layer is tiled every n cells (its record's repeat). In AREA_01_01
 that gives the sandy path and the grass beside it. Not yet the game's: the stored normals (the
-heightmap's are used), the tiles' alpha as the specular strength, the depth and one-layer bake
-draws (kinds 0x00 and 0x10), the coarse patches at a distance; 207 of AREA_01_01's 6,248 lit
-triangles index past their patch's vertices and are left out (hard seams and small gaps where
-draws meet show it), and which map the third and fourth bytes of a draw name is not settled
-(the program number is used).
+heightmap's are used), the tiles' alpha as the specular strength, the depth draws, the bake (the
+one-layer draws under the second map, added by programs 12 to 15: those draws are drawn
+without it), the per-patch texture list the layer numbers presumably count in, and the coarse
+patches at a distance.
 
 Options: `--size N` (64..1280), `--yaw DEG`, `--pitch DEG` (45 by default for fields),
 `--no-alpha` to turn off the alpha test. `BARREL_DRY=1` builds the scene and prints its

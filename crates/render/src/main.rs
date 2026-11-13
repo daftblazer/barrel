@@ -571,6 +571,7 @@ impl Scene {
     fn add_terrain(&mut self, m: &barrel_formats::ktf::Mesh, h: &barrel_formats::khm::Heightmap, repeats: &[u8]) -> (u32, u32) {
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
         let first_index = self.indices.len() as u32;
+        let mut dropped = 0usize;
         let hcell = |x: isize, z: isize| h.height(x.clamp(0, h.cells_x as isize) as usize, z.clamp(0, h.cells_z as isize) as usize);
         for (k, p) in m.patches.iter().enumerate() {
             if !p.leaf {
@@ -580,7 +581,9 @@ impl Scene {
             let draws = m.draws.get(p.first_draw as usize..p.first_draw as usize + usize::from(p.draws)).unwrap_or(&[]);
             for d in draws.iter().filter(|d| d.kind == 0x20 && !d.layers.is_empty()) {
                 let (a, b) = (d.layers[0], *d.layers.get(1).unwrap_or(&d.layers[0]));
-                let blend = if d.layers.len() < 2 || d.program % 4 == 0 { 3 } else { u32::from(d.program / 4) * 4 + u32::from(d.program % 4 - 1) };
+                // The map is the draw's fourth byte; programs 1-3 and 5-7 read its channel pairs (5-7
+                // also add the bake of the other map's layers, not drawn yet).
+                let blend = if d.layers.len() < 2 || d.program % 4 == 0 { 3 } else { u32::from(d.extra[1]) * 4 + u32::from(d.program % 4 - 1) };
                 let rep = |l: u8| f32::from(*repeats.get(l as usize).unwrap_or(&1));
                 let uv = [f32::from(a) + 32.0 * f32::from(b) + 1024.0 * blend as f32, rep(a) + 256.0 * rep(b)];
                 let base = self.vertices.len() as u32;
@@ -594,12 +597,17 @@ impl Scene {
                     self.hi = self.hi.max(pos);
                     self.vertices.push(Vertex { pos: pos.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [0.0; 3] });
                 }
-                for t in barrel_formats::ktf::strip_triangles(m, d) {
+                for t in barrel_formats::ktf::patch_triangles(m, p, d) {
                     if t.iter().all(|&i| (i as usize) < verts.len()) {
                         self.indices.extend(t.map(|i| base + i));
+                    } else {
+                        dropped += 1;
                     }
                 }
             }
+        }
+        if dropped > 0 {
+            eprintln!("terrain: {dropped} triangles index past their patch's vertices, left out");
         }
         (first_index, self.indices.len() as u32 - first_index)
     }
