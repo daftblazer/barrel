@@ -133,10 +133,6 @@ likely settle them where static reading failed.
 
 ## Events and story
 
-- **Event camera yaw sign.** `EVENT_MM01_OP1_111` needs the sign flipped (Escha 2° off centre)
-  while `EVENT_MM08_AS4_130` looks right as is. Suspects: `t19` field camera data, operand 4's
-  angle (`0x1401ec8f0`), a per-field base yaw; read `CameraCFieldMap`'s `t20` path to the eye
-  (`0x1401e7a10`, jump index 0x11).
 - **`TOWN_03` event scenes** (`EVENT_MM08_AS4_110`) render from inside the ground with nobody in
   view; the terrain is a flat placeholder. Next idea: each object's bounds against the
   characters; whether the event starts in another field before its `q12`.

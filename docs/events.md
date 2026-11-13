@@ -225,6 +225,14 @@ put the event's characters nearest the centre of its first shot over the 168 sto
 (taking operand 3 as the pitch, and the yaw's sign in x only); both were wrong in ways that
 measure could not see, since the view always passes through the target.
 
+**Checked against the game** (an oracle run, 2026-11-13, 1280 × 720): the first line of
+`EVENT_MM01_OP1_111` ("You haven't forgotten anything, have you, Escha?") in the game and
+Barrel's frame at 8 s line up: the cabinet behind Escha, the floor's ledge and both
+characters' heads in the same places, Escha left of centre and Clone from behind on the
+right. So the eye above (yaw sign included) is the game's; an earlier note that this event
+needed the yaw's sign flipped no longer holds. The game holds the camera on the shot while
+the line waits for the player; Barrel's playback does not wait.
+
 **The field camera over time** (`barrel_game::field_camera`). Each of its values is held as
 `{start, goal, now, seconds}` (yaw at +0x20 to +0x2c, pitch +0x50, a fourth angle +0x80,
 distance +0x98; setters `0x1401eca20`, `0x1401ec7a0`, `0x1401ec940`, `0x1401ec890`): a
