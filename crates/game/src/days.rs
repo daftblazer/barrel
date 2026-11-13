@@ -75,6 +75,41 @@ pub const RECIPES: usize = 265;
 pub const MONTHS: usize = 60;
 pub const MEMBERS: usize = 11;
 
+/// The tables the days read, loaded from an install (as `barrel days` loads them): the
+/// requests (`QuestAlc`, `QuestBtl`, `QuestGat`), the wares (`ShopData`), the ranks
+/// (`RankData`) and each recipe's price (its item, the first word of its 0x120-byte record at
+/// `0x140d19c70` in the English executable, and that item's `itemData` cost).
+pub struct Data {
+    pub requests: Vec<Request>,
+    pub wares: Vec<Ware>,
+    pub ranks: Vec<crate::rank::Rank>,
+    pub recipe_costs: Vec<i32>,
+}
+
+impl Data {
+    pub fn load(root: &std::path::Path) -> Result<Data, String> {
+        let table = |rel: &str| -> Result<barrel_formats::table::Element, String> {
+            let path = root.join(rel);
+            let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            barrel_formats::table::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+        };
+        let mut requests = Vec::new();
+        for (file, kind) in [("QuestAlc", quest::Kind::Synthesis), ("QuestBtl", quest::Kind::Monster), ("QuestGat", quest::Kind::Gathering)] {
+            requests.extend(quest::requests(&table(&format!("Saves/quest/{file}.xml"))?, kind));
+        }
+        let ranks = crate::rank::ranks(&table("Saves/rank/RankData.xml")?);
+        let wares = shop::wares(&table("Saves/shop/ShopData.xml")?);
+        let costs: Vec<i32> = table("Saves/item/itemData.xml")?.children.iter().map(|r| r.attr("cost").and_then(|v| v.parse().ok()).unwrap_or(0)).collect();
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).map_err(|e| format!("executable: {e}"))?;
+        let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("executable: {e}"))?;
+        let at = pe.offset(0x1_40d1_9c70).ok_or("no recipe table")?;
+        let recipe_costs = (0..RECIPES)
+            .map(|k| exe.get(at + k * 0x120..at + k * 0x120 + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap())).and_then(|i| costs.get(i as usize)).copied().unwrap_or(0))
+            .collect();
+        Ok(Data { requests, wares, ranks, recipe_costs })
+    }
+}
+
 /// What the calendar keeps.
 #[derive(Clone, Debug)]
 pub struct World {

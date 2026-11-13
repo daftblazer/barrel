@@ -12,6 +12,7 @@
 //! lead escha
 //! field 3 10000 10950
 //! today 90
+//! tenths 5
 //! seen 8 90
 //! flag 36 1
 //! ```
@@ -28,6 +29,11 @@ pub enum Scene {
 
 pub struct Session {
     chain: Chain,
+    /// The calendar, once given its tables ([`Session::with_calendar`]): the date, the shops,
+    /// the board, field time carried.
+    calendar: Option<(crate::days::World, crate::days::Data)>,
+    /// Field time carried from a loaded save, for the calendar once it is given.
+    carried: i32,
     scene: Scene,
     /// The field the player is in (the last an event changed to), if any yet.
     field: Option<u32>,
@@ -38,24 +44,74 @@ pub struct Session {
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy }
+        Session { chain, calendar: None, carried: 0, scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, scene: Scene::Field(map), field: Some(map), logy }
+        Session { chain, calendar: None, carried: 0, scene: Scene::Field(map), field: Some(map), logy }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
     /// they leave or once they are there (`Chain::walk`, both fields of kind 0), which then
     /// plays; else play goes on in `to`.
     pub fn walked(&mut self, from: u32, to: u32) -> &Scene {
+        // Leaving a field area (not the town) with field time carried passes a day.
+        if from as usize >= barrel_formats::gimmick::TOWN_MAPS && from != to {
+            self.time(|w, t| w.leave_field(t));
+        }
         self.field = Some(to);
         self.scene = match self.chain.walk([0, from as i32], [0, to as i32]) {
             Some(e) => Scene::Event(e.to_string()),
             None => Scene::Field(to),
         };
         &self.scene
+    }
+
+    /// The calendar from `data`, starting as a new game's (`days::World::new_game`, the main
+    /// generator as `rng`) on the story's date.
+    pub fn with_calendar(mut self, data: crate::days::Data, rng: crate::rng::Rng) -> Session {
+        let leader = usize::from(self.logy);
+        let mut world = crate::days::World::new_game(rng, leader, &data.wares);
+        world.date = self.chain.story().today.max(0) as u32;
+        world.tenths = self.carried;
+        self.calendar = Some((world, data));
+        self
+    }
+
+    /// Field time spent, in tenths of a day (a gathering: `days::gather_tenths`; a battle's
+    /// time): whole days pass for `reason`.
+    pub fn spend(&mut self, tenths: i32, reason: crate::days::Reason) {
+        self.time(|w, t| w.spend_time(tenths, reason, t));
+    }
+
+    /// The date (the story's day number; `calendar::Date` reads it).
+    pub fn today(&self) -> i32 {
+        self.chain.story().today
+    }
+
+    /// Runs a calendar step with its tables (what the story has seen; no assignments cleared,
+    /// every request known, held counts 0: the session keeps no items yet), then the story's
+    /// date follows the calendar's.
+    fn time(&mut self, step: impl FnOnce(&mut crate::days::World, &crate::days::Tables) -> Vec<usize>) {
+        let Some((world, data)) = self.calendar.as_mut() else { return };
+        let story = self.chain.story();
+        let names = self.chain.names();
+        let seen = |e: &str| names.iter().position(|n| n == e).is_some_and(|i| story.seen.get(i).is_some_and(Option::is_some));
+        let cost = |k: usize| data.recipe_costs.get(k).copied().unwrap_or(0);
+        let t = crate::days::Tables {
+            requests: &data.requests,
+            wares: &data.wares,
+            ranks: &data.ranks,
+            recipe_cost: &cost,
+            seen: &seen,
+            cleared: &|_| false,
+            known: &|_| true,
+            level: &|_| 0,
+        };
+        step(world, &t);
+        let date = world.date as i32;
+        self.chain.story_mut().today = date;
     }
 
     /// The story, to play events on ([`Session::in_field`] takes it back).
@@ -104,6 +160,10 @@ impl Session {
         let Scene::Field(map) = self.scene else { return None };
         let story = self.chain.story();
         let mut out = format!("barrel-save 1\nlead {}\nfield {map} {} {}\ntoday {}\n", if self.logy { "logy" } else { "escha" }, at[0], at[1], story.today);
+        let tenths = self.calendar.as_ref().map_or(self.carried, |(w, _)| w.tenths);
+        if tenths != 0 {
+            out += &format!("tenths {tenths}\n");
+        }
         for (e, day) in story.seen.iter().enumerate() {
             if let Some(d) = day {
                 out += &format!("seen {e} {d}\n");
@@ -123,7 +183,7 @@ impl Session {
         if lines.next() != Some("barrel-save 1") {
             return Err(BadSave("not a Barrel save (version 1)".into()));
         }
-        let (mut logy, mut field, mut at) = (false, None, [0.0f32; 2]);
+        let (mut logy, mut field, mut at, mut carried) = (false, None, [0.0f32; 2], 0);
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -137,6 +197,7 @@ impl Session {
                     at = [w.get(2).and_then(|v| v.parse().ok()).ok_or_else(|| bad(line))?, w.get(3).and_then(|v| v.parse().ok()).ok_or_else(|| bad(line))?];
                 }
                 "today" => story.today = num(1)? as i32,
+                "tenths" => carried = num(1)? as i32,
                 "seen" => *story.seen.get_mut(num(1)? as usize).ok_or_else(|| bad(line))? = Some(num(2)? as i32),
                 "flag" => *story.flags.get_mut(num(1)? as usize).ok_or_else(|| bad(line))? = num(2)? as i32,
                 _ => return Err(bad(line)),
@@ -144,7 +205,7 @@ impl Session {
         }
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
-        Ok((Session { chain, scene: Scene::Field(field), field: Some(field), logy }, at))
+        Ok((Session { chain, calendar: None, carried, scene: Scene::Field(field), field: Some(field), logy }, at))
     }
 }
 
@@ -171,5 +232,25 @@ mod tests {
         assert_eq!(back.scene(), &Scene::Field(3));
         assert_eq!(back.save(at).unwrap(), text);
         assert!(Session::load(chain(), "barrel-save 2\n").is_err());
+    }
+
+    #[test]
+    fn field_time_passes_days() {
+        let data = crate::days::Data { requests: Vec::new(), wares: Vec::new(), ranks: Vec::new(), recipe_costs: Vec::new() };
+        let mut s = Session::in_field(chain(), 12, false).with_calendar(data, crate::rng::Rng::seeded(1));
+        assert_eq!(s.today(), 90);
+        // Two and a half days of gathering: two pass, half a day is carried.
+        s.spend(25, crate::days::Reason::Gather);
+        assert_eq!(s.today(), 92);
+        assert!(s.save([0.0, 0.0]).unwrap().contains("tenths 5\n"));
+        // Leaving the area with time carried: a day more, nothing carried.
+        s.walked(12, 13);
+        assert_eq!(s.today(), 93);
+        s.walked(13, 0);
+        assert_eq!(s.today(), 93);
+        // Town maps carry nothing.
+        s.spend(5, crate::days::Reason::Gather);
+        s.walked(0, 1);
+        assert_eq!(s.today(), 93);
     }
 }

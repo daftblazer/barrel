@@ -386,6 +386,18 @@ plays division 4, zeroes her velocity and sounds the ground (`0x140234e05`). The
 ground she left; her gait takes over when the landing ends. In a window it sounds as the game's
 does: effect 0x23 at 0.6 and, when `JumpVoice` says so, one of Escha's three jump voices.
 
+## The session's calendar
+
+A session in free play carries the calendar (`days::World` over `days::Data`, the tables
+`barrel days` reads), and the story's date follows it: field time (`Session::spend`, in tenths
+of a day: a gathering's `days::gather_tenths`, a battle's time) passes whole days and carries
+the rest; leaving a field area (map 12 or above) for another map with time carried passes one
+day and drops the rest (`World::leave_field`); town maps carry none. Each new day runs the
+calendar's work (board, month reports, rank) and the shops restock. The session keeps no items
+yet, so the board's tables see no held items, every request as known and no assignment cleared.
+The main random generator is not saved by the game either; a fixed seed stands in. Saves keep
+the carried time (`tenths N`).
+
 ## Play camera follow (not yet the game's)
 
 The field's play camera follows the player with `play_camera::Follow`, rebuilt from what

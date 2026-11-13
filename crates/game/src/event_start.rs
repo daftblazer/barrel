@@ -413,6 +413,11 @@ impl Chain {
         Chain { checks, process, names, lists, story: Story::default(), rng: Rng::seeded(1) }
     }
 
+    /// The `EVENT_*` names, in enum order.
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
     /// The story state: what has been seen, the flags, the date.
     pub fn story(&self) -> &Story {
         &self.story

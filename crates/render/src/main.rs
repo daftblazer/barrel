@@ -2993,6 +2993,7 @@ fn main() -> Result<()> {
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--load: give --field with a field of the game install")?.to_path_buf();
         let text = std::fs::read_to_string(file)?;
         let (s, at) = barrel_game::session::Session::load(story_chain(&root)?, &text)?;
+        let s = s.with_calendar(barrel_game::days::Data::load(&root)?, barrel_game::rng::Rng::seeded(1));
         let barrel_game::session::Scene::Field(map) = *s.scene() else { return Err("--load: the save is not in free play".into()) };
         let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         let names = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&exe)?);
@@ -4824,7 +4825,7 @@ fn main() -> Result<()> {
             let number = |p: &Path| p.file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).map(|m| m as u32);
             if let (Some(s), Some(from), Some(to), Some(root)) = (session.as_mut(), number(Path::new(&args[1])), number(&next), root.clone())
                 && let barrel_game::session::Scene::Event(e) = s.walked(from, to).clone() {
-                    eprintln!("field {from} to {to}: {e} starts");
+                    eprintln!("field {from} to {to}, day {}: {e} starts", s.today());
                     let s = session.take().unwrap();
                     chain = Some((s.into_chain(), root.clone()));
                     current_event = Some(root.join("Event/event").join(barrel_game::event_start::event_file(&e)).to_string_lossy().into_owned());
@@ -4870,8 +4871,10 @@ fn main() -> Result<()> {
             current_event = None;
             player_at = Some(at);
             // The story goes on as the session, in free play there.
-            if let (Some((c, _)), Some(map)) = (chain.take(), barrel_game::event::last_field(&steps)) {
-                session = Some(barrel_game::session::Session::in_field(c, map, hero == 1));
+            if let (Some((c, root)), Some(map)) = (chain.take(), barrel_game::event::last_field(&steps)) {
+                // With the calendar (the main generator not known: a fixed seed stands in).
+                let data = barrel_game::days::Data::load(&root)?;
+                session = Some(barrel_game::session::Session::in_field(c, map, hero == 1).with_calendar(data, barrel_game::rng::Rng::seeded(1)));
             }
             first_event = false;
         }
