@@ -4957,6 +4957,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let color = *color;
             cauldron(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
         }
+    // In a window `BARREL_MENU_AT` opens the menu at that frame, `BARREL_MENU_KEYS` and
+    // `BARREL_OPTIONS_KEYS` pressed in it first (a scripted check of the screens in a window).
+    // Once a run: a scene started again (as the page's confirm does) does not run it again.
+    static SCRIPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let scripted = presenter.is_some()
+        && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
+        && !SCRIPTED.swap(true, std::sync::atomic::Ordering::Relaxed);
+    if scripted {
+        open_menu = true;
+    }
+    let script = |name: &str| if scripted { title::keys(&std::env::var(name).unwrap_or_default()) } else { Vec::new() };
     // Offscreen: the main menu drawn at a frame (`BARREL_MENU_AT`) after the buttons in
     // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
     if presenter.is_none() && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
@@ -5078,7 +5089,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &[], None)?;
+            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {
@@ -5099,7 +5110,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
                     let now = options::Graphics { render: settings, display: current_display(p) };
                     let first = options::Graphics { render: settings::RenderSettings::DESKTOP, display: settings::Display::DEFAULT };
-                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, now, first, &[], None)?;
+                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, now, first, &script("BARREL_OPTIONS_KEYS"), None)?;
                     eprintln!("frame {frame}: options: {kept:?}");
                     // Kept and changed: into the config. The window takes its new size or
                     // fullscreen at once; new render settings start the scene again where she

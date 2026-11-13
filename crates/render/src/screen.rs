@@ -57,7 +57,8 @@ pub fn run<S: Clone + PartialEq, O>(
         (Some((presenter, pump)), _) => {
             let (ready, done) = unsafe { (d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?) };
             let mut shown: Option<S> = None;
-            let picked = loop {
+            // Keys given beforehand may already have picked (a scripted windowed run).
+            let picked = if picked.is_some() { picked } else { loop {
                 if !pump.pump() {
                     break None;
                 }
@@ -89,7 +90,7 @@ pub fn run<S: Clone + PartialEq, O>(
                     d.destroy_fence(fence, None);
                     d.free_command_buffers(pool, &cbs);
                 }
-            };
+            } };
             unsafe {
                 d.device_wait_idle()?;
                 d.destroy_semaphore(ready, None);
