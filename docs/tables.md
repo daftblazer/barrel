@@ -539,8 +539,10 @@ and level in the table at `0x140d196f0` (49 records of 0x1c bytes, -1 ended): th
 from Craft (195) on, two each, for levels 1 and 2. The effect equal to its +0x18 (the first,
 when that is -1) becomes its +0x8: the weakest of an L/M/S triple turns into the M (level 1)
 or S (level 2) one, so Craft's Phy Damage L (17 to 22) is Phy Damage M (30 to 40) at level 1
-and S (80 to 106) at 2. The level is the battle command's +0x40 (`0x1401bcde9`); every other
-caller passes 0, which no record has, and what sets +0x40 is not read. Not followed yet: traits of kind 7 (two 16-bit trait ids at +0x8 of the instance when +0xe is 0;
+and S (80 to 106) at 2. The level is the battle command's +0x40 (`0x1401bcde9`, in `0x1401bcce0`, which
+its callers hand the fighter's command at +0x208: so the fighter's +0x248); every other caller
+passes 0, which no record has. Nothing writes +0x248 directly, so the command is filled whole
+(a copy or a constructor), and what sets the level is not read. Not followed yet: traits of kind 7 (two 16-bit trait ids at +0x8 of the instance when +0xe is 0;
 the trait table's records +0x3c) adding effects: each `ITEM_SUB_BTL_ADD_USEEFFECT` slot is
 rolled from its minimum to maximum (`0x1402a1e20` reads the slot's bounds and rolls them) and
 names an `item_effect` row whose used slots follow the item's own (`battle::trait_effects`).
