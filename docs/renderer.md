@@ -184,7 +184,11 @@ seen on day 90, and loading it puts her back there. A door walked through in the
 free play goes on after it. After the opening, from the Hall (map 3) the door at (10000, 14850)
 leads to the Town Entrance (map 4) and starts `EVENT_MM02_OP2_111`; going to the Administration
 Office (map 2) would start `EVENT_MM02_OP2_510` (`barrel event-chain ROOT EVENT_MM01_OP1_310
-0.3>0.4`). `barrel new-game` prints the session's save at free play.
+0.3>0.4`). `barrel new-game` prints the session's save at free play. G (or `BARREL_GATHER_AT=FRAME`) gathers at the nearest
+gathering point of the map within its reach (the point's size, 2 m in most, from its place on
+the ground; the game's own reach is not read): one pick (`gather::Gathering::gather`) into the
+session's basket, half a day of field time. In `AREA_01_01` from (3700, 4100) point 0, 76 units
+away, gave item 0 at quality 50. The points are not drawn yet.
 
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above

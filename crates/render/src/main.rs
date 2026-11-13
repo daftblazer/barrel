@@ -2989,6 +2989,8 @@ fn main() -> Result<()> {
     };
     // The story in free play (after `--free-play`, or from `--load`), for saving.
     let mut session: Option<barrel_game::session::Session> = None;
+    // The gathering tables, loaded at the first gathering.
+    let mut gathering: Option<barrel_game::gather::Gathering> = None;
     if let Some(file) = &load_file {
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--load: give --field with a field of the game install")?.to_path_buf();
         let text = std::fs::read_to_string(file)?;
@@ -3535,6 +3537,7 @@ fn main() -> Result<()> {
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut save_now = std::env::var("BARREL_SAVE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
+    let mut gather_now = std::env::var("BARREL_GATHER_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     if let Some(p) = pump.as_mut() {
         if !p.pump() {
             eprintln!("window closed after {frame} frames");
@@ -3556,6 +3559,7 @@ fn main() -> Result<()> {
                 KeyCode::KeyJ => jump_now = true,
                 KeyCode::KeyK => strike_now = true,
                 KeyCode::F5 => save_now = true,
+                KeyCode::KeyG => gather_now = true,
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -3745,6 +3749,32 @@ fn main() -> Result<()> {
                     }
                 }
             }
+        // G (or `BARREL_GATHER_AT`): a gathering at the nearest point of this map within its
+        // reach (its size, 2 m in most, from its centre on the ground), into the session's
+        // basket with its field time (`gather::Gathering`, `Session::gathered`).
+        if gather_now {
+            if gathering.is_none() {
+                gathering = Some(barrel_game::gather::Gathering::load(&w.root).map_err(|e| format!("gathering: {e}"))?);
+            }
+            let g = gathering.as_ref().unwrap();
+            let map = w.maps.iter().position(|m| *m == w.field.name).map_or(-1, |m| m as i32);
+            let near = g
+                .points_in(map)
+                .map(|(k, p)| (k, ((p.position[0] * 100.0 - w.pos[0]).powi(2) + (p.position[2] * 100.0 - w.pos[2]).powi(2)).sqrt(), p.size[0].max(p.size[2]) * 100.0))
+                .filter(|&(_, d, reach)| d <= reach)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            match near {
+                Some((k, d, _)) => {
+                    let got = g.gather(k, 0, |_| 0, 1, &mut w.rng);
+                    eprintln!("frame {frame}: gathering at point {k} ({d:.0} away): items {:?}", got.iter().map(|g| (g.item, g.quality)).collect::<Vec<_>>());
+                    if let Some(s) = session.as_mut() {
+                        s.gathered(got);
+                        eprintln!("  basket {} items, day {}", s.basket.len(), s.today());
+                    }
+                }
+                None => eprintln!("frame {frame}: no gathering point within reach"),
+            }
+        }
         // F5 (or `BARREL_SAVE_AT`): the session saved where she stands (`--save FILE`).
         if save_now {
             match (session.as_ref().and_then(|s| s.save([w.pos[0], w.pos[2]])), &save_file) {
