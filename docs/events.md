@@ -1021,7 +1021,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 862 | 6 (862) |
 | `75000069` | `u105` |  | Event (case `0x14005157a` of `0x140050fa0`'s switch) | 2 | 0 (2) |
 | `7500006a` | `u106` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2 | 0 (2) |
-| `7500006b` | `u107` |  | Event (case `0x1400515cc` of `0x140050fa0`'s switch) | 9 | 1 (9) |
+| `7500006b` | `u107` | `OPEN_PLANBOARD` (event.rs): `{n}` opens the planning board (game mode 44, `PLANBOARD`, `n` at the request's +0xd0, `0x140292240`) at each main quest period's start: 12 in `EVENT_MM03_MQ1_020`, 62 to 412 (50 apart) in `EVENT_MQ02_010` to `MQ09_010` | Event (case `0x1400515cc` of `0x140050fa0`'s switch) | 9 | 1 (9) |
 | `7500006c` | `u108` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 9 | 0 (9) |
 | `75000082` | `u130` | (`{v, a}`: variable v = the answer to `0x7600001d {a}`) | Event (case `0x14005201f` of `0x140050fa0`'s switch; who answers is not read) | 2 | 2 (2) |
 | `75000086` | `u134` | `SET_END_GROUP` (event.rs): which process data group the event's end runs (+0x60, 1 unless set; read at `ECT_END`, `0x140052c76` → `0x14005a070`). Only `EVENT_MM12_ST3_031` to `_036` (groups 1 to 5: listener commands 116 to 120) and `EVENT_MS06_080` (groups 1, 2: item 63 or 64) have more than one | Event (case `0x140051dbb` of `0x140050fa0`'s switch) | 22 | 1 (22) |

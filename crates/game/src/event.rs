@@ -38,13 +38,25 @@ pub const ADD_EVENT_FLAG: u32 = 0x7500_0023;
 pub const CHANGE_GAME_MODE: u32 = 0x7500_001d;
 /// The game modes (`GAME_MODE_TYPE_INFO_*`, in enum order): `u29` and `u46` (13, the movie)
 /// name them by number.
-pub const GAME_MODES: [&str; 40] = [
+pub const GAME_MODES: [&str; 75] = [
     "FIELDMAP", "BATTLE", "BUC", "BALLOON_BUC", "TITLE", "BALLOON_SELECT", "HELP", "MONEY_GP", "OPTION", "LIBRARY",
     "EVENT_TELOP", "SKIP_ICON", "CLEAR_SAVE", "MOVIE", "WORLDMAP", "MESSAGE_ITEM_GP", "MESSAGE_LOG", "EVENT_SKIP", "INSTALL",
     "GAMEOVER", "SAVELOAD_STEAM", "MENU", "INPUT_COUNT", "CALENDAR_MENU", "SHOP", "HOM", "WORK", "RANKUP", "NPC_DELIVERY",
     "MIX", "LOG_VIEWER", "DISCOVERY", "QUEST_STOCK", "SAVELOAD", "EVENT_ITEM_SELECT", "EXTRA", "MIX_WEAPON", "EXTRA_EVENT",
-    "MIX_MELT", "CALENDAR_GP",
+    "MIX_MELT", "CALENDAR_GP", "THROW_CONTAINER", "ITEM_GHOST", "RECLAIM_MENU", "DLCBGM", "PLANBOARD", "VIEWMODE", "SEED_LETTER",
+    "ITEM_FAIR", "MEMORIES_NOTE", "MASTER_SELECT", "MARION_MENU", "MONTHLY_REPORT", "QUEST", "STDSAVELOAD", "ENDING_REPORT",
+    "COSTUME", "EVENT_INFOMATION", "DEBUG_EVENT_FLAG", "DEBUG_EVENT_CHECK", "DEBUG_USER_DATA", "DEBUG_PARTY", "DEBUG_ITEM",
+    "DEBUG_KNOWLEDGE", "DEBUG_WORLDMAP_ROUTE", "DEBUG_WORLDMAP_POINTER", "DEBUG_LIBRARY", "DEBUG_EXTRA", "DEBUG_RECLAIM_SEED",
+    "DEBUG_RECLAIM_TARGET", "DEBUG_FACILITY", "DEBUG_NPC_DELIVERY", "DEBUG_DELIVERY", "DEBUG_BONUS_ENTRY", "DEBUG_MOTION_LOG",
+    "DEBUG_EXPLORE_EQUIP",
 ];
+/// The planning board's game mode (`PLANBOARD`), opened by `u107`.
+pub const PLANBOARD_MODE: u32 = 44;
+/// `u107` (0x7500006b, `{n}`): opens the planning board (game mode [`PLANBOARD_MODE`], with
+/// `n` at the request's +0xd0; case `0x1400515cc`, `0x140292240`), at the start of each main
+/// quest period (`EVENT_MM03_MQ1_020` with 12, `EVENT_MQ02_010` to `MQ09_010` with 62, 112,
+/// ... 412: 50 apart).
+pub const OPEN_PLANBOARD: u32 = 0x7500_006b;
 /// `u134` (0x75000086, `{group}`): which of the event's process data groups its end runs
 /// (the event's +0x60, case `0x140051dbb`; read at `ECT_END`, `0x140052c76`, which runs that
 /// group of `EventProcessDataAll.epd` through `0x14005a070`). 1 unless set
@@ -318,6 +330,8 @@ pub enum Step<'a> {
     EndGroup { group: u32 },
     /// `u29`: the game goes to this mode (`GAME_MODES`) after the event.
     GameMode { mode: u32 },
+    /// `u107`: the planning board opens with `first` (its first entry, presumably).
+    Planboard { first: u32 },
     /// `u38`: the game would unlock this Steam achievement here (Barrel does not).
     Trophy { trophy: u32 },
     /// A movie plays (`u46`; not drawn yet: `docs/engine.md`, "Movies").
@@ -590,6 +604,7 @@ impl<'a> Player<'a> {
             (LONG_WAIT, _) => out.push(Step::Wait { seconds: 2.0 }),
             (SET_EVENT_FLAG, [flag, value, ..]) => out.push(Step::EventFlag { flag: *flag, value: *value as i32 }),
             (CHANGE_GAME_MODE, [mode, ..]) => out.push(Step::GameMode { mode: *mode }),
+            (OPEN_PLANBOARD, [n, ..]) => out.push(Step::Planboard { first: *n }),
             (SET_END_GROUP, rest) => out.push(Step::EndGroup { group: rest.first().copied().unwrap_or(0) }),
             // A missing amount reads as 0 (the case reads it only when given).
             (ADD_EVENT_FLAG, [flag, rest @ ..]) => out.push(Step::EventFlagAdd { flag: *flag, amount: rest.first().map_or(0, |&a| a as i32) }),
@@ -1017,6 +1032,7 @@ mod tests {
         let table = OperandTable::new(&[(CHANGE_GAME_MODE, Some(3))]);
         let steps: Vec<Step> = Player::escha(&event, &[], &table).unwrap().collect();
         assert!(steps.contains(&Step::GameMode { mode: 14 }) && GAME_MODES[14] == "WORLDMAP" && GAME_MODES[13] == "MOVIE");
+        assert_eq!((GAME_MODES[PLANBOARD_MODE as usize], GAME_MODES[74]), ("PLANBOARD", "DEBUG_EXPLORE_EQUIP"));
     }
 
     #[test]
@@ -1205,6 +1221,7 @@ mod tests {
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
                 Step::EventFlagAdd { flag, amount } => format!("flag {flag} += {amount}"),
                 Step::EndGroup { group } => format!("end runs process group {group}"),
+                Step::Planboard { first } => format!("planning board from {first}"),
                 Step::GameMode { mode } => format!("then game mode {}", GAME_MODES.get(*mode as usize).unwrap_or(&"?")),
                 Step::Trophy { trophy } => format!("trophy {trophy}"),
                 Step::Movie { movie } => format!("movie {movie}"),
