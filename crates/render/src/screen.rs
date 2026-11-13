@@ -133,7 +133,7 @@ pub fn run<S: Clone + PartialEq, O>(
 pub fn sheet_keys(pe: &barrel_formats::pe::Pe, elements: impl IntoIterator<Item = crate::hud::Element>) -> Vec<(String, u32)> {
     let mut keys: Vec<(String, u32)> = Vec::new();
     for e in elements {
-        if let crate::hud::Element::Picture { pack, index, .. } = &e {
+        if let crate::hud::Element::Picture { pack, index, .. } | crate::hud::Element::Slice { pack, index, .. } = &e {
             let key = (pack.clone(), *index);
             if !keys.contains(&key) {
                 keys.push(key);

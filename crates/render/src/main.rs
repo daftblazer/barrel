@@ -37,6 +37,7 @@ mod result;
 mod shopping;
 mod equipping;
 mod area_panel;
+mod question;
 mod graphics_options;
 mod options;
 mod drops;
@@ -1118,7 +1119,7 @@ struct AreaMap {
     layer: text::Layer,
     font: text::Font,
     sheets: hud::Sheets,
-    shown: Option<(usize, u32, u32, bool, Option<(i32, u32, u32)>)>,
+    shown: Option<(usize, u32, u32, bool, Option<(i32, u32, u32)>, Option<bool>)>,
     pe_bytes: Vec<u8>,
     /// The world map (the town and the regions, kind 0) rather than a region's area map, and
     /// the place the cursor started on (a trip's start).
@@ -1131,6 +1132,8 @@ struct AreaMap {
     item_names: Vec<String>,
     /// The area routes' tags not known yet (`Session::known_routes`): their dots are not drawn.
     hidden_routes: Vec<String>,
+    /// "Return to World Map?" asked (Back on an area map): Yes lit when true.
+    asking: Option<bool>,
     /// The places closed to the player (`Session::closed`), and the sectors not known yet
     /// (`Session::known`): no way there, no label, not listed.
     closed: Vec<bool>,
@@ -1171,6 +1174,7 @@ impl AreaMap {
         let mut all = area_panel::elements(&pe, "", "", "", &[], |_, _| 0.0);
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, 0, 1, 1));
+        all.extend(question::elements(&pe, "", true));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
         let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
@@ -1187,7 +1191,7 @@ impl AreaMap {
         let trips = if world { barrel_game::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_game::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
         let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), hidden_routes: Vec::new() })
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), hidden_routes: Vec::new(), asking: None })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -1211,6 +1215,20 @@ impl AreaMap {
     /// waypoints, then the next place's mark), confirm gives the field to enter.
     fn press(&mut self, b: title::Button, w: &mut Walker) -> Option<AreaPick> {
         use barrel_game::area_map::Way;
+        // The question open: up and down choose, confirm on Yes leaves for the world map.
+        if let Some(yes) = self.asking {
+            match b {
+                title::Button::Up | title::Button::Down => self.asking = Some(!yes),
+                title::Button::Confirm if yes => {
+                    self.asking = None;
+                    let tag = &self.places[self.at].tag;
+                    return Some(AreaPick::World { region: tag.split_once('p').map_or(tag.as_str(), |(r, _)| r).to_string() });
+                }
+                title::Button::Confirm | title::Button::Back => self.asking = None,
+                _ => {}
+            }
+            return None;
+        }
         let way = match b {
             title::Button::Up => Way::Up,
             title::Button::Down => Way::Down,
@@ -1221,9 +1239,10 @@ impl AreaMap {
                 return (self.at != self.from).then(|| AreaPick::Travel { from: self.places[self.from].tag.clone(), to: self.places[self.at].tag.clone() });
             }
             title::Button::Confirm => return self.fields[self.at].map(AreaPick::Field),
+            // Back asks first, Yes lit (the recording).
             title::Button::Back if !self.world => {
-                let tag = &self.places[self.at].tag;
-                return Some(AreaPick::World { region: tag.split_once('p').map_or(tag.as_str(), |(r, _)| r).to_string() });
+                self.asking = Some(true);
+                return None;
             }
             _ => return None,
         };
@@ -1267,7 +1286,7 @@ impl AreaMap {
     /// `mvp` (she stands still) the neighbours' labels too; on the world map, `trip` (days,
     /// arrival month and day) shows the travel panel.
     fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>, knows: impl Fn(i32) -> bool) -> Result<()> {
-        if self.shown == Some((self.at, width, height, mvp.is_some(), trip)) {
+        if self.shown == Some((self.at, width, height, mvp.is_some(), trip, self.asking)) {
             return Ok(());
         }
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
@@ -1290,7 +1309,7 @@ impl AreaMap {
             };
             area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, measure)
         };
-        if let Some(mvp) = mvp {
+        if let Some(mvp) = mvp.filter(|_| self.asking.is_none()) {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
             let k = height as f32 / 1080.0;
             let dx = (width as f32 - 1920.0 * k) / 2.0;
@@ -1304,11 +1323,17 @@ impl AreaMap {
                 e.extend(area_panel::label(&pe, [((x - dx) / k) as i32, (y / k) as i32], name, measure(name, 36.0)));
             }
         }
+        if let Some(yes) = self.asking {
+            e.extend(question::elements(&pe, RETURN_TO_WORLD_MAP, yes));
+        }
         self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &self.sheets, &e, width as f32, height as f32))?;
-        self.shown = Some((self.at, width, height, mvp.is_some(), trip));
+        self.shown = Some((self.at, width, height, mvp.is_some(), trip, self.asking));
         Ok(())
     }
 }
+
+/// The area map's Back question (the executable's string at `0x140949850`).
+const RETURN_TO_WORLD_MAP: &str = "Return to World Map?";
 
 /// A lost battle's line for the lead (`Saves_EN/systemMessage/SysMess.xml`, row 240 for Escha,
 /// 241 for Logy: the one the game showed after a wipe; row 61, Escha's other, presumably

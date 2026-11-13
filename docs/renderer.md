@@ -295,6 +295,15 @@ generator and commands always give the same battle, so what was played stays) up
 member turn. Not yet the game's: the list (the game's command layout is not identified), no
 mark on the target in the scene, no items, guarding or fleeing, the pad not mapped.
 
+**The question.** Back on an area map asks "Return to World Map?" as the game does
+(`question.rs`, the recording `colseit-arrival-60hz.mkv` at 1:05): the system message window
+(layout 701's place, `a15_common.g1t` texture 4's window piece stretched to 900 × 222 with its
+ends kept) and the Yes / No box over its top edge (texture 23's ornate panel stretched keeping
+its corners, texture 3's fading yellow band on the lit row, texture 16's feather). Yes lit
+first; up and down choose; confirm on Yes goes to the world map, No or Back closes it. The
+neighbours' labels go while it asks. Stretched pieces are `hud::Element::Slice` (`hud::nine`
+keeps a panel's corners). Checked side by side with the recording.
+
 **The area map.** With `--load SAVE`, `--area-map` starts on the area map at the save's
 field's point (as a lost battle does). `barrel-view --field .../A15_WMAP OUT --world-point SP_A2P0 --area-map` puts
 Escha on a region's point of the world map with the area map's cursor (`AreaMap`, over

@@ -74,6 +74,24 @@ pub enum Element {
     Label(layout::Text),
     /// A rectangle (left, top, right, bottom on the 1920 × 1080 screen) of one colour.
     Fill { rect: [i32; 4], colour: [f32; 4] },
+    /// A region `src` (texture pixels: left, top, right, bottom) of a pack's picture, drawn
+    /// into `rect` (the 1920 × 1080 screen): the pieces the game stretches (windows, panels).
+    Slice { pack: String, index: u32, src: [f32; 4], rect: [i32; 4] },
+}
+
+/// A piece stretched into `rect` keeping its `edge` texture pixels at each side as they are
+/// (the corners whole, the edges stretched one way, the middle both ways).
+pub fn nine(pack: &str, index: u32, src: [f32; 4], rect: [i32; 4], edge: f32) -> Vec<Element> {
+    let e = edge as i32;
+    let xs = [(src[0], rect[0]), (src[0] + edge, rect[0] + e), (src[2] - edge, rect[2] - e), (src[2], rect[2])];
+    let ys = [(src[1], rect[1]), (src[1] + edge, rect[1] + e), (src[3] - edge, rect[3] - e), (src[3], rect[3])];
+    let mut out = Vec::new();
+    for j in 0..3 {
+        for i in 0..3 {
+            out.push(Element::Slice { pack: pack.into(), index, src: [xs[i].0, ys[j].0, xs[i + 1].0, ys[j + 1].0], rect: [xs[i].1, ys[j].1, xs[i + 1].1, ys[j + 1].1] });
+        }
+    }
+    out
 }
 
 /// Node kind of a sprite drawn mirrored left to right (the right halves of symmetric pieces:
@@ -91,7 +109,7 @@ impl Element {
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
             Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } | Element::Cropped { part, cut, at, .. } => Some((part, cut, at)),
-            Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } => None,
+            Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
 }
@@ -200,6 +218,17 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     rect: [dx + x * k, y * k, dx + (x + size[0]) * k, (y + size[1]) * k],
                     uv: [0.0, 0.0, 1.0, 1.0],
                     color: [1.0, 1.0, 1.0, if *dim { 0.5 } else { 1.0 }],
+                    texture: sheets.first + slot,
+                });
+            }
+            Element::Slice { pack, index, src, rect: [l, t, r, b] } => {
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let x = |v: i32| dx + v as f32 * k;
+                out.push(Quad {
+                    rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k],
+                    uv: [src[0] / w, src[1] / h, src[2] / w, src[3] / h],
+                    color: [1.0; 4],
                     texture: sheets.first + slot,
                 });
             }
