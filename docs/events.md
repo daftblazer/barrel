@@ -747,6 +747,32 @@ That gives a place for 61 of the 106 unnamed commands. The ones that matter most
 `w1` and `w4` are tested only by `Event`'s own code and the helpers around
 `0x140050d30`: the event player starts actions itself (`w1`, above).
 
+**Which commands are the event's own.** `Event`'s vtable (`0x140758188`) slot 4,
+`0x140050d30`, says whether a command is the event's to run (its switch, slot 8,
+`0x140050fa0`) or the listeners' (the balloon, the camera, the screen effects ...). For the
+`u` group (`0x75000002` to `0x75000092`) a byte table (RVA `0x50ecc`, three targets at
+`0x50ec0`) decides:
+
+- **the event's own** (93): `u2` to `u10`, `u12`, `u14`, `u15`, `u17` to `u21`, `u23`, `u24`,
+  `u26` to `u32`, `u34` to `u38`, `u41` to `u48`, `u53`, `u62`, `u63`, `u65`, `u66`, `u69`,
+  `u71` to `u74`, `u76` to `u82`, `u87` to `u89`, `u93` to `u96`, `u99` to `u102`, `u105` to
+  `u107`, `u109`, `u110`, `u112`, `u115` to `u122`, `u130`, `u132`, `u134` to `u138`, `u141` to
+  `u143`, `u145`, `u146`;
+- **the listeners'** (50): `u11`, `u13`, `u16`, `u25`, `u33`, `u39`, `u40`, `u49` to `u52`,
+  `u54` to `u61`, `u64`, `u67`, `u68`, `u70`, `u75`, `u83` to `u86`, `u90` to `u92`, `u97`,
+  `u98`, `u103`, `u104`, `u108`, `u111`, `u113`, `u114`, `u123` to `u129`, `u131`, `u139`,
+  `u140`, `u144`;
+- **asked** (2): `u22` and `u133` send the query `0x7600001a` with their first operand to the
+  listeners and are the event's when one answers yes.
+
+That settles `u16` against `u18`: both show message lines in the balloon, `u18` through the
+event (which forwards it, `0x140052b1b`), `u16` (the choices' lines) straight from the
+balloon's own switch. Outside the `u` group the event keeps `0x75000001`, the `r` waits
+(bitmask `0x911` from `0x7200000f`), `0x70000001` to `0x70000005`, `0x71000023`, the 0x75
+words picked by mask `0xc03` from `0x7420000e`, `0x75100001` to `0x7510000a`, `0x77000001`,
+`0x77000003`, `0x77000004`, `0x75350004`, `0x75350005`, `0x75400008` to `0x7540000a`,
+`0x75f10001`, `0x7f000000`, and every word from `0x77100000` to `0x77400000`.
+
 The battle commands (`r`) have their own switch, `0x1401a0e90` (`GameModeBattle`): a jump table
 at RVA `0x1a232c` over `r1` to `r35`. `r12`, `r15`, `r19`, `r23` and `r26` fall to its default.
 Four of those, `r15`, `r19`, `r23` and `r26`, are the ones the event player keeps for itself.
@@ -964,7 +990,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | `PostEffectManager` (`0x140331bf0` → `0x140331220`; "Screen effects") | 2180 | 8 (1319), 4 (861) |
 | `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 637 | 0 (637) |
 | `7500000f` | `u15` | `LONG_WAIT` (event.rs): wait 2 seconds (`0x140051412`, the constant at `0x14071c964`) | Event (case `0x140051412` of `0x140050fa0`'s switch) | 81 | 0 (81) |
-| `75000010` | `u16` | (`{first, last}`: lines, as `u18` in the balloon; "Choices") | B3Balloon (`0x140180cb0`'s case `0x140180cf2`, `u18`'s; the event's own switch passes it by, where `u18` is forwarded, `0x140052b1b`; the ready check `0x140050d30` puts them in different groups, `0x140050ea2` and `0x140050eb2`, not read further) | 98 | 2 (98) |
+| `75000010` | `u16` | (`{first, last}`: lines, as `u18` in the balloon; "Choices") | B3Balloon (`0x140180cb0`'s case `0x140180cf2`, `u18`'s; the event's own switch passes it by, where `u18` is forwarded, `0x140052b1b`; `0x140050d30` makes `u18` the event's own and `u16` the listeners', see "Which commands are the event's own") | 98 | 2 (98) |
 | `75000011` | `u17` |  | B3Balloon | 2 | 0 (2) |
 | `75000012` | `u18` | `SHOW_MESSAGES` (event.rs): show messages first..=last | B3Balloon | 4990 | 2 (4990) |
 | `75000015` | `u21` | ECT_EVENT_CONTRAST_WAIT | Contrast | 138 | 1 (138) |
