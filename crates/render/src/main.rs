@@ -1268,6 +1268,8 @@ struct Walker {
     music: Option<u32>,
     /// The map's landing sound (`walk::landing_sound`).
     landing: Option<u32>,
+    /// The map's ambience and its volume (`Area::ambience`; none where the volume is 0).
+    ambience: Option<(u32, f32)>,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1283,6 +1285,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let gimmicks = area.as_ref().map(|a| a.gimmicks.clone()).unwrap_or_default();
     let music = area.as_ref().and_then(|a| u32::try_from(a.music()).ok());
     let landing = area.as_ref().and_then(|a| barrel_game::walk::landing_sound(a.landing()));
+    let ambience = area.as_ref().map(|a| a.ambience()).and_then(|(n, v)| Some((u32::try_from(n).ok()?, v))).filter(|&(_, v)| v > 0.0);
     let field = barrel_game::walk::Field::load(field_dir.parent().ok_or("no fields folder")?, name, gimmicks)?;
     let ground = &field.ground;
     // Dropped from high above onto whatever is under her.
@@ -1307,7 +1310,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3153,9 +3156,14 @@ fn main() -> Result<()> {
                 .unwrap_or_default();
             match barrel_audio::Output::open(0.1) {
                 Ok(out) => {
-                    let (mut mixer, library) = (barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", tracks));
+                    let (mut mixer, mut library) = (barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", tracks));
                     let playing = w.music.and_then(|t| library.music(t)).map(|m| mixer.play_stream(m.stream, m.volume, m.loop_from));
-                    eprintln!("field music {:?}", w.music);
+                    // And its ambience, a looping environment sound under the music.
+                    if let Some((n, volume)) = w.ambience
+                        && let Some(barrel_audio::Effect::Stream(stream, from)) = library.effect(n) {
+                            mixer.play_stream(stream, volume, from);
+                        }
+                    eprintln!("field music {:?}, ambience {:?}", w.music, w.ambience);
                     sound = Some((out, mixer, library, playing));
                 }
                 Err(e) => eprintln!("no sound: {e}"),

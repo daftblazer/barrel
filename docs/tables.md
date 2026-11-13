@@ -873,7 +873,8 @@ macro and run (`SQ.execProgramMacroFast`); Escha's weak swing plays `MOTION_LAD`
 0.56, 0.57 to 0.9 s, so the viewer runs it to 0.9 s) with `SE_WAND02` (99) 0.10 s into division 1,
 0.31 s in, and his jumps call out with his voices (11318 to 11320). In a window the field's music
 (`Area::music`, the map record's second word) plays from the start, at the track's volume and
-looping from its loop point; frames written to files stay silent. With field enemies (`--creatures AREA --player X,Z`)
+looping from its loop point, with the map's ambience under it (`Area::ambience`, at its
+volume, none in rooms); jumps land with the ground's sound; frames written to files stay silent. With field enemies (`--creatures AREA --player X,Z`)
 they watch the player instead of the stand-in, and her strike hits as the game's does: 0.35 to
 0.6 s into the swing, the nearest enemy within reach of a point ahead of her (`encounter::struck`,
 stage 0, radius 130, or Logy's 150), before the touch test: at `AREA_01_01` from (4300, 3520) walking west at
