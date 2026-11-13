@@ -1927,11 +1927,19 @@ takes its block (`0x1401b7880`: monster number +0x3a8, block +0x3b0) its reactio
 reactions (45 records, all on bosses: the Panzer, Grand Dragon, Lord of Fire, Frigate,
 Dreadnought, Gullveig, Regalveig, Flameu ...). Word 1 is a reaction type, 1 to 26 (9 in 43 of the
 45 records, 14 in two), which `0x1401ac120` and `0x1401ac2a0` turn through jump tables into the
-object's +0x8, +0xc, +0x10 and +0x14; word 2 is a skill of the skill table (the Panzer's 46 is
-Alarm, the Grand Dragon's 48 Thunder Breath, the Lord of Fire's 53 Energy Jail); word 3 runs 99,
-70, 60, 50, 40, 33, 25 and 15, an HP percentage by the look of it; word 0 is 1 to 8 and word 4 is
-1 in all. So a reaction presumably uses its skill once the boss's HP falls to the percentage;
-the trigger check (the object's one virtual, `0x1401b8db0`, and its users) is not read yet.
+object's +0x8 (the battle moment it answers to), +0xc, +0x10 and +0x14 (the condition): type 9
+gives moment 0, +0xc 3, +0x10 -1 and condition 8; type 14 the same with condition 10. Word 2 is a
+character, the monster's own `Chara` row (18 + its number: the Panzer, 28, has 46, the Grand
+Dragon, 30, 48, the Lord of Fire 53, the Frigate 74, Gullveig 80; an earlier reading of it as a
+skill was a coincidence of numbering). Word 3 is a percentage and word 4 the uses left (1 in all).
+The battle hands each moment to every fighter's list (`0x1401b5c40` and its five siblings,
+moments 1, 0, ...; `0x1401ac800`): from the last reaction back, one of that moment whose
+condition holds (`0x1401ab640`, a switch on +0x14) fires (`0x1401abcd0`, which uses word 0, 1 to
+8); a reaction whose uses (+0x20) are then 0 is removed, and a firing one can stop the rest.
+Condition 8 (`0x1401ab83f`) looks over the fighters the moment concerns for one standing whose
+model's character (+0x10, then +0x81c) is word 2 and whose HP × 100 / max HP is at most word 3:
+so a type-9 reaction fires once, when the boss itself falls to that share of its HP (the Grand
+Dragon at 40%). What firing does with word 0, and condition 10, are not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which
