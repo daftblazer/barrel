@@ -16,6 +16,15 @@
 //! not drawn (one item a deal); the help line's wording; selling is plain text over the desk
 //! (the game's grid, 568, not drawn); the bought items at the ware's quality with none of its
 //! effects or traits.
+//!
+//! Selling is drawn from the same layout: the bars and the money box, the grid (568: its frame,
+//! 565, without the "Use" tabs, 558, or the counts under it, 559; 30 cells, 561, five a row,
+//! 82 pixels apart, the rows at y 270, 336, 402, 472, 536 and 604: a frame, part 0x44, the item's
+//! picture, part 0xd7, and its quality, part 0x54) with the basket's items, and the chosen one's
+//! worth in Price / Total. Not yet the game's: the pictures at 64 pixels from the cell's corner
+//! + (12, 6) (the layout's own are 96, which the game must scale), the other items at half
+//! strength, every cell's frame lit (part 0x44 cut 0 as the layout has it), no check marks or
+//! page count, more than 30 items not reached.
 
 use std::path::Path;
 
@@ -67,6 +76,59 @@ pub struct Lists {
     pub buy: Vec<Line>,
     pub rows: Vec<Row>,
     pub sell: Vec<Line>,
+    /// The basket's items as the grid shows them, and each one's worth.
+    pub items: Vec<crate::basket::Item>,
+    pub worth: Vec<i32>,
+}
+
+const GRID: u32 = 568;
+const GRID_FRAME: u32 = 565;
+const TABS: u32 = 558;
+const COUNTS: u32 = 559;
+const CELL: u32 = 561;
+const CELL_FRAME: i32 = 0x44;
+const CELLS: usize = 30;
+const PICTURE_AT: [i32; 2] = [12, 6];
+const PICTURE_SIZE: f32 = 64.0;
+const QUALITY_DIGITS: i32 = 0x54;
+const QUALITY_END: [i32; 2] = [80, 44];
+
+/// The selling view from layout 664's placed nodes.
+pub fn sell_elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, l: &Lists, chosen: usize) -> Vec<Element> {
+    let mut out = Vec::new();
+    let worth = l.worth.get(chosen).copied().unwrap_or(0);
+    let mut cells: Vec<[i32; 2]> = Vec::new();
+    for p in nodes {
+        let n = p.node;
+        let Some(&branch) = p.path.get(1) else { continue };
+        match branch {
+            TITLE | HELP if n.part == 0x164 => {
+                if let Some(t) = texts(p) {
+                    let text = if branch == TITLE { l.shop.clone() } else { "Up / Down / Left / Right: choose   Enter: sell   Esc: leave".into() };
+                    out.push(Element::Label(Text { text, ..t }));
+                }
+            }
+            MONEY if n.part == MONEY_DIGITS && n.kind == 28 => out.extend(digits(l.money, MONEY_DIGITS, p.at[0], p.at[1])),
+            TOTALS if n.part == MONEY_DIGITS && n.kind == 28 => out.extend(digits(worth, MONEY_DIGITS, p.at[0], p.at[1])),
+            GRID if p.path.contains(&CELL) => {
+                if n.part == CELL_FRAME && p.path.last() == Some(&CELL) {
+                    cells.push(p.at);
+                }
+            }
+            GRID if p.path.contains(&GRID_FRAME) && !p.path.contains(&TABS) && !p.path.contains(&COUNTS) && n.part != 0x164 => out.push(Element::stored(p)),
+            TITLE | HELP | MONEY | TOTALS if n.part != 0x164 => out.push(Element::stored(p)),
+            _ => {}
+        }
+    }
+    let first = chosen / CELLS * CELLS;
+    for (slot, at) in cells.iter().enumerate() {
+        out.push(Element::Sprite { part: CELL_FRAME, cut: 0, at: *at });
+        let k = first + slot;
+        let Some(it) = l.items.get(k) else { continue };
+        out.push(Element::Picture { pack: crate::basket::PICTURES.into(), index: it.picture, size: [PICTURE_SIZE; 2], at: [at[0] + PICTURE_AT[0], at[1] + PICTURE_AT[1]], dim: k != chosen });
+        out.extend(digits(it.quality, QUALITY_DIGITS, at[0] + QUALITY_END[0], at[1] + QUALITY_END[1]));
+    }
+    out
 }
 
 pub const LAYOUT: u32 = 664;
@@ -164,6 +226,16 @@ impl Shop {
         let list = if self.selling { &l.sell } else { &l.buy };
         let n = list.len();
         match b {
+            // Selling: the grid's five columns (left and right move along a row there; Tab-free:
+            // the lists change with left on the first column and right on the last).
+            Button::Left | Button::Right if self.selling && n > 0 && !(b == Button::Left && self.chosen % 5 == 0) && !(b == Button::Right && (self.chosen % 5 == 4 || self.chosen + 1 >= n)) => {
+                self.chosen = if b == Button::Left { self.chosen - 1 } else { self.chosen + 1 };
+                None
+            }
+            Button::Up | Button::Down if self.selling && n > 0 => {
+                self.chosen = if b == Button::Up { self.chosen.saturating_sub(5) } else { (self.chosen + 5).min(n - 1) };
+                None
+            }
             Button::Up | Button::Down if n > 0 => {
                 self.chosen = if b == Button::Up { (self.chosen + n - 1) % n } else { (self.chosen + 1) % n };
                 let visible = if self.selling { VISIBLE } else { ROWS };
@@ -182,7 +254,7 @@ impl Shop {
 
     /// The view: buying from the game's layout (its nodes given), selling as text.
     pub fn view(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, l: &Lists) -> Vec<Element> {
-        if self.selling { self.elements(l) } else { buy_elements(nodes, texts, l, self.chosen, self.first) }
+        if self.selling { sell_elements(nodes, texts, l, self.chosen) } else { buy_elements(nodes, texts, l, self.chosen, self.first) }
     }
 
     pub fn elements(&self, l: &Lists) -> Vec<Element> {
@@ -205,14 +277,15 @@ impl Shop {
 
 /// The lines of a shop's lists: its wares on sale (name, price, whether the money covers it,
 /// how many the basket holds: `held(ware)`) and the basket's items (name, quality, worth).
-pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)], held: impl Fn(&Ware) -> i32) -> Lists {
+pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)], held: impl Fn(&Ware) -> i32, items: Vec<crate::basket::Item>) -> Lists {
     let buy = wares.iter().map(|w| {
         let price = barrel_game::shop::list_price(w);
         Line { text: format!("{}   {} cole", w.item_name, price), can: price <= money }
     });
     let rows = wares.iter().map(|w| Row { name: w.item_name.clone(), held: held(w), price: barrel_game::shop::list_price(w) });
     let sell = basket.iter().map(|(name, quality, worth)| Line { text: format!("{name}   quality {quality:.0}   {worth} cole"), can: true });
-    Lists { shop: shop.to_string(), money, buy: buy.collect(), rows: rows.collect(), sell: sell.collect() }
+    let worth = basket.iter().map(|b| b.2).collect();
+    Lists { shop: shop.to_string(), money, buy: buy.collect(), rows: rows.collect(), sell: sell.collect(), items, worth }
 }
 
 /// Runs the screen over the desk; the deal made, if any.
@@ -239,6 +312,8 @@ pub fn run(
     let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
     let mut every = desk.clone();
     every.extend(buy_elements(&nodes, texts, l, 0, 0));
+    every.extend(sell_elements(&nodes, texts, l, 0));
+    every.extend((0..10).map(|cut| Element::Sprite { part: QUALITY_DIGITS, cut, at: [0, 0] }));
     every.extend([HELD_DIGITS, PRICE_DIGITS, MONEY_DIGITS].iter().flat_map(|&part| (0..10).map(move |cut| Element::Sprite { part, cut, at: [0, 0] })));
     every.extend(nodes.iter().filter(|p| p.node.part == LIT_BAR).map(Element::stored));
     let keys_needed = screen::sheet_keys(&pe, every);
@@ -269,7 +344,7 @@ mod tests {
 
     #[test]
     fn buying_needs_the_money_and_selling_is_a_side_step_away() {
-        let l = Lists { shop: "Shop".into(), money: 50, rows: Vec::new(), buy: vec![Line { text: "a".into(), can: false }, Line { text: "b".into(), can: true }], sell: vec![Line { text: "c".into(), can: true }] };
+        let l = Lists { shop: "Shop".into(), money: 50, rows: Vec::new(), items: Vec::new(), worth: Vec::new(), buy: vec![Line { text: "a".into(), can: false }, Line { text: "b".into(), can: true }], sell: vec![Line { text: "c".into(), can: true }] };
         let mut s = Shop { selling: false, chosen: 0, first: 0 };
         assert_eq!(s.press(Button::Confirm, &l), None, "too dear: nothing");
         s.press(Button::Down, &l);

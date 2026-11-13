@@ -711,7 +711,9 @@ cole), its list with the prices (those the money does not cover grey), left / ri
 basket's items at their worth; confirm buys or sells one (`Session::buy`, `Session::sell`):
 from 100 cole the Mutated Taun leaves 10, a Corundum Stone at quality 50 brings 12. Buying is
 drawn from the game's shop screen (layout 664: title bar, money box, product list with the lit
-row, Price / Total; `shopping.rs`), selling is still plain text over the desk; one deal a
+row, Price / Total; `shopping.rs`), and so is selling (the grid of 30 cells with the basket's
+items and their qualities, the chosen one's worth in Price / Total; arrows move in the grid,
+left on its first column and right on its last change back to buying); one deal a
 visit, no amounts or stock, which shop stands where not read. Option opens its list: Save writes the game as F5 does (the next free
 slot); Return to Title starts the run again at the title, and Load at the title's Load Game list
 (so Back there goes to the title, not to the game: not yet the game's). Starting again keeps the

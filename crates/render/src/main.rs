@@ -1000,7 +1000,8 @@ fn shop_visit(
     let basket: Vec<(String, f32, i32)> = s.basket.iter().map(|g| (book.name(g.item).to_string(), g.quality, barrel_game::synthesis::worth(cost(g.item), g.quality, &[]))).collect();
     let name = shown.first().map_or(shop.to_string(), |w| w.shop_name.clone());
     let held = |w: &barrel_game::shop::Ware| item_number(&w.item).map_or(0, |i| s.basket.iter().filter(|g| g.item == i).count() as i32);
-    let lists = shopping::lists(&name, &shown, s.money, &basket, held);
+    let grid_items = basket::items(&s.basket.iter().map(|g| (g.item, g.quality)).collect::<Vec<_>>(), &item_rows.children);
+    let lists = shopping::lists(&name, &shown, s.money, &basket, held, grid_items);
     match shopping::run(gpu, pool, target, window, offscreen, root, &lists, keys, out)? {
         Some(shopping::Deal::Buy(k)) => {
             let w = shown[k];
