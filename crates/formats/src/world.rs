@@ -61,7 +61,7 @@ pub fn areas(pe: &Pe, table: u64) -> Option<Vec<Area>> {
 /// Entrance" ...). The tag is the place's mark on the world map (`point_tag`). The links are
 /// route numbers (`areas`: 24 `A2r0`, 25 `A2r1` ..., the tags of the path dots between the
 /// points), each shared by the two places it joins, one per direction the
-/// cursor can go (-1: none): the Ruins Entrance `[-1, -1, 25, 24, -1, -1]`, Sector One
+/// cursor can go: right (+x), left (-x), down (+z), up (-z), then two others (-1: none): the Ruins Entrance `[-1, -1, 25, 24, -1, -1]`, Sector One
 /// `[27, 25, 26, -1, -1, -1]`, the region's entry `[-1, -1, 24, -1, -1, -1]`. The description
 /// is what the area map's panel shows ("A path leading into the ruins."); none for the town
 /// and the regions' entries.

@@ -1,5 +1,6 @@
 //! Barrel's game logic.
 
+pub mod area_map;
 pub mod auto_battle;
 pub mod battle;
 pub mod bonus;

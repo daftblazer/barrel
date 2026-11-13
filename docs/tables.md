@@ -2361,7 +2361,10 @@ take, each shared by the two places it joins: the Southern Ruins (region `A2`) h
 One (`A2p1`) `[27, 25, 26, -1, -1, -1]`, where route 24 is `A2r0`, 25 `A2r1`, 26 `A2r2` and 27
 `A2r3`: the path dots between them carry those tags. The descriptions are the area map's
 panel line ("A path leading into the ruins."; none for the town and the regions' entries).
-Which slot is which direction is not read yet. The area map is the world map's own terrain
+The slots are the directions on the map: right (+x), left (-x), down (+z) and up (-z), then
+two more (one route in the whole table uses slot 4): Sector One (26800, 31300) has Sector
+Two (27500, 31300) in slot 0, the Ruins Entrance (26250, 30750) in slot 1 and Sector Three
+(26800, 32000) in slot 2 (`game::area_map::step`). The area map is the world map's own terrain
 (no other field and no game mode of its own); its panels are layouts 636 (the buttons), 637
 (the place name, top right), 638 (a point's label), 639 (the travel panel, "Time", "Date"),
 641 (a sector's panel: the description, the "Items to gather" tab the game titles "Gatherable
