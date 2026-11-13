@@ -862,6 +862,14 @@ In `TOWN_01` (1 layer, 1 map, a 790-byte block) the parts are clear enough to na
 - **Patch records:** eight of 16 bytes at 0x318 (`{u32 n | 0x80000000 flag, u32 0 or 1,
   0x80ffffff, 0x80ffffff}`), then a u16 list (`1 2 3 5 3 6 3 7 4`).
 
+`AREA_08_02` (6 layers, 1 map, a 5,000 × 15,000-unit field) does not fit that count. After its
+six layer records come six 48-byte records, not four, laid out differently: `{f32 0.018, f32 3000
+/ 1800 / 600, 0, u32 1, f32 1/5000, f32 1/15000, 0, 0, the same two, 0, 0}`, so they hold the
+blend coordinate scales for each axis of a non-square field. Its root node (at 0x294) is centred
+on (2500, 1800, 7500) with that half-size. So the record count follows something other than the
+layers, and the leaves' integers are still unexplained. Reading them needs the executable's
+section readers below.
+
 Over nine fields the block grows with the layers: 750 to 794 bytes for one layer, 8 KB for
 `AREA_08_02` (6 layers, 1 map), 97 KB for `AREA_01_01` (12 layers, 2 maps) and 694 KB for
 `AREA_03_01` (13, 3). `AREA_01_01`, the viewer's usual test field, is therefore one whose
