@@ -32,6 +32,11 @@ To the opening, with the pad: A at the title, then New Game (once the run's pref
 save the menu starts on Load Game: D-pad up first), A on Escha's card, A, D-pad left (Yes), A; the opening movie shows Proton's colour bars and A skips it, and
 `EVENT_MM01_OP1_111` begins. On the keyboard: `k` confirms, the arrow keys move.
 
+**With a copied save** (the player's own progress point, in this prefix only): stay where the
+player has already been. On the save used so far (Southern Ruins, Sector One), the area map's
+Sector Two starts a story scene on entry: do not enter it; Sector One and the Ruins Entrance are
+fine. Stop at the first line of any scene that starts unexpectedly.
+
 **Without Steam:** tried (2026-11-12) and the game will not run: under Proton's own Wine (its
 Wine Mono for the English executable's .NET import, its DXVK copied into a prefix of its own),
 with no Steam variables, the executable exits with 0 after a second, the Steam API's restart
