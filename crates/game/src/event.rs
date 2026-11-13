@@ -28,6 +28,9 @@ pub const MARK_EVENT: u32 = 0x7500_0024;
 /// `u34` (0x75000022, `{flag, value}`): sets one of the 151 event flags (`0x14035f660`: the
 /// words at `0x1410932d0`, saved as `event/m_eventFlag`).
 pub const SET_EVENT_FLAG: u32 = 0x7500_0022;
+/// `u35` (0x75000023, `{flag, amount}`): adds to an event flag (`0x14035f6b0`, case
+/// `0x140051516`). Like `u34` it then runs the event checks with trigger 7 and the flag.
+pub const ADD_EVENT_FLAG: u32 = 0x7500_0023;
 /// `u38` (0x75000026, `{trophy}`): unlocks a Steam achievement once (`0x140168390`: the
 /// `TROPHY_*` table at `0x140d5fcf8`, 0x198 bytes a row, through the user-stats interface's
 /// `SetAchievement` and `StoreStats`). Barrel leaves it out on purpose while it is being built
@@ -281,6 +284,8 @@ pub enum Step<'a> {
     MarkEvent { event: u32, seen: bool },
     /// `u34`: an event flag set.
     EventFlag { flag: u32, value: i32 },
+    /// `u35`: an amount added to an event flag.
+    EventFlagAdd { flag: u32, amount: i32 },
     /// `u38`: the game would unlock this Steam achievement here (Barrel does not).
     Trophy { trophy: u32 },
     /// A movie plays (`u46`; not drawn yet: `docs/engine.md`, "Movies").
@@ -549,6 +554,8 @@ impl<'a> Player<'a> {
             (SHORT_WAIT, _) => out.push(Step::Wait { seconds: 0.3 }),
             (LONG_WAIT, _) => out.push(Step::Wait { seconds: 2.0 }),
             (SET_EVENT_FLAG, [flag, value, ..]) => out.push(Step::EventFlag { flag: *flag, value: *value as i32 }),
+            // A missing amount reads as 0 (the case reads it only when given).
+            (ADD_EVENT_FLAG, [flag, rest @ ..]) => out.push(Step::EventFlagAdd { flag: *flag, amount: rest.first().map_or(0, |&a| a as i32) }),
             (TROPHY, [trophy, ..]) => out.push(Step::Trophy { trophy: *trophy }),
             (PLAY_MOVIE, [movie, ..]) => out.push(Step::Movie { movie: *movie }),
             (MARK_EVENT, [event, rest @ ..]) => out.push(Step::MarkEvent { event: *event, seen: rest.first().is_some_and(|&v| v != 0) }),
@@ -961,6 +968,15 @@ mod tests {
     }
 
     #[test]
+    fn a_flag_is_added_to() {
+        let act = Action { flags: 0, name: vec![], description: vec![], words: vec![ADD_EVENT_FLAG, 12, 3, END] };
+        let event = Ebd { actions: vec![act], resources: vec![] };
+        let table = OperandTable::new(&[(ADD_EVENT_FLAG, Some(2))]);
+        let steps: Vec<Step> = Player::escha(&event, &[], &table).unwrap().collect();
+        assert!(steps.contains(&Step::EventFlagAdd { flag: 12, amount: 3 }), "{steps:?}");
+    }
+
+    #[test]
     fn a_movie_plays() {
         let act = Action { flags: 0, name: vec![], description: vec![], words: vec![PLAY_MOVIE, 5, 1, 0, END] };
         let event = Ebd { actions: vec![act], resources: vec![] };
@@ -1126,6 +1142,7 @@ mod tests {
                 Step::Wait { seconds } => format!("wait {seconds}"),
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
+                Step::EventFlagAdd { flag, amount } => format!("flag {flag} += {amount}"),
                 Step::Trophy { trophy } => format!("trophy {trophy}"),
                 Step::Movie { movie } => format!("movie {movie}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),

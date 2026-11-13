@@ -1002,7 +1002,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500001e` | `u30` |  | B3Balloon, Event | 2 | 1 (2) |
 | `7500001f` | `u31` | ECT_EVENT_VOICE_PLAY | B3Balloon, Event | 400 | 1 (400) |
 | `75000022` | `u34` | `SET_EVENT_FLAG` (event.rs): sets one of the 151 event flags (`0x14035f660`: the words at `0x1410932d0`, saved as `event/m_eventFlag`) | B3Balloon, Event | 52 | 2 (52) |
-| `75000023` | `u35` |  | B3Balloon, Event | 79 | 2 (79) |
+| `75000023` | `u35` | `ADD_EVENT_FLAG` (event.rs): adds `{amount}` to event flag `{flag}` (`0x14035f6b0`, case `0x140051516`; then the event checks with trigger 7, as `u34`) | B3Balloon, Event | 79 | 2 (79) |
 | `75000024` | `u36` | (marks an event seen: `{event, seen}`, `0x14035f480`) | B3Balloon, Event | 76 | 2 (76) |
 | `75000026` | `u38` | `TROPHY` (event.rs): unlocks a Steam achievement once (`0x140168390`: the `TROPHY_*` table at `0x140d5fcf8`, 0x198 bytes a row, through the user-stats interface's ... | B3Balloon, Event | 50 | 1 (50) |
 | `7500002e` | `u46` | (plays a movie: `{movie, 1, 0}`) | B3Balloon, Event (case `0x140051a96`: a `GAMEMODE_CREATE_DATA`, mode 13, with the movie and `op1 != 0`, `0x140292000`; see "Movies") | 18 | 3 (18) |
