@@ -24,6 +24,10 @@ pub struct SceneData<'a> {
     pub weights: &'a [f32],
     /// Each field's ground: its 8 textures uploaded (2 blend maps, 6 layers).
     pub grounds: Vec<GroundData>,
+    /// Each field's light texture (none: `white`'s), one set 1 for each field.
+    pub patterns: Vec<Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>>,
+    /// White's place in `textures`.
+    pub white: usize,
 }
 
 pub struct GroundData {
@@ -73,8 +77,10 @@ pub struct SceneGpu {
     buffers: [vk::Buffer; 4],
     delta_mem: vk::DeviceMemory,
     inst_pool: vk::DescriptorPool,
-    /// Set 1: instances (0), palette (1), morph offsets (2) and weights (3), lighting (4), shadow (5).
-    pub instance_set: vk::DescriptorSet,
+    /// Set 1, one for each field: instances (0), palette (1), morph offsets (2) and weights (3),
+    /// lighting (4), shadow (5), the field's light texture (6).
+    instance_sets: Vec<vk::DescriptorSet>,
+    patterns: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     ground_pool: Option<vk::DescriptorPool>,
     pub grounds: Vec<Ground>,
     /// One set per texture (layout `set_layout`: one combined image sampler), in texture order.
@@ -118,32 +124,37 @@ impl SceneGpu {
         gpu.upload_at(palette_mem, half, bytes(data.palette))?;
         let (delta_buf, delta_mem) = host(bytes(data.deltas), storage)?;
         let (weight_buf, weight_mem) = host(bytes(data.weights), storage)?;
+        let fields = data.patterns.len().max(1);
+        let n = fields as u32;
         let inst_sizes = [
-            vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 },
-            vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 1 },
-            vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 },
+            vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 * n },
+            vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: n },
+            vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 * n },
         ];
-        let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
-        let inst_layouts = [shared.instance_layout];
-        let instance_set =
-            unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))?[0] };
+        let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&inst_sizes), None)? };
+        let inst_layouts = vec![shared.instance_layout; fields];
+        let instance_sets = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))? };
         let whole = |b| [vk::DescriptorBufferInfo::default().buffer(b).offset(0).range(vk::WHOLE_SIZE)];
         let infos = [whole(instance_buf), whole(palette_buf), whole(delta_buf), whole(weight_buf)];
         let look_info = whole(shared.look);
-        let shadow_info = [vk::DescriptorImageInfo::default()
-            .sampler(shared.shadow_sampler)
-            .image_view(shared.shadow_view)
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-        let mut writes: Vec<_> = infos
-            .iter()
-            .enumerate()
-            .map(|(b, info)| vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(b as u32).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(info))
+        let image = |sampler, view| [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let shadow_info = image(shared.shadow_sampler, shared.shadow_view);
+        let white_view = textures[data.white].2;
+        let pattern_infos: Vec<_> = (0..fields)
+            .map(|k| image(shared.sampler, data.patterns.get(k).and_then(|p| p.as_ref()).map_or(white_view, |p| p.2)))
             .collect();
-        writes.push(vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(4).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&look_info));
-        writes.push(
-            vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(5).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&shadow_info),
-        );
-        unsafe { d.update_descriptor_sets(&writes, &[]) };
+        for (set, pattern_info) in instance_sets.iter().zip(&pattern_infos) {
+            let mut writes: Vec<_> = infos
+                .iter()
+                .enumerate()
+                .map(|(b, info)| vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(b as u32).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(info))
+                .collect();
+            writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(4).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&look_info));
+            writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(5).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&shadow_info));
+            writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(6).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(pattern_info));
+            unsafe { d.update_descriptor_sets(&writes, &[]) };
+        }
+        let patterns = data.patterns.into_iter().flatten().collect();
 
         let mut ground_pool = None;
         let mut grounds = Vec::new();
@@ -192,9 +203,15 @@ impl SceneGpu {
             buffers: [instance_buf, palette_buf, delta_buf, weight_buf],
             delta_mem,
             inst_pool,
-            instance_set,
+            instance_sets,
+            patterns,
             sets,
         })
+    }
+
+    /// Set 1 for field `field` (the first's for a scene without fields).
+    pub fn instance_set(&self, field: usize) -> vk::DescriptorSet {
+        self.instance_sets[field.min(self.instance_sets.len() - 1)]
     }
 
     /// This frame's instances (their model matrices and last frame's).
@@ -221,7 +238,7 @@ impl SceneGpu {
             if let Some(p) = self.ground_pool {
                 d.destroy_descriptor_pool(p, None);
             }
-            for (image, mem, view) in self.textures.into_iter().chain(self.grounds.into_iter().flat_map(|g| g.textures)) {
+            for (image, mem, view) in self.textures.into_iter().chain(self.grounds.into_iter().flat_map(|g| g.textures)).chain(self.patterns) {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
                 d.free_memory(mem, None);

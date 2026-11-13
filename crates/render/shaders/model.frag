@@ -37,6 +37,12 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // scattering constants (docs/shading.md, "Fog": read from the game's memory).
     vec4 fog;
     vec4 scat[4];
+    // Slots 37 to 47: the billboards' axes and the view-projections (model.vert's).
+    vec4 vertex_only[11];
+    // The field's light texture (docs/shading.md, "The light texture"): {1 / width,
+    // 1 / height (field units), u + 0.5, v + 0.5}, and {on}.
+    vec4 pattern;
+    vec4 pattern_on;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -69,6 +75,22 @@ vec3 soft_light(vec3 a, vec4 kw) {
 
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
 // and a half apart), 1 lit to 0 shadowed (atColor white: the full strength).
+layout(set = 1, binding = 6) uniform sampler2D pattern_map;
+
+// The field's light texture at world point p (render space): the point slid along the
+// sunlight onto the plane 1000 units up, in the field's own space (x mirrored back), then
+// scaled to one repeat per area and moved by the drift. 1 without one.
+float cloud_light(vec3 p) {
+    vec3 d = vec3(-look.sun_dir.x, look.sun_dir.y, look.sun_dir.z);
+    if (look.pattern_on.x == 0.0 || abs(d.y) < 1e-4) {
+        return 1.0;
+    }
+    vec3 g = vec3(-p.x, p.y, p.z);
+    float k = (g.y - 1000.0) / d.y;
+    vec2 uv = vec2((g.x - k * d.x) * look.pattern.x + look.pattern.z, (g.z - k * d.z) * look.pattern.y + look.pattern.w);
+    return texture(pattern_map, uv).r;
+}
+
 float sun_shadow(vec3 p) {
     if (look.shadow_info.y < 0.5) return 1.0;
     vec4 c = look.shadow_vp * vec4(p, 1.0);
@@ -95,7 +117,7 @@ void main() {
             if (c.a < pc.params.x) discard;
             c.a = 1.0;
         }
-        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world)) * c.rgb, fog_keep) * pc.params.w, c.a);
+        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep) * pc.params.w, c.a);
         return;
     }
     if (c.a < pc.params.x) discard;
@@ -103,7 +125,7 @@ void main() {
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the
         // light texture and shadows are not done yet, nor fog.
-        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world)) * c.rgb, fog_keep) * pc.params.w, 1.0);
+        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep) * pc.params.w, 1.0);
         return;
     }
     vec3 col;

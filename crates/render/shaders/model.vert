@@ -73,6 +73,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     mat4 prev_view_proj;
     // This frame's view-projection without the jitter (the drawn one, pc.view_proj, has it).
     mat4 view_proj;
+    // The field's light texture's mapping (model.frag).
+    vec4 pattern;
+    vec4 pattern_on;
 } look;
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;

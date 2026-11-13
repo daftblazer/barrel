@@ -194,7 +194,16 @@ in turn (`D3DXMatrixMultiply`, row vectors):
 
 In the field's own space, d the sun's direction: U = (x − (y − 1000)·d.x / d.y) / width + u +
 0.5 and V = (z − (y − 1000)·d.z / d.y) / height + v + 0.5. The cloud shadows fall along the
-sunlight, one repeat of the texture per area, drifting at the speeds. Not drawn yet.
+sunlight, one repeat of the texture per area, drifting at the speeds.
+
+The renderer draws them so: each field's `_pat` texture (stubs left out) is bound with set 1
+(binding 6, one set per field loaded), the mapping goes in the look block's slots 48 and 49,
+and `model.frag` and `terrain.frag` multiply the sun's part by the texture's red at
+`cloud_light(world)`. The drift runs from the scene's first frame (the game's from the
+field's load, so where the clouds are in a given shot is not the game's). In `TOWN_10`'s
+narration shot (`EVENT_MM01_OP1_111` at 58 s) the ground goes from 159, 127, 81 to 147, 120,
+81 (the game 130, 107, 78); indoor fields are pixel-identical. The house front there is
+still twice the game's (131 against 61): its shade is something else.
 
 ### Wind (plants swaying)
 

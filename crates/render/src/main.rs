@@ -44,7 +44,7 @@ const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 48 * 16;
+const LOOK_SIZE: u64 = 50 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 const SHADOW_HALF: f32 = 1500.0;
@@ -1676,7 +1676,9 @@ fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
 /// A field's placed objects and its shared texture pack.
 /// Adds a field's ground and objects to the scene, as field `scene.field`, its textures taken
 /// to start at `base` in the scene's list; returns its texture pack.
-fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
+/// A field's models and terrain into the scene: its texture pack, and its light texture
+/// (`<AREA>_pat.g1t`; indoor fields carry a 64-byte stub, taken as none).
+fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, Option<Vec<u8>>)> {
     let first_draw = scene.draws.len();
     let area = dir.file_name().ok_or("field directory has no name")?.to_string_lossy().into_owned();
     let main_bytes = std::fs::read(dir.join(format!("{area}.elixir.gz")))?;
@@ -1684,6 +1686,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
     let obj_bytes = std::fs::read(dir.join(format!("{area}_Obj.elixir.gz")))?;
     let objects = Elixir::parse(&obj_bytes)?;
     let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
+    let pattern = named(&main, &format!("{area}_pat.g1t")).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty())).map(<[u8]>::to_vec);
     let texture_count = G1t::parse(&textures)?.textures.len();
     // A flat placeholder terrain (every height 0, one layer: TOWN_03, TOWN_07) is not drawn: the
     // town's ground is its models, and events stand characters below it (TOWN_07's at y -255).
@@ -1750,7 +1753,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<Vec<u8>> {
         d.overlay = d.overlay.map(|o| o + base);
         d.mask = d.mask.map(|m| m + base);
     }
-    Ok(textures)
+    Ok((textures, pattern))
 }
 
 /// The version a placement's tags give it: `<N>` from `xAM_balloon_ver<N>` (TOWN_07's dock
@@ -1868,6 +1871,8 @@ struct Loaded {
     start_at: Option<f32>,
     /// The field map the event is in there (`--at`), if it has moved.
     start_field: Option<u32>,
+    /// Each field's light texture pack (`<AREA>_pat.g1t`), in `field_maps` order.
+    patterns: Vec<Option<Vec<u8>>>,
 }
 
 /// The story from a new game, over the install at ROOT (`event_start::Chain`).
@@ -1909,6 +1914,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     // The field map numbers loaded, in scene order (empty for `--field DIR`).
     let mut field_maps: Vec<u32> = Vec::new();
     let mut field_looks: Vec<Option<barrel_formats::field_look::FieldLook>> = Vec::new();
+    let mut patterns: Vec<Option<Vec<u8>>> = Vec::new();
     // Each field's distant view's instance (it follows the camera), if it has one.
     let mut sky_instances: Vec<Option<u32>> = Vec::new();
     let mut pack_bytes = Vec::new();
@@ -1931,7 +1937,8 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
                 .and_then(|b| barrel_formats::table::parse(&b).ok());
             field_looks.push(table.map(|t| barrel_formats::field_look::read(&t)));
             scene.field = Some(k as u16);
-            let bytes = field_scene(dir, &mut scene, base)?;
+            let (bytes, pattern) = field_scene(dir, &mut scene, base)?;
+            patterns.push(pattern);
             base += G1t::parse(&bytes)?.textures.len();
             pack_bytes.push(bytes);
             field_maps.push(*map);
@@ -2060,7 +2067,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
     }
-    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field })
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field, patterns })
 }
 
 /// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
@@ -2363,6 +2370,12 @@ fn main() -> Result<()> {
         // The sun's shadow map (binding 5).
         vk::DescriptorSetLayoutBinding::default()
             .binding(5)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        // The field's light texture, the drifting cloud shadows (binding 6).
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(6)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
@@ -2756,7 +2769,7 @@ fn main() -> Result<()> {
         })
         .transpose()?;
     // The scene: loaded, then uploaded under the renderer set up above.
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at, start_field } =
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at, start_field, patterns } =
         load_scene(SceneSpec {
             field,
             args: args.clone(),
@@ -2828,9 +2841,29 @@ fn main() -> Result<()> {
         );
     }
     let grounds = upload_grounds(&gpu, pool, &terrains)?;
-    let scene_data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds };
+    // Each field's light texture (none: white).
+    let pattern_textures = patterns
+        .iter()
+        .map(|p| -> Result<_> {
+            let Some(bytes) = p else { return Ok(None) };
+            let g = G1t::parse(bytes)?;
+            g.textures.first().map(|t| upload_texture(&gpu, pool, t)).transpose()
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let scene_data = scene_gpu::SceneData {
+        vertices: vbytes,
+        indices: ibytes,
+        textures,
+        instances: &instances,
+        palette: &palette,
+        deltas: &deltas,
+        weights: &morph_weights,
+        grounds,
+        patterns: pattern_textures,
+        white,
+    };
     let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &shared)?;
-    let (vbuf, ibuf, instance_set) = (scene.vbuf, scene.ibuf, scene.instance_set);
+    let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
     let sets = scene.sets.clone();
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
@@ -3197,6 +3230,8 @@ fn main() -> Result<()> {
     let mut frame_jitter = (0f32, 0f32);
     let mut last_shot: Option<taa::Shot> = None;
     let mut shot_field = u16::MAX;
+    // The light texture's clock: from the scene's first frame (the game's starts at the field's load).
+    let mut pattern_time = 0.0f32;
     let mut ran = 0u32;
     let mut stop = false;
     for frame in 0..frames - frame_base {
@@ -3304,6 +3339,9 @@ fn main() -> Result<()> {
             eye = (look + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist) * mirror;
             fov = point.fov.clamp(10.0, 120.0).to_radians();
         }
+    }
+    if frame > 0 {
+        pattern_time += if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
     }
     // Town people: each posed in its wait motion on the viewer's clock.
     if !town_bodies.is_empty() {
@@ -3763,7 +3801,7 @@ fn main() -> Result<()> {
         };
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 48];
+        let mut look = [[0f32; 4]; 50];
         // Last frame's view-projection (this frame's on the first), for the motion vectors.
         for (k, col) in prev_mvp.unwrap_or(mvp).to_cols_array_2d().into_iter().enumerate() {
             look[40 + k] = col;
@@ -3814,6 +3852,13 @@ fn main() -> Result<()> {
                 look[slot + 1] = *color;
             }
         }
+        // The light texture's mapping (docs/shading.md, "The light texture"): {1 / width,
+        // 1 / height (field units), u + 0.5, v + 0.5}, and whether there is one.
+        if let (Some(pat), true) = (field_look.and_then(|l| l.pattern), patterns.get(current_field as usize).is_some_and(Option::is_some)) {
+            let drift = |speed: f32| (pattern_time * speed).rem_euclid(1.0);
+            look[48] = [1.0 / (pat.size[0] * 100.0), 1.0 / (pat.size[1] * 100.0), drift(pat.speed[0]) + 0.5, drift(pat.speed[1]) + 0.5];
+            look[49] = [1.0, 0.0, 0.0, 0.0];
+        }
         look[26] = match event_lights.ambient {
             Some(rgb) => [rgb[0], rgb[1], rgb[2], 1.0],
             None => field_look.and_then(|l| l.ambient).unwrap_or([0.6, 0.6, 0.6, 1.0]),
@@ -3859,6 +3904,8 @@ fn main() -> Result<()> {
     let scene_area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: scene_width, height: scene_height } };
     let frozen_ready = targets.frozen_ready;
     targets.frozen_ready = true;
+    // Set 1 for the field drawn (its light texture at binding 6).
+    let instance_set = scene.instance_set(current_field as usize);
     let record = |cb: vk::CommandBuffer| unsafe {
         if let Some(t) = &timer {
             t.begin(d, cb);

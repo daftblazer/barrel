@@ -10,9 +10,19 @@
 //! </light>
 //! <chara_shader light_dir light_color rim_light_dir rim_light_color point_light_strength />
 //! <hdr threshold glow_add_rate />
+//! <pattern_map speed_u speed_v area_width area_height />
 //! ```
 
 use crate::table::Element;
+
+/// `<pattern_map>`: the light texture's drift (`speed_u`, `speed_v`, repeats a second) and the
+/// area one repeat covers (`area_width`, `area_height`, metres); missing values are the
+/// field loader's (`0x14006937a`: 0.0777, 0.0333, 50, 50). `docs/shading.md`, "The light texture".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pattern {
+    pub speed: [f32; 2],
+    pub size: [f32; 2],
+}
 
 /// The character shader's constants (`docs/shading.md`): the directions as given (not
 /// normalised), the colours with their weight in the fourth value.
@@ -64,6 +74,8 @@ pub struct FieldLook {
     pub fog: Option<Fog>,
     /// `<hdr threshold glow_add_rate>`.
     pub hdr: Option<(f32, f32)>,
+    /// The cloud shadows' texture (`<AREA>_pat.g1t`) over the field: `<pattern_map>`.
+    pub pattern: Option<Pattern>,
     /// `<sphere offset>`: where the distant view sits from the camera (metres), when it
     /// follows the camera.
     pub sphere_offset: Option<[f32; 3]>,
@@ -218,6 +230,12 @@ pub fn read(root: &Element) -> FieldLook {
                     rayleigh_rgb: numbers(e, "rayleighRGB").unwrap_or_default(),
                 })
             }
+            "pattern_map" => {
+                look.pattern = Some(Pattern {
+                    speed: [number(e, "speed_u").unwrap_or(0.0777), number(e, "speed_v").unwrap_or(0.0333)],
+                    size: [number(e, "area_width").unwrap_or(50.0), number(e, "area_height").unwrap_or(50.0)],
+                })
+            }
             "hdr" => look.hdr = Some((number(e, "threshold").unwrap_or(1.0), number(e, "glow_add_rate").unwrap_or(0.0))),
             "sphere" if e.attr("tracking_camera") != Some("false") => look.sphere_offset = numbers(e, "offset"),
             "camera" => {
@@ -264,6 +282,7 @@ mod tests {
             </light>
             <chara_shader light_dir="2.0, -1.0, -1.0" light_color="0.65, 0.4, 0.3, 0.3" rim_light_dir="2.56, -2.67, 1.0" rim_light_color="0.9, 0.9, 0.0, 0.25" point_light_strength="0.1, 0.0, 0.0, 0.0" />
             <hdr threshold="0.7" glow_add_rate="1.0" />
+            <pattern_map speed_u="-0.005" speed_v="0.01" area_width="200.0" />
         </root>"#;
         let look = read(&crate::table::parse_str(xml).unwrap());
         let c = look.chara.unwrap();
@@ -277,5 +296,6 @@ mod tests {
         assert!((1.0 / (att[0] + att[2] * r * r) - 0.02).abs() < 1e-6);
         assert_eq!(look.fog.unwrap().end, 50.0);
         assert_eq!(look.hdr, Some((0.7, 1.0)));
+        assert_eq!(look.pattern, Some(Pattern { speed: [-0.005, 0.01], size: [200.0, 50.0] }));
     }
 }
