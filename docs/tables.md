@@ -1923,9 +1923,15 @@ bosses: a list of 20-byte records ended by -1, the block's **reactions**. When a
 takes its block (`0x1401b7880`: monster number +0x3a8, block +0x3b0) its reaction list (+0x258,
 +0x10) is emptied and each record becomes a `BtlCharaReaction` (0x70 bytes, vtable `0x140807a38`,
 `0x1401ac500` → `0x1401ab400`): word 0 to +0x28, word 1 handed to `0x1401ac120` and
-`0x1401ac2a0`, words 2, 3 and 4 to +0x18, +0x1c and +0x20, and +0x24 set to 3. The Grand
-Dragon's one record is `{2, 9, 48, 40, 1}`. What the words mean (a trigger, a skill, ...) wants
-the reaction's own code; not read yet.
+`0x1401ac2a0`, words 2, 3 and 4 to +0x18, +0x1c and +0x20, and +0x24 set to 3. 32 blocks have
+reactions (45 records, all on bosses: the Panzer, Grand Dragon, Lord of Fire, Frigate,
+Dreadnought, Gullveig, Regalveig, Flameu ...). Word 1 is a reaction type, 1 to 26 (9 in 43 of the
+45 records, 14 in two), which `0x1401ac120` and `0x1401ac2a0` turn through jump tables into the
+object's +0x8, +0xc, +0x10 and +0x14; word 2 is a skill of the skill table (the Panzer's 46 is
+Alarm, the Grand Dragon's 48 Thunder Breath, the Lord of Fire's 53 Energy Jail); word 3 runs 99,
+70, 60, 50, 40, 33, 25 and 15, an HP percentage by the look of it; word 0 is 1 to 8 and word 4 is
+1 in all. So a reaction presumably uses its skill once the boss's HP falls to the percentage;
+the trigger check (the object's one virtual, `0x1401b8db0`, and its users) is not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which
