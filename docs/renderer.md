@@ -176,8 +176,9 @@ walls and onto its ground, turned the way she goes (as the field creatures are, 
 camera carried along with her: `--player 5577,3520 --walk -300,0 --frames 30 --fps 30` runs her
 300 units west along the valley. In a window W A S D steer her instead, relative to the
 camera (the arrows still turn it), at the game's run speed, 500 units a second
-(`game::walk::player_run_speed`; 625 after `EVENT_XG05_110`, which the viewer takes as unseen); standing she goes back to her wait
-motion, facing the way she last ran.
+(`game::walk::player_run_speed`; 625 after `EVENT_XG05_110`, which the viewer takes as unseen); her walk, run and wait motions are
+the game's choice by speed (`game::walk::player_gait`; `--walk -150,0` walks, `-500,0` runs),
+facing the way she last went.
 
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC

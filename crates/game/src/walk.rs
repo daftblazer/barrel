@@ -32,6 +32,29 @@ pub fn player_move(stick: [f32; 2], dt: f32, faster: bool) -> [f32; 2] {
     [stick[0] * scale, stick[1] * scale]
 }
 
+/// The player's field motion: `MOTION_F_WAIT` (31), `MOTION_WALK` (32) or `MOTION_RUN` (33).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gait {
+    Wait,
+    Walk,
+    Run,
+}
+
+/// The motion for the player moving at `speed` (units a second, as she moved this frame) and
+/// the rate it plays at, as the user brain picks them (`0x140235410`): running from 0.42 of the
+/// run speed, walking below it, waiting when still; played at the speed times 0.00225, never
+/// slower than 1. (It blends into a new run or walk over 0.15 seconds.)
+pub fn player_gait(speed: f32, faster: bool) -> (Gait, f32) {
+    let gait = if speed >= player_run_speed(faster) * 0.42 {
+        Gait::Run
+    } else if speed > 0.0 {
+        Gait::Walk
+    } else {
+        Gait::Wait
+    };
+    (gait, (speed * 0.01 * 0.225).max(1.0))
+}
+
 /// A wall seen from above: a segment on the ground (x, z) and the heights it spans.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Wall {
@@ -235,6 +258,15 @@ mod tests {
         assert!((half[1] - 250.0).abs() < 1e-3 && half[0] == 0.0, "{half:?}");
         let full = player_move([3.0, 4.0], 0.5, true);
         assert!((full[0] - 187.5).abs() < 1e-3 && (full[1] - 250.0).abs() < 1e-3, "past full lean: {full:?}");
+    }
+
+    #[test]
+    fn the_speed_picks_the_gait() {
+        assert_eq!(player_gait(0.0, false), (Gait::Wait, 1.0));
+        assert_eq!(player_gait(200.0, false), (Gait::Walk, 1.0), "under 0.42 of 500");
+        assert_eq!(player_gait(500.0, false).0, Gait::Run);
+        assert!((player_gait(500.0, false).1 - 1.125).abs() < 1e-6);
+        assert_eq!(player_gait(250.0, true).0, Gait::Walk, "under 0.42 of 625");
     }
 
     #[test]

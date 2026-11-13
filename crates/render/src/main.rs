@@ -1151,6 +1151,8 @@ struct TownBody {
     instance: u32,
     skeleton: barrel_formats::g1m::Skeleton,
     anim: barrel_formats::g1a::Animation,
+    /// Its own motion clock (seconds into `anim`), if not the viewer's.
+    clock: Option<f32>,
 }
 
 fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>, Vec<TownBody>)> {
@@ -1195,7 +1197,7 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, _, anim, _)) = body.rig {
-            bodies.push(TownBody { instance: body.instance, skeleton, anim });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None });
         }
         placed.push(p.chara);
         first = first.or(Some(pos));
@@ -1211,13 +1213,14 @@ struct Walker {
     /// Her entry in the town bodies (posed there in `wait` or `run`).
     body: usize,
     wait: barrel_formats::g1a::Animation,
+    walk: barrel_formats::g1a::Animation,
     run: barrel_formats::g1a::Animation,
     pos: [f32; 3],
     velocity: [f32; 2],
     /// The way she faces (radians about y, from +z), kept when she stops.
     facing: f32,
-    /// Whether her body is in `run` (else `wait`).
-    running: bool,
+    /// The motion her body is in.
+    gait: barrel_game::walk::Gait,
     walls: barrel_game::walk::Walls,
     ground: barrel_game::walk::Ground,
 }
@@ -1253,10 +1256,11 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let (skeleton, mut motions, anim, _) = body.rig.ok_or("the player has no skeleton")?;
     // Her run (the `RUN` column, `ACT_RUN`; `WALK` is the slow one).
     let run = motions.get("RUN").cloned().ok_or("the player has no RUN motion")?;
+    let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let walls = barrel_game::walk::Walls::new(&collision);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), run, pos, velocity: [0.0; 2], facing: 0.0, running: false, walls, ground };
-    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim }, walker))
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, walls, ground };
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
 }
 
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
@@ -3452,21 +3456,34 @@ fn main() -> Result<()> {
             w.velocity = barrel_game::walk::player_move([-v.x, v.z], 1.0, false);
         }
         let moving = w.velocity != [0.0, 0.0];
-        if moving != w.running {
-            w.running = moving;
-            if let Some(b) = town_bodies.get_mut(w.body) {
-                b.anim = if moving { w.run.clone() } else { w.wait.clone() };
-            }
-        }
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        let mut speed = 0.0;
         if moving && frame > 0 && dt > 0.0 {
             let delta = [w.velocity[0] * dt, w.velocity[1] * dt];
             let next = w.walls.step([w.pos[0], w.pos[2]], delta, w.pos[1], 150.0, 48.0);
             if let Some(y) = w.ground.height(next[0], next[1], w.pos[1], 50.0) {
                 let moved = Vec3::new(next[0] - w.pos[0], y - w.pos[1], next[1] - w.pos[2]) * Vec3::new(-1.0, 1.0, 1.0);
+                speed = Vec3::new(moved.x, 0.0, moved.z).length() / dt;
                 w.pos = [next[0], y, next[1]];
                 eye += moved;
                 target += moved;
+            }
+        }
+        // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
+        // its beginning (the game blends into it over 0.15 s; not yet here).
+        if frame > 0 && dt > 0.0 {
+            let (gait, rate) = barrel_game::walk::player_gait(speed, false);
+            if let Some(b) = town_bodies.get_mut(w.body) {
+                if gait != w.gait {
+                    w.gait = gait;
+                    b.anim = match gait {
+                        barrel_game::walk::Gait::Wait => w.wait.clone(),
+                        barrel_game::walk::Gait::Walk => w.walk.clone(),
+                        barrel_game::walk::Gait::Run => w.run.clone(),
+                    };
+                    b.clock = Some(0.0);
+                }
+                b.clock = Some(b.clock.unwrap_or(0.0) + dt * rate);
             }
         }
         if moving {
@@ -3482,7 +3499,7 @@ fn main() -> Result<()> {
             town_time += dt;
         }
         for b in &town_bodies {
-            let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, town_time, true));
+            let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, b.clock.unwrap_or(town_time), true));
             let base = instances[b.instance as usize].palette as usize;
             for (k, m) in joints.iter().enumerate() {
                 if let Some(slot) = palette.get_mut(base + k) {
