@@ -297,6 +297,12 @@ impl Pump {
         if state.window.is_none() {
             return Err("the window did not open".into());
         }
+        // SIGTERM (how Steam and Kintsugi stop a game) and SIGINT end the run as closing the
+        // window does.
+        unsafe {
+            libc::signal(libc::SIGTERM, stop_signal as *const () as libc::sighandler_t);
+            libc::signal(libc::SIGINT, stop_signal as *const () as libc::sighandler_t);
+        }
         Ok(Pump { event_loop, state, pad: crate::pad::Gamepad::open(), lean: (0, 0), pending: None })
     }
 
@@ -381,6 +387,13 @@ impl Pump {
             }
             self.lean = lean;
         }
-        !self.state.closed
+        !self.state.closed && !STOPPED.load(std::sync::atomic::Ordering::Relaxed)
     }
+}
+
+/// Set by SIGTERM or SIGINT.
+static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn stop_signal(_: libc::c_int) {
+    STOPPED.store(true, std::sync::atomic::Ordering::Relaxed);
 }

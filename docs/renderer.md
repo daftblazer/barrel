@@ -424,7 +424,8 @@ face changes by writing its weights, like a pose by writing its palette. The wei
 from the line's expression (`--line`): in `EVENT_MM08_AS4_130`, line 2, 108 weights over three
 faces, 3 not zero (the mouths), and the frame is pixel-identical to the CPU-morphed one.
 
-**Live window.** `barrel-view --window FRAMES` opens a 1280×720 window (winit 0.30, Wayland or
+**Live window.** `barrel-view --window FRAMES` (0: until the player quits, as a game launch
+uses it) opens a 1280×720 window (winit 0.30, Wayland or
 X11) and presents through a FIFO swapchain (`present.rs`: the surface, the swapchain, acquire
 and present; vsync, so the display paces the loop), with the engine clock taking each
 frame's real time (`docs/engine.md`, "Timing"). It clears each frame to a colour that moves

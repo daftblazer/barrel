@@ -8,7 +8,7 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use crate::{Gpu, Result};
 
 /// The instance extensions a surface on this display needs.
-pub fn instance_extensions(display: RawDisplayHandle) -> Result<Vec<*const i8>> {
+pub fn instance_extensions(display: RawDisplayHandle) -> Result<Vec<*const std::ffi::c_char>> {
     let platform = match display {
         RawDisplayHandle::Wayland(_) => ash::khr::wayland_surface::NAME.as_ptr(),
         RawDisplayHandle::Xlib(_) => ash::khr::xlib_surface::NAME.as_ptr(),

@@ -102,6 +102,7 @@ dependencies = [
  "barrel-game",
  "encoding_rs",
  "glam",
+ "libc",
  "raw-window-handle",
  "sdl3-sys",
  "winit",

@@ -99,6 +99,27 @@ Extracted data goes in `work/`, which git ignores. No game data belongs in the r
 
 The name comes from the series' running "Barrel!" joke.
 
+## Playing through Steam (Kintsugi)
+
+Barrel runs as a [Kintsugi](https://github.com/daftblazer/kintsugi) engine: in the game's
+Properties > Compatibility, force the Kintsugi tool, and Steam starts Barrel at the title screen
+on the game's own files instead of the Windows game. Escha & Logy DX (app 1152310) is the one
+wired up so far.
+
+```
+tools/deploy.sh                 # build for this machine and install the engine here
+tools/deploy.sh user@host       # cross-build for aarch64 and install it on a handheld over SSH
+tools/package.sh ARCH OUT       # just make the engine folder (x86_64 or aarch64)
+```
+
+The aarch64 build needs an arm64 root filesystem (glibc no newer than the device's, the Vulkan
+loader, libwayland-client) in `BARREL_AARCH64_SYSROOT` and a prefix with arm64 SDL3 in
+`BARREL_AARCH64_DEPS`; SDL3 ships in the engine's `lib/`. On an aarch64 device the first start is
+fullscreen with the handheld preset (`BARREL_DEFAULT_PRESET`, `BARREL_DEFAULT_FULLSCREEN`, used
+only while there is no `~/.config/barrel/graphics.conf`); after that the in-game Options page
+decides. The engine's log is `~/.local/state/barrel/barrel.log`, saves are in
+`~/.local/share/barrel/saves`.
+
 ## Third-party code
 
 Barrel's renderer carries ports of two upscalers' shaders, with their notices in the shader

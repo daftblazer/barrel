@@ -200,7 +200,7 @@ impl Gpu {
     fn new(display: Option<raw_window_handle::RawDisplayHandle>) -> Result<Gpu> {
         let entry = unsafe { ash::Entry::load()? };
         let validation = std::env::var("BARREL_VALIDATION").is_ok_and(|v| v == "1");
-        let layers: Vec<*const i8> = if validation { vec![c"VK_LAYER_KHRONOS_validation".as_ptr()] } else { vec![] };
+        let layers: Vec<*const std::ffi::c_char> = if validation { vec![c"VK_LAYER_KHRONOS_validation".as_ptr()] } else { vec![] };
         let app = vk::ApplicationInfo::default().application_name(c"barrel-view").api_version(vk::API_VERSION_1_1);
         let instance = unsafe {
             let extensions = match display {
@@ -3743,7 +3743,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
             "--audio" => audio_out = Some(PathBuf::from(it.next().ok_or("--audio OUT.wav")?)),
             "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
-            "--window" => window_frames = Some(it.next().ok_or("--window FRAMES")?.parse::<u32>()?.clamp(1, 100_000)),
+            // --window 0: until the player quits (a game launch, Kintsugi's `run`).
+            "--window" => window_frames = Some(match it.next().ok_or("--window FRAMES")?.parse::<u32>()? {
+                0 => u32::MAX,
+                n => n.min(100_000),
+            }),
             "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
             "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
             // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
@@ -3850,7 +3854,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
 
     // Barrel's graphics config, when there is one (`settings::RenderSettings::config_path`).
     let config_text = settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok());
-    let display_settings = config_text.as_deref().map_or(settings::Display::DEFAULT, settings::Display::from_config);
+    // With no config yet, a launcher's defaults (Kintsugi's `run` on a handheld):
+    // `BARREL_DEFAULT_FULLSCREEN=1` and `BARREL_DEFAULT_PRESET=NAME` (see `--preset`).
+    let display_settings = config_text.as_deref().map_or_else(
+        || settings::Display { fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1"), ..settings::Display::DEFAULT },
+        settings::Display::from_config,
+    );
     // A window (with --window) or an offscreen image to draw into.
     let mut pump = match kept_pump {
         // A new size or fullscreen chosen in the last scene: the window opens again with it.
@@ -4007,10 +4016,20 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // Its window lines are read whatever the command line says.
     if !has_settings_flags(&original_args)
         && (window_frames.is_some() || std::env::var_os("BARREL_CONFIG").is_some())
-        && let Some(text) = settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok()) {
-            settings = settings::RenderSettings::from_config(&text);
-            eprintln!("graphics from the config: {settings:?}");
+    {
+        match settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok()) {
+            Some(text) => {
+                settings = settings::RenderSettings::from_config(&text);
+                eprintln!("graphics from the config: {settings:?}");
+            }
+            None => {
+                if let Some(preset) = std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| settings::RenderSettings::preset(&n)) {
+                    settings = preset;
+                    eprintln!("graphics: no config yet, the default preset {settings:?}");
+                }
+            }
         }
+    }
     // TAA brings the motion vectors and the jitter, and drops MSAA.
     let settings = settings.resolved();
     // The scene's samples: the most the device allows for colour and depth, up to `--msaa`.
