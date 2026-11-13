@@ -602,3 +602,11 @@ keys (`window::Pump`):
 No button quits (Escape). `barrel-view --field auto /dev/null --pad-test` prints the pad's name,
 presses and sticks for ten seconds without a window. Not yet the game's: which button does what
 in the field (the game's own key config is not read).
+
+## Advancing lines
+
+In a window an event's line waits at the end of its reading time (`event::reading_time`) for A
+or Enter, as the game's message window waits for a button; pressed earlier, A ends the line at
+once and stops its voice. Space still pauses the whole event. Offscreen renders keep the timed
+schedule. Not yet the game's: the reading time a line is held before it waits (the game shows
+the whole line at once and waits; its text speed and auto mode are not read).

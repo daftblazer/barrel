@@ -3663,6 +3663,12 @@ fn main() -> Result<()> {
     let mut last_frame = std::time::Instant::now();
     let mut stale = false;
     let mut paused = false;
+    // In a window a line waits at its end for A / Enter (as the game's message window does);
+    // pressed earlier, it ends the line there and then. The line end last let go, the press,
+    // and the line's voice (stopped when the line is ended early).
+    let mut line_released: Option<f32> = None;
+    let mut next_line = false;
+    let mut line_voice: Option<barrel_audio::Playing> = None;
     // The fades' presets (u22), from the executable.
     let fade_presets = event_spec
         .as_ref()
@@ -3728,6 +3734,7 @@ fn main() -> Result<()> {
         let mut quit = false;
         for key in p.take_pressed() {
             match key {
+                KeyCode::Enter | KeyCode::NumpadEnter => next_line = true,
                 KeyCode::Space => {
                     paused = !paused;
                     eprintln!("frame {frame}: {}", if paused { "paused" } else { "playing" });
@@ -4174,11 +4181,28 @@ fn main() -> Result<()> {
     if let Some((play, clock, before, after)) = player.as_mut()
         && frame > 0 {
             // A window takes the real time since the last frame; files take 1/fps.
-            let real = if presenter.is_some() {
+            let mut real = if presenter.is_some() {
                 if paused { 0.0 } else { frame_dt as f64 }
             } else {
                 1.0 / fps
             };
+            // A window holds a line at its end until A / Enter; a press before then skips to it.
+            if presenter.is_some()
+                && let Some(end) = play.stage.line.as_ref().and_then(|l| l.until)
+                && line_released != Some(end) {
+                    let tick = 1.0 / f64::from(clock.rate());
+                    let left = (f64::from(end) - f64::from(play.stage.time) - tick).max(0.0);
+                    if std::mem::take(&mut next_line) {
+                        line_released = Some(end);
+                        real = real.max(left + tick);
+                        if let (Some(v), Some((_, mixer, ..))) = (line_voice.take(), sound.as_mut()) {
+                            mixer.stop(v);
+                        }
+                    } else {
+                        real = real.min(left);
+                    }
+                }
+            next_line = false;
             let f = clock.advance(real);
             for _ in 0..f.ticks {
                 *before = std::mem::replace(after, {
@@ -4214,7 +4238,7 @@ fn main() -> Result<()> {
                             }
                             barrel_game::stage::Cue::Voice { clip } => {
                                 if let Some(v) = library.voice(clip) {
-                                    mixer.play(v, 1.0, None);
+                                    line_voice = Some(mixer.play(v, 1.0, None));
                                 }
                             }
                         }

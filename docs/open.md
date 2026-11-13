@@ -11,6 +11,17 @@ Oracle runs (the real game under Proton, with memory reads and a virtual pad:
 player's own save folder. Many entries below are marked **live read**: one short oracle run would
 likely settle them where static reading failed.
 
+## Issues found during manual testing
+- Escha's hat and puffballs don't move correctly with the character, they float above Escha
+- English spoken dialogue during initial cutscene with Escha and Clone gets cut a little short. Some audio during scenes cuts short.
+  - Likely the next line starting while the voice still played: lines ran on a reading time
+    (1 s + 0.08 s a character) shorter than some clips. Lines now wait for A, so a voice plays
+    to its end unless skipped; to check in play. Sound effects cut short are still open.
+- Scenes normally are progressed by pressing the A button on the controller
+  - Done (2026-11-13): in a window each line now waits at its end for A / Enter, and A before
+    then ends the line (and its voice) at once.
+- Some animation transitions don't transition smoothly
+
 ## Saves
 
 - **Writing the game's own `GAMEDATA` saves.** Reading works (`save::decode`, the record tree,
