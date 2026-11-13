@@ -893,8 +893,8 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `73000071` | `s113` | ECT_CHARA_EFF_FADEOUT | EventExecChara | 10 | 2 (10) |
 | `73000072` | `s114` | ECT_CHARA_NODEEFF_FADEOUT | EventExecChara | 115 | 2 (115) |
 | `73000073` | `s115` | ECT_CHARA_OFFSET_ROT_MOVE_WITHOUT_SORTROT | EventExecChara | 77 | 6 (77) |
-| `73000074` | `s116` |  | EventExecChara | 1604 | 4 (1604) |
-| `73000075` | `s117` |  | EventExecChara | 1632 | 1 (1632) |
+| `73000074` | `s116` | `CHARA_HEAD_GESTURE` (event.rs): `{character, segment, rate, weight}` (the last two in hundredths): a head gesture, one segment of the character's `M_HEAD` clip (`docs/events.md`, ... | EventExecChara | 1604 | 4 (1604) |
+| `73000075` | `s117` | `CHARA_HEAD_STOP` (event.rs): `{character}`: the head gesture ends | EventExecChara | 1632 | 1 (1632) |
 | `73000076` | `s118` |  | EventExecChara | 1 | 5 (1) |
 | `73000077` | `s119` |  | EventExecChara | 8 | 7 (8) |
 | `73000079` | `s121` |  | EventExecBtlChara | 11 | 3 (11) |
@@ -935,7 +935,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `74200013` | `t19/0x20` |  | BucFrameGp | 5 | 0 (5) |
 | `74300001` | `t1/0x30` | ECT_VARIINDEX_INDEX_START |  | 195 | 0 (195) |
 | `74300002` | `t2/0x30` | ECT_VARIINDEX_INDEX_SETTING (slot to row, see Slots) |  | 6736 | 2 (6736) |
-| `75000001` | `u1` |  | Event | 596 | 0 (596) |
+| `75000001` | `u1` | `SHORT_WAIT` (event.rs): wait 0.3 seconds (the event player's constant) | Event | 596 | 0 (596) |
 | `75000002` | `u2` | (the setup's preload) | Event (`0x140050fa0`, table at `0x52ddc`/`0x52cf0`, case `0x140051b43`): `u2 {n}` gathers the list `0x140213460 (n)` builds from the 14 lists at `0x14082eb00` and goes through it; see "the event's setup action" | 741 | 1 (741) |
 | `75000003` | `u3` | (label) | Event: `u3 {n}` marks label `n`; its case does nothing when run ("Labels and jumps") | 1297 | 1 (1297) |
 | `75000005` | `u5` | (jump) | Event (case `0x140051435`): `u5 {n}` goes on from label `n` (`0x140210be0`; "Labels and jumps") | 806 | 1 (806) |
@@ -945,10 +945,10 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 66 | 1 (66) |
 | `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | `PostEffectManager` (`0x140331bf0` → `0x140331220`; "Screen effects") | 2180 | 8 (1319), 4 (861) |
 | `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 637 | 0 (637) |
-| `7500000f` | `u15` |  | Event (case `0x140051412` of `0x140050fa0`'s switch) | 81 | 0 (81) |
+| `7500000f` | `u15` | `LONG_WAIT` (event.rs): wait 2 seconds (`0x140051412`, the constant at `0x14071c964`) | Event (case `0x140051412` of `0x140050fa0`'s switch) | 81 | 0 (81) |
 | `75000010` | `u16` |  | B3Balloon | 98 | 2 (98) |
 | `75000011` | `u17` |  | B3Balloon | 2 | 0 (2) |
-| `75000012` | `u18` |  | B3Balloon | 4990 | 2 (4990) |
+| `75000012` | `u18` | `SHOW_MESSAGES` (event.rs): show messages first..=last | B3Balloon | 4990 | 2 (4990) |
 | `75000015` | `u21` | ECT_EVENT_CONTRAST_WAIT | Contrast | 138 | 1 (138) |
 | `75000016` | `u22` | ECT_EVENT_CONTRAST_SET_MIX | Contrast | 3159 | 3 (3159) |
 | `75000019` | `u25` |  | B3Balloon | 2 | 3 (2) |
@@ -957,18 +957,18 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500001d` | `u29` |  | B3Balloon, Event | 24 | 5 (24) |
 | `7500001e` | `u30` |  | B3Balloon, Event | 2 | 1 (2) |
 | `7500001f` | `u31` | ECT_EVENT_VOICE_PLAY | B3Balloon, Event | 400 | 1 (400) |
-| `75000022` | `u34` |  | B3Balloon, Event | 52 | 2 (52) |
+| `75000022` | `u34` | `SET_EVENT_FLAG` (event.rs): sets one of the 151 event flags (`0x14035f660`: the words at `0x1410932d0`, saved as `event/m_eventFlag`) | B3Balloon, Event | 52 | 2 (52) |
 | `75000023` | `u35` |  | B3Balloon, Event | 79 | 2 (79) |
 | `75000024` | `u36` | (marks an event seen: `{event, seen}`, `0x14035f480`) | B3Balloon, Event | 76 | 2 (76) |
-| `75000026` | `u38` |  | B3Balloon, Event | 50 | 1 (50) |
+| `75000026` | `u38` | `TROPHY` (event.rs): unlocks a Steam achievement once (`0x140168390`: the `TROPHY_*` table at `0x140d5fcf8`, 0x198 bytes a row, through the user-stats interface's ... | B3Balloon, Event | 50 | 1 (50) |
 | `7500002e` | `u46` | (plays a movie: `{movie, 1, 0}`) | B3Balloon, Event (case `0x140051a96`: a `GAMEMODE_CREATE_DATA`, mode 13, with the movie and `op1 != 0`, `0x140292000`; see "Movies") | 18 | 3 (18) |
 | `7500002f` | `u47` | (after `u46` in every use: the movie's own, presumably its wait) | Movie | 18 | 0 (18) |
 | `75000030` | `u48` | (after `u47` in every use) | B3Balloon, Event | 18 | 0 (18) |
 | `75000033` | `u51` |  | ClearSaveGameMode | 2 | 1 (2) |
 | `75000034` | `u52` |  | ClearSaveGameMode | 7 | 0 (7) |
 | `75000035` | `u53` |  | B3Balloon, Event | 2 | 0 (2) |
-| `75000037` | `u55` |  | EventTelop | 63 | 1 (63) |
-| `75000038` | `u56` |  | EventTelop | 126 | 3 (126) |
+| `75000037` | `u55` | `EVENT_TELOP` (event.rs): (`EventTelop`): `{card}`: shows narration card `card` (the voiced lines of the openings, the ending), layout id `0x140d85ce0[card]` (960 + ...; ... | EventTelop | 63 | 1 (63) |
+| `75000038` | `u56` | `EVENT_TELOP_ALPHA` (event.rs): `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to` | EventTelop | 126 | 3 (126) |
 | `75000043` | `u67` |  | B3Balloon | 294 | 1 (294) |
 | `75000044` | `u68` |  | B3Balloon | 194 | 0 (194) |
 | `7500004f` | `u79` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 3 | 0 (3) |
@@ -1008,7 +1008,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75400008` | `u8/0x40` |  | Event | 134 | 0 (134) |
 | `75400009` | `u9/0x40` |  | Event | 3628 | 0 (3628) |
 | `7540000a` | `u10/0x40` |  | Event | 3628 | 0 (3628) |
-| `77000001` | `w1` |  | Event | 47448 | 1 (47448) |
+| `77000001` | `w1` | `START_ACTION` (event.rs): start action N (its operand) alongside the one running | Event | 47448 | 1 (47448) |
 | `77000004` | `w4` |  | Event | 206 | 1 (206) |
 
 ### Camera quakes (`t14`, `t16`)
