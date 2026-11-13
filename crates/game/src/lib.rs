@@ -4,6 +4,7 @@ pub mod auto_battle;
 pub mod battle;
 pub mod bonus;
 pub mod calendar;
+pub mod cauldron;
 pub mod camera;
 pub mod clock;
 pub mod creature;

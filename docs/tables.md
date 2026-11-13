@@ -1322,6 +1322,16 @@ slot when one of its `itemData` columns `category_00`..`category_03` is that cat
 (the tags turn into numbers through the executable's category enum). `barrel synth` warns
 when a material does not fit.
 
+**Making from the basket** (`barrel_game::cauldron`, `Session::synthesize`): a recipe's
+ingredients are filled from the basket in that order (the first entry not yet picked that fits
+each), put in with their own qualities as effect values, and finished; the materials leave the
+basket, the item made goes in, and the recipe's days pass (reason 2). The recipe table's
+records without ingredient slots (the "S" items such as "Poly. Poison S", 0 days) are not
+offered. `barrel cauldron INSTALL ITEM:QUALITY...` lists what a basket can make and makes the
+first: Spiky Fruit (69) at 40, Spiky Bud (70) at 30 and Black Powder (61) at 55 make a Craft of
+quality 41.7 in 3 days. (`barrel xml`'s row lines start two below the item number.) Not yet the
+game's: every recipe open, the cost points fixed at 99, no traits or skills, one item made.
+
 **Learnt skills and starting CP.** The save's `bonus/skill` (128 bytes at `0x141079780`)
 holds a flag per skill record: learnt (`0x1400fd940` lists a user's learnt skills of a
 type: the flag set and the record's user that user or -1). One save at alchemy level 12 has

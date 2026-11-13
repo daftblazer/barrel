@@ -247,6 +247,7 @@ fn main() -> ExitCode {
         ["shops", install] => shops(Path::new(install), None),
         ["shops", install, lang] => shops(Path::new(install), Some(lang)),
         ["recipes", exe] => recipes(Path::new(exe)),
+        ["cauldron", install, items @ ..] if !items.is_empty() => cauldron(Path::new(install), items),
         ["synth", install, item, materials @ ..] if !materials.is_empty() => {
             synth(Path::new(install), item, materials)
         }
@@ -2670,6 +2671,36 @@ fn recipes(exe: &Path) -> Result<()> {
 fn table_rows(path: &Path) -> Result<Vec<barrel_formats::table::Element>> {
     let root = barrel_formats::table::parse(&read(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(root.children)
+}
+
+/// What a basket (`ITEM:QUALITY` each) can make (`barrel_game::cauldron`), and the first of
+/// those made from it.
+fn cauldron(install: &Path, items: &[&str]) -> Result<()> {
+    let exe = read(&install.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let book = barrel_game::cauldron::Book::load(&exe, install)?;
+    let mut basket = Vec::new();
+    for it in items {
+        let (item, quality) = it.split_once(':').unwrap_or((it, "50"));
+        basket.push(barrel_game::gather::Got { item: item.parse().map_err(|_| format!("{it}: ITEM:QUALITY"))?, quality: quality.parse().map_err(|_| format!("{it}: ITEM:QUALITY"))?, traits: Vec::new() });
+    }
+    let makeable = book.makeable(&basket);
+    for &r in &makeable {
+        let item = i32::from(book.recipes[r].item);
+        println!("recipe {r}: {} ({item}), {} days", book.name(item), book.recipes[r].days);
+    }
+    let Some(&r) = makeable.first() else {
+        println!("nothing can be made; the first recipes take:");
+        for recipe in book.recipes.iter().filter(|r| !r.slots.is_empty()).take(6) {
+            let wants: Vec<String> = barrel_game::synthesis::order(recipe).into_iter().map(|i| book.ingredient(i)).collect();
+            println!("  {} ({}): {}", book.name(i32::from(recipe.item)), recipe.item, wants.join(", "));
+        }
+        return Ok(());
+    };
+    let picks = book.fill(r, &basket).ok_or("no fill")?;
+    let made = book.make(r, &picks, &basket, &mut |lo, _| lo)?;
+    let used: Vec<&str> = picks.iter().map(|&k| book.name(basket[k].item)).collect();
+    println!("made {} from {}: quality {}, effects {:?}, {} days", book.name(made.item), used.join(", "), made.quality, made.effects, made.days);
+    Ok(())
 }
 
 fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {

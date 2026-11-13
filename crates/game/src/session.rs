@@ -100,6 +100,24 @@ impl Session {
         self.chain.story().seen.iter().map(Option::is_some).collect()
     }
 
+    /// Recipe `r` made from the basket's entries `picks` (`cauldron::Book::make`): they leave
+    /// the basket, the item made goes in, and the recipe's days pass (reason 2, synthesis).
+    pub fn synthesize(&mut self, book: &crate::cauldron::Book, r: usize, picks: &[usize], roll: &mut dyn FnMut(i32, i32) -> i32) -> Result<crate::cauldron::Made, String> {
+        let mut sorted = picks.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.len() != picks.len() {
+            return Err("a material is picked twice".into());
+        }
+        let made = book.make(r, picks, &self.basket, roll)?;
+        for &k in sorted.iter().rev() {
+            self.basket.remove(k);
+        }
+        self.basket.push(crate::gather::Got { item: made.item, quality: made.quality, traits: Vec::new() });
+        self.spend((made.days * 10.0).round() as i32, crate::days::Reason::Synthesis);
+        Ok(made)
+    }
+
     /// Whether the event named `name` (`EVENT_*`) has been seen.
     pub fn event_seen(&self, name: &str) -> bool {
         let story = self.chain.story();
