@@ -68,6 +68,13 @@ pub fn known_routes(places: &[Place], visited: &std::collections::BTreeSet<usize
     visited.iter().filter(|&&k| k < places.len()).flat_map(|&k| neighbours(places, k)).filter(|&(_, j)| !closed(j)).map(|(r, _)| r).collect()
 }
 
+/// The routes walked: both their ends visited (the save's `knowledgeRoute` 15; a route only
+/// seen is 10). The user's save also has 15 on routes into a region's entry, which is itself
+/// only 10 there; Barrel counts the entry as visited when she arrives on it.
+pub fn walked_routes(places: &[Place], visited: &std::collections::BTreeSet<usize>) -> std::collections::BTreeSet<i32> {
+    visited.iter().filter(|&&k| k < places.len()).flat_map(|&k| neighbours(places, k)).filter(|(_, j)| visited.contains(j)).map(|(r, _)| r).collect()
+}
+
 /// A direction on the map, as the link slots order them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Way {
@@ -98,6 +105,9 @@ mod tests {
         // Sector One visited: the Entrance and Sector Two seen, Sector Three shut, the Courtyard two routes off.
         assert_eq!(known(&places, &visited, |k| k == 2), [true, true, false, true, false]);
         assert_eq!(known_routes(&places, &visited, |k| k == 2).into_iter().collect::<Vec<_>>(), [25, 27]);
+        // The Entrance visited too: its route walked, Sector Two's only seen.
+        let both = [0, 1].into_iter().collect();
+        assert_eq!(walked_routes(&places, &both).into_iter().collect::<Vec<_>>(), [25]);
     }
 
     #[test]

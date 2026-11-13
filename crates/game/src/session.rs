@@ -231,6 +231,11 @@ impl Session {
         crate::area_map::known_routes(places, &self.visited, |k| self.closed(places, k))
     }
 
+    /// Which routes the player has walked, by route number.
+    pub fn walked_routes(&self, places: &[barrel_formats::world::Place]) -> std::collections::BTreeSet<i32> {
+        crate::area_map::walked_routes(places, &self.visited)
+    }
+
     /// Place `k`'s field gimmick used: it opens.
     pub fn open_place(&mut self, k: usize) {
         self.opened.insert(k);

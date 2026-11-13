@@ -2389,8 +2389,11 @@ only known sectors; the world level's own places also open with the story (place
 route from Colseit, is unknown there; not read yet). Barrel keeps the visits as its save's
 `visited K` lines. A route's dots (the world map's placements tagged with its id, `A2r2`)
 are drawn only when the route is known (the recording at 0:45: no dots down from Sector One
-to Sector Three); the game draws a seen route's dots green and a walked one's white (Barrel
-draws all white: not yet the game's).
+to Sector Three); the game draws a seen route's dots green and a walked one's white. The dot
+model (`obj-ns_a15_point_r_off`, the only one) has an `atColor` shader parameter (white): the
+game tints it at run time. Barrel does the same (`Draw::tint` → the field model shader's
+atColor), green for a route known but not walked (`area_map::walked_routes`: both ends
+visited).
 
 A sector's "Gatherable Items" (the area map's scroll) are the items of its gathering points'
 lists at the table level (the first list at level 0), each once, by item number

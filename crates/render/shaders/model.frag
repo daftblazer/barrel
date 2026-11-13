@@ -129,8 +129,11 @@ void main() {
     vec3 n = normalize(normal);
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the
-        // light texture and shadows are not done yet, nor fog.
-        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep) * pc.params.w, 1.0);
+        // light texture and shadows are not done yet, nor fog. Its atColor (a run-time tint,
+        // packed as unorm8 in the outline colour's word; 0: none) multiplies the colour.
+        uint tint = floatBitsToUint(pc.outline_colour);
+        vec3 at_color = tint != 0u ? unpackUnorm4x8(tint).rgb : vec3(1.0);
+        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb * at_color, fog_keep) * pc.params.w, 1.0);
         return;
     }
     vec3 col;
@@ -174,7 +177,7 @@ void main() {
     vec3 over = mix(2.0 * col * L, 1.0 - 2.0 * (1.0 - col) * (1.0 - L), round(col));
     float w = max(max(L.r, L.g), L.b) * look.misc.x;
     col = clamp(col + w * (over - col), 0.0, 1.0);
-    // (6. fog is not done yet; 7. atColor is 1 and the HDR range 1.)
+    // (6. fog is not done yet; 7. atColor is 1 for characters and the HDR range 1.)
     // The scene is drawn at the HDR range's inverse (params.w), doubled back after.
     color = vec4(mix(fog_add, col, fog_keep) * pc.params.w, 1.0);
 }

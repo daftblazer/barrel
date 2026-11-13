@@ -166,6 +166,8 @@ struct Draw {
     /// Its model's lighting material (`cDiff`, `cAmb`: g1m section 0x10001, grey in every
     /// field model), packed as two unorm16 for the push constants; [`FULL_LIGHT`] without one.
     light: u32,
+    /// Its `atColor` set at run time (unorm8 RGBA; 0: none, the material's white).
+    tint: u32,
 }
 
 /// `cDiff` and `cAmb` both 1.
@@ -586,7 +588,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry) });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0 });
         }
         Ok(())
     }
@@ -1132,6 +1134,8 @@ struct AreaMap {
     item_names: Vec<String>,
     /// The area routes' tags not known yet (`Session::known_routes`): their dots are not drawn.
     hidden_routes: Vec<String>,
+    /// The routes seen but not walked: their dots green (`SEEN_ROUTE`).
+    seen_routes: Vec<String>,
     /// "Return to World Map?" asked (Back on an area map): Yes lit when true.
     asking: Option<bool>,
     /// The places closed to the player (`Session::closed`), and the sectors not known yet
@@ -1191,7 +1195,7 @@ impl AreaMap {
         let trips = if world { barrel_game::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_game::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
         let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), hidden_routes: Vec::new(), asking: None })
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), hidden_routes: Vec::new(), seen_routes: Vec::new(), asking: None })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -1199,6 +1203,11 @@ impl AreaMap {
         let tag = &self.places[at].tag;
         let region = tag.split_once('p').map_or(tag.as_str(), |(r, _)| r);
         self.places.iter().find(|p| p.tag == region).map_or("", |p| p.name.as_str())
+    }
+
+    /// A draw's run-time tint: green for a dot of a route seen but not walked.
+    fn tint(&self, name: &str) -> u32 {
+        if !self.seen_routes.is_empty() && name.contains("point_r") && name.split_whitespace().any(|w| self.seen_routes.iter().any(|r| r == w)) { SEEN_ROUTE } else { 0 }
     }
 
     /// Whether a draw (by its name: object and placement tags) is a dot of a route not known.
@@ -1338,6 +1347,10 @@ impl AreaMap {
         Ok(())
     }
 }
+
+/// A seen route's dots, as unorm8 RGBA: the recording's green (0:45: (0.77, 0.97, 0.75) where
+/// a walked route's are (0.95, 0.95, 0.91)), matched by eye on Barrel's lighting.
+const SEEN_ROUTE: u32 = u32::from_le_bytes([170, 255, 170, 255]);
 
 /// The area map's Back question (the executable's string at `0x140949850`).
 const RETURN_TO_WORLD_MAP: &str = "Return to World Map?";
@@ -5486,6 +5499,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         let known = s.known_routes(&a.places);
                         let area_routes: std::collections::BTreeSet<i32> = a.places.iter().filter(|p| p.kind == 1).flat_map(|p| p.links).filter(|&r| r >= 0).collect();
                         a.hidden_routes = area_routes.difference(&known).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
+                        let walked = s.walked_routes(&a.places);
+                        a.seen_routes = known.difference(&walked).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
                     }
                     area_map = Some(a);
                 }
@@ -6743,6 +6758,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let mut per_draw = [0u8; 16];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
             per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
+            let tint = if draw.tint != 0 { draw.tint } else { area_map.as_ref().map_or(0, |a| a.tint(&draw.name)) };
+            per_draw[8..12].copy_from_slice(&tint.to_le_bytes());
             per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
