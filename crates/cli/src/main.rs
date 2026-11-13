@@ -51,7 +51,7 @@ usage:
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
-  barrel town-people EXE [MAP]  who the field load places on each map, and the events it waits for
+  barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
@@ -135,9 +135,13 @@ fn main() -> ExitCode {
         },
         ["gather-sim", install, point] => gather_sim(Path::new(install), point, None),
         ["gather-sim", install, point, save] => gather_sim(Path::new(install), point, Some(Path::new(save))),
-        ["town-people", exe] => town_people(Path::new(exe), None),
+        ["town-people", exe] => town_people(Path::new(exe), None, None),
         ["town-people", exe, map] => match map.parse() {
-            Ok(m) => town_people(Path::new(exe), Some(m)),
+            Ok(m) => town_people(Path::new(exe), Some(m), None),
+            Err(_) => Err("MAP is a number".into()),
+        },
+        ["town-people", exe, map, save] => match map.parse() {
+            Ok(m) => town_people(Path::new(exe), Some(m), Some(Path::new(save))),
             Err(_) => Err("MAP is a number".into()),
         },
         ["gimmicks", exe] => gimmicks(Path::new(exe), None),
@@ -1877,7 +1881,7 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
 
 /// Lists the compiled placements of town people (or one map's): character, and the events their
 /// conditions want seen and not seen.
-fn town_people(exe: &Path, only: Option<i32>) -> Result<()> {
+fn town_people(exe: &Path, only: Option<i32>, save: Option<&Path>) -> Result<()> {
     use barrel_formats::npc;
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
@@ -1888,7 +1892,23 @@ fn town_people(exe: &Path, only: Option<i32>) -> Result<()> {
         Some((seen, not)) => format!("#{c}[{} / not {}]", seen.iter().map(name).collect::<Vec<_>>().join(" "), not.iter().map(name).collect::<Vec<_>>().join(" ")),
         None => format!("#{c}"),
     };
+    let seen: Option<Vec<bool>> = match save {
+        Some(f) => {
+            let data = read(f)?;
+            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", f.display()))?.body;
+            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", f.display()))?;
+            let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
+            Some(sum.events.iter().map(|e| e.seen).collect())
+        }
+        None => None,
+    };
+    let is_seen = |e: &i32| seen.as_ref().and_then(|s| usize::try_from(*e).ok().and_then(|e| s.get(e))).copied().unwrap_or(false);
+    let holds = |c: &i32| npc::condition(&pe, *c).is_some_and(|(want, not)| want.iter().all(is_seen) && !not.iter().any(is_seen));
     for (k, p) in places.iter().enumerate().filter(|(_, p)| only.is_none_or(|m| m == p.map)) {
+        let passes = (p.conditions[0].is_empty() || p.conditions[0].iter().any(holds)) && !p.conditions[1..].iter().flatten().any(holds);
+        if seen.is_some() {
+            print!("{} ", if passes { "PASS" } else { "    " });
+        }
         let lists: Vec<String> = p.conditions.iter().map(|l| l.iter().map(show).collect::<Vec<_>>().join(" ")).collect();
         let [x, y, z] = p.position;
         println!(

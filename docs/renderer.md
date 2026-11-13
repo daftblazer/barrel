@@ -136,7 +136,11 @@ notes; the map number comes from the directory's name through the `FIELDMAP_*` l
 
 Each stands still at its spot (metres ×100 into field units, x mirrored like the enemies), and
 the camera starts on the first. Random-companion placements are left out. On `TOWN_05` (map 4)
-the oracle save (day 229) places one: `Chara` row 15 (`PC35`), an adventurer by a bench.
+the oracle save (day 229) places one: `Chara` row 15 (`PC35`), an adventurer by a bench. On `TOWN_04` (map 3, 154 placements)
+it places one too, `Chara` row 3, at the foot of the plaza steps: `barrel town-people EXE 3 SAVE`
+shows three passing placements, all for that row. The save is early in the story (`MQ02_010`
+seen, `MQ03_010` not), and most placements also wait for `XF01_030` (condition #159, which holds
+while that event is unseen).
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its
