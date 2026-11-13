@@ -356,8 +356,9 @@ stick at that speed times the lean (at most 1) times the frame's time. Pad butto
 fast again (× 1.5: 750 units a second at full lean). Her motion follows how fast she went this frame (`0x140235410`,
 `game::walk::player_gait`): `MOTION_RUN` (33) from 0.42 of the run speed, `MOTION_WALK` (32)
 below it, waiting when still, blended in over 0.15 seconds and played at the speed times
-0.00225 (never slower than normal: 1.125 at 500). The viewer starts a new motion from its
-beginning without the blend. The user brain's button 1 starts an action in
+0.00225 (never slower than normal: 1.125 at 500). The viewer does the same: a new motion starts
+from its beginning and is mixed in over 0.15 seconds while the old one plays on (joint by joint,
+rotations by slerp). The user brain's button 1 starts an action in
 `MOTION_JUMP` (49; the player's `JUMP` column, `PC20_ACT_JUMP`) played at 1.5 with sound 0x23,
 then timed at +0x124 and +0x128 (1.7 s): not read further.
 

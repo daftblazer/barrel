@@ -1151,7 +1151,13 @@ struct TownBody {
     anim: barrel_formats::g1a::Animation,
     /// Its own motion clock (seconds into `anim`), if not the viewer's.
     clock: Option<f32>,
+    /// The motion it is leaving, its clock and how far into the blend it is (seconds): the new
+    /// one is blended in over [`MOTION_BLEND`] (`0x140235410` asks 0.15 s).
+    from: Option<(barrel_formats::g1a::Animation, f32, f32)>,
 }
+
+/// How long a gait change blends the old motion into the new one (seconds).
+const MOTION_BLEND: f32 = 0.15;
 
 fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>, Vec<TownBody>)> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
@@ -1195,7 +1201,7 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, _, anim, _)) = body.rig {
-            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None });
         }
         placed.push(p.chara);
         first = first.or(Some(pos));
@@ -1278,7 +1284,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
     let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default() };
-    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
 /// A world map trip's way (`game::travel::WorldMap::path`), from the executable beside the
@@ -3582,20 +3588,29 @@ fn main() -> Result<()> {
             }
         }
         // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
-        // its beginning (the game blends into it over 0.15 s; not yet here).
+        // its beginning and is blended in over 0.15 s, the old one playing on meanwhile.
         if frame > 0 && dt > 0.0 {
             let (gait, rate) = barrel_game::walk::player_gait(speed, false);
             if let Some(b) = town_bodies.get_mut(w.body) {
                 if gait != w.gait {
                     w.gait = gait;
-                    b.anim = match gait {
+                    let next = match gait {
                         barrel_game::walk::Gait::Wait => w.wait.clone(),
                         barrel_game::walk::Gait::Walk => w.walk.clone(),
                         barrel_game::walk::Gait::Run => w.run.clone(),
                     };
+                    let old = std::mem::replace(&mut b.anim, next);
+                    b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
                     b.clock = Some(0.0);
                 }
                 b.clock = Some(b.clock.unwrap_or(0.0) + dt * rate);
+                if let Some((_, clock, blend)) = &mut b.from {
+                    *clock += dt * rate;
+                    *blend += dt;
+                }
+                if b.from.as_ref().is_some_and(|f| f.2 >= MOTION_BLEND) {
+                    b.from = None;
+                }
             }
         }
         if moving {
@@ -3631,7 +3646,12 @@ fn main() -> Result<()> {
             town_time += dt;
         }
         for b in &town_bodies {
-            let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, b.clock.unwrap_or(town_time), true));
+            let now = local_pose(&b.skeleton, &b.anim, motion_clock(&b.anim, b.clock.unwrap_or(town_time), true));
+            let locals = match &b.from {
+                Some((old, clock, blend)) => mix_pose(&local_pose(&b.skeleton, old, motion_clock(old, *clock, true)), &now, (blend / MOTION_BLEND).clamp(0.0, 1.0)),
+                None => now,
+            };
+            let joints = skin(&b.skeleton, &locals);
             let base = instances[b.instance as usize].palette as usize;
             for (k, m) in joints.iter().enumerate() {
                 if let Some(slot) = palette.get_mut(base + k) {
