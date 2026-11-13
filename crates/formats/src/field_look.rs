@@ -72,7 +72,8 @@ pub struct FieldLook {
     pub ambient: Option<[f32; 4]>,
     pub lights: Vec<Light>,
     pub fog: Option<Fog>,
-    /// `<hdr threshold glow_add_rate>`.
+    /// `<hdr threshold glow_add_rate>` as written (the game applies only the rate: docs/shading.md,
+    /// "After the scene").
     pub hdr: Option<(f32, f32)>,
     /// The cloud shadows' texture (`<AREA>_pat.g1t`) over the field: `<pattern_map>`.
     pub pattern: Option<Pattern>,
