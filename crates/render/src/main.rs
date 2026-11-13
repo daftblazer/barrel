@@ -1223,8 +1223,12 @@ struct Walker {
     gait: barrel_game::walk::Gait,
     /// The run toggle (T in a window; the game's pad button 6), off at the start.
     run_on: bool,
-    walls: barrel_game::walk::Walls,
-    ground: barrel_game::walk::Ground,
+    /// The field she walks (walls, ground, gimmicks: its doors lead on).
+    field: barrel_game::walk::Field,
+    /// The gimmicks she stands in now (a door takes her only as she steps in).
+    inside: Vec<usize>,
+    /// The field names by map number, for the doors.
+    maps: Vec<String>,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1232,17 +1236,17 @@ struct Walker {
 /// motion. Her texture packs, where she stands (field units) and her body.
 fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody, Walker)> {
     let name = field_dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
-    let bytes = std::fs::read(field_dir.join(format!("{name}.elixir.gz")))?;
-    let container = Elixir::parse(&bytes)?;
-    let collision = container
-        .entries
+    // The map's gimmicks from the executable's table (its doors lead to other maps).
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let maps = barrel_game::event::field_maps(&pe);
+    let gimmicks = maps
         .iter()
-        .find(|e| e.name.ends_with("_col.g1co"))
-        .map(|e| barrel_formats::g1co::parse(container.data(e)))
-        .transpose()?
+        .position(|n| n == name)
+        .and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).map(|a| a.gimmicks.clone()))
         .unwrap_or_default();
-    let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
-    let ground = barrel_game::walk::Ground::new(heightmap, &collision, barrel_game::walk::DEFAULT_SLOPE);
+    let field = barrel_game::walk::Field::load(field_dir.parent().ok_or("no fields folder")?, name, gimmicks)?;
+    let ground = &field.ground;
     // Dropped from high above onto whatever is under her.
     let y = ground.height(at[0], at[1], 1.0e6, 0.0).ok_or("--player: no ground there")?;
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
@@ -1260,8 +1264,8 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let run = motions.get("RUN").cloned().ok_or("the player has no RUN motion")?;
     let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
-    let walls = barrel_game::walk::Walls::new(&collision, barrel_game::walk::DEFAULT_SLOPE);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, walls, ground };
+    let inside = field.inside(pos);
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
 }
 
@@ -2255,7 +2259,7 @@ fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDra
 
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
     // --window FRAMES: open a window and present that many frames (the live loop's start).
     if let ["--window", frames] = args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         return window::run(frames.parse()?);
@@ -3333,6 +3337,8 @@ fn main() -> Result<()> {
     let mut pattern_time = 0.0f32;
     let mut ran = 0u32;
     let mut stop = false;
+    // A door the player stepped into: the map it leads to, where she stands there, her velocity.
+    let mut door: Option<(String, [f32; 2], [f32; 2])> = None;
     for frame in 0..frames - frame_base {
     ran = frame + 1;
     // Chained: the event over (every step applied), the next one takes the window.
@@ -3468,13 +3474,23 @@ fn main() -> Result<()> {
         let mut speed = 0.0;
         if moving && frame > 0 && dt > 0.0 {
             let delta = [w.velocity[0] * dt, w.velocity[1] * dt];
-            let next = w.walls.step([w.pos[0], w.pos[2]], delta, w.pos[1], 150.0, 48.0);
-            if let Some(y) = w.ground.height(next[0], next[1], w.pos[1], 50.0) {
+            let next = w.field.walls.step([w.pos[0], w.pos[2]], delta, w.pos[1], 150.0, 48.0);
+            if let Some(y) = w.field.ground.height(next[0], next[1], w.pos[1], 50.0) {
                 let moved = Vec3::new(next[0] - w.pos[0], y - w.pos[1], next[1] - w.pos[2]) * Vec3::new(-1.0, 1.0, 1.0);
                 speed = Vec3::new(moved.x, 0.0, moved.z).length() / dt;
                 w.pos = [next[0], y, next[1]];
                 eye += moved;
                 target += moved;
+                // A door she steps into: the scene is rebuilt in the map it leads to.
+                let now = w.field.inside(w.pos);
+                let entered = now.iter().find(|i| !w.inside.contains(i)).and_then(|&i| w.field.gimmicks[i].destination);
+                w.inside = now;
+                if let Some(to) = entered {
+                    if let Some(name) = w.maps.get(to.map as usize) {
+                        eprintln!("frame {frame}: through the door to {name} at {:?}", to.position);
+                        door = Some((name.clone(), [to.position[0] * 100.0, to.position[2] * 100.0], w.velocity));
+                    }
+                }
             }
         }
         // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
@@ -3499,6 +3515,9 @@ fn main() -> Result<()> {
         }
         let turn = glam::Quat::from_rotation_y(w.facing);
         instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos)));
+    }
+    if door.is_some() {
+        break;
     }
     // Town people: each posed in its wait motion on the viewer's clock.
     if !town_bodies.is_empty() {
@@ -4337,6 +4356,18 @@ fn main() -> Result<()> {
     }
     scene.destroy(&gpu);
     frame_base += ran;
+    // Through a door: the same again in the next map, the player at the door's spot.
+    if let Some((name, at, velocity)) = door.take() {
+        if let Some(next) = Path::new(&args[1]).parent().map(|p| p.join(&name)) {
+            args[1] = next.to_string_lossy().into_owned();
+            player_at = Some(at);
+            if player_walk.is_some() {
+                player_walk = Some(velocity);
+            }
+            first_event = false;
+            continue 'events;
+        }
+    }
     let ended = event_spec.as_deref().and_then(|e| Path::new(e).file_stem()).and_then(|s| s.to_str()).unwrap_or("").to_string();
     let next = match chain.as_mut() {
         Some((c, root)) if !stop && frame_base < frames => c.after(&ended).map(|n| root.join("Event/event").join(barrel_game::event_start::event_file(n))),

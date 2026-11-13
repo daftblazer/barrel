@@ -178,7 +178,12 @@ camera carried along with her: `--player 5577,3520 --walk -300,0 --frames 30 --f
 camera (the arrows still turn it; T is the game's run toggle, × 1.5), at the game's run speed, 500 units a second
 (`game::walk::player_run_speed`; 625 after `EVENT_XG05_110`, which the viewer takes as unseen); her walk, run and wait motions are
 the game's choice by speed (`game::walk::player_gait`; `--walk -150,0` walks, `-500,0` runs),
-facing the way she last went.
+facing the way she last went. She walks the field as `game::walk::Field` (its walls, ground and gimmicks);
+stepping into a town door ends the scene and builds the next map's, her at the door's spot
+(as the chained events rebuild theirs): `--field .../TOWN_01 --player 600,1000 --walk -300,0`
+leaves the Atelier at frame 25 for Marion's office (`TOWN_02`, at (820, 1050)). The free
+camera stays where it was set, so indoors it looks down through the beams; the game's indoor
+camera is not used here yet.
 
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
