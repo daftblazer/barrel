@@ -1261,6 +1261,9 @@ struct Walker {
     rng: barrel_game::rng::Rng,
     /// The install, for her sounds.
     root: std::path::PathBuf,
+    /// Logy leads instead of Escha (`BARREL_LEAD=logy`): his swing, its sound and reach, his
+    /// jump voices.
+    logy: bool,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1283,9 +1286,11 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let y = ground.height(at[0], at[1], 1.0e6, 0.0).ok_or("--player: no ground there")?;
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
+    // The lead: Escha (`Chara.xml` row 0), or Logy (row 1) with `BARREL_LEAD=logy`.
+    let logy = std::env::var("BARREL_LEAD").is_ok_and(|v| v.eq_ignore_ascii_case("logy"));
     let row = charas
         .children
-        .first()
+        .get(usize::from(logy))
         .and_then(|r| r.attr("BaseTag"))
         .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
         .ok_or("no row for the player")?;
@@ -1299,7 +1304,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf() };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3513,10 +3518,11 @@ fn main() -> Result<()> {
             // Her strike hits first, in its window (0.35 to 0.6 s into the swing,
             // `0x14026e2c0`): the nearest enemy within reach of a point ahead of her
             // (`encounter::struck`, stage 0, Escha's radius 130).
-            use barrel_game::encounter::{STRIKE_RADIUS_ESCHA, STRIKE_WINDOW};
+            use barrel_game::encounter::{STRIKE_RADIUS_ESCHA, STRIKE_RADIUS_LOGY, STRIKE_WINDOW};
+            let radius = if walker.as_ref().is_some_and(|w| w.logy) { STRIKE_RADIUS_LOGY[0] } else { STRIKE_RADIUS_ESCHA[0] };
             let struck = strike_time.filter(|&t| (STRIKE_WINDOW.0..=STRIKE_WINDOW.1).contains(&(t as f64))).and_then(|_| {
                 let placed: Vec<([f64; 3], f64)> = field.mobs.iter().zip(&field.radii).map(|(m, &r)| (m.creature.position, r)).collect();
-                barrel_game::encounter::struck(at, facing, 0, STRIKE_RADIUS_ESCHA[0], &placed)
+                barrel_game::encounter::struck(at, facing, 0, radius, &placed)
             });
             if let Some(k) = struck {
                 eprintln!("frame {frame}: her strike hits enemy {k}: encounter group {} (begun by a strike)", field.groups[k]);
@@ -3645,7 +3651,7 @@ fn main() -> Result<()> {
                 b.clock = Some(0.0);
                 w.jump = Some(-1.0);
                 // The jump's sound (0x23 at 0.6) and, now and then, a voice (Escha's).
-                let voice = w.jump_voice.jump(0, &mut w.rng);
+                let voice = w.jump_voice.jump(u32::from(w.logy), &mut w.rng);
                 eprintln!("frame {frame}: jump{}", voice.map_or(String::new(), |c| format!(", voice {c}")));
                 if sound.is_none() && presenter.is_some() {
                     match barrel_audio::Output::open(0.1) {
@@ -3676,16 +3682,17 @@ fn main() -> Result<()> {
                 let before = b.clock.unwrap_or(0.0);
                 let clock = before + dt;
                 b.clock = Some(clock);
-                // The macro's sound: `SE_WAND01` (98) at full volume after division 0 (to 0.1 s)
-                // and its waits of 0.05 and 0.30 s, so 0.45 s in.
-                const SWING_SOUND: (f32, u32) = (0.45, 98);
-                if before < SWING_SOUND.0 && clock >= SWING_SOUND.0 {
+                // The macro's sound at full volume: Escha's `SE_WAND01` (98) after division 0
+                // (to 0.1 s) and waits of 0.05 and 0.30 s, so 0.45 s in; Logy's `SE_WAND02` (99)
+                // 0.10 s into division 1 (from 0.21 s), so 0.31 s in.
+                let swing_sound: (f32, u32) = if w.logy { (0.31, 99) } else { (0.45, 98) };
+                if before < swing_sound.0 && clock >= swing_sound.0 {
                     if sound.is_none() && presenter.is_some()
                         && let Ok(out) = barrel_audio::Output::open(0.1) {
                             sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
                         }
                     if let Some((_, mixer, library, _)) = sound.as_mut()
-                        && let Some(barrel_audio::Effect::Clip(e)) = library.effect(SWING_SOUND.1) {
+                        && let Some(barrel_audio::Effect::Clip(e)) = library.effect(swing_sound.1) {
                             mixer.play(e, 1.0, None);
                         }
                 }
@@ -3696,7 +3703,9 @@ fn main() -> Result<()> {
                 if b.from.as_ref().is_some_and(|f| f.2 >= MOTION_BLEND) {
                     b.from = None;
                 }
-                if clock >= w.strike_anim.as_ref().map_or(0.0, |a| a.duration) {
+                // Escha's swing runs to the motion's end; Logy's to division 3's end, 0.9 s.
+                let end = if w.logy { 0.9 } else { w.strike_anim.as_ref().map_or(0.0, |a| a.duration) };
+                if clock >= end {
                     w.striking = false;
                     w.gait = barrel_game::walk::Gait::Jump;
                 }
