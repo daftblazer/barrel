@@ -39,7 +39,8 @@ costly and a recording answers later questions without another. Start the game w
 **With a copied save** (the player's own progress point, in this prefix only): stay where the
 player has already been. On the save used so far (Southern Ruins, Sector One), the area map's
 Sector Two starts a story scene on entry: do not enter it; Sector One and the Ruins Entrance are
-fine. Stop at the first line of any scene that starts unexpectedly.
+fine. Going back to Colseit (world map, 4 days to 8/24) starts a scene in the Atelier on arrival:
+do not go back to town either (so no shop visits on this save). Stop at the first line of any scene that starts unexpectedly.
 
 **Without Steam:** tried (2026-11-12) and the game will not run: under Proton's own Wine (its
 Wine Mono for the English executable's .NET import, its DXVK copied into a prefix of its own),
