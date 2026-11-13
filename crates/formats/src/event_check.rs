@@ -9,7 +9,11 @@ use crate::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventCheck {
-    /// The 14 words (word 1: 10, 100, 500 ... by the events, a priority presumably).
+    /// The 14 words (word 1: 10, 100, 500 ... by the events, a priority presumably; words 8
+    /// to 10 and 11 to 13 the first and last date it may start on, year, month and day, -1 for
+    /// any: event 62 from year 1, month 7, day 15 to year 1, month 8, day 30; see
+    /// `game::event_start`). Word 13 lands at the record's +0x5c, which is not the event
+    /// runner's +0x5c that `u7` jumps from (the runner is another object).
     pub words: [i32; 14],
     pub groups: Vec<Vec<i32>>,
 }

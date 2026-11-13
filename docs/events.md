@@ -284,7 +284,8 @@ when it equals `c` and from `first + 1` otherwise. They are set from questions t
 its listeners: `u80 {v}` (v 10 when not given) takes the item picked in the event's item
 selection (`0x7600001b`, answered by `EventItemSelectGameMode`), `u82 {v}` the answer to
 `0x7600001c` and `u130 {v, a}` to `0x7600001d {a}` (who answers those two is not read).
-`u7 {n}` goes on from label base + `n`, the base being the runner's +0x5c (none when it is
+`u7 {n}` goes on from label base + `n`, the base being the runner's +0x5c (not the event check
+record's +0x5c, which is its last start day; none when it is
 negative; where it is set is not read). These `u9` and `u10` are group 0x75's, not the setup
 markers below. `event::Player` takes the three variable jumps with every variable 0
 (nothing picked: playback has no item selection), so `u8` and `u9` go on from `first`. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
