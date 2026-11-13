@@ -159,10 +159,11 @@ likely settle them where static reading failed.
   view is unknown.
 - **A house front too bright** (`TOWN_10`): parked three times; next is per-object vertex colour
   checks (`BARREL_HIDE` + `g1m-materials`) against the game's pixels.
-- **Terrain blending** (`.ktf` patch tree): which blend map and channel weights which layer per
-  patch. Four tries; the leaf integers and layer → channel mapping need the section readers
-  (`0x14066f6d0` and deeper). The viewer blends the first two maps over the first six layers,
-  wrong on most areas.
+- **Terrain details.** The blend is read and drawn (docs/formats.md, "Patches and their
+  draws"; checked by eye on AREA_01_01, AREA_03_01 and AREA_04_01, not yet against the
+  game's pixels). Open: whether a draw's layer numbers count in a per-patch texture list, the
+  draws' third byte, the stored normals, the tiles' alpha as specular strength, the coarse
+  patches at a distance, and `battle`'s terrain (it does not read as a mesh).
 - **Fog and shadows**: the conversion of the stored fog values (`0x1404d6df0`) into shader
   parameters was not found.
 - **Draw priority of pieces** (`xS1`–`xS3`, the 1024-bucket sort `0x1403387e0`): the writer
