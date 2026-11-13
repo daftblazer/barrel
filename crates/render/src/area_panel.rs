@@ -6,9 +6,11 @@
 //! places these layouts at run time: 637 at (1434, 61), 641 at (1450, 143), 640 at (1448, 305).
 //! The description is drawn in the scroll's dark brown ink, not the layout's colour.
 //!
+//! The item lines are the sector's gatherables (`Gathering::field_items`), "????" for those
+//! the player does not know yet (`Session::knows`).
+//!
 //! Not yet the game's: the scroll itself (a flat parchment fill: 641's part 0x280 has no
-//! sheet), the name's placing on it, the item lines (empty: the sector's gatherables are not
-//! listed yet), the "X →" button at the scroll's foot.
+//! sheet), the name's placing on it, the "X →" button at the scroll's foot.
 
 use barrel_formats::layout::{Placed, Text};
 
@@ -40,6 +42,7 @@ pub fn elements(
     region: &str,
     name: &str,
     description: &str,
+    items: &[String],
     width_of: impl Fn(&str, f32) -> f32,
 ) -> Vec<Element> {
     let texts = |p: &Placed| barrel_formats::layout::text(pe, p);
@@ -53,6 +56,7 @@ pub fn elements(
     out.push(Element::Label(Text { at: NAME_AT, size: 36.0, colour: INK, text: name.to_string(), kind: 22 }));
     let panel = barrel_formats::layout::placed(pe, PANEL);
     let mut first_text = true;
+    let mut row = 0;
     for p in &panel {
         let at = moved(p, PANEL_AT);
         match (p.node.part, texts(p)) {
@@ -63,8 +67,16 @@ pub fn elements(
                     out.push(Element::Label(Text { at: [at[0], at[1] + LINE_STEP * k as i32], text: line, colour: INK, ..t.clone() }));
                 }
             }
-            // Its own tab (layout 640 stands in its place), the item lines' texts (no list
-            // yet) and the "...ETC" past the tenth.
+            // The gatherable items, one a line, in the scroll's ink.
+            (0x164, Some(t)) if t.filled_in() => {
+                if let Some(item) = items.get(row) {
+                    out.push(Element::Label(Text { at, text: item.clone(), colour: INK, ..t }));
+                }
+                row += 1;
+            }
+            // "...ETC" past the tenth.
+            (0x164, Some(t)) if items.len() > 10 => out.push(Element::Label(Text { at, colour: INK, ..t })),
+            // Its own tab (layout 640 stands in its place).
             (0x164, _) | (0x92, _) | (0x280, _) => {}
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }

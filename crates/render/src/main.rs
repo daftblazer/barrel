@@ -1126,6 +1126,9 @@ struct AreaMap {
     from: usize,
     /// The world map's routes (a trip's days), on the world map.
     trips: Option<barrel_game::travel::WorldMap>,
+    /// The gathering tables (a sector's gatherables) and the items' names.
+    gathering: Option<barrel_game::gather::Gathering>,
+    item_names: Vec<String>,
 }
 
 impl AreaMap {
@@ -1160,7 +1163,7 @@ impl AreaMap {
         let image = atlas.textures.first().ok_or("an empty font atlas")?;
         let font = text::Font { glyphs, size: image.width as f32 };
         // The panels' sheets, as any place's panels use them.
-        let mut all = area_panel::elements(&pe, "", "", "", |_, _| 0.0);
+        let mut all = area_panel::elements(&pe, "", "", "", &[], |_, _| 0.0);
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, 0, 1, 1));
         let keys = screen::sheet_keys(&pe, all);
@@ -1177,7 +1180,9 @@ impl AreaMap {
         let layer = text::Layer::new(gpu, pool, pass, &images)?;
         drop(images);
         let trips = if world { barrel_game::travel::WorldMap::load(&pe, &placements) } else { None };
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips })
+        let gathering = barrel_game::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
+        let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -1246,7 +1251,7 @@ impl AreaMap {
     /// The panels for the place she stands on, redrawn when it changes; with the camera's
     /// `mvp` (she stands still) the neighbours' labels too; on the world map, `trip` (days,
     /// arrival month and day) shows the travel panel.
-    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>) -> Result<()> {
+    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>, knows: impl Fn(i32) -> bool) -> Result<()> {
         if self.shown == Some((self.at, width, height, mvp.is_some(), trip)) {
             return Ok(());
         }
@@ -1263,7 +1268,12 @@ impl AreaMap {
             }
             e
         } else {
-            area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, measure)
+            // The sector's gatherables, "????" for those not known yet.
+            let items: Vec<String> = match (&self.gathering, self.fields[self.at]) {
+                (Some(g), Some(map)) => g.field_items(map as i32, 0).into_iter().map(|i| if knows(i) { self.item_names.get(i as usize).cloned().unwrap_or_default() } else { "????".into() }).collect(),
+                _ => Vec::new(),
+            };
+            area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, measure)
         };
         if let Some(mvp) = mvp {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
@@ -4291,7 +4301,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         player_at = Some(at);
         hero = u32::from(s.logy);
         eprintln!("loaded {}: field {map} ({name}) at ({:.0}, {:.0}), {}", file.display(), at[0], at[1], if s.logy { "Logy" } else { "Escha" });
-        if carry.to_area_map
+        // A lost battle (or `--area-map` with `--load`): on the area map at the field's point.
+        if (carry.to_area_map || area_mode)
             && let Some((point, at)) = area_point(&root, map)? {
                 eprintln!("onto the area map at {point}");
                 args[1] = root.join("Data/x64/Field/A15_WMAP").to_string_lossy().into_owned();
@@ -5439,7 +5450,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let v = hud::Values::on(today + d.max(0) as u32, 0);
             (d, v.month, v.day)
         });
-        a.panel(&gpu, width, height, mvp, trip)?;
+        a.panel(&gpu, width, height, mvp, trip, |i| session.as_ref().is_some_and(|s| s.knows(i)))?;
     }
     if area_enter.is_some() {
         stop = true;

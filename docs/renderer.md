@@ -295,7 +295,8 @@ generator and commands always give the same battle, so what was played stays) up
 member turn. Not yet the game's: the list (the game's command layout is not identified), no
 mark on the target in the scene, no items, guarding or fleeing, the pad not mapped.
 
-**The area map.** `barrel-view --field .../A15_WMAP OUT --world-point SP_A2P0 --area-map` puts
+**The area map.** With `--load SAVE`, `--area-map` starts on the area map at the save's
+field's point (as a lost battle does). `barrel-view --field .../A15_WMAP OUT --world-point SP_A2P0 --area-map` puts
 Escha on a region's point of the world map with the area map's cursor (`AreaMap`, over
 `game::area_map`): W A S D (offscreen `BARREL_AREA_KEYS`, up / down / left / right / confirm,
 one a frame once she stands still) take the route in that way's link slot, which she runs

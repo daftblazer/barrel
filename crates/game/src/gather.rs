@@ -169,6 +169,21 @@ impl Gathering {
         Ok(Gathering { rows, points, items, traits })
     }
 
+    /// What field map `map` can give, as the area map's "Gatherable Items" lists it: the items
+    /// of its points' lists at table level `level` (their first at 0), each once, by item
+    /// number (Sector One, map 26: list 71, Garden Stone 12, Moss Grass 75, Mountain Feather
+    /// 141, Eagle Feather 142, the recording's order with the first unknown).
+    pub fn field_items(&self, map: i32, level: i32) -> Vec<i32> {
+        let mut items: Vec<i32> = self
+            .points_in(map)
+            .filter_map(|(_, p)| p.lists.get(list_index(p.alchemy, level, level, 0)).or(p.lists.last()).copied())
+            .flat_map(|list| self.rows.iter().filter(move |g| g.list == list).map(|g| g.item))
+            .collect();
+        items.sort_unstable();
+        items.dedup();
+        items
+    }
+
     /// The points standing in field map `map`.
     pub fn points_in(&self, map: i32) -> impl Iterator<Item = (usize, &barrel_formats::gather::Point)> {
         self.points.iter().enumerate().filter(move |(_, p)| p.map == map)
@@ -203,6 +218,14 @@ impl Gathering {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn sector_one_lists_the_recordings_items() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let g = super::Gathering::load(std::path::Path::new(&root)).unwrap();
+        assert_eq!(g.field_items(26, 0), [12, 75, 141, 142]);
+    }
+
     use super::*;
     use barrel_formats::gather::Gather;
 

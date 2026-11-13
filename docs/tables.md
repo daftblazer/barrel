@@ -2361,7 +2361,13 @@ take, each shared by the two places it joins: the Southern Ruins (region `A2`) h
 One (`A2p1`) `[27, 25, 26, -1, -1, -1]`, where route 24 is `A2r0`, 25 `A2r1`, 26 `A2r2` and 27
 `A2r3`: the path dots between them carry those tags. The descriptions are the area map's
 panel line ("A path leading into the ruins."; none for the town and the regions' entries).
-The slots are the directions on the map: right (+x), left (-x), down (+z) and up (-z), then
+A sector's "Gatherable Items" (the area map's scroll) are the items of its gathering points'
+lists at the table level (the first list at level 0), each once, by item number
+(`Gathering::field_items`): Sector One (map 26) has its four points on list 71, Garden Stone
+(12), Moss Grass (75), Mountain Feather (141), Eagle Feather (142); the recording at the
+user's 8/20 lists "????, Moss Grass, Mountain Feather, Eagle Feather", the unknown item first
+by number. "????" stands for an item the player has not held yet (Barrel keeps that as the
+save's `known` line: `Session::knows`). The slots are the directions on the map: right (+x), left (-x), down (+z) and up (-z), then
 two more (one route in the whole table uses slot 4): Sector One (26800, 31300) has Sector
 Two (27500, 31300) in slot 0, the Ruins Entrance (26250, 30750) in slot 1 and Sector Three
 (26800, 32000) in slot 2 (`game::area_map::step`). The two words at +0x48 look like a place's opening condition (`barrel world-places` lists

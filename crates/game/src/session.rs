@@ -62,17 +62,20 @@ pub struct Session {
     pub money: i32,
     /// The 11 party members by member number, once given their defaults ([`Session::with_party`]).
     pub party: Vec<Member>,
+    /// The items the player has come to know (held at some time: gathered, found, bought), as
+    /// the area map's gatherable list shows them (the others are "????").
+    known: std::collections::BTreeSet<i32>,
 }
 
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new() }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default() }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new() }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default() }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -146,6 +149,8 @@ impl Session {
     /// sell-price bonus `sell_bonus` percent. The items leave the basket and the money comes in;
     /// what it paid.
     pub fn sell(&mut self, picks: &[usize], cost: impl Fn(i32) -> i32, sell_bonus: i32) -> i32 {
+        let sold: Vec<i32> = picks.iter().filter_map(|&k| self.basket.get(k).map(|g| g.item)).collect();
+        self.known.extend(sold);
         let mut picks: Vec<usize> = picks.iter().copied().filter(|&k| k < self.basket.len()).collect();
         picks.sort_unstable();
         picks.dedup();
@@ -165,6 +170,7 @@ impl Session {
         if count <= 0 || !self.pay(-crate::shop::purchase_cost(price, count)) {
             return false;
         }
+        self.known.insert(item);
         for _ in 0..count {
             self.basket.push(crate::gather::Got { item, quality, traits: Vec::new() });
         }
@@ -190,8 +196,14 @@ impl Session {
         Ok(())
     }
 
+    /// Whether the player knows item `item` (has held it).
+    pub fn knows(&self, item: i32) -> bool {
+        self.known.contains(&item) || self.basket.iter().any(|g| g.item == item)
+    }
+
     /// A won battle's drops (item, count, quality) into the basket, with no traits.
     pub fn found(&mut self, drops: &[(i32, i32, f32)]) {
+        self.known.extend(drops.iter().map(|d| d.0));
         for &(item, count, quality) in drops {
             for _ in 0..count.max(0) {
                 self.basket.push(crate::gather::Got { item, quality, traits: Vec::new() });
@@ -217,6 +229,7 @@ impl Session {
     /// A gathering gave `got`: into the basket, and its field time passes (`days::gather_tenths`
     /// with no reduction: half a day).
     pub fn gathered(&mut self, got: Vec<crate::gather::Got>) {
+        self.known.extend(got.iter().map(|g| g.item));
         self.basket.extend(got);
         self.spend(crate::days::gather_tenths(0), crate::days::Reason::Gather);
     }
@@ -366,7 +379,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text) };
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default() };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -387,7 +400,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new() };
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default() };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -427,6 +440,10 @@ impl Session {
             let traits: Vec<String> = g.traits.iter().map(usize::to_string).collect();
             out += &format!("item {} {}{}\n", g.item, g.quality, if traits.is_empty() { String::new() } else { format!(" {}", traits.join(",")) });
         }
+        let known: Vec<String> = self.known.iter().chain(self.basket.iter().map(|g| &g.item)).collect::<std::collections::BTreeSet<_>>().into_iter().map(i32::to_string).collect();
+        if !known.is_empty() {
+            out += &format!("known {}\n", known.join(","));
+        }
         for (e, day) in story.seen.iter().enumerate() {
             if let Some(d) = day {
                 out += &format!("seen {e} {d}\n");
@@ -448,6 +465,7 @@ impl Session {
         }
         let (mut logy, mut field, mut at, mut carried, mut basket) = (false, None, [0.0f32; 2], 0, Vec::new());
         let (mut money, mut party) = (NEW_GAME_MONEY, Vec::<Member>::new());
+        let mut known = std::collections::BTreeSet::new();
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -477,6 +495,7 @@ impl Session {
                     quality: w.get(2).and_then(|v| v.parse().ok()).ok_or_else(|| bad(line))?,
                     traits: w.get(3).map_or(Ok(Vec::new()), |t| t.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect())?,
                 }),
+                "known" => known.extend(w.get(1).ok_or_else(|| bad(line))?.split(',').map(|v| v.parse::<i32>().map_err(|_| bad(line))).collect::<Result<Vec<_>, _>>()?),
                 "seen" => *story.seen.get_mut(num(1)? as usize).ok_or_else(|| bad(line))? = Some(num(2)? as i32),
                 "flag" => *story.flags.get_mut(num(1)? as usize).ok_or_else(|| bad(line))? = num(2)? as i32,
                 _ => return Err(bad(line)),
@@ -484,7 +503,8 @@ impl Session {
         }
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party }, at))
+        known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known }, at))
     }
 }
 
@@ -494,6 +514,18 @@ mod tests {
 
     fn chain() -> Chain {
         Chain::new(Vec::new(), Vec::new(), vec!["EVENT_A".into()])
+    }
+
+    #[test]
+    fn known_items_outlast_the_basket_and_a_save() {
+        let mut s = Session::in_field(chain(), 12, false);
+        s.gathered(vec![crate::gather::Got { item: 75, quality: 20.0, traits: Vec::new() }]);
+        s.basket.clear();
+        assert!(s.knows(75) && !s.knows(12));
+        let text = s.save([0.0, 0.0]).unwrap();
+        assert!(text.contains("known 75\n"));
+        let (back, _) = Session::load(chain(), &text).unwrap();
+        assert!(back.knows(75) && !back.knows(12));
     }
 
     #[test]
