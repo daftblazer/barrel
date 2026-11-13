@@ -18,6 +18,7 @@ usage:
   barrel pak-extract PAK PART OUTDIR  write the entries whose names contain PART under OUTDIR
   barrel ebd FILE.ebd          print an event's actions as words
   barrel ebd-scan DIR          read every event under DIR and count its commands
+  barrel pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
   barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
   barrel xml FILE.xml          print a table's rows
   barrel xml-scan DIR          read every XML table under DIR and list what it holds
@@ -99,6 +100,7 @@ fn main() -> ExitCode {
         ["ebd", file] => ebd(Path::new(file)),
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
+        ["pssg-scan", dir] => pssg_scan(Path::new(dir)),
         ["ebd-measure", dir] => ebd_measure(Path::new(dir)),
         ["voice-scan", dir] => voice_scan(Path::new(dir)),
         ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word, None),
@@ -448,6 +450,48 @@ fn ebd_measure(dir: &Path) -> Result<()> {
         println!("    (0x{w:08x}, {}), // {short}", c.map_or("None".to_string(), |n| format!("Some({n})")));
     }
     Ok(())
+}
+
+/// Reads every PSSG file under DIR (`*.PSSG`, `*.PSSG.gz`: Ayesha DX's) and counts the node
+/// kinds they hold.
+fn pssg_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".PSSG", &mut files)?;
+    files_ending(dir, ".PSSG.gz", &mut files)?;
+    files.sort();
+    let (mut ok, mut failed) = (0, Vec::new());
+    let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
+    for f in &files {
+        let raw = read(f)?;
+        let d = match barrel_formats::pssg::unwrap(&raw) {
+            Ok(d) => d,
+            Err(e) => {
+                failed.push(format!("{}: {e}", f.display()));
+                continue;
+            }
+        };
+        match barrel_formats::pssg::Pssg::parse(&d) {
+            Ok(p) => {
+                ok += 1;
+                let mut stack = vec![&p.root];
+                while let Some(n) = stack.pop() {
+                    *kinds.entry(p.name(n.kind).to_string()).or_default() += 1;
+                    stack.extend(n.children.iter());
+                }
+            }
+            Err(e) => failed.push(format!("{}: {e}", f.display())),
+        }
+    }
+    println!("{} PSSG files: {ok} read, {} failed", files.len(), failed.len());
+    let mut by: Vec<_> = kinds.into_iter().collect();
+    by.sort_by_key(|k| std::cmp::Reverse(k.1));
+    for (k, n) in by.iter().take(30) {
+        println!("{n:>8}  {k}");
+    }
+    for f in failed.iter().take(10) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some files did not read".into()) }
 }
 
 /// The operand table for the game installed above `dir`: Shallie DX's, Ayesha DX's or Sophie 2's measured

@@ -1200,3 +1200,23 @@ u32 0, f32 × 4 255}`; `layout::speaker_names`). Entries 0 to 17 are the cast as
 the rest name those not yet introduced or never named: 59 "???" (Clone's first lines in
 `EVENT_MM01_OP1_111`, as the game shows them), 60 "!!!", 62 "Everyone", 19 "Gloomy Man" and
 the like. The field is usually the speaker's own number (Clone: 16 in 365 lines, 59 in 5).
+
+## PSSG (Ayesha DX)
+
+Ayesha DX keeps the PS3 game's PhyreEngine data: 1,768 files under `Res/x64` (`*.PSSG` and
+`*.PSSG.gz`; the `.gz` ones are plain PSSG but for 731, mostly motions, that are gzip members).
+`barrel_formats::pssg` reads them all (`barrel pssg-scan DIR`); big-endian throughout:
+
+| Part | Layout |
+|---|---|
+| Header | `PSSG`, u32 the size of the rest, u32 the attribute kinds' count, u32 the node kinds' count |
+| Schema | per node kind: u32 id, a name (u32 length, bytes), u32 attribute count, then per attribute u32 id and a name |
+| Node | u32 kind, u32 size of the rest, u32 size of its attributes, the attributes (u32 kind, u32 length, bytes), then child nodes or raw data |
+
+Whether a node's tail is children or data is not marked: it is children when it reads as nodes
+to the node's end exactly. The root is `PSSGDATABASE`. Over all the files the commonest kinds
+are the render streams (`RENDERSTREAM`, `RENDERINSTANCESTREAM`, `RISTREAM`), animation
+channels and keys, data blocks (`DATABLOCK`, `DATABLOCKDATA`, `DATABLOCKSTREAM`), shader
+inputs, index sources, skinning (`SKINJOINT`, `INVERSEBINDMATRIX`, `JOINTNODE`) and the scene
+nodes (`NODE`, `RENDERNODE`, `TRANSFORM`, `BOUNDINGBOX`). Reading meshes and motions out of
+them is next.

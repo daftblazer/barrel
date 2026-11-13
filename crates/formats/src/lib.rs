@@ -42,6 +42,7 @@ pub mod pak;
 pub mod pe;
 pub mod quake;
 pub mod png;
+pub mod pssg;
 pub mod recipe;
 pub mod salary;
 pub mod save;

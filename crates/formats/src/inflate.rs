@@ -266,6 +266,37 @@ fn adler32(data: &[u8]) -> u32 {
     }
     (b << 16) | a
 }
+/// A gzip member (RFC 1952: its header, optional fields included, then the deflate stream),
+/// its size taken from the trailer and held to `max_out`. Ayesha DX's gzipped `*.PSSG.gz`.
+pub fn gunzip(input: &[u8], max_out: usize) -> Result<Vec<u8>, Error> {
+    if input.len() < 18 || input[0] != 0x1f || input[1] != 0x8b || input[2] != 8 {
+        return Err(Error::NotThisFormat);
+    }
+    let flags = input[3];
+    let mut at = 10;
+    if flags & 4 != 0 {
+        let len = u16::from_le_bytes([*input.get(at).ok_or(Error::Corrupt("gzip: truncated"))?, *input.get(at + 1).ok_or(Error::Corrupt("gzip: truncated"))?]) as usize;
+        at += 2 + len;
+    }
+    for flag in [8u8, 16] {
+        if flags & flag != 0 {
+            at += input.get(at..).ok_or(Error::Corrupt("gzip: truncated"))?.iter().position(|&b| b == 0).ok_or(Error::Corrupt("gzip: name not ended"))? + 1;
+        }
+    }
+    if flags & 2 != 0 {
+        at += 2;
+    }
+    let size = u32::from_le_bytes(input[input.len() - 4..].try_into().unwrap()) as usize;
+    if size > max_out {
+        return Err(Error::TooLarge);
+    }
+    let (out, _) = inflate(input.get(at..).ok_or(Error::Corrupt("gzip: truncated"))?, size)?;
+    if out.len() != size {
+        return Err(Error::Corrupt("gzip: size does not match the trailer"));
+    }
+    Ok(out)
+}
+
 
 /// Decompress one zlib stream, checking its header and Adler-32.
 pub fn zlib_decompress(input: &[u8], max_out: usize) -> Result<Vec<u8>, Error> {
@@ -285,6 +316,14 @@ pub fn zlib_decompress(input: &[u8], max_out: usize) -> Result<Vec<u8>, Error> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gunzip_reads_a_member() {
+        // gzip.compress(b"PSSG barrel", mtime=0)
+        let gz = [0x1f, 0x8b, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0xff, 0xb, 0x8, 0xe, 0x76, 0x57, 0x48, 0x4a, 0x2c, 0x2a, 0x4a, 0xcd, 0x1, 0x0, 0x4c, 0x48, 0x83, 0xcd, 0xb, 0x0, 0x0, 0x0];
+        assert_eq!(gunzip(&gz, 64).unwrap(), b"PSSG barrel");
+        assert!(gunzip(&gz, 4).is_err(), "held to the size given");
+    }
+
     use super::*;
 
     #[test]

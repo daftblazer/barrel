@@ -71,17 +71,14 @@ the same model as Escha's. The RTTI names 589 game classes. It needs its own loa
 of the shared ones.
 
 **How far Escha's readers reach in Ayesha DX** (unchanged): events 3,891 of 3,891 (262 distinct
-commands), messages 51,628 in 4,648 files (none failed), textures 940 of 940, tables 135 of 136
-(`fieldmap/map/param/L_POINT_09_C.param.xml` has an unquoted attribute value). But no models,
+commands), messages 51,628 in 4,648 files (none failed), textures 940 of 940, tables 136 of 136
+(`fieldmap/map/param/L_POINT_09_C.param.xml` has a value missing its opening quote, read as the
+game must). But no models,
 animations or containers: every 3D asset is a gzipped PSSG file (`Res/x64/**/*.PSSG.gz`, 1,661:
 1,251 under `chara`, 108 `fieldmap`, 103 `obj`, 99 `item_obj`, 66 `effmodel`, 33 `btlField`, one
 `worldmap`; magic `PSSG`, big-endian, a `PSSGDATA` node tree), and the `g1t` textures are the
-interface and pictures (`ipu*`, `winxls*`). Ayesha needs a PSSG reader for its models, maps and
-animations; the rest carries over.
-
-Checked with Barrel's readers (2026-11-12): the assets are under `Res/x64`, not `Data`: no
-elixir containers, models in PSSG (107 `.PSSG` and gzipped ones), 940 loose `g1t` textures
-(all read), 210 `ktx`. Events, messages and tables read (`docs/events.md`, "Ayesha DX").
+interface and pictures (`ipu*`, `winxls*`). `barrel_formats::pssg` reads all 1,768 PSSG files as node trees (`docs/formats.md`, "PSSG"); the
+meshes, skeletons and animations in them are not taken out yet. The rest carries over.
 
 ### Sophie 2
 
