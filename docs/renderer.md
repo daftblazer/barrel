@@ -759,6 +759,28 @@ What is not yet the game's is listed in `menu.rs`'s header: how the chosen butto
 Option rows' wording and text size, the buttons dimmed under the Option list, Escha's figure for
 both leads, and no party plates, help line, opening motion or "NEW" badges.
 
+## The world map
+
+The area map's top level (`AreaMap` with `world`): the town and the regions (the places of
+kind 0, `world::places`), joined by the world routes R0 to R12, whose numbers are those
+places' links (the town's `[0, 3, 1, 2]`: R0 right to the Twilight forest, R3 left, R1 down
+to the Southern Ruins, R2 up). The town's world map exit lands there on the town's mark
+(`LP_T0`); an area map's Back (Backspace or X; offscreen "back") lands there on the region's
+mark. A direction runs her along the route's dots to the next place's mark; confirm takes
+the trip from where she started (`Session::travelled`: the field left passes its time, the
+route's days pass, an event on the road or on arriving plays, the arrival field being the
+region's first sector across its entry's route, or the town's entrance) and lands on the
+region's area map at its entry (`LP_` mark), or in the town's entrance at its world map exit.
+Offscreen `BARREL_WORLD_KEYS` and `BARREL_AREA_KEYS` (each used once a run). Checked: from
+the Town Entrance (a save at (5700, 3740), `--walk 300,0`), `down,confirm` on the world map:
+R1, four days (90 to 94), the Southern Ruins' area map; `down,back` there: the Ruins
+Entrance, then the world map at the Southern Ruins. On the maps she runs the dots without the
+field's walls (a mark's collision held her short of it), and no faster than reaches the
+next waypoint in a frame (at 5 fps a 100-unit step overshot the 30-unit reach both ways).
+Not yet the game's: the world map's camera (the area map's), its panels (the travel panel
+639 with the trip's days, the region's name 637), the cursor moving ahead of her (the
+game's runs the trip at once).
+
 ## Graphics settings
 
 The PC release changes its graphics in a separate launcher; Barrel has none. Its graphics

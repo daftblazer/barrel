@@ -91,6 +91,11 @@ impl Session {
         &self.scene
     }
 
+    /// The field the player is in (or last left for the world map).
+    pub fn field(&self) -> Option<u32> {
+        self.field
+    }
+
     /// The player leaves field area `from` for its area map: leaving a field area with field
     /// time carried passes a day (as [`Session::walked`] does between fields).
     pub fn left_for_area_map(&mut self, from: u32) {
