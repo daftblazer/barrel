@@ -654,8 +654,10 @@ In free play (a field with the story loaded and no event playing) Space, the pad
 the main menu (`crates/render/src/menu.rs`, layouts 383, 361 and 374: `docs/formats.md`). Up and
 down choose among the ten commands (eight shown, the list scrolling), Back closes it and play
 goes on where it stood. Status opens the lead's Status page (`crates/render/src/status.rs`:
-level, experience to the next, HP, MP, attack, defence and speed from the game's growth and
-experience tables; Barrel's saves keep no level yet, so level 1). Basket shows the items
+level, experience to the next, HP, MP, attack, defence, speed and resistances: the session's
+level and experience through the game's growth and experience tables, plus what the lead's
+equipment gives; a save with Escha at level 4, 40 experience, in her starting kit shows LV 4,
+Next 30, HP 21, MP 32, ATK 10, DEF 9, SPD 8). Basket shows the items
 gathered (the save's `item` lines) in the game's item grid, with their pictures and qualities,
 the chosen one's name below (`crates/render/src/basket.rs`). Assignment shows the period's
 card from `SubjectData.xml` (`crates/render/src/assignment.rs`): each square's task icon, "?"

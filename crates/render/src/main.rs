@@ -4470,7 +4470,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, Some(Path::new(&out_path)))?;
+            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
                 restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
@@ -4547,7 +4547,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &[], None)?;
+            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &[], None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {

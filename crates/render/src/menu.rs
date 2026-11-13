@@ -240,6 +240,7 @@ pub fn run(
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
     logy: bool,
+    lead: Option<&barrel_game::session::Member>,
     basket: &[(i32, f32)],
     card: &[Option<crate::assignment::Task>],
     keys: &[Button],
@@ -251,9 +252,9 @@ pub fn run(
     let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
     // The Status page: its nodes over the desk, and the lead's values.
     let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
-    let values = crate::status::Values::lead(&pe, logy).ok_or("menu: no party tables")?;
-    // The Basket page: the grid over the desk, and the basket's items.
     let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let values = crate::status::Values::lead(&pe, logy, lead, &item_rows.children).ok_or("menu: no party tables")?;
+    // The Basket page: the grid over the desk, and the basket's items.
     let items = crate::basket::items(basket, &item_rows.children);
     let grid_nodes: Vec<Placed> = [BACKGROUND, crate::basket::GRID].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
     let basket_elements = |b: &crate::basket::Basket, texts: &dyn Fn(&Placed) -> Option<Text>| {
