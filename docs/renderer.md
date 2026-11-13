@@ -19,7 +19,8 @@ than six layers, where the settings block must say which layers a map's channels
 
 Options: `--size N` (64..1280), `--yaw DEG`, `--pitch DEG` (45 by default for fields),
 `--no-alpha` to turn off the alpha test. `BARREL_DRY=1` builds the scene and prints its
-bounds without touching the GPU.
+bounds without drawing (the device is opened first, as the renderer is set up before any
+scene, but nothing is uploaded).
 
 What it does today:
 - uploads the model's submeshes (positions, normals, UVs from `g1m::Geometry::simple_mesh`)

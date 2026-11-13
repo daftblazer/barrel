@@ -2256,54 +2256,6 @@ fn main() -> Result<()> {
         }
     }
 
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies } =
-        load_scene(SceneSpec {
-            field,
-            args: args.clone(),
-            event_spec: event_spec.clone(),
-            skeleton_spec,
-            anim_spec,
-            time,
-            morph_spec,
-            face_specs,
-            costumes,
-            costumes_from,
-            event_line,
-            event_at,
-            look_at,
-            creatures_area,
-            town_people_from,
-        })?;
-    let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
-    let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
-    if no_terrain {
-        scene.terrains.clear();
-    }
-    let Scene { vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
-    // Lay each overlay over its base texture into a new RGBA texture.
-    let composites = composite_overlays(&mut draws, &all_textures);
-    let composite_textures: Vec<barrel_formats::g1t::Texture> = composites
-        .iter()
-        .map(|(w, h, px)| barrel_formats::g1t::Texture {
-            width: *w,
-            height: *h,
-            format: Format::Rgba8,
-            format_code: 1,
-            layers: 1,
-            volume: false,
-            levels: vec![&px[..]],
-        })
-        .collect();
-    let all_textures: Vec<&barrel_formats::g1t::Texture> = all_textures.into_iter().chain(composite_textures.iter()).collect();
-    if draws.is_empty() || all_textures.is_empty() {
-        return Err("nothing to draw".into());
-    }
-    eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, all_textures.len());
-    eprintln!("bounds {lo:?} .. {hi:?}");
-    if std::env::var("BARREL_DRY").is_ok() {
-        return Ok(());
-    }
-
     // A window (with --window) or an offscreen image to draw into.
     let mut pump = window_frames.map(|_| window::Pump::open()).transpose()?;
     let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
@@ -2327,13 +2279,6 @@ fn main() -> Result<()> {
         d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
     };
 
-    // Geometry buffers (host-visible: one frame does not need a staging copy).
-    let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
-    let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
-
-    // Textures, uploaded as their BC blocks with all mip levels, then the outline and white.
-    let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
-    let (textures, outline_tex, white) = upload_textures(&gpu, pool, &all_textures, root.as_deref())?;
     let sampler = unsafe {
         d.create_sampler(
             &vk::SamplerCreateInfo::default()
@@ -2354,13 +2299,6 @@ fn main() -> Result<()> {
         .descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
     let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)? };
-    // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
-    // draw's instance number (set 1, bound once for every pipeline).
-    for i in &mut instances {
-        i.prev_palette = i.palette + palette.len() as u32;
-        i.prev_model = i.model;
-    }
-    let mut prev_palette = palette.clone();
     let storage = |b: u32| {
         vk::DescriptorSetLayoutBinding::default()
             .binding(b)
@@ -2368,14 +2306,6 @@ fn main() -> Result<()> {
             .descriptor_count(1)
             .stage_flags(vk::ShaderStageFlags::VERTEX)
     };
-    if deltas.len() > 1 {
-        eprintln!(
-            "morphs: {} vertex offsets, {} weights, {} not zero",
-            deltas.len() - 1,
-            morph_weights.len() - 1,
-            morph_weights.iter().filter(|&&w| w != 0.0).count()
-        );
-    }
     // And the field's character lighting (binding 4, for the fragment shader).
     let (look_buf, look_mem) = gpu.buffer(LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER, true)?;
     let inst_binding = [
@@ -2410,7 +2340,6 @@ fn main() -> Result<()> {
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
     let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
-    let grounds = upload_grounds(&gpu, pool, &terrains)?;
     let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
     let shared = scene_gpu::Shared {
         set_layout,
@@ -2421,10 +2350,6 @@ fn main() -> Result<()> {
         shadow_view: shadow_target.view,
         terrain_layout,
     };
-    let scene_data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds };
-    let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &shared)?;
-    let (vbuf, ibuf, instance_set) = (scene.vbuf, scene.ibuf, scene.instance_set);
-    let sets = scene.sets.clone();
 
     // Offscreen target.
     let extent = vk::Extent3D { width, height, depth: 1 };
@@ -2758,6 +2683,83 @@ fn main() -> Result<()> {
         let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
         TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
     };
+
+    // The scene: loaded, then uploaded under the renderer set up above.
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies } =
+        load_scene(SceneSpec {
+            field,
+            args: args.clone(),
+            event_spec: event_spec.clone(),
+            skeleton_spec,
+            anim_spec,
+            time,
+            morph_spec,
+            face_specs,
+            costumes,
+            costumes_from,
+            event_line,
+            event_at,
+            look_at,
+            creatures_area,
+            town_people_from,
+        })?;
+    let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
+    let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
+    if no_terrain {
+        scene.terrains.clear();
+    }
+    let Scene { vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
+    // Lay each overlay over its base texture into a new RGBA texture.
+    let composites = composite_overlays(&mut draws, &all_textures);
+    let composite_textures: Vec<barrel_formats::g1t::Texture> = composites
+        .iter()
+        .map(|(w, h, px)| barrel_formats::g1t::Texture {
+            width: *w,
+            height: *h,
+            format: Format::Rgba8,
+            format_code: 1,
+            layers: 1,
+            volume: false,
+            levels: vec![&px[..]],
+        })
+        .collect();
+    let all_textures: Vec<&barrel_formats::g1t::Texture> = all_textures.into_iter().chain(composite_textures.iter()).collect();
+    if draws.is_empty() || all_textures.is_empty() {
+        return Err("nothing to draw".into());
+    }
+    eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, all_textures.len());
+    eprintln!("bounds {lo:?} .. {hi:?}");
+    if std::env::var("BARREL_DRY").is_ok() {
+        return Ok(());
+    }
+
+    // Geometry buffers (host-visible: one frame does not need a staging copy).
+    let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
+    let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
+
+    // Textures, uploaded as their BC blocks with all mip levels, then the outline and white.
+    let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
+    let (textures, outline_tex, white) = upload_textures(&gpu, pool, &all_textures, root.as_deref())?;
+    // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
+    // draw's instance number (set 1, bound once for every pipeline).
+    for i in &mut instances {
+        i.prev_palette = i.palette + palette.len() as u32;
+        i.prev_model = i.model;
+    }
+    let mut prev_palette = palette.clone();
+    if deltas.len() > 1 {
+        eprintln!(
+            "morphs: {} vertex offsets, {} weights, {} not zero",
+            deltas.len() - 1,
+            morph_weights.len() - 1,
+            morph_weights.iter().filter(|&&w| w != 0.0).count()
+        );
+    }
+    let grounds = upload_grounds(&gpu, pool, &terrains)?;
+    let scene_data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds };
+    let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &shared)?;
+    let (vbuf, ibuf, instance_set) = (scene.vbuf, scene.ibuf, scene.instance_set);
+    let sets = scene.sets.clone();
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
     // With an event, look at its characters from a few metres away; otherwise frame it all.
