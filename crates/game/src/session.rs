@@ -382,6 +382,19 @@ impl Session {
         out
     }
 
+    /// A lost battle in a field save's text: a day passes (`today` + 1; the game's wipe turns the
+    /// date panel 8/20 → 8/21 on white, `docs/events.md` "A lost battle"); the rest is kept.
+    /// Not yet the game's: the party comes back where the battle was touched, not on the area
+    /// map at that area (Barrel has no area map), and their HP is not kept by Barrel's saves.
+    pub fn lost_in_save(text: &str) -> String {
+        text.lines()
+            .map(|line| match line.strip_prefix("today ").and_then(|v| v.trim().parse::<i32>().ok()) {
+                Some(day) => format!("today {}\n", day + 1),
+                None => format!("{line}\n"),
+            })
+            .collect()
+    }
+
     /// The session's state in free play, where the player stands at `at` (x, z field units),
     /// as text; `None` while an event plays (the game saves only in free play).
     pub fn save(&self, at: [f32; 2]) -> Option<String> {
@@ -573,6 +586,15 @@ mod tests {
         assert_eq!(s.basket.iter().map(|g| g.item).collect::<Vec<_>>(), vec![0]);
         let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
         assert_eq!(back.party, s.party);
+    }
+
+    #[test]
+    fn a_lost_battle_costs_a_day() {
+        let s = Session::in_field(chain(), 3, false);
+        let text = s.save([0.0, 0.0]).unwrap();
+        let (back, _) = Session::load(chain(), &Session::lost_in_save(&text)).unwrap();
+        assert_eq!(back.today(), s.today() + 1);
+        assert_eq!((back.money, back.party.clone(), back.basket.len()), (s.money, s.party.clone(), s.basket.len()));
     }
 
     #[test]

@@ -1796,6 +1796,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_game::se
         fight: BattleFight { tables, party: party.to_vec(), monsters, rng, commands: Vec::new() },
         result: None,
         result_closed: false,
+        lost_noted: false,
         turn,
         chosen: 0,
         target: 0,
@@ -1834,6 +1835,8 @@ struct BattlePlay {
     /// confirm press has closed it.
     result: Option<(result::Values, f32)>,
     result_closed: bool,
+    /// A lost battle's day has gone into the field's save.
+    lost_noted: bool,
 }
 
 /// A battle's tables, sides, generator and the commands given so far.
@@ -5217,6 +5220,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             Some(result::Row { chara: c, level: m.level, next, level_up: before.get(c).is_some_and(|b| m.level > b.level) })
                         }).collect();
                         play.result = Some((result::Values { rows, exp, money }, play.time));
+                    }
+                // Over and lost: a day passes in the field's save, and the lead's line from the
+                // game's wipe (not yet shown on screen: the console).
+                if play.over() && !won && !play.lost_noted
+                    && let Some(save) = carry.back.as_mut().and_then(|b| b.1.save.as_mut()) {
+                        *save = barrel_game::session::Session::lost_in_save(save);
+                        play.lost_noted = true;
+                        eprintln!("battle lost: a day passes; \"Oww... that was bad. Let's be more careful next time.\"");
                     }
                 // Then back to the field it came from: a lost battle at once, a won one once its
                 // Result is closed (confirm; offscreen after `RESULT_SECONDS`).
