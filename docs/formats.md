@@ -847,6 +847,12 @@ layers, 6 maps), is not decoded yet:
   units on a side, then nodes of half-size 5,000, 2,500 ... Each holds 6 and 0x0b, child
   indices (-1 where none), and lists like `2 3 4 5` (the layers a patch uses, presumably).
 
+The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
+`0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
+`0x14066f900`, `0x14066fc90`, `0x14066fc50`, `0x14066f940`, `0x14066f690`, `0x14066f6d0` (the
+largest), `0x14066fb10`, `0x14066fad0`, `0x14066fba0`, `0x14066f250`, `0x14066f2b0` and four
+more. Most are thin wrappers over deeper calls, not followed yet.
+
 ### Placement lists (`*.opl2`)
 
 Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 effects.
