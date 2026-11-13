@@ -855,7 +855,10 @@ makes one when the player's field strike, while out (`0x14026e2c0`), hits an ene
 (`0x1408edd58`, `encounter::struck`); the player's +0x1e0 is that stage, 1 once event 733 has
 been seen (`0x14026e350`, `0x14035f270 (0x2dd)`), and its +0x1e4 the strike's radius, 130 or
 190 for Escha and 150 or 210 for Logy (`0x1408edd60`, `0x1408edd68`); the strike can hit from
-0.35 to 0.6 s into its motion (`0x14026e2c0`, `0x1408edd70`, `0x1408edd78`); the hit plays sound 0x20 for
+0.35 to 0.6 s into its motion (`0x14026e2c0`: while the player's +0x130 object is there and its
+virtual +0x58 says it is playing, its time, virtual +0x60, within the stage's window
+`0x1408edd70`/`0x1408edd78`; the contact check tests a strike first and falls back to touching;
+what starts the strike, its button and motion, is not found); the hit plays sound 0x20 for
 Escha in the lead, 0x24 for Logy (`0x140160070`), and hands on the enemy's +0x178; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
 they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
 raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.5; the enemy's
