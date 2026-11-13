@@ -913,9 +913,17 @@ section by its own reader, each checking that it read the length the header give
 | 0x194 | `0x14066f6d0` | the node tree, count at 0x30 |
 | 0x2d0 | `0x14066fb10`, `0x14066fad0`, `0x14066fba0`, `0x14066f250`, `0x14066f2b0`, `0x14066f150`, `0x14066f1d0`, `0x14066c3b0`, `0x14066c3f0`, `0x14066f110`, `0x14066f210` | the rest, in that order: `fb10` reads 16-byte records into 24-byte slots, `fad0` the same, `fba0` 8-byte ones into 24-byte slots |
 
-The counts (u32 from 0x24): 0, layers, 48-byte records, nodes, then 4 / 6 / 4 (TOWN_01,
-AREA_08_02, AREA_01_01) at 0x34, the patches at 0x38 (1 / 4 / 4), then 2 / 15 / 51, 128 / 4320 /
-51552 and 22 / 2538 / 43246.
+The counts (u32 from 0x24, as the dispatcher passes them): 0, layers (0x28), 48-byte records
+(0x2c), nodes (0x30), 4 / 6 / 4 (TOWN_01, AREA_08_02, AREA_01_01; 0x34, not passed to these
+readers), the patches (0x38: 1 / 4 / 4; `fb10`'s and `fba0`'s count), `fad0`'s count (0x3c: 2 /
+15 / 51), `f2b0`'s (0x40: 128 / 4320 / 51552) and 22 / 2538 / 43246 (0x44). So after the nodes:
+a 16-byte record per patch (`fb10`), 16-byte records by 0x3c (`fad0`), and, when a flag of the
+terrain object (+0x8a, a byte that also divides) is set, 8 bytes per patch (`fba0`: a word kept
+at the patch's +0x10 and a size divided by that byte, by the look an index range: offset and
+count). `f250` builds something from the 0x1c-byte block (the vertex format), and `f2b0` hands
+0x40's count to a virtual reader (the vertex data, presumably). The patches are therefore draw
+chunks (vertex and index ranges per leaf), not blend descriptions: which layer weighs where must
+ride on the vertices or come later in the file.
 
 **A node** is a 0x28-byte record, then 5 integers, or 9 when bit 0 of its flags is set (it has
 children): centre (3 floats), 1.0, half-size (3 floats), 12 bytes of 0, the patch it holds at
@@ -925,8 +933,9 @@ integers are the parent and the neighbouring nodes (-1 for none); the reader dro
 four after them, on a node with children, are the children's numbers (-1 for none), turned into
 pointers. TOWN_01: the root and four leaves, one holding patch 0; AREA_08_02 (non-square, three
 levels): nine nodes, leaves 2, 3, 5, 8 holding patches 0 to 3. What follows the nodes is not
-fitted yet: in TOWN_01, 72 bytes between the nodes' end (0x2d0) and the 16-byte records with
-`0x80ffffff` (0x318), which the counts above do not explain as 16- or 8-byte records.
+fitted yet byte for byte: in TOWN_01 one patch record (16 bytes) and two `fad0` records (32)
+from 0x2d0 leave 0x300 to 0x318 for `fba0` and what `f250` reads before the records with
+`0x80ffffff` at 0x318.
 
 The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
 `0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
