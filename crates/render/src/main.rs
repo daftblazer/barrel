@@ -868,6 +868,20 @@ fn local_pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g
     out
 }
 
+/// Each joint's position in model space for local transforms.
+fn skin_world(skeleton: &barrel_formats::g1m::Skeleton, locals: &[Trs]) -> Vec<Vec3> {
+    let mut out = vec![Mat4::IDENTITY; locals.len()];
+    for i in skeleton.order() {
+        let (sc, r, t) = locals[i];
+        let m = Mat4::from_scale_rotation_translation(sc, r, t);
+        out[i] = match skeleton.joints[i].parent {
+            Some(p) => out[p] * m,
+            None => m,
+        };
+    }
+    out.iter().map(|m| m.w_axis.truncate()).collect()
+}
+
 /// Two local poses mixed: `w` of the way from `a` to `b` (rotations by slerp).
 fn mix_pose(a: &[Trs], b: &[Trs], w: f32) -> Vec<Trs> {
     a.iter().zip(b).map(|(x, y)| (x.0.lerp(y.0, w), x.1.slerp(y.1, w), x.2.lerp(y.2, w))).collect()
@@ -924,8 +938,13 @@ struct Actor {
     anim: barrel_formats::g1a::Animation,
     start: f32,
     looping: bool,
-    /// The motion being blended out: it, its time at the switch, whether it loops.
-    previous: Option<(barrel_formats::g1a::Animation, f32, bool)>,
+    /// What is being blended out.
+    previous: Option<BlendFrom>,
+    /// What it plays: the motion's column, its division and the stage time it started; a
+    /// change of any starts a blend.
+    playing: (String, Option<u32>, f32),
+    /// The local pose shown last frame (to blend out of when a switch comes mid-blend).
+    last_locals: Vec<Trs>,
     face: Option<FaceRig>,
     /// The time shown at the last frame, in the current motion.
     last_t: f32,
@@ -935,6 +954,15 @@ struct Actor {
     division: Option<barrel_formats::chara_div::Division>,
     /// The motion whose division was last logged.
     last_division_column: String,
+}
+
+/// What a character's new motion blends in over.
+enum BlendFrom {
+    /// The old motion running on: it, its time at the switch, whether it loops.
+    Running(barrel_formats::g1a::Animation, f32, bool),
+    /// A held pose: the one shown when the switch came during a blend, or between two
+    /// divisions of one motion (so the pose never jumps).
+    Held(Vec<Trs>),
 }
 
 /// A character's body as loaded: its texture pack, the pack's texture count, its instance, and
@@ -1167,6 +1195,22 @@ struct TownBody {
     /// The motion it is leaving, its clock and how far into the blend it is (seconds): the new
     /// one is blended in over [`MOTION_BLEND`] (`0x140235410` asks 0.15 s).
     from: Option<(barrel_formats::g1a::Animation, f32, f32)>,
+    /// When a switch came during a blend: the pose then shown, blended out of instead of
+    /// `from`'s motion (so the pose never jumps).
+    held: Option<Vec<Trs>>,
+    /// The local pose shown last frame.
+    last_locals: Vec<Trs>,
+}
+
+impl TownBody {
+    /// Starts `next` from its beginning, blended in over [`MOTION_BLEND`]: out of the old motion
+    /// running on, or, mid-blend, out of the pose last shown.
+    fn switch(&mut self, next: barrel_formats::g1a::Animation) {
+        self.held = (self.from.is_some() && !self.last_locals.is_empty()).then(|| self.last_locals.clone());
+        let old = std::mem::replace(&mut self.anim, next);
+        self.from = Some((old, self.clock.unwrap_or(0.0), 0.0));
+        self.clock = Some(0.0);
+    }
 }
 
 /// How long a gait change blends the old motion into the new one (seconds).
@@ -1204,7 +1248,7 @@ fn town_people(root: &Path, field_dir: &Path, seen: Option<Vec<bool>>, scene: &m
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, _, anim, _)) = body.rig {
-            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new() });
         }
         placed.push(p.chara);
         first = first.or(Some(pos));
@@ -1318,7 +1362,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
     let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience, follow: Default::default() };
-    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new() }, walker))
 }
 
 /// A world map trip's way (`game::travel::WorldMap::path`), from the executable beside the
@@ -1766,7 +1810,7 @@ fn event_characters(
         };
         let Some((body, face_rig)) = add_body(root, scene, tex_base, row, who, pos, angle, &column, motion_time, wear.as_ref(), face)? else { continue };
         if let Some((skeleton, motions, anim, start)) = body.rig {
-            actors.push(Actor { who, instance: body.instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, last_t: start, face: face_rig, head: None, division: None, last_division_column: String::new() });
+            actors.push(Actor { who, instance: body.instance, skeleton, motions, column: column.clone(), anim, start, looping, previous: None, playing: (column.clone(), None, 0.0), last_locals: Vec::new(), last_t: start, face: face_rig, head: None, division: None, last_division_column: String::new() });
         }
         eprintln!("character {who} ({tag}) at {pos:?}, {angle} degrees");
         centre += Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0);
@@ -3720,6 +3764,7 @@ fn main() -> Result<()> {
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut open_menu = false;
+    let pose_jumps = std::env::var("BARREL_POSE_JUMPS").ok().and_then(|v| v.parse::<f32>().ok());
     // Offscreen: the main menu drawn at a frame (`BARREL_MENU_AT`) after the buttons in
     // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
     if presenter.is_none() && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
@@ -3968,9 +4013,7 @@ fn main() -> Result<()> {
         // the landing, and her gait takes over when the motion ends.
         if jump_now && w.jump.is_none()
             && let (Some(anim), Some(b)) = (w.jump_anim.clone(), town_bodies.get_mut(w.body)) {
-                let old = std::mem::replace(&mut b.anim, anim);
-                b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
-                b.clock = Some(0.0);
+                b.switch(anim);
                 w.jump = Some(-1.0);
                 // The jump's sound (0x23 at 0.6) and, now and then, a voice (Escha's).
                 let voice = w.jump_voice.jump(u32::from(w.logy), &mut w.rng);
@@ -4038,9 +4081,7 @@ fn main() -> Result<()> {
         // A strike: the swing's motion once through, blended in, then her gait again.
         if strike_now && !w.striking && w.jump.is_none()
             && let (Some(anim), Some(b)) = (w.strike_anim.clone(), town_bodies.get_mut(w.body)) {
-                let old = std::mem::replace(&mut b.anim, anim);
-                b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
-                b.clock = Some(0.0);
+                b.switch(anim);
                 w.striking = true;
                 eprintln!("frame {frame}: strike");
             }
@@ -4138,9 +4179,7 @@ fn main() -> Result<()> {
                         barrel_game::walk::Gait::Walk => w.walk.clone(),
                         barrel_game::walk::Gait::Run | barrel_game::walk::Gait::Jump => w.run.clone(),
                     };
-                    let old = std::mem::replace(&mut b.anim, next);
-                    b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
-                    b.clock = Some(0.0);
+                    b.switch(next);
                 }
                 b.clock = Some(b.clock.unwrap_or(0.0) + dt * rate);
                 if let Some((_, clock, blend)) = &mut b.from {
@@ -4191,12 +4230,17 @@ fn main() -> Result<()> {
         if frame > 0 {
             town_time += dt;
         }
-        for b in &town_bodies {
+        for b in &mut town_bodies {
             let now = local_pose(&b.skeleton, &b.anim, motion_clock(&b.anim, b.clock.unwrap_or(town_time), true));
-            let locals = match &b.from {
-                Some((old, clock, blend)) => mix_pose(&local_pose(&b.skeleton, old, motion_clock(old, *clock, true)), &now, (blend / MOTION_BLEND).clamp(0.0, 1.0)),
-                None => now,
+            let locals = match (&b.from, &b.held) {
+                (Some((_, _, blend)), Some(held)) if held.len() == now.len() => mix_pose(held, &now, (blend / MOTION_BLEND).clamp(0.0, 1.0)),
+                (Some((old, clock, blend)), _) => mix_pose(&local_pose(&b.skeleton, old, motion_clock(old, *clock, true)), &now, (blend / MOTION_BLEND).clamp(0.0, 1.0)),
+                (None, _) => {
+                    b.held = None;
+                    now
+                }
             };
+            b.last_locals.clone_from(&locals);
             let joints = skin(&b.skeleton, &locals);
             let base = instances[b.instance as usize].palette as usize;
             for (k, m) in joints.iter().enumerate() {
@@ -4432,14 +4476,28 @@ fn main() -> Result<()> {
                 let mut weight = 1.0;
                 if let Some(m) = staged
                     && let Some(column) = motion_names.get(m.motion as usize) {
-                        if *column != a.column {
-                            if let Some(anim) = a.motions.get(column).cloned() {
+                        let now_playing = (column.clone(), m.division, m.since);
+                        if now_playing != a.playing {
+                            // Mid-blend, or a new division of the same motion: blend out of
+                            // the pose last shown; else the old motion runs on under the new.
+                            let mid_blend = a.previous.is_some();
+                            let same_motion = *column == a.column;
+                            if same_motion {
+                                if m.blend > 0.0 && !a.last_locals.is_empty() {
+                                    a.previous = Some(BlendFrom::Held(a.last_locals.clone()));
+                                }
+                            } else if let Some(anim) = a.motions.get(column).cloned() {
                                 eprintln!("frame {frame}: character {} plays {column} (blend {:.2} s)", a.who, m.blend);
                                 let old = std::mem::replace(&mut a.anim, anim);
-                                a.previous = (m.blend > 0.0).then_some((old, a.last_t, a.looping));
+                                a.previous = match (m.blend > 0.0, mid_blend && !a.last_locals.is_empty()) {
+                                    (false, _) => None,
+                                    (true, true) => Some(BlendFrom::Held(a.last_locals.clone())),
+                                    (true, false) => Some(BlendFrom::Running(old, a.last_t, a.looping)),
+                                };
                             }
                             a.column = column.clone();
                             a.looping = m.looping;
+                            a.playing = now_playing;
                         }
                         t = shown_time - m.since;
                         // Its division, if the command names one the tables have.
@@ -4469,13 +4527,26 @@ fn main() -> Result<()> {
                 let mut locals = local_pose(&a.skeleton, &a.anim, clock);
                 match (&a.previous, weight < 1.0) {
                     // The old motion runs on from where it was while the new one fades in.
-                    (Some((old, at_switch, old_loops)), true) => {
+                    (Some(BlendFrom::Running(old, at_switch, old_loops)), true) => {
                         let before = local_pose(&a.skeleton, old, motion_clock(old, at_switch + t.max(0.0), *old_loops));
                         locals = mix_pose(&before, &locals, weight);
                     }
-                    (Some(_), false) => a.previous = None,
+                    (Some(BlendFrom::Held(before)), true) if before.len() == locals.len() => locals = mix_pose(before, &locals, weight),
+                    (Some(_), _) => a.previous = None,
                     _ => {}
                 }
+                // `BARREL_POSE_JUMPS=CM`: report a frame where a joint moved more than CM
+                // (game units) in the model's own space, to find motion pops.
+                if let Some(limit) = pose_jumps
+                    && a.last_locals.len() == locals.len() {
+                        let world = |l: &[Trs]| skin_world(&a.skeleton, l);
+                        let (was, now) = (world(&a.last_locals), world(&locals));
+                        let (k, d) = was.iter().zip(&now).map(|(p, q)| p.distance(*q)).enumerate().fold((0, 0.0f32), |m, (k, d)| if d > m.1 { (k, d) } else { m });
+                        if d > limit {
+                            eprintln!("frame {frame}: character {} joint {k} jumped {d:.1} ({})", a.who, a.column);
+                        }
+                    }
+                a.last_locals.clone_from(&locals);
                 // A head gesture (s116): its segment's pose laid over the joints it turns, at its
                 // weight (the game lerps the joints' transforms, 0x1404177a0).
                 if let Some((segment, rate, w, since)) = play.stage.characters.get(&a.who).and_then(|b| b.head) {

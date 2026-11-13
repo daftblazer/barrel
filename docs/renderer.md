@@ -618,6 +618,18 @@ No button quits (Escape). `barrel-view --field auto /dev/null --pad-test` prints
 presses and sticks for ten seconds without a window. Not yet the game's: which button does what
 in the field (the game's own key config is not read).
 
+## Motion blends
+
+A character's new motion blends in over the time its command gives (event motions; gestures
+0.2 s; her gait, jump and strike 0.15 s), the old motion running on under it. When a switch
+comes while a blend is still running, or a gesture moves on to the next division of the same
+motion, the new motion blends out of the pose last shown instead, so the pose never jumps:
+dropping a half-done blend snapped a joint 30 units in one frame in the opening (character 16,
+WALK → F_WAIT → EV_ACT_1 three frames apart). Whether the game blends out of the shown pose
+the same way is not read. `BARREL_POSE_JUMPS=N` logs every frame where an event character's
+joint moves more than N units, to find pops (a limb in normal motion moves about 5 a frame at
+30 fps).
+
 ## Advancing lines
 
 In a window an event's line waits at the end of its reading time (`event::reading_time`) for A

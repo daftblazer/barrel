@@ -25,6 +25,10 @@ likely settle them where static reading failed.
     then ends the line (and its voice) at once. Auto mode (Y / T) goes on by itself after the
     line's voice. The game's own auto-mode button and timing are not read yet.
 - Some animation transitions don't transition smoothly
+  - Partly fixed (2026-11-13): a motion switch during a running blend dropped the half-done
+    blend (a 30-unit snap in the opening), and a gesture's next division of the same motion
+    switched with no blend at all; both now blend out of the pose last shown, in events and
+    for her walk / run / stand. If you still see a pop, note where (scene and moment).
 - After each dialogue, the text box flickers. Likely disappearing for a frame then reappearing. 
   - Fixed (2026-11-13): pressing A moved the event a tick past the line's end, and the next
     line came a tick later, so the box was gone for a frame. The window now stays up, empty,
