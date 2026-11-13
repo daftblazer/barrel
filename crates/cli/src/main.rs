@@ -589,6 +589,8 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     let (mut meshes, mut triangles, mut bad_meshes) = (0usize, 0usize, Vec::new());
     let mut texture_formats: std::collections::BTreeMap<String, usize> = Default::default();
     let mut bad_textures = 0usize;
+    let (mut skins, mut skin_mismatch, mut missing_joints, mut bind_errors) = (0usize, 0usize, 0usize, Vec::<f32>::new());
+    let mut posed_files: std::collections::BTreeMap<String, usize> = Default::default();
     let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
     for f in &files {
         let raw = read(f)?;
@@ -602,6 +604,27 @@ fn pssg_scan(dir: &Path) -> Result<()> {
         match barrel_formats::pssg::Pssg::parse(&d) {
             Ok(p) => {
                 ok += 1;
+                let joints = p.joints();
+                for skin in p.skins() {
+                    skins += 1;
+                    if skin.joints.len() != skin.inverse_binds.len() {
+                        skin_mismatch += 1;
+                        continue;
+                    }
+                    // In the bind pose each joint's world matrix undoes its inverse bind matrix.
+                    for (j, inv) in skin.joints.iter().zip(&skin.inverse_binds) {
+                        let Some(joint) = joints.iter().find(|k| k.name == *j) else {
+                            missing_joints += 1;
+                            continue;
+                        };
+                        let m = barrel_formats::pssg::mul(inv, &joint.world);
+                        let off = m.iter().zip(barrel_formats::pssg::IDENTITY).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+                        bind_errors.push(off);
+                        if off > 0.01 {
+                            *posed_files.entry(f.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string()).or_default() += 1;
+                        }
+                    }
+                }
                 for t in p.textures() {
                     *texture_formats.entry(t.format.clone()).or_default() += 1;
                     if t.to_rgba8().is_some_and(|px| px.len() != (t.width * t.height * 4) as usize) {
@@ -627,6 +650,16 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     }
     println!("{} PSSG files: {ok} read, {} failed", files.len(), failed.len());
     println!("{meshes} meshes, {triangles} triangles; {} with an index past their vertices", bad_meshes.len());
+    bind_errors.sort_by(f32::total_cmp);
+    let pct = |q: f32| bind_errors.get(((bind_errors.len() as f32 - 1.0) * q) as usize).copied().unwrap_or(0.0);
+    println!(
+        "{skins} skins ({skin_mismatch} with joints and matrices in other counts, {missing_joints} joints not found); inverse bind × joint world off the identity by at most: median {}, 99% {}, max {}",
+        pct(0.5),
+        pct(0.99),
+        pct(1.0)
+    );
+    let off = bind_errors.iter().filter(|&&e| e > 0.01).count();
+    println!("  {off} of {} joints off by more than 0.01, in {} files: {:?}", bind_errors.len(), posed_files.len(), posed_files.iter().take(8).collect::<Vec<_>>());
     println!("textures by format: {texture_formats:?}; {bad_textures} that did not decode to their size");
     for b in bad_meshes.iter().take(5) {
         println!("  {b}");

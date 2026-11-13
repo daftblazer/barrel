@@ -1244,8 +1244,7 @@ its mesh by `indices="#<data source>"`. `barrel pssg-obj` places each mesh so. A
 meshes are already in place (their transforms are the identity: `PC00J_MODEL` comes out the
 same); a field map's are spread over it (`L_POINT_DLC_02_D`: 201 render nodes, a ground grid
 with its props gathered at the middle, the sky sphere (`LAYER_020SKY`) half a million units
-out). That the order is the game's is taken from the scene coming out whole, not checked
-against the game.
+out). The order is confirmed by the skins below.
 
 **Textures** (`Pssg::textures`, `barrel pssg-textures FILE OUTDIR`): a `TEXTURE` node has
 `width`, `height`, `texelFormat` and `numberMipMapLevels`, and a `TEXTUREIMAGEBLOCK` whose
@@ -1255,4 +1254,16 @@ the source file's name (`PC00J_Body.dds`). Over Ayesha's files: 4,647 `dxt1`, 1,
 `dxt3` (BC2: `bc::decode_bc2`) and 6 `ui8x4` (uncompressed, its byte order not read yet); every
 compressed one decodes to its size, and Ayesha's body atlas and eyes come out as drawn.
 
-Skins, materials and motions are not read yet.
+**Skeletons** (`Pssg::joints`, `Pssg::skins`): the joints are `JOINTNODE`s in the scene tree
+(`B_0_Base`, `B_0_Pelvis`, ...), placed by their `TRANSFORM`s like any node. A `SKINNODE`
+(`skeleton="#<id>"`) lists its palette as `SKINJOINT joint="#<joint>"` children, in order, and
+the `SKELETON` it names (in a `LIBRARY`) holds as many `INVERSEBINDMATRIX`es (16 big-endian
+floats). The skinned mesh is drawn through the `SKINNODE`'s `MODIFIERNETWORKINSTANCE`
+(`network="PSSGInternalDatabase#skinTransformLocal"`), its streams `SkinIndices` (palette
+slots, `uchar4`) and `SkinWeights` (`float4`). Over Ayesha's 2,444 skins every joint is found
+and every palette matches its skeleton's count; and inverse bind × the joint's world matrix is
+the identity (median off by 0.00003) for 25,286 of 27,386 joints, which settles the matrix
+order (row vectors, a parent's matrix applied after its child's). The rest are in 74 files,
+effects (`E3D_*`) and a few monsters (`MOB03A_MODEL`), whose stored pose is not the bind pose.
+
+Materials and motions are not read yet.

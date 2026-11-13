@@ -136,12 +136,12 @@ pub fn decode_bc2(src: &[u8], width: usize, height: usize) -> Vec<u8> {
             let Some(b) = src.get(at..at + 16) else { return out };
             let colors = color_block(&b[8..], false);
             let alpha = u64::from_le_bytes(b[..8].try_into().unwrap());
-            for i in 0..16 {
+            for (i, &color) in colors.iter().enumerate() {
                 let (x, y) = (bx * 4 + i % 4, by * 4 + i / 4);
                 if x >= width || y >= height {
                     continue;
                 }
-                let mut px = colors[i];
+                let mut px = color;
                 px[3] = ((alpha >> (4 * i)) & 0xf) as u8 * 17;
                 out[(y * width + x) * 4..][..4].copy_from_slice(&px);
             }

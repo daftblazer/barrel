@@ -91,6 +91,41 @@ impl<'a> Pssg<'a> {
     }
 }
 
+pub const IDENTITY: [f32; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+
+/// The product of two matrices of 16 floats, row vectors (`a` applied first).
+pub fn mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+    let mut m = [0.0; 16];
+    for r in 0..4 {
+        for c in 0..4 {
+            m[r * 4 + c] = (0..4).map(|k| a[r * 4 + k] * b[k * 4 + c]).sum();
+        }
+    }
+    m
+}
+
+/// Sixteen big-endian floats.
+fn matrix(d: &[u8]) -> [f32; 16] {
+    std::array::from_fn(|k| f32::from_be_bytes(d[4 * k..4 * k + 4].try_into().unwrap()))
+}
+
+/// A joint of a PSSG skeleton (`Pssg::joints`).
+#[derive(Clone, Debug)]
+pub struct Joint {
+    pub name: String,
+    pub parent: Option<usize>,
+    pub world: [f32; 16],
+}
+
+/// A skin (`Pssg::skins`): the joints its palette names, in order, and their inverse bind
+/// matrices.
+#[derive(Clone, Debug)]
+pub struct Skin {
+    pub name: String,
+    pub joints: Vec<String>,
+    pub inverse_binds: Vec<[f32; 16]>,
+}
+
 /// A texture of a PSSG file (`Pssg::textures`).
 #[derive(Clone, Debug)]
 pub struct Texture<'a> {
@@ -163,26 +198,11 @@ impl Pssg<'_> {
     /// nodes' `TRANSFORM`s (16 big-endian floats, row vectors: the translation in the last row)
     /// multiplied from the root down.
     pub fn placements(&self) -> Vec<(String, [f32; 16])> {
-        const IDENTITY: [f32; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
-        fn mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
-            let mut m = [0.0; 16];
-            for r in 0..4 {
-                for c in 0..4 {
-                    m[r * 4 + c] = (0..4).map(|k| a[r * 4 + k] * b[k * 4 + c]).sum();
-                }
-            }
-            m
-        }
         let mut out = Vec::new();
         let mut stack: Vec<(&Node, [f32; 16])> = vec![(&self.root, IDENTITY)];
         while let Some((n, parent)) = stack.pop() {
             let kind = self.name(n.kind);
-            let local = n
-                .children
-                .iter()
-                .find(|c| self.name(c.kind) == "TRANSFORM" && c.data.len() == 64)
-                .map(|t| std::array::from_fn(|k| f32::from_be_bytes(t.data[4 * k..4 * k + 4].try_into().unwrap())));
-            let world = match (kind.ends_with("NODE"), local) {
+            let world = match (kind.ends_with("NODE"), self.transform(n)) {
                 (true, Some(l)) => mul(&l, &parent),
                 _ => parent,
             };
@@ -222,6 +242,54 @@ impl Pssg<'_> {
                 })
             })
             .collect()
+    }
+
+    /// The joints (`JOINTNODE`s) in tree order: name, parent (its place in the list) and world
+    /// matrix, their `TRANSFORM`s multiplied from the root down as [`Pssg::placements`] does.
+    pub fn joints(&self) -> Vec<Joint> {
+        let mut out = Vec::new();
+        let mut stack: Vec<(&Node, [f32; 16], Option<usize>)> = vec![(&self.root, IDENTITY, None)];
+        while let Some((n, parent, parent_joint)) = stack.pop() {
+            let kind = self.name(n.kind);
+            let world = match (kind.ends_with("NODE"), self.transform(n)) {
+                (true, Some(l)) => mul(&l, &parent),
+                _ => parent,
+            };
+            let mut here = parent_joint;
+            if kind == "JOINTNODE" {
+                out.push(Joint { name: self.attr_str(n, "id").unwrap_or("").to_string(), parent: parent_joint, world });
+                here = Some(out.len() - 1);
+            }
+            for c in n.children.iter().rev() {
+                stack.push((c, world, here));
+            }
+        }
+        out
+    }
+
+    /// The skins: each `SKINNODE`'s joints in palette order (`SKINJOINT joint="#<name>"`) and its
+    /// `SKELETON`'s inverse bind matrices, one for each.
+    pub fn skins(&self) -> Vec<Skin> {
+        let mut all = Vec::new();
+        self.walk(&self.root, &mut all);
+        let skeletons: std::collections::HashMap<&str, &Node> =
+            all.iter().filter(|n| self.name(n.kind) == "SKELETON").filter_map(|n| Some((self.attr_str(n, "id")?, *n))).collect();
+        all.iter()
+            .filter(|n| self.name(n.kind) == "SKINNODE")
+            .map(|n| {
+                let joints = n.children.iter().filter(|c| self.name(c.kind) == "SKINJOINT").filter_map(|c| self.attr_str(c, "joint")).map(|j| j.trim_start_matches('#').to_string()).collect();
+                let inverse_binds = self
+                    .attr_str(n, "skeleton")
+                    .and_then(|k| skeletons.get(k.trim_start_matches('#')))
+                    .map(|k| k.children.iter().filter(|c| self.name(c.kind) == "INVERSEBINDMATRIX" && c.data.len() == 64).map(|c| matrix(c.data)).collect())
+                    .unwrap_or_default();
+                Skin { name: self.attr_str(n, "id").unwrap_or("").to_string(), joints, inverse_binds }
+            })
+            .collect()
+    }
+
+    fn transform(&self, n: &Node) -> Option<[f32; 16]> {
+        n.children.iter().find(|c| self.name(c.kind) == "TRANSFORM" && c.data.len() == 64).map(|t| matrix(t.data))
     }
 
     /// Every mesh in the file (its vertex data big-endian like the rest: a unit normal and a
@@ -349,6 +417,19 @@ mod tests {
 
     fn be(v: u32) -> [u8; 4] {
         v.to_be_bytes()
+    }
+
+    #[test]
+    fn matrices_compose_as_row_vectors() {
+        // A translation by (1, 2, 3) after a scale by 2: the point (1, 1, 1) goes to (3, 4, 5).
+        let mut scale = IDENTITY;
+        (scale[0], scale[5], scale[10]) = (2.0, 2.0, 2.0);
+        let mut shift = IDENTITY;
+        shift[12..15].copy_from_slice(&[1.0, 2.0, 3.0]);
+        let m = mul(&scale, &shift);
+        let p: Vec<f32> = (0..3).map(|c| m[c] + m[4 + c] + m[8 + c] + m[12 + c]).collect();
+        assert_eq!(p, [3.0, 4.0, 5.0]);
+        assert_eq!(mul(&IDENTITY, &m), m);
     }
 
     #[test]
