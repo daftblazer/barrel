@@ -973,6 +973,18 @@ give the first map's red to layer 0, green to layer 2 and blue to layer 1. So a 
 as the overlaps of its layers two at a time, each overlap its own index range. TOWN_01 (one
 layer): a depth draw and one lit draw of one tile.
 
+**Vertices and indices.** After the draws: 8 bytes per patch (`fba0`), then the vertices
+(the byte count at 0x40, 16 bytes each) and the indices (u16, the byte count at 0x44); they
+end exactly at the layer textures' offset (0x10) in TOWN_01, AREA_08_02 and AREA_01_01, so the
+block is read whole. A vertex is `{s16 x, s16 height, s16 z, s16 0, u8 × 4 normal, u8 × 4
+colour}`: x and z count cells (times the cell size at 0x84: 100 in AREA_01_01 over 0 to 64,
+250 in AREA_08_02 over 4 to 20 and 0 to 60), the height spans the whole s16 range (presumably
+mapped onto the root node's height bounds), the colour is white (`ff ff ff 80`) in all read.
+A draw's indices count from its own first vertex (AREA_01_01's highest is 1134 of 3222
+vertices). The vertex program turns the integers to floats and scales them by `scale`. So the
+terrain is its own mesh, not the heightmap: TOWN_01's is one 500 × 500 square (cells 3 to 4,
+0 to 1) of 8 vertices, the rest of its ground being models.
+
 The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
 `0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
 `0x14066f900`, `0x14066fc90`, `0x14066fc50`, `0x14066f940`, `0x14066f690`, `0x14066f6d0` (the
