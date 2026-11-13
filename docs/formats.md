@@ -833,9 +833,19 @@ The layer tiles' alpha is 0 throughout, so alpha means something other than opac
 The settings block starts with layer records at 0x1c (file offset 0xb4), 32 bytes each and
 one per layer texture: `{u16 layer, u16 0xffff, u16 0, u8 n, u8 n, f32 u scale, f32 v
 scale, 16 bytes of 0}`. The scale is 1 / (100 × n): the layer repeats every n cells.
-Fields with more layers than the two maps' six channels can weight need the block between
-0x98 and the layer textures (layer settings and a tree of patches with their bounds),
-which is not decoded yet.
+The blend maps do not pair with the layers as two maps for six: over the 141 terrains the
+count of maps does not follow the count of layers (10 layers with 1 map, 4 layers with 5;
+`barrel ktf-scan` prints the pairs). So which map and channel weights which layer is set per
+patch, by the block between 0x98 and the layer textures. Its layout, as seen in `TOWN_04` (6
+layers, 6 maps), is not decoded yet:
+
+- **Header:** at 0x98, u32 0x310, u32 0, u32 7, then small u16 pairs.
+- **Layer records:** at 0xb4, as above.
+- **Records of about 48 bytes:** from about 0x16c, each with a small float (0.015, 0.016), a
+  height-like float (487 to 534) and a 6.
+- **A quadtree:** a root with bounds centred on (10000, ~508, 10000), half the field's 20,000
+  units on a side, then nodes of half-size 5,000, 2,500 ... Each holds 6 and 0x0b, child
+  indices (-1 where none), and lists like `2 3 4 5` (the layers a patch uses, presumably).
 
 ### Placement lists (`*.opl2`)
 
