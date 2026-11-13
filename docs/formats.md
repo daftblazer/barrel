@@ -1234,5 +1234,15 @@ skinned mesh `SkinnableVertex`, `SkinnableNormal`, `SkinIndices`, `SkinWeights`)
 `DATABLOCKDATA`. The vertex data is big-endian like the rest (a unit normal and a white vertex
 colour read so). Over Ayesha's 1,768 files that is 45,941 meshes, 13,953,259 triangles, every
 index within its mesh's vertices. Characters stand with z up (Ayesha's `PC00J_MODEL`: 164.5
-units tall, arms out). The node transforms that place the pieces are not applied yet, nor the
-skins, materials or motions.
+units tall, arms out).
+
+**Placement** (`Pssg::placements`): the scene nodes (`ROOTNODE`, `NODE`, `RENDERNODE`,
+`JOINTNODE`, `SKINNODE`) each hold a `TRANSFORM` of 16 big-endian floats, taken as row vectors
+(the translation in the last row) and multiplied from the root down; an instance under a node
+(`RENDERSTREAMINSTANCE`, or `MODIFIERNETWORKINSTANCE` for the morphed and skinned ones) names
+its mesh by `indices="#<data source>"`. `barrel pssg-obj` places each mesh so. A character's
+meshes are already in place (their transforms are the identity: `PC00J_MODEL` comes out the
+same); a field map's are spread over it (`L_POINT_DLC_02_D`: 201 render nodes, a ground grid
+with its props gathered at the middle, the sky sphere (`LAYER_020SKY`) half a million units
+out). That the order is the game's is taken from the scene coming out whole, not checked
+against the game. Skins, materials and motions are not read yet.

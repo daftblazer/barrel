@@ -135,6 +135,46 @@ impl Pssg<'_> {
         }
     }
 
+    /// Where each mesh is drawn: the data source an instance names (`RENDERSTREAMINSTANCE` or
+    /// `MODIFIERNETWORKINSTANCE`, `indices="#<source>"`) with its node's world matrix, the scene
+    /// nodes' `TRANSFORM`s (16 big-endian floats, row vectors: the translation in the last row)
+    /// multiplied from the root down.
+    pub fn placements(&self) -> Vec<(String, [f32; 16])> {
+        const IDENTITY: [f32; 16] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        fn mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+            let mut m = [0.0; 16];
+            for r in 0..4 {
+                for c in 0..4 {
+                    m[r * 4 + c] = (0..4).map(|k| a[r * 4 + k] * b[k * 4 + c]).sum();
+                }
+            }
+            m
+        }
+        let mut out = Vec::new();
+        let mut stack: Vec<(&Node, [f32; 16])> = vec![(&self.root, IDENTITY)];
+        while let Some((n, parent)) = stack.pop() {
+            let kind = self.name(n.kind);
+            let local = n
+                .children
+                .iter()
+                .find(|c| self.name(c.kind) == "TRANSFORM" && c.data.len() == 64)
+                .map(|t| std::array::from_fn(|k| f32::from_be_bytes(t.data[4 * k..4 * k + 4].try_into().unwrap())));
+            let world = match (kind.ends_with("NODE"), local) {
+                (true, Some(l)) => mul(&l, &parent),
+                _ => parent,
+            };
+            if kind == "RENDERSTREAMINSTANCE" || kind == "MODIFIERNETWORKINSTANCE" {
+                if let Some(src) = self.attr_str(n, "indices") {
+                    out.push((src.trim_start_matches('#').to_string(), world));
+                }
+            }
+            for c in &n.children {
+                stack.push((c, world));
+            }
+        }
+        out
+    }
+
     /// Every mesh in the file (its vertex data big-endian like the rest: a unit normal and a
     /// white vertex colour read so, noise the other way round).
     pub fn meshes(&self) -> Vec<Mesh> {
@@ -155,9 +195,9 @@ impl Pssg<'_> {
                     "RENDERINDEXSOURCE" => {
                         let data = c.children.iter().find(|d| kind(d) == "INDEXSOURCEDATA").map_or(&[][..], |d| d.data);
                         let raw: Vec<u32> = match self.attr_str(c, "format") {
-                            Some("uint") => data.chunks_exact(4).map(|w| u32::from_be_bytes([w[0], w[1], w[2], w[3]])).collect(),
+                            Some("uint") => data.as_chunks::<4>().0.iter().map(|w| u32::from_be_bytes(*w)).collect(),
                             Some("uchar") => data.iter().map(|&b| u32::from(b)).collect(),
-                            _ => data.chunks_exact(2).map(|w| u32::from(u16::from_be_bytes([w[0], w[1]]))).collect(),
+                            _ => data.as_chunks::<2>().0.iter().map(|w| u32::from(u16::from_be_bytes(*w))).collect(),
                         };
                         mesh.indices = match self.attr_str(c, "primitive") {
                             Some("triangles") => raw,

@@ -505,7 +505,8 @@ fn pssg_meshes(file: &Path) -> Result<()> {
 }
 
 /// Writes a PSSG file's meshes as Wavefront OBJ (positions, texture coordinates and normals
-/// where the mesh has them; each mesh a group), as they are in the file (no node transforms).
+/// where the mesh has them; each mesh a group), each placed by the node that draws it (normals
+/// left as they are).
 fn pssg_obj(file: &Path, out: &Path) -> Result<()> {
     use std::fmt::Write as _;
     let raw = read(file)?;
@@ -513,8 +514,19 @@ fn pssg_obj(file: &Path, out: &Path) -> Result<()> {
     let p = barrel_formats::pssg::Pssg::parse(&d)?;
     let mut s = String::new();
     let mut base = 1usize;
+    let placed = p.placements();
     for m in p.meshes() {
-        let pos = m.positions();
+        // Placed by the node that draws it (the first, when several do), else as it is.
+        let world = placed.iter().find(|(src, _)| *src == m.name).map(|(_, w)| *w);
+        let pos: Vec<Vec<f32>> = m
+            .positions()
+            .iter()
+            .map(|v| match world {
+                Some(w) => (0..3).map(|c| v[0] * w[c] + v[1] * w[4 + c] + v[2] * w[8 + c] + w[12 + c]).collect(),
+                None => v.clone(),
+            })
+            .collect();
+        let pos = &pos[..];
         let uv = m.stream("ST").filter(|v| v.len() == pos.len());
         let nrm = m.stream("Normal").or_else(|| m.stream("SkinnableNormal")).filter(|v| v.len() == pos.len());
         writeln!(s, "g {}", m.name)?;
