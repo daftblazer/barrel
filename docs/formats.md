@@ -900,7 +900,11 @@ then one with -1 on the axis) and, at 0x110, a list of increasing offsets (0x20,
 0x6e4, 0x950, 0xddc), presumably its parts. Colours and sizes follow (runs of 1.0, 0.1, 40.0).
 The parts' layout is not decoded yet. The executable reads the 0x14-byte header
 (`0x1406162f0`), checks it (`0x140618f10`: `XF1G`, version at least `5200`), allocates that
-object and parses the rest with `0x140615be0`, whose work is in `0x140611d60` (called twice).
+object and constructs it with `0x140615be0` (the effect object, vtable `0x14097f1c8`, its
+parts at +0xa0, 0xe8 bytes each, built by `0x140611d60`, vtable `0x14097f140`). The data is
+read by the object's own methods: `0x140617180` sets its flags (+0x9c) from the header and runs
+`0x140612780` on each part. The classes are the framework's (`elixir::EXEffectObject`,
+`EXEffectManager`) under the game's `EffectObject` and `EffectManager`.
 
 ### Placement lists (`*.opl2`)
 
