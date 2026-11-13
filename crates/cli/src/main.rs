@@ -68,6 +68,7 @@ usage:
   barrel world-places EXE       the world map's places: tags, route links, names, descriptions
   barrel travel EXE FROM TO     a trip on the world map between two marks (T0, A0, A0p0 ...): routes, days, fields
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
+  barrel import-save INSTALL GAMEDATA.pcsave   the game's save as a Barrel save (stdout), for its Load Game
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
   barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
@@ -185,6 +186,7 @@ fn main() -> ExitCode {
             Ok(n) => gimmicks(Path::new(exe), Some(n)),
             Err(_) => Err("the area is a number".into()),
         },
+        ["import-save", install, save] => import_save(Path::new(install), Path::new(save)),
         ["routes", exe] => routes(Path::new(exe), None),
         ["routes", exe, save] => routes(Path::new(exe), Some(Path::new(save))),
         ["gestures", exe, numbers @ ..] => gestures(Path::new(exe), numbers),
@@ -1540,6 +1542,103 @@ fn voice_map(install: &Path) -> Result<()> {
 
 /// Rebuilds each `Party` record's stats in use (`equipment::in_use`) and compares them with
 /// the saved ones.
+/// The game's save as a Barrel save (`barrel_game::session::Session::load`'s text): the lead,
+/// the date, money, the party (levels, experience, equipment), the basket, the items known, the
+/// places visited, opened and worn, the field effect, the events seen and the event flags. The
+/// game's save keeps no field position Barrel reads yet: it loads on the area map of the region
+/// the party is in (`worldmap/chara`), so the Barrel save starts in that place's field, at its
+/// arrival spot. The container, the battle item grids, requests, shops and the library's other
+/// lists are not carried over yet.
+fn import_save(install: &Path, file: &Path) -> Result<()> {
+    use barrel_formats::save::{self, Body};
+    let data = read(file)?;
+    let body = save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+    let state = save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+    let records = save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
+    let s = save::summary(&records);
+    let exe = read(&install.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let places = barrel_formats::world::places(&pe, barrel_formats::world::PLACES_EN).ok_or("no place table")?;
+    let group = |name: &str, child: &str| -> Option<Vec<u8>> {
+        let r = records.iter().find(|r| r.name == name)?.child(child)?;
+        match &r.body {
+            Body::Data(d) | Body::Raw(d) => Some(d.to_vec()),
+            Body::Group(_) => None,
+        }
+    };
+    // Where the party is: its place on the world map, and the field that place opens.
+    let (place, _) = s.world_position.ok_or("no worldmap/chara record")?;
+    let place = usize::try_from(place).ok().filter(|&k| k < places.len()).ok_or("the party's place is not in the table")?;
+    let names = barrel_formats::world::point_names(&pe).ok_or("no world map points")?;
+    let field = names
+        .iter()
+        .position(|n| barrel_formats::world::point_tag(n).as_deref() == Some(places[place].tag.as_str()))
+        .and_then(|point| barrel_formats::world::point_maps(&pe)?.into_iter().find(|(p, _, _)| *p as usize == point).map(|(_, m, _)| m))
+        .ok_or_else(|| format!("place {place} ({}) opens no field", places[place].name))?;
+    let arrival = barrel_formats::world::arrival(&pe, field).ok_or_else(|| format!("field {field} has no arrival spot"))?;
+    eprintln!("the party is at place {place} ({}): field {field}", places[place].name);
+    let mut out = format!(
+        "barrel-save 1\nlead {}\nfield {field} {} {}\ntoday {}\nmoney {}\n",
+        if s.hero == Some(1) { "logy" } else { "escha" },
+        arrival.position[0] * 100.0,
+        arrival.position[2] * 100.0,
+        s.day.ok_or("no date record")?,
+        s.money.unwrap_or(0),
+    );
+    // The party in member order: level, experience, and the four equipped items (+0x19c, four
+    // item units; an empty slot's serial is 0xffff).
+    let party = records.iter().find(|r| r.name == "party").ok_or("no party record")?;
+    let Body::Group(children) = &party.body else { return Err("party is not a group".into()) };
+    for (c, r) in children.iter().filter(|r| r.name == "Party").enumerate() {
+        let (Body::Data(d) | Body::Raw(d)) = &r.body else { continue };
+        let m = save::member(d).ok_or("a short Party record")?;
+        let kit: Vec<String> = (0..4)
+            .map(|k| {
+                let at = 0x19c + k * save::ITEM_UNIT;
+                d.get(at..at + save::ITEM_UNIT).and_then(|u| save::item_units(u).into_iter().next()).map_or(-1, |u| i32::from(u.item)).to_string()
+            })
+            .collect();
+        out += &format!("member {c} {} {} {}\n", m.level, m.exp, kit.join(","));
+    }
+    for u in &s.basket {
+        let traits: Vec<String> = u.traits.iter().filter(|&&t| t >= 0).map(i16::to_string).collect();
+        // One line per item in the stack (the save's +0x22 count), as Barrel's basket holds them.
+        for _ in 0..u.counts[3].max(1) {
+            out += &format!("item {} {}{}\n", u.item, u.quality, if traits.is_empty() { String::new() } else { format!(" {}", traits.join(",")) });
+        }
+    }
+    let known: Vec<String> = s.knowledge.item.iter().enumerate().filter(|(_, l)| **l >= 2).map(|(i, _)| i.to_string()).collect();
+    if !known.is_empty() {
+        out += &format!("known {}\n", known.join(","));
+    }
+    // The places: opened (a gimmick place no longer shut), worn (an obstacle's damage so far,
+    // its durability less what is left) and visited (knowledge 15).
+    let states = group("worldmap", "pointerStatus").map(|d| save::place_states(&d)).unwrap_or_default();
+    for (k, (p, &(left, shut, _))) in places.iter().zip(&states).enumerate() {
+        match p.extra {
+            [0, _] if !shut => out += &format!("opened {k}\n"),
+            [1, n] if left < n => out += &format!("worn {k} {}\n", n - left.max(0)),
+            _ => {}
+        }
+    }
+    for (k, &v) in s.place_knowledge.iter().enumerate() {
+        if v == 15 {
+            out += &format!("visited {k}\n");
+        }
+    }
+    if let Some((gauge, mode, [a, b, c])) = group("fieldmap", "m_userDataFieldMapData").as_deref().and_then(save::field_effect) {
+        out += &format!("field-effect {gauge} {mode} {a} {b} {c}\n");
+    }
+    for (e, r) in s.events.iter().enumerate().filter(|(_, r)| r.seen) {
+        out += &format!("seen {e} {}\n", r.day);
+    }
+    for (f, v) in s.event_flags.iter().enumerate().filter(|(_, v)| **v != 0) {
+        out += &format!("flag {f} {v}\n");
+    }
+    print!("{out}");
+    Ok(())
+}
+
 fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_formats::save::Summary) -> Result<()> {
     use barrel_formats::battle_data as bd;
     use barrel_game::equipment::{self, ItemRow, Tables, STATS};

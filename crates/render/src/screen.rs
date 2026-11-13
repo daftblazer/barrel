@@ -50,6 +50,14 @@ pub fn run<S: Clone + PartialEq, O>(
         d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(target.pass).framebuffer(target.framebuffers[image]).render_area(area), vk::SubpassContents::INLINE);
         d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: w, height: h, min_depth: 0.0, max_depth: 1.0 }]);
         d.cmd_set_scissor(cb, 0, &[area]);
+        // The pass leaves the image's old contents undefined (the scene's post pass covers
+        // every pixel); a screen whose pieces leave gaps (the Load Game list) shows black there,
+        // not whatever the memory held.
+        d.cmd_clear_attachments(
+            cb,
+            &[vk::ClearAttachment { aspect_mask: vk::ImageAspectFlags::COLOR, color_attachment: 0, clear_value: vk::ClearValue { color: vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] } } }],
+            &[vk::ClearRect { rect: area, base_array_layer: 0, layer_count: 1 }],
+        );
         layer.record(d, cb, target.width, target.height);
         d.cmd_end_render_pass(cb);
     };

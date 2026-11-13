@@ -120,6 +120,11 @@ only while there is no `~/.config/barrel/graphics.conf`); after that the in-game
 decides. The engine's log is `~/.local/state/barrel/barrel.log`, saves are in
 `~/.local/share/barrel/saves`.
 
+A save from the original game carries over with `barrel import-save INSTALL GAMEDATA00.pcsave >
+~/.local/share/barrel/saves/slot01.save` (the lead, date, money, party and equipment, basket,
+known items, map progress, field effect, events seen and flags; Barrel starts it in the field of
+the place the party is at, at its arrival spot, where the game opens that place's area map).
+
 ## Third-party code
 
 Barrel's renderer carries ports of two upscalers' shaders, with their notices in the shader
