@@ -83,18 +83,6 @@ fn target(data: &[u8]) -> Result<Vec<[f32; 3]>, Error> {
         .collect())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn blend_weights_targets_from_bone_one() {
-        let set = MorphSet { layout: 0, targets: vec![vec![[1.0, 0.0, 0.0]], vec![[0.0, 2.0, 0.0]]] };
-        let out = set.blend(|bone| [9.0, 0.5, 1.0][bone]);
-        assert_eq!(out, [[0.5, 2.0, 0.0]]);
-    }
-}
-
 pub fn parse(data: &[u8]) -> Result<Vec<MorphSet>, Error> {
     if !data.starts_with(b"_H1G") {
         return Err(Error::NotThisFormat);
@@ -130,4 +118,16 @@ pub fn parse(data: &[u8]) -> Result<Vec<MorphSet>, Error> {
         out.push(MorphSet { layout, targets });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blend_weights_targets_from_bone_one() {
+        let set = MorphSet { layout: 0, targets: vec![vec![[1.0, 0.0, 0.0]], vec![[0.0, 2.0, 0.0]]] };
+        let out = set.blend(|bone| [9.0, 0.5, 1.0][bone]);
+        assert_eq!(out, [[0.5, 2.0, 0.0]]);
+    }
 }

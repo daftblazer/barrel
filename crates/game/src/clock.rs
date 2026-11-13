@@ -76,10 +76,10 @@ mod tests {
     #[test]
     fn ticks_are_the_same_at_any_frame_rate() {
         // One second at 144 Hz and at 30 Hz both run 60 ticks.
-        for hz in [144.0, 30.0, 60.0, 59.94] {
+        for hz in [144.0_f64, 30.0, 60.0, 59.94] {
             let mut c = Clock::default();
             let mut ran = 0;
-            let frames = (hz as f64).round() as usize;
+            let frames = hz.round() as usize;
             for _ in 0..frames {
                 let f = c.advance(1.0 / hz);
                 assert!((0.0..=1.0).contains(&f.alpha));
