@@ -1369,7 +1369,9 @@ Code asking for event 8 (`PROGRAM_EXEC`, group 29, value 8) starts `EVENT_MM01_O
 (group 11, value 8, with 8 seen) starts `EVENT_MM01_OP1_121` (its check: 8 seen, 10 not, ended
 by 8). That one's end starts `EVENT_MM01_OP1_131`.
 
-`barrel event-chain ROOT START [N]` follows that through (`event_start::Story`):
+`barrel play-event FILE --chain [LANG]` plays the events in that order, one file after the
+next (from `EVENT_MM01_OP1_111`: 111, 121, 131, 300, 310). `barrel event-chain ROOT START [N]`
+lists the order only (`event_start::Story`):
 
 1. Each event is marked seen and its process data applied: seen marks (`0x77120001`), flags
    set (`0x77130004`) and added to (`0x77130002`, `0x14035f6b0` adds).

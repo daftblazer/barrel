@@ -77,6 +77,7 @@ usage:
   barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
   barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
+  barrel play-event FILE.ebd --chain [LANG]  the event, then each one the story starts after it
   barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)
   barrel play-event FILE.ebd --stage [--fps HZ]  run an event on a clock and print where its characters and camera are
       (--fps: drive it as a renderer at HZ would, and print the end state)";
@@ -219,6 +220,8 @@ fn main() -> ExitCode {
         ["play-macro", script, name, args @ ..] => play_macro(Path::new(script), name, args, false),
         ["play-event", file, "--stage"] => stage_event(Path::new(file), None),
         ["play-event", file, "--stage", "--fps", hz] => stage_event(Path::new(file), Some(hz)),
+        ["play-event", file, "--chain"] => play_chain(Path::new(file), None),
+        ["play-event", file, "--chain", lang] => play_chain(Path::new(file), Some(lang)),
         ["play-event", file] => play_event(Path::new(file), None, false),
         ["play-event", file, "--timed"] => play_event(Path::new(file), None, true),
         ["play-event", file, lang] => play_event(Path::new(file), Some(lang), false),
@@ -2748,6 +2751,42 @@ fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
 fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     play(file, event, lang, timed)
+}
+
+/// Plays an event, then the events the story starts after it in a new game, one after another
+/// (`event_start::Story`: each event seen and its process data applied, its end firing group
+/// 11), until none starts.
+fn play_chain(file: &Path, lang: Option<&str>) -> Result<()> {
+    use barrel_game::event_start as es;
+    let root = file.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the event is not inside a game install")?.to_path_buf();
+    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let process = barrel_formats::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
+    let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
+    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
+    let lists = es::listings(&checks);
+    let mut story = es::Story::default();
+    let mut rng = barrel_game::rng::Rng::seeded(1);
+    let mut path = file.to_path_buf();
+    for _ in 0..100 {
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+        let event = names.iter().position(|n| *n == stem).ok_or_else(|| format!("{stem}: not an EVENT_* name"))?;
+        println!("=== {stem}");
+        play_event(&path, lang, false)?;
+        story.play(event, process.get(event).map_or(&[][..], |p| p.as_slice()));
+        let Some(next) = story.next(&checks, &lists, 11, &[event as i32], &mut rng) else {
+            println!("=== (no event starts when {stem} ends)");
+            break;
+        };
+        let name = names.get(next).ok_or("event number past the enum")?;
+        // Event files sit in Event/event/<chapter>/, the chapter being the name's middle part.
+        let chapter = name.trim_start_matches("EVENT_").rsplit_once('_').map_or("", |(c, _)| c);
+        path = root.join("Event/event").join(chapter).join(format!("{name}.ebd"));
+        if !path.is_file() {
+            return Err(format!("{}: no such event file", path.display()).into());
+        }
+    }
+    Ok(())
 }
 
 /// Plays a script macro (ROOT/Script/FILE.nut's function NAME) as an event with one action,
