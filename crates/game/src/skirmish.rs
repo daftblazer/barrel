@@ -100,50 +100,144 @@ const MONSTER_SIZE: f32 = 100.0;
 /// Runs the battle until a side wins or `max_events` happened: the party are fighters 0..n,
 /// the monsters n and on, in `foes`' order, each monster as big as its entry in `foe_sizes`
 /// (`battle_data::monster_size`, its `Chara.xml` radius). Returns the events and the winning
-/// side (0 the party).
+/// side (0 the party). Every member's turn is the stand-in's ([`Skirmish::auto`]).
 pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
-    let n = party.len();
-    // The formation (`battle::party_spot`, `battle::scatter`): each member at its sector's
-    // place (its index mod 3), the monsters scattered round the centre, the biggest there.
-    let mut fighters: Vec<Fighter> = party
-        .iter()
-        .enumerate()
-        .map(|(k, m)| {
-            let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
-            f.position = crate::battle::party_spot(k as i32, k as i32 % 3);
-            f.size = m.size;
-            if let Some((hp, mp)) = m.now {
-                f.stats[stat::HP] = hp.clamp(0, f.stats[stat::MAX_HP]);
-                f.stats[stat::MP] = mp.clamp(0, f.stats[stat::MAX_MP]);
-            }
-            f
-        })
-        .collect();
-    let sizes: Vec<f32> = (0..foes.len()).map(|k| foe_sizes.get(k).copied().unwrap_or(MONSTER_SIZE)).collect();
-    let spots = crate::battle::scatter(&sizes, rng);
-    for (k, (foe, (spot, _))) in foes.iter().zip(spots).enumerate() {
-        let mut f = Fighter::new(&foe.block, 1, 999_999);
-        f.death_immune = foe.death_immune;
-        f.position = spot;
-        f.size = sizes[k];
-        fighters.push(f);
-    }
-    let mut b = Battle::new(fighters);
+    let mut s = Skirmish::new(party, foes, foe_sizes, rules, rng);
     let mut events = Vec::new();
-    // What is left of each member's items.
-    let mut left: Vec<Vec<u32>> = party.iter().map(|m| m.items.iter().map(|h| h.count).collect()).collect();
-    // Each monster's reactions still to come (its block's list; `Reaction`).
-    let mut reactions: Vec<Vec<barrel_formats::battle_data::Reaction>> = foes.iter().map(|f| f.block.reactions.clone()).collect();
-    // The side last felled by the other side (`0x141077e34`, -1 none; set to -1 as the battle
-    // starts, `0x1401b4728`).
-    let mut felled = -1;
-    while events.len() < max_events && b.winner().is_none() {
-        let before = events.len();
-        let who = b.next();
-        events.extend(b.start_turn(who));
-        if b.winner().is_some() || b.fighters[who].down() {
-            continue;
+    while events.len() < max_events && s.winner().is_none() {
+        let (who, start) = s.begin_turn();
+        events.extend(start);
+        if s.can_act(who) {
+            events.extend(s.auto(who, rng));
         }
+    }
+    (events, s.winner())
+}
+
+/// A member's command (a player's choice): the normal attack or one of the skills it may use
+/// (`Member::skills`' index), on a fighter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Command {
+    Attack { target: usize },
+    Skill { skill: usize, target: usize },
+}
+
+/// A skirmish fought a turn at a time: whoever's turn comes ([`Skirmish::begin_turn`]) acts
+/// by a command ([`Skirmish::command`], a member's) or by the stand-in and the monsters' rules
+/// ([`Skirmish::auto`]).
+pub struct Skirmish<'p, 'a> {
+    party: &'p [Member<'a>],
+    foes: &'p [Foe<'a>],
+    rules: ItemRules<'p>,
+    pub battle: Battle,
+    /// What is left of each member's items.
+    left: Vec<Vec<u32>>,
+    /// Each monster's reactions still to come (its block's list; `Reaction`).
+    reactions: Vec<Vec<barrel_formats::battle_data::Reaction>>,
+    /// The side last felled by the other side (`0x141077e34`, -1 none; set to -1 as the battle
+    /// starts, `0x1401b4728`).
+    felled: i32,
+}
+
+impl<'p, 'a> Skirmish<'p, 'a> {
+    /// The battle set up: the formation (`battle::party_spot`, `battle::scatter`): each member at
+    /// its sector's place (its index mod 3), the monsters scattered round the centre, the
+    /// biggest there.
+    pub fn new(party: &'p [Member<'a>], foes: &'p [Foe<'a>], foe_sizes: &[f32], rules: ItemRules<'p>, rng: &mut Rng) -> Self {
+        let mut fighters: Vec<Fighter> = party
+            .iter()
+            .enumerate()
+            .map(|(k, m)| {
+                let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
+                f.position = crate::battle::party_spot(k as i32, k as i32 % 3);
+                f.size = m.size;
+                if let Some((hp, mp)) = m.now {
+                    f.stats[stat::HP] = hp.clamp(0, f.stats[stat::MAX_HP]);
+                    f.stats[stat::MP] = mp.clamp(0, f.stats[stat::MAX_MP]);
+                }
+                f
+            })
+            .collect();
+        let sizes: Vec<f32> = (0..foes.len()).map(|k| foe_sizes.get(k).copied().unwrap_or(MONSTER_SIZE)).collect();
+        let spots = crate::battle::scatter(&sizes, rng);
+        for (k, (foe, (spot, _))) in foes.iter().zip(spots).enumerate() {
+            let mut f = Fighter::new(&foe.block, 1, 999_999);
+            f.death_immune = foe.death_immune;
+            f.position = spot;
+            f.size = sizes[k];
+            fighters.push(f);
+        }
+        Skirmish {
+            party,
+            foes,
+            rules,
+            battle: Battle::new(fighters),
+            left: party.iter().map(|m| m.items.iter().map(|h| h.count).collect()).collect(),
+            reactions: foes.iter().map(|f| f.block.reactions.clone()).collect(),
+            felled: -1,
+        }
+    }
+
+    pub fn winner(&self) -> Option<u8> {
+        self.battle.winner()
+    }
+
+    /// Whose turn comes next, and what its start did (poison).
+    pub fn begin_turn(&mut self) -> (usize, Vec<Event>) {
+        let who = self.battle.next();
+        let events = self.battle.start_turn(who);
+        (who, events)
+    }
+
+    /// Whether `who` acts this turn (the battle not won, `who` standing).
+    pub fn can_act(&self, who: usize) -> bool {
+        self.battle.winner().is_none() && !self.battle.fighters[who].down()
+    }
+
+    /// Whether `who` is a party member (whose turn waits for a command).
+    pub fn is_member(&self, who: usize) -> bool {
+        who < self.party.len()
+    }
+
+    /// The skills member `who` may use now: each with its MP cost and whether it can pay.
+    pub fn skills(&self, who: usize) -> Vec<(&'a Skill, i32, bool)> {
+        let mp = self.battle.fighters.get(who).map_or(0, |f| f.mp());
+        self.party.get(who).map_or(Vec::new(), |m| m.skills.iter().map(|&(s, c)| (s, c, c <= mp)).collect())
+    }
+
+    /// The monsters still standing.
+    pub fn foes_standing(&self) -> Vec<usize> {
+        (self.party.len()..self.battle.fighters.len()).filter(|&k| !self.battle.fighters[k].down()).collect()
+    }
+
+    /// Member `who` acts by `command` (a skill it cannot pay for, or a target that is not a
+    /// standing monster, falls back to the normal attack on the first one standing).
+    pub fn command(&mut self, who: usize, command: Command, rng: &mut Rng) -> Vec<Event> {
+        let before_target = self.foes_standing();
+        let fallback = before_target.first().copied().unwrap_or(self.party.len());
+        let valid = |t: usize| if before_target.contains(&t) { t } else { fallback };
+        let member = &self.party[who];
+        let mut events = Vec::new();
+        match command {
+            Command::Skill { skill, target } if self.skills(who).get(skill).is_some_and(|s| s.2) => {
+                let (s, cost) = member.skills[skill];
+                self.battle.pay_mp(who, cost);
+                events.extend(self.battle.act(who, s, None, valid(target), rng));
+            }
+            Command::Skill { target, .. } | Command::Attack { target } => events.extend(self.battle.act(who, member.attack, None, valid(target), rng)),
+        }
+        let mut all = events;
+        let from = 0;
+        react(&mut self.battle, self.foes, self.party.len(), &mut self.reactions, &mut self.felled, from, &mut all, rng);
+        all
+    }
+
+    /// `who` acts by the stand-in (a member) or its rules (a monster).
+    pub fn auto(&mut self, who: usize, rng: &mut Rng) -> Vec<Event> {
+        let (party, foes, rules, n) = (self.party, self.foes, self.rules, self.party.len());
+        let b = &mut self.battle;
+        let left = &mut self.left;
+        let mut events = Vec::new();
         // The party's target: the first monster still standing (a player's choice; this stand-in
         // works down the line).
         let foe_target = (n..b.fighters.len()).find(|&k| !b.fighters[k].down()).unwrap_or(n);
@@ -199,10 +293,9 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
             let target = target.unwrap_or(0);
             events.extend(b.act(who, skill, slot, target, rng));
         }
-        react(&mut b, foes, n, &mut reactions, &mut felled, before, &mut events, rng);
+        react(&mut self.battle, foes, n, &mut self.reactions, &mut self.felled, 0, &mut events, rng);
+        events
     }
-    let winner = b.winner();
-    (events, winner)
 }
 
 /// The reactions after an action (moment 0, `0x1401ac800`): the fighters the action struck (its
@@ -272,6 +365,33 @@ mod tests {
 
     fn skill(name: &str, wait: i32, lo: i32, hi: i32) -> Skill {
         Skill { name: name.into(), category: String::new(), wait, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: lo, max: hi, min2: 0, max2: 0 }], description: String::new() }
+    }
+
+    #[test]
+    fn a_member_acts_by_its_command() {
+        let table = [skill("Attack", 600, 1, 1), skill("Shot", 550, 5, 5)];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }, PartySkill { skill: 1, order: 1, command: 1, level: Some(1), mp: 10 }];
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let m = Member::new(block.clone(), 10, &list, &table).unwrap();
+        let claw = skill("Claw", 600, 1, 1);
+        let foe = Foe { block: StatBlock { hp: 5000, speed: 1, ..block }, normal: &claw, skills: None, death_immune: false, chara: -1 };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let party = [m];
+        let foes = [foe];
+        let mut s = Skirmish::new(&party, &foes, &[], ItemRules::default(), &mut rng);
+        let who = loop {
+            let (who, _) = s.begin_turn();
+            if s.is_member(who) && s.can_act(who) {
+                break who;
+            }
+            s.auto(who, &mut rng);
+        };
+        assert_eq!(s.skills(who).iter().map(|k| (k.0.name.as_str(), k.2)).collect::<Vec<_>>(), [("Shot", true)]);
+        let e = s.command(who, Command::Skill { skill: 0, target: 1 }, &mut rng);
+        assert!(matches!(&e[0], Event::Acted { who: 0, target: 1, skill, mp_left: 0, .. } if skill == "Shot"));
+        // Out of MP: the normal attack instead.
+        let e = s.command(who, Command::Skill { skill: 0, target: 9 }, &mut rng);
+        assert!(matches!(&e[0], Event::Acted { target: 1, skill, .. } if skill == "Attack"));
     }
 
     #[test]
