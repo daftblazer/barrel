@@ -817,15 +817,16 @@ fighter's `position`, which the skirmish sets from the formation below.
 Where fighters stand: each keeps a home spot (its model's +0x3d8; the model is the fighter's +0x10, while the fighter's own +0x3d8 starts a pointer list) that its position (+0x230)
 returns to. The battle's setup hands over a list of `{fighter, position}` records (read at
 `0x14019ddd0`: each home spot set from the record, the fighter's size +0x35c stored beside it),
-so the formation comes from whoever builds the battle (the field encounter, not read yet). The
+so the formation comes from whoever builds the battle (the field encounter: "The battle setup" below). The
 setup travels as the battle scene's request (the scene factory around `0x1402946b0` makes the
 0x1468-byte battle, `0x14019eec0`, from the request's +0x40 and +0x48; the battle keeps the
 setup at +0xf50). The setup holds the party as 8-byte entries from +0 to +8, the monsters as
 0x18-byte entries from +0x18 to +0x20 (a monster number, then a 16-byte position at +8 whose
 second float the fighter's size replaces), a word at +0x30 and a flag at +0x38. Before placing
-anyone `0x14019dee0` marks, per monster, whether its number lies in 0x45..0x81. Who fills the
-request (the field encounter) is not found yet: no table names battle positions, and the
-field area tables (`Saves/field/AREA_*.xml`) hold only camera, fog, light and render settings.
+anyone `0x14019dee0` marks, per monster, whether its number lies in 0x45..0x81. The field encounter
+fills it (`0x1400502a0`, "The battle setup" below) from the squad and the encounter group; no
+table names battle positions (the field area tables, `Saves/field/AREA_*.xml`, hold only camera,
+fog, light and render settings), so the positions are the group's entries' and the formation's.
 Fighters joining later are scattered by `0x1401a3e7d`: parked at (-100000, 0, 0), then each
 after the first put at a random angle (0 to 359°) and a random distance 200 to 400 from the
 centre ((sin, 0, cos) × distance, `0x140804bb4` = 200), the first at the centre. Another path (`0x14018b5b6`) hands the same list on to `0x1401c9ad0`
