@@ -155,8 +155,6 @@ likely settle them where static reading failed.
   the glow must come from a bright pass); cloud shadows; the glow combine. Parked four times.
 - **Distant view too pale** (buildings and bushes far off): the real fog rule for the distant
   view is unknown.
-- **A house front too bright** (`TOWN_10`): parked three times; next is per-object vertex colour
-  checks (`BARREL_HIDE` + `g1m-materials`) against the game's pixels.
 - **Terrain details.** The blend is read and drawn (docs/formats.md, "Patches and their
   draws"; checked by eye on AREA_01_01, AREA_03_01 and AREA_04_01, not yet against the
   game's pixels). Open: whether a draw's layer numbers count in a per-patch texture list, the

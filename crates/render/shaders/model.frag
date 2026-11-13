@@ -5,7 +5,9 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 // The character's mask (its red channel says how much of the shading applies; white when the
 // material has none).
 layout(set = 2, binding = 0) uniform sampler2D mask;
-layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour; } pc;
+layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
+    // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
+    uint light; } pc;
 // The field's character lighting (barrel_formats::field_look), in render space: the
 // directions as the field gives them (the shader uses their negation), the colours with their
 // weight in w; the camera's eye.

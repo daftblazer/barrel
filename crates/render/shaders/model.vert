@@ -10,7 +10,9 @@ layout(location = 6) in vec4 in_color;
 // A billboard corner (MapSTD-B*'s PSIZE), turned by the camera's axes below; zero otherwise.
 layout(location = 7) in vec3 in_corner;
 // view_proj: the camera; instance: which of the instances places this draw.
-layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour; } pc;
+layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
+    // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
+    uint light; } pc;
 // Each instance's model matrix (render space, x already mirrored) and where its joints'
 // matrices begin in the palette. Instance 0 is the identity, for geometry baked in place.
 // info: x the palette's first joint, y the first morph weight, z last frame's first joint;
@@ -161,8 +163,11 @@ void main() {
         }
     }
     vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
-    field_light = amb * in_color.rgb + in_color.rgb * diffuse;
-    sun_part = in_color.rgb * sun;
+    // MapSTD: d = vertex colour x cDiff takes the lights' diffuse, the ambient takes the vertex
+    // colour x cAmb (the model's lighting material, 1 in nearly every field model).
+    vec2 material = unpackUnorm2x16(pc.light);
+    field_light = amb * in_color.rgb * material.y + in_color.rgb * material.x * diffuse;
+    sun_part = in_color.rgb * material.x * sun;
     // The distant view's dome and clouds are not lit: their texture on their vertex colour
     // (flag 16: its solid pieces, lit as the field's models are); nor are the field's xEF_
     // models (flag 32: window light).

@@ -52,7 +52,7 @@ const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.fr
 const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
-const PUSH_SIZE: u32 = 124;
+const PUSH_SIZE: u32 = 128;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
@@ -151,6 +151,21 @@ struct Draw {
     /// The version a field object belongs to (its placement tag `xAM_…_ver<N>`): drawn only
     /// while the event shows that version (`q15`, `Stage::versions_shown`).
     version: Option<u32>,
+    /// Its model's lighting material (`cDiff`, `cAmb`: g1m section 0x10001, grey in every
+    /// field model), packed as two unorm16 for the push constants; [`FULL_LIGHT`] without one.
+    light: u32,
+}
+
+/// `cDiff` and `cAmb` both 1.
+const FULL_LIGHT: u32 = 0xffff_ffff;
+
+/// A model's lighting material as the push constants take it: `cDiff` (its red) and `cAmb`
+/// (its red) as unorm16 (`unpackUnorm2x16`).
+fn light_word(geometry: &barrel_formats::g1m::Geometry) -> u32 {
+    geometry.lights.first().map_or(FULL_LIGHT, |l| {
+        let q = |v: f32| (v.clamp(0.0, 1.0) * 65535.0).round() as u32;
+        q(l.diffuse[0]) | q(l.ambient[0]) << 16
+    })
 }
 
 struct Gpu {
@@ -555,7 +570,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry) });
         }
         Ok(())
     }
@@ -5683,7 +5698,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
             d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, shadow_pipeline);
-            let mut push = [0f32; 31];
+            let mut push = [0f32; 32];
             push[..16].copy_from_slice(&shadow_vp.to_cols_array());
             push[16] = alpha_cutoff;
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
@@ -5726,7 +5741,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         // view_proj, params, the terrain's scales; the instance number goes in per draw.
-        let mut push = [0f32; 31];
+        let mut push = [0f32; 32];
         push[..16].copy_from_slice(&draw_vp.to_cols_array());
         push[16] = alpha_cutoff;
         push[18] = width as f32 / height.max(1) as f32;
@@ -5772,9 +5787,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5
                 // Its grass sway group (bits 8-11, number + 1), by the mesh name's keyword.
                 | sway_groups.iter().position(|k| !k.is_empty() && draw.name.contains(k.as_str())).map_or(0, |k| (k as u32 + 1).min(15)) << 8;
-            let mut per_draw = [0u8; 8];
+            let mut per_draw = [0u8; 16];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
-            per_draw[4..].copy_from_slice(&flags.to_le_bytes());
+            per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
+            per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);

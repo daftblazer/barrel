@@ -207,11 +207,13 @@ and `model.frag` and `terrain.frag` multiply the sun's part by the texture's red
 field's load, so where the clouds are in a given shot is not the game's). In `TOWN_10`'s
 narration shot (`EVENT_MM01_OP1_111` at 58 s) the ground goes from 159, 127, 81 to 147, 120,
 81 (the game 130, 107, 78); indoor fields are pixel-identical. The house front there is
-still twice the game's (131 against 61): its shade is something else. Not the sun's heading
-or the shadow map's extent (no setting shades it), not the point lights, not `cDiff` or `cAmb`
-(1 in the game's memory), not the ambient (the game's `ambLit` is the table's `<light
-ambient>` as written: TOWN_02's 0.4, 0.45, 0.3, 0.6 in both). Left: the house's vertex
-colours, or a program other than `MapSTD` for it.
+still twice the game's (131 against 61): its shade is something else. It was the house's lighting material: `obj-a15_06house_body` is
+the one model in `TOWN_10` whose g1m section 0x10001 is not all ones (diffuse 0.7, ambient
+0.3: `cDiff` and `cAmb`; `docs/formats.md`), and the renderer takes them from it
+(`Draw::light`, pushed at offset 124 as two unorm16; `model.vert` scales the ambient by `cAmb`
+and the lights' diffuse, the sun's too, by `cDiff`). The wall behind Escha's close-up
+(`EVENT_MM01_OP1_111` at 50 s) went from 94, 78, 73 to 29, 24, 23 (the game 34, 28, 26).
+`cDiff`'s alpha (0.5 to 0.62 in a few models) is not applied yet.
 
 ### Wind (plants swaying)
 

@@ -32,7 +32,7 @@
 //!
 //! | 0x10009 | mesh groups (`{u32 block count}` in the header's count): per block nine words `{lod, group, first entry, count1, count2, lod range start, lod range length, -1, 0}`, then `count1 + count2` entries `{16-byte name, u32 0, u32 -1, u32 n, n submesh numbers}`. The name is the shader the submeshes draw with: group 0 the colour pass (`MapSTD`, `MapSTD-T0`, `CharaMTDS`, `CharaEYEL` ...: the `String`s of `Saves/shader/shader.xml`), group 1 the shadow pass (`SM`) |
 //!
-//! Type 0x10001 is kept as a raw section for now.
+//! | 0x10001 | lighting materials (`{u32 0x100}` then `count` 64-byte entries): diffuse (4 floats), ambient (3), a word of nibble flags, then three floats, a float and three floats (in field models 1, 1, 1, 20 and 0, 0, 0: specular, power and emissive by the order of the game's `cSpec`; not read) and a mask. The diffuse and ambient are `MapSTD`'s `cDiff` and `cAmb` ([`Geometry::lights`]) |
 
 use crate::{Error, u32_at};
 
@@ -207,8 +207,21 @@ pub struct Geometry<'a> {
     pub shader_params: Vec<Vec<ShaderParam>>,
     /// Mesh groups (section 0x10009): which shader draws which submeshes, per pass.
     pub mesh_groups: Vec<MeshGroup>,
+    /// Lighting materials (section 0x10001): the light a field model takes, scaled
+    /// (`MapSTD`'s `cDiff` and `cAmb`). One entry in field models; which entry a submesh takes
+    /// when there are several is not known.
+    pub lights: Vec<Light>,
     /// Sections not decoded yet: (type, count, body).
     pub other_sections: Vec<(u32, u32, &'a [u8])>,
+}
+
+/// A lighting material (G1MG section 0x10001): what the field light is scaled by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Light {
+    /// `cDiff`: the directional and point lights' diffuse (and alpha).
+    pub diffuse: [f32; 4],
+    /// `cAmb`: the ambient.
+    pub ambient: [f32; 3],
 }
 
 /// Submeshes drawn with one shader in one pass (G1MG section 0x10009).
@@ -398,6 +411,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         bone_maps: Vec::new(),
         shader_params: Vec::new(),
         mesh_groups: Vec::new(),
+        lights: Vec::new(),
         other_sections: Vec::new(),
     };
     let mut at = 36;
@@ -552,6 +566,13 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
                         index_start: f[12] as usize,
                         index_count: f[13] as usize,
                     });
+                }
+            }
+            0x10001 => {
+                for e in 0..bounded(count)? {
+                    let at = 16 + 64 * e;
+                    let f = |k: usize| f32_at(sec, at + 4 * k);
+                    g.lights.push(Light { diffuse: [f(0)?, f(1)?, f(2)?, f(3)?], ambient: [f(4)?, f(5)?, f(6)?] });
                 }
             }
             0x10009 => {
