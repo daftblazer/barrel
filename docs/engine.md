@@ -406,8 +406,9 @@ reads (2026-11-13, from the Southern Ruins' area map): Sector One (map 26) put E
 (53.32, 0, 102.80) m, its record exactly, and the Ruins Entrance (map 25) at (129.08, 0, 200)
 against its record's (129, 0, 200) (likely the ground settling her). Both are about 3.5 m from the
 field's exit, which is why the old stand-in (standing in the exit) was close. The viewer's world
-map trips use it (a field without a record falls back to the exit); the record's facing is not
-applied yet (the walker starts facing 0). That world map trips read the same table as the area
+map trips use it (a field without a record falls back to the exit), facing the record's way
+(degrees, as `atan2(x, z)`, the events' convention: Sector One's 180 has Escha's back to its
+camera, which looks along -z, as the running game showed). That world map trips read the same table as the area
 map is assumed, not seen.
 
 ## Play camera follow

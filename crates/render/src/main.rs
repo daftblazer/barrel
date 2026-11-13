@@ -1525,7 +1525,7 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
 /// map field's placements), the mark the field `from_map` stands for, and the field map `to`
 /// opens with the place to arrive at there (field units): the field's record in the arrival
 /// table (`world::arrivals`), else its own world-map exit (`WORLDMAP_CHANGE_EX`).
-fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game::travel::WorldMap, String, u32, [f32; 2])> {
+fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game::travel::WorldMap, String, u32, [f32; 2], Option<f32>)> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let wmap = root.join("Data/x64/Field/A15_WMAP");
@@ -1545,11 +1545,13 @@ fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game:
     };
     let field = points.iter().find(|(p, _, _)| tag(*p).as_deref() == Some(to)).map(|(_, m, _)| *m).ok_or(format!("{to} opens no field"))?;
     if let Some(a) = barrel_formats::world::arrival(&pe, field) {
-        return Ok((map, from, field, [a.position[0] * 100.0, a.position[2] * 100.0]));
+        // The record's facing in degrees, the walker's way (atan2(x, z)): Sector One's 180 has
+        // Escha's back to its camera, which looks along -z.
+        return Ok((map, from, field, [a.position[0] * 100.0, a.position[2] * 100.0], Some(a.facing.to_radians())));
     }
     let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT).ok_or("no map table")?;
     let exit = areas.get(field as usize).and_then(|a| a.gimmicks.iter().find(|g| g.kind == barrel_formats::gimmick::WORLDMAP_CHANGE_EX)).ok_or(format!("field {field} has no world map exit"))?;
-    Ok((map, from, field, [exit.position[0] * 100.0, exit.position[2] * 100.0]))
+    Ok((map, from, field, [exit.position[0] * 100.0, exit.position[2] * 100.0], None))
 }
 
 /// The battle tables for field encounters (`barrel_game::auto_battle`).
@@ -2544,6 +2546,8 @@ struct SceneSpec {
     player_at: Option<[f32; 2]>,
     /// `--walk DX,DZ`: and walking that way (units a second).
     player_walk: Option<[f32; 2]>,
+    /// Which way the player faces at the start (radians; 0 towards +z): a field's arrival.
+    player_facing: Option<f32>,
     /// `--world-trip`: the waypoints she runs through.
     trip: Vec<[f32; 3]>,
     /// Logy leads (`--hero logy`): the player walking is Logy.
@@ -2619,6 +2623,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         town_seen,
         player_at,
         player_walk,
+        player_facing,
         trip,
         logy,
     } = spec;
@@ -2841,6 +2846,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         w.body = town_bodies.len();
         town_bodies.push(body);
         w.velocity = player_walk.unwrap_or_default();
+        w.facing = player_facing.unwrap_or(w.facing);
         w.waypoints = trip.iter().copied().skip(1).collect();
         walker = Some(w);
         focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
@@ -3090,6 +3096,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut town_people_from = None::<String>;
     let mut player_at = None::<[f32; 2]>;
     let mut player_walk = None::<[f32; 2]>;
+    // A trip's arrival facing, for the next scene only.
+    let mut player_facing = None::<f32>;
     let mut trip_path: Vec<[f32; 3]> = Vec::new();
     let mut town_time = 0.0f32;
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
@@ -3847,6 +3855,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             town_seen: town_seen.clone(),
             player_at,
             player_walk,
+            player_facing: player_facing.take(),
             trip: trip_path.clone(),
             logy: hero == 1,
         })?;
@@ -6037,7 +6046,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the field is not inside a game install")?.to_path_buf();
         let maps = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
         let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).ok_or("this field is not in the map table")? as u32;
-        let (map, from, field, arrive) = world_exit_trip(&root, here, &to)?;
+        let (map, from, field, arrive, facing) = world_exit_trip(&root, here, &to)?;
         let scene = match session.as_mut() {
             Some(s) => s.travelled(&map, here, &from, &to, field).cloned().ok_or(format!("no way from {from} to {to}"))?,
             None => barrel_game::session::Scene::Field(field),
@@ -6054,6 +6063,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             barrel_game::session::Scene::Field(m) => {
                 args[1] = root.join("Data/x64/Field").join(maps.get(m as usize).ok_or("no such field")?).to_string_lossy().into_owned();
                 player_at = Some(arrive);
+                player_facing = facing;
                 player_walk = player_walk.map(|_| [0.0, 0.0]);
             }
         }
