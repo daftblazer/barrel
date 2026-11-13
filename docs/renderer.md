@@ -525,7 +525,14 @@ is lit in the game; lit here as the solid pieces are (field light on its vertex 
 turns darker still (a patch of `EVENT_MM01_OP1_212`'s first shot from 183 to 158), so the
 missing brightness is not that light: what `MapSTD` adds for the dome (its specular, the
 light texture, or the fog's in-scattering at its distance) is still to find, and the dome
-stays unlit until then.
+stays unlit until then. Against the reference recording (`EVENT_MM01_OP1_111`'s upward arch
+shot in `TOWN_09`, the game at 77.5 s, the renderer at 74 s) the game's sky is a saturated
+yellow with the dome's clouds plainly showing through and a bright patch toward the sun (top
+246, 234, 184; the renderer 220, 195, 153, a flat cream with the clouds all but gone). Unfogged,
+the dome is a purple-blue cloudy sky: so the game fogs it, but less than the fog's full span,
+and its in-scattering peaks toward the sun (`TOWN_09`'s `mieG` is 1.0: a sharp Mie peak). Taking
+the scattering angle the other way round changed nothing visible; the dome's own fog distance
+(its radius against the fog's start and end, `tracking_camera` with offset (0, -3, 0)) is next.
 
 **Accessories.** A character's container holds its body (`<stem>_default.g1m`), its skeleton
 (`<stem>.g1m`) and part models (`<stem>_P_M_*.g1m`). The parts named in
