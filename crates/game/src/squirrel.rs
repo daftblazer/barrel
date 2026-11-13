@@ -737,11 +737,10 @@ impl Interp {
                     self.exec(i, host)?;
                 }
                 let flow = loop {
-                    if let Some(c) = c {
-                        if !self.eval(c, host)?.truthy() {
+                    if let Some(c) = c
+                        && !self.eval(c, host)?.truthy() {
                             break Flow::Normal;
                         }
-                    }
                     match self.exec(body, host)? {
                         Flow::Break => break Flow::Normal,
                         Flow::Return(v) => break Flow::Return(v),
@@ -780,12 +779,11 @@ impl Interp {
                 // Squirrel switches fall through from the first matching case (or default).
                 let mut start = None;
                 for (i, (label, _)) in cases.iter().enumerate() {
-                    if let Some(l) = label {
-                        if self.eval(l, host)? == v {
+                    if let Some(l) = label
+                        && self.eval(l, host)? == v {
                             start = Some(i);
                             break;
                         }
-                    }
                 }
                 let start = start.or_else(|| cases.iter().position(|(l, _)| l.is_none()));
                 if let Some(start) = start {
@@ -1038,8 +1036,8 @@ fn binary(op: &str, a: &Value, b: &Value) -> Result<Value, Error> {
     if op == "!=" {
         return Ok(Value::Bool(a != b));
     }
-    if op == "+" {
-        if let (Value::Str(x), y) | (y, Value::Str(x)) = (a, b) {
+    if op == "+"
+        && let (Value::Str(x), y) | (y, Value::Str(x)) = (a, b) {
             let y = match y {
                 Value::Str(s) => s.to_string(),
                 Value::Int(i) => i.to_string(),
@@ -1048,7 +1046,6 @@ fn binary(op: &str, a: &Value, b: &Value) -> Result<Value, Error> {
             };
             return Ok(Value::Str(if matches!(a, Value::Str(_)) { format!("{x}{y}") } else { format!("{y}{x}") }.into()));
         }
-    }
     match (a, b) {
         (Value::Int(x), Value::Int(y)) => {
             let (x, y) = (*x, *y);

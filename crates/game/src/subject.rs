@@ -28,7 +28,7 @@ pub fn pay<T: Clone>(lines: u32, paid: u32, steps: &[T]) -> (Vec<T>, u32) {
     if lines <= paid {
         return (Vec::new(), paid);
     }
-    (steps.iter().cloned().skip(paid as usize).take((lines - paid) as usize).collect(), lines)
+    (steps.iter().skip(paid as usize).cloned().take((lines - paid) as usize).collect(), lines)
 }
 
 #[cfg(test)]

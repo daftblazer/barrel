@@ -120,11 +120,10 @@ pub fn item_stat(t: &Tables, unit: &ItemUnit, stat: usize, base: i32, roll: &mut
         return 0;
     }
     let mut sum = 0;
-    if stat < 9 {
-        if let Some(row) = usize::try_from(unit.item).ok().and_then(|i| t.items.get(i)).filter(|r| r.equip) {
+    if stat < 9
+        && let Some(row) = usize::try_from(unit.item).ok().and_then(|i| t.items.get(i)).filter(|r| r.equip) {
             sum = row.stats[stat];
         }
-    }
     for e in unit.effects {
         sum += effect_amount(t, e.into(), stat, roll);
     }

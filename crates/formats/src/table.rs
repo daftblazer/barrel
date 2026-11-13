@@ -212,7 +212,7 @@ impl<'a> Parser<'a> {
                 }
                 // A closing tag for an element further out closes this one implicitly; leave
                 // the tag for the parent to read.
-                if self.open.iter().any(|n| *n == close) {
+                if self.open.contains(&close) {
                     self.pos = tag_start;
                     return Ok(e);
                 }

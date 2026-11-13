@@ -303,7 +303,7 @@ pub fn zlib_decompress(input: &[u8], max_out: usize) -> Result<Vec<u8>, Error> {
     let [cmf, flg, ..] = *input else {
         return Err(Error::Corrupt("zlib header"));
     };
-    if cmf & 0x0f != 8 || ((cmf as u16) << 8 | flg as u16) % 31 != 0 || flg & 0x20 != 0 {
+    if cmf & 0x0f != 8 || !((cmf as u16) << 8 | flg as u16).is_multiple_of(31) || flg & 0x20 != 0 {
         return Err(Error::Corrupt("zlib header"));
     }
     let (out, used) = inflate(&input[2..], max_out)?;

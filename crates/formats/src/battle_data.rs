@@ -701,11 +701,10 @@ pub fn field_enemies(pe: &Pe, builder: u64) -> Option<Vec<FieldEnemy>> {
     let u32_at = |i: usize| code.get(i..i + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
     let rip = |i: usize, len: usize, rel: u32| (builder as i64 + i as i64 + len as i64 + rel as i32 as i64) as u64;
     let store = |table: &mut Vec<u32>, d: u32, v: u32| {
-        if let Some(o) = (d as usize).checked_sub(0x30) {
-            if let Some(w) = table.get_mut(o / 4) {
+        if let Some(o) = (d as usize).checked_sub(0x30)
+            && let Some(w) = table.get_mut(o / 4) {
                 *w = v;
             }
-        }
     };
     let mut i = 0;
     let mut started = false;

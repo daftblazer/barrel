@@ -187,7 +187,7 @@ impl Battle {
         let share = |k: usize| self.fighters[k].stats[stat::HP] as f32 / self.fighters[k].stats[stat::MAX_HP] as f32;
         let mut best = first;
         match mode {
-            1 | 2 | 3 => {
+            1..=3 => {
                 for &k in &candidates[1..] {
                     let better = match mode {
                         1 => distance(best) > distance(k),

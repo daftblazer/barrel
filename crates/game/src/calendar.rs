@@ -95,7 +95,7 @@ pub fn add_gain(value: f32, gain: f32) -> f32 {
 /// Whether day `v` is a month's first (the new day's monthly work, `0x140363860` and the
 /// manager at `0x140dfc220`'s `0x140267f50`, runs then).
 pub fn month_start(v: u32) -> bool {
-    v % DAYS_PER_MONTH == 0
+    v.is_multiple_of(DAYS_PER_MONTH)
 }
 
 /// Whether the request board is redrawn on day `v` (`0x14033aaa0`: three synthesis, four battle

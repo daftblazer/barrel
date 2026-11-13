@@ -61,11 +61,10 @@ pub fn learn_item(k: &mut Knowledge, unit: &ItemUnit, level: i32, traits_hidden:
 pub fn reveal_effect(flags: &mut [[bool; 10]], k: &mut Knowledge, recipe: Option<(usize, &barrel_formats::recipe::Recipe)>, effect: i32) {
     let Some((r, rec)) = recipe else { return };
     let Ok(e) = u16::try_from(effect) else { return };
-    if let Some(j) = rec.effect_list().iter().position(|&x| x == e) {
-        if let Some(f) = flags.get_mut(r) {
+    if let Some(j) = rec.effect_list().iter().position(|&x| x == e)
+        && let Some(f) = flags.get_mut(r) {
             f[j.min(9)] = true;
         }
-    }
     raise(&mut k.eff, effect, KNOWN);
 }
 

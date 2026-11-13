@@ -826,13 +826,12 @@ impl<'a> Player<'a> {
                 continue;
             }
             steps.clear();
-            if let Some(n) = self.translate(action, c, &mut steps) {
-                if n < self.actions.len() && !self.started[n] {
+            if let Some(n) = self.translate(action, c, &mut steps)
+                && n < self.actions.len() && !self.started[n] {
                     self.started[n] = true;
                     threads.push((now, n, 0));
                     out.push(Timed { time: now, action, step: Step::StartAction { action: n } });
                 }
-            }
             for s in steps.drain(..) {
                 if let Step::Wait { seconds } = s {
                     threads[t].0 += seconds.max(0.0);
@@ -932,13 +931,12 @@ impl<'a> Iterator for Player<'a> {
                 continue;
             }
             let mut steps = Vec::new();
-            if let Some(n) = self.translate(action, c, &mut steps) {
-                if n < self.actions.len() && !self.started[n] {
+            if let Some(n) = self.translate(action, c, &mut steps)
+                && n < self.actions.len() && !self.started[n] {
                     self.started[n] = true;
                     self.running.push((n, 0));
                     return Some(Step::StartAction { action: n });
                 }
-            }
             self.pending.extend(steps);
         }
     }

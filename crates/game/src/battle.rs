@@ -614,12 +614,11 @@ pub fn take_hp_damage(stats: &mut [i32; stat::COUNT], amount: i32, reverse: Opti
         amount = (amount - part).max(0);
     }
     stats[stat::HP] = (stats[stat::HP] - amount).max(0);
-    if amount != 0 && stats[stat::HP] > 0 {
-        if let Some(v) = hp_to_mp {
+    if amount != 0 && stats[stat::HP] > 0
+        && let Some(v) = hp_to_mp {
             let gain = amount.wrapping_mul(v) / 100;
             stats[stat::MP] = (stats[stat::MP] + gain).min(stats[stat::MAX_MP]);
         }
-    }
     amount
 }
 
@@ -725,16 +724,14 @@ pub fn wait_after_action(
     rng: &mut crate::rng::Rng,
 ) -> i32 {
     let mut cut = None;
-    if let Some(p) = quick_state {
-        if rng.chance(p) {
+    if let Some(p) = quick_state
+        && rng.chance(p) {
             cut = Some(25);
         }
-    }
-    if let Some((p, amount)) = quick_passive {
-        if rng.chance(p) {
+    if let Some((p, amount)) = quick_passive
+        && rng.chance(p) {
             cut = Some(amount);
         }
-    }
     let wait = match cut {
         Some(c) => (wait as f32 * (100 - c) as f32 / 100.0) as i32,
         None => wait,

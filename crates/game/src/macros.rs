@@ -61,8 +61,8 @@ pub fn read(src: &str) -> Vec<Macro> {
         // The function's array, before the next function.
         let body_end = rest.find("function ").unwrap_or(rest.len());
         let body = &rest[close..body_end];
-        if let (Some(a), Some(b)) = (body.find('['), body.find(']')) {
-            if a < b {
+        if let (Some(a), Some(b)) = (body.find('['), body.find(']'))
+            && a < b {
                 let words = body[a + 1..b]
                     .split(',')
                     .map(str::trim)
@@ -74,7 +74,6 @@ pub fn read(src: &str) -> Vec<Macro> {
                     .collect();
                 macros.push(Macro { name, params, words });
             }
-        }
         rest = &rest[body_end..];
     }
     macros

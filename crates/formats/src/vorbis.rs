@@ -860,14 +860,13 @@ impl Decoder {
         let mut blocks = Vec::with_capacity(ch);
         for c in 0..ch {
             let mut spectrum = vec![0f32; n2];
-            if let Some((fi, y)) = &floors[c] {
-                if let Floor::One(f) = &self.setup.floors[*fi] {
+            if let Some((fi, y)) = &floors[c]
+                && let Floor::One(f) = &self.setup.floors[*fi] {
                     let curve = floor1_curve(f, y, n2);
                     for i in 0..n2 {
                         spectrum[i] = curve[i] * vectors[c][i];
                     }
                 }
-            }
             let mut out = imdct(&spectrum);
             for (i, v) in out.iter_mut().enumerate() {
                 let w = if i < ls {
