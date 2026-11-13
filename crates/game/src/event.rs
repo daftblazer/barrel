@@ -251,6 +251,11 @@ pub const CHARA_MOVE: u32 = 0x7300_0012;
 pub const START_ACTION: u32 = 0x7700_0001;
 /// The old name of [`START_ACTION`], from when it was taken for a step marker.
 pub const STEP: u32 = START_ACTION;
+/// `w4` (0x77000004, `{n}`): starts action N as `w1` does, but only when the event is watched
+/// again from the Extra menu (`ExtraEventExec` sets its runner's +0x69, `0x140050cb0`) or a
+/// debug switch (`0x141077ef0`, never set) is on (`0x1400523cc`): the set-up a replay needs
+/// that play would have given. 206 uses.
+pub const REPLAY_START_ACTION: u32 = 0x7700_0004;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Step<'a> {
@@ -389,6 +394,8 @@ pub struct Player<'a> {
     /// `u80`, `u82` and `u130` set them from the game's answers (the item picked ...), which
     /// playback does not have: they stay 0, as nothing has been picked.
     vars: [i32; 20],
+    /// Watched again from the Extra menu: `w4` starts its actions.
+    replay: bool,
 }
 
 /// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
@@ -424,7 +431,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20] })
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -456,6 +463,13 @@ impl<'a> Player<'a> {
     /// [`MASTER_CHARACTER`] then stands for.
     pub fn hero(mut self, hero: u32) -> Self {
         self.hero = hero;
+        self
+    }
+
+    /// Plays the event as the Extra menu replays it: `w4` ([`REPLAY_START_ACTION`]) starts its
+    /// actions (in play it does nothing).
+    pub fn replay(mut self, replay: bool) -> Self {
+        self.replay = replay;
         self
     }
 
@@ -522,6 +536,8 @@ impl<'a> Player<'a> {
         match (c.word, c.operands) {
             (START_ACTION, [n, ..]) => return Some(*n as usize),
             (START_ACTION, []) => {}
+            (REPLAY_START_ACTION, [n, ..]) if self.replay => return Some(*n as usize),
+            (REPLAY_START_ACTION, _) => {}
             (TIME_WAIT, [hundredths, ..]) => out.push(Step::Wait { seconds: f(*hundredths) / 100.0 }),
             (TIME_WAIT, []) => out.push(Step::Wait { seconds: 0.0 }),
             (SHORT_WAIT, _) => out.push(Step::Wait { seconds: 0.3 }),
@@ -923,6 +939,17 @@ mod tests {
         assert_eq!(run(vec![GOTO_ABOVE, 7, 3, 0]), [t(7), t(8)]);
         assert_eq!(run(vec![GOTO_EQUAL, 7, 3, 0]), [t(7), t(8)]);
         assert_eq!(run(vec![GOTO_EQUAL, 7, 3, 5]), [t(8)]);
+    }
+
+    #[test]
+    fn replays_start_their_own_actions() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        let event = Ebd { actions: vec![act(vec![REPLAY_START_ACTION, 1, END]), act(vec![TROPHY, 9, END])], resources: vec![] };
+        let table = OperandTable::new(&[(REPLAY_START_ACTION, Some(1)), (TROPHY, Some(1))]);
+        let trophies = |replay| -> usize {
+            Player::escha(&event, &[], &table).unwrap().replay(replay).filter(|s| matches!(s, Step::Trophy { .. })).count()
+        };
+        assert_eq!((trophies(false), trophies(true)), (0, 1));
     }
 
     #[test]

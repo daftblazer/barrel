@@ -1020,7 +1020,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75400009` | `u9/0x40` |  | Event | 3628 | 0 (3628) |
 | `7540000a` | `u10/0x40` |  | Event | 3628 | 0 (3628) |
 | `77000001` | `w1` | `START_ACTION` (event.rs): start action N (its operand) alongside the one running | Event | 47448 | 1 (47448) |
-| `77000004` | `w4` |  | Event | 206 | 1 (206) |
+| `77000004` | `w4` | (starts an action in replays only: `{n}`; "Replays") | Event | 206 | 1 (206) |
 
 ### Camera quakes (`t14`, `t16`)
 
@@ -1457,3 +1457,12 @@ and names the variable for the answer (the event's case `0x1400518dd` keeps `v` 
 data's +0xe8, `0x140210df0`; when the choosing is over the event asks `0x7600000f` and sets
 that variable to the answer, `0x140053313` on), and `u8 0 0` jumps by variable 0, to labels that each say their part and end with `u67 0` and `u68`, which clears the
 window. `u67` is used 98 times with 1 and 196 with 0, `u68` 194 times.
+
+## Replays
+
+`w4 {n}` (206 uses) starts action `n` as `w1` does, but only when the event is watched again
+from the Extra menu (`ExtraEventExec`, `0x140222510`, sets its runner's +0x69 through
+`0x140050cb0`) or when a debug switch is on (`0x141077ef0`, read in the event, battle and menu
+code but never written: off). In play it does nothing. So a replay starts actions that set up
+what play would have given the event (`EVENT_MS05_*` uses it most, 48 times; no opening
+does). `event::Player::replay(true)` plays an event so.
