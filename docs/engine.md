@@ -401,14 +401,18 @@ the carried time (`tenths N`).
 ## Arriving from the world map (not yet the game's)
 
 A trip's player arrives at the field's own world map exit (its first `WORLDMAP_CHANGE_EX`
-gimmick), standing in it (so it does not send them straight back). Where the game puts them was
+gimmick), standing in it (so it does not send them straight back). One live point (2026-11-13,
+the Southern Ruins' area map into Sector One, map 26): the game put Escha at (53.32, 0, 102.80) m,
+3.5 m from that field's first exit (52.5, 0, 106.2), on the field's side of it, not in it; one
+point is not enough for the rule (a fixed step from the exit, or a spot of its own). Where the game puts them was
 not found in three tries (the field load `0x140076760` and its callers; `docs/loop-archive.md`
 707, 754); an oracle run (stage 7) can read it.
 
 ## Play camera follow
 
-Read from the running game (2026-11-13: the user's save, Southern Ruins Sector One,
-`AREA_03_01`, whose one area is `CLOSELY_Z` with `bumper_follow_speed` 5 and `zoom_distance` 0).
+Read from the running game (2026-11-13: the user's save, Southern Ruins Sector One, map 26,
+`AREA_03_02`, whose one area is `CLOSELY_X` with points at x 42, 52 and 62 m, lengths 7.5, 6 and
+8 m, `bumper_follow_speed` 5 and `zoom_distance` 0).
 The play camera (`CameraCFieldMap`, vtable `0x14080c428`: its +0x88 and +0xd8 are the known
 `0x1401ec650` and `0x1401e6e10`; one object, found by scanning for that pointer) was dumped
 every 0.1 s while Escha stood, ran 1.5 s and stopped:
@@ -416,7 +420,7 @@ every 0.1 s while Escha stood, ran 1.5 s and stopped:
 | Offset | What |
 |---|---|
 | +0x18, +0x30, ... +0x1c0 | tweens, each `{vtable 0x140725e10, current, from, to, ...}` |
-| +0x98 (the +0x90 tween) | a distance: 624 to 681 as she ran along x, the setting unchanged (likely the length after the camera's collision pull-in; not yet checked) |
+| +0x98 (the +0x90 tween) | the setting's length: 624 at x 53.2 m and 680.6 at x 56.0 m, exactly `play_camera::setting`'s blend (6.24 and 6.806 m), so the blend along the area's axis is the game's |
 | +0xb0 | the player's position one frame earlier |
 | +0xc0, +0xd0 | the player's position |
 | +0x188 | the look point: the player's position plus `diffPosition` (y + 100 here) |

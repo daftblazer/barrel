@@ -52,7 +52,7 @@ fn mix(a: &CameraPoint, b: &CameraPoint, t: f32) -> CameraPoint {
 }
 
 /// The camera following the player between frames: its look point and how far it has zoomed
-/// out for movement. Read live (2026-11-13, `AREA_03_01`, `bumper_follow_speed` 5, the camera
+/// out for movement. Read live (2026-11-13, `AREA_03_02`, `bumper_follow_speed` 5, the camera
 /// object found by its vtable `0x14080c428`): the look point (+0x188) is the player's position
 /// plus `diffPosition` every frame, with no trailing (+0xb0 holds the previous frame's position,
 /// one frame behind +0xc0, the current one), and the zoom blend (+0x1a0) rises from 0 to 1 at
