@@ -348,8 +348,7 @@ struct TerrainGpu {
 /// drawn with the terrain shader. Each vertex carries its draw's layers and blend (`uv`, see
 /// `add_terrain`).
 struct TerrainDraw {
-    first_index: u32,
-    index_count: u32,
+    patches: Vec<scene_gpu::TerrainPatch>,
     /// The cell size (a layer repeats every n cells).
     cell: f32,
     /// The field's size in world units along x and z (the blend maps span it).
@@ -563,14 +562,14 @@ impl Scene {
 }
 
 impl Scene {
-    /// A heightmap as a grid of quads; UVs run 0..1 across the field. Returns the index range.
-    /// The terrain mesh's lit draws over its finest patches. A vertex's `uv` says how its draw
-    /// mixes: x = layer a + 32 × layer b + 1024 × blend (the map × 4 + the channel pair, 3 for
-    /// one layer alone), y = layer a's repeat + 256 × layer b's (in cells). Normals come from the
-    /// heightmap (the stored ones are not decoded).
-    fn add_terrain(&mut self, m: &barrel_formats::ktf::Mesh, h: &barrel_formats::khm::Heightmap, repeats: &[u8]) -> (u32, u32) {
+    /// The terrain mesh's lit draws over its finest patches, a range of indices per patch with
+    /// its bake list. A vertex's `uv` says how its draw mixes: x = layer a + 32 × layer b + 1024
+    /// × blend (the map × 4 + the channel pair, 3 for one layer alone) + 32768 when the draw adds
+    /// the bake (programs 4 to 7); y = layer a's repeat + 256 × layer b's (in cells). Normals come
+    /// from the heightmap (the stored ones are not decoded).
+    fn add_terrain(&mut self, m: &barrel_formats::ktf::Mesh, h: &barrel_formats::khm::Heightmap, repeats: &[u8]) -> Vec<scene_gpu::TerrainPatch> {
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
-        let first_index = self.indices.len() as u32;
+        let mut out = Vec::new();
         let mut dropped = 0usize;
         let hcell = |x: isize, z: isize| h.height(x.clamp(0, h.cells_x as isize) as usize, z.clamp(0, h.cells_z as isize) as usize);
         for (k, p) in m.patches.iter().enumerate() {
@@ -579,13 +578,23 @@ impl Scene {
             }
             let verts = m.patch_vertices(k);
             let draws = m.draws.get(p.first_draw as usize..p.first_draw as usize + usize::from(p.draws)).unwrap_or(&[]);
+            let first_index = self.indices.len() as u32;
+            // The bake: the one-layer draws (kind 0x10), each its layer under one map channel
+            // (the program: 0 red, 1 green, 2 blue).
+            let bake = draws
+                .iter()
+                .filter(|d| d.kind == 0x10 && !d.layers.is_empty() && d.program < 3)
+                .map(|d| scene_gpu::bake_entry(d.layers[0], d.extra[1], d.program, *repeats.get(d.layers[0] as usize).unwrap_or(&1)))
+                .take(scene_gpu::BAKE_MAX)
+                .collect();
             for d in draws.iter().filter(|d| d.kind == 0x20 && !d.layers.is_empty()) {
                 let (a, b) = (d.layers[0], *d.layers.get(1).unwrap_or(&d.layers[0]));
                 // The map is the draw's fourth byte; programs 1-3 and 5-7 read its channel pairs (5-7
                 // also add the bake of the other map's layers, not drawn yet).
                 let blend = if d.layers.len() < 2 || d.program % 4 == 0 { 3 } else { u32::from(d.extra[1]) * 4 + u32::from(d.program % 4 - 1) };
                 let rep = |l: u8| f32::from(*repeats.get(l as usize).unwrap_or(&1));
-                let uv = [f32::from(a) + 32.0 * f32::from(b) + 1024.0 * blend as f32, rep(a) + 256.0 * rep(b)];
+                let baked = if (4..8).contains(&d.program) { 32768.0 } else { 0.0 };
+                let uv = [f32::from(a) + 32.0 * f32::from(b) + 1024.0 * blend as f32 + baked, rep(a) + 256.0 * rep(b)];
                 let base = self.vertices.len() as u32;
                 // The draw's own copy of its patch's vertices (its indices are the patch's, and
                 // its vertex range does not always bound them).
@@ -605,11 +614,12 @@ impl Scene {
                     }
                 }
             }
+            out.push(scene_gpu::TerrainPatch { first_index, index_count: self.indices.len() as u32 - first_index, bake });
         }
         if dropped > 0 {
             eprintln!("terrain: {dropped} triangles index past their patch's vertices, left out");
         }
-        (first_index, self.indices.len() as u32 - first_index)
+        out
     }
 }
 
@@ -2339,7 +2349,8 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
     if let Some((bytes, t)) = terrain {
         let h = &t.heightmap;
         let mesh = barrel_formats::ktf::mesh(bytes)?;
-        let (first_index, index_count) = scene.add_terrain(&mesh, h, &t.layer_repeats());
+        let patches = scene.add_terrain(&mesh, h, &t.layer_repeats());
+        let index_count: u32 = patches.iter().map(|p| p.index_count).sum();
         let (mut lo, mut hi) = (f32::MAX, f32::MIN);
         for z in 0..=h.cells_z {
             for x in 0..=h.cells_x {
@@ -2358,7 +2369,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
         );
         scene.terrains.push((
             scene.field.unwrap_or(0),
-            TerrainDraw { first_index, index_count, cell: mesh.cell_size, extent: [h.cells_x as f32 * h.cell_size, h.cells_z as f32 * h.cell_size], ktf: bytes.to_vec() },
+            TerrainDraw { patches, cell: mesh.cell_size, extent: [h.cells_x as f32 * h.cell_size, h.cells_z as f32 * h.cell_size], ktf: bytes.to_vec() },
         ));
     }
     let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
@@ -2889,7 +2900,7 @@ fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDra
         for i in 0..TERRAIN_LAYERS {
             tex.push(upload_texture(gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
         }
-        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, first_index: t.first_index, index_count: t.index_count, cell: t.cell, extent: t.extent });
+        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, patches: t.patches.clone(), cell: t.cell, extent: t.extent });
     }
     Ok(grounds)
 }
@@ -5732,9 +5743,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     terrain_push[20] = g.extent[0];
                     terrain_push[21] = g.extent[1];
                     d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
-                    d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(terrain_push.as_ptr() as *const u8, PUSH_SIZE as usize));
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
-                    d.cmd_draw_indexed(cb, g.index_count, 1, g.first_index, 0, 0);
+                    // A patch at a time, its bake list in the push constants' floats 22 to 27
+                    // (their bits: the count, then two entries a word).
+                    for patch in g.patches.iter().filter(|p| p.index_count > 0) {
+                        terrain_push[22..28].copy_from_slice(&scene_gpu::bake_words(&patch.bake).map(f32::from_bits));
+                        d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(terrain_push.as_ptr() as *const u8, PUSH_SIZE as usize));
+                        d.cmd_draw_indexed(cb, patch.index_count, 1, patch.first_index, 0, 0);
+                    }
                 }
             }
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);

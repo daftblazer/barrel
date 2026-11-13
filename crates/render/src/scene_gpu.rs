@@ -33,10 +33,36 @@ pub struct SceneData<'a> {
 pub struct GroundData {
     pub field: u16,
     pub textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
-    pub first_index: u32,
-    pub index_count: u32,
+    pub patches: Vec<TerrainPatch>,
     pub cell: f32,
     pub extent: [f32; 2],
+}
+
+/// One terrain patch's lit draws (an index range) and its bake list (`bake_entry`).
+#[derive(Clone, Debug)]
+pub struct TerrainPatch {
+    pub first_index: u32,
+    pub index_count: u32,
+    pub bake: Vec<u16>,
+}
+
+/// The most bake entries a patch's push constants hold (10: two a word over five words).
+pub const BAKE_MAX: usize = 10;
+
+/// A bake entry: layer (5 bits), map (3), channel (2: 0 red, 1 green, 2 blue) and the layer's
+/// repeat in cells (4), as `terrain.frag` unpacks it.
+pub fn bake_entry(layer: u8, map: u8, channel: u8, repeat: u8) -> u16 {
+    u16::from(layer & 31) | u16::from(map & 7) << 5 | u16::from(channel & 3) << 8 | u16::from(repeat.min(15)) << 10
+}
+
+/// A bake list as six words: the count, then two entries a word (the first in the low half).
+pub fn bake_words(bake: &[u16]) -> [u32; 6] {
+    let mut w = [0u32; 6];
+    w[0] = bake.len().min(BAKE_MAX) as u32;
+    for (k, &e) in bake.iter().take(BAKE_MAX).enumerate() {
+        w[1 + k / 2] |= u32::from(e) << (16 * (k % 2));
+    }
+    w
 }
 
 /// A field's ground as drawn: its texture set (`Shared::terrain_layout`) and its indices.
@@ -44,8 +70,7 @@ pub struct Ground {
     pub field: u16,
     pub set: vk::DescriptorSet,
     textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
-    pub first_index: u32,
-    pub index_count: u32,
+    pub patches: Vec<TerrainPatch>,
     pub cell: f32,
     pub extent: [f32; 2],
 }
@@ -180,8 +205,7 @@ impl SceneGpu {
                     field: g.field,
                     set,
                     textures: g.textures,
-                    first_index: g.first_index,
-                    index_count: g.index_count,
+                    patches: g.patches,
                     cell: g.cell,
                     extent: g.extent,
                 });
@@ -252,5 +276,18 @@ impl SceneGpu {
             d.destroy_buffer(self.ibuf, None);
             d.free_memory(self.imem, None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bake_lists_pack_two_entries_a_word() {
+        let e = bake_entry(3, 1, 2, 4);
+        assert_eq!(e, 3 | 1 << 5 | 2 << 8 | 4 << 10);
+        let w = bake_words(&[e, 7, 9]);
+        assert_eq!(w, [3, u32::from(e) | 7 << 16, 9, 0, 0, 0]);
     }
 }

@@ -13,11 +13,14 @@ terrain from the field's `.ktf`: the terrain's own mesh (`ktf::mesh`, docs/forma
 "Patches and their draws"), its finest patches' lit draws, each triangle carrying its draw's
 one or two layers and its blend map (the draw's fourth byte) and channel pair. `terrain.frag`
 mixes the two layers by that pair, each divided by their sum, as the field's own programs 9 to
-11 do; a one-layer draw is that layer alone. Each layer is tiled every n cells (its record's repeat). In AREA_01_01
+11 do; a one-layer draw is that layer alone. The bake (programs 12 to 15: the patch's one-layer
+draws, each its layer under one map channel, which the game paints into a screen-sized target
+first) is summed in the shader instead: the ground is drawn a patch at a time with the patch's
+bake list (up to 10 entries) in the push constants, and a baked draw adds the list's tiles,
+weighted, to its own and divides by the whole weight as the game's programs do. That gives
+the same colour without the extra target. Each layer is tiled every n cells (its record's repeat). In AREA_01_01
 that gives the sandy path and the grass beside it. Not yet the game's: the stored normals (the
-heightmap's are used), the tiles' alpha as the specular strength, the depth draws, the bake (the
-one-layer draws under the second map, added by programs 12 to 15: those draws are drawn
-without it), the per-patch texture list the layer numbers presumably count in, and the coarse
+heightmap's are used), the tiles' alpha as the specular strength, the depth draws, the per-patch texture list the layer numbers presumably count in, and the coarse
 patches at a distance.
 
 Options: `--size N` (64..1280), `--yaw DEG`, `--pitch DEG` (45 by default for fields),
