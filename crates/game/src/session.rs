@@ -69,17 +69,19 @@ pub struct Session {
     /// front of others (`area_map::closed`), by place number.
     opened: std::collections::BTreeSet<usize>,
     worn: std::collections::BTreeMap<usize, i32>,
+    /// The places visited, by place number (`area_map::known`).
+    visited: std::collections::BTreeSet<usize>,
 }
 
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default() }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default() }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default() }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default() }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -203,6 +205,16 @@ impl Session {
     /// Whether place `k` (of the table `places`) is closed to the player.
     pub fn closed(&self, places: &[barrel_formats::world::Place], k: usize) -> bool {
         places.get(k).is_some_and(|p| crate::area_map::closed(p, self.opened.contains(&k), self.worn.get(&k).copied().unwrap_or(0)))
+    }
+
+    /// Place `k` visited.
+    pub fn visit(&mut self, k: usize) {
+        self.visited.insert(k);
+    }
+
+    /// Which places the player knows, by place number.
+    pub fn known(&self, places: &[barrel_formats::world::Place]) -> Vec<bool> {
+        crate::area_map::known(places, &self.visited, |k| self.closed(places, k))
     }
 
     /// Place `k`'s field gimmick used: it opens.
@@ -398,7 +410,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default() };
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default() };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -419,7 +431,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default() };
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default() };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -466,6 +478,9 @@ impl Session {
         for k in &self.opened {
             out += &format!("opened {k}\n");
         }
+        for k in &self.visited {
+            out += &format!("visited {k}\n");
+        }
         for (k, d) in &self.worn {
             out += &format!("worn {k} {d}\n");
         }
@@ -492,6 +507,7 @@ impl Session {
         let (mut money, mut party) = (NEW_GAME_MONEY, Vec::<Member>::new());
         let mut known = std::collections::BTreeSet::new();
         let (mut opened, mut worn) = (std::collections::BTreeSet::new(), std::collections::BTreeMap::new());
+        let mut visited = std::collections::BTreeSet::new();
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -522,6 +538,9 @@ impl Session {
                     traits: w.get(3).map_or(Ok(Vec::new()), |t| t.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect())?,
                 }),
                 "known" => known.extend(w.get(1).ok_or_else(|| bad(line))?.split(',').map(|v| v.parse::<i32>().map_err(|_| bad(line))).collect::<Result<Vec<_>, _>>()?),
+                "visited" => {
+                    visited.insert(num(1)? as usize);
+                }
                 "opened" => {
                     opened.insert(num(1)? as usize);
                 }
@@ -536,7 +555,7 @@ impl Session {
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited }, at))
     }
 }
 
@@ -568,8 +587,10 @@ mod tests {
         assert!(s.closed(&places, 0) && s.closed(&places, 1));
         s.wear(0, 30);
         s.open_place(1);
+        s.visit(1);
         let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
         assert!(!back.closed(&places, 0) && !back.closed(&places, 1));
+        assert_eq!(back.known(&places), [false, true]);
     }
 
     #[test]

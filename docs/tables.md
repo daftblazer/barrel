@@ -2373,6 +2373,16 @@ has every one untouched (Sector Three 30 left). Barrel keeps only what changed, 
 `opened K` and `worn K DAMAGE` lines; a closed place has no way there on the area map, no
 label, and is not on the world map's list.
 
+Which places the player knows: the save's `worldmap` group holds `knowledgePointer` (96 words,
+a place's: 15 visited, 10 seen, 0 unknown) and `knowledgeRoute` (85 words, a route's, the
+same values). On the user's save at 8/20 the known ones are exactly the places visited and
+the open places one route from them (`area_map::known`), and the known routes those routes:
+Sector One visited, Sector Two and its route seen, Sector Three (behind its obstacle) and the
+Ruins Courtyard (two routes off) unknown. The world map's "Map" list and the area map show
+only known sectors; the world level's own places also open with the story (place 5, one
+route from Colseit, is unknown there; not read yet). Barrel keeps the visits as its save's
+`visited K` lines.
+
 A sector's "Gatherable Items" (the area map's scroll) are the items of its gathering points'
 lists at the table level (the first list at level 0), each once, by item number
 (`Gathering::field_items`): Sector One (map 26) has its four points on list 71, Garden Stone

@@ -43,6 +43,25 @@ pub fn closed(place: &Place, opened: bool, damage: i32) -> bool {
     }
 }
 
+/// The places the player knows (the save's `worldmap/knowledgePointer`, 96 words: 15 for a
+/// place visited, 10 for one seen, 0 unknown): those visited and the open places one route
+/// from them. Checked against the user's save at 8/20: every sector it knows, and only those
+/// (Sector Two seen from Sector One, Sector Three behind its obstacle unknown). The world
+/// level's places open with the story as well (not read yet: place 5, one route from Colseit,
+/// is unknown there).
+pub fn known(places: &[Place], visited: &std::collections::BTreeSet<usize>, closed: impl Fn(usize) -> bool) -> Vec<bool> {
+    let mut out = vec![false; places.len()];
+    for &k in visited.iter().filter(|&&k| k < places.len()) {
+        out[k] = true;
+        for (_, j) in neighbours(places, k) {
+            if !closed(j) {
+                out[j] = true;
+            }
+        }
+    }
+    out
+}
+
 /// A direction on the map, as the link slots order them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Way {
@@ -64,6 +83,14 @@ mod tests {
 
     fn place(tag: &str, links: [i32; 6]) -> Place {
         Place { name: tag.into(), tag: tag.into(), kind: 1, links, description: String::new(), extra: [-1, 0] }
+    }
+
+    #[test]
+    fn a_visit_shows_the_open_neighbours() {
+        let places = vec![place("A2p0", [-1, -1, 25, 24, -1, -1]), place("A2p1", [27, 25, 26, -1, -1, -1]), place("A2p2", [29, -1, -1, 26, -1, -1]), place("A2p3", [-1, 27, 28, -1, -1, -1]), place("A2p4", [30, 29, -1, 28, -1, -1])];
+        let visited = [1].into_iter().collect();
+        // Sector One visited: the Entrance and Sector Two seen, Sector Three shut, the Courtyard two routes off.
+        assert_eq!(known(&places, &visited, |k| k == 2), [true, true, false, true, false]);
     }
 
     #[test]

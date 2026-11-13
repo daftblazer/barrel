@@ -1129,7 +1129,8 @@ struct AreaMap {
     /// The gathering tables (a sector's gatherables) and the items' names.
     gathering: Option<barrel_game::gather::Gathering>,
     item_names: Vec<String>,
-    /// The places closed to the player (`Session::closed`): no way there, no label, not listed.
+    /// The places closed to the player (`Session::closed`), and the sectors not known yet
+    /// (`Session::known`): no way there, no label, not listed.
     closed: Vec<bool>,
 }
 
@@ -5431,7 +5432,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             match AreaMap::new(Path::new(&args[1]), w.pos, world_mode, &gpu, pool, post_pass) {
                 Ok(mut a) => {
                     eprintln!("area map: {} ({})", a.places[a.at].name, a.places[a.at].tag);
-                    a.closed = (0..a.places.len()).map(|k| session.as_ref().is_some_and(|s| s.closed(&a.places, k))).collect();
+                    // Where she stands is visited; the sectors closed or not known yet are hidden.
+                    if let Some(s) = session.as_mut() {
+                        s.visit(a.at);
+                    }
+                    a.closed = match session.as_ref() {
+                        Some(s) => {
+                            let known = s.known(&a.places);
+                            (0..a.places.len()).map(|k| s.closed(&a.places, k) || (a.places[k].kind == 1 && !known[k])).collect()
+                        }
+                        None => Vec::new(),
+                    };
                     area_map = Some(a);
                 }
                 Err(e) => {
@@ -6941,6 +6952,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     // The area map's Enter: the field of the point she stands on, at its arrival place.
     if let Some(AreaPick::Field(field)) = area_enter.take() {
+        // The sector entered is visited (its open neighbours seen: `area_map::known`).
+        if let (Some(s), Some(a)) = (session.as_mut(), area_map.as_ref()) {
+            s.visit(a.at);
+        }
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the world map is not inside a game install")?.to_path_buf();
         let pe_bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&pe_bytes)?;
