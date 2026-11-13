@@ -1247,6 +1247,10 @@ struct Walker {
     maps: Vec<String>,
     /// A world map trip's waypoints still ahead (`--world-trip`): she runs to each in turn.
     waypoints: std::collections::VecDeque<[f32; 3]>,
+    /// Her `JUMP` motion, and the seconds since a jump left the ground (J in a window;
+    /// `BARREL_JUMP_AT=FRAME` jumps at that frame).
+    jump_anim: Option<barrel_formats::g1a::Animation>,
+    jump: Option<f32>,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1281,9 +1285,10 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     // Her run (the `RUN` column, `ACT_RUN`; `WALK` is the slow one).
     let run = motions.get("RUN").cloned().ok_or("the player has no RUN motion")?;
     let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
+    let jump_anim = motions.get("JUMP").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default() };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3435,6 +3440,8 @@ fn main() -> Result<()> {
     let now = std::time::Instant::now();
     let frame_dt = (now - last_frame).as_secs_f64().min(0.25) as f32;
     last_frame = now;
+    // A jump asked for this frame (J, or `BARREL_JUMP_AT`).
+    let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     if let Some(p) = pump.as_mut() {
         if !p.pump() {
             eprintln!("window closed after {frame} frames");
@@ -3453,6 +3460,7 @@ fn main() -> Result<()> {
                 }
                 KeyCode::Escape => quit = true,
                 KeyCode::KeyR => orbit = (0.0, 0.0, 1.0),
+                KeyCode::KeyJ => jump_now = true,
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -3587,9 +3595,49 @@ fn main() -> Result<()> {
                     }
             }
         }
+        // A jump (`game::walk::jump_height`): her `JUMP` motion at 1.5 from its start, blended in,
+        // and the lift of a launch at 5 m/s; when she is back down the motion skips to its landing
+        // (1.5 s in, the crouch; the viewer's stand-in for the game's landing phase, whose trigger
+        // is not read) and her gait takes over once it ends.
+        if jump_now && w.jump.is_none()
+            && let (Some(anim), Some(b)) = (w.jump_anim.clone(), town_bodies.get_mut(w.body)) {
+                let old = std::mem::replace(&mut b.anim, anim);
+                b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
+                b.clock = Some(0.0);
+                w.jump = Some(0.0);
+                eprintln!("frame {frame}: jump");
+            }
+        let mut lift = 0.0;
+        if let Some(t) = w.jump.as_mut() {
+            if dt > 0.0 {
+                *t += dt;
+            }
+            let h = barrel_game::walk::jump_height(barrel_game::walk::JUMP_SPEED, *t);
+            let duration = w.jump_anim.as_ref().map_or(0.0, |a| a.duration);
+            if let Some(b) = town_bodies.get_mut(w.body) {
+                if h > 0.0 {
+                    lift = h;
+                } else if b.clock.unwrap_or(0.0) < 1.5 {
+                    b.clock = Some(1.5);
+                }
+                b.clock = Some(b.clock.unwrap_or(0.0) + dt * 1.5);
+                if let Some((_, clock, blend)) = &mut b.from {
+                    *clock += dt;
+                    *blend += dt;
+                }
+                if b.from.as_ref().is_some_and(|f| f.2 >= MOTION_BLEND) {
+                    b.from = None;
+                }
+                if h <= 0.0 && b.clock.unwrap_or(0.0) >= duration {
+                    w.jump = None;
+                    // The gait picks her motion again from the next frame (blended from here).
+                    w.gait = barrel_game::walk::Gait::Jump;
+                }
+            }
+        }
         // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
         // its beginning and is blended in over 0.15 s, the old one playing on meanwhile.
-        if frame > 0 && dt > 0.0 {
+        if frame > 0 && dt > 0.0 && w.jump.is_none() {
             let (gait, rate) = barrel_game::walk::player_gait(speed, false);
             if let Some(b) = town_bodies.get_mut(w.body) {
                 if gait != w.gait {
@@ -3597,7 +3645,7 @@ fn main() -> Result<()> {
                     let next = match gait {
                         barrel_game::walk::Gait::Wait => w.wait.clone(),
                         barrel_game::walk::Gait::Walk => w.walk.clone(),
-                        barrel_game::walk::Gait::Run => w.run.clone(),
+                        barrel_game::walk::Gait::Run | barrel_game::walk::Gait::Jump => w.run.clone(),
                     };
                     let old = std::mem::replace(&mut b.anim, next);
                     b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
@@ -3634,7 +3682,7 @@ fn main() -> Result<()> {
             }
         }
         let turn = glam::Quat::from_rotation_y(w.facing);
-        instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos)));
+        instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos) + Vec3::Y * lift));
     }
     if door.is_some() {
         break;

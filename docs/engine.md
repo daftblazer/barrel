@@ -377,7 +377,11 @@ phases (+0x138: 0 the take-off, 1 in the air, 4 the landing), and going into the
 velocity drops by a·dt, a being its +0x160 acceleration, whose upward part is the gravity, 14.71
 m/s² (`0x14026b9c9`). So a jump peaks 0.85 m (85 units) up after 0.34 s and is back down after
 0.68 s (`game::walk::jump_height`). What ends the landing (the ground under her, the 1.7 s timer)
-is not read; the viewer does not jump yet.
+is not read. The viewer jumps (J in a window, `BARREL_JUMP_AT=FRAME` headless): the `JUMP` motion
+at 1.5 from its start, blended in, her body lifted by `jump_height` until she is back down; then
+the motion skips to its landing crouch (1.5 s in, its own pose from the take-off to the air hold
+lining up with the 0.68 s flight at that speed) and her gait takes over when it ends. The skip is
+the viewer's stand-in for the landing phase until that is read.
 
 ## Movies (open)
 

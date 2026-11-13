@@ -43,6 +43,8 @@ pub enum Gait {
     Wait,
     Walk,
     Run,
+    /// In a jump (`MOTION_JUMP`, 49): not a pick by speed, so the next pick always changes.
+    Jump,
 }
 
 /// The motion for the player moving at `speed` (units a second, as she moved this frame) and
