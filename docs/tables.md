@@ -1922,8 +1922,9 @@ The fourth pointer is set only for some bosses (the Grand
 Dragon's: `2, 9, 48, 40, 1, -1, ...`), not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
-entries of another shape (skills, probably). Some drops have numbers above the item enum's
-568; what those are is still open.
+entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which
+end at 559: the drop draws from a pool by that number (`0x140111bc0`, "Rewards" above; 560 to
+568 are also the item enum's `ITEM_REV_CLASS_*` names).
 
 | Monster | Level | HP | ATK | DEF | SPD | Drops |
 |---|---|---|---|---|---|---|
