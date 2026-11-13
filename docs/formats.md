@@ -964,7 +964,7 @@ does:
 | `xDS_` | casts a shadow (`+0x561` = 1; `renderer.md`, shadow casters) |
 | `xN1_`, `xN2_` | the wind's node shaker keyword (`<n_shaker>`, `shading.md`) |
 | `xV1_` to `xV5_` | the wind's vertex shaker keyword (`<v_shaker>`, `shading.md`) |
-| `xS1_`, `xS2_`, `xS3_` | the word at `+0x568` = 0, 1, 2, handed to the draw queue (`0x140338710`, from `0x1404d884e`) as one of its sort words: a draw-order group, read so, not traced further |
+| `xS1_`, `xS2_`, `xS3_` | raise the object's draw priority by 0, 1, 2 (the word at `+0x568`; `renderer.md`, "Draw priority") |
 | `xCT_` | runs `0x1404f0ac0`: a box from the rotation and the model's bounds (`+0x468`), placed at the position, into `+0x600` (not read further) |
 | `xAM_` | sets `+0x654..+0x65c` to (-1, -1, 1) and `+0x661` = 1 (not read further) |
 | `xEF_` | effect objects (their files, `Obj/xEF_*/....elixir.gz`) |

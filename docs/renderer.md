@@ -497,3 +497,16 @@ Cameras, cuts, positions, walks, gestures, faces, name cards, line breaks and th
 agree. The gaps left are lighting: the sky dome's brightness, the outdoor ambient (walls in
 shade), the cloud-shadow light texture and the glow's level combination
 (`docs/shading.md`).
+
+## Draw priority
+
+The game queues each placement's draw (`0x1404d8869` → `0x140338710`) as a 0x60-byte command:
+`+0x8` the draw layer, `+0x9` the model's slot, `+0xa` the kind of draw (0, 1, 2: three loops
+over the model's pieces), `+0x10` a word from the caller, `+0x12` the placement's `xS` offset
+(its `xS1_`/`xS2_`/`xS3_` tag: 0, 1, 2; none: 0), `+0x18` a pointer, `+0x50` the model. Queuing
+counts every piece of the model into one of 1,024 buckets (`0x1403387e0`: the queue's `+0x20`
+array, its total at `+0x1020`) at the piece's own priority word (`+0x4`) plus that offset, and
+the commands are then laid out bucket by bucket (`0x1403380d0`, copying `+0x12` to `+0x2a` of
+the sorted entry): a counting sort, so pieces draw in priority order, and an `xS` tag pushes a
+whole object's pieces up by one or two places. Where a piece's own priority comes from (the
+mesh group, its material or shader) is not traced yet, and the viewer does not order by it.
