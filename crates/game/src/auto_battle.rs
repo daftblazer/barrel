@@ -34,9 +34,24 @@ pub struct Tables {
     /// What each member's starting kit adds (`party_defaults`' equipment through
     /// `equipment::item_stat`): HP, MP, attack, defence, speed, the four resistances.
     kit: Vec<[i32; 9]>,
+    /// `itemData.xml`'s equipment values, for [`Tables::equip`].
+    items: Vec<crate::equipment::ItemRow>,
 }
 
 impl Tables {
+    /// Member `member` fights in `items` (item numbers, -1 for none) instead of its new-game
+    /// kit: a session's equipment. Made as fresh items too (quality 50, no traits or effects:
+    /// a held item's own quality and traits are not carried yet).
+    pub fn equip(&mut self, member: usize, items: &[i32]) {
+        if self.items.is_empty() {
+            return;
+        }
+        if self.kit.len() <= member {
+            self.kit.resize(member + 1, [0; 9]);
+        }
+        self.kit[member] = kit_stats(&self.items, items);
+    }
+
     /// From the English executable, `item_effect.xml`'s table (`effects_xml`) and `Chara.xml`'s
     /// (`chara`, for the fighters' sizes).
     ///
@@ -44,12 +59,9 @@ impl Tables {
     /// (`docs/tables.md`, "A new game's party"); without it, in its base stats alone.
     pub fn load(pe: &Pe, effects_xml: &barrel_formats::table::Element, chara: Option<&barrel_formats::table::Element>, items: Option<&barrel_formats::table::Element>) -> Result<Tables, String> {
         let (act_names, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
-        let kit = match (items, bd::party_defaults(pe, bd::PARTY_DEFAULTS_EN)) {
-            (Some(items), Some(defaults)) => {
-                let rows: Vec<crate::equipment::ItemRow> = items.children.iter().map(crate::equipment::ItemRow::from_row).collect();
-                let t = crate::equipment::Tables { items: &rows, effects: &[], traits: &[], acts: &[] };
-                defaults.iter().map(|d| kit_stats(&t, &d.equipment)).collect()
-            }
+        let rows: Vec<crate::equipment::ItemRow> = items.map(|i| i.children.iter().map(crate::equipment::ItemRow::from_row).collect()).unwrap_or_default();
+        let kit = match bd::party_defaults(pe, bd::PARTY_DEFAULTS_EN) {
+            Some(defaults) if !rows.is_empty() => defaults.iter().map(|d| kit_stats(&rows, &d.equipment)).collect(),
             _ => Vec::new(),
         };
         Ok(Tables {
@@ -63,13 +75,15 @@ impl Tables {
             effects: bd::item_effects(effects_xml, &act_names),
             radii: chara.map(bd::chara_radii).unwrap_or_default(),
             kit,
+            items: rows,
         })
     }
 }
 
 /// What a set of freshly made items (`0x14029ce00`: quality 50, no effects; their default traits
 /// from a per-item table are not read) adds to stats 0 to 8.
-fn kit_stats(t: &crate::equipment::Tables, items: &[i32]) -> [i32; 9] {
+fn kit_stats(rows: &[crate::equipment::ItemRow], items: &[i32]) -> [i32; 9] {
+    let t = &crate::equipment::Tables { items: rows, effects: &[], traits: &[], acts: &[] };
     let mut out = [0; 9];
     for &item in items.iter().filter(|&&i| i >= 0) {
         let unit = barrel_formats::save::ItemUnit { serial: 1, item: item as i16, quality: 50.0, traits: [-1; 3], word_e: 0, effects: [-1; 4], equip_cost: 0, word_1a: 0, counts: [0; 4] };
@@ -254,6 +268,11 @@ mod tests {
             fight_drawn(t, &[(0, 1), (1, 1)], &[rat], &mut rng).unwrap().winner == Some(0)
         }).count();
         let (with, without) = (wins(&kit), wins(&bare));
+        // A session's own equipment replaces the kit: none at all fights as the bare stats.
+        let mut stripped = Tables::load(&pe, &effects, Some(&chara), Some(&items)).unwrap();
+        stripped.equip(0, &[-1; 4]);
+        stripped.equip(1, &[-1; 4]);
+        assert_eq!(wins(&stripped), without);
         eprintln!("Escha and Logy at level 1 against an Ore Rat: {with} of 200 won in their kit, {without} without");
         assert!(with > without);
     }

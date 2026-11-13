@@ -1618,14 +1618,21 @@ const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
 /// then the other alchemist) at their places around it (`battle::party_spot`, member k in
 /// sector k mod 3), everyone in their `WAIT` motion (the battle idle, `B_WAIT`), the party facing
 /// the centre and the monsters the lead.
-fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
-    let tables = battle_tables(root)?;
+///
+/// `members` are the session's party (its save's `member` lines): each fights at its level in
+/// its equipment; without them, at level 1 in the new game's kit.
+fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_game::session::Member], scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
+    let mut tables = battle_tables(root)?;
+    for (c, m) in members.iter().enumerate() {
+        tables.equip(c, &m.equipment);
+    }
+    let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
     let mut rng = barrel_game::rng::Rng::seeded(1);
     let drawn = barrel_game::auto_battle::draw(&tables, group, &mut rng)?;
     let sizes: Vec<f32> = drawn.iter().map(|d| d.1).collect();
     // The battle scatters the monsters first: a copy of its generator gives the same spots.
     let spots = barrel_game::battle::scatter(&sizes, &mut rng.clone());
-    let party = [(usize::from(logy), 1), (usize::from(!logy), 1)];
+    let party = [(usize::from(logy), level(usize::from(logy))), (usize::from(!logy), level(usize::from(!logy)))];
     let monsters: Vec<usize> = drawn.iter().map(|d| d.0).collect();
     // Fought a member's command at a time (`fight_commanded`): up to the first member turn.
     let (outcome, turn) = barrel_game::auto_battle::fight_commanded(&tables, &party, &monsters, rng, &[])?;
@@ -2561,6 +2568,8 @@ struct SceneSpec {
     logy: bool,
     /// `--battle GROUP`: a battle laid out on the stage (`battle_people`).
     battle_group: Option<i32>,
+    /// The saved session a field encounter's battle came from (its `member` lines give the party).
+    battle_party: Option<String>,
     /// `--look-from FIELD`: the look table (`Saves/field/FIELD.xml`) for a field without its
     /// own, as a battle stage (`BF_POINT*`) takes the field area's.
     look_from: Option<String>,
@@ -2613,6 +2622,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         field,
         look_from,
         battle_group,
+        battle_party,
         args,
         event_spec,
         skeleton_spec,
@@ -2827,7 +2837,8 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let field_dir = Path::new(&args[1]);
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--battle: the stage is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, bodies, play) = battle_people(&root, group, logy, &mut scene, base, town_bodies.len())?;
+        let members = battle_party.as_deref().map(barrel_game::session::Session::party_in).unwrap_or_default();
+        let (packs, bodies, play) = battle_people(&root, group, logy, &members, &mut scene, base, town_bodies.len())?;
         pack_bytes.extend(packs);
         town_bodies.extend(bodies);
         battle_play = Some(play);
@@ -3846,6 +3857,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             field,
             look_from: look_from.clone(),
             battle_group,
+            battle_party: carry.back.as_ref().and_then(|b| b.1.save.clone()),
             args: args.clone(),
             event_spec: event_spec.clone(),
             skeleton_spec: skeleton_spec.clone(),
@@ -4632,7 +4644,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 match battles.as_mut() {
                     Some((tables, rng)) => {
                         let logy = walker.as_ref().is_some_and(|w| w.logy);
-                        let party = [(usize::from(logy), 1), (usize::from(!logy), 1)];
+                        // The session's party, at its levels and in its equipment (level 1 and
+                        // the new game's kit without a session).
+                        let members = session.as_ref().map(|s| s.party.clone()).unwrap_or_default();
+                        for (c, m) in members.iter().enumerate() {
+                            tables.equip(c, &m.equipment);
+                        }
+                        let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
+                        let party = [(usize::from(logy), level(usize::from(logy))), (usize::from(!logy), level(usize::from(!logy)))];
                         match barrel_game::auto_battle::fight(tables, &party, field.groups[k], rng) {
                             Ok(o) => {
                                 for line in o.lines() {

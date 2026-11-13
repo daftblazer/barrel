@@ -262,6 +262,21 @@ impl std::fmt::Display for BadSave {
 impl std::error::Error for BadSave {}
 
 impl Session {
+    /// The party members of saved text (its `member` lines, in order), for a run that has the
+    /// text but no session: the battle a field encounter opens.
+    pub fn party_in(text: &str) -> Vec<Member> {
+        text.lines()
+            .filter_map(|l| {
+                let w: Vec<&str> = l.split_whitespace().collect();
+                if w.first() != Some(&"member") || w.len() != 5 {
+                    return None;
+                }
+                let kit: Vec<i32> = w[4].split(',').filter_map(|v| v.parse().ok()).collect();
+                Some(Member { level: w[2].parse().ok()?, experience: w[3].parse().ok()?, equipment: kit.try_into().ok()? })
+            })
+            .collect()
+    }
+
     /// The session's state in free play, where the player stands at `at` (x, z field units),
     /// as text; `None` while an event plays (the game saves only in free play).
     pub fn save(&self, at: [f32; 2]) -> Option<String> {
@@ -407,6 +422,7 @@ mod tests {
         assert!(text.contains("money 999999\nmember 0 4 40 364,417,-1,-1\nmember 1 1 0 369,438,-1,-1\n"), "{text}");
         let (back, _) = Session::load(chain(), &text).unwrap();
         assert_eq!((back.money, &back.party), (MAX_MONEY, &s.party));
+        assert_eq!(Session::party_in(&text), s.party);
         // A save from before these lines: a new game's money, the party filled in later.
         let (old, _) = Session::load(chain(), "barrel-save 1\nfield 3 0 0\ntoday 90\n").unwrap();
         assert_eq!((old.money, old.party.len()), (NEW_GAME_MONEY, 0));
