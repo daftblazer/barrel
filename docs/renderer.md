@@ -204,8 +204,9 @@ seen, `MQ03_010` not), and most placements also wait for `XF01_030` (condition #
 while that event is unseen).
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
-area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its
-encounter group's first monster (`AREA_01_01`: two `MOB15A`, one `MOB01A`) in its `CharaBase`
+area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
+model the game gives it (`FieldEnemy::model`, a `CharaBase` row; its encounter group's first
+monster when missing, which agrees: `AREA_01_01`: two `MOB15A`, one `MOB01A`) in its `CharaBase`
 motions, and steps their scripts each frame while a stand-in player (Escha, walking) goes
 west at 2 m/s from 15 m east of the first enemy; each body follows its creature's place and
 facing and switches to the motion its script plays. When one touches the player everything

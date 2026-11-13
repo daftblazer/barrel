@@ -1321,10 +1321,13 @@ fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Re
     let groups = barrel_formats::battle_data::encounter_groups(&pe, barrel_formats::battle_data::ENCOUNTER_GROUPS_EN);
     let (mut bodies, mut packs, mut tex_base) = (Vec::new(), Vec::new(), base);
     for (k, e) in enemies.iter().enumerate() {
-        let Some(row) = barrel_game::field_ai::body_row(&groups, e)
-            .and_then(|r| charas.children.get(r)?.attr("BaseTag"))
-            .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
-        else {
+        // The model the game shows it as (`FieldEnemy::model`, a CharaBase row); its group's
+        // first monster's when that row is missing.
+        let Some(row) = usize::try_from(e.model).ok().and_then(|m| bases.children.get(m)).or_else(|| {
+            barrel_game::field_ai::body_row(&groups, e)
+                .and_then(|r| charas.children.get(r)?.attr("BaseTag"))
+                .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
+        }) else {
             continue;
         };
         let c = &field.mobs[k].creature;

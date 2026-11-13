@@ -131,7 +131,8 @@ pub fn build(
     Ok((field, enemies))
 }
 
-/// The `Chara.xml` row an enemy is drawn as: its group's first monster's (row 18 + monster).
+/// The `Chara.xml` row of an enemy's group's first monster (row 18 + monster): a stand-in for
+/// the model it shows when its own (`FieldEnemy::model`, a `CharaBase` row) is not there.
 pub fn body_row(pe_groups: &[barrel_formats::battle_data::EncounterGroup], enemy: &barrel_formats::battle_data::FieldEnemy) -> Option<usize> {
     let m = pe_groups.iter().find(|g| g.id == enemy.group)?.monsters.first()?.0;
     Some(barrel_formats::battle_data::MONSTER_CHARA_FIRST + usize::try_from(m).ok()?)
