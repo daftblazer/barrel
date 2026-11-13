@@ -1428,6 +1428,14 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 | `MIX_HP_EMPTY`, `MIX_ACCESS`, `BATTLE_ANNIHILATION(_ATELIER)`, `RECLAIM_KINGDOM_LV_UP`, `ATELIER_RETURN`, `ATELIER_SLEEP_MIX`, `MAP_WORLDMAP_ROUTE_MOVE`, `MEMORIES_LV_UP` | always, once their trigger group fired |
 | 41 codes on the switch's default (`CHIMU_*`, `MAP_TRAVERSAL_RITU_*`, `LICENSE_RANK_*`, `QUEST_ACCEPT_NUM_*`, the `RECLAIM_*` conditions, the `DLC_*` ones but `DLC`, `CHARA_WMPOINTER_BE_WITH_PLAYER`, `QUEST_(NOT_)OCCURRENCE`, `TRIGGER_ATELIER_ITEM_RETURN`) | never; the check data uses none of them |
 
+**A lost battle.** No event waits for a wipe: the triggers `BATTLE_ANNIHILATION` (group 20)
+and `BATTLE_ANNIHILATION_ATELIER` (group 21) head no group in `EventCheckDataAll.ecd`
+(`barrel event-starts ROOT new 20` and `21` list nothing). What the game does instead is its
+own: game mode 19 is `GAMEOVER`, with four game-over themes (`Sound/BGM/sy_gameover_a` to
+`_d`), and no layout text or `Saves_EN` message names a game over or a wipe (searched for
+"annihilat", "wiped out", "retreat", "game over"), so its screen is pictures only or is drawn
+by code. Where it goes afterwards is not read yet (a live wipe on the oracle prefix is next).
+
 Dates compare through `0x1402f08a0` (≥), `0x1402f0800` (=) and `0x1402f0950` (≤), all
 against the date global. `0x1402f0a00` turns today into (school year, month, day) and puts -1
 wherever the pattern has -1. Both sides then count -1 as 1 and encode as `0x1402f02d0` does,
