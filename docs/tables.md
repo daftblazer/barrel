@@ -2005,9 +2005,15 @@ number (+0x78) is the `Chara` row, unless that character is already there. Rows 
 instead pick a random companion from the party list (`0x140330540`, at most five).
 
 The events' town characters 10048 to 10057 (put in event mode with `q7` by 201 events, mostly in
-the `QC*` chapters, never added with `q3` or `q4`) are a different numbering. The event command
-handler remaps number ranges (`0x1401ddc71`: 825 to 10,000 by +9,175, and a range from 10,026),
-which is presumably how they reach these rows; that is not read yet.
+the `QC*` chapters, never added with `q3` or `q4`) are a different numbering. They are variable
+slots: the character handler (`0x1401ddb70`, for the `s` commands and a few others) first reads a
+number from 825 to 9,999 as that plus 9,175 (a short form of 10,000 and up), then a number from
+10,026 to 10,078 as the first word of entry number − 10,026 of a 53-entry table it keeps (20 bytes
+each, -1 when unbound), and 749 as the chosen hero (`0x14035ebb0`). `t1/0x30` clears the table
+(`0x1401de1d1`) and `t2/0x30 {slot, row}` binds an entry (`0x1401de1a8`; a slot below 10,026 taken
+as that plus 10,026): `docs/events.md`, "Slots", which `event::Player` follows. So 10048 to 10057
+are entries 22 to 31, bound by each event. No shipped event uses the two short forms (no `s`
+command names a character from 825 to 9,999, and no binding a slot below 10,026).
 
 ## Deliveries (`Saves/delivery/DeliveryData.xml`)
 
