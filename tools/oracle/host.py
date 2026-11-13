@@ -7,6 +7,8 @@ allows only to ancestors.
 
 Commands, one per line, written to work/oracle/cmd (a FIFO the host makes):
     read ADDR LEN OUT     write LEN bytes from ADDR (hex) of the game's memory to OUT
+    write ADDR HEX        write the bytes HEX (hex digits) to ADDR (hex) of the game's memory
+                          (only ever an oracle run's copy of a save: the run's own state)
     pid                   write the game's pid to work/oracle/pid
     quit                  stop the run (tools/oracle/stop.sh) and exit
 Each command's completion is appended to work/oracle/done as "ok <command>" or "err ...".
@@ -74,6 +76,11 @@ while True:
                         mem.seek(addr)
                         data = mem.read(n)
                     open(out, "wb").write(data)
+                elif words[0] == "write":
+                    addr, data = int(words[1], 16), bytes.fromhex(words[2])
+                    with open(f"/proc/{pid}/mem", "r+b", buffering=0) as mem:
+                        mem.seek(addr)
+                        mem.write(data)
                 done.write(f"ok {line.strip()}\n")
             except Exception as e:  # report and keep serving
                 done.write(f"err {e}: {line.strip()}\n")

@@ -1431,10 +1431,15 @@ table picks the case: index bytes at `0x14021486c` (one per code), targets at `0
 **A lost battle.** No event waits for a wipe: the triggers `BATTLE_ANNIHILATION` (group 20)
 and `BATTLE_ANNIHILATION_ATELIER` (group 21) head no group in `EventCheckDataAll.ecd`
 (`barrel event-starts ROOT new 20` and `21` list nothing). What the game does instead is its
-own: game mode 19 is `GAMEOVER`, with four game-over themes (`Sound/BGM/sy_gameover_a` to
-`_d`), and no layout text or `Saves_EN` message names a game over or a wipe (searched for
-"annihilat", "wiped out", "retreat", "game over"), so its screen is pictures only or is drawn
-by code. Where it goes afterwards is not read yet (a live wipe on the oracle prefix is next).
+own, and it is no game over (`ruins-entrance-lost-battle-60hz.mkv`, a wipe in a Ruins Entrance
+battle on the copied save): the last member falls in slow motion, the screen fades to white,
+the date panel alone shows on the white while the day turns (8/20 → 8/21, "Left" 100 → 99),
+and the area map comes back at the area the battle was in (the Southern Ruins map at the Ruins
+Entrance, not the Atelier) with the lead's line "Oww... that was bad. Let's be more careful
+next time." (a line no table holds: from the executable or a message file not searched yet).
+Game mode 19 `GAMEOVER` and the four game-over themes (`Sound/BGM/sy_gameover_a` to `_d`) are
+for something else (presumably the calendar running out). Not read yet: the party's HP after
+the wipe, whether anything is lost (items, the gathered materials), and the line's source.
 
 Dates compare through `0x1402f08a0` (≥), `0x1402f0800` (=) and `0x1402f0950` (≤), all
 against the date global. `0x1402f0a00` turns today into (school year, month, day) and puts -1

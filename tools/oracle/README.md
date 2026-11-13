@@ -63,3 +63,7 @@ the title: 298 frames, none more than 25 ms apart). `tools/oracle/frames.sh VIDE
 writes every frame in a time range as PNG with the timestamps in `DIR/times.txt`, so a frame
 shown twice or skipped can be told from the game's own animation. Recordings are references
 kept outside the repository (they are the game's pictures), on a large disk.
+
+`tools/oracle/poke.sh ADDR HEX` writes bytes to the run's memory through the host's `write`
+command (only ever the oracle prefix's copy of a save; e.g. a party fighter's current HP, stat
+1 at +0x8c, set to 1 to see a lost battle).
