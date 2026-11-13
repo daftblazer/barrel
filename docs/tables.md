@@ -2060,3 +2060,19 @@ Chips (39), Cloud Financier (25) or Preserved Biscuit (25), and `cost` is 1 in e
 still worth feeding is the remaining days over `dec_day` (`0x1400daef5`). The table is the
 singleton at `0x140dfccd0` (`0x1400e1880`), looked up by item (`0x1400e1af0`). `day` is
 presumably the job's length in days; where a job's time is first set was not found.
+
+## The world map's field (`Data/x64/Field/A15_WMAP`)
+
+The world map is a field like the others: `A15_WMAP.elixir.gz` holds its terrain (`A15_WMAP.ktf`
+with its `.g1s`, `.g1t` and light texture), a heightmap of 256 × 256 cells of 250 units (64,000
+across, heights -19 to 528), a placement list and a small collision mesh; `A15_WMAP_Obj` the
+objects, named by region (`A0_obj` 30 placements, `B1_obj` 22, `E2_obj` 45 ... and the clouds,
+`xxCLOUD_*xx`). Its look is `Saves/field/A15_WMAP.xml` (fog, one `PARALLEL` light, the sphere
+following the camera, the character shader, and `<tex_filter_world>` / `<tex_filter_area>`
+overlay modifiers 2 and 3, not read). `barrel-view --field .../A15_WMAP OUT --player 32000,32000`
+draws it with Escha standing on it. The places on it are not in these files: the executable
+names them `WM_POINTER_LP_T0`, `WM_POINTER_LP_A0` to `_F2` (a large point per place, by the
+names) and `WM_POINTER_SP_A0P0` ... (small points along the routes), parsed from names with the
+`WM_POINTER_` prefix at `0x14003e11e`; where their positions live is not read yet. The routes
+and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
+part).
