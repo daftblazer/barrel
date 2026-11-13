@@ -1007,7 +1007,11 @@ or zero, and string pointers), then copies each record into the enemy data (`0x1
 | +0x50 | where it stands (x, y, z) |
 
 The field (`0x140072980`) spawns, for its area, each record whose area matches (or is -1), whose
-conditions hold and which is not already out or beaten (`0x140075e10`), through `0x14026fc20`
+conditions hold and which is not already out or beaten (`0x140075e10`: it looks the record up in
+a map kept on the field object at +0x40, keyed by field map number and then by the record's
++0x1c, held in memory only and never saved, which fits the live finding that ordinary enemies
+come back; it is added to or read by `0x140085df0`, `0x140270450`, `0x14027de10` and
+`0x140281e40`, not read further), through `0x14026fc20`
 (its +0, +4 and +0x1c). The area is the field map's number (`FIELDMAP_*`: towns 0 to 11, then `AREA_01_01` = 12 and
 on), so area 12 is `AREA_01_01`, with Ore Rats (group 10) and Stray Dogs (11) near (40, 0, 40);
 area 107's single record is the Ancient Beast King (group 220). `barrel encounter EXE AREA
