@@ -470,6 +470,13 @@ and scales with the height, centred. Not yet as the game: the tag's slight tilt 
 and the small green fleur at the panel's lower right. `--size WxH` renders other shapes
 (1280x720 for comparing with oracle frames).
 
+**Texture filtering.** The scene's textures are filtered anisotropically (`RenderSettings::
+anisotropy`: 16 on the desktop, 4 on the handhelds, capped by the device's
+`maxSamplerAnisotropy`; off where `samplerAnisotropy` is missing). Against the game's frame of
+`EVENT_MM01_OP1_111`'s arch shot (`TOWN_09`), trilinear filtering blurred the ground's cobbles
+into a plain band a few metres off where the game keeps them sharp; with it they carry as far.
+The game's own sampler states are not read (by the look, not yet the game's setting).
+
 **Shadows.** The sun's shadow map: one 2048² depth map from the field's first directional
 light, an orthographic square 3,000 field units across around the camera's target
 (`shadow.rs`; the game's four cascades are not read: a deliberate difference meanwhile).

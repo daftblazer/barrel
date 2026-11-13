@@ -176,6 +176,8 @@ struct Gpu {
     queue: vk::Queue,
     queue_family: u32,
     memory: vk::PhysicalDeviceMemoryProperties,
+    /// The most anisotropic filtering the device allows (1 without the feature).
+    max_anisotropy: f32,
 }
 
 impl Gpu {
@@ -225,7 +227,9 @@ impl Gpu {
             .texture_compression_bc(true)
             .independent_blend(features.independent_blend != 0)
             .shader_storage_image_write_without_format(features.shader_storage_image_write_without_format != 0)
-            .shader_storage_image_read_without_format(features.shader_storage_image_read_without_format != 0);
+            .shader_storage_image_read_without_format(features.shader_storage_image_read_without_format != 0)
+            .sampler_anisotropy(features.sampler_anisotropy != 0);
+        let max_anisotropy = if features.sampler_anisotropy != 0 { props.limits.max_sampler_anisotropy } else { 1.0 };
         let swapchain_ext = [ash::khr::swapchain::NAME.as_ptr()];
         let device = unsafe {
             instance.create_device(
@@ -239,7 +243,7 @@ impl Gpu {
         };
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let memory = unsafe { instance.get_physical_device_memory_properties(physical) };
-        Ok(Gpu { _entry: entry, instance, physical, device, queue, queue_family, memory })
+        Ok(Gpu { _entry: entry, instance, physical, device, queue, queue_family, memory, max_anisotropy })
     }
 
     fn memory_type(&self, bits: u32, flags: vk::MemoryPropertyFlags) -> Result<u32> {
@@ -3258,6 +3262,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
     };
 
+    let anisotropy = (settings.anisotropy as f32).min(gpu.max_anisotropy).max(1.0);
     let sampler = unsafe {
         d.create_sampler(
             &vk::SamplerCreateInfo::default()
@@ -3266,7 +3271,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .address_mode_u(vk::SamplerAddressMode::REPEAT)
                 .address_mode_v(vk::SamplerAddressMode::REPEAT)
-                .max_lod(16.0),
+                .max_lod(16.0)
+                .anisotropy_enable(anisotropy > 1.0)
+                .max_anisotropy(anisotropy),
             None,
         )?
     };

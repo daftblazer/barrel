@@ -41,11 +41,15 @@ pub struct RenderSettings {
     pub gsr2: bool,
     /// FSR 3.1's upscaler (`fsr3.rs`): the same inputs and replacements as GSR 2.
     pub fsr3: bool,
+    /// Anisotropic filtering of the scene's textures (most samples a lookup takes; 1 off). The
+    /// game keeps the ground's cobbles sharp far along it, as anisotropic filtering does
+    /// (docs/renderer.md, "Texture filtering"); the device's limit caps it.
+    pub anisotropy: u32,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 16 };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
     /// The desktop with FSR 3.1 as anti-aliasing at full resolution (its "native AA").
@@ -56,7 +60,7 @@ impl RenderSettings {
     pub const DESKTOP_TAA: RenderSettings = RenderSettings { taa: true, motion: true, jitter: true, sharpen: true, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 4 };
 
     /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `desktop-fsr3`, `handheld`, `handheld-gsr2`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
