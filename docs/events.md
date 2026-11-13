@@ -998,7 +998,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000019` | `u25` |  | B3Balloon | 2 | 3 (2) |
 | `7500001a` | `u26` | (a choice: `{v, ...}`, the answer into variable `v`; "Choices") | BalloonSelectMode | 93 | 4 (93) |
 | `7500001b` | `u27` |  | B3Balloon, Event | 2 | 5 (2) |
-| `7500001d` | `u29` |  | B3Balloon, Event | 24 | 5 (24) |
+| `7500001d` | `u29` | `CHANGE_GAME_MODE` (event.rs): `{mode, 0, 0}`, the game mode after the event (case `0x14005171e`: a `GAMEMODE_CREATE_DATA` of that mode to the event's interface): 14 `WORLDMAP` in most, 0 `FIELDMAP`, 4 `TITLE` (`EVENT_MM14_ED1_010`, an ending); the modes are `GAME_MODE_TYPE_INFO_*` in enum order, `event::GAME_MODES` | B3Balloon, Event | 24 | 5 (24) |
 | `7500001e` | `u30` |  | B3Balloon, Event | 2 | 1 (2) |
 | `7500001f` | `u31` | ECT_EVENT_VOICE_PLAY | B3Balloon, Event | 400 | 1 (400) |
 | `75000022` | `u34` | `SET_EVENT_FLAG` (event.rs): sets one of the 151 event flags (`0x14035f660`: the words at `0x1410932d0`, saved as `event/m_eventFlag`) | B3Balloon, Event | 52 | 2 (52) |
