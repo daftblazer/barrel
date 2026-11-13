@@ -3845,22 +3845,29 @@ fn main() -> Result<()> {
         push[16] = alpha_cutoff;
         push[18] = width as f32 / height.max(1) as f32;
         push[19] = HDR_RANGE_INV;
-        if let Some(tg) = &terrain_gpu {
-            for g in tg.grounds.iter().filter(|g| g.field == current_field) {
-                push[17] = g.field_size;
-                push[20..26].copy_from_slice(&g.scales);
-                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
-                d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
-                d.cmd_draw_indexed(cb, g.index_count, 1, g.first_index, 0, 0);
-            }
-        }
+        // The terrain's push constants: the shared ones with its field size and layer scales.
+        let mut terrain_push = push;
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
         let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        // The current field's distant view first, then the rest over it.
+        // The current field's distant view first, then the terrain and the rest over it (the
+        // distant view does not keep depth, so the terrain drawn before it would be covered).
         for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
+        if !pass_sky {
+            if let Some(tg) = &terrain_gpu {
+                for g in tg.grounds.iter().filter(|g| g.field == current_field) {
+                    terrain_push[17] = g.field_size;
+                    terrain_push[20..26].copy_from_slice(&g.scales);
+                    d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
+                    d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(terrain_push.as_ptr() as *const u8, PUSH_SIZE as usize));
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
+                    d.cmd_draw_indexed(cb, g.index_count, 1, g.first_index, 0, 0);
+                }
+            }
+            d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+        }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
         for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
