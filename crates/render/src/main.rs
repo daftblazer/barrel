@@ -30,6 +30,7 @@ mod title;
 mod screen;
 mod menu;
 mod status;
+mod basket;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -852,6 +853,11 @@ fn music_tracks(root: &Path) -> Vec<barrel_formats::bgm::Track> {
         .ok()
         .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
         .unwrap_or_default()
+}
+
+/// The basket's (item row, quality) pairs, for the menu's Basket page.
+fn basket_of(session: Option<&barrel_game::session::Session>) -> Vec<(i32, f32)> {
+    session.map_or_else(Vec::new, |s| s.basket.iter().map(|g| (g.item, g.quality)).collect())
 }
 
 fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::Animation, time: f32) -> Vec<Mat4> {
@@ -3783,7 +3789,7 @@ fn main() -> Result<()> {
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &keys, Some(Path::new(&out_path)))?;
+            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &keys, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             stop = true;
             break;
@@ -3835,7 +3841,7 @@ fn main() -> Result<()> {
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), &[], None)?;
+            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &[], None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {

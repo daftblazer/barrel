@@ -132,6 +132,13 @@ pub fn run<S: Clone + PartialEq, O>(
 pub fn sheet_keys(pe: &barrel_formats::pe::Pe, elements: impl IntoIterator<Item = crate::hud::Element>) -> Vec<(String, u32)> {
     let mut keys: Vec<(String, u32)> = Vec::new();
     for e in elements {
+        if let crate::hud::Element::Picture { pack, index, .. } = &e {
+            let key = (pack.clone(), *index);
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+            continue;
+        }
         if let Some((part, cut, at)) = e.sprite()
             && let Some(p) = barrel_formats::layout::sprite(pe, part, cut, at) {
                 let key = (p.texture, p.index);

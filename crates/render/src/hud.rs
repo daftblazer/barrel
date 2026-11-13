@@ -62,6 +62,9 @@ pub enum Element {
     Dim { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite mirrored left to right (node kind 2).
     Mirrored { part: i32, cut: i32, at: [i32; 2] },
+    /// A whole picture of a pack chosen at run time (an item's picture), `size` on the
+    /// 1920 × 1080 screen, at half strength when `dim`.
+    Picture { pack: String, index: u32, size: [f32; 2], at: [i32; 2], dim: bool },
     Label(layout::Text),
 }
 
@@ -80,7 +83,7 @@ impl Element {
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
             Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } => Some((part, cut, at)),
-            Element::Label(_) => None,
+            Element::Label(_) | Element::Picture { .. } => None,
         }
     }
 }
@@ -163,6 +166,16 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k],
                     uv: if matches!(e, Element::Mirrored { .. }) { [r / w, t / h, l / w, b / h] } else { [l / w, t / h, r / w, b / h] },
                     color: [1.0, 1.0, 1.0, alpha],
+                    texture: sheets.first + slot,
+                });
+            }
+            Element::Picture { pack, index, size, at, dim } => {
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
+                let [x, y] = at.map(|v| v as f32);
+                out.push(Quad {
+                    rect: [dx + x * k, y * k, dx + (x + size[0]) * k, (y + size[1]) * k],
+                    uv: [0.0, 0.0, 1.0, 1.0],
+                    color: [1.0, 1.0, 1.0, if *dim { 0.5 } else { 1.0 }],
                     texture: sheets.first + slot,
                 });
             }

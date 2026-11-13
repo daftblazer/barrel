@@ -1274,6 +1274,17 @@ page layout 431: the name (a kind 22 text, size 45), the labels "LV", "Next", "H
 cut 12 the slash), and the bookmark with the figure (layout 393, kind 7). Its other branches:
 398 the equipment effects list, 388 the skill list, 387 a skill's details.
 
+The item grid is layout 456 (placed at [100, 252]; the Container screen, layout 458, shows it
+twice, at x 44 and 480, under the tab layout 457 with "Name" between the LB / RB marks): 25 cells
+in five rows of five, 98 to 104 pixels apart. The plain cell is layout 451: the lit frame (part
+0x17 cut 5 at [-16, -14]), a strip (part 0x18, kind 17), the item's picture (part 0xd7, kind 4,
+at [18, 16]) and a number (part 0x54 on `a15_common.g1t` picture 7, kind 28, at [84, 52]). The
+first column of rows 2 to 5 holds layouts 452 to 455 instead: the same pieces with wider frames
+(240 to 546 pixels), likely the cursor spanning several cells. An item's picture is its
+`itemData.xml` `ImageNo` as the picture index in `WinXls/a15_itempic.g1t` (528 pictures of
+96 × 96; the layouts' placeholder is 519). The detail panels for one item (picture, name,
+category, traits) are layouts 465, 467 and 500 to 505.
+
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 

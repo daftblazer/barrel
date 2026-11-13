@@ -91,8 +91,15 @@ pub struct Menu {
     pub first: usize,
     /// The Option list open, on this row.
     pub option: Option<usize>,
-    /// The Status page open (`crate::status`).
-    pub status: bool,
+    /// The page open over the menu, if any.
+    pub page: Option<Page>,
+}
+
+/// A command's page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    Status,
+    Basket(crate::basket::Basket),
 }
 
 /// What a button did.
@@ -107,16 +114,23 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None, status: false }
+        Menu { chosen: 0, first: 0, option: None, page: None }
     }
 
-    pub fn press(&mut self, b: Button) -> Option<Outcome> {
-        if self.status {
-            if b == Button::Back {
-                self.status = false;
-            }
-            return None;
+    /// A button press, with `count` items in the basket (for its page).
+    pub fn press(&mut self, b: Button, count: usize) -> Option<Outcome> {
+        let close = match self.page.as_mut() {
+            Some(Page::Status) => b == Button::Back,
+            Some(Page::Basket(basket)) => basket.press(b, count),
+            None => return self.press_list(b),
+        };
+        if close {
+            self.page = None;
         }
+        None
+    }
+
+    fn press_list(&mut self, b: Button) -> Option<Outcome> {
         if let Some(row) = self.option.as_mut() {
             let n = OPTION_ROWS.len();
             match b {
@@ -136,7 +150,8 @@ impl Menu {
             Button::Back => return Some(Outcome::Close),
             Button::Confirm => match COMMANDS[self.chosen] {
                 Command::Option => self.option = Some(0),
-                Command::Status => self.status = true,
+                Command::Status => self.page = Some(Page::Status),
+                Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
                 c => return Some(Outcome::Command(c)),
             },
         }
@@ -222,6 +237,7 @@ pub fn run(
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
     logy: bool,
+    basket: &[(i32, f32)],
     keys: &[Button],
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<Outcome>> {
@@ -232,6 +248,15 @@ pub fn run(
     // The Status page: its nodes over the desk, and the lead's values.
     let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
     let values = crate::status::Values::lead(&pe, logy).ok_or("menu: no party tables")?;
+    // The Basket page: the grid over the desk, and the basket's items.
+    let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let items = crate::basket::items(basket, &item_rows.children);
+    let grid_nodes: Vec<Placed> = [BACKGROUND, crate::basket::GRID].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let basket_elements = |b: &crate::basket::Basket, texts: &dyn Fn(&Placed) -> Option<Text>| {
+        let mut e: Vec<crate::hud::Element> = grid_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
+        e.extend(b.elements(&grid_nodes, texts, &items));
+        e
+    };
     let status_elements = |texts: &dyn Fn(&Placed) -> Option<Text>| {
         let mut e: Vec<crate::hud::Element> = status_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
         e.extend(crate::status::elements(&status_nodes, texts, &values));
@@ -246,14 +271,19 @@ pub fn run(
     let mut every = Vec::new();
     for chosen in 0..COMMANDS.len() {
         let first = chosen.saturating_sub(VISIBLE - 1);
-        every.extend(Menu { chosen, first, option: None, status: false }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: 0, option: None, status: false }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None, status: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first, option: None, page: None }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: 0, option: None, page: None }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None, page: None }.elements(&nodes, texts));
     }
     for row in 0..OPTION_ROWS.len() {
-        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), status: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), page: None }.elements(&nodes, texts));
     }
     every.extend(status_elements(&texts));
+    // Every cell lit and not, with every item.
+    for chosen in 0..items.len().max(1) {
+        every.extend(basket_elements(&crate::basket::Basket { chosen, first: chosen / 5 / 5 * 5 }, &texts));
+    }
+    every.extend((0..10).map(|cut| crate::hud::Element::Sprite { part: 0x54, cut, at: [0, 0] }));
     // Every digit the numbers may show.
     every.extend((0..13).map(|cut| crate::hud::Element::Sprite { part: 0x4e, cut, at: [0, 0] }));
     let keys_needed = screen::sheet_keys(&pe, every);
@@ -269,12 +299,17 @@ pub fn run(
     }
     let (w, h) = (target.width as f32, target.height as f32);
     let quads = |m: &Menu| {
-        let e = if m.status { status_elements(&texts) } else { m.elements(&nodes, texts) };
+        let e = match m.page {
+            Some(Page::Status) => status_elements(&texts),
+            Some(Page::Basket(b)) => basket_elements(&b, &texts),
+            None => m.elements(&nodes, texts),
+        };
         hud::quads(&pe, Some(&font), &sheets, &e, w, h)
     };
     let mut menu = Menu::new();
     // Barrel acts on Close and on the Option rows it has; the rest only report.
-    let press = |m: &mut Menu, b: Button| match m.press(b)? {
+    let count = items.len();
+    let press = |m: &mut Menu, b: Button| match m.press(b, count)? {
         Outcome::Command(c) => {
             eprintln!("menu: {c:?} is not there yet");
             None
@@ -296,19 +331,25 @@ mod tests {
     #[test]
     fn moves_scrolls_and_opens_options() {
         let mut m = Menu::new();
-        assert_eq!(m.press(Button::Up), None);
+        assert_eq!(m.press(Button::Up, 0), None);
         assert_eq!((m.chosen, m.first), (9, 2));
-        assert_eq!(m.press(Button::Confirm), None);
+        assert_eq!(m.press(Button::Confirm, 0), None);
         assert_eq!(m.option, Some(0));
-        m.press(Button::Up);
-        assert_eq!(m.press(Button::Confirm), Some(Outcome::Option(OptionRow::ReturnToTitle)));
-        m.press(Button::Back);
+        m.press(Button::Up, 0);
+        assert_eq!(m.press(Button::Confirm, 0), Some(Outcome::Option(OptionRow::ReturnToTitle)));
+        m.press(Button::Back, 0);
         assert_eq!(m.option, None);
-        m.press(Button::Down);
+        m.press(Button::Down, 0);
         assert_eq!((m.chosen, m.first), (0, 0));
-        m.press(Button::Down);
-        assert_eq!(m.press(Button::Confirm), Some(Outcome::Command(Command::Basket)));
-        assert_eq!(m.press(Button::Back), Some(Outcome::Close));
+        m.press(Button::Down, 0);
+        // Basket opens its page; Back closes it, then the menu.
+        assert_eq!(m.press(Button::Confirm, 0), None);
+        assert!(matches!(m.page, Some(Page::Basket(_))));
+        assert_eq!(m.press(Button::Back, 0), None);
+        assert_eq!(m.page, None);
+        m.press(Button::Down, 0);
+        assert_eq!(m.press(Button::Confirm, 0), Some(Outcome::Command(Command::AdventureEquip)));
+        assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
     }
 
     #[test]
@@ -322,7 +363,7 @@ mod tests {
             node(&[LIST, COMMAND], LABEL, [136, 274], [88, 10]),
         ];
         let mut m = Menu::new();
-        m.press(Button::Down);
+        m.press(Button::Down, 0);
         let e = m.elements(&nodes, |_| None);
         assert_eq!(e, vec![
             Element::Sprite { part: PLATE, cut: 0, at: [36, 184] },

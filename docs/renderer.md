@@ -585,7 +585,9 @@ the main menu (`crates/render/src/menu.rs`, layouts 383, 361 and 374: `docs/form
 down choose among the ten commands (eight shown, the list scrolling), Back closes it and play
 goes on where it stood. Status opens the lead's Status page (`crates/render/src/status.rs`:
 level, experience to the next, HP, MP, attack, defence and speed from the game's growth and
-experience tables; Barrel's saves keep no level yet, so level 1). Option opens its list: Save writes the game as F5 does (the next free
+experience tables; Barrel's saves keep no level yet, so level 1). Basket shows the items
+gathered (the save's `item` lines) in the game's item grid, with their pictures and qualities,
+the chosen one's name below (`crates/render/src/basket.rs`). Option opens its list: Save writes the game as F5 does (the next free
 slot), the other rows and the other commands are not there yet and only say so on the console.
 The menu has its own frame loop (`crates/render/src/screen.rs`, shared with the title), so play
 stands still while it is open. Offscreen, `BARREL_MENU_AT=N` opens it at frame N with the buttons
