@@ -6591,6 +6591,33 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // Onto the world map: the trip to `--travel-to`, through the session (its days, an event on
     // the road or on arriving), then the field it opens, the player at its own world map exit.
     if world_exit {
+        // Without `--travel-to`, a field area's exit leads to its area map, the player on the
+        // field's point (the town's leads to the world map itself: not drawn yet).
+        if travel_to.is_none()
+            && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf) {
+                let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+                let pe = barrel_formats::pe::Pe::parse(&exe)?;
+                let maps = barrel_game::event::field_maps(&pe);
+                let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n));
+                let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+                let point = here.filter(|&h| h >= barrel_formats::gimmick::TOWN_MAPS).and_then(|h| {
+                    barrel_formats::world::point_maps(&pe)?.into_iter().find(|(_, m, _)| *m as usize == h).and_then(|(p, _, _)| names.get(p as usize).cloned())
+                });
+                if let Some(point) = point {
+                    let wmap = root.join("Data/x64/Field/A15_WMAP");
+                    let at = world_point(&wmap, &point)?;
+                    if let (Some(s), Some(h)) = (session.as_mut(), here) {
+                        s.left_for_area_map(h as u32);
+                    }
+                    eprintln!("onto the area map at {point}");
+                    args[1] = wmap.to_string_lossy().into_owned();
+                    player_at = Some([at[0], at[2]]);
+                    player_walk = player_walk.map(|_| [0.0, 0.0]);
+                    area_mode = true;
+                    first_event = false;
+                    continue 'events;
+                }
+            }
         let Some(to) = travel_to.clone() else {
             eprintln!("on the world map: no --travel-to MARK, so the run ends here");
             break 'events;

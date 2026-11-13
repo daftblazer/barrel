@@ -91,6 +91,14 @@ impl Session {
         &self.scene
     }
 
+    /// The player leaves field area `from` for its area map: leaving a field area with field
+    /// time carried passes a day (as [`Session::walked`] does between fields).
+    pub fn left_for_area_map(&mut self, from: u32) {
+        if from as usize >= barrel_formats::gimmick::TOWN_MAPS {
+            self.time(|w, t| w.leave_field(t));
+        }
+    }
+
     /// The calendar from `data`, starting as a new game's (`days::World::new_game`, the main
     /// generator as `rng`) on the story's date.
     /// The party as a new game sets it up (`0x1403619d0`): every member at level 1 with no

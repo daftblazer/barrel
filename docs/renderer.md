@@ -305,7 +305,11 @@ place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, En
 `AREA_03_02`, at its arrival. Not yet the game's: the camera (it follows her close; the game
 looks down on the region), the panel (plain text at the right, not layouts 641 and 642), the
 buttons (636), the place labels (638), the party member's "Enter / Quit" prompt, Back to the
-world map, leaving a field back to its area map, and a wipe landing there.
+world map, and a wipe landing there. Leaving a field area by its world map exit without
+`--travel-to` lands on its area map at the field's point (`Session::left_for_area_map`: the
+carried field time passes, as between fields): from (3700, 3680) in `AREA_01_01` walking west,
+the exit at frame 6, the Forest Entrance (`SP_A0P0`), confirm, back in `AREA_01_01` at its
+arrival place. The town's exit still ends the run (no world map screen).
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
