@@ -628,7 +628,8 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
         println!("{k:4}: ({:.1}, {:.1}, {y:.1}){}", p[0], p[1], if blocked { "  (against a wall)" } else { "" });
         let now: Vec<usize> = (0..gimmicks.len()).filter(|&i| gimmicks[i].contains([p[0] / 100.0, y / 100.0, p[1] / 100.0])).collect();
         for &i in now.iter().filter(|i| !inside.contains(i)) {
-            println!("      enters {} at {:?}", gimmicks[i].kind_name(), gimmicks[i].position);
+            let to = gimmicks[i].destination.map(|d| format!(": to map {} at {:?} facing {}", d.map, d.position, d.facing)).unwrap_or_default();
+            println!("      enters {} at {:?}{to}", gimmicks[i].kind_name(), gimmicks[i].position);
         }
         inside = now;
     }

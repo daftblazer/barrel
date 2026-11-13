@@ -57,7 +57,23 @@ pub struct Gimmick {
     pub events: (i32, i32),
     /// The rest, raw (+0x30 to +0x60).
     pub rest: [u8; 0x30],
+    /// Where a `FIELDMAP_CHANGE_EX` leads (its record at +0x48).
+    pub destination: Option<Destination>,
 }
+
+/// Where a map change puts the player: the map, the way she faces (degrees) and where she
+/// stands (metres), just inside the door back (map 0's door to map 1 puts her at (8.2, 0,
+/// 10.5) facing -90, beside map 1's door back at (10.2, 0, 10.5)).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Destination {
+    pub map: i32,
+    pub facing: f32,
+    pub position: [f32; 3],
+}
+
+/// `FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX`: a door to another map (the town's; the field
+/// areas have only world map exits, `WORLDMAP_CHANGE_EX`, 27).
+pub const FIELDMAP_CHANGE_EX: i32 = 26;
 
 impl Gimmick {
     pub fn kind_name(&self) -> &'static str {
@@ -115,6 +131,14 @@ pub fn areas(pe: &Pe, table: u64, count: usize) -> Option<Vec<Area>> {
                     size: [f(0x1c), f(0x20), f(0x24)],
                     events: (w(0x28), w(0x2c)),
                     rest: e[0x30..0x60].try_into().unwrap(),
+                    destination: (w(0) == FIELDMAP_CHANGE_EX)
+                        .then(|| u64::from_le_bytes(e[0x48..0x50].try_into().unwrap()))
+                        .and_then(|va| pe.offset(va))
+                        .and_then(|o| pe.data.get(o..o + 20))
+                        .map(|d| {
+                            let f = |o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                            Destination { map: i32::from_le_bytes(d[0..4].try_into().unwrap()), facing: f(4), position: [f(8), f(12), f(16)] }
+                        }),
                 });
                 g += GIMMICK;
             }
@@ -130,7 +154,7 @@ mod tests {
 
     #[test]
     fn a_turned_box_contains_along_its_turn() {
-        let g = Gimmick { kind: 19, id: -1, angle: 90.0, word3: 100, position: [10.0, 0.0, 10.0], size: [6.0, 10.0, 2.0], events: (-1, -1), rest: [0; 0x30] };
+        let g = Gimmick { kind: 19, id: -1, angle: 90.0, word3: 100, position: [10.0, 0.0, 10.0], size: [6.0, 10.0, 2.0], events: (-1, -1), rest: [0; 0x30], destination: None };
         // Turned a quarter, its long side (x, 6) lies along z.
         assert!(g.contains([10.0, 50.0, 12.5]));
         assert!(!g.contains([12.5, 0.0, 10.0]));
