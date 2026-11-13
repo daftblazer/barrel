@@ -587,7 +587,9 @@ goes on where it stood. Status opens the lead's Status page (`crates/render/src/
 level, experience to the next, HP, MP, attack, defence and speed from the game's growth and
 experience tables; Barrel's saves keep no level yet, so level 1). Basket shows the items
 gathered (the save's `item` lines) in the game's item grid, with their pictures and qualities,
-the chosen one's name below (`crates/render/src/basket.rs`). Option opens its list: Save writes the game as F5 does (the next free
+the chosen one's name below (`crates/render/src/basket.rs`). Assignment shows the period's
+card from `SubjectData.xml` (`crates/render/src/assignment.rs`): each square's task icon, "?"
+while the task's event is unseen, and the chosen task's name and description. Option opens its list: Save writes the game as F5 does (the next free
 slot); Return to Title starts the run again at the title, and Load at the title's Load Game list
 (so Back there goes to the title, not to the game: not yet the game's). Starting again keeps the
 window and builds everything else anew (`view` returns `Ended::Restart` with the arguments less

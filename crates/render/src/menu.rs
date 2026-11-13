@@ -100,6 +100,7 @@ pub struct Menu {
 pub enum Page {
     Status,
     Basket(crate::basket::Basket),
+    Assignment(crate::assignment::Assignment),
 }
 
 /// What a button did.
@@ -122,6 +123,7 @@ impl Menu {
         let close = match self.page.as_mut() {
             Some(Page::Status) => b == Button::Back,
             Some(Page::Basket(basket)) => basket.press(b, count),
+            Some(Page::Assignment(a)) => a.press(b),
             None => return self.press_list(b),
         };
         if close {
@@ -152,6 +154,7 @@ impl Menu {
                 Command::Option => self.option = Some(0),
                 Command::Status => self.page = Some(Page::Status),
                 Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
+                Command::Assignment => self.page = Some(Page::Assignment(crate::assignment::Assignment::default())),
                 c => return Some(Outcome::Command(c)),
             },
         }
@@ -238,6 +241,7 @@ pub fn run(
     root: &std::path::Path,
     logy: bool,
     basket: &[(i32, f32)],
+    card: &[Option<crate::assignment::Task>],
     keys: &[Button],
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<Outcome>> {
@@ -255,6 +259,13 @@ pub fn run(
     let basket_elements = |b: &crate::basket::Basket, texts: &dyn Fn(&Placed) -> Option<Text>| {
         let mut e: Vec<crate::hud::Element> = grid_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
         e.extend(b.elements(&grid_nodes, texts, &items));
+        e
+    };
+    // The Assignment page: the card over the desk.
+    let card_nodes: Vec<Placed> = [BACKGROUND, crate::assignment::LAYOUT].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let assignment_elements = |a: &crate::assignment::Assignment, texts: &dyn Fn(&Placed) -> Option<Text>| {
+        let mut e: Vec<crate::hud::Element> = card_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
+        e.extend(a.elements(&card_nodes, texts, card));
         e
     };
     let status_elements = |texts: &dyn Fn(&Placed) -> Option<Text>| {
@@ -284,6 +295,9 @@ pub fn run(
         every.extend(basket_elements(&crate::basket::Basket { chosen, first: chosen / 5 / 5 * 5 }, &texts));
     }
     every.extend((0..10).map(|cut| crate::hud::Element::Sprite { part: 0x54, cut, at: [0, 0] }));
+    every.extend(assignment_elements(&crate::assignment::Assignment::default(), &texts));
+    // Every task icon, plain and lit.
+    every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
     // Every digit the numbers may show.
     every.extend((0..13).map(|cut| crate::hud::Element::Sprite { part: 0x4e, cut, at: [0, 0] }));
     let keys_needed = screen::sheet_keys(&pe, every);
@@ -302,6 +316,7 @@ pub fn run(
         let e = match m.page {
             Some(Page::Status) => status_elements(&texts),
             Some(Page::Basket(b)) => basket_elements(&b, &texts),
+            Some(Page::Assignment(a)) => assignment_elements(&a, &texts),
             None => m.elements(&nodes, texts),
         };
         hud::quads(&pe, Some(&font), &sheets, &e, w, h)

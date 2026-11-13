@@ -1285,6 +1285,19 @@ first column of rows 2 to 5 holds layouts 452 to 455 instead: the same pieces wi
 96 × 96; the layouts' placeholder is 519). The detail panels for one item (picture, name,
 category, traits) are layouts 465, 467 and 500 to 505.
 
+The Assignment page is layout 430: the book, layout 428 (placed at [114, 150]: the Tasks and
+Bonus tabs, layouts 410 and 411, each label there twice, dark and plain), the card, layout 425
+(25 squares, layout 419 each, at x 72 to 606 and y 72 to 592: columns A to E, rows 1 to 5, as
+`SubjectData.xml`'s `Pos`; the centre emblem part 0xf cut 12; the lines overlay layout 424),
+the Bonus page, layout 426 (six rows "Bonus1" … "Line"), the details panel, layout 418 (at
+[836, 0]: the name, a kind 22 text, the icon part 0xe, the description where the layout has
+"By pressing <IM20>here…", "Reward" with points, completion stars), the past cards list, layout
+429, and the rank box, layout 527. A square: plate part 0xf cut 6, the task icon part 0xe (cut 5
+"?", 6 a sword, 8 a basket, 10 a pot; 7, 9, 11 the same in orange; 12 to 15 the same in white),
+a glow (part 0xd, kind 36), stamps (layouts 949 "OK" and 704) and counters (parts 0x56 and
+0xaf, kind 28). The tasks' `Type`s: `SUBJECT_CATEGORY_BTL` (118), `ADV` (169), `MIX` (110),
+`OTHER` (60, the centre square's main assignment, several rows sharing it).
+
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 

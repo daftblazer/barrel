@@ -31,6 +31,7 @@ mod screen;
 mod menu;
 mod status;
 mod basket;
+mod assignment;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -853,6 +854,16 @@ fn music_tracks(root: &Path) -> Vec<barrel_formats::bgm::Track> {
         .ok()
         .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
         .unwrap_or_default()
+}
+
+/// The period's assignment card for the menu's Assignment page (empty without a story or
+/// when the table cannot be read).
+fn card_of(root: &Path, session: Option<&barrel_game::session::Session>) -> Vec<Option<assignment::Task>> {
+    let Some(s) = session else { return Vec::new() };
+    assignment::card(root, s.today().max(0) as u32, |e| s.event_seen(e)).unwrap_or_else(|e| {
+        eprintln!("no assignment card: {e}");
+        Vec::new()
+    })
 }
 
 /// The basket's (item row, quality) pairs, for the menu's Basket page.
@@ -3844,7 +3855,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &keys, Some(Path::new(&out_path)))?;
+            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
                 restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
@@ -3899,7 +3910,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &[], None)?;
+            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &[], None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {

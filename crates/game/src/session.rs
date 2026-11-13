@@ -100,6 +100,12 @@ impl Session {
         self.chain.story().seen.iter().map(Option::is_some).collect()
     }
 
+    /// Whether the event named `name` (`EVENT_*`) has been seen.
+    pub fn event_seen(&self, name: &str) -> bool {
+        let story = self.chain.story();
+        self.chain.names().iter().position(|n| n == name).is_some_and(|i| story.seen.get(i).is_some_and(Option::is_some))
+    }
+
     /// The tenths of today already spent in the field (0 without a calendar).
     pub fn field_tenths(&self) -> i32 {
         self.calendar.as_ref().map_or(0, |(w, _)| w.tenths)
