@@ -4812,6 +4812,22 @@ fn main() -> Result<()> {
     // Through a door: the same again in the next map, the player at the door's spot.
     if let Some((name, at, velocity)) = door.take()
         && let Some(next) = Path::new(&args[1]).parent().map(|p| p.join(&name)) {
+            // In a story's free play the walk may start an event (`Session::walked`): it plays,
+            // and free play goes on after it where it leaves the hero.
+            let root = next.ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
+            let maps = root.as_ref().and_then(|r| std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok()).and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::event::field_maps(&pe))).unwrap_or_default();
+            let number = |p: &Path| p.file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).map(|m| m as u32);
+            if let (Some(s), Some(from), Some(to), Some(root)) = (session.as_mut(), number(Path::new(&args[1])), number(&next), root.clone())
+                && let barrel_game::session::Scene::Event(e) = s.walked(from, to).clone() {
+                    eprintln!("field {from} to {to}: {e} starts");
+                    let s = session.take().unwrap();
+                    chain = Some((s.into_chain(), root.clone()));
+                    current_event = Some(root.join("Event/event").join(barrel_game::event_start::event_file(&e)).to_string_lossy().into_owned());
+                    args[1] = "auto".into();
+                    player_at = None;
+                    first_event = false;
+                    continue 'events;
+                }
             args[1] = next.to_string_lossy().into_owned();
             player_at = Some(at);
             if player_walk.is_some() {

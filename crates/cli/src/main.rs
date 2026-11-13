@@ -3360,6 +3360,8 @@ fn new_game(root: &Path, logy: bool) -> Result<()> {
             Scene::Event(name) => name.clone(),
             Scene::Field(map) => {
                 println!("free play in field {map} ({})", maps.get(*map as usize).map_or("?", |s| s.as_str()));
+                // The session's save there (the spot unknown here: 0, 0).
+                print!("{}", session.save([0.0, 0.0]).unwrap_or_default());
                 return Ok(());
             }
         };

@@ -46,6 +46,23 @@ impl Session {
         Session { chain, scene: Scene::Field(map), field: Some(map), logy }
     }
 
+    /// The player walks from field `from` to field `to` in free play: the event that starts as
+    /// they leave or once they are there (`Chain::walk`, both fields of kind 0), which then
+    /// plays; else play goes on in `to`.
+    pub fn walked(&mut self, from: u32, to: u32) -> &Scene {
+        self.field = Some(to);
+        self.scene = match self.chain.walk([0, from as i32], [0, to as i32]) {
+            Some(e) => Scene::Event(e.to_string()),
+            None => Scene::Field(to),
+        };
+        &self.scene
+    }
+
+    /// The story, to play events on ([`Session::in_field`] takes it back).
+    pub fn into_chain(self) -> Chain {
+        self.chain
+    }
+
     pub fn scene(&self) -> &Scene {
         &self.scene
     }

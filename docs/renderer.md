@@ -179,7 +179,12 @@ the story after it (`--chain`), then free play (`--free-play`), where the story 
 scene) saves it in Barrel's text format; `--load FILE` (with `--field` naming any field of the
 install) starts in free play from such a save. From the end of `EVENT_MM01_OP1_310` a save at
 free-play frame 60 holds Escha at (10000, 10950) in field 3 with events 15, 518, 520 and 521
-seen on day 90, and loading it puts her back there.
+seen on day 90, and loading it puts her back there. A door walked through in the story's free play asks the session first
+(`Session::walked`, the story's `MAP_FROM_TO_*` triggers): an event that starts plays, and
+free play goes on after it. After the opening, from the Hall (map 3) the door at (10000, 14850)
+leads to the Town Entrance (map 4) and starts `EVENT_MM02_OP2_111`; going to the Administration
+Office (map 2) would start `EVENT_MM02_OP2_510` (`barrel event-chain ROOT EVENT_MM01_OP1_310
+0.3>0.4`). `barrel new-game` prints the session's save at free play.
 
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
