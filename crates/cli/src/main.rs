@@ -45,7 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
-  barrel event-chain ROOT START [K.M>K.M ...]  follow the story from an event in a new game: each event's end starts the next; then the walks
+  barrel event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
   barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
   barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
   barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
@@ -3149,8 +3149,9 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
 /// save's `subject_save` state of each.
 /// Follows the story from event START (an `EVENT_*` name) in a new game: each event is played
 /// (seen, its process data applied), then its end fires (group 11) and the event that starts is
-/// next. When none does, the player takes the next walk of WALKS (`K.M>K.M`: from kind and map
-/// to kind and map, kind 0 the town's maps) and the story goes on from what that starts.
+/// next. When none does, the player takes the next step of STEPS: a walk (`K.M>K.M`: from kind
+/// and map to kind and map, kind 0 a field, 1 the world map) or days passing (`sleep:N`,
+/// `mix:N`, `travel:N`), and the story goes on from what that starts.
 fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
     let mut chain = story_chain(root)?;
     let place = |s: &str| -> Result<[i32; 2]> {
@@ -3166,10 +3167,24 @@ fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
             continue;
         }
         let Some(w) = walks.next() else { break };
-        let (from, to) = w.split_once('>').ok_or("a walk is FROM>TO")?;
-        let (from, to) = (place(from)?, place(to)?);
-        event = chain.walk(from, to).map(str::to_string);
-        println!("  walk {w}: {}", event.as_deref().unwrap_or("nothing starts"));
+        use barrel_game::event_start::Days;
+        event = match w.split_once(':') {
+            Some((what, n)) => {
+                let what = match what {
+                    "sleep" => Days::Sleep,
+                    "mix" => Days::Mix,
+                    "travel" => Days::Travel,
+                    _ => return Err(format!("{w}: sleep:N, mix:N or travel:N").into()),
+                };
+                chain.days(what, n.parse()?)
+            }
+            None => {
+                let (from, to) = w.split_once('>').ok_or("a step is FROM>TO, sleep:N, mix:N or travel:N")?;
+                chain.walk(place(from)?, place(to)?)
+            }
+        }
+        .map(str::to_string);
+        println!("  {w}: {}", event.as_deref().unwrap_or("nothing starts"));
     }
     Ok(())
 }

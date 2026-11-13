@@ -427,6 +427,13 @@ impl Chain {
         self.names.get(next).map(String::as_str)
     }
 
+    /// N days pass sleeping, in synthesis or on the road: the event that starts as that is
+    /// over, if any.
+    pub fn days(&mut self, what: Days, n: i32) -> Option<&str> {
+        self.story.today += n;
+        self.fire(what as u8, &[])
+    }
+
     /// The event that starts when trigger group `group` fires with `values`, if any.
     pub fn fire(&mut self, group: u8, values: &[i32]) -> Option<&str> {
         let next = self.story.next(&self.checks, &self.lists, group, values, &mut self.rng)?;
@@ -438,6 +445,15 @@ impl Chain {
 pub const MAP_FROM_TO_BEFORE: u8 = 0;
 pub const MAP_FROM_TO_AFTER: u8 = 1;
 pub const EVENT_END: u8 = 11;
+
+/// What the days pass in: each fires its own group when it is over (`DATE_*_IS_OVER`,
+/// `DATE_EVENT_*_IS_OVER`), on the day it ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Days {
+    Sleep = 17,
+    Mix = 18,
+    Travel = 19,
+}
 
 impl Chain {
     /// Marks the event named NAME played (seen, its process data applied) without firing its
@@ -656,6 +672,23 @@ mod tests {
         assert_eq!(chain.walk([0, 3], [0, 4]), Some("E1"));
         chain.play("E1");
         assert_eq!(chain.walk([0, 4], [0, 5]), Some("E2"));
+    }
+
+    #[test]
+    fn days_passing_start_what_waits_on_them() {
+        let event = |groups: Vec<Vec<i32>>| {
+            let mut words = [0; 14];
+            words[1] = 500;
+            words[8..14].copy_from_slice(&[-1; 6]);
+            EventCheck { words, groups }
+        };
+        // Event 1 starts when a sleep is over 3 days after event 0 was seen.
+        let checks = vec![event(vec![vec![]]), event(vec![vec![], vec![0x7000_0000 + 0x94, 0, 3]])];
+        let mut chain = Chain::new(checks, vec![], ["E0", "E1"].map(String::from).to_vec());
+        chain.play("E0");
+        assert_eq!(chain.days(Days::Sleep, 1), None);
+        assert_eq!(chain.days(Days::Mix, 2), None, "a synthesis does not fire the sleep's group");
+        assert_eq!(chain.days(Days::Sleep, 1), Some("E1"));
     }
 
     /// Both openings play through as the game chains them, from the real files

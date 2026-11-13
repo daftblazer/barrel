@@ -1397,7 +1397,11 @@ map, to kind, to map}. After Escha's opening, `0.3>0.4` (Urban Area to Town Entr
 `EVENT_MM02_OP2_111` and `0.5>0.4` `EVENT_MM02_OP2_420`, as their check data reads. The kinds: 0 is a field, by its number in the
 map table (692 uses, the town's and the areas'); 1 is the world map, always with any map
 (`0x60000002`): it is only gone to in `BEFORE` (51) and come from in `AFTER` (45), so the
-player leaving a field for the world map is `0.M>1.0` and arriving from it `1.0>0.M`.
+player leaving a field for the world map is `0.M>1.0` and arriving from it `1.0>0.M`. Days
+pass with `sleep:N`, `mix:N` and `travel:N` (`Chain::days`): the day moves on and the
+activity's own group fires (17, 18, 19), so `DATE_*_IS_OVER` and `DATE_EVENT_*_IS_OVER`
+read the day it ended on. After the opening none starts anything: the second chapter waits
+on the walks.
 
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
