@@ -978,10 +978,16 @@ layer): a depth draw and one lit draw of one tile.
 end exactly at the layer textures' offset (0x10) in TOWN_01, AREA_08_02 and AREA_01_01, so the
 block is read whole. A vertex is `{s16 x, s16 height, s16 z, s16 0, u8 × 4 normal, u8 × 4
 colour}`: x and z count cells (times the cell size at 0x84: 100 in AREA_01_01 over 0 to 64,
-250 in AREA_08_02 over 4 to 20 and 0 to 60), the height spans the whole s16 range (presumably
-mapped onto the root node's height bounds), the colour is white (`ff ff ff 80`) in all read.
-A draw's indices count from its own first vertex (AREA_01_01's highest is 1134 of 3222
-vertices). The vertex program turns the integers to floats and scales them by `scale`. So the
+250 in AREA_08_02 over 4 to 20 and 0 to 60), the colour is white (`ff ff ff 80`) in all read. The patches' vertices follow each other
+(a patch's count is where its farthest-reaching draw ends; they add up to the whole), and a
+draw's first vertex and indices count from its patch's first vertex. The height spreads the
+s16 range over a node's height bounds: low + (stored + 32768) / 65535 × (high − low), the
+bounds being those of the topmost ancestor that holds a patch too (fields with levels of
+detail, such as AREA_04_01, have coarse patches whose children are finer patches over the same
+ground, the patch record's byte 0xc giving the level: the finer ones store their heights
+against the coarse one's bounds). Checked by `barrel ktf-scan`: 581,713 of 658,935 vertices
+over the 140 meshes land within 0.5 of the heightmap; most of the rest sit exactly 10 lower
+(skirts along the patch edges, by the look). `battle`'s terrain does not read as a mesh. The vertex program turns the integers to floats and scales them by `scale`. So the
 terrain is its own mesh, not the heightmap: TOWN_01's is one 500 × 500 square (cells 3 to 4,
 0 to 1) of 8 vertices, the rest of its ground being models.
 

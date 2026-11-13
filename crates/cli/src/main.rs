@@ -3271,6 +3271,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     let mut layers: BTreeMap<usize, usize> = BTreeMap::new();
     let mut blends: BTreeMap<(usize, usize), usize> = BTreeMap::new();
     let mut failed = Vec::new();
+    let (mut meshes, mut heights) = (0usize, (0usize, 0usize));
     for path in &files {
         let bytes = read(path)?;
         let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
@@ -3283,6 +3284,29 @@ fn ktf_scan(dir: &Path) -> Result<()> {
                     terrains += 1;
                     *layers.entry(t.layers.textures.len()).or_default() += 1;
                     *blends.entry((t.layers.textures.len(), t.blend.textures.len())).or_default() += 1;
+                    match barrel_formats::ktf::mesh(e.data(entry)) {
+                        Ok(m) => {
+                            meshes += 1;
+                            // The vertices' heights against the heightmap's at the same cell.
+                            let hm = &t.heightmap;
+                            let (mut near, mut all) = (0usize, 0usize);
+                            for p in &m.patches {
+                                let end = m.patches.iter().map(|q| q.first_vertex).filter(|&v| v > p.first_vertex).min().unwrap_or(m.vertices.len() as u32);
+                                for v in &m.vertices[p.first_vertex as usize..end as usize] {
+                                    if v.x >= 0 && v.z >= 0 && (v.x as usize) <= hm.cells_x && (v.z as usize) <= hm.cells_z {
+                                        all += 1;
+                                        near += usize::from((p.height(v.height) - hm.height(v.x as usize, v.z as usize)).abs() < 0.5);
+                                    }
+                                }
+                            }
+                            if all > 0 && near * 10 < all * 8 {
+                                println!("  {}: {near} of {all} near, cell {} / heightmap {}", entry.name, m.cell_size, hm.cell_size);
+                            }
+                            heights.0 += near;
+                            heights.1 += all;
+                        }
+                        Err(err) => failed.push(format!("{}#{i} mesh: {err}", path.display())),
+                    }
                 }
                 Err(err) => failed.push(format!("{}#{i}: {err}", path.display())),
             }
@@ -3290,6 +3314,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     }
     println!("{terrains} terrains, {} failed; layer counts {layers:?}", failed.len());
     println!("(layers, blend maps) {blends:?}");
+    println!("{meshes} meshes read; {} of {} vertices within 0.5 of the heightmap", heights.0, heights.1);
     for f in failed.iter().take(20) {
         println!("failed: {f}");
     }
