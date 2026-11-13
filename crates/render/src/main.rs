@@ -3499,9 +3499,29 @@ fn main() -> Result<()> {
     // body placed, turned and posed in its current motion.
     if let Some((field, bodies, names, time, player_at, stopped)) = creatures.as_mut() {
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        // With the player (`--player`) the enemies watch her, else a stand-in walking west.
+        let (at, facing, strike_time) = match walker.as_ref() {
+            Some(w) => (w.pos.map(|v| v as f64), w.facing as f64, w.striking.then(|| town_bodies.get(w.body).and_then(|b| b.clock)).flatten()),
+            None => (*player_at, -std::f64::consts::FRAC_PI_2, None),
+        };
         if frame > 0 && dt > 0.0 && !*stopped {
-            player_at[0] -= 200.0 * dt as f64;
-            if let Some(t) = field.step(*player_at, -std::f64::consts::FRAC_PI_2, dt as f64).map_err(|e| format!("creatures: {e}"))? {
+            if walker.is_none() {
+                player_at[0] -= 200.0 * dt as f64;
+            } else {
+                *player_at = at;
+            }
+            // Her strike hits first, in its window (0.35 to 0.6 s into the swing,
+            // `0x14026e2c0`): the nearest enemy within reach of a point ahead of her
+            // (`encounter::struck`, stage 0, Escha's radius 130).
+            use barrel_game::encounter::{STRIKE_RADIUS_ESCHA, STRIKE_WINDOW};
+            let struck = strike_time.filter(|&t| (STRIKE_WINDOW.0..=STRIKE_WINDOW.1).contains(&(t as f64))).and_then(|_| {
+                let placed: Vec<([f64; 3], f64)> = field.mobs.iter().zip(&field.radii).map(|(m, &r)| (m.creature.position, r)).collect();
+                barrel_game::encounter::struck(at, facing, 0, STRIKE_RADIUS_ESCHA[0], &placed)
+            });
+            if let Some(k) = struck {
+                eprintln!("frame {frame}: her strike hits enemy {k}: encounter group {} (begun by a strike)", field.groups[k]);
+                *stopped = true;
+            } else if let Some(t) = field.step(at, facing, dt as f64).map_err(|e| format!("creatures: {e}"))? {
                 eprintln!("frame {frame}: enemy {} touches the player: encounter group {}", t.enemy, t.group);
                 *stopped = true;
             }
@@ -3510,6 +3530,11 @@ fn main() -> Result<()> {
         for b in bodies.iter_mut() {
             let (position, facing, motion) = match field.mobs.get(b.mob) {
                 Some(m) => (m.creature.position, m.creature.facing, m.creature.motion.and_then(|m| names.get(m as usize)).cloned()),
+                None if walker.is_some() => {
+                    // The stand-in is not needed with the player there: hidden.
+                    instances[b.instance as usize].model = Mat4::from_scale(Vec3::ZERO);
+                    continue;
+                }
                 None => (*player_at, -std::f64::consts::FRAC_PI_2, Some(if *stopped { "F_WAIT" } else { "WALK" }.to_string())),
             };
             if let Some(column) = motion

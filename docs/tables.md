@@ -868,7 +868,12 @@ macro and run (`SQ.execProgramMacroFast`); Escha's weak swing plays `MOTION_LAD`
 0.51 to the end), so the macro's motion is that one played through (`barrel play-macro
 .../macro_attacking_escha.nut wandAttack 0` lists its steps). The viewer swings so (K in a window,
 `BARREL_STRIKE_AT=FRAME`), the motion and, 0.45 s in (division 0 to 0.1 s, then the macro's waits of 0.05 and 0.30 s),
-`SE_WAND01` (98) in a window; no effects or hit test yet. Which button
+`SE_WAND01` (98) in a window; no effects yet. With field enemies (`--creatures AREA --player X,Z`)
+they watch the player instead of the stand-in, and her strike hits as the game's does: 0.35 to
+0.6 s into the swing, the nearest enemy within reach of a point ahead of her (`encounter::struck`,
+stage 0, radius 130), before the touch test: at `AREA_01_01` from (4300, 3520) walking west at
+100 units a second, a strike at frame 5 hits the first Ore Rat at frame 16 (0.37 s in), encounter
+group 10, begun by a strike. Which button
 starts it is in the brain's caller, not read here; the hit plays sound 0x20 for
 Escha in the lead, 0x24 for Logy (`0x140160070`), and hands on the enemy's +0x178; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
 they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
