@@ -13,6 +13,9 @@ likely settle them where static reading failed.
 
 ## Issues found during manual testing
 - Escha's hat and puffballs don't move correctly with the character, they float above Escha
+  - Fixed (2026-11-13): the hat's submeshes have a bone palette (joint 18, under the head) but no
+    per-vertex weights, and were drawn unposed; such submeshes are now rigid on their palette's
+    joint, so the hat turns with her head. To check in play whether it still sits a little high.
 - English spoken dialogue during initial cutscene with Escha and Clone gets cut a little short. Some audio during scenes cuts short.
   - Likely the next line starting while the voice still played: lines ran on a reading time
     (1 s + 0.08 s a character) shorter than some clips. Lines now wait for A, so a voice plays

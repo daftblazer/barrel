@@ -705,17 +705,19 @@ impl Geometry<'_> {
     /// Each vertex's joints and weights for a submesh, over the same vertex range as
     /// [`Geometry::simple_mesh`]: the bone-index byte / 3 picks a slot of the submesh's
     /// palette, whose joint is returned; a missing last weight is 1 minus the others.
-    /// None when the submesh is not skinned.
+    /// A submesh with a palette but no bone indices or weights (Escha's hat, `_P_M_Acc_Hat1`)
+    /// is rigid on its palette's first joint. None when the submesh has no palette joint.
     pub fn skin(&self, s: &Submesh) -> Result<Option<Vec<([u32; 4], [f32; 4])>>, Error> {
         let layout = self.layouts.get(s.layout).ok_or(Error::Corrupt("submesh layout"))?;
         let find = |sem: Semantic| layout.attributes.iter().find(|a| a.semantic == sem && a.layer == 0);
-        let (Some(bones), Some(weights), Some(palette)) = (find(Semantic::BoneIndices), find(Semantic::Weights), self.bone_maps.get(s.bone_map)) else {
-            return Ok(None);
-        };
-        let buffer = |a: &Attribute| &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
         let ib = &self.index_buffers[s.index_buffer][s.index_start..s.index_start + s.index_count];
         let lo = ib.iter().copied().min().unwrap_or(0) as usize;
         let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
+        let Some(palette) = self.bone_maps.get(s.bone_map) else { return Ok(None) };
+        let (Some(bones), Some(weights)) = (find(Semantic::BoneIndices), find(Semantic::Weights)) else {
+            return Ok(palette.first().map(|r| vec![([r.joint; 4], [1.0, 0.0, 0.0, 0.0]); hi - lo]));
+        };
+        let buffer = |a: &Attribute| &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
         let (bvb, wvb) = (buffer(bones), buffer(weights));
         let count = match weights.kind {
             AttrType::Float1 => 1,

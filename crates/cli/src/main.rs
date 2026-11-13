@@ -30,6 +30,7 @@ usage:
   barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
   barrel g1t-scan DIR          read every texture, loose and in containers
   barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
+  barrel g1m-bones FILE#N      a model's chunks, joints and submesh bone palettes
   barrel g1m-materials FILE#N  a model's materials: each texture's index, kind and subtype, and which submeshes use it
   barrel g1h FILE#N            list a morph file's sets and targets
   barrel g1h-scan DIR          read every morph file in the containers under DIR
@@ -129,6 +130,7 @@ fn main() -> ExitCode {
         ["g1t-scan", dir] => g1t_scan(Path::new(dir)),
         ["g1m-obj", file, out] => g1m_obj(file, Path::new(out)),
         ["g1m-materials", file] => g1m_materials(file),
+        ["g1m-bones", file] => g1m_bones(file),
         ["g1h", file] => g1h(file),
         ["g1h-scan", dir] => g1h_scan(Path::new(dir)),
         ["g1m-scan", dir] => g1m_scan(Path::new(dir)),
@@ -2817,6 +2819,31 @@ fn g1t_scan(dir: &Path) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some textures did not read".into()) }
+}
+
+/// A model's chunks, joints (parent, place in model space) and the joints each submesh's
+/// palette names.
+fn g1m_bones(spec: &str) -> Result<()> {
+    let bytes = file_or_entry(spec)?;
+    let m = barrel_formats::g1m::G1m::parse(&bytes).map_err(|e| format!("{spec}: {e}"))?;
+    let magics: Vec<String> = m.chunks.iter().map(|c| format!("{} ({} bytes)", String::from_utf8_lossy(&c.magic), c.body.len())).collect();
+    println!("chunks: {}", magics.join(", "));
+    if let Some(sk) = &m.skeleton {
+        let world = sk.world_positions();
+        println!("{} joints, index map {} entries, layer {}", sk.joints.len(), sk.index_map.len(), sk.layer);
+        let odd: Vec<String> = sk.index_map.iter().enumerate().filter(|(i, v)| **v as usize != *i).take(40).map(|(i, v)| format!("{i}->{v:#x}")).collect();
+        println!("index map entries not to themselves: {}", odd.join(" "));
+        for (i, j) in sk.joints.iter().enumerate() {
+            println!("  joint {i}: parent {:?} at {:.2?}", j.parent, world[i]);
+        }
+    }
+    if let Some(g) = &m.geometry {
+        for (k, s) in g.submeshes.iter().enumerate() {
+            let map = g.bone_maps.get(s.bone_map).map(|p| p.iter().map(|r| format!("{}{}{}", if r.external { "x" } else { "" }, r.joint, if r.flags != 0x8000_0000 { format!("/f{:x}", r.flags) } else { String::new() })).collect::<Vec<_>>().join(" ")).unwrap_or_default();
+            println!("submesh {k}: palette {} [{map}]", s.bone_map);
+        }
+    }
+    Ok(())
 }
 
 fn g1m_materials(spec: &str) -> Result<()> {

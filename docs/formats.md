@@ -155,7 +155,7 @@ model:
 | 0x10003 | shader parameter sets (one per submesh's "shader parameters" number): per set `{u32 count}`, then per parameter `{u32 size, u32 name length, u32, u16 value count, u16 kind}`, the name, its float values (`Geometry::shader_params`; `shading.md`, "The materials' own parameters") |
 | 0x10004 | vertex buffers: `{u32, u32 stride, u32 vertex count, u32}`, then the vertices |
 | 0x10005 | vertex layouts: `{u32 buffer count, u32 buffer numbers[], u32 attribute count}`, then per attribute `{u16 buffer (position in this layout's list), u16 offset, u8 type, u8, u8 semantic, u8 layer}` |
-| 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags (0x80000000), u32 joint}` |
+| 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags (0x80000000), u32 joint}`; a submesh with a palette but no bone indices or weights (Escha's `_P_M_Acc_Hat1`, on joint 18 under the head) is rigid on its palette's first joint |
 | 0x10007 | index buffers: `{u32 count, u32 bits (always 16), u32}`, then the indices, padded to 4 bytes |
 | 0x10008 | submeshes, 14 u32 each: flags, **layout**, bone map, ?, ?, shader parameters, material, index buffer, ?, primitive (3 triangle list, 4 strip), first vertex, vertex count, first index, index count |
 | 0x10009 | mesh groups: per LOD and pass (0 colour, 1 shadow) the shader by name and the submeshes drawn with it (`Geometry::mesh_groups`, `shading.md`); after each name two words, 0 or (in the shadow pass) a count in the top byte, then -1: no draw priority |
