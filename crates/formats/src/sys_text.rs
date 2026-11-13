@@ -6,6 +6,11 @@
 //!   number (-1 none) and the text.
 //! - `SysInfo.xml`: 118 plain lines (`Text`), such as the menus' descriptions.
 //! - `Menu_Line_Help.xml`: 160 button-help lines (`LineHelp`) with `<IMnn>` button icon tags.
+//!
+//! Two more text tables are read here too: `poster/PosterData.xml` (the atelier's reference
+//! posters: a name, an index and the text, `<CR>` for line breaks) and
+//! `subject/SubjectTalkData.xml` (what Marion says around the assignments: name and character
+//! tags, a voice number and the text).
 
 use crate::table::Element;
 
@@ -40,6 +45,42 @@ pub fn lines(t: &Element, attribute: &str) -> Vec<String> {
     t.children.iter().map(|e| e.attr(attribute).unwrap_or("").to_string()).collect()
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Poster {
+    pub name: String,
+    pub index: i32,
+    pub text: String,
+}
+
+pub fn posters(t: &Element) -> Vec<Poster> {
+    t.children
+        .iter()
+        .filter(|e| e.name == "PosterData")
+        .map(|e| Poster {
+            name: e.attr("posterName").unwrap_or("").to_string(),
+            index: e.attr("index").and_then(|v| v.trim().parse().ok()).unwrap_or(-1),
+            text: e.attr("text").unwrap_or("").to_string(),
+        })
+        .collect()
+}
+
+/// A line of `SubjectTalkData.xml`, as [`SysMess`] without the balloon fields.
+pub fn subject_talk(t: &Element) -> Vec<SysMess> {
+    let a = |e: &Element, n: &str| e.attr(n).unwrap_or("").to_string();
+    t.children
+        .iter()
+        .filter(|e| e.name == "SubjectTalkData")
+        .map(|e| SysMess {
+            chara: a(e, "CharaTag"),
+            name: a(e, "NameTag"),
+            buc: String::new(),
+            balloon: String::new(),
+            voice: e.attr("VoiceNo").and_then(|v| v.trim().parse().ok()).unwrap_or(-1),
+            text: a(e, "Text"),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -49,5 +90,14 @@ mod tests {
         assert_eq!((m[0].chara.as_str(), m[0].voice, m[0].text.as_str()), ("CHARA_ESCHA", -1, "Hmm"));
         let h = br#"<Root><Menu_Line_Help LineHelp="&lt;IM09&gt;Select"/></Root>"#;
         assert_eq!(super::lines(&crate::table::parse(h).unwrap(), "LineHelp"), ["<IM09>Select"]);
+    }
+
+    #[test]
+    fn posters_and_talk() {
+        let p = br#"<Root><PosterData posterName="Colseit" index="0" text="a&lt;CR&gt;b"/></Root>"#;
+        let p = super::posters(&crate::table::parse(p).unwrap());
+        assert_eq!((p[0].index, p[0].text.as_str()), (0, "a<CR>b"));
+        let t = br#"<Root><SubjectTalkData NameTag="NAME_MARION" CharaTag="CHARA_MARION" VoiceNo="11083" Text="x"/></Root>"#;
+        assert_eq!(super::subject_talk(&crate::table::parse(t).unwrap())[0].voice, 11083);
     }
 }
