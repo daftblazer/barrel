@@ -881,7 +881,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `73000050` | `s80` | ECT_CHARA_SET_FLAG | none: the default case of both character switches (`0x1401efea0`'s table at RVA `0x1f2540`, `0x1401ddb70`'s at `0x1de210`), so presumably ignored | 6 | 3 (6) |
 | `73000051` | `s81` | ECT_CHARA_SET_PROGRAM_MOTION_WAIT | none, as `s80`: presumably ignored, so its wait does not happen | 41 | 1 (41) |
 | `73000053` | `s83` | ECT_CHARA_MULTI_MOTION_LOOP_CLEAR | EventExecChara | 1 | 1 (1) |
-| `73000054` | `s84` | (presumably `…_ROT_SET_COPY_TARGET`) | EventExecChara (`0x1401f0a93`): `{character, target (6)}`, the character takes the target's facing: the rotation `0x1402f1640` reads for the target, its y only, into +0x244. `s85` (`ECT_CHARA_ROT_SET_COPY_TARGET_ALL`, `0x1401f0ad1`) copies all three angles. Played as `Step::CopyFacing` | 405 | 7 (405) |
+| `73000054` | `s84` | (presumably `…_ROT_SET_COPY_TARGET`) | EventExecChara (`0x1401f0a93`): `{character, target (6)}`, the character takes the target's facing: the rotation `0x1402f1640` reads for the target, its y only, into +0x244. `s85` (`ECT_CHARA_ROT_SET_COPY_TARGET_ALL`, `0x1401f0ad1`) copies all three angles. Both play as `Step::CopyFacing` (the stage keeps only the facing) | 405 | 7 (405) |
 | `73000055` | `s85` | ECT_CHARA_ROT_SET_COPY_TARGET_ALL | EventExecChara | 11 | 7 (11) |
 | `73000056` | `s86` | ECT_CHARA_ROT_MOVE_SET_COPY_TARGET | EventExecChara | 2 | 9 (2) |
 | `73000058` | `s88` | ECT_CHARA_FACIAL_MOTION_SET | EventExecChara | 17 | 4 (17) |
