@@ -1203,6 +1203,39 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
     Ok((packs, first, bodies))
 }
 
+/// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
+/// ground there (`game::walk::Ground`: the heightmap and the collision floors), in her wait
+/// motion. Her texture packs, where she stands (field units) and her body.
+fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody)> {
+    let name = field_dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
+    let bytes = std::fs::read(field_dir.join(format!("{name}.elixir.gz")))?;
+    let container = Elixir::parse(&bytes)?;
+    let collision = container
+        .entries
+        .iter()
+        .find(|e| e.name.ends_with("_col.g1co"))
+        .map(|e| barrel_formats::g1co::parse(container.data(e)))
+        .transpose()?
+        .unwrap_or_default();
+    let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
+    let ground = barrel_game::walk::Ground::new(heightmap, &collision);
+    // Dropped from high above onto whatever is under her.
+    let y = ground.height(at[0], at[1], 1.0e6, 0.0).ok_or("--player: no ground there")?;
+    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
+    let row = charas
+        .children
+        .first()
+        .and_then(|r| r.attr("BaseTag"))
+        .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
+        .ok_or("no row for the player")?;
+    let pos = [at[0], y, at[1]];
+    let (body, _) = add_body(root, scene, base, row, 21_000, pos, 0.0, "F_WAIT", None, None, |_, _, _, _| Ok(None::<()>))?.ok_or("the player's model did not load")?;
+    let (skeleton, _, anim, _) = body.rig.ok_or("the player has no skeleton")?;
+    eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim }))
+}
+
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -1848,6 +1881,8 @@ struct SceneSpec {
     look_at: Option<u32>,
     creatures_area: Option<i32>,
     town_people_from: Option<String>,
+    /// `--player X,Z`: the player standing there.
+    player_at: Option<[f32; 2]>,
 }
 
 /// A scene loaded on the CPU side: its geometry, draws and instances, the texture packs, the
@@ -1903,6 +1938,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         look_at,
         creatures_area,
         town_people_from,
+        player_at,
     } = spec;
     let mut town_bodies = Vec::new();
     // Where playback starts: --at, or --line's start.
@@ -2067,6 +2103,15 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
     }
+    if let Some(at) = player_at {
+        let field_dir = Path::new(&args[1]);
+        let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--player: the field is not inside a game install")?.to_path_buf();
+        let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
+        let (packs, pos, body) = player(&root, field_dir, at, &mut scene, base)?;
+        pack_bytes.extend(packs);
+        town_bodies.push(body);
+        focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
+    }
     Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field, patterns })
 }
 
@@ -2202,6 +2247,7 @@ fn main() -> Result<()> {
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
     let mut town_people_from = None::<String>;
+    let mut player_at = None::<[f32; 2]>;
     let mut town_time = 0.0f32;
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
     // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
@@ -2296,6 +2342,12 @@ fn main() -> Result<()> {
             // --town-people all|GAMEDATA: the town people the field load would place here
             // (all: each character's first placement; a save: those its seen events allow).
             "--town-people" => town_people_from = Some(it.next().ok_or("--town-people all|GAMEDATA")?.clone()),
+            // --player X,Z: the player (Escha) standing there, on the field's ground.
+            "--player" => {
+                let v = it.next().ok_or("--player X,Z")?;
+                let (x, z) = v.split_once(',').ok_or("--player X,Z")?;
+                player_at = Some([x.parse()?, z.parse()?]);
+            }
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
             // --chain: when the event ends, the one the story starts after it, and so on.
@@ -2786,6 +2838,7 @@ fn main() -> Result<()> {
             look_at,
             creatures_area,
             town_people_from: town_people_from.clone(),
+            player_at,
         })?;
     let event_at = start_at;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;

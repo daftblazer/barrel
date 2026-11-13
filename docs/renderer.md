@@ -164,6 +164,14 @@ pipelines are set up once before the first. A chained event plays from its start
 whole run's; closing the window or Escape ends the chain. From `EVENT_MM01_OP1_111` it runs
 111, 121, 131 and on, as the game does.
 
+**The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
+row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
+onto the highest of the heightmap and the collision floors), in her wait motion, and points
+the camera at her. The spot has to be one she could walk to: over a rock that has no collision
+floor on top (AREA_01_01's plateaus) the ground found is the valley under it. AREA_01_01's
+start, (5577, 3520), has her on the valley floor (`BARREL_HIDE=tree --pitch 50` to see her past
+the trees). Walking her about is next.
+
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
 notes; the map number comes from the directory's name through the `FIELDMAP_*` list):

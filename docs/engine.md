@@ -328,8 +328,8 @@ steps of at most half the radius so none passes through a wall; a move into a wa
 it (`barrel walk FIELD_DIR X Y Z DX DZ STEPS`: in TOWN_10 a walk north from (6000, 10500) stops
 at the wall near z = 11,347 and slides along it). The game moves characters through ktgl's
 collision engine (`elixir::EXCollisionScene` over ktgl's broad and narrow phases, `S_CE_BNP_INPUT`
-and `_OUTPUT`), which is not read: the radius (the character's `FMrad` in `CharaBase.xml`, 30
-here), the height, the steps and how corners and slopes are taken are this module's, to be
+and `_OUTPUT`), which is not read: the radius (the character's `FMrad` in `CharaBase.xml`: 48
+for the player, as the field enemies' scripts take it), the height, the steps and how corners and slopes are taken are this module's, to be
 replaced by the game's once read. The ground (`game::walk::Ground`) is the highest of the
 heightmap (`<AREA>.khm`, bilinear between its vertices) and the collision mesh's floors (its
 triangles that are not upright) under the character and no more than a step (50 here) above its
