@@ -1366,7 +1366,15 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         let Some(s) = &saved else { return false };
         subject_names.iter().position(|n| *n == name).and_then(|i| s.subjects.get(i)).is_some_and(|r| r.state >= 7)
     };
-    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &cleared, known: &known, level: &|_| 0 };
+    // The battle requests' sort key (`0x14035cc80`): how many of item row m the player holds
+    // (the basket's and the container's stacks), m being the monster's number: the same slip as
+    // `quest::monster_request_known`.
+    let level = |r: &barrel_game::quest::Request| {
+        let Some(s) = &saved else { return 0 };
+        let Some(m) = monster_names.iter().position(|n| *n == r.target) else { return 0 };
+        barrel_game::quest::held(s.basket.iter().chain(&s.container).chain(&s.materials).map(|u| (u.item as i32, u.counts[3] as i32)), m as i32)
+    };
+    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &cleared, known: &known, level: &level };
     let rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let mut w = if let (Some(file), Some(summary)) = (from, &saved) {
         // A save's calendar (the main generator is not saved: a fixed one stands in).

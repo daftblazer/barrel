@@ -98,7 +98,7 @@ members can use the item: flags `PC00` to `PC10`, one per playable character.
 are fractions in the tables (5.12 points, 1.7067 of a prize), and the loader keeps them so
 (`movss` straight into the records), and they become whole when the board posts a request (`0x14033ab30`,
 `quest::rewards`). With `n` the count wanted (the row's `Num`, at least 1; a monster request
-no more than half a per-monster count from `0x1410bcaf0`'s slot `+0x70`, not read, and 10:
+no more than half the container's count of item row m, the monster's number (the same slip; `quest::held`), and 10:
 `quest::wanted`), the points and the first prize's count are `trunc(m × value × n + 1 + a)` and
 the second prize's `trunc(count × n + a)`, where (m, a) is (1.5, 1) when the current
 assignment ends 1 to 30 days from the posting day (`0x14035c070`: the period's last day, or
@@ -741,8 +741,7 @@ drawn on day 220, posted `MONSTER_MINIDRAGON_02`, monster 11, never met (monster
 but with item row 11, Scrap Paper, at 10, while the three slug requests eligible then, for
 slugs known in full (monster level 10) but with item rows 13, 19 and 44 at 0, stayed off it;
 `barrel days … --from SAVE` draws boards with these tests), and are sorted by
-`0x14035cc80 (target)` from highest to lowest (`0x14033ecc0` with `0x14033c1d0`; the monster's
-level, presumably) before the same draw and shuffle (`0x14033eb80` with `0x14033c210`);
+`0x14035cc80 (target)` from highest to lowest (`0x14033ecc0` with `0x14033c1d0`): not a monster level but how many of item row m the player holds (the container's and the basket's stack sizes, `quest::held`), m the monster's number, the same slip, before the same draw and shuffle (`0x14033eb80` with `0x14033c210`);
 the three gathering slots (board places 7 to 9, `0x14033bd10`, groups 0 to 2) come from the
 third list (+0x30), skip a target already on an earlier gathering slot and ask for no count
 (`quest::board_eligible`, `draw_synthesis`, `draw_battle`, `draw_gathering`, `draw_board`).

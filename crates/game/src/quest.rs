@@ -63,8 +63,8 @@ pub fn requests(table: &Element, kind: Kind) -> Vec<Request> {
 }
 
 /// How many a posted request asks for (the slot's count, `0x14033ab30`): its `Num`, at least 1;
-/// a monster request no more than half of `seen` (the count the game asks the monster table for,
-/// `0x1410bcaf0`'s slot `+0x70`, not read) and 10.
+/// a monster request no more than half of `seen` (the count the container at `0x1410bcaf0` holds
+/// of item row m, m the monster's number: [`held`]) and 10.
 pub fn wanted(r: &Request, seen: i32) -> i32 {
     let n = match r.kind {
         Kind::Monster => r.num.min((seen / 2).min(10)),
@@ -168,11 +168,22 @@ pub fn draw_synthesis(requests: &[Request], day: i32, seen: impl Fn(&str) -> boo
     draw_slots(requests, Kind::Synthesis, day, &seen, &cleared, &known, None, false, rng)
 }
 
+/// How many of item row `item` are held, over `(item row, stack size)` pairs: what the board
+/// sorts the battle requests by (`0x14035cc80`: `0x1402a4810` on the container at `0x1410bcaf0`
+/// plus `0x1402a40c0` on the basket at `0x1410bcab0`, each summing the stack sizes, +0x22, of
+/// the units whose row, +2, matches, and asking a sub-list at +0x20 the same, presumably the
+/// materials). The battle code passes the monster's number as the row (see
+/// [`monster_request_known`]), and the wanted count asks the container for the same
+/// ([`wanted`]'s `seen`).
+pub fn held(units: impl IntoIterator<Item = (i32, i32)>, item: i32) -> i32 {
+    units.into_iter().filter(|&(i, _)| i == item).map(|(_, n)| n).sum()
+}
+
 /// The four battle slots (`0x14033b990`, board places 3 to 6, `Table` 0 to 3; nothing has
 /// `Table` 3, so the fourth takes only -1). The candidates come from the manager's second list
 /// (+0x18), need a count of at least 2 for the monster in `0x141079fe0` (`known`), and are sorted
-/// by `level` (`0x14035cc80` of the target, the monster's level presumably; comparator
-/// `0x14033c1d0`) from highest to lowest before the draw.
+/// by `level` (`0x14035cc80` of the target: [`held`], how many of item row m are held;
+/// comparator `0x14033c1d0`) from highest to lowest before the draw.
 pub fn draw_battle(
     requests: &[Request],
     day: i32,
@@ -321,6 +332,12 @@ mod tests {
         let b = board_from_save(&slots, &requests, &items, &["MONSTER_X"]);
         // The Craft request with ITEM_B as its prize, and the monster one.
         assert_eq!((b[0], b[6], b[1]), (Some(1), Some(2), None));
+    }
+
+    #[test]
+    fn held_sums_the_stacks() {
+        assert_eq!(held([(3, 2), (4, 1), (3, 5)], 3), 7);
+        assert_eq!(held([(3, 2)], 9), 0);
     }
 
     #[test]

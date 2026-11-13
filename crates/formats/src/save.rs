@@ -416,7 +416,7 @@ fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
 /// (+0xe), four effect rows (+0x10), the equip cost (+0x18: the squares it takes on the battle
 /// item grid, `0x14029f030`), a word (+0x1a, taken off the cost) and the use counts (+0x1c the
 /// uses left, which the battle code reads, = +0x20 + +0x1e; +0x1e the uses from its recipe and
-/// traits, `0x14029ef10`; +0x20, +0x22). A serial of 0xffff is an empty slot.
+/// traits, `0x14029ef10`; +0x20, and +0x22 the stack size, 1 to 34 in a save, which the item counts sum). A serial of 0xffff is an empty slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemUnit {
     pub serial: u16,
