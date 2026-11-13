@@ -1936,9 +1936,15 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
     Ok(barrel_formats::world::point_position(&placements, name).ok_or(format!("no point {name} on {stem}"))?)
 }
 
-/// The area map's camera: its pitch (degrees) and distance from the player (units).
-const AREA_CAMERA_PITCH: f32 = 55.0;
-const AREA_CAMERA_DISTANCE: f32 = 2200.0;
+/// The area map's camera: its pitch (degrees), distance (units) and field of view (degrees),
+/// looking at a point [`AREA_CAMERA_AHEAD`] units north of the player. Fitted to the recording
+/// (`ruins-entrance-lost-battle-60hz.mkv` at 0:45: Sector One's row of dots, 150 units apart
+/// and 116 pixels apart at her depth, and the column of dots toward the region's entry): 7
+/// pixels RMS over 14 dots, the field of view the least sure (12 to 20 fit nearly as well).
+const AREA_CAMERA_PITCH: f32 = 43.0;
+const AREA_CAMERA_DISTANCE: f32 = 5400.0;
+const AREA_CAMERA_FOV: f32 = 15.0;
+const AREA_CAMERA_AHEAD: f32 = 150.0;
 
 /// The world map point field area `map` stands for (`SP_A0P0` ...) and where it is (x, z), none
 /// for the town's maps and fields on no point.
@@ -4545,14 +4551,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         dist = c.distance;
         eprintln!("event camera: target {:?}, distance {}, yaw {}, pitch {}, fov {}", c.target, c.distance, c.yaw, c.pitch, c.fov);
     }
-    // The area map looks down on the player from the south (screen up is -z): sized from the
-    // recording (about 2700 units across the screen; the pitch is a guess, not yet the game's).
+    // The area map looks down on the player from the south (screen up is -z), as fitted to
+    // the recording (`AREA_CAMERA_*`).
     if area_mode && let Some(c) = focus {
         let p = AREA_CAMERA_PITCH.to_radians();
-        target = c;
+        target = c - Vec3::new(0.0, 0.0, AREA_CAMERA_AHEAD);
         dist = AREA_CAMERA_DISTANCE;
-        fov = 30f32.to_radians();
-        eye = c + Vec3::new(0.0, p.sin(), p.cos()) * dist;
+        fov = AREA_CAMERA_FOV.to_radians();
+        eye = target + Vec3::new(0.0, p.sin(), p.cos()) * dist;
     }
     // The camera can be turned about its target and moved in or out from the window
     // (arrows, + and -): `orbit` holds the turn (yaw, pitch in radians) and the zoom factor.

@@ -313,11 +313,12 @@ along its dots (`world::route_path`, queued as the walker's waypoints) to the ne
 mark; the panel shows the place's name and description; Enter walks into the field the point
 opens (`world::point_maps`, through `Session::walked`, so an event there plays) at its arrival
 place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, Enter: field 26,
-`AREA_03_02`, at its arrival. The camera looks down on her from the south (screen up is -z, left -x) at 55 degrees from
-2200 units with a 30-degree view (`AREA_CAMERA_*`), sized against the recording
-(`ruins-entrance-lost-battle-60hz.mkv` at 0:45, Sector One: the claw-shaped ruin east of her
-the same size on screen); the pitch is a guess. In the game Escha is drawn about 1.5 times as
-large there, and the neighbours' labels (layout 638, "Ruins Entrance", "Sector Two") stand on
+`AREA_03_02`, at its arrival. The camera looks down on her from the south (screen up is -z, left -x) at 43 degrees from
+5400 units with a 15-degree view, at a point 150 units north of her (`AREA_CAMERA_*`), fitted
+to the recording (`ruins-entrance-lost-battle-60hz.mkv` at 0:45: Sector One's row of dots, 150
+units apart and 116 pixels apart at her depth, and the column of dots toward the region's
+entry: 7 pixels RMS over 14 dots; a view of 12 to 20 degrees fits nearly as well). In the game
+Escha is drawn about 1.75 times as large there, and the neighbours' labels (layout 638, "Ruins Entrance", "Sector Two") stand on
 the route beside her, a step out each way, not on the neighbour's mark. Not yet the game's:
 her size, the labels' plates (the neighbours' names now stand on their routes' third dot,
 48 pixels up, while she stands still: `area_panel::label`), the routes not yet open (the
