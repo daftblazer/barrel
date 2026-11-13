@@ -685,11 +685,14 @@ A lost battle (all members down) passes a day in the field's carried save
 lead's wipe line on the console. Before it goes back the battle fades to white over 2 s
 (`hud::Element::Fill`, a quad of one colour) and the field HUD's assignment panel (605,
 `hud::date_panel`) shows alone on the white with the new day for 2 s more (`WIPE_FADE`,
-`WIPE_SECONDS`, from the recording). Checked: a level-1 party with nothing equipped walking into
+`WIPE_SECONDS`, from the recording); back in the field the lead's line is in the message window
+(`Saves_EN/systemMessage/SysMess.xml` row 240 for Escha, "Oww... that was bad. Let's be more
+careful next time.", the one the game showed; 241 for Logy; carried as `Carry::notice`) until
+Enter (offscreen `NOTICE_SECONDS`, 3). Checked: a level-1 party with nothing equipped walking into
 `AREA_01_01`'s first Ore Rat (`--creatures 12 --walk -300,0`, `BARREL_BATTLE_KEYS` confirms)
 loses (frame 129), and a save right after reads `today 95` from 94. Not yet the game's (its wipe,
-`docs/events.md`): the slow fall, the panel's date turning over (the new day shows at once), the area map
-it lands on (Barrel has none: the touch point instead) and the line on screen.
+`docs/events.md`): the slow fall, the panel's date turning over (the new day shows at once), and the area map
+it lands on (Barrel has none: the touch point instead, the line over the field).
 In a town map (0 to 11) B opens a shop (`shopping.rs`; offscreen `BARREL_SHOP_AT` and
 `BARREL_SHOP_KEYS`): the shop with the most wares on sale (`Saves_EN/shop/ShopData.xml` against
 the events seen; right after the opening the Homunculus Shop, ten wares from 90 to 15,000

@@ -1436,10 +1436,12 @@ battle on the copied save): the last member falls in slow motion, the screen fad
 the date panel alone shows on the white while the day turns (8/20 → 8/21, "Left" 100 → 99),
 and the area map comes back at the area the battle was in (the Southern Ruins map at the Ruins
 Entrance, not the Atelier) with the lead's line "Oww... that was bad. Let's be more careful
-next time." (a line no table holds: from the executable or a message file not searched yet).
+next time." (`Saves_EN/systemMessage/SysMess.xml` row 240; Logy's is 241, "That was rough.
+Gotta be more careful next time...", Nio's 250; row 61 is Escha's other, "Oooh, that was bad. I
+should be more careful next time...", presumably `BATTLE_ANNIHILATION_ATELIER`'s).
 Game mode 19 `GAMEOVER` and the four game-over themes (`Sound/BGM/sy_gameover_a` to `_d`) are
 for something else (presumably the calendar running out). Not read yet: the party's HP after
-the wipe, whether anything is lost (items, the gathered materials), and the line's source.
+the wipe, whether anything is lost (items, the gathered materials).
 
 Dates compare through `0x1402f08a0` (≥), `0x1402f0800` (=) and `0x1402f0950` (≤), all
 against the date global. `0x1402f0a00` turns today into (school year, month, day) and puts -1

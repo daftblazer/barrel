@@ -1059,6 +1059,18 @@ fn equip_visit(
     Ok(())
 }
 
+/// A lost battle's line for the lead (`Saves_EN/systemMessage/SysMess.xml`, row 240 for Escha,
+/// 241 for Logy: the one the game showed after a wipe; row 61, Escha's other, presumably
+/// after a wipe in the Atelier's own fights), as (name, text).
+fn wipe_line(root: &Path, logy: bool) -> Option<(String, String)> {
+    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok()?).ok()?;
+    let text = table.children.get(if logy { 241 } else { 240 })?.attr("Text")?.to_string();
+    Some((if logy { "Logy" } else { "Escha" }.to_string(), text))
+}
+
+/// How long an offscreen run shows a carried notice.
+const NOTICE_SECONDS: f32 = 3.0;
+
 /// The first field area's map number (the town's maps come before it).
 const FIRST_AREA_MAP: u32 = 12;
 
@@ -3135,6 +3147,8 @@ enum Ended {
 struct Carry {
     save: Option<String>,
     defeated: Vec<usize>,
+    /// A line to show in the message window on arrival (speaker, text): a lost battle's.
+    notice: Option<(String, String)>,
     back: Option<Box<(Vec<String>, Carry)>>,
 }
 
@@ -4491,6 +4505,32 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             None => eprintln!("no HUD: the English executable, the font or a WinXls pack is missing"),
         }
     }
+    // A carried notice (a lost battle's line) in the message window until confirmed (Enter;
+    // offscreen `NOTICE_SECONDS`): its layer (the font, the window) and the time it went up.
+    let mut notice: Option<(text::Layer, f32)> = None;
+    if let (Some((speaker, line)), Some(root), true) = (carry.notice.take(), hud_root.as_ref(), session.is_some() && player.is_none()) {
+        let made = (|| -> Option<text::Layer> {
+            let exe = hud_exe.as_ref()?;
+            let pe = barrel_formats::pe::Pe::parse(exe).ok()?;
+            let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN)?;
+            let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
+            let common_bytes = std::fs::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok()?;
+            let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
+            let common = barrel_formats::g1t::G1t::parse(&common_bytes).ok()?;
+            let images = [atlas.textures.first()?, common.textures.get(4)?];
+            let font = text::Font { glyphs, size: images[0].width as f32 };
+            let mut layer = text::Layer::new(&gpu, pool, post_pass, &images).ok()?;
+            layer.set(&gpu, &font.dialogue(Some(&speaker), &line, width as f32, height as f32)).ok()?;
+            Some(layer)
+        })();
+        match made {
+            Some(layer) => {
+                eprintln!("{speaker}: {line}");
+                notice = Some((layer, 0.0));
+            }
+            None => eprintln!("no message window for the notice"),
+        }
+    }
     // The field enemies already beaten (carried back from their battles).
     if let Some((field, ..)) = creatures.as_mut() {
         for &k in &carry.defeated {
@@ -4641,6 +4681,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             stop = true;
             break;
         }
+    // Offscreen, a carried notice goes down after `NOTICE_SECONDS`.
+    if presenter.is_none() && let Some((_, up)) = notice.as_mut() {
+        *up += (1.0 / fps) as f32;
+        if *up >= NOTICE_SECONDS {
+            unsafe { gpu.device.device_wait_idle()? };
+            if let Some((layer, _)) = notice.take() {
+                layer.destroy(&gpu);
+            }
+        }
+    }
     let mut save_now = std::env::var("BARREL_SAVE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut gather_now = std::env::var("BARREL_GATHER_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     if let Some(p) = pump.as_mut() {
@@ -4686,6 +4736,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 KeyCode::KeyG => gather_now = true,
                 KeyCode::KeyC if walker.is_some() => open_mix = true,
                 KeyCode::KeyB if walker.is_some() => open_shop = true,
+                KeyCode::Enter | KeyCode::NumpadEnter if notice.is_some() => {
+                    unsafe { gpu.device.device_wait_idle()? };
+                    if let Some((layer, _)) = notice.take() {
+                        layer.destroy(&gpu);
+                    }
+                }
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -4806,7 +4862,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 let mut defeated: Vec<usize> = (0..field.defeated.len()).filter(|&j| field.defeated[j]).collect();
                 defeated.push(k);
                 eprintln!("frame {frame}: to battle stage {stage} with encounter group {}", field.groups[k]);
-                Some((battle, Carry { back: Some(Box::new((original_args.clone(), Carry { save: Some(save), defeated, back: None }))), ..Carry::default() }))
+                Some((battle, Carry { back: Some(Box::new((original_args.clone(), Carry { save: Some(save), defeated, back: None, notice: None }))), ..Carry::default() }))
             });
             if let Some((battle, c)) = to_battle {
                 restart = Some(battle);
@@ -5242,8 +5298,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     && let Some(save) = carry.back.as_mut().and_then(|b| b.1.save.as_mut()) {
                         *save = barrel_game::session::Session::lost_in_save(save);
                         play.lost_noted = true;
+                        let logy = save.lines().any(|l| l == "lead logy");
                         let today = save.lines().find_map(|l| l.strip_prefix("today ")).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
                         play.wiped = Some((play.time, today));
+                        if let Some(back) = carry.back.as_mut() {
+                            back.1.notice = hud_root.as_ref().and_then(|root| wipe_line(root, logy));
+                        }
                         eprintln!("battle lost: a day passes; \"Oww... that was bad. Let's be more careful next time.\"");
                     }
                 // Then back to the field it came from: a lost battle at once, a won one once its
@@ -6209,6 +6269,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if let Some(h) = &battle_layer {
             h.layer.record(d, cb, width, height);
         }
+        if let Some((layer, _)) = &notice {
+            layer.record(d, cb, width, height);
+        }
         d.cmd_end_render_pass(cb);
         if let Some(t) = &timer {
             t.mark(d, cb, 4);
@@ -6273,6 +6336,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The scene's own resources go; the renderer stays for the next.
     unsafe { d.device_wait_idle()? };
     if let Some((layer, ..)) = text_layer.take() {
+        layer.destroy(&gpu);
+    }
+    if let Some((layer, _)) = notice.take() {
         layer.destroy(&gpu);
     }
     if let Some((layer, ..)) = field_hud.take() {
