@@ -2024,6 +2024,106 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies })
 }
 
+/// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
+/// pixels), numbered after `textures`, and points the draw at it.
+fn composite_overlays(draws: &mut [Draw], all_textures: &[&barrel_formats::g1t::Texture]) -> Vec<(u32, u32, Vec<u8>)> {
+    let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+    for draw in draws {
+        if let Some(o) = draw.overlay {
+            let (base, top) = (all_textures[draw.texture], all_textures[o]);
+            let (w, h) = (base.width, base.height);
+            let mut px = base.to_rgba8();
+            let over = top.to_rgba8();
+            for y in 0..h {
+                for x in 0..w {
+                    let (sx, sy) = (x * top.width / w, y * top.height / h);
+                    let src = &over[((sy * top.width + sx) * 4) as usize..][..4];
+                    let dst = &mut px[((y * w + x) * 4) as usize..][..4];
+                    let a = src[3] as u32;
+                    for c in 0..3 {
+                        dst[c] = ((src[c] as u32 * a + dst[c] as u32 * (255 - a)) / 255) as u8;
+                    }
+                }
+            }
+            draw.texture = all_textures.len() + composites.len();
+            composites.push((w, h, px));
+        }
+    }
+    composites
+}
+
+/// Uploads a scene's textures (BC blocks with all mip levels), then the characters' outline
+/// texture (`Data/x64/Shader/texture/outline.g1t` under ROOT, if found) and a white one for
+/// masks a material does not have: the textures, the outline's slot and white's.
+fn upload_textures(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    all_textures: &[&barrel_formats::g1t::Texture],
+    root: Option<&Path>,
+) -> Result<(Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>, Option<usize>, usize)> {
+    let mut textures = Vec::new();
+    for t in all_textures {
+        textures.push(upload_texture(gpu, pool, t)?);
+    }
+    // The characters' outline texture (`Data/x64/Shader/texture/outline.g1t`), if found.
+    let outline_tex = {
+        let bytes = root.and_then(|r: &Path| std::fs::read(r.join("Data/x64/Shader/texture/outline.g1t")).ok());
+        match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(gpu, pool, &t))) {
+            Some(t) => {
+                textures.push(t?);
+                Some(textures.len() - 1)
+            }
+            None => None,
+        }
+    };
+    // White, for masks a material does not have.
+    let white_px = [255u8; 4];
+    let white = textures.len();
+    textures.push(upload_texture(
+        gpu,
+        pool,
+        &barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&white_px[..]] },
+    )?);
+    Ok((textures, outline_tex, white))
+}
+
+/// Uploads each field's ground textures: its 2 blend maps (a black second one where the field
+/// has one) and 6 layers (the last repeated where it has fewer).
+fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDraw)]) -> Result<Vec<scene_gpu::GroundData>> {
+    let mut grounds = Vec::new();
+    for (field, t) in terrains {
+        let bundle = barrel_formats::ktf::parse(&t.ktf)?;
+        let mut tex = Vec::new();
+        for b in bundle.blend.textures.iter().take(2) {
+            tex.push(upload_texture(gpu, pool, b)?);
+        }
+        // A field with one blend map (TOWN_03) weights only the first three layers: the
+        // second map is black, so layers 4 to 6 get no weight.
+        let black = [0u8, 0, 0, 255];
+        while tex.len() < 2 && !tex.is_empty() {
+            let t = barrel_formats::g1t::Texture {
+                width: 1,
+                height: 1,
+                format: Format::Rgba8,
+                format_code: 1,
+                layers: 1,
+                volume: false,
+                levels: vec![&black[..]],
+            };
+            tex.push(upload_texture(gpu, pool, &t)?);
+        }
+        let layer_count = bundle.layers.textures.len().clamp(1, 6);
+        for i in 0..6 {
+            tex.push(upload_texture(gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
+        }
+        if tex.len() != 8 {
+            return Err("terrain needs two blend maps".into());
+        }
+        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, first_index: t.first_index, index_count: t.index_count, field_size: t.field_size, scales: t.scales });
+    }
+    Ok(grounds)
+}
+
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -2181,28 +2281,7 @@ fn main() -> Result<()> {
     }
     let Scene { vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
     // Lay each overlay over its base texture into a new RGBA texture.
-    let mut composites: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-    for draw in &mut draws {
-        if let Some(o) = draw.overlay {
-            let (base, top) = (all_textures[draw.texture], all_textures[o]);
-            let (w, h) = (base.width, base.height);
-            let mut px = base.to_rgba8();
-            let over = top.to_rgba8();
-            for y in 0..h {
-                for x in 0..w {
-                    let (sx, sy) = (x * top.width / w, y * top.height / h);
-                    let src = &over[((sy * top.width + sx) * 4) as usize..][..4];
-                    let dst = &mut px[((y * w + x) * 4) as usize..][..4];
-                    let a = src[3] as u32;
-                    for c in 0..3 {
-                        dst[c] = ((src[c] as u32 * a + dst[c] as u32 * (255 - a)) / 255) as u8;
-                    }
-                }
-            }
-            draw.texture = all_textures.len() + composites.len();
-            composites.push((w, h, px));
-        }
-    }
+    let composites = composite_overlays(&mut draws, &all_textures);
     let composite_textures: Vec<barrel_formats::g1t::Texture> = composites
         .iter()
         .map(|(w, h, px)| barrel_formats::g1t::Texture {
@@ -2252,31 +2331,9 @@ fn main() -> Result<()> {
     let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
     let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
 
-    // Textures, uploaded as their BC blocks with all mip levels.
-    let mut textures = Vec::new();
-    for t in &all_textures {
-        textures.push(upload_texture(&gpu, pool, t)?);
-    }
-    // The characters' outline texture (`Data/x64/Shader/texture/outline.g1t`), if found.
-    let outline_tex = {
-        let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
-        let bytes = root.and_then(|r| std::fs::read(r.join("Data/x64/Shader/texture/outline.g1t")).ok());
-        match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(&gpu, pool, &t))) {
-            Some(t) => {
-                textures.push(t?);
-                Some(textures.len() - 1)
-            }
-            None => None,
-        }
-    };
-    // White, for masks a material does not have.
-    let white_px = [255u8; 4];
-    let white = textures.len();
-    textures.push(upload_texture(
-        &gpu,
-        pool,
-        &barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&white_px[..]] },
-    )?);
+    // Textures, uploaded as their BC blocks with all mip levels, then the outline and white.
+    let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
+    let (textures, outline_tex, white) = upload_textures(&gpu, pool, &all_textures, root.as_deref())?;
     let sampler = unsafe {
         d.create_sampler(
             &vk::SamplerCreateInfo::default()
@@ -2353,37 +2410,7 @@ fn main() -> Result<()> {
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
     let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
-    let mut grounds = Vec::new();
-    for (field, t) in &terrains {
-        let bundle = barrel_formats::ktf::parse(&t.ktf)?;
-        let mut tex = Vec::new();
-        for b in bundle.blend.textures.iter().take(2) {
-            tex.push(upload_texture(&gpu, pool, b)?);
-        }
-        // A field with one blend map (TOWN_03) weights only the first three layers: the
-        // second map is black, so layers 4 to 6 get no weight.
-        let black = [0u8, 0, 0, 255];
-        while tex.len() < 2 && !tex.is_empty() {
-            let t = barrel_formats::g1t::Texture {
-                width: 1,
-                height: 1,
-                format: Format::Rgba8,
-                format_code: 1,
-                layers: 1,
-                volume: false,
-                levels: vec![&black[..]],
-            };
-            tex.push(upload_texture(&gpu, pool, &t)?);
-        }
-        let layer_count = bundle.layers.textures.len().clamp(1, 6);
-        for i in 0..6 {
-            tex.push(upload_texture(&gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
-        }
-        if tex.len() != 8 {
-            return Err("terrain needs two blend maps".into());
-        }
-        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, first_index: t.first_index, index_count: t.index_count, field_size: t.field_size, scales: t.scales });
-    }
+    let grounds = upload_grounds(&gpu, pool, &terrains)?;
     let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
     let shared = scene_gpu::Shared {
         set_layout,
