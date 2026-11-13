@@ -39,7 +39,7 @@ usage:
   barrel ebm FILE.ebm          print an event's messages
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR         read every field placement list in the containers
-  barrel opl2 FILE#N              a field's placements: each object, its instances and their tags
+  barrel opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
   barrel g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
@@ -3232,6 +3232,9 @@ fn opl2_list(spec: &str) -> Result<()> {
                 println!("       at {:.1?} turned {:.1?} scaled {:.2?}", i.position, i.rotation, i.scale);
             }
         }
+    }
+    for t in &p.effects {
+        println!("{:4} effect {:33} at {:.1?}", t.instances.len(), t.name, t.instances.first().map(|i| i.position));
     }
     Ok(())
 }
