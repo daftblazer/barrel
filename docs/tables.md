@@ -2361,6 +2361,18 @@ take, each shared by the two places it joins: the Southern Ruins (region `A2`) h
 One (`A2p1`) `[27, 25, 26, -1, -1, -1]`, where route 24 is `A2r0`, 25 `A2r1`, 26 `A2r2` and 27
 `A2r3`: the path dots between them carry those tags. The descriptions are the area map's
 panel line ("A path leading into the ruins."; none for the town and the regions' entries).
+Which places are open (`area_map::closed`, read from `0x14035e6f0` / `0x14035e740` and the
+code that changes the save's `pointerStatus` record, `save::place_states`: 96 × 12 bytes, per
+place the durability left, a "still shut" byte and a word not read yet). The place table's
+`extra` (+0x48) is the condition: `[1, N]` puts an obstacle of durability N before the place
+("Durability: %d" at `0x14038b01f`; Sector Three's is 30, the Dragon's Head's 200); a hit
+takes its damage off (`0x140177ad2`, floored at 0) and at 0 the place is open. `[0, N]`
+starts shut and opens when its field gimmick is used (`0x140176619` clears the byte; the N, 31
+to 84, is not read). Any other condition (`[-1, 0]`) is always open. The user's save at 8/20
+has every one untouched (Sector Three 30 left). Barrel keeps only what changed, as its save's
+`opened K` and `worn K DAMAGE` lines; a closed place has no way there on the area map, no
+label, and is not on the world map's list.
+
 A sector's "Gatherable Items" (the area map's scroll) are the items of its gathering points'
 lists at the table level (the first list at level 0), each once, by item number
 (`Gathering::field_items`): Sector One (map 26) has its four points on list 71, Garden Stone

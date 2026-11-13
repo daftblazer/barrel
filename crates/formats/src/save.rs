@@ -410,6 +410,14 @@ fn records(d: &[u8]) -> Option<Vec<Record<'_>>> {
     Some(out)
 }
 
+/// The places' states, the `pointerStatus` record (96 × 12 bytes, `0x14035e200` loads it):
+/// per place the obstacle's durability left (+0, set from the place table's `[1, N]`), whether
+/// it is still shut (+4, a byte: set for the table's `[0, N]` places until their gimmick is
+/// used) and a word (+8, not read yet). See `area_map::closed`.
+pub fn place_states(d: &[u8]) -> Vec<(i32, bool, i32)> {
+    d.chunks_exact(12).map(|c| (i32::from_le_bytes(c[0..4].try_into().unwrap()), c[4] != 0, i32::from_le_bytes(c[8..12].try_into().unwrap()))).collect()
+}
+
 /// One held item (36 bytes; the basket, container and material lists are runs of these):
 /// a serial number (+0; the `item/ID` record holds the next), the `itemData.xml` row (+2),
 /// the quality as a float (+4), three trait rows (+8, -1 none), a word the battle code checks

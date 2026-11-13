@@ -29,6 +29,20 @@ pub fn neighbours(places: &[Place], at: usize) -> Vec<(i32, usize)> {
     out
 }
 
+/// Whether place `place` is closed (`0x14035e6f0`, `0x14035e740`), by its opening condition
+/// (`extra`, the table's +0x48) and what the player has done to it: `[0, _]` places start shut
+/// and open when their field gimmick is used (`opened`: `0x140176619` clears the save's flag);
+/// `[1, N]` places stand behind an obstacle of durability N ("Durability: %d"), which hits wear
+/// down (`damage` in all: `0x140177ad2`) and which opens at 0. Other places are always open.
+/// The game keeps this per place in the save's `pointerStatus` (`save::place_states`).
+pub fn closed(place: &Place, opened: bool, damage: i32) -> bool {
+    match place.extra[0] {
+        0 => !opened,
+        1 => place.extra[1] - damage > 0,
+        _ => false,
+    }
+}
+
 /// A direction on the map, as the link slots order them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Way {
@@ -50,6 +64,17 @@ mod tests {
 
     fn place(tag: &str, links: [i32; 6]) -> Place {
         Place { name: tag.into(), tag: tag.into(), kind: 1, links, description: String::new(), extra: [-1, 0] }
+    }
+
+    #[test]
+    fn obstacles_and_gimmicks_close_places() {
+        let mut sector_three = place("A2p2", [29, -1, -1, 26, -1, -1]);
+        sector_three.extra = [1, 30];
+        assert!(closed(&sector_three, false, 0) && closed(&sector_three, false, 29) && !closed(&sector_three, false, 30));
+        let mut promenade = place("B1p1", [33, 34, -1, -1, -1, -1]);
+        promenade.extra = [0, 31];
+        assert!(closed(&promenade, false, 0) && !closed(&promenade, true, 0));
+        assert!(!closed(&place("A2p1", [-1; 6]), false, 0));
     }
 
     #[test]

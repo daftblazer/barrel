@@ -1129,6 +1129,8 @@ struct AreaMap {
     /// The gathering tables (a sector's gatherables) and the items' names.
     gathering: Option<barrel_game::gather::Gathering>,
     item_names: Vec<String>,
+    /// The places closed to the player (`Session::closed`): no way there, no label, not listed.
+    closed: Vec<bool>,
 }
 
 impl AreaMap {
@@ -1182,7 +1184,7 @@ impl AreaMap {
         let trips = if world { barrel_game::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_game::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
         let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names })
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new() })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -1192,10 +1194,15 @@ impl AreaMap {
         self.places.iter().find(|p| p.tag == region).map_or("", |p| p.name.as_str())
     }
 
+    /// The open place across the route in way `way` from where she stands.
+    fn step(&self, way: barrel_game::area_map::Way) -> Option<usize> {
+        barrel_game::area_map::step(&self.places, self.at, way).filter(|&k| !self.closed.get(k).copied().unwrap_or(false))
+    }
+
     /// A button: a direction goes along that way's route (the dots queued as the walker's
     /// waypoints, then the next place's mark), confirm gives the field to enter.
     fn press(&mut self, b: title::Button, w: &mut Walker) -> Option<AreaPick> {
-        use barrel_game::area_map::{Way, step};
+        use barrel_game::area_map::Way;
         let way = match b {
             title::Button::Up => Way::Up,
             title::Button::Down => Way::Down,
@@ -1212,7 +1219,7 @@ impl AreaMap {
             }
             _ => return None,
         };
-        let next = step(&self.places, self.at, way)?;
+        let next = self.step(way)?;
         let route = self.places[self.at].links[way as usize];
         let tag = self.routes.get(route as usize)?;
         let mark = self.marks[next]?;
@@ -1227,12 +1234,12 @@ impl AreaMap {
     /// Where each neighbour's label stands (world, game space): its route's third dot out (as
     /// the recording has "Ruins Entrance" and "Sector Two" either side of Sector One).
     fn label_places(&self) -> Vec<(usize, [f32; 3])> {
-        use barrel_game::area_map::{Way, step};
+        use barrel_game::area_map::Way;
         let Some(from) = self.marks[self.at] else { return Vec::new() };
         [Way::Right, Way::Left, Way::Down, Way::Up]
             .into_iter()
             .filter_map(|way| {
-                let next = step(&self.places, self.at, way)?;
+                let next = self.step(way)?;
                 let tag = self.routes.get(self.places[self.at].links[way as usize] as usize)?;
                 let path = barrel_formats::world::route_path(&self.placements, tag, from);
                 let mid = *path.get(2).or(path.last()).or(self.marks[next].as_ref())?;
@@ -1261,7 +1268,7 @@ impl AreaMap {
         let measure = |s: &str, size: f32| font.width_of(s) * size / text::LINE * 1.47;
         let mut e = if self.world {
             let sector = format!("{}p", p.tag);
-            let sectors: Vec<String> = self.places.iter().filter(|q| q.kind == 1 && q.tag.starts_with(&sector)).map(|q| q.name.clone()).collect();
+            let sectors: Vec<String> = self.places.iter().enumerate().filter(|(k, q)| q.kind == 1 && q.tag.starts_with(&sector) && !self.closed.get(*k).copied().unwrap_or(false)).map(|(_, q)| q.name.clone()).collect();
             let mut e = area_panel::world_elements(&pe, &p.name, &p.description, &sectors, measure);
             if let Some((days, month, day)) = trip {
                 e.extend(area_panel::travel(&pe, days, month, day));
@@ -5422,8 +5429,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if area_mode && area_map.is_none()
         && let Some(w) = walker.as_ref() {
             match AreaMap::new(Path::new(&args[1]), w.pos, world_mode, &gpu, pool, post_pass) {
-                Ok(a) => {
+                Ok(mut a) => {
                     eprintln!("area map: {} ({})", a.places[a.at].name, a.places[a.at].tag);
+                    a.closed = (0..a.places.len()).map(|k| session.as_ref().is_some_and(|s| s.closed(&a.places, k))).collect();
                     area_map = Some(a);
                 }
                 Err(e) => {
