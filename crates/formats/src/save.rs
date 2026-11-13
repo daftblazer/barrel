@@ -418,6 +418,14 @@ pub fn place_states(d: &[u8]) -> Vec<(i32, bool, i32)> {
     d.chunks_exact(12).map(|c| (i32::from_le_bytes(c[0..4].try_into().unwrap()), c[4] != 0, i32::from_le_bytes(c[8..12].try_into().unwrap()))).collect()
 }
 
+/// The field effect, the `fieldmap/m_userDataFieldMapData` record (9 words): a word (0 in the
+/// user's save), the gauge (the HUD's percentage, 45), the effect's mode (4: the gathering
+/// tier raised by the first value) and values (2, then -1s). Returns (gauge, mode, values).
+pub fn field_effect(d: &[u8]) -> Option<(i32, i32, [i32; 3])> {
+    let w = |k: usize| d.get(4 * k..4 * k + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
+    Some((w(1)?, w(2)?, [w(3)?, w(4)?, w(5)?]))
+}
+
 /// One held item (36 bytes; the basket, container and material lists are runs of these):
 /// a serial number (+0; the `item/ID` record holds the next), the `itemData.xml` row (+2),
 /// the quality as a float (+4), three trait rows (+8, -1 none), a word the battle code checks

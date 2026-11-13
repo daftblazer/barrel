@@ -1171,7 +1171,7 @@ impl AreaMap {
         let image = atlas.textures.first().ok_or("an empty font atlas")?;
         let font = text::Font { glyphs, size: image.width as f32 };
         // The panels' sheets, as any place's panels use them.
-        let mut all = area_panel::elements(&pe, "", "", "", &[], |_, _| 0.0);
+        let mut all: Vec<hud::Element> = (0..5).flat_map(|tier| area_panel::elements(&pe, "", "", "", &[], tier, |_, _| 0.0)).collect();
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, 0, 1, 1));
         all.extend(question::elements(&pe, "", true));
@@ -1285,7 +1285,7 @@ impl AreaMap {
     /// The panels for the place she stands on, redrawn when it changes; with the camera's
     /// `mvp` (she stands still) the neighbours' labels too; on the world map, `trip` (days,
     /// arrival month and day) shows the travel panel.
-    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>, knows: impl Fn(i32) -> bool) -> Result<()> {
+    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>, knows: impl Fn(i32) -> bool, levels: barrel_game::gather::Levels) -> Result<()> {
         if self.shown == Some((self.at, width, height, mvp.is_some(), trip, self.asking)) {
             return Ok(());
         }
@@ -1304,10 +1304,10 @@ impl AreaMap {
         } else {
             // The sector's gatherables, "????" for those not known yet.
             let items: Vec<String> = match (&self.gathering, self.fields[self.at]) {
-                (Some(g), Some(map)) => g.field_items(map as i32, 0).into_iter().map(|i| if knows(i) { self.item_names.get(i as usize).cloned().unwrap_or_default() } else { "????".into() }).collect(),
+                (Some(g), Some(map)) => g.field_items(map as i32, levels).into_iter().map(|i| if knows(i) { self.item_names.get(i as usize).cloned().unwrap_or_default() } else { "????".into() }).collect(),
                 _ => Vec::new(),
             };
-            area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, measure)
+            area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, levels.tier(false), measure)
         };
         if let Some(mvp) = mvp.filter(|_| self.asking.is_none()) {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
@@ -5506,7 +5506,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let v = hud::Values::on(today + d.max(0) as u32, 0);
             (d, v.month, v.day)
         });
-        a.panel(&gpu, width, height, mvp, trip, |i| session.as_ref().is_some_and(|s| s.knows(i)))?;
+        a.panel(&gpu, width, height, mvp, trip, |i| session.as_ref().is_some_and(|s| s.knows(i)), session.as_ref().map(|s| s.levels()).unwrap_or_default())?;
     }
     if area_enter.is_some() {
         stop = true;
@@ -5625,7 +5625,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             match near {
                 Some((k, d, _)) => {
-                    let got = g.gather(k, 0, |_| 0, 1, &mut w.rng);
+                    let got = g.gather(k, session.as_ref().map(|s| s.levels()).unwrap_or_default(), |_| 0, 1, &mut w.rng);
                     eprintln!("frame {frame}: gathering at point {k} ({d:.0} away): items {:?}", got.iter().map(|g| (g.item, g.quality)).collect::<Vec<_>>());
                     if let Some(s) = session.as_mut() {
                         s.gathered(got);

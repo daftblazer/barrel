@@ -43,6 +43,7 @@ pub fn elements(
     name: &str,
     description: &str,
     items: &[String],
+    tier: usize,
     width_of: impl Fn(&str, f32) -> f32,
 ) -> Vec<Element> {
     let texts = |p: &Placed| barrel_formats::layout::text(pe, p);
@@ -85,6 +86,8 @@ pub fn elements(
         let at = moved(&p, TAB_AT);
         match texts(&p) {
             Some(t) if p.node.part == 0x164 => out.push(Element::Label(Text { at, text: "Gatherable Items".into(), ..t })),
+            // The gathering level: cut 12 plus the points' tier (Lv1 to Lv4, MAX).
+            _ if p.node.part == 0x69 => out.push(Element::Sprite { part: 0x69, cut: 12 + tier.min(4) as i32, at }),
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }
     }

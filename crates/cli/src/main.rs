@@ -2500,7 +2500,7 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
     let mut rng = barrel_game::rng::Rng::from_state([env("BARREL_SEED", 1) as u32, 2, 3, 4]);
     let level = env("BARREL_TABLE_LEVEL", 0);
     println!("point {point}: map {}, at {:?} m, lists {:?}", p.map, p.position, p.lists);
-    for got in g.gather(n, level, |item| knowledge.get(item as usize).copied().unwrap_or(0), env("BARREL_PICKS", 1).max(0) as u32, &mut rng) {
+    for got in g.gather(n, barrel_game::gather::Levels::tables(level), |item| knowledge.get(item as usize).copied().unwrap_or(0), env("BARREL_PICKS", 1).max(0) as u32, &mut rng) {
         let name = items.get(got.item.max(0) as usize).and_then(|r| r.attr("ItemName")).unwrap_or("?");
         println!("  {name} at quality {}, traits {:?}", got.quality, got.traits);
     }

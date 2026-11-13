@@ -1651,6 +1651,12 @@ the field state at `0x1410783b0` read mode 4 with value 2, so its ordinary point
 in from an effect object by `0x140283d16`, and the code tests it for modes 3 to 8 in several
 places (gathering's 3 to 5 above; 6 in battle, 7 and 8 elsewhere): a field effect, not followed
 further yet.
+The save keeps it as `fieldmap/m_userDataFieldMapData` (9 words, `save::field_effect`): a word
+(0), the field gauge (the HUD's 45%), the mode (4) and the values (2, then -1s); the HUD's
+"Rare Material Changed" names that effect. The area map's gathering icon shows the tier:
+part 0x69 cut 12 plus the ordinary points' list index (`0x140267bea`; cuts 12 to 16 are Lv1 to
+Lv4 and MAX), so the recording's Lv3 at Sector One is that +2 (`gather::Levels::tier`). Barrel
+keeps the effect as its save's `field-effect GAUGE MODE V0 V1 V2` line.
 
 **The draw** (`0x14023c210 (lists, list, ...)`, `barrel_game::gather`): the list's records are
 gathered in table order; each gets a weight, its own plus a roll of 30 to 100 when the player

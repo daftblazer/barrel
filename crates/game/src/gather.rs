@@ -77,6 +77,28 @@ pub fn list_index(alchemy_point: bool, alc_level: i32, gat_level: i32, field_bon
     level.clamp(0, 4) as usize
 }
 
+/// What chooses the points' lists: the two table levels and the field's state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Levels {
+    pub alchemy: i32,
+    pub gathering: i32,
+    pub field: FieldState,
+}
+
+impl Levels {
+    /// The same table level for both kinds of point, no field effect.
+    pub fn tables(level: i32) -> Levels {
+        Levels { alchemy: level, gathering: level, field: FieldState::default() }
+    }
+
+    /// The list a point draws from (an alchemy point's or an ordinary one's): the field's
+    /// first value counts while its mode is 4. The area map's gathering icon is cut 12 plus
+    /// the ordinary points' tier (`0x140267bea`: Lv1 to Lv4, then MAX).
+    pub fn tier(&self, alchemy_point: bool) -> usize {
+        list_index(alchemy_point, self.alchemy, self.gathering, if self.field.mode == 4 { self.field.values[0] } else { 0 })
+    }
+}
+
 /// A gathered item's quality (`0x14023c8b0`): a stacking item (`itemData` `isStack`
 /// `ITEM_STACK_TYPE_STACK`, the loaded row's +0x2c) comes at its row's `effect` (+0x40), at
 /// most 120; any other at a roll between the record's quality bounds, raised by
@@ -173,10 +195,10 @@ impl Gathering {
     /// of its points' lists at table level `level` (their first at 0), each once, by item
     /// number (Sector One, map 26: list 71, Garden Stone 12, Moss Grass 75, Mountain Feather
     /// 141, Eagle Feather 142, the recording's order with the first unknown).
-    pub fn field_items(&self, map: i32, level: i32) -> Vec<i32> {
+    pub fn field_items(&self, map: i32, levels: Levels) -> Vec<i32> {
         let mut items: Vec<i32> = self
             .points_in(map)
-            .filter_map(|(_, p)| p.lists.get(list_index(p.alchemy, level, level, 0)).or(p.lists.last()).copied())
+            .filter_map(|(_, p)| p.lists.get(levels.tier(p.alchemy)).or(p.lists.last()).copied())
             .flat_map(|list| self.rows.iter().filter(move |g| g.list == list).map(|g| g.item))
             .collect();
         items.sort_unstable();
@@ -194,9 +216,9 @@ impl Gathering {
     /// makes it (`0x14023c210`): the point's tier list, weights with the unknown-item bonus,
     /// the picked record's quality, its fixed traits and, for a made item's record without a
     /// fixed trait word, random traits.
-    pub fn gather(&self, point: usize, level: i32, knowledge: impl Fn(i32) -> i32, picks: u32, rng: &mut crate::rng::Rng) -> Vec<Got> {
+    pub fn gather(&self, point: usize, levels: Levels, knowledge: impl Fn(i32) -> i32, picks: u32, rng: &mut crate::rng::Rng) -> Vec<Got> {
         let Some(p) = self.points.get(point) else { return Vec::new() };
-        let k = list_index(p.alchemy, level, level, 0);
+        let k = levels.tier(p.alchemy);
         let Some(&list) = p.lists.get(k).or(p.lists.last()) else { return Vec::new() };
         let records: Vec<&Gather> = self.rows.iter().filter(|g| g.list == list).collect();
         let weights = weights(&records, knowledge, rng);
@@ -223,7 +245,10 @@ mod tests {
     fn sector_one_lists_the_recordings_items() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
         let g = super::Gathering::load(std::path::Path::new(&root)).unwrap();
-        assert_eq!(g.field_items(26, 0), [12, 75, 141, 142]);
+        assert_eq!(g.field_items(26, super::Levels::default()), [12, 75, 141, 142]);
+        // The user's save at 8/20: field state mode 4, value 2 (Lv3): tier 2, the same items.
+        let user = super::Levels { field: super::FieldState { mode: 4, values: [2, -1, -1] }, ..Default::default() };
+        assert_eq!((user.tier(false), g.field_items(26, user)), (2, vec![12, 75, 141, 142]));
     }
 
     use super::*;
