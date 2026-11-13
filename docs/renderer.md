@@ -294,6 +294,19 @@ generator and commands always give the same battle, so what was played stays) up
 member turn. Not yet the game's: the list (the game's command layout is not identified), no
 mark on the target in the scene, no items, guarding or fleeing, the pad not mapped.
 
+**The area map.** `barrel-view --field .../A15_WMAP OUT --world-point SP_A2P0 --area-map` puts
+Escha on a region's point of the world map with the area map's cursor (`AreaMap`, over
+`game::area_map`): W A S D (offscreen `BARREL_AREA_KEYS`, up / down / left / right / confirm,
+one a frame once she stands still) take the route in that way's link slot, which she runs
+along its dots (`world::route_path`, queued as the walker's waypoints) to the next place's
+mark; the panel shows the place's name and description; Enter walks into the field the point
+opens (`world::point_maps`, through `Session::walked`, so an event there plays) at its arrival
+place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, Enter: field 26,
+`AREA_03_02`, at its arrival. Not yet the game's: the camera (it follows her close; the game
+looks down on the region), the panel (plain text at the right, not layouts 641 and 642), the
+buttons (636), the place labels (638), the party member's "Enter / Quit" prompt, Back to the
+world map, leaving a field back to its area map, and a wipe landing there.
+
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
 model the game gives it (`FieldEnemy::model`, a `CharaBase` row; its encounter group's first

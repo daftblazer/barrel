@@ -1075,6 +1075,102 @@ fn equip_visit(
     Ok(())
 }
 
+/// The area map on the world map (`game::area_map`): the places, their marks, the routes'
+/// tags, the field each opens, where the player stands, and the panel (the place's name and
+/// description; not yet the game's layout 641: plain text at its place).
+struct AreaMap {
+    places: Vec<barrel_formats::world::Place>,
+    marks: Vec<Option<[f32; 3]>>,
+    routes: Vec<String>,
+    fields: Vec<Option<u32>>,
+    placements: barrel_formats::opl2::Placements,
+    at: usize,
+    layer: text::Layer,
+    font: text::Font,
+    shown: Option<(usize, u32, u32)>,
+    pe_bytes: Vec<u8>,
+}
+
+impl AreaMap {
+    fn new(wmap: &Path, pos: [f32; 3], gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass) -> Result<AreaMap> {
+        let root = wmap.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("not inside a game install")?;
+        let pe_bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&pe_bytes)?;
+        let places = barrel_formats::world::places(&pe, barrel_formats::world::PLACES_EN).ok_or("no place table")?;
+        let routes = barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no route table")?.into_iter().map(|a| a.id).collect();
+        let bytes = std::fs::read(wmap.join("A15_WMAP.elixir.gz"))?;
+        let container = Elixir::parse(&bytes)?;
+        let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the world map has no placements")?;
+        let placements = barrel_formats::opl2::parse(container.data(entry))?;
+        let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+        let points = barrel_formats::world::point_maps(&pe).unwrap_or_default();
+        // A place's point name (its tag as a world map point), its mark and its field.
+        let point_of = |tag: &str| names.iter().position(|n| barrel_formats::world::point_tag(n).as_deref() == Some(tag));
+        let marks = places.iter().map(|p| point_of(&p.tag).and_then(|k| barrel_formats::world::point_position(&placements, &names[k]))).collect::<Vec<_>>();
+        let fields = places.iter().map(|p| point_of(&p.tag).and_then(|k| points.iter().find(|(q, _, _)| *q as usize == k).map(|(_, m, _)| *m))).collect();
+        // Where she stands: the nearest sector's mark.
+        let at = (0..places.len())
+            .filter(|&k| places[k].kind == 1 && marks[k].is_some())
+            .min_by(|&a, &b| {
+                let d = |k: usize| marks[k].map_or(f32::MAX, |m| (m[0] - pos[0]).powi(2) + (m[2] - pos[2]).powi(2));
+                d(a).total_cmp(&d(b))
+            })
+            .ok_or("no place on the world map")?;
+        let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("no glyph table")?;
+        let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+        let atlas = G1t::parse(&atlas_bytes)?;
+        let image = atlas.textures.first().ok_or("an empty font atlas")?;
+        let font = text::Font { glyphs, size: image.width as f32 };
+        let layer = text::Layer::new(gpu, pool, pass, &[image])?;
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, shown: None, pe_bytes })
+    }
+
+    /// A button: a direction goes along that way's route (the dots queued as the walker's
+    /// waypoints, then the next place's mark), confirm gives the field to enter.
+    fn press(&mut self, b: title::Button, w: &mut Walker) -> Option<u32> {
+        use barrel_game::area_map::{Way, step};
+        let way = match b {
+            title::Button::Up => Way::Up,
+            title::Button::Down => Way::Down,
+            title::Button::Left => Way::Left,
+            title::Button::Right => Way::Right,
+            title::Button::Confirm => return self.fields[self.at],
+            _ => return None,
+        };
+        let next = step(&self.places, self.at, way)?;
+        let route = self.places[self.at].links[way as usize];
+        let tag = self.routes.get(route as usize)?;
+        let mark = self.marks[next]?;
+        let mut path = barrel_formats::world::route_path(&self.placements, tag, w.pos);
+        path.push(mark);
+        eprintln!("area map: {} to {} along {tag} ({} dots)", self.places[self.at].name, self.places[next].name, path.len() - 1);
+        w.waypoints.extend(path);
+        self.at = next;
+        None
+    }
+
+    /// The panel's text for the place she stands on, redrawn when it changes.
+    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32) -> Result<()> {
+        if self.shown == Some((self.at, width, height)) {
+            return Ok(());
+        }
+        let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
+        let p = &self.places[self.at];
+        let label = |text: &str, at: [i32; 2], size: f32| hud::Element::Label(barrel_formats::layout::Text { at, size, colour: [0xff, 0x30, 0x24, 0x18], text: text.to_string(), kind: 21 });
+        let mut e = vec![label(&p.name, [1500, 170], 36.0)];
+        if !p.description.is_empty() {
+            e.push(label(p.description.trim(), [1500, 230], 30.0));
+        }
+        if self.fields[self.at].is_some() {
+            e.push(label("Enter: go in", [1500, 290], 30.0));
+        }
+        let sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
+        self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &sheets, &e, width as f32, height as f32))?;
+        self.shown = Some((self.at, width, height));
+        Ok(())
+    }
+}
+
 /// A lost battle's line for the lead (`Saves_EN/systemMessage/SysMess.xml`, row 240 for Escha,
 /// 241 for Logy: the one the game showed after a wipe; row 61, Escha's other, presumably
 /// after a wipe in the Atelier's own fights), as (name, text).
@@ -3283,6 +3379,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut save_file = None::<PathBuf>;
     let mut new_game = None::<PathBuf>;
     let mut travel_to = None::<String>;
+    let mut area_mode = false;
     let mut load_file = None::<PathBuf>;
     // `--saves DIR`: Barrel's save slots (`barrel_game::saves`; by default its own data folder).
     let mut saves_dir = None::<PathBuf>;
@@ -3441,6 +3538,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // --travel-to MARK: where a world map exit takes the player (there is no world
             // map screen yet): `A0`, `A0p0` ... (`barrel world-routes`).
             "--travel-to" => travel_to = Some(it.next().ok_or("--travel-to MARK")?.clone()),
+            // --area-map: on the world map (A15_WMAP, from a --world-point), the area map: W A S D
+            // (offscreen `BARREL_AREA_KEYS`: up, down, left, right, confirm) go along the routes
+            // of the point's region, Enter enters the field of the point she stands on.
+            "--area-map" => area_mode = true,
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
             "--pad-test" => {
@@ -4638,6 +4739,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut door: Option<(String, [f32; 2], [f32; 2])> = None;
     // The player stepped onto the world map.
     let mut world_exit = false;
+    // The area map (`--area-map`), built once the player stands on the world map, and the field
+    // map chosen with Enter.
+    let mut area_map: Option<AreaMap> = None;
+    let mut area_enter: Option<u32> = None;
+    let mut area_keys: std::collections::VecDeque<title::Button> = title::keys(&std::env::var("BARREL_AREA_KEYS").unwrap_or_default()).into_iter().collect();
     for frame in 0..frames - frame_base {
     ran = frame + 1;
     // Chained: the event over (every step applied), the next one takes the window.
@@ -4736,6 +4842,22 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 };
                 if let (Some(b), Some(play)) = (b, battle_play.as_mut()) {
                     play.press(b);
+                    continue;
+                }
+            }
+            if let Some(a) = area_map.as_mut() {
+                let b = match key {
+                    KeyCode::KeyW => Some(title::Button::Up),
+                    KeyCode::KeyS => Some(title::Button::Down),
+                    KeyCode::KeyA => Some(title::Button::Left),
+                    KeyCode::KeyD => Some(title::Button::Right),
+                    KeyCode::Enter | KeyCode::NumpadEnter => Some(title::Button::Confirm),
+                    _ => None,
+                };
+                if let (Some(b), Some(w)) = (b, walker.as_mut()) {
+                    if let Some(field) = a.press(b, w) {
+                        area_enter = Some(field);
+                    }
                     continue;
                 }
             }
@@ -4997,6 +5119,34 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The player walking: a step against the field's walls and onto its ground, turned the way
     // she goes, the camera carried along. In a window W A S D steer her (relative to the
     // camera) at the game's speed (`game::walk::player_move`); offscreen `--walk` does.
+    if area_mode && area_map.is_none()
+        && let Some(w) = walker.as_ref() {
+            match AreaMap::new(Path::new(&args[1]), w.pos, &gpu, pool, post_pass) {
+                Ok(a) => {
+                    eprintln!("area map: {} ({})", a.places[a.at].name, a.places[a.at].tag);
+                    area_map = Some(a);
+                }
+                Err(e) => {
+                    eprintln!("no area map: {e}");
+                    area_mode = false;
+                }
+            }
+        }
+    // Offscreen, a key a frame once she stands still.
+    if presenter.is_none()
+        && let (Some(a), Some(w)) = (area_map.as_mut(), walker.as_mut())
+        && w.waypoints.is_empty()
+        && let Some(b) = area_keys.pop_front()
+        && let Some(field) = a.press(b, w) {
+            area_enter = Some(field);
+        }
+    if let Some(a) = area_map.as_mut() {
+        a.panel(&gpu, width, height)?;
+    }
+    if area_enter.is_some() {
+        stop = true;
+        break;
+    }
     if let Some(w) = walker.as_mut() {
         // A trip's waypoints: run straight to the next (within a step of it, on to the one after).
         while let Some(next) = w.waypoints.front().copied() {
@@ -5013,7 +5163,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             w.velocity = [dx / d * speed, dz / d * speed];
             break;
         }
-        if let Some(p) = pump.as_ref().filter(|_| w.waypoints.is_empty()) {
+        if let Some(p) = pump.as_ref().filter(|_| w.waypoints.is_empty() && area_map.is_none()) {
             use winit::keyboard::KeyCode;
             let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
             let (mut ahead, mut right) = (axis(KeyCode::KeyS, KeyCode::KeyW), axis(KeyCode::KeyA, KeyCode::KeyD));
@@ -6311,6 +6461,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if let Some((layer, _)) = &notice {
             layer.record(d, cb, width, height);
         }
+        if let Some(a) = &area_map {
+            a.layer.record(d, cb, width, height);
+        }
         d.cmd_end_render_pass(cb);
         if let Some(t) = &timer {
             t.mark(d, cb, 4);
@@ -6396,6 +6549,45 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     scene.destroy(&gpu);
     frame_base += ran;
+    if let Some(a) = area_map.take() {
+        unsafe { gpu.device.device_wait_idle()? };
+        a.layer.destroy(&gpu);
+    }
+    // The area map's Enter: the field of the point she stands on, at its arrival place.
+    if let Some(field) = area_enter.take() {
+        let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the world map is not inside a game install")?.to_path_buf();
+        let pe_bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&pe_bytes)?;
+        let maps = barrel_game::event::field_maps(&pe);
+        // Entering a sector is a walk into its field (an event may start there, as a door's).
+        let scene = match session.as_mut() {
+            Some(s) => s.walked(field, field).clone(),
+            None => barrel_game::session::Scene::Field(field),
+        };
+        eprintln!("area map: into field {field} ({}): {scene:?}", maps.get(field as usize).map_or("?", |m| m.as_str()));
+        match scene {
+            barrel_game::session::Scene::Event(e) => {
+                let s = session.take().ok_or("an event without a session")?;
+                chain = Some((s.into_chain(), root.clone()));
+                current_event = Some(root.join("Event/event").join(barrel_game::event_start::event_file(&e)).to_string_lossy().into_owned());
+                args[1] = "auto".into();
+                player_at = None;
+            }
+            barrel_game::session::Scene::Field(m) => {
+                args[1] = root.join("Data/x64/Field").join(maps.get(m as usize).ok_or("no such field")?).to_string_lossy().into_owned();
+                match barrel_formats::world::arrival(&pe, m) {
+                    Some(a) => {
+                        player_at = Some([a.position[0] * 100.0, a.position[2] * 100.0]);
+                        player_facing = Some(a.facing.to_radians());
+                    }
+                    None => player_at = Some([0.0, 0.0]),
+                }
+            }
+        }
+        area_mode = false;
+        first_event = false;
+        continue 'events;
+    }
     // Onto the world map: the trip to `--travel-to`, through the session (its days, an event on
     // the road or on arriving), then the field it opens, the player at its own world map exit.
     if world_exit {
