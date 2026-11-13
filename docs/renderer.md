@@ -781,9 +781,15 @@ on its bar 0x3c, the value in a 0x3d box between "< >", the rules 0x28, the curs
 "Default" and "Confirm". Left / right step a row to its next open choice; a row with no other
 open choice shows its value grey without arrows; the help bar at the foot names the closed
 choices with their reason. Checked offscreen: Native AA greys the upscaler and sharpening;
-150% greys every upscaler ("Upscalers need a render scale under 100%."). Not yet: applying
-the choice live, keeping it across runs, the sound page beside it, and the game's own look
-of the page title and help bar.
+150% greys every upscaler ("Upscalers need a render scale under 100%."). Confirm keeps the choice in Barrel's own config (`~/.config/barrel/graphics.conf`, or
+`$XDG_CONFIG_HOME`, or the file `BARREL_CONFIG` names; `key value` lines:
+`RenderSettings::to_config`), then the scene starts again where she stands (the carried save)
+without the command line's setting options, so the renderer's targets and pipelines are
+built anew for the choice. A windowed run with no setting option on its command line starts
+from the config; offscreen runs read and write one only when `BARREL_CONFIG` names it (tests
+never touch the user's). Checked offscreen: MSAA 2x confirmed into a scratch config, the next
+run starting with it. Not yet: the windowed restart tried by hand, resolution and
+fullscreen, the sound page, the game's own look of the page title and help bar.
 
 ## Controllers
 

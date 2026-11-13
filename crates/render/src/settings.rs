@@ -114,6 +114,64 @@ impl RenderSettings {
     }
 }
 
+/// Barrel's graphics config (its own file, not the game's: the Options screen's graphics page
+/// writes it): one `key value` a line, `scale`, `upscaler` (bilinear, fsr1, gsr1), `msaa`,
+/// `shadows` (high, low), `taa`, `sharpen`, `gsr2`, `fsr3` (on, off), `anisotropy`.
+impl RenderSettings {
+    pub fn to_config(&self) -> String {
+        let on = |b: bool| if b { "on" } else { "off" };
+        let upscaler = match self.upscaler {
+            Upscaler::Bilinear => "bilinear",
+            Upscaler::Fsr1 => "fsr1",
+            Upscaler::Gsr1 => "gsr1",
+        };
+        let shadows = if self.shadows.size >= Shadows::DESKTOP.size { "high" } else { "low" };
+        format!(
+            "scale {}\nupscaler {upscaler}\nmsaa {}\nshadows {shadows}\ntaa {}\nsharpen {}\ngsr2 {}\nfsr3 {}\nanisotropy {}\n",
+            self.scale, self.msaa, on(self.taa), on(self.sharpen), on(self.gsr2), on(self.fsr3), self.anisotropy
+        )
+    }
+
+    /// The settings a config gives, over the desktop preset, resolved; unknown lines are skipped.
+    pub fn from_config(text: &str) -> RenderSettings {
+        let mut s = Self::DESKTOP;
+        for line in text.lines() {
+            let Some((key, value)) = line.trim().split_once(' ') else { continue };
+            let value = value.trim();
+            let on = value == "on";
+            match key {
+                "scale" => s.scale = value.parse::<f32>().map_or(s.scale, |v| v.clamp(0.25, 2.0)),
+                "upscaler" => {
+                    s.upscaler = match value {
+                        "fsr1" => Upscaler::Fsr1,
+                        "gsr1" => Upscaler::Gsr1,
+                        _ => Upscaler::Bilinear,
+                    }
+                }
+                "msaa" => s.msaa = value.parse::<u32>().map_or(1, |v| v.clamp(1, 8)),
+                "shadows" => s.shadows = if value == "low" { Shadows::HANDHELD } else { Shadows::DESKTOP },
+                "taa" => s.taa = on,
+                "sharpen" => s.sharpen = on,
+                "gsr2" => s.gsr2 = on,
+                "fsr3" => s.fsr3 = on,
+                "anisotropy" => s.anisotropy = value.parse::<u32>().map_or(s.anisotropy, |v| v.clamp(1, 16)),
+                _ => {}
+            }
+        }
+        s.resolved()
+    }
+
+    /// Where the config lives: `BARREL_CONFIG`, else `$XDG_CONFIG_HOME/barrel/graphics.conf`
+    /// (`~/.config/barrel/graphics.conf`).
+    pub fn config_path() -> Option<std::path::PathBuf> {
+        if let Some(p) = std::env::var_os("BARREL_CONFIG") {
+            return Some(p.into());
+        }
+        let base = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
+        Some(base.join("barrel/graphics.conf"))
+    }
+}
+
 /// Whether the scene pass keeps its depth for a temporal upscaler to read.
 impl RenderSettings {
     pub fn keeps_depth(&self) -> bool {
@@ -167,5 +225,13 @@ mod tests {
         assert_eq!(jitter(0), (0.0, 1.0 / 3.0 - 0.5));
         assert_eq!(jitter(1), (-0.25, 2.0 / 3.0 - 0.5));
         assert_eq!(jitter(16), jitter(0));
+    }
+
+    #[test]
+    fn configs_round_trip() {
+        for s in [RenderSettings::DESKTOP, RenderSettings::HANDHELD, RenderSettings::DESKTOP_TAA, RenderSettings::HANDHELD_GSR2, RenderSettings::DESKTOP_FSR3].map(RenderSettings::resolved) {
+            assert_eq!(RenderSettings::from_config(&s.to_config()), s);
+        }
+        assert_eq!(RenderSettings::from_config("msaa 4\nnonsense\n").msaa, 4);
     }
 }

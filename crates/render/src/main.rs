@@ -3338,6 +3338,43 @@ struct Carry {
     back: Option<Box<(Vec<String>, Carry)>>,
 }
 
+/// The command line's render setting options (`--preset`, `--msaa N` ...), with whether each
+/// takes a value.
+const SETTINGS_FLAGS: [(&str, bool); 14] = [
+    ("--preset", true), ("--handheld", false), ("--fsr", false), ("--gsr", false), ("--motion", false), ("--jitter", false), ("--taa", false),
+    ("--gsr2", false), ("--fsr3", false), ("--sharpen", false), ("--msaa", true), ("--scale", true), ("--shadows", true), ("--anisotropy", true),
+];
+
+fn has_settings_flags(args: &[String]) -> bool {
+    args.iter().any(|a| SETTINGS_FLAGS.iter().any(|(f, _)| a == f))
+}
+
+/// `args` less the render setting options, so that a run takes Barrel's config.
+fn without_settings_flags(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match SETTINGS_FLAGS.iter().find(|(f, _)| a == f) {
+            Some((_, true)) => {
+                it.next();
+            }
+            Some(_) => {}
+            None => out.push(a.clone()),
+        }
+    }
+    out
+}
+
+/// Writes Barrel's graphics config.
+fn write_config(s: &settings::RenderSettings) -> Result<std::path::PathBuf> {
+    let path = settings::RenderSettings::config_path().ok_or("no place for the config (no HOME)")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&path, s.to_config())?;
+    Ok(path)
+}
+
 /// `args` less what picks a scene (as [`title_args`], and the field options `--battle`,
 /// `--look-from`, `--player`, `--walk`, `--creatures`, `--hero`), for a run on another one.
 fn plain_args(args: &[String]) -> Vec<String> {
@@ -3793,6 +3830,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     };
     let color_view = offscreen.map(|(color, _)| view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)).transpose()?;
 
+    // Barrel's graphics config (the Options screen's graphics page writes it) when no setting
+    // was given on the command line: in a window, or offscreen when `BARREL_CONFIG` names one.
+    if !has_settings_flags(&original_args)
+        && (window_frames.is_some() || std::env::var_os("BARREL_CONFIG").is_some())
+        && let Some(text) = settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok()) {
+            settings = settings::RenderSettings::from_config(&text);
+            eprintln!("graphics from the config: {settings:?}");
+        }
     // TAA brings the motion vectors and the jitter, and drops MSAA.
     let settings = settings.resolved();
     // The scene's samples: the most the device allows for colour and depth, up to `--msaa`.
@@ -4874,8 +4919,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let keys = title::keys(&std::env::var("BARREL_OPTIONS_KEYS").unwrap_or_default());
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
             let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-options.png";
-            let kept = options::run(&gpu, pool, &target, None, Some(*color), &root, settings, settings, &keys, Some(Path::new(&shot)))?;
+            let kept = options::run(&gpu, pool, &target, None, Some(*color), &root, settings, settings::RenderSettings::DESKTOP, &keys, Some(Path::new(&shot)))?;
             eprintln!("frame {frame}: options: {kept:?}");
+            // Kept: into the config `BARREL_CONFIG` names (offscreen runs never write the user's).
+            if let Some(new) = kept.filter(|_| std::env::var_os("BARREL_CONFIG").is_some()) {
+                eprintln!("frame {frame}: graphics saved to {}", write_config(&new)?.display());
+            }
         }
     // A town shop (B in free play in town; `BARREL_SHOP_AT` offscreen, `BARREL_SHOP_KEYS`).
     let mut open_shop = false;
@@ -5035,8 +5084,22 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 Some(menu::Outcome::Option(menu::OptionRow::Options)) => {
                     unsafe { gpu.device.device_wait_idle()? };
                     let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, settings, settings, &[], None)?;
+                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, settings, settings::RenderSettings::DESKTOP, &[], None)?;
                     eprintln!("frame {frame}: options: {kept:?}");
+                    // Kept and changed: into the config, and the scene again where she stands
+                    // under the new settings (the renderer's targets and pipelines are built
+                    // for them at a scene's start).
+                    if let Some(new) = kept.filter(|k| *k != settings) {
+                        let path = write_config(&new)?;
+                        eprintln!("frame {frame}: graphics saved to {}", path.display());
+                        if let (Some(s), Some(w)) = (session.as_ref(), walker.as_ref())
+                            && let Some(text) = s.save([w.pos[0], w.pos[2]]) {
+                                restart = Some(without_settings_flags(&plain_args(&original_args)));
+                                carry_out = Carry { save: Some(text), ..Carry::default() };
+                                stop = true;
+                                break;
+                            }
+                    }
                 }
                 Some(menu::Outcome::Command(menu::Command::AdventureEquip | menu::Command::BattleEquip)) => {
                     unsafe { gpu.device.device_wait_idle()? };
