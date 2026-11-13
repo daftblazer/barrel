@@ -601,4 +601,33 @@ mod tests {
     fn event_files_sit_in_their_chapter() {
         assert_eq!(event_file("EVENT_MM01_OP1_111"), "MM01_OP1/EVENT_MM01_OP1_111.ebd");
     }
+
+    /// Both openings play through as the game chains them, from the real files
+    /// (`BARREL_ROOT` = the game's folder; not in the repository): each branch's three events,
+    /// then the two they share, then nothing on an event's end.
+    #[test]
+    #[ignore]
+    fn the_openings_chain() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let root = std::path::Path::new(&root);
+        let read = |p: &str| std::fs::read(root.join(p)).unwrap();
+        let checks = barrel_formats::event_check::parse(&read("Event/eventCheck/EventCheckDataAll.ecd")).unwrap();
+        let process = barrel_formats::event_process::parse(&read("Event/eventprocess/EventProcessDataAll.epd")).unwrap();
+        let exe = read("Atelier_Escha_and_Logy_EN.exe");
+        let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
+        let names: Vec<String> = pe.enum_names("EVENT_MM01_OP1_111").unwrap().0.iter().map(|n| n.to_string()).collect();
+        for (start, branch) in [("EVENT_MM01_OP1_111", ["121", "131"]), ("EVENT_MM01_OP1_212", ["222", "232"])] {
+            let mut chain = Chain::new(checks.clone(), process.clone(), names.clone());
+            let mut played = vec![start.to_string()];
+            while let Some(next) = chain.after(played.last().unwrap()) {
+                played.push(next.to_string());
+                assert!(played.len() < 10);
+                assert!(root.join("Event/event").join(event_file(next)).is_file(), "{next}: no event file");
+            }
+            let want: Vec<String> = std::iter::once(start.to_string())
+                .chain(branch.iter().chain(&["300", "310"]).map(|n| format!("EVENT_MM01_OP1_{n}")))
+                .collect();
+            assert_eq!(played, want);
+        }
+    }
 }
