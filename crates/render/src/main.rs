@@ -1369,7 +1369,7 @@ fn event_characters(
     actors: &mut Vec<Actor>,
     absent_out: &mut std::collections::HashSet<u32>,
     costumes: &[(u32, usize, usize, usize)],
-) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>)> {
+) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>, Option<f32>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
@@ -1455,6 +1455,30 @@ fn event_characters(
     let absent = absent_out;
     // --at SECONDS: where the stage has everyone then (barrel_game::stage), and its camera
     // when it has set both the eye and the target.
+    // The same schedule playback uses: the event's lines, each held for a reading time. The
+    // English lines when there are (as playback reads them: the reading times follow the text,
+    // so other lines would put the stage out of step with what is shown).
+    let lines = if at.is_some() || line.is_some() {
+        let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
+        let english = event_path.strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
+        let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
+        english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let schedule = if at.is_some() || line.is_some() {
+        Some(barrel_game::event::Player::escha(&event, &lines, &ops)?.reading_time(barrel_game::event::reading_time).schedule())
+    } else {
+        None
+    };
+    // --line N without --at: from the time line N starts (its camera and stage then).
+    let at = at.or_else(|| {
+        let n = line?;
+        let t = schedule.as_ref()?.iter().find(|t| matches!(t.step, barrel_game::event::Step::Message { index, .. } if index as usize == n))?;
+        eprintln!("line {n} starts at {:.2} s", t.time);
+        Some(t.time + barrel_game::stage::FRAME)
+    });
     if let Some(at) = at {
         use barrel_game::stage::{Measures, Stage, FRAME};
         let curves = std::fs::read(root.join("Saves/curve/curve_data.xml"))
@@ -1462,15 +1486,7 @@ fn event_characters(
             .and_then(|b| barrel_formats::table::parse(&b).ok())
             .map(|t| barrel_game::curve::Curve::table(&t))
             .unwrap_or_default();
-        // The same schedule playback uses: the event's lines, each held for a reading time.
-        let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
-        // The English lines when there are (as playback reads them: the reading times follow the
-        // text, so other lines would put the stage out of step with what is shown).
-        let english = event_path.strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
-        let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
-        let lines = english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default();
-        let steps = barrel_game::event::Player::escha(&event, &lines, &ops)?.reading_time(barrel_game::event::reading_time).schedule();
+        let steps = schedule.unwrap_or_default();
         let upto: Vec<_> = steps.into_iter().filter(|t| t.time <= at).collect();
         let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
         stage.run_until(at + FRAME * 0.5);
@@ -1583,7 +1599,7 @@ fn event_characters(
         tex_base += body.count;
         packs.extend(body.packs);
     }
-    Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements))
+    Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements, at))
 }
 
 /// The fields an event plays in, in the order it first goes to each (`docs/events.md`, "Which
@@ -1845,6 +1861,8 @@ struct Loaded {
     absent: std::collections::HashSet<u32>,
     creatures: Option<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<String>, f32, [f64; 3], bool)>,
     town_bodies: Vec<TownBody>,
+    /// Where playback starts (`--at`, or the start of `--line`'s line).
+    start_at: Option<f32>,
 }
 
 /// The story from a new game, over the install at ROOT (`event_start::Chain`).
@@ -1877,6 +1895,8 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         town_people_from,
     } = spec;
     let mut town_bodies = Vec::new();
+    // Where playback starts: --at, or --line's start.
+    let mut start_at = event_at;
     // CPU side: the vertices and draws, and the texture pack.
     let mut scene = Scene::new();
     // The field map numbers loaded, in scene order (empty for `--field DIR`).
@@ -1991,7 +2011,8 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     let mut absent: std::collections::HashSet<u32> = Default::default();
     if let Some(e) = &event_spec {
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, centre, cam, placements) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent, &costumes)?;
+        let (packs, centre, cam, placements, at) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent, &costumes)?;
+        start_at = at;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
@@ -2031,7 +2052,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
     }
-    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies })
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at })
 }
 
 /// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
@@ -2727,7 +2748,7 @@ fn main() -> Result<()> {
         })
         .transpose()?;
     // The scene: loaded, then uploaded under the renderer set up above.
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies } =
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at } =
         load_scene(SceneSpec {
             field,
             args: args.clone(),
@@ -2745,6 +2766,7 @@ fn main() -> Result<()> {
             creatures_area,
             town_people_from: town_people_from.clone(),
         })?;
+    let event_at = start_at;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
     if no_terrain {

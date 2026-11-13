@@ -60,6 +60,10 @@ blended offsets are added to that vertex layout's positions before skinning (see
 `formats.md`, "Morph targets"). Escha with `PC20_EYE_M_ANG_M_*` at 2 s opens her mouth and
 moves her brows and eyes.
 
+**Starting at a line.** Without `--at`, `--line N` starts the event where line N starts on
+the schedule (`--at` that time and a frame): the stage, the camera and the cast are as they
+are then (`EVENT_MM01_OP1_222`'s line 10 at 82.32 s, the shot with the desk lamp).
+
 **Expressions at a line.** With `--event`, `--line N` gives each placed character the
 expression the event's messages have set by line N (each line's fourth field; see
 `formats.md`, "Event messages"), with line N's speaker talking. The names come from the
