@@ -203,7 +203,11 @@ and `model.frag` and `terrain.frag` multiply the sun's part by the texture's red
 field's load, so where the clouds are in a given shot is not the game's). In `TOWN_10`'s
 narration shot (`EVENT_MM01_OP1_111` at 58 s) the ground goes from 159, 127, 81 to 147, 120,
 81 (the game 130, 107, 78); indoor fields are pixel-identical. The house front there is
-still twice the game's (131 against 61): its shade is something else.
+still twice the game's (131 against 61): its shade is something else. Not the sun's heading
+or the shadow map's extent (no setting shades it), not the point lights, not `cDiff` or `cAmb`
+(1 in the game's memory), not the ambient (the game's `ambLit` is the table's `<light
+ambient>` as written: TOWN_02's 0.4, 0.45, 0.3, 0.6 in both). Left: the house's vertex
+colours, or a program other than `MapSTD` for it.
 
 ### Wind (plants swaying)
 
