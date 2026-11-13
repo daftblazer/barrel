@@ -109,8 +109,6 @@ likely settle them where static reading failed.
 
 ## Synthesis
 
-- **Slot initial values** (+0x420 / +0x42c of the 0x4e0-byte state, set once at synthesis
-  start): five static tries found only UI. **Live read** at the start of a synthesis.
 - **Property point spending** (+0x3f8): only UI reads it; a trait's `point` is likely its PP
   cost. Needs a synthesis with 2 PP or more in a run.
 - **Prices** (`q = trunc(quality / 3 × 2) + Σ trait +0x28 + Σ effect +0x24`, columns unsettled);
