@@ -729,6 +729,12 @@ That gives a place for 61 of the 106 unnamed commands. The ones that matter most
 `w1` and `w4` are tested only by `Event`'s own code and the helpers around
 `0x140050d30`: the event player starts actions itself (`w1`, above).
 
+The battle commands (`r`) have their own switch, `0x1401a0e90` (`GameModeBattle`): a jump table
+at RVA `0x1a232c` over `r1` to `r35`. `r12`, `r15`, `r19`, `r23` and `r26` fall to its default.
+Four of those, `r15`, `r19`, `r23` and `r26`, are the ones the event player keeps for itself.
+`0x140050d30` marks them with the bitmask `0x911` over `r15` and up, and they are its waits
+(`0x140052f2b`). The other `r` commands are battle-scene work on the battle's +0x8d0 object.
+
 ## Operand counts
 
 
@@ -774,15 +780,15 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `71000038` | `q56` |  | nspFM::clsFMWorldEvent | 44 | 1 (44) |
 | `71000039` | `q57` |  | nspFM::clsFMWorldEvent | 42 | 0 (42) |
 | `72000004` | `r4` | ECT_BATTLE_ADD_EFFECT_ID | GameModeBattle (`0x1401a0e90`) | 1117 | 2 (1117) |
-| `72000008` | `r8` |  | GameModeBattle (`0x1401a0e90`) | 1095 | 1 (1095) |
+| `72000008` | `r8` |  | the battle event switch (`0x1401a0e90`, case `0x1401a10ce`): `r8 {unit}` finds battle unit `unit` (`0x1401b27a0`; 10000 to 10002 are special) and acts on it (`0x1401b13d0`, not read further) | 1095 | 1 (1095) |
 | `7200000d` | `r13` |  | GameModeBattle (`0x1401a0e90`) | 340 | 4 (340) |
-| `7200000e` | `r14` |  | GameModeBattle (`0x1401a0e90`) | 681 | 6 (681) |
+| `7200000e` | `r14` |  | the battle event switch (`0x1401a0e90`, case `0x1401a13e1`): up to five operands read, a float default from `0x14071a9a4`; not read further | 681 | 6 (681) |
 | `7200000f` | `r15` |  | Event, GameModeBattle | 191 | 0 (191) |
 | `72000010` | `r16` |  | Event | 60 | 14 (60) |
 | `72000011` | `r17` |  | Event | 76 | 2 (76) |
 | `72000012` | `r18` |  | Event | 90 | 7 (90) |
 | `72000013` | `r19` |  | Event, GameModeBattle | 6 | 1 (6) |
-| `72000014` | `r20` |  | Event | 693 | 2 (693) |
+| `72000014` | `r20` |  | the battle event switch (`0x1401a0e90`, case `0x1401a17db`): `r20 {unit, on}` finds the battle units matching `unit` (`0x1401b2b30`) and sets a float triple on them to 1, 1, 1 when `on`, else 0 (`0x1401b32b0`): shown or hidden presumably | 693 | 2 (693) |
 | `72000016` | `r22` |  | Event | 30 | 6 (30) |
 | `72000018` | `r24` |  | Event | 12 | 4 (12) |
 | `7200001b` | `r27` |  | GameModeBattle (`0x1401a0e90`) | 3 | 1 (3) |
