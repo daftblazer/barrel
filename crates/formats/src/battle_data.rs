@@ -78,6 +78,22 @@ pub struct StatBlock {
     /// and each of the 9 action slots' index into `skills`.
     pub rules: Vec<Rule>,
     pub slots: [i32; 9],
+    /// Its reactions (the fourth pointer, words 18 and 19; bosses only; `docs/tables.md`,
+    /// "Monster actions").
+    pub reactions: Vec<Reaction>,
+}
+
+/// A monster's battle reaction, a 20-byte record of a block's fourth list (`BtlCharaReaction`).
+/// Type 9, nearly all of them: right after an action, if it struck the character `chara` (the
+/// monster's own `Chara` row) and left it at or below `percent` of its HP, the monster uses entry
+/// `skill` of its skill list (`0x1401ab83f`, `0x1401abcd0`); `uses` times (1 in all), then gone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reaction {
+    pub skill: i32,
+    pub kind: i32,
+    pub chara: i32,
+    pub percent: i32,
+    pub uses: i32,
 }
 
 /// One of a monster's action rules (32 bytes: eight i32).
@@ -203,6 +219,19 @@ pub fn monsters(pe: &Pe, table: u64) -> Option<Vec<Monster>> {
                     .unwrap_or_default(),
                 rules: Vec::new(),
                 slots: [-1; 9],
+                reactions: u64_at(d, stats + 4 * (BLOCK_WORDS * b + 18))
+                    .and_then(|list| pe.offset(list))
+                    .map(|list| {
+                        (0..32)
+                            .map_while(|i| {
+                                let w = |k: usize| i32_at(d, list + 20 * i + 4 * k);
+                                let skill = w(0)?;
+                                (skill != -1).then_some(())?;
+                                Some(Reaction { skill, kind: w(1)?, chara: w(2)?, percent: w(3)?, uses: w(4)? })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             });
             // The first pointer (words 12, 13): {pointer to the rules, i32 slot[9]}; the rules
             // are 32-byte records ended by one whose first word is -1.

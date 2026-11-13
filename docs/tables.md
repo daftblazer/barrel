@@ -1944,7 +1944,14 @@ on the boss (`0x1401b9e10` on its +0x1e0: a `BtlCharaActionSkill`, word 0 at +0x
 is entry word 0 of the block's skill list (the fighter's virtual +0x88, `0x1401b75b0` →
 `0x140111d20`: the second pointer's 16-byte records, entries 0 to 13), not an action slot: the
 Grand Dragon's 2 is its third skill, `Skill_MONSTER_BOSS_DRAGON_01_2`. So the boss answers the
-moment it drops to the share with that skill. Condition 10 (type 14) is not read yet.
+moment it drops to the share with that skill: the Grand Dragon uses Evolution at 40%. The moment
+(0) is handed out right after an action resolves (`0x1401d75c5`, `0x1401d78e8`), with the
+fighters it struck (gathered by `0x140189fc0`), which condition 8 searches. `battle_data::Reaction`
+(each block's `reactions`; `barrel monsters` lists them) and the skirmish's `react` follow this:
+after every action, a standing monster's type-9 reaction fires when a struck fighter of its
+character is at or below the share, and the monster uses that skill at once. The game queues it
+on the monster's command list instead; when that list runs (at once, or at the monster's next
+turn) is not read. Condition 10 (type 14) is not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which

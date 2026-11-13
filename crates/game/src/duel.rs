@@ -27,7 +27,7 @@ pub struct Hit {
 
 /// A party member's base stats at a level as a stat block (no resistances, no equipment).
 pub fn party_block(level: i32, s: &barrel_formats::battle_data::LevelStats) -> StatBlock {
-    StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] }
+    StatBlock { level, hp: s.hp, attack: s.attack, defense: s.defense, speed: s.speed, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() }
 }
 
 /// One side of a duel: its stat block, its normal attack, and (for a monster) the skill
@@ -38,6 +38,9 @@ pub struct Fighter<'a> {
     pub skills: Option<&'a [Skill]>,
     /// A monster instant death never lands on (`Monster::death_immune`).
     pub death_immune: bool,
+    /// Its `Chara.xml` row (a monster's is 18 + its number; -1 for none): what its reactions
+    /// look for among the fighters an action struck.
+    pub chara: i32,
 }
 
 impl Fighter<'_> {
@@ -58,6 +61,12 @@ impl Fighter<'_> {
 
     /// A slot's index into the skill list (what an action through it leaves at +0x2d0); 0 for
     /// no slot.
+    /// The skill of entry `index` of its block's skill list (a reaction's answer).
+    pub(crate) fn listed_skill(&self, index: i32) -> Option<&Skill> {
+        let (n, _) = self.block.skills.get(usize::try_from(index).ok()?)?;
+        self.skills?.get(*n as usize)
+    }
+
     pub(crate) fn skill_index(&self, slot: Option<usize>) -> i32 {
         slot.and_then(|k| self.block.slots.get(k).copied()).unwrap_or(0)
     }
@@ -111,8 +120,8 @@ mod tests {
 
     #[test]
     fn a_duel_ends() {
-        let squirrel = StatBlock { level: 6, hp: 35, attack: 15, defense: 8, speed: 13, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
-        let rat = StatBlock { level: 30, hp: 351, attack: 52, defense: 27, speed: 37, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let squirrel = StatBlock { level: 6, hp: 35, attack: 15, defense: 8, speed: 13, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let rat = StatBlock { level: 30, hp: 351, attack: 52, defense: 27, speed: 37, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
         let attack = Skill {
             name: "Attack".into(),
             category: String::new(),
@@ -123,7 +132,7 @@ mod tests {
             description: String::new(),
         };
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-        let (a, b) = (Fighter { block: squirrel.clone(), normal: &attack, skills: None, death_immune: false }, Fighter { block: rat.clone(), normal: &attack, skills: None, death_immune: false });
+        let (a, b) = (Fighter { block: squirrel.clone(), normal: &attack, skills: None, death_immune: false, chara: -1 }, Fighter { block: rat.clone(), normal: &attack, skills: None, death_immune: false, chara: -1 });
         let hits = duel(&a, &b, &mut rng, 100);
         let last = hits.last().unwrap();
         assert_eq!(last.hp_left, 0);

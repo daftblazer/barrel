@@ -132,7 +132,10 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
     let mut events = Vec::new();
     // What is left of each member's items.
     let mut left: Vec<Vec<u32>> = party.iter().map(|m| m.items.iter().map(|h| h.count).collect()).collect();
+    // Each monster's reactions still to come (its block's list; `Reaction`).
+    let mut reactions: Vec<Vec<barrel_formats::battle_data::Reaction>> = foes.iter().map(|f| f.block.reactions.clone()).collect();
     while events.len() < max_events && b.winner().is_none() {
+        let before = events.len();
         let who = b.next();
         events.extend(b.start_turn(who));
         if b.winner().is_some() || b.fighters[who].down() {
@@ -193,9 +196,55 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
             let target = target.unwrap_or(0);
             events.extend(b.act(who, skill, slot, target, rng));
         }
+        react(&mut b, foes, n, &mut reactions, before, &mut events, rng);
     }
     let winner = b.winner();
     (events, winner)
+}
+
+/// The reactions after an action (moment 0, `0x1401ac800`): the fighters the action struck (its
+/// events from `from` on), and for each standing monster its reactions from the last back: a
+/// type-9 one fires when a struck, standing fighter of its character (`chara`, the monster's own
+/// row) is at or below `percent` of its HP; the monster then uses entry `skill` of its skill list,
+/// the reaction loses a use (gone at 0) and the monster's other reactions wait. The game queues
+/// that skill on the monster's command list; here it is used at once, before the next turn (when
+/// the game runs the queued command is not read).
+fn react(b: &mut Battle, foes: &[Foe], n: usize, reactions: &mut [Vec<barrel_formats::battle_data::Reaction>], from: usize, events: &mut Vec<Event>, rng: &mut Rng) {
+    let struck: Vec<usize> = events[from..]
+        .iter()
+        .filter_map(|e| match *e {
+            Event::Acted { target, .. } | Event::Healed { target, .. } | Event::Felled { target, .. } => Some(target),
+            _ => None,
+        })
+        .collect();
+    if struck.is_empty() {
+        return;
+    }
+    for (k, list) in reactions.iter_mut().enumerate() {
+        let who = n + k;
+        if b.winner().is_some() || b.fighters[who].down() {
+            continue;
+        }
+        let Some(r) = (0..list.len()).rev().find(|&r| {
+            let r = list[r];
+            r.kind == 9
+                && struck.iter().any(|&t| {
+                    let f = &b.fighters[t];
+                    t >= n && foes[t - n].chara == r.chara && !f.down() && f.hp() as i64 * 100 / f.stats[stat::MAX_HP].max(1) as i64 <= r.percent as i64
+                })
+        }) else {
+            continue;
+        };
+        let reaction = list[r];
+        list[r].uses -= 1;
+        if list[r].uses <= 0 {
+            list.remove(r);
+        }
+        let Some(skill) = foes[k].listed_skill(reaction.skill) else { continue };
+        let candidates = b.candidates(who, skill);
+        let target = b.pick_target(0, who, &candidates, rng).unwrap_or(0);
+        events.extend(b.act(who, skill, None, target, rng));
+    }
 }
 
 #[cfg(test)]
@@ -211,14 +260,14 @@ mod tests {
     fn members_throw_attack_items() {
         let table = [skill("Attack", 600, 1, 1)];
         let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }];
-        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
         let mut m = Member::new(block.clone(), 0, &list, &table).unwrap();
         let mut doom = skill("Doom", 600, 0, 0);
         doom.effects[0].act = 195;
         m.items.push(Held { action: doom, power: 100, count: 1, traits: Vec::new() });
         let foe_block = StatBlock { hp: 5000, speed: 1, ..block };
         let claw = skill("Claw", 600, 1, 1);
-        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false };
+        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false, chara: -1 };
         let mut rng = Rng::from_state([1, 2, 3, 4]);
         let (events, winner) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 60);
         assert!(events.iter().any(|e| matches!(e, Event::Felled { skill, .. } if skill == "Doom")));
@@ -233,7 +282,7 @@ mod tests {
             PartySkill { skill: 1, order: 1, command: 1, level: Some(7), mp: 15 },
             PartySkill { skill: 2, order: 3, command: 3, level: Some(25), mp: 28 },
         ];
-        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
         let m = Member::new(block, 20, &list, &table).unwrap();
         assert_eq!(m.skills.len(), 1);
         assert_eq!(m.choose(20).0.name, "Shot");
@@ -244,17 +293,36 @@ mod tests {
     fn a_member_without_heal_skills_uses_a_healing_item_once() {
         let table = [skill("Attack", 600, 1, 1)];
         let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }];
-        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
         let mut m = Member::new(block.clone(), 0, &list, &table).unwrap();
         let salve = Skill { name: "Salve".into(), category: String::new(), wait: 600, target: 1, spread: 0, effects: vec![SkillEffect { act: 19, element: None, min: 40, max: 40, min2: 0, max2: 0 }], description: String::new() };
         m.items.push(Held { action: salve, power: 100, count: 1, traits: Vec::new() });
         // A monster that hits hard and never dies quickly.
         let foe_block = StatBlock { hp: 100_000, attack: 40, ..block };
         let claw = skill("Claw", 600, 30, 30);
-        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false };
+        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false, chara: -1 };
         let mut rng = Rng::from_state([5, 6, 7, 8]);
         let (events, _) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 60);
         let used = events.iter().filter(|e| matches!(e, Event::Healed { skill, .. } if skill == "Salve")).count();
         assert_eq!(used, 1);
+    }
+
+    #[test]
+    fn a_boss_answers_falling_to_half_once() {
+        let table = [skill("Attack", 600, 10, 10), skill("Roar", 600, 1, 1)];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }];
+        let block = StatBlock { level: 10, hp: 1000, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let m = Member::new(block.clone(), 0, &list, &table).unwrap();
+        // A boss of 200 HP whose one reaction answers 50% or less with its second listed skill.
+        let reaction = barrel_formats::battle_data::Reaction { skill: 1, kind: 9, chara: 48, percent: 50, uses: 1 };
+        let foe_block = StatBlock { hp: 200, speed: 1, skills: vec![(0, String::new()), (1, String::new())], reactions: vec![reaction], ..block };
+        let foe = Foe { block: foe_block, normal: &table[0], skills: Some(&table), death_immune: false, chara: 48 };
+        let mut rng = Rng::from_state([5, 6, 7, 8]);
+        let (events, _) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 200);
+        let roars: Vec<usize> = events.iter().enumerate().filter(|(_, e)| matches!(e, Event::Acted { skill, who: 1, .. } if skill == "Roar")).map(|(k, _)| k).collect();
+        assert_eq!(roars.len(), 1, "{events:?}");
+        // Right after the hit that took it to half or less.
+        let Event::Acted { target: 1, hp_left, .. } = events[roars[0] - 1] else { panic!("{:?}", events[roars[0] - 1]) };
+        assert!(hp_left * 2 <= 200 && hp_left > 0);
     }
 }

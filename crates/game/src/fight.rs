@@ -451,7 +451,7 @@ mod tests {
     use super::*;
 
     fn block(hp: i32) -> StatBlock {
-        StatBlock { level: 10, hp, attack: 30, defense: 0, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] }
+        StatBlock { level: 10, hp, attack: 30, defense: 0, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() }
     }
 
     #[test]
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn areas_reach_by_distance() {
-        let block = StatBlock { level: 10, hp: 100, attack: 10, defense: 10, speed: 10, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9] };
+        let block = StatBlock { level: 10, hp: 100, attack: 10, defense: 10, speed: 10, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
         let mut fighters: Vec<Fighter> = (0..4).map(|k| Fighter::new(&block, (k > 0) as u8, 999)).collect();
         // The user at (0, 0, -800); monsters at the centre, 300 and 500 to the side.
         fighters[0].position = [0.0, 0.0, -800.0];
