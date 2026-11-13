@@ -533,9 +533,14 @@ item's value at +4 (a float after its 16-bit id at +2; its quality, presumably) 
 truncated (`0x14071a9a0` = 0.5, `0x1407b9b04` = 75; `battle::item_power`: quality 50 gives
 100). The entries come from the instance's four effect ids (16-bit at +0x10, -1 none): each
 names an `item_effect` row (up to 0x2b9), whose used slots (act ≥ 0) follow in order
-(`battle::item_action`). Two refinements are not followed yet: an override record some items
-have (`0x1400e3480` by item id: the first slot, or the slot equal to its +0x18, takes its +0x8
-instead), and traits of kind 7 (two 16-bit trait ids at +0x8 of the instance when +0xe is 0;
+(`battle::item_action`). An override record some items have is
+followed (`battle_data::item_levels`, `battle::leveled_effects`): `0x1400e3480` finds one by item
+and level in the table at `0x140d196f0` (49 records of 0x1c bytes, -1 ended): the attack items
+from Craft (195) on, two each, for levels 1 and 2. The effect equal to its +0x18 (the first,
+when that is -1) becomes its +0x8: the weakest of an L/M/S triple turns into the M (level 1)
+or S (level 2) one, so Craft's Phy Damage L (17 to 22) is Phy Damage M (30 to 40) at level 1
+and S (80 to 106) at 2. The level is the battle command's +0x40 (`0x1401bcde9`); every other
+caller passes 0, which no record has, and what sets +0x40 is not read. Not followed yet: traits of kind 7 (two 16-bit trait ids at +0x8 of the instance when +0xe is 0;
 the trait table's records +0x3c) adding effects: each `ITEM_SUB_BTL_ADD_USEEFFECT` slot is
 rolled from its minimum to maximum (`0x1402a1e20` reads the slot's bounds and rolls them) and
 names an `item_effect` row whose used slots follow the item's own (`battle::trait_effects`).

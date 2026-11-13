@@ -45,6 +45,17 @@ pub fn item_action(name: &str, target: i32, area: i32, wait: i32, effect_ids: &[
     barrel_formats::battle_data::Skill { name: name.to_string(), category: String::new(), wait, target, spread: area, effects, description: String::new() }
 }
 
+/// An item's effect ids at a battle command's level (`0x14029d270`): with a record for the item
+/// and level, the effect equal to its `from` (the first, when `from` is -1) becomes its `to`.
+pub fn leveled_effects(item: i32, level: i32, effect_ids: &[i16], levels: &[barrel_formats::battle_data::ItemLevel]) -> Vec<i16> {
+    let Some(r) = levels.iter().find(|r| r.item == item && r.level == level) else { return effect_ids.to_vec() };
+    effect_ids
+        .iter()
+        .enumerate()
+        .map(|(k, &id)| if id != -1 && ((k == 0 && r.from == -1) || i32::from(id) == r.from) { r.to as i16 } else { id })
+        .collect()
+}
+
 /// The chance an instant-death act kills (the handlers at `0x1401bfd59`, `0x1401bfd9f` and
 /// `0x1401bfdfe` in `0x1401bde10`'s switch), or `None` for any other act:
 /// - `PERCENT_DEATH` (80): the amount + 5 × (user's level − target's level), percent;
@@ -1195,5 +1206,16 @@ mod music_tests {
         assert_eq!(super::music(0, false, true), Some(14));
         assert_eq!(super::music(0, true, true), Some(25));
         assert_eq!(super::music(2, false, false), None);
+    }
+
+    #[test]
+    fn a_level_puts_the_stronger_effect_in() {
+        use barrel_formats::battle_data::ItemLevel;
+        // Craft (195): Phy Damage L (0) becomes M (1) at level 1, S (2) at 2; level 0 keeps it.
+        let levels = [ItemLevel { item: 195, level: 1, to: 1, from: 0 }, ItemLevel { item: 195, level: 2, to: 2, from: 0 }];
+        assert_eq!(crate::battle::leveled_effects(195, 0, &[0, 40, -1], &levels), [0, 40, -1]);
+        assert_eq!(crate::battle::leveled_effects(195, 1, &[0, 40, -1], &levels), [1, 40, -1]);
+        assert_eq!(crate::battle::leveled_effects(195, 2, &[40, 0, -1], &levels), [40, 2, -1]);
+        assert_eq!(crate::battle::leveled_effects(196, 2, &[0], &levels), [0]);
     }
 }

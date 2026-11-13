@@ -254,6 +254,39 @@ pub struct Drop {
     pub count: i32,
 }
 
+/// The attack items' stronger effects (`0x140d196f0` in the English executable, 49 records of
+/// 0x1c bytes ended by -1; `0x1400e3480` finds one by item and level): when a battle command's
+/// level (+0x40) is 1 or 2, an item listed here has its base effect (`from`, the L row; the
+/// first effect when it is -1) replaced by `to` (the M or S row: Craft's Phy Damage L becomes
+/// M at 1 and S at 2), as `0x14029d270` builds the item's effects. What sets the level is not
+/// read; the other commands use level 0, which no record has.
+pub const ITEM_LEVELS_EN: u64 = 0x1_40d1_96f0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ItemLevel {
+    /// The item (its `itemData.xml` row).
+    pub item: i32,
+    pub level: i32,
+    /// The effect row put in place of `from`.
+    pub to: i32,
+    /// +0xc (0, 1 or 2), +0x10 (100) and +0x14 (1.0) are not read.
+    pub from: i32,
+}
+
+pub fn item_levels(pe: &Pe, table: u64) -> Option<Vec<ItemLevel>> {
+    let at = pe.offset(table)?;
+    let mut out = Vec::new();
+    for n in 0..256 {
+        let r = at + n * 0x1c;
+        let w = |k: usize| i32_at(pe.data, r + 4 * k);
+        if w(0)? == -1 {
+            return Some(out);
+        }
+        out.push(ItemLevel { item: w(0)?, level: w(1)?, to: w(2)?, from: w(6)? });
+    }
+    None
+}
+
 /// The drop pools (English Escha): a drop slot's item 560 to 599 is pool `item - 560`, of 40
 /// at [`DROP_POOLS_EN`], each ten 28-byte entries (item -1 for none).
 pub const DROP_POOLS_EN: u64 = 0x1_40d3_1b70;
@@ -840,4 +873,22 @@ pub const EXP_TABLE_EN: u64 = 0x1_40cf_c760;
 pub fn exp_table(pe: &Pe, table: u64) -> Option<Vec<(i32, i32)>> {
     let at = pe.offset(table)?;
     (0..99).map(|k| Some((i32_at(pe.data, at + 8 * k)?, i32_at(pe.data, at + 8 * k + 4)?))).collect()
+}
+
+#[cfg(test)]
+mod item_level_tests {
+    use super::*;
+
+    /// The real table (`BARREL_ROOT` = the game's folder): 49 records, Craft's first.
+    #[test]
+    #[ignore]
+    fn the_item_levels_read() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let exe = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = Pe::parse(&exe).unwrap();
+        let levels = item_levels(&pe, ITEM_LEVELS_EN).unwrap();
+        assert_eq!(levels.len(), 49);
+        assert_eq!(levels[0], ItemLevel { item: 195, level: 1, to: 1, from: 0 });
+        assert_eq!(levels[3], ItemLevel { item: 196, level: 2, to: 5, from: 3 });
+    }
 }
