@@ -1375,7 +1375,12 @@ the item's two traits into +0x38. Then come the cost points:
   marked invalid (+0x4d8 = 0) and the material is not added. Otherwise the elements are
   added (above), then the element points (below), and +0x3e0 counts the cost.
 
-Where a slot entry's cost and element value are first set is still open. The state's
+The slot entries are first set by the synthesis setup (`0x1403025c5`, in `0x140302320`), one
+per material from the screen's list, its `itemData` row from `0x1402a3560 (item number)`: +0 the
+item, +8 its cost points (the row's +0x34, `level`), +0xc its effect value (the item's own
+quality, its unit's +4), +0x10 its element count (the row's +0x44), +0x14 its element value (the
+row's +0x48, `value`), +0x18 a bonus of 0, +0x1c to +0x1f whether it has each element (the row's
+four element flags at +0x4c, each above 0) and +0x21 set to 1: as the live read found them. The state's
 constructor (`0x140313690`) clears all four entries; apart from it only the skills write
 them, so they are copied in whole somewhere. The synthesis screen reads them for display
 (`0x140314b90` copies each entry's item, cost and value into its own lists, through
