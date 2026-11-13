@@ -195,10 +195,11 @@ session's basket, half a day of field time. In `AREA_01_01` from (3700, 4100) po
 away, gave item 0 at quality 50. The points are not drawn yet. A world map exit (`WORLDMAP_CHANGE_EX`) takes the player onto the world map;
 with no world map screen yet, `--travel-to MARK` says where to (`barrel world-routes`): the
 session takes the trip (`Session::travelled`: leaving a field area passes its carried time, the
-route's days pass, an event on the road or on arriving plays) and the field the mark opens is
-loaded with the player at that field's own world map exit. From the Town Entrance (map 4, its
-exit at (6010, 3740)) `--travel-to A0p0` passes four days (90 to 94) and arrives in
-`AREA_01_01` at (3200, 3680). In the story's free play a field area (map 12 on) has its enemies out as
+route's days pass, an event on the road or on arriving plays) and the trip ends on the area
+map of the place reached, the player on its point (a field on no point is loaded at once, at
+its own world map exit). From the Town Entrance (map 4, its exit at (6010, 3740); a save
+there at (5700, 3740), `--walk 300,0`) `--travel-to A0p0` passes four days (90 to 94) and
+lands on the Forest Entrance's point; Enter goes into `AREA_01_01` at its arrival place. In the story's free play a field area (map 12 on) has its enemies out as
 `--creatures` has them (their scripts, the touch and strike checks); from (4500, 3520) in
 `AREA_01_01` walking west, the first Ore Rat closes in and touches Escha at frame 68
 (encounter group 10). The encounter is then fought out on the console, without a battle

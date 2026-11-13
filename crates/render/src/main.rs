@@ -6666,12 +6666,25 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 args[1] = "auto".into();
                 player_at = None;
             }
-            barrel_game::session::Scene::Field(m) => {
-                args[1] = root.join("Data/x64/Field").join(maps.get(m as usize).ok_or("no such field")?).to_string_lossy().into_owned();
-                player_at = Some(arrive);
-                player_facing = facing;
-                player_walk = player_walk.map(|_| [0.0, 0.0]);
-            }
+            // A trip ends on the area map of the place it reached (as the game's does: the
+            // region's map with its sectors), the player on that place's point; a field on no
+            // point (or the town) is entered at once.
+            barrel_game::session::Scene::Field(m) => match area_point(&root, m)? {
+                Some((point, at)) => {
+                    eprintln!("onto the area map at {point}");
+                    args[1] = root.join("Data/x64/Field/A15_WMAP").to_string_lossy().into_owned();
+                    player_at = Some(at);
+                    player_walk = player_walk.map(|_| [0.0, 0.0]);
+                    area_mode = true;
+                    travel_to = None;
+                }
+                None => {
+                    args[1] = root.join("Data/x64/Field").join(maps.get(m as usize).ok_or("no such field")?).to_string_lossy().into_owned();
+                    player_at = Some(arrive);
+                    player_facing = facing;
+                    player_walk = player_walk.map(|_| [0.0, 0.0]);
+                }
+            },
         }
         first_event = false;
         continue 'events;
