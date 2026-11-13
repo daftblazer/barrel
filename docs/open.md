@@ -85,7 +85,10 @@ likely settle them where static reading failed.
   the arrows (602), the small count (part 0xe5), the gathering gauge and notices are not shown.
   The button list's place (the layout says y 792) and the text size are measured from one
   screenshot. Way in: the HUD's update code (the layout 625 owner; find who loads layout id
-  625 = 0x271) or a **live read** with the day's time partly spent.
+  625 = 0x271) or a **live read** with the day's time partly spent. Tried once (2026-11-13): the
+  area map shows the assignment panel, the badge row and the gathering gauge but no dial (it is
+  drawn only in a field), and moving between the Southern Ruins' sectors there changed neither
+  the date nor anything shown; next try in a field, before and after a gathering.
 
 - **Which title layout.** Layouts 958 (`a15_title.g1t`) and 1056 (`a15_title64.g1t`) hold the
   same title menu at different places; Barrel uses 1056 (958's last entry ends past the
