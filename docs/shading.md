@@ -437,7 +437,12 @@ houses from 169 to 134 (red; the game 107); the ground is still about 1.35 times
 (152, 118, 72 against 111, 89, 51) and the plaza's (`TOWN_04`) 1.15 times, evenly over the
 channels: a light, not a texture. (`TOWN_09`'s models were 1.2 to 1.35 times too: its glow,
 "After the scene"; with the glow's real threshold its ground is 1.14 times, 127 against 111,
-like `TOWN_04`'s 145 against 127.)
+like `TOWN_04`'s 145 against 127.) The terrain's vertex program has no point lights (only
+`litDir[0..1]`, `litCol`, `ambLit`), so the renderer leaves them out of the terrain too (flag 64
+in `model.vert`); it changed nothing at these spots, away from the lamps. Its pixel program 9
+(`TOWN_09`) is the renderer's: shadow × `sLit` × the sun's part plus `v2`, times the blended
+layers, plus the specular (`v8 + s·lit·v7`) × the layers' alpha (not drawn: it can only
+brighten), the fog, × 0.5. What leaves the ground 1.14 times the game's is not found yet.
 
 ## Shadows (what is known)
 

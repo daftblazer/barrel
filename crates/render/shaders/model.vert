@@ -153,7 +153,10 @@ void main() {
     vec3 wn = normalize(mat3(i.model) * n);
     vec3 amb = look.ambient.rgb;
     vec3 diffuse = max(dot(wn, -normalize(look.fill_dir.xyz)), 0.0) * look.fill_color.rgb;
-    for (int k = 0; k < int(look.misc.y); k++) {
+    // The terrain (flag 64) takes no point lights: its vertex program (the field's `.g1s`
+    // program 2) has only the two directional lights and the ambient.
+    int points = (pc.flags & 64u) != 0u ? 0 : int(look.misc.y);
+    for (int k = 0; k < points; k++) {
         vec3 d = look.point_pos[k].xyz - w.xyz;
         float d2 = dot(d, d);
         if (d2 < look.point_pos[k].w) {

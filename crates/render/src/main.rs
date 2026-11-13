@@ -5779,6 +5779,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     terrain_push[17] = g.cell;
                     terrain_push[20] = g.extent[0];
                     terrain_push[21] = g.extent[1];
+                    // Flags (word 29): 64, the terrain (model.vert: no point lights).
+                    terrain_push[29] = f32::from_bits(64);
                     d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
                     // A patch at a time, its bake list in the push constants' floats 22 to 27
