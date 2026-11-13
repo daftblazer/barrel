@@ -259,6 +259,40 @@ fn closest(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
     [a[0] + ab[0] * t, a[1] + ab[1] * t]
 }
 
+/// The player's jump (pad button 1 in the user brain, `0x140234cbf`): `MOTION_JUMP` (49) at 1.5,
+/// sound 0x23, and sometimes a voice. The chance of a voice starts at 5 (`0x14023429f`); each jump
+/// rolls it (`0x1404ca5f0`): a hit plays a voice clip from 11315 to 11317 for Escha (hero 0) or
+/// 11318 to 11320 for Logy (`0x1404ca660`, both ends included; `0x140160960`) and sets the chance
+/// back to 5, a miss raises it by 10.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JumpVoice {
+    pub chance: i32,
+}
+
+pub const JUMP_MOTION: u32 = 49;
+pub const JUMP_SOUND: u32 = 0x23;
+
+impl Default for JumpVoice {
+    fn default() -> Self {
+        JumpVoice { chance: 5 }
+    }
+}
+
+impl JumpVoice {
+    /// One jump's voice, if any, for `hero` (0 Escha, else Logy).
+    pub fn jump(&mut self, hero: u32, rng: &mut crate::rng::Rng) -> Option<u32> {
+        if rng.chance(self.chance) {
+            let top = if hero == 0 { 0x2c35 } else { 0x2c38 };
+            let clip = rng.range(top - 2, top) as u32;
+            self.chance = 5;
+            Some(clip)
+        } else {
+            self.chance += 10;
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,5 +368,23 @@ mod tests {
     fn a_wall_above_the_character_lets_it_pass() {
         let p = one_wall().step([0.0, 50.0], [0.0, -100.0], 300.0, 150.0, 30.0);
         assert!(p[0].abs() < 1e-3 && (p[1] + 50.0).abs() < 1e-3, "{p:?}");
+    }
+
+    #[test]
+    fn jump_voices_grow_likelier_until_one_plays() {
+        let mut v = JumpVoice::default();
+        let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
+        let mut misses = 0;
+        let clip = loop {
+            match v.jump(0, &mut rng) {
+                Some(c) => break c,
+                None => misses += 1,
+            }
+            assert_eq!(v.chance, 5 + 10 * misses);
+        };
+        assert!((11315..=11317).contains(&clip) && v.chance == 5);
+        // By 100 the voice is certain.
+        let mut v = JumpVoice { chance: 100 };
+        assert!(v.jump(1, &mut rng).is_some_and(|c| (11318..=11320).contains(&c)));
     }
 }

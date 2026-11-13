@@ -359,8 +359,15 @@ below it, waiting when still, blended in over 0.15 seconds and played at the spe
 0.00225 (never slower than normal: 1.125 at 500). The viewer does the same: a new motion starts
 from its beginning and is mixed in over 0.15 seconds while the old one plays on (joint by joint,
 rotations by slerp). The user brain's button 1 starts an action in
-`MOTION_JUMP` (49; the player's `JUMP` column, `PC20_ACT_JUMP`) played at 1.5 with sound 0x23,
-then timed at +0x124 and +0x128 (1.7 s): not read further.
+`MOTION_JUMP` (49; the player's `JUMP` column, `PC20_ACT_JUMP`) played at 1.5 with sound 0x23
+(`0x140234cbf` and on): a jump. Each one may come with a voice: a chance, 5 at first
+(`0x14023429f`), is rolled; a hit plays a clip from 11315 to 11317 for Escha or 11318 to 11320 for
+Logy and sets the chance back to 5, a miss raises it by 10 (`game::walk::JumpVoice`). The jump is
+timed at +0x124 (and +0x128, against 1.7 s); on landing (`0x140234e12`) the motion turns to 4
+with a landing sound picked by the ground under her (the map's 64-byte record at the field's
++0x10e8, its word +0x10 a material from 0 to 9, whose sound is the first word of a 16-byte entry
+at +0x2f68). How high and how far she goes (the rise itself) is not read; the viewer does not
+jump yet.
 
 ## Movies (open)
 
