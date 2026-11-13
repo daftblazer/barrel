@@ -680,6 +680,11 @@ confirm lists the basket items that fit (`ItemRow::fits`) and confirm again puts
 Status page's ATK from 6 to 23 and SPD from 6 to 16, and an F5 save and reload keeps it
 (`member 0 1 0 366,417,-1,-1`, the old staff back in the basket). Not yet the game's: plain text
 over the desk, no stat comparison before choosing, one change a visit, both commands the same.
+The page is now drawn from the game's equipment screen (layout 404, `equipping.rs`): the
+member's Status notebook, the slot panel with what each slot holds, and while an item is being
+chosen the values it would give with red and blue arrows (the Feather Staff: ATK 23 and SPD 16,
+both up); the fitting items are text lines under the slot panel (the game's grid and card not
+drawn).
 After a won battle's Result closes, its drops show on a screen of their own (`drops.rs`;
 offscreen `BARREL_DROPS_KEYS`, written to OUT-drops.png): the desk, the drops in the Basket
 page's grid (tab "Drops"), the chosen one's basket count in the "Possessed" box (layout 706,

@@ -1040,13 +1040,26 @@ fn equip_visit(
     let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let items: Vec<barrel_game::equipment::ItemRow> = table.children.iter().map(barrel_game::equipment::ItemRow::from_row).collect();
     let name = |item: i32| if item < 0 { "(none)".to_string() } else { book.name(item).to_string() };
-    let members: Vec<equipping::Member> = s.party.iter().enumerate().map(|(c, m)| equipping::Member {
-        name: ["Escha", "Logy"].get(c).map_or(format!("Member {c}"), |n| n.to_string()),
-        worn: m.equipment.map(name),
-        fitting: std::array::from_fn(|slot| s.basket.iter().enumerate()
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let members: Vec<equipping::Member> = s.party.iter().enumerate().map(|(c, m)| {
+        let fitting: [Vec<(usize, String)>; 4] = std::array::from_fn(|slot| s.basket.iter().enumerate()
             .filter(|(_, g)| usize::try_from(g.item).ok().and_then(|i| items.get(i)).is_some_and(|r| r.fits(c, slot)))
             .map(|(k, g)| (k, format!("{}   quality {:.0}", book.name(g.item), g.quality)))
-            .collect()),
+            .collect());
+        // The Status page's values (Escha's and Logy's tables only), worn and with each change.
+        let values = |m: &barrel_game::session::Member| (c < 2).then(|| status::Values::lead(&pe, c == 1, Some(m), &table.children)).flatten();
+        let previews = std::array::from_fn(|slot| fitting[slot].iter().map(|&(k, _)| {
+            let mut changed = m.clone();
+            changed.equipment[slot] = s.basket[k].item;
+            values(&changed)
+        }).collect());
+        equipping::Member {
+            name: ["Escha", "Logy"].get(c).map_or(format!("Member {c}"), |n| n.to_string()),
+            worn: m.equipment.map(name),
+            status: values(m),
+            previews,
+            fitting,
+        }
     }).collect();
     match equipping::run(gpu, pool, target, window, offscreen, root, &members, keys, out)? {
         Some((member, slot, pick)) => {

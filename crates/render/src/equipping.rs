@@ -2,12 +2,22 @@
 //! armour, two accessories) and then a basket item that fits it (`ItemRow::fits`); confirm puts
 //! it on (`Session::equip`, what the slot held back into the basket).
 //!
-//! Not yet the game's: plain text over the main menu's desk (layout 383); the game's equipment
-//! screen is not drawn yet, and no stat changes are shown before choosing; one change a visit.
+//! Drawn from the game's equipment screen, layout 404 (its pieces fit throughout; not seen in the
+//! running game yet): over the desk (383), the member's Status notebook (399, as the Status
+//! page draws it, `status.rs`), the slot panel (403: four rows, layout 390 each, an item frame,
+//! part 0xb cut 4, a name bar, part 0x3d, and the item's name, 56 pixels or so apart from y
+//! 206) and, while an item is being chosen, the new values beside the notebook (406 / 405: for
+//! HP, MP, ATK, DEF, SPD and the four RES, an arrow, part 0x68, cut 0 up in red, cut 2 down in
+//! blue, and the value, part 0x4e digits ending at x 1678).
+//!
+//! Not yet the game's: the slot names white on their yellow bars (hard to read; the game likely
+//! tints them); the items' pictures in the slot frames; the fitting items as text lines
+//! under the slot panel (the game's grid, 568, and the item card, 752, not drawn); the help line;
+//! one change a visit.
 
 use std::path::Path;
 
-use barrel_formats::layout::Text;
+use barrel_formats::layout::{Placed, Text};
 
 use crate::hud::{self, Element};
 use crate::screen;
@@ -30,6 +40,91 @@ pub struct Member {
     pub name: String,
     pub worn: [String; 4],
     pub fitting: [Vec<(usize, String)>; 4],
+    /// The Status page's values as worn, and with each fitting item put on instead.
+    pub status: Option<crate::status::Values>,
+    pub previews: [Vec<Option<crate::status::Values>>; 4],
+}
+
+pub const LAYOUT: u32 = 404;
+const SLOT_PANEL: u32 = 403;
+const SLOT_ROW: u32 = 390;
+const NAME_BAR: i32 = 0x3d;
+const PREVIEW: u32 = 406;
+const ARROW: i32 = 0x68;
+const UP: i32 = 0;
+const DOWN: i32 = 2;
+const DIGITS: i32 = 0x4e;
+const DIGIT_ADVANCE: i32 = 20;
+const ITEMS_AT: [i32; 2] = [120, 520];
+
+/// The nine values the preview column shows, in its order.
+fn shown(v: &crate::status::Values) -> [i32; 9] {
+    let [r0, r1, r2, r3] = v.resist;
+    [v.hp.1, v.mp.1, v.attack, v.defense, v.speed, r0, r1, r2, r3]
+}
+
+/// The page from layout 404's placed nodes (`texts` gives a node's text).
+pub fn view(e: &Equip, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, m: &[Member]) -> Vec<Element> {
+    let (member, slot, item) = match *e {
+        Equip::Slots { member, slot } => (member, slot, None),
+        Equip::Items { member, slot, chosen, first } => (member, slot, Some((chosen, first))),
+    };
+    let Some(x) = m.get(member) else { return Vec::new() };
+    let mut out = Vec::new();
+    if let Some(v) = &x.status {
+        out.extend(crate::status::elements(nodes, &texts, v));
+    }
+    // The slot panel: its rows in order are the four slots.
+    let mut row = 0usize;
+    for p in nodes.iter().filter(|p| p.path.get(1) == Some(&SLOT_PANEL)) {
+        let n = p.node;
+        if p.path.last() == Some(&SLOT_ROW) {
+            match n.part {
+                0x164 => {
+                    if let Some(t) = texts(p) {
+                        let colour = if row == slot { [0xff, 0xff, 0xd0, 0x40] } else if x.fitting[row].is_empty() { [0xff, 0xb0, 0xb0, 0xb0] } else { [0xff; 4] };
+                        out.push(Element::Label(Text { text: x.worn[row].clone(), colour, ..t }));
+                    }
+                    row = (row + 1).min(3);
+                }
+                _ => out.push(Element::stored(p)),
+            }
+        } else if n.part != 0x164 {
+            out.push(Element::stored(p));
+        }
+    }
+    let label = |text: String, at: [i32; 2], colour: [u8; 4]| Element::Label(Text { at, size: 30.0, colour, text, kind: 21 });
+    out.push(label(format!("{}   (left / right: member, up / down: slot, Enter: change)", x.name), [120, 1000], [0xff; 4]));
+    // Choosing an item: the fitting ones under the panel, and the values it would give.
+    if let Some((chosen, first)) = item {
+        for (k, (_, text)) in x.fitting[slot].iter().enumerate().skip(first).take(VISIBLE) {
+            out.push(label(text.clone(), [ITEMS_AT[0], ITEMS_AT[1] + 34 * (k - first) as i32], if k == chosen { [0xff, 0xff, 0xd0, 0x40] } else { [0xff; 4] }));
+        }
+        if let (Some(now), Some(Some(then))) = (&x.status, x.previews[slot].get(chosen)) {
+            let (now, then) = (shown(now), shown(then));
+            let mut k = 0;
+            for p in nodes.iter().filter(|p| p.path.get(1) == Some(&PREVIEW)) {
+                let n = p.node;
+                match n.part {
+                    ARROW if n.cut == 0 => {
+                        if let (Some(a), Some(b)) = (now.get(k), then.get(k)) && a != b {
+                            out.push(Element::Sprite { part: ARROW, cut: if b > a { UP } else { DOWN }, at: p.at });
+                        }
+                    }
+                    DIGITS if n.kind == 28 => {
+                        let v = then.get(k).copied().unwrap_or(0).max(0).to_string();
+                        let len = v.len() as i32;
+                        for (i, d) in v.bytes().enumerate() {
+                            out.push(Element::Sprite { part: DIGITS, cut: i32::from(d - b'0'), at: [p.at[0] - DIGIT_ADVANCE * (len - i as i32), p.at[1]] });
+                        }
+                        k += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Where the page is.
@@ -127,7 +222,15 @@ pub fn run(
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("equip: an empty font atlas")?.width as f32 };
     let desk: Vec<Element> = barrel_formats::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
-    let keys_needed = screen::sheet_keys(&pe, desk.clone());
+    let nodes = barrel_formats::layout::placed(&pe, LAYOUT);
+    let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
+    let mut every = desk.clone();
+    for member in 0..members.len() {
+        every.extend(view(&Equip::Slots { member, slot: 0 }, &nodes, texts, members));
+    }
+    every.extend((0..13).map(|cut| Element::Sprite { part: DIGITS, cut, at: [0, 0] }));
+    every.extend([UP, DOWN].map(|cut| Element::Sprite { part: ARROW, cut, at: [0, 0] }));
+    let keys_needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
     let mut images = vec![&atlas.textures[0]];
@@ -141,7 +244,7 @@ pub fn run(
     let (w, h) = (target.width as f32, target.height as f32);
     let quads = |e: &Equip| {
         let mut all = desk.clone();
-        all.extend(e.elements(members));
+        all.extend(view(e, &nodes, texts, members));
         hud::quads(&pe, Some(&font), &sheets, &all, w, h)
     };
     let press = |e: &mut Equip, b: Button| e.press(b, members);
@@ -158,7 +261,7 @@ mod tests {
         let none = || [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         let mut fitting = none();
         fitting[0] = vec![(4, "Staff".into()), (7, "Rod".into())];
-        let m = [Member { name: "Escha".into(), worn: Default::default(), fitting }, Member { name: "Logy".into(), worn: Default::default(), fitting: none() }];
+        let m = [Member { name: "Escha".into(), worn: Default::default(), fitting, status: None, previews: Default::default() }, Member { name: "Logy".into(), worn: Default::default(), fitting: none(), status: None, previews: Default::default() }];
         let mut e = Equip::Slots { member: 0, slot: 0 };
         e.press(Button::Right, &m);
         assert_eq!(e.press(Button::Confirm, &m), None, "Logy has nothing to put on");

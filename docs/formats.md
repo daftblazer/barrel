@@ -1558,6 +1558,15 @@ no layout holds it, nor a grid of the drops screen's shape (five by six, a scrol
 headings; layouts 404, 445, 685, 791 and 815 checked), so the screen is put together at run
 time.
 
+**The equipment screen** is layout 404 (`a15_menu.g1t`; not seen in the running game): the
+Status notebook (399, with 431 inside, as layout 400 has it), the slot panel (403: a heading,
+401, four slot lines, part 0x28, and four rows, layout 390 each, at y 206, 262, 320 and 376:
+an item frame, part 0xb cut 4, a name bar, part 0x3d, and the name at x 206), the new values
+beside the notebook (406 / 405: nine rows, HP and MP at y 354 and 398, ATK, DEF and SPD at 480,
+530 and 578, the four RES from 706 to 846; each an arrow, part 0x68 on `a15_common.g1t`
+picture 5, cut 0 a red up arrow, cut 2 a blue down one, cut 4 blank, and a part 0x4e number
+ending at x 1678), the basket grid (568) and the item card (752).
+
 **The shop screen** is layout 664 (its pieces fit a shop throughout; not seen in the running
 game). Its branches: 371 the title bar (a text at 570, 40), 372 the help bar (a kind 23 text
 ending at 1856, 1012), 370 the money box (coin, a part 0x4d number ending at 628, 168), 662 the
