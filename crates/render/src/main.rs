@@ -29,6 +29,7 @@ mod loadlist;
 mod title;
 mod screen;
 mod menu;
+mod status;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -3782,7 +3783,7 @@ fn main() -> Result<()> {
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, &keys, Some(Path::new(&out_path)))?;
+            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &keys, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             stop = true;
             break;
@@ -3834,7 +3835,7 @@ fn main() -> Result<()> {
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, &[], None)?;
+            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), &[], None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {

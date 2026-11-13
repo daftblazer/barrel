@@ -91,6 +91,8 @@ pub struct Menu {
     pub first: usize,
     /// The Option list open, on this row.
     pub option: Option<usize>,
+    /// The Status page open (`crate::status`).
+    pub status: bool,
 }
 
 /// What a button did.
@@ -105,10 +107,16 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None }
+        Menu { chosen: 0, first: 0, option: None, status: false }
     }
 
     pub fn press(&mut self, b: Button) -> Option<Outcome> {
+        if self.status {
+            if b == Button::Back {
+                self.status = false;
+            }
+            return None;
+        }
         if let Some(row) = self.option.as_mut() {
             let n = OPTION_ROWS.len();
             match b {
@@ -128,6 +136,7 @@ impl Menu {
             Button::Back => return Some(Outcome::Close),
             Button::Confirm => match COMMANDS[self.chosen] {
                 Command::Option => self.option = Some(0),
+                Command::Status => self.status = true,
                 c => return Some(Outcome::Command(c)),
             },
         }
@@ -212,6 +221,7 @@ pub fn run(
     window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
+    logy: bool,
     keys: &[Button],
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<Outcome>> {
@@ -219,6 +229,14 @@ pub fn run(
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    // The Status page: its nodes over the desk, and the lead's values.
+    let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let values = crate::status::Values::lead(&pe, logy).ok_or("menu: no party tables")?;
+    let status_elements = |texts: &dyn Fn(&Placed) -> Option<Text>| {
+        let mut e: Vec<crate::hud::Element> = status_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
+        e.extend(crate::status::elements(&status_nodes, texts, &values));
+        e
+    };
     let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
     let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("menu: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
@@ -228,13 +246,16 @@ pub fn run(
     let mut every = Vec::new();
     for chosen in 0..COMMANDS.len() {
         let first = chosen.saturating_sub(VISIBLE - 1);
-        every.extend(Menu { chosen, first, option: None }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: 0, option: None }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first, option: None, status: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: 0, option: None, status: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None, status: false }.elements(&nodes, texts));
     }
     for row in 0..OPTION_ROWS.len() {
-        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row) }.elements(&nodes, texts));
+        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), status: false }.elements(&nodes, texts));
     }
+    every.extend(status_elements(&texts));
+    // Every digit the numbers may show.
+    every.extend((0..13).map(|cut| crate::hud::Element::Sprite { part: 0x4e, cut, at: [0, 0] }));
     let keys_needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::Result<Vec<_>>>()?;
@@ -247,7 +268,10 @@ pub fn run(
         images.push(t);
     }
     let (w, h) = (target.width as f32, target.height as f32);
-    let quads = |m: &Menu| hud::quads(&pe, Some(&font), &sheets, &m.elements(&nodes, texts), w, h);
+    let quads = |m: &Menu| {
+        let e = if m.status { status_elements(&texts) } else { m.elements(&nodes, texts) };
+        hud::quads(&pe, Some(&font), &sheets, &e, w, h)
+    };
     let mut menu = Menu::new();
     // Barrel acts on Close and on the Option rows it has; the rest only report.
     let press = |m: &mut Menu, b: Button| match m.press(b)? {

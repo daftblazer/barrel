@@ -1266,6 +1266,14 @@ Save Data, Rest, Change BGM, Dressing Room, Options, Return to Title. Layout 365
 figure with six party plates (layout 362, from [78, 152] stepping 136 down and 45 right) and the
 list arrows (364).
 
+The Status page is layout 400: the open notebook, layout 399 (at [62, 128]), holds on its right
+page layout 431: the name (a kind 22 text, size 45), the labels "LV", "Next", "HP", "MP",
+"ATK", "DEF", "SPD", four "RES" rows with their element icons (part 0x67 cuts 0 to 3) and
+"Friend", and fourteen numbers in that order (HP and MP as current / max), each a node of kind
+28 holding digit sprites (part 0x4e on `a15_common.g1t` picture 7: cut = digit, 20 pixels wide;
+cut 12 the slash), and the bookmark with the figure (layout 393, kind 7). Its other branches:
+398 the equipment effects list, 388 the skill list, 387 a skill's details.
+
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 
