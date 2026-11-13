@@ -1951,7 +1951,14 @@ fighters it struck (gathered by `0x140189fc0`), which condition 8 searches. `bat
 after every action, a standing monster's type-9 reaction fires when a struck fighter of its
 character is at or below the share, and the monster uses that skill at once. The game queues it
 on the monster's command list instead; when that list runs (at once, or at the monster's next
-turn) is not read. Condition 10 (type 14) is not read yet.
+turn) is not read. Condition 10 (type 14, `0x1401abb2a`: only the Ancient Beast King, monster
+130, `{3, 14, 0, -1, -1}` in both its blocks) holds while the monster stands and a battle global
+(`0x141077e34`) equals word 2, which it then sets back to -1. The global is -1 as the battle starts
+(`0x1401b4728`) and, after each effect (`0x1401c0707`), becomes the side of a target that has just
+gone down to a fighter of the other side (the fighters' virtual +0x10: 0 a party member,
+`0x1401b9880`, 1 a monster, `0x1401b9870`). So the Ancient Beast King answers every party member
+its side fells with the fourth skill of its list; its uses are -1, and since a reaction goes only
+when its uses come to exactly 0, it never runs out. The skirmish follows both types.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which

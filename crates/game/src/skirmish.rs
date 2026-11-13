@@ -134,6 +134,9 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
     let mut left: Vec<Vec<u32>> = party.iter().map(|m| m.items.iter().map(|h| h.count).collect()).collect();
     // Each monster's reactions still to come (its block's list; `Reaction`).
     let mut reactions: Vec<Vec<barrel_formats::battle_data::Reaction>> = foes.iter().map(|f| f.block.reactions.clone()).collect();
+    // The side last felled by the other side (`0x141077e34`, -1 none; set to -1 as the battle
+    // starts, `0x1401b4728`).
+    let mut felled = -1;
     while events.len() < max_events && b.winner().is_none() {
         let before = events.len();
         let who = b.next();
@@ -196,27 +199,40 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
             let target = target.unwrap_or(0);
             events.extend(b.act(who, skill, slot, target, rng));
         }
-        react(&mut b, foes, n, &mut reactions, before, &mut events, rng);
+        react(&mut b, foes, n, &mut reactions, &mut felled, before, &mut events, rng);
     }
     let winner = b.winner();
     (events, winner)
 }
 
 /// The reactions after an action (moment 0, `0x1401ac800`): the fighters the action struck (its
-/// events from `from` on), and for each standing monster its reactions from the last back: a
-/// type-9 one fires when a struck, standing fighter of its character (`chara`, the monster's own
-/// row) is at or below `percent` of its HP; the monster then uses entry `skill` of its skill list,
-/// the reaction loses a use (gone at 0) and the monster's other reactions wait. The game queues
-/// that skill on the monster's command list; here it is used at once, before the next turn (when
-/// the game runs the queued command is not read).
-fn react(b: &mut Battle, foes: &[Foe], n: usize, reactions: &mut [Vec<barrel_formats::battle_data::Reaction>], from: usize, events: &mut Vec<Event>, rng: &mut Rng) {
-    let struck: Vec<usize> = events[from..]
-        .iter()
-        .filter_map(|e| match *e {
-            Event::Acted { target, .. } | Event::Healed { target, .. } | Event::Felled { target, .. } => Some(target),
-            _ => None,
-        })
-        .collect();
+/// events from `from` on), and for each standing monster its reactions from the last back, the
+/// first whose condition holds firing:
+/// - type 9 (condition 8, `0x1401ab83f`): a struck, standing fighter of its character (`chara`,
+///   the monster's own row) is at or below `percent` of its HP;
+/// - type 14 (condition 10, `0x1401abb2a`): the side of the last fighter felled by the other side
+///   (`0x1401c0707`, kept in `felled`, 0 the party, 1 the monsters) is `chara`; it is then
+///   cleared, so one reaction takes it.
+///
+/// The monster then uses entry `skill` of its skill list, the reaction loses a use and goes at
+/// exactly 0 (-1, the Ancient Beast King's, never does), and the monster's other reactions wait.
+/// The game queues that skill on the monster's command list; here it is used at once, before the
+/// next turn (when the game runs the queued command is not read).
+fn react(b: &mut Battle, foes: &[Foe], n: usize, reactions: &mut [Vec<barrel_formats::battle_data::Reaction>], felled: &mut i32, from: usize, events: &mut Vec<Event>, rng: &mut Rng) {
+    let mut struck = Vec::new();
+    for e in &events[from..] {
+        let (who, target, down) = match *e {
+            Event::Acted { who, target, hp_left, .. } => (who, target, hp_left <= 0),
+            Event::Healed { who, target, .. } => (who, target, false),
+            Event::Felled { who, target, .. } => (who, target, true),
+            _ => continue,
+        };
+        struck.push(target);
+        let side = |k: usize| i32::from(k >= n);
+        if down && side(who) != side(target) {
+            *felled = side(target);
+        }
+    }
     if struck.is_empty() {
         return;
     }
@@ -225,19 +241,21 @@ fn react(b: &mut Battle, foes: &[Foe], n: usize, reactions: &mut [Vec<barrel_for
         if b.winner().is_some() || b.fighters[who].down() {
             continue;
         }
-        let Some(r) = (0..list.len()).rev().find(|&r| {
-            let r = list[r];
-            r.kind == 9
-                && struck.iter().any(|&t| {
-                    let f = &b.fighters[t];
-                    t >= n && foes[t - n].chara == r.chara && !f.down() && f.hp() as i64 * 100 / f.stats[stat::MAX_HP].max(1) as i64 <= r.percent as i64
-                })
-        }) else {
-            continue;
+        let holds = |r: &barrel_formats::battle_data::Reaction, felled: i32| match r.kind {
+            9 => struck.iter().any(|&t| {
+                let f = &b.fighters[t];
+                t >= n && foes[t - n].chara == r.chara && !f.down() && f.hp() as i64 * 100 / f.stats[stat::MAX_HP].max(1) as i64 <= r.percent as i64
+            }),
+            14 => felled == r.chara,
+            _ => false,
         };
+        let Some(r) = (0..list.len()).rev().find(|&r| holds(&list[r], *felled)) else { continue };
         let reaction = list[r];
+        if reaction.kind == 14 {
+            *felled = -1;
+        }
         list[r].uses -= 1;
-        if list[r].uses <= 0 {
+        if list[r].uses == 0 {
             list.remove(r);
         }
         let Some(skill) = foes[k].listed_skill(reaction.skill) else { continue };
@@ -324,5 +342,24 @@ mod tests {
         // Right after the hit that took it to half or less.
         let Event::Acted { target: 1, hp_left, .. } = events[roars[0] - 1] else { panic!("{:?}", events[roars[0] - 1]) };
         assert!(hp_left * 2 <= 200 && hp_left > 0);
+    }
+
+    #[test]
+    fn a_boss_answers_each_fallen_member() {
+        let table = [skill("Attack", 600, 1, 1), skill("Crush", 600, 500, 500), skill("Gloat", 600, 0, 0), skill("Shout", 600, 0, 0)];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }];
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let party: Vec<Member> = (0..2).map(|_| Member::new(block.clone(), 0, &list, &table).unwrap()).collect();
+        // The Ancient Beast King's kind: on any party member felled, entry 3 of its list, without end.
+        let reaction = barrel_formats::battle_data::Reaction { skill: 3, kind: 14, chara: 0, percent: -1, uses: -1 };
+        let foe_block = StatBlock { hp: 100_000, speed: 30, skills: (0..4).map(|k| (k, String::new())).collect(), reactions: vec![reaction], ..block };
+        let foe = Foe { block: foe_block, normal: &table[1], skills: Some(&table), death_immune: false, chara: 148 };
+        let mut rng = Rng::from_state([5, 6, 7, 8]);
+        let (events, winner) = skirmish(&party, std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 200);
+        let shouts = events.iter().filter(|e| matches!(e, Event::Acted { skill, .. } if skill == "Shout")).count();
+        let fallen = events.iter().filter(|e| matches!(e, Event::Acted { target, hp_left, .. } if *target < 2 && *hp_left <= 0)).count();
+        // Every fall but the one that ends the battle is answered.
+        assert!(fallen >= 2);
+        assert_eq!(shouts, fallen - usize::from(winner == Some(1)), "{events:?}");
     }
 }
