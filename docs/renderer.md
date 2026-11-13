@@ -682,10 +682,13 @@ Status page's ATK from 6 to 23 and SPD from 6 to 16, and an F5 save and reload k
 over the desk, no stat comparison before choosing, one change a visit, both commands the same.
 A lost battle (all members down) passes a day in the field's carried save
 (`Session::lost_in_save`) and goes straight back to the field where the enemy was touched, the
-lead's wipe line on the console. Checked: a level-1 party with nothing equipped walking into
+lead's wipe line on the console. Before it goes back the battle fades to white over 2 s
+(`hud::Element::Fill`, a quad of one colour) and the field HUD's assignment panel (605,
+`hud::date_panel`) shows alone on the white with the new day for 2 s more (`WIPE_FADE`,
+`WIPE_SECONDS`, from the recording). Checked: a level-1 party with nothing equipped walking into
 `AREA_01_01`'s first Ore Rat (`--creatures 12 --walk -300,0`, `BARREL_BATTLE_KEYS` confirms)
 loses (frame 129), and a save right after reads `today 95` from 94. Not yet the game's (its wipe,
-`docs/events.md`): the slow fall, the fade to white with the date panel turning, the area map
+`docs/events.md`): the slow fall, the panel's date turning over (the new day shows at once), the area map
 it lands on (Barrel has none: the touch point instead) and the line on screen.
 In a town map (0 to 11) B opens a shop (`shopping.rs`; offscreen `BARREL_SHOP_AT` and
 `BARREL_SHOP_KEYS`): the shop with the most wares on sale (`Saves_EN/shop/ShopData.xml` against

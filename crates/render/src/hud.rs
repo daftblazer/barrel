@@ -72,6 +72,8 @@ pub enum Element {
     /// 1920 × 1080 screen, at half strength when `dim`.
     Picture { pack: String, index: u32, size: [f32; 2], at: [i32; 2], dim: bool },
     Label(layout::Text),
+    /// A rectangle (left, top, right, bottom on the 1920 × 1080 screen) of one colour.
+    Fill { rect: [i32; 4], colour: [f32; 4] },
 }
 
 /// Node kind of a sprite drawn mirrored left to right (the right halves of symmetric pieces:
@@ -89,7 +91,7 @@ impl Element {
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
             Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } | Element::Cropped { part, cut, at, .. } => Some((part, cut, at)),
-            Element::Label(_) | Element::Picture { .. } => None,
+            Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } => None,
         }
     }
 }
@@ -144,6 +146,13 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
     out
 }
 
+/// The assignment panel alone (605: "Left" and the days, the date, the year disc), as the
+/// game shows it on white while a lost battle's day passes.
+pub fn date_panel(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, v: Values) -> Vec<Element> {
+    let panel: Vec<Placed> = nodes.iter().filter(|p| p.path.get(1) == Some(&605)).cloned().collect();
+    elements(&panel, texts, v)
+}
+
 /// The HUD's textures in a text layer after the font atlas: each (pack, picture) and its size.
 pub struct Sheets {
     pub keys: Vec<(String, u32)>,
@@ -193,6 +202,10 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     color: [1.0, 1.0, 1.0, if *dim { 0.5 } else { 1.0 }],
                     texture: sheets.first + slot,
                 });
+            }
+            Element::Fill { rect: [l, t, r, b], colour } => {
+                let x = |v: i32| dx + v as f32 * k;
+                out.push(Quad { rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k], uv: [-1.0, 0.0, 0.0, 0.0], color: *colour, texture: 0 });
             }
             Element::Label(t) => {
                 let Some(font) = font else { continue };

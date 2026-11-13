@@ -1686,9 +1686,11 @@ struct BattleHud {
     nodes: Vec<barrel_formats::layout::Placed>,
     /// The Result screen's nodes (layout 904), shown instead once a won battle is over.
     result_nodes: Vec<barrel_formats::layout::Placed>,
+    /// The field HUD's nodes (layout 625), for its date panel over a lost battle's white.
+    field_nodes: Vec<barrel_formats::layout::Placed>,
     exe: Vec<u8>,
-    /// What it shows now, and at what size.
-    shown: Option<(Vec<battlehud::Member>, Option<(Vec<(String, bool)>, usize, String)>, Option<result::Values>, u32, u32)>,
+    /// What it shows now, and at what size (the wipe: its day and fade step).
+    shown: Option<(Vec<battlehud::Member>, Option<(Vec<(String, bool)>, usize, String)>, Option<result::Values>, Option<(u32, u32)>, u32, u32)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1708,6 +1710,11 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     every.extend(result::elements(&result_nodes, |p| barrel_formats::layout::text(&pe, p), &sample));
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0x4, cut, at: [0, 0] }));
     every.extend((0..10).flat_map(|cut| [0x4b, 0x4c].map(|part| hud::Element::Sprite { part, cut, at: [0, 0] })));
+    // And the field HUD's date panel (a lost battle's wipe), every digit and year.
+    let field_nodes = barrel_formats::layout::placed(&pe, hud::FIELD_HUD);
+    every.extend(hud::date_panel(&field_nodes, |p| barrel_formats::layout::text(&pe, p), hud::Values { left: 0, month: 10, day: 23, year: 1, tenths_spent: 0 }));
+    every.extend((0..10).map(|cut| hud::Element::Sprite { part: 0x57, cut, at: [0, 0] }));
+    every.extend((3..8).map(|cut| hud::Element::Sprite { part: 0x8a, cut, at: [0, 0] }));
     let keys = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
@@ -1721,11 +1728,16 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     }
     let size = images[0].width as f32;
     let layer = text::Layer::new(gpu, pool, pass, &images)?;
-    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, result_nodes, exe, shown: None })
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, result_nodes, field_nodes, exe, shown: None })
 }
 
 /// How long an offscreen run shows a won battle's Result screen before going back.
 const RESULT_SECONDS: f32 = 3.0;
+
+/// A lost battle's wipe (`ruins-entrance-lost-battle-60hz.mkv`): the fade to white, then the
+/// date panel alone on the white, in seconds (about 2 and 2 in the recording).
+const WIPE_FADE: f32 = 2.0;
+const WIPE_SECONDS: f32 = 4.0;
 
 /// The centre of a battle stage (`BF_POINT*`, 16 × 16 cells of 400: taken as the middle of its
 /// ground; not yet read from the game).
@@ -1797,6 +1809,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_game::se
         result: None,
         result_closed: false,
         lost_noted: false,
+        wiped: None,
         turn,
         chosen: 0,
         target: 0,
@@ -1837,6 +1850,8 @@ struct BattlePlay {
     result_closed: bool,
     /// A lost battle's day has gone into the field's save.
     lost_noted: bool,
+    /// A lost battle's wipe: when it began and the day it turns to.
+    wiped: Option<(f32, u32)>,
 }
 
 /// A battle's tables, sides, generator and the commands given so far.
@@ -5227,12 +5242,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     && let Some(save) = carry.back.as_mut().and_then(|b| b.1.save.as_mut()) {
                         *save = barrel_game::session::Session::lost_in_save(save);
                         play.lost_noted = true;
+                        let today = save.lines().find_map(|l| l.strip_prefix("today ")).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+                        play.wiped = Some((play.time, today));
                         eprintln!("battle lost: a day passes; \"Oww... that was bad. Let's be more careful next time.\"");
                     }
                 // Then back to the field it came from: a lost battle at once, a won one once its
                 // Result is closed (confirm; offscreen after `RESULT_SECONDS`).
                 let closed = play.result.as_ref().is_some_and(|(_, at)| play.result_closed || (presenter.is_none() && play.time - at >= RESULT_SECONDS));
-                if play.over() && (!won || closed || play.result.is_none() && carry.back.as_ref().and_then(|b| b.1.save.as_ref()).is_none())
+                let wiped = play.wiped.is_none_or(|(at, _)| play.time - at >= WIPE_SECONDS);
+                if play.over() && (!won && wiped || closed || won && play.result.is_none() && carry.back.as_ref().and_then(|b| b.1.save.as_ref()).is_none())
                     && let Some(back) = carry.back.take() {
                         eprintln!("frame {frame}: the battle is over, back to the field");
                         (restart, carry_out) = (Some(back.0), back.1);
@@ -5944,9 +5962,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let members = play.members();
         let commands = play.commands();
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), width, height))
+        // The wipe's day and its fade in twentieths (20: white, the panel on it).
+        let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
-                let elements = match &shown_result {
+                let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_formats::layout::text(&pe, p), v),
                     None => {
@@ -5957,8 +5977,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         e
                     }
                 };
+                if let Some((day, step)) = wipe {
+                    elements.push(hud::Element::Fill { rect: [-4000, 0, 6000, 1080], colour: [1.0, 1.0, 1.0, step as f32 / 20.0] });
+                    if step == 20 {
+                        elements.extend(hud::date_panel(&h.field_nodes, |p| barrel_formats::layout::text(&pe, p), hud::Values::on(day, 0)));
+                    }
+                }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, commands, shown_result, width, height));
+                h.shown = Some((members, commands, shown_result, wipe, width, height));
             }
     }
     let record = |cb: vk::CommandBuffer| unsafe {
