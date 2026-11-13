@@ -961,9 +961,9 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000023` | `u35` |  | B3Balloon, Event | 79 | 2 (79) |
 | `75000024` | `u36` | (marks an event seen: `{event, seen}`, `0x14035f480`) | B3Balloon, Event | 76 | 2 (76) |
 | `75000026` | `u38` |  | B3Balloon, Event | 50 | 1 (50) |
-| `7500002e` | `u46` |  | B3Balloon, Event | 18 | 3 (18) |
-| `7500002f` | `u47` |  | Movie | 18 | 0 (18) |
-| `75000030` | `u48` |  | B3Balloon, Event | 18 | 0 (18) |
+| `7500002e` | `u46` | (plays a movie: `{movie, 1, 0}`) | B3Balloon, Event (case `0x140051a96`: a `GAMEMODE_CREATE_DATA`, mode 13, with the movie and `op1 != 0`, `0x140292000`; see "Movies") | 18 | 3 (18) |
+| `7500002f` | `u47` | (after `u46` in every use: the movie's own, presumably its wait) | Movie | 18 | 0 (18) |
+| `75000030` | `u48` | (after `u47` in every use) | B3Balloon, Event | 18 | 0 (18) |
 | `75000033` | `u51` |  | ClearSaveGameMode | 2 | 1 (2) |
 | `75000034` | `u52` |  | ClearSaveGameMode | 7 | 0 (7) |
 | `75000035` | `u53` |  | B3Balloon, Event | 2 | 0 (2) |
@@ -1410,3 +1410,24 @@ failing and are tallied. On the oracle save (day 229), `ATELIER_SLEEP_MIX` (grou
 events listed) passes for one event (`EVENT_QC10_MAR_011`) with every command in its checks modelled. Friendship comes from the save's `Party`
 records (by their character number, 0 to 10 as `0x140330120` allows).
 
+## Movies
+
+`u46 {movie, 1, 0}` switches the game to its movie mode (game mode 13) with the movie's number,
+followed by `u47` and `u48` in all 18 uses, at the start of the event's first action. The
+movies are a table of 32-byte records at `0x140d8ece0` (EN executable): `{name, u32 1280, u32
+720, u32 20, u32 1, title}`, the name a `.pam` under `Data/x64/Movie[_EN/_SC/_TC]` (installed
+as `.wmv`):
+
+| Movie | File | Title | Played by |
+|---|---|---|---|
+| 0 | `opening` | Opening | |
+| 1 | `ending` | Ending | the endings (`EVENT_MM15_ED2_*`, `MM09_520`) |
+| 2 | `teaser` | Teaser | |
+| 3 | `avantitle` | Pretitle | `EVENT_MM03_MQ1_170` |
+| 4 | `opening_logy` | Logy Intro | Logy's opening (`EVENT_MM01_OP1_212`) |
+| 5 | `opening_escha` | Escha Intro | Escha's opening (`EVENT_MM01_OP1_111`) |
+| 6 | `sequence_01` | Breakthrough | `EVENT_MM10_ST1_010` |
+| 7 | `sequence_02` | Collapse | `EVENT_MM10_ST1_060` |
+
+The table goes on with records that reuse `opening.pam` under place names (Filtzberg,
+Hoenheim, ...): their use is not read.
