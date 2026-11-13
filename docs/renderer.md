@@ -514,7 +514,8 @@ much fog those near pieces get is still open.
 
 The dome (`Sphere_sky`) and the clouds (`xEF_`) are drawn unlit (texture × vertex colour) and
 alpha-blended; the solid pieces are lit like the field's models (field light on the vertex
-colour) and alpha-tested. All are fogged as at the fog's end (`s = 1`). Lighting the pieces
+colour) and alpha-tested. The solid pieces are fogged as at the fog's end (`s = 1`), the
+dome and clouds at their own distance (below). Lighting the pieces
 brings TOWN_07's ruins from 107 to 96 (game 93, 97, 87) and leaves TOWN_10's street as it was
 (the shader packs agree: `MapSTDNA`, texture × `atColor` only, fits the dome; the others are
 lit). Still open: TOWN_07's `ns_` bush is dark in the game (52) and pale here, as if it took
@@ -531,8 +532,17 @@ yellow with the dome's clouds plainly showing through and a bright patch toward 
 246, 234, 184; the renderer 220, 195, 153, a flat cream with the clouds all but gone). Unfogged,
 the dome is a purple-blue cloudy sky: so the game fogs it, but less than the fog's full span,
 and its in-scattering peaks toward the sun (`TOWN_09`'s `mieG` is 1.0: a sharp Mie peak). Taking
-the scattering angle the other way round changed nothing visible; the dome's own fog distance
-(its radius against the fog's start and end, `tracking_camera` with offset (0, -3, 0)) is next.
+the scattering angle the other way round changed nothing visible. The dome (`Sphere_sky`,
+radius 32,000 to 35,400 units) and the clouds (`xEF_…_Sphere_cloud`, 26,900 to 33,100) now
+take the fog at their own distance, as their programs (`MapSTD`, `MapSTD-T0`) compute it with
+nothing clamped: s ≈ 4.7 in `TOWN_09` (fog 15 to 80 m), so almost all of what shows is the
+in-scattered light, Rayleigh and the ambient. The arch shot's sky went from 220, 195, 153 to
+241, 210, 147 at the top (the game 246, 234, 184) and 206, 179, 120 in the middle (195, 182,
+120). The solid pieces keep the fog's full span (s = 1). `TOWN_10`'s narration sky is
+unchanged (92, 89, 41 both ways; the game's frame there is framed differently). The game's
+brighter patches in that sky are not the dome's clouds (fogged away at that distance) but
+likely its glow. Its Mie term is 0 with `mieG` 1 (the factor (1 − g)², checked live in three
+fields).
 
 **Accessories.** A character's container holds its body (`<stem>_default.g1m`), its skeleton
 (`<stem>.g1m`) and part models (`<stem>_P_M_*.g1m`). The parts named in

@@ -187,10 +187,14 @@ void main() {
     {
         vec3 e = look.eye.xyz - w.xyz;
         float s = look.fog.x * length(e) + look.fog.y;
-        // The distant view stands in for what lies beyond the field: as far as the fog reaches.
-        if ((pc.flags & 8u) != 0u) {
+        // The distant view's solid pieces (flag 16: ground ring, stones, plants) stand in for
+        // what lies beyond the field: as far as the fog reaches. The dome and the clouds take
+        // the fog at their own distance, as `MapSTD`/`MapSTD-T0` do: 30,000 units and more,
+        // nearly all in-scattered light, which is the game's sky colour.
+        if ((pc.flags & 24u) == 24u) {
             s = 1.0;
         }
+
         fog_keep = min(exp2(s * look.scat[0].xyz), vec3(1.0));
         float c = dot(normalize(e), normalize(look.sun_dir.xyz));
         fog_add = look.scat[3].xyz * pow(max(look.scat[2].w * c + look.scat[3].w, 0.0001), -1.5) + (1.0 + c * c) * look.scat[2].xyz + look.scat[1].xyz;
