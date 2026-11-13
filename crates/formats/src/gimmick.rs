@@ -46,6 +46,19 @@ impl Area {
     pub fn music(&self) -> i32 {
         self.words[1]
     }
+
+    /// The map's ambience, a looping environment sound (128 + its number in `Sound/SE/env`:
+    /// 129 `01ENV_FOREST01`, 136 `08ENV_TOWN01`, 139 `11ENV_WIND01`, 142 `14ENV_MOB02`), and its
+    /// volume (0 in rooms), played as the map starts (`0x140290f60`).
+    pub fn ambience(&self) -> (i32, f32) {
+        (self.words[2], f32::from_bits(self.words[3] as u32))
+    }
+
+    /// The map's ground kind for a jump's landing sound (`walk::landing_sound`): 2 in the open
+    /// fields, 7 in town streets and ruins, 9 in rooms.
+    pub fn landing(&self) -> i32 {
+        self.words[4]
+    }
 }
 
 /// A gimmick.

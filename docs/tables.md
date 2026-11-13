@@ -1662,9 +1662,16 @@ Atelier theme) for the Atelier and the offices, 32 for the Tavern, 34 for the Ba
 Old Highway, 46 `fm_iseki01` for the Southern Ruins, 37 `fm_cemetery01`, 224 `fm_crystal01`
 for the Palace of Paupers, 51 `fm_worldmap`; the test map `Test_Nakai` has 41, Escha's Atelier
 theme, so the lead may swap 40 for 41 somewhere (not found: `0x14004abb0`, which picks a track
-by name from a per-lead list, Logy's at +0 and Escha's at +0x20, is another path). The third
-(129, 136, 139, 142) and fourth (a float: 0 indoors, 0.15 in town, 0.2 in the forest, 0.05 on
-the highway) are not known; the fifth is 9 indoors, 7 in town and ruins, 2 in the open fields. The sixth, +0x14, is what the field's battle start
+by name from a per-lead list, Logy's at +0 and Escha's at +0x20, is another path). The third and
+fourth are the map's ambience and its volume (`Area::ambience`, played as the map starts by
+`0x140290f60`, its handle kept at +0xb64): effect 128 + n is `Sound/SE/env`'s n-th loop, so 129
+`01ENV_FOREST01` for the Twilight Forest (0.2), 136 `08ENV_TOWN01` for the town (0.15 outdoors,
+0 in rooms), 139 `11ENV_WIND01` for the Old Highway (0.05) and most other fields, 142
+`14ENV_MOB02` (a crowd) for the Tavern. The fifth is the ground kind for a jump's landing sound
+(`Area::landing`, `walk::landing_sound`): as a jump lands (`0x140234e85`, after the take-off's
+0x23 at 0.6) the field plays, at 0.5, the first word of entry *kind* of a ten-entry table it
+builds at +0x2f68 (`0x14006dd5e`: 15, 16, 17, 18, 19, 20, 21, 23, 24, 25), so 17 in the open
+fields (kind 2), 23 in town streets and ruins (7), 25 in rooms (9). The sixth, +0x14, is what the field's battle start
 puts into the battle setup's +0x30: 19 for the Twilight Forest's areas, 7 for the Southern
 Ruins', the battle stage by the look of it. Then come a pointer to the map's gimmick list
 (+0x20), a word, and pointers to its place and area names (+0x30, +0x38). The field's runtime

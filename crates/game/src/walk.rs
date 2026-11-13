@@ -274,6 +274,18 @@ pub struct JumpVoice {
 pub const JUMP_MOTION: u32 = 49;
 pub const JUMP_SOUND: u32 = 0x23;
 
+/// The landing sounds by ground kind (the map record's fifth word, `Area::landing`): a table
+/// the field builds at its +0x2f68 (`0x14006dd5e`), ten 16-byte entries whose first word is
+/// the bank effect, played at half volume as a jump lands (`0x140234e85`). The open fields
+/// are kind 2 (17), the town's streets and ruins 7 (23), rooms 9 (25).
+pub const LANDING_SOUNDS: [u32; 10] = [15, 16, 17, 18, 19, 20, 21, 23, 24, 25];
+pub const LANDING_VOLUME: f32 = 0.5;
+
+/// A ground kind's landing sound.
+pub fn landing_sound(kind: i32) -> Option<u32> {
+    LANDING_SOUNDS.get(usize::try_from(kind).ok()?).copied()
+}
+
 impl Default for JumpVoice {
     fn default() -> Self {
         JumpVoice { chance: 5 }
@@ -323,6 +335,14 @@ mod tests {
             vertices: vec![[-100.0, 0.0, 0.0], [100.0, 0.0, 0.0], [-100.0, 200.0, 0.0], [100.0, 200.0, 0.0]],
         };
         Walls::new(&c, DEFAULT_SLOPE)
+    }
+
+    #[test]
+    fn landing_sounds_by_ground() {
+        assert_eq!(landing_sound(2), Some(17));
+        assert_eq!(landing_sound(9), Some(25));
+        assert_eq!(landing_sound(10), None);
+        assert_eq!(landing_sound(-1), None);
     }
 
     #[test]

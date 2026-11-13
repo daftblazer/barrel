@@ -1266,6 +1266,8 @@ struct Walker {
     logy: bool,
     /// The map's field music (`Area::music`), played from the start in a window.
     music: Option<u32>,
+    /// The map's landing sound (`walk::landing_sound`).
+    landing: Option<u32>,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1280,6 +1282,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let area = maps.iter().position(|n| n == name).and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).cloned());
     let gimmicks = area.as_ref().map(|a| a.gimmicks.clone()).unwrap_or_default();
     let music = area.as_ref().and_then(|a| u32::try_from(a.music()).ok());
+    let landing = area.as_ref().and_then(|a| barrel_game::walk::landing_sound(a.landing()));
     let field = barrel_game::walk::Field::load(field_dir.parent().ok_or("no fields folder")?, name, gimmicks)?;
     let ground = &field.ground;
     // Dropped from high above onto whatever is under her.
@@ -1304,7 +1307,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3750,9 +3753,14 @@ fn main() -> Result<()> {
                             clock = LOOP.0 + (clock - LOOP.0) % (LOOP.1 - LOOP.0);
                         }
                     } else if t > 0.0 && clock < LOOP.1 {
-                        // Down: the landing division.
+                        // Down: the landing division, and the ground's landing sound.
                         clock = LOOP.1;
                         t = f32::INFINITY;
+                        eprintln!("frame {frame}: lands{}", w.landing.map_or(String::new(), |s| format!(", sound {s}")));
+                        if let Some((_, mixer, library, _)) = sound.as_mut()
+                            && let Some(barrel_audio::Effect::Clip(e)) = w.landing.and_then(|s| library.effect(s)) {
+                                mixer.play(e, barrel_game::walk::LANDING_VOLUME, None);
+                            }
                     }
                 }
                 b.clock = Some(clock);
