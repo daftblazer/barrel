@@ -2362,3 +2362,11 @@ beside both a region's mark and its first small point can come out at the small 
 `T0` - `A1p0`, the region `A1`'s first point): this way of reading them is this project's. The routes
 and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
 part).
+
+**Who wears what** (`itemData.xml`, `equipment::ItemRow::fits`): `base` gives the slot
+(`ITEM_KIND_WEAPON` the weapon, `ITEM_KIND_ARMOR` the armour, `ITEM_KIND_ACCESSORY` either
+accessory slot), and each attribute `PC00` to `PC10` present on the row (always `-1`) lets that
+character wear it: the 53 weapons name one character each, armour 2, 6 or all 11, the 25
+accessories all 11 (the Traditional Staff `PC00` only, the Cotton Shirt all, the Leather Coat 1,
+2, 3, 4, 6, 8). `Session::equip` swaps a basket item onto a member, what the slot held back to
+the basket (not yet the game's: at quality 50, the worn item's own quality and traits not kept).

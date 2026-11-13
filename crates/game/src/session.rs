@@ -158,6 +158,25 @@ impl Session {
         true
     }
 
+    /// Puts basket item `pick` on member `member` (character number) in slot `slot` (0 weapon,
+    /// 1 armour, 2 and 3 accessories) when it fits there (`ItemRow::fits`); what the slot held
+    /// goes back into the basket. Not yet the game's: the item keeps no quality or traits once
+    /// worn and comes back at quality 50 (the stats read are the row's, as `Tables::equip`).
+    pub fn equip(&mut self, member: usize, slot: usize, pick: usize, items: &[crate::equipment::ItemRow]) -> Result<(), String> {
+        let got = self.basket.get(pick).ok_or("no such basket item")?;
+        let row = usize::try_from(got.item).ok().and_then(|i| items.get(i)).ok_or("no such item")?;
+        if !row.fits(member, slot) {
+            return Err("it does not fit there".into());
+        }
+        let m = self.party.get_mut(member).ok_or("no such member")?;
+        let worn = std::mem::replace(&mut m.equipment[slot], got.item);
+        self.basket.remove(pick);
+        if worn >= 0 {
+            self.basket.push(crate::gather::Got { item: worn, quality: 50.0, traits: Vec::new() });
+        }
+        Ok(())
+    }
+
     /// A won battle's drops (item, count, quality) into the basket, with no traits.
     pub fn found(&mut self, drops: &[(i32, i32, f32)]) {
         for &(item, count, quality) in drops {
@@ -532,6 +551,28 @@ mod tests {
         let with = Session::won_in_save(&text, &[0, 1], 25, 12, &[(111, 2, 50.0)], &table);
         let (back, _) = Session::load(chain(), &with).unwrap();
         assert_eq!(back.basket.iter().map(|g| (g.item, g.quality)).collect::<Vec<_>>(), vec![(111, 50.0), (111, 50.0)]);
+    }
+
+    #[test]
+    fn equipping_swaps_with_the_basket_and_survives_a_save() {
+        use crate::equipment::ItemRow;
+        let row = |slots: &'static [usize], wearers: u16| ItemRow { equip: true, stats: [0; 9], slots, wearers };
+        // Item 0 a material, 1 Escha's staff, 2 Logy's sword, 3 an accessory for all.
+        let items = [ItemRow { equip: false, stats: [0; 9], slots: &[], wearers: 0 }, row(&[0], 1), row(&[0], 2), row(&[2, 3], 0x7ff)];
+        let mut s = Session::in_field(chain(), 3, false);
+        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1] }];
+        s.basket = [0, 1, 3].iter().map(|&item| crate::gather::Got { item, quality: 60.0, traits: Vec::new() }).collect();
+        assert!(s.equip(0, 0, 0, &items).is_err(), "a material is no weapon");
+        assert!(s.equip(1, 0, 1, &items).is_err(), "Escha's staff is not Logy's");
+        assert!(s.equip(0, 1, 1, &items).is_err(), "a weapon is no armour");
+        s.equip(1, 3, 2, &items).unwrap();
+        assert_eq!(s.party[1].equipment, [2, -1, -1, 3]);
+        // Logy's sword is not his to take off for Escha's staff, but Escha takes hers.
+        s.equip(0, 0, 1, &items).unwrap();
+        assert_eq!(s.party[0].equipment[0], 1);
+        assert_eq!(s.basket.iter().map(|g| g.item).collect::<Vec<_>>(), vec![0]);
+        let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
+        assert_eq!(back.party, s.party);
     }
 
     #[test]

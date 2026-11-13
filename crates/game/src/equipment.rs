@@ -68,6 +68,19 @@ pub fn stat_trait_kinds(stat: usize) -> &'static [&'static str] {
 pub struct ItemRow {
     pub equip: bool,
     pub stats: [i32; 9],
+    /// Which slots it goes in (`base`): a weapon the first, armour the second, an accessory
+    /// either of the last two; none for anything else.
+    pub slots: &'static [usize],
+    /// Who can wear it, a bit per character (an attribute `PC00` to `PC10` present on the row,
+    /// always `-1`: one for a weapon, some for armour, all eleven for an accessory).
+    pub wearers: u16,
+}
+
+impl ItemRow {
+    /// Whether character `chara` can wear it in slot `slot`.
+    pub fn fits(&self, chara: usize, slot: usize) -> bool {
+        self.equip && self.slots.contains(&slot) && chara < 16 && self.wearers & (1 << chara) != 0
+    }
 }
 
 impl ItemRow {
@@ -76,6 +89,13 @@ impl ItemRow {
         ItemRow {
             equip: row.attr("UseType") == Some("ITEM_USE_EQUIP"),
             stats: ["HP", "MP", "ATK", "DEF", "SPD", "RES_FIRE", "RES_WATER", "RES_WIND", "RES_EARTH"].map(n),
+            slots: match row.attr("base") {
+                Some("ITEM_KIND_WEAPON") => &[0],
+                Some("ITEM_KIND_ARMOR") => &[1],
+                Some("ITEM_KIND_ACCESSORY") => &[2, 3],
+                _ => &[],
+            },
+            wearers: (0..11).filter(|k| row.attr(&format!("PC{k:02}")).is_some()).fold(0, |m, k| m | 1 << k),
         }
     }
 }
@@ -233,7 +253,7 @@ mod tests {
             effects: vec![SkillEffect { act: 1, element: None, min: 10, max: 10, min2: 0, max2: 0 }, SkillEffect { act: 2, element: None, min: 1, max: 1, min2: 7, max2: 7 }],
         }];
         let traits = vec![Trait { name: "Power".into(), group: String::new(), level: 0, point: 0, kinds: [false; 9], slots: vec![barrel_formats::battle_data::TraitSlot { kind: "ITEM_SUB_EVOLVE_STATUS".into(), min: 10, max: 10 }] }];
-        let items = vec![ItemRow { equip: true, stats: [0, 0, 20, 0, 0, 0, 0, 0, 0] }];
+        let items = vec![ItemRow { equip: true, stats: [0, 0, 20, 0, 0, 0, 0, 0, 0], slots: &[0], wearers: 1 }];
         let t = Tables { items: &items, effects: &effects, traits: &traits, acts: &acts };
         let unit = ItemUnit { serial: 1, item: 0, quality: 50.0, traits: [0, -1, -1], word_e: 0, effects: [0, -1, -1, -1], equip_cost: 0, word_1a: 0, counts: [0; 4] };
         let mut roll = |lo: i32, _hi: i32| lo;
