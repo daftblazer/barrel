@@ -32,6 +32,10 @@ To the opening, with the pad: A at the title, then New Game (once the run's pref
 save the menu starts on Load Game: D-pad up first), A on Escha's card, A, D-pad left (Yes), A; the opening movie shows Proton's colour bars and A skips it, and
 `EVENT_MM01_OP1_111` begins. On the keyboard: `k` confirms, the arrow keys move.
 
+**Record every run** (`record.sh`, started right after the game and stopped before it): runs are
+costly and a recording answers later questions without another. Start the game with
+`ORACLE_HZ=60 ORACLE_AUDIO=1` for 60 frames a second and its sound.
+
 **With a copied save** (the player's own progress point, in this prefix only): stay where the
 player has already been. On the save used so far (Southern Ruins, Sector One), the area map's
 Sector Two starts a story scene on entry: do not enter it; Sector One and the Ruins Entrance are
