@@ -248,7 +248,23 @@ two vectors, a draw's flags bits 8 to 11 its group, and `model.vert` moves the v
 above. It takes the program's space as metres (the game's x, our units / 100: the parser keeps
 height and root height × 100 and the frame divides them back, and AREA_01_01's wind 30 over
 weight 800 sways 4 cm in metres, nothing visible in centimetres); not checked against the
-game. (The node shakers, `<n_shaker>`, are a spring per bone, not read.)
+game. The node shakers (`<n_shaker>`, trees and dense grass: placements named `xN1_...`) are a
+spring per node. The parser (`0x140284f00` on) keeps `weight` (+0x20), the swing `axis`
+normalised (+0x24 to +0x30, the rest direction), `axis_power` × 100 (+0x34), `max_angle`
+(+0x38, degrees), `char_range` × 100 (+0x3c) and `char_power` (+0x40). Each node keeps a tip
+direction `d` (+0x48, unit) and a velocity `v` (+0x58), and each frame (`0x1402856c0` on, `dt`
+the frame's time):
+
+1. the wind, taken into the node's space as a unit vector `u` with a strength `s` (how is
+   before `0x1402856c0`, not read): unless `|u · d| ≥ 0.9`, `v += u × s × dt / weight`;
+2. within `char_range` of the player: `v += r × char_power × dt`, `r` a random unit vector
+   (each part `(rand() % 100 - 50) / 50`, normalised);
+3. `v += (rest − d) × axis_power × dt` (pulled back to the axis);
+4. `d += v × dt`, normalised;
+5. past `max_angle` from the rest direction (`cos(max_angle) > rest · d`), `d` is put back on
+   that cone (`0x140285b7b` on, through the cross products of the two; not read further).
+
+The node is then turned from the rest direction to `d`. Not done in the renderer yet.
 
 ### Fog (read from the running game)
 
