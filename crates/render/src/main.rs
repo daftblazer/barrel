@@ -3805,9 +3805,8 @@ fn main() -> Result<()> {
             }
         }
         look[5] = [c.point_light_strength, points.len() as f32, 0.0, 0.0];
-        // The field's two directional lights: rot is taken as pitch (down from level) then yaw,
-        // in degrees, the light travelling along that direction (the game's convention is not
-        // read).
+        // The field's two directional lights: (0, 0, 1) turned by rot.x degrees about x, then
+        // rot.y about y, the light travelling along it (the field loader's own, 0x140068e6c).
         for (k, slot) in [22usize, 24].into_iter().enumerate() {
             if let Some((rot, color)) = parallels.get(k) {
                 let (p, y) = (rot[0].to_radians(), rot[1].to_radians());

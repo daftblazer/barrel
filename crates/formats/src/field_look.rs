@@ -190,7 +190,7 @@ pub fn read(root: &Element) -> FieldLook {
                 for p in e.children.iter().filter(|p| p.name == "param") {
                     let color = numbers(p, "color").unwrap_or([1.0; 4]);
                     match p.attr("type") {
-                        Some("PARALLEL") => look.lights.push(Light::Parallel { rot: numbers(p, "rot").unwrap_or_default(), color }),
+                        Some("PARALLEL") => look.lights.push(Light::Parallel { rot: numbers(p, "rot").unwrap_or([30.0, 45.0, 0.0]), color }),
                         Some("POINT") => look.lights.push(Light::Point {
                             pos: numbers(p, "pos").unwrap_or_default(),
                             color,

@@ -157,8 +157,12 @@ lights' diffuse and the sun's diffuse; the pixel shader multiplies that by the t
 `g_fWindTime`, `g_fInvHeight`, `g_f3Shift`, `g_fRootHeight`: plants sway) and, twice,
 `emissiveColor`; `cDiff`, `cAmb` and `cSpec` are the engine's. Taken
 for now: the material colours white no light texture or shadow (1), the
-`PARALLEL` `rot` as pitch below level then yaw in degrees, and point light distances in
-metres. Point light distances are in field units, as for characters. Checked again against
+`PARALLEL` `rot` as pitch below level then yaw in degrees (now read: the field loader,
+`0x140068e6c` on, turns (0, 0, 1) by `rot.x` degrees about x and then `rot.y` about y,
+right-handed (`0x14006bf70`), normalises it and keeps it as the light's `dir`, so the light
+travels along (cos x·sin y, −sin x, cos x·cos y) and lights `max(n·−dir, 0)`; `rot.z` is
+not used; no `rot` gives 30, 45; the table's own `dir` is read first and overwritten), and
+point light distances in metres. Point light distances are in field units, as for characters. Checked again against
 TOWN_03 (Colland's office, event `EVENT_MM01_OP1_222`): taking metres there makes the desk
 lamp glow as in the game but blows Escha's workshop out to white (101, 65, 67 become 255,
 242, 254), so field units stand. The quadratic term was the error (below: the table's `att2`
