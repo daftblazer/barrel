@@ -1847,6 +1847,16 @@ struct Loaded {
     town_bodies: Vec<TownBody>,
 }
 
+/// The story from a new game, over the install at ROOT (`event_start::Chain`).
+fn story_chain(root: &Path) -> Result<barrel_game::event_start::Chain> {
+    let checks = barrel_formats::event_check::parse(&std::fs::read(root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let process = barrel_formats::event_process::parse(&std::fs::read(root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
+    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
+    Ok(barrel_game::event_start::Chain::new(checks, process, names.iter().map(|n| n.to_string()).collect()))
+}
+
 /// Loads a scene (`docs/renderer.md`, "Chained events": the renderer outlives its scenes).
 fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     let SceneSpec {
@@ -2173,6 +2183,7 @@ fn main() -> Result<()> {
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
     let mut no_terrain = false;
+    let mut chain_on = false;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -2251,6 +2262,8 @@ fn main() -> Result<()> {
             "--town-people" => town_people_from = Some(it.next().ok_or("--town-people all|GAMEDATA")?.clone()),
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
+            // --chain: when the event ends, the one the story starts after it, and so on.
+            "--chain" => chain_on = true,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -2684,24 +2697,53 @@ fn main() -> Result<()> {
         TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
     };
 
+
+    // --chain: the events the story starts after this one, played on in turn under the same
+    // renderer (`event_start::Chain`; `docs/renderer.md`, "Chained events").
+    let mut chain = match (&event_spec, chain_on) {
+        (Some(e), true) => {
+            if args[1] != "auto" {
+                return Err("--chain needs --field auto".into());
+            }
+            let root = Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--chain: the event is not inside a game install")?;
+            Some((story_chain(root)?, root.to_path_buf()))
+        }
+        _ => None,
+    };
+    let mut current_event = event_spec.clone();
+    let mut frame_base = 0u32;
+    let mut first_event = true;
+    'events: loop {
+    let event_spec = current_event.clone();
+    // A chained event plays from its start.
+    let (event_at, event_line) = if first_event { (event_at, event_line) } else { (None, None) };
+    // Render each frame: read it back to a file, or present it in the window.
+    let bytes = (width * height * 4) as u64;
+    let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
+    let sync = presenter
+        .as_ref()
+        .map(|_| -> Result<(vk::Semaphore, vk::Semaphore)> {
+            unsafe { Ok((d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?)) }
+        })
+        .transpose()?;
     // The scene: loaded, then uploaded under the renderer set up above.
     let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies } =
         load_scene(SceneSpec {
             field,
             args: args.clone(),
             event_spec: event_spec.clone(),
-            skeleton_spec,
-            anim_spec,
+            skeleton_spec: skeleton_spec.clone(),
+            anim_spec: anim_spec.clone(),
             time,
-            morph_spec,
-            face_specs,
-            costumes,
-            costumes_from,
+            morph_spec: morph_spec.clone(),
+            face_specs: face_specs.clone(),
+            costumes: costumes.clone(),
+            costumes_from: costumes_from.clone(),
             event_line,
             event_at,
             look_at,
             creatures_area,
-            town_people_from,
+            town_people_from: town_people_from.clone(),
         })?;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
@@ -3107,15 +3149,6 @@ fn main() -> Result<()> {
         };
     }
 
-    // Render each frame: read it back to a file, or present it in the window.
-    let bytes = (width * height * 4) as u64;
-    let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
-    let sync = presenter
-        .as_ref()
-        .map(|_| -> Result<(vk::Semaphore, vk::Semaphore)> {
-            unsafe { Ok((d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?)) }
-        })
-        .transpose()?;
     let mut last_frame = std::time::Instant::now();
     let mut stale = false;
     let mut paused = false;
@@ -3133,7 +3166,15 @@ fn main() -> Result<()> {
     let mut frame_jitter = (0f32, 0f32);
     let mut last_shot: Option<taa::Shot> = None;
     let mut shot_field = u16::MAX;
-    for frame in 0..frames {
+    let mut ran = 0u32;
+    let mut stop = false;
+    for frame in 0..frames - frame_base {
+    ran = frame + 1;
+    // Chained: the event over (every step applied), the next one takes the window.
+    if chain.is_some() && frame > 0 && player.as_ref().is_some_and(|p| p.0.finished()) {
+        ran = frame;
+        break;
+    }
     // Last frame's transforms and joints, before this frame moves anything (motion vectors).
     for i in &mut instances {
         i.prev_model = i.model;
@@ -3146,6 +3187,7 @@ fn main() -> Result<()> {
     if let Some(p) = pump.as_mut() {
         if !p.pump() {
             eprintln!("window closed after {frame} frames");
+            stop = true;
             break;
         }
         // Space pauses the event, Escape quits; arrows turn the camera about its target
@@ -3165,6 +3207,7 @@ fn main() -> Result<()> {
         }
         if quit {
             eprintln!("quit after {frame} frames");
+            stop = true;
             break;
         }
         let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
@@ -4030,13 +4073,14 @@ fn main() -> Result<()> {
         d.unmap_memory(rmem);
     }
     // One frame: OUT.png; several: OUT_000.png, OUT_001.png, ... (with --save-every, only some).
-    if frames > 1 && (frame + 1) % save_every != 0 && frame + 1 != frames {
+    let shot_number = frame_base + frame;
+    if frames > 1 && (shot_number + 1) % save_every != 0 && shot_number + 1 != frames {
         continue;
     }
     let path = if frames > 1 {
         let p = Path::new(&out_path);
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("frame");
-        p.with_file_name(format!("{stem}_{frame:03}.png"))
+        p.with_file_name(format!("{stem}_{shot_number:03}.png"))
     } else {
         Path::new(&out_path).to_path_buf()
     };
@@ -4044,14 +4088,49 @@ fn main() -> Result<()> {
     eprintln!("wrote {}", path.display());
     }
 
+    // The scene's own resources go; the renderer stays for the next.
+    unsafe { d.device_wait_idle()? };
+    if let Some((layer, ..)) = text_layer.take() {
+        layer.destroy(&gpu);
+    }
+    unsafe {
+        d.destroy_buffer(readback, None);
+        d.free_memory(rmem, None);
+        if let Some((ready, done)) = sync {
+            d.destroy_semaphore(ready, None);
+            d.destroy_semaphore(done, None);
+        }
+    }
+    scene.destroy(&gpu);
+    frame_base += ran;
+    let ended = event_spec.as_deref().and_then(|e| Path::new(e).file_stem()).and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let next = match chain.as_mut() {
+        Some((c, root)) if !stop && frame_base < frames => c.after(&ended).map(|n| root.join("Event/event").join(barrel_game::event_start::event_file(n))),
+        _ => None,
+    };
+    match next {
+        Some(path) if path.is_file() => {
+            eprintln!("{ended} ends: {}", path.display());
+            current_event = Some(path.to_string_lossy().into_owned());
+            first_event = false;
+        }
+        Some(path) => return Err(format!("{}: no such event file", path.display()).into()),
+        None => {
+            if chain.is_some() && !stop {
+                if frame_base >= frames {
+                    eprintln!("{ended}: the frames are used up");
+                } else {
+                    eprintln!("{ended} ends: no event starts");
+                }
+            }
+            break 'events;
+        }
+    }
+    }
+
     // Tear down in reverse order.
     unsafe {
         d.device_wait_idle()?;
-        d.destroy_buffer(readback, None);
-        d.free_memory(rmem, None);
-        if let Some((layer, ..)) = text_layer {
-            layer.destroy(&gpu);
-        }
         d.destroy_pipeline(terrain_gpu.pipeline, None);
         d.destroy_pipeline_layout(terrain_gpu.pipeline_layout, None);
         d.destroy_shader_module(terrain_gpu.shader, None);
@@ -4098,16 +4177,11 @@ fn main() -> Result<()> {
             d.destroy_image(color, None);
             d.free_memory(cmem, None);
         }
-        if let Some((ready, done)) = sync {
-            d.destroy_semaphore(ready, None);
-            d.destroy_semaphore(done, None);
-        }
         d.destroy_descriptor_set_layout(set_layout, None);
         d.destroy_sampler(sampler, None);
         d.destroy_buffer(look_buf, None);
         d.free_memory(look_mem, None);
     }
-    scene.destroy(&gpu);
     shadow_target.destroy(&gpu);
     unsafe {
         d.destroy_descriptor_set_layout(instance_layout, None);
