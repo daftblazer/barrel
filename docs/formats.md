@@ -937,6 +937,18 @@ fitted yet byte for byte: in TOWN_01 one patch record (16 bytes) and two `fad0` 
 from 0x2d0 leave 0x300 to 0x318 for `fba0` and what `f250` reads before the records with
 `0x80ffffff` at 0x318.
 
+**How the game blends (from the field's own shader pack, `<AREA>.g1s`).** AREA_01_01's pack
+(16 programs) holds three tiny pixel programs (5, 6, 7) that each sample one layer tile
+(`sLand0`, at TEXCOORD0.zw) and one blend map (`sBlendMap`, at TEXCOORD0.xy), and output the
+tile times one channel of the map (5 red, 6 green, 7 blue) with alpha half that weight. Their
+vertex program (1) takes integer positions (`itof`), scales them by `scale` and lifts them by
+`gMrpRng`, and gives the tile coordinate as position × `texsize0` and the map coordinate as
+position × `bmsize` + `uvOffset0`. So the ground is painted pass by pass, one (layer, map,
+channel) per pass, added together, and the combinations are what the file's per-patch data
+lists, not a fixed two-maps-for-six rule. The lit ground programs (8 to 15) come with one tile
+(8), two tiles and a map (9, 10, 11: again one per channel) and more; TOWN_01's pack (1 layer)
+has only the one-tile kind. The real ground vertex is POSITION, NORMAL, COLOR (programs 2, 3).
+
 The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
 `0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
 `0x14066f900`, `0x14066fc90`, `0x14066fc50`, `0x14066f940`, `0x14066f690`, `0x14066f6d0` (the
