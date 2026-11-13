@@ -1363,6 +1363,12 @@ The trigger compare is `0x140213540 (ctx, cmd, count, mode)` against the fired v
   Town Entrance (map 4) to the Plaza (map 5).
 - In the from-to triggers, `0x60000001` counts only at operands 1 and 3 after a kind of 0.
 
+A check on real data: with a new game's state (`barrel event-starts ROOT new ...`, nothing
+seen, day 90, `BARREL_SEEN=a,b` marking events seen), the opening chains as the game plays it.
+Code asking for event 8 (`PROGRAM_EXEC`, group 29, value 8) starts `EVENT_MM01_OP1_111`. Its end
+(group 11, value 8, with 8 seen) starts `EVENT_MM01_OP1_121` (its check: 8 seen, 10 not, ended
+by 8). That one's end starts `EVENT_MM01_OP1_131`.
+
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
 The field map is taken as none and the day flag as clear. Commands not modelled yet count as

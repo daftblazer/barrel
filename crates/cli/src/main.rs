@@ -45,7 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
-  barrel event-starts ROOT GAMEDATA GROUP [VALUES...]  the events a save would start when a trigger group fires
+  barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
   barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
   barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
@@ -3116,10 +3116,23 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
     let group: u8 = group.parse().map_err(|_| "GROUP is a number")?;
     let fired: Vec<i32> = values.iter().map(|v| v.parse()).collect::<std::result::Result<_, _>>().map_err(|_| "VALUES are numbers")?;
     let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
-    let data = read(save)?;
-    let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", save.display()))?.body;
-    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
-    let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
+    // `new`: a new game's state (nothing seen, no flags, April 1st of year 1: day 90).
+    let sum = if save == Path::new("new") {
+        // BARREL_SEEN=a,b,...: events taken as seen.
+        let mut events = vec![barrel_formats::save::EventRecord { seen: false, day: -31, count: 0, roll: 0, value: 0 }; 1165];
+        for e in std::env::var("BARREL_SEEN").unwrap_or_default().split(',').filter_map(|v| v.trim().parse::<usize>().ok()) {
+            if let Some(r) = events.get_mut(e) {
+                r.seen = true;
+                r.day = 90;
+            }
+        }
+        barrel_formats::save::Summary { day: Some(90), events, ..Default::default() }
+    } else {
+        let data = read(save)?;
+        let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", save.display()))?.body;
+        let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
+        barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?)
+    };
     let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
     let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
