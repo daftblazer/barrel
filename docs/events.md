@@ -289,7 +289,10 @@ negative). Both of the `Event` class's constructors (`0x140050560`, `0x1400505f0
 called with the same constant) set +0x58 to +0x64 to `(-1, 1, 1, 0)` from `0x1407581f0`, and
 nothing writes +0x5c after, so the base is 1: `u7 n` goes on from label `n + 1`
 (`event::GOTO_FROM_BASE`). (The event check record's +0x5c is its last start day, another
-thing.) These `u9` and `u10` are group 0x75's, not the setup
+thing.) Over the installed events, 198 of the 199 `u7 n` have a label `n + 1` in their action
+(only 10 have a label `n`); the one without, `u7 9` in `EVENT_QC09_KAT_060` (labels 1, 2, 9),
+jumps to a label that is not there: what the game's label search (`0x140210be0`) does then
+is not read, and `event::Player` goes on with the next command. These `u9` and `u10` are group 0x75's, not the setup
 markers below. `event::Player` takes the three variable jumps with every variable 0
 (nothing picked: playback has no item selection), so `u8` and `u9` go on from `first`. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
 `u5 99`, which jumps over starting actions 64 and 65 (Escha placed in town, the camera handed
