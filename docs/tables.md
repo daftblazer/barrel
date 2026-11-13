@@ -1934,6 +1934,12 @@ them). The getters at `0x1401118c0` and its neighbours index a table of 48-byte 
 | 32 | pointer to the drop list: four 12-byte slots, i32 item, i8 chance in percent, i32 count at +8 (the Poison Squirrel: items 55, 0, 57, 70 at 50, 35, 25 and 10 percent, one each) |
 | 40 | pointer to the stat blocks |
 
+A monster's **size** in battle (fighter +0x358, counted in reach and in the formation's spacing)
+is its `Chara.xml` row's `Radius` (+0x64): the battle copies it from the records at
+`[0x141077ed0]` (0x80 bytes each, the `Chara.xml` rows), monster m being row 18 + m. Read live
+(2026-11-12, a battle in the Southern Ruins): all 192 records' +0x64 equal the rows' `Radius`.
+The skirmish takes these sizes (`foe_sizes`).
+
 The **stat blocks** are 20 i32 each, one after another, ended by a block whose level is
 -1 or 0. Most monsters have one; bosses have more (the same monster at other resistances,
 or stronger later fights):

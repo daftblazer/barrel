@@ -87,8 +87,6 @@ likely settle them where static reading failed.
   quest is active (the user's recollection, not checked). Way in: look for request kinds or
   event ops that attach a character to the player; **live read** during such a request once
   one is reachable without spoilers past the opening.
-- **Defeated field enemies.** Which enemies stay down after a battle (`0x141087bd0` per map):
-  **live read** after one fight.
 
 - **Field HUD details.** The time dial's ten segments (part 0x8d, layout 609) are drawn as the
   tenths of the day still free (the game's screenshot shows them dark in an area: likely the
@@ -110,8 +108,6 @@ likely settle them where static reading failed.
   request +0x40). Scans for the party's home positions (±692.8) found nothing; the formation
   writes through `[fighter+0x10]+0x3d8` (a model's vector pointers). **Live read** during a
   battle: `[f+0x10]+0x3d8`.
-- **Monster sizes.** Size +0x358 = `[0x141077ed0]` + id × 0x80 + 0x64; its filler is not found.
-  **Live read** `0x141077ed0`'s records once a battle has loaded.
 - **Item power.** The builder of an effect entry's +0x18 for action kind 1 was not found (three
   tries; itemData `effect` is row +0x40).
 - **Item level in battle** (fighter +0x248, from a command copied whole): setter not found.
