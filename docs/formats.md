@@ -1211,6 +1211,16 @@ that place them are tables in the executable (English addresses; `crates/formats
   Every sprite of the 701 layouts resolves (`barrel layouts EXE`; `barrel layout-png ROOT
   OUT.png ID...` draws layouts).
 - Coordinates are on a 1920 × 1080 screen.
+- **Nesting**: a node part above 0x164 is another layout, by id, placed at the node (its own
+  place added): 105 layouts are not nested in any other, the screens. Part 0x164 itself (kinds
+  21, 22, 23: 625 nodes) is not a sprite; most likely text or a number (not read). The node
+  `kind` values seen: 0 (2,623), 21, 28, 4, 22, 36, 15, 19, 29, 7, ... (widget, not read).
+- **Screens found** by drawing the top layouts (`barrel layout-png`): 625 the field HUD (top
+  left: the assignment's days "0/0", the year disc, the time-of-day dial, the "Free Time" tab,
+  the collection badges; it also nests the request poster and other pop-ups), 958 the title
+  menu (logo; New Game, Load Game, Dressing Room, Extras, Options, Exit Game; "Press any
+  button"; 1056 the same over a fade), 1015 and 1023 the hero choice (Yes/No, then the two
+  profile cards), 1035 the save list, 916 the battle result, 920 party info, 926 field info.
 
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.

@@ -101,32 +101,34 @@ pub fn nodes(pe: &Pe, id: u32) -> Option<([i32; 2], Vec<Node>)> {
     Some(([x, y], out))
 }
 
-/// The sprite pieces of layout `id`, placed on the screen.
+/// The sprite pieces of layout `id`, placed on the screen, with those of the layouts it nests
+/// (a node part above 0x164 is that layout, placed at the node; taken from the node counts, the
+/// drawing code is not read).
 pub fn pieces(pe: &Pe, id: u32) -> Vec<Piece> {
     let mut out = Vec::new();
-    let Some(k) = id.checked_sub(FIRST_LAYOUT) else { return out };
-    let rec = LAYOUTS_EN + 16 * k as u64;
-    let (Some(mut node), Some(x), Some(y)) = (u64_at(pe, rec), i32_at(pe, rec + 8), i32_at(pe, rec + 12)) else { return out };
-    for _ in 0..256 {
-        let Some(part) = i32_at(pe, node) else { break };
-        if part < 0 {
-            break;
-        }
-        let (cut, nx, ny) = (i32_at(pe, node + 4).unwrap_or(0).max(0), i32_at(pe, node + 8).unwrap_or(0), i32_at(pe, node + 12).unwrap_or(0));
-        if part < 0x164 {
+    add_pieces(pe, id, [0, 0], 0, &mut out);
+    out
+}
+
+fn add_pieces(pe: &Pe, id: u32, origin: [i32; 2], depth: u32, out: &mut Vec<Piece>) {
+    let Some(([x, y], nodes)) = nodes(pe, id) else { return };
+    let (x, y) = (origin[0] + x, origin[1] + y);
+    for n in nodes {
+        let at = [x + n.at[0], y + n.at[1]];
+        if n.part < 0x164 {
             let piece = (|| {
-                let cuts = u64_at(pe, SPRITES_EN + 8 * part as u64)?;
-                let c = cuts + 20 * cut as u64;
+                let cuts = u64_at(pe, SPRITES_EN + 8 * n.part as u64)?;
+                let c = cuts + 20 * n.cut.max(0) as u64;
                 let (texture, index) = texture(pe, i32_at(pe, c)?)?;
                 let o = pe.offset(c + 4)?;
                 let w = |i: usize| pe.data.get(o + 2 * i..o + 2 * i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
-                Some(Piece { texture, index, src: [w(0)?, w(1)?, w(2)?, w(3)?], at: [x + nx, y + ny] })
+                Some(Piece { texture, index, src: [w(0)?, w(1)?, w(2)?, w(3)?], at })
             })();
             out.extend(piece);
+        } else if n.part > 0x164 && depth < 8 && n.part as u32 != id {
+            add_pieces(pe, n.part as u32, at, depth + 1, out);
         }
-        node += 0x28;
     }
-    out
 }
 
 /// The event still pictures (`u1/0x30`, `IpuGallery`): 32-byte records `{i32 width, height, f32
