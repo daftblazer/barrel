@@ -1544,8 +1544,15 @@ member's numbers and a "Skill Get!" mark), then the battle's totals, "EXP" (part
 and "Cole" (the money, part 0x37e at y 956, with a coin). Layout 900 is one member's level-up
 panel over it (a row, "HP" to "SPD" with old and new numbers, layout 899: two number columns at
 x 356 and 476, part 0x4c digits; a skill name and "learned!", part 0x37b); 903 is the confirm
-button (`<IM00>`). A plain render (`barrel layout-png ROOT OUT 904`) shows every state at once;
-which parts show when, and where the drops are listed, is not read yet.
+button (`<IM00>`). A plain render (`barrel layout-png ROOT OUT 904`) shows every state at once.
+The running game (recording `ruins-entrance-battle-result-60hz.mkv`, 260 to 263 s) shows it
+without the desk: over the battle scene, the lead in a victory pose at the right, the "Result"
+heading and one row per party member in the battle (five there: portrait, "Lv 12", "Next 72";
+"Level Up!" in red beside a member that went up), then "EXP 39" and "Cole 13" with the coin.
+Its drops follow on a screen of their own over the desk: the item grid (the battle's items,
+each with a check mark), the chosen item's card ("Slag Antenna": Alchemy LV, EFF bar, Stats,
+the four element icons, Trait, Effect, Property, "1/1") and "Possessed" (basket 6, container
+0), with an "OK" under the grid.
 
 **The synthesis screens** are layouts 720 to 851 on `a15_mix.g1t`; the largest stand alone
 (no layout nests them): 753 (the item's card: picture, "Stats", "Effect", "Property"), 774
