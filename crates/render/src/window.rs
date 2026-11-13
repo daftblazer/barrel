@@ -189,6 +189,9 @@ pub struct Pump {
     pad: Option<crate::pad::Gamepad>,
     /// Which way the left stick leaned last frame (for menu steps on a lean).
     lean: (i8, i8),
+    /// A new window size or fullscreen to open again with at the next scene's start (the
+    /// compositor keeps a live window's size: `reopen`).
+    pub pending: Option<crate::settings::Display>,
 }
 
 /// The keys a pad button stands for when pressed: the menus' and the field's (A confirms and
@@ -228,8 +231,8 @@ struct PumpState {
     pressed: Vec<winit::keyboard::KeyCode>,
 }
 
-impl ApplicationHandler for PumpState {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+impl PumpState {
+    fn make_window(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let d = self.display.unwrap_or(crate::settings::Display::DEFAULT);
             let attrs = Window::default_attributes()
@@ -241,6 +244,17 @@ impl ApplicationHandler for PumpState {
                 Err(e) => self.error = Some(e.to_string()),
             }
         }
+    }
+}
+
+impl ApplicationHandler for PumpState {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.make_window(event_loop);
+    }
+
+    // A window closed to open again (`Pump::reopen`) is made on the loop's next pass.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.make_window(event_loop);
     }
 
     fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
@@ -283,19 +297,29 @@ impl Pump {
         if state.window.is_none() {
             return Err("the window did not open".into());
         }
-        Ok(Pump { event_loop, state, pad: crate::pad::Gamepad::open(), lean: (0, 0) })
+        Ok(Pump { event_loop, state, pad: crate::pad::Gamepad::open(), lean: (0, 0), pending: None })
     }
 
-    /// Sets the window to `display`: borderless fullscreen, or windowed at its size (the
-    /// presenter follows the resize as it follows the user's).
-    pub fn set_display(&self, display: crate::settings::Display) {
-        let w = self.window();
-        if display.fullscreen {
-            w.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-        } else {
-            w.set_fullscreen(None);
-            let _ = w.request_inner_size(winit::dpi::PhysicalSize::new(display.width, display.height));
+    /// Closes the window and opens it again as `display` has it (between scenes: nothing may
+    /// draw to the old one).
+    pub fn reopen(&mut self, display: crate::settings::Display) -> Result<()> {
+        use winit::platform::pump_events::EventLoopExtPumpEvents;
+        self.state.window = None;
+        self.state.display = Some(display);
+        self.state.held.clear();
+        for _ in 0..200 {
+            let _ = self.event_loop.pump_app_events(Some(std::time::Duration::from_millis(10)), &mut self.state);
+            if self.state.window.is_some() || self.state.error.is_some() {
+                break;
+            }
         }
+        if let Some(e) = self.state.error.take() {
+            return Err(e.into());
+        }
+        if self.state.window.is_none() {
+            return Err("the window did not open again".into());
+        }
+        Ok(())
     }
 
     pub fn window(&self) -> &Window {

@@ -799,11 +799,12 @@ scratch config opened at 1600 x 900 with MSAA 2x. In a window `BARREL_MENU_AT` o
 and `BARREL_OPTIONS_KEYS` pressed first (once a run), a scripted check of the page:
 `up,confirm,down,down,down,confirm` reaches Option → Options. Checked in a window (KDE,
 Wayland): MSAA 2x confirmed → saved, the scene again at her spot with MSAA 2x; 1600 x 900,
-85% and FSR 1 confirmed → saved, the scene again at 85% with FSR 1. The window size did not
-stick live: the request gave a 1600 x 900 swapchain, then the compositor's own size (1280 x
-720) came back and the presenter followed it; the window opens at the config's size on the
-next start. Not yet: the size taking live (another way than `request_inner_size`), the
-sound page, the game's own look of the page title and help bar.
+85% and FSR 1 confirmed → saved, the scene again at 85% with FSR 1. A live window keeps
+its size under KWin on Wayland (`request_inner_size` gave a 1600 x 900 swapchain, then the
+compositor's 1280 x 720 came back), so a new size or fullscreen closes the window and opens
+it again at the next scene's start (`Pump::pending`, `Pump::reopen`: the same event loop,
+after the presenter is gone): checked, 1600 x 900 confirmed, the scene again in a 1600 x 900
+window. Not yet: the sound page, the game's own look of the page title and help bar.
 
 ## Controllers
 

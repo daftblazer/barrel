@@ -3697,7 +3697,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let display_settings = config_text.as_deref().map_or(settings::Display::DEFAULT, settings::Display::from_config);
     // A window (with --window) or an offscreen image to draw into.
     let mut pump = match kept_pump {
-        Some(p) => Some(p),
+        // A new size or fullscreen chosen in the last scene: the window opens again with it.
+        Some(mut p) => {
+            if let Some(d) = p.pending.take() {
+                p.reopen(d)?;
+            }
+            Some(p)
+        }
         None => window_frames.map(|_| window::Pump::open(display_settings)).transpose()?,
     };
     let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
@@ -5118,11 +5124,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     if let Some(new) = kept.filter(|k| *k != now) {
                         let path = write_config(&new)?;
                         eprintln!("frame {frame}: graphics saved to {}", path.display());
+                        // A new window size or fullscreen: the window opens again with it at
+                        // the scene's start (the compositor keeps a live window's size).
                         if new.display != now.display {
-                            p.set_display(new.display);
+                            p.pending = Some(new.display);
                         }
-                        if new.render != settings
-                            && let (Some(s), Some(w)) = (session.as_ref(), walker.as_ref())
+                        if let (Some(s), Some(w)) = (session.as_ref(), walker.as_ref())
                             && let Some(text) = s.save([w.pos[0], w.pos[2]]) {
                                 restart = Some(without_settings_flags(&plain_args(&original_args)));
                                 carry_out = Carry { save: Some(text), ..Carry::default() };
