@@ -582,7 +582,7 @@ fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Walks the player (radius 48, the field's player radius; 160 tall) from (X, Y, Z) by (DX, DZ) each step for STEPS
+/// Walks the player (radius 48 and 150 tall: `FMrad` and `FMhig` in her `CharaBase.xml` row) from (X, Y, Z) by (DX, DZ) each step for STEPS
 /// steps against FIELD_DIR's walls, on its ground (`game::walk`), printing where it stands.
 fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> {
     let name = dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
@@ -597,7 +597,7 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
     let (mut p, mut y) = ([x?, z?], y?);
     let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];
     for k in 0..steps.parse::<usize>()? {
-        let next = walls.step(p, d, y, 160.0, 48.0);
+        let next = walls.step(p, d, y, 150.0, 48.0);
         let blocked = (next[0] - p[0] - d[0]).abs() > 0.01 || (next[1] - p[1] - d[1]).abs() > 0.01;
         // Stand on the ground there (a step up of at most 50); nothing under it: stay put.
         match ground.height(next[0], next[1], y, 50.0) {
