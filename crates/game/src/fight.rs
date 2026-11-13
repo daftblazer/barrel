@@ -72,6 +72,8 @@ pub struct Fighter {
     pub last_skill: i32,
     /// Whether guts has saved it since its last heal (+0x28d).
     pub guts_used: bool,
+    /// Instant death never lands on it (a monster's `death_immune`; party members never are).
+    pub death_immune: bool,
 }
 
 impl Fighter {
@@ -85,7 +87,7 @@ impl Fighter {
         s[stat::DEFENSE] = block.defense;
         s[stat::SPEED] = block.speed;
         s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
-        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], size: 0.0, draw: 0, remembered: -1, last_skill: 0, guts_used: false }
+        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], size: 0.0, draw: 0, remembered: -1, last_skill: 0, guts_used: false, death_immune: false }
     }
 
     /// With `mp` as its MP and maximum MP (the monsters' blocks have none).
@@ -304,7 +306,7 @@ impl Battle {
                 80 | 176 | 195 => {
                     let t = &self.fighters[target];
                     let Some(chance) = battle::death_chance(e.act, amount, self.fighters[who].stats[stat::LEVEL], &t.stats) else { continue };
-                    let lands = e.act == 195 || (!battle::death_blocked(&t.states, false) && rng.chance(chance));
+                    let lands = e.act == 195 || (!battle::death_blocked(&t.states, t.death_immune) && rng.chance(chance));
                     if lands && !t.down() {
                         self.fighters[target].stats[stat::HP] = 0;
                         felled.push(Event::Felled { who, skill: skill.name.clone(), target });
@@ -523,6 +525,21 @@ mod tests {
         assert_eq!(events[1], Event::Felled { who: 0, skill: "Doom".into(), target: 1 });
         assert!(b.fighters[1].down());
         assert_eq!(b.winner(), Some(0));
+    }
+
+    #[test]
+    fn instant_death_misses_an_immune_monster() {
+        use barrel_formats::battle_data::SkillEffect;
+        let skill = |act| Skill { name: "Death".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act, element: None, min: 100, max: 100, min2: 0, max2: 0 }], description: String::new() };
+        let fight = |act, immune| {
+            let mut foe = Fighter::new(&block(500), 1, 999_999);
+            foe.death_immune = immune;
+            let mut b = Battle::new(vec![Fighter::new(&block(100), 0, 999), foe]);
+            b.use_item(0, &skill(act), 100, 1, &mut Rng::from_state([1, 2, 3, 4]));
+            b.fighters[1].down()
+        };
+        // DEATH_PERCENT at 100: certain, unless the target is immune; ABSOLUTE_DEATH lands anyway.
+        assert!(fight(176, false) && !fight(176, true) && fight(195, true));
     }
 
     #[test]

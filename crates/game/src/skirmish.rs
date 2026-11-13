@@ -123,6 +123,7 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
     let spots = crate::battle::scatter(&sizes, rng);
     for (k, (foe, (spot, _))) in foes.iter().zip(spots).enumerate() {
         let mut f = Fighter::new(&foe.block, 1, 999_999);
+        f.death_immune = foe.death_immune;
         f.position = spot;
         f.size = sizes[k];
         fighters.push(f);
@@ -217,7 +218,7 @@ mod tests {
         m.items.push(Held { action: doom, power: 100, count: 1, traits: Vec::new() });
         let foe_block = StatBlock { hp: 5000, speed: 1, ..block };
         let claw = skill("Claw", 600, 1, 1);
-        let foe = Foe { block: foe_block, normal: &claw, skills: None };
+        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false };
         let mut rng = Rng::from_state([1, 2, 3, 4]);
         let (events, winner) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 60);
         assert!(events.iter().any(|e| matches!(e, Event::Felled { skill, .. } if skill == "Doom")));
@@ -250,7 +251,7 @@ mod tests {
         // A monster that hits hard and never dies quickly.
         let foe_block = StatBlock { hp: 100_000, attack: 40, ..block };
         let claw = skill("Claw", 600, 30, 30);
-        let foe = Foe { block: foe_block, normal: &claw, skills: None };
+        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false };
         let mut rng = Rng::from_state([5, 6, 7, 8]);
         let (events, _) = skirmish(&[m], std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng, 60);
         let used = events.iter().filter(|e| matches!(e, Event::Healed { skill, .. } if skill == "Salve")).count();

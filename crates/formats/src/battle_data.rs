@@ -102,7 +102,9 @@ pub struct Rule {
 pub struct Monster {
     pub name: String,
     pub family: u32,
-    pub boss: bool,
+    /// Instant death never lands on it (record +0xc not 0: 87 of the 153; `0x140111ac0`, which the
+    /// monster fighter's virtual +0x40 asks, `0x1401b7490`; party members never are).
+    pub death_immune: bool,
     pub exp: i32,
     pub money: i32,
     pub blocks: Vec<StatBlock>,
@@ -224,7 +226,7 @@ pub fn monsters(pe: &Pe, table: u64) -> Option<Vec<Monster>> {
         out.push(Monster {
             name,
             family: i32_at(d, r + 8)? as u32,
-            boss: i32_at(d, r + 12)? == 1,
+            death_immune: i32_at(d, r + 12)? != 0,
             exp: i32_at(d, r + 16)?,
             money: i32_at(d, r + 20)?,
             blocks,

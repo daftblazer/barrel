@@ -2058,7 +2058,7 @@ fn monsters(exe: &Path) -> Result<()> {
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
     for (n, m) in monsters.iter().enumerate() {
         let drops: Vec<String> = m.drops.iter().map(|d| format!("item {} {}%", d.item, d.chance)).collect();
-        println!("{n:3} {}{}  drops {}", m.name, if m.boss { " (boss)" } else { "" }, drops.join(", "));
+        println!("{n:3} {}{}  drops {}", m.name, if m.death_immune { " (immune to instant death)" } else { "" }, drops.join(", "));
         for b in &m.blocks {
             let names: Vec<String> = b.skills.iter().map(|(s, _)| skills.get(*s as usize).map_or_else(|| s.to_string(), |k| k.name.clone())).collect();
             println!("      lv {:2}  {}/{}/{}/{}  {}", b.level, b.hp, b.attack, b.defense, b.speed, names.join(", "));
@@ -2172,8 +2172,8 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     // Monsters pick by their rules from the skill table; party members use the normal attack.
     let table = |s: &str| (!s.starts_with('p')).then_some(&skills[..]);
-    let fa = barrel_game::duel::Fighter { block: ba, normal: aa, skills: table(a) };
-    let fb = barrel_game::duel::Fighter { block: bb, normal: ab, skills: table(b) };
+    let fa = barrel_game::duel::Fighter { block: ba, normal: aa, skills: table(a), death_immune: false };
+    let fb = barrel_game::duel::Fighter { block: bb, normal: ab, skills: table(b), death_immune: false };
     let hits = barrel_game::duel::duel(&fa, &fb, &mut rng, 1000);
     for h in &hits {
         let (x, y) = if h.attacker == 0 { (&na, &nb) } else { (&nb, &na) };
@@ -2308,7 +2308,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let n: usize = monster.parse().map_err(|_| format!("{monster}: not a monster number"))?;
     let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{monster}: no such monster"))?;
     names.push(m.name.clone());
-    let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) };
+    let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]), death_immune: m.death_immune };
     let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let acts = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
@@ -4059,7 +4059,7 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
     let mut foes = Vec::new();
     for &k in &drawn {
         let m = monsters.get(k).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("monster {k}: none"))?;
-        foes.push(barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]) });
+        foes.push(barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]), death_immune: m.death_immune });
         names.push(m.name.clone());
     }
     println!("against {}", names[members.len()..].join(", "));

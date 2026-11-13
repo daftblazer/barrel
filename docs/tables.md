@@ -1145,7 +1145,7 @@ amount + 5 × (user's level − target's level); `DEATH_PERCENT` (176, `0x1401bf
 one when the target's HP × 100 / max(max HP, 1) is at most the amount, else none;
 `ABSOLUTE_DEATH` (195, `0x1401bfdfe`) builds the event already landed. The event
 (`0x1401c1340`, vtable `0x140809170`) misses under state 0x50 or when the target's virtual
-+0x40 says so (not read yet), else rolls its chance (`0x1404ca5f0`, `Rng::chance`). A landed
++0x40 says so (a monster when its record's +0xc is not 0, `0x1401b7490` → `0x140111ac0`: 87 of the 153, read before as a boss flag; a party member never, `0x1401b98e0`; `Monster::death_immune`, `Fighter::death_immune`), else rolls its chance (`0x1404ca5f0`, `Rng::chance`). A landed
 one leaves the target at 0 HP (`fight::Event::Felled`). In `barrel battle` a member with an attack item (damage or death acts, not aimed at its own side) throws it at the monster when no heal is due, before its skills (a stand-in for the player): Logy at level 5 with three Crafts (`p1:5+#195:~10,0,0,0@50x3`) loses to the Flesh Eater (5); with Fatal Blow (`…x3t50`) the first Craft hits for 18 and then fells it (the trait's effect follows the item's own). `fight::Battle` acts as the game does: every effect's amounts rolled first, in slot order (`0x1401bd520`), then each applied in slot order (`0x1401bde10`): poison, stat states, instant death, heals and revives, damage (the first hit drawing for its sound). An item's bonus is rolled in the roll pass for each effect, right after its amounts (`fight::Boost::apply`): on a flag-3 act `item_bonus` asks the traits' sums kind by kind in the game's order (each ask rolls the slots, `battle::kind_sum`), then on a flag-4 act kind 39's.
 
 ### Battle stats (executable)
@@ -1852,7 +1852,7 @@ them). The getters at `0x1401118c0` and its neighbours index a table of 48-byte 
 |---|---|
 | 0 | pointer to the name in the executable's language ("Poison Squirrel") |
 | 8 | family (4 for the squirrels and rats, 7 for the dragons, ...) |
-| 12 | 1 for bosses |
+| 12 | 1 when instant death never lands on it (87 of the 153, not only bosses; `0x140111ac0`, `Monster::death_immune`), else 0 |
 | 16 | experience |
 | 20 | money |
 | 24, 28 | not known yet |

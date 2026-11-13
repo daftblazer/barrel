@@ -36,6 +36,8 @@ pub struct Fighter<'a> {
     pub block: StatBlock,
     pub normal: &'a Skill,
     pub skills: Option<&'a [Skill]>,
+    /// A monster instant death never lands on (`Monster::death_immune`).
+    pub death_immune: bool,
 }
 
 impl Fighter<'_> {
@@ -121,7 +123,7 @@ mod tests {
             description: String::new(),
         };
         let mut rng = Rng::from_state([123456789, 362436069, 521288629, 88675123]);
-        let (a, b) = (Fighter { block: squirrel.clone(), normal: &attack, skills: None }, Fighter { block: rat.clone(), normal: &attack, skills: None });
+        let (a, b) = (Fighter { block: squirrel.clone(), normal: &attack, skills: None, death_immune: false }, Fighter { block: rat.clone(), normal: &attack, skills: None, death_immune: false });
         let hits = duel(&a, &b, &mut rng, 100);
         let last = hits.last().unwrap();
         assert_eq!(last.hp_left, 0);

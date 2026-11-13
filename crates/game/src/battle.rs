@@ -1123,7 +1123,7 @@ pub fn rewards(monsters: &[barrel_formats::battle_data::Monster], defeated: &[i3
 mod reward_tests {
     #[test]
     fn rewards_add_up_per_monster() {
-        let m = |exp, money| barrel_formats::battle_data::Monster { name: String::new(), family: 0, boss: false, exp, money, blocks: Vec::new(), drops: Vec::new() };
+        let m = |exp, money| barrel_formats::battle_data::Monster { name: String::new(), family: 0, death_immune: false, exp, money, blocks: Vec::new(), drops: Vec::new() };
         let monsters = vec![m(7, 13), m(5, 9)];
         assert_eq!(super::rewards(&monsters, &[0, 0, 1], 0, 0), (19, 35));
         // 10 percent more, each cut on its own: 7 → 7, 5 → 5; 13 → 14, 9 → 9.
@@ -1172,7 +1172,7 @@ mod drop_tests {
     #[test]
     fn the_drop_bonus_raises_every_slot() {
         use barrel_formats::battle_data::{Drop, Monster};
-        let m = Monster { name: String::new(), family: 0, boss: false, exp: 0, money: 0, blocks: Vec::new(), drops: vec![Drop { item: 55, chance: 0, count: 1 }, Drop { item: 57, chance: 100, count: 1 }] };
+        let m = Monster { name: String::new(), family: 0, death_immune: false, exp: 0, money: 0, blocks: Vec::new(), drops: vec![Drop { item: 55, chance: 0, count: 1 }, Drop { item: 57, chance: 100, count: 1 }] };
         let mut rng = crate::rng::Rng::from_state([1, 2, 3, 4]);
         assert_eq!(super::monster_drops(&m, 0, 0, &mut rng), vec![(57, 1)]);
         assert_eq!(super::monster_drops(&m, 100, 0, &mut rng).len(), 2);
