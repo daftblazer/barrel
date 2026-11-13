@@ -226,6 +226,11 @@ pub const STILL_SHOW: u32 = 0x7530_0001;
 pub const STILL_FADE: u32 = 0x7530_0002;
 /// `u56`: `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to`.
 pub const EVENT_TELOP_ALPHA: u32 = 0x7500_0038;
+/// `u97` (`EventTelop`, case `0x14021972f`): `{part, on, hundredths}`: shows (`on` non-zero:
+/// `0x140370f10`, from clear to the part's own opacity over the time) or hides
+/// (`0x140370fc0`) piece `part` of the telop's layout (its +0x280 node's children). All 65
+/// uses show pieces 0 to 9 over 0.5 s.
+pub const EVENT_TELOP_PART: u32 = 0x7500_0061;
 /// `ECT_SOUND_SE_PLAY` (`u1/0x10`, 5 uses): `{effect, a, volume %, pan ×100, d}`, taken to
 /// play as `u8/0x10` does (its own handler is not read).
 pub const SOUND_SE_PLAY: u32 = 0x7510_0001;
@@ -376,6 +381,9 @@ pub enum Step<'a> {
     Still { action: usize, picture: u32, seconds: f32 },
     /// The narration card's opacity moves from `from` to `to` (0 to 1) over `seconds` (`u56`).
     TelopAlpha { action: usize, from: f32, to: f32, seconds: f32 },
+    /// A piece of the narration card's layout shown (fading in over `seconds`) or hidden
+    /// (`u97`).
+    TelopPart { action: usize, part: u32, shown: bool, seconds: f32 },
     /// A sound effect plays (`ECT_SOUND_SE_PLAY`, or `s62` from a character) at `volume`
     /// (0 to 1) and `pan` (-1 left to 1 right).
     Effect { action: usize, character: Option<u32>, effect: u32, volume: f32, pan: f32 },
@@ -644,6 +652,12 @@ impl<'a> Player<'a> {
                 out.push(Step::Still { action, picture: *picture, seconds: rest.first().map_or(0.0, |&h| h as i32 as f32 / 100.0) })
             }
             (EVENT_TELOP, [card, ..]) => out.push(Step::Telop { action, card: *card }),
+            (EVENT_TELOP_PART, [part, rest @ ..]) => out.push(Step::TelopPart {
+                action,
+                part: *part,
+                shown: rest.first().is_some_and(|&v| v != 0),
+                seconds: rest.get(1).map_or(0.0, |&h| h as i32 as f32 / 100.0),
+            }),
             (EVENT_TELOP_ALPHA, [from, to, hundredths, ..]) => out.push(Step::TelopAlpha {
                 action,
                 from: *from as i32 as f32 / 100.0,
@@ -1006,6 +1020,15 @@ mod tests {
     }
 
     #[test]
+    fn a_card_piece_fades_in() {
+        let act = Action { flags: 0, name: vec![], description: vec![], words: vec![EVENT_TELOP_PART, 3, 1, 50, END] };
+        let event = Ebd { actions: vec![act], resources: vec![] };
+        let table = OperandTable::new(&[(EVENT_TELOP_PART, Some(3))]);
+        let steps: Vec<Step> = Player::escha(&event, &[], &table).unwrap().collect();
+        assert!(steps.contains(&Step::TelopPart { action: 0, part: 3, shown: true, seconds: 0.5 }), "{steps:?}");
+    }
+
+    #[test]
     fn a_flag_is_added_to() {
         let act = Action { flags: 0, name: vec![], description: vec![], words: vec![ADD_EVENT_FLAG, 12, 3, END] };
         let event = Ebd { actions: vec![act], resources: vec![] };
@@ -1211,6 +1234,7 @@ mod tests {
                 Step::HeadGesture { character, segment, rate, weight, .. } => format!("{character} head gesture {segment} at {rate}× (weight {weight})"),
                 Step::HeadStop { character, .. } => format!("{character} head gesture ends"),
                 Step::TelopAlpha { from, to, seconds, .. } => format!("narration card {from} -> {to} over {seconds} s"),
+                Step::TelopPart { part, shown, seconds, .. } => format!("narration card piece {part} {} over {seconds} s", if *shown { "shown" } else { "hidden" }),
                 Step::Music { track, fade, .. } => match track {
                     Some(t) => format!("music {t}"),
                     None => format!("music stops over {fade} s"),

@@ -352,7 +352,8 @@ voiced narration of the openings (`EVENT_MM01_OP1_111` cards 38 to 44 with voice
 `0x140d85ce0[card]` (51 entries, 960 to 1010; the opening's 986 to 998). `u56 {from, to,
 hundredths}` (all hundredths) moves its opacity (+0x2d8 start, +0x2dc goal, +0x2e0 now, +0x2e4
 time left; `0x140219240` moves it linearly each frame); events fade a card in over 1 s with
-the voice and out over 0.5 s.
+the voice and out over 0.5 s. `u97 {part, on, hundredths}` shows a piece of the card's layout (its +0x280 node's
+children), fading in from clear, or hides it: 65 uses, pieces 0 to 9 over 0.5 s.
 
 The layout ids index `0x140dd9080` (16 bytes from id 0x165 on: `{node pointer, x, y}`;
 `0x140373f40`), the cards at (180, 390). The nodes are the UI layouts compiled into the
@@ -1016,7 +1017,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000043` | `u67` | (`{on}`: holds the message window open after its line, for a choice; "Choices") | B3Balloon (`0x140180cb0`'s switch, case `0x140180e02`: the balloon's +0x307) | 294 | 1 (294) |
 | `75000044` | `u68` | (closes the message window: its line cleared, the hold off; "Choices") | B3Balloon (case `0x140180e23`, then `0x140180170`) | 194 | 0 (194) |
 | `7500004f` | `u79` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 3 | 0 (3) |
-| `75000061` | `u97` |  | EventTelop | 65 | 3 (65) |
+| `75000061` | `u97` | `EVENT_TELOP_PART` (event.rs): `{part, on, hundredths}`: shows (fading in from clear over the time, `0x140370f10`) or hides (`0x140370fc0`) piece `part` of the telop's layout (case `0x14021972f`); all uses show pieces 0 to 9 over 0.5 s | EventTelop | 65 | 3 (65) |
 | `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 862 | 6 (862) |
 | `75000069` | `u105` |  | Event (case `0x14005157a` of `0x140050fa0`'s switch) | 2 | 0 (2) |
 | `7500006a` | `u106` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2 | 0 (2) |

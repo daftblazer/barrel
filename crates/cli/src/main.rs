@@ -3304,6 +3304,7 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
             Step::Still { action, picture, seconds } => println!("{action:3} --- still picture {picture} (fading over {seconds} s)"),
             Step::Telop { action, card } => println!("{action:3} --- narration card {card}"),
             Step::TelopAlpha { action, from, to, seconds } => println!("{action:3} --- narration card opacity {from} -> {to} over {seconds} s"),
+            Step::TelopPart { action, part, shown, seconds } => println!("{action:3} --- narration card piece {part} {} over {seconds} s", if shown { "shown" } else { "hidden" }),
             Step::Fade { action, preset, seconds } => println!("{action:3} --- fade (preset {preset}) over {seconds} s"),
             Step::Light { action, change } => println!("{action:3} --- light {change:?}"),
             Step::ScreenEffect { action, kind, param, seconds } => {
