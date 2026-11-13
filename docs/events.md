@@ -980,8 +980,8 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000035` | `u53` |  | B3Balloon, Event | 2 | 0 (2) |
 | `75000037` | `u55` | `EVENT_TELOP` (event.rs): (`EventTelop`): `{card}`: shows narration card `card` (the voiced lines of the openings, the ending), layout id `0x140d85ce0[card]` (960 + ...; ... | EventTelop | 63 | 1 (63) |
 | `75000038` | `u56` | `EVENT_TELOP_ALPHA` (event.rs): `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to` | EventTelop | 126 | 3 (126) |
-| `75000043` | `u67` |  | B3Balloon | 294 | 1 (294) |
-| `75000044` | `u68` |  | B3Balloon | 194 | 0 (194) |
+| `75000043` | `u67` | (`{on}`: holds the message window open after its line, for a choice; "Choices") | B3Balloon (`0x140180cb0`'s switch, case `0x140180e02`: the balloon's +0x307) | 294 | 1 (294) |
+| `75000044` | `u68` | (closes the message window: its line cleared, the hold off; "Choices") | B3Balloon (case `0x140180e23`, then `0x140180170`) | 194 | 0 (194) |
 | `7500004f` | `u79` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 3 | 0 (3) |
 | `75000061` | `u97` |  | EventTelop | 65 | 3 (65) |
 | `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 862 | 6 (862) |
@@ -1442,3 +1442,17 @@ as `.wmv`):
 
 The table goes on with records that reuse `opening.pam` under place names (Filtzberg,
 Hoenheim, ...): their use is not read.
+
+## Choices
+
+The message balloon (`B3Balloon`, its command switch `0x140180cb0` over `u16` to `u68`) takes
+the lines (`u16`, `u18`), `u25`, `u39`, `u67` and `u68`. A choice in the scripts reads (from
+`EVENT_MM02_OP2_080`, by command words only):
+
+`u67 1` · `u16 42 42` · `u26 0 0 0 0` · `u8 0 0` · ... · `u3 0` · `u67 0` · `u68`
+
+`u67 1` keeps the window up after the line (the balloon's +0x307, which its busy check
+reports), `u16` shows the question, `u26` (`BalloonSelectMode`) puts up the answers, and `u8 0
+0` jumps by variable 0 (so the answer lands in variable 0, presumably by `u26`'s mode; not
+read), to labels that each say their part and end with `u67 0` and `u68`, which clears the
+window. `u67` is used 98 times with 1 and 196 with 0, `u68` 194 times.
