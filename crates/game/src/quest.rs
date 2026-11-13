@@ -185,6 +185,16 @@ pub fn draw_battle(
     draw_slots(requests, Kind::Monster, day, &seen, &cleared, &known, Some(&level), false, rng)
 }
 
+/// Whether a monster request's target counts as known for the board (`0x14033ba31`): the game
+/// reads the library's levels at `0x141079fe0` by the monster's number (its `MONSTER_*` row,
+/// `0x14003f1c0`), which is the start of the item list, not the monster list 0xff0 further on;
+/// so it is item row `monster`'s level that must be 2 or more. Kept as the game has it, since
+/// it decides which requests come up. `item_levels`: the library's item levels (`knowledge`'s
+/// `item` record).
+pub fn monster_request_known(item_levels: &[i32], monster: usize) -> bool {
+    item_levels.get(monster).is_some_and(|&l| l >= 2)
+}
+
 /// The three gathering slots (`0x14033bd10`, board places 7 to 9, `Table` 0 to 2; the rows with
 /// `Table` 3 come up only through -1, which none has). The candidates come from the manager's
 /// third list (+0x30); a target already on an earlier gathering slot is skipped; no count is
@@ -311,6 +321,14 @@ mod tests {
         let b = board_from_save(&slots, &requests, &items, &["MONSTER_X"]);
         // The Craft request with ITEM_B as its prize, and the monster one.
         assert_eq!((b[0], b[6], b[1]), (Some(1), Some(2), None));
+    }
+
+    #[test]
+    fn monster_requests_read_the_item_list() {
+        // Monster 3 is known when item row 3 is at 2, whatever the monster list says.
+        let items = [0, 0, 0, 2, 10];
+        assert!(monster_request_known(&items, 3) && monster_request_known(&items, 4));
+        assert!(!monster_request_known(&items, 0) && !monster_request_known(&items, 9));
     }
 
     #[test]

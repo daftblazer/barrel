@@ -736,7 +736,7 @@ draw (day 90) holds none of the requests that start on 91; they first come up on
 Synthesis candidates also need a count of at least 6 for their target in `0x141079fe0` and its
 recipe flagged (`0x1400e31a0`, `0x141079fe0` + 0x8c0); the four battle slots (board places 3 to 6, groups 0 to 3; no row
 has `Table` 3, so the fourth takes only the -1 rows) come from the manager's second list (+0x18,
-0x40-byte rows), need a count of at least 2 for the monster in `0x141079fe0`, and are sorted by
+0x40-byte rows), need a count of at least 2 at `0x141079fe0` + 4 × the monster's number (`0x14033ba31`; the number from `0x14003f1c0`, a `MONSTER_*` row of the 153 names at `0x140cf5dc0`): the item list's entry, not the monster list's at +0xff0, so item row m's level gates monster m's requests, a slip the engine keeps (`quest::monster_request_known`), and are sorted by
 `0x14035cc80 (target)` from highest to lowest (`0x14033ecc0` with `0x14033c1d0`; the monster's
 level, presumably) before the same draw and shuffle (`0x14033eb80` with `0x14033c210`);
 the three gathering slots (board places 7 to 9, `0x14033bd10`, groups 0 to 2) come from the

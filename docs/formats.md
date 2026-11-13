@@ -588,7 +588,7 @@ at `0x1410782e3` is set) and the item row's two synthesis skills (`0x1402a35b0`)
 level. So 10 is known in full (made or gathered) and 2 seen (bought or given). One save holds
 items at 0, 2, 4 and 10, recipes at 0, 5 (known) and 6 (made at least once), books at 0, 4 and 10. The request board reads
 the item levels: a synthesis request needs its item at 6 or more, a battle request an
-entry at 2 or more (which list is not read yet). The engine's rule is `library::learn_item`; `barrel save` counts the
+entry at 2 or more: the item list's, read by the monster's number (`tables.md`, "Requests"). The engine's rule is `library::learn_item`; `barrel save` counts the
 levels.
 
 **Revealed recipe effects** (`mix_recipe`, written by `0x140367e50`, kept at
