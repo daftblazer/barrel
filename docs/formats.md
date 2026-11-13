@@ -949,6 +949,30 @@ lists, not a fixed two-maps-for-six rule. The lit ground programs (8 to 15) come
 (8), two tiles and a map (9, 10, 11: again one per channel) and more; TOWN_01's pack (1 layer)
 has only the one-tile kind. The real ground vertex is POSITION, NORMAL, COLOR (programs 2, 3).
 
+**Patches and their draws.** After the nodes come a 16-byte record per patch (count at 0x38):
+`{u32 first draw, u16 draws, u16 4 or 5 (1 in TOWN_01), u16 draws, u16 draws, u16 patch, u8,
+u8}`; the draws of all patches add up to the count at 0x3c. Then the draws, 24 bytes each (the
+executable reads them as a 16-byte and an 8-byte part):
+
+| Byte | What |
+|---|---|
+| 0 | the program within the pass kind (below) |
+| 1 | the pass kind: 0x00 the depth pass (key `00 ff ff ff`), 0x10 one layer painted alone (the bake programs 5–7: byte 0 is 0, 1, 2), 0x20 the lit ground |
+| 2, 3 | 4 or 6, and 0 or 1 (not settled: 4 with programs 9–11, 6 with 13–15, so presumably which blend map) |
+| 4 | the number of layers drawn (0, 1 or 2) |
+| 5, 6 | those layers (0xff where none) |
+| 8–23 | first vertex, vertex count, first index, index count |
+
+In the lit kind byte 0 + 8 is the shader pack's program: 0 is one tile (program 8), 1–3 two
+tiles under the first map's channel pairs (programs 9–11), 5–7 the same with the second map
+(13–15). Program 9 reads the map's red and green, divides each by their sum (plus 1/1024) and
+mixes its two tiles by them; the tile's alpha (0 in the files read) scales the specular term,
+and the result is halved. The pairs follow one channel per layer: in AREA_01_01's first patch
+the draws `0 2` (program 9: red, green), `2 1` (10: green, blue) and `1 0` (11: blue, red)
+give the first map's red to layer 0, green to layer 2 and blue to layer 1. So a patch is drawn
+as the overlaps of its layers two at a time, each overlap its own index range. TOWN_01 (one
+layer): a depth draw and one lit draw of one tile.
+
 The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
 `0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
 `0x14066f900`, `0x14066fc90`, `0x14066fc50`, `0x14066f940`, `0x14066f690`, `0x14066f6d0` (the
