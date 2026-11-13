@@ -25,6 +25,7 @@ mod glow;
 mod fsr3;
 mod gsr2;
 mod present;
+mod scene_gpu;
 mod settings;
 mod shadow;
 mod taa;
@@ -2184,10 +2185,6 @@ fn main() -> Result<()> {
     // Geometry buffers (host-visible: one frame does not need a staging copy).
     let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
     let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
-    let (vbuf, vmem) = gpu.buffer(vbytes.len() as u64, vk::BufferUsageFlags::VERTEX_BUFFER, true)?;
-    gpu.upload(vmem, vbytes)?;
-    let (ibuf, imem) = gpu.buffer(ibytes.len() as u64, vk::BufferUsageFlags::INDEX_BUFFER, true)?;
-    gpu.upload(imem, ibytes)?;
 
     // Textures, uploaded as their BC blocks with all mip levels.
     let mut textures = Vec::new();
@@ -2234,21 +2231,9 @@ fn main() -> Result<()> {
         .descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
     let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)? };
-    let pool_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: textures.len() as u32 }];
-    let dpool = unsafe {
-        d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(textures.len() as u32).pool_sizes(&pool_sizes), None)?
-    };
-    let layouts = vec![set_layout; textures.len()];
-    let sets = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(dpool).set_layouts(&layouts))? };
-    for (set, (_, _, view)) in sets.iter().zip(&textures) {
-        let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-        let write = vk::WriteDescriptorSet::default()
-            .dst_set(*set)
-            .dst_binding(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&info);
-        unsafe { d.update_descriptor_sets(&[write], &[]) };
-    }
+    let scene = scene_gpu::SceneGpu::new(&gpu, vbytes, ibytes, textures, set_layout, sampler)?;
+    let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
+    let sets = scene.sets.clone();
 
     // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
     // draw's instance number (set 1, bound once for every pipeline).
@@ -4090,17 +4075,12 @@ fn main() -> Result<()> {
             d.destroy_semaphore(ready, None);
             d.destroy_semaphore(done, None);
         }
-        d.destroy_descriptor_pool(dpool, None);
         d.destroy_descriptor_set_layout(set_layout, None);
         d.destroy_sampler(sampler, None);
-        for (image, mem, view) in textures {
-            d.destroy_image_view(view, None);
-            d.destroy_image(image, None);
-            d.free_memory(mem, None);
-        }
         d.destroy_buffer(look_buf, None);
         d.free_memory(look_mem, None);
     }
+    scene.destroy(&gpu);
     shadow_target.destroy(&gpu);
     unsafe {
         for (b, m) in [(instance_buf, instance_mem), (palette_buf, palette_mem), (delta_buf, delta_mem), (weight_buf, weight_mem)] {
@@ -4109,10 +4089,6 @@ fn main() -> Result<()> {
         }
         d.destroy_descriptor_pool(inst_pool, None);
         d.destroy_descriptor_set_layout(instance_layout, None);
-        d.destroy_buffer(vbuf, None);
-        d.free_memory(vmem, None);
-        d.destroy_buffer(ibuf, None);
-        d.free_memory(imem, None);
         d.destroy_command_pool(pool, None);
         if let Some(p) = presenter {
             p.destroy(&gpu);
