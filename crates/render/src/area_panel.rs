@@ -79,6 +79,27 @@ pub fn elements(
     out
 }
 
+/// A neighbour's label (layout 638: its text centred), on a plate whose centre stands
+/// [`LABEL_ABOVE`] over the label's place `at` (its route's dot).
+/// Not yet the game's: the plate (a parchment fill; the game's has gilt ends) and the ink
+/// (the layout's texts are white over a shadow; the game's label reads dark on the plate).
+pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, width: f32) -> Vec<Element> {
+    let at = [at[0], at[1] - LABEL_ABOVE];
+    let half = (width / 2.0) as i32 + 28;
+    let mut out = vec![Element::Fill { rect: [at[0] - half, at[1] - 22, at[0] + half, at[1] + 24], colour: [0.93, 0.88, 0.74, 0.95] }];
+    // The layout's white text, at its node less the node's own centre (320, -4).
+    if let Some(t) = barrel_formats::layout::placed(pe, LABEL).iter().filter_map(|p| barrel_formats::layout::text(pe, p)).find(|t| t.colour[0] == 0) {
+        out.push(Element::Label(Text { at: [at[0], at[1] - LABEL_RISE], text: name.to_string(), colour: INK, ..t }));
+    }
+    out
+}
+
+const LABEL: u32 = 638;
+/// How far the label's centre stands over its dot (the recording: 48 pixels).
+const LABEL_ABOVE: i32 = 48;
+/// The label's text top above its centre.
+const LABEL_RISE: i32 = 20;
+
 /// `text` broken at spaces into lines no wider than [`DESCRIPTION_WIDTH`].
 fn lines(text: &str, width: impl Fn(&str) -> f32) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();

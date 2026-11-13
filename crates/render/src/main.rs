@@ -1088,7 +1088,7 @@ struct AreaMap {
     layer: text::Layer,
     font: text::Font,
     sheets: hud::Sheets,
-    shown: Option<(usize, u32, u32)>,
+    shown: Option<(usize, u32, u32, bool)>,
     pe_bytes: Vec<u8>,
 }
 
@@ -1170,17 +1170,50 @@ impl AreaMap {
         None
     }
 
-    /// The panel's text for the place she stands on, redrawn when it changes.
-    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32) -> Result<()> {
-        if self.shown == Some((self.at, width, height)) {
+    /// Where each neighbour's label stands (world, game space): its route's third dot out (as
+    /// the recording has "Ruins Entrance" and "Sector Two" either side of Sector One).
+    fn label_places(&self) -> Vec<(usize, [f32; 3])> {
+        use barrel_game::area_map::{Way, step};
+        let Some(from) = self.marks[self.at] else { return Vec::new() };
+        [Way::Right, Way::Left, Way::Down, Way::Up]
+            .into_iter()
+            .filter_map(|way| {
+                let next = step(&self.places, self.at, way)?;
+                let tag = self.routes.get(self.places[self.at].links[way as usize] as usize)?;
+                let path = barrel_formats::world::route_path(&self.placements, tag, from);
+                let mid = *path.get(2).or(path.last()).or(self.marks[next].as_ref())?;
+                Some((next, mid))
+            })
+            .collect()
+    }
+
+    /// The panels for the place she stands on, redrawn when it changes; with the camera's
+    /// `mvp` (she stands still) the neighbours' labels too.
+    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>) -> Result<()> {
+        if self.shown == Some((self.at, width, height, mvp.is_some())) {
             return Ok(());
         }
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
         let p = &self.places[self.at];
         let font = &self.font;
-        let e = area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, |s, size| font.width_of(s) * size / text::LINE * 1.47);
+        let measure = |s: &str, size: f32| font.width_of(s) * size / text::LINE * 1.47;
+        let mut e = area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, measure);
+        if let Some(mvp) = mvp {
+            // On the 1920 × 1080 layout screen (scaled to the height, centred).
+            let k = height as f32 / 1080.0;
+            let dx = (width as f32 - 1920.0 * k) / 2.0;
+            for (next, at) in self.label_places() {
+                let clip = mvp * glam::Vec4::new(-at[0], at[1], at[2], 1.0);
+                if clip.w <= 0.0 {
+                    continue;
+                }
+                let (x, y) = ((clip.x / clip.w + 1.0) * 0.5 * width as f32, (clip.y / clip.w + 1.0) * 0.5 * height as f32);
+                let name = &self.places[next].name;
+                e.extend(area_panel::label(&pe, [((x - dx) / k) as i32, (y / k) as i32], name, measure(name, 36.0)));
+            }
+        }
         self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &self.sheets, &e, width as f32, height as f32))?;
-        self.shown = Some((self.at, width, height));
+        self.shown = Some((self.at, width, height, mvp.is_some()));
         Ok(())
     }
 }
@@ -5199,7 +5232,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             area_enter = Some(field);
         }
     if let Some(a) = area_map.as_mut() {
-        a.panel(&gpu, width, height)?;
+        // The neighbours' labels stand while she stands on a point.
+        let still = walker.as_ref().is_some_and(|w| w.waypoints.is_empty());
+        let mvp = still.then(|| view_proj(eye, target, Vec3::Y, dist, fov, width, height, orbit));
+        a.panel(&gpu, width, height, mvp)?;
     }
     if area_enter.is_some() {
         stop = true;

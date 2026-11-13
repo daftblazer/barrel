@@ -309,7 +309,10 @@ place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, En
 the same size on screen); the pitch is a guess. In the game Escha is drawn about 1.5 times as
 large there, and the neighbours' labels (layout 638, "Ruins Entrance", "Sector Two") stand on
 the route beside her, a step out each way, not on the neighbour's mark. Not yet the game's:
-her size, the scroll's art and its "X →" button, the item lines (the panels are the game's layouts
+her size, the labels' plates (the neighbours' names now stand on their routes' third dot,
+48 pixels up, while she stands still: `area_panel::label`), the routes not yet open (the
+recording at Sector One shows no way down to Sector Three: Barrel draws and takes every
+route), the scroll's art and its "X →" button, the item lines (the panels are the game's layouts
 637, 640 and 641 placed as the recording has them: `area_panel`), the
 buttons (636), the place labels (638), the party member's "Enter / Quit" prompt and Back to
 the world map. A lost battle lands there too, as the game's wipe does (`docs/events.md`, "A
