@@ -1202,9 +1202,14 @@ that place them are tables in the executable (English addresses; `crates/formats
 - **Sprites**: a part below 0x164 is a sprite sheet, `u64 cuts = [0x140db9f70 + 8 part]`;
   each cut is 20 bytes `{i32 texture, u16 x0, y0, x1, y1, 8 bytes}`, the rectangle in the
   texture's pixels.
-- **Textures**: ids from 583 name `WinXls` files, `[0x140db5c50 + 8 (id - 583)]` (303 names;
-  `a15_telop_mm01_op1_111_01.g1t` is 736). Lower ids, and parts from 0x164 on, are other
-  kinds (not read yet).
+- **Textures** `0x140db6800`, 887 records of 16 bytes `{u64 dds name, i32 index, i32 file}`
+  (`0x1403740a0`): one picture of a `WinXls` pack, `index` its place in the pack's list and
+  `file` the pack, named by `[0x140db5c50 + 8 file]` (303 names). Texture 0 is
+  `a15_menu_parts01` (`a15_menu.g1t` #0), 7 to 35 `a15_common.g1t` #0 to #28 (`pad_button`,
+  `a15_common_parts01` ...), 36 to 42 `a15_mix.g1t`, 43 to 570 `a15_itempic.g1t` (the item
+  pictures, then small icons), 571 to 583 `a15_battle.g1t`, 736 `a15_telop_mm01_op1_111_01`.
+  Every sprite of the 701 layouts resolves (`barrel layouts EXE`; `barrel layout-png ROOT
+  OUT.png ID...` draws layouts).
 - Coordinates are on a 1920 × 1080 screen.
 
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are

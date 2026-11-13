@@ -76,6 +76,8 @@ usage:
   barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
   barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
   barrel font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
+  barrel layout-png ROOT OUT.png ID...   draws interface layouts over each other
+  barrel layouts EXE            every interface layout: its nodes and their texture pieces
   barrel telops EXE             the narration cards (u55): each one's layout and texture pieces
   barrel g1s FILE.g1s [N]       a shader pack's programs: stage, inputs, outputs, constants, textures (N: program N's code)
   barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
@@ -218,6 +220,11 @@ fn main() -> ExitCode {
             Err(_) => Err("g1s: the program number is a number".into()),
         },
         ["telops", exe] => telops(Path::new(exe)),
+        ["layouts", exe] => layouts(Path::new(exe)),
+        ["layout-png", root, out, ids @ ..] if !ids.is_empty() => match ids.iter().map(|v| v.parse()).collect::<std::result::Result<Vec<u32>, _>>() {
+            Ok(ids) => layout_png(Path::new(root), &ids, Path::new(out)),
+            Err(e) => Err(format!("layout id: {e}").into()),
+        },
         ["font-text", exe, g1t, out, text] => font_text(Path::new(exe), Path::new(g1t), Path::new(out), text),
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
@@ -1822,8 +1829,6 @@ fn stream_check(kvs: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Writes `text` in the English font, white on dark gray, to a PNG (a check of the glyph
-/// table against the atlas).
 /// Every narration card (`u55`): its layout and the texture pieces it shows.
 fn telops(exe: &Path) -> Result<()> {
     let bytes = std::fs::read(exe)?;
@@ -1837,6 +1842,69 @@ fn telops(exe: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Every interface layout: its place, then each node (part, cut, place, kind) and, for sprite
+/// parts, the texture rectangle it shows.
+fn layouts(exe: &Path) -> Result<()> {
+    use barrel_formats::layout;
+    let bytes = std::fs::read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    for id in layout::FIRST_LAYOUT..layout::FIRST_LAYOUT + 4096 {
+        let Some((at, nodes)) = layout::nodes(&pe, id) else { break };
+        println!("layout {id} at {at:?}: {} nodes", nodes.len());
+        let pieces = layout::pieces(&pe, id);
+        let mut sprites = pieces.iter();
+        for n in &nodes {
+            let shown = if n.part < 0x164 { sprites.next().map(|p| format!(" {}#{} {:?}", p.texture, p.index, p.src)).unwrap_or_default() } else { String::new() };
+            println!("  part {:#x} cut {} at {:?} kind {}{shown}", n.part, n.cut, n.at, n.kind);
+        }
+    }
+    Ok(())
+}
+
+/// Draws interface layouts `ids` (in order, over each other) on a 1920 × 1080 dark gray screen
+/// from their `WinXls_EN` (else `WinXls`) pictures, alpha blended, to a PNG.
+fn layout_png(root: &Path, ids: &[u32], out: &Path) -> Result<()> {
+    use barrel_formats::{g1t::G1t, layout};
+    let bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    let (w, h) = (1920usize, 1080usize);
+    let mut img: Vec<u8> = [48u8, 48, 48, 255].repeat(w * h);
+    let mut sheets: std::collections::HashMap<(String, u32), Option<(usize, usize, Vec<u8>)>> = std::collections::HashMap::new();
+    for &id in ids {
+        for p in layout::pieces(&pe, id) {
+            let sheet = sheets.entry((p.texture.clone(), p.index)).or_insert_with(|| {
+                let x64 = root.join("Data/x64");
+                let data = std::fs::read(x64.join("WinXls_EN").join(&p.texture)).or_else(|_| std::fs::read(x64.join("WinXls").join(&p.texture))).ok()?;
+                let g = G1t::parse(&data).ok()?;
+                let t = g.textures.get(p.index as usize)?;
+                Some((t.width as usize, t.height as usize, t.to_rgba8()))
+            });
+            let Some((tw, th, px)) = sheet.as_ref() else {
+                eprintln!("layout {id}: {}#{} missing", p.texture, p.index);
+                continue;
+            };
+            let [l, t, r, b] = p.src.map(usize::from);
+            for sy in t..b.min(*th) {
+                for sx in l..r.min(*tw) {
+                    let (dx, dy) = (p.at[0] + (sx - l) as i32, p.at[1] + (sy - t) as i32);
+                    if dx < 0 || dy < 0 || dx as usize >= w || dy as usize >= h {
+                        continue;
+                    }
+                    let (s, d) = ((sy * tw + sx) * 4, (dy as usize * w + dx as usize) * 4);
+                    let a = u32::from(px[s + 3]);
+                    for ch in 0..3 {
+                        img[d + ch] = ((u32::from(px[s + ch]) * a + u32::from(img[d + ch]) * (255 - a)) / 255) as u8;
+                    }
+                }
+            }
+        }
+    }
+    std::fs::write(out, barrel_formats::png::encode_rgba(w as u32, h as u32, &img))?;
+    Ok(())
+}
+
+/// Writes `text` in the English font, white on dark gray, to a PNG (a check of the glyph
+/// table against the atlas).
 fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
     use barrel_formats::{font, g1t as tex};
     let data = read(exe)?;

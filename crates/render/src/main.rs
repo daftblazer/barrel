@@ -3442,15 +3442,16 @@ fn main() -> Result<()> {
         let ui = common.as_ref().and_then(|c| barrel_formats::g1t::G1t::parse(c).ok());
         // The narration cards' pieces and their WinXls_EN textures (slots after the font and
         // the window).
-        let mut sheet_names: Vec<String> = Vec::new();
+        let mut sheet_names: Vec<(String, u32)> = Vec::new();
         let mut card_pieces: Vec<(u32, Vec<barrel_formats::layout::Piece>)> = Vec::new();
         if let Some(pe) = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok()) {
             for &card in &telop_cards {
                 let Some(id) = barrel_formats::layout::telop_layout(&pe, card) else { continue };
                 let pieces = barrel_formats::layout::pieces(&pe, id);
                 for p in &pieces {
-                    if !sheet_names.contains(&p.texture) {
-                        sheet_names.push(p.texture.clone());
+                    let key = (p.texture.clone(), p.index);
+                    if !sheet_names.contains(&key) {
+                        sheet_names.push(key);
                     }
                 }
                 card_pieces.push((card, pieces));
@@ -3474,7 +3475,7 @@ fn main() -> Result<()> {
             })
             .collect();
         let still_g1t: Vec<Option<barrel_formats::g1t::G1t>> = still_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
-        let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|n| std::fs::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
+        let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|(n, _)| std::fs::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
         let sheets: Vec<Option<barrel_formats::g1t::G1t>> = sheet_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
         match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(4))) {
             (Some(glyphs), Some(g), Some(window)) if !g.textures.is_empty() => {
@@ -3482,8 +3483,8 @@ fn main() -> Result<()> {
                 let mut images = vec![&g.textures[0], window];
                 // Each sheet's slot in the layer (None: missing).
                 let mut slots = Vec::new();
-                for sheet in &sheets {
-                    match sheet.as_ref().and_then(|s| s.textures.first()) {
+                for (sheet, (_, index)) in sheets.iter().zip(&sheet_names) {
+                    match sheet.as_ref().and_then(|s| s.textures.get(*index as usize)) {
                         Some(t) => {
                             slots.push(Some((images.len(), t.width as f32, t.height as f32)));
                             images.push(t);
@@ -3501,7 +3502,7 @@ fn main() -> Result<()> {
                     let list = pieces
                         .iter()
                         .filter_map(|p| {
-                            let (slot, w, h) = slots[sheet_names.iter().position(|n| *n == p.texture)?]?;
+                            let (slot, w, h) = slots[sheet_names.iter().position(|(n, i)| *n == p.texture && *i == p.index)?]?;
                             let [l, t, r, b] = p.src.map(f32::from);
                             let [x, y] = p.at.map(|v| v as f32);
                             Some((slot, [l / w, t / h, r / w, b / h], [x, y, x + r - l, y + b - t]))
