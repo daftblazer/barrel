@@ -963,7 +963,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000015` | `u21` | ECT_EVENT_CONTRAST_WAIT | Contrast | 138 | 1 (138) |
 | `75000016` | `u22` | ECT_EVENT_CONTRAST_SET_MIX | Contrast | 3159 | 3 (3159) |
 | `75000019` | `u25` |  | B3Balloon | 2 | 3 (2) |
-| `7500001a` | `u26` |  | BalloonSelectMode | 93 | 4 (93) |
+| `7500001a` | `u26` | (a choice: `{v, ...}`, the answer into variable `v`; "Choices") | BalloonSelectMode | 93 | 4 (93) |
 | `7500001b` | `u27` |  | B3Balloon, Event | 2 | 5 (2) |
 | `7500001d` | `u29` |  | B3Balloon, Event | 24 | 5 (24) |
 | `7500001e` | `u30` |  | B3Balloon, Event | 2 | 1 (2) |
@@ -1452,7 +1452,8 @@ the lines (`u16`, `u18`), `u25`, `u39`, `u67` and `u68`. A choice in the scripts
 `u67 1` · `u16 42 42` · `u26 0 0 0 0` · `u8 0 0` · ... · `u3 0` · `u67 0` · `u68`
 
 `u67 1` keeps the window up after the line (the balloon's +0x307, which its busy check
-reports), `u16` shows the question, `u26` (`BalloonSelectMode`) puts up the answers, and `u8 0
-0` jumps by variable 0 (so the answer lands in variable 0, presumably by `u26`'s mode; not
-read), to labels that each say their part and end with `u67 0` and `u68`, which clears the
+reports), `u16` shows the question, `u26 {v, ...}` (`BalloonSelectMode`) puts up the answers
+and names the variable for the answer (the event's case `0x1400518dd` keeps `v` at the event
+data's +0xe8, `0x140210df0`; when the choosing is over the event asks `0x7600000f` and sets
+that variable to the answer, `0x140053313` on), and `u8 0 0` jumps by variable 0, to labels that each say their part and end with `u67 0` and `u68`, which clears the
 window. `u67` is used 98 times with 1 and 196 with 0, `u68` 194 times.
