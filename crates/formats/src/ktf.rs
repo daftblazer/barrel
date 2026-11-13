@@ -45,6 +45,22 @@ impl Terrain<'_> {
         }
         out
     }
+
+    /// Each layer's repeat in cells (the record's first `n`; the tile scale is 1 / (cell size
+    /// × n)).
+    pub fn layer_repeats(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut at = 0x1c;
+        while at + 16 <= self.settings.len() && out.len() < self.layers.textures.len() {
+            let s = &self.settings[at..];
+            if u16::from_le_bytes([s[2], s[3]]) != 0xffff {
+                break;
+            }
+            out.push(s[6].max(1));
+            at += 0x20;
+        }
+        out
+    }
 }
 
 /// A terrain vertex: x and z in cells, the height as stored (the whole s16 range), the normal
@@ -60,8 +76,9 @@ pub struct Vertex {
 
 /// One draw of a patch: its pass kind (0x00 depth, 0x10 one layer alone, 0x20 lit), the program
 /// within the kind (in the lit kind, the field shader pack's program less 8), the two bytes
-/// after it (not settled: which blend map, presumably), the layers it mixes (none, one or two)
-/// and its vertex and index ranges (indices count from `first_vertex`).
+/// after it (not settled), the layers it mixes (none, one or two) and its vertex range (the
+/// lowest and the count up to the highest its indices use, counted from the patch's first
+/// vertex like the indices themselves) and index range.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draw {
     pub program: u8,
@@ -84,6 +101,9 @@ pub struct Patch {
     pub first_vertex: u32,
     pub low: f32,
     pub high: f32,
+    /// Whether its node has no children: the finest level of detail over its ground (a coarse
+    /// patch's ground is covered again by its children's).
+    pub leaf: bool,
 }
 
 impl Patch {
@@ -114,10 +134,15 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
     // Each node's patch (+0x20, -1 for none), parent (the first integer after the record) and
     // height bounds (centre y +4, half-size y +0x14).
     let mut tree: Vec<(i32, i32, (f32, f32))> = Vec::with_capacity(nodes);
+    let mut leaves = vec![true; patches];
     for _ in 0..nodes {
         let flags = *d.get(at + 0x25).ok_or(Error::Corrupt("ktf node"))?;
         let (centre, half) = (f(at + 4)?, f(at + 0x14)?);
-        tree.push((u32_at(d, at + 0x20)? as i32, u32_at(d, at + 0x28)? as i32, (centre - half, centre + half)));
+        let patch = u32_at(d, at + 0x20)? as i32;
+        if let Some(l) = usize::try_from(patch).ok().and_then(|p| leaves.get_mut(p)) {
+            *l = flags & 1 == 0;
+        }
+        tree.push((patch, u32_at(d, at + 0x28)? as i32, (centre - half, centre + half)));
         at += 0x28 + 4 * if flags & 1 != 0 { 9 } else { 5 };
     }
     // A patch's heights are stored against the bounds of its topmost ancestor that holds a
@@ -149,7 +174,7 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
     let mut m = Mesh { cell_size, ..Default::default() };
     for k in 0..patches {
         let o = at + 16 * k;
-        m.patches.push(Patch { first_draw: w(o), draws: u16_at(o + 4), first_vertex: 0, low: bounds[k].0, high: bounds[k].1 });
+        m.patches.push(Patch { first_draw: w(o), draws: u16_at(o + 4), first_vertex: 0, low: bounds[k].0, high: bounds[k].1, leaf: leaves[k] });
     }
     at += 16 * patches;
     for k in 0..draws {
@@ -185,6 +210,33 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
     at += vbytes;
     m.indices = (0..ibytes / 2).map(|k| u16_at(at + 2 * k)).collect();
     Ok(m)
+}
+
+impl Mesh {
+    /// Patch `k`'s vertices.
+    pub fn patch_vertices(&self, k: usize) -> &[Vertex] {
+        let start = self.patches[k].first_vertex as usize;
+        let end = self.patches.get(k + 1).map_or(self.vertices.len(), |p| p.first_vertex as usize);
+        &self.vertices[start..end]
+    }
+}
+
+/// A draw's triangles from its index strip (the game draws terrain as strips, repeated
+/// indices joining the runs): index triples into the patch's vertices (the indices count from
+/// the patch's first vertex; the draw's vertex range only bounds them), the degenerate ones
+/// left out.
+pub fn strip_triangles(m: &Mesh, draw: &Draw) -> Vec<[u32; 3]> {
+    let start = draw.first_index as usize;
+    let Some(strip) = m.indices.get(start..start + draw.indices as usize) else { return Vec::new() };
+    strip
+        .windows(3)
+        .enumerate()
+        .filter(|(_, w)| w[0] != w[1] && w[1] != w[2] && w[0] != w[2])
+        .map(|(k, w)| {
+            let (a, b, c) = (u32::from(w[0]), u32::from(w[1]), u32::from(w[2]));
+            if k % 2 == 0 { [a, b, c] } else { [b, a, c] }
+        })
+        .collect()
 }
 
 pub fn parse(d: &[u8]) -> Result<Terrain<'_>, Error> {

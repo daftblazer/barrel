@@ -344,17 +344,23 @@ struct TerrainGpu {
     pipeline: vk::Pipeline,
 }
 
-/// The field's ground: a heightmap grid drawn with the terrain shader.
+/// The field's ground: the terrain's own mesh (`ktf::Mesh`, its finest patches' lit draws)
+/// drawn with the terrain shader. Each vertex carries its draw's layers and blend (`uv`, see
+/// `add_terrain`).
 struct TerrainDraw {
     first_index: u32,
     index_count: u32,
-    /// The field's width in world units (the blend maps span it).
-    field_size: f32,
-    /// Tile scale (1/world units) of each of the six layers the blend maps weight.
-    scales: [f32; 6],
+    /// The cell size (a layer repeats every n cells).
+    cell: f32,
+    /// The field's size in world units along x and z (the blend maps span it).
+    extent: [f32; 2],
     /// The terrain bundle, for its layer and blend textures.
     ktf: Vec<u8>,
 }
+
+/// Blend maps and layers a terrain set holds (the most any field has: 7 maps, 20 layers).
+pub const TERRAIN_MAPS: usize = 8;
+pub const TERRAIN_LAYERS: usize = 20;
 
 struct Scene {
     vertices: Vec<Vertex>,
@@ -558,28 +564,41 @@ impl Scene {
 
 impl Scene {
     /// A heightmap as a grid of quads; UVs run 0..1 across the field. Returns the index range.
-    fn add_heightmap(&mut self, h: &barrel_formats::khm::Heightmap) -> (u32, u32) {
+    /// The terrain mesh's lit draws over its finest patches. A vertex's `uv` says how its draw
+    /// mixes: x = layer a + 32 × layer b + 1024 × blend (the map × 4 + the channel pair, 3 for
+    /// one layer alone), y = layer a's repeat + 256 × layer b's (in cells). Normals come from the
+    /// heightmap (the stored ones are not decoded).
+    fn add_terrain(&mut self, m: &barrel_formats::ktf::Mesh, h: &barrel_formats::khm::Heightmap, repeats: &[u8]) -> (u32, u32) {
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
-        let base = self.vertices.len() as u32;
-        let w = h.cells_x + 1;
-        for z in 0..=h.cells_z {
-            for x in 0..=h.cells_x {
-                let p = Vec3::new(x as f32 * h.cell_size, h.height(x, z), z as f32 * h.cell_size) * mirror;
-                let hx = |dx: isize| h.height((x as isize + dx).clamp(0, h.cells_x as isize) as usize, z);
-                let hz = |dz: isize| h.height(x, (z as isize + dz).clamp(0, h.cells_z as isize) as usize);
-                let n = Vec3::new(hx(-1) - hx(1), 2.0 * h.cell_size, hz(-1) - hz(1)).normalize() * mirror;
-                self.lo = self.lo.min(p);
-                self.hi = self.hi.max(p);
-                let uv = [x as f32 / h.cells_x as f32, z as f32 / h.cells_z as f32];
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [0.0; 3] });
-            }
-        }
         let first_index = self.indices.len() as u32;
-        for z in 0..h.cells_z {
-            for x in 0..h.cells_x {
-                let i = base + (z * w + x) as u32;
-                let w = w as u32;
-                self.indices.extend([i, i + 1, i + w, i + 1, i + w + 1, i + w]);
+        let hcell = |x: isize, z: isize| h.height(x.clamp(0, h.cells_x as isize) as usize, z.clamp(0, h.cells_z as isize) as usize);
+        for (k, p) in m.patches.iter().enumerate() {
+            if !p.leaf {
+                continue;
+            }
+            let verts = m.patch_vertices(k);
+            let draws = m.draws.get(p.first_draw as usize..p.first_draw as usize + usize::from(p.draws)).unwrap_or(&[]);
+            for d in draws.iter().filter(|d| d.kind == 0x20 && !d.layers.is_empty()) {
+                let (a, b) = (d.layers[0], *d.layers.get(1).unwrap_or(&d.layers[0]));
+                let blend = if d.layers.len() < 2 || d.program % 4 == 0 { 3 } else { u32::from(d.program / 4) * 4 + u32::from(d.program % 4 - 1) };
+                let rep = |l: u8| f32::from(*repeats.get(l as usize).unwrap_or(&1));
+                let uv = [f32::from(a) + 32.0 * f32::from(b) + 1024.0 * blend as f32, rep(a) + 256.0 * rep(b)];
+                let base = self.vertices.len() as u32;
+                // The draw's own copy of its patch's vertices (its indices are the patch's, and
+                // its vertex range does not always bound them).
+                for v in verts {
+                    let pos = Vec3::new(f32::from(v.x) * m.cell_size, p.height(v.height), f32::from(v.z) * m.cell_size) * mirror;
+                    let (x, z) = (isize::from(v.x), isize::from(v.z));
+                    let n = Vec3::new(hcell(x - 1, z) - hcell(x + 1, z), 2.0 * h.cell_size, hcell(x, z - 1) - hcell(x, z + 1)).normalize() * mirror;
+                    self.lo = self.lo.min(pos);
+                    self.hi = self.hi.max(pos);
+                    self.vertices.push(Vertex { pos: pos.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [0.0; 3] });
+                }
+                for t in barrel_formats::ktf::strip_triangles(m, d) {
+                    if t.iter().all(|&i| (i as usize) < verts.len()) {
+                        self.indices.extend(t.map(|i| base + i));
+                    }
+                }
             }
         }
         (first_index, self.indices.len() as u32 - first_index)
@@ -2311,11 +2330,8 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
     });
     if let Some((bytes, t)) = terrain {
         let h = &t.heightmap;
-        let (first_index, index_count) = scene.add_heightmap(h);
-        let mut scales = [0.01f32; 6];
-        for (i, s) in t.layer_scales().into_iter().take(6).enumerate() {
-            scales[i] = s;
-        }
+        let mesh = barrel_formats::ktf::mesh(bytes)?;
+        let (first_index, index_count) = scene.add_terrain(&mesh, h, &t.layer_repeats());
         let (mut lo, mut hi) = (f32::MAX, f32::MIN);
         for z in 0..=h.cells_z {
             for x in 0..=h.cells_x {
@@ -2324,12 +2340,17 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
             }
         }
         eprintln!(
-            "{area}: terrain {}x{} cells of {}, heights {lo}..{hi}, {} layers, scales {scales:?}",
-            h.cells_x, h.cells_z, h.cell_size, t.layers.textures.len()
+            "{area}: terrain {}x{} cells of {}, heights {lo}..{hi}, {} layers, {} maps, {} triangles",
+            h.cells_x,
+            h.cells_z,
+            h.cell_size,
+            t.layers.textures.len(),
+            t.blend.textures.len(),
+            index_count / 3
         );
         scene.terrains.push((
             scene.field.unwrap_or(0),
-            TerrainDraw { first_index, index_count, field_size: h.cells_x as f32 * h.cell_size, scales, ktf: bytes.to_vec() },
+            TerrainDraw { first_index, index_count, cell: mesh.cell_size, extent: [h.cells_x as f32 * h.cell_size, h.cells_z as f32 * h.cell_size], ktf: bytes.to_vec() },
         ));
     }
     let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
@@ -2850,32 +2871,17 @@ fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDra
     for (field, t) in terrains {
         let bundle = barrel_formats::ktf::parse(&t.ktf)?;
         let mut tex = Vec::new();
-        for b in bundle.blend.textures.iter().take(2) {
-            tex.push(upload_texture(gpu, pool, b)?);
-        }
-        // A field with one blend map (TOWN_03) weights only the first three layers: the
-        // second map is black, so layers 4 to 6 get no weight.
+        // The blend maps, then black for the slots past them.
         let black = [0u8, 0, 0, 255];
-        while tex.len() < 2 && !tex.is_empty() {
-            let t = barrel_formats::g1t::Texture {
-                width: 1,
-                height: 1,
-                format: Format::Rgba8,
-                format_code: 1,
-                layers: 1,
-                volume: false,
-                levels: vec![&black[..]],
-            };
-            tex.push(upload_texture(gpu, pool, &t)?);
+        let black_tex = barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&black[..]] };
+        for i in 0..TERRAIN_MAPS {
+            tex.push(upload_texture(gpu, pool, bundle.blend.textures.get(i).unwrap_or(&black_tex))?);
         }
-        let layer_count = bundle.layers.textures.len().clamp(1, 6);
-        for i in 0..6 {
+        let layer_count = bundle.layers.textures.len().clamp(1, TERRAIN_LAYERS);
+        for i in 0..TERRAIN_LAYERS {
             tex.push(upload_texture(gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
         }
-        if tex.len() != 8 {
-            return Err("terrain needs two blend maps".into());
-        }
-        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, first_index: t.first_index, index_count: t.index_count, field_size: t.field_size, scales: t.scales });
+        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, first_index: t.first_index, index_count: t.index_count, cell: t.cell, extent: t.extent });
     }
     Ok(grounds)
 }
@@ -3276,12 +3282,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(2)
+            .descriptor_count(TERRAIN_MAPS as u32)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
         vk::DescriptorSetLayoutBinding::default()
             .binding(1)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(6)
+            .descriptor_count(TERRAIN_LAYERS as u32)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
     let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
@@ -5714,8 +5720,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             {
                 let tg = &terrain_gpu;
                 for g in scene.grounds.iter().filter(|g| g.field == current_field) {
-                    terrain_push[17] = g.field_size;
-                    terrain_push[20..26].copy_from_slice(&g.scales);
+                    terrain_push[17] = g.cell;
+                    terrain_push[20] = g.extent[0];
+                    terrain_push[21] = g.extent[1];
                     d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
                     d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(terrain_push.as_ptr() as *const u8, PUSH_SIZE as usize));
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);

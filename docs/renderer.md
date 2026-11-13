@@ -9,13 +9,17 @@ texture pack (the object models carry no textures of their own). Each instance i
 rotated (x, then y, then z, in radians) and moved on the CPU. AREA_01_01 places 112
 objects (126 draws, 52,089 triangles), and they come out where they belong: a ring of
 cliffs around a valley of trees, rocks and flowers. Under them it draws the
-terrain from the field's `.ktf`: the heightmap as a grid, shaded by `terrain.frag`, which
-reads the two blend maps across the whole field (UV 0..1) and uses their six channels
-(map 0 RGB, map 1 RGB) as weights for the first six ground layers, each tiled at the scale
-its layer record gives (AREA_01_01: 300, 300, 400, 300, 200 and 100 units a repeat). In
-AREA_01_01 that gives sand on the open ground and dirt and grass in the valley under the
-trees. Still to check against the game: the blend maps' orientation, and fields with more
-than six layers, where the settings block must say which layers a map's channels weight.
+terrain from the field's `.ktf`: the terrain's own mesh (`ktf::mesh`, docs/formats.md
+"Patches and their draws"), its finest patches' lit draws, each triangle carrying its draw's
+one or two layers and its blend map and channel pair. `terrain.frag` mixes the two layers by
+that pair, each divided by their sum, as the field's own programs 9 to 15 do; a one-layer draw
+is that layer alone. Each layer is tiled every n cells (its record's repeat). In AREA_01_01
+that gives the sandy path and the grass beside it. Not yet the game's: the stored normals (the
+heightmap's are used), the tiles' alpha as the specular strength, the depth and one-layer bake
+draws (kinds 0x00 and 0x10), the coarse patches at a distance; 207 of AREA_01_01's 6,248 lit
+triangles index past their patch's vertices and are left out (hard seams and small gaps where
+draws meet show it), and which map the third and fourth bytes of a draw name is not settled
+(the program number is used).
 
 Options: `--size N` (64..1280), `--yaw DEG`, `--pitch DEG` (45 by default for fields),
 `--no-alpha` to turn off the alpha test. `BARREL_DRY=1` builds the scene and prints its
@@ -149,10 +153,8 @@ ktf-scan`), the number of blend maps does not follow the number of layers:
 - `TOWN_04`: 6 layers and 6 maps.
 - Elsewhere: 10 layers with 1 map, 4 layers with 5 maps.
 
-So the maps' channels are not simply layers 0 to 5. The patch tree between 0x98 and the layer
-textures must say which map and channels each patch uses for which layers. The viewer still
-blends the first two maps over the first six layers, which is right only where that happens
-to match. Reading the patch tree is open.
+So the maps' channels are not simply layers 0 to 5: each patch's draws name their layers
+and their map and channels, and the viewer now follows them (above).
 
 **Chained events.** `barrel-view --field auto OUT.png --event FILE.ebd --chain` plays the
 event, then each one the story starts after it (`event_start::Chain`, as `barrel play-event
@@ -333,9 +335,7 @@ and Escha walking into the plaza towards Threia and Reyfer, mid-stride; 4 frames
 `F_WAIT` at 2.4 s, as the event says. Every character the event ever places is loaded up front; a character the stage does not
 have at a frame (not placed yet, or removed by `q5`) is not drawn (its draws are skipped
 by instance), so characters come and go as the event says (`EVENT_MM08_AS4_020`: Escha,
-Logy and character 7 appear by 0.5 s, placed at 0.1 and 0.2 s). `--field auto` takes the field from the event (`docs/events.md`, "Which field"). A field
-with one terrain blend map (`TOWN_03`) gets a black second map, so its layers 4 to 6 have no
-weight. Faces change as the event goes: every character with a `Facial` container gets all its
+Logy and character 7 appear by 0.5 s, placed at 0.1 and 0.2 s). `--field auto` takes the field from the event (`docs/events.md`, "Which field"). Faces change as the event goes: every character with a `Facial` container gets all its
 morph sets, and each frame its weights are rebuilt from the stage (its latest expression and
 whether it is talking, through `face::Tables`), brow and eyes held at 0.5 s into their
 animations and a talking mouth moving through its animation in time (looping), a quiet one

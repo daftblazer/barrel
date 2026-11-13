@@ -980,7 +980,8 @@ block is read whole. A vertex is `{s16 x, s16 height, s16 z, s16 0, u8 × 4 norm
 colour}`: x and z count cells (times the cell size at 0x84: 100 in AREA_01_01 over 0 to 64,
 250 in AREA_08_02 over 4 to 20 and 0 to 60), the colour is white (`ff ff ff 80`) in all read. The patches' vertices follow each other
 (a patch's count is where its farthest-reaching draw ends; they add up to the whole), and a
-draw's first vertex and indices count from its patch's first vertex. The height spreads the
+draw's indices count from its patch's first vertex (its vertex range is only the lowest and
+the span its indices use). The indices are triangle strips, repeated indices joining the runs. The height spreads the
 s16 range over a node's height bounds: low + (stored + 32768) / 65535 × (high − low), the
 bounds being those of the topmost ancestor that holds a patch too (fields with levels of
 detail, such as AREA_04_01, have coarse patches whose children are finer patches over the same

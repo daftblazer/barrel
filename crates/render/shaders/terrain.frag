@@ -1,10 +1,14 @@
 #version 450
-// Field terrain: two blend maps over the whole field weight six tiled ground layers.
-layout(set = 0, binding = 0) uniform sampler2D blend[2];
-layout(set = 0, binding = 1) uniform sampler2D layers[6];
+// Field terrain, as the field's own terrain programs draw it (docs/formats.md, "Patches and
+// their draws"): each triangle belongs to one draw that mixes one or two tiled layers by a pair
+// of one blend map's channels, each divided by their sum.
+layout(set = 0, binding = 0) uniform sampler2D blend[8];
+layout(set = 0, binding = 1) uniform sampler2D layers[20];
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; } pc;
 layout(location = 0) in vec3 normal;
-layout(location = 1) in vec2 uv; // 0..1 across the field
+// x: layer a + 32 × layer b + 1024 × blend (map × 4 + channel pair, 3 one layer alone);
+// y: layer a's repeat + 256 × layer b's, in cells (Scene::add_terrain). The same over a draw.
+layout(location = 1) in vec2 uv;
 layout(location = 2) in vec3 world;
 // The field light at this vertex (model.vert), the sun's part apart.
 layout(location = 4) in vec3 field_light;
@@ -93,18 +97,33 @@ layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
-    vec3 w0 = texture(blend[0], uv).rgb;
-    vec3 w1 = texture(blend[1], uv).rgb;
-    float w[6] = float[6](w0.r, w0.g, w0.b, w1.r, w1.g, w1.b);
-    float s[6] = float[6](pc.scale_a.x, pc.scale_a.y, pc.scale_a.z, pc.scale_a.w, pc.scale_b.x, pc.scale_b.y);
-    vec2 field_xz = uv * pc.params.y;
-    vec3 c = vec3(0.0);
-    float total = 0.0;
-    for (int i = 0; i < 6; i++) {
-        c += w[i] * texture(layers[i], field_xz * s[i]).rgb;
-        total += w[i];
+    int code = int(uv.x + 0.5), reps = int(uv.y + 0.5);
+    int la = code & 31, lb = (code >> 5) & 31, mix_code = code >> 10;
+    float cell = pc.params.y;
+    // The field's own coordinates (x mirrored back), across the field for the maps.
+    vec2 field_xz = vec2(-world.x, world.z);
+    vec2 map_uv = field_xz / pc.scale_a.xy;
+    // The layer and map numbers vary by triangle, so each slot is read by a constant index
+    // (no descriptor indexing needed), with gradients taken outside the branches.
+    vec2 ua = field_xz / (cell * float(reps & 255)), ub = field_xz / (cell * float(reps >> 8));
+    vec2 ua_dx = dFdx(ua), ua_dy = dFdy(ua), ub_dx = dFdx(ub), ub_dy = dFdy(ub);
+    vec2 m_dx = dFdx(map_uv), m_dy = dFdy(map_uv);
+    vec3 ta = vec3(0.0), tb = vec3(0.0), m = vec3(0.0);
+    for (int i = 0; i < 20; i++) {
+        if (i == la) ta = textureGrad(layers[i], ua, ua_dx, ua_dy).rgb;
+        if (i == lb) tb = textureGrad(layers[i], ub, ub_dx, ub_dy).rgb;
     }
-    c = total > 0.001 ? c / total : texture(layers[0], field_xz * s[0]).rgb;
+    for (int i = 0; i < 8; i++) {
+        if (i == (mix_code >> 2)) m = textureGrad(blend[i], map_uv, m_dx, m_dy).rgb;
+    }
+    vec3 c = ta;
+    if ((mix_code & 3) != 3) {
+        // The pairs: red and green, green and blue, blue and red.
+        int p = mix_code & 3;
+        vec2 w = p == 0 ? m.rg : (p == 1 ? m.gb : m.br);
+        w /= w.x + w.y + 1.0 / 1024.0;
+        c = ta * w.x + tb * w.y;
+    }
     // Lit as the field's own terrain program does (its pack's pixel program 9 in TOWN_10):
     // the same per-vertex light as the field's models (the vertex colour white), on the
     // blended layers; the light texture, shadow and specular are not done yet.

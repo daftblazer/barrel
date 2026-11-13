@@ -35,8 +35,8 @@ pub struct GroundData {
     pub textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     pub first_index: u32,
     pub index_count: u32,
-    pub field_size: f32,
-    pub scales: [f32; 6],
+    pub cell: f32,
+    pub extent: [f32; 2],
 }
 
 /// A field's ground as drawn: its texture set (`Shared::terrain_layout`) and its indices.
@@ -46,8 +46,8 @@ pub struct Ground {
     textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     pub first_index: u32,
     pub index_count: u32,
-    pub field_size: f32,
-    pub scales: [f32; 6],
+    pub cell: f32,
+    pub extent: [f32; 2],
 }
 
 /// What a scene's sets point at that the renderer owns: the layouts, the texture sampler, the
@@ -160,7 +160,7 @@ impl SceneGpu {
         let mut grounds = Vec::new();
         if !data.grounds.is_empty() {
             let n = data.grounds.len() as u32;
-            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 * n }];
+            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: (crate::TERRAIN_MAPS + crate::TERRAIN_LAYERS) as u32 * n }];
             let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)? };
             ground_pool = Some(tpool);
             for g in data.grounds {
@@ -172,8 +172,8 @@ impl SceneGpu {
                     .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(shared.sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
                     .collect();
                 let writes = [
-                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..2]),
-                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
+                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..crate::TERRAIN_MAPS]),
+                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[crate::TERRAIN_MAPS..]),
                 ];
                 unsafe { d.update_descriptor_sets(&writes, &[]) };
                 grounds.push(Ground {
@@ -182,8 +182,8 @@ impl SceneGpu {
                     textures: g.textures,
                     first_index: g.first_index,
                     index_count: g.index_count,
-                    field_size: g.field_size,
-                    scales: g.scales,
+                    cell: g.cell,
+                    extent: g.extent,
                 });
             }
         }
