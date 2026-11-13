@@ -48,6 +48,11 @@ likely settle them where static reading failed.
   gain, unverified.
 - **Gimmick +0x38.** Its reader was not found (not the constructor `0x1402712d0` nor the list
   walk `0x140276190`).
+- **Followers on escort requests (unconfirmed).** On a plain field walk only the lead is shown
+  (oracle run), but a character may follow the lead while an escort-style request or story
+  quest is active (the user's recollection, not checked). Way in: look for request kinds or
+  event ops that attach a character to the player; **live read** during such a request once
+  one is reachable without spoilers past the opening.
 - **Defeated field enemies.** Which enemies stay down after a battle (`0x141087bd0` per map):
   **live read** after one fight.
 
