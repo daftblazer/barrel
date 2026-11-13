@@ -82,9 +82,13 @@ likely settle them where static reading failed.
 - **Field HUD details.** The time dial is fixed (2026-11-13, the running game: its segments
   light as field time is spent, clockwise from the top; `crates/render/src/hud.rs`). Left: the
   dial's hand (layout 610, a turned sprite), the assignment badges (603), the "Free Time" tab
-  (604), the arrows (602), the small count (part 0xe5), the gathering gauge and notices; one
-  gathering took 4 tenths there, against `gather_tenths(0)`'s 5 (a reduction of 1 from
-  something not read). The button list's place (the layout says y 792) and the text size are measured from one
+  (604), the arrows (602), the small count (part 0xe5), the gathering gauge and notices; the dial
+  and the gathering cost disagree: after a battle 1 segment was lit, after one gathering 5,
+  while a gathering costs 5 tenths less the region's reduction (`0x1402f3fe0`, its one caller
+  `0x1400a3c99` passing 0 and skipping the charge when the gathering's +0x84 is set or
+  `0x1402360a0` holds) and the save's 17 reductions (`bonus/collectTimeBonus`) are all 0. So
+  either the dial does not show whole tenths or that charge was skipped or cut: a **live read**
+  of the carried tenths (`0x1410782e4`) before and after a battle and a gathering settles it. The button list's place (the layout says y 792) and the text size are measured from one
   screenshot. The area map shows the assignment panel, the badge row and the gathering gauge but
   no dial. Way in for the rest: the HUD's update code (the layout 625 owner; who loads layout
   id 625 = 0x271).
