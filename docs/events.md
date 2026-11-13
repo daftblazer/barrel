@@ -957,7 +957,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | `PostEffectManager` (`0x140331bf0` → `0x140331220`; "Screen effects") | 2180 | 8 (1319), 4 (861) |
 | `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 637 | 0 (637) |
 | `7500000f` | `u15` | `LONG_WAIT` (event.rs): wait 2 seconds (`0x140051412`, the constant at `0x14071c964`) | Event (case `0x140051412` of `0x140050fa0`'s switch) | 81 | 0 (81) |
-| `75000010` | `u16` |  | B3Balloon | 98 | 2 (98) |
+| `75000010` | `u16` | (`{first, last}`: lines, as `u18` in the balloon; "Choices") | B3Balloon (`0x140180cb0`'s case `0x140180cf2`, `u18`'s; the event's own switch passes it by, where `u18` is forwarded, `0x140052b1b`; the ready check `0x140050d30` puts them in different groups, `0x140050ea2` and `0x140050eb2`, not read further) | 98 | 2 (98) |
 | `75000011` | `u17` |  | B3Balloon | 2 | 0 (2) |
 | `75000012` | `u18` | `SHOW_MESSAGES` (event.rs): show messages first..=last | B3Balloon | 4990 | 2 (4990) |
 | `75000015` | `u21` | ECT_EVENT_CONTRAST_WAIT | Contrast | 138 | 1 (138) |
