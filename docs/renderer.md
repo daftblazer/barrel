@@ -590,10 +590,10 @@ keys (`window::Pump`):
 | Left stick | steps (leaned past half way) | walks, partway when leaned partway |
 | D-pad | steps | walks |
 | Right stick | | turns the camera |
-| A (south) | confirm | gather |
+| A (south) | confirm | gather; next line in an event |
 | B (east) | back | jump |
 | X (west) | | strike |
-| Y (north) | | running on / off |
+| Y (north) | | running on / off; auto lines in an event |
 | LB / RB | | camera out / in |
 | Right stick click | | camera back |
 | Start | | pause the event |
@@ -607,6 +607,8 @@ in the field (the game's own key config is not read).
 
 In a window an event's line waits at the end of its reading time (`event::reading_time`) for A
 or Enter, as the game's message window waits for a button; pressed earlier, A ends the line at
-once and stops its voice. Space still pauses the whole event. Offscreen renders keep the timed
+once and stops its voice. Auto mode (T, or Y on a pad, while an event plays) lets each line go
+on by itself once its reading time is up and its voice has finished. Space still pauses the
+whole event. Offscreen renders keep the timed
 schedule. Not yet the game's: the reading time a line is held before it waits (the game shows
 the whole line at once and waits; its text speed and auto mode are not read).

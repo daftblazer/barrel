@@ -3669,6 +3669,9 @@ fn main() -> Result<()> {
     let mut line_released: Option<f32> = None;
     let mut next_line = false;
     let mut line_voice: Option<barrel_audio::Playing> = None;
+    // Auto mode (T, or Y on a pad, during an event): lines go on by themselves once their
+    // reading time is up and their voice has finished.
+    let mut auto_lines = false;
     // The fades' presets (u22), from the executable.
     let fade_presets = event_spec
         .as_ref()
@@ -3749,6 +3752,9 @@ fn main() -> Result<()> {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
                         eprintln!("run {}", if w.run_on { "on" } else { "off" });
+                    } else if player.is_some() {
+                        auto_lines = !auto_lines;
+                        eprintln!("frame {frame}: auto {}", if auto_lines { "on" } else { "off" });
                     }
                 }
                 _ => {}
@@ -4192,6 +4198,14 @@ fn main() -> Result<()> {
                 && line_released != Some(end) {
                     let tick = 1.0 / f64::from(clock.rate());
                     let left = (f64::from(end) - f64::from(play.stage.time) - tick).max(0.0);
+                    // Auto: the line's reading time is up and its voice done.
+                    let voice_done = match (line_voice, sound.as_ref()) {
+                        (Some(v), Some((_, mixer, ..))) => !mixer.is_playing(v),
+                        _ => true,
+                    };
+                    if auto_lines && left <= 0.0 && voice_done {
+                        next_line = true;
+                    }
                     if std::mem::take(&mut next_line) {
                         line_released = Some(end);
                         real = real.max(left + tick);
