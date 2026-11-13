@@ -1483,12 +1483,25 @@ fn voice_map(install: &Path) -> Result<()> {
         }
     }
     found.sort_by(|a, b| a.0.cmp(&b.0).then(b.2.total_cmp(&a.2)));
-    let good = found.iter().filter(|f| f.2 >= 0.85).count();
-    for (k, (start, n, r, name)) in found.iter().enumerate() {
-        let chained = found.get(k + 1).is_some_and(|next| next.0 == start + n);
-        println!("{start:>6} {n:>3} {r:.3} {}{name}", if chained { "+ " } else { "  " });
+    // The executable's own table (`voice::first_clips`) beside each guess.
+    let exe = read(&install.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("executable: {e}"))?;
+    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
+    let table = barrel_formats::voice::first_clips(&pe, barrel_formats::voice::FIRST_CLIPS_EN).ok_or("no voice table")?;
+    let actual = |name: &str| names.iter().position(|n| n.strip_prefix("EVENT_") == Some(name)).and_then(|k| table.get(k).copied().flatten());
+    let (mut agree, mut strong, mut strong_agree) = (0, 0, 0);
+    for (start, n, r, name) in &found {
+        let a = actual(name);
+        let same = a == Some(*start as u32);
+        agree += same as usize;
+        if *r >= 0.85 {
+            strong += 1;
+            strong_agree += same as usize;
+        }
+        println!("{start:>6} {n:>3} {r:.3} {name}  table {}", a.map_or("-".to_string(), |c| c.to_string()));
     }
-    eprintln!("{} events, {good} at correlation 0.85 or more", found.len());
+    let voiced = table.iter().filter(|c| c.is_some()).count();
+    eprintln!("{} events guessed, {agree} as the table has it; {strong_agree} of the {strong} at correlation 0.85 or more; the table voices {voiced} events", found.len());
     Ok(())
 }
 

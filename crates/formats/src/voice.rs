@@ -113,8 +113,21 @@ mod tests {
     }
 }
 
-/// Where an event's lines most likely start among the clips (docs/formats.md, "Story lines'
-/// voices"): a story line's clip is its scene's first clip plus the line's index, and a clip's
+/// The first voice clip of each event's lines in the English executable: an i32 per `EVENT_*`
+/// name (1,165, in the enum's order) at this address, -1 for an event without voices; read by
+/// `0x140213420 (event)`. A line's clip is its event's first clip plus the line's index.
+pub const FIRST_CLIPS_EN: u64 = 0x1408_2d710;
+pub const EVENTS: usize = 1165;
+
+/// The events' first voice clips (`None` for an unvoiced event), from the executable.
+pub fn first_clips(pe: &crate::pe::Pe, at: u64) -> Option<Vec<Option<u32>>> {
+    let o = pe.offset(at)?;
+    let d = pe.data.get(o..o + 4 * EVENTS)?;
+    Some(d.chunks_exact(4).map(|c| u32::try_from(i32::from_le_bytes(c.try_into().unwrap())).ok()).collect())
+}
+
+/// Where an event's lines most likely start among the clips, guessed without the executable
+/// ([`first_clips`] has them; this cross-checks it, docs/formats.md, "Story lines' voices"): a story line's clip is its scene's first clip plus the line's index, and a clip's
 /// size follows the line's length, so the first clip is the place where the run of `sizes`
 /// (by clip number, 0 for none) correlates best with the lines' `lengths`. Returns the clip
 /// and the correlation (Pearson, -1 to 1); `None` for fewer than 3 lines.

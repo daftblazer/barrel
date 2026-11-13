@@ -1190,10 +1190,8 @@ are XORed with their index (`OfeP` for `OggS`). A clip's length is its last Ogg 
 granule position over the identification header's sample rate. `barrel_formats::voice`
 reads them; `barrel voice-scan DIR` finds 18,000 clips, 21.7 hours, all decoding, in
 Escha's Japanese voices. Clips are numbered within a series (`SeriesN` clip k is voice N + k,
-by the look of it); which voice a message line plays is not in the line (its fields are
-speaker, gesture, expression and line number) and is still open, as are
-`ECT_EVENT_VOICE_PLAY` (`u31`, 400 uses, a voice number such as 14235) and
-`ECT_CHARA_VOICE_PLAY`.
+by the look of it). Which clip a story line plays, and the two voice commands, are under
+"Voices" above.
 
 ## Interface layouts (compiled into the executable)
 
