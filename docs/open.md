@@ -34,9 +34,6 @@ likely settle them where static reading failed.
   `0x1401e7321`; their readers were not found (two tries; `0x140234570` is the jump timers, not
   the camera). Also not done: blending between camera areas' settings (Barrel snaps). Way in:
   **live read** the camera's eye and target each frame while the player runs and stops.
-- **Partner following the lead.** The partner exists on the field (radius 0.4 of the lead's,
-  `docs/tables.md`) but no brain class is named for following (`clsFMBrainEnemy/Event/Npc/User`
-  only); the user brain's lead checks at `0x140235e6a` and `0x14023640e` are not it.
 - **Field NPC spawns in story events (characters 10048 and up).** Third lookup `0x140270230`
   (list at manager +0x50 by +0x78); leads `0x14017f13e`, `0x1403386af` unchecked. Parked after
   three tries. The stage camera of some story events depends on it.
