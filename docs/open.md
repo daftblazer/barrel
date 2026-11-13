@@ -19,7 +19,10 @@ likely settle them where static reading failed.
 - English spoken dialogue during initial cutscene with Escha and Clone gets cut a little short. Some audio during scenes cuts short.
   - Likely the next line starting while the voice still played: lines ran on a reading time
     (1 s + 0.08 s a character) shorter than some clips. Lines now wait for A, so a voice plays
-    to its end unless skipped; to check in play. Sound effects cut short are still open.
+    to its end unless skipped; to check in play. Sound effects: fixed (2026-11-13) one more cause,
+    the sound output was reopened at every scene change (one event into the next, or into free
+    play), cutting off whatever still played; it is now kept for the whole run (only the music
+    and ambience stop). To check in play.
 - Scenes normally are progressed by pressing the A button on the controller
   - Done (2026-11-13): in a window each line now waits at its end for A / Enter, and A before
     then ends the line (and its voice) at once. Auto mode (Y / T) goes on by itself after the

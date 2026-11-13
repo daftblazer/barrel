@@ -845,6 +845,14 @@ fn render_space(transform: Mat4) -> Mat4 {
 /// between lines (`docs/engine.md`, "Deliberate differences").
 const WINDOW_GRACE: f32 = 0.6;
 
+/// The music tracks compiled into the English executable (none if it cannot be read).
+fn music_tracks(root: &Path) -> Vec<barrel_formats::bgm::Track> {
+    std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+        .ok()
+        .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
+        .unwrap_or_default()
+}
+
 fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::Animation, time: f32) -> Vec<Mat4> {
     skin(skeleton, &local_pose(skeleton, anim, time))
 }
@@ -3163,7 +3171,18 @@ fn main() -> Result<()> {
     let mut current_event = event_spec.clone();
     let mut frame_base = 0u32;
     let mut first_event = true;
+    // The sound output, its mixer, the sound library and the music playing: one for the whole
+    // run, so a voice or effect still sounding when a scene hands over plays to its end.
+    let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
+    // The field's ambience loop, while one plays.
+    let mut ambience: Option<barrel_audio::Playing> = None;
     'events: loop {
+    // A new scene stops the last one's music and ambience; its voices and effects play on.
+    if let Some((_, mixer, _, music)) = sound.as_mut() {
+        for p in [music.take(), ambience.take()].into_iter().flatten() {
+            mixer.stop(p);
+        }
+    }
     let event_spec = current_event.clone();
     // A chained event plays from its start.
     let (event_at, event_line) = if first_event { (event_at, event_line) } else { (None, None) };
@@ -3361,27 +3380,23 @@ fn main() -> Result<()> {
     let mut telop_pieces: std::collections::HashMap<u32, Vec<(usize, [f32; 4], [f32; 4])>> = std::collections::HashMap::new();
     // The event's music and voices, in a window only (frames written to files are silent):
     // the output, the mixer, the library, and the music now playing.
-    let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
     // Walking a field in a window, its music plays from the start, looping as the track does.
     if let Some(w) = walker.as_ref()
         && presenter.is_some() {
-            let tracks = barrel_formats::pe::Pe::parse(&std::fs::read(w.root.join("Atelier_Escha_and_Logy_EN.exe"))?)
-                .ok()
-                .and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN))
-                .unwrap_or_default();
-            match barrel_audio::Output::open(0.1) {
-                Ok(out) => {
-                    let (mut mixer, mut library) = (barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", tracks));
-                    let playing = w.music.and_then(|t| library.music(t)).map(|m| mixer.play_stream(m.stream, m.volume, m.loop_from));
-                    // And its ambience, a looping environment sound under the music.
-                    if let Some((n, volume)) = w.ambience
-                        && let Some(barrel_audio::Effect::Stream(stream, from)) = library.effect(n) {
-                            mixer.play_stream(stream, volume, from);
-                        }
-                    eprintln!("field music {:?}, ambience {:?}", w.music, w.ambience);
-                    sound = Some((out, mixer, library, playing));
+            if sound.is_none() {
+                match barrel_audio::Output::open(0.1) {
+                    Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
+                    Err(e) => eprintln!("no sound: {e}"),
                 }
-                Err(e) => eprintln!("no sound: {e}"),
+            }
+            if let Some((_, mixer, library, music)) = sound.as_mut() {
+                *music = w.music.and_then(|t| library.music(t)).map(|m| mixer.play_stream(m.stream, m.volume, m.loop_from));
+                // And its ambience, a looping environment sound under the music.
+                if let Some((n, volume)) = w.ambience
+                    && let Some(barrel_audio::Effect::Stream(stream, from)) = library.effect(n) {
+                        ambience = Some(mixer.play_stream(stream, volume, from));
+                    }
+                eprintln!("field music {:?}, ambience {:?}", w.music, w.ambience);
             }
         }
     let mut motion_names: Vec<String> = Vec::new();
@@ -3539,13 +3554,9 @@ fn main() -> Result<()> {
         let snap = play.stage.snapshot();
         eprintln!("playing {frames} frames at {fps} Hz from {:.2} s, {} actors", clock.time(), actors.len());
         player = Some((play, clock, snap.clone(), snap));
-        if presenter.is_some() {
-            let tracks = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
-                .ok()
-                .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
-                .unwrap_or_default();
+        if presenter.is_some() && sound.is_none() {
             match barrel_audio::Output::open(0.1) {
-                Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", tracks), None)),
+                Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
                 Err(e) => eprintln!("no sound: {e}"),
             }
         }

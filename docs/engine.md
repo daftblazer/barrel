@@ -470,6 +470,12 @@ engine calls `pump(&mut mixer)` from its frame loop, which mixes just enough to 
 set time queued (a tenth of a second in the test), so the sound runs on the device's clock
 while the logic keeps its fixed tick.
 
+**One output for the run.** The viewer opens the output and mixer once and keeps them across
+scenes: when one event hands over to the next, or ends into free play, the old scene's music
+and field ambience stop, but a voice or effect still sounding plays to its end. (Opening a new
+output per scene dropped them mid-sound: the user's "audio during scenes cuts short".) Whether
+the game lets a scene's last sounds ring on into the next is not read.
+
 **Streaming.** Music is not decoded up front (a long track is tens of millions of frames and
 takes seconds): `barrel_formats::vorbis::Stream` keeps the compressed packets and, from a pass
 over each packet's mode bits (its block size), the frame each one's samples start at (a packet
