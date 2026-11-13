@@ -1279,6 +1279,17 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
 }
 
+/// Where world map point `name` stands on the world map field in `field` (field units), from
+/// its tagged placement (`barrel_formats::world::point_position`).
+fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
+    let stem = field.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
+    let bytes = std::fs::read(field.join(format!("{stem}.elixir.gz")))?;
+    let container = Elixir::parse(&bytes)?;
+    let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the field has no placements")?;
+    let placements = barrel_formats::opl2::parse(container.data(entry))?;
+    Ok(barrel_formats::world::point_position(&placements, name).ok_or(format!("no point {name} on {stem}"))?)
+}
+
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -2406,6 +2417,15 @@ fn main() -> Result<()> {
                 let v = it.next().ok_or("--player X,Z")?;
                 let (x, z) = v.split_once(',').ok_or("--player X,Z")?;
                 player_at = Some([x.parse()?, z.parse()?]);
+            }
+            // --world-point NAME: the player at a world map point (`LP_T0`, `SP_A0P0` ...: the
+            // field must be A15_WMAP), where its tagged placement marks it.
+            "--world-point" => {
+                let name = it.next().ok_or("--world-point NAME")?;
+                let field = Path::new(args.get(1).ok_or("--world-point needs --field .../A15_WMAP")?);
+                let at = world_point(field, name)?;
+                eprintln!("world map point {name} at {at:?}");
+                player_at = Some([at[0], at[2]]);
             }
             // --walk DX,DZ: the player walks that way, DX and DZ units a second.
             "--walk" => {

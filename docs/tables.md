@@ -2090,6 +2090,11 @@ where the world map's placements mark them, by tag (`A15_WMAP.opl2`): `T0` the t
 (`a15wmap_point_sm_on`/`_off`, `SP_A0P0` ...); `A0r0` ... tag the dots along a region's paths
 (`a15_point_r_off`, 271) and `R0` to `R14` the routes' marks (`a15_point_r_big_bwr`, 112)
 (`world::point_tag`, `point_position`; `barrel world-points` prints them: the town at (26250,
-27000), the Twilight Forest's points 750 apart east of it). The routes
+27000), the Twilight Forest's points 750 apart east of it). `barrel-view --field .../A15_WMAP OUT --world-point SP_A0P2` stands
+Escha on that point's mark (the forest region, its path dots either side). The route records
+(`barrel_formats::world::areas`, `R0` ..., `A0R0` ...: the ids the `R*` and `A0r*` dots carry)
+hold, besides their days, an event number at +0x14 (46 for `R0`, 171 for `R1`, 628 for `A0R1`)
+and at +0x18 and +0x20 (`A0R1`: 50 and 171), presumably when each opens; which points a route
+joins is not in them, not read yet. The routes
 and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
 part).
