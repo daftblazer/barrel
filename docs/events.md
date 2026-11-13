@@ -746,8 +746,8 @@ listener chain:
 The listener's +0x60 is the `PostEffectManager`. Its command handler (`0x140331bf0`, asked
 first by `0x140293cc0`) takes:
 
-- **`u13`** (`ECT_EVENT_SET_POST_EFFECT`, 2,180 uses): reads its operands and sets an effect
-  (`0x140331220`, not read further).
+- **`u13`** (`ECT_EVENT_SET_POST_EFFECT`): makes an effect by its kind (`0x140331220`; see
+  "Screen effects" above for the kinds and operands).
 - **`u14`** (`ECT_EVENT_WAIT_POST_EFFECT`): taken; its wait is the manager's wait check
   (`0x140331d60`).
 - **`u104`**: `0x1404da730`.
@@ -758,10 +758,7 @@ through vtable slot 7, which only `PostEffectBlur` overrides (for `u103`). The w
 (`0x140293ef0`) also has its own cases for `u12` (`ECT_EVENT_WAIT_TIME_EFFECT`), `u48` and
 `u115`.
 
-The classes are `PostEffectBase` and its children `PostEffectBattleEnter`, `Blur`, `Color`,
-`CrossFade`, `Fade`, `Gamma`, `Glow`, `Hue`, `Monotone` and `Negative`, under
-`PostEffectManager`. Which class takes `u12`, `u13`, `u106`, `u108` and `u139`, and what each
-draws, is not read; the viewer does not draw them yet.
+Which listener takes `u106` and `u108` is not read.
 
 ## Operand counts
 
@@ -946,7 +943,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000008` | `u8` |  | Event (case `0x14005147a` of `0x140050fa0`'s switch) | 99 | 3 (99) |
 | `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 339 | 6 (339) |
 | `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 66 | 1 (66) |
-| `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2180 | 8 (1319), 4 (861) |
+| `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | `PostEffectManager` (`0x140331bf0` → `0x140331220`; "Screen effects") | 2180 | 8 (1319), 4 (861) |
 | `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 637 | 0 (637) |
 | `7500000f` | `u15` |  | Event (case `0x140051412` of `0x140050fa0`'s switch) | 81 | 0 (81) |
 | `75000010` | `u16` |  | B3Balloon | 98 | 2 (98) |
