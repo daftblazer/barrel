@@ -591,6 +591,9 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     let mut bad_textures = 0usize;
     let (mut skins, mut skin_mismatch, mut missing_joints, mut bind_errors) = (0usize, 0usize, 0usize, Vec::<f32>::new());
     let mut posed_files: std::collections::BTreeMap<String, usize> = Default::default();
+    let (mut motions, mut channels, mut bad_channels) = (0usize, 0usize, Vec::<String>::new());
+    let mut bad_kinds: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut lead_in = 0usize;
     let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
     for f in &files {
         let raw = read(f)?;
@@ -622,6 +625,33 @@ fn pssg_scan(dir: &Path) -> Result<()> {
                         bind_errors.push(off);
                         if off > 0.01 {
                             *posed_files.entry(f.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string()).or_default() += 1;
+                        }
+                    }
+                }
+                for m in p.motions() {
+                    motions += 1;
+                    for c in &m.channels {
+                        channels += 1;
+                        // Keys before time 0 lead the curve in (facial motions start at -1/15 s).
+                        if c.times.first().is_some_and(|&t| t < -0.001) {
+                            lead_in += 1;
+                        }
+                        let ordered = c.times.windows(2).all(|t| t[0] <= t[1]) && c.times.iter().all(|&t| t <= m.length + 0.001);
+                        let unit = c.kind != "Rotation" || c.values.iter().all(|q| (q.iter().map(|v| v * v).sum::<f32>() - 1.0).abs() < 0.01);
+                        let why = if c.times.len() != c.values.len() {
+                            "uneven"
+                        } else if !c.times.windows(2).all(|t| t[0] <= t[1]) {
+                            "out of order"
+                        } else if !ordered {
+                            "past the length"
+                        } else if !unit {
+                            "rotation not unit"
+                        } else {
+                            ""
+                        };
+                        if !why.is_empty() {
+                            *bad_kinds.entry(format!("{} {why}", c.kind)).or_default() += 1;
+                            bad_channels.push(format!("{}: {} {} {} {why} (length {}, times {:?})", f.display(), m.name, c.target, c.kind, m.length, &c.times[..c.times.len().min(4)]));
                         }
                     }
                 }
@@ -660,6 +690,11 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     );
     let off = bind_errors.iter().filter(|&&e| e > 0.01).count();
     println!("  {off} of {} joints off by more than 0.01, in {} files: {:?}", bind_errors.len(), posed_files.len(), posed_files.iter().take(8).collect::<Vec<_>>());
+    println!("{motions} motions, {channels} channels; {} with keys out of order, past the motion's length, uneven or a rotation not of unit length", bad_channels.len());
+    println!("  by kind and reason: {bad_kinds:?}; {lead_in} channels with keys before time 0");
+    for b in bad_channels.iter().take(3) {
+        println!("  {b}");
+    }
     println!("textures by format: {texture_formats:?}; {bad_textures} that did not decode to their size");
     for b in bad_meshes.iter().take(5) {
         println!("  {b}");

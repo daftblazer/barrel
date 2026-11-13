@@ -1266,4 +1266,18 @@ the identity (median off by 0.00003) for 25,286 of 27,386 joints, which settles 
 order (row vectors, a parent's matrix applied after its child's). The rest are in 74 files,
 effects (`E3D_*`) and a few monsters (`MOB03A_MODEL`), whose stored pose is not the bind pose.
 
-Materials and motions are not read yet.
+**Motions** (`Pssg::motions`): an `ANIMATION` (`PC00_ACT_BYEBYE`: 464 channels, 565 constant
+ones) holds `CHANNELREF channel="#<id>" targetName="<joint>"` children and `CONSTANTCHANNEL value
+targetName keyType` ones (a fixed value, 16 bytes). Each `ANIMATIONCHANNEL` names a `timeBlock`
+and a `valueBlock`, each an `ANIMATIONCHANNELDATABLOCK` (`keyCount`, `keyType`) whose `KEYS`
+are big-endian floats: `Time` one a key, `Translation` and `Scale` three, `Rotation` four (a
+quaternion: every one over Ayesha's files is of unit length), `MorphTargetWeight1` and
+`ShaderInstanceFloatParameter` one (their targets `#<weights>#<n>` and
+`#<shader instance>#<parameter>`, the face's morphs and the eyes' UV scroll). The
+`constantChannelEndTime` spans the constant channels only (0 in a motion that has none), so a
+motion lasts to its last key. Some keys come before time 0 (757 channels, the facial motions
+start at -1/15 s), leading the curve in. Over the 1,960 motions (1,089,658 channels) every
+channel's keys are in order with a value for each.
+
+Materials are not read yet, nor how the game blends the keys (linear, presumably, with the
+rotations slerped).

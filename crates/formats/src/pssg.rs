@@ -126,6 +126,26 @@ pub struct Skin {
     pub inverse_binds: Vec<[f32; 16]>,
 }
 
+/// A motion (`Pssg::motions`): its length in seconds (to its last key) and its channels.
+#[derive(Clone, Debug, Default)]
+pub struct Motion {
+    pub name: String,
+    pub length: f32,
+    pub channels: Vec<Channel>,
+}
+
+/// One animated value of a motion: what it moves (a joint's name, or a shader parameter's
+/// `#<instance>#<parameter>`), what of it (`Translation`, `Rotation` as a quaternion x, y, z,
+/// w, `Scale`, `MorphTargetWeight1`, `ShaderInstanceFloatParameter`), and its keys: the times
+/// and a value at each. A constant channel has one key at time 0.
+#[derive(Clone, Debug, Default)]
+pub struct Channel {
+    pub target: String,
+    pub kind: String,
+    pub times: Vec<f32>,
+    pub values: Vec<Vec<f32>>,
+}
+
 /// A texture of a PSSG file (`Pssg::textures`).
 #[derive(Clone, Debug)]
 pub struct Texture<'a> {
@@ -290,6 +310,77 @@ impl Pssg<'_> {
 
     fn transform(&self, n: &Node) -> Option<[f32; 16]> {
         n.children.iter().find(|c| self.name(c.kind) == "TRANSFORM" && c.data.len() == 64).map(|t| matrix(t.data))
+    }
+
+    /// Every motion in the file: each `ANIMATION`'s channels (`CHANNELREF channel="#<id>"
+    /// targetName`, the `ANIMATIONCHANNEL`'s `timeBlock` and `valueBlock`, each an
+    /// `ANIMATIONCHANNELDATABLOCK` of `keyCount` keys of its `keyType`, the floats in `KEYS`)
+    /// and its constant ones (`CONSTANTCHANNEL value targetName keyType`).
+    pub fn motions(&self) -> Vec<Motion> {
+        let mut all = Vec::new();
+        self.walk(&self.root, &mut all);
+        let by_id = |kind: &str| -> std::collections::HashMap<&str, &Node> {
+            all.iter().filter(|n| self.name(n.kind) == kind).filter_map(|n| Some((self.attr_str(n, "id")?, *n))).collect()
+        };
+        let (channels, blocks) = (by_id("ANIMATIONCHANNEL"), by_id("ANIMATIONCHANNELDATABLOCK"));
+        let floats = |b: &[u8]| -> Vec<f32> { b.as_chunks::<4>().0.iter().map(|w| f32::from_be_bytes(*w)).collect() };
+        let width = |key_type: &str| match key_type {
+            "Rotation" => 4,
+            "Translation" | "Scale" => 3,
+            _ => 1,
+        };
+        let block = |id: &str| -> Option<(String, Vec<Vec<f32>>)> {
+            let b = blocks.get(id.trim_start_matches('#'))?;
+            let kind = self.attr_str(b, "keyType")?.to_string();
+            let count = self.attr_u32(b, "keyCount")? as usize;
+            let keys = floats(b.children.iter().find(|k| self.name(k.kind) == "KEYS")?.data);
+            let w = width(&kind);
+            Some((kind, keys.chunks(w).take(count).map(<[f32]>::to_vec).collect()))
+        };
+        all.iter()
+            .filter(|n| self.name(n.kind) == "ANIMATION")
+            .map(|a| {
+                let mut motion = Motion {
+                    name: self.attr_str(a, "id").unwrap_or("").to_string(),
+                    length: self.attr(a, "constantChannelEndTime").and_then(|b| Some(f32::from_be_bytes(b.get(..4)?.try_into().ok()?))).unwrap_or(0.0),
+                    channels: Vec::new(),
+                };
+                for c in &a.children {
+                    match self.name(c.kind) {
+                        "CHANNELREF" => {
+                            let Some(ch) = self.attr_str(c, "channel").and_then(|id| channels.get(id.trim_start_matches('#'))) else { continue };
+                            let (Some((_, times)), Some((kind, values))) =
+                                (self.attr_str(ch, "timeBlock").and_then(block), self.attr_str(ch, "valueBlock").and_then(block))
+                            else {
+                                continue;
+                            };
+                            motion.channels.push(Channel {
+                                target: self.attr_str(c, "targetName").unwrap_or("").to_string(),
+                                kind,
+                                times: times.into_iter().map(|t| t[0]).collect(),
+                                values,
+                            });
+                        }
+                        "CONSTANTCHANNEL" => {
+                            let kind = self.attr_str(c, "keyType").unwrap_or("").to_string();
+                            let value = self.attr(c, "value").map(floats).unwrap_or_default();
+                            let w = width(&kind).min(value.len());
+                            motion.channels.push(Channel {
+                                target: self.attr_str(c, "targetName").unwrap_or("").to_string(),
+                                kind,
+                                times: vec![0.0],
+                                values: vec![value[..w].to_vec()],
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                // `constantChannelEndTime` spans the constant channels only (0 in a motion that has
+                // none): the motion lasts to its last key too.
+                motion.length = motion.channels.iter().filter_map(|c| c.times.last().copied()).fold(motion.length, f32::max);
+                motion
+            })
+            .collect()
     }
 
     /// Every mesh in the file (its vertex data big-endian like the rest: a unit normal and a
