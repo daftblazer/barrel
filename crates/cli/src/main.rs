@@ -62,6 +62,7 @@ usage:
   barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
   barrel world-points EXE       the world map's points and the field maps they open
   barrel world-routes EXE       the world map's routes and the marks at their ends
+  barrel travel EXE FROM TO     a trip on the world map between two marks (T0, A0, A0p0 ...): routes, days, fields
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
@@ -168,6 +169,7 @@ fn main() -> ExitCode {
         },
         ["world-points", exe] => world_points(Path::new(exe)),
         ["world-routes", exe] => world_routes(Path::new(exe)),
+        ["travel", exe, from, to] => travel(Path::new(exe), from, to),
         ["gimmicks", exe] => gimmicks(Path::new(exe), None),
         ["gimmicks", exe, area] => match area.parse() {
             Ok(n) => gimmicks(Path::new(exe), Some(n)),
@@ -636,6 +638,45 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
             y = field.ground.height(p[0], p[1], at[1] + 50.0, 0.0).unwrap_or(at[1]);
             inside = field.inside([p[0], y, p[1]]);
             println!("      through the door to {name} (map {}) at ({:.1}, {:.1}, {y:.1}) facing {}", to.map, p[0], p[1], to.facing);
+        }
+    }
+    Ok(())
+}
+
+/// The world map's routes with their ends (as their dots lie), from the executable and the
+/// world map field beside it.
+fn world_map(exe: &Path) -> Result<barrel_game::travel::WorldMap> {
+    let bytes = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    let field = read(&exe.parent().ok_or("no folder")?.join("Data/x64/Field/A15_WMAP/A15_WMAP.elixir.gz"))?;
+    let c = Elixir::parse(&field)?;
+    let e = c.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("no placements")?;
+    let placements = barrel_formats::opl2::parse(c.data(e))?;
+    let mut routes = Vec::new();
+    for a in barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no routes")? {
+        // The record ids are R0, A0R0 ...; the dots' tags R0, A0r0 ...
+        let tag = if a.id.starts_with('R') { a.id.clone() } else { a.id.replace('R', "r") };
+        if let Some((from, to, _)) = barrel_formats::world::route_ends(&placements, &tag) {
+            routes.push(barrel_game::travel::Route { area: a, ends: (from, to) });
+        }
+    }
+    Ok(barrel_game::travel::WorldMap { routes })
+}
+
+/// A trip on the world map from mark FROM to mark TO (`T0`, `A0`, `A0p0` ...) in a new game
+/// (no events seen): the routes, the days, and the fields TO opens.
+fn travel(exe: &Path, from: &str, to: &str) -> Result<()> {
+    let map = world_map(exe)?;
+    let (days, path) = map.trip(from, to, |_| false).ok_or(format!("no way from {from} to {to}"))?;
+    println!("{from} to {to}: {days} days by {}", path.join(", "));
+    let bytes = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+    let maps = barrel_game::event::field_maps(&pe);
+    for (point, m, _) in barrel_formats::world::point_maps(&pe).unwrap_or_default() {
+        let name = names.get(point as usize).map_or("", |s| s.as_str());
+        if barrel_formats::world::point_tag(name).as_deref() == Some(to) {
+            println!("  opens map {m} {}", maps.get(m as usize).map_or("?", |s| s.as_str()));
         }
     }
     Ok(())

@@ -420,3 +420,16 @@ end, seeks to the loop's start and carries on in the same buffer, so the wrap is
 interpolates across it as a whole clip would (the ignored test `streams_like_clips` compares
 the two over two wraps). Decoding happens in the frame loop's pump, a packet (about a
 thousandth of a second of work on the PC) at a time.
+
+## World map travel
+
+`game::travel::WorldMap` holds the world map's routes (`barrel_formats::world::areas`, their
+ends as the routes' dots lie: `docs/tables.md`, "The world map's field") and finds the fewest
+days between two marks (`trip`, the paths inside a region taking none, each route its
+`trip_days` for the events seen). `barrel travel EXE FROM TO` prints the trip and the fields its
+end opens: from the town (`T0`) to the Twilight Forest's third point (`A0p2`) 4 days by `R0` and
+the forest's paths, opening `AREA_01_03`; from the town to `D2` 6 days by `R3` and `R6`. The game
+lets the player pick each route rather than finding the shortest; this search is for trying
+trips, and the days it adds are what the story's travel trigger (`Chain::days(Days::Travel,
+n)`) takes. How the game moves the marker along a route, and what happens on the way, is not
+read.
