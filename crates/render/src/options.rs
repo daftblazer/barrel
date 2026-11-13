@@ -17,7 +17,7 @@ use barrel_formats::layout::Text;
 use crate::graphics_options::{self as g, Row};
 use crate::hud::{self, Element};
 use crate::screen;
-use crate::settings::RenderSettings;
+use crate::settings::{Display, RenderSettings, WINDOW_SIZES};
 use crate::title::Button;
 use crate::{Result, text};
 
@@ -31,17 +31,32 @@ const DARK: [u8; 4] = [0xff, 0x1a, 0x28, 0x5a];
 const GREY: [u8; 4] = [0xff, 0x78, 0x78, 0x81];
 const HELP_AT: [i32; 2] = [150, 1012];
 
+/// What the page sets: the render settings and the window.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Graphics {
+    pub render: RenderSettings,
+    pub display: Display,
+}
+
+impl Graphics {
+    pub fn to_config(&self) -> String {
+        self.display.to_config() + &self.render.to_config()
+    }
+}
+
 /// The page: the row the cursor is on (the rows, then "Default", "Confirm") and the settings
 /// as chosen so far.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Page {
     pub cursor: usize,
-    pub settings: RenderSettings,
-    pub default: RenderSettings,
+    pub settings: Graphics,
+    pub default: Graphics,
 }
 
 fn name(row: Row) -> &'static str {
     match row {
+        Row::Mode => "Display",
+        Row::WindowSize => "Window Size",
         Row::Scale => "Render Scale",
         Row::AntiAliasing => "Anti-Aliasing",
         Row::Upscaling => "Upscaler",
@@ -51,26 +66,42 @@ fn name(row: Row) -> &'static str {
     }
 }
 
-/// A row's choices in order: each one's label and the settings it makes, or why it is closed.
-pub fn choices(row: Row, s: &RenderSettings) -> Vec<(String, std::result::Result<RenderSettings, &'static str>)> {
-    let with = |f: &dyn Fn(&mut RenderSettings)| {
-        let mut t = *s;
-        f(&mut t);
+/// A choice: its label and what it makes, or why it is closed.
+pub type Choice = (String, std::result::Result<Graphics, &'static str>);
+
+/// A row's choices in order.
+pub fn choices(row: Row, now: &Graphics) -> Vec<Choice> {
+    let s = &now.render;
+    let render = |f: &dyn Fn(&mut RenderSettings)| {
+        let mut t = *now;
+        f(&mut t.render);
         t
     };
+    let display = |d: Display| Graphics { display: d, ..*now };
     match row {
-        Row::Scale => g::SCALES.iter().map(|&k| (format!("{}%", (k * 100.0).round()), Ok(with(&|t| g::set_scale(t, k))))).collect(),
-        Row::AntiAliasing => g::AA_CHOICES.iter().map(|&a| (a.label(), g::aa_open(s, a).map(|_| with(&|t| g::set_aa(t, a))))).collect(),
-        Row::Upscaling => g::UP_CHOICES.iter().map(|&u| (u.label().to_string(), g::up_open(s, u).map(|_| with(&|t| g::set_upscaler(t, u))))).collect(),
-        Row::Sharpening => [false, true].iter().map(|&on| (if on { "On" } else { "Off" }.to_string(), g::sharpen_open(s).map(|_| with(&|t| g::set_sharpen(t, on))))).collect(),
-        Row::Shadows => [false, true].iter().map(|&high| (if high { "High" } else { "Low" }.to_string(), Ok(with(&|t| g::set_shadows(t, high))))).collect(),
-        Row::Filtering => g::FILTERING.iter().map(|&n| (if n == 1 { "Off".to_string() } else { format!("{n}x") }, Ok(with(&|t| t.anisotropy = n)))).collect(),
+        Row::Mode => [false, true].iter().map(|&full| (if full { "Fullscreen" } else { "Window" }.to_string(), Ok(display(Display { fullscreen: full, ..now.display })))).collect(),
+        Row::WindowSize => WINDOW_SIZES
+            .iter()
+            .map(|&(w, h)| {
+                let open = if now.display.fullscreen { Err("Fullscreen takes the screen's own size.") } else { Ok(display(Display { width: w, height: h, ..now.display })) };
+                (format!("{w} x {h}"), open)
+            })
+            .collect(),
+        Row::Scale => g::SCALES.iter().map(|&k| (format!("{}%", (k * 100.0).round()), Ok(render(&|t| g::set_scale(t, k))))).collect(),
+        Row::AntiAliasing => g::AA_CHOICES.iter().map(|&a| (a.label(), g::aa_open(s, a).map(|_| render(&|t| g::set_aa(t, a))))).collect(),
+        Row::Upscaling => g::UP_CHOICES.iter().map(|&u| (u.label().to_string(), g::up_open(s, u).map(|_| render(&|t| g::set_upscaler(t, u))))).collect(),
+        Row::Sharpening => [false, true].iter().map(|&on| (if on { "On" } else { "Off" }.to_string(), g::sharpen_open(s).map(|_| render(&|t| g::set_sharpen(t, on))))).collect(),
+        Row::Shadows => [false, true].iter().map(|&high| (if high { "High" } else { "Low" }.to_string(), Ok(render(&|t| g::set_shadows(t, high))))).collect(),
+        Row::Filtering => g::FILTERING.iter().map(|&n| (if n == 1 { "Off".to_string() } else { format!("{n}x") }, Ok(render(&|t| t.anisotropy = n)))).collect(),
     }
 }
 
 /// The row's value as shown.
-pub fn value(row: Row, s: &RenderSettings) -> String {
+pub fn value(row: Row, now: &Graphics) -> String {
+    let s = &now.render;
     match row {
+        Row::Mode => if now.display.fullscreen { "Fullscreen" } else { "Window" }.to_string(),
+        Row::WindowSize => format!("{} x {}", now.display.width, now.display.height),
         Row::Scale => format!("{}%", (s.scale * 100.0).round()),
         Row::AntiAliasing => g::aa(s).label(),
         Row::Upscaling => g::upscaler(s).label().to_string(),
@@ -81,18 +112,18 @@ pub fn value(row: Row, s: &RenderSettings) -> String {
 }
 
 /// The next open choice of `row` from its value the way `step` (+1 or -1) goes, wrapping round.
-fn stepped(row: Row, s: &RenderSettings, step: i32) -> Option<RenderSettings> {
-    let all = choices(row, s);
-    let now = value(row, s);
+fn stepped(row: Row, now: &Graphics, step: i32) -> Option<Graphics> {
+    let all = choices(row, now);
+    let shown = value(row, now);
     let n = all.len() as i32;
-    let at = all.iter().position(|(l, _)| *l == now).map_or(if step > 0 { -1 } else { n }, |k| k as i32);
-    (1..=n).map(|k| (at + step * k).rem_euclid(n)).find_map(|k| all[k as usize].1.ok().filter(|t| value(row, t) != now))
+    let at = all.iter().position(|(l, _)| *l == shown).map_or(if step > 0 { -1 } else { n }, |k| k as i32);
+    (1..=n).map(|k| (at + step * k).rem_euclid(n)).find_map(|k| all[k as usize].1.ok().filter(|t| value(row, t) != shown))
 }
 
 /// Why the cursor's row has choices closed (the help bar's line).
-pub fn help(row: Row, s: &RenderSettings) -> String {
+pub fn help(row: Row, now: &Graphics) -> String {
     let mut closed: Vec<(String, &str)> = Vec::new();
-    for (label, why) in choices(row, s).into_iter().filter_map(|(l, r)| r.err().map(|w| (l, w))) {
+    for (label, why) in choices(row, now).into_iter().filter_map(|(l, r)| r.err().map(|w| (l, w))) {
         match closed.iter_mut().find(|(_, w)| *w == why) {
             Some((ls, _)) => ls.push_str(&format!(", {label}")),
             None => closed.push((label, why)),
@@ -100,6 +131,10 @@ pub fn help(row: Row, s: &RenderSettings) -> String {
     }
     if closed.is_empty() {
         return "Left / Right: change".into();
+    }
+    // A whole row closed for one reason: the reason alone.
+    if closed.len() == 1 && choices(row, now).iter().all(|(_, r)| r.is_err()) {
+        return closed[0].1.to_string();
     }
     closed.iter().map(|(l, w)| format!("{l}: {w}")).collect::<Vec<_>>().join("  ")
 }
@@ -165,11 +200,11 @@ pub fn run(
     window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
-    settings: RenderSettings,
-    default: RenderSettings,
+    settings: Graphics,
+    default: Graphics,
     keys: &[Button],
     out: Option<&Path>,
-) -> Result<Option<RenderSettings>> {
+) -> Result<Option<Graphics>> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("options: no glyph table")?;
@@ -182,7 +217,8 @@ pub fn run(
         .filter(|p| matches!(p.node.part, 0x0 | 0x30 | 0x2e | 0x2c))
         .map(Element::stored)
         .collect();
-    let mut page = Page { cursor: 0, settings: settings.resolved(), default: default.resolved() };
+    let resolved = |g: Graphics| Graphics { render: g.render.resolved(), ..g };
+    let mut page = Page { cursor: 0, settings: resolved(settings), default: resolved(default) };
     let all = |p: &Page| {
         let mut e = frame.clone();
         e.extend(p.elements());
@@ -214,21 +250,28 @@ mod tests {
 
     #[test]
     fn right_skips_closed_choices() {
+        let start = Graphics { render: RenderSettings::DESKTOP.resolved(), display: Display::DEFAULT };
+        let row = |r: Row| g::ROWS.iter().position(|&x| x == r).unwrap();
         // Desktop at 100%: the upscaler row has only bilinear open; anti-aliasing goes Off →
         // MSAA 2x → ... → FSR 3 Native AA.
-        let mut p = Page { cursor: 2, settings: RenderSettings::DESKTOP.resolved(), default: RenderSettings::DESKTOP.resolved() };
+        let mut p = Page { cursor: row(Row::Upscaling), settings: start, default: start };
         p.press(Button::Right);
-        assert_eq!(g::upscaler(&p.settings), g::Up::Bilinear);
+        assert_eq!(g::upscaler(&p.settings.render), g::Up::Bilinear);
         assert!(help(Row::Upscaling, &p.settings).contains("FSR 1, GSR 1, GSR 2, FSR 3: Upscalers need a render scale under 100%."));
-        p.cursor = 1;
+        p.cursor = row(Row::AntiAliasing);
         p.press(Button::Left);
-        assert_eq!(g::aa(&p.settings), g::Aa::Native);
+        assert_eq!(g::aa(&p.settings.render), g::Aa::Native);
         // Native AA closes sharpening.
         assert!(choices(Row::Sharpening, &p.settings).iter().all(|(_, r)| r.is_err()));
+        // Fullscreen closes the window size.
+        p.cursor = row(Row::Mode);
+        p.press(Button::Right);
+        assert!(p.settings.display.fullscreen);
+        assert_eq!(help(Row::WindowSize, &p.settings), "Fullscreen takes the screen's own size.");
         // Default puts it back; back leaves.
         p.cursor = g::ROWS.len();
         p.press(Button::Confirm);
-        assert_eq!(p.settings, RenderSettings::DESKTOP.resolved());
+        assert_eq!(p.settings, start);
         assert_eq!(p.press(Button::Back), Some(false));
     }
 }

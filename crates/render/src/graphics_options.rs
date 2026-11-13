@@ -11,6 +11,9 @@ use crate::shadow::Shadows;
 /// The page's rows, top to bottom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Row {
+    /// Window or fullscreen, and the window's size (`settings::Display`: `options.rs`).
+    Mode,
+    WindowSize,
     Scale,
     AntiAliasing,
     Upscaling,
@@ -19,7 +22,7 @@ pub enum Row {
     Filtering,
 }
 
-pub const ROWS: [Row; 6] = [Row::Scale, Row::AntiAliasing, Row::Upscaling, Row::Sharpening, Row::Shadows, Row::Filtering];
+pub const ROWS: [Row; 8] = [Row::Mode, Row::WindowSize, Row::Scale, Row::AntiAliasing, Row::Upscaling, Row::Sharpening, Row::Shadows, Row::Filtering];
 
 /// The render scales offered.
 pub const SCALES: [f32; 8] = [0.5, 2.0 / 3.0, 0.75, 0.85, 1.0, 1.25, 1.5, 2.0];

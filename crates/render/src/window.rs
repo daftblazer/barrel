@@ -216,6 +216,8 @@ fn pad_keys(b: crate::pad::Pad) -> &'static [winit::keyboard::KeyCode] {
 
 #[derive(Default)]
 struct PumpState {
+    /// The window as it opens (`settings::Display`).
+    display: Option<crate::settings::Display>,
     window: Option<Window>,
     closed: bool,
     error: Option<String>,
@@ -229,7 +231,11 @@ struct PumpState {
 impl ApplicationHandler for PumpState {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
-            let attrs = Window::default_attributes().with_title("Barrel").with_inner_size(winit::dpi::PhysicalSize::new(1280, 720));
+            let d = self.display.unwrap_or(crate::settings::Display::DEFAULT);
+            let attrs = Window::default_attributes()
+                .with_title("Barrel")
+                .with_inner_size(winit::dpi::PhysicalSize::new(d.width, d.height))
+                .with_fullscreen(d.fullscreen.then_some(winit::window::Fullscreen::Borderless(None)));
             match event_loop.create_window(attrs) {
                 Ok(w) => self.window = Some(w),
                 Err(e) => self.error = Some(e.to_string()),
@@ -260,11 +266,11 @@ impl ApplicationHandler for PumpState {
 }
 
 impl Pump {
-    /// Opens the window (1280×720).
-    pub fn open() -> Result<Pump> {
+    /// Opens the window as `display` has it (its size, or borderless fullscreen).
+    pub fn open(display: crate::settings::Display) -> Result<Pump> {
         use winit::platform::pump_events::EventLoopExtPumpEvents;
         let mut event_loop = EventLoop::new()?;
-        let mut state = PumpState::default();
+        let mut state = PumpState { display: Some(display), ..PumpState::default() };
         for _ in 0..200 {
             let _ = event_loop.pump_app_events(Some(std::time::Duration::from_millis(10)), &mut state);
             if state.window.is_some() || state.error.is_some() {
@@ -278,6 +284,18 @@ impl Pump {
             return Err("the window did not open".into());
         }
         Ok(Pump { event_loop, state, pad: crate::pad::Gamepad::open(), lean: (0, 0) })
+    }
+
+    /// Sets the window to `display`: borderless fullscreen, or windowed at its size (the
+    /// presenter follows the resize as it follows the user's).
+    pub fn set_display(&self, display: crate::settings::Display) {
+        let w = self.window();
+        if display.fullscreen {
+            w.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        } else {
+            w.set_fullscreen(None);
+            let _ = w.request_inner_size(winit::dpi::PhysicalSize::new(display.width, display.height));
+        }
     }
 
     pub fn window(&self) -> &Window {

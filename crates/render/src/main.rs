@@ -3365,8 +3365,15 @@ fn without_settings_flags(args: &[String]) -> Vec<String> {
     out
 }
 
+/// The window as it is now: its size, or fullscreen.
+fn current_display(p: &window::Pump) -> settings::Display {
+    let w = p.window();
+    let size = w.inner_size();
+    settings::Display { width: size.width, height: size.height, fullscreen: w.fullscreen().is_some() }
+}
+
 /// Writes Barrel's graphics config.
-fn write_config(s: &settings::RenderSettings) -> Result<std::path::PathBuf> {
+fn write_config(s: &options::Graphics) -> Result<std::path::PathBuf> {
     let path = settings::RenderSettings::config_path().ok_or("no place for the config (no HOME)")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -3685,10 +3692,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
     }
 
+    // Barrel's graphics config, when there is one (`settings::RenderSettings::config_path`).
+    let config_text = settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok());
+    let display_settings = config_text.as_deref().map_or(settings::Display::DEFAULT, settings::Display::from_config);
     // A window (with --window) or an offscreen image to draw into.
     let mut pump = match kept_pump {
         Some(p) => Some(p),
-        None => window_frames.map(|_| window::Pump::open()).transpose()?,
+        None => window_frames.map(|_| window::Pump::open(display_settings)).transpose()?,
     };
     let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
     let gpu = Gpu::new(display)?;
@@ -3832,6 +3842,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
 
     // Barrel's graphics config (the Options screen's graphics page writes it) when no setting
     // was given on the command line: in a window, or offscreen when `BARREL_CONFIG` names one.
+    // Its window lines are read whatever the command line says.
     if !has_settings_flags(&original_args)
         && (window_frames.is_some() || std::env::var_os("BARREL_CONFIG").is_some())
         && let Some(text) = settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok()) {
@@ -4919,7 +4930,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let keys = title::keys(&std::env::var("BARREL_OPTIONS_KEYS").unwrap_or_default());
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
             let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-options.png";
-            let kept = options::run(&gpu, pool, &target, None, Some(*color), &root, settings, settings::RenderSettings::DESKTOP, &keys, Some(Path::new(&shot)))?;
+            let now = options::Graphics { render: settings, display: display_settings };
+            let first = options::Graphics { render: settings::RenderSettings::DESKTOP, display: settings::Display::DEFAULT };
+            let kept = options::run(&gpu, pool, &target, None, Some(*color), &root, now, first, &keys, Some(Path::new(&shot)))?;
             eprintln!("frame {frame}: options: {kept:?}");
             // Kept: into the config `BARREL_CONFIG` names (offscreen runs never write the user's).
             if let Some(new) = kept.filter(|_| std::env::var_os("BARREL_CONFIG").is_some()) {
@@ -5084,15 +5097,21 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 Some(menu::Outcome::Option(menu::OptionRow::Options)) => {
                     unsafe { gpu.device.device_wait_idle()? };
                     let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, settings, settings::RenderSettings::DESKTOP, &[], None)?;
+                    let now = options::Graphics { render: settings, display: current_display(p) };
+                    let first = options::Graphics { render: settings::RenderSettings::DESKTOP, display: settings::Display::DEFAULT };
+                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, now, first, &[], None)?;
                     eprintln!("frame {frame}: options: {kept:?}");
-                    // Kept and changed: into the config, and the scene again where she stands
-                    // under the new settings (the renderer's targets and pipelines are built
-                    // for them at a scene's start).
-                    if let Some(new) = kept.filter(|k| *k != settings) {
+                    // Kept and changed: into the config. The window takes its new size or
+                    // fullscreen at once; new render settings start the scene again where she
+                    // stands (the renderer's targets and pipelines are built at a scene's start).
+                    if let Some(new) = kept.filter(|k| *k != now) {
                         let path = write_config(&new)?;
                         eprintln!("frame {frame}: graphics saved to {}", path.display());
-                        if let (Some(s), Some(w)) = (session.as_ref(), walker.as_ref())
+                        if new.display != now.display {
+                            p.set_display(new.display);
+                        }
+                        if new.render != settings
+                            && let (Some(s), Some(w)) = (session.as_ref(), walker.as_ref())
                             && let Some(text) = s.save([w.pos[0], w.pos[2]]) {
                                 restart = Some(without_settings_flags(&plain_args(&original_args)));
                                 carry_out = Carry { save: Some(text), ..Carry::default() };

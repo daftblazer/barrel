@@ -172,6 +172,43 @@ impl RenderSettings {
     }
 }
 
+/// The window: its size, or borderless fullscreen on its screen (then the screen's own size).
+/// In the same config as the render settings: `window WxH`, `fullscreen on|off`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Display {
+    pub width: u32,
+    pub height: u32,
+    pub fullscreen: bool,
+}
+
+/// The window sizes the graphics page offers.
+pub const WINDOW_SIZES: [(u32, u32); 7] = [(1280, 720), (1600, 900), (1920, 1080), (2560, 1080), (2560, 1440), (3440, 1440), (3840, 2160)];
+
+impl Display {
+    pub const DEFAULT: Display = Display { width: 1280, height: 720, fullscreen: false };
+
+    pub fn to_config(&self) -> String {
+        format!("window {}x{}\nfullscreen {}\n", self.width, self.height, if self.fullscreen { "on" } else { "off" })
+    }
+
+    pub fn from_config(text: &str) -> Display {
+        let mut d = Self::DEFAULT;
+        for line in text.lines() {
+            match line.trim().split_once(' ') {
+                Some(("window", v)) => {
+                    if let Some((w, h)) = v.trim().split_once('x')
+                        && let (Ok(w), Ok(h)) = (w.parse::<u32>(), h.parse::<u32>()) {
+                            (d.width, d.height) = (w.clamp(320, 16384), h.clamp(200, 16384));
+                        }
+                }
+                Some(("fullscreen", v)) => d.fullscreen = v.trim() == "on",
+                _ => {}
+            }
+        }
+        d
+    }
+}
+
 /// Whether the scene pass keeps its depth for a temporal upscaler to read.
 impl RenderSettings {
     pub fn keeps_depth(&self) -> bool {
@@ -233,5 +270,8 @@ mod tests {
             assert_eq!(RenderSettings::from_config(&s.to_config()), s);
         }
         assert_eq!(RenderSettings::from_config("msaa 4\nnonsense\n").msaa, 4);
+        let d = Display { width: 2560, height: 1440, fullscreen: true };
+        let text = d.to_config() + &RenderSettings::HANDHELD.resolved().to_config();
+        assert_eq!((Display::from_config(&text), RenderSettings::from_config(&text)), (d, RenderSettings::HANDHELD.resolved()));
     }
 }

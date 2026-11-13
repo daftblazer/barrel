@@ -788,8 +788,16 @@ without the command line's setting options, so the renderer's targets and pipeli
 built anew for the choice. A windowed run with no setting option on its command line starts
 from the config; offscreen runs read and write one only when `BARREL_CONFIG` names it (tests
 never touch the user's). Checked offscreen: MSAA 2x confirmed into a scratch config, the next
-run starting with it. Not yet: the windowed restart tried by hand, resolution and
-fullscreen, the sound page, the game's own look of the page title and help bar.
+run starting with it. The page's first two rows are the window: "Display" (Window,
+Fullscreen: borderless on its screen) and "Window Size" (1280 x 720 to 3840 x 2160, with the
+ultrawide 2560 x 1080 and 3440 x 1440; greyed under fullscreen, "Fullscreen takes the screen's
+own size."), kept in the same config (`window WxH`, `fullscreen on|off`:
+`settings::Display`); the window opens as the config has it (whatever the command line's
+setting options) and a change takes at once (`Pump::set_display`, the presenter following the
+resize as it follows the user's), with no restart. Checked: a 20-frame windowed run from a
+scratch config opened at 1600 x 900 with MSAA 2x. Not yet: the page's confirm and restart
+tried by hand in a window, the sound page, the game's own look of the page title and help
+bar.
 
 ## Controllers
 
