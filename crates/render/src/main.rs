@@ -3513,6 +3513,23 @@ fn main() -> Result<()> {
         if moving {
             w.facing = w.velocity[0].atan2(w.velocity[1]);
         }
+        // The field's play camera on her (as the creatures' mode uses it, `play_camera`): the
+        // setting for where she stands, unless `--free-camera` (then it is carried along).
+        if use_event_camera {
+            let look_table = field_looks.first().and_then(|l| l.as_ref());
+            let point = look_table
+                .and_then(|l| barrel_game::play_camera::setting(&l.camera_areas, &l.camera_points, w.pos.map(|v| v / 100.0)))
+                .or_else(|| look_table.and_then(|l| l.camera_points.first().cloned()));
+            if let Some(point) = point {
+                let mirror = Vec3::new(-1.0, 1.0, 1.0);
+                let look = Vec3::from(w.pos) + Vec3::from(point.diff) * 100.0;
+                let (y, p) = (point.yaw.to_radians(), point.pitch.to_radians());
+                dist = point.length.max(1.0) * 100.0;
+                target = look * mirror;
+                eye = (look + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist) * mirror;
+                fov = point.fov.clamp(10.0, 120.0).to_radians();
+            }
+        }
         let turn = glam::Quat::from_rotation_y(w.facing);
         instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos)));
     }

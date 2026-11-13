@@ -181,9 +181,12 @@ the game's choice by speed (`game::walk::player_gait`; `--walk -150,0` walks, `-
 facing the way she last went. She walks the field as `game::walk::Field` (its walls, ground and gimmicks);
 stepping into a town door ends the scene and builds the next map's, her at the door's spot
 (as the chained events rebuild theirs): `--field .../TOWN_01 --player 600,1000 --walk -300,0`
-leaves the Atelier at frame 25 for Marion's office (`TOWN_02`, at (820, 1050)). The free
-camera stays where it was set, so indoors it looks down through the beams; the game's indoor
-camera is not used here yet.
+leaves the Atelier at frame 25 for Marion's office (`TOWN_02`, at (820, 1050)). The camera is
+the field's play camera on her (`game::play_camera::setting` for where she stands: distance,
+yaw, pitch, field of view, look offset), as the creatures' mode has it, so the Atelier and
+Marion's office are framed from their own settings; `--free-camera` carries the set camera
+along instead. (The game moves between settings smoothly and follows with the bumper speed;
+here the camera takes each setting at once.)
 
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
