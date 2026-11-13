@@ -79,9 +79,127 @@ impl<'a> Pssg<'a> {
         Ok(Pssg { schema, root })
     }
 
+    /// An attribute kind's name, looked up across the schema (attribute ids are the file's, not
+    /// a node kind's: a node carries kinds listed under others, its `id` among them).
+    pub fn attribute_name(&self, id: u32) -> &str {
+        self.schema.nodes.values().find_map(|(_, a)| a.get(&id)).map_or("?", |s| s.as_str())
+    }
+
     /// A node kind's name.
     pub fn name(&self, kind: u32) -> &str {
         self.schema.nodes.get(&kind).map_or("?", |n| n.0.as_str())
+    }
+}
+
+/// A mesh read out of a `RENDERDATASOURCE`: its triangles' corners (three indices each) and
+/// the vertex streams its `RENDERSTREAM`s name, by their `renderType` (`Vertex`, `Normal`,
+/// `Color`, `ST` ...), each element as floats.
+#[derive(Clone, Debug, Default)]
+pub struct Mesh {
+    pub name: String,
+    pub indices: Vec<u32>,
+    pub streams: Vec<(String, Vec<Vec<f32>>)>,
+}
+
+impl Mesh {
+    pub fn stream(&self, render_type: &str) -> Option<&[Vec<f32>]> {
+        self.streams.iter().find(|(t, _)| t == render_type).map(|(_, v)| v.as_slice())
+    }
+
+    /// The vertices' positions: `Vertex`, or `SkinnableVertex` in a skinned mesh.
+    pub fn positions(&self) -> &[Vec<f32>] {
+        self.stream("Vertex").or_else(|| self.stream("SkinnableVertex")).unwrap_or(&[])
+    }
+}
+
+impl Pssg<'_> {
+    fn attr<'n>(&self, n: &'n Node, name: &str) -> Option<&'n [u8]> {
+        n.attributes.iter().find(|(id, _)| self.attribute_name(*id) == name).map(|(_, b)| *b)
+    }
+
+    /// A string attribute (u32 length, bytes).
+    pub fn attr_str<'n>(&self, n: &'n Node, name: &str) -> Option<&'n str> {
+        let b = self.attr(n, name)?;
+        let len = u32::from_be_bytes(b.get(..4)?.try_into().ok()?) as usize;
+        std::str::from_utf8(b.get(4..4 + len)?).ok()
+    }
+
+    pub fn attr_u32(&self, n: &Node, name: &str) -> Option<u32> {
+        Some(u32::from_be_bytes(self.attr(n, name)?.get(..4)?.try_into().ok()?))
+    }
+
+    fn walk<'n>(&self, n: &'n Node<'n>, out: &mut Vec<&'n Node<'n>>) {
+        out.push(n);
+        for c in &n.children {
+            self.walk(c, out);
+        }
+    }
+
+    /// Every mesh in the file (its vertex data big-endian like the rest: a unit normal and a
+    /// white vertex colour read so, noise the other way round).
+    pub fn meshes(&self) -> Vec<Mesh> {
+        let mut all = Vec::new();
+        self.walk(&self.root, &mut all);
+        let kind = |n: &Node| self.name(n.kind).to_string();
+        let blocks: std::collections::HashMap<&str, &Node> =
+            all.iter().filter(|n| kind(n) == "DATABLOCK").filter_map(|n| Some((self.attr_str(n, "id")?, *n))).collect();
+        let f32_at = |b: &[u8], at: usize| -> Option<f32> {
+            let w: [u8; 4] = b.get(at..at + 4)?.try_into().ok()?;
+            Some(f32::from_be_bytes(w))
+        };
+        let mut out = Vec::new();
+        for src in all.iter().filter(|n| kind(n) == "RENDERDATASOURCE") {
+            let mut mesh = Mesh { name: self.attr_str(src, "id").unwrap_or("").to_string(), ..Default::default() };
+            for c in &src.children {
+                match kind(c).as_str() {
+                    "RENDERINDEXSOURCE" => {
+                        let data = c.children.iter().find(|d| kind(d) == "INDEXSOURCEDATA").map_or(&[][..], |d| d.data);
+                        let raw: Vec<u32> = match self.attr_str(c, "format") {
+                            Some("uint") => data.chunks_exact(4).map(|w| u32::from_be_bytes([w[0], w[1], w[2], w[3]])).collect(),
+                            Some("uchar") => data.iter().map(|&b| u32::from(b)).collect(),
+                            _ => data.chunks_exact(2).map(|w| u32::from(u16::from_be_bytes([w[0], w[1]]))).collect(),
+                        };
+                        mesh.indices = match self.attr_str(c, "primitive") {
+                            Some("triangles") => raw,
+                            // A strip: each corner after the first two makes a triangle, every
+                            // other one turned, the degenerate ones (restarts) left out.
+                            _ => raw
+                                .windows(3)
+                                .enumerate()
+                                .filter(|(_, t)| t[0] != t[1] && t[1] != t[2] && t[0] != t[2])
+                                .flat_map(|(k, t)| if k % 2 == 0 { [t[0], t[1], t[2]] } else { [t[1], t[0], t[2]] })
+                                .collect(),
+                        };
+                    }
+                    "RENDERSTREAM" => {
+                        let Some(block) = self.attr_str(c, "dataBlock").and_then(|b| blocks.get(b.trim_start_matches('#'))) else { continue };
+                        let sub = self.attr_u32(c, "subStream").unwrap_or(0) as usize;
+                        let Some(st) = block.children.iter().filter(|d| kind(d) == "DATABLOCKSTREAM").nth(sub) else { continue };
+                        let data = block.children.iter().find(|d| kind(d) == "DATABLOCKDATA").map_or(&[][..], |d| d.data);
+                        let count = self.attr_u32(block, "elementCount").unwrap_or(0) as usize;
+                        let (offset, stride) = (self.attr_u32(st, "offset").unwrap_or(0) as usize, self.attr_u32(st, "stride").unwrap_or(0) as usize);
+                        let data_type = self.attr_str(st, "dataType").unwrap_or("");
+                        let values = if data_type == "uchar4" {
+                            // Bytes (the skin's joint numbers), as they are.
+                            (0..count).map_while(|e| data.get(offset + e * stride..offset + e * stride + 4).map(|b| b.iter().map(|&v| f32::from(v)).collect())).collect()
+                        } else {
+                            let width = match data_type {
+                                "float4" => 4,
+                                "float3" => 3,
+                                "float2" => 2,
+                                "float1" | "float" => 1,
+                                _ => continue,
+                            };
+                            (0..count).map_while(|e| (0..width).map(|k| f32_at(data, offset + e * stride + 4 * k)).collect::<Option<Vec<f32>>>()).collect()
+                        };
+                        mesh.streams.push((self.attr_str(st, "renderType").unwrap_or("?").to_string(), values));
+                    }
+                    _ => {}
+                }
+            }
+            out.push(mesh);
+        }
+        out
     }
 }
 

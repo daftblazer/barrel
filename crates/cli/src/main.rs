@@ -18,6 +18,8 @@ usage:
   barrel pak-extract PAK PART OUTDIR  write the entries whose names contain PART under OUTDIR
   barrel ebd FILE.ebd          print an event's actions as words
   barrel ebd-scan DIR          read every event under DIR and count its commands
+  barrel pssg FILE             print a PSSG file's node tree
+  barrel pssg-obj FILE OUT.obj  write a PSSG file's meshes as OBJ
   barrel pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
   barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
   barrel xml FILE.xml          print a table's rows
@@ -101,6 +103,9 @@ fn main() -> ExitCode {
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
         ["pssg-scan", dir] => pssg_scan(Path::new(dir)),
+        ["pssg", file] => pssg_tree(Path::new(file)),
+        ["pssg-meshes", file] => pssg_meshes(Path::new(file)),
+        ["pssg-obj", file, out] => pssg_obj(Path::new(file), Path::new(out)),
         ["ebd-measure", dir] => ebd_measure(Path::new(dir)),
         ["voice-scan", dir] => voice_scan(Path::new(dir)),
         ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word, None),
@@ -452,6 +457,94 @@ fn ebd_measure(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Prints a PSSG file's node tree: each node's kind and attributes (as a string when they read
+/// as one, else as numbers), and the size of its data.
+fn pssg_tree(file: &Path) -> Result<()> {
+    let raw = read(file)?;
+    let d = barrel_formats::pssg::unwrap(&raw)?;
+    let p = barrel_formats::pssg::Pssg::parse(&d)?;
+    fn show(p: &barrel_formats::pssg::Pssg, n: &barrel_formats::pssg::Node, depth: usize) {
+        let attrs = p.schema.nodes.get(&n.kind).map(|k| &k.1);
+        let shown: Vec<String> = n
+            .attributes
+            .iter()
+            .map(|(id, b)| {
+                let name = attrs.and_then(|a| a.get(id)).map_or_else(|| p.attribute_name(*id), |s| s.as_str());
+                let value = if b.len() > 4 && b[..4] == ((b.len() - 4) as u32).to_be_bytes() && b[4..].iter().all(|c| (0x20..0x7f).contains(c)) {
+                    format!("{:?}", String::from_utf8_lossy(&b[4..]))
+                } else if b.len() == 4 {
+                    let v = u32::from_be_bytes(b[..4].try_into().unwrap());
+                    let f = f32::from_bits(v);
+                    if v < 0x0100_0000 { v.to_string() } else { format!("{f}") }
+                } else {
+                    format!("<{} bytes>", b.len())
+                };
+                format!("{name}={value}")
+            })
+            .collect();
+        let data = if n.data.is_empty() { String::new() } else { format!(" [{} bytes]", n.data.len()) };
+        println!("{}{} {}{data}", "  ".repeat(depth), p.name(n.kind), shown.join(" "));
+        for c in &n.children {
+            show(p, c, depth + 1);
+        }
+    }
+    show(&p, &p.root, 0);
+    Ok(())
+}
+
+/// A PSSG file's meshes: their triangles and vertex streams.
+fn pssg_meshes(file: &Path) -> Result<()> {
+    let raw = read(file)?;
+    let d = barrel_formats::pssg::unwrap(&raw)?;
+    let p = barrel_formats::pssg::Pssg::parse(&d)?;
+    for m in p.meshes() {
+        let streams: Vec<String> = m.streams.iter().map(|(t, v)| format!("{t}×{}", v.len())).collect();
+        println!("{} {} triangles: {}", m.name, m.indices.len() / 3, streams.join(", "));
+    }
+    Ok(())
+}
+
+/// Writes a PSSG file's meshes as Wavefront OBJ (positions, texture coordinates and normals
+/// where the mesh has them; each mesh a group), as they are in the file (no node transforms).
+fn pssg_obj(file: &Path, out: &Path) -> Result<()> {
+    use std::fmt::Write as _;
+    let raw = read(file)?;
+    let d = barrel_formats::pssg::unwrap(&raw)?;
+    let p = barrel_formats::pssg::Pssg::parse(&d)?;
+    let mut s = String::new();
+    let mut base = 1usize;
+    for m in p.meshes() {
+        let pos = m.positions();
+        let uv = m.stream("ST").filter(|v| v.len() == pos.len());
+        let nrm = m.stream("Normal").or_else(|| m.stream("SkinnableNormal")).filter(|v| v.len() == pos.len());
+        writeln!(s, "g {}", m.name)?;
+        for v in pos {
+            writeln!(s, "v {} {} {}", v[0], v[1], v[2])?;
+        }
+        for t in uv.unwrap_or(&[]) {
+            writeln!(s, "vt {} {}", t[0], 1.0 - t[1])?;
+        }
+        for n in nrm.unwrap_or(&[]) {
+            writeln!(s, "vn {} {} {}", n[0], n[1], n[2])?;
+        }
+        let corner = |i: u32| {
+            let k = base + i as usize;
+            match (uv.is_some(), nrm.is_some()) {
+                (true, true) => format!("{k}/{k}/{k}"),
+                (true, false) => format!("{k}/{k}"),
+                (false, true) => format!("{k}//{k}"),
+                (false, false) => k.to_string(),
+            }
+        };
+        for t in m.indices.chunks_exact(3) {
+            writeln!(s, "f {} {} {}", corner(t[0]), corner(t[1]), corner(t[2]))?;
+        }
+        base += pos.len();
+    }
+    std::fs::write(out, s)?;
+    Ok(())
+}
+
 /// Reads every PSSG file under DIR (`*.PSSG`, `*.PSSG.gz`: Ayesha DX's) and counts the node
 /// kinds they hold.
 fn pssg_scan(dir: &Path) -> Result<()> {
@@ -460,6 +553,7 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     files_ending(dir, ".PSSG.gz", &mut files)?;
     files.sort();
     let (mut ok, mut failed) = (0, Vec::new());
+    let (mut meshes, mut triangles, mut bad_meshes) = (0usize, 0usize, Vec::new());
     let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
     for f in &files {
         let raw = read(f)?;
@@ -473,6 +567,14 @@ fn pssg_scan(dir: &Path) -> Result<()> {
         match barrel_formats::pssg::Pssg::parse(&d) {
             Ok(p) => {
                 ok += 1;
+                for m in p.meshes() {
+                    meshes += 1;
+                    triangles += m.indices.len() / 3;
+                    let vertices = m.positions().len();
+                    if m.indices.iter().any(|&i| i as usize >= vertices) {
+                        bad_meshes.push(format!("{}: {} ({} vertices)", f.display(), m.name, vertices));
+                    }
+                }
                 let mut stack = vec![&p.root];
                 while let Some(n) = stack.pop() {
                     *kinds.entry(p.name(n.kind).to_string()).or_default() += 1;
@@ -483,6 +585,10 @@ fn pssg_scan(dir: &Path) -> Result<()> {
         }
     }
     println!("{} PSSG files: {ok} read, {} failed", files.len(), failed.len());
+    println!("{meshes} meshes, {triangles} triangles; {} with an index past their vertices", bad_meshes.len());
+    for b in bad_meshes.iter().take(5) {
+        println!("  {b}");
+    }
     let mut by: Vec<_> = kinds.into_iter().collect();
     by.sort_by_key(|k| std::cmp::Reverse(k.1));
     for (k, n) in by.iter().take(30) {

@@ -1218,5 +1218,21 @@ to the node's end exactly. The root is `PSSGDATABASE`. Over all the files the co
 are the render streams (`RENDERSTREAM`, `RENDERINSTANCESTREAM`, `RISTREAM`), animation
 channels and keys, data blocks (`DATABLOCK`, `DATABLOCKDATA`, `DATABLOCKSTREAM`), shader
 inputs, index sources, skinning (`SKINJOINT`, `INVERSEBINDMATRIX`, `JOINTNODE`) and the scene
-nodes (`NODE`, `RENDERNODE`, `TRANSFORM`, `BOUNDINGBOX`). Reading meshes and motions out of
-them is next.
+nodes (`NODE`, `RENDERNODE`, `TRANSFORM`, `BOUNDINGBOX`).
+
+Attribute ids belong to the file, not to a node kind: a node carries kinds listed under others
+(`id` among them), so a name is looked up across the whole schema. String attributes are a u32
+length and the bytes.
+
+**Meshes** (`Pssg::meshes`, `barrel pssg-meshes`, `barrel pssg-obj FILE OUT.obj`): each
+`RENDERDATASOURCE` is one. Its `RENDERINDEXSOURCE` gives `primitive` (`triangles`, else a
+strip), `format` (`ushort`, `uint` or `uchar`) and `count`, its `INDEXSOURCEDATA` the indices.
+Its `RENDERSTREAM`s name a `DATABLOCK` (`dataBlock="#<id>"`) and a `subStream`; the block's
+`DATABLOCKSTREAM`s give each stream's `renderType` (`Vertex`, `Normal`, `Color`, `ST`, and in a
+skinned mesh `SkinnableVertex`, `SkinnableNormal`, `SkinIndices`, `SkinWeights`), `dataType`
+(`float1` to `float4`, `uchar4`), `offset` and `stride`, over `elementCount` elements of its
+`DATABLOCKDATA`. The vertex data is big-endian like the rest (a unit normal and a white vertex
+colour read so). Over Ayesha's 1,768 files that is 45,941 meshes, 13,953,259 triangles, every
+index within its mesh's vertices. Characters stand with z up (Ayesha's `PC00J_MODEL`: 164.5
+units tall, arms out). The node transforms that place the pieces are not applied yet, nor the
+skins, materials or motions.
