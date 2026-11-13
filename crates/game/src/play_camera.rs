@@ -51,13 +51,14 @@ fn mix(a: &CameraPoint, b: &CameraPoint, t: f32) -> CameraPoint {
     }
 }
 
-/// The camera following the player between frames: the point it looks from, which trails the
-/// player, and how far it has zoomed out for movement. A reconstruction from the setting's
-/// documented meaning (`Saves/field/_def.xml`: `bumper_follow_speed` the base speed, rising
-/// with the distance, negative for none; `bumper_max_distance` the most it may trail, metres;
-/// `zoom_time` the seconds to the widest zoom while the player moves, `zoom_distance` how far
-/// it pulls back, metres). The game's own tween code (`CameraCFieldMap`, its +0x150, +0x168,
-/// +0x1b0, +0x1c8) is not read, so the curves are not yet matched (`docs/engine.md`).
+/// The camera following the player between frames: its look point and how far it has zoomed
+/// out for movement. Read live (2026-11-13, `AREA_03_01`, `bumper_follow_speed` 5, the camera
+/// object found by its vtable `0x14080c428`): the look point (+0x188) is the player's position
+/// plus `diffPosition` every frame, with no trailing (+0xb0 holds the previous frame's position,
+/// one frame behind +0xc0, the current one), and the zoom blend (+0x1a0) rises from 0 to 1 at
+/// 1 / `zoom_time` a second while the player moves. What `bumper_follow_speed` and
+/// `bumper_max_distance` change was not seen; the zoom's way back after a stop is a stand-in
+/// (the same rate; the run showed it falling once and staying up once).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Follow {
     /// Where the camera's look point is (field units), once it has started.
@@ -68,32 +69,14 @@ pub struct Follow {
 
 impl Follow {
     /// One frame of `dt` seconds with the player at `player` (field units), moving or not,
-    /// under setting `point`: the look point and the extra distance (field units).
+    /// under setting `point`: the look point (the player's position) and the extra distance
+    /// (field units).
     pub fn step(&mut self, player: [f32; 3], moving: bool, point: &CameraPoint, dt: f32) -> ([f32; 3], f32) {
-        let (speed, max) = point.bumper;
-        let at = match self.at {
-            Some(at) if speed >= 0.0 => {
-                let gap = [player[0] - at[0], player[1] - at[1], player[2] - at[2]];
-                let d = (gap[0] * gap[0] + gap[1] * gap[1] + gap[2] * gap[2]).sqrt();
-                // Closing at `speed` per second times the gap in metres: an easing whose rate
-                // grows with the distance, never past the player.
-                let k = (speed * (d / 100.0).max(1.0) * dt).min(1.0);
-                let mut next = [at[0] + gap[0] * k, at[1] + gap[1] * k, at[2] + gap[2] * k];
-                let left = d * (1.0 - k);
-                let limit = max.max(0.0) * 100.0;
-                if left > limit && left > 0.0 {
-                    let f = limit / left;
-                    next = [player[0] - gap[0] * (1.0 - k) * f, player[1] - gap[1] * (1.0 - k) * f, player[2] - gap[2] * (1.0 - k) * f];
-                }
-                next
-            }
-            _ => player,
-        };
-        self.at = Some(at);
+        self.at = Some(player);
         let (time, distance) = point.zoom;
         let rate = if time > 0.0 { dt / time } else { 1.0 };
         self.zoom = (self.zoom + if moving { rate } else { -rate }).clamp(0.0, 1.0);
-        (at, self.zoom * distance * 100.0)
+        (player, self.zoom * distance * 100.0)
     }
 }
 
@@ -116,27 +99,18 @@ mod tests {
     }
 
     #[test]
-    fn the_camera_trails_and_zooms_out() {
-        let point = CameraPoint { length: 5.0, yaw: 0.0, pitch: 0.0, fov: 40.0, diff: [0.0; 3], position: [0.0; 3], bumper: (2.0, 1.0), zoom: (2.0, 1.0) };
+    fn the_look_point_stays_on_the_player_and_the_camera_zooms_out() {
+        let point = CameraPoint { length: 5.0, yaw: 0.0, pitch: 0.0, fov: 40.0, diff: [0.0; 3], position: [0.0; 3], bumper: (5.0, 1.0), zoom: (2.0, 1.0) };
         let mut f = Follow::default();
         assert_eq!(f.step([0.0; 3], false, &point, 1.0 / 30.0), ([0.0; 3], 0.0));
-        // A jump of 5 m: held to 1 m behind.
-        let (at, _) = f.step([500.0, 0.0, 0.0], true, &point, 1.0 / 30.0);
-        assert!((at[0] - 400.0).abs() < 1e-3, "{at:?}");
-        // Standing still, it closes in.
-        for _ in 0..120 {
-            f.step([500.0, 0.0, 0.0], false, &point, 1.0 / 30.0);
-        }
-        assert!((f.at.unwrap()[0] - 500.0).abs() < 1.0);
-        // Moving for a second: half the zoom; stopped long enough: none.
+        // A jump of 5 m: no trailing, as the game at bumper_follow_speed 5.
+        assert_eq!(f.step([500.0, 0.0, 0.0], true, &point, 1.0 / 30.0).0, [500.0, 0.0, 0.0]);
+        // Moving for a second: half the zoom (zoom_time 2).
         let mut g = Follow::default();
         let mut extra = 0.0;
         for _ in 0..30 {
             extra = g.step([0.0; 3], true, &point, 1.0 / 30.0).1;
         }
         assert!((extra - 50.0).abs() < 0.5, "{extra}");
-        // A negative speed: locked on.
-        let locked = CameraPoint { bumper: (-1.0, 1.0), ..point };
-        assert_eq!(Follow::default().step([7.0, 8.0, 9.0], false, &locked, 0.1).0, [7.0, 8.0, 9.0]);
     }
 }

@@ -4964,7 +4964,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 .or_else(|| look_table.and_then(|l| l.camera_points.first().cloned()));
             if let Some(point) = point {
                 let mirror = Vec3::new(-1.0, 1.0, 1.0);
-                // It trails her and pulls back while she moves (`play_camera::Follow`).
+                // It looks at her and pulls back while she moves (`play_camera::Follow`).
                 let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
                 let (at, extra) = w.follow.step(w.pos, moving, &point, dt);
                 let look = Vec3::from(at) + Vec3::from(point.diff) * 100.0;

@@ -405,17 +405,30 @@ gimmick), standing in it (so it does not send them straight back). Where the gam
 not found in three tries (the field load `0x140076760` and its callers; `docs/loop-archive.md`
 707, 754); an oracle run (stage 7) can read it.
 
-## Play camera follow (not yet the game's)
+## Play camera follow
 
-The field's play camera follows the player with `play_camera::Follow`, rebuilt from what
-`Saves/field/_def.xml` says the setting's numbers mean, not from the game's code: the look point
-closes on the player at `bumper_follow_speed` per second times the gap in metres (at least 1),
-never trailing by more than `bumper_max_distance`; a negative speed locks it on. While the player
-moves the camera pulls back by up to `zoom_distance`, reaching it after `zoom_time` seconds, and
-comes back in at the same rate when they stop. The settings themselves still switch at once
-between camera areas. The game's tween code (`CameraCFieldMap`, the tweens at +0x150, +0x168,
-+0x1b0, +0x1c8) was not found in two tries, so these curves are a stand-in until an oracle run
-measures the game's camera (stage 7).
+Read from the running game (2026-11-13: the user's save, Southern Ruins Sector One,
+`AREA_03_01`, whose one area is `CLOSELY_Z` with `bumper_follow_speed` 5 and `zoom_distance` 0).
+The play camera (`CameraCFieldMap`, vtable `0x14080c428`: its +0x88 and +0xd8 are the known
+`0x1401ec650` and `0x1401e6e10`; one object, found by scanning for that pointer) was dumped
+every 0.1 s while Escha stood, ran 1.5 s and stopped:
+
+| Offset | What |
+|---|---|
+| +0x18, +0x30, ... +0x1c0 | tweens, each `{vtable 0x140725e10, current, from, to, ...}` |
+| +0x98 (the +0x90 tween) | a distance: 624 to 681 as she ran along x, the setting unchanged (likely the length after the camera's collision pull-in; not yet checked) |
+| +0xb0 | the player's position one frame earlier |
+| +0xc0, +0xd0 | the player's position |
+| +0x188 | the look point: the player's position plus `diffPosition` (y + 100 here) |
+| +0x158 | 5.0, `bumper_follow_speed` |
+| +0x19c | seconds since the player last started or stopped moving |
+| +0x1a0 | the move zoom blend: 0 to 1 at 1 / `zoom_time` a second while moving |
+
+So the look point does not trail the player (`play_camera::Follow` keeps it on her; it used to
+trail at `bumper_follow_speed` per second, a guess from `_def.xml`). Not seen yet: what the
+bumper numbers change, the camera's eye (not in the object's first 4 KB), and how the zoom
+blend comes back after a stop (it fell at the same rate once, stayed at 1 the other time; Barrel
+brings it back at the same rate). The settings still switch at once between camera areas.
 
 ## Movies (open)
 

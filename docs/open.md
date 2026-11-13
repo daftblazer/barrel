@@ -62,12 +62,10 @@ likely settle them where static reading failed.
   `0x1402b6d43`, `0x1402ecad1` were bounds checks. Way in: read `0x140076760` whole for where it
   places the player, or **live read** the player's position right after arriving in
   `AREA_01_01` from the Town Entrance.
-- **Play camera follow curves.** `play_camera::Follow` is rebuilt from `_def.xml`'s comments, not
-  the code (`docs/engine.md`). The setting's tweens sit at `CameraCFieldMap` +0x150 (bumper
-  speed), +0x168 (max distance), +0x1b0 (zoom time), +0x1c8 (zoom distance), written at
-  `0x1401e7321`; their readers were not found (two tries; `0x140234570` is the jump timers, not
-  the camera). Also not done: blending between camera areas' settings (Barrel snaps). Way in:
-  **live read** the camera's eye and target each frame while the player runs and stops.
+- **Play camera follow.** Read live (`docs/engine.md`, "Play camera follow"): the look point
+  sits on the player. Left: what `bumper_follow_speed` / `bumper_max_distance` change, the
+  eye (look outside `CameraCFieldMap`'s first 4 KB, or follow its pointers at +0x130 and
+  +0x260..+0x288), the zoom blend's way back, blending between camera areas (Barrel snaps).
 - **Field NPC spawns in story events (characters 10048 and up).** Third lookup `0x140270230`
   (list at manager +0x50 by +0x78); leads `0x14017f13e`, `0x1403386af` unchecked. Parked after
   three tries. The stage camera of some story events depends on it.
