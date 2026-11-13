@@ -138,9 +138,6 @@ likely settle them where static reading failed.
   characters; whether the event starts in another field before its `q12`.
   Parked: checks against the running game stay within the opening for now, and this event
   comes later.
-- **The Atelier's back wall** (`TOWN_11`, `EVENT_MM01_OP1_111` at 30 s): behind Clone and the
-  table Barrel shows the clear colour above the shelves, where a wall or beam would be
-  expected. Not yet compared with the game's shot.
 - **Event start order among equal priorities**: the game sorts with MSVC's introsort, which does
   not keep order, so a random pick may differ from Barrel's.
 - **Story voice line mapping**: which voice clip goes with which message line when not given by

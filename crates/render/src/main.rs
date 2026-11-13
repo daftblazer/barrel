@@ -3973,7 +3973,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         .unwrap_or_default();
     let mut quake_rng = barrel_game::rng::Rng::from_state([0x1234_5678, 0x9abc_def0, 0x0fed_cba9, 0x8765_4321]);
     let mut divisions = barrel_formats::chara_div::Divisions::new();
-    let event_file = if frames > 1 { event_spec.as_ref().map(std::fs::read).transpose()? } else { None };
+    // The event is played (up to `--at` and on) even for one frame, so a still shows the state its
+    // commands have set by then (objects shown, versions, the camera).
+    let event_file = event_spec.as_ref().map(std::fs::read).transpose()?;
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
         use barrel_game::stage::{Measures, Playback, Stage};
@@ -5044,6 +5046,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 out.pump(mixer);
             }
             versions_shown.clone_from(&play.stage.versions_shown);
+            if event_objects != play.stage.event_objects {
+                eprintln!("frame {frame}: event objects {}", if play.stage.event_objects { "shown" } else { "hidden" });
+            }
             event_objects = play.stage.event_objects;
             // The field the event is in now.
             if let Some(k) = play.stage.field.and_then(|m| field_maps.iter().position(|&f| f == m))

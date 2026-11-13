@@ -319,7 +319,10 @@ view 22.5). The camera keeps the last four as tweens (+0x150, +0x168, +0x1b0, +0
 in `CameraCFieldMap`'s own code reads them back, so what they do is not found.
 
 **Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
---fps HZ` builds the scene once, then plays the event on: an `event::Player` schedule in a
+--fps HZ` builds the scene once, then plays the event on (one frame too: the event runs up to
+`--at` first, so a still shows what its commands have set by then, such as the Atelier's
+`xEV_` west wall that `q10 1` shows from 3 s into `EVENT_MM01_OP1_111`; a still once skipped
+the playing and drew the room open on that side, which the game's own shot showed wrong): an `event::Player` schedule in a
 `stage::Playback` stepped by a `clock::Clock` fed 1/HZ a frame, each frame drawing the last
 two ticks blended (`docs/engine.md`, "Timing"). Between frames only the characters'
 instance matrices and joint palettes are rewritten; each character plays the motion the
