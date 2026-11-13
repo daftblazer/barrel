@@ -1369,7 +1369,7 @@ fn event_characters(
     actors: &mut Vec<Actor>,
     absent_out: &mut std::collections::HashSet<u32>,
     costumes: &[(u32, usize, usize, usize)],
-) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>, Option<f32>)> {
+) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>, Option<f32>, Option<u32>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
     let event = Ebd::parse(&std::fs::read(event_path)?)?;
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
@@ -1452,6 +1452,8 @@ fn event_characters(
         }
     }
     let mut stage_motions: std::collections::HashMap<u32, (String, f32, bool)> = Default::default();
+    // The field the stage is in at `at` (none: where the event starts).
+    let mut start_field = None;
     let absent = absent_out;
     // --at SECONDS: where the stage has everyone then (barrel_game::stage), and its camera
     // when it has set both the eye and the target.
@@ -1490,6 +1492,7 @@ fn event_characters(
         let upto: Vec<_> = steps.into_iter().filter(|t| t.time <= at).collect();
         let mut stage = Stage { measures: Measures::table(&charas), curves, ..Stage::default() }.play(&upto, |_, _| {});
         stage.run_until(at + FRAME * 0.5);
+        start_field = stage.field;
         // Everyone the event ever places is loaded (so playing on can show characters who come
         // later); those not on the stage at `at` start hidden.
         let later: Vec<Placement> = first.iter().filter(|f| !stage.characters.contains_key(&f.0)).copied().collect();
@@ -1599,7 +1602,7 @@ fn event_characters(
         tex_base += body.count;
         packs.extend(body.packs);
     }
-    Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements, at))
+    Ok((packs, (placed > 0.0).then(|| centre / placed), camera, placements, at, start_field))
 }
 
 /// The fields an event plays in, in the order it first goes to each (`docs/events.md`, "Which
@@ -1863,6 +1866,8 @@ struct Loaded {
     town_bodies: Vec<TownBody>,
     /// Where playback starts (`--at`, or the start of `--line`'s line).
     start_at: Option<f32>,
+    /// The field map the event is in there (`--at`), if it has moved.
+    start_field: Option<u32>,
 }
 
 /// The story from a new game, over the install at ROOT (`event_start::Chain`).
@@ -1897,6 +1902,8 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     let mut town_bodies = Vec::new();
     // Where playback starts: --at, or --line's start.
     let mut start_at = event_at;
+    // The field the event is in where playback starts.
+    let mut start_field = None;
     // CPU side: the vertices and draws, and the texture pack.
     let mut scene = Scene::new();
     // The field map numbers loaded, in scene order (empty for `--field DIR`).
@@ -2011,8 +2018,9 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     let mut absent: std::collections::HashSet<u32> = Default::default();
     if let Some(e) = &event_spec {
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, centre, cam, placements, at) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent, &costumes)?;
+        let (packs, centre, cam, placements, at, field_at) = event_characters(Path::new(e), &mut scene, base, event_line, event_at, &mut actors, &mut absent, &costumes)?;
         start_at = at;
+        start_field = field_at;
         pack_bytes.extend(packs);
         focus = centre;
         event_camera = cam;
@@ -2052,7 +2060,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
     }
-    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at })
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field })
 }
 
 /// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
@@ -2748,7 +2756,7 @@ fn main() -> Result<()> {
         })
         .transpose()?;
     // The scene: loaded, then uploaded under the renderer set up above.
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at } =
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at, start_field } =
         load_scene(SceneSpec {
             field,
             args: args.clone(),
@@ -3156,6 +3164,7 @@ fn main() -> Result<()> {
     let mut current_field: u16 = player
         .as_ref()
         .and_then(|p| p.0.stage.field)
+        .or(start_field)
         .and_then(|m| field_maps.iter().position(|&f| f == m))
         .map_or(0, |k| k as u16);
     let start_ticks = player.as_ref().map_or(0, |p| p.1.ticks);

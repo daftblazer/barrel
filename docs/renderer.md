@@ -60,6 +60,12 @@ blended offsets are added to that vertex layout's positions before skinning (see
 `formats.md`, "Morph targets"). Escha with `PC20_EYE_M_ANG_M_*` at 2 s opens her mouth and
 moves her brows and eyes.
 
+**One frame of a moving event.** A single frame (`--frames 1`, the default) has no playback,
+so the field drawn is the one the stage is in at `--at` (or `--line`'s start), as playback
+would draw it: one frame is the first of several, pixel for pixel. Before, a one-frame render
+of an event that had moved on (`EVENT_MM01_OP1_111` at 58 s, in TOWN_10) drew the field it
+started in, and nothing showed but the characters.
+
 **Starting at a line.** Without `--at`, `--line N` starts the event where line N starts on
 the schedule (`--at` that time and a frame): the stage, the camera and the cast are as they
 are then (`EVENT_MM01_OP1_222`'s line 10 at 82.32 s, the shot with the desk lamp).
