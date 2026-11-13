@@ -325,24 +325,11 @@ fn barrier(
     };
 }
 
-/// The terrain on the GPU: one pipeline, and each field's ground with its set of textures.
+/// The terrain's pipeline (the renderer's; each scene's grounds are in `SceneGpu`).
 struct TerrainGpu {
-    layout: vk::DescriptorSetLayout,
-    pool: vk::DescriptorPool,
     pipeline_layout: vk::PipelineLayout,
     shader: vk::ShaderModule,
     pipeline: vk::Pipeline,
-    grounds: Vec<Ground>,
-}
-
-struct Ground {
-    field: u16,
-    set: vk::DescriptorSet,
-    textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
-    first_index: u32,
-    index_count: u32,
-    field_size: f32,
-    scales: [f32; 6],
 }
 
 /// The field's ground: a heightmap grid drawn with the terrain shader.
@@ -2273,6 +2260,51 @@ fn main() -> Result<()> {
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
+    // Each field's ground textures: a set of 2 blend maps + 6 layers.
+    let terrain_bindings = [
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(2)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(6)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+    ];
+    let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
+    let mut grounds = Vec::new();
+    for (field, t) in &terrains {
+        let bundle = barrel_formats::ktf::parse(&t.ktf)?;
+        let mut tex = Vec::new();
+        for b in bundle.blend.textures.iter().take(2) {
+            tex.push(upload_texture(&gpu, pool, b)?);
+        }
+        // A field with one blend map (TOWN_03) weights only the first three layers: the
+        // second map is black, so layers 4 to 6 get no weight.
+        let black = [0u8, 0, 0, 255];
+        while tex.len() < 2 && !tex.is_empty() {
+            let t = barrel_formats::g1t::Texture {
+                width: 1,
+                height: 1,
+                format: Format::Rgba8,
+                format_code: 1,
+                layers: 1,
+                volume: false,
+                levels: vec![&black[..]],
+            };
+            tex.push(upload_texture(&gpu, pool, &t)?);
+        }
+        let layer_count = bundle.layers.textures.len().clamp(1, 6);
+        for i in 0..6 {
+            tex.push(upload_texture(&gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
+        }
+        if tex.len() != 8 {
+            return Err("terrain needs two blend maps".into());
+        }
+        grounds.push(scene_gpu::GroundData { field: *field, textures: tex, first_index: t.first_index, index_count: t.index_count, field_size: t.field_size, scales: t.scales });
+    }
     let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
     let shared = scene_gpu::Shared {
         set_layout,
@@ -2281,8 +2313,9 @@ fn main() -> Result<()> {
         look: look_buf,
         shadow_sampler: shadow_target.sampler,
         shadow_view: shadow_target.view,
+        terrain_layout,
     };
-    let scene_data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights };
+    let scene_data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds };
     let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &shared)?;
     let (vbuf, ibuf, instance_set) = (scene.vbuf, scene.ibuf, scene.instance_set);
     let sets = scene.sets.clone();
@@ -2605,27 +2638,10 @@ fn main() -> Result<()> {
         .render_pass(post_pass);
     let post_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[post_info], None).map_err(|(_, e)| e)?[0] };
 
-    // Terrain: each field's own textures in a set of 2 blend maps + 6 layers, and one pipeline
-    // with the terrain fragment shader.
-    let mut terrain_gpu: Option<TerrainGpu> = None;
-    if !terrains.is_empty() {
-        let bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(2)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(6)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
-        let tlayout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings), None)? };
-        let n = terrains.len() as u32;
-        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 * n }];
-        let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)? };
-        let tpl_layouts = [tlayout, instance_layout];
+    // Terrain: one pipeline with the terrain fragment shader, over each field's ground set
+    // (2 blend maps + 6 layers, `SceneGpu`).
+    let terrain_gpu = {
+        let tpl_layouts = [terrain_layout, instance_layout];
         let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
         let tfs = module(TERRAIN_FRAG)?;
         let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
@@ -2634,50 +2650,8 @@ fn main() -> Result<()> {
         let traster = raster.cull_mode(vk::CullModeFlags::NONE);
         let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster);
         let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
-        let mut grounds = Vec::new();
-        for (field, t) in &terrains {
-            let bundle = barrel_formats::ktf::parse(&t.ktf)?;
-            let mut tex = Vec::new();
-            for b in bundle.blend.textures.iter().take(2) {
-                tex.push(upload_texture(&gpu, pool, b)?);
-            }
-            // A field with one blend map (TOWN_03) weights only the first three layers: the
-            // second map is black, so layers 4 to 6 get no weight.
-            let black = [0u8, 0, 0, 255];
-            while tex.len() < 2 && !tex.is_empty() {
-                let t = barrel_formats::g1t::Texture {
-                    width: 1,
-                    height: 1,
-                    format: Format::Rgba8,
-                    format_code: 1,
-                    layers: 1,
-                    volume: false,
-                    levels: vec![&black[..]],
-                };
-                tex.push(upload_texture(&gpu, pool, &t)?);
-            }
-            let layer_count = bundle.layers.textures.len().clamp(1, 6);
-            for i in 0..6 {
-                tex.push(upload_texture(&gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
-            }
-            if tex.len() != 8 {
-                return Err("terrain needs two blend maps".into());
-            }
-            let tl = [tlayout];
-            let tset = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
-            let infos: Vec<vk::DescriptorImageInfo> = tex
-                .iter()
-                .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
-                .collect();
-            let writes = [
-                vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..2]),
-                vk::WriteDescriptorSet::default().dst_set(tset).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
-            ];
-            unsafe { d.update_descriptor_sets(&writes, &[]) };
-            grounds.push(Ground { field: *field, set: tset, textures: tex, first_index: t.first_index, index_count: t.index_count, field_size: t.field_size, scales: t.scales });
-        }
-        terrain_gpu = Some(TerrainGpu { layout: tlayout, pool: tpool, pipeline_layout: tpl, shader: tfs, pipeline: tpipe, grounds });
-    }
+        TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
+    };
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
     // With an event, look at its characters from a few metres away; otherwise frame it all.
@@ -3792,8 +3766,9 @@ fn main() -> Result<()> {
         // distant view does not keep depth, so the terrain drawn before it would be covered).
         for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
         if !pass_sky {
-            if let Some(tg) = &terrain_gpu {
-                for g in tg.grounds.iter().filter(|g| g.field == current_field) {
+            {
+                let tg = &terrain_gpu;
+                for g in scene.grounds.iter().filter(|g| g.field == current_field) {
                     terrain_push[17] = g.field_size;
                     terrain_push[20..26].copy_from_slice(&g.scales);
                     d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
@@ -3969,18 +3944,10 @@ fn main() -> Result<()> {
         if let Some((layer, ..)) = text_layer {
             layer.destroy(&gpu);
         }
-        if let Some(tg) = terrain_gpu {
-            d.destroy_pipeline(tg.pipeline, None);
-            d.destroy_pipeline_layout(tg.pipeline_layout, None);
-            d.destroy_shader_module(tg.shader, None);
-            d.destroy_descriptor_pool(tg.pool, None);
-            d.destroy_descriptor_set_layout(tg.layout, None);
-            for (image, mem, view) in tg.grounds.into_iter().flat_map(|g| g.textures) {
-                d.destroy_image_view(view, None);
-                d.destroy_image(image, None);
-                d.free_memory(mem, None);
-            }
-        }
+        d.destroy_pipeline(terrain_gpu.pipeline, None);
+        d.destroy_pipeline_layout(terrain_gpu.pipeline_layout, None);
+        d.destroy_shader_module(terrain_gpu.shader, None);
+        d.destroy_descriptor_set_layout(terrain_layout, None);
         d.destroy_pipeline(post_pipeline, None);
         d.destroy_pipeline_layout(post_layout, None);
         d.destroy_shader_module(post_vs, None);

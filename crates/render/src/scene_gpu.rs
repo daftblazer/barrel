@@ -22,6 +22,28 @@ pub struct SceneData<'a> {
     pub palette: &'a [Mat4],
     pub deltas: &'a [[f32; 4]],
     pub weights: &'a [f32],
+    /// Each field's ground: its 8 textures uploaded (2 blend maps, 6 layers).
+    pub grounds: Vec<GroundData>,
+}
+
+pub struct GroundData {
+    pub field: u16,
+    pub textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    pub first_index: u32,
+    pub index_count: u32,
+    pub field_size: f32,
+    pub scales: [f32; 6],
+}
+
+/// A field's ground as drawn: its texture set (`Shared::terrain_layout`) and its indices.
+pub struct Ground {
+    pub field: u16,
+    pub set: vk::DescriptorSet,
+    textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    pub first_index: u32,
+    pub index_count: u32,
+    pub field_size: f32,
+    pub scales: [f32; 6],
 }
 
 /// What a scene's sets point at that the renderer owns: the layouts, the texture sampler, the
@@ -33,6 +55,7 @@ pub struct Shared {
     pub look: vk::Buffer,
     pub shadow_sampler: vk::Sampler,
     pub shadow_view: vk::ImageView,
+    pub terrain_layout: vk::DescriptorSetLayout,
 }
 
 pub struct SceneGpu {
@@ -52,6 +75,8 @@ pub struct SceneGpu {
     inst_pool: vk::DescriptorPool,
     /// Set 1: instances (0), palette (1), morph offsets (2) and weights (3), lighting (4), shadow (5).
     pub instance_set: vk::DescriptorSet,
+    ground_pool: Option<vk::DescriptorPool>,
+    pub grounds: Vec<Ground>,
     /// One set per texture (layout `set_layout`: one combined image sampler), in texture order.
     pub sets: Vec<vk::DescriptorSet>,
 }
@@ -119,7 +144,41 @@ impl SceneGpu {
             vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(5).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&shadow_info),
         );
         unsafe { d.update_descriptor_sets(&writes, &[]) };
+
+        let mut ground_pool = None;
+        let mut grounds = Vec::new();
+        if !data.grounds.is_empty() {
+            let n = data.grounds.len() as u32;
+            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 * n }];
+            let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)? };
+            ground_pool = Some(tpool);
+            for g in data.grounds {
+                let tl = [shared.terrain_layout];
+                let set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
+                let infos: Vec<vk::DescriptorImageInfo> = g
+                    .textures
+                    .iter()
+                    .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(shared.sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
+                    .collect();
+                let writes = [
+                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..2]),
+                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[2..]),
+                ];
+                unsafe { d.update_descriptor_sets(&writes, &[]) };
+                grounds.push(Ground {
+                    field: g.field,
+                    set,
+                    textures: g.textures,
+                    first_index: g.first_index,
+                    index_count: g.index_count,
+                    field_size: g.field_size,
+                    scales: g.scales,
+                });
+            }
+        }
         Ok(SceneGpu {
+            ground_pool,
+            grounds,
             vbuf,
             vmem,
             ibuf,
@@ -159,14 +218,17 @@ impl SceneGpu {
         unsafe {
             d.destroy_descriptor_pool(self.pool, None);
             d.destroy_descriptor_pool(self.inst_pool, None);
-            for (b, m) in self.buffers.into_iter().zip([self.instance_mem, self.palette_mem, self.delta_mem, self.weight_mem]) {
-                d.destroy_buffer(b, None);
-                d.free_memory(m, None);
+            if let Some(p) = self.ground_pool {
+                d.destroy_descriptor_pool(p, None);
             }
-            for (image, mem, view) in self.textures {
+            for (image, mem, view) in self.textures.into_iter().chain(self.grounds.into_iter().flat_map(|g| g.textures)) {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
                 d.free_memory(mem, None);
+            }
+            for (b, m) in self.buffers.into_iter().zip([self.instance_mem, self.palette_mem, self.delta_mem, self.weight_mem]) {
+                d.destroy_buffer(b, None);
+                d.free_memory(m, None);
             }
             d.destroy_buffer(self.vbuf, None);
             d.free_memory(self.vmem, None);
