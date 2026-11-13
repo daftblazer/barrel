@@ -34,6 +34,7 @@ mod basket;
 mod assignment;
 mod battlehud;
 mod result;
+mod shopping;
 mod mix;
 mod fsr3;
 mod gsr2;
@@ -955,6 +956,68 @@ fn cauldron(
     }
     Ok(())
 }
+
+/// A town shop (B in free play in town; `BARREL_SHOP_AT` offscreen): the shop with the most
+/// wares on sale (`Saves_EN/shop/ShopData.xml`; which shop stands in which part of town is not
+/// read yet), one deal a visit through `Session::buy` / `Session::sell`.
+#[allow(clippy::too_many_arguments)]
+fn shop_visit(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    target: &screen::Target,
+    window: Option<(&present::Presenter, &mut window::Pump)>,
+    offscreen: Option<vk::Image>,
+    root: &Path,
+    session: Option<&mut barrel_game::session::Session>,
+    keys: &[title::Button],
+    out: Option<&Path>,
+    frame: u32,
+) -> Result<()> {
+    let Some(s) = session else { return Ok(()) };
+    if !matches!(*s.scene(), barrel_game::session::Scene::Field(m) if m < FIRST_AREA_MAP) {
+        eprintln!("the shops are in town");
+        return Ok(());
+    }
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let book = barrel_game::cauldron::Book::load(&exe, root)?;
+    let (tags, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
+    let item_number = |tag: &str| tags.iter().position(|t| *t == tag).map(|n| n as i32);
+    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/shop/ShopData.xml"))?)?;
+    let wares = barrel_game::shop::wares(&table);
+    let on_sale: Vec<&barrel_game::shop::Ware> = wares.iter().filter(|w| barrel_game::shop::on_sale(w, |e| s.event_seen(e)) && item_number(&w.item).is_some()).collect();
+    let mut shops: Vec<&str> = on_sale.iter().map(|w| w.shop.as_str()).collect();
+    shops.dedup();
+    let Some(shop) = shops.iter().copied().max_by_key(|t| on_sale.iter().filter(|w| w.shop == *t).count()) else {
+        eprintln!("frame {frame}: no shop has anything on sale");
+        return Ok(());
+    };
+    let shown: Vec<&barrel_game::shop::Ware> = on_sale.into_iter().filter(|w| w.shop == shop).collect();
+    let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let cost = |item: i32| usize::try_from(item).ok().and_then(|i| item_rows.children.get(i)).and_then(|r| r.attr("cost")).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    let basket: Vec<(String, f32, i32)> = s.basket.iter().map(|g| (book.name(g.item).to_string(), g.quality, barrel_game::synthesis::worth(cost(g.item), g.quality, &[]))).collect();
+    let name = shown.first().map_or(shop.to_string(), |w| w.shop_name.clone());
+    let lists = shopping::lists(&name, &shown, s.money, &basket);
+    match shopping::run(gpu, pool, target, window, offscreen, root, &lists, keys, out)? {
+        Some(shopping::Deal::Buy(k)) => {
+            let w = shown[k];
+            let item = item_number(&w.item).unwrap_or(-1);
+            if s.buy(item, w.quality as f32, barrel_game::shop::list_price(w), 1) {
+                eprintln!("frame {frame}: bought {} for {}; {} cole left", book.name(item), barrel_game::shop::list_price(w), s.money);
+            }
+        }
+        Some(shopping::Deal::Sell(k)) => {
+            let item = s.basket[k].item;
+            let paid = s.sell(&[k], cost, 0);
+            eprintln!("frame {frame}: sold {} for {paid}; {} cole now", book.name(item), s.money);
+        }
+        None => eprintln!("frame {frame}: left the shop"),
+    }
+    Ok(())
+}
+
+/// The first field area's map number (the town's maps come before it).
+const FIRST_AREA_MAP: u32 = 12;
 
 /// The Atelier's field map number.
 const ATELIER_MAP: u32 = 0;
@@ -4477,6 +4540,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut open_menu = false;
     // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` offscreen).
     let mut open_mix = presenter.is_none() && std::env::var("BARREL_MIX_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
+    // A town shop (B in free play in town; `BARREL_SHOP_AT` offscreen, `BARREL_SHOP_KEYS`).
+    let mut open_shop = false;
+    if presenter.is_none() && std::env::var("BARREL_SHOP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+            let keys = title::keys(&std::env::var("BARREL_SHOP_KEYS").unwrap_or_default());
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let color = *color;
+            shop_visit(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
+        }
     let pose_jumps = std::env::var("BARREL_POSE_JUMPS").ok().and_then(|v| v.parse::<f32>().ok());
     // Offscreen: the cauldron at a frame (`BARREL_MIX_AT`) with the buttons in `BARREL_MIX_KEYS`.
     if open_mix && presenter.is_none()
@@ -4544,6 +4616,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 KeyCode::F5 => save_now = true,
                 KeyCode::KeyG => gather_now = true,
                 KeyCode::KeyC if walker.is_some() => open_mix = true,
+                KeyCode::KeyB if walker.is_some() => open_shop = true,
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -4565,6 +4638,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
             cauldron(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
+        }
+        if open_shop && let (Some(root), Some(pr)) = (hud_root.clone(), presenter.as_ref()) {
+            unsafe { gpu.device.device_wait_idle()? };
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            shop_visit(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
         }
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };

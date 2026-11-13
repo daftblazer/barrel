@@ -672,7 +672,15 @@ while the task's event is unseen, and the chosen task's name and description. In
 first that fit) and the quality it would come out at; confirm makes it (`Session::synthesize`:
 the materials leave the basket, the item goes in, its days pass). Not yet the game's: plain text
 over the desk (the game's synthesis screens, layouts 720 to 851 on `a15_mix.g1t`, not drawn),
-no choosing among fitting materials, no skills, traits or count. Option opens its list: Save writes the game as F5 does (the next free
+no choosing among fitting materials, no skills, traits or count. In a town map (0 to 11) B opens a shop (`shopping.rs`; offscreen `BARREL_SHOP_AT` and
+`BARREL_SHOP_KEYS`): the shop with the most wares on sale (`Saves_EN/shop/ShopData.xml` against
+the events seen; right after the opening the Homunculus Shop, ten wares from 90 to 15,000
+cole), its list with the prices (those the money does not cover grey), left / right for the
+basket's items at their worth; confirm buys or sells one (`Session::buy`, `Session::sell`):
+from 100 cole the Mutated Taun leaves 10, a Corundum Stone at quality 50 brings 12. Not yet the
+game's: plain text over the desk (the game's shop screen, likely layout 664 with the amount
+dialog 660, not drawn and not checked: the copied save cannot reach a shop), one deal a visit,
+no amounts or stock, which shop stands where not read. Option opens its list: Save writes the game as F5 does (the next free
 slot); Return to Title starts the run again at the title, and Load at the title's Load Game list
 (so Back there goes to the title, not to the game: not yet the game's). Starting again keeps the
 window and builds everything else anew (`view` returns `Ended::Restart` with the arguments less
