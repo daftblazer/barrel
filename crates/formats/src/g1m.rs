@@ -219,6 +219,9 @@ pub struct MeshGroup {
     pub group: u32,
     /// The shader's name (`Saves/shader/shader.xml`'s `String`: `MapSTD`, `CharaMTDS`, `SM` ...).
     pub shader: String,
+    /// The two words after the shader's name: 0 in the colour pass, in the shadow pass a
+    /// count in the top byte (0 to 10 seen); the second always -1 (over 238 entries).
+    pub words: [u32; 2],
     pub submeshes: Vec<u32>,
 }
 
@@ -559,9 +562,10 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
                     for _ in 0..entries {
                         let name = sec.get(p..p + 16).ok_or(Error::Corrupt("g1mg mesh group past the end"))?;
                         let shader = String::from_utf8_lossy(name.split(|&b| b == 0).next().unwrap_or_default()).into_owned();
+                        let words = [u32_at(sec, p + 16)?, u32_at(sec, p + 20)?];
                         let k = bounded(u32_at(sec, p + 24)?)?;
                         let submeshes = (0..k).map(|i| u32_at(sec, p + 28 + 4 * i)).collect::<Result<_, _>>()?;
-                        g.mesh_groups.push(MeshGroup { lod, group, shader, submeshes });
+                        g.mesh_groups.push(MeshGroup { lod, group, shader, words, submeshes });
                         p += 28 + 4 * k;
                     }
                 }

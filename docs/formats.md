@@ -158,7 +158,7 @@ model:
 | 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags (0x80000000), u32 joint}` |
 | 0x10007 | index buffers: `{u32 count, u32 bits (always 16), u32}`, then the indices, padded to 4 bytes |
 | 0x10008 | submeshes, 14 u32 each: flags, **layout**, bone map, ?, ?, shader parameters, material, index buffer, ?, primitive (3 triangle list, 4 strip), first vertex, vertex count, first index, index count |
-| 0x10009 | LOD groups, not decoded yet |
+| 0x10009 | mesh groups: per LOD and pass (0 colour, 1 shadow) the shader by name and the submeshes drawn with it (`Geometry::mesh_groups`, `shading.md`); after each name two words, 0 or (in the shadow pass) a count in the top byte, then -1: no draw priority |
 
 A submesh names a vertex layout, not a buffer. A layout lists one or more buffers of the same
 length: characters keep positions in a 12-byte buffer of their own and the rest in a

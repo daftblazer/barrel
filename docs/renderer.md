@@ -508,5 +508,5 @@ counts every piece of the model into one of 1,024 buckets (`0x1403387e0`: the qu
 array, its total at `+0x1020`) at the piece's own priority word (`+0x4`) plus that offset, and
 the commands are then laid out bucket by bucket (`0x1403380d0`, copying `+0x12` to `+0x2a` of
 the sorted entry): a counting sort, so pieces draw in priority order, and an `xS` tag pushes a
-whole object's pieces up by one or two places. Where a piece's own priority comes from (the
-mesh group, its material or shader) is not traced yet, and the viewer does not order by it.
+whole object's pieces up by one or two places. Where a piece's own priority comes from is not traced yet (not
+the mesh groups' spare words, which are 0 or a shadow-pass count and -1), and the viewer does not order by it.

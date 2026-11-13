@@ -2704,7 +2704,7 @@ fn g1m_materials(spec: &str) -> Result<()> {
         println!("material {i}: {} (submeshes {users:?}){colours}", tex.join(", "));
     }
     for m in &g.mesh_groups {
-        println!("lod {} pass {} shader {}: submeshes {:?}", m.lod, if m.group == 0 { "colour" } else { "shadow" }, m.shader, m.submeshes);
+        println!("lod {} pass {} shader {} {:?}: submeshes {:?}", m.lod, if m.group == 0 { "colour" } else { "shadow" }, m.shader, m.words, m.submeshes);
     }
     for (k, m) in g.submeshes.iter().filter_map(|s| g.simple_mesh(s).ok()).enumerate().filter(|(_, m)| !m.corners.is_empty()) {
         let first: Vec<String> = m.corners.iter().take(4).map(|c| format!("{c:.1?}")).collect();
