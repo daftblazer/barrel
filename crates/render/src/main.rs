@@ -1808,139 +1808,65 @@ fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Tex
     }
 }
 
-#[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
-fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    // --window FRAMES: open a window and present that many frames (the live loop's start).
-    if let ["--window", frames] = args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-        return window::run(frames.parse()?);
-    }
-    let field = args.first().is_some_and(|a| a == "--field");
-    let positional = if field { 3 } else { 3 };
-    if args.len() < positional {
-        return Err("usage: barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png | --field DIR OUT.png  [--size N] [--yaw DEG] [--pitch DEG]".into());
-    }
-    let out_path = if field { args[2].clone() } else { args[2].clone() };
-    let mut size = 768u32;
-    let mut size_h = 768u32;
-    let mut yaw = 0f32;
-    let mut pitch = if field { 45f32 } else { 0f32 };
-    let mut alpha_cutoff = 0.3f32;
-    // The render settings (`settings.rs`): `--preset desktop|desktop-high|handheld` (`--handheld`
-    // for the last), then single fields over it, in the order given: `--scale S` (the scene at
-    // S times the output's size, 0.25 to 2), `--fsr` (FSR 1 instead of the bilinear scale),
-    // `--msaa N` (samples a pixel, resolved in the scene pass), `--shadows desktop|handheld`.
-    let mut settings = settings::RenderSettings::DESKTOP;
-    // `--show-motion`: the motion vectors shown in place of the frame (red across, green down).
-    let mut show_motion = false;
-    // Print the GPU's time per stage at the end (--timings).
-    let mut timings = false;
-    let mut hero = 0u32;
-    let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
-    let mut event_spec = None::<String>;
-    let mut creatures_area = None::<i32>;
-    let mut town_people_from = None::<String>;
-    let mut town_bodies: Vec<TownBody> = Vec::new();
-    let mut town_time = 0.0f32;
-    // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
-    // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
-    let mut costumes: Vec<(u32, usize, usize, usize)> = Vec::new();
-    let mut costumes_from = None::<PathBuf>;
-    // --save-every N: of several frames, write only every Nth and the last.
-    let mut save_every = 1u32;
-    let mut event_line = None::<usize>;
-    let mut event_at = None::<f32>;
-    let (mut frames, mut fps) = (1u32, 60f64);
-    // --window FRAMES: show that many frames in a window, at the display's rate, instead of
-    // writing them to files.
-    let mut window_frames = None::<u32>;
-    let mut look_at = None::<u32>;
-    let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
-    let mut use_event_camera = true;
-    let mut no_terrain = false;
-    let mut it = args[positional..].iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            // N (square) or WxH, up to 8192 either way (4K, ultrawide 3440×1440 and 5120×1440, 8K wide).
-            "--size" => {
-                let v = it.next().ok_or("--size N|WxH")?;
-                let (w, h) = v.split_once('x').unwrap_or((v, v));
-                size = w.parse::<u32>()?.clamp(64, 8192);
-                size_h = h.parse::<u32>()?.clamp(64, 8192);
-            }
-            "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
-            "--no-alpha" => alpha_cutoff = -1.0,
-            "--preset" => {
-                let name = it.next().ok_or("--preset desktop|desktop-high|handheld")?;
-                settings = settings::RenderSettings::preset(name).ok_or_else(|| format!("{name}: no such preset"))?;
-            }
-            "--handheld" => settings = settings::RenderSettings::HANDHELD,
-            "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
-            "--gsr" => settings.upscaler = settings::Upscaler::Gsr1,
-            "--motion" => settings.motion = true,
-            "--jitter" => settings.jitter = true,
-            "--taa" => settings.taa = true,
-            "--gsr2" => settings.gsr2 = true,
-            "--fsr3" => settings.fsr3 = true,
-            "--timings" => timings = true,
-            // The protagonist the player chose, whom "Master Character" (row 749) stands for.
-            "--hero" => {
-                hero = match it.next().ok_or("--hero escha|logy")?.as_str() {
-                    "escha" => 0,
-                    "logy" => 1,
-                    other => return Err(format!("--hero {other}: escha or logy").into()),
-                }
-            }
-            "--sharpen" => settings.sharpen = true,
-            "--show-motion" => {
-                settings.motion = true;
-                show_motion = true;
-            }
-            "--msaa" => settings.msaa = it.next().ok_or("--msaa N")?.parse()?,
-            "--scale" => settings.scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
-            "--shadows" => {
-                settings.shadows = match it.next().map(String::as_str) {
-                    Some("desktop") => shadow::Shadows::DESKTOP,
-                    Some("handheld") => shadow::Shadows::HANDHELD,
-                    _ => return Err("--shadows desktop|handheld".into()),
-                }
-            }
-            "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
-            "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
-            "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
-            "--morph" => morph_spec = Some(it.next().ok_or("--morph FILE#N")?.clone()),
-            "--face" => face_specs.push(it.next().ok_or("--face FILE#N")?.clone()),
-            "--look-at" => look_at = Some(it.next().ok_or("--look-at CHARA")?.parse()?),
-            "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
-            "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
-            "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
-            "--window" => window_frames = Some(it.next().ok_or("--window FRAMES")?.parse::<u32>()?.clamp(1, 100_000)),
-            "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
-            "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
-            // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
-            "--save-every" => save_every = it.next().ok_or("--save-every N")?.parse::<u32>()?.max(1),
-            // --costumes SYSDATA: every costumed character dressed as the settings save has them.
-            "--costumes" => costumes_from = Some(PathBuf::from(it.next().ok_or("--costumes SYSDATA")?)),
-            "--costume" => {
-                let v = it.next().ok_or("--costume WHO:BODY:HEAD[:FACE]")?;
-                let p: Vec<usize> = v.split(':').map(str::parse).collect::<std::result::Result<_, _>>()?;
-                match p[..] {
-                    [w, b, h] => costumes.push((w as u32, b, h, 0)),
-                    [w, b, h, f] => costumes.push((w as u32, b, h, f)),
-                    _ => return Err("--costume WHO:BODY:HEAD[:FACE]".into()),
-                }
-            }
-            "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
-            // --town-people all|GAMEDATA: the town people the field load would place here
-            // (all: each character's first placement; a save: those its seen events allow).
-            "--town-people" => town_people_from = Some(it.next().ok_or("--town-people all|GAMEDATA")?.clone()),
-            "--free-camera" => use_event_camera = false,
-            "--no-terrain" => no_terrain = true,
-            "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
-            other => return Err(format!("unknown option {other}").into()),
-        }
-    }
+/// What a scene is loaded from: the viewer's positional arguments (a model and its textures,
+/// or `--field DIR|auto`) and the options that add to it.
+struct SceneSpec {
+    field: bool,
+    args: Vec<String>,
+    event_spec: Option<String>,
+    skeleton_spec: Option<String>,
+    anim_spec: Option<String>,
+    time: f32,
+    morph_spec: Option<String>,
+    face_specs: Vec<String>,
+    costumes: Vec<(u32, usize, usize, usize)>,
+    costumes_from: Option<PathBuf>,
+    event_line: Option<usize>,
+    event_at: Option<f32>,
+    look_at: Option<u32>,
+    creatures_area: Option<i32>,
+    town_people_from: Option<String>,
+}
 
+/// A scene loaded on the CPU side: its geometry, draws and instances, the texture packs, the
+/// fields it spans, and what plays on it (the event's characters, field enemies, town people).
+struct Loaded {
+    scene: Scene,
+    pack_bytes: Vec<Vec<u8>>,
+    /// The field map numbers loaded, in scene order (empty for `--field DIR`).
+    field_maps: Vec<u32>,
+    field_looks: Vec<Option<barrel_formats::field_look::FieldLook>>,
+    /// Each field's distant view's instance (it follows the camera), if it has one.
+    sky_instances: Vec<Option<u32>>,
+    focus: Option<Vec3>,
+    event_camera: Option<EventCamera>,
+    actors: Vec<Actor>,
+    /// Characters loaded but not on the stage (yet, or any more): not drawn.
+    absent: std::collections::HashSet<u32>,
+    creatures: Option<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<String>, f32, [f64; 3], bool)>,
+    town_bodies: Vec<TownBody>,
+}
+
+/// Loads a scene (`docs/renderer.md`, "Chained events": the renderer outlives its scenes).
+fn load_scene(spec: SceneSpec) -> Result<Loaded> {
+    let SceneSpec {
+        field,
+        args,
+        event_spec,
+        skeleton_spec,
+        anim_spec,
+        time,
+        morph_spec,
+        face_specs,
+        mut costumes,
+        costumes_from,
+        event_line,
+        event_at,
+        look_at,
+        creatures_area,
+        town_people_from,
+    } = spec;
+    let mut town_bodies = Vec::new();
     // CPU side: the vertices and draws, and the texture pack.
     let mut scene = Scene::new();
     // The field map numbers loaded, in scene order (empty for `--field DIR`).
@@ -2095,6 +2021,159 @@ fn main() -> Result<()> {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
     }
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies })
+}
+
+#[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    // --window FRAMES: open a window and present that many frames (the live loop's start).
+    if let ["--window", frames] = args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        return window::run(frames.parse()?);
+    }
+    let field = args.first().is_some_and(|a| a == "--field");
+    let positional = if field { 3 } else { 3 };
+    if args.len() < positional {
+        return Err("usage: barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png | --field DIR OUT.png  [--size N] [--yaw DEG] [--pitch DEG]".into());
+    }
+    let out_path = if field { args[2].clone() } else { args[2].clone() };
+    let mut size = 768u32;
+    let mut size_h = 768u32;
+    let mut yaw = 0f32;
+    let mut pitch = if field { 45f32 } else { 0f32 };
+    let mut alpha_cutoff = 0.3f32;
+    // The render settings (`settings.rs`): `--preset desktop|desktop-high|handheld` (`--handheld`
+    // for the last), then single fields over it, in the order given: `--scale S` (the scene at
+    // S times the output's size, 0.25 to 2), `--fsr` (FSR 1 instead of the bilinear scale),
+    // `--msaa N` (samples a pixel, resolved in the scene pass), `--shadows desktop|handheld`.
+    let mut settings = settings::RenderSettings::DESKTOP;
+    // `--show-motion`: the motion vectors shown in place of the frame (red across, green down).
+    let mut show_motion = false;
+    // Print the GPU's time per stage at the end (--timings).
+    let mut timings = false;
+    let mut hero = 0u32;
+    let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
+    let mut event_spec = None::<String>;
+    let mut creatures_area = None::<i32>;
+    let mut town_people_from = None::<String>;
+    let mut town_time = 0.0f32;
+    // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
+    // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
+    let mut costumes: Vec<(u32, usize, usize, usize)> = Vec::new();
+    let mut costumes_from = None::<PathBuf>;
+    // --save-every N: of several frames, write only every Nth and the last.
+    let mut save_every = 1u32;
+    let mut event_line = None::<usize>;
+    let mut event_at = None::<f32>;
+    let (mut frames, mut fps) = (1u32, 60f64);
+    // --window FRAMES: show that many frames in a window, at the display's rate, instead of
+    // writing them to files.
+    let mut window_frames = None::<u32>;
+    let mut look_at = None::<u32>;
+    let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
+    let mut use_event_camera = true;
+    let mut no_terrain = false;
+    let mut it = args[positional..].iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            // N (square) or WxH, up to 8192 either way (4K, ultrawide 3440×1440 and 5120×1440, 8K wide).
+            "--size" => {
+                let v = it.next().ok_or("--size N|WxH")?;
+                let (w, h) = v.split_once('x').unwrap_or((v, v));
+                size = w.parse::<u32>()?.clamp(64, 8192);
+                size_h = h.parse::<u32>()?.clamp(64, 8192);
+            }
+            "--yaw" => yaw = it.next().ok_or("--yaw DEG")?.parse()?,
+            "--no-alpha" => alpha_cutoff = -1.0,
+            "--preset" => {
+                let name = it.next().ok_or("--preset desktop|desktop-high|handheld")?;
+                settings = settings::RenderSettings::preset(name).ok_or_else(|| format!("{name}: no such preset"))?;
+            }
+            "--handheld" => settings = settings::RenderSettings::HANDHELD,
+            "--fsr" => settings.upscaler = settings::Upscaler::Fsr1,
+            "--gsr" => settings.upscaler = settings::Upscaler::Gsr1,
+            "--motion" => settings.motion = true,
+            "--jitter" => settings.jitter = true,
+            "--taa" => settings.taa = true,
+            "--gsr2" => settings.gsr2 = true,
+            "--fsr3" => settings.fsr3 = true,
+            "--timings" => timings = true,
+            // The protagonist the player chose, whom "Master Character" (row 749) stands for.
+            "--hero" => {
+                hero = match it.next().ok_or("--hero escha|logy")?.as_str() {
+                    "escha" => 0,
+                    "logy" => 1,
+                    other => return Err(format!("--hero {other}: escha or logy").into()),
+                }
+            }
+            "--sharpen" => settings.sharpen = true,
+            "--show-motion" => {
+                settings.motion = true;
+                show_motion = true;
+            }
+            "--msaa" => settings.msaa = it.next().ok_or("--msaa N")?.parse()?,
+            "--scale" => settings.scale = it.next().ok_or("--scale S")?.parse::<f32>()?.clamp(0.25, 2.0),
+            "--shadows" => {
+                settings.shadows = match it.next().map(String::as_str) {
+                    Some("desktop") => shadow::Shadows::DESKTOP,
+                    Some("handheld") => shadow::Shadows::HANDHELD,
+                    _ => return Err("--shadows desktop|handheld".into()),
+                }
+            }
+            "--skeleton" => skeleton_spec = Some(it.next().ok_or("--skeleton FILE#N")?.clone()),
+            "--anim" => anim_spec = Some(it.next().ok_or("--anim FILE#N")?.clone()),
+            "--time" => time = it.next().ok_or("--time SECONDS")?.parse()?,
+            "--morph" => morph_spec = Some(it.next().ok_or("--morph FILE#N")?.clone()),
+            "--face" => face_specs.push(it.next().ok_or("--face FILE#N")?.clone()),
+            "--look-at" => look_at = Some(it.next().ok_or("--look-at CHARA")?.parse()?),
+            "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
+            "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
+            "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
+            "--window" => window_frames = Some(it.next().ok_or("--window FRAMES")?.parse::<u32>()?.clamp(1, 100_000)),
+            "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
+            "--event" => event_spec = Some(it.next().ok_or("--event FILE.ebd")?.clone()),
+            // --creatures AREA: field area AREA's enemies (12 is AREA_01_01) under their scripts.
+            "--save-every" => save_every = it.next().ok_or("--save-every N")?.parse::<u32>()?.max(1),
+            // --costumes SYSDATA: every costumed character dressed as the settings save has them.
+            "--costumes" => costumes_from = Some(PathBuf::from(it.next().ok_or("--costumes SYSDATA")?)),
+            "--costume" => {
+                let v = it.next().ok_or("--costume WHO:BODY:HEAD[:FACE]")?;
+                let p: Vec<usize> = v.split(':').map(str::parse).collect::<std::result::Result<_, _>>()?;
+                match p[..] {
+                    [w, b, h] => costumes.push((w as u32, b, h, 0)),
+                    [w, b, h, f] => costumes.push((w as u32, b, h, f)),
+                    _ => return Err("--costume WHO:BODY:HEAD[:FACE]".into()),
+                }
+            }
+            "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
+            // --town-people all|GAMEDATA: the town people the field load would place here
+            // (all: each character's first placement; a save: those its seen events allow).
+            "--town-people" => town_people_from = Some(it.next().ok_or("--town-people all|GAMEDATA")?.clone()),
+            "--free-camera" => use_event_camera = false,
+            "--no-terrain" => no_terrain = true,
+            "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
+            other => return Err(format!("unknown option {other}").into()),
+        }
+    }
+
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies } =
+        load_scene(SceneSpec {
+            field,
+            args: args.clone(),
+            event_spec: event_spec.clone(),
+            skeleton_spec,
+            anim_spec,
+            time,
+            morph_spec,
+            face_specs,
+            costumes,
+            costumes_from,
+            event_line,
+            event_at,
+            look_at,
+            creatures_area,
+            town_people_from,
+        })?;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
     if no_terrain {
