@@ -1265,8 +1265,21 @@ classes' vtables, the 35 stats at +0x88 read before and after each hit): against
 attack 13), Katla (11, 31) and Wilbell (15, 41) did 2, 18 and 31. The battle screen showed
 "Damage Rate: 140%" on all three, from the first hit on: the running bonus
 (`0x141077e70` = 40) is already set when the battle starts, and it scales the final damage.
-With it the formula gives Escha 1 to 2 and Wilbell 28 to 32, as seen; Katla 19 to 22 against
-18 seen (one short: not explained yet). Without it Barrel's battles hit 40 % too weakly.
+The three hits fit one scale only near 1.35 (Katla's 18 needs 1.286 to 1.357 on her lowest
+roll, 14; Wilbell's 31 needs 1.348 to 1.39 on her highest, 23; Escha's 2 fits), not 1.4: the
+hit is dealt at 135 % and the label shows the rate after the action's own step.
+
+The rate's steps (`0x1401bd000`, after the action's effects are rolled and applied, party
+actions only, the actor's kind 0): the sum over the action's effects of the act table's last
+word (`0x14002aa70`: `0x140ce9590` + 20 × act + 0x10; 5 for acts 0 and 2, 3 for act 1, 25 for
+act 6), plus the actor's passive 0xdb value, plus 10 when the actor's +0x2f0 is set, 25 when
+the battle's [+0x8b8]+0x20 is 1 and the actor's +0x2e8 is set, 5 for +0x2e0, 5 for +0x2e4;
+added by `0x1401d07a0`, which hands `100 + rate` on (the "Damage Rate" label) and compares the
+rate with 100. `0x1401d08b0` clears it (from the battle state's method `0x1401d7a70`, called
+through a vtable). Not yet known: when the clear runs (each turn, as the three equal labels
+suggest?) and so where the 35 the hits were dealt at comes from (10 + 25 from the flags
+would make it); a live read of `0x141077e70` and the actors' +0x2e0..+0x2f0 around an action
+settles it. Without it Barrel's battles hit about 35 % too weakly.
 Party stats agree with "Party growth" plus equipment (Escha at level 12: 35 HP, 47 MP, attack
 13, defence 13, speed 13).
 
