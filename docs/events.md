@@ -1010,7 +1010,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500002f` | `u47` | (after `u46` in every use: the movie's own, presumably its wait) | Movie | 18 | 0 (18) |
 | `75000030` | `u48` | (after `u47` in every use) | B3Balloon, Event | 18 | 0 (18) |
 | `75000033` | `u51` |  | ClearSaveGameMode | 2 | 1 (2) |
-| `75000034` | `u52` |  | ClearSaveGameMode | 7 | 0 (7) |
+| `75000034` | `u52` | `ClearSaveGameMode`'s (its vtable slot 43, `0x140038390`): not done while its +0x98 is set, then `0x1400402d0` on its +0xa0; in the five `BSP_EV_BUCMODE_*` scripts, `EVENT_MM09_520` and `EVENT_MS06_100` (not read further) | ClearSaveGameMode | 7 | 0 (7) |
 | `75000035` | `u53` |  | B3Balloon, Event | 2 | 0 (2) |
 | `75000037` | `u55` | `EVENT_TELOP` (event.rs): (`EventTelop`): `{card}`: shows narration card `card` (the voiced lines of the openings, the ending), layout id `0x140d85ce0[card]` (960 + ...; ... | EventTelop | 63 | 1 (63) |
 | `75000038` | `u56` | `EVENT_TELOP_ALPHA` (event.rs): `{from, to, hundredths}`: the card's opacity (hundredths) moves from `from` to `to` | EventTelop | 126 | 3 (126) |
@@ -1022,7 +1022,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000069` | `u105` |  | Event (case `0x14005157a` of `0x140050fa0`'s switch) | 2 | 0 (2) |
 | `7500006a` | `u106` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2 | 0 (2) |
 | `7500006b` | `u107` | `OPEN_PLANBOARD` (event.rs): `{n}` opens the planning board (game mode 44, `PLANBOARD`, `n` at the request's +0xd0, `0x140292240`) at each main quest period's start: 12 in `EVENT_MM03_MQ1_020`, 62 to 412 (50 apart) in `EVENT_MQ02_010` to `MQ09_010` | Event (case `0x1400515cc` of `0x140050fa0`'s switch) | 9 | 1 (9) |
-| `7500006c` | `u108` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 9 | 0 (9) |
+| `7500006c` | `u108` | the planning board's own (`GameModePlanBoard` vtable slot 5, `0x1400ce9b0`: `0x14016a750` on its +0x268 with 0x1000, -1, 0); follows `u107` in every main quest period's opening | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 9 | 0 (9) |
 | `75000082` | `u130` | (`{v, a}`: variable v = the answer to `0x7600001d {a}`) | Event (case `0x14005201f` of `0x140050fa0`'s switch; who answers is not read) | 2 | 2 (2) |
 | `75000086` | `u134` | `SET_END_GROUP` (event.rs): which process data group the event's end runs (+0x60, 1 unless set; read at `ECT_END`, `0x140052c76` → `0x14005a070`). Only `EVENT_MM12_ST3_031` to `_036` (groups 1 to 5: listener commands 116 to 120) and `EVENT_MS06_080` (groups 1, 2: item 63 or 64) have more than one | Event (case `0x140051dbb` of `0x140050fa0`'s switch) | 22 | 1 (22) |
 | `75000087` | `u135` | bracket begin with `u136` (case `0x140051dd9`, 5 events: `EVENT_MM03_MQ1_100`, `MQ02_060`, `MQ05_030`, `MS04_020`, `QC03_THR_120`): notes where the event runs (`0x140dfc89c`: 1 when the field's list at +0x50 has something, `0x1400546c0`, else 2 when the list at +0x118 does, `0x140054630`; by the calls, 2 is the world map); from the world map it asks for game mode 0, the field, with a map worked out from the world map place (`0x14016e7a0` → `0x1400f18c0`, `0x140291f30`), presumably the field the scene plays in | Event (case `0x140051dd9` of `0x140050fa0`'s switch) | 5 | 0 (5) |
