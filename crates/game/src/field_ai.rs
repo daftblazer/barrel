@@ -42,6 +42,8 @@ pub struct Field {
     pub radii: Vec<f64>,
     pub groups: Vec<i32>,
     pub player_radius: f64,
+    /// Beaten: out of the field (no touch, no moves).
+    pub defeated: Vec<bool>,
 }
 
 /// A field enemy touched the player: which one, and the encounter group it starts.
@@ -70,17 +72,24 @@ impl Field {
             let scripts = (script(&e.ai.0)?, script(&e.ai.1)?);
             mobs.push(Mob::new(c, utility, scripts).map_err(|e| e.to_string())?);
         }
-        Ok(Field { mobs, radii: enemies.iter().map(&radius).collect(), groups: enemies.iter().map(|e| e.group).collect(), player_radius })
+        let defeated = vec![false; mobs.len()];
+        Ok(Field { mobs, radii: enemies.iter().map(&radius).collect(), groups: enemies.iter().map(|e| e.group).collect(), player_radius, defeated })
+    }
+
+    /// Where the enemies stand and their radii, for the touch and strike checks; a beaten one
+    /// far out of reach.
+    pub fn placed(&self) -> Vec<([f64; 3], f64)> {
+        self.mobs.iter().zip(&self.radii).zip(&self.defeated).map(|((m, &r), &d)| (if d { [f64::INFINITY; 3] } else { m.creature.position }, r)).collect()
     }
 
     /// One frame: the touch check against where the enemies stand (`0x140270cc0`; a touch ends
     /// the frame there, as the field's state then turns to the encounter), else each enemy's tick.
     pub fn step(&mut self, player: [f64; 3], facing: f64, dt: f64) -> Result<Option<Touch>, String> {
-        let placed: Vec<([f64; 3], f64)> = self.mobs.iter().zip(&self.radii).map(|(m, &r)| (m.creature.position, r)).collect();
+        let placed = self.placed();
         if let Some(enemy) = crate::encounter::touched(player, self.player_radius, &placed) {
             return Ok(Some(Touch { enemy, group: self.groups[enemy] }));
         }
-        for (k, m) in self.mobs.iter_mut().enumerate() {
+        for (k, m) in self.mobs.iter_mut().enumerate().filter(|(k, _)| !self.defeated[*k]) {
             m.tick(player, facing, dt).map_err(|e| format!("enemy {k}: {e}"))?;
         }
         Ok(None)

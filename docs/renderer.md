@@ -197,7 +197,12 @@ exit at (6010, 3740)) `--travel-to A0p0` passes four days (90 to 94) and arrives
 `AREA_01_01` at (3200, 3680). In the story's free play a field area (map 12 on) has its enemies out as
 `--creatures` has them (their scripts, the touch and strike checks); from (4500, 3520) in
 `AREA_01_01` walking west, the first Ore Rat closes in and touches Escha at frame 68
-(encounter group 10). The encounter only stops the field so far (the battle is stage 4). A town map in free play has its people, placed by the field load's
+(encounter group 10). The encounter is then fought out on the console, without a battle
+screen yet (`barrel_game::auto_battle`: the group's monsters drawn as the game draws them,
+against the lead and the other alchemist at level 1 with their base stats, no equipment or
+items, each standing in for the player as `skirmish` does), and the field goes on with that
+enemy gone, whoever won (not yet the game's: no results, no game over). Level 1 without
+equipment is too weak: the Ore Rat of group 10 wins. A town map in free play has its people, placed by the field load's
 conditions over what the story has seen (`town_people`, as `--town-people` does from a save).
 Right after the opening, the Atelier, the Administration Office, the Urban Area and the Apple
 Orchard have one or two each and the Tavern three (chara 14, `PC34`, and two townsfolk,

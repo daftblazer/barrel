@@ -1445,6 +1445,15 @@ fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game:
     Ok((map, from, field, [exit.position[0] * 100.0, exit.position[2] * 100.0]))
 }
 
+/// The battle tables for field encounters (`barrel_game::auto_battle`).
+fn battle_tables(root: &Path) -> Result<barrel_game::auto_battle::Tables> {
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let effects = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/item_effect.xml"))?)?;
+    let chara = std::fs::read(root.join("Saves/chara/Chara.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    Ok(barrel_game::auto_battle::Tables::load(&pe, &effects, chara.as_ref())?)
+}
+
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -2127,6 +2136,8 @@ struct Loaded {
     /// Characters loaded but not on the stage (yet, or any more): not drawn.
     absent: std::collections::HashSet<u32>,
     creatures: Option<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<String>, f32, [f64; 3], bool)>,
+    /// The battle tables and generator for the field's encounters.
+    battles: Option<(barrel_game::auto_battle::Tables, barrel_game::rng::Rng)>,
     town_bodies: Vec<TownBody>,
     /// Where playback starts (`--at`, or the start of `--line`'s line).
     start_at: Option<f32>,
@@ -2314,6 +2325,8 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         }
     }
     let mut creatures = None;
+    // The battle tables and generator, with the field's enemies.
+    let mut battles: Option<(barrel_game::auto_battle::Tables, barrel_game::rng::Rng)> = None;
     if let Some(area) = creatures_area {
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--creatures: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
@@ -2323,6 +2336,13 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             focus = field.mobs.first().map(|m| Vec3::from(m.creature.position.map(|v| v as f32)) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
         creatures = Some((field, bodies, names, 0.0f32, player_at, false));
+        battles = match battle_tables(&root) {
+            Ok(t) => Some((t, barrel_game::rng::Rng::seeded(1))),
+            Err(e) => {
+                eprintln!("no battles: {e}");
+                None
+            }
+        };
     }
     if town_people_from.is_some() || town_seen.is_some() {
         let field_dir = Path::new(&args[1]);
@@ -2362,7 +2382,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         walker = Some(w);
         focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
     }
-    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field, patterns, walker })
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, battles, town_bodies, start_at, start_field, patterns, walker })
 }
 
 /// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
@@ -3280,7 +3300,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             town_seen = here.filter(|&m| m < barrel_formats::gimmick::TOWN_MAPS).and(session.as_ref().map(|s| s.seen()));
         }
     // The scene: loaded, then uploaded under the renderer set up above.
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut town_bodies, start_at, start_field, patterns, mut walker } =
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut battles, mut town_bodies, start_at, start_field, patterns, mut walker } =
         load_scene(SceneSpec {
             field,
             args: args.clone(),
@@ -3958,20 +3978,50 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             // (`encounter::struck`, stage 0, Escha's radius 130).
             use barrel_game::encounter::{STRIKE_RADIUS_ESCHA, STRIKE_RADIUS_LOGY, STRIKE_WINDOW};
             let radius = if walker.as_ref().is_some_and(|w| w.logy) { STRIKE_RADIUS_LOGY[0] } else { STRIKE_RADIUS_ESCHA[0] };
-            let struck = strike_time.filter(|&t| (STRIKE_WINDOW.0..=STRIKE_WINDOW.1).contains(&(t as f64))).and_then(|_| {
-                let placed: Vec<([f64; 3], f64)> = field.mobs.iter().zip(&field.radii).map(|(m, &r)| (m.creature.position, r)).collect();
-                barrel_game::encounter::struck(at, facing, 0, radius, &placed)
-            });
-            if let Some(k) = struck {
+            let struck = strike_time.filter(|&t| (STRIKE_WINDOW.0..=STRIKE_WINDOW.1).contains(&(t as f64))).and_then(|_| barrel_game::encounter::struck(at, facing, 0, radius, &field.placed()));
+            let met = if let Some(k) = struck {
                 eprintln!("frame {frame}: her strike hits enemy {k}: encounter group {} (begun by a strike)", field.groups[k]);
-                *stopped = true;
+                Some(k)
             } else if let Some(t) = field.step(at, facing, dt as f64).map_err(|e| format!("creatures: {e}"))? {
                 eprintln!("frame {frame}: enemy {} touches the player: encounter group {}", t.enemy, t.group);
-                *stopped = true;
+                Some(t.enemy)
+            } else {
+                None
+            };
+            // The encounter is fought out (no battle screen yet: `auto_battle`) and the field
+            // goes on, the enemy gone; without the battle tables the field stops there.
+            if let Some(k) = met {
+                match battles.as_mut() {
+                    Some((tables, rng)) => {
+                        let logy = walker.as_ref().is_some_and(|w| w.logy);
+                        let party = [(usize::from(logy), 1), (usize::from(!logy), 1)];
+                        match barrel_game::auto_battle::fight(tables, &party, field.groups[k], rng) {
+                            Ok(o) => {
+                                for line in o.lines() {
+                                    eprintln!("battle: {line}");
+                                }
+                            }
+                            Err(e) => eprintln!("battle: {e}"),
+                        }
+                        field.defeated[k] = true;
+                    }
+                    None => *stopped = true,
+                }
             }
             *time += dt;
         }
         for b in bodies.iter_mut() {
+            // A beaten enemy is gone: its body collapsed, as the stand-in's below.
+            if field.defeated.get(b.mob).copied().unwrap_or(false) {
+                instances[b.instance as usize].model = Mat4::from_scale(Vec3::ZERO);
+                let base = instances[b.instance as usize].palette as usize;
+                for k in 0..b.skeleton.joints.len() {
+                    if let Some(slot) = palette.get_mut(base + k) {
+                        *slot = Mat4::from_scale(Vec3::ZERO);
+                    }
+                }
+                continue;
+            }
             let (position, facing, motion) = match field.mobs.get(b.mob) {
                 Some(m) => (m.creature.position, m.creature.facing, m.creature.motion.and_then(|m| names.get(m as usize)).cloned()),
                 None if walker.is_some() => {
