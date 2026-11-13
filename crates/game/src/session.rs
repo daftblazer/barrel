@@ -95,6 +95,11 @@ impl Session {
         self.spend(crate::days::gather_tenths(0), crate::days::Reason::Gather);
     }
 
+    /// Which events have been seen, by event number.
+    pub fn seen(&self) -> Vec<bool> {
+        self.chain.story().seen.iter().map(Option::is_some).collect()
+    }
+
     /// The date (the story's day number; `calendar::Date` reads it).
     pub fn today(&self) -> i32 {
         self.chain.story().today

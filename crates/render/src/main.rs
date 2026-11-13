@@ -1159,21 +1159,11 @@ struct TownBody {
 /// How long a gait change blends the old motion into the new one (seconds).
 const MOTION_BLEND: f32 = 0.15;
 
-fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>, Vec<TownBody>)> {
+fn town_people(root: &Path, field_dir: &Path, seen: Option<Vec<bool>>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>, Vec<TownBody>)> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let dir_name = field_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let map = barrel_game::event::field_maps(&pe).iter().position(|n| n == dir_name).ok_or("--town-people: the field's map number is not known")? as i32;
-    let seen: Option<Vec<bool>> = match save {
-        Some(p) => {
-            let data = std::fs::read(p)?;
-            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", p.display()))?.body;
-            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", p.display()))?;
-            let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
-            Some(sum.events.iter().map(|e| e.seen).collect())
-        }
-        None => None,
-    };
     let is_seen = |e: &i32| seen.as_ref().and_then(|s| usize::try_from(*e).ok().and_then(|e| s.get(e))).copied().unwrap_or(false);
     let holds = |c: &i32| barrel_formats::npc::condition(&pe, *c).is_some_and(|(want, not)| want.iter().all(is_seen) && !not.iter().any(is_seen));
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
@@ -2026,6 +2016,8 @@ struct SceneSpec {
     look_at: Option<u32>,
     creatures_area: Option<i32>,
     town_people_from: Option<String>,
+    /// The events seen, for placing town people in the story's free play.
+    town_seen: Option<Vec<bool>>,
     /// `--player X,Z`: the player standing there.
     player_at: Option<[f32; 2]>,
     /// `--walk DX,DZ`: and walking that way (units a second).
@@ -2091,6 +2083,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         look_at,
         creatures_area,
         town_people_from,
+        town_seen,
         player_at,
         player_walk,
         trip,
@@ -2248,14 +2241,27 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         }
         creatures = Some((field, bodies, names, 0.0f32, player_at, false));
     }
-    if let Some(from) = &town_people_from {
+    if town_people_from.is_some() || town_seen.is_some() {
         let field_dir = Path::new(&args[1]);
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--town-people: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let save = (from != "all").then(|| PathBuf::from(from));
-        let (packs, first, bodies) = town_people(&root, field_dir, save.as_deref(), &mut scene, base)?;
+        // The events seen: the story's (free play), a save's (`--town-people GAMEDATA`), or
+        // none (`all`: everyone placed whatever their conditions).
+        let seen = match (&town_seen, town_people_from.as_deref()) {
+            (Some(s), _) => Some(s.clone()),
+            (None, Some(p)) if p != "all" => {
+                let data = std::fs::read(p)?;
+                let body = barrel_formats::save::parse(&data).map_err(|e| format!("{p}: {e}"))?.body;
+                let state = barrel_formats::save::decode(body).map_err(|e| format!("{p}: {e}"))?;
+                let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
+                Some(sum.events.iter().map(|e| e.seen).collect())
+            }
+            _ => None,
+        };
+        let (packs, first, bodies) = town_people(&root, field_dir, seen, &mut scene, base)?;
         pack_bytes.extend(packs);
-        town_bodies = bodies;
+        // After the player's body, if there is one (the walker keeps its index).
+        town_bodies.extend(bodies);
         if focus.is_none() {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
@@ -2414,6 +2420,7 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
+    let mut town_seen: Option<Vec<bool>>;
     let mut town_people_from = None::<String>;
     let mut player_at = None::<[f32; 2]>;
     let mut player_walk = None::<[f32; 2]>;
@@ -3054,6 +3061,7 @@ fn main() -> Result<()> {
             unsafe { Ok((d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?)) }
         })
         .transpose()?;
+    town_seen = None;
     // In the story's free play a field area (map 12 on) has its enemies out
     // (`--creatures`'s field AI), a town none.
     if session.is_some() && current_event.is_none()
@@ -3061,6 +3069,8 @@ fn main() -> Result<()> {
             let maps = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
             let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n));
             creatures_area = here.filter(|&m| m >= barrel_formats::gimmick::TOWN_MAPS).map(|m| m as i32);
+            // A town map has its people, placed by what the story has seen.
+            town_seen = here.filter(|&m| m < barrel_formats::gimmick::TOWN_MAPS).and(session.as_ref().map(|s| s.seen()));
         }
     // The scene: loaded, then uploaded under the renderer set up above.
     let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut town_bodies, start_at, start_field, patterns, mut walker } =
@@ -3080,6 +3090,7 @@ fn main() -> Result<()> {
             look_at,
             creatures_area,
             town_people_from: town_people_from.clone(),
+            town_seen: town_seen.clone(),
             player_at,
             player_walk,
             trip: trip_path.clone(),

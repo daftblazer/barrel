@@ -197,7 +197,12 @@ exit at (6010, 3740)) `--travel-to A0p0` passes four days (90 to 94) and arrives
 `AREA_01_01` at (3200, 3680). In the story's free play a field area (map 12 on) has its enemies out as
 `--creatures` has them (their scripts, the touch and strike checks); from (4500, 3520) in
 `AREA_01_01` walking west, the first Ore Rat closes in and touches Escha at frame 68
-(encounter group 10). The encounter only stops the field so far (the battle is stage 4).
+(encounter group 10). The encounter only stops the field so far (the battle is stage 4). A town map in free play has its people, placed by the field load's
+conditions over what the story has seen (`town_people`, as `--town-people` does from a save).
+Right after the opening, the Atelier, the Administration Office, the Urban Area and the Apple
+Orchard have one or two each and the Tavern three (chara 14, `PC34`, and two townsfolk,
+`NPC00B` and `NPC04B`); the Plaza has none yet (its regular, chara 8, waits for
+`XF01_080`).
 
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
