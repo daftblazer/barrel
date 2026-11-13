@@ -152,7 +152,7 @@ model:
 |---|---|
 | 0x10001 | not decoded yet |
 | 0x10002 | materials: `{u32, u32 texture count, u32, u32}`, then per texture `{u16 index into the model's g1t, u16 layer, u16 type, u16 subtype, u16 tile u, u16 tile v}` |
-| 0x10003 | shader parameters, not decoded yet |
+| 0x10003 | shader parameter sets (one per submesh's "shader parameters" number): per set `{u32 count}`, then per parameter `{u32 size, u32 name length, u32, u16 value count, u16 kind}`, the name, its float values (`Geometry::shader_params`; `shading.md`, "The materials' own parameters") |
 | 0x10004 | vertex buffers: `{u32, u32 stride, u32 vertex count, u32}`, then the vertices |
 | 0x10005 | vertex layouts: `{u32 buffer count, u32 buffer numbers[], u32 attribute count}`, then per attribute `{u16 buffer (position in this layout's list), u16 offset, u8 type, u8, u8 semantic, u8 layer}` |
 | 0x10006 | bone palettes: `{u32 count}`, then per entry `{u32, u32 flags (0x80000000), u32 joint}` |
@@ -1037,8 +1037,8 @@ per message: u32 kind (1 for 89% of lines; 2, 4 and 0 also occur)
 ```
 
 In `MM08_AS4_130` the third field runs 246, 91, 1, 1, 237, 248, ... (Escha's lines 246, 248,
-235, 134), which looks like a voice clip or expression number per line, and the fourth is 0,
-3 or 4; which they are is still open. They matter for faces: events hardly set expressions
+235, 134), the speaker's gesture for the line, and the fourth (0, 3 or 4) its expression (both read
+below, "What the game does with them"). They matter for faces: events hardly set expressions
 with commands (`ECT_CHARA_FACIAL_MOTION_SET`, `s88`, occurs 17 times in all 1,639 events, and
 the brow, eye and mouth variants never), so per-line expressions must come from these
 fields or from the body motions. `barrel ebm` prints the fields.
