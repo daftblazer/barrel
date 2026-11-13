@@ -2046,3 +2046,13 @@ and MP as well. All 332 actions in the table resolve. Taken together the rows ad
 both experience rates, 49 to the level limit (so 99), 50 HP, 40 MP, 15 to each other stat,
 and 4 to every gathering slot. `barrel bonuses Bonus.xml` lists them; `bonus::apply` runs the
 value actions and hands the rest back to their systems.
+
+## Homunculus work (`Saves/hom/HomData.xml`)
+
+What the homunculi can be asked to make (game mode 25, `HOM`; loaded by `0x1400e1900`,
+`barrel_formats::hom`): 348 rows `{ItemTag, day, dec_day, mat, cost}`, kept as 20 bytes each
+with the tags as item numbers. `day` runs 5 to 50 (15 and 10 most often), `dec_day` 1 to 5
+(5 in 224 rows), `mat` is the payment: Melty Gem (185 rows), Baumkuchen (74), Dry Potato
+Chips (39), Cloud Financier (25) or Preserved Biscuit (25), and `cost` is 1 in every row. What
+`day` and `dec_day` count is not read yet (by the names, the days a piece takes and how much
+each step down takes off).

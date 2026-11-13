@@ -24,6 +24,7 @@ pub mod field_look;
 pub mod g1a;
 pub mod gather;
 pub mod gimmick;
+pub mod hom;
 pub mod item_give;
 pub mod npc;
 pub mod g1co;
