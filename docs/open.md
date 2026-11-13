@@ -61,9 +61,8 @@ likely settle them where static reading failed.
   `0x140079400` → `0x140214f20` → the field load `0x140076760` / `0x140081080`; candidates
   `0x1402b6d43`, `0x1402ecad1` were bounds checks. Way in: read `0x140076760` whole for where it
   places the player, or **live read** the player's position right after arriving in
-  `AREA_01_01` from the Town Entrance. One point read (`docs/engine.md`): Sector One of the
-  Southern Ruins, 3.5 m from its exit on the field's side. Another field's arrival would show
-  whether it is a fixed step from the exit.
+  `AREA_01_01` from the Town Entrance. Two points read (`docs/engine.md`): about 3.5 m from
+  the exit into the field, in directions the exits' turns do not give.
 - **Play camera follow.** Read live (`docs/engine.md`, "Play camera follow"): the look point
   sits on the player. Left: what `bumper_follow_speed` / `bumper_max_distance` change, the
   eye (look outside `CameraCFieldMap`'s first 4 KB, or follow its pointers at +0x130 and
