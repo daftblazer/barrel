@@ -29,7 +29,20 @@ pub struct CharaShader {
 pub enum Light {
     /// A directional light turned by `rot` (degrees about x, y, z).
     Parallel { rot: [f32; 3], color: [f32; 4] },
+    /// A point light: `pos` and `range` in metres, `att` the shader's attenuation over field
+    /// units, 1 / (att0 + att1·d + att2·d²) (see [`point_attenuation`]).
     Point { pos: [f32; 3], color: [f32; 4], ambient: [f32; 4], att: [f32; 3], range: f32 },
+}
+
+/// A `POINT`'s attenuation as the field loader makes it (`0x140068cc4` on): `att0` and `att1`
+/// as written, but the table's `att2` is not the quadratic term. It is how much of the light is
+/// left at the range (`fall`, 0.1 when not given): the quadratic term is chosen so that,
+/// the linear term left out, 1 / (att0 + att2·R²) = fall, R the range in field units. A missing
+/// `att0` is 1, `att1` 0.001 and `range` 1 m. `q54`'s point lights are made the same way.
+pub fn point_attenuation(att0: f32, att1: f32, fall: f32, range: f32) -> [f32; 3] {
+    let fall = fall + f32::EPSILON;
+    let r = range * 100.0;
+    [att0, att1, (1.0 - fall * att0) / (fall * r * r)]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -182,8 +195,13 @@ pub fn read(root: &Element) -> FieldLook {
                             pos: numbers(p, "pos").unwrap_or_default(),
                             color,
                             ambient: numbers(p, "ambient").unwrap_or_default(),
-                            att: [number(p, "att0").unwrap_or(0.0), number(p, "att1").unwrap_or(0.0), number(p, "att2").unwrap_or(0.0)],
-                            range: number(p, "range").unwrap_or(0.0),
+                            att: point_attenuation(
+                                number(p, "att0").unwrap_or(1.0),
+                                number(p, "att1").unwrap_or(0.001),
+                                number(p, "att2").unwrap_or(0.1),
+                                number(p, "range").unwrap_or(1.0),
+                            ),
+                            range: number(p, "range").unwrap_or(1.0),
                         }),
                         _ => {}
                     }
@@ -252,6 +270,11 @@ mod tests {
         assert_eq!((c.light_dir, c.light_color[3], c.point_light_strength), ([2.0, -1.0, -1.0], 0.3, 0.1));
         assert_eq!(look.lights.len(), 2);
         assert!(matches!(look.lights[1], Light::Point { range: 7.5, .. }));
+        // att2 0.02 is the light left at the 7.5 m range.
+        let Light::Point { att, .. } = look.lights[1] else { unreachable!() };
+        assert_eq!(&att[..2], &[0.01, 0.01]);
+        let r = 750.0f32;
+        assert!((1.0 / (att[0] + att[2] * r * r) - 0.02).abs() < 1e-6);
         assert_eq!(look.fog.unwrap().end, 50.0);
         assert_eq!(look.hdr, Some((0.7, 1.0)));
     }

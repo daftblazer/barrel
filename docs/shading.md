@@ -72,7 +72,18 @@ and the HDR range (1); fields' own shaders (`MapSTD*`).
 Point lights: for each of four, with d the vector from the vertex to `litPos[i]`, the light
 adds `(litAmb[i] + litCol[nDirLit + i]) × (1 - saturate(d² / att.w)) / (att.x + att.y·|d| +
 att.z·d²)` (`litAtt[i]`; a range or divisor near zero drops it), and the sum is saturated:
-the pixel program's v2. The directional lights (`litCol[0 .. nDirLit]`) do not light
+the pixel program's v2.
+
+**`litAtt` from the field's `POINT`** (the field loader, `0x140068cc4` on): `att.x` is `att0`
+and `att.y` is `att1` as written, `att.w` is the range scaled by 100 (field units) and squared,
+but the table's `att2` is not `att.z`. It is how much of the light is left at the range
+(`fall`, plus 1.19e-7): `att.z = (1 - fall·att0) / (fall·R²)`, R the range in field units,
+so that 1 / (att0 + att.z·R²) = `fall`. Missing values: `att0` 1, `att1` 0.001, `range` 1,
+`att2` 0.1. `q54` makes its lights the same way (`field_look::point_attenuation`). Taking
+`att2` as `att.z` had made every field point light all but vanish (TOWN_03's `att2` 0.9 over
+d² in centimetres); with it, Colland's office and Escha's workshop come up toward the game's
+(the workshop above the message window 49, 44, 31 before, 61, 55, 38 now, the game 77, 68,
+43), nothing blown out. The directional lights (`litCol[0 .. nDirLit]`) do not light
 characters. The renderer takes d in field units (centimetres) and `att.w` as the range, scaled to field
 units, squared: with d in metres the town's street lamps (`TOWN_10`: ambient 4, `att0` 0.27)
 would light the whole street several times over, in centimetres they glow near the lamp.
@@ -150,9 +161,9 @@ for now: the material colours white no light texture or shadow (1), the
 metres. Point light distances are in field units, as for characters. Checked again against
 TOWN_03 (Colland's office, event `EVENT_MM01_OP1_222`): taking metres there makes the desk
 lamp glow as in the game but blows Escha's workshop out to white (101, 65, 67 become 255,
-242, 254), so field units stand; the lamp's glow in the game (its shade 145, 142, 116 against
-75, 76, 54 here, the room otherwise matching to a few levels) comes from something not done
-yet: an emissive material or the light texture.
+242, 254), so field units stand. The quadratic term was the error (below: the table's `att2`
+is the light left at the range); the lamp's own shade against the game's is not measured
+again yet (the viewer's line-start shot is not the game's lamp shot).
 
 **The light texture is the field's `<AREA>_pat.g1t`.** Outdoor fields carry a real one
 (`TOWN_10_pat.g1t`: one 512 × 512 BC1 texture, grey, mean 0.61, black to white: drifting cloud

@@ -148,15 +148,13 @@ pub const FIELDMAP_CHARA_POINT_LIGHT_STRENGTH_ORG: u32 = 0x7100_0039;
 pub fn point_light(pos: [u32; 3], color: [u32; 3], ambient: [u32; 3], att: [u32; 3], range: u32) -> barrel_formats::field_look::Light {
     let i = |v: u32| v as i32 as f32;
     let c = |v: [u32; 3]| [i(v[0]) / 128.0, i(v[1]) / 128.0, i(v[2]) / 128.0, 1.0];
-    let (att0, att1, fall) = (i(att[0]) / 1000.0, i(att[1]) / 1000.0, i(att[2]) / 1000.0 + f32::EPSILON);
-    let range = i(range);
-    let att2 = (1.0 - fall * att0) / (fall * range * range);
+    let range = i(range) / 100.0;
     barrel_formats::field_look::Light::Point {
         pos: [i(pos[0]) / 100.0, i(pos[1]) / 100.0, i(pos[2]) / 100.0],
         color: c(color),
         ambient: c(ambient),
-        att: [att0, att1, att2],
-        range: range / 100.0,
+        att: barrel_formats::field_look::point_attenuation(i(att[0]) / 1000.0, i(att[1]) / 1000.0, i(att[2]) / 1000.0, range),
+        range,
     }
 }
 
