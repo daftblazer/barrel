@@ -816,8 +816,8 @@ axis it splits) covers its children's and links to its second child. Over Escha'
 (31,354 triangles, 45,162 vertices) every index is within its vertices, every triangle is in
 exactly one leaf and inside that leaf's bounds. The mesh is the walls (upright quads) and the
 floors where the ground is not the heightmap (TOWN_10: the town's outline, the gate squares
-and a stair), in field units, one vertex per corner (not shared). How the game moves a
-character against it is not read yet.
+and a stair), in field units, one vertex per corner (not shared). Characters walk on its
+floors and stop at its walls (`game::walk`, `engine.md` "Walking").
 
 ### Heightmaps (`*.khm`)
 
@@ -951,7 +951,24 @@ per instance: position (3 floats + pad), rotation in radians (3 floats + pad),
 
 An object type's name is its model's name without `_hi.g1m`. Instance tags are 4-character
 codes run together: none (10,115 instances), `xDS_` (3,105), `xS3_` (1,129), `xV1_` and
-combinations; effects carry `eff`. What the tags mean is still open.
+combinations; effects carry `eff`. The game knows 21 tags (a table at `0x14095a740`: `xNS_`, `xDS_`, `xEF_`, `xE2_`, `xEV_`,
+`xCT_`, `xAM_`, `xN1_`, `xN2_`, `xV1_` to `xV5_`, `xBK_`, `xGL_`, `xS1_` to `xS3_`). As a placement
+is made (`0x1404f0480` and on; the object holds position `+0x230`, rotation `+0x240`, scale
+`+0x250`), its name and tags are searched for each (`strstr`), and a flag word at `+0x5a0` holds
+them as bits in that order from 0 (`xDS_` 1, `xEV_` 4, `xCT_` 5, `xAM_` 6, `xN1_` 7, `xN2_` 8,
+`xV1_` to `xV5_` 9 to 13; the same function writes the prefixes back from the bits). What each
+does:
+
+| tag | effect |
+|---|---|
+| `xDS_` | casts a shadow (`+0x561` = 1; `renderer.md`, shadow casters) |
+| `xN1_`, `xN2_` | the wind's node shaker keyword (`<n_shaker>`, `shading.md`) |
+| `xV1_` to `xV5_` | the wind's vertex shaker keyword (`<v_shaker>`, `shading.md`) |
+| `xS1_`, `xS2_`, `xS3_` | the word at `+0x568` = 0, 1, 2, handed to the draw queue (`0x140338710`, from `0x1404d884e`) as one of its sort words: a draw-order group, read so, not traced further |
+| `xCT_` | runs `0x1404f0ac0`: a box from the rotation and the model's bounds (`+0x468`), placed at the position, into `+0x600` (not read further) |
+| `xAM_` | sets `+0x654..+0x65c` to (-1, -1, 1) and `+0x661` = 1 (not read further) |
+| `xEF_` | effect objects (their files, `Obj/xEF_*/....elixir.gz`) |
+| `xNS_`, `xE2_`, `xEV_`, `xBK_`, `xGL_` | not read |
 
 ## Event bytecode (`*.ebd`)
 
