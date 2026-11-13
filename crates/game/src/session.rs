@@ -127,6 +127,37 @@ impl Session {
         }
     }
 
+    /// Sells the basket's items at `picks` (indices into the basket) to a shop
+    /// (`shop::sale_total`): each one's worth (`synthesis::worth` of its `itemData` cost, from
+    /// `cost`, at its quality; its traits' price changes not counted, all 0 as shipped) with the
+    /// sell-price bonus `sell_bonus` percent. The items leave the basket and the money comes in;
+    /// what it paid.
+    pub fn sell(&mut self, picks: &[usize], cost: impl Fn(i32) -> i32, sell_bonus: i32) -> i32 {
+        let mut picks: Vec<usize> = picks.iter().copied().filter(|&k| k < self.basket.len()).collect();
+        picks.sort_unstable();
+        picks.dedup();
+        let sold: Vec<(i32, i32)> = picks.iter().map(|&k| (crate::synthesis::worth(cost(self.basket[k].item), self.basket[k].quality, &[]), 1)).collect();
+        let paid = crate::shop::sale_total(&sold, sell_bonus);
+        for &k in picks.iter().rev() {
+            self.basket.remove(k);
+        }
+        self.pay(paid);
+        paid
+    }
+
+    /// Buys `count` of a shop's ware (`shop::purchase_cost` of its list price): false and
+    /// nothing bought when the money is short; else the money goes and the items come into the
+    /// basket at the ware's quality (its effects and traits not carried yet).
+    pub fn buy(&mut self, item: i32, quality: f32, price: i32, count: i32) -> bool {
+        if count <= 0 || !self.pay(-crate::shop::purchase_cost(price, count)) {
+            return false;
+        }
+        for _ in 0..count {
+            self.basket.push(crate::gather::Got { item, quality, traits: Vec::new() });
+        }
+        true
+    }
+
     pub fn with_calendar(mut self, data: crate::days::Data, rng: crate::rng::Rng) -> Session {
         let leader = usize::from(self.logy);
         let mut world = crate::days::World::new_game(rng, leader, &data.wares);
@@ -482,5 +513,20 @@ mod tests {
         let text = t.save([0.0, 0.0]).unwrap();
         t.won(&[0, 1], 25, 12, &table);
         assert_eq!(Session::won_in_save(&text, &[0, 1], 25, 12, &table), t.save([0.0, 0.0]).unwrap());
+    }
+
+    #[test]
+    fn buying_and_selling_move_money_and_survive_a_save() {
+        let mut s = Session::in_field(chain(), 3, false);
+        // Two Crafts (cost 30) bought at 70 each, quality 50.
+        assert!(s.buy(195, 50.0, 70, 1));
+        assert!(!s.buy(195, 50.0, 70, 1), "100 - 70 leaves 30: not enough for another");
+        assert_eq!((s.money, s.basket.len()), (30, 1));
+        s.basket.push(crate::gather::Got { item: 195, quality: 50.0, traits: Vec::new() });
+        // Sold back: worth trunc(150 × 30 / 200) = 22 each, a 10% bonus: trunc(44 × 1.1) = 48.
+        let paid = s.sell(&[1, 0, 1], |_| 30, 10);
+        assert_eq!((paid, s.money, s.basket.len()), (48, 78, 0));
+        let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
+        assert_eq!(back.money, 78);
     }
 }

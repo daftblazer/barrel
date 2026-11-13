@@ -1538,7 +1538,8 @@ it (`0x14036a8e0`, the money at `0x1410989f4`, a gain capped at 999,999). **Buyi
 money; each list entry's price is the ware's `Cost` (+0x5c), at least 1 (`0x140340600`). The
 buy-cost bonus (bonus value 41) is fetched there and then dropped (its result is overwritten
 by the cost), so as shipped it changes nothing. `shop::sale_total` and
-`purchase_cost` follow them.
+`purchase_cost` follow them. `Session::sell` and `Session::buy` apply them to the session's basket and
+money (two Crafts bought at 70 and sold back with a 10 % bonus: 100 → 30 → 78).
 
 **Experience** (`0x14030ef30`, when a synthesis finishes): with L the made item's
 `itemData` level, D the recipe's days (record +0x18) less what bonuses take off (`0x1400fe4e0`:
