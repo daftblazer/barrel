@@ -169,7 +169,10 @@ likely settle them where static reading failed.
   among 100+ candidate stores can't be told statically. **Live read** of the draw queue's +0x20
   buckets during a field frame.
 - **Particle effects** (`eff_pack_list.xml`, `.g1e`): not decoded; character-bound effects
-  (`0x1401f6cf0`) wait on it.
+  (`0x1401f6cf0`) wait on it. Parked: the opening uses none (no `s38`–`s114` in the
+  `MM01_OP1` events, and `barrel opl2` lists no placed effects in any `TOWN_*`; the first fields
+  with some are `AREA_06_*` (smoke, eruption particles) and `AREA_08_*` (`287_FLAME_01`)), so
+  there is no reference within the opening to check a decoder against.
 - **Plant sway amplitude** (`v_shaker`) and tree springs (`n_shaker`): implemented, units not
   verified against the game.
 
