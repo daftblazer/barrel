@@ -284,9 +284,12 @@ when it equals `c` and from `first + 1` otherwise. They are set from questions t
 its listeners: `u80 {v}` (v 10 when not given) takes the item picked in the event's item
 selection (`0x7600001b`, answered by `EventItemSelectGameMode`), `u82 {v}` the answer to
 `0x7600001c` and `u130 {v, a}` to `0x7600001d {a}` (who answers those two is not read).
-`u7 {n}` goes on from label base + `n`, the base being the runner's +0x5c (not the event check
-record's +0x5c, which is its last start day; none when it is
-negative; where it is set is not read). These `u9` and `u10` are group 0x75's, not the setup
+`u7 {n}` goes on from label base + `n`, the base being the event's +0x5c (nothing when it is
+negative). Both of the `Event` class's constructors (`0x140050560`, `0x1400505f0`, the second
+called with the same constant) set +0x58 to +0x64 to `(-1, 1, 1, 0)` from `0x1407581f0`, and
+nothing writes +0x5c after, so the base is 1: `u7 n` goes on from label `n + 1`
+(`event::GOTO_FROM_BASE`). (The event check record's +0x5c is its last start day, another
+thing.) These `u9` and `u10` are group 0x75's, not the setup
 markers below. `event::Player` takes the three variable jumps with every variable 0
 (nothing picked: playback has no item selection), so `u8` and `u9` go on from `first`. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
 `u5 99`, which jumps over starting actions 64 and 65 (Escha placed in town, the camera handed
@@ -951,7 +954,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000002` | `u2` | (the setup's preload) | Event (`0x140050fa0`, table at `0x52ddc`/`0x52cf0`, case `0x140051b43`): `u2 {n}` gathers the list `0x140213460 (n)` builds from the 14 lists at `0x14082eb00` and goes through it; see "the event's setup action" | 741 | 1 (741) |
 | `75000003` | `u3` | (label) | Event: `u3 {n}` marks label `n`; its case does nothing when run ("Labels and jumps") | 1297 | 1 (1297) |
 | `75000005` | `u5` | (jump) | Event (case `0x140051435`): `u5 {n}` goes on from label `n` (`0x140210be0`; "Labels and jumps") | 806 | 1 (806) |
-| `75000007` | `u7` | (jump: `{n}` to label base + n) | Event (case `0x14005145a` of `0x140050fa0`'s switch): the base is the runner's +0x5c, nothing when it is negative (where it is set is not read) | 199 | 1 (199) |
+| `75000007` | `u7` | (jump: `{n}` to label base + n) | Event (case `0x14005145a` of `0x140050fa0`'s switch): the base is the event's +0x5c, 1 from its constructors and never changed | 199 | 1 (199) |
 | `75000008` | `u8` | (jump: `{first, v}` to label first + variable v) | Event (case `0x14005147a` of `0x140050fa0`'s switch; "Labels and jumps") | 99 | 3 (99) |
 | `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 339 | 6 (339) |
 | `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 66 | 1 (66) |

@@ -125,6 +125,11 @@ pub const MARKERS: [u32; 3] = [0x7540_0008, 0x7540_0009, 0x7540_000a];
 pub const GOTO: u32 = 0x7500_0005;
 /// `u6 {a, b}`: the action goes on from label `a + b`.
 pub const GOTO_SUM: u32 = 0x7500_0006;
+/// `u7 {n}`: goes on from label [`LABEL_BASE`] + `n` (case `0x14005145a`).
+pub const GOTO_FROM_BASE: u32 = 0x7500_0007;
+/// The base `u7` counts from: the event's +0x5c, which both constructors set to 1 (from the
+/// 16 bytes `(-1, 1, 1, 0)` at `0x1407581f0` for +0x58 to +0x64) and nothing changes after.
+pub const LABEL_BASE: u32 = 1;
 /// `u8` (`{first, v}`): goes on from label `first` + variable `v` (case `0x14005147a`).
 pub const GOTO_VAR: u32 = 0x7500_0008;
 /// `u9` (`{first, v, c}`): from label `first + 1` when variable `v` is above `c`, else `first`.
@@ -487,7 +492,7 @@ impl<'a> Player<'a> {
         self
     }
 
-    /// Where a jump command (`u5`, `u6`, `u8` to `u10`) in `action` sends it: the index of the
+    /// Where a jump command (`u5` to `u10`) in `action` sends it: the index of the
     /// label's command.
     fn jump(&self, action: usize, c: ebd::Command<'a>) -> Option<usize> {
         // A variable beyond the 20 reads as 0 (the game's getter does not check; none does so).
@@ -495,6 +500,7 @@ impl<'a> Player<'a> {
         let target = match (c.word, c.operands) {
             (GOTO, [n, ..]) => *n,
             (GOTO_SUM, [a, b, ..]) => a.wrapping_add(*b),
+            (GOTO_FROM_BASE, [n, ..]) => LABEL_BASE.wrapping_add(*n),
             (GOTO_VAR, [first, v, ..]) => first.wrapping_add(var(*v) as u32),
             (GOTO_ABOVE, [first, v, c, ..]) => first.wrapping_add(u32::from(var(*v) > *c as i32)),
             (GOTO_EQUAL, [first, v, c, ..]) => first.wrapping_add(u32::from(var(*v) != *c as i32)),
@@ -927,7 +933,7 @@ mod tests {
         // Nothing picked (every variable 0): u8 and u9 go to `first`, u10 to `first` when it
         // tests for 0 and to `first + 1` otherwise.
         let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
-        let table = OperandTable::new(&[(GOTO_VAR, Some(2)), (GOTO_ABOVE, Some(3)), (GOTO_EQUAL, Some(3)), (LABEL, Some(1)), (TROPHY, Some(1))]);
+        let table = OperandTable::new(&[(GOTO_FROM_BASE, Some(1)), (GOTO_VAR, Some(2)), (GOTO_ABOVE, Some(3)), (GOTO_EQUAL, Some(3)), (LABEL, Some(1)), (TROPHY, Some(1))]);
         let run = |jump: Vec<u32>| -> Vec<String> {
             let mut words = jump;
             words.extend([TROPHY, 1, LABEL, 7, TROPHY, 7, LABEL, 8, TROPHY, 8, END]);
@@ -939,6 +945,8 @@ mod tests {
         assert_eq!(run(vec![GOTO_ABOVE, 7, 3, 0]), [t(7), t(8)]);
         assert_eq!(run(vec![GOTO_EQUAL, 7, 3, 0]), [t(7), t(8)]);
         assert_eq!(run(vec![GOTO_EQUAL, 7, 3, 5]), [t(8)]);
+        // u7 counts from label 1.
+        assert_eq!(run(vec![GOTO_FROM_BASE, 7]), [t(8)]);
     }
 
     #[test]
