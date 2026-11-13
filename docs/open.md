@@ -177,8 +177,7 @@ likely settle them where static reading failed.
 
 - **Sound against the reference recording**: voice and music levels match since
   `OPTION_VOLUME` and `VOICE_GAIN` (`docs/engine.md`, "Levels"; measured, the option table not
-  read); the effects' level is not measured apart; the game has sound in event 111's first
-  seconds where Barrel is silent.
+  read); the effects' level is not measured apart.
 - **Sound effect id layer**: event sound ids (≤ 244) go through a group/cue layer at the bank's
   entry 0, not read.
 

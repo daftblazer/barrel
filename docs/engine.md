@@ -495,9 +495,10 @@ It is written when the run ends. The reference recording of the opening carries 
 mix (`tools/oracle/README.md`, "Recording"), so the two can be set side by side:
 `tools/oracle/clip-fit.py MIX.wav CLIP.wav` finds a clip in a mix and its gain; `tools/oracle/audio-offset.py GAME.wav BARREL.wav` cross-correlates their loudness envelopes
 (10 ms steps) for the offset and prints the levels second by second. First look, event 111's
-first 20 s: Barrel is silent for its first 4 s where the game already has sound (likely music
-carried in from the load); the game's lines wait for a button, so the two timelines only line
-up line by line.
+first 20 s: the recording starts 4.87 s into the event (clip 12900 at 1.635 s there, 6.5 s in
+Barrel), so Barrel's silent first 4 s (music 57 starts at 4.0 s) are before it; the music then
+lines up (Barrel's 5.8 s found at 0.930 s in the recording, 0.935 expected). The game's lines
+wait for a button, so the two timelines only line up line by line.
 
 **Levels.** A voice clip (`barrel voice-wav`) fitted into each track (its offset by
 cross-correlation, its gain by least squares: the music under it does not correlate) gives the
