@@ -1823,7 +1823,13 @@ fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
     use barrel_formats::{font, g1t as tex};
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let glyphs = font::glyphs(&pe, font::FONT_EN).ok_or("no font table at the English executable's address")?;
+    // The English executable has its one table; the multi-language one a table per font folder,
+    // picked by the atlas's folder (Font, Font_EN, Font_SC, Font_TC).
+    let folder = g1t.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("Font_EN");
+    let table = font::FONTS_MULTI.iter().find(|(f, _)| *f == folder).map(|&(_, a)| a);
+    let glyphs = font::glyphs(&pe, font::FONT_EN)
+        .or_else(|| table.and_then(|a| font::glyphs(&pe, a)))
+        .ok_or("no font table at the English or the multi-language executable's address")?;
     let atlas_data = read(g1t)?;
     let atlas = tex::G1t::parse(&atlas_data).map_err(|e| format!("{}: {e}", g1t.display()))?;
     let t = atlas.textures.first().ok_or("no texture")?;

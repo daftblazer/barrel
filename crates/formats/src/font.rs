@@ -3,7 +3,8 @@
 //!
 //! ```text
 //! descriptor (just before the file name): ..., u64 pointer to the name, u64 glyph count
-//! the name ("MainFont_x64_0.g1t", 0x18 bytes) and then the glyphs, 28 bytes each:
+//! the name ("MainFont_x64_0.g1t" and its 0), then the glyphs from the next 16-byte boundary,
+//! 28 bytes each:
 //!   u32 code, u16 x, u16 y, u16 width, u16 height, i32 x offset, i32 y offset, u32 advance,
 //!   u32 0
 //! ```
@@ -13,6 +14,12 @@
 //! the top of the line to the top of the glyph.
 
 use crate::pe::Pe;
+
+/// The fonts' file names in the multi-language executable (`Atelier_Escha_and_Logy.exe`), one
+/// table each, in the font folders' order: Japanese (`Font`, 3,007 glyphs), English (`Font_EN`,
+/// 2,947, the same as the English executable's), Simplified Chinese (`Font_SC`, 4,483) and
+/// Traditional Chinese (`Font_TC`, 3,772).
+pub const FONTS_MULTI: [(&str, u64); 4] = [("Font", 0x1407_d4db8), ("Font_EN", 0x1407_e96d0), ("Font_SC", 0x1407_fd960), ("Font_TC", 0x1408_1c3f0)];
 
 /// The English font's file name in the English executable (its glyphs follow it).
 pub const FONT_EN: u64 = 0x1407_9ee58;
@@ -42,11 +49,14 @@ pub fn glyphs(pe: &Pe, name: u64) -> Option<std::collections::HashMap<char, Glyp
     let count = usize::try_from(u64_at(at - 8)?).ok().filter(|&n| n <= 0x10000)?;
     let u16_at = |o: usize| u16::from_le_bytes([d[o], d[o + 1]]);
     let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+    // The glyphs start at the first 16-byte boundary after the name's 0.
+    let len = d.get(at..)?.iter().position(|&b| b == 0)?;
+    let start = usize::try_from((name + len as u64 + 1).next_multiple_of(16) - name).ok()?;
     // The whole table is there.
-    d.get(at + 0x18..at + 0x18 + count * RECORD)?;
+    d.get(at + start..at + start + count * RECORD)?;
     let mut out = std::collections::HashMap::with_capacity(count);
     for i in 0..count {
-        let r = at + 0x18 + i * RECORD;
+        let r = at + start + i * RECORD;
         let code = u32_at(r);
         let Some(c) = character(code) else { continue };
         out.insert(c, Glyph {
@@ -83,5 +93,24 @@ mod tests {
         assert_eq!(character(0xe280a6), Some('…'));
         assert_eq!(character(0xefbd9e), Some('～'));
         assert_eq!(character(0xff), None);
+    }
+}
+
+#[cfg(test)]
+mod real_tests {
+    /// The multi-language executable's four tables read, each with its language's glyphs
+    /// (`BARREL_ROOT` = the game's folder; not in the repository).
+    #[test]
+    #[ignore]
+    fn the_four_languages() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let data = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy.exe")).unwrap();
+        let pe = crate::pe::Pe::parse(&data).unwrap();
+        let tables: Vec<_> = super::FONTS_MULTI.iter().map(|&(_, a)| super::glyphs(&pe, a).unwrap()).collect();
+        assert!(tables.iter().all(|t| t.contains_key(&'A') && t.contains_key(&'の')));
+        assert!(tables[2].contains_key(&'这') && !tables[3].contains_key(&'这') && tables[3].contains_key(&'這'));
+        let en = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let en = super::glyphs(&crate::pe::Pe::parse(&en).unwrap(), super::FONT_EN).unwrap();
+        assert_eq!(en, tables[1]);
     }
 }

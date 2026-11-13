@@ -373,13 +373,18 @@ interface code (not read).
 Each language has one atlas (`Font`, `Font_EN`, `Font_SC`, `Font_TC`): a 2048×2048 BC3 texture
 with the glyphs white in its alpha, packed in no grid. Where each glyph is comes from the
 executable: just before the file name (`0x14079ee58` in the English one) a descriptor ends
-with a pointer to the name and the glyph count (2,947); after the name's 0x18 bytes come the
-glyphs, 28 bytes each: `{u32 code, u16 x, u16 y, u16 width, u16 height, i32 x offset, i32 y
-offset (from the line's top to the glyph's), u32 advance, u32 0}`, in rising code order. Codes
+with a pointer to the name and the glyph count (2,947); the glyphs start at the first 16-byte
+boundary after the name's 0 (0x18 bytes on, here), 28 bytes each: `{u32 code, u16 x, u16 y,
+u16 width, u16 height, i32 x offset, i32 y offset (from the line's top to the glyph's), u32 advance, u32 0}`, in rising code order. Codes
 0 to 126 are ASCII by number (0 to 31 are 3×3 blanks); the rest are the character's UTF-8 bytes
 read as a big-endian number (`0xc2a2` ¢, `0xe280a6` …). The Latin glyphs reach 53 pixels below
 the line's top; a space advances 10, `A` 23 (`barrel_formats::font`; `barrel font-text EXE
-FONT.g1t OUT.png TEXT` lays out a line from both). The other languages' tables are not read yet.
+FONT.g1t OUT.png TEXT` lays out a line from both). The multi-language executable (`Atelier_Escha_and_Logy.exe`) holds a table per font folder,
+in the folders' order: Japanese (`0x1407d4db8`, 3,007 glyphs), English (`0x1407e96d0`, 2,947,
+the English executable's table exactly), Simplified Chinese (`0x1407fd960`, 4,483) and
+Traditional Chinese (`0x14081c3f0`, 3,772), in the same layout (their glyphs start 0x20 bytes
+after the name, the boundary falling there; `font::FONTS_MULTI`). Every table has the kana and
+Latin; only the Simplified one has 这, the Traditional one 這.
 
 The font also holds the 33 button icons that `<IMnn>` puts in a line: codes `0xd090` to
 `0xd0b0` (which would read as Cyrillic А to а), 50×50 at the atlas's top. The colours that
