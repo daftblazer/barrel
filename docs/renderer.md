@@ -797,12 +797,14 @@ Its panels (`area_panel::world_elements`, `travel`; the recording
 region the scroll with its description and the "Map" tab over its sectors (layout 642's rows
 at (1442, 228)); for the town no scroll; and, while the cursor stands on another place than
 the start, the travel panel (639 at (688, 640), under her): the trip's days
-(`WorldMap::trip`, the events seen shortening routes) and the arrival's month / day. Checked
+(`WorldMap::trip`, the events seen shortening routes) and the arrival's month / day in 639's
+digit sprites (part 0xcf: cut = digit, cut 12 the "/"; placed as measured on the recording at
+1:18 and 1:25, the labels in its tan). Checked
 against the recording's Southern Ruins scroll (the same lines, the same places to within a
 few pixels; the game's list rows are a little closer than 642's 50). Not yet the game's: the
-world map's camera (the area map's), the sectors not open yet left out of the list, the
-numbers as 639's digit sprites, the "Return to World Map?" question on an area map's Back,
-the "Area Info" button.
+world map's camera (the area map's, and the panel stands at a fixed place, not under her),
+the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
+to World Map?" question is `question.rs`.
 
 ## Graphics settings
 
