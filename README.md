@@ -24,7 +24,11 @@ The goals:
 
 ## Status
 
-Escha & Logy DX comes first; the other games so far have their archives and a few tables read.
+Escha & Logy DX comes first. The other six games' data reads with the same code (checked over
+every file, 2026-11-12): Shallie DX's and Ayesha DX's events, messages and tables (each with its
+own measured event command table), and every texture, model, animation, event and message in
+Sophie 2's and the Ryza games' archives, but for two Japanese test-event message files
+(`docs/formats.md`). Ayesha's models are in the older PSSG format, not read yet.
 Barrel does not play Escha yet: the systems below run on their own, from the command line or
 the viewer, and are checked against the original (its executable's code and recorded runs).
 
