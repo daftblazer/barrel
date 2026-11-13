@@ -1158,7 +1158,14 @@ struct FieldBody {
 /// the directory's name, each placement whose conditions pass on the save's seen events (or,
 /// without a save, each character's first placement), as a still body at its spot (metres to
 /// field units). Random-companion placements (rows 318 to 322) are left out.
-fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>)> {
+/// A town person's body, posed in its wait motion each frame (it does not move).
+struct TownBody {
+    instance: u32,
+    skeleton: barrel_formats::g1m::Skeleton,
+    anim: barrel_formats::g1a::Animation,
+}
+
+fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>, Vec<TownBody>)> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let dir_name = field_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -1178,7 +1185,7 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     let mut placed: Vec<i32> = Vec::new();
-    let (mut packs, mut tex_base, mut first) = (Vec::new(), base, None);
+    let (mut packs, mut tex_base, mut first, mut bodies) = (Vec::new(), base, None, Vec::new());
     for p in barrel_formats::npc::places(&pe).ok_or("no placement table")?.iter().filter(|p| p.map == map) {
         if (318..=322).contains(&p.chara) || placed.contains(&p.chara) {
             continue;
@@ -1199,10 +1206,13 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
         eprintln!("town person chara {} as {:?} at {pos:?} facing {}", p.chara, row.attr("BaseTag"), p.angle);
         tex_base += body.count;
         packs.extend(body.packs);
+        if let Some((skeleton, _, anim, _)) = body.rig {
+            bodies.push(TownBody { instance: body.instance, skeleton, anim });
+        }
         placed.push(p.chara);
         first = first.or(Some(pos));
     }
-    Ok((packs, first))
+    Ok((packs, first, bodies))
 }
 
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
@@ -1842,6 +1852,8 @@ fn main() -> Result<()> {
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
     let mut town_people_from = None::<String>;
+    let mut town_bodies: Vec<TownBody> = Vec::new();
+    let mut town_time = 0.0f32;
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
     // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
     let mut costumes: Vec<(u32, usize, usize, usize)> = Vec::new();
@@ -2088,8 +2100,9 @@ fn main() -> Result<()> {
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--town-people: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
         let save = (from != "all").then(|| PathBuf::from(from));
-        let (packs, first) = town_people(&root, field_dir, save.as_deref(), &mut scene, base)?;
+        let (packs, first, bodies) = town_people(&root, field_dir, save.as_deref(), &mut scene, base)?;
         pack_bytes.extend(packs);
+        town_bodies = bodies;
         if focus.is_none() {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
@@ -3194,6 +3207,26 @@ fn main() -> Result<()> {
             target = look * mirror;
             eye = (look + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist) * mirror;
             fov = point.fov.clamp(10.0, 120.0).to_radians();
+        }
+    }
+    // Town people: each posed in its wait motion on the viewer's clock.
+    if !town_bodies.is_empty() {
+        let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        if frame > 0 {
+            town_time += dt;
+        }
+        for b in &town_bodies {
+            let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, town_time, true));
+            let base = instances[b.instance as usize].palette as usize;
+            for (k, m) in joints.iter().enumerate() {
+                if let Some(slot) = palette.get_mut(base + k) {
+                    *slot = render_space(*m);
+                }
+            }
+        }
+        if player.is_none() {
+            gpu.upload(palette_mem, palette_bytes(&palette))?;
+            gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
         }
     }
     // The view's up: the event camera's roll turns it (t10).

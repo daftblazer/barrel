@@ -134,8 +134,8 @@ notes; the map number comes from the directory's name through the `FIELDMAP_*` l
 - **With a save:** each placement whose conditions pass on the save's seen events.
 - **With `all`:** each character's first placement.
 
-Each stands still at its spot (metres ×100 into field units, x mirrored like the enemies), and
-the camera starts on the first. Random-companion placements are left out. On `TOWN_05` (map 4)
+Each stands at its spot (metres ×100 into field units, x mirrored like the enemies), looping
+its `F_WAIT` motion on the viewer's clock, and the camera starts on the first. Random-companion placements are left out. On `TOWN_05` (map 4)
 the oracle save (day 229) places one: `Chara` row 15 (`PC35`), an adventurer by a bench. On `TOWN_04` (map 3, 154 placements)
 it places one too, `Chara` row 3, at the foot of the plaza steps: `barrel town-people EXE 3 SAVE`
 shows three passing placements, all for that row. The save is early in the story (`MQ02_010`
