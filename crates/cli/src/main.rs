@@ -2869,6 +2869,7 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
             Step::Wait { seconds } => println!("      (wait {seconds:.2} s)"),
             Step::EventFlag { flag, value } => println!("      (event flag {flag} = {value})"),
             Step::Trophy { trophy } => println!("      (achievement {trophy}: left out)"),
+            Step::Movie { movie } => println!("      movie {movie} (not played yet)"),
             Step::MarkEvent { event, seen } => println!("      (event {event} marked {})", if seen { "seen" } else { "unseen" }),
             Step::CharacterWait { action, character, seconds } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);

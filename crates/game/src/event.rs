@@ -34,6 +34,10 @@ pub const SET_EVENT_FLAG: u32 = 0x7500_0022;
 /// and tested (it never touches the player's Steam account); a finished engine may offer it as
 /// an option.
 pub const TROPHY: u32 = 0x7500_0026;
+/// `u46` (0x7500002e, `{movie, 1, 0}`): plays movie `movie` (the game's movie mode, 13, through
+/// a `GAMEMODE_CREATE_DATA`, case `0x140051a96`; the table at `0x140d8ece0`, `docs/events.md`,
+/// "Movies"), then `u47` and `u48` follow it.
+pub const PLAY_MOVIE: u32 = 0x7500_002e;
 /// `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): binds a variable character slot
 /// (10028 ...) to a `Chara.xml` row (most often the position markers 590 to 603); commands then
 /// name the character by either (6,736 uses, 34 slots, 54 rows over the events).
@@ -263,6 +267,8 @@ pub enum Step<'a> {
     EventFlag { flag: u32, value: i32 },
     /// `u38`: the game would unlock this Steam achievement here (Barrel does not).
     Trophy { trophy: u32 },
+    /// A movie plays (`u46`; not drawn yet: `docs/engine.md`, "Movies").
+    Movie { movie: u32 },
     /// Wait until a character (by `Chara.xml` row) is ready (`p3`); what "ready" means is
     /// still open (`docs/events.md`, "Waits").
     WaitForCharacter { character: u32 },
@@ -506,6 +512,7 @@ impl<'a> Player<'a> {
             (LONG_WAIT, _) => out.push(Step::Wait { seconds: 2.0 }),
             (SET_EVENT_FLAG, [flag, value, ..]) => out.push(Step::EventFlag { flag: *flag, value: *value as i32 }),
             (TROPHY, [trophy, ..]) => out.push(Step::Trophy { trophy: *trophy }),
+            (PLAY_MOVIE, [movie, ..]) => out.push(Step::Movie { movie: *movie }),
             (MARK_EVENT, [event, rest @ ..]) => out.push(Step::MarkEvent { event: *event, seen: rest.first().is_some_and(|&v| v != 0) }),
             (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: self.slot(*character) }),
             (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
@@ -884,6 +891,15 @@ mod tests {
     use barrel_formats::ebd::{Action, END};
 
     #[test]
+    fn a_movie_plays() {
+        let act = Action { flags: 0, name: vec![], description: vec![], words: vec![PLAY_MOVIE, 5, 1, 0, END] };
+        let event = Ebd { actions: vec![act], resources: vec![] };
+        let table = OperandTable::new(&[(PLAY_MOVIE, Some(3))]);
+        let steps: Vec<Step> = Player::escha(&event, &[], &table).unwrap().collect();
+        assert_eq!(steps, [Step::Movie { movie: 5 }]);
+    }
+
+    #[test]
     fn the_master_character_is_the_hero() {
         use crate::field_camera::{Change, FOLLOW};
         let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
@@ -1041,6 +1057,7 @@ mod tests {
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
                 Step::Trophy { trophy } => format!("trophy {trophy}"),
+                Step::Movie { movie } => format!("movie {movie}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),
                 Step::CharacterWait { character, seconds, .. } => format!("{character} waits {seconds}"),
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
