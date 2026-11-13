@@ -793,7 +793,11 @@ R1, four days (90 to 94), the Southern Ruins' area map; `down,back` there: the R
 Entrance, then the world map at the Southern Ruins. On the maps she runs the dots without the
 field's walls (a mark's collision held her short of it), and no faster than reaches the
 next waypoint in a frame (at 5 fps a 100-unit step overshot the 30-unit reach both ways).
-Its panels (`area_panel::world_elements`, `travel`; the recording
+Its camera is fitted the same way as the area map's (`colseit-arrival-60hz.mkv` at 1:12, the
+cursor on the Southern Ruins: Colseit's mark and the route dots, 16 pixels RMS): 35 degrees
+from 12000 units at a point on the ground 400 units north of her, the same 15-degree view
+(`WORLD_CAMERA_*`); she is drawn 3.7 times her size there (`WORLD_MAP_SCALE`), as tall on
+screen as on the area map. Its panels (`area_panel::world_elements`, `travel`; the recording
 `colseit-arrival-60hz.mkv` at 1:15 and 1:25): the place's name at the top right (637); for a
 region the scroll with its description and the "Map" tab over its sectors (layout 642's rows
 at (1442, 228)); for the town no scroll; and, while the cursor stands on another place than
@@ -803,7 +807,8 @@ digit sprites (part 0xcf: cut = digit, cut 12 the "/"; placed as measured on the
 1:18 and 1:25, the labels in its tan). Checked
 against the recording's Southern Ruins scroll (the same lines, the same places to within a
 few pixels; the game's list rows are a little closer than 642's 50). Not yet the game's: the
-world map's camera (the area map's),
+world map's own cursor (a compass mark while the cursor moves; Barrel walks her), the routes the
+story has not opened yet (R3 west of Colseit is unknown on the user's save),
 the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
 to World Map?" question is `question.rs`.
 

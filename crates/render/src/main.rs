@@ -1945,9 +1945,19 @@ const AREA_CAMERA_PITCH: f32 = 43.0;
 const AREA_CAMERA_DISTANCE: f32 = 5400.0;
 const AREA_CAMERA_FOV: f32 = 15.0;
 const AREA_CAMERA_AHEAD: f32 = 150.0;
+/// The world map's camera, fitted the same way to `colseit-arrival-60hz.mkv` at 1:12 (the
+/// cursor on the Southern Ruins: Colseit's mark, the route dots north and east, 16 pixels RMS;
+/// the area map's 15-degree view kept): steeper and farther than the area map's.
+const WORLD_CAMERA_PITCH: f32 = 35.0;
+const WORLD_CAMERA_DISTANCE: f32 = 12000.0;
+const WORLD_CAMERA_AHEAD: f32 = 400.0;
+
 /// How much larger the player is drawn on the maps (the recording at 0:45, at the fitted
 /// camera: 170 pixels from her head to her feet against Barrel's 97 at life size).
 const AREA_MAP_SCALE: f32 = 1.75;
+/// And on the world map, whose camera stands farther off (the recording at 1:12: about as tall
+/// on screen as on the area map).
+const WORLD_MAP_SCALE: f32 = 3.7;
 
 /// The world map point field area `map` stands for (`SP_A0P0` ...) and where it is (x, z), none
 /// for the town's maps and fields on no point.
@@ -4557,10 +4567,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The area map looks down on the player from the south (screen up is -z), as fitted to
     // the recording (`AREA_CAMERA_*`).
     if area_mode && let Some(c) = focus {
-        let p = AREA_CAMERA_PITCH.to_radians();
+        let (pitch, distance, ahead) = if world_mode { (WORLD_CAMERA_PITCH, WORLD_CAMERA_DISTANCE, WORLD_CAMERA_AHEAD) } else { (AREA_CAMERA_PITCH, AREA_CAMERA_DISTANCE, AREA_CAMERA_AHEAD) };
+        let p = pitch.to_radians();
         // On the ground (the focus stands 80 units up, at her chest), that far north.
-        target = c - Vec3::new(0.0, 80.0, AREA_CAMERA_AHEAD);
-        dist = AREA_CAMERA_DISTANCE;
+        target = c - Vec3::new(0.0, 80.0, ahead);
+        dist = distance;
         fov = AREA_CAMERA_FOV.to_radians();
         eye = target + Vec3::new(0.0, p.sin(), p.cos()) * dist;
     }
@@ -5823,7 +5834,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             }
         }
         let turn = glam::Quat::from_rotation_y(w.facing);
-        let size = if area_mode { AREA_MAP_SCALE } else { 1.0 };
+        let size = match (area_mode, world_mode) {
+            (true, true) => WORLD_MAP_SCALE,
+            (true, false) => AREA_MAP_SCALE,
+            _ => 1.0,
+        };
         instances[w.instance as usize].model = render_space(Mat4::from_scale_rotation_translation(Vec3::splat(size), turn, Vec3::from(w.pos) + Vec3::Y * lift));
         if player.is_none()
             && let Some((out, mixer, ..)) = sound.as_mut() {
