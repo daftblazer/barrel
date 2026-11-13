@@ -423,7 +423,13 @@ same shadow lookup, `sLit`, and two layers `sLand0`/`sLand1` weighted by the ble
 and green (each divided by their sum plus 1/1024), at the world position's x and z times
 `texsize0`; colour = `(v2 + s·lit·v6) × layers + (v8 + s·lit·v7) × layers.a`, then the fog,
 and × 0.5 written in (the HDR range's inverse). The renderer's terrain takes the same
-per-vertex light as the field's models (with a white vertex colour) on its blended layers.
+per-vertex light as the field's models on its blended layers, with the vertex's own colour
+and normal (`docs/formats.md`, "Terrain"). Against the reference recording of
+`EVENT_MM01_OP1_111`'s arch shot (`TOWN_09`), the baked colour darkened the band under the
+houses from 169 to 134 (red; the game 107); the ground is still about 1.35 times the game's
+(152, 118, 72 against 111, 89, 51) and the plaza's (`TOWN_04`) 1.15 times, evenly over the
+channels: a light, not a texture. `TOWN_09`'s models are 1.2 to 1.35 times too (`TOWN_04`'s
+match), so that field's light is also too strong.
 
 ## Shadows (what is known)
 

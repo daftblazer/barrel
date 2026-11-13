@@ -905,7 +905,7 @@ section by its own reader, each checking that it read the length the header give
 | File offset (TOWN_01) | Reader | What |
 |---|---|---|
 | 0x00 | | `KFTK`, version `0820`, 10, the file size, the section offsets (0x10 layer textures, 0x14 blend maps, 0x1c heightmap), then counts from 0x24 |
-| 0x48 | `0x14066f900` | 0x50 bytes (floats: seven 1.0, 0.3 three times, 4.0 ...) |
+| 0x48 | `0x14066f900` | 0x50 bytes: the terrain's lighting material as in g1m section 0x10001 (diffuse 1, 1, 1, 1 = `cDiff`; ambient 1, 1, 1 = `cAmb`; flags `0x133`; 0.3 three times and 4.0: specular and power), then the cell size and others (TOWN_09: 100, 25, 1/256) |
 | 0x98 | `0x14066fc90` | 0x1c bytes, the same in every file (`0x310, 0, 7`, then u16 pairs: a vertex format, by the look) |
 | 0xb4 | `0x14066fc50` | the layer records, 32 bytes each, count at 0x28 |
 | | `0x14066f940` | 8 bytes a layer, only when a flag passed in is set (not in the files read) |
@@ -989,9 +989,16 @@ vertex and first index as byte offsets into the two lists below; the second is d
 index size, a byte of the terrain object, as it is read), then the vertices
 (the byte count at 0x40, 16 bytes each) and the indices (u16, the byte count at 0x44); they
 end exactly at the layer textures' offset (0x10) in TOWN_01, AREA_08_02 and AREA_01_01, so the
-block is read whole. A vertex is `{s16 x, s16 height, s16 z, s16 0, u8 × 4 normal, u8 × 4
-colour}`: x and z count cells (times the cell size at 0x84: 100 in AREA_01_01 over 0 to 64,
-250 in AREA_08_02 over 4 to 20 and 0 to 60), the colour is white (`ff ff ff 80`) in all read. The patches' vertices follow each other
+block is read whole. A vertex is `{s16 x, s16 height, s16 z, s16 0, u8 × 4 colour, u8 × 4
+morph colour}`: x and z count cells (times the cell size at 0x84: 100 in AREA_01_01 over 0 to 64,
+250 in AREA_08_02 over 4 to 20 and 0 to 60). By the terrain's vertex program (the field's
+`.g1s` program 2), the two colours' rgb are the vertex colour near and toward the coarser level,
+blended by the LOD morph (`gMrpRng`), and their fourth bytes are the normal's x and z (unorm
+× 2.007874 − 1.007874; y = √(1 − x² − z²)). The colour is baked shade, white in the fields
+first read (AREA_*: `ff ff ff 80`), not in the towns: means 0.61 in TOWN_09, 0.88 in TOWN_04,
+0.96 in TOWN_10, darkest under walls and in corners. The light is `MapSTD`'s on that colour:
+ambient × colour × `cAmb` + the second light's diffuse × colour × `cDiff`, and the sun's
+diffuse × colour × `cDiff` apart (for the shadow and the light texture). The patches' vertices follow each other
 (a patch's count is where its farthest-reaching draw ends; they add up to the whole). A draw's
 first index counts from its patch's first index and its indices from its patch's first vertex
 (its vertex range is only the lowest and the span its indices use). The indices are triangle strips, repeated indices joining the runs. The height spreads the

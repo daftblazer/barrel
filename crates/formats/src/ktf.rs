@@ -63,15 +63,27 @@ impl Terrain<'_> {
     }
 }
 
-/// A terrain vertex: x and z in cells, the height as stored (the whole s16 range), the normal
-/// and colour as stored.
+/// A terrain vertex: x and z in cells, the height as stored (the whole s16 range), and two
+/// colours (`COLOR0`-like unorm bytes; the terrain's vertex program blends them by its LOD
+/// morph, `gMrpRng`: the first near, the second toward the coarser level) whose fourth bytes
+/// are the normal's x and z ([`Vertex::normal`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
     pub x: i16,
     pub height: i16,
     pub z: i16,
-    pub normal: [u8; 4],
     pub colour: [u8; 4],
+    pub morph_colour: [u8; 4],
+}
+
+impl Vertex {
+    /// The normal as the vertex program rebuilds it (field space): x and z from the colours'
+    /// fourth bytes (unorm × 2.007874 − 1.007874), y the rest of the unit length.
+    pub fn normal(&self) -> [f32; 3] {
+        let unit = |b: u8| f32::from(b) / 255.0 * 2.007_874 - 1.007_874;
+        let (x, z) = (unit(self.colour[3]), unit(self.morph_colour[3]));
+        [x, (1.0 - x * x - z * z).max(0.0).sqrt(), z]
+    }
 }
 
 /// One draw of a patch: its pass kind (0x00 depth, 0x10 one layer alone, 0x20 lit), the program
@@ -207,7 +219,7 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
     for k in 0..vbytes / 16 {
         let o = at + 16 * k;
         let s = |i: usize| u16_at(o + i) as i16;
-        m.vertices.push(Vertex { x: s(0), height: s(2), z: s(4), normal: [d[o + 8], d[o + 9], d[o + 10], d[o + 11]], colour: [d[o + 12], d[o + 13], d[o + 14], d[o + 15]] });
+        m.vertices.push(Vertex { x: s(0), height: s(2), z: s(4), colour: [d[o + 8], d[o + 9], d[o + 10], d[o + 11]], morph_colour: [d[o + 12], d[o + 13], d[o + 14], d[o + 15]] });
     }
     at += vbytes;
     m.indices = (0..ibytes / 2).map(|k| u16_at(at + 2 * k)).collect();

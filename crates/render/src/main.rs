@@ -586,11 +586,10 @@ impl Scene {
     /// × blend (the map × 4 + the channel pair, 3 for one layer alone) + 32768 when the draw adds
     /// the bake (programs 4 to 7); y = layer a's repeat + 256 × layer b's (in cells). Normals come
     /// from the heightmap (the stored ones are not decoded).
-    fn add_terrain(&mut self, m: &barrel_formats::ktf::Mesh, h: &barrel_formats::khm::Heightmap, repeats: &[u8]) -> Vec<scene_gpu::TerrainPatch> {
+    fn add_terrain(&mut self, m: &barrel_formats::ktf::Mesh, repeats: &[u8]) -> Vec<scene_gpu::TerrainPatch> {
         let mirror = Vec3::new(-1.0, 1.0, 1.0);
         let mut out = Vec::new();
         let mut dropped = 0usize;
-        let hcell = |x: isize, z: isize| h.height(x.clamp(0, h.cells_x as isize) as usize, z.clamp(0, h.cells_z as isize) as usize);
         for (k, p) in m.patches.iter().enumerate() {
             if !p.leaf {
                 continue;
@@ -619,11 +618,14 @@ impl Scene {
                 // its vertex range does not always bound them).
                 for v in verts {
                     let pos = Vec3::new(f32::from(v.x) * m.cell_size, p.height(v.height), f32::from(v.z) * m.cell_size) * mirror;
-                    let (x, z) = (isize::from(v.x), isize::from(v.z));
-                    let n = Vec3::new(hcell(x - 1, z) - hcell(x + 1, z), 2.0 * h.cell_size, hcell(x, z - 1) - hcell(x, z + 1)).normalize() * mirror;
+                    let n = Vec3::from(v.normal()) * mirror;
                     self.lo = self.lo.min(pos);
                     self.hi = self.hi.max(pos);
-                    self.vertices.push(Vertex { pos: pos.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [0.0; 3] });
+                    // The vertex's own colour: baked shade (darker under walls and in
+                    // corners), lit as a field model's vertex colour is (the near colour; the
+                    // LOD morph toward the second is not done).
+                    let [r, g, b, _] = v.colour;
+                    self.vertices.push(Vertex { pos: pos.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [r, g, b, 255], corner: [0.0; 3] });
                 }
                 for t in barrel_formats::ktf::patch_triangles(m, p, d) {
                     if t.iter().all(|&i| (i as usize) < verts.len()) {
@@ -2368,7 +2370,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
     if let Some((bytes, t)) = terrain {
         let h = &t.heightmap;
         let mesh = barrel_formats::ktf::mesh(bytes)?;
-        let patches = scene.add_terrain(&mesh, h, &t.layer_repeats());
+        let patches = scene.add_terrain(&mesh, &t.layer_repeats());
         let index_count: u32 = patches.iter().map(|p| p.index_count).sum();
         let (mut lo, mut hi) = (f32::MAX, f32::MIN);
         for z in 0..=h.cells_z {
