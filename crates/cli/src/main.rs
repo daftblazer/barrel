@@ -21,6 +21,7 @@ usage:
   barrel pssg FILE             print a PSSG file's node tree
   barrel pssg-obj FILE OUT.obj  write a PSSG file's meshes as OBJ
   barrel pssg-textures FILE OUTDIR  write a PSSG file's textures as PNG
+  barrel walk FIELD_DIR X Y Z DX DZ STEPS  walk a character against a field's walls
   barrel g1co-scan DIR         read and check every field's collision
   barrel pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
   barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
@@ -106,6 +107,7 @@ fn main() -> ExitCode {
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
         ["pssg-scan", dir] => pssg_scan(Path::new(dir)),
         ["g1co-scan", dir] => g1co_scan(Path::new(dir)),
+        ["walk", field_dir, x, y, z, dx, dz, steps] => walk(Path::new(field_dir), [x, y, z], [dx, dz], steps),
         ["pssg", file] => pssg_tree(Path::new(file)),
         ["pssg-meshes", file] => pssg_meshes(Path::new(file)),
         ["pssg-obj", file, out] => pssg_obj(Path::new(file), Path::new(out)),
@@ -576,6 +578,26 @@ fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
             }
             None => println!("{name}: {}×{} {} (format not read)", t.width, t.height, t.format),
         }
+    }
+    Ok(())
+}
+
+/// Walks a character (radius 30, 160 tall) from (X, Y, Z) by (DX, DZ) each step for STEPS
+/// steps against FIELD_DIR's walls (`game::walk`), printing where it stands.
+fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> {
+    let name = dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
+    let bytes = read(&dir.join(format!("{name}.elixir.gz")))?;
+    let container = Elixir::parse(&bytes)?;
+    let entry = container.entries.iter().find(|e| e.name.ends_with("_col.g1co")).ok_or("the field has no collision")?;
+    let walls = barrel_game::walk::Walls::new(&barrel_formats::g1co::parse(container.data(entry))?);
+    let [x, y, z] = at.map(|v| v.parse::<f32>());
+    let (mut p, y) = ([x?, z?], y?);
+    let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];
+    for k in 0..steps.parse::<usize>()? {
+        let next = walls.step(p, d, y, 160.0, 30.0);
+        let blocked = (next[0] - p[0] - d[0]).abs() > 0.01 || (next[1] - p[1] - d[1]).abs() > 0.01;
+        println!("{k:4}: ({:.1}, {:.1}){}", next[0], next[1], if blocked { "  (against a wall)" } else { "" });
+        p = next;
     }
     Ok(())
 }

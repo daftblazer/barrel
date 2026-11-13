@@ -319,6 +319,19 @@ the first opening (1280×720) about 1,300 pixels change, all along edges, which 
 smooth. It suits FSR, which expects an anti-aliased input: from half size with 4× MSAA, FSR
 comes to 32.1 dB against the full-size 4× frame, where without it it came to 29.4.
 
+## Walking (not yet the game's)
+
+A character walks against its field's collision mesh (`<AREA>_col.g1co`, `docs/formats.md`,
+"Collision") through `game::walk`: an upright cylinder pushed back out of the mesh's upright
+triangles (seen from above as segments, found through the hierarchy's leaves), the move cut into
+steps of at most half the radius so none passes through a wall; a move into a wall slides along
+it (`barrel walk FIELD_DIR X Y Z DX DZ STEPS`: in TOWN_10 a walk north from (6000, 10500) stops
+at the wall near z = 11,347 and slides along it). The game moves characters through ktgl's
+collision engine (`elixir::EXCollisionScene` over ktgl's broad and narrow phases, `S_CE_BNP_INPUT`
+and `_OUTPUT`), which is not read: the radius (the character's `FMrad` in `CharaBase.xml`, 30
+here), the height, the steps and how corners and slopes are taken are this module's, to be
+replaced by the game's once read. Floors and the heightmap are not followed yet.
+
 ## Movies (open)
 
 Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":
