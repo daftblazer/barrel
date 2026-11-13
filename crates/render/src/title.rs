@@ -197,6 +197,7 @@ pub fn run(
     window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
     offscreen: Option<vk::Image>,
     root: &Path,
+    load_list: bool,
     keys: &[Button],
     out: Option<&Path>,
     saves: Option<&Path>,
@@ -272,7 +273,8 @@ pub fn run(
         Front::Hero(hero) => hud::quads(&pe, Some(&font), &sheets, &hero.elements(&hero_nodes, texts, &question), w, h),
         Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
-    let mut front = Front::Title(Title::new());
+    // On the Load Game list (the in-play menu's Load), else the title.
+    let mut front = if load_list { Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_game::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
     crate::screen::run(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out)
 }
 

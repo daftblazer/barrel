@@ -2457,9 +2457,58 @@ fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDra
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
 fn main() -> Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mut pump = None;
+    // A run ends, or starts again from the title (the menu's Return to Title and Load), with the
+    // window kept: everything else is built anew.
+    loop {
+        match view(args, pump)? {
+            Ended::Done => return Ok(()),
+            Ended::Restart(a, p) => {
+                eprintln!("restarting: {}", a.join(" "));
+                (args, pump) = (a, p);
+            }
+        }
+    }
+}
+
+/// How a run of [`view`] ended.
+enum Ended {
+    Done,
+    /// Start again with these arguments and the window.
+    Restart(Vec<String>, Option<window::Pump>),
+}
+
+/// The arguments to start again at the title (`load_list`: on its Load Game list): `args` less
+/// what picks a start (`--load`, `--event`, `--at`, `--title`, `--title-load`, `--chain`,
+/// `--free-play`), with `--field auto` and `--title ROOT`.
+fn title_args(args: &[String], root: &Path, load_list: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--load" | "--event" | "--at" | "--title" => {
+                it.next();
+            }
+            "--title-load" | "--chain" | "--free-play" => {}
+            _ => out.push(a.clone()),
+        }
+    }
+    if out.len() > 1 && out[0] == "--field" {
+        out[1] = "auto".into();
+    }
+    out.extend(["--title".to_string(), root.to_string_lossy().into_owned()]);
+    if load_list {
+        out.push("--title-load".into());
+    }
+    out
+}
+
+fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended> {
+    let original_args = args.clone();
+    let mut restart: Option<Vec<String>> = None;
     // --window FRAMES: open a window and present that many frames (the live loop's start).
     if let ["--window", frames] = args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-        return window::run(frames.parse()?);
+        return window::run(frames.parse()?).map(|()| Ended::Done);
     }
     let field = args.first().is_some_and(|a| a == "--field");
     let positional = if field { 3 } else { 3 };
@@ -2485,6 +2534,8 @@ fn main() -> Result<()> {
     let mut free_play = false;
     // `--title ROOT`: the title screen first (`title`), its New Game going on as `--new-game`.
     let mut title_root: Option<PathBuf> = None;
+    // `--title-load`: the title opens on its Load Game list (the menu's Option → Load).
+    let mut title_load = false;
     // --save FILE: where F5 (or `BARREL_SAVE_AT=FRAME`) saves in free play; --load FILE: start
     // in free play from such a save.
     let mut save_file = None::<PathBuf>;
@@ -2655,9 +2706,10 @@ fn main() -> Result<()> {
                     }
                     std::thread::sleep(std::time::Duration::from_millis(16));
                 }
-                return Ok(());
+                return Ok(Ended::Done);
             }
             "--new-game" => new_game = Some(PathBuf::from(it.next().ok_or("--new-game ROOT")?)),
+            "--title-load" => title_load = true,
             "--title" => {
                 let r = PathBuf::from(it.next().ok_or("--title ROOT")?);
                 new_game = Some(r.clone());
@@ -2672,7 +2724,10 @@ fn main() -> Result<()> {
     }
 
     // A window (with --window) or an offscreen image to draw into.
-    let mut pump = window_frames.map(|_| window::Pump::open()).transpose()?;
+    let mut pump = match kept_pump {
+        Some(p) => Some(p),
+        None => window_frames.map(|_| window::Pump::open()).transpose()?,
+    };
     let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
     let gpu = Gpu::new(display)?;
     let mut presenter = match (&pump, display) {
@@ -3125,7 +3180,7 @@ fn main() -> Result<()> {
         let window = presenter.as_ref().zip(pump.as_mut());
         let out = presenter.is_none().then(|| PathBuf::from(&out_path));
         let saves = saves_dir.clone().or_else(barrel_game::saves::default_dir);
-        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, &keys, out.as_deref(), saves.as_deref())?;
+        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, title_load, &keys, out.as_deref(), saves.as_deref())?;
         eprintln!("title: {picked:?}");
         match picked {
             Some(title::Start::NewGame { logy }) => {
@@ -3143,7 +3198,7 @@ fn main() -> Result<()> {
                 args[1] = r.join("Data/x64/Field/TOWN_04").to_string_lossy().into_owned();
                 load_file = Some(file);
             }
-            _ => return Ok(()),
+            _ => return Ok(Ended::Done),
         }
     }
     let mut chain = match (&event_spec, chain_on) {
@@ -3265,7 +3320,7 @@ fn main() -> Result<()> {
     eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, all_textures.len());
     eprintln!("bounds {lo:?} .. {hi:?}");
     if std::env::var("BARREL_DRY").is_ok() {
-        return Ok(());
+        return Ok(Ended::Done);
     }
 
     // Geometry buffers (host-visible: one frame does not need a staging copy).
@@ -3791,6 +3846,9 @@ fn main() -> Result<()> {
             let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
             let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), &basket_of(session.as_ref()), &keys, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
+            if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
+                restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
+            }
             stop = true;
             break;
         }
@@ -3850,6 +3908,12 @@ fn main() -> Result<()> {
                     break;
                 }
                 Some(menu::Outcome::Option(menu::OptionRow::Save)) => save_now = true,
+                // Back to the title, or to its Load Game list: the run starts again.
+                Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) => {
+                    restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
+                    stop = true;
+                    break;
+                }
                 Some(_) => {}
             }
             // The menu's time is not play time.
@@ -5399,5 +5463,20 @@ fn main() -> Result<()> {
         gpu.instance.destroy_instance(None);
     }
     let _ = gpu.physical;
-    Ok(())
+    Ok(match restart {
+        Some(a) => Ended::Restart(a, pump),
+        None => Ended::Done,
+    })
+}
+
+#[cfg(test)]
+mod restart_tests {
+    use super::*;
+
+    #[test]
+    fn title_args_drop_the_start() {
+        let a: Vec<String> = ["--field", "/g/Data/x64/Field/TOWN_04", "out.png", "--load", "s.save", "--size", "1280x720", "--free-play"].map(String::from).to_vec();
+        assert_eq!(title_args(&a, Path::new("/g"), false), ["--field", "auto", "out.png", "--size", "1280x720", "--title", "/g"].map(String::from).to_vec());
+        assert_eq!(title_args(&a, Path::new("/g"), true).last().map(String::as_str), Some("--title-load"));
+    }
 }

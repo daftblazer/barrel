@@ -588,7 +588,11 @@ level, experience to the next, HP, MP, attack, defence and speed from the game's
 experience tables; Barrel's saves keep no level yet, so level 1). Basket shows the items
 gathered (the save's `item` lines) in the game's item grid, with their pictures and qualities,
 the chosen one's name below (`crates/render/src/basket.rs`). Option opens its list: Save writes the game as F5 does (the next free
-slot), the other rows and the other commands are not there yet and only say so on the console.
+slot); Return to Title starts the run again at the title, and Load at the title's Load Game list
+(so Back there goes to the title, not to the game: not yet the game's). Starting again keeps the
+window and builds everything else anew (`view` returns `Ended::Restart` with the arguments less
+the start's, `title_args`; `--title-load` opens the title on its list). Change BGM, Options and
+the commands without a page only say on the console that they are not there yet.
 The menu has its own frame loop (`crates/render/src/screen.rs`, shared with the title), so play
 stands still while it is open. Offscreen, `BARREL_MENU_AT=N` opens it at frame N with the buttons
 in `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), writes it to OUT and ends the run.
