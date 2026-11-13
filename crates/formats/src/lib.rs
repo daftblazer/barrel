@@ -46,6 +46,7 @@ pub mod recipe;
 pub mod salary;
 pub mod save;
 pub mod subject;
+pub mod sys_text;
 pub mod table;
 pub mod voice;
 pub mod world;
