@@ -735,6 +735,19 @@ Four of those, `r15`, `r19`, `r23` and `r26`, are the ones the event player keep
 `0x140050d30` marks them with the bitmask `0x911` over `r15` and up, and they are its waits
 (`0x140052f2b`). The other `r` commands are battle-scene work on the battle's +0x8d0 object.
 
+The screen-effect commands that `Event`'s own switch passes over are answered through the
+listener chain:
+
+- **`u103`** (`ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET`): `PostEffectBlur`, its vtable
+  (`0x140935bb0`) slot 7, `0x140332490`.
+- **`u11`** (`ECT_EVENT_SET_TIME_EFFECT`) and **`u64`**: `0x1402f45e0`, called from
+  `0x140293cc0`, which first asks the object at its +0x60 (`0x140331bf0`).
+
+The classes are `PostEffectBase` and its children `PostEffectBattleEnter`, `Blur`, `Color`,
+`CrossFade`, `Fade`, `Gamma`, `Glow`, `Hue`, `Monotone` and `Negative`, under
+`PostEffectManager`. Which class takes `u12`, `u13`, `u106`, `u108` and `u139`, and what each
+draws, is not read; the viewer does not draw them yet.
+
 ## Operand counts
 
 
