@@ -1540,7 +1540,7 @@ records together:
 | 1 | the item (`itemData` row) |
 | 2 | -1 (0 in three) |
 | 3, 4 | a quality range where set (60 to 70, 50 to 60, 70 to 80, ...), else 0 and 0 |
-| 5, 6, 7 | not read yet (0 to 3, then 1 to 10, then 4 to 20 where set) |
+| 5, 6, 7 | the random traits: how many are drawn (0 to 3), and the low and high ends of their level range (1 to 10, 4 to 20, where set; `gather::random_traits`, below) |
 | 8 | the item's weight in the list's draw |
 | 9 to 12 | up to four traits (`item_potential.xml` rows), -1 for none |
 | 13 to 15 | -1 |
