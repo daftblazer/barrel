@@ -411,7 +411,8 @@ mod tests {
     #[test]
     #[ignore]
     fn streams_like_clips() {
-        let kovs = std::fs::read(std::env::var("BARREL_KVS").expect("BARREL_KVS")).unwrap();
+        let Ok(path) = std::env::var("BARREL_KVS") else { return };
+        let kovs = std::fs::read(path).unwrap();
         let ogg = barrel_formats::voice::ogg(&kovs).unwrap();
         let start = u64::from(barrel_formats::voice::looping(&kovs).unwrap().start);
         let clip = Arc::new(Sound::from_ogg(&ogg).unwrap());
