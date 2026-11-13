@@ -578,6 +578,21 @@ before any field is loaded. Offscreen, `BARREL_TITLE_KEYS=confirm,down` presses 
 writes the screen as it then stands to OUT (`confirm,confirm,confirm,left,confirm` goes on into
 a new game with Escha).
 
+## The main menu
+
+In free play (a field with the story loaded and no event playing) Space, the pad's Start, opens
+the main menu (`crates/render/src/menu.rs`, layouts 383, 361 and 374: `docs/formats.md`). Up and
+down choose among the ten commands (eight shown, the list scrolling), Back closes it and play
+goes on where it stood. Option opens its list: Save writes the game as F5 does (the next free
+slot), the other rows and the other commands are not there yet and only say so on the console.
+The menu has its own frame loop (`crates/render/src/screen.rs`, shared with the title), so play
+stands still while it is open. Offscreen, `BARREL_MENU_AT=N` opens it at frame N with the buttons
+in `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), writes it to OUT and ends the run.
+
+What is not yet the game's is listed in `menu.rs`'s header: how the chosen button is lit, the
+Option rows' wording and text size, the buttons dimmed under the Option list, Escha's figure for
+both leads, and no party plates, help line, opening motion or "NEW" badges.
+
 ## Controllers
 
 With a window, a game controller works through SDL3's gamepad layer (`crates/render/src/pad.rs`;
@@ -596,7 +611,7 @@ keys (`window::Pump`):
 | Y (north) | | running on / off; auto lines in an event |
 | LB / RB | | camera out / in |
 | Right stick click | | camera back |
-| Start | | pause the event |
+| Start | | the main menu in free play; pause the event |
 | Back | | save (F5) |
 
 No button quits (Escape). `barrel-view --field auto /dev/null --pad-test` prints the pad's name,

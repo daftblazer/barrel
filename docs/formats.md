@@ -1242,6 +1242,21 @@ that place them are tables in the executable (English addresses; `crates/formats
   0x157, cut 0 "Save", 1 "Load", 2 "Delete"; the details panel 1044 with "Play Time",
   "Protagoist" (sic), "LV", "Alchemy LV", "Money" and eleven party rows, layout 1046), 916 the battle result, 920 party info, 926 field info.
 
+The main menu opened in play is layouts 383 (the desk background, `a15_menu.g1t` picture 0),
+361 (the lead's figure: nested 957 on `a15_menu_chara01.g1t`) and 374 (placed at [0, 90]: a dark
+strip, eight command buttons, layout 373, from [36, 184] stepping about 81 down and 14 right,
+and five Option rows, layout 378, from [138, 340] stepping 56 to 58 down and 12 right). A
+command button: plate part 0x1d (cut 0 green, 1 yellow; cuts 2 and 3 are the Option rows' white
+and tan plates), name part 0x2f and icon part 0x2b on `a15_common.g1t` picture 2 (cuts 0 to 9 in
+gold, 10 to 19 the same in white: Container, Basket, Adventure Equip., Battle Equip., Formation,
+Status, Assignment, Request, Journal, Option), a glowing frame part 0x1e (cuts 0 to 4: 0, 1, 2,
+1, 0, a pulse; the Option rows' is part 0x1f) and a "NEW" badge part 0x4a. The Option rows' texts
+are filled in at run time; `SysInfo.xml` describes five (save, load, change the music, volume and
+display, quit to the title), and the executable's strings at 0x140794000 name Save, Load, Erase
+Save Data, Rest, Change BGM, Dressing Room, Options, Return to Title. Layout 365 is the same
+figure with six party plates (layout 362, from [78, 152] stepping 136 down and 45 right) and the
+list arrows (364).
+
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 

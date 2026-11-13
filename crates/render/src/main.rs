@@ -27,6 +27,8 @@ mod pad;
 mod hero;
 mod loadlist;
 mod title;
+mod screen;
+mod menu;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -3053,19 +3055,7 @@ fn main() -> Result<()> {
     // `BARREL_TITLE_KEYS` (up, down, confirm, back, comma-separated) picks, and the screen as
     // it then stands is written to OUT.
     if let Some(r) = &title_root {
-        let keys: Vec<title::Button> = std::env::var("BARREL_TITLE_KEYS")
-            .unwrap_or_default()
-            .split(',')
-            .filter_map(|k| match k.trim() {
-                "up" => Some(title::Button::Up),
-                "down" => Some(title::Button::Down),
-                "confirm" => Some(title::Button::Confirm),
-                "left" => Some(title::Button::Left),
-                "right" => Some(title::Button::Right),
-                "back" => Some(title::Button::Back),
-                _ => None,
-            })
-            .collect();
+        let keys = title::keys(&std::env::var("BARREL_TITLE_KEYS").unwrap_or_default());
         let target = title::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
         let window = presenter.as_ref().zip(pump.as_mut());
         let out = presenter.is_none().then(|| PathBuf::from(&out_path));
@@ -3723,6 +3713,18 @@ fn main() -> Result<()> {
     // A jump asked for this frame (J, or `BARREL_JUMP_AT`).
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
+    let mut open_menu = false;
+    // Offscreen: the main menu drawn at a frame (`BARREL_MENU_AT`) after the buttons in
+    // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
+    if presenter.is_none() && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
+        && let (Some(root), Some((color, _))) = (hud_root.as_ref(), offscreen.as_ref()) {
+            let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, &keys, Some(Path::new(&out_path)))?;
+            eprintln!("menu: {picked:?}");
+            stop = true;
+            break;
+        }
     let mut save_now = std::env::var("BARREL_SAVE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut gather_now = std::env::var("BARREL_GATHER_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     if let Some(p) = pump.as_mut() {
@@ -3738,6 +3740,8 @@ fn main() -> Result<()> {
         for key in p.take_pressed() {
             match key {
                 KeyCode::Enter | KeyCode::NumpadEnter => next_line = true,
+                // In free play Space (the pad's Start) opens the main menu; in events it pauses.
+                KeyCode::Space if walker.is_some() && field_hud.is_some() => open_menu = true,
                 KeyCode::Space => {
                     paused = !paused;
                     eprintln!("frame {frame}: {}", if paused { "paused" } else { "playing" });
@@ -3764,6 +3768,23 @@ fn main() -> Result<()> {
             eprintln!("quit after {frame} frames");
             stop = true;
             break;
+        }
+        if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
+            unsafe { gpu.device.device_wait_idle()? };
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, &[], None)?;
+            eprintln!("frame {frame}: menu: {picked:?}");
+            match picked {
+                None => {
+                    eprintln!("window closed in the menu after {frame} frames");
+                    stop = true;
+                    break;
+                }
+                Some(menu::Outcome::Option(menu::OptionRow::Save)) => save_now = true,
+                Some(_) => {}
+            }
+            // The menu's time is not play time.
+            last_frame = std::time::Instant::now();
         }
         let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
         let right_stick = pad::stick(p.sticks().1[0], p.sticks().1[1]);

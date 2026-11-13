@@ -154,6 +154,22 @@ impl Front {
     }
 }
 
+/// Buttons from a comma-separated list (up, down, left, right, confirm, back), for offscreen
+/// runs.
+pub fn keys(list: &str) -> Vec<Button> {
+    list.split(',')
+        .filter_map(|k| match k.trim() {
+            "up" => Some(Button::Up),
+            "down" => Some(Button::Down),
+            "left" => Some(Button::Left),
+            "right" => Some(Button::Right),
+            "confirm" => Some(Button::Confirm),
+            "back" => Some(Button::Back),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A key's title button.
 pub fn button(key: winit::keyboard::KeyCode) -> Option<Button> {
     use winit::keyboard::KeyCode as K;
@@ -168,14 +184,7 @@ pub fn button(key: winit::keyboard::KeyCode) -> Option<Button> {
     }
 }
 
-/// Where the title draws: the post pass and its framebuffers (the window's images, or the one
-/// offscreen image), and the screen's size.
-pub struct Target<'a> {
-    pub pass: vk::RenderPass,
-    pub framebuffers: &'a [vk::Framebuffer],
-    pub width: u32,
-    pub height: u32,
-}
+pub use crate::screen::Target;
 
 /// Shows the title screen and the hero choice, and returns how they ended (`None`: the window
 /// was closed, or, offscreen, `keys` did not end them). In a window it runs until a new game is
@@ -193,7 +202,6 @@ pub fn run(
     saves: Option<&Path>,
 ) -> Result<Option<Start>> {
     use crate::hero::Hero;
-    let d = &gpu.device;
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let still = barrel_formats::layout::still(&pe, BACKGROUND).ok_or("title: no background picture")?;
@@ -248,7 +256,6 @@ pub fn run(
         sheets.keys.push((name, index));
         images.push(t);
     }
-    let mut layer = text::Layer::new(gpu, pool, target.pass, &images)?;
     let (w, h) = (target.width as f32, target.height as f32);
     let quads = |f: &Front| match f {
         Front::Title(t) => {
@@ -263,94 +270,7 @@ pub fn run(
         Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
     let mut front = Front::Title(Title::new());
-    let mut picked = None;
-    for &b in keys {
-        if picked.is_none() {
-            picked = front.press(b, saves);
-        }
-    }
-    layer.set(gpu, &quads(&front))?;
-    let draw = |cb: vk::CommandBuffer, layer: &text::Layer, image: usize| unsafe {
-        let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: target.width, height: target.height } };
-        d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(target.pass).framebuffer(target.framebuffers[image]).render_area(area), vk::SubpassContents::INLINE);
-        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: w, height: h, min_depth: 0.0, max_depth: 1.0 }]);
-        d.cmd_set_scissor(cb, 0, &[area]);
-        layer.record(d, cb, target.width, target.height);
-        d.cmd_end_render_pass(cb);
-    };
-    let result = match (window, offscreen) {
-        (Some((presenter, pump)), _) => {
-            let (ready, done) = unsafe { (d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?) };
-            let mut shown = None;
-            let picked = loop {
-                if !pump.pump() {
-                    break None;
-                }
-                let mut chosen = None;
-                for key in pump.take_pressed() {
-                    if let Some(b) = button(key)
-                        && chosen.is_none() {
-                            chosen = front.press(b, saves);
-                        }
-                }
-                if chosen.is_some() {
-                    break chosen;
-                }
-                if shown.as_ref() != Some(&front) {
-                    layer.set(gpu, &quads(&front))?;
-                    shown = Some(front.clone());
-                }
-                let Some(image) = presenter.acquire(ready)? else { continue };
-                unsafe {
-                    let cb = d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0];
-                    d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
-                    draw(cb, &layer, image as usize);
-                    d.end_command_buffer(cb)?;
-                    let fence = d.create_fence(&vk::FenceCreateInfo::default(), None)?;
-                    let (waits, stages, cbs, signals) = ([ready], [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT], [cb], [done]);
-                    d.queue_submit(gpu.queue, &[vk::SubmitInfo::default().wait_semaphores(&waits).wait_dst_stage_mask(&stages).command_buffers(&cbs).signal_semaphores(&signals)], fence)?;
-                    presenter.present(gpu, image, done)?;
-                    d.wait_for_fences(&[fence], true, u64::MAX)?;
-                    d.destroy_fence(fence, None);
-                    d.free_command_buffers(pool, &cbs);
-                }
-            };
-            unsafe {
-                d.device_wait_idle()?;
-                d.destroy_semaphore(ready, None);
-                d.destroy_semaphore(done, None);
-            }
-            picked
-        }
-        (None, Some(color)) => {
-            let bytes = u64::from(target.width) * u64::from(target.height) * 4;
-            let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
-            gpu.submit(pool, |cb| unsafe {
-                draw(cb, &layer, 0);
-                let region = vk::BufferImageCopy::default()
-                    .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
-                    .image_extent(vk::Extent3D { width: target.width, height: target.height, depth: 1 });
-                d.cmd_copy_image_to_buffer(cb, color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
-            })?;
-            let mut pixels = vec![0u8; bytes as usize];
-            unsafe {
-                let p = d.map_memory(rmem, 0, bytes, vk::MemoryMapFlags::empty())? as *const u8;
-                std::ptr::copy_nonoverlapping(p, pixels.as_mut_ptr(), pixels.len());
-                d.unmap_memory(rmem);
-                d.destroy_buffer(readback, None);
-                d.free_memory(rmem, None);
-            }
-            if let Some(out) = out {
-                std::fs::write(out, barrel_formats::png::encode_rgba(target.width, target.height, &pixels))?;
-                eprintln!("wrote {}", out.display());
-            }
-            picked
-        }
-        _ => None,
-    };
-    unsafe { d.device_wait_idle()? };
-    layer.destroy(gpu);
-    Ok(result)
+    crate::screen::run(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out)
 }
 
 #[cfg(test)]

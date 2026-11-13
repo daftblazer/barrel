@@ -78,6 +78,7 @@ usage:
   barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
   barrel font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
   barrel layout-png ROOT OUT.png ID...   draws interface layouts over each other
+  barrel sprite-png ROOT OUT.png PART    draws every cut of an interface sprite, one under another
   barrel layouts EXE            every interface layout: its nodes and their texture pieces
   barrel telops EXE             the narration cards (u55): each one's layout and texture pieces
   barrel g1s FILE.g1s [N]       a shader pack's programs: stage, inputs, outputs, constants, textures (N: program N's code)
@@ -226,6 +227,10 @@ fn main() -> ExitCode {
         ["layout-png", root, out, ids @ ..] if !ids.is_empty() => match ids.iter().map(|v| v.parse()).collect::<std::result::Result<Vec<u32>, _>>() {
             Ok(ids) => layout_png(Path::new(root), &ids, Path::new(out)),
             Err(e) => Err(format!("layout id: {e}").into()),
+        },
+        ["sprite-png", root, out, part] => match i64::from_str_radix(part.trim_start_matches("0x"), if part.starts_with("0x") { 16 } else { 10 }) {
+            Ok(part) => sprite_png(Path::new(root), part as i32, Path::new(out)),
+            Err(e) => Err(format!("part: {e}").into()),
         },
         ["font-text", exe, g1t, out, text] => font_text(Path::new(exe), Path::new(g1t), Path::new(out), text),
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
@@ -1867,14 +1872,35 @@ fn layouts(exe: &Path) -> Result<()> {
 /// Draws interface layouts `ids` (in order, over each other) on a 1920 × 1080 dark gray screen
 /// from their `WinXls_EN` (else `WinXls`) pictures, alpha blended, to a PNG.
 fn layout_png(root: &Path, ids: &[u32], out: &Path) -> Result<()> {
-    use barrel_formats::{g1t::G1t, layout};
     let bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-    let (w, h) = (1920usize, 1080usize);
+    let pieces: Vec<_> = ids.iter().flat_map(|&id| barrel_formats::layout::pieces(&pe, id)).collect();
+    draw_pieces(root, &pieces, 1920, 1080, out)
+}
+
+/// Every cut of interface sprite `part`, one under another with its number at the left.
+fn sprite_png(root: &Path, part: i32, out: &Path) -> Result<()> {
+    let bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    let (mut pieces, mut y, mut w) = (Vec::new(), 0i32, 1i32);
+    for cut in 0..256 {
+        let Some(p) = barrel_formats::layout::sprite(&pe, part, cut, [0, y]) else { break };
+        let [l, t, r, b] = p.src.map(i32::from);
+        println!("cut {cut}: {}#{} [{l}, {t}, {r}, {b}] at y {y}", p.texture, p.index);
+        w = w.max(r - l);
+        y += (b - t).max(1) + 4;
+        pieces.push(p);
+    }
+    draw_pieces(root, &pieces, w.max(1) as usize, y.max(1) as usize, out)
+}
+
+fn draw_pieces(root: &Path, pieces: &[barrel_formats::layout::Piece], w: usize, h: usize, out: &Path) -> Result<()> {
+    use barrel_formats::g1t::G1t;
     let mut img: Vec<u8> = [48u8, 48, 48, 255].repeat(w * h);
     let mut sheets: std::collections::HashMap<(String, u32), Option<(usize, usize, Vec<u8>)>> = std::collections::HashMap::new();
-    for &id in ids {
-        for p in layout::pieces(&pe, id) {
+    {
+        for p in pieces {
+            let id = &p.texture;
             let sheet = sheets.entry((p.texture.clone(), p.index)).or_insert_with(|| {
                 let x64 = root.join("Data/x64");
                 let data = std::fs::read(x64.join("WinXls_EN").join(&p.texture)).or_else(|_| std::fs::read(x64.join("WinXls").join(&p.texture))).ok()?;
