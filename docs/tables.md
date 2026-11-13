@@ -2077,8 +2077,13 @@ names) and `WM_POINTER_SP_A0P0` ... (small points along the routes), parsed from
 are 96, numbered in this order: 0 `LP_T0`, 1 to 13 `LP_A0`, `A1`, `A2`, `C2`, `B1`, `B2`, `D2`,
 `E1`, `C1`, `D1`, `E2`, `F1`, `F2`; then per region its `SP_<region>` and `SP_<region>P0` on (14
 `SP_A0`, 15 to 19 `SP_A0P0` to `P4`, 20 `SP_A1` ... 93 `SP_E2P7`, a few numbers skipped:
-`SP_A2P5`, `SP_D2P6`); last 94 `LP_G1` and 95 `LP_G2`. Where their positions live is not read
-yet; the lead is `u135`'s path (`0x14016e7a0` gives the world map's current point, `0x1400f18c0`
-the field for it). The routes
+`SP_A2P5`, `SP_D2P6`); last 94 `LP_G1` and 95 `LP_G2`. Which field each point opens is a
+table of 107 records of 32 bytes at `0x1407b3180` (`0x1400f18c0` looks them up; `u135` asks it
+for the world map's current point, `0x14016e7a0`): `{1, point, 0, 0, map, 0, n, event}`, the
+point leading to field map `map` once `event` has been seen (-1, always, in all 107;
+`barrel_formats::world::point_maps`, `barrel world-points EXE`). The town point `LP_T0` opens
+the town's maps 0 to 10; `SP_A0P0` to `P4` the Twilight Forest's `AREA_01_01` to `_05`, and so
+on through the regions; `LP_G1` `EX_AREA_03` and `LP_G2` `EX_AREA_04` to `_10`. Where the points
+stand on the world map is not read yet. The routes
 and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
 part).

@@ -66,3 +66,30 @@ mod tests {
         assert_eq!(r1.trip_days(|e| e == 689 || e == 688), 2);
     }
 }
+
+/// The world map's points and the fields they open (English Escha): 107 records of 32 bytes at
+/// [`POINT_MAPS_EN`], `{1, point, 0, 0, map, 0, n, event}`: world map point `point` (a
+/// `WM_POINTER_*` number, see [`point_names`]) leads to field map `map`, once `event` has been
+/// seen (-1, always, in all of them). `0x1400f18c0` looks a point (or a map) up in it. The town
+/// point (`LP_T0`) leads to the town's maps 0 to 10; `SP_A0P0` (15) to map 12 (`AREA_01_01`).
+pub const POINT_MAPS_EN: u64 = 0x1_407b_3180;
+pub const POINT_MAP_COUNT: usize = 107;
+
+/// A world map point's link to a field: (point, map, event; -1 none).
+pub fn point_maps(pe: &Pe) -> Option<Vec<(u32, u32, i32)>> {
+    let at = pe.offset(POINT_MAPS_EN)?;
+    (0..POINT_MAP_COUNT)
+        .map(|k| {
+            let r = pe.data.get(at + 32 * k..at + 32 * (k + 1))?;
+            let w = |o: usize| i32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+            (w(0) == 1 && w(12) == 0).then(|| (w(4) as u32, w(16) as u32, w(28)))
+        })
+        .collect()
+}
+
+/// The world map points' names (`WM_POINTER_` dropped: `LP_T0`, `LP_A0`, ..., `SP_A0P0`, ...),
+/// by number: the executable's names from `LP_T0` on.
+pub fn point_names(pe: &Pe) -> Option<Vec<String>> {
+    let (names, first) = pe.enum_names("WM_POINTER_LP_T0")?;
+    Some(names[first..].iter().take_while(|n| n.starts_with("WM_POINTER_")).map(|n| n["WM_POINTER_".len()..].to_string()).collect())
+}

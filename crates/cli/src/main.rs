@@ -60,6 +60,7 @@ usage:
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
   barrel town-talk EXE ID       one town person's lines (their placement's talk id)
   barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
+  barrel world-points EXE       the world map's points and the field maps they open
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
@@ -164,6 +165,7 @@ fn main() -> ExitCode {
             Ok(m) => town_people(Path::new(exe), Some(m), Some(Path::new(save))),
             Err(_) => Err("MAP is a number".into()),
         },
+        ["world-points", exe] => world_points(Path::new(exe)),
         ["gimmicks", exe] => gimmicks(Path::new(exe), None),
         ["gimmicks", exe, area] => match area.parse() {
             Ok(n) => gimmicks(Path::new(exe), Some(n)),
@@ -633,6 +635,21 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
             inside = field.inside([p[0], y, p[1]]);
             println!("      through the door to {name} (map {}) at ({:.1}, {:.1}, {y:.1}) facing {}", to.map, p[0], p[1], to.facing);
         }
+    }
+    Ok(())
+}
+
+/// The world map's points and the field maps they open (`barrel_formats::world::point_maps`).
+fn world_points(exe: &Path) -> Result<()> {
+    let bytes = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+    let maps = barrel_game::event::field_maps(&pe);
+    for (point, map, event) in barrel_formats::world::point_maps(&pe).ok_or("no point table")? {
+        let name = names.get(point as usize).map_or("?", |s| s.as_str());
+        let field = maps.get(map as usize).map_or("?", |s| s.as_str());
+        let after = if event >= 0 { format!(" after event {event}") } else { String::new() };
+        println!("point {point:3} {name:10} -> map {map:3} {field}{after}");
     }
     Ok(())
 }
