@@ -23,6 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 mod fsr;
 mod glow;
 mod hud;
+mod title;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -2412,6 +2413,8 @@ fn main() -> Result<()> {
     let mut timings = false;
     let mut hero = 0u32;
     let mut free_play = false;
+    // `--title ROOT`: the title screen first (`title`), its New Game going on as `--new-game`.
+    let mut title_root: Option<PathBuf> = None;
     // --save FILE: where F5 (or `BARREL_SAVE_AT=FRAME`) saves in free play; --load FILE: start
     // in free play from such a save.
     let mut save_file = None::<PathBuf>;
@@ -2565,6 +2568,11 @@ fn main() -> Result<()> {
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
             "--new-game" => new_game = Some(PathBuf::from(it.next().ok_or("--new-game ROOT")?)),
+            "--title" => {
+                let r = PathBuf::from(it.next().ok_or("--title ROOT")?);
+                new_game = Some(r.clone());
+                title_root = Some(r);
+            }
             "--save" => save_file = Some(PathBuf::from(it.next().ok_or("--save FILE")?)),
             "--load" => load_file = Some(PathBuf::from(it.next().ok_or("--load FILE")?)),
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -3049,6 +3057,30 @@ fn main() -> Result<()> {
     let mut current_event = event_spec.clone();
     let mut frame_base = 0u32;
     let mut first_event = true;
+    // The title screen: New Game goes on into the new game; anything else ends here. Offscreen,
+    // `BARREL_TITLE_KEYS` (up, down, confirm, back, comma-separated) picks, and the screen as
+    // it then stands is written to OUT.
+    if let Some(r) = &title_root {
+        let keys: Vec<title::Button> = std::env::var("BARREL_TITLE_KEYS")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|k| match k.trim() {
+                "up" => Some(title::Button::Up),
+                "down" => Some(title::Button::Down),
+                "confirm" => Some(title::Button::Confirm),
+                "back" => Some(title::Button::Back),
+                _ => None,
+            })
+            .collect();
+        let target = title::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+        let window = presenter.as_ref().zip(pump.as_mut());
+        let out = presenter.is_none().then(|| PathBuf::from(&out_path));
+        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, &keys, out.as_deref())?;
+        eprintln!("title: {picked:?}");
+        if picked != Some(title::Entry::NewGame) {
+            return Ok(());
+        }
+    }
     'events: loop {
     let event_spec = current_event.clone();
     // A chained event plays from its start.
@@ -4690,7 +4722,7 @@ fn main() -> Result<()> {
         if *last != Some((v, width, height))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(exe) {
                 let elements = hud::elements(nodes, |p| barrel_formats::layout::text(&pe, p), v);
-                layer.set(&gpu, &hud::quads(&pe, font, sheets, &elements, width as f32, height as f32))?;
+                layer.set(&gpu, &hud::quads(&pe, Some(font), sheets, &elements, width as f32, height as f32))?;
                 *last = Some((v, width, height));
             }
     }

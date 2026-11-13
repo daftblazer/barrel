@@ -121,7 +121,7 @@ pub struct Sheets {
 /// The quads for `elements` on a `width` × `height` screen (the 1920 × 1080 layout scaled to
 /// the height and centred). Labels: the node's size taken as the text's height in pixels on
 /// that screen, over the font's line (not read).
-pub fn quads(pe: &barrel_formats::pe::Pe, font: &text::Font, sheets: &Sheets, elements: &[Element], width: f32, height: f32) -> Vec<Quad> {
+pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sheets, elements: &[Element], width: f32, height: f32) -> Vec<Quad> {
     let k = height / 1080.0;
     let dx = (width - 1920.0 * k) / 2.0;
     let mut out = Vec::new();
@@ -141,6 +141,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: &text::Font, sheets: &Sheets, el
                 });
             }
             Element::Label(t) => {
+                let Some(font) = font else { continue };
                 let [a, r, g, b] = t.colour;
                 let colour = if a == 0 { [1.0; 4] } else { [r, g, b, a].map(|c| f32::from(c) / 255.0) };
                 let scale = t.size * k / text::LINE * 1.47;

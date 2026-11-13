@@ -1224,8 +1224,13 @@ that place them are tables in the executable (English addresses; `crates/formats
   dial, the "Free Time" tab, the collection badges; bottom left, 620: the button list "<IM24>
   Search Equip", "<IM19> Requests", "<IM11> Assignment", "<IM15> Leave Map", "<IM29> Running
   OFF", "<IM20> Message Log"; at the right, 618 ×5: the gathered-item notices; it also nests the request poster and other pop-ups), 958 the title
-  menu (logo; New Game, Load Game, Dressing Room, Extras, Options, Exit Game; "Press any
-  button"; 1056 the same over a fade), 1015 and 1023 the hero choice (Yes/No, then the two
+  menu on `a15_title.g1t` and 1056 the same pieces on `a15_title64.g1t` (logo part 0x15c cut 0
+  at (310, 30); "Press any button" 0x15c cut 1 at (570, 660); the entries New Game, Load Game,
+  Dressing Room, Extras, Options, Exit Game, parts 0x15d, 0x15e, 0x162, 0x15f, 0x160, 0x161
+  from y 538 every 78, cut 0 plain and cut 1 lit; the cursor, layout 1057: bar 0x15c cut 2,
+  ornaments part 0x163 cuts 0 and 4 at (-60, -16) and (642, -16); 958's own entries start at
+  616, the last ending past the screen's foot). The title's backgrounds are stills 9 to 11
+  (`Ipu/title_bg01` to `03`), 1015 and 1023 the hero choice (Yes/No, then the two
   profile cards), 1035 the save list, 916 the battle result, 920 party info, 926 field info.
 
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are

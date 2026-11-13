@@ -64,6 +64,11 @@ likely settle them where static reading failed.
   screenshot. Way in: the HUD's update code (the layout 625 owner; find who loads layout id
   625 = 0x271) or a **live read** with the day's time partly spent.
 
+- **Which title layout.** Layouts 958 (`a15_title.g1t`) and 1056 (`a15_title64.g1t`) hold the
+  same title menu at different places; Barrel uses 1056 (958's last entry ends past the
+  screen's foot). The cursor's place and the menu's motion are ours. Way in: who loads layout
+  0x420 / 0x3be, or a screenshot of the real title menu.
+
 ## Battle
 
 - **Formation / battle areas.** Where the party and enemies stand: battle areas decoded, but the

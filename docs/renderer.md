@@ -562,3 +562,12 @@ session's date. Checked against a screenshot of the game on August 20th of year 
 day, the two big numbers the month and the day. The offsets measured from that screenshot (the
 list's rise, the days' number, the text size) and the dial as the tenths of the day still free
 are ours (`docs/open.md`). `BARREL_NO_HUD` turns it off.
+
+## The title screen
+
+`barrel-view --field auto OUT --title ROOT` starts at the title screen (`crates/render/src/title.rs`,
+layout 1056 and still 9): "Press any button", then the six entries (arrows or W/S, Enter, Space
+or Z to pick, Escape, Backspace or X back). New Game goes on as `--new-game ROOT` and Exit Game
+ends; the other entries are not there yet. The screen is drawn with the text layer alone,
+before any field is loaded. Offscreen, `BARREL_TITLE_KEYS=confirm,down` presses buttons and
+writes the screen as it then stands to OUT (`confirm,confirm` goes on into the new game).

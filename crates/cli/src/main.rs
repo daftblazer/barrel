@@ -1854,10 +1854,8 @@ fn layouts(exe: &Path) -> Result<()> {
         for t in layout::texts(&pe, id) {
             println!("  text at {:?} size {} colour {:02x?} kind {}{}: {:?}", t.at, t.size, t.colour, t.kind, if t.filled_in() { " (filled in)" } else { "" }, t.text);
         }
-        let pieces = layout::pieces(&pe, id);
-        let mut sprites = pieces.iter();
         for n in &nodes {
-            let shown = if n.part < 0x164 { sprites.next().map(|p| format!(" {}#{} {:?}", p.texture, p.index, p.src)).unwrap_or_default() } else { String::new() };
+            let shown = layout::sprite(&pe, n.part, n.cut.max(0), n.at).map(|p| format!(" {}#{} {:?}", p.texture, p.index, p.src)).unwrap_or_default();
             println!("  part {:#x} cut {} at {:?} kind {}{shown}", n.part, n.cut, n.at, n.kind);
         }
     }
