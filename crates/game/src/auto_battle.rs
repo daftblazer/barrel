@@ -93,6 +93,13 @@ pub fn draw(t: &Tables, group: i32, rng: &mut Rng) -> Result<Vec<(usize, f32)>, 
 /// Encounter group `group` (its id, as a field enemy names it) against `party`, each a
 /// (character number, level).
 pub fn fight(t: &Tables, party: &[(usize, i32)], group: i32, rng: &mut Rng) -> Result<Outcome, String> {
+    let drawn: Vec<usize> = draw(t, group, rng)?.into_iter().map(|(m, _)| m).collect();
+    fight_drawn(t, party, &drawn, rng)
+}
+
+/// Monsters already drawn (`draw`) against `party`: the battle scatters them with `rng` first
+/// (`battle::scatter`), so a copy of `rng` taken now places them where the battle does.
+pub fn fight_drawn(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng) -> Result<Outcome, String> {
     let mut names = Vec::new();
     let mut members = Vec::new();
     for &(c, level) in party {
@@ -104,10 +111,9 @@ pub fn fight(t: &Tables, party: &[(usize, i32)], group: i32, rng: &mut Rng) -> R
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
     }
-    let drawn: Vec<usize> = draw(t, group, rng)?.into_iter().map(|(m, _)| m).collect();
     let normal = t.skills.get(1).ok_or("no skill 1")?;
     let mut foes = Vec::new();
-    for &k in &drawn {
+    for &k in drawn {
         let m = t.monsters.get(k).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("monster {k}: none"))?;
         foes.push(crate::duel::Fighter { block: m.blocks[0].clone(), normal, skills: Some(&t.skills[..]), death_immune: m.death_immune, chara: bd::MONSTER_CHARA_FIRST as i32 + k as i32 });
         names.push(m.name.clone());

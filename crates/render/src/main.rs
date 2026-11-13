@@ -1226,6 +1226,8 @@ struct TownBody {
     held: Option<Vec<Trs>>,
     /// The local pose shown last frame.
     last_locals: Vec<Trs>,
+    /// Gone (a fallen monster): drawn collapsed.
+    hidden: bool,
 }
 
 impl TownBody {
@@ -1274,7 +1276,7 @@ fn town_people(root: &Path, field_dir: &Path, seen: Option<Vec<bool>>, scene: &m
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, _, anim, _)) = body.rig {
-            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new() });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
         placed.push(p.chara);
         first = first.or(Some(pos));
@@ -1388,7 +1390,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
     let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience, follow: Default::default() };
-    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new() }, walker))
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false }, walker))
 }
 
 /// A world map trip's way (`game::travel::WorldMap::path`), from the executable beside the
@@ -1463,12 +1465,16 @@ const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
 /// then the other alchemist) at their places around it (`battle::party_spot`, member k in
 /// sector k mod 3), everyone in their `WAIT` motion (the battle idle, `B_WAIT`), the party facing
 /// the centre and the monsters the lead.
-fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>)> {
+fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
     let tables = battle_tables(root)?;
     let mut rng = barrel_game::rng::Rng::seeded(1);
     let drawn = barrel_game::auto_battle::draw(&tables, group, &mut rng)?;
     let sizes: Vec<f32> = drawn.iter().map(|d| d.1).collect();
-    let spots = barrel_game::battle::scatter(&sizes, &mut rng);
+    // The battle scatters the monsters first: a copy of its generator gives the same spots.
+    let spots = barrel_game::battle::scatter(&sizes, &mut rng.clone());
+    let party = [(usize::from(logy), 1), (usize::from(!logy), 1)];
+    let monsters: Vec<usize> = drawn.iter().map(|d| d.0).collect();
+    let outcome = barrel_game::auto_battle::fight_drawn(&tables, &party, &monsters, &mut rng)?;
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     let base_row = |chara: usize| charas.children.get(chara)?.attr("BaseTag").and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
@@ -1485,7 +1491,9 @@ fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: u
         people.push((barrel_formats::battle_data::MONSTER_CHARA_FIRST + m, *spot, lead));
     }
     let (mut packs, mut tex_base, mut bodies) = (Vec::new(), base, Vec::new());
+    let mut fighters = Vec::new();
     for (k, (chara, spot, look)) in people.into_iter().enumerate() {
+        fighters.push(None);
         let Some(row) = base_row(chara) else { continue };
         let pos = at(spot);
         let angle = facing(spot, look);
@@ -1493,11 +1501,115 @@ fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: u
         eprintln!("battle: chara {chara} as {:?} at {pos:?} facing {angle:.0}", row.attr("BaseTag"));
         tex_base += body.count;
         packs.extend(body.packs);
-        if let Some((skeleton, _, anim, _)) = body.rig {
-            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new() });
+        if let Some((skeleton, motions, anim, _)) = body.rig {
+            fighters[k] = Some(BattleFighter { body: first_body + bodies.len(), motions, back_at: None, down: false, party: k < party.len() });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
     }
-    Ok((packs, bodies))
+    Ok((packs, bodies, BattlePlay { fighters, outcome, next: 0, time: 0.0, until: BATTLE_FIRST_STEP }))
+}
+
+/// Seconds before the battle's first step, and between steps.
+const BATTLE_FIRST_STEP: f32 = 1.0;
+const BATTLE_STEP: f32 = 1.6;
+
+/// A battle fought out (`auto_battle`) played in the scene: one event a step, the actor in its
+/// attack motion and the target in its damage motion, each back to its wait when that ends; a
+/// fallen monster gone, a fallen member down. Not yet the game's: the steps' timing, every
+/// action as the normal attack's motion (`ATTACK00`), no one moving to their target, no effects,
+/// numbers or sounds.
+struct BattlePlay {
+    /// Per fighter (the party, then the monsters, as the battle numbers them).
+    fighters: Vec<Option<BattleFighter>>,
+    outcome: barrel_game::auto_battle::Outcome,
+    next: usize,
+    time: f32,
+    until: f32,
+}
+
+struct BattleFighter {
+    /// Its body among the town bodies.
+    body: usize,
+    motions: Motions,
+    /// When its one-off motion ends (back to its wait).
+    back_at: Option<f32>,
+    down: bool,
+    party: bool,
+}
+
+impl BattlePlay {
+    /// Plays `column` on fighter `k` once, from the start.
+    fn play(&mut self, bodies: &mut [TownBody], k: usize, column: &str) {
+        let time = self.time;
+        let Some(f) = self.fighters.get_mut(k).and_then(Option::as_mut) else { return };
+        let Some(anim) = f.motions.get(column).cloned() else { return };
+        f.back_at = Some(time + anim.duration);
+        if let Some(b) = bodies.get_mut(f.body) {
+            b.switch(anim);
+        }
+    }
+
+    /// One frame: the bodies' clocks, motions back to their wait, and the next event when due.
+    fn step(&mut self, bodies: &mut [TownBody], dt: f32) {
+        self.time += dt;
+        for f in self.fighters.iter_mut().flatten() {
+            let Some(b) = bodies.get_mut(f.body) else { continue };
+            b.clock = Some(b.clock.unwrap_or(0.0) + dt);
+            if let Some((_, clock, blend)) = &mut b.from {
+                *clock += dt;
+                *blend += dt;
+            }
+            if b.from.as_ref().is_some_and(|x| x.2 >= MOTION_BLEND) {
+                b.from = None;
+            }
+            if f.back_at.is_some_and(|t| self.time >= t) {
+                f.back_at = None;
+                if f.down && !f.party {
+                    b.hidden = true;
+                } else if let Some(anim) = f.motions.get(if f.down { "DOWN_LOOP" } else { "WAIT" }).cloned() {
+                    b.switch(anim);
+                }
+            }
+        }
+        if self.time < self.until {
+            return;
+        }
+        self.until = self.time + BATTLE_STEP;
+        let Some(event) = self.outcome.events.get(self.next).cloned() else {
+            if self.next == self.outcome.events.len() {
+                self.next += 1;
+                if let Some(end) = self.outcome.lines().last() {
+                    eprintln!("battle: {end}");
+                }
+            }
+            return;
+        };
+        if let Some(line) = self.outcome.lines().get(self.next) {
+            eprintln!("battle: {line}");
+        }
+        self.next += 1;
+        use barrel_game::fight::Event;
+        let (who, target, fell) = match event {
+            Event::Acted { who, target, hp_left, .. } => (Some(who), Some(target), hp_left <= 0),
+            Event::Healed { who, target, .. } => (Some(who), Some(target).filter(|&t| t != who), false),
+            Event::Felled { who, target, .. } => (Some(who), Some(target), true),
+            Event::Poisoned { who, hp_left, .. } => (None, Some(who), hp_left <= 0),
+        };
+        if let Some(w) = who {
+            self.play(bodies, w, "ATTACK00");
+        }
+        if let Some(t) = target {
+            if fell {
+                if let Some(f) = self.fighters.get_mut(t).and_then(Option::as_mut) {
+                    f.down = true;
+                }
+                let party = self.fighters.get(t).and_then(Option::as_ref).is_some_and(|f| f.party);
+                self.play(bodies, t, if party { "DOWN" } else { "DAMAGE" });
+            } else if matches!(event, Event::Acted { damage, .. } if damage > 0) || matches!(event, Event::Poisoned { .. }) {
+                self.play(bodies, t, "DAMAGE");
+            }
+        }
+    }
 }
 
 /// Party member k's battle place (sector k mod 3).
@@ -2192,6 +2304,8 @@ struct Loaded {
     /// Characters loaded but not on the stage (yet, or any more): not drawn.
     absent: std::collections::HashSet<u32>,
     creatures: Option<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<String>, f32, [f64; 3], bool)>,
+    /// `--battle`'s battle, played in the scene.
+    battle_play: Option<BattlePlay>,
     /// The battle tables and generator for the field's encounters.
     battles: Option<(barrel_game::auto_battle::Tables, barrel_game::rng::Rng)>,
     town_bodies: Vec<TownBody>,
@@ -2242,6 +2356,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         logy,
     } = spec;
     let mut town_bodies = Vec::new();
+    let mut battle_play: Option<BattlePlay> = None;
     // Where playback starts: --at, or --line's start.
     let mut start_at = event_at;
     let mut walker: Option<Walker> = None;
@@ -2433,9 +2548,10 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let field_dir = Path::new(&args[1]);
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--battle: the stage is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, bodies) = battle_people(&root, group, logy, &mut scene, base)?;
+        let (packs, bodies, play) = battle_people(&root, group, logy, &mut scene, base, town_bodies.len())?;
         pack_bytes.extend(packs);
         town_bodies.extend(bodies);
+        battle_play = Some(play);
         focus = focus.or(Some(Vec3::from(BATTLE_CENTRE) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0)));
         // A look over the whole battle from behind the lead (not the game's battle camera,
         // which is not read yet).
@@ -2462,7 +2578,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         walker = Some(w);
         focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
     }
-    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, battles, town_bodies, start_at, start_field, patterns, walker })
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, battles, battle_play, town_bodies, start_at, start_field, patterns, walker })
 }
 
 /// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
@@ -3386,7 +3502,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             town_seen = here.filter(|&m| m < barrel_formats::gimmick::TOWN_MAPS).and(session.as_ref().map(|s| s.seen()));
         }
     // The scene: loaded, then uploaded under the renderer set up above.
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut battles, mut town_bodies, start_at, start_field, patterns, mut walker } =
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut battles, mut battle_play, mut town_bodies, start_at, start_field, patterns, mut walker } =
         load_scene(SceneSpec {
             field,
             look_from: look_from.clone(),
@@ -4460,6 +4576,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
         if frame > 0 {
             town_time += dt;
+            if let Some(play) = battle_play.as_mut() {
+                play.step(&mut town_bodies, dt);
+            }
         }
         for b in &mut town_bodies {
             let now = local_pose(&b.skeleton, &b.anim, motion_clock(&b.anim, b.clock.unwrap_or(town_time), true));
@@ -4472,7 +4591,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
                 }
             };
             b.last_locals.clone_from(&locals);
-            let joints = skin(&b.skeleton, &locals);
+            let joints = if b.hidden { vec![Mat4::from_scale(Vec3::ZERO); b.skeleton.joints.len()] } else { skin(&b.skeleton, &locals) };
             let base = instances[b.instance as usize].palette as usize;
             for (k, m) in joints.iter().enumerate() {
                 if let Some(slot) = palette.get_mut(base + k) {

@@ -259,7 +259,14 @@ member k in sector k mod 3), all in their `WAIT` motion (the battle idle, `B_WAI
 alchemists), the party facing the centre and the monsters the lead, seen from behind the lead.
 Not yet the game's: the centre taken as the stage's middle (3200, 0, 3200), the camera, the
 facings (the formation's own, `0x1401b0e30`, not used yet). Group 12 on `BF_POINT19` gives two
-Ore Rats and two Stray Dogs, the largest at the centre.
+Ore Rats and two Stray Dogs, the largest at the centre. The battle is then fought out
+(`auto_battle::fight_drawn` on the drawn monsters: it scatters them first, so a copy of its
+generator taken before gives the scene the battle's own spots) and played (`BattlePlay`): an
+event every 1.6 s, the actor in its `ATTACK00` motion and the target in `DAMAGE` (a fallen
+member `DOWN` then `DOWN_LOOP`, a fallen monster gone once its damage motion ends), each back
+to `WAIT` when its motion ends, the event's line on the console. Not yet the game's: the
+timing, one motion for every action, no one running to their target, no effects, numbers or
+sounds, no results.
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
