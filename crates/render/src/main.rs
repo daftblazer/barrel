@@ -1240,7 +1240,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
         .transpose()?
         .unwrap_or_default();
     let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
-    let ground = barrel_game::walk::Ground::new(heightmap, &collision);
+    let ground = barrel_game::walk::Ground::new(heightmap, &collision, barrel_game::walk::DEFAULT_SLOPE);
     // Dropped from high above onto whatever is under her.
     let y = ground.height(at[0], at[1], 1.0e6, 0.0).ok_or("--player: no ground there")?;
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
@@ -1258,7 +1258,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let run = motions.get("RUN").cloned().ok_or("the player has no RUN motion")?;
     let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
-    let walls = barrel_game::walk::Walls::new(&collision);
+    let walls = barrel_game::walk::Walls::new(&collision, barrel_game::walk::DEFAULT_SLOPE);
     let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, walls, ground };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
 }

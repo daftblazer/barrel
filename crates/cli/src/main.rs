@@ -590,9 +590,9 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
     let container = Elixir::parse(&bytes)?;
     let entry = container.entries.iter().find(|e| e.name.ends_with("_col.g1co")).ok_or("the field has no collision")?;
     let collision = barrel_formats::g1co::parse(container.data(entry))?;
-    let walls = barrel_game::walk::Walls::new(&collision);
+    let walls = barrel_game::walk::Walls::new(&collision, barrel_game::walk::DEFAULT_SLOPE);
     let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
-    let ground = barrel_game::walk::Ground::new(heightmap, &collision);
+    let ground = barrel_game::walk::Ground::new(heightmap, &collision, barrel_game::walk::DEFAULT_SLOPE);
     let [x, y, z] = at.map(|v| v.parse::<f32>());
     let (mut p, mut y) = ([x?, z?], y?);
     let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];

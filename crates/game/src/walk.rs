@@ -70,9 +70,9 @@ pub struct Walls {
 }
 
 impl Walls {
-    /// The collision mesh's upright triangles (their normal within about 25° of level) as
+    /// The collision mesh's triangles steeper than `max_slope` (degrees: `walkable_slope`) as
     /// walls, grouped by the hierarchy's leaves.
-    pub fn new(c: &Collision) -> Walls {
+    pub fn new(c: &Collision, max_slope: f32) -> Walls {
         let leaves = c
             .nodes
             .iter()
@@ -80,7 +80,7 @@ impl Walls {
             .map(|n| {
                 let walls = (n.first..n.first + n.count)
                     .filter_map(|t| c.triangles.get(t as usize))
-                    .filter_map(|t| wall(t.map(|i| c.vertices[i as usize])))
+                    .filter_map(|t| wall(t.map(|i| c.vertices[i as usize]), max_slope))
                     .collect();
                 ([n.min[0], n.min[2]], [n.max[0], n.max[2]], walls)
             })
@@ -143,8 +143,9 @@ pub struct Ground {
 }
 
 impl Ground {
-    pub fn new(heightmap: Option<barrel_formats::khm::Heightmap>, c: &Collision) -> Ground {
-        let floors = c.triangles.iter().map(|t| t.map(|i| c.vertices[i as usize])).filter(|v| wall(*v).is_none()).collect();
+    /// The floors are the collision mesh's triangles no steeper than `max_slope` (degrees).
+    pub fn new(heightmap: Option<barrel_formats::khm::Heightmap>, c: &Collision, max_slope: f32) -> Ground {
+        let floors = c.triangles.iter().map(|t| t.map(|i| c.vertices[i as usize])).filter(|v| wall(*v, max_slope).is_none()).collect();
         Ground { heightmap, floors }
     }
 
@@ -183,12 +184,24 @@ fn floor_height(t: &[[f32; 3]; 3], x: f32, z: f32) -> Option<f32> {
     (l1 >= -1e-4 && l2 >= -1e-4 && l3 >= -1e-4).then(|| l1 * a[1] + l2 * b[1] + l3 * c[1])
 }
 
-/// An upright triangle as a wall: its longest edge seen from above, and its heights.
-fn wall(v: [[f32; 3]; 3]) -> Option<Wall> {
+/// The steepest slope a character walks, degrees: the larger of the field's (the first float
+/// of its record in `field_look::SKY_SETS_EN`, 75 in nearly all) and the character's
+/// `CharaBase.xml` `FMslp` (75 for the player), as `0x14026c3c0` hands them to the collision.
+pub fn walkable_slope(field: f32, chara: f32) -> f32 {
+    field.max(chara)
+}
+
+/// The slope the walks here take when the field's is not looked up: 75 degrees, the player's
+/// `FMslp` and nearly every field's.
+pub const DEFAULT_SLOPE: f32 = 75.0;
+
+/// A triangle steeper than `max_slope` degrees as a wall: its longest edge seen from above,
+/// and its heights.
+fn wall(v: [[f32; 3]; 3], max_slope: f32) -> Option<Wall> {
     let (e1, e2) = ([v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]], [v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]]);
     let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
     let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-    if len < 1e-6 || (n[1] / len).abs() > 0.42 {
+    if len < 1e-6 || (n[1] / len).abs() > max_slope.to_radians().cos() {
         return None;
     }
     let flat = v.map(|p| [p[0], p[2]]);
@@ -220,7 +233,7 @@ mod tests {
             triangles: vec![[0, 1, 2], [2, 1, 3]],
             vertices: vec![[-100.0, 0.0, 0.0], [100.0, 0.0, 0.0], [-100.0, 200.0, 0.0], [100.0, 200.0, 0.0]],
         };
-        Walls::new(&c)
+        Walls::new(&c, DEFAULT_SLOPE)
     }
 
     #[test]
@@ -245,7 +258,7 @@ mod tests {
             triangles: vec![[0, 1, 2], [2, 1, 3]],
             vertices: vec![[0.0, 100.0, 0.0], [100.0, 100.0, 0.0], [0.0, 100.0, 100.0], [100.0, 100.0, 100.0]],
         };
-        let g = Ground::new(None, &c);
+        let g = Ground::new(None, &c, DEFAULT_SLOPE);
         assert_eq!(g.height(50.0, 50.0, 90.0, 30.0), Some(100.0), "a step up onto it");
         assert_eq!(g.height(50.0, 50.0, 0.0, 30.0), None, "too high a ledge from the bottom");
         assert_eq!(g.height(150.0, 50.0, 100.0, 30.0), None, "off its edge");
@@ -267,6 +280,15 @@ mod tests {
         assert_eq!(player_gait(500.0, false).0, Gait::Run);
         assert!((player_gait(500.0, false).1 - 1.125).abs() < 1e-6);
         assert_eq!(player_gait(250.0, true).0, Gait::Walk, "under 0.42 of 625");
+    }
+
+    #[test]
+    fn a_ramp_is_a_floor_up_to_the_slope() {
+        // A ramp rising 100 over 50 (about 63 degrees): a floor at 75, a wall at 60.
+        let v = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 100.0, 50.0]];
+        assert!(wall(v, 75.0).is_none());
+        assert!(wall(v, 60.0).is_some());
+        assert_eq!(walkable_slope(75.0, 80.0), 80.0);
     }
 
     #[test]

@@ -330,8 +330,11 @@ at the wall near z = 11,347 and slides along it). The game moves characters thro
 collision engine (`elixir::EXCollisionScene` over ktgl's broad and narrow phases, `S_CE_BNP_INPUT`
 and `_OUTPUT`), which is not read. The character's size is its `CharaBase.xml` row's: the radius its `FMrad`
 (0.48 for the player: 48 units, as the field enemies' scripts take it), the height its `FMhig`
-(1.5: 150 units); `FMslp` (75 for the player) is presumably the steepest slope it walks up, not
-used yet. The steps, the step-up height and how corners and slopes are taken are this module's,
+(1.5: 150 units); the steepest slope it walks, degrees, is the larger of its `FMslp` (75 for
+the player) and the field's (75 in nearly all, `docs/shading.md`, "The distant view"), all
+three handed to the collision engine by `0x14026c3c0` (`game::walk::walkable_slope`; the
+lead's partner gets 0.4 of its radius and a height of 200). Here a collision triangle steeper
+than that is a wall, the others floors. The steps, the step-up height and how corners and slopes are taken are this module's,
 to be replaced by the game's once read. The ground (`game::walk::Ground`) is the highest of the
 heightmap (`<AREA>.khm`, bilinear between its vertices) and the collision mesh's floors (its
 triangles that are not upright) under the character and no more than a step (50 here) above its

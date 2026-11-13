@@ -833,7 +833,7 @@ raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.
 height is moved first by its monster row's +0x5c, +0x60 and +0x74, `encounter::touched`);
 a field character's radius, +0x90, is set by `0x14026c3c0` from its `CharaBase.xml` row (its
 +0x7c, rows of 0x1010 bytes at the battle data singleton's +0x19c80): the row's `FMrad`, which
-the loader (`0x1401edae0`) multiplies by 100 like `FMhig` and `FMslp`, so Escha and Logy
+the loader (`0x1401edae0`) multiplies by 100 like `FMhig` (`FMslp`, degrees, it leaves), so Escha and Logy
 (`PC20`, `PC21`, 0.48) touch at 48 field units; the lead's partner (by `0x14035ebb0`: Escha,
 then character 1, or Logy, then character 0) gets 0.4 of it. 87 of the 507 rows have 0.2,
 23 have 1, 11 have 2. A field character's +0x7c is its `CharaBase` row (the radius reads it directly);
