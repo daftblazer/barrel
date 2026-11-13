@@ -164,8 +164,8 @@ its Wind line none up to 20, *Bursting* up to 70, *Explosive* up to 100; Flam's 
 is *Fire Damage* all the way. `tools/recipes.py ... EFFECT_TAGS.txt` prints the
 lines.
 
-The five `{effect, 0, threshold}` triples in words 9..23 point at the same enum, but what
-they are for is still open (Craft's name Earth Damage, Rain of Fire, Water Damage, Poison and
+The five `{effect, 0, threshold}` triples in words 9..23 point at the same enum; only screen
+code reads them (below, "The header triples") (Craft's name Earth Damage, Rain of Fire, Water Damage, Poison and
 HP regen at 10, 20, 30, 50 and 75).
 
 ### How the game reads the recipes
@@ -207,8 +207,12 @@ the game does with a record:
 - **Words 5 and 6**: cost and time, read by their own getters (`0x1402a263f` and
   `0x1402a3ea0`, which reads the time as a float). Words 3 and 4 have plain getters too
   (`0x1402a25bf`, `0x1402a25ff`).
-- **The header triples**: `0x1402a3510` hands each of the five `{a, 0, threshold}` triples
-  to `0x1402b49f0`, which adds them to a list. What the list is for is still open.
+- **The header triples**: `0x1402a34f0 (recipe, list)` hands each of the five `{a, 0, threshold}`
+  triples to `0x1402b49f0`, which adds them to a list. Its one caller is screen code
+  (`0x1402bc6bb`: the recipe of the item at the screen's +0x25c, `0x1400e31a0`), which keeps the
+  triples whose effect is not -1 for display; no game rule reads them that has been found, so
+  they look like what a recipe page lists, the thresholds shown beside the effects (which screen
+  is not identified).
 
 For example:
 
