@@ -3648,8 +3648,22 @@ fn main() -> Result<()> {
             }
         if w.striking
             && let Some(b) = town_bodies.get_mut(w.body) {
-                let clock = b.clock.unwrap_or(0.0) + dt;
+                let before = b.clock.unwrap_or(0.0);
+                let clock = before + dt;
                 b.clock = Some(clock);
+                // The macro's sound: `SE_WAND01` (98) at full volume after division 0 (to 0.1 s)
+                // and its waits of 0.05 and 0.30 s, so 0.45 s in.
+                const SWING_SOUND: (f32, u32) = (0.45, 98);
+                if before < SWING_SOUND.0 && clock >= SWING_SOUND.0 {
+                    if sound.is_none() && presenter.is_some()
+                        && let Ok(out) = barrel_audio::Output::open(0.1) {
+                            sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
+                        }
+                    if let Some((_, mixer, library, _)) = sound.as_mut()
+                        && let Some(barrel_audio::Effect::Clip(e)) = library.effect(SWING_SOUND.1) {
+                            mixer.play(e, 1.0, None);
+                        }
+                }
                 if let Some((_, c, blend)) = &mut b.from {
                     *c += dt;
                     *blend += dt;
