@@ -1129,7 +1129,7 @@ mod reward_tests {
     #[test]
     fn the_facing_slot_wraps() {
         // Sectors 0 to 2 face party slots 3 to 5; sector 3 (an angle of 360) wraps to 0.
-        assert_eq!([0, 1, 2, 3].map(facing_slot), [3, 4, 5, 0]);
+        assert_eq!([0, 1, 2, 3].map(super::facing_slot), [3, 4, 5, 0]);
     }
 
     #[test]
