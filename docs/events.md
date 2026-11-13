@@ -1561,7 +1561,11 @@ Short cases that only pass their operands on look alike in both and match many (
 `q3` to `q5`, `q7` to `q9`, `q13` to `q15`, `q18` to `q20`, `q30`, `q33`, `q36`, `q38` and `q40`
 (Escha `q3` to `q5`, `q7` to `q9`, `q13`, `q14`, `q17` to `q19`, `q29`, `q32`, `q35`, `q37`, `q39`):
 the same one-up shift from `q15` on. Shallie's own operand counts (`ebd_tables::SHALLIE`) agree
-where checked (`q55`'s 14 = Escha `q54`'s).
+where checked (`q55`'s 14 = Escha `q54`'s). `barrel play-event` reads a Shallie event (one inside a Shallie
+install) with Shallie's table and puts its command words into Escha's where they mean the same
+(`ebd::shallie_to_escha`, `Ebd::translate`): the matched `q` commands to their Escha numbers,
+the unmatched ones marked as Shallie's own (passed by), the other groups as they are. 600 of
+its events play through so.
 
 Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
 13,290 of its 162,098 bodies. Its table is measured from its 3,891 events the same way

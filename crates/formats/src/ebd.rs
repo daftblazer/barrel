@@ -112,7 +112,47 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// A Shallie event command word as Escha's that means the same (`docs/events.md`, "Shallie's
+/// `q` commands ..."): the `q` commands matched by their code (most one number down from `q15`
+/// on), the rest of `q` marked as Shallie's own (flags `0xee`: no Escha command, so passed by),
+/// every other group as it is (the `u` group lines up; `s`, `t` and the others not checked).
+pub fn shallie_to_escha(word: u32) -> u32 {
+    if word >> 16 != 0x7100 {
+        return word;
+    }
+    let n = word & 0xffff;
+    let escha = match n {
+        2 | 6 | 11 | 12 => Some(n),
+        16 | 17 | 25 | 34 | 35 | 41..=46 | 55..=57 => Some(n - 1),
+        // Passed by in both games.
+        3..=5 | 7..=9 | 13 | 14 => Some(n),
+        _ => None,
+    };
+    escha.map_or(0x71ee_0000 | n, |e| 0x7100_0000 | e)
+}
+
 impl Ebd {
+    /// This event with every command word put through `map` (operands left as they are), and
+    /// the operand table for the new words (each carrying its old word's count).
+    pub fn translate(&self, table: &OperandTable, map: impl Fn(u32) -> u32) -> Result<(Ebd, OperandTable), Error> {
+        let mut entries: Vec<(u32, Option<u8>)> = Vec::new();
+        let mut actions = Vec::with_capacity(self.actions.len());
+        for a in &self.actions {
+            let mut words = Vec::with_capacity(a.words.len());
+            for c in decode(&a.words, table)? {
+                let w = map(c.word);
+                if !entries.iter().any(|(k, _)| *k == w) {
+                    entries.push((w, table.get(c.word).flatten().map(Some).unwrap_or(None)));
+                }
+                words.push(w);
+                words.extend_from_slice(c.operands);
+            }
+            words.push(END);
+            actions.push(Action { words, ..a.clone() });
+        }
+        Ok((Ebd { actions, resources: self.resources.clone() }, OperandTable::new(&entries)))
+    }
+
     pub fn parse(data: &[u8]) -> Result<Ebd, Error> {
         let mut r = Reader { data, pos: 0 };
         let count = r.u32()? as usize;
@@ -288,6 +328,25 @@ pub fn decode<'a>(body: &'a [u32], table: &OperandTable) -> Result<Vec<Command<'
         }
         out.push(Command { word, operands });
         i += 1 + count;
+    }
+}
+
+#[cfg(test)]
+mod shallie_tests {
+    use super::*;
+
+    #[test]
+    fn shallie_words_become_eschas() {
+        assert_eq!(shallie_to_escha(0x7100_0037), 0x7100_0036, "q55, the point light, is Escha's q54");
+        assert_eq!(shallie_to_escha(0x7100_0006), 0x7100_0006);
+        assert_eq!(shallie_to_escha(0x7100_001a), 0x71ee_001a, "q26, not matched, is Shallie's own");
+        assert_eq!(shallie_to_escha(0x7500_0022), 0x7500_0022, "u keeps its numbers");
+        // A body translated: the command word changes, its operands stay, the count carries.
+        let table = OperandTable::new(&[(0x7100_0037, Some(2))]);
+        let e = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words: vec![0x7100_0037, 5, 6, END] }], resources: vec![] };
+        let (t, table) = e.translate(&table, shallie_to_escha).unwrap();
+        assert_eq!(t.actions[0].words, vec![0x7100_0036, 5, 6, END]);
+        assert_eq!(table.get(0x7100_0036), Some(Some(2)));
     }
 }
 

@@ -3291,6 +3291,10 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
     // BARREL_GAME=sophie2: an Atelier Sophie 2 event, carried over to Escha's commands by name.
     let sophie2 = std::env::var("BARREL_GAME").is_ok_and(|g| g == "sophie2");
     let table = if sophie2 { OperandTable::sophie2() } else { OperandTable::escha() };
+    // A Shallie event (its install beside it): read with Shallie's table, its commands put into
+    // Escha's words where they mean the same (`ebd::shallie_to_escha`).
+    let shallie = file.ancestors().any(|p| p.join("Atelier_Shallie.exe").is_file());
+    let (event, table) = if shallie { event.translate(&OperandTable::shallie(), barrel_formats::ebd::shallie_to_escha)? } else { (event, table) };
     let player = if sophie2 { Player::translated(&event, &messages, &table, barrel_game::names::SOPHIE2)? } else { Player::escha(&event, &messages, &table)? };
     let steps: Vec<(Option<f32>, Step)> = if timed {
         // BARREL_READ: hold each line its unattended reading time, as the viewer does.
