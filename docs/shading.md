@@ -395,8 +395,15 @@ pass is the game's whole HDR treatment: the scene is drawn at `HdrRangeInv` into
 8-bit target; program 0 takes `saturate(scene - fHdrThreshold)`; programs 1 to 14 blur it in x
 and y over several smaller targets (7 taps, weights 0.0455, 0.0909, 0.1818, 0.3636, ...);
 program 15 finishes with `scene × 2 + glow × fGlowAddRate`. So the range is 2 (`HdrRangeInv`
-0.5) and there is no tone curve: values over 2 clip. The field's `<hdr threshold
-glow_add_rate>` are the two constants. `PostEffectGamma`, `Color`, `Hue`, `Sepia`, `Monotone`,
+0.5) and there is no tone curve: values over 2 clip. Only `glow_add_rate` comes from the
+field (`<hdr threshold bloom_weight glow_add_rate>`, read at `0x1400690d3`; defaults 0.85, 0.4
+and none): it is set by name (`fGlowAddRate`, `0x1403355c0`), while the threshold's setter
+(`0x140287470`) stores it at +0x198 and ends in a stub (`0x1403355b0`, a bare `ret`), the
+bloom weight is only stored, and `fHdrThreshold` is named nowhere in the executable. The
+threshold is so the program's own default, 0.5 (its `RDEF`; `fGlowAddRate`'s default is 1.0),
+in every field. Taking `TOWN_09`'s `threshold="0.0"` had made its glow a fifth of the whole
+frame: against the reference recording's arch shot the right wall 107 became 89 (the game 88),
+the sky 143 became 120 (123). `PostEffectGamma`, `Color`, `Hue`, `Sepia`, `Monotone`,
 `Fade`, `CrossFade`, `Blur`, `Wave` and others are separate effects the events can turn on.
 
 The glow's targets, from the blur programs' tap offsets (one texel each): level 0 is 480×272
@@ -428,8 +435,9 @@ and normal (`docs/formats.md`, "Terrain"). Against the reference recording of
 `EVENT_MM01_OP1_111`'s arch shot (`TOWN_09`), the baked colour darkened the band under the
 houses from 169 to 134 (red; the game 107); the ground is still about 1.35 times the game's
 (152, 118, 72 against 111, 89, 51) and the plaza's (`TOWN_04`) 1.15 times, evenly over the
-channels: a light, not a texture. `TOWN_09`'s models are 1.2 to 1.35 times too (`TOWN_04`'s
-match), so that field's light is also too strong.
+channels: a light, not a texture. (`TOWN_09`'s models were 1.2 to 1.35 times too: its glow,
+"After the scene"; with the glow's real threshold its ground is 1.14 times, 127 against 111,
+like `TOWN_04`'s 145 against 127.)
 
 ## Shadows (what is known)
 

@@ -53,6 +53,10 @@ const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
 const PUSH_SIZE: u32 = 128;
+/// The glow's bright-pass threshold: `PostEffectGlow.kps` program 0's `fHdrThreshold` default.
+/// The field table's `<hdr threshold>` is read by the game (`0x1400690f1`) but its setter
+/// (`0x140287470`) stores it and ends in a stub, and no code sets the constant by name.
+const GLOW_THRESHOLD: f32 = 0.5;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
@@ -5831,7 +5835,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             t.mark(d, cb, 2);
         }
         // The glow from the scene's bright parts (the field's <hdr>; none: no glow).
-        let (threshold, rate) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.hdr).unwrap_or((1.0, 0.0));
+        // The field's glow rate; the bright pass's threshold is the glow program's own default
+        // (`GLOW_THRESHOLD`): the game reads `<hdr threshold>` but never passes it on.
+        let (threshold, rate) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.hdr).map_or((1.0, 0.0), |(_, rate)| (GLOW_THRESHOLD, rate));
         if let Some(g) = &targets.glow {
             g.record(d, &glow_pipelines, cb, threshold);
         }
