@@ -3236,6 +3236,7 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
             Step::Wait { seconds } => println!("      (wait {seconds:.2} s)"),
             Step::EventFlag { flag, value } => println!("      (event flag {flag} = {value})"),
             Step::EventFlagAdd { flag, amount } => println!("      (event flag {flag} += {amount})"),
+            Step::EndGroup { group } => println!("      (the end runs process group {group})"),
             Step::Trophy { trophy } => println!("      (achievement {trophy}: left out)"),
             Step::Movie { movie } => println!("      movie {movie} (not played yet)"),
             Step::MarkEvent { event, seen } => println!("      (event {event} marked {})", if seen { "seen" } else { "unseen" }),

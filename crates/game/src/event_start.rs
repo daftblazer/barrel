@@ -334,14 +334,20 @@ impl World for Story {
 }
 
 impl Story {
-    /// An event is played: it is marked seen today, then its process data's changes apply
-    /// (seen marks `0x77120001`, flag set `0x77130004` and flag add `0x77130002`; the rest is
-    /// not kept here).
+    /// An event is played to its usual end: [`Story::play_ending`] with end group 1.
     pub fn play(&mut self, event: usize, process: &[Vec<u32>]) {
+        self.play_ending(event, process, crate::event::DEFAULT_END_GROUP);
+    }
+
+    /// An event is played: it is marked seen today, then its process data's changes apply,
+    /// group 0 (run as it starts) and the end group its script chose (`u134`, 1 unless it says
+    /// otherwise; only five events have others): seen marks `0x77120001`, flag set `0x77130004`
+    /// and flag add `0x77130002`; the rest is not kept here.
+    pub fn play_ending(&mut self, event: usize, process: &[Vec<u32>], end: usize) {
         if let Some(s) = self.seen.get_mut(event) {
             *s = Some(self.today);
         }
-        for group in process {
+        for group in [process.first(), process.get(end).filter(|_| end != 0)].into_iter().flatten() {
             let Ok(cmds) = barrel_formats::event_process::commands(group) else { continue };
             for (word, ops) in cmds {
                 let (a, b) = (ops.first().copied().unwrap_or(0) as i32, ops.get(1).copied().unwrap_or(0) as i32);
@@ -643,6 +649,10 @@ mod tests {
         story.play(1, &[vec![0x7713_0002, 5, 2, 0x7f00_0000]]);
         assert_eq!(story.flag(5), 2);
         assert_eq!(story.next(&checks, &lists, 11, &[1], &mut rng), Some(2));
+        // Only the chosen end group applies: group 2 here, not 1.
+        let flag_set = |v: u32| vec![0x7713_0004, 9, v, 0x7f00_0000];
+        story.play_ending(2, &[vec![0x7f00_0000], flag_set(1), flag_set(2)], 2);
+        assert_eq!(story.flag(9), 2);
     }
 
 

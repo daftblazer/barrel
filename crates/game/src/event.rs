@@ -31,6 +31,15 @@ pub const SET_EVENT_FLAG: u32 = 0x7500_0022;
 /// `u35` (0x75000023, `{flag, amount}`): adds to an event flag (`0x14035f6b0`, case
 /// `0x140051516`). Like `u34` it then runs the event checks with trigger 7 and the flag.
 pub const ADD_EVENT_FLAG: u32 = 0x7500_0023;
+/// `u134` (0x75000086, `{group}`): which of the event's process data groups its end runs
+/// (the event's +0x60, case `0x140051dbb`; read at `ECT_END`, `0x140052c76`, which runs that
+/// group of `EventProcessDataAll.epd` through `0x14005a070`). 1 unless set
+/// ([`DEFAULT_END_GROUP`]); `EVENT_MM12_ST3_031` to `_036` choose among five, `EVENT_MS06_080`
+/// between two.
+pub const SET_END_GROUP: u32 = 0x7500_0086;
+/// The process data group an event's end runs when its script does not choose (the
+/// constructors' 1 at +0x60).
+pub const DEFAULT_END_GROUP: usize = 1;
 /// `u38` (0x75000026, `{trophy}`): unlocks a Steam achievement once (`0x140168390`: the
 /// `TROPHY_*` table at `0x140d5fcf8`, 0x198 bytes a row, through the user-stats interface's
 /// `SetAchievement` and `StoreStats`). Barrel leaves it out on purpose while it is being built
@@ -286,6 +295,8 @@ pub enum Step<'a> {
     EventFlag { flag: u32, value: i32 },
     /// `u35`: an amount added to an event flag.
     EventFlagAdd { flag: u32, amount: i32 },
+    /// `u134`: the process data group the event's end runs.
+    EndGroup { group: u32 },
     /// `u38`: the game would unlock this Steam achievement here (Barrel does not).
     Trophy { trophy: u32 },
     /// A movie plays (`u46`; not drawn yet: `docs/engine.md`, "Movies").
@@ -554,6 +565,7 @@ impl<'a> Player<'a> {
             (SHORT_WAIT, _) => out.push(Step::Wait { seconds: 0.3 }),
             (LONG_WAIT, _) => out.push(Step::Wait { seconds: 2.0 }),
             (SET_EVENT_FLAG, [flag, value, ..]) => out.push(Step::EventFlag { flag: *flag, value: *value as i32 }),
+            (SET_END_GROUP, rest) => out.push(Step::EndGroup { group: rest.first().copied().unwrap_or(0) }),
             // A missing amount reads as 0 (the case reads it only when given).
             (ADD_EVENT_FLAG, [flag, rest @ ..]) => out.push(Step::EventFlagAdd { flag: *flag, amount: rest.first().map_or(0, |&a| a as i32) }),
             (TROPHY, [trophy, ..]) => out.push(Step::Trophy { trophy: *trophy }),
@@ -1143,6 +1155,7 @@ mod tests {
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
                 Step::EventFlagAdd { flag, amount } => format!("flag {flag} += {amount}"),
+                Step::EndGroup { group } => format!("end runs process group {group}"),
                 Step::Trophy { trophy } => format!("trophy {trophy}"),
                 Step::Movie { movie } => format!("movie {movie}"),
                 Step::WaitForCharacter { character } => format!("wait for {character}"),

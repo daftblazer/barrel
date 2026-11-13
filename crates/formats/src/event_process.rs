@@ -1,5 +1,6 @@
 //! What events change: group 0 when they start (`0x1402178d0`), group 1 at their script's
-//! `ECT_END` (`0x140052c0b`) (`Event/eventprocess/EventProcessDataAll.epd`, read by
+//! `ECT_END` (`0x140052c0b`; another group when the script chose one with `u134`, the event's
+//! +0x60: five events have more than two groups) (`Event/eventprocess/EventProcessDataAll.epd`, read by
 //! `0x140059c60` into a map at `0x140df9eb0`): an i32 count (1,165, one per `EVENT_*`), then per
 //! event a group count and, per group, a word count and that many words. The words are event
 //! commands (`0x7710xxxx`-`0x7716xxxx`, run by the event command handler `0x140052391`), each
