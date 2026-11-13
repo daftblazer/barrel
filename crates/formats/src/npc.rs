@@ -16,6 +16,8 @@ pub const PLACES_EN: u64 = 0x1_408c_2cd0;
 pub const PLACES: usize = 841;
 pub const CONDITIONS_EN: u64 = 0x1_408a_ab70;
 pub const CONDITIONS: usize = 190;
+pub const LINES_EN: u64 = 0x1_408a_b750;
+pub const LINES: usize = 1494;
 const PLACE: usize = 0x98;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,8 +41,8 @@ pub struct Place {
     pub angle: f32,
     /// +0x60: four flag bytes (`00 00 00 01` in 591 records).
     pub flags: [u8; 4],
-    /// +0x80: a number, mostly different per record (202, 1003 ...: a message or talk id
-    /// presumably).
+    /// +0x80: the talk id, the lines spoken when the player talks to this person ([`lines`];
+    /// all 779 distinct ids in the placements have lines).
     pub id: i32,
     /// +0x38 to the end as stored (+0x64 to +0x74 are 1, 1, 3, 10 and 90 in every record).
     pub rest: Vec<u8>,
@@ -93,5 +95,36 @@ pub fn condition(pe: &Pe, i: i32) -> Option<(Vec<i32>, Vec<i32>)> {
     let at = pe.offset(CONDITIONS_EN)? + 16 * k;
     let q = |o: usize| pe.data.get(o..o + 8).map(|b| u64::from_le_bytes(b.try_into().unwrap()));
     Some((list(pe, q(at)?), list(pe, q(at + 8)?)))
+}
+
+/// One talk line: the talk id it belongs to (1,065 ids, up to 11 lines each, in order), the
+/// speaker's `Chara` row, a third number (not read), the English text compiled into the
+/// executable (+0x10), a second text (+0x38, set in 48 lines), and +0x18 with its flag +0x2c
+/// (set in 46 lines, not read).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Line {
+    pub id: i32,
+    pub chara: i32,
+    pub word_8: i32,
+    pub text: String,
+    pub second: String,
+    pub word_18: i32,
+}
+
+pub fn lines(pe: &Pe) -> Option<Vec<Line>> {
+    let at = pe.offset(LINES_EN)?;
+    let text = |va: u64| -> String {
+        let Some(o) = pe.offset(va) else { return String::new() };
+        let end = pe.data[o..].iter().position(|&b| b == 0).unwrap_or(0);
+        String::from_utf8_lossy(&pe.data[o..o + end]).into_owned()
+    };
+    (0..LINES)
+        .map(|k| {
+            let r = pe.data.get(at + 0x40 * k..at + 0x40 * (k + 1))?;
+            let w = |o: usize| i32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+            let q = |o: usize| u64::from_le_bytes(r[o..o + 8].try_into().unwrap());
+            Some(Line { id: w(0), chara: w(4), word_8: w(8), text: text(q(0x10)), second: text(q(0x38)), word_18: w(0x18) })
+        })
+        .collect()
 }
 

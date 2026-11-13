@@ -1897,7 +1897,12 @@ filled by `0x14023e440`) copies three tables out of the executable:
 - **Conditions:** 190 pairs of list pointers from `0x1408aab70`. Condition `i` is pair `i - 1`
   (read at +0x10 + 16 × `i`). It holds (`0x14035f320`) when every event of its first list has
   been seen and none of its second.
-- **A second table:** 1,494 entries of 0x40 bytes from `0x1408ab750` (to +0xbf0), not read.
+- **Talk lines:** 1,494 lines of 0x40 bytes from `0x1408ab750` (to +0xbf0). Each holds a talk
+  id (1,065 ids, up to 11 lines each, in order), the speaker's `Chara` row, a third number, a
+  pointer to the line's English text (the town people's talk is compiled into the executable,
+  not in a table file), a second text (48 lines) and a word at +0x18 with a flag at +0x2c (46
+  lines). All 779 distinct talk ids of the placements (+0x80) have lines. `barrel town-talk
+  EXE ID` prints one id's lines; nothing prints them all, since they can tell the story ahead.
 - **Placements:** 841 records of 0x98 bytes from `0x1408c2cd0` (to +0xc08). Each holds a map
   (+0), five pointers to -1-ended condition lists (+8 to +0x28), a `Chara.xml` row (+0x30) and a
   value passed to the builder (+0x34). Then, by the values:

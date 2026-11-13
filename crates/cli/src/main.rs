@@ -51,6 +51,7 @@ usage:
   barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
   barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
   barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
+  barrel town-talk EXE ID       one town person's lines (their placement's talk id)
   barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
@@ -135,6 +136,10 @@ fn main() -> ExitCode {
         },
         ["gather-sim", install, point] => gather_sim(Path::new(install), point, None),
         ["gather-sim", install, point, save] => gather_sim(Path::new(install), point, Some(Path::new(save))),
+        ["town-talk", exe, id] => match id.parse::<i32>() {
+            Ok(id) => town_talk(Path::new(exe), id),
+            Err(_) => Err("ID is a number".into()),
+        },
         ["town-people", exe] => town_people(Path::new(exe), None, None),
         ["town-people", exe, map] => match map.parse() {
             Ok(m) => town_people(Path::new(exe), Some(m), None),
@@ -1875,6 +1880,17 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
         }
         let names: Vec<&str> = got.iter().filter_map(|&t| traits.get(t)).map(|t| t.name.as_str()).collect();
         println!("  {} at quality {quality}, traits {names:?}", row.attr("ItemName").unwrap_or("?"));
+    }
+    Ok(())
+}
+
+/// Prints the lines of one talk id (a town person's placement +0x80). Text is shown only on
+/// request: it can tell the story ahead.
+fn town_talk(exe: &Path, id: i32) -> Result<()> {
+    let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
+    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
+    for l in barrel_formats::npc::lines(&pe).ok_or("no talk table")?.iter().filter(|l| l.id == id) {
+        println!("chara {:4} ({:3}) {}{}", l.chara, l.word_8, l.text, if l.second.is_empty() { String::new() } else { format!("  [{}]", l.second) });
     }
     Ok(())
 }
