@@ -414,14 +414,15 @@ impl Chain {
         self.fire(EVENT_END, &[event as i32])
     }
 
-    /// The player walks from map `from` to map `to` (each {kind, map}: kind 0 the town's
-    /// maps): the event that starts as they leave (`MAP_FROM_TO_BEFORE`), or else once they
-    /// are there (`MAP_FROM_TO_AFTER`, the story then in the new map).
+    /// The player goes from `from` to `to`, each {kind, map}: kind 0 a field (its number in
+    /// the map table: the town's 0 to 11, the areas from 12), kind 1 the world map (whose map
+    /// the triggers never name). The event that starts as they leave (`MAP_FROM_TO_BEFORE`), or
+    /// else once they are there (`MAP_FROM_TO_AFTER`, the story then in the new place).
     pub fn walk(&mut self, from: [i32; 2], to: [i32; 2]) -> Option<&str> {
         let values = [from[0], from[1], to[0], to[1]];
-        self.story.field_map = Some(from[1]);
+        self.story.field_map = (from[0] == 0).then_some(from[1]);
         let before = self.story.next(&self.checks, &self.lists, MAP_FROM_TO_BEFORE, &values, &mut self.rng);
-        self.story.field_map = Some(to[1]);
+        self.story.field_map = (to[0] == 0).then_some(to[1]);
         let next = before.or_else(|| self.story.next(&self.checks, &self.lists, MAP_FROM_TO_AFTER, &values, &mut self.rng))?;
         self.names.get(next).map(String::as_str)
     }

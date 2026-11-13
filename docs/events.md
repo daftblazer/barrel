@@ -1394,7 +1394,10 @@ what a move would start.
 (`event_start::Chain::walk`): each fires `MAP_FROM_TO_BEFORE` (group 0) as the player leaves,
 then, if nothing starts, `MAP_FROM_TO_AFTER` (group 1) in the new map, with {from kind, from
 map, to kind, to map}. After Escha's opening, `0.3>0.4` (Urban Area to Town Entrance) starts
-`EVENT_MM02_OP2_111` and `0.5>0.4` `EVENT_MM02_OP2_420`, as their check data reads.
+`EVENT_MM02_OP2_111` and `0.5>0.4` `EVENT_MM02_OP2_420`, as their check data reads. The kinds: 0 is a field, by its number in the
+map table (692 uses, the town's and the areas'); 1 is the world map, always with any map
+(`0x60000002`): it is only gone to in `BEFORE` (51) and come from in `AFTER` (45), so the
+player leaving a field for the world map is `0.M>1.0` and arriving from it `1.0>0.M`.
 
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
