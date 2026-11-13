@@ -3,8 +3,8 @@
 //! by [`crate::skirmish`] (each member standing in for the player). The step between touching an
 //! enemy in the field and the played battle screen.
 //!
-//! Not yet the game's: the party members' stats their base stats at their level (no equipment),
-//! HP and MP full, no battle items; everything [`crate::skirmish`] leaves out.
+//! Not yet the game's: the party members' stats their base stats at their level plus a new
+//! game's starting kit (not the save's own equipment), HP and MP full, no battle items; everything [`crate::skirmish`] leaves out.
 
 use barrel_formats::battle_data::{self as bd, ActInfo, EncounterGroup, ItemEffect, LevelStats, Monster, PartySkill, Skill};
 use barrel_formats::pe::Pe;
@@ -31,13 +31,27 @@ pub struct Tables {
     kinds: Vec<String>,
     effects: Vec<ItemEffect>,
     radii: Vec<f32>,
+    /// What each member's starting kit adds (`party_defaults`' equipment through
+    /// `equipment::item_stat`): HP, MP, attack, defence, speed, the four resistances.
+    kit: Vec<[i32; 9]>,
 }
 
 impl Tables {
     /// From the English executable, `item_effect.xml`'s table (`effects_xml`) and `Chara.xml`'s
     /// (`chara`, for the fighters' sizes).
-    pub fn load(pe: &Pe, effects_xml: &barrel_formats::table::Element, chara: Option<&barrel_formats::table::Element>) -> Result<Tables, String> {
+    ///
+    /// With `itemData.xml` (`items`), each member fights in the kit a new game equips it with
+    /// (`docs/tables.md`, "A new game's party"); without it, in its base stats alone.
+    pub fn load(pe: &Pe, effects_xml: &barrel_formats::table::Element, chara: Option<&barrel_formats::table::Element>, items: Option<&barrel_formats::table::Element>) -> Result<Tables, String> {
         let (act_names, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+        let kit = match (items, bd::party_defaults(pe, bd::PARTY_DEFAULTS_EN)) {
+            (Some(items), Some(defaults)) => {
+                let rows: Vec<crate::equipment::ItemRow> = items.children.iter().map(crate::equipment::ItemRow::from_row).collect();
+                let t = crate::equipment::Tables { items: &rows, effects: &[], traits: &[], acts: &[] };
+                defaults.iter().map(|d| kit_stats(&t, &d.equipment)).collect()
+            }
+            _ => Vec::new(),
+        };
         Ok(Tables {
             monsters: bd::monsters(pe, bd::MONSTERS_EN).ok_or("no monster table")?,
             skills: bd::skills(pe, bd::SKILLS_EN).ok_or("no skill table")?,
@@ -48,8 +62,22 @@ impl Tables {
             kinds: bd::trait_kinds(pe).into_iter().map(str::to_string).collect(),
             effects: bd::item_effects(effects_xml, &act_names),
             radii: chara.map(bd::chara_radii).unwrap_or_default(),
+            kit,
         })
     }
+}
+
+/// What a set of freshly made items (`0x14029ce00`: quality 50, no effects; their default traits
+/// from a per-item table are not read) adds to stats 0 to 8.
+fn kit_stats(t: &crate::equipment::Tables, items: &[i32]) -> [i32; 9] {
+    let mut out = [0; 9];
+    for &item in items.iter().filter(|&&i| i >= 0) {
+        let unit = barrel_formats::save::ItemUnit { serial: 1, item: item as i16, quality: 50.0, traits: [-1; 3], word_e: 0, effects: [-1; 4], equip_cost: 0, word_1a: 0, counts: [0; 4] };
+        for (k, o) in out.iter_mut().enumerate() {
+            *o += crate::equipment::item_stat(t, &unit, k, 0, &mut |lo, _| lo);
+        }
+    }
+    out
 }
 
 /// How a battle went: the fighters' names (the party first), what happened and the winning
@@ -112,11 +140,20 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
     let mut members = Vec::new();
     for &(c, level) in party {
         let stats = t.growth.get(c).and_then(|l| l.get((level as usize).wrapping_sub(1))).ok_or_else(|| format!("character {c}: no growth row for level {level}"))?;
-        let block = crate::duel::party_block(level, stats);
+        let mut block = crate::duel::party_block(level, stats);
+        let kit = t.kit.get(c).copied().unwrap_or_default();
+        block.hp += kit[0];
+        block.attack += kit[2];
+        block.defense += kit[3];
+        block.speed += kit[4];
+        for (r, k) in block.resist.iter_mut().zip(&kit[5..]) {
+            *r += k;
+        }
+        let mp = stats.mp + kit[1];
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
-        let mut member = crate::skirmish::Member::new(block, stats.mp, list, &t.skills).ok_or("no party attack")?;
+        let mut member = crate::skirmish::Member::new(block.clone(), mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);
-        start.push([stats.hp, stats.hp, stats.mp, stats.mp]);
+        start.push([block.hp, block.hp, mp, mp]);
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
     }
@@ -197,5 +234,27 @@ mod tests {
             winner: Some(0),
         };
         assert_eq!(o.lines(), vec!["Escha uses Attack on Puni: 12 damage (0 HP left)".to_string(), "the party wins".into()]);
+    }
+
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn the_starting_kit_wins_against_an_ore_rat() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let root = std::path::Path::new(&root);
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = Pe::parse(&exe).unwrap();
+        let read = |p: &str| barrel_formats::table::parse(&std::fs::read(root.join(p)).unwrap()).unwrap();
+        let (effects, chara, items) = (read("Saves_EN/item/item_effect.xml"), read("Saves/chara/Chara.xml"), read("Saves_EN/item/itemData.xml"));
+        let kit = Tables::load(&pe, &effects, Some(&chara), Some(&items)).unwrap();
+        let bare = Tables::load(&pe, &effects, Some(&chara), None).unwrap();
+        assert_eq!((kit.kit[0][2], kit.kit[0][3], kit.kit[1][2], kit.kit[1][3]), (5, 5, 8, 9));
+        let rat = kit.monsters.iter().position(|m| m.name == "Ore Rat").unwrap();
+        let wins = |t: &Tables| (0..200u32).filter(|&s| {
+            let mut rng = Rng::from_state([s, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]);
+            fight_drawn(t, &[(0, 1), (1, 1)], &[rat], &mut rng).unwrap().winner == Some(0)
+        }).count();
+        let (with, without) = (wins(&kit), wins(&bare));
+        eprintln!("Escha and Logy at level 1 against an Ore Rat: {with} of 200 won in their kit, {without} without");
+        assert!(with > without);
     }
 }

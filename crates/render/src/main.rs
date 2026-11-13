@@ -1560,7 +1560,8 @@ fn battle_tables(root: &Path) -> Result<barrel_game::auto_battle::Tables> {
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let effects = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/item_effect.xml"))?)?;
     let chara = std::fs::read(root.join("Saves/chara/Chara.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
-    Ok(barrel_game::auto_battle::Tables::load(&pe, &effects, chara.as_ref())?)
+    let items = std::fs::read(root.join("Saves_EN/item/itemData.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    Ok(barrel_game::auto_battle::Tables::load(&pe, &effects, chara.as_ref(), items.as_ref())?)
 }
 
 /// The battle HUD's layer (`battlehud`, layout 886) and what redrawing it needs: the font, the

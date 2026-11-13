@@ -1830,8 +1830,15 @@ experience 0 (level 1, `0x14032d790`). The defaults are 11 records of 0x58 bytes
 | 15 to 18 | the items it starts equipped with, -1 for none: Escha the Traditional Staff (364) and a Cotton Shirt (417), Logy the Phantom Saber (369) and a Leather Coat (438) |
 | 19 to 21 | 0, a float, 1 |
 
-So a new game's members stand at level 1 with their kit on: Barrel's battles so far used the
-base stats alone (no equipment).
+So a new game's members stand at level 1 with their kit on. Each kit item is made fresh
+(`0x14029ce00` → `0x14029ceb0`): quality 50 (then its row's float +0x40 when 0 or more, likely
+`itemData`'s `effect`, 50 for these), its default traits from a per-item table (`[0x140dfcce0]`
++0x18, 20 bytes an item, words at +8, +0xc, +0x10; not read), no effects. At quality 50 an item
+gives its row's stats as they are ((50 × 0.5 + 75) / 100 = 1): Escha attack +5 and defence +5,
+Logy attack +8 and defence +9. Barrel's field battles (`auto_battle::Tables::load` with
+`itemData.xml`) fight in this kit: Escha and Logy at level 1 now beat a lone Ore Rat in all
+200 seeds of a test where, in base stats alone, they lost all 200 (`the_starting_kit_wins_
+against_an_ore_rat`).
 
 ### A party member's stats (executable)
 
