@@ -20,6 +20,7 @@ pub mod fight;
 pub mod event;
 pub mod event_start;
 pub mod walk;
+pub mod wind;
 pub mod face;
 pub mod gather;
 pub mod inventory;

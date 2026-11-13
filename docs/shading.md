@@ -233,8 +233,16 @@ names hold the keyword, `xV1_` ...) and `<n_shaker keyword weight axis max_angle
 char_range char_power>` (node sway: a spring per bone, `0x1402859xx`). The `v_shaker` parser
 (`0x140285125` on) keeps height ×100 (+0x20) and root height ×100 (+0x24, field units), shake
 time (+0x28, clamped), shift x and z (+0x2c, +0x30) and weight (+0x34); the `<wind>` parser
-reads `freq` at `0x140285327`. How weight, the winds and the time become `g_f3Wind` and
-`g_fWindTime` is not read yet, so the renderer does not sway plants.
+reads `freq` at `0x140285327`. Each frame the field's wind clock `T`
+(seconds, kept within 0 to 3600, `0x140286540`) gives each `<wind>` a strength from none to
+full, `(sinf((T + shift) · 360 / freq °) + 1) / 2`, and the winds are summed, `power · dir`
+each (`dir` normalised). Each `<v_shaker>` (`0x140285d80`) keeps its own clock, advanced by `2π
+/ shake_time` a second (within 0 to 3600), and sets its meshes' constants: `g_nWindFlag` 1,
+`g_fWindTime` its clock, `g_f3Wind` the summed wind over its `weight`, `g_fInvHeight` 1 over
+its height (the kept height / 100), `g_fRootHeight` its root height (/ 100) and `g_f3Shift`
+(`shift_x`, 0, `shift_z`). `game::wind` does the same (`wind`, `Shaker::step`); the
+`<wind_root>` is read into `FieldLook::winds` and `v_shakers`. The renderer does not sway
+plants yet. (The node shakers, `<n_shaker>`, are a spring per bone, not read.)
 
 ### Fog (read from the running game)
 

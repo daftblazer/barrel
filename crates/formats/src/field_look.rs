@@ -85,6 +85,33 @@ pub struct FieldLook {
     /// `<camera><area>`: each area's kind and rectangle (`tlPosition`, `brPosition`, metres) and
     /// the indices of its points in `camera_points`.
     pub camera_areas: Vec<CameraArea>,
+    /// `<wind_root><wind>`: the field's winds.
+    pub winds: Vec<Wind>,
+    /// `<wind_root><v_shaker>`: the grass that sways by vertex, by mesh name.
+    pub v_shakers: Vec<VShaker>,
+}
+
+/// A wind (`<wind dir power freq shift>`): blowing along `dir` (normalised), `power` strong at
+/// its height, rising and falling over `freq` seconds, `shift` seconds into that.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Wind {
+    pub dir: [f32; 3],
+    pub power: f32,
+    pub freq: f32,
+    pub shift: f32,
+}
+
+/// Grass swaying by vertex (`<v_shaker keyword weight root_height height shake_time shift_x
+/// shift_z>`, metres and seconds), for the meshes whose names hold `keyword`; defaults as the
+/// game's own notes give them (`Saves/field/_def.xml`): weight 200, root height and shifts 0.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VShaker {
+    pub keyword: String,
+    pub weight: f32,
+    pub root_height: f32,
+    pub height: f32,
+    pub shake_time: f32,
+    pub shift: [f32; 2],
 }
 
 /// A play-camera setting of a field (`<point>`), as `CameraCFieldMap` takes it (`0x1401e71ad`
@@ -235,6 +262,31 @@ pub fn read(root: &Element) -> FieldLook {
                     speed: [number(e, "speed_u").unwrap_or(0.0777), number(e, "speed_v").unwrap_or(0.0333)],
                     size: [number(e, "area_width").unwrap_or(50.0), number(e, "area_height").unwrap_or(50.0)],
                 })
+            }
+            "wind_root" => {
+                for w in &e.children {
+                    match w.name.as_str() {
+                        "wind" => {
+                            let d: [f32; 3] = numbers(w, "dir").unwrap_or([1.0, 0.0, 0.0]);
+                            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                            look.winds.push(Wind {
+                                dir: if len > 0.0 { d.map(|v| v / len) } else { d },
+                                power: number(w, "power").unwrap_or(0.0),
+                                freq: number(w, "freq").unwrap_or(1.0),
+                                shift: number(w, "shift").unwrap_or(0.0),
+                            });
+                        }
+                        "v_shaker" => look.v_shakers.push(VShaker {
+                            keyword: w.attr("keyword").unwrap_or("").to_string(),
+                            weight: number(w, "weight").unwrap_or(200.0),
+                            root_height: number(w, "root_height").unwrap_or(0.0),
+                            height: number(w, "height").unwrap_or(1.0),
+                            shake_time: number(w, "shake_time").unwrap_or(1.0),
+                            shift: [number(w, "shift_x").unwrap_or(0.0), number(w, "shift_z").unwrap_or(0.0)],
+                        }),
+                        _ => {}
+                    }
+                }
             }
             "hdr" => look.hdr = Some((number(e, "threshold").unwrap_or(1.0), number(e, "glow_add_rate").unwrap_or(0.0))),
             "sphere" if e.attr("tracking_camera") != Some("false") => look.sphere_offset = numbers(e, "offset"),
