@@ -893,11 +893,14 @@ shared texture pack, `eff_texture.g1t`. All 536 begin the same way:
 | 4 | the version, `5200` in all |
 | 8 | u32 file size (matches in all) |
 | 0xc | u32 9 in all |
+| 0x10 | u32 1 in all: what the loader sizes its object by (0x188 + 0xe8 × it), so the number of effects in the file, presumably |
 
 Further in, the devil aura (`701_FE_DEVIL_AURA_01`, 5,008 bytes) has 4 × 4 matrices (identity,
 then one with -1 on the axis) and, at 0x110, a list of increasing offsets (0x20, 0x24c, 0x478,
 0x6e4, 0x950, 0xddc), presumably its parts. Colours and sizes follow (runs of 1.0, 0.1, 40.0).
-The parts' layout is not decoded yet.
+The parts' layout is not decoded yet. The executable reads the 0x14-byte header
+(`0x1406162f0`), checks it (`0x140618f10`: `XF1G`, version at least `5200`), allocates that
+object and parses the rest with `0x140615be0`, whose work is in `0x140611d60` (called twice).
 
 ### Placement lists (`*.opl2`)
 
