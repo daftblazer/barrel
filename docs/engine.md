@@ -383,7 +383,8 @@ motion runs on into division 3's loop; she lands as soon as she is on the ground
 (`0x14026c550`: the character's ground flag, +0x12e, or always while its +0x128 is clear), which
 plays division 4, zeroes her velocity and sounds the ground (`0x140234e05`). The viewer jumps so
 (J in a window, `BARREL_JUMP_AT=FRAME` headless), on the flat arc of `jump_height` against the
-ground she left; her gait takes over when the landing ends.
+ground she left; her gait takes over when the landing ends. In a window it sounds as the game's
+does: effect 0x23 at 0.6 and, when `JumpVoice` says so, one of Escha's three jump voices.
 
 ## Movies (open)
 

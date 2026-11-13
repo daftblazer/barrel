@@ -1251,6 +1251,11 @@ struct Walker {
     /// `BARREL_JUMP_AT=FRAME` jumps at that frame).
     jump_anim: Option<barrel_formats::g1a::Animation>,
     jump: Option<f32>,
+    /// Whether a jump calls out (`game::walk::JumpVoice`), on its own generator.
+    jump_voice: barrel_game::walk::JumpVoice,
+    rng: barrel_game::rng::Rng,
+    /// The install, for her sounds.
+    root: std::path::PathBuf,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1288,7 +1293,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let jump_anim = motions.get("JUMP").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf() };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3606,7 +3611,23 @@ fn main() -> Result<()> {
                 b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
                 b.clock = Some(0.0);
                 w.jump = Some(-1.0);
-                eprintln!("frame {frame}: jump");
+                // The jump's sound (0x23 at 0.6) and, now and then, a voice (Escha's).
+                let voice = w.jump_voice.jump(0, &mut w.rng);
+                eprintln!("frame {frame}: jump{}", voice.map_or(String::new(), |c| format!(", voice {c}")));
+                if sound.is_none() && presenter.is_some() {
+                    match barrel_audio::Output::open(0.1) {
+                        Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
+                        Err(e) => eprintln!("no sound: {e}"),
+                    }
+                }
+                if let Some((_, mixer, library, _)) = sound.as_mut() {
+                    if let Some(barrel_audio::Effect::Clip(e)) = library.effect(barrel_game::walk::JUMP_SOUND) {
+                        mixer.play(e, 0.6, None);
+                    }
+                    if let Some(v) = voice.and_then(|c| library.voice(c)) {
+                        mixer.play(v, 1.0, None);
+                    }
+                }
             }
         let mut lift = 0.0;
         if let Some(t) = w.jump {
@@ -3700,6 +3721,10 @@ fn main() -> Result<()> {
         }
         let turn = glam::Quat::from_rotation_y(w.facing);
         instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos) + Vec3::Y * lift));
+        if player.is_none()
+            && let Some((out, mixer, ..)) = sound.as_mut() {
+                out.pump(mixer);
+            }
     }
     if door.is_some() {
         break;
