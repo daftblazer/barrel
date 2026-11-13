@@ -1347,6 +1347,16 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         println!("{} of {} events seen", seen_events.len(), summary.events.len());
         let posted: Vec<&str> = w.board.iter().map(|s| s.map_or("-", |i| all[i].target.as_str())).collect();
         println!("board as saved: {}", posted.join(", "));
+        // Each saved slot's rolled rewards beside the ones `quest::rewards` gives for its day.
+        for (slot, i) in summary.board.iter().zip(&board) {
+            if let (Some(slot), Some(i)) = (slot, i) {
+                let period = barrel_game::calendar::period(slot.posted.max(0) as u32).unwrap_or(9);
+                let left = barrel_game::quest::days_to_deadline(period, slot.posted.max(0) as u32);
+                let (points, prizes) = barrel_game::quest::rewards(&all[*i], slot.count, left);
+                let rolled: Vec<i32> = prizes.iter().map(|p| p.1).collect();
+                println!("  {}: state {}, posted {}, until {}, count {}, saved {} {:?}, rolled {points} {rolled:?} ({left} days left)", all[*i].target, slot.state, slot.posted, slot.until, slot.count, slot.value, slot.prizes.map(|p| p.1));
+            }
+        }
         let d = barrel_game::calendar::Date::of(w.date);
         println!("from {}: day {} (Y{} {}/{}), rank {} ({} points), squad {:?}", file.display(), w.date, d.year, d.month, d.day, w.rank.rank, w.rank.points, w.joined);
         w

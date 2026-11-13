@@ -96,8 +96,19 @@ members can use the item: flags `PC00` to `PC10`, one per playable character.
 `isClearSubject` (strings), `StartDate`/`EndDate` (integer days), `Priority` (a float),
 `Table` and `Num` (integers; `QuestAlc` writes `num`), `PotTag`. The points and prize counts
 are fractions in the tables (5.12 points, 1.7067 of a prize), and the loader keeps them so
-(`movss` straight into the records), so whatever makes them whole happens where a request is
-paid, not read yet. The requests' owner holds the three lists at `+0x0` (synthesis), `+0x18`
+(`movss` straight into the records), and they become whole when the board posts a request (`0x14033ab30`,
+`quest::rewards`). With `n` the count wanted (the row's `Num`, at least 1; a monster request
+no more than half a per-monster count from `0x1410bcaf0`'s slot `+0x70`, not read, and 10:
+`quest::wanted`), the points and the first prize's count are `trunc(m × value × n + 1 + a)` and
+the second prize's `trunc(count × n + a)`, where (m, a) is (1.5, 1) when the current
+assignment ends 1 to 30 days from the posting day (`0x14035c070`: the period's last day, or
+April 1st of school year 5 after the ninth, less today; `quest::days_to_deadline`) and (1, 0)
+otherwise. The slot also takes today and that deadline (its "until" day). In a save posted on
+day 220 (109 days to the deadline), the two synthesis slots' saved points and prizes are
+exactly these (5.12 → 6; prizes 1.x → 2 and 3, 2), and the monster slot's prizes too, but not
+its points: 2 saved where its row (`MONSTER_MINIDRAGON_02`, 4.32) gives 5, and no row with the
+same prizes gives 2. Either the monster matched from the save is the wrong one or a monster
+slot's points change after posting; not resolved. The requests' owner holds the three lists at `+0x0` (synthesis), `+0x18`
 (monsters) and `+0x30` (gathering), each filled by the loader with its kind 0, 1, 2
 (`0x14011f650`, `0x14011f670`, `0x14011f690`), all three from its load method `0x14011f550`
 (which then takes the lock at `0x140dfc880`). `barrel_game::quest` reads the requests and says whether one is offered on a

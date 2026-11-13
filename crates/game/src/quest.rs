@@ -2,8 +2,8 @@
 //! `QuestGat.xml` (gathering), as the executable's schema types them (`docs/tables.md`,
 //! "Requests"): the target, the points, two prizes, the days and events that bound it.
 //!
-//! The points and the prize counts are floats in the tables (5.12, 1.7067): how the game turns
-//! them into whole numbers is not read yet, so they are kept as given.
+//! The points and the prize counts are floats in the tables (5.12, 1.7067); a posted request
+//! carries them rolled into whole numbers ([`rewards`]).
 
 use barrel_formats::table::Element;
 
@@ -60,6 +60,45 @@ pub fn requests(table: &Element, kind: Kind) -> Vec<Request> {
             clear_subject: opt(e, "isClearSubject"),
         })
         .collect()
+}
+
+/// How many a posted request asks for (the slot's count, `0x14033ab30`): its `Num`, at least 1;
+/// a monster request no more than half of `seen` (the count the game asks the monster table for,
+/// `0x1410bcaf0`'s slot `+0x70`, not read) and 10.
+pub fn wanted(r: &Request, seen: i32) -> i32 {
+    let n = match r.kind {
+        Kind::Monster => r.num.min((seen / 2).min(10)),
+        _ => r.num,
+    };
+    n.max(1)
+}
+
+/// Days from `today` to the end of the current assignment (`0x14035c070`): the last day of
+/// period `assignment` (0 to 8), or April 1st of school year 5 after the ninth.
+pub fn days_to_deadline(assignment: u32, today: u32) -> i32 {
+    let end = if assignment < crate::calendar::PERIODS {
+        crate::calendar::period_days(assignment).1
+    } else {
+        crate::calendar::Date { year: 5, month: 4, day: 1 }.number()
+    };
+    end as i32 - today as i32
+}
+
+/// A request's points and prize counts as posted for `n` wanted (`0x14033ab30`, each truncated):
+/// the points and the first prize `GetPoint` (or its count) × n × m + 1 + a, the second prize
+/// count × n + a, where (m, a) is (1.5, 1) when the assignment's end is 1 to 30 days away
+/// ([`days_to_deadline`]) and (1, 0) otherwise. So 5.12 points for one item post as 6.
+pub fn rewards(r: &Request, n: i32, days_left: i32) -> (i32, Vec<(String, i32)>) {
+    let (m, a) = if (1..=30).contains(&days_left) { (1.5f32, 1.0f32) } else { (1.0, 0.0) };
+    let n = n as f32;
+    let points = (m * r.points * n + 1.0 + a) as i32;
+    let prizes = r
+        .prizes
+        .iter()
+        .enumerate()
+        .map(|(k, (t, c))| (t.clone(), if k == 0 { (m * c * n + 1.0 + a) as i32 } else { (c * n + a) as i32 }))
+        .collect();
+    (points, prizes)
 }
 
 /// Whether a request is offered on `day`, given which events have been seen.
@@ -272,6 +311,31 @@ mod tests {
         let b = board_from_save(&slots, &requests, &items, &["MONSTER_X"]);
         // The Craft request with ITEM_B as its prize, and the monster one.
         assert_eq!((b[0], b[6], b[1]), (Some(1), Some(2), None));
+    }
+
+    #[test]
+    fn rewards_roll_as_posted() {
+        let r = Request {
+            kind: Kind::Synthesis,
+            target: "x".into(),
+            points: 5.12,
+            prizes: vec![("a".into(), 1.7067), ("b".into(), 1.5)],
+            from_event: None,
+            until_event: None,
+            from_day: 0,
+            to_day: 0,
+            priority: 0.0,
+            table: 0,
+            num: 2,
+            clear_subject: None,
+        };
+        assert_eq!(rewards(&r, 1, 100), (6, vec![("a".into(), 2), ("b".into(), 1)]));
+        // Near the deadline: 5.12 × 2 × 1.5 + 2 = 17.36; 1.7067 × 3 + 2 = 7.12; 1.5 × 2 + 1 = 4.
+        assert_eq!(rewards(&r, 2, 30), (17, vec![("a".into(), 7), ("b".into(), 4)]));
+        assert_eq!(days_to_deadline(0, 200), 9);
+        assert_eq!(days_to_deadline(9, 0), crate::calendar::Date { year: 5, month: 4, day: 1 }.number() as i32);
+        assert_eq!(wanted(&Request { kind: Kind::Monster, num: 5, ..r.clone() }, 6), 3);
+        assert_eq!(wanted(&Request { num: 0, ..r }, 0), 1);
     }
 
     #[test]
