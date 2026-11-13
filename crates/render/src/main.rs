@@ -2231,26 +2231,12 @@ fn main() -> Result<()> {
         .descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
     let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)? };
-    let scene = scene_gpu::SceneGpu::new(&gpu, vbytes, ibytes, textures, set_layout, sampler)?;
-    let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
-    let sets = scene.sets.clone();
-
     // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
     // draw's instance number (set 1, bound once for every pipeline).
     for i in &mut instances {
         i.prev_palette = i.palette + palette.len() as u32;
         i.prev_model = i.model;
     }
-    let ibytes_inst = unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) };
-    let (instance_buf, instance_mem) = gpu.buffer(ibytes_inst.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
-    gpu.upload(instance_mem, ibytes_inst)?;
-    // And the joint palette (binding 1): this frame's joints, then last frame's (the same
-    // to begin with), for the motion vectors.
-    let palette_bytes = |p: &[Mat4]| unsafe { std::slice::from_raw_parts(p.as_ptr() as *const u8, p.len() * size_of::<Mat4>()) };
-    let half = (palette.len() * size_of::<Mat4>()) as u64;
-    let (palette_buf, palette_mem) = gpu.buffer((2 * half).max(64), vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
-    gpu.upload(palette_mem, palette_bytes(&palette))?;
-    gpu.upload_at(palette_mem, half, palette_bytes(&palette))?;
     let mut prev_palette = palette.clone();
     let storage = |b: u32| {
         vk::DescriptorSetLayoutBinding::default()
@@ -2267,13 +2253,6 @@ fn main() -> Result<()> {
             morph_weights.iter().filter(|&&w| w != 0.0).count()
         );
     }
-    // The morph targets' offsets (binding 2) and the instances' weights (binding 3).
-    let dbytes = unsafe { std::slice::from_raw_parts(deltas.as_ptr() as *const u8, deltas.len() * 16) };
-    let (delta_buf, delta_mem) = gpu.buffer(dbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
-    gpu.upload(delta_mem, dbytes)?;
-    let wbytes = unsafe { std::slice::from_raw_parts(morph_weights.as_ptr() as *const u8, morph_weights.len() * 4) };
-    let (weight_buf, weight_mem) = gpu.buffer(wbytes.len() as u64, vk::BufferUsageFlags::STORAGE_BUFFER, true)?;
-    gpu.upload(weight_mem, wbytes)?;
     // And the field's character lighting (binding 4, for the fragment shader).
     let (look_buf, look_mem) = gpu.buffer(LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER, true)?;
     let inst_binding = [
@@ -2294,42 +2273,19 @@ fn main() -> Result<()> {
             .stage_flags(vk::ShaderStageFlags::FRAGMENT),
     ];
     let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-    let inst_sizes = [
-        vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 },
-        vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 1 },
-        vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 },
-    ];
-    let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&inst_sizes), None)? };
-    let inst_layouts = [instance_layout];
-    let instance_set =
-        unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))?[0] };
-    let inst_info = [vk::DescriptorBufferInfo::default().buffer(instance_buf).offset(0).range(vk::WHOLE_SIZE)];
-    let pal_info = [vk::DescriptorBufferInfo::default().buffer(palette_buf).offset(0).range(vk::WHOLE_SIZE)];
-    let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
-    let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buf).offset(0).range(vk::WHOLE_SIZE)];
-    let look_info = [vk::DescriptorBufferInfo::default().buffer(look_buf).offset(0).range(vk::WHOLE_SIZE)];
     let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
-    let shadow_info = [vk::DescriptorImageInfo::default()
-        .sampler(shadow_target.sampler)
-        .image_view(shadow_target.view)
-        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-    unsafe {
-        d.update_descriptor_sets(
-            &[
-                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&inst_info),
-                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&pal_info),
-                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(2).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&delta_info),
-                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(3).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&weight_info),
-                vk::WriteDescriptorSet::default().dst_set(instance_set).dst_binding(4).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&look_info),
-                vk::WriteDescriptorSet::default()
-                    .dst_set(instance_set)
-                    .dst_binding(5)
-                    .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                    .image_info(&shadow_info),
-            ],
-            &[],
-        )
+    let shared = scene_gpu::Shared {
+        set_layout,
+        sampler,
+        instance_layout,
+        look: look_buf,
+        shadow_sampler: shadow_target.sampler,
+        shadow_view: shadow_target.view,
     };
+    let scene_data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights };
+    let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &shared)?;
+    let (vbuf, ibuf, instance_set) = (scene.vbuf, scene.ibuf, scene.instance_set);
+    let sets = scene.sets.clone();
 
     // Offscreen target.
     let extent = vk::Extent3D { width, height, depth: 1 };
@@ -3173,9 +3129,8 @@ fn main() -> Result<()> {
             }
         }
         if player.is_none() {
-            gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
-            gpu.upload(palette_mem, palette_bytes(&palette))?;
-            gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
+            scene.write_instances(&gpu, &instances)?;
+            scene.write_palette(&gpu, &palette, &prev_palette)?;
             // The camera follows the player with the field's play-camera setting for where the
             // player is (`barrel_game::play_camera`): its distance, yaw, pitch, field of view and
             // look offset, the eye built as the field camera builds it (in game space, then x
@@ -3210,8 +3165,7 @@ fn main() -> Result<()> {
             }
         }
         if player.is_none() {
-            gpu.upload(palette_mem, palette_bytes(&palette))?;
-            gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
+            scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
     }
     // The view's up: the event camera's roll turns it (t10).
@@ -3494,10 +3448,9 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
-            gpu.upload(weight_mem, unsafe { std::slice::from_raw_parts(morph_weights.as_ptr() as *const u8, morph_weights.len() * 4) })?;
-            gpu.upload(palette_mem, palette_bytes(&palette))?;
-            gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
+            scene.write_instances(&gpu, &instances)?;
+            scene.write_weights(&gpu, &morph_weights)?;
+            scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
     }
     // A resized window, or a swapchain gone stale: remake it and the framebuffers.
@@ -3564,9 +3517,8 @@ fn main() -> Result<()> {
     // With motion vectors, this frame's and last frame's transforms and joints every frame (a
     // frame that moves nothing still has last frame's movement to forget).
     if settings.motion {
-        gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
-        gpu.upload(palette_mem, palette_bytes(&palette))?;
-        gpu.upload_at(palette_mem, half, palette_bytes(&prev_palette))?;
+        scene.write_instances(&gpu, &instances)?;
+        scene.write_palette(&gpu, &palette, &prev_palette)?;
     }
     // The sun's shadow map (deliberately one square around the camera's target: the game's
     // cascades are not read yet, docs/renderer.md "Shadows").
@@ -3633,7 +3585,7 @@ fn main() -> Result<()> {
         let offset = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.sphere_offset).unwrap_or([0.0; 3]);
         let at = turned_eye(eye, target, orbit) + Vec3::new(-offset[0], offset[1], offset[2]) * 100.0;
         instances[*inst as usize].model = Mat4::from_translation(at);
-        gpu.upload(instance_mem, unsafe { std::slice::from_raw_parts(instances.as_ptr() as *const u8, instances.len() * size_of::<Instance>()) })?;
+        scene.write_instances(&gpu, &instances)?;
     }
     // The field's character lighting, mirrored into render space, and the eye.
     {
@@ -4083,11 +4035,6 @@ fn main() -> Result<()> {
     scene.destroy(&gpu);
     shadow_target.destroy(&gpu);
     unsafe {
-        for (b, m) in [(instance_buf, instance_mem), (palette_buf, palette_mem), (delta_buf, delta_mem), (weight_buf, weight_mem)] {
-            d.destroy_buffer(b, None);
-            d.free_memory(m, None);
-        }
-        d.destroy_descriptor_pool(inst_pool, None);
         d.destroy_descriptor_set_layout(instance_layout, None);
         d.destroy_command_pool(pool, None);
         if let Some(p) = presenter {
