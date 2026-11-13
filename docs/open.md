@@ -26,6 +26,10 @@ likely settle them where static reading failed.
     line's voice. The game's own auto-mode button and timing are not read yet.
 - Some animation transitions don't transition smoothly
 - After each dialogue, the text box flickers. Likely disappearing for a frame then reappearing. 
+  - Fixed (2026-11-13): pressing A moved the event a tick past the line's end, and the next
+    line came a tick later, so the box was gone for a frame. The window now stays up, empty,
+    for 0.6 s after a line (bridging that tick and the short pauses between some lines); a
+    stand-in until the game's own window rule is read (`docs/engine.md`).
 - Character select on new game looks wrong
 
 ## Saves

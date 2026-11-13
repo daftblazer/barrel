@@ -335,6 +335,18 @@ impl Stage {
         self.line.as_ref().filter(|l| l.until.is_none_or(|u| self.time < u))
     }
 
+    /// The text window now: the line on screen, or, for `grace` seconds after a line went
+    /// down, the window kept up empty (its speaker's name, no text), so that the next line of
+    /// a conversation follows without the window closing for a few frames between them.
+    pub fn window(&self, grace: f32) -> Option<Line> {
+        if let Some(l) = self.line_shown() {
+            return Some(l.clone());
+        }
+        let l = self.line.as_ref()?;
+        let u = l.until?;
+        (self.time < u + grace).then(|| Line { text: String::new(), ..l.clone() })
+    }
+
     /// How many seconds the character's move has left, while it moves.
     pub fn move_left(&self, character: u32) -> Option<f32> {
         self.characters.get(&character)?.mover.as_ref().map(Mover::seconds_left)
@@ -760,6 +772,10 @@ mod tests {
         assert!(stage.line_shown().is_some());
         stage.time = 3.0;
         assert!(stage.line_shown().is_none());
+        // The window stays up, empty, for the grace after it.
+        assert_eq!(stage.window(0.3).map(|l| (l.speaker, l.text)), Some((3, String::new())));
+        stage.time = 3.3;
+        assert!(stage.window(0.3).is_none());
         // With no reading time a line stays until the next.
         let mut stage = Stage::default();
         stage.apply(&Step::Message { index: 0, speaker: 3, name: None, text: "ab".into(), expression: None, gesture: None });

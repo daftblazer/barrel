@@ -839,6 +839,12 @@ fn render_space(transform: Mat4) -> Mat4 {
 
 /// Each joint's skinning matrix for an animation at `time`: its posed world transform times
 /// the inverse of its bind world transform. Joints without a track keep their bind pose.
+/// How long the text window stays up, empty, after a line goes down, for the next line to come
+/// (seconds of event time: long enough to bridge the one-tick step between lines and the short
+/// `p1 50` pauses between some). Not yet the game's: a stand-in for however it keeps its window
+/// between lines (`docs/engine.md`, "Deliberate differences").
+const WINDOW_GRACE: f32 = 0.6;
+
 fn pose(skeleton: &barrel_formats::g1m::Skeleton, anim: &barrel_formats::g1a::Animation, time: f32) -> Vec<Mat4> {
     skin(skeleton, &local_pose(skeleton, anim, time))
 }
@@ -4292,7 +4298,8 @@ fn main() -> Result<()> {
                     current_field = k as u16;
                 }
             if let Some((layer, font, last)) = text_layer.as_mut() {
-                let line = play.stage.line_shown().cloned();
+                // Between the lines of a conversation the window stays up (`WINDOW_GRACE`).
+                let line = play.stage.window(WINDOW_GRACE);
                 // The narration card and its opacity (in 1/1000ths, so a fade redraws each step).
                 let card = play.stage.telop.filter(|_| play.stage.telop_alpha.now() > 0.0);
                 let card_alpha = (play.stage.telop_alpha.now().clamp(0.0, 1.0) * 1000.0) as u16;

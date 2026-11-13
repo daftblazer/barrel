@@ -454,6 +454,11 @@ Not chosen yet (the user's call). Until then the events go on past `u46` without
   (one byte before the right recipe's flags, `0x140367ad0`). That is corruption of another
   recipe's state, so Barrel sets no flag then (`library::reveal_effect`). Lockstep checks of
   `mix_recipe` skip that byte.
+- **Text window between lines (stand-in).** After a line goes down Barrel keeps the text
+  window up, empty, for 0.6 s of event time (`WINDOW_GRACE` in `crates/render/src/main.rs`,
+  `Stage::window`), so it does not close for a frame between the lines of a conversation; how
+  the original keeps its window between lines is not read. Presentation only: no event state
+  depends on it.
 
 ## Sound
 
