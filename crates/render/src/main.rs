@@ -1281,9 +1281,12 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let maps = barrel_game::event::field_maps(&pe);
-    let area = maps.iter().position(|n| n == name).and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).cloned());
+    let map = maps.iter().position(|n| n == name);
+    let area = map.and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).cloned());
     let gimmicks = area.as_ref().map(|a| a.gimmicks.clone()).unwrap_or_default();
-    let music = area.as_ref().and_then(|a| u32::try_from(a.music()).ok());
+    let logy = std::env::var("BARREL_LEAD").is_ok_and(|v| v.eq_ignore_ascii_case("logy"));
+    // The viewer has no story flags: flag 303 is taken as unset.
+    let music = map.zip(area.as_ref()).and_then(|(m, a)| u32::try_from(barrel_game::walk::field_music(m, a.music(), logy, false)).ok());
     let landing = area.as_ref().and_then(|a| barrel_game::walk::landing_sound(a.landing()));
     let ambience = area.as_ref().map(|a| a.ambience()).and_then(|(n, v)| Some((u32::try_from(n).ok()?, v))).filter(|&(_, v)| v > 0.0);
     let field = barrel_game::walk::Field::load(field_dir.parent().ok_or("no fields folder")?, name, gimmicks)?;
@@ -1293,7 +1296,6 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     // The lead: Escha (`Chara.xml` row 0), or Logy (row 1) with `BARREL_LEAD=logy`.
-    let logy = std::env::var("BARREL_LEAD").is_ok_and(|v| v.eq_ignore_ascii_case("logy"));
     let row = charas
         .children
         .get(usize::from(logy))

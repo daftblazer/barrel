@@ -281,6 +281,19 @@ pub const JUMP_SOUND: u32 = 0x23;
 pub const LANDING_SOUNDS: [u32; 10] = [15, 16, 17, 18, 19, 20, 21, 23, 24, 25];
 pub const LANDING_VOLUME: f32 = 0.5;
 
+/// The music a map plays (`0x14028d0e0`, kept at the field's +0xb68): the map record's track
+/// (`Area::music`), except that the Atelier, the two offices and the hallway (maps 0 to 2 and
+/// 11) play the lead's Atelier theme, 40 (`fm_atelier_boy01`) for Logy and 41
+/// (`fm_atelier_girl01_a`) for Escha, and track 45 (`fm_heigen01`, the Withering Plains)
+/// turns to 39 (`fm_haikyo01`) once flag 303 (read by `0x14035f270`) is set.
+pub fn field_music(map: usize, track: i32, logy_leads: bool, flag_303: bool) -> i32 {
+    match (map, track) {
+        (0..=2 | 11, _) => if logy_leads { 40 } else { 41 },
+        (_, 45) if flag_303 => 39,
+        _ => track,
+    }
+}
+
 /// A ground kind's landing sound.
 pub fn landing_sound(kind: i32) -> Option<u32> {
     LANDING_SOUNDS.get(usize::try_from(kind).ok()?).copied()
@@ -335,6 +348,16 @@ mod tests {
             vertices: vec![[-100.0, 0.0, 0.0], [100.0, 0.0, 0.0], [-100.0, 200.0, 0.0], [100.0, 200.0, 0.0]],
         };
         Walls::new(&c, DEFAULT_SLOPE)
+    }
+
+    #[test]
+    fn atelier_theme_by_lead() {
+        assert_eq!(field_music(0, 40, true, false), 40);
+        assert_eq!(field_music(0, 40, false, false), 41);
+        assert_eq!(field_music(11, 40, false, false), 41);
+        assert_eq!(field_music(3, 29, false, false), 29);
+        assert_eq!(field_music(40, 45, false, true), 39);
+        assert_eq!(field_music(40, 45, false, false), 45);
     }
 
     #[test]

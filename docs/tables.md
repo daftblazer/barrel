@@ -1662,8 +1662,10 @@ Atelier theme) for the Atelier and the offices, 32 for the Tavern, 34 for the Ba
 `fm_ringoen01` for the orchard, 48 `fm_woods` for the Twilight Forest, 47 `fm_kouya01` for the
 Old Highway, 46 `fm_iseki01` for the Southern Ruins, 37 `fm_cemetery01`, 224 `fm_crystal01`
 for the Palace of Paupers, 51 `fm_worldmap`; the test map `Test_Nakai` has 41, Escha's Atelier
-theme, so the lead may swap 40 for 41 somewhere (not found: `0x14004abb0`, which picks a track
-by name from a per-lead list, Logy's at +0 and Escha's at +0x20, is another path). The third and
+theme. The field's music (`0x14028d0e0`, kept at +0xb68; `walk::field_music`) is the record's,
+except that maps 0 to 2 and 11 play the lead's Atelier theme (40 + (lead ≠ 1): 40 for Logy, 41
+`fm_atelier_girl01_a` for Escha) and track 45 (`fm_heigen01`, the Withering Plains, maps 39 to
+46) turns to 39 (`fm_haikyo01`) once flag 303 (read by `0x14035f270`) is set. The third and
 fourth are the map's ambience and its volume (`Area::ambience`, played as the map starts by
 `0x140290f60`, its handle kept at +0xb64): effect 128 + n is `Sound/SE/env`'s n-th loop, so 129
 `01ENV_FOREST01` for the Twilight Forest (0.2), 136 `08ENV_TOWN01` for the town (0.15 outdoors,
