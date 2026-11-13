@@ -1611,9 +1611,10 @@ A point is inside it (`0x140281770`, `Gimmick::contains`) when, turned by minus 
 y around the gimmick, it is within half the size along x and along z; the height is not tested.
 `barrel walk` says which gimmicks a walk steps into: in AREA_01_01 west along z = 36.8 m the
 world map exit and its `MAP_CHANGE_INFO` both take her at x = 33.4 m, just before the map's
-edge. Of the 122 maps' 640 gimmicks, 227 are `MAP_CHANGE_INFO` (each beside an exit, its
-+0x50 a pointer to a structure tagged 0x19930522, not read), 148 `WORLDMAP_CHANGE_EX` (every
-field area's exits: the areas join through the world map) and 69 `FIELDMAP_CHANGE_EX`, the
+edge. Of the 122 maps' 640 gimmicks, 227 are `MAP_CHANGE_INFO` (each beside an exit, the same
+in all: +0x30 -1, +0x50 the float 6.5, +0x54 1, +0x58 -1), 148 `WORLDMAP_CHANGE_EX` (every
+field area's exits, with nothing past +0x30 but -1 and zeros: any of them opens the world
+map; the areas join through it) and 69 `FIELDMAP_CHANGE_EX`, the
 town's doors: their +0x48 points to 20 bytes, `{i32 map, f32 facing (degrees), f32 x, y, z
 (metres)}`, where the door puts the player, just inside the door back (the Atelier's door, map
 0 at (2.5, 0, 10), to map 1 at (8.2, 0, 10.5) facing -90, beside map 1's door back at (10.2,
