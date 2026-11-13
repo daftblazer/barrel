@@ -20,6 +20,7 @@ usage:
   barrel ebd-scan DIR          read every event under DIR and count its commands
   barrel pssg FILE             print a PSSG file's node tree
   barrel pssg-obj FILE OUT.obj  write a PSSG file's meshes as OBJ
+  barrel pssg-textures FILE OUTDIR  write a PSSG file's textures as PNG
   barrel pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
   barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
   barrel xml FILE.xml          print a table's rows
@@ -106,6 +107,7 @@ fn main() -> ExitCode {
         ["pssg", file] => pssg_tree(Path::new(file)),
         ["pssg-meshes", file] => pssg_meshes(Path::new(file)),
         ["pssg-obj", file, out] => pssg_obj(Path::new(file), Path::new(out)),
+        ["pssg-textures", file, out] => pssg_textures(Path::new(file), Path::new(out)),
         ["ebd-measure", dir] => ebd_measure(Path::new(dir)),
         ["voice-scan", dir] => voice_scan(Path::new(dir)),
         ["ebd-ops", dir, word] => ebd_ops(Path::new(dir), word, None),
@@ -557,6 +559,25 @@ fn pssg_obj(file: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Writes a PSSG file's textures as PNG files under OUT (their largest level).
+fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
+    let raw = read(file)?;
+    let d = barrel_formats::pssg::unwrap(&raw)?;
+    let p = barrel_formats::pssg::Pssg::parse(&d)?;
+    std::fs::create_dir_all(out)?;
+    for t in p.textures() {
+        let name = t.name.replace(['/', '\\'], "_");
+        match t.to_rgba8() {
+            Some(px) => {
+                std::fs::write(out.join(format!("{name}.png")), barrel_formats::png::encode_rgba(t.width, t.height, &px))?;
+                println!("{name}: {}×{} {}", t.width, t.height, t.format);
+            }
+            None => println!("{name}: {}×{} {} (format not read)", t.width, t.height, t.format),
+        }
+    }
+    Ok(())
+}
+
 /// Reads every PSSG file under DIR (`*.PSSG`, `*.PSSG.gz`: Ayesha DX's) and counts the node
 /// kinds they hold.
 fn pssg_scan(dir: &Path) -> Result<()> {
@@ -566,6 +587,8 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     files.sort();
     let (mut ok, mut failed) = (0, Vec::new());
     let (mut meshes, mut triangles, mut bad_meshes) = (0usize, 0usize, Vec::new());
+    let mut texture_formats: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut bad_textures = 0usize;
     let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
     for f in &files {
         let raw = read(f)?;
@@ -579,6 +602,12 @@ fn pssg_scan(dir: &Path) -> Result<()> {
         match barrel_formats::pssg::Pssg::parse(&d) {
             Ok(p) => {
                 ok += 1;
+                for t in p.textures() {
+                    *texture_formats.entry(t.format.clone()).or_default() += 1;
+                    if t.to_rgba8().is_some_and(|px| px.len() != (t.width * t.height * 4) as usize) {
+                        bad_textures += 1;
+                    }
+                }
                 for m in p.meshes() {
                     meshes += 1;
                     triangles += m.indices.len() / 3;
@@ -598,6 +627,7 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     }
     println!("{} PSSG files: {ok} read, {} failed", files.len(), failed.len());
     println!("{meshes} meshes, {triangles} triangles; {} with an index past their vertices", bad_meshes.len());
+    println!("textures by format: {texture_formats:?}; {bad_textures} that did not decode to their size");
     for b in bad_meshes.iter().take(5) {
         println!("  {b}");
     }

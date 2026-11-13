@@ -124,8 +124,47 @@ pub fn decode(src: &[u8], width: usize, height: usize, bc3: bool) -> Vec<u8> {
     out
 }
 
+/// Decode a BC2 (DXT3) level: each 16-byte block an explicit alpha (4 bits a pixel, from the
+/// low bits of the first eight bytes, little-endian), then a BC1 colour block (always four
+/// colours). Ayesha DX's PSSG textures use it.
+pub fn decode_bc2(src: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let (bw, bh) = (width.div_ceil(4), height.div_ceil(4));
+    let mut out = vec![0u8; width * height * 4];
+    for by in 0..bh {
+        for bx in 0..bw {
+            let at = (by * bw + bx) * 16;
+            let Some(b) = src.get(at..at + 16) else { return out };
+            let colors = color_block(&b[8..], false);
+            let alpha = u64::from_le_bytes(b[..8].try_into().unwrap());
+            for i in 0..16 {
+                let (x, y) = (bx * 4 + i % 4, by * 4 + i / 4);
+                if x >= width || y >= height {
+                    continue;
+                }
+                let mut px = colors[i];
+                px[3] = ((alpha >> (4 * i)) & 0xf) as u8 * 17;
+                out[(y * width + x) * 4..][..4].copy_from_slice(&px);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bc2_takes_its_alpha_as_written() {
+        // Alpha nibbles 0, 1, ..., 15 in pixel order; a plain white colour block.
+        let mut b = [0u8; 16];
+        for i in 0..8 {
+            b[i] = (2 * i as u8) | ((2 * i as u8 + 1) << 4);
+        }
+        b[8..12].copy_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        let px = decode_bc2(&b, 4, 4);
+        assert_eq!((px[3], px[4 * 1 + 3], px[4 * 15 + 3]), (0, 17, 255));
+        assert_eq!(&px[..3], &[255, 255, 255]);
+    }
+
     use super::*;
 
     #[test]

@@ -1245,4 +1245,14 @@ meshes are already in place (their transforms are the identity: `PC00J_MODEL` co
 same); a field map's are spread over it (`L_POINT_DLC_02_D`: 201 render nodes, a ground grid
 with its props gathered at the middle, the sky sphere (`LAYER_020SKY`) half a million units
 out). That the order is the game's is taken from the scene coming out whole, not checked
-against the game. Skins, materials and motions are not read yet.
+against the game.
+
+**Textures** (`Pssg::textures`, `barrel pssg-textures FILE OUTDIR`): a `TEXTURE` node has
+`width`, `height`, `texelFormat` and `numberMipMapLevels`, and a `TEXTUREIMAGEBLOCK` whose
+`TEXTUREIMAGEBLOCKDATA` holds the levels largest first, in the usual DDS block layout (not
+byte-swapped): a 128 × 128 `dxt1` with 7 more levels is 10,936 bytes, down to 1 × 1. The `id` is
+the source file's name (`PC00J_Body.dds`). Over Ayesha's files: 4,647 `dxt1`, 1,462 `dxt5`, 533
+`dxt3` (BC2: `bc::decode_bc2`) and 6 `ui8x4` (uncompressed, its byte order not read yet); every
+compressed one decodes to its size, and Ayesha's body atlas and eyes come out as drawn.
+
+Skins, materials and motions are not read yet.

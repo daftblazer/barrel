@@ -91,6 +91,29 @@ impl<'a> Pssg<'a> {
     }
 }
 
+/// A texture of a PSSG file (`Pssg::textures`).
+#[derive(Clone, Debug)]
+pub struct Texture<'a> {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub data: &'a [u8],
+}
+
+impl Texture<'_> {
+    /// The largest level as RGBA8, or `None` for a format not read.
+    pub fn to_rgba8(&self) -> Option<Vec<u8>> {
+        let (w, h) = (self.width as usize, self.height as usize);
+        Some(match self.format.as_str() {
+            "dxt1" => crate::bc::decode(self.data, w, h, false),
+            "dxt3" => crate::bc::decode_bc2(self.data, w, h),
+            "dxt5" => crate::bc::decode(self.data, w, h, true),
+            _ => return None,
+        })
+    }
+}
+
 /// A mesh read out of a `RENDERDATASOURCE`: its triangles' corners (three indices each) and
 /// the vertex streams its `RENDERSTREAM`s name, by their `renderType` (`Vertex`, `Normal`,
 /// `Color`, `ST` ...), each element as floats.
@@ -163,16 +186,42 @@ impl Pssg<'_> {
                 (true, Some(l)) => mul(&l, &parent),
                 _ => parent,
             };
-            if kind == "RENDERSTREAMINSTANCE" || kind == "MODIFIERNETWORKINSTANCE" {
-                if let Some(src) = self.attr_str(n, "indices") {
-                    out.push((src.trim_start_matches('#').to_string(), world));
-                }
+            if (kind == "RENDERSTREAMINSTANCE" || kind == "MODIFIERNETWORKINSTANCE")
+                && let Some(src) = self.attr_str(n, "indices")
+            {
+                out.push((src.trim_start_matches('#').to_string(), world));
             }
             for c in &n.children {
                 stack.push((c, world));
             }
         }
         out
+    }
+
+    /// Every texture in the file: its `id`, size, `texelFormat` (`dxt1`, `dxt3`, `dxt5`,
+    /// `ui8x4`) and its image block's bytes (the largest level first, then the smaller ones).
+    pub fn textures(&self) -> Vec<Texture<'_>> {
+        let mut all = Vec::new();
+        self.walk(&self.root, &mut all);
+        all.iter()
+            .filter(|n| self.name(n.kind) == "TEXTURE")
+            .filter_map(|n| {
+                let data = n
+                    .children
+                    .iter()
+                    .filter(|b| self.name(b.kind) == "TEXTUREIMAGEBLOCK")
+                    .flat_map(|b| b.children.iter())
+                    .find(|d| self.name(d.kind) == "TEXTUREIMAGEBLOCKDATA")?
+                    .data;
+                Some(Texture {
+                    name: self.attr_str(n, "id").unwrap_or("").to_string(),
+                    width: self.attr_u32(n, "width")?,
+                    height: self.attr_u32(n, "height")?,
+                    format: self.attr_str(n, "texelFormat")?.to_string(),
+                    data,
+                })
+            })
+            .collect()
     }
 
     /// Every mesh in the file (its vertex data big-endian like the rest: a unit normal and a
