@@ -32,10 +32,20 @@ pub struct Area {
     /// Its place name and its area name ("Forest Entrance", "Twilight Forest 1").
     pub place: String,
     pub name: String,
-    /// The six words before the list pointer, not read yet (the first is the region:
-    /// 1 for the Twilight Forest, 2 the Old Highway, 3 the Southern Ruins, ...).
+    /// The six words before the list pointer: the region (1 for the Twilight Forest, 2 the
+    /// Old Highway, 3 the Southern Ruins, ...), the field music, three not read yet, and the
+    /// battle stage.
     pub words: [i32; 6],
     pub gimmicks: Vec<Gimmick>,
+}
+
+impl Area {
+    /// The map's field music, a music table track: 29 (`fm_town`) for the town's streets, 40
+    /// (`fm_atelier_boy01`) indoors, 48 (`fm_woods`) for the Twilight Forest, 51
+    /// (`fm_worldmap`) for the world map, 224 (`fm_crystal01`) for the Palace of Paupers.
+    pub fn music(&self) -> i32 {
+        self.words[1]
+    }
 }
 
 /// A gimmick.

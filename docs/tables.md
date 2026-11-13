@@ -1653,7 +1653,16 @@ one per map number (`barrel_formats::gimmick`, `MAPS_EN`):
   and three test maps (region 14).
 
 Each record holds six words. The first is the region: 0 the town, 1 the Twilight Forest, 2
-the Old Highway, 3 the Southern Ruins ... The sixth, +0x14, is what the field's battle start
+the Old Highway, 3 the Southern Ruins ... The second is the map's field music, a track of the music
+table (`Area::music`): 29 `fm_town` for the town's streets, 40 `fm_atelier_boy01` (Logy's
+Atelier theme) for the Atelier and the offices, 32 for the Tavern, 34 for the Balloon Docks, 43
+`fm_ringoen01` for the orchard, 48 `fm_woods` for the Twilight Forest, 47 `fm_kouya01` for the
+Old Highway, 46 `fm_iseki01` for the Southern Ruins, 37 `fm_cemetery01`, 224 `fm_crystal01`
+for the Palace of Paupers, 51 `fm_worldmap`; the test map `Test_Nakai` has 41, Escha's Atelier
+theme, so the lead may swap 40 for 41 somewhere (not found: `0x14004abb0`, which picks a track
+by name from a per-lead list, Logy's at +0 and Escha's at +0x20, is another path). The third
+(129, 136, 139, 142) and fourth (a float: 0 indoors, 0.15 in town, 0.2 in the forest, 0.05 on
+the highway) are not known; the fifth is 9 indoors, 7 in town and ruins, 2 in the open fields. The sixth, +0x14, is what the field's battle start
 puts into the battle setup's +0x30: 19 for the Twilight Forest's areas, 7 for the Southern
 Ruins', the battle stage by the look of it. Then come a pointer to the map's gimmick list
 (+0x20), a word, and pointers to its place and area names (+0x30, +0x38). The field's runtime
