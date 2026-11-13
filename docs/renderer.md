@@ -759,6 +759,21 @@ What is not yet the game's is listed in `menu.rs`'s header: how the chosen butto
 Option rows' wording and text size, the buttons dimmed under the Option list, Escha's figure for
 both leads, and no party plates, help line, opening motion or "NEW" badges.
 
+## Graphics settings
+
+The PC release changes its graphics in a separate launcher; Barrel has none. Its graphics
+options go on a page of the game's own Options screen (main menu → Option → Options, layout
+511, `docs/formats.md`), drawn in that screen's style. The page's choices are
+`graphics_options`: render scale (50% to 200%), anti-aliasing (off, MSAA 2x / 4x / 8x, TAA,
+FSR 3 native AA), upscaler (bilinear, FSR 1, GSR 1, GSR 2, FSR 3), sharpening, shadows and
+texture filtering. A choice that conflicts is greyed out with the help bar's reason: under a
+temporal upscaler (GSR 2, FSR 3 below full size) no anti-aliasing can be chosen (it does its
+own) and sharpening is fixed; at 100% or more no upscaler can be; native AA needs 100% or
+more and no spatial upscaler. Choosing keeps the settings as `RenderSettings::resolved` has
+them (a test walks every open choice three deep from each preset), so the page never shows
+what the renderer would undo. Dropping the scale under 100% under native AA makes FSR 3 the
+upscaler; raising it to 100% drops GSR 2 and its anti-aliasing.
+
 ## Controllers
 
 With a window, a game controller works through SDL3's gamepad layer (`crates/render/src/pad.rs`;

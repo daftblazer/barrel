@@ -1411,6 +1411,17 @@ a glow (part 0xd, kind 36), stamps (layouts 949 "OK" and 704) and counters (part
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 
+**The Options screen** (main menu → Option → Options) is layout 511: the desk (part 0x0,
+`a15_menu.g1t` #0), the title bar (0x30 cut 1 with heading 0x2e cut 14 and icon 0x2c cut 14)
+and the page, part 0x198, which is layout 408 placed at (584, 150): seven volume rows (BGM,
+SE, Env. SE, Sys. SE, Voice, B. Voice, Movie; their names at x 50 every 74 pixels from y 70,
+a bar 0x3c behind each, the slider 0x197 at x 304), two two-way rows ("Fast Forward Event":
+Read / All, "Voice Language": English / Japanese, each choice in a 0x3c box at x 300 and 500,
+its text twice: dark `1a285a` chosen, grey `787881` not), the rules 0x28 between rows, the
+cursor 0x32 at x -72, and "Default" / "Confirm" (0x3d buttons at y 746 and 800). 511 also
+holds the hero's outfit choice (texts "Escha", "Logy", "Ok"; layout 512). Barrel's graphics
+page (`docs/renderer.md`, "Graphics settings") is to be drawn with these same pieces.
+
 ## Costumes (`Saves/costume/*.xml`)
 
 An outfit is a body with a head and a face accessory. `CostumeBody.xml` (35 rows): its name,

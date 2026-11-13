@@ -37,6 +37,7 @@ mod result;
 mod shopping;
 mod equipping;
 mod area_panel;
+mod graphics_options;
 mod drops;
 mod mix;
 mod fsr3;
