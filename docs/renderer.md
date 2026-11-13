@@ -304,8 +304,12 @@ opens (`world::point_maps`, through `Session::walked`, so an event there plays) 
 place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, Enter: field 26,
 `AREA_03_02`, at its arrival. Not yet the game's: the camera (it follows her close; the game
 looks down on the region), the panel (plain text at the right, not layouts 641 and 642), the
-buttons (636), the place labels (638), the party member's "Enter / Quit" prompt, Back to the
-world map, and a wipe landing there. Leaving a field area by its world map exit without
+buttons (636), the place labels (638), the party member's "Enter / Quit" prompt and Back to
+the world map. A lost battle lands there too, as the game's wipe does (`docs/events.md`, "A
+lost battle"): the carried save comes back with `to_area_map`, so the run starts on the world
+map at the battle field's point in area map mode (no enemies, no field HUD, the walk
+stopped). Checked with the lost-battle recipe in `AREA_01_01`: the wipe at frame 149, then the
+Forest Entrance with the day passed (Left 114 to 113); Enter goes back into the field. Leaving a field area by its world map exit without
 `--travel-to` lands on its area map at the field's point (`Session::left_for_area_map`: the
 carried field time passes, as between fields): from (3700, 3680) in `AREA_01_01` walking west,
 the exit at frame 6, the Forest Entrance (`SP_A0P0`), confirm, back in `AREA_01_01` at its

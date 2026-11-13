@@ -1752,6 +1752,22 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
     Ok(barrel_formats::world::point_position(&placements, name).ok_or(format!("no point {name} on {stem}"))?)
 }
 
+/// The world map point field area `map` stands for (`SP_A0P0` ...) and where it is (x, z), none
+/// for the town's maps and fields on no point.
+fn area_point(root: &Path, map: u32) -> Result<Option<(String, [f32; 2])>> {
+    if (map as usize) < barrel_formats::gimmick::TOWN_MAPS {
+        return Ok(None);
+    }
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+    let Some(point) = barrel_formats::world::point_maps(&pe).unwrap_or_default().into_iter().find(|(_, m, _)| *m == map).and_then(|(p, _, _)| names.get(p as usize).cloned()) else {
+        return Ok(None);
+    };
+    let at = world_point(&root.join("Data/x64/Field/A15_WMAP"), &point)?;
+    Ok(Some((point, [at[0], at[2]])))
+}
+
 /// A trip off a field's world-map exit to mark `to`: the world map (its routes from the world
 /// map field's placements), the mark the field `from_map` stands for, and the field map `to`
 /// opens with the place to arrive at there (field units): the field's record in the arrival
@@ -3264,6 +3280,8 @@ struct Carry {
     defeated: Vec<usize>,
     /// A line to show in the message window on arrival (speaker, text): a lost battle's.
     notice: Option<(String, String)>,
+    /// Arrive on the area map at the save's field's point, not in the field (a lost battle).
+    to_area_map: bool,
     back: Option<Box<(Vec<String>, Carry)>>,
 }
 
@@ -4091,6 +4109,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         player_at = Some(at);
         hero = u32::from(s.logy);
         eprintln!("loaded {}: field {map} ({name}) at ({:.0}, {:.0}), {}", file.display(), at[0], at[1], if s.logy { "Logy" } else { "Escha" });
+        if carry.to_area_map
+            && let Some((point, at)) = area_point(&root, map)? {
+                eprintln!("onto the area map at {point}");
+                args[1] = root.join("Data/x64/Field/A15_WMAP").to_string_lossy().into_owned();
+                player_at = Some(at);
+                player_walk = player_walk.map(|_| [0.0, 0.0]);
+                area_mode = true;
+            }
         session = Some(s);
     }
     let mut current_event = event_spec.clone();
@@ -4131,6 +4157,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // A town map has its people, placed by what the story has seen.
             town_seen = here.filter(|&m| m < barrel_formats::gimmick::TOWN_MAPS).and(session.as_ref().map(|s| s.seen()));
         }
+    // The area map (the world map field) has no enemies.
+    if area_mode {
+        creatures_area = None;
+    }
     // The scene: loaded, then uploaded under the renderer set up above.
     let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut battles, mut battle_play, mut town_bodies, start_at, start_field, patterns, mut walker } =
         load_scene(SceneSpec {
@@ -4585,7 +4615,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         _ => None,
     };
     let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_formats::layout::Placed>, Option<(hud::Values, u32, u32)>)> = None;
-    if session.is_some() && player.is_none() && std::env::var("BARREL_NO_HUD").is_err() {
+    // The field's HUD (layout 625); the area map has its own panels instead.
+    if session.is_some() && player.is_none() && !area_mode && std::env::var("BARREL_NO_HUD").is_err() {
         let made = (|| -> Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_formats::layout::Placed>)> {
             let Some(exe) = hud_exe.as_ref() else {
                 return None;
@@ -5003,7 +5034,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 let mut defeated: Vec<usize> = (0..field.defeated.len()).filter(|&j| field.defeated[j]).collect();
                 defeated.push(k);
                 eprintln!("frame {frame}: to battle stage {stage} with encounter group {}", field.groups[k]);
-                Some((battle, Carry { back: Some(Box::new((original_args.clone(), Carry { save: Some(save), defeated, back: None, notice: None }))), ..Carry::default() }))
+                Some((battle, Carry { back: Some(Box::new((original_args.clone(), Carry { save: Some(save), defeated, back: None, notice: None, to_area_map: false }))), ..Carry::default() }))
             });
             if let Some((battle, c)) = to_battle {
                 restart = Some(battle);
@@ -5472,6 +5503,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         play.wiped = Some((play.time, today));
                         if let Some(back) = carry.back.as_mut() {
                             back.1.notice = hud_root.as_ref().and_then(|root| wipe_line(root, logy));
+                            // The game brings the party round on the area map of the battle's area.
+                            back.1.to_area_map = true;
                         }
                         eprintln!("battle lost: a day passes; \"Oww... that was bad. Let's be more careful next time.\"");
                     }
@@ -6596,22 +6629,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if travel_to.is_none()
             && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf) {
                 let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
-                let pe = barrel_formats::pe::Pe::parse(&exe)?;
-                let maps = barrel_game::event::field_maps(&pe);
-                let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n));
-                let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
-                let point = here.filter(|&h| h >= barrel_formats::gimmick::TOWN_MAPS).and_then(|h| {
-                    barrel_formats::world::point_maps(&pe)?.into_iter().find(|(_, m, _)| *m as usize == h).and_then(|(p, _, _)| names.get(p as usize).cloned())
-                });
-                if let Some(point) = point {
-                    let wmap = root.join("Data/x64/Field/A15_WMAP");
-                    let at = world_point(&wmap, &point)?;
-                    if let (Some(s), Some(h)) = (session.as_mut(), here) {
-                        s.left_for_area_map(h as u32);
+                let maps = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&exe)?);
+                let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).map(|h| h as u32);
+                if let Some(h) = here
+                    && let Some((point, at)) = area_point(&root, h)? {
+                    if let Some(s) = session.as_mut() {
+                        s.left_for_area_map(h);
                     }
                     eprintln!("onto the area map at {point}");
-                    args[1] = wmap.to_string_lossy().into_owned();
-                    player_at = Some([at[0], at[2]]);
+                    args[1] = root.join("Data/x64/Field/A15_WMAP").to_string_lossy().into_owned();
+                    player_at = Some(at);
                     player_walk = player_walk.map(|_| [0.0, 0.0]);
                     area_mode = true;
                     first_event = false;
