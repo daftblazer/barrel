@@ -2054,5 +2054,9 @@ What the homunculi can be asked to make (game mode 25, `HOM`; loaded by `0x1400e
 with the tags as item numbers. `day` runs 5 to 50 (15 and 10 most often), `dec_day` 1 to 5
 (5 in 224 rows), `mat` is the payment: Melty Gem (185 rows), Baumkuchen (74), Dry Potato
 Chips (39), Cloud Financier (25) or Preserved Biscuit (25), and `cost` is 1 in every row. What
-`day` and `dec_day` count is not read yet (by the names, the days a piece takes and how much
-each step down takes off).
+`dec_day` counts: the days each payment item takes off a job. Feeding `n` of the job's `mat`
+(`0x1400dacff`) takes `n × dec_day` off its remaining days (a float at +0x2c of the job's
+0x34-byte work slot, the item at +2) and `n` of the material out of the container; the count
+still worth feeding is the remaining days over `dec_day` (`0x1400daef5`). The table is the
+singleton at `0x140dfccd0` (`0x1400e1880`), looked up by item (`0x1400e1af0`). `day` is
+presumably the job's length in days; where a job's time is first set was not found.

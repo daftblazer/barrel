@@ -3,15 +3,22 @@
 //! `dec_day` (1 to 5), the material they are paid in (`mat`: Melty Gem for most, Baumkuchen,
 //! Dry Potato Chips, Cloud Financier or Preserved Biscuit) and its `cost` (1 in all). The game
 //! keeps each as 20 bytes, `{item, day, dec_day, mat, cost}`, the tags turned into item numbers
-//! (`0x14003e9d0`). What `day` and `dec_day` count is not read yet: by the names, the days a
-//! piece takes and how much each step down takes off.
+//! (`0x14003e9d0`; the table is the singleton at `0x140dfccd0`, `0x1400e1880`, looked up by
+//! item with `0x1400e1af0`). `dec_day` is the days each payment item takes off a job: feeding
+//! `n` of `mat` (`0x1400dacff`) takes `n × dec_day` off the job's remaining days (a float at
+//! +0x2c of its 0x34-byte work slot) and `n` of the material from the container, and the
+//! number still worth feeding is the remaining days over `dec_day` (`0x1400daef5`). `day` is
+//! presumably the job's length in days (where a job's remaining time is first set is not
+//! found).
 
 use crate::table::Element;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Work {
     pub item: String,
+    /// The job's length in days, presumably.
     pub day: i32,
+    /// Days each payment item takes off a job.
     pub dec_day: i32,
     /// The material paid (an item tag).
     pub payment: String,
