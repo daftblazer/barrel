@@ -95,8 +95,12 @@ members can use the item: flags `PC00` to `PC10`, one per playable character.
 (`PrizeItemTag1`/`2` with a float count `PrizeItemNum1`/`2`), `StartEvent`/`EndEvent`,
 `isClearSubject` (strings), `StartDate`/`EndDate` (integer days), `Priority` (a float),
 `Table` and `Num` (integers; `QuestAlc` writes `num`), `PotTag`. The points and prize counts
-are fractions in the tables (5.12 points, 1.7067 of a prize): how they become whole numbers is
-not read yet. `barrel_game::quest` reads the requests and says whether one is offered on a
+are fractions in the tables (5.12 points, 1.7067 of a prize), and the loader keeps them so
+(`movss` straight into the records), so whatever makes them whole happens where a request is
+paid, not read yet. The requests' owner holds the three lists at `+0x0` (synthesis), `+0x18`
+(monsters) and `+0x30` (gathering), each filled by the loader with its kind 0, 1, 2
+(`0x14011f650`, `0x14011f670`, `0x14011f690`), all three from its load method `0x14011f550`
+(which then takes the lock at `0x140dfc880`). `barrel_game::quest` reads the requests and says whether one is offered on a
 day; `barrel quests INSTALL` lists them (93 synthesis, 124 monster, 305 gathering).
 
 ## Numbers behind the tags
