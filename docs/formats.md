@@ -880,12 +880,9 @@ In `TOWN_01` (1 layer, 1 map, a 790-byte block) the parts are clear enough to na
 - **Four 48-byte records:** `{u32 0, u32 1, f32 a, f32 a, 0, 0, f32 a, f32 a, 0 × 4}`, with `a`
   = 1/4000, and the field is 4,000 units across. So these are presumably texture-coordinate
   scales for the blend maps. `TOWN_04` has four as well.
-- **A quadtree of 60-byte nodes:** each is a centre (3 floats), 1.0, a half-size (3 floats),
-  a pad (32 bytes), then seven integers. The root is centred on (2000, 0, 2000), half-size
-  2000, followed by its children's numbers 1 to 4. The four leaves are centred on (1000,
-  1000), (3000, 1000), (1000, 3000) and (3000, 3000), half-size 1000. A leaf's integers are -1,
-  a flags word `0x0401`, 0, then pairs like (1, 4) and (2, 3), presumably ranges into what
-  follows.
+- **A quadtree** (its node layout is read below, "Read order"): the root centred on (2000, 0,
+  2000), half-size 2000, its children 1 to 4; the four leaves centred on (1000, 1000), (3000,
+  1000), (1000, 3000) and (3000, 3000), half-size 1000.
 - **Patch records:** eight of 16 bytes at 0x318 (`{u32 n | 0x80000000 flag, u32 0 or 1,
   0x80ffffff, 0x80ffffff}`), then a u16 list (`1 2 3 5 3 6 3 7 4`).
 
@@ -901,6 +898,35 @@ Over nine fields the block grows with the layers: 750 to 794 bytes for one layer
 `AREA_08_02` (6 layers, 1 map), 97 KB for `AREA_01_01` (12 layers, 2 maps) and 694 KB for
 `AREA_03_01` (13, 3). `AREA_01_01`, the viewer's usual test field, is therefore one whose
 blending the viewer gets wrong.
+
+**Read order (from the executable).** `0x14066bed0` reads the file as one stream, each
+section by its own reader, each checking that it read the length the header gives:
+
+| File offset (TOWN_01) | Reader | What |
+|---|---|---|
+| 0x00 | | `KFTK`, version `0820`, 10, the file size, the section offsets (0x10 layer textures, 0x14 blend maps, 0x1c heightmap), then counts from 0x24 |
+| 0x48 | `0x14066f900` | 0x50 bytes (floats: seven 1.0, 0.3 three times, 4.0 ...) |
+| 0x98 | `0x14066fc90` | 0x1c bytes, the same in every file (`0x310, 0, 7`, then u16 pairs: a vertex format, by the look) |
+| 0xb4 | `0x14066fc50` | the layer records, 32 bytes each, count at 0x28 |
+| | `0x14066f940` | 8 bytes a layer, only when a flag passed in is set (not in the files read) |
+| 0xd4 | `0x14066f690` | the 48-byte records, count at 0x2c (4 in TOWN_01, 6 in AREA_08_02) |
+| 0x194 | `0x14066f6d0` | the node tree, count at 0x30 |
+| 0x2d0 | `0x14066fb10`, `0x14066fad0`, `0x14066fba0`, `0x14066f250`, `0x14066f2b0`, `0x14066f150`, `0x14066f1d0`, `0x14066c3b0`, `0x14066c3f0`, `0x14066f110`, `0x14066f210` | the rest, in that order: `fb10` reads 16-byte records into 24-byte slots, `fad0` the same, `fba0` 8-byte ones into 24-byte slots |
+
+The counts (u32 from 0x24): 0, layers, 48-byte records, nodes, then 4 / 6 / 4 (TOWN_01,
+AREA_08_02, AREA_01_01) at 0x34, the patches at 0x38 (1 / 4 / 4), then 2 / 15 / 51, 128 / 4320 /
+51552 and 22 / 2538 / 43246.
+
+**A node** is a 0x28-byte record, then 5 integers, or 9 when bit 0 of its flags is set (it has
+children): centre (3 floats), 1.0, half-size (3 floats), 12 bytes of 0, the patch it holds at
++0x20 (an index counted up through the leaves, -1 where none), its depth at +0x24 (0 the root),
+its flags at +0x25 (0x01 children, 0x04 on the root and on leaves without a patch). The five
+integers are the parent and the neighbouring nodes (-1 for none); the reader drops them. The
+four after them, on a node with children, are the children's numbers (-1 for none), turned into
+pointers. TOWN_01: the root and four leaves, one holding patch 0; AREA_08_02 (non-square, three
+levels): nine nodes, leaves 2, 3, 5, 8 holding patches 0 to 3. What follows the nodes is not
+fitted yet: in TOWN_01, 72 bytes between the nodes' end (0x2d0) and the 16-byte records with
+`0x80ffffff` (0x318), which the counts above do not explain as 16- or 8-byte records.
 
 The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
 `0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
