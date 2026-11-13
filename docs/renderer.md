@@ -630,7 +630,12 @@ experience tables; Barrel's saves keep no level yet, so level 1). Basket shows t
 gathered (the save's `item` lines) in the game's item grid, with their pictures and qualities,
 the chosen one's name below (`crates/render/src/basket.rs`). Assignment shows the period's
 card from `SubjectData.xml` (`crates/render/src/assignment.rs`): each square's task icon, "?"
-while the task's event is unseen, and the chosen task's name and description. Option opens its list: Save writes the game as F5 does (the next free
+while the task's event is unseen, and the chosen task's name and description. In the Atelier (map 0) C opens the cauldron (`mix`; offscreen `BARREL_MIX_AT` and
+`BARREL_MIX_KEYS`): the recipes the basket can make, then the chosen one's ingredients (the
+first that fit) and the quality it would come out at; confirm makes it (`Session::synthesize`:
+the materials leave the basket, the item goes in, its days pass). Not yet the game's: plain text
+over the desk (the game's synthesis screens, layouts 720 to 851 on `a15_mix.g1t`, not drawn),
+no choosing among fitting materials, no skills, traits or count. Option opens its list: Save writes the game as F5 does (the next free
 slot); Return to Title starts the run again at the title, and Load at the title's Load Game list
 (so Back there goes to the title, not to the game: not yet the game's). Starting again keeps the
 window and builds everything else anew (`view` returns `Ended::Restart` with the arguments less

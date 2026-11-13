@@ -1426,3 +1426,11 @@ the target panel (877: a plate and the state icons). A plate (870): its frame (p
 ring, part 0xee cut 4), the HP bar (part 0xee cut 11, 124 × 16 at [126, 54]) and the MP bar
 (cut 10 at [126, 104]), numbers (parts 0xde and 0xdf, kind 28) and state icons (layouts 873,
 875). Layout 910 is the party's formation screen (six plates, layout 905).
+
+**The synthesis screens** are layouts 720 to 851 on `a15_mix.g1t`; the largest stand alone
+(no layout nests them): 753 (the item's card: picture, "Stats", "Effect", "Property"), 774
+(the recipe and ingredient pick: "Recipe" tabs, "Use" columns, the ingredient list), 789 (the
+ingredient grid, 25 cells, with the effect lines' bars by element), 815 (the cauldron: seven
+skill rows with SP, "Information", the element bars), 821/822 and 830/831 (more of the
+cauldron and result). They show every state at once in a plain render (all branches placed).
+

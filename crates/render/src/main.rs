@@ -33,6 +33,7 @@ mod status;
 mod basket;
 mod assignment;
 mod battlehud;
+mod mix;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -856,6 +857,44 @@ fn music_tracks(root: &Path) -> Vec<barrel_formats::bgm::Track> {
         .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
         .unwrap_or_default()
 }
+
+/// The cauldron (`mix`), in the story's free play in the Atelier (map 0): the recipe made, if
+/// one is, goes through `Session::synthesize` (its materials out of the basket, the item in,
+/// its days passed).
+#[allow(clippy::too_many_arguments)]
+fn cauldron(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    target: &screen::Target,
+    window: Option<(&present::Presenter, &mut window::Pump)>,
+    offscreen: Option<vk::Image>,
+    root: &Path,
+    session: Option<&mut barrel_game::session::Session>,
+    keys: &[title::Button],
+    out: Option<&Path>,
+    frame: u32,
+) -> Result<()> {
+    let Some(s) = session else { return Ok(()) };
+    if *s.scene() != barrel_game::session::Scene::Field(ATELIER_MAP) {
+        eprintln!("the cauldron is in the Atelier");
+        return Ok(());
+    }
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let book = barrel_game::cauldron::Book::load(&exe, root)?;
+    let Some((r, picks)) = mix::run(gpu, pool, target, window, offscreen, root, &book, &s.basket, keys, out)? else {
+        eprintln!("frame {frame}: synthesis: nothing made");
+        return Ok(());
+    };
+    let mut rng = barrel_game::rng::Rng::seeded(frame + 1);
+    match s.synthesize(&book, r, &picks, &mut |lo, hi| rng.range(lo, hi)) {
+        Ok(m) => eprintln!("frame {frame}: synthesis: made {} at quality {:.0} in {} days; the basket holds {}", book.name(m.item), m.quality, m.days, s.basket.len()),
+        Err(e) => eprintln!("frame {frame}: synthesis: {e}"),
+    }
+    Ok(())
+}
+
+/// The Atelier's field map number.
+const ATELIER_MAP: u32 = 0;
 
 /// The period's assignment card for the menu's Assignment page (empty without a story or
 /// when the table cannot be read).
@@ -4289,7 +4328,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut open_menu = false;
+    // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` offscreen).
+    let mut open_mix = presenter.is_none() && std::env::var("BARREL_MIX_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let pose_jumps = std::env::var("BARREL_POSE_JUMPS").ok().and_then(|v| v.parse::<f32>().ok());
+    // Offscreen: the cauldron at a frame (`BARREL_MIX_AT`) with the buttons in `BARREL_MIX_KEYS`.
+    if open_mix && presenter.is_none()
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+            let keys = title::keys(&std::env::var("BARREL_MIX_KEYS").unwrap_or_default());
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let color = *color;
+            cauldron(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
+        }
     // Offscreen: the main menu drawn at a frame (`BARREL_MENU_AT`) after the buttons in
     // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
     if presenter.is_none() && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
@@ -4347,6 +4396,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 KeyCode::KeyK => strike_now = true,
                 KeyCode::F5 => save_now = true,
                 KeyCode::KeyG => gather_now = true,
+                KeyCode::KeyC if walker.is_some() => open_mix = true,
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -4363,6 +4413,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             eprintln!("quit after {frame} frames");
             stop = true;
             break;
+        }
+        if open_mix && let (Some(root), Some(pr)) = (hud_root.clone(), presenter.as_ref()) {
+            unsafe { gpu.device.device_wait_idle()? };
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            cauldron(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
         }
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
