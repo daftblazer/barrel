@@ -1800,14 +1800,24 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
             let rotation = glam::Quat::from_euler(glam::EulerRot::ZYX, i.rotation[2], i.rotation[1], i.rotation[0]);
             let transform = Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position));
             let before = scene.draws.len();
-            scene.add(geometry, transform, texture_count)?;
+            // Objects that sway by node (named or tagged `xN<n>_`, the `<n_shaker>` keywords)
+            // get their own instance, so the tree's spring can turn it; the rest are baked.
+            let node_sway = |s: &str| s.match_indices("xN").any(|(k, _)| s[k + 2..].chars().next().is_some_and(|c| c.is_ascii_digit()) && s[k + 3..].starts_with('_'));
+            if node_sway(&t.name) || node_sway(&i.tags) {
+                let instance = scene.instance(transform);
+                scene.add_posed(geometry, Mat4::IDENTITY, texture_count, None, instance)?;
+            } else {
+                scene.add(geometry, transform, texture_count)?;
+            }
             // Only the objects marked xDS_ cast the sun's shadow (TOWN_11's workshop: its
             // furniture and a second, xDS_ ceiling; the ceiling drawn does not cast).
             let casts = t.name.contains("xDS_") || i.tags.contains("xDS_");
             let version = object_version(&i.tags);
             for d in &mut scene.draws[before..] {
                 d.casts = casts;
-                d.name = t.name.clone();
+                // The object's name and its placement's tags (the sway keywords, xV1_ / xN1_,
+                // may be in either).
+                d.name = if i.tags.is_empty() { t.name.clone() } else { format!("{} {}", t.name, i.tags) };
                 d.version = version;
             }
             placed += 1;
@@ -3338,6 +3348,10 @@ fn main() -> Result<()> {
     // The grass sway groups' clocks (game::wind::Shaker), and the time stepped this frame.
     let mut shakers: Vec<barrel_game::wind::Shaker> = Vec::new();
     let mut sway_dt = 0.0f32;
+    // The trees' node springs, for the field they were made for: (instance, its rest
+    // transform, its shaker in render space, its spring).
+    type TreeSpring = (u32, Mat4, barrel_formats::field_look::NShaker, barrel_game::wind::NodeSpring);
+    let mut tree_springs: Option<(u16, Vec<TreeSpring>)> = None;
     let mut ran = 0u32;
     let mut stop = false;
     // A door the player stepped into: the map it leads to, where she stands there, her velocity.
@@ -3971,6 +3985,44 @@ fn main() -> Result<()> {
         },
         None => [0.0; 4],
     };
+    // The trees' node sway (game::wind::NodeSpring): each placement whose name holds an
+    // `<n_shaker>` keyword springs about its rest axis in the field's wind, turned from it to
+    // the spring's tip (render space: x mirrored, as the vertices are). The player's push is
+    // not done here.
+    if tree_springs.as_ref().is_none_or(|(f, _)| *f != current_field) {
+        let mut springs = Vec::new();
+        if let Some(l) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()) {
+            let mut seen = std::collections::HashSet::new();
+            // Only instances all of whose draws are the tree's (a field's own instance holds
+            // many objects; turning it would turn them all).
+            let keyword_of = |d: &Draw| l.n_shakers.iter().position(|n| !n.keyword.is_empty() && d.name.contains(n.keyword.as_str()));
+            let mixed: std::collections::HashSet<u32> = draws.iter().filter(|d| keyword_of(d).is_none()).map(|d| d.instance).collect();
+            for draw in draws.iter().filter(|d| d.field.is_none_or(|f| f == current_field) && !d.sky && !mixed.contains(&d.instance)) {
+                let Some(n) = l.n_shakers.iter().find(|n| !n.keyword.is_empty() && draw.name.contains(n.keyword.as_str())) else { continue };
+                if seen.insert(draw.instance) {
+                    let n = barrel_formats::field_look::NShaker { axis: [-n.axis[0], n.axis[1], n.axis[2]], ..n.clone() };
+                    let spring = barrel_game::wind::NodeSpring::new(&n);
+                    springs.push((draw.instance, instances[draw.instance as usize].model, n, spring));
+                }
+            }
+        }
+        if !springs.is_empty() {
+            eprintln!("{} trees sway by node", springs.len());
+        }
+        tree_springs = Some((current_field, springs));
+    }
+    if let Some((_, springs)) = tree_springs.as_mut().filter(|(_, s)| !s.is_empty()) {
+        let w = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map_or([0.0; 3], |l| barrel_game::wind::wind(&l.winds, pattern_time));
+        let w = Vec3::new(-w[0], w[1], w[2]);
+        let strength = w.length();
+        for (inst, base, n, spring) in springs.iter_mut() {
+            let toward = (glam::Mat3::from_mat4(*base).inverse() * w).normalize_or_zero();
+            spring.step(n, toward.to_array(), strength, None, sway_dt);
+            let turn = glam::Quat::from_rotation_arc(Vec3::from(n.axis), Vec3::from(spring.d));
+            instances[*inst as usize].model = *base * Mat4::from_quat(turn);
+        }
+        scene.write_instances(&gpu, &instances)?;
+    }
     // The current field's distant view follows the eye (plus the field's sphere offset).
     if let Some(Some(inst)) = sky_instances.get(current_field as usize) {
         let offset = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.sphere_offset).unwrap_or([0.0; 3]);

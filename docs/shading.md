@@ -267,8 +267,12 @@ the frame's time):
 
 The node is then turned from the rest direction to `d`. `game::wind::NodeSpring` does these
 steps (`FieldLook::n_shakers` the settings), its cone clamp in the plane of `d` and the axis
-(the game's own, by cross products, is not read through); the renderer does not turn the
-nodes yet.
+(the game's own, by cross products, is not read through). In the renderer the objects named or
+tagged `xN<n>_` get their own instance (the rest of a field is baked into one), and each frame
+each turns from its rest axis to its spring's tip under the field's wind (seven trees in
+AREA_01_01, their leaves stirring frame to frame); the player's push is not done. A draw's name
+is now its object's name and its placement's tags, since the sway keywords may be in either
+(the grass's `xV1_` mostly is in the tags, which the grass sway had missed).
 
 ### Fog (read from the running game)
 
