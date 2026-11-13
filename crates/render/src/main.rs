@@ -1203,8 +1203,9 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
     Ok((packs, first, bodies))
 }
 
-/// How fast the player runs, units a second: a stand-in until the game's own speed is read.
-const PLAYER_RUN_SPEED: f32 = 400.0;
+/// How fast the player runs, units a second: the game's speed before `EVENT_XG05_110` (the
+/// viewer has no save to say it has been seen).
+const PLAYER_RUN_SPEED: f32 = 500.0; // barrel_game::walk::player_run_speed(false)
 
 /// The player walking: her instance, where she stands (field units), her velocity (x, z, units
 /// a second) and the field's walls and ground she walks against (`game::walk`).

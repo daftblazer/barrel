@@ -8,6 +8,15 @@
 
 use barrel_formats::g1co::Collision;
 
+/// The event whose having been seen makes the player run faster (`EVENT_XG05_110`).
+pub const FASTER_RUN_EVENT: usize = 734;
+
+/// How fast the player runs on a field, units a second: 500, or 625 once `FASTER_RUN_EVENT`
+/// has been seen (the user brain's speed, `0x140234910`).
+pub fn player_run_speed(faster: bool) -> f32 {
+    if faster { 625.0 } else { 500.0 }
+}
+
 /// A wall seen from above: a segment on the ground (x, z) and the heights it spans.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Wall {

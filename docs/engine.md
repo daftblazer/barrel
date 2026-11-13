@@ -328,14 +328,20 @@ steps of at most half the radius so none passes through a wall; a move into a wa
 it (`barrel walk FIELD_DIR X Y Z DX DZ STEPS`: in TOWN_10 a walk north from (6000, 10500) stops
 at the wall near z = 11,347 and slides along it). The game moves characters through ktgl's
 collision engine (`elixir::EXCollisionScene` over ktgl's broad and narrow phases, `S_CE_BNP_INPUT`
-and `_OUTPUT`), which is not read: the radius (the character's `FMrad` in `CharaBase.xml`: 48
-for the player, as the field enemies' scripts take it) and the height its `FMhig` (1.5: 150 units); `FMslp` (75 for
-the player) is presumably the steepest slope she walks up, not used yet, the height, the steps and how corners and slopes are taken are this module's, to be
-replaced by the game's once read. The ground (`game::walk::Ground`) is the highest of the
+and `_OUTPUT`), which is not read. The character's size is its `CharaBase.xml` row's: the radius its `FMrad`
+(0.48 for the player: 48 units, as the field enemies' scripts take it), the height its `FMhig`
+(1.5: 150 units); `FMslp` (75 for the player) is presumably the steepest slope it walks up, not
+used yet. The steps, the step-up height and how corners and slopes are taken are this module's,
+to be replaced by the game's once read. The ground (`game::walk::Ground`) is the highest of the
 heightmap (`<AREA>.khm`, bilinear between its vertices) and the collision mesh's floors (its
 triangles that are not upright) under the character and no more than a step (50 here) above its
 feet; with nothing under it the walk does not move (`barrel walk` across AREA_01_01 from (3000,
 3000) eastward goes over the valley floor between heights 0 and 46).
+
+The player runs at 500 units a second, 625 once `EVENT_XG05_110` (event 734) has been seen
+(`game::walk::player_run_speed`): the user brain (`clsFMBrainUser`) reads it from `0x140234910`,
+a test of that event's record and the constants 500 and 625; it does not override the brains'
+`getMoveSpeed` (the base one returns 1).
 
 ## Movies (open)
 

@@ -175,8 +175,8 @@ the trees). `--walk DX,DZ` has her run that way (DX and DZ units a second, her `
 walls and onto its ground, turned the way she goes (as the field creatures are, from +z), the
 camera carried along with her: `--player 5577,3520 --walk -300,0 --frames 30 --fps 30` runs her
 300 units west along the valley. In a window W A S D steer her instead, relative to the
-camera (the arrows still turn it), at a stand-in run speed of 400 units a second
-(`PLAYER_RUN_SPEED`: the game's own is not read yet); standing she goes back to her wait
+camera (the arrows still turn it), at the game's run speed, 500 units a second
+(`game::walk::player_run_speed`; 625 after `EVENT_XG05_110`, which the viewer takes as unseen); standing she goes back to her wait
 motion, facing the way she last ran.
 
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
