@@ -252,6 +252,14 @@ while that event is unseen).
 "The field's battle start"); with no look table of its own, `--look-from FIELD` lends it
 `Saves/field/FIELD.xml` (the field area's; whether the game does so is not read yet), e.g.
 `BF_POINT19 --look-from AREA_01_01 --player 3200,3200`. Without one it draws black.
+`--battle GROUP` lays a battle out on the stage (`battle_people`): encounter group GROUP's
+monsters drawn as the game draws them (`auto_battle::draw`) and scattered about the centre
+(`battle::scatter`), the lead and the other alchemist at their places (`battle::party_spot`,
+member k in sector k mod 3), all in their `WAIT` motion (the battle idle, `B_WAIT` for the
+alchemists), the party facing the centre and the monsters the lead, seen from behind the lead.
+Not yet the game's: the centre taken as the stage's middle (3200, 0, 3200), the camera, the
+facings (the formation's own, `0x1401b0e30`, not used yet). Group 12 on `BF_POINT19` gives two
+Ore Rats and two Stray Dogs, the largest at the centre.
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the

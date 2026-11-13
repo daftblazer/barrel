@@ -1454,6 +1454,57 @@ fn battle_tables(root: &Path) -> Result<barrel_game::auto_battle::Tables> {
     Ok(barrel_game::auto_battle::Tables::load(&pe, &effects, chara.as_ref())?)
 }
 
+/// The centre of a battle stage (`BF_POINT*`, 16 × 16 cells of 400: taken as the middle of its
+/// ground; not yet read from the game).
+const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
+
+/// A battle laid out on a stage (`--battle GROUP`): encounter group GROUP's monsters, drawn as
+/// the game draws them, scattered about the centre (`battle::scatter`), and the party (the lead,
+/// then the other alchemist) at their places around it (`battle::party_spot`, member k in
+/// sector k mod 3), everyone in their `WAIT` motion (the battle idle, `B_WAIT`), the party facing
+/// the centre and the monsters the lead.
+fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>)> {
+    let tables = battle_tables(root)?;
+    let mut rng = barrel_game::rng::Rng::seeded(1);
+    let drawn = barrel_game::auto_battle::draw(&tables, group, &mut rng)?;
+    let sizes: Vec<f32> = drawn.iter().map(|d| d.1).collect();
+    let spots = barrel_game::battle::scatter(&sizes, &mut rng);
+    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
+    let base_row = |chara: usize| charas.children.get(chara)?.attr("BaseTag").and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
+    let at = |p: [f32; 3]| [BATTLE_CENTRE[0] + p[0], BATTLE_CENTRE[1] + p[1], BATTLE_CENTRE[2] + p[2]];
+    // Facing a point: the turn (degrees) whose forward, (sin, cos), points from `from` to `to`.
+    let facing = |from: [f32; 3], to: [f32; 3]| (to[0] - from[0]).atan2(to[2] - from[2]).to_degrees();
+    let mut people: Vec<(usize, [f32; 3], [f32; 3])> = Vec::new();
+    let lead = party_spot_of(0);
+    for (k, c) in [usize::from(logy), usize::from(!logy)].into_iter().enumerate() {
+        let p = party_spot_of(k);
+        people.push((c, p, [0.0; 3]));
+    }
+    for (&(m, _), (spot, _)) in drawn.iter().zip(&spots) {
+        people.push((barrel_formats::battle_data::MONSTER_CHARA_FIRST + m, *spot, lead));
+    }
+    let (mut packs, mut tex_base, mut bodies) = (Vec::new(), base, Vec::new());
+    for (k, (chara, spot, look)) in people.into_iter().enumerate() {
+        let Some(row) = base_row(chara) else { continue };
+        let pos = at(spot);
+        let angle = facing(spot, look);
+        let Some((body, _)) = add_body(root, scene, tex_base, row, 30_000 + k as u32, pos, angle, "WAIT", None, None, |_, _, _, _| Ok(None::<()>))? else { continue };
+        eprintln!("battle: chara {chara} as {:?} at {pos:?} facing {angle:.0}", row.attr("BaseTag"));
+        tex_base += body.count;
+        packs.extend(body.packs);
+        if let Some((skeleton, _, anim, _)) = body.rig {
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new() });
+        }
+    }
+    Ok((packs, bodies))
+}
+
+/// Party member k's battle place (sector k mod 3).
+fn party_spot_of(k: usize) -> [f32; 3] {
+    barrel_game::battle::party_spot(k as i32, (k % 3) as i32)
+}
+
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -2118,6 +2169,8 @@ struct SceneSpec {
     trip: Vec<[f32; 3]>,
     /// Logy leads (`--hero logy`): the player walking is Logy.
     logy: bool,
+    /// `--battle GROUP`: a battle laid out on the stage (`battle_people`).
+    battle_group: Option<i32>,
     /// `--look-from FIELD`: the look table (`Saves/field/FIELD.xml`) for a field without its
     /// own, as a battle stage (`BF_POINT*`) takes the field area's.
     look_from: Option<String>,
@@ -2167,6 +2220,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     let SceneSpec {
         field,
         look_from,
+        battle_group,
         args,
         event_spec,
         skeleton_spec,
@@ -2374,6 +2428,26 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         if focus.is_none() {
             focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
+    }
+    if let Some(group) = battle_group {
+        let field_dir = Path::new(&args[1]);
+        let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--battle: the stage is not inside a game install")?.to_path_buf();
+        let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
+        let (packs, bodies) = battle_people(&root, group, logy, &mut scene, base)?;
+        pack_bytes.extend(packs);
+        town_bodies.extend(bodies);
+        focus = focus.or(Some(Vec3::from(BATTLE_CENTRE) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0)));
+        // A look over the whole battle from behind the lead (not the game's battle camera,
+        // which is not read yet).
+        let lead = party_spot_of(0);
+        event_camera = event_camera.or(Some(EventCamera {
+            eye: None,
+            target: Vec3::from(BATTLE_CENTRE) + Vec3::new(0.0, 80.0, 0.0),
+            distance: 1700.0,
+            yaw: lead[0].atan2(lead[2]).to_degrees(),
+            pitch: 22.0,
+            fov: 45.0,
+        }));
     }
     if let Some(at) = player_at {
         let field_dir = Path::new(&args[1]);
@@ -2607,6 +2681,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     let mut use_event_camera = true;
     let mut no_terrain = false;
     let mut look_from: Option<String> = None;
+    let mut battle_group: Option<i32> = None;
     let mut chain_on = false;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
@@ -2719,6 +2794,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
             // --look-from FIELD: a field without a look table of its own takes FIELD's.
+            // --battle GROUP: on a battle stage, encounter group GROUP against the party.
+            "--battle" => battle_group = Some(it.next().ok_or("--battle GROUP")?.parse()?),
             "--look-from" => look_from = Some(it.next().ok_or("--look-from FIELD")?.clone()),
             // --chain: when the event ends, the one the story starts after it, and so on.
             "--chain" => chain_on = true,
@@ -3313,6 +3390,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
         load_scene(SceneSpec {
             field,
             look_from: look_from.clone(),
+            battle_group,
             args: args.clone(),
             event_spec: event_spec.clone(),
             skeleton_spec: skeleton_spec.clone(),

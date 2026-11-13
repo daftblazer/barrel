@@ -83,6 +83,13 @@ impl Outcome {
     }
 }
 
+/// Encounter group `group`'s monsters (by its id) drawn as the game draws them, each with its
+/// size (`Chara.xml` radius).
+pub fn draw(t: &Tables, group: i32, rng: &mut Rng) -> Result<Vec<(usize, f32)>, String> {
+    let g = t.groups.iter().find(|g| g.id == group).ok_or_else(|| format!("no encounter group {group}"))?;
+    Ok(crate::battle::encounter_monsters(g, rng).into_iter().map(|m| (m as usize, bd::monster_size(&t.radii, m as usize).unwrap_or(MONSTER_SIZE))).collect())
+}
+
 /// Encounter group `group` (its id, as a field enemy names it) against `party`, each a
 /// (character number, level).
 pub fn fight(t: &Tables, party: &[(usize, i32)], group: i32, rng: &mut Rng) -> Result<Outcome, String> {
@@ -97,8 +104,7 @@ pub fn fight(t: &Tables, party: &[(usize, i32)], group: i32, rng: &mut Rng) -> R
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
     }
-    let g = t.groups.iter().find(|g| g.id == group).ok_or_else(|| format!("no encounter group {group}"))?;
-    let drawn: Vec<usize> = crate::battle::encounter_monsters(g, rng).into_iter().map(|m| m as usize).collect();
+    let drawn: Vec<usize> = draw(t, group, rng)?.into_iter().map(|(m, _)| m).collect();
     let normal = t.skills.get(1).ok_or("no skill 1")?;
     let mut foes = Vec::new();
     for &k in &drawn {
