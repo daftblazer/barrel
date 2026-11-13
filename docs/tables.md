@@ -1682,8 +1682,17 @@ fourth are the map's ambience and its volume (`Area::ambience`, played as the ma
 0x23 at 0.6) the field plays, at 0.5, the first word of entry *kind* of a ten-entry table it
 builds at +0x2f68 (`0x14006dd5e`: 15, 16, 17, 18, 19, 20, 21, 23, 24, 25), so 17 in the open
 fields (kind 2), 23 in town streets and ruins (7), 25 in rooms (9). The sixth, +0x14, is what the field's battle start
-puts into the battle setup's +0x30: 19 for the Twilight Forest's areas, 7 for the Southern
-Ruins', the battle stage by the look of it. Then come a pointer to the map's gimmick list
+puts into the battle setup's +0x30: the battle stage, `Data/x64/Field/BF_POINTnn` for stage
+nn (the executable's `BTL_FIELD_BF_POINT00` … `32` enum and its name list `BF_POINT01` …
+`BF_POINT32` at 0x1408016f8, with `sandbox_k` in place of 20, as no folder or area has 20).
+By area: 19 the Twilight Forest (12 to 16; 26 its deserted houses), 2 and 3 the Old Highway, 4
+and 5 the Southern Ruins, 6 the Upland Forest, 7 the Withering Plains, 8 the Searing Wastes, 9
+the Abandoned River, 10 the Slag Graveyard, 11 to 13 and 22 to 24 and 29 the Laboratory, the
+Dragon Nest and the Ends of the Earth, 15 to 18 and 25 the Flying and Fallen Gardens, 30 to 32
+the DLC Palace; -1 in towns and rooms (no battles). A stage folder holds what a field's does
+(terrain, objects, collision; BF_POINT19 a clearing ringed by rock walls, 16 × 16 cells of 400
+around (3200, 3200)) but only `BF_POINT30` has a look table (`Saves/field`): where the others'
+light comes from is not read yet. Then come a pointer to the map's gimmick list
 (+0x20), a word, and pointers to its place and area names (+0x30, +0x38). The field's runtime
 object keeps one record per map (+0x10e8 + 0x40 × map, 122 of them) and walks the list from
 there. A list is 0x60-byte gimmicks ended by -1:

@@ -248,6 +248,11 @@ shows three passing placements, all for that row. The save is early in the story
 seen, `MQ03_010` not), and most placements also wait for `XF01_030` (condition #159, which holds
 while that event is unseen).
 
+**Battle stages.** `--field .../BF_POINTnn` loads a battle stage like a field (docs/tables.md,
+"The field's battle start"); with no look table of its own, `--look-from FIELD` lends it
+`Saves/field/FIELD.xml` (the field area's; whether the game does so is not read yet), e.g.
+`BF_POINT19 --look-from AREA_01_01 --player 3200,3200`. Without one it draws black.
+
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
 model the game gives it (`FieldEnemy::model`, a `CharaBase` row; its encounter group's first

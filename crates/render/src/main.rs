@@ -2118,6 +2118,9 @@ struct SceneSpec {
     trip: Vec<[f32; 3]>,
     /// Logy leads (`--hero logy`): the player walking is Logy.
     logy: bool,
+    /// `--look-from FIELD`: the look table (`Saves/field/FIELD.xml`) for a field without its
+    /// own, as a battle stage (`BF_POINT*`) takes the field area's.
+    look_from: Option<String>,
 }
 
 /// A scene loaded on the CPU side: its geometry, draws and instances, the texture packs, the
@@ -2163,6 +2166,7 @@ fn story_chain(root: &Path) -> Result<barrel_game::event_start::Chain> {
 fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     let SceneSpec {
         field,
+        look_from,
         args,
         event_spec,
         skeleton_spec,
@@ -2208,12 +2212,14 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         };
         let mut base = 0;
         for (k, (map, dir)) in dirs.iter().enumerate() {
-            // Its look, from the table of the same name (Saves/field/<FIELD>.xml).
+            // Its look, from the table of the same name (Saves/field/<FIELD>.xml), else
+            // `--look-from`'s.
+            let root = dir.ancestors().find(|p| p.join("Saves").is_dir());
+            let look = |name: &std::ffi::OsStr| root.and_then(|r| std::fs::read(r.join("Saves/field").join(name).with_extension("xml")).ok());
             let table = dir
-                .ancestors()
-                .find(|p| p.join("Saves").is_dir())
-                .zip(dir.file_name())
-                .and_then(|(root, name)| std::fs::read(root.join("Saves/field").join(name).with_extension("xml")).ok())
+                .file_name()
+                .and_then(look)
+                .or_else(|| look_from.as_deref().and_then(|n| look(std::ffi::OsStr::new(n))))
                 .and_then(|b| barrel_formats::table::parse(&b).ok());
             field_looks.push(table.map(|t| barrel_formats::field_look::read(&t)));
             scene.field = Some(k as u16);
@@ -2600,6 +2606,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     let (mut morph_spec, mut face_specs) = (None::<String>, Vec::<String>::new());
     let mut use_event_camera = true;
     let mut no_terrain = false;
+    let mut look_from: Option<String> = None;
     let mut chain_on = false;
     let mut it = args[positional..].iter();
     while let Some(a) = it.next() {
@@ -2711,6 +2718,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             }
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
+            // --look-from FIELD: a field without a look table of its own takes FIELD's.
+            "--look-from" => look_from = Some(it.next().ok_or("--look-from FIELD")?.clone()),
             // --chain: when the event ends, the one the story starts after it, and so on.
             "--chain" => chain_on = true,
             // --free-play (with --chain): when no event starts any more, the hero walks freely
@@ -3303,6 +3312,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut battles, mut town_bodies, start_at, start_field, patterns, mut walker } =
         load_scene(SceneSpec {
             field,
+            look_from: look_from.clone(),
             args: args.clone(),
             event_spec: event_spec.clone(),
             skeleton_spec: skeleton_spec.clone(),
