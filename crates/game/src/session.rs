@@ -291,6 +291,32 @@ impl Session {
             .collect()
     }
 
+    /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
+    /// field encounter opens, which carries its field's save and hands it back.
+    pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, exp_table: &[(i32, i32)]) -> String {
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text) };
+        if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
+            s.money = m;
+        }
+        s.won(fighters, exp, money, exp_table);
+        let mut out = String::new();
+        let mut members = s.party.iter().enumerate();
+        for line in text.lines() {
+            if line.starts_with("money ") {
+                out += &format!("money {}\n", s.money);
+            } else if line.starts_with("member ") {
+                if let Some((c, m)) = members.next() {
+                    let kit: Vec<String> = m.equipment.iter().map(i32::to_string).collect();
+                    out += &format!("member {c} {} {} {}\n", m.level, m.experience, kit.join(","));
+                }
+            } else {
+                out += line;
+                out += "\n";
+            }
+        }
+        out
+    }
+
     /// The session's state in free play, where the player stands at `at` (x, z field units),
     /// as text; `None` while an event plays (the game saves only in free play).
     pub fn save(&self, at: [f32; 2]) -> Option<String> {
@@ -451,5 +477,10 @@ mod tests {
         assert_eq!(s.money, 112);
         assert_eq!((s.party[0].level, s.party[0].experience), (3, 25));
         assert_eq!((s.party[2].level, s.party[2].experience), (1, 0), "a member not fighting gains nothing");
+        // The same through saved text (the battle screen's way back).
+        let mut t = Session::in_field(chain(), 3, false).with_party(&[kit([-1; 4]), kit([-1; 4]), kit([-1; 4])]);
+        let text = t.save([0.0, 0.0]).unwrap();
+        t.won(&[0, 1], 25, 12, &table);
+        assert_eq!(Session::won_in_save(&text, &[0, 1], 25, 12, &table), t.save([0.0, 0.0]).unwrap());
     }
 }

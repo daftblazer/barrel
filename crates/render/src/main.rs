@@ -5045,8 +5045,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 // Over: back to the field it came from.
                 if play.over()
-                    && let Some(back) = carry.back.take() {
+                    && let Some(mut back) = carry.back.take() {
                         eprintln!("frame {frame}: the battle is over, back to the field");
+                        // Won: the spoils go into the field's save (money, the fighters' experience).
+                        let (exp, money) = play.fight.tables.spoils(&play.outcome);
+                        if let Some(save) = back.1.save.as_mut().filter(|_| play.outcome.winner == Some(0)) {
+                            *save = barrel_game::session::Session::won_in_save(save, &play.charas, exp, money, &play.fight.tables.exp);
+                            eprintln!("battle: {exp} experience, {money} money");
+                        }
                         (restart, carry_out) = (Some(back.0), back.1);
                         stop = true;
                         break;

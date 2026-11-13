@@ -210,7 +210,8 @@ equipment is too weak: the Ore Rat of group 10 wins. In the story's free play th
 opens its battle instead: the run starts again (as Return to Title does, the window kept) on
 the area's battle stage (`BF_POINTnn`, the area's word 5) with `--battle GROUP`, the area's look
 and the lead, carrying the story's save text and the way back (`Carry`); when the battle is
-played out the run starts again in the field from that save, where the touch happened, with
+played out (a won battle's money and experience paid into that save first,
+`Session::won_in_save`) the run starts again in the field from that save, where the touch happened, with
 the beaten enemies gone (`Carry::defeated`). From `AREA_01_01` at (4500, 3520) walking west the
 Ore Rat touches Escha, stage 19 plays the battle, and the field comes back at (4140, 3520)
 without it. A town map in free play has its people, placed by the field load's
