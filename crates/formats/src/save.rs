@@ -608,6 +608,8 @@ pub struct Summary {
     /// `global` +0x38: the protagonist the player chose, 0 Escha or 1 Logy (`Chara.xml` row,
     /// what "Master Character", row 749, stands for).
     pub hero: Option<i32>,
+    /// `subject/subject_save`: each assignment's record (a `SubjectData` row each).
+    pub subjects: Vec<crate::subject::SavedSubject>,
     /// `subject/job_rank` and `job_point`: the rank and its points.
     pub rank: Option<(i32, i32)>,
     /// `shop/shop_data`: four shops, each a u32 and 50 wares' (count, days, state), the
@@ -716,6 +718,7 @@ pub fn summary(records: &[Record]) -> Summary {
             .unwrap_or_default(),
         board: bytes(top("quest").and_then(|r| r.child("now"))).map(|d| board_slots(&d)).unwrap_or_default(),
         taken: bytes(top("quest").and_then(|r| r.child("player"))).map(|d| board_slots(&d)).unwrap_or_default(),
+        subjects: bytes(top("subject").and_then(|r| r.child("subject_save"))).map(|d| crate::subject::saved(&d)).unwrap_or_default(),
         rank: (|| {
             let sub = top("subject")?;
             Some((i32_at(&bytes(sub.child("job_rank"))?, 0)?, i32_at(&bytes(sub.child("job_point"))?, 0)?))

@@ -730,7 +730,7 @@ shuffled (each place k from 1 swapped with `below(k + 1)`) and the first taken
 (`quest::BoardRng`, `board_pick`). Every candidate first passes `0x14033b450`
 on its row (+0x24 `StartEvent`, +0x28 `EndEvent`, +0x2c `isClearSubject`, +0x30 `StartDate`,
 +0x34 `EndDate`): the start event seen and the end event not, each when given; the assignment
-cleared (its state in the 0x14-byte records at `0x141099e10` at least 7); and, when either date
+cleared (its state in the 0x14-byte records at `0x141099e10` at least 7: the record of its `SubjectData` row, the rows named by the executable's 457 `SUBJECT_*` names in order, `SUBJECT_CARD_00_A1_00` the first; saved as `subject/subject_save`, `save::Summary::subjects`); and, when either date
 is above 0, `StartDate <= today <= EndDate` (an end below 0 meaning none). So the April 1st
 draw (day 90) holds none of the requests that start on 91; they first come up on April 11th.
 Synthesis candidates also need a count of at least 6 for their target in `0x141079fe0` and its

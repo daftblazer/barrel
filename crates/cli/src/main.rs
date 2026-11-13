@@ -1357,7 +1357,16 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
             Kind::Gathering => true,
         }
     };
-    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &known, level: &|_| 0 };
+    // From a save: an assignment counts as cleared for the board at state 7 or more (achieved
+    // or cleared), its record found by its SubjectData row.
+    // The rows' tags are the executable's SUBJECT_* names, in row order.
+    let (subject_enum, _) = pe.enum_names("SUBJECT_CARD_00_A1_00").ok_or("no SUBJECT_* enum")?;
+    let subject_names = &subject_enum[subject_enum.iter().position(|t| t.starts_with("SUBJECT_")).unwrap_or(0)..];
+    let cleared = |name: &str| {
+        let Some(s) = &saved else { return false };
+        subject_names.iter().position(|n| *n == name).and_then(|i| s.subjects.get(i)).is_some_and(|r| r.state >= 7)
+    };
+    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &cleared, known: &known, level: &|_| 0 };
     let rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let mut w = if let (Some(file), Some(summary)) = (from, &saved) {
         // A save's calendar (the main generator is not saved: a fixed one stands in).
