@@ -847,6 +847,26 @@ layers, 6 maps), is not decoded yet:
   units on a side, then nodes of half-size 5,000, 2,500 ... Each holds 6 and 0x0b, child
   indices (-1 where none), and lists like `2 3 4 5` (the layers a patch uses, presumably).
 
+In `TOWN_01` (1 layer, 1 map, a 790-byte block) the parts are clear enough to name:
+
+- **Layer records:** one 32-byte record at 0xb4.
+- **Four 48-byte records:** `{u32 0, u32 1, f32 a, f32 a, 0, 0, f32 a, f32 a, 0 × 4}`, with `a`
+  = 1/4000, and the field is 4,000 units across. So these are presumably texture-coordinate
+  scales for the blend maps. `TOWN_04` has four as well.
+- **A quadtree of 60-byte nodes:** each is a centre (3 floats), 1.0, a half-size (3 floats),
+  a pad (32 bytes), then seven integers. The root is centred on (2000, 0, 2000), half-size
+  2000, followed by its children's numbers 1 to 4. The four leaves are centred on (1000,
+  1000), (3000, 1000), (1000, 3000) and (3000, 3000), half-size 1000. A leaf's integers are -1,
+  a flags word `0x0401`, 0, then pairs like (1, 4) and (2, 3), presumably ranges into what
+  follows.
+- **Patch records:** eight of 16 bytes at 0x318 (`{u32 n | 0x80000000 flag, u32 0 or 1,
+  0x80ffffff, 0x80ffffff}`), then a u16 list (`1 2 3 5 3 6 3 7 4`).
+
+Over nine fields the block grows with the layers: 750 to 794 bytes for one layer, 8 KB for
+`AREA_08_02` (6 layers, 1 map), 97 KB for `AREA_01_01` (12 layers, 2 maps) and 694 KB for
+`AREA_03_01` (13, 3). `AREA_01_01`, the viewer's usual test field, is therefore one whose
+blending the viewer gets wrong.
+
 The executable's reader checks the magic (`KFTK` read as `0x4b54464b`) in `0x14066be00` and
 `0x14066efe0`. Both go to `0x14066bed0`, which calls a section reader for each part in turn:
 `0x14066f900`, `0x14066fc90`, `0x14066fc50`, `0x14066f940`, `0x14066f690`, `0x14066f6d0` (the
