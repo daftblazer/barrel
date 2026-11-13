@@ -1381,8 +1381,9 @@ an event end, and that is how the game has it.
 
 The second chapter's events (`EVENT_MM02_OP2_*`, all needing 310 seen) start on the player's
 own walks between the town maps (`MAP_FROM_TO_BEFORE/AFTER`, such as `0 3 0 4`: Urban Area to
-Town Entrance). They are split by event flag 4, = 0 for one set and ≥ 1 for the other, which
-fits the hero choice (0 Escha, 1 Logy) but is not checked. One leaves for the world map:
+Town Entrance). They are split by event flag 4, the hero: the process data sets it to 0 at the end of
+Escha's branch of the opening (`OP1_131`, also `OP1_031`) and to 1 at the end of Logy's (`OP1_232`,
+also `OP1_032`), so 0 is Escha's route and 1 Logy's. One leaves for the world map:
 `0 4 1 0x60000002`, the Town Entrance to kind 1, any. So from there the story follows where
 the player goes, and `barrel event-starts ROOT new 0|1 0 FROM 0 TO` (with `BARREL_SEEN`) shows
 what a move would start.
