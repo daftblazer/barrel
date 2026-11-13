@@ -822,6 +822,9 @@ fn pssg_scan(dir: &Path) -> Result<()> {
                 }
                 for t in p.textures() {
                     *texture_formats.entry(t.format.clone()).or_default() += 1;
+                    if t.to_rgba8().is_none() {
+                        println!("unread texture format {} ({}x{}): {} in {}", t.format, t.width, t.height, t.name, f.display());
+                    }
                     if t.to_rgba8().is_some_and(|px| px.len() != (t.width * t.height * 4) as usize) {
                         bad_textures += 1;
                     }

@@ -1293,8 +1293,9 @@ out). The order is confirmed by the skins below.
 `TEXTUREIMAGEBLOCKDATA` holds the levels largest first, in the usual DDS block layout (not
 byte-swapped): a 128 × 128 `dxt1` with 7 more levels is 10,936 bytes, down to 1 × 1. The `id` is
 the source file's name (`PC00J_Body.dds`). Over Ayesha's files: 4,647 `dxt1`, 1,462 `dxt5`, 533
-`dxt3` (BC2: `bc::decode_bc2`) and 6 `ui8x4` (uncompressed, its byte order not read yet); every
-compressed one decodes to its size, and Ayesha's body atlas and eyes come out as drawn.
+`dxt3` (BC2: `bc::decode_bc2`) and 6 `ui8x4` (uncompressed, four bytes a texel in DDS order: blue, green, red, alpha; the
+alpha byte is 255 throughout the opaque ones and `waves2`'s normal map has its 248-average Z
+in the first byte); every one decodes to its size, and Ayesha's body atlas and eyes come out as drawn.
 
 **Skeletons** (`Pssg::joints`, `Pssg::skins`): the joints are `JOINTNODE`s in the scene tree
 (`B_0_Base`, `B_0_Pelvis`, ...), placed by their `TRANSFORM`s like any node. A `SKINNODE`

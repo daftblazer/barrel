@@ -164,6 +164,8 @@ impl Texture<'_> {
             "dxt1" => crate::bc::decode(self.data, w, h, false),
             "dxt3" => crate::bc::decode_bc2(self.data, w, h),
             "dxt5" => crate::bc::decode(self.data, w, h, true),
+            // Uncompressed, four bytes a texel in DDS order: blue, green, red, alpha.
+            "ui8x4" => self.data.get(..w * h * 4)?.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect(),
             _ => return None,
         })
     }
@@ -500,6 +502,18 @@ fn children<'a>(d: &'a [u8], mut at: usize, end: usize, schema: &Schema, depth: 
         at = next;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod texel_tests {
+    use super::*;
+
+    #[test]
+    fn ui8x4_is_bgra() {
+        let data = [10u8, 20, 30, 255, 1, 2, 3, 4];
+        let t = Texture { name: String::new(), width: 2, height: 1, format: "ui8x4".into(), data: &data };
+        assert_eq!(t.to_rgba8().unwrap(), vec![30, 20, 10, 255, 3, 2, 1, 4]);
+    }
 }
 
 #[cfg(test)]
