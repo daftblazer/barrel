@@ -15,6 +15,10 @@ scene really looks like, and values the game only computes while running.
 - `pad.py` (in the background, started before the game) and `pad.sh "tap A" "dpad LEFT" "stick L 0 -1 800" ...`:
   a virtual Xbox 360 pad through uinput (python-evdev), named "Barrel oracle pad"; the game
   takes it as its controller. It is visible system-wide while it exists.
+  Start the pad in its own session (`setsid python3 tools/oracle/pad.py ... &`): a pad started
+  inside a command that is later stopped dies with it, and the game does not take a pad
+  plugged in after it started. `pad.sh` waits for the pad's log of finished commands
+  (`work/oracle/paddone`) and gives up on a command that gets no answer within a minute.
 - `xkey.c`: key taps through XTest (`cc -O2 -o work/xkey xkey.c -lX11 -lXtst`), to the run's
   X display (`DISPLAY=:2`).
 - `readlog.c`: a preload library that logs the game's file reads (path, offset, length, time)
@@ -22,8 +26,8 @@ scene really looks like, and values the game only computes while running.
   `LD_PRELOAD=$PWD/work/readlog.so READLOG_FILE=$PWD/work/oracle/reads.log tools/oracle/run.sh ...`.
 - `peek.sh ADDR LEN OUT`, `scan.py VALUE [MAX_MB]`: read memory, find a pointer.
 
-To the opening, with the pad: A at the title, A (New Game), A on Escha's card, A, D-pad left
-(Yes), A; the opening movie shows Proton's colour bars and A skips it, and
+To the opening, with the pad: A at the title, then New Game (once the run's prefix holds a
+save the menu starts on Load Game: D-pad up first), A on Escha's card, A, D-pad left (Yes), A; the opening movie shows Proton's colour bars and A skips it, and
 `EVENT_MM01_OP1_111` begins. On the keyboard: `k` confirms, the arrow keys move.
 
 **Without Steam:** tried (2026-11-12) and the game will not run: under Proton's own Wine (its
