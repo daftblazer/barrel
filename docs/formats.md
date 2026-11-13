@@ -1537,6 +1537,16 @@ ring, part 0xee cut 4), the HP bar (part 0xee cut 11, 124 × 16 at [126, 54]) an
 (cut 10 at [126, 104]), numbers (parts 0xde and 0xdf, kind 28) and state icons (layouts 873,
 875). Layout 910 is the party's formation screen (six plates, layout 905).
 
+**The battle result** is layout 904 (not 916, which is the "Field Info" cards): the desk (901,
+`a15_menu.g1t`), the "Result" heading (part 0x37c, kind 7) and the party list (898): six rows
+(part 0x37f at y 128 + 124 × row, each a portrait plate with "Lv" and "Next" at x 244, the
+member's numbers and a "Skill Get!" mark), then the battle's totals, "EXP" (part 0x37d at y 868)
+and "Cole" (the money, part 0x37e at y 956, with a coin). Layout 900 is one member's level-up
+panel over it (a row, "HP" to "SPD" with old and new numbers, layout 899: two number columns at
+x 356 and 476, part 0x4c digits; a skill name and "learned!", part 0x37b); 903 is the confirm
+button (`<IM00>`). A plain render (`barrel layout-png ROOT OUT 904`) shows every state at once;
+which parts show when, and where the drops are listed, is not read yet.
+
 **The synthesis screens** are layouts 720 to 851 on `a15_mix.g1t`; the largest stand alone
 (no layout nests them): 753 (the item's card: picture, "Stats", "Effect", "Property"), 774
 (the recipe and ingredient pick: "Recipe" tabs, "Use" columns, the ingredient list), 789 (the
