@@ -1270,6 +1270,21 @@ by the table. Most used: `EVENT_OCCURRENCE` (1,006), `EVENT_NOT_OCCURRENCE` (767
 then `TRIGGER_MAP_FROM_TO_AFTER 0 4 0 5`. The file's 121,876 bytes read exactly so. `Event/eventprocess/EventProcessDataAll.epd`
 is read below ("What events change").
 
+### How a new game starts (`event_start::new_game_event`)
+
+The opening events are not started by checks. `EVENT_MM01_OP1_111` (Escha's opening, event 8)
+and `EVENT_MM01_OP1_212` (Logy's, event 11) are listed only under `TRIGGER_PROGRAM_EXEC`
+(trigger group 29, fired by the game's own code) and under the end of `EVENT_MM01_OP1_515` /
+`516` with flag 36 = 0. Those two (events 16 and 17) are also program-started: the New Game+
+start, whose messages say the inventory, equipment and skills carry over from the save and
+offer to skip the first part of the story (to the first tutorial; flag 36). So a plain new game
+plays 111 or 212 by the choice, and the story then runs by event ends: 111, 121, 131 (or 212,
+222, 232), 300 (`EVENT_END` of 10 or 13, not yet seen 15), 310, after which nothing starts and
+free play begins (`barrel event-chain ROOT EVENT_MM01_OP1_111`; `barrel event-check ROOT EVENT`
+prints an event's conditions). Events 1 to 7 (`EVENT_MM01_OP1_011` to `040`) have no trigger at
+all, only seen / not-seen conditions chaining them (011, 021, 031 and 012, 022, 032 alternate,
+040 after either), and their messages are Japanese even in `Event_EN`: cut scenes, never started.
+
 ### Which event starts (`0x140214d70`, `barrel_game::event_start`)
 
 Called from 31 places with a trigger group. Nothing starts in three cases:

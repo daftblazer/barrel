@@ -487,6 +487,22 @@ impl Chain {
     }
 }
 
+/// The event a new game opens with, by name: Escha's opening `EVENT_MM01_OP1_111` or Logy's
+/// `EVENT_MM01_OP1_212` (the choice screen's pick), or with a carried-over save (New Game+)
+/// `EVENT_MM01_OP1_515` or `516`, which offers to skip the story (flag 36) and, if not
+/// skipped, starts the same openings as it ends. All four are listed only under
+/// `TRIGGER_PROGRAM_EXEC` (group 29): the game's own code starts them, not a check.
+/// The openings then follow by their ends (`Chain::after`): 111, 121, 131 or 212, 222, 232,
+/// then 300 and 310, after which free play begins.
+pub fn new_game_event(logy: bool, carried_over: bool) -> &'static str {
+    match (logy, carried_over) {
+        (false, false) => "EVENT_MM01_OP1_111",
+        (true, false) => "EVENT_MM01_OP1_212",
+        (false, true) => "EVENT_MM01_OP1_515",
+        (true, true) => "EVENT_MM01_OP1_516",
+    }
+}
+
 /// Where an event's script is under the game's `Event/event`: in its chapter's folder, the
 /// name's middle part (`EVENT_MM01_OP1_111` → `MM01_OP1/EVENT_MM01_OP1_111.ebd`).
 pub fn event_file(name: &str) -> String {

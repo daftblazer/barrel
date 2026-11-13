@@ -51,6 +51,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel event-check ROOT EVENT  an event's start conditions: its 14 words and each group's conditions and triggers
   barrel event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N|trip:FROM>TO ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
   barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
   barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
@@ -190,6 +191,7 @@ fn main() -> ExitCode {
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
         ["event-chain", root, start, walks @ ..] => event_chain(Path::new(root), start, walks),
+        ["event-check", root, event] => event_check(Path::new(root), event),
         ["event-starts", root, save, group, values @ ..] => event_starts(Path::new(root), Path::new(save), group, values),
         ["subjects", root] => subjects(Path::new(root), None),
         ["subjects", root, save] => subjects(Path::new(root), Some(Path::new(save))),
@@ -3323,6 +3325,25 @@ fn play_chain(file: &Path, lang: Option<&str>) -> Result<()> {
 }
 
 /// The story from a new game, over the install at ROOT (`event_start::Chain`).
+/// Prints an event's start conditions (`EventCheckDataAll.ecd`): its words, then each group's
+/// commands by name with their operands, triggers marked with their group.
+fn event_check(root: &Path, event: &str) -> Result<()> {
+    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
+    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
+    let n = event.parse::<usize>().ok().or_else(|| names.iter().position(|n| *n == event)).ok_or("no such event")?;
+    let c = checks.get(n).ok_or("no check for that event")?;
+    println!("{} (event {n}): words {:?}", names.get(n).copied().unwrap_or("?"), c.words);
+    for (g, group) in c.groups.iter().enumerate() {
+        for cmd in barrel_formats::event_check::commands(group).map_err(|e| e.to_string())? {
+            let trigger = cmd.trigger().map_or(String::new(), |t| format!(" [trigger group {t}]"));
+            println!("  group {g}: {} {:?}{trigger}", cmd.name(), cmd.operands);
+        }
+    }
+    Ok(())
+}
+
 fn story_chain(root: &Path) -> Result<barrel_game::event_start::Chain> {
     let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
     let process = barrel_formats::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
