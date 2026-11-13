@@ -148,7 +148,10 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [a, r, g, b] = t.colour;
                 let colour = if a == 0 { [1.0; 4] } else { [r, g, b, a].map(|c| f32::from(c) / 255.0) };
                 let scale = t.size * k / text::LINE * 1.47;
-                font.line(&t.text, dx + t.at[0] as f32 * k, t.at[1] as f32 * k, scale, colour, &mut out);
+                // Kind 23 texts end at their node (the numbers at x 1800 in the save list's
+                // details); the others start there.
+                let x = dx + t.at[0] as f32 * k - if t.kind == 23 { font.width_of(&t.text) * scale } else { 0.0 };
+                font.line(&t.text, x, t.at[1] as f32 * k, scale, colour, &mut out);
             }
         }
     }

@@ -114,28 +114,36 @@ fn all_elements() -> Vec<Element> {
     out
 }
 
-/// The screens before play: the title, then the hero choice.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The screens before play: the title, then the hero choice or the Load Game list.
+#[derive(Clone, Debug, PartialEq)]
 enum Front {
     Title(Title),
     Hero(crate::hero::Hero),
+    Load(crate::loadlist::LoadList),
 }
 
 /// How the screens before play ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Start {
     /// A new game with this lead (Logy when true).
     NewGame { logy: bool },
+    /// A saved game from this file.
+    Load(std::path::PathBuf),
     Exit,
 }
 
 impl Front {
-    fn press(&mut self, b: Button) -> Option<Start> {
+    fn press(&mut self, b: Button, saves: Option<&Path>) -> Option<Start> {
         match self {
             Front::Title(t) => match t.press(b)? {
                 Entry::NewGame => *self = Front::Hero(crate::hero::Hero::new()),
+                Entry::LoadGame => *self = Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_game::saves::list).unwrap_or_default())),
                 Entry::ExitGame => return Some(Start::Exit),
                 other => eprintln!("title: {other:?} is not there yet"),
+            },
+            Front::Load(l) => match l.press(b)? {
+                crate::loadlist::Outcome::Load(path) => return Some(Start::Load(path)),
+                crate::loadlist::Outcome::Back => *self = Front::Title(Title::Menu(1)),
             },
             Front::Hero(h) => match h.press(b)? {
                 crate::hero::Outcome::Chosen(logy) => return Some(Start::NewGame { logy }),
@@ -182,6 +190,7 @@ pub fn run(
     root: &Path,
     keys: &[Button],
     out: Option<&Path>,
+    saves: Option<&Path>,
 ) -> Result<Option<Start>> {
     use crate::hero::Hero;
     let d = &gpu.device;
@@ -192,6 +201,7 @@ pub fn run(
     let still_bytes = std::fs::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| std::fs::read(x64.join(&still.folder).join(&still.file)))?;
     let still_g1t = barrel_formats::g1t::G1t::parse(&still_bytes)?;
     let hero_nodes = barrel_formats::layout::placed(&pe, crate::hero::LAYOUT);
+    let load_nodes = barrel_formats::layout::placed(&pe, crate::loadlist::LAYOUT);
     let texts = |p: &barrel_formats::layout::Placed| barrel_formats::layout::text(&pe, p);
     let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("title: no glyph table")?;
     let atlas_bytes = std::fs::read(x64.join("Font_EN/MainFont_x64_0.g1t"))?;
@@ -203,6 +213,12 @@ pub fn run(
         every.extend(Hero::Choose { logy }.elements(&hero_nodes, texts));
         for yes in [false, true] {
             every.extend(Hero::Confirm { logy, yes }.elements(&hero_nodes, texts));
+        }
+    }
+    // The list's sprites as stored, and the cuts it swaps in (the stamps, the "Load" heading).
+    for p in &load_nodes {
+        for cut in [p.node.cut.max(0), 1, 2] {
+            every.push(Element::Sprite { part: p.node.part, cut, at: p.at });
         }
     }
     let mut keys_needed: Vec<(String, u32)> = Vec::new();
@@ -244,12 +260,13 @@ pub fn run(
             q
         }
         Front::Hero(hero) => hud::quads(&pe, Some(&font), &sheets, &hero.elements(&hero_nodes, texts), w, h),
+        Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
     let mut front = Front::Title(Title::new());
     let mut picked = None;
     for &b in keys {
         if picked.is_none() {
-            picked = front.press(b);
+            picked = front.press(b, saves);
         }
     }
     layer.set(gpu, &quads(&front))?;
@@ -273,15 +290,15 @@ pub fn run(
                 for key in pump.take_pressed() {
                     if let Some(b) = button(key)
                         && chosen.is_none() {
-                            chosen = front.press(b);
+                            chosen = front.press(b, saves);
                         }
                 }
                 if chosen.is_some() {
                     break chosen;
                 }
-                if shown != Some(front) {
+                if shown.as_ref() != Some(&front) {
                     layer.set(gpu, &quads(&front))?;
-                    shown = Some(front);
+                    shown = Some(front.clone());
                 }
                 let Some(image) = presenter.acquire(ready)? else { continue };
                 unsafe {

@@ -167,6 +167,11 @@ impl Font {
         }
     }
 
+    /// The widest line of layout text `text`, in atlas pixels.
+    pub fn width_of(&self, text: &str) -> f32 {
+        plain_lines(text).iter().map(|l| self.width(l)).fold(0.0, f32::max)
+    }
+
     /// One line of layout text (`<IMnn>` icons and `<CLxx>` colours read) with its top-left at
     /// (x, y), `scale` screen pixels per atlas pixel.
     pub fn line(&self, text: &str, x: f32, y: f32, scale: f32, colour: [f32; 4], out: &mut Vec<Quad>) {

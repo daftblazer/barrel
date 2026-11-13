@@ -569,8 +569,11 @@ are ours (`docs/open.md`). `BARREL_NO_HUD` turns it off.
 layout 1056 and still 9): "Press any button", then the six entries (arrows or W/S, Enter, Space
 or Z to pick, Escape, Backspace or X back). New Game opens the hero choice (`hero.rs`, layout
 1023: the two profile cards, left and right switch, confirm asks Yes / No with Yes at the left)
-and its Yes starts the new game with that lead, as `--new-game ROOT [--hero logy]`; Exit Game
-ends; the other entries are not there yet. The screen is drawn with the text layer alone,
+and its Yes starts the new game with that lead, as `--new-game ROOT [--hero logy]`; Load Game opens the save list (`loadlist.rs`, layout 1035) over Barrel's own save
+slots (`barrel_game::saves`: `slotNN.save` in `--saves DIR`, by default
+`$XDG_DATA_HOME/barrel/saves`), and a saved slot loads as `--load FILE`; Exit Game ends; the
+other entries are not there yet. In free play F5 without `--save FILE` writes the saves
+folder's next free slot. The screen is drawn with the text layer alone,
 before any field is loaded. Offscreen, `BARREL_TITLE_KEYS=confirm,down` presses buttons and
 writes the screen as it then stands to OUT (`confirm,confirm,confirm,left,confirm` goes on into
 a new game with Escha).

@@ -1212,7 +1212,8 @@ that place them are tables in the executable (English addresses; `crates/formats
   OUT.png ID...` draws layouts).
 - Coordinates are on a 1920 × 1080 screen.
 - **Nesting**: a node part above 0x164 is another layout, by id, placed at the node (its own
-  place added): 105 layouts are not nested in any other, the screens. Part 0x164 (kinds 21, 22, 23) is a text:
+  place added): 105 layouts are not nested in any other, the screens. Part 0x164 (kinds 21, 22, 23) is a text (kind 23 ends at its node, right-aligned: the save list's numbers at x 1800; kinds
+  21 and 22 start there):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as 0xAARRGGBB (0: the widget's own), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
   number such as 19213, unread). Fixed labels are the string itself, with `<IMnn>` button
@@ -1234,7 +1235,12 @@ that place them are tables in the executable (English addresses; `crates/formats
   background, layout 357: the figures, layouts 1021 and 1022; the profile cards, Escha's 1024 and
   Logy's 1025, part 0x141 cut 0 frame, cut 1 or 2 the profile, cut 3 a "Cleared" stamp; the
   arrows, parts 0x142 and 0x143; the Yes and No tags, 1013 and 1014; "Select your character.";
-  1023 has the cards side by side, Logy's at the left, 1015 the figures alone with the tags), 1035 the save list, 916 the battle result, 920 party info, 926 field info.
+  1023 has the cards side by side, Logy's at the left, 1015 the figures alone with the tags), 1035 the save list (`a15_saveload.g1t`: four slot plates,
+  layout 1040 every 200 from y 200, the lit plate part 0x152 and the plain 0x153; the stamp part
+  0x151, cut 0 "NEW DATA", 1 Escha's and 2 Logy's "DATA" picture; the slot texts, layout 1042:
+  "New SaveData" or "Game Data 999", the date line and "9999/99/99 00:00:00"; the heading part
+  0x157, cut 0 "Save", 1 "Load", 2 "Delete"; the details panel 1044 with "Play Time",
+  "Protagoist" (sic), "LV", "Alchemy LV", "Money" and eleven party rows, layout 1046), 916 the battle result, 920 party info, 926 field info.
 
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.

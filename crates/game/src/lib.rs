@@ -40,6 +40,7 @@ pub mod skirmish;
 pub mod sophie2;
 pub mod squirrel;
 pub mod subject;
+pub mod saves;
 pub mod session;
 pub mod stage;
 pub mod synthesis;

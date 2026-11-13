@@ -24,6 +24,7 @@ mod fsr;
 mod glow;
 mod hud;
 mod hero;
+mod loadlist;
 mod title;
 mod fsr3;
 mod gsr2;
@@ -2422,6 +2423,8 @@ fn main() -> Result<()> {
     let mut new_game = None::<PathBuf>;
     let mut travel_to = None::<String>;
     let mut load_file = None::<PathBuf>;
+    // `--saves DIR`: Barrel's save slots (`barrel_game::saves`; by default its own data folder).
+    let mut saves_dir = None::<PathBuf>;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
@@ -2576,6 +2579,7 @@ fn main() -> Result<()> {
             }
             "--save" => save_file = Some(PathBuf::from(it.next().ok_or("--save FILE")?)),
             "--load" => load_file = Some(PathBuf::from(it.next().ok_or("--load FILE")?)),
+            "--saves" => saves_dir = Some(PathBuf::from(it.next().ok_or("--saves DIR")?)),
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -3046,14 +3050,27 @@ fn main() -> Result<()> {
         let target = title::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
         let window = presenter.as_ref().zip(pump.as_mut());
         let out = presenter.is_none().then(|| PathBuf::from(&out_path));
-        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, &keys, out.as_deref())?;
+        let saves = saves_dir.clone().or_else(barrel_game::saves::default_dir);
+        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, &keys, out.as_deref(), saves.as_deref())?;
         eprintln!("title: {picked:?}");
-        let Some(title::Start::NewGame { logy }) = picked else { return Ok(()) };
-        // The new game with the lead chosen.
-        hero = u32::from(logy);
-        let first = barrel_game::event_start::new_game_event(logy, false);
-        event_spec = Some(r.join("Event/event").join(barrel_game::event_start::event_file(first)).to_string_lossy().into_owned());
-        eprintln!("new game: {first}");
+        match picked {
+            Some(title::Start::NewGame { logy }) => {
+                // The new game with the lead chosen.
+                hero = u32::from(logy);
+                let first = barrel_game::event_start::new_game_event(logy, false);
+                event_spec = Some(r.join("Event/event").join(barrel_game::event_start::event_file(first)).to_string_lossy().into_owned());
+                eprintln!("new game: {first}");
+            }
+            Some(title::Start::Load(file)) => {
+                // A saved game: as `--load FILE` with any field of the install.
+                event_spec = None;
+                chain_on = false;
+                free_play = false;
+                args[1] = r.join("Data/x64/Field/TOWN_04").to_string_lossy().into_owned();
+                load_file = Some(file);
+            }
+            _ => return Ok(()),
+        }
     }
     let mut chain = match (&event_spec, chain_on) {
         (Some(e), true) => {
@@ -3929,15 +3946,23 @@ fn main() -> Result<()> {
                 None => eprintln!("frame {frame}: no gathering point within reach"),
             }
         }
-        // F5 (or `BARREL_SAVE_AT`): the session saved where she stands (`--save FILE`).
+        // F5 (or `BARREL_SAVE_AT`): the session saved where she stands (`--save FILE`, else the
+        // next free slot of the saves folder).
         if save_now {
-            match (session.as_ref().and_then(|s| s.save([w.pos[0], w.pos[2]])), &save_file) {
+            let next_slot = || {
+                let dir = saves_dir.clone().or_else(barrel_game::saves::default_dir)?;
+                std::fs::create_dir_all(&dir).ok()?;
+                let n = barrel_game::saves::list(&dir).iter().map(|s| s.number).max().unwrap_or(0) + 1;
+                Some(barrel_game::saves::slot_path(&dir, n))
+            };
+            let file = save_file.clone().or_else(next_slot);
+            match (session.as_ref().and_then(|s| s.save([w.pos[0], w.pos[2]])), &file) {
                 (Some(text), Some(file)) => match std::fs::write(file, text) {
                     Ok(()) => eprintln!("frame {frame}: saved to {}", file.display()),
                     Err(e) => eprintln!("frame {frame}: saving to {} failed: {e}", file.display()),
                 },
                 (None, _) => eprintln!("frame {frame}: nothing to save (no story in free play)"),
-                (_, None) => eprintln!("frame {frame}: no --save FILE to save to"),
+                (_, None) => eprintln!("frame {frame}: no --save FILE or saves folder to save to"),
             }
         }
         // A strike: the swing's motion once through, blended in, then her gait again.
