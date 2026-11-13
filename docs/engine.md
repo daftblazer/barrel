@@ -493,7 +493,7 @@ sound into a `Capture` instead of a device: at each frame exactly up to the even
 `--at`), so the WAV (16-bit stereo, 48 kHz) lines up with the frames written, run after run.
 It is written when the run ends. The reference recording of the opening carries the game's own
 mix (`tools/oracle/README.md`, "Recording"), so the two can be set side by side:
-`tools/oracle/audio-offset.py GAME.wav BARREL.wav` cross-correlates their loudness envelopes
+`tools/oracle/clip-fit.py MIX.wav CLIP.wav` finds a clip in a mix and its gain; `tools/oracle/audio-offset.py GAME.wav BARREL.wav` cross-correlates their loudness envelopes
 (10 ms steps) for the offset and prints the levels second by second. First look, event 111's
 first 20 s: Barrel is silent for its first 4 s where the game already has sound (likely music
 carried in from the load); the game's lines wait for a button, so the two timelines only line
