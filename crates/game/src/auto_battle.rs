@@ -10,6 +10,7 @@ use barrel_formats::battle_data::{self as bd, ActInfo, EncounterGroup, ItemEffec
 use barrel_formats::pe::Pe;
 
 use crate::fight::Event;
+pub use crate::skirmish::Command;
 use crate::rng::Rng;
 
 /// The party members' names by character number.
@@ -102,6 +103,10 @@ pub fn fight(t: &Tables, party: &[(usize, i32)], group: i32, rng: &mut Rng) -> R
 /// Monsters already drawn (`draw`) against `party`: the battle scatters them with `rng` first
 /// (`battle::scatter`), so a copy of `rng` taken now places them where the battle does.
 pub fn fight_drawn(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng) -> Result<Outcome, String> {
+    fight_with(t, party, drawn, rng, None).map(|(o, _)| o)
+}
+
+fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng, commands: Option<&[Command]>) -> Result<(Outcome, Option<Turn>), String> {
     let mut names = Vec::new();
     let mut start = Vec::new();
     let mut members = Vec::new();
@@ -126,8 +131,57 @@ pub fn fight_drawn(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mu
     let sizes: Vec<f32> = drawn.iter().map(|&k| bd::monster_size(&t.radii, k).unwrap_or(MONSTER_SIZE)).collect();
     let kinds: Vec<&str> = t.kinds.iter().map(String::as_str).collect();
     let rules = crate::skirmish::ItemRules { acts: &t.acts, kinds: &kinds, effects: &t.effects };
-    let (events, winner) = crate::skirmish::skirmish(&members, &foes, &sizes, rules, rng, MAX_EVENTS);
-    Ok(Outcome { names, start, events, winner })
+    let (events, winner, turn) = match commands {
+        None => {
+            let (events, winner) = crate::skirmish::skirmish(&members, &foes, &sizes, rules, rng, MAX_EVENTS);
+            (events, winner, None)
+        }
+        Some(commands) => run_commanded(&members, &foes, &sizes, rules, rng, commands),
+    };
+    Ok((Outcome { names, start, events, winner }, turn))
+}
+
+/// A member's turn waiting for a command: who, the skills it may use (name, MP cost, whether it
+/// can pay) and the monsters standing (fighter numbers).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Turn {
+    pub who: usize,
+    pub skills: Vec<(String, i32, bool)>,
+    pub foes: Vec<usize>,
+}
+
+/// Monsters already drawn against `party` with the player's `commands`, one per member turn in
+/// order, from the battle's generator `rng` (taken by value: the same generator and commands
+/// always fight the same battle, so a battle grows a command at a time). Returns the battle so
+/// far and the member turn waiting for the next command (none once a side has won).
+pub fn fight_commanded(t: &Tables, party: &[(usize, i32)], drawn: &[usize], mut rng: Rng, commands: &[Command]) -> Result<(Outcome, Option<Turn>), String> {
+    fight_with(t, party, drawn, &mut rng, Some(commands))
+}
+
+fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fighter], sizes: &[f32], rules: crate::skirmish::ItemRules, rng: &mut Rng, commands: &[Command]) -> (Vec<Event>, Option<u8>, Option<Turn>) {
+    let mut s = crate::skirmish::Skirmish::new(members, foes, sizes, rules, rng);
+    let mut events = Vec::new();
+    let mut given = commands.iter();
+    while events.len() < MAX_EVENTS && s.winner().is_none() {
+        let (who, start) = s.begin_turn();
+        events.extend(start);
+        if !s.can_act(who) {
+            continue;
+        }
+        if !s.is_member(who) {
+            events.extend(s.auto(who, rng));
+            continue;
+        }
+        match given.next() {
+            Some(&c) => events.extend(s.command(who, c, rng)),
+            None => {
+                let skills = s.skills(who).into_iter().map(|(k, cost, can)| (k.name.clone(), cost, can)).collect();
+                return (events, None, Some(Turn { who, skills, foes: s.foes_standing() }));
+            }
+        }
+    }
+    let winner = s.winner();
+    (events, winner, None)
 }
 
 #[cfg(test)]

@@ -80,6 +80,24 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
     out
 }
 
+/// Where the command list stands and its lines' spacing (not the game's command layout, which
+/// is not identified yet).
+const LIST_AT: [i32; 2] = [1500, 360];
+const LIST_STEP: i32 = 44;
+const LIST_SIZE: f32 = 33.0;
+
+/// A member's command list (`list`: each line and whether it can be given), the chosen line
+/// gold and those that cannot be given grey, under a title (who acts, on whom): plain text right of centre.
+pub fn command_list(list: &[(String, bool)], chosen: usize, title: &str) -> Vec<Element> {
+    let line = |text: String, at: [i32; 2], colour: [u8; 4]| Element::Label(Text { at, size: LIST_SIZE, colour, text, kind: 21 });
+    let mut out = vec![line(title.to_string(), LIST_AT, [0xff, 0xff, 0xff, 0xff])];
+    for (k, (text, can)) in list.iter().enumerate() {
+        let colour = if !*can { [0xff, 0x90, 0x90, 0x90] } else if k == chosen { [0xff, 0xff, 0xd0, 0x40] } else { [0xff, 0xff, 0xff, 0xff] };
+        out.push(line(text.clone(), [LIST_AT[0], LIST_AT[1] + LIST_STEP * (k as i32 + 1)], colour));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

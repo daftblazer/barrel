@@ -1466,7 +1466,7 @@ struct BattleHud {
     nodes: Vec<barrel_formats::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size.
-    shown: Option<(Vec<battlehud::Member>, u32, u32)>,
+    shown: Option<(Vec<battlehud::Member>, Option<(Vec<(String, bool)>, usize, String)>, u32, u32)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1514,7 +1514,8 @@ fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: u
     let spots = barrel_game::battle::scatter(&sizes, &mut rng.clone());
     let party = [(usize::from(logy), 1), (usize::from(!logy), 1)];
     let monsters: Vec<usize> = drawn.iter().map(|d| d.0).collect();
-    let outcome = barrel_game::auto_battle::fight_drawn(&tables, &party, &monsters, &mut rng)?;
+    // Fought a member's command at a time (`fight_commanded`): up to the first member turn.
+    let (outcome, turn) = barrel_game::auto_battle::fight_commanded(&tables, &party, &monsters, rng, &[])?;
     let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     let base_row = |chara: usize| charas.children.get(chara)?.attr("BaseTag").and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
@@ -1546,7 +1547,19 @@ fn battle_people(root: &Path, group: i32, logy: bool, scene: &mut Scene, base: u
             bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
     }
-    Ok((packs, bodies, BattlePlay { fighters, now: outcome.start.clone(), charas: party.iter().map(|p| p.0).collect(), outcome, next: 0, time: 0.0, until: BATTLE_FIRST_STEP }))
+    Ok((packs, bodies, BattlePlay {
+        fighters,
+        now: outcome.start.clone(),
+        charas: party.iter().map(|p| p.0).collect(),
+        outcome,
+        next: 0,
+        time: 0.0,
+        until: BATTLE_FIRST_STEP,
+        fight: BattleFight { tables, party: party.to_vec(), monsters, rng, commands: Vec::new() },
+        turn,
+        chosen: 0,
+        target: 0,
+    }))
 }
 
 /// Seconds before the battle's first step, and between steps.
@@ -1566,9 +1579,26 @@ struct BattlePlay {
     now: Vec<[i32; 4]>,
     /// The party's character numbers (the first fighters).
     charas: Vec<usize>,
+    /// What fights the battle again with each new command.
+    fight: BattleFight,
+    /// The member turn waiting for a command (once the events before it have played).
+    turn: Option<barrel_game::auto_battle::Turn>,
+    /// The command list's choice (0 the attack, then the skills) and the target's place among
+    /// the standing monsters.
+    chosen: usize,
+    target: usize,
     next: usize,
     time: f32,
     until: f32,
+}
+
+/// A battle's tables, sides, generator and the commands given so far.
+struct BattleFight {
+    tables: barrel_game::auto_battle::Tables,
+    party: Vec<(usize, i32)>,
+    monsters: Vec<usize>,
+    rng: barrel_game::rng::Rng,
+    commands: Vec<barrel_game::auto_battle::Command>,
 }
 
 struct BattleFighter {
@@ -1585,6 +1615,56 @@ impl BattlePlay {
     fn set(&mut self, k: usize, field: usize, value: i32) {
         if let Some(v) = self.now.get_mut(k) {
             v[field] = value;
+        }
+    }
+
+    /// Whether a member's turn waits for a command (its events before it all played).
+    fn waiting(&self) -> bool {
+        self.turn.is_some() && self.next >= self.outcome.events.len() && self.time >= self.until
+    }
+
+    /// The command list: the attack, then the member's skills (with their MP costs; those it
+    /// cannot pay for marked), and the chosen target's name.
+    fn commands(&self) -> Option<(Vec<(String, bool)>, usize, String)> {
+        let turn = self.turn.as_ref().filter(|_| self.waiting())?;
+        let mut list = vec![("Attack".to_string(), true)];
+        list.extend(turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)));
+        let target = turn.foes.get(self.target).and_then(|&k| self.outcome.names.get(k)).cloned().unwrap_or_default();
+        let who = self.outcome.names.get(turn.who).cloned().unwrap_or_default();
+        Some((list, self.chosen, format!("{who} → {target}")))
+    }
+
+    /// A button on a member's turn: up and down choose the command, left and right the target,
+    /// confirm gives it (the battle is fought again with it, the events after it to play).
+    fn press(&mut self, b: title::Button) {
+        let Some(turn) = self.turn.clone().filter(|_| self.waiting()) else { return };
+        let count = turn.skills.len() + 1;
+        let foes = turn.foes.len().max(1);
+        match b {
+            title::Button::Up => self.chosen = (self.chosen + count - 1) % count,
+            title::Button::Down => self.chosen = (self.chosen + 1) % count,
+            title::Button::Left => self.target = (self.target + foes - 1) % foes,
+            title::Button::Right => self.target = (self.target + 1) % foes,
+            title::Button::Confirm => {
+                use barrel_game::auto_battle::Command;
+                let target = turn.foes.get(self.target).copied().unwrap_or(0);
+                let command = if self.chosen == 0 { Command::Attack { target } } else { Command::Skill { skill: self.chosen - 1, target } };
+                self.fight.commands.push(command);
+                let f = &self.fight;
+                match barrel_game::auto_battle::fight_commanded(&f.tables, &f.party, &f.monsters, f.rng, &f.commands) {
+                    Ok((outcome, turn)) => {
+                        self.outcome = outcome;
+                        self.turn = turn;
+                    }
+                    Err(e) => {
+                        eprintln!("battle: {e}");
+                        self.turn = None;
+                    }
+                }
+                (self.chosen, self.target) = (0, 0);
+                self.until = self.time;
+            }
+            title::Button::Back => {}
         }
     }
 
@@ -1636,9 +1716,13 @@ impl BattlePlay {
         if self.time < self.until {
             return;
         }
+        // Nothing to play: a member's turn waits (the step's time kept for its command).
+        if self.next >= self.outcome.events.len() && self.turn.is_some() {
+            return;
+        }
         self.until = self.time + BATTLE_STEP;
         let Some(event) = self.outcome.events.get(self.next).cloned() else {
-            if self.next == self.outcome.events.len() {
+            if self.next == self.outcome.events.len() && self.turn.is_none() {
                 self.next += 1;
                 if let Some(end) = self.outcome.lines().last() {
                     eprintln!("battle: {end}");
@@ -4057,6 +4141,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             None => eprintln!("no HUD: the English executable, the font or a WinXls pack is missing"),
         }
     }
+    let mut battle_keys: std::collections::VecDeque<title::Button> = title::keys(&std::env::var("BARREL_BATTLE_KEYS").unwrap_or_default()).into();
     let mut battle_layer = match battle_play.as_ref() {
         Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
             let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
@@ -4183,7 +4268,23 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
         // and + / - move it in and out (R puts it back).
         use winit::keyboard::KeyCode;
         let mut quit = false;
+        let battle_waits = battle_play.as_ref().is_some_and(BattlePlay::waiting);
         for key in p.take_pressed() {
+            // A member's turn: the arrows choose the command and target, Enter gives it.
+            if battle_waits {
+                let b = match key {
+                    KeyCode::ArrowUp => Some(title::Button::Up),
+                    KeyCode::ArrowDown => Some(title::Button::Down),
+                    KeyCode::ArrowLeft => Some(title::Button::Left),
+                    KeyCode::ArrowRight => Some(title::Button::Right),
+                    KeyCode::Enter | KeyCode::NumpadEnter => Some(title::Button::Confirm),
+                    _ => None,
+                };
+                if let (Some(b), Some(play)) = (b, battle_play.as_mut()) {
+                    play.press(b);
+                    continue;
+                }
+            }
             match key {
                 KeyCode::Enter | KeyCode::NumpadEnter => next_line = true,
                 // In free play Space (the pad's Start) opens the main menu; in events it pauses.
@@ -4662,6 +4763,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             town_time += dt;
             if let Some(play) = battle_play.as_mut() {
                 play.step(&mut town_bodies, dt);
+                // Offscreen: `BARREL_BATTLE_KEYS` (as `BARREL_MENU_KEYS`), a key a frame while a
+                // member's turn waits.
+                if presenter.is_none() && play.waiting()
+                    && let Some(b) = battle_keys.pop_front() {
+                        play.press(b);
+                    }
             }
         }
         for b in &mut town_bodies {
@@ -5361,11 +5468,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     // The battle HUD with the party's HP and MP, rebuilt when they change.
     if let (Some(h), Some(play)) = (battle_layer.as_mut(), battle_play.as_ref()) {
         let members = play.members();
-        if h.shown.as_ref() != Some(&(members.clone(), width, height))
+        let commands = play.commands();
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), width, height))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
-                let elements = battlehud::elements(&h.nodes, |p| barrel_formats::layout::text(&pe, p), &members);
+                let mut elements = battlehud::elements(&h.nodes, |p| barrel_formats::layout::text(&pe, p), &members);
+                if let Some((list, chosen, title)) = &commands {
+                    elements.extend(battlehud::command_list(list, *chosen, title));
+                }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, width, height));
+                h.shown = Some((members, commands, width, height));
             }
     }
     let record = |cb: vk::CommandBuffer| unsafe {

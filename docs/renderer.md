@@ -268,6 +268,14 @@ to `WAIT` when its motion ends, the event's line on the console. Not yet the gam
 timing, one motion for every action, no one running to their target, no effects, numbers or
 sounds, no results. The battle HUD (`battlehud`, layout 886) is drawn over it: each member's
 plate with their portrait and their HP and MP bars cut to what is left, following the events.
+A member's turn waits for a command: the list (the attack, then the skills it may use with their
+MP costs, those it cannot pay for grey) and who acts on whom, right of centre; up and down
+choose, left and right change the target among the standing monsters, Enter gives it
+(offscreen `BARREL_BATTLE_KEYS`, a key a frame while a turn waits). The battle is then fought
+again from its start with the commands so far (`auto_battle::fight_commanded`: the same
+generator and commands always give the same battle, so what was played stays) up to the next
+member turn. Not yet the game's: the list (the game's command layout is not identified), no
+mark on the target in the scene, no items, guarding or fleeing, the pad not mapped.
 
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
