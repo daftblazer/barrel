@@ -293,6 +293,21 @@ impl JumpVoice {
     }
 }
 
+/// A character's gravity, metres a second squared (its +0x164, set to 0x416b5c0f by
+/// `0x14026b9c9`).
+pub const GRAVITY: f32 = 14.71;
+/// The jump's launch speed upward, metres a second (`0x140234f80`: 5, or 25 when the character's
+/// +0x12d is set), given as it leaves the ground (the jump's second phase).
+pub const JUMP_SPEED: f32 = 5.0;
+pub const JUMP_SPEED_HIGH: f32 = 25.0;
+
+/// How far above where it left the ground a character launched at `speed` (metres a second) is
+/// after `t` seconds, in field units (`0x14026bc80`: each frame it moves by v dt - a dt^2 / 2,
+/// the height times 100, and its speed drops by a dt). Below 0 it has come down.
+pub fn jump_height(speed: f32, t: f32) -> f32 {
+    100.0 * (speed * t - GRAVITY * t * t / 2.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +401,12 @@ mod tests {
         // By 100 the voice is certain.
         let mut v = JumpVoice { chance: 100 };
         assert!(v.jump(1, &mut rng).is_some_and(|c| (11318..=11320).contains(&c)));
+    }
+
+    #[test]
+    fn a_jump_rises_85_units_and_lands_in_0_68_s() {
+        let peak = JUMP_SPEED / GRAVITY;
+        assert!((jump_height(JUMP_SPEED, peak) - 85.0).abs() < 0.1);
+        assert!(jump_height(JUMP_SPEED, 2.0 * peak).abs() < 1e-3 && (2.0 * peak - 0.68).abs() < 0.01);
     }
 }

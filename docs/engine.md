@@ -369,9 +369,15 @@ with a landing sound picked by the ground under her (the map's 64-byte record at
 at +0x2f68). The motion carries a rise of its own: in `PC20_ACT_JUMP` (1.93 s) her
 hips (bone 4; the root and the next two stay at the origin) go from 88 units up to 111 by 0.5 s,
 hold near 95 from 1.0 to 1.5 s (the pose in the air), drop to a 52-unit crouch at 1.7 s and are
-back at 88 at the end (`barrel g1a FILE#N 4` samples a bone). Whether the code also lifts her,
-and what ends the jump (landing on ground, or the timers), is not read; the viewer does not jump
-yet.
+back at 88 at the end (`barrel g1a FILE#N 4` samples a bone). The code lifts her too: the jump runs in
+phases (+0x138: 0 the take-off, 1 in the air, 4 the landing), and going into the air
+(`0x140234f13`) plays the motion's next division and gives the character an upward speed (its
++0x150 velocity set to (0, 5, 0) metres a second, or (0, 25, 0) when its +0x12d is set). Each frame
+(`0x14026bc80`) a character moves by v·dt − a·dt²/2 (the height × 100 into field units) and its
+velocity drops by a·dt, a being its +0x160 acceleration, whose upward part is the gravity, 14.71
+m/s² (`0x14026b9c9`). So a jump peaks 0.85 m (85 units) up after 0.34 s and is back down after
+0.68 s (`game::walk::jump_height`). What ends the landing (the ground under her, the 1.7 s timer)
+is not read; the viewer does not jump yet.
 
 ## Movies (open)
 
