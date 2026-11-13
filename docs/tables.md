@@ -2083,7 +2083,13 @@ for the world map's current point, `0x14016e7a0`): `{1, point, 0, 0, map, 0, n, 
 point leading to field map `map` once `event` has been seen (-1, always, in all 107;
 `barrel_formats::world::point_maps`, `barrel world-points EXE`). The town point `LP_T0` opens
 the town's maps 0 to 10; `SP_A0P0` to `P4` the Twilight Forest's `AREA_01_01` to `_05`, and so
-on through the regions; `LP_G1` `EX_AREA_03` and `LP_G2` `EX_AREA_04` to `_10`. Where the points
-stand on the world map is not read yet. The routes
+on through the regions; `LP_G1` `EX_AREA_03` and `LP_G2` `EX_AREA_04` to `_10`. The points stand
+where the world map's placements mark them, by tag (`A15_WMAP.opl2`): `T0` the town's mark
+(`a15wmap_point_mat_on`/`_off`, `LP_T0`), `A0` ... `G2` the regions' big marks
+(`a15wmap_point_big_on`/`_off`, `LP_A0` ...), `A0p0` ... the small points
+(`a15wmap_point_sm_on`/`_off`, `SP_A0P0` ...); `A0r0` ... tag the dots along a region's paths
+(`a15_point_r_off`, 271) and `R0` to `R14` the routes' marks (`a15_point_r_big_bwr`, 112)
+(`world::point_tag`, `point_position`; `barrel world-points` prints them: the town at (26250,
+27000), the Twilight Forest's points 750 apart east of it). The routes
 and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
 part).

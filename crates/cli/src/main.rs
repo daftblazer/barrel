@@ -645,11 +645,22 @@ fn world_points(exe: &Path) -> Result<()> {
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
     let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
     let maps = barrel_game::event::field_maps(&pe);
+    // Where each point stands, from the world map field's placements beside the executable.
+    let placements = exe
+        .parent()
+        .map(|d| d.join("Data/x64/Field/A15_WMAP/A15_WMAP.elixir.gz"))
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|bytes| {
+            let c = Elixir::parse(&bytes).ok()?;
+            let e = c.entries.iter().find(|e| e.name.ends_with(".opl2"))?;
+            barrel_formats::opl2::parse(c.data(e)).ok()
+        });
     for (point, map, event) in barrel_formats::world::point_maps(&pe).ok_or("no point table")? {
         let name = names.get(point as usize).map_or("?", |s| s.as_str());
         let field = maps.get(map as usize).map_or("?", |s| s.as_str());
         let after = if event >= 0 { format!(" after event {event}") } else { String::new() };
-        println!("point {point:3} {name:10} -> map {map:3} {field}{after}");
+        let at = placements.as_ref().and_then(|p| barrel_formats::world::point_position(p, name)).map(|p| format!(" at ({:.0}, {:.0}, {:.0})", p[0], p[1], p[2])).unwrap_or_default();
+        println!("point {point:3} {name:10} -> map {map:3} {field}{after}{at}");
     }
     Ok(())
 }

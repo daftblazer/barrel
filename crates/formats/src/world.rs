@@ -93,3 +93,33 @@ pub fn point_names(pe: &Pe) -> Option<Vec<String>> {
     let (names, first) = pe.enum_names("WM_POINTER_LP_T0")?;
     Some(names[first..].iter().take_while(|n| n.starts_with("WM_POINTER_")).map(|n| n["WM_POINTER_".len()..].to_string()).collect())
 }
+
+/// The placement tag that marks a world map point on the world map's field (`A15_WMAP.opl2`):
+/// `LP_T0` the town's mark (`T0`), `LP_A0` ... a region's big mark (`A0`), `SP_A0P0` ... a
+/// small point (`A0p0`). The region entries `SP_A0` ... have no mark of their own (none).
+pub fn point_tag(name: &str) -> Option<String> {
+    if let Some(region) = name.strip_prefix("LP_") {
+        return Some(region.to_string());
+    }
+    let rest = name.strip_prefix("SP_")?;
+    let (region, n) = rest.split_once('P')?;
+    Some(format!("{region}p{n}"))
+}
+
+/// Where a world map point stands (field units), from the world map's placements: the first
+/// placement tagged with the point's tag.
+pub fn point_position(placements: &crate::opl2::Placements, name: &str) -> Option<[f32; 3]> {
+    let tag = point_tag(name)?;
+    placements.objects.iter().flat_map(|t| t.instances.iter()).find(|i| i.tags.split_whitespace().any(|t| t == tag) || i.tags == tag).map(|i| i.position)
+}
+
+#[cfg(test)]
+mod point_tests {
+    #[test]
+    fn point_names_become_tags() {
+        assert_eq!(super::point_tag("LP_T0").as_deref(), Some("T0"));
+        assert_eq!(super::point_tag("LP_A0").as_deref(), Some("A0"));
+        assert_eq!(super::point_tag("SP_A0P3").as_deref(), Some("A0p3"));
+        assert_eq!(super::point_tag("SP_A0"), None);
+    }
+}
