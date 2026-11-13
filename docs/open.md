@@ -175,9 +175,10 @@ likely settle them where static reading failed.
 
 ## Sound
 
-- **Loudness and the event's first seconds** (against the reference recording): Barrel's event
-  mix is 3 to 7 dB above the game's and clips; the game has sound in event 111's first seconds
-  where Barrel is silent. Levels by part (music, voice, effects) are next.
+- **Sound against the reference recording**: voice and music levels match since
+  `OPTION_VOLUME` and `VOICE_GAIN` (`docs/engine.md`, "Levels"; measured, the option table not
+  read); the effects' level is not measured apart; the game has sound in event 111's first
+  seconds where Barrel is silent.
 - **Sound effect id layer**: event sound ids (≤ 244) go through a group/cue layer at the bank's
   entry 0, not read.
 

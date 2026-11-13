@@ -115,9 +115,24 @@ pub struct Mixer {
     pub master: f32,
 }
 
+/// The game's overall level at its default options, measured against the reference recording
+/// of the opening: voices and music both come out at 0.8 of their own level there (voices
+/// besides at [`VOICE_GAIN`]). Not yet read from the game's option table.
+pub const OPTION_VOLUME: f32 = 0.8;
+
+/// A voice line's gain: the game puts a mono voice clip in the middle at about 1/√2 a side
+/// (constant power), against the same clip fitted into the reference recording (0.57 of it
+/// with [`OPTION_VOLUME`], over two clips).
+pub const VOICE_GAIN: f32 = std::f32::consts::FRAC_1_SQRT_2;
+
 impl Mixer {
     pub fn new() -> Mixer {
         Mixer { voices: Vec::new(), next: 0, master: 1.0 }
+    }
+
+    /// A mixer at the game's default level ([`OPTION_VOLUME`]).
+    pub fn game() -> Mixer {
+        Mixer { master: OPTION_VOLUME, ..Mixer::new() }
     }
 
     /// Starts a sound at `gain`: once, or (with `loop_from`) going back to that frame each

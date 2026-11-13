@@ -496,9 +496,21 @@ mix (`tools/oracle/README.md`, "Recording"), so the two can be set side by side:
 `tools/oracle/audio-offset.py GAME.wav BARREL.wav` cross-correlates their loudness envelopes
 (10 ms steps) for the offset and prints the levels second by second. First look, event 111's
 first 20 s: Barrel is silent for its first 4 s where the game already has sound (likely music
-carried in from the load), and 3 to 7 dB louder on the voiced parts, peaking at full scale
-(clipping), where the game peaks at -1.4 dB; the game's lines wait for a button, so the two
-timelines only line up line by line.
+carried in from the load); the game's lines wait for a button, so the two timelines only line
+up line by line.
+
+**Levels.** A voice clip (`barrel voice-wav`) fitted into each track (its offset by
+cross-correlation, its gain by least squares: the music under it does not correlate) gives the
+level each mix plays it at, and what is left over the music and effects. The game played
+clips 12900 and 12901 at 0.80 and 0.79 of the clip (both tracks taken to mono by FFmpeg's
+downmix, which scales a centred sound by √2); Barrel, at gain 1, 1.40. So the game's voice
+lines are 0.57 of Barrel's: 0.8 (`OPTION_VOLUME`, the default options' level, by
+measurement: not yet read from the game's option table) times 1/√2 (`VOICE_GAIN`, a mono clip
+put in the middle at constant power), and its music and effects about 2 dB down (the same
+0.8). The viewer's mixers start at that level (`Mixer::game`) and voice lines play at
+`VOICE_GAIN`: then 0.79 and 0.79 for the voices, -21.3 and -20.0 dB left over (the game
+-21.0 and -20.9), -21.2 dB overall against -20.9, no clipping (peak -3.1 dB; it hit full scale
+before). The effects' own level is not measured apart.
 
 ## World map travel
 

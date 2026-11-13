@@ -4002,7 +4002,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         && presenter.is_some() {
             if sound.is_none() {
                 match barrel_audio::Output::open(0.1) {
-                    Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
+                    Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
                     Err(e) => eprintln!("no sound: {e}"),
                 }
             }
@@ -4175,13 +4175,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         player = Some((play, clock, snap.clone(), snap));
         if presenter.is_some() && sound.is_none() {
             match barrel_audio::Output::open(0.1) {
-                Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
+                Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
                 Err(e) => eprintln!("no sound: {e}"),
             }
         } else if presenter.is_none() && sound.is_none()
             && let Some(path) = audio_out.clone() {
                 let start = player.as_ref().map_or(0.0, |p| p.1.time());
-                sound = Some((Sink::File { capture: barrel_audio::Capture::new(), start, path }, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None));
+                sound = Some((Sink::File { capture: barrel_audio::Capture::new(), start, path }, barrel_audio::Mixer::game(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None));
             }
         // The event's lines in the game's English font.
         let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
@@ -4781,7 +4781,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 eprintln!("frame {frame}: jump{}", voice.map_or(String::new(), |c| format!(", voice {c}")));
                 if sound.is_none() && presenter.is_some() {
                     match barrel_audio::Output::open(0.1) {
-                        Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
+                        Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
                         Err(e) => eprintln!("no sound: {e}"),
                     }
                 }
@@ -4790,7 +4790,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         mixer.play(e, 0.6, None);
                     }
                     if let Some(v) = voice.and_then(|c| library.voice(c)) {
-                        mixer.play(v, 1.0, None);
+                        mixer.play(v, barrel_audio::VOICE_GAIN, None);
                     }
                 }
             }
@@ -4858,7 +4858,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 if before < swing_sound.0 && clock >= swing_sound.0 {
                     if sound.is_none() && presenter.is_some()
                         && let Ok(out) = barrel_audio::Output::open(0.1) {
-                            sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
+                            sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
                         }
                     if let Some((_, mixer, library, _)) = sound.as_mut()
                         && let Some(barrel_audio::Effect::Clip(e)) = library.effect(swing_sound.1) {
@@ -5100,8 +5100,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                                 }
                             }
                             barrel_game::stage::Cue::Voice { clip } => {
+                                eprintln!("frame {frame}: voice {clip}");
                                 if let Some(v) = library.voice(clip) {
-                                    line_voice = Some(mixer.play(v, 1.0, None));
+                                    line_voice = Some(mixer.play(v, barrel_audio::VOICE_GAIN, None));
                                 }
                             }
                         }
