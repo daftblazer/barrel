@@ -2757,36 +2757,33 @@ fn play_event(file: &Path, lang: Option<&str>, timed: bool) -> Result<()> {
 /// (`event_start::Story`: each event seen and its process data applied, its end firing group
 /// 11), until none starts.
 fn play_chain(file: &Path, lang: Option<&str>) -> Result<()> {
-    use barrel_game::event_start as es;
     let root = file.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the event is not inside a game install")?.to_path_buf();
-    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
-    let process = barrel_formats::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
-    let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
-    let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
-    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
-    let lists = es::listings(&checks);
-    let mut story = es::Story::default();
-    let mut rng = barrel_game::rng::Rng::seeded(1);
+    let mut chain = story_chain(&root)?;
     let mut path = file.to_path_buf();
     for _ in 0..100 {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-        let event = names.iter().position(|n| *n == stem).ok_or_else(|| format!("{stem}: not an EVENT_* name"))?;
         println!("=== {stem}");
         play_event(&path, lang, false)?;
-        story.play(event, process.get(event).map_or(&[][..], |p| p.as_slice()));
-        let Some(next) = story.next(&checks, &lists, 11, &[event as i32], &mut rng) else {
+        let Some(next) = chain.after(&stem) else {
             println!("=== (no event starts when {stem} ends)");
             break;
         };
-        let name = names.get(next).ok_or("event number past the enum")?;
-        // Event files sit in Event/event/<chapter>/, the chapter being the name's middle part.
-        let chapter = name.trim_start_matches("EVENT_").rsplit_once('_').map_or("", |(c, _)| c);
-        path = root.join("Event/event").join(chapter).join(format!("{name}.ebd"));
+        path = root.join("Event/event").join(barrel_game::event_start::event_file(next));
         if !path.is_file() {
             return Err(format!("{}: no such event file", path.display()).into());
         }
     }
     Ok(())
+}
+
+/// The story from a new game, over the install at ROOT (`event_start::Chain`).
+fn story_chain(root: &Path) -> Result<barrel_game::event_start::Chain> {
+    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let process = barrel_formats::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
+    let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
+    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
+    Ok(barrel_game::event_start::Chain::new(checks, process, names.iter().map(|n| n.to_string()).collect()))
 }
 
 /// Plays a script macro (ROOT/Script/FILE.nut's function NAME) as an event with one action,

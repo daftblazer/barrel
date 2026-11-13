@@ -389,6 +389,40 @@ impl Story {
     }
 }
 
+/// The story followed from one event to the next in a new game: each event played (seen, its
+/// process data applied), then its end fired (group 11) to pick the next. Events by their
+/// `EVENT_*` names, in enum order.
+pub struct Chain {
+    checks: Vec<EventCheck>,
+    process: Vec<Vec<Vec<u32>>>,
+    names: Vec<String>,
+    lists: HashMap<u8, Vec<Listed>>,
+    story: Story,
+    rng: Rng,
+}
+
+impl Chain {
+    pub fn new(checks: Vec<EventCheck>, process: Vec<Vec<Vec<u32>>>, names: Vec<String>) -> Chain {
+        let lists = listings(&checks);
+        Chain { checks, process, names, lists, story: Story::default(), rng: Rng::seeded(1) }
+    }
+
+    /// The event named NAME has played: the name of the one that starts when it ends, if any.
+    pub fn after(&mut self, name: &str) -> Option<&str> {
+        let event = self.names.iter().position(|n| n == name)?;
+        self.story.play(event, self.process.get(event).map_or(&[][..], |p| p.as_slice()));
+        let next = self.story.next(&self.checks, &self.lists, 11, &[event as i32], &mut self.rng)?;
+        self.names.get(next).map(String::as_str)
+    }
+}
+
+/// Where an event's script is under the game's `Event/event`: in its chapter's folder, the
+/// name's middle part (`EVENT_MM01_OP1_111` → `MM01_OP1/EVENT_MM01_OP1_111.ebd`).
+pub fn event_file(name: &str) -> String {
+    let chapter = name.trim_start_matches("EVENT_").rsplit_once('_').map_or("", |(c, _)| c);
+    format!("{chapter}/{name}.ebd")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,4 +596,9 @@ mod tests {
         assert_eq!(story.next(&checks, &lists, 11, &[1], &mut rng), Some(2));
     }
 
+
+    #[test]
+    fn event_files_sit_in_their_chapter() {
+        assert_eq!(event_file("EVENT_MM01_OP1_111"), "MM01_OP1/EVENT_MM01_OP1_111.ebd");
+    }
 }
