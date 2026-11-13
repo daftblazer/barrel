@@ -4009,6 +4009,12 @@ fn main() -> Result<()> {
         if !springs.is_empty() {
             eprintln!("{} trees sway by node", springs.len());
         }
+        if let Some(l) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()) {
+            let grass = draws.iter().filter(|d| d.field.is_none_or(|f| f == current_field) && l.v_shakers.iter().take(8).any(|v| !v.keyword.is_empty() && d.name.contains(v.keyword.as_str()))).count();
+            if grass > 0 {
+                eprintln!("{grass} draws sway by vertex");
+            }
+        }
         tree_springs = Some((current_field, springs));
     }
     if let Some((_, springs)) = tree_springs.as_mut().filter(|(_, s)| !s.is_empty()) {
