@@ -1945,6 +1945,9 @@ const AREA_CAMERA_PITCH: f32 = 43.0;
 const AREA_CAMERA_DISTANCE: f32 = 5400.0;
 const AREA_CAMERA_FOV: f32 = 15.0;
 const AREA_CAMERA_AHEAD: f32 = 150.0;
+/// How much larger the player is drawn on the maps (the recording at 0:45, at the fitted
+/// camera: 170 pixels from her head to her feet against Barrel's 97 at life size).
+const AREA_MAP_SCALE: f32 = 1.75;
 
 /// The world map point field area `map` stands for (`SP_A0P0` ...) and where it is (x, z), none
 /// for the town's maps and fields on no point.
@@ -4555,7 +4558,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // the recording (`AREA_CAMERA_*`).
     if area_mode && let Some(c) = focus {
         let p = AREA_CAMERA_PITCH.to_radians();
-        target = c - Vec3::new(0.0, 0.0, AREA_CAMERA_AHEAD);
+        // On the ground (the focus stands 80 units up, at her chest), that far north.
+        target = c - Vec3::new(0.0, 80.0, AREA_CAMERA_AHEAD);
         dist = AREA_CAMERA_DISTANCE;
         fov = AREA_CAMERA_FOV.to_radians();
         eye = target + Vec3::new(0.0, p.sin(), p.cos()) * dist;
@@ -5819,7 +5823,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             }
         }
         let turn = glam::Quat::from_rotation_y(w.facing);
-        instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos) + Vec3::Y * lift));
+        let size = if area_mode { AREA_MAP_SCALE } else { 1.0 };
+        instances[w.instance as usize].model = render_space(Mat4::from_scale_rotation_translation(Vec3::splat(size), turn, Vec3::from(w.pos) + Vec3::Y * lift));
         if player.is_none()
             && let Some((out, mixer, ..)) = sound.as_mut() {
                 out.pump(mixer, 0.0);
