@@ -5699,6 +5699,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, shadow_pipeline);
             let mut push = [0f32; 32];
+            // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
+            push[31] = f32::from_bits(FULL_LIGHT);
             push[..16].copy_from_slice(&shadow_vp.to_cols_array());
             push[16] = alpha_cutoff;
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
@@ -5742,6 +5744,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         // view_proj, params, the terrain's scales; the instance number goes in per draw.
         let mut push = [0f32; 32];
+            // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
+            push[31] = f32::from_bits(FULL_LIGHT);
         push[..16].copy_from_slice(&draw_vp.to_cols_array());
         push[16] = alpha_cutoff;
         push[18] = width as f32 / height.max(1) as f32;
