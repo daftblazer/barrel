@@ -1466,3 +1466,28 @@ from the Extra menu (`ExtraEventExec`, `0x140222510`, sets its runner's +0x69 th
 code but never written: off). In play it does nothing. So a replay starts actions that set up
 what play would have given the event (`EVENT_MS05_*` uses it most, 48 times; no opening
 does). `event::Player::replay(true)` plays an event so.
+
+## Shallie DX
+
+Shallie DX's events are in the same format as Escha's. Its other files read with Escha's code
+too (`barrel scan`, `g1t-scan`, `g1m-scan`, `xml-scan`, `ebm-scan` over its install: 6,771
+models, 1,545 tables, 5,040 message files, none failed). The events do not decode with
+Escha's operand table (1,024 of 39,739 bodies fail), so Shallie has its own, measured from its
+2,194 events (`barrel ebd-measure`, `ebd_tables::SHALLIE`; `barrel ebd-decode` picks the
+installed game's table): every body decodes. Against Escha's table, 58 of its 270 commands
+are Shallie's own (among them `q17`, `q34`, `q35`, `q38`, `q40`, `q41`, `s54`, `s56`, `s124`
+with 20 operands, `u150` to `u152`) and 7 take other counts:
+
+| Command | Escha | Shallie |
+|---|---|---|
+| `q16` | 6 | 3 |
+| `q43` | 1 | 6 |
+| `q44` | 3 | 1 |
+| `q45` | 0 | 3 |
+| `q55` | 1 | 14 |
+| `r35` | 2 | 1 |
+| `s122` | 14 | 2 |
+
+`q55` with 14 operands has the shape of Escha's `q54` (the event's point light), so commands
+moved between the two games: Escha's meanings carry over only where Shallie's own executable
+confirms them, command by command.

@@ -196,6 +196,11 @@ impl OperandTable {
         Self::new(crate::ebd_tables::ESCHA)
     }
 
+    /// Atelier Shallie DX's (measured, `ebd_tables::SHALLIE`).
+    pub fn shallie() -> Self {
+        Self::new(crate::ebd_tables::SHALLIE)
+    }
+
     /// Atelier Sophie 2's (measured, `ebd_tables::SOPHIE2`).
     pub fn sophie2() -> Self {
         Self::new(crate::ebd_tables::SOPHIE2)

@@ -18,7 +18,7 @@ usage:
   barrel pak-extract PAK PART OUTDIR  write the entries whose names contain PART under OUTDIR
   barrel ebd FILE.ebd          print an event's actions as words
   barrel ebd-scan DIR          read every event under DIR and count its commands
-  barrel ebd-decode DIR        decode every event under DIR into commands (Escha's table)
+  barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
   barrel xml FILE.xml          print a table's rows
   barrel xml-scan DIR          read every XML table under DIR and list what it holds
   barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
@@ -450,8 +450,21 @@ fn ebd_measure(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The operand table for the game installed above `dir`: Shallie DX's or Sophie 2's measured
+/// ones, Escha & Logy DX's otherwise.
+fn operand_table_for(dir: &Path) -> OperandTable {
+    let has = |name: &str| dir.ancestors().any(|p| p.join(name).is_file());
+    if has("Atelier_Shallie.exe") {
+        OperandTable::shallie()
+    } else if has("Atelier_Sophie_2.exe") {
+        OperandTable::sophie2()
+    } else {
+        OperandTable::escha()
+    }
+}
+
 fn ebd_decode(dir: &Path) -> Result<()> {
-    let table = OperandTable::escha();
+    let table = operand_table_for(dir);
     let mut files = Vec::new();
     files_ending(dir, ".ebd", &mut files)?;
     files.sort();
