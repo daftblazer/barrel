@@ -1965,6 +1965,21 @@ fn field_enemies(exe: &Path) -> Result<()> {
             e.area, e.position[0], e.position[1], e.position[2], e.chara, e.model, e.kind, e.ai.0, e.ai.1, e.speeds.0, e.speeds.1, e.wait, e.sight, e.reach, e.view, e.group, fights.join(", ")
         );
     }
+    // With the install's tables beside the executable: the enemies whose model is not their
+    // group's first monster's own (its Chara row's BaseTag, as a CharaBase row).
+    let table = |name: &str| exe.parent().and_then(|d| std::fs::read(d.join("Saves/chara").join(name)).ok()).and_then(|b| barrel_formats::table::parse(&b).ok());
+    if let (Some(charas), Some(bases)) = (table("Chara.xml"), table("CharaBase.xml")) {
+        let own = |e: &bd::FieldEnemy| {
+            let tag = barrel_game::field_ai::body_row(&groups, e).and_then(|r| charas.children.get(r)?.attr("BaseTag"))?;
+            bases.children.iter().position(|b| b.attr("BaseTag") == Some(tag))
+        };
+        let tag = |m: i32| usize::try_from(m).ok().and_then(|m| bases.children.get(m)?.attr("BaseTag")).unwrap_or("?");
+        let other: Vec<(usize, &bd::FieldEnemy)> = enemies.iter().enumerate().filter(|(_, e)| own(e).map(|r| r as i32) != Some(e.model)).collect();
+        println!("{} of {} enemies show a model other than their group's first monster's:", other.len(), enemies.len());
+        for (k, e) in other {
+            println!("  {k:3} area {:3} model {} ({}), first monster's {:?}", e.area, e.model, tag(e.model), own(e).map(|r| tag(r as i32)));
+        }
+    }
     Ok(())
 }
 
