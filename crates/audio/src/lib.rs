@@ -1,10 +1,13 @@
 //! Sound for the engine: [`Mixer`] adds up the playing sounds into one stereo stream, and
 //! [`Output`] hands that stream to the system through SDL3 (an audio device stream the engine
-//! keeps topped up from its frame loop). The mixer is plain code, testable without a device.
+//! keeps topped up from its frame loop), or [`Capture`] keeps it for a file. The mixer is plain
+//! code, testable without a device.
 
 use std::sync::Arc;
 
+pub mod capture;
 pub mod output;
+pub use capture::Capture;
 pub use output::Output;
 
 /// The rate everything is mixed at (the game's clips are all 48 kHz).

@@ -488,6 +488,18 @@ interpolates across it as a whole clip would (the ignored test `streams_like_cli
 the two over two wraps). Decoding happens in the frame loop's pump, a packet (about a
 thousandth of a second of work on the PC) at a time.
 
+**To a file.** `barrel-view ... --event FILE.ebd --audio OUT.wav` (offscreen) mixes the event's
+sound into a `Capture` instead of a device: at each frame exactly up to the event's clock (from
+`--at`), so the WAV (16-bit stereo, 48 kHz) lines up with the frames written, run after run.
+It is written when the run ends. The reference recording of the opening carries the game's own
+mix (`tools/oracle/README.md`, "Recording"), so the two can be set side by side:
+`tools/oracle/audio-offset.py GAME.wav BARREL.wav` cross-correlates their loudness envelopes
+(10 ms steps) for the offset and prints the levels second by second. First look, event 111's
+first 20 s: Barrel is silent for its first 4 s where the game already has sound (likely music
+carried in from the load), and 3 to 7 dB louder on the voiced parts, peaking at full scale
+(clipping), where the game peaks at -1.4 dB; the game's lines wait for a button, so the two
+timelines only line up line by line.
+
 ## World map travel
 
 `game::travel::WorldMap` holds the world map's routes (`barrel_formats::world::areas`, their

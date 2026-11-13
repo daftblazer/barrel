@@ -3007,6 +3007,37 @@ fn title_args(args: &[String], root: &Path, load_list: bool) -> Vec<String> {
     out
 }
 
+/// Where the mixed sound goes: the device (a window), or a WAV file (`--audio`, offscreen: mixed
+/// exactly up to the event's clock, so it lines up with the frames written).
+enum Sink {
+    Device(barrel_audio::Output),
+    File { capture: barrel_audio::Capture, start: f64, path: PathBuf },
+}
+
+impl Sink {
+    /// Keeps the device fed, or the file mixed up to `now` (the event's clock, seconds).
+    fn pump(&mut self, mixer: &mut barrel_audio::Mixer, now: f64) {
+        match self {
+            Sink::Device(out) => {
+                out.pump(mixer);
+            }
+            Sink::File { capture, start, .. } => capture.until(mixer, now - *start),
+        }
+    }
+}
+
+impl Drop for Sink {
+    /// The file is written when the run lets go of it, however it ends.
+    fn drop(&mut self) {
+        if let Sink::File { capture, path, .. } = self {
+            match std::fs::write(&*path, capture.wav()) {
+                Ok(()) => eprintln!("sound: {} ({:.2} s)", path.display(), capture.frames() as f64 / f64::from(barrel_audio::RATE)),
+                Err(e) => eprintln!("sound: {}: {e}", path.display()),
+            }
+        }
+    }
+}
+
 fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry) -> Result<Ended> {
     let original_args = args.clone();
     let mut restart: Option<Vec<String>> = None;
@@ -3066,6 +3097,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut save_every = 1u32;
     let mut event_line = None::<usize>;
     let mut event_at = None::<f32>;
+    // `--audio OUT.wav`: an offscreen event's sound to a file.
+    let mut audio_out = None::<PathBuf>;
     let (mut frames, mut fps) = (1u32, 60f64);
     // --window FRAMES: show that many frames in a window, at the display's rate, instead of
     // writing them to files.
@@ -3132,6 +3165,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             "--look-at" => look_at = Some(it.next().ok_or("--look-at CHARA")?.parse()?),
             "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
             "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
+            "--audio" => audio_out = Some(PathBuf::from(it.next().ok_or("--audio OUT.wav")?)),
             "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
             "--window" => window_frames = Some(it.next().ok_or("--window FRAMES")?.parse::<u32>()?.clamp(1, 100_000)),
             "--fps" => fps = it.next().ok_or("--fps HZ")?.parse::<f64>()?.clamp(1.0, 1000.0),
@@ -3754,7 +3788,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut first_event = true;
     // The sound output, its mixer, the sound library and the music playing: one for the whole
     // run, so a voice or effect still sounding when a scene hands over plays to its end.
-    let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
+    let mut sound: Option<(Sink, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
     // The field's ambience loop, while one plays.
     let mut ambience: Option<barrel_audio::Playing> = None;
     'events: loop {
@@ -3968,7 +4002,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         && presenter.is_some() {
             if sound.is_none() {
                 match barrel_audio::Output::open(0.1) {
-                    Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
+                    Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
                     Err(e) => eprintln!("no sound: {e}"),
                 }
             }
@@ -4141,10 +4175,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         player = Some((play, clock, snap.clone(), snap));
         if presenter.is_some() && sound.is_none() {
             match barrel_audio::Output::open(0.1) {
-                Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
+                Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
                 Err(e) => eprintln!("no sound: {e}"),
             }
-        }
+        } else if presenter.is_none() && sound.is_none()
+            && let Some(path) = audio_out.clone() {
+                let start = player.as_ref().map_or(0.0, |p| p.1.time());
+                sound = Some((Sink::File { capture: barrel_audio::Capture::new(), start, path }, barrel_audio::Mixer::new(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None));
+            }
         // The event's lines in the game's English font.
         let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
         let glyphs = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok().and_then(|pe| barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN)));
@@ -4743,7 +4781,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 eprintln!("frame {frame}: jump{}", voice.map_or(String::new(), |c| format!(", voice {c}")));
                 if sound.is_none() && presenter.is_some() {
                     match barrel_audio::Output::open(0.1) {
-                        Ok(out) => sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
+                        Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
                         Err(e) => eprintln!("no sound: {e}"),
                     }
                 }
@@ -4820,7 +4858,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 if before < swing_sound.0 && clock >= swing_sound.0 {
                     if sound.is_none() && presenter.is_some()
                         && let Ok(out) = barrel_audio::Output::open(0.1) {
-                            sound = Some((out, barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
+                            sound = Some((Sink::Device(out), barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
                         }
                     if let Some((_, mixer, library, _)) = sound.as_mut()
                         && let Some(barrel_audio::Effect::Clip(e)) = library.effect(swing_sound.1) {
@@ -4941,7 +4979,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos) + Vec3::Y * lift));
         if player.is_none()
             && let Some((out, mixer, ..)) = sound.as_mut() {
-                out.pump(mixer);
+                out.pump(mixer, 0.0);
             }
     }
     if door.is_some() || world_exit {
@@ -5071,7 +5109,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 }
             }
             if let Some((out, mixer, ..)) = sound.as_mut() {
-                out.pump(mixer);
+                out.pump(mixer, clock.time());
             }
             versions_shown.clone_from(&play.stage.versions_shown);
             if event_objects != play.stage.event_objects {
