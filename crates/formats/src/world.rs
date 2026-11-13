@@ -53,6 +53,42 @@ pub fn areas(pe: &Pe, table: u64) -> Option<Vec<Area>> {
     )
 }
 
+/// The arrival places (English Escha executable): where the player stands on entering a field
+/// from the area map (and, presumably, the world map): 107 records of 24 bytes at
+/// [`ARRIVALS_EN`], `{u32 map, f32 facing (degrees), f32 x, y, z (metres), u32 0}`, one per
+/// field map (towns 0-10, fields from 12; some numbers have none). Read live (2026-11-13): the
+/// Southern Ruins' Sector One put Escha at its record's (53.32, 0, 102.80), the Ruins Entrance at
+/// (129.08, 0, 200) against its record's (129, 0, 200).
+pub const ARRIVALS_EN: u64 = 0x1_407b_3ee0;
+pub const ARRIVAL_COUNT: usize = 107;
+
+/// One field's arrival place.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arrival {
+    pub map: u32,
+    /// Which way the player faces, degrees.
+    pub facing: f32,
+    /// Metres.
+    pub position: [f32; 3],
+}
+
+/// The arrival places, in table order.
+pub fn arrivals(pe: &Pe, table: u64) -> Option<Vec<Arrival>> {
+    let at = pe.offset(table)?;
+    let data = pe.data.get(at..at + ARRIVAL_COUNT * 24)?;
+    let f = |r: &[u8], o: usize| f32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+    Some(
+        data.chunks_exact(24)
+            .map(|r| Arrival { map: u32::from_le_bytes(r[0..4].try_into().unwrap()), facing: f(r, 4), position: [f(r, 8), f(r, 12), f(r, 16)] })
+            .collect(),
+    )
+}
+
+/// The arrival place of field map `map`, if it has one.
+pub fn arrival(pe: &Pe, map: u32) -> Option<Arrival> {
+    arrivals(pe, ARRIVALS_EN)?.into_iter().find(|a| a.map == map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Area;
@@ -174,5 +210,18 @@ mod point_tests {
         assert_eq!(super::point_tag("LP_A0").as_deref(), Some("A0"));
         assert_eq!(super::point_tag("SP_A0P3").as_deref(), Some("A0p3"));
         assert_eq!(super::point_tag("SP_A0"), None);
+    }
+
+    #[test]
+    #[ignore = "needs the game's executable (BARREL_EXE)"]
+    fn arrivals_match_the_live_reads() {
+        let Ok(path) = std::env::var("BARREL_EXE") else { return };
+        let exe = std::fs::read(path).unwrap();
+        let pe = crate::pe::Pe::parse(&exe).unwrap();
+        let all = super::arrivals(&pe, super::ARRIVALS_EN).unwrap();
+        assert_eq!((all[0].map, all.last().unwrap().map), (0, 107));
+        let one = super::arrival(&pe, 26).unwrap();
+        assert_eq!((one.facing, one.position), (180.0, [53.32, 0.0, 102.8]));
+        assert_eq!(super::arrival(&pe, 25).unwrap().position, [129.0, 0.0, 200.0]);
     }
 }

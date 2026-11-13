@@ -1523,8 +1523,8 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
 
 /// A trip off a field's world-map exit to mark `to`: the world map (its routes from the world
 /// map field's placements), the mark the field `from_map` stands for, and the field map `to`
-/// opens with the place to arrive at there: that field's own world-map exit
-/// (`WORLDMAP_CHANGE_EX`, field units; a stand-in, see `docs/engine.md`).
+/// opens with the place to arrive at there (field units): the field's record in the arrival
+/// table (`world::arrivals`), else its own world-map exit (`WORLDMAP_CHANGE_EX`).
 fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game::travel::WorldMap, String, u32, [f32; 2])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -1544,6 +1544,9 @@ fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game:
         points.iter().find(|(_, m, _)| *m == from_map).and_then(|(p, _, _)| tag(*p)).ok_or(format!("field {from_map} is on no world map mark"))?
     };
     let field = points.iter().find(|(p, _, _)| tag(*p).as_deref() == Some(to)).map(|(_, m, _)| *m).ok_or(format!("{to} opens no field"))?;
+    if let Some(a) = barrel_formats::world::arrival(&pe, field) {
+        return Ok((map, from, field, [a.position[0] * 100.0, a.position[2] * 100.0]));
+    }
     let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT).ok_or("no map table")?;
     let exit = areas.get(field as usize).and_then(|a| a.gimmicks.iter().find(|g| g.kind == barrel_formats::gimmick::WORLDMAP_CHANGE_EX)).ok_or(format!("field {field} has no world map exit"))?;
     Ok((map, from, field, [exit.position[0] * 100.0, exit.position[2] * 100.0]))

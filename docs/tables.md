@@ -1916,6 +1916,16 @@ gaps, so its count, `0x1402a5240`, its holds-item check, `0x1402a5d70`, and its 
 or none when `EquipCost` is 0, `inventory::equip_cost`; `0x14035dc40`); when any uses came back it queues message 0x1f with their number and counts up
 the month's report field +0x114 (at most 255). `barrel_game::inventory`.
 
+## Arrival places (executable)
+
+Where the player stands on entering a field: 107 records of 24 bytes at `0x1407b3ee0` (English
+Escha executable), `{u32 map, f32 facing (degrees), f32 x, f32 y, f32 z (metres), u32 0}`, maps in
+rising order from 0 (`TOWN_01`: (6.5, 0.1, 10) facing -90) to 107, some numbers missing (11,
+17, 18, ...). Sector One of the Southern Ruins (map 26) is (53.32, 0, 102.8) facing 180; the
+Ruins Entrance (25) (129, 0, 200) facing 5. Checked against the running game (`docs/engine.md`,
+"Arriving in a field"). `barrel_formats::world::arrivals`. Its reader is not found yet (found by
+searching the executable for the live position).
+
 ## Monsters
 
 Compiled into the executable like the recipes. The monster enum has 153 tags, from

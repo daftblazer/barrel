@@ -398,23 +398,17 @@ yet, so the board's tables see no held items, every request as known and no assi
 The main random generator is not saved by the game either; a fixed seed stands in. Saves keep
 the carried time (`tenths N`).
 
-## Arriving from the world map (not yet the game's)
+## Arriving in a field
 
-A trip's player arrives at the field's own world map exit (its first `WORLDMAP_CHANGE_EX`
-gimmick), standing in it (so it does not send them straight back). Two live points
-(2026-11-13, from the Southern Ruins' area map):
-
-| Field | Exit (first `WORLDMAP_CHANGE_EX`, m) | Arrival (m) | Step |
-|---|---|---|---|
-| Sector One, map 26 `AREA_03_02` | (52.5, 0, 106.2) | (53.32, 0, 102.80) | (0.82, -3.40), 3.50 m |
-| Ruins Entrance, map 25 `AREA_03_01` | (128.0, 0, 196.7) | (129.08, 0, 200.00) | (1.08, 3.30), 3.47 m |
-
-So the game puts the player about 3.5 m from the exit, into the field, never in it; the two
-steps point opposite ways while both exits are turned 0, so the direction is not the exit's
-turn. Not yet the rule (the step's direction: towards the field's middle, a spot of its own in
-data not read, or the way the player last left). Where the game puts them was
-not found in three tries (the field load `0x140076760` and its callers; `docs/loop-archive.md`
-707, 754); an oracle run (stage 7) can read it.
+The player arrives at the field's record in the executable's arrival table (`world::arrivals`,
+`docs/tables.md`, "Arrival places"): a place and a facing per field map. Found from two live
+reads (2026-11-13, from the Southern Ruins' area map): Sector One (map 26) put Escha at
+(53.32, 0, 102.80) m, its record exactly, and the Ruins Entrance (map 25) at (129.08, 0, 200)
+against its record's (129, 0, 200) (likely the ground settling her). Both are about 3.5 m from the
+field's exit, which is why the old stand-in (standing in the exit) was close. The viewer's world
+map trips use it (a field without a record falls back to the exit); the record's facing is not
+applied yet (the walker starts facing 0). That world map trips read the same table as the area
+map is assumed, not seen.
 
 ## Play camera follow
 
