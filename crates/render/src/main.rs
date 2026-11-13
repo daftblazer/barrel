@@ -1261,6 +1261,8 @@ struct Walker {
     rng: barrel_game::rng::Rng,
     /// The install, for her sounds.
     root: std::path::PathBuf,
+    /// The play camera's follow (`play_camera::Follow`).
+    follow: barrel_game::play_camera::Follow,
     /// Logy leads instead of Escha (`BARREL_LEAD=logy`): his swing, its sound and reach, his
     /// jump voices.
     logy: bool,
@@ -1312,7 +1314,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
     let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience, follow: Default::default() };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3882,9 +3884,12 @@ fn main() -> Result<()> {
                 .or_else(|| look_table.and_then(|l| l.camera_points.first().cloned()));
             if let Some(point) = point {
                 let mirror = Vec3::new(-1.0, 1.0, 1.0);
-                let look = Vec3::from(w.pos) + Vec3::from(point.diff) * 100.0;
+                // It trails her and pulls back while she moves (`play_camera::Follow`).
+                let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+                let (at, extra) = w.follow.step(w.pos, moving, &point, dt);
+                let look = Vec3::from(at) + Vec3::from(point.diff) * 100.0;
                 let (y, p) = (point.yaw.to_radians(), point.pitch.to_radians());
-                dist = point.length.max(1.0) * 100.0;
+                dist = point.length.max(1.0) * 100.0 + extra;
                 target = look * mirror;
                 eye = (look + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist) * mirror;
                 fov = point.fov.clamp(10.0, 120.0).to_radians();

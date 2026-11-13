@@ -386,6 +386,18 @@ plays division 4, zeroes her velocity and sounds the ground (`0x140234e05`). The
 ground she left; her gait takes over when the landing ends. In a window it sounds as the game's
 does: effect 0x23 at 0.6 and, when `JumpVoice` says so, one of Escha's three jump voices.
 
+## Play camera follow (not yet the game's)
+
+The field's play camera follows the player with `play_camera::Follow`, rebuilt from what
+`Saves/field/_def.xml` says the setting's numbers mean, not from the game's code: the look point
+closes on the player at `bumper_follow_speed` per second times the gap in metres (at least 1),
+never trailing by more than `bumper_max_distance`; a negative speed locks it on. While the player
+moves the camera pulls back by up to `zoom_distance`, reaching it after `zoom_time` seconds, and
+comes back in at the same rate when they stop. The settings themselves still switch at once
+between camera areas. The game's tween code (`CameraCFieldMap`, the tweens at +0x150, +0x168,
++0x1b0, +0x1c8) was not found in two tries, so these curves are a stand-in until an oracle run
+measures the game's camera (stage 7).
+
 ## Movies (open)
 
 Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":
