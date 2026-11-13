@@ -2349,7 +2349,23 @@ where the world map's placements mark them, by tag (`A15_WMAP.opl2`): `T0` the t
 (`a15_point_r_off`, 271) and `R0` to `R14` the routes' marks (`a15_point_r_big_bwr`, 112)
 (`world::point_tag`, `point_position`; `barrel world-points` prints them: the town at (26250,
 27000), the Twilight Forest's points 750 apart east of it). `barrel-view --field .../A15_WMAP OUT --world-point SP_A0P2` stands
-Escha on that point's mark (the forest region, its path dots either side). The route records
+Escha on that point's mark (the forest region, its path dots either side).
+
+**The places** (the area map's names and panel texts) are a table of 96 records of 0x60 bytes
+at `0x140d65bb0` (English), right before the routes, one per point (`world::places`):
+`{name, name (Japanese), u64 kind, tag, i32 links[6], description, description (Japanese),
+i32 a, i32 b, u64, u64}`. Kind 0 marks the town and the regions' big points, 1 a region's
+own entry and its sectors. The links are route numbers, one per direction the cursor can
+take, each shared by the two places it joins: the Southern Ruins (region `A2`) has its entry
+`[-1, -1, 24, -1, -1, -1]`, the Ruins Entrance (`A2p0`) `[-1, -1, 25, 24, -1, -1]` and Sector
+One (`A2p1`) `[27, 25, 26, -1, -1, -1]`, where route 24 is `A2r0`, 25 `A2r1`, 26 `A2r2` and 27
+`A2r3`: the path dots between them carry those tags. The descriptions are the area map's
+panel line ("A path leading into the ruins."; none for the town and the regions' entries).
+Which slot is which direction is not read yet. The area map is the world map's own terrain
+(no other field and no game mode of its own); its panels are layouts 636 (the buttons), 637
+(the place name, top right), 638 (a point's label), 639 (the travel panel, "Time", "Date"),
+641 (a sector's panel: the description, the "Items to gather" tab the game titles "Gatherable
+Items", ten item lines) and 642 (a region's "Map" list, ten lines). The route records
 (`barrel_formats::world::areas`, `R0` ..., `A0R0` ...: the ids the `R*` and `A0r*` dots carry)
 hold, besides their days, an event number at +0x14 (46 for `R0`, 171 for `R1`, 628 for `A0R1`)
 and at +0x18 and +0x20 (`A0R1`: 50 and 171), presumably when each opens. Which points a route joins is not in them; the game's own table

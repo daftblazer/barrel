@@ -53,6 +53,60 @@ pub fn areas(pe: &Pe, table: u64) -> Option<Vec<Area>> {
     )
 }
 
+/// The world map's places (English Escha executable): 96 records of 0x60 bytes at
+/// [`PLACES_EN`], right before the routes (`AREAS_EN`), one per world map point and in the
+/// same count: `{name, name (Japanese), u64 kind, tag, i32 links[6], description, description
+/// (Japanese), i32 a, i32 b, u64, u64}`. The kind is 0 for the town and the regions' big
+/// points, 1 for a region's own entry and its sectors (`A2` "Southern Ruins", `A2p0` "Ruins
+/// Entrance" ...). The tag is the place's mark on the world map (`point_tag`). The links are
+/// route numbers (`areas`: 24 `A2r0`, 25 `A2r1` ..., the tags of the path dots between the
+/// points), each shared by the two places it joins, one per direction the
+/// cursor can go (-1: none): the Ruins Entrance `[-1, -1, 25, 24, -1, -1]`, Sector One
+/// `[27, 25, 26, -1, -1, -1]`, the region's entry `[-1, -1, 24, -1, -1, -1]`. The description
+/// is what the area map's panel shows ("A path leading into the ruins."); none for the town
+/// and the regions' entries.
+pub const PLACES_EN: u64 = 0x1_40d6_5bb0;
+pub const PLACE_COUNT: usize = 96;
+const PLACE_SIZE: usize = 0x60;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Place {
+    pub name: String,
+    pub tag: String,
+    pub kind: u32,
+    pub links: [i32; 6],
+    pub description: String,
+    /// The two words at +0x48 (-1, 0 in nearly all; `A2p2`: 1, 30).
+    pub extra: [i32; 2],
+}
+
+pub fn places(pe: &Pe, table: u64) -> Option<Vec<Place>> {
+    let at = pe.offset(table)?;
+    let data = pe.data.get(at..at + PLACE_COUNT * PLACE_SIZE)?;
+    // A text: up to 200 bytes of UTF-8 before a zero (spaces and punctuation in it).
+    let text = |r: &[u8], o: usize| {
+        pe.offset(u64::from_le_bytes(r[o..o + 8].try_into().unwrap()))
+            .and_then(|at| pe.data.get(at..))
+            .and_then(|rest| rest.iter().take(200).position(|&b| b == 0).map(|end| &rest[..end]))
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .unwrap_or("")
+            .to_string()
+    };
+    let i32_at = |r: &[u8], o: usize| i32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+    Some(
+        data.chunks_exact(PLACE_SIZE)
+            .map(|r| Place {
+                name: text(r, 0),
+                tag: text(r, 0x18),
+                kind: i32_at(r, 0x10) as u32,
+                links: std::array::from_fn(|k| i32_at(r, 0x20 + 4 * k)),
+                description: text(r, 0x38),
+                extra: [i32_at(r, 0x48), i32_at(r, 0x4c)],
+            })
+            .collect(),
+    )
+}
+
 /// The arrival places (English Escha executable): where the player stands on entering a field
 /// from the area map (and, presumably, the world map): 107 records of 24 bytes at
 /// [`ARRIVALS_EN`], `{u32 map, f32 facing (degrees), f32 x, y, z (metres), u32 0}`, one per
@@ -223,5 +277,23 @@ mod point_tests {
         let one = super::arrival(&pe, 26).unwrap();
         assert_eq!((one.facing, one.position), (180.0, [53.32, 0.0, 102.8]));
         assert_eq!(super::arrival(&pe, 25).unwrap().position, [129.0, 0.0, 200.0]);
+    }
+
+    #[test]
+    #[ignore = "needs the game's executable (BARREL_EXE)"]
+    fn the_southern_ruins_places_link_up() {
+        let Ok(path) = std::env::var("BARREL_EXE") else { return };
+        let exe = std::fs::read(path).unwrap();
+        let pe = crate::pe::Pe::parse(&exe).unwrap();
+        let all = super::places(&pe, super::PLACES_EN).unwrap();
+        assert_eq!((all[0].name.as_str(), all[0].tag.as_str()), ("Colseit", "T0"));
+        let entrance = all.iter().find(|p| p.tag == "A2p0").unwrap();
+        assert_eq!((entrance.name.as_str(), entrance.description.as_str()), ("Ruins Entrance", "A path leading into the ruins."));
+        let one = all.iter().find(|p| p.tag == "A2p1").unwrap();
+        assert_eq!(one.links, [27, 25, 26, -1, -1, -1]);
+        // The link between them is shared.
+        assert!(entrance.links.contains(&25));
+        let routes = super::areas(&pe, super::AREAS_EN).unwrap();
+        assert_eq!([24, 25, 26, 27].map(|k| routes[k].id.clone()), ["A2r0", "A2r1", "A2r2", "A2r3"]);
     }
 }
