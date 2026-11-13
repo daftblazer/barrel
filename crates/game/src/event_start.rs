@@ -440,6 +440,22 @@ impl Chain {
         self.fire(what as u8, &[])
     }
 
+    /// A trip on the world map from mark `from` to mark `to` (`crate::travel`), arriving in
+    /// field map `map`: the days on the road pass (their travel trigger, as [`Chain::days`]),
+    /// the shorter trips counting by the events seen so far; then, if nothing has started on
+    /// the road, the player walks from the world map into the field ([`Chain::walk`]). The
+    /// event that starts, if any, and the days taken (none without a way there).
+    pub fn travel(&mut self, map: &crate::travel::WorldMap, from: &str, to: &str, field: i32) -> (Option<&str>, Option<i32>) {
+        let seen = |e: u32| self.story.seen.get(e as usize).is_some_and(Option::is_some);
+        let Some((days, _)) = map.trip(from, to, seen) else { return (None, None) };
+        self.story.today += days;
+        // The travel trigger fires once (its pick can be random): an event on the road wins.
+        if let Some(e) = self.story.next(&self.checks, &self.lists, Days::Travel as u8, &[], &mut self.rng) {
+            return (self.names.get(e).map(String::as_str), Some(days));
+        }
+        (self.walk([1, 0], [0, field]), Some(days))
+    }
+
     /// The event that starts when trigger group `group` fires with `values`, if any.
     pub fn fire(&mut self, group: u8, values: &[i32]) -> Option<&str> {
         let next = self.story.next(&self.checks, &self.lists, group, values, &mut self.rng)?;
@@ -699,6 +715,19 @@ mod tests {
         assert_eq!(chain.days(Days::Sleep, 1), None);
         assert_eq!(chain.days(Days::Mix, 2), None, "a synthesis does not fire the sleep's group");
         assert_eq!(chain.days(Days::Sleep, 1), Some("E1"));
+    }
+
+    #[test]
+    fn a_trip_takes_its_days_and_ends_in_the_field() {
+        use crate::travel::{Route, WorldMap};
+        use barrel_formats::world::Area;
+        let route = |id: &str, a: &str, b: &str, d: i32| Route { area: Area { id: id.into(), float: 1.0, days: [(d, -1), (d, -1), (d, -1)] }, ends: (a.into(), b.into()) };
+        let map = WorldMap { routes: vec![route("R0", "T0", "A0", 4), route("A0r0", "A0", "A0p0", 0)] };
+        let mut chain = Chain::new(vec![], vec![], vec![]);
+        let today = chain.story.today;
+        assert_eq!(chain.travel(&map, "T0", "A0p0", 12), (None, Some(4)));
+        assert_eq!((chain.story.today, chain.story.field_map), (today + 4, Some(12)));
+        assert_eq!(chain.travel(&map, "T0", "B1", 30).1, None, "no way there");
     }
 
     /// Both openings play through as the game chains them, from the real files

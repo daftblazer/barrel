@@ -430,6 +430,9 @@ days between two marks (`trip`, the paths inside a region taking none, each rout
 end opens: from the town (`T0`) to the Twilight Forest's third point (`A0p2`) 4 days by `R0` and
 the forest's paths, opening `AREA_01_03`; from the town to `D2` 6 days by `R3` and `R6`. The game
 lets the player pick each route rather than finding the shortest; this search is for trying
-trips, and the days it adds are what the story's travel trigger (`Chain::days(Days::Travel,
-n)`) takes. How the game moves the marker along a route, and what happens on the way, is not
+trips, and the days it adds are what the story's travel trigger takes: `Chain::travel` passes the
+trip's days (the shorter trips counting by the events the story has seen), fires the travel
+trigger once, and if nothing starts on the road walks the player from the world map into the
+field the end point opens; `barrel event-chain ROOT START trip:T0>A0p0` takes it after the
+opening (4 days, nothing starts). How the game moves the marker along a route, and what happens on the way, is not
 read.

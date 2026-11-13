@@ -51,7 +51,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
-  barrel event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
+  barrel event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N|trip:FROM>TO ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
   barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
   barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
   barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
@@ -3618,7 +3618,9 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
 /// (seen, its process data applied), then its end fires (group 11) and the event that starts is
 /// next. When none does, the player takes the next step of STEPS: a walk (`K.M>K.M`: from kind
 /// and map to kind and map, kind 0 a field, 1 the world map) or days passing (`sleep:N`,
-/// `mix:N`, `travel:N`), and the story goes on from what that starts.
+/// `mix:N`, `travel:N`) or a world map trip (`trip:FROM>TO`, between marks: `T0`, `A0p0`
+/// ..., its days on the road, then into the field TO opens), and the story goes on from what
+/// that starts.
 fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
     let mut chain = story_chain(root)?;
     let place = |s: &str| -> Result<[i32; 2]> {
@@ -3636,6 +3638,24 @@ fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
         let Some(w) = walks.next() else { break };
         use barrel_game::event_start::Days;
         event = match w.split_once(':') {
+            // trip:FROM>TO: a world map trip between two marks, into the field TO opens first.
+            Some(("trip", ends)) => {
+                let (from, to) = ends.split_once('>').ok_or("trip:FROM>TO")?;
+                let exe = root.join("Atelier_Escha_and_Logy_EN.exe");
+                let map = world_map(&exe)?;
+                let bytes = read(&exe)?;
+                let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+                let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+                let field = barrel_formats::world::point_maps(&pe)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|(p, _, _)| names.get(*p as usize).and_then(|n| barrel_formats::world::point_tag(n)).as_deref() == Some(to))
+                    .map(|(_, m, _)| m as i32)
+                    .ok_or(format!("{to} opens no field"))?;
+                let (started, days) = chain.travel(&map, from, to, field);
+                println!("  {w}: {} days", days.ok_or(format!("no way from {from} to {to}"))?);
+                started
+            }
             Some((what, n)) => {
                 let what = match what {
                     "sleep" => Days::Sleep,
