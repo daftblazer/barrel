@@ -304,7 +304,7 @@ mod tests {
         let req = |kind, target: &str, prize: &str| Request { kind, target: target.into(), points: 5.12, prizes: vec![(prize.into(), 2.0)], from_event: None, until_event: None, from_day: 0, to_day: 0, priority: 0.0, table: 0, num: 1, clear_subject: None };
         let requests = [req(Kind::Synthesis, "ITEM_MIX_CRAFT", "ITEM_A"), req(Kind::Synthesis, "ITEM_MIX_CRAFT", "ITEM_B"), req(Kind::Monster, "MONSTER_X", "ITEM_A")];
         let items = ["ITEM_A", "ITEM_B", "ITEM_MIX_CRAFT"];
-        let slot = |kind, target, prize| Some(BoardSlot { kind, target, state: 1, posted: 220, until: 329, count: 1, value: 6.0, prizes: [(prize, 2.0), (-1, 0.0)] });
+        let slot = |kind, target, prize| Some(BoardSlot { kind, target, wanted: 1, progress: 0, posted: 220, until: 329, flag: 1, value: 6.0, prizes: [(prize, 2.0), (-1, 0.0)] });
         let mut slots = vec![None; 10];
         slots[0] = slot(0, 2, 1);
         slots[6] = slot(1, 0, 0);

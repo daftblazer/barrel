@@ -498,20 +498,24 @@ pub fn member(d: &[u8]) -> Option<Member> {
     })
 }
 
-/// A request board slot (`quest/now`, `player`, `next`: ten 52-byte slots each): the kind (+0:
-/// 0 synthesis, 1 monster, 2 gathering), the target (+4: an `itemData` row, or a monster
-/// number counted from the first `MONSTER_` name), the state (+0xc: 0 empty, 1 posted, 2
-/// taken), the day posted and a later day (+0x14, +0x18, the deadline presumably), a count
-/// (+0x1c), a float (+0x20: 6 where the table's points are 5.12) and two prizes as an item row
-/// and a rolled count (+0x24 .. +0x30).
+/// A request board slot (`quest/now`, `player`, `next`: ten 52-byte slots each, laid out as the
+/// game's at `0x1410985d8`, filled by `0x14033ab30`): the kind (+0: 0 synthesis, 1 monster,
+/// 2 gathering), the target (+4: an `itemData` row, or a monster number counted from the first
+/// `MONSTER_` name), how many are wanted (+0xc, at least 1; 0 an empty slot) and done so far
+/// (+0x10), the day posted and the assignment's deadline (+0x14, +0x18), a flag the posting
+/// sets to 1 (+0x1c), the points (+0x20) and two prizes as an item row and a count (+0x24 ..
+/// +0x30), all rolled (`quest::rewards`). The request is done when the progress reaches the
+/// wanted count (`0x14033b1c0`) and pays the points truncated and each prize counted 1 or more
+/// (`0x14033b220`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoardSlot {
     pub kind: i32,
     pub target: i32,
-    pub state: i32,
+    pub wanted: i32,
+    pub progress: i32,
     pub posted: i32,
     pub until: i32,
-    pub count: i32,
+    pub flag: i32,
     pub value: f32,
     pub prizes: [(i32, f32); 2],
 }
@@ -524,10 +528,11 @@ pub fn board_slots(d: &[u8]) -> Vec<Option<BoardSlot>> {
             (i(c, 3) != 0).then(|| BoardSlot {
                 kind: i(c, 0),
                 target: i(c, 1),
-                state: i(c, 3),
+                wanted: i(c, 3),
+                progress: i(c, 4),
                 posted: i(c, 5),
                 until: i(c, 6),
-                count: i(c, 7),
+                flag: i(c, 7),
                 value: f(c, 8),
                 prizes: [(i(c, 9), f(c, 10)), (i(c, 11), f(c, 12))],
             })
