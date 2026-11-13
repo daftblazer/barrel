@@ -434,5 +434,10 @@ trips, and the days it adds are what the story's travel trigger takes: `Chain::t
 trip's days (the shorter trips counting by the events the story has seen), fires the travel
 trigger once, and if nothing starts on the road walks the player from the world map into the
 field the end point opens; `barrel event-chain ROOT START trip:T0>A0p0` takes it after the
-opening (4 days, nothing starts). How the game moves the marker along a route, and what happens on the way, is not
-read.
+opening (4 days, nothing starts). `WorldMap::path` lays the trip out as
+the routes' dots in order (`world::route_path`, each next dot the nearest left, from the end
+at the mark the trip is at) between the marks; `barrel-view --field .../A15_WMAP OUT
+--world-trip T0 A0p0` has Escha run that way at her run speed (13 waypoints: from the town past
+`R0`'s marks, through the forest's path dots, onto `A0p0`'s mark), the play camera following.
+How the game itself moves the player along a route (its speed, the marker, the days ticking
+by), and what happens on the way, is not read.

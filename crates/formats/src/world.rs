@@ -131,11 +131,39 @@ pub fn route_ends(placements: &crate::opl2::Placements, tag: &str) -> Option<(St
             }
         }
     }
-    // The marks: tags of the form T0, A0 (region), A0p0 (small point).
-    let is_mark = |t: &str| t == "T0" || (t.len() == 2 && t.as_bytes()[0].is_ascii_uppercase() && t.as_bytes()[0] != b'R' && t.as_bytes()[1].is_ascii_digit()) || (t.len() >= 4 && t.as_bytes()[2] == b'p');
-    let marks: Vec<(&str, [f32; 3])> = instances.iter().flat_map(|i| i.tags.split_whitespace().filter(|t| is_mark(t)).map(move |t| (t, i.position))).collect();
-    let nearest = |p: [f32; 3]| marks.iter().min_by(|x, y| d2(x.1, p).total_cmp(&d2(y.1, p))).map(|m| m.0.to_string());
+    let marks = marks(placements);
+    let nearest = |p: [f32; 3]| marks.iter().min_by(|x, y| d2(x.1, p).total_cmp(&d2(y.1, p))).map(|m| m.0.clone());
     Some((nearest(a)?, nearest(b)?, dots.len()))
+}
+
+/// The marks' positions on the world map: each point mark's tag (`T0`, `A0`, `A0p0` ...) and
+/// where it stands.
+pub fn marks(placements: &crate::opl2::Placements) -> Vec<(String, [f32; 3])> {
+    let is_mark = |t: &str| t == "T0" || (t.len() == 2 && t.as_bytes()[0].is_ascii_uppercase() && t.as_bytes()[0] != b'R' && t.as_bytes()[1].is_ascii_digit()) || (t.len() >= 4 && t.as_bytes()[2] == b'p');
+    let mut out: Vec<(String, [f32; 3])> = Vec::new();
+    for i in placements.objects.iter().flat_map(|t| t.instances.iter()) {
+        for t in i.tags.split_whitespace().filter(|t| is_mark(t)) {
+            if !out.iter().any(|(k, _)| k == t) {
+                out.push((t.to_string(), i.position));
+            }
+        }
+    }
+    out
+}
+
+/// A route's dots in order from the end nearest `from` (a position): each next dot the nearest
+/// of those left, as the dots run along it.
+pub fn route_path(placements: &crate::opl2::Placements, tag: &str, from: [f32; 3]) -> Vec<[f32; 3]> {
+    let mut left: Vec<[f32; 3]> =
+        placements.objects.iter().flat_map(|t| t.instances.iter()).filter(|i| i.tags.split_whitespace().any(|x| x == tag)).map(|i| i.position).collect();
+    let d2 = |a: [f32; 3], b: [f32; 3]| (a[0] - b[0]).powi(2) + (a[2] - b[2]).powi(2);
+    let mut path = Vec::with_capacity(left.len());
+    let mut at = from;
+    while let Some(k) = (0..left.len()).min_by(|&a, &b| d2(left[a], at).total_cmp(&d2(left[b], at))) {
+        at = left.swap_remove(k);
+        path.push(at);
+    }
+    path
 }
 
 #[cfg(test)]

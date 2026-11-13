@@ -1239,6 +1239,8 @@ struct Walker {
     inside: Vec<usize>,
     /// The field names by map number, for the doors.
     maps: Vec<String>,
+    /// A world map trip's waypoints still ahead (`--world-trip`): she runs to each in turn.
+    waypoints: std::collections::VecDeque<[f32; 3]>,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1275,8 +1277,23 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default() };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
+}
+
+/// A world map trip's way (`game::travel::WorldMap::path`), from the executable beside the
+/// install and the world map field in `field`.
+fn world_trip(field: &Path, from: &str, to: &str) -> Result<Vec<[f32; 3]>> {
+    let root = field.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the field is not inside a game install")?;
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let stem = field.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
+    let bytes = std::fs::read(field.join(format!("{stem}.elixir.gz")))?;
+    let container = Elixir::parse(&bytes)?;
+    let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the field has no placements")?;
+    let placements = barrel_formats::opl2::parse(container.data(entry))?;
+    let map = barrel_game::travel::WorldMap::load(&pe, &placements).ok_or("no routes")?;
+    Ok(map.path(&placements, from, to, |_| false).ok_or(format!("no way from {from} to {to}"))?)
 }
 
 /// Where world map point `name` stands on the world map field in `field` (field units), from
@@ -1945,6 +1962,8 @@ struct SceneSpec {
     player_at: Option<[f32; 2]>,
     /// `--walk DX,DZ`: and walking that way (units a second).
     player_walk: Option<[f32; 2]>,
+    /// `--world-trip`: the waypoints she runs through.
+    trip: Vec<[f32; 3]>,
 }
 
 /// A scene loaded on the CPU side: its geometry, draws and instances, the texture packs, the
@@ -2004,6 +2023,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         town_people_from,
         player_at,
         player_walk,
+        trip,
     } = spec;
     let mut town_bodies = Vec::new();
     // Where playback starts: --at, or --line's start.
@@ -2178,6 +2198,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         w.body = town_bodies.len();
         town_bodies.push(body);
         w.velocity = player_walk.unwrap_or_default();
+        w.waypoints = trip.iter().copied().skip(1).collect();
         walker = Some(w);
         focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
     }
@@ -2318,6 +2339,7 @@ fn main() -> Result<()> {
     let mut town_people_from = None::<String>;
     let mut player_at = None::<[f32; 2]>;
     let mut player_walk = None::<[f32; 2]>;
+    let mut trip_path: Vec<[f32; 3]> = Vec::new();
     let mut town_time = 0.0f32;
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
     // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
@@ -2426,6 +2448,17 @@ fn main() -> Result<()> {
                 let at = world_point(field, name)?;
                 eprintln!("world map point {name} at {at:?}");
                 player_at = Some([at[0], at[2]]);
+            }
+            // --world-trip FROM TO: on the world map (the field A15_WMAP), the player runs a
+            // trip's way from mark FROM to mark TO (`T0`, `A0p0` ...: game::travel).
+            "--world-trip" => {
+                let (from, to) = (it.next().ok_or("--world-trip FROM TO")?, it.next().ok_or("--world-trip FROM TO")?);
+                let field = Path::new(args.get(1).ok_or("--world-trip needs --field .../A15_WMAP")?);
+                let path = world_trip(field, from, to)?;
+                eprintln!("world map trip {from} to {to}: {} waypoints", path.len());
+                player_at = path.first().map(|p| [p[0], p[2]]);
+                player_walk = Some([0.0, 0.0]);
+                trip_path = path;
             }
             // --walk DX,DZ: the player walks that way, DX and DZ units a second.
             "--walk" => {
@@ -2925,6 +2958,7 @@ fn main() -> Result<()> {
             town_people_from: town_people_from.clone(),
             player_at,
             player_walk,
+            trip: trip_path.clone(),
         })?;
     let event_at = start_at;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
@@ -3503,7 +3537,22 @@ fn main() -> Result<()> {
     // she goes, the camera carried along. In a window W A S D steer her (relative to the
     // camera) at the game's speed (`game::walk::player_move`); offscreen `--walk` does.
     if let Some(w) = walker.as_mut() {
-        if let Some(p) = pump.as_ref() {
+        // A trip's waypoints: run straight to the next (within a step of it, on to the one after).
+        while let Some(next) = w.waypoints.front().copied() {
+            let (dx, dz) = (next[0] - w.pos[0], next[2] - w.pos[2]);
+            let d = (dx * dx + dz * dz).sqrt();
+            if d < 30.0 {
+                w.waypoints.pop_front();
+                if w.waypoints.is_empty() {
+                    w.velocity = [0.0, 0.0];
+                }
+                continue;
+            }
+            let speed = barrel_game::walk::player_run_speed(false);
+            w.velocity = [dx / d * speed, dz / d * speed];
+            break;
+        }
+        if let Some(p) = pump.as_ref().filter(|_| w.waypoints.is_empty()) {
             use winit::keyboard::KeyCode;
             let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
             let (ahead, right) = (axis(KeyCode::KeyS, KeyCode::KeyW), axis(KeyCode::KeyA, KeyCode::KeyD));

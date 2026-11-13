@@ -18,6 +18,35 @@ pub struct WorldMap {
 }
 
 impl WorldMap {
+    /// The world map from the executable's route records and the world map field's
+    /// placements (the routes' ends as their dots lie).
+    pub fn load(pe: &barrel_formats::pe::Pe, placements: &barrel_formats::opl2::Placements) -> Option<WorldMap> {
+        let mut routes = Vec::new();
+        for a in barrel_formats::world::areas(pe, barrel_formats::world::AREAS_EN)? {
+            if let Some((from, to, _)) = barrel_formats::world::route_ends(placements, &dot_tag(&a.id)) {
+                routes.push(Route { area: a, ends: (from, to) });
+            }
+        }
+        Some(WorldMap { routes })
+    }
+
+    /// The way a trip goes on the world map: the dots of its routes in order from `from`'s
+    /// mark to `to`'s, then `to`'s mark (positions, field units).
+    pub fn path(&self, placements: &barrel_formats::opl2::Placements, from: &str, to: &str, seen: impl Fn(u32) -> bool) -> Option<Vec<[f32; 3]>> {
+        let marks = barrel_formats::world::marks(placements);
+        let at = |m: &str| marks.iter().find(|(k, _)| k == m).map(|(_, p)| *p);
+        let (_, routes) = self.trip(from, to, seen)?;
+        let mut mark = from.to_string();
+        let mut path = vec![at(&mark)?];
+        for id in routes {
+            let r = self.routes.iter().find(|r| r.area.id == id)?;
+            path.extend(barrel_formats::world::route_path(placements, &dot_tag(&id), at(&mark)?));
+            mark = if r.ends.0 == mark { r.ends.1.clone() } else { r.ends.0.clone() };
+            path.push(at(&mark)?);
+        }
+        Some(path)
+    }
+
     /// The routes leaving `mark`, each with the mark at its other end.
     pub fn from<'a>(&'a self, mark: &'a str) -> impl Iterator<Item = (&'a Route, &'a str)> + 'a {
         self.routes.iter().filter_map(move |r| match (&r.ends.0, &r.ends.1) {
@@ -54,6 +83,12 @@ impl WorldMap {
         }
         best.remove(to)
     }
+}
+
+/// The tag a route's dots carry: the record's id (`R0`, `A0R1`) with a region path's `R` small
+/// (`R0`, `A0r1`).
+pub fn dot_tag(id: &str) -> String {
+    if id.starts_with('R') { id.to_string() } else { id.replace('R', "r") }
 }
 
 #[cfg(test)]

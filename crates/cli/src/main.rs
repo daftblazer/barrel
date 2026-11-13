@@ -652,15 +652,7 @@ fn world_map(exe: &Path) -> Result<barrel_game::travel::WorldMap> {
     let c = Elixir::parse(&field)?;
     let e = c.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("no placements")?;
     let placements = barrel_formats::opl2::parse(c.data(e))?;
-    let mut routes = Vec::new();
-    for a in barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no routes")? {
-        // The record ids are R0, A0R0 ...; the dots' tags R0, A0r0 ...
-        let tag = if a.id.starts_with('R') { a.id.clone() } else { a.id.replace('R', "r") };
-        if let Some((from, to, _)) = barrel_formats::world::route_ends(&placements, &tag) {
-            routes.push(barrel_game::travel::Route { area: a, ends: (from, to) });
-        }
-    }
-    Ok(barrel_game::travel::WorldMap { routes })
+    Ok(barrel_game::travel::WorldMap::load(&pe, &placements).ok_or("no routes")?)
 }
 
 /// A trip on the world map from mark FROM to mark TO (`T0`, `A0`, `A0p0` ...) in a new game
