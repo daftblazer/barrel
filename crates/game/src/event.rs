@@ -125,6 +125,12 @@ pub const MARKERS: [u32; 3] = [0x7540_0008, 0x7540_0009, 0x7540_000a];
 pub const GOTO: u32 = 0x7500_0005;
 /// `u6 {a, b}`: the action goes on from label `a + b`.
 pub const GOTO_SUM: u32 = 0x7500_0006;
+/// `u8` (`{first, v}`): goes on from label `first` + variable `v` (case `0x14005147a`).
+pub const GOTO_VAR: u32 = 0x7500_0008;
+/// `u9` (`{first, v, c}`): from label `first + 1` when variable `v` is above `c`, else `first`.
+pub const GOTO_ABOVE: u32 = 0x7500_0009;
+/// `u10` (`{first, v, c}`): from label `first` when variable `v` is `c`, else `first + 1`.
+pub const GOTO_EQUAL: u32 = 0x7500_000a;
 /// `u22` (`ECT_EVENT_CONTRAST_SET_MIX`): `{contrast id, preset, hundredths of a second}`: the
 /// screen's colour overlay moves from the preset's first colour to its second over the time
 /// (`docs/events.md`, "Fades").
@@ -379,6 +385,10 @@ pub struct Player<'a> {
     /// The protagonist the player chose (`Chara.xml` row 0 Escha, 1 Logy), which
     /// [`MASTER_CHARACTER`] stands for.
     hero: u32,
+    /// The event's 20 variables (the event data's +0x94): the jumps `u8` to `u10` test them,
+    /// `u80`, `u82` and `u130` set them from the game's answers (the item picked ...), which
+    /// playback does not have: they stay 0, as nothing has been picked.
+    vars: [i32; 20],
 }
 
 /// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
@@ -414,7 +424,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0 })
+        Ok(Player { names: crate::names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20] })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -463,11 +473,17 @@ impl<'a> Player<'a> {
         self
     }
 
-    /// Where a jump command (`u5`, `u6`) in `action` sends it: the index of the label's command.
+    /// Where a jump command (`u5`, `u6`, `u8` to `u10`) in `action` sends it: the index of the
+    /// label's command.
     fn jump(&self, action: usize, c: ebd::Command<'a>) -> Option<usize> {
+        // A variable beyond the 20 reads as 0 (the game's getter does not check; none does so).
+        let var = |v: u32| self.vars.get(v as usize).copied().unwrap_or(0);
         let target = match (c.word, c.operands) {
             (GOTO, [n, ..]) => *n,
             (GOTO_SUM, [a, b, ..]) => a.wrapping_add(*b),
+            (GOTO_VAR, [first, v, ..]) => first.wrapping_add(var(*v) as u32),
+            (GOTO_ABOVE, [first, v, c, ..]) => first.wrapping_add(u32::from(var(*v) > *c as i32)),
+            (GOTO_EQUAL, [first, v, c, ..]) => first.wrapping_add(u32::from(var(*v) != *c as i32)),
             _ => return None,
         };
         self.actions[action].iter().position(|l| l.word == LABEL && l.operands.first() == Some(&target))
@@ -889,6 +905,25 @@ mod tests {
         assert_eq!((LONG_WAIT, MARK_EVENT), (0x7500_000f, 0x7500_0024));
     }
     use barrel_formats::ebd::{Action, END};
+
+    #[test]
+    fn jumps_test_the_variables() {
+        // Nothing picked (every variable 0): u8 and u9 go to `first`, u10 to `first` when it
+        // tests for 0 and to `first + 1` otherwise.
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        let table = OperandTable::new(&[(GOTO_VAR, Some(2)), (GOTO_ABOVE, Some(3)), (GOTO_EQUAL, Some(3)), (LABEL, Some(1)), (TROPHY, Some(1))]);
+        let run = |jump: Vec<u32>| -> Vec<String> {
+            let mut words = jump;
+            words.extend([TROPHY, 1, LABEL, 7, TROPHY, 7, LABEL, 8, TROPHY, 8, END]);
+            let event = Ebd { actions: vec![act(words)], resources: vec![] };
+            Player::escha(&event, &[], &table).unwrap().filter(|s| matches!(s, Step::Trophy { .. })).map(|s| format!("{s:?}")).collect()
+        };
+        let t = |n: u32| format!("{:?}", Step::Trophy { trophy: n });
+        assert_eq!(run(vec![GOTO_VAR, 7, 3]), [t(7), t(8)]);
+        assert_eq!(run(vec![GOTO_ABOVE, 7, 3, 0]), [t(7), t(8)]);
+        assert_eq!(run(vec![GOTO_EQUAL, 7, 3, 0]), [t(7), t(8)]);
+        assert_eq!(run(vec![GOTO_EQUAL, 7, 3, 5]), [t(8)]);
+    }
 
     #[test]
     fn a_movie_plays() {

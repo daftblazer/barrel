@@ -286,7 +286,8 @@ selection (`0x7600001b`, answered by `EventItemSelectGameMode`), `u82 {v}` the a
 `0x7600001c` and `u130 {v, a}` to `0x7600001d {a}` (who answers those two is not read).
 `u7 {n}` goes on from label base + `n`, the base being the runner's +0x5c (none when it is
 negative; where it is set is not read). These `u9` and `u10` are group 0x75's, not the setup
-markers below. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
+markers below. `event::Player` takes the three variable jumps with every variable 0
+(nothing picked: playback has no item selection), so `u8` and `u9` go on from `first`. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
 `u5 99`, which jumps over starting actions 64 and 65 (Escha placed in town, the camera handed
 back to play, a fade in) to `u3 99` at the end: that part is reached some other way
 (skipping the event, presumably). `u9`/`u10/0x40` (3,628 uses each, no operands) bracket each
