@@ -150,6 +150,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             .map(|(k, m)| {
                 let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
                 f.position = crate::battle::party_spot(k as i32, k as i32 % 3);
+                f.slot = k as i32 % 3 + 3;
                 f.size = m.size;
                 if let Some((hp, mp)) = m.now {
                     f.stats[stat::HP] = hp.clamp(0, f.stats[stat::MAX_HP]);
@@ -160,8 +161,9 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             .collect();
         let sizes: Vec<f32> = (0..foes.len()).map(|k| foe_sizes.get(k).copied().unwrap_or(MONSTER_SIZE)).collect();
         let spots = crate::battle::scatter(&sizes, rng);
-        for (k, (foe, (spot, _))) in foes.iter().zip(spots).enumerate() {
+        for (k, (foe, (spot, sector))) in foes.iter().zip(spots).enumerate() {
             let mut f = Fighter::new(&foe.block, 1, 999_999);
+            f.slot = sector;
             f.death_immune = foe.death_immune;
             f.position = spot;
             f.size = sizes[k];

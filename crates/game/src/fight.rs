@@ -74,6 +74,9 @@ pub struct Fighter {
     pub guts_used: bool,
     /// Instant death never lands on it (a monster's `death_immune`; party members never are).
     pub death_immune: bool,
+    /// Its place around the battle (+0x394): a monster's sector (0 to 3, `battle::scatter`), a
+    /// party member's sector plus 3; -1 when not placed (no flank attacks then).
+    pub slot: i32,
 }
 
 impl Fighter {
@@ -87,7 +90,7 @@ impl Fighter {
         s[stat::DEFENSE] = block.defense;
         s[stat::SPEED] = block.speed;
         s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
-        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], size: 0.0, draw: 0, remembered: -1, last_skill: 0, guts_used: false, death_immune: false }
+        Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], size: 0.0, draw: 0, remembered: -1, last_skill: 0, guts_used: false, death_immune: false, slot: -1 }
     }
 
     /// With `mp` as its MP and maximum MP (the monsters' blocks have none).
@@ -278,6 +281,24 @@ impl Battle {
         if let Some(k) = slot.filter(|&k| k < 9) {
             self.fighters[who].uses[k] += 1;
         }
+        // As the action starts (`0x1401bac40`): a critical roll for each target (chance 5 plus
+        // the actor's value, its virtual +0x100, and passive 0x1b's: not read, taken as 0).
+        let targets = self.area(who, target, skill.spread);
+        let mut critical = false;
+        for _ in &targets {
+            critical |= rng.chance(5);
+        }
+        // The damage rate (`docs/tables.md`, "HP damage"): cleared as each action starts, a party
+        // action's steps before its hits scale them: 25 for a flank attack (a target on the
+        // other side whose sector the actor's slot does not face), 10 for a critical.
+        let rate = if self.fighters[who].side == 0 {
+            let slot = self.fighters[who].slot;
+            let flank = slot >= 0 && targets.iter().any(|&t| self.fighters[t].side == 1 && self.fighters[t].slot >= 0 && slot != battle::facing_slot(self.fighters[t].slot));
+            25 * i32::from(flank) + 10 * i32::from(critical)
+        } else {
+            0
+        };
+        let scale = (100 + rate) as f32 / 100.0;
         // The rolls first (`0x1401bd520`): each effect's amount, then its second value, then an
         // item's bonus for it.
         let rolled: Vec<(SkillEffect, i32, i32)> = skill
@@ -296,7 +317,7 @@ impl Battle {
         let mut felled = Vec::new();
         let mut events = Vec::new();
         let mut hits = 0;
-        for target in self.area(who, target, skill.spread) {
+        for target in targets {
         let (mut damage, mut healed, mut heals) = (0, 0, false);
         for &(e, amount, second) in &rolled {
             match e.act {
@@ -339,7 +360,7 @@ impl Battle {
                         battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
                     } else {
                         // Elemental damage skips defence and meets the target's resistance.
-                        let d = battle::skill_damage(amount, power.unwrap_or(user[stat::ATTACK]), user[stat::LEVEL], foe[stat::DEFENSE], e.element.is_none(), 1.0);
+                        let d = battle::skill_damage(amount, power.unwrap_or(user[stat::ATTACK]), user[stat::LEVEL], foe[stat::DEFENSE], e.element.is_none(), scale);
                         let mut resist = [0; 4];
                         resist.copy_from_slice(&foe[stat::RESIST..stat::RESIST + 4]);
                         battle::reduce(d, e.element, &Defender { resist, ..Defender::default() })

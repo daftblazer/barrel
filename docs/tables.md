@@ -1286,7 +1286,10 @@ state's method `0x1401d7a70`), 30 right after Wilbell's and after Escha's attack
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first
 (a flank attack and a critical, labelled 140 % once the attack's own 5 was added). Without the
-rate Barrel's battles hit 25 to 35 % too weakly.
+rate Barrel's battles hit 25 to 35 % too weakly. `fight::Battle::act` applies it: each fighter's slot (+0x394,
+`Fighter::slot`: a party member's sector + 3, a monster's sector from `battle::scatter`,
+`battle::facing_slot`), a critical roll per target as each action starts (chance 5: the
+actor's own part not read yet), and the party's hits scaled by 100 + the steps before them.
 Party stats agree with "Party growth" plus equipment (Escha at level 12: 35 HP, 47 MP, attack
 13, defence 13, speed 13).
 

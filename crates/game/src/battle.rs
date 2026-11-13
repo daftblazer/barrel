@@ -98,6 +98,11 @@ pub fn arena_outside(p: [f32; 3]) -> f32 {
     ((p[0] * p[0] + p[2] * p[2]).sqrt() - 500.0).max(0.0)
 }
 
+/// The party slot facing a monster's sector (`0x1401b0b40`): sector + 3, wrapped into 0 to 5.
+pub fn facing_slot(sector: i32) -> i32 {
+    (sector + 3).rem_euclid(6)
+}
+
 /// Where the battle puts the monsters it places itself (`0x1401a3d00`; those whose setup
 /// position is (0, -1, 0)), given their sizes (`+0x358`), kept inside the arena
 /// ([`arena_outside`]). They go largest first (ties keep their setup order here,
@@ -1121,6 +1126,12 @@ pub fn rewards(monsters: &[barrel_formats::battle_data::Monster], defeated: &[i3
 
 #[cfg(test)]
 mod reward_tests {
+    #[test]
+    fn the_facing_slot_wraps() {
+        // Sectors 0 to 2 face party slots 3 to 5; sector 3 (an angle of 360) wraps to 0.
+        assert_eq!([0, 1, 2, 3].map(facing_slot), [3, 4, 5, 0]);
+    }
+
     #[test]
     fn rewards_add_up_per_monster() {
         let m = |exp, money| barrel_formats::battle_data::Monster { name: String::new(), family: 0, death_immune: false, exp, money, blocks: Vec::new(), drops: Vec::new() };

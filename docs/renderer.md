@@ -205,8 +205,10 @@ exit at (6010, 3740)) `--travel-to A0p0` passes four days (90 to 94) and arrives
 screen yet (`barrel_game::auto_battle`: the group's monsters drawn as the game draws them,
 against the lead and the other alchemist at level 1 with their base stats, no equipment or
 items, each standing in for the player as `skirmish` does), and the field goes on with that
-enemy gone, whoever won (not yet the game's: no results, no game over). Level 1 without
-equipment is too weak: the Ore Rat of group 10 wins. In the story's free play the encounter
+enemy gone, whoever won (not yet the game's: no results, no game over). With the session's
+party (level 1 in the new game's kit) and the damage rate (a flank attack's 25 %, a
+critical's 10 %), Escha and Logy beat group 10's two Ore Rats on the battle screen (Escha 5 a
+hit, Logy 7 to 8; 6 experience and 2 money). In the story's free play the encounter
 opens its battle instead: the run starts again (as Return to Title does, the window kept) on
 the area's battle stage (`BF_POINTnn`, the area's word 5) with `--battle GROUP`, the area's look
 and the lead, carrying the story's save text and the way back (`Carry`); when the battle is
