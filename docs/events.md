@@ -1377,8 +1377,15 @@ by 8). That one's end starts `EVENT_MM01_OP1_131`.
 3. The event that starts is next.
 
 From `EVENT_MM01_OP1_111` the opening runs 111, 121, 131, 300, 310. Then nothing starts on
-an event end; the next one waits for another trigger (a map change, presumably), which the
-chain does not fire.
+an event end, and that is how the game has it.
+
+The second chapter's events (`EVENT_MM02_OP2_*`, all needing 310 seen) start on the player's
+own walks between the town maps (`MAP_FROM_TO_BEFORE/AFTER`, such as `0 3 0 4`: Urban Area to
+Town Entrance). They are split by event flag 4, = 0 for one set and ≥ 1 for the other, which
+fits the hero choice (0 Escha, 1 Logy) but is not checked. One leaves for the world map:
+`0 4 1 0x60000002`, the Town Entrance to kind 1, any. So from there the story follows where
+the player goes, and `barrel event-starts ROOT new 0|1 0 FROM 0 TO` (with `BARREL_SEEN`) shows
+what a move would start.
 
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
