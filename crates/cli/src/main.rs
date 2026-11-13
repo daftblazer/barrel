@@ -585,37 +585,28 @@ fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
 /// Walks the player (radius 48 and 150 tall: `FMrad` and `FMhig` in her `CharaBase.xml` row) from (X, Y, Z) by (DX, DZ) each step for STEPS
 /// steps against FIELD_DIR's walls, on its ground (`game::walk`), printing where it stands.
 fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> {
-    let name = dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
-    let bytes = read(&dir.join(format!("{name}.elixir.gz")))?;
-    let container = Elixir::parse(&bytes)?;
-    let entry = container.entries.iter().find(|e| e.name.ends_with("_col.g1co")).ok_or("the field has no collision")?;
-    let collision = barrel_formats::g1co::parse(container.data(entry))?;
-    let walls = barrel_game::walk::Walls::new(&collision, barrel_game::walk::DEFAULT_SLOPE);
-    let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
-    let ground = barrel_game::walk::Ground::new(heightmap, &collision, barrel_game::walk::DEFAULT_SLOPE);
-    // The map's gimmicks (map exits, chests ...), from the executable beside the install's
-    // `Data` folder, to say which the walk steps into.
-    let dir_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let gimmicks: Vec<barrel_formats::gimmick::Gimmick> = dir
-        .ancestors()
-        .map(|a| a.join("Atelier_Escha_and_Logy_EN.exe"))
-        .find(|e| e.is_file())
-        .and_then(|e| std::fs::read(e).ok())
-        .and_then(|bytes| {
-            let pe = barrel_formats::pe::Pe::parse(&bytes).ok()?;
-            let map = barrel_game::event::field_maps(&pe).iter().position(|n| n == dir_name)?;
-            Some(barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(map)?.gimmicks.clone())
-        })
-        .unwrap_or_default();
-    let mut inside: Vec<usize> = Vec::new();
+    use barrel_game::walk::Field;
+    let fields = dir.parent().ok_or("FIELD_DIR has no parent folder")?;
+    // The maps' names and gimmicks, from the executable beside the install's `Data` folder (none
+    // without it: the walk then only follows walls and ground).
+    let exe = dir.ancestors().map(|a| a.join("Atelier_Escha_and_Logy_EN.exe")).find(|e| e.is_file()).map(std::fs::read).transpose()?;
+    let pe = exe.as_deref().map(barrel_formats::pe::Pe::parse).transpose()?;
+    let maps = pe.as_ref().map(barrel_game::event::field_maps).unwrap_or_default();
+    let areas = pe.as_ref().and_then(|pe| barrel_formats::gimmick::areas(pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)).unwrap_or_default();
+    let open = |name: &str| -> Result<Field> {
+        let gimmicks = maps.iter().position(|n| n == name).and_then(|m| areas.get(m)).map(|a| a.gimmicks.clone()).unwrap_or_default();
+        Ok(Field::load(fields, name, gimmicks)?)
+    };
+    let mut field = open(dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?)?;
     let [x, y, z] = at.map(|v| v.parse::<f32>());
     let (mut p, mut y) = ([x?, z?], y?);
     let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];
+    let mut inside = field.inside([p[0], y, p[1]]);
     for k in 0..steps.parse::<usize>()? {
-        let next = walls.step(p, d, y, 150.0, 48.0);
+        let next = field.walls.step(p, d, y, 150.0, 48.0);
         let blocked = (next[0] - p[0] - d[0]).abs() > 0.01 || (next[1] - p[1] - d[1]).abs() > 0.01;
         // Stand on the ground there (a step up of at most 50); nothing under it: stay put.
-        match ground.height(next[0], next[1], y, 50.0) {
+        match field.ground.height(next[0], next[1], y, 50.0) {
             Some(h) => {
                 y = h;
                 p = next;
@@ -626,12 +617,22 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
             }
         }
         println!("{k:4}: ({:.1}, {:.1}, {y:.1}){}", p[0], p[1], if blocked { "  (against a wall)" } else { "" });
-        let now: Vec<usize> = (0..gimmicks.len()).filter(|&i| gimmicks[i].contains([p[0] / 100.0, y / 100.0, p[1] / 100.0])).collect();
-        for &i in now.iter().filter(|i| !inside.contains(i)) {
-            let to = gimmicks[i].destination.map(|d| format!(": to map {} at {:?} facing {}", d.map, d.position, d.facing)).unwrap_or_default();
-            println!("      enters {} at {:?}{to}", gimmicks[i].kind_name(), gimmicks[i].position);
-        }
+        let now = field.inside([p[0], y, p[1]]);
+        let entered: Vec<usize> = now.iter().copied().filter(|i| !inside.contains(i)).collect();
         inside = now;
+        for &i in &entered {
+            println!("      enters {} at {:?}", field.gimmicks[i].kind_name(), field.gimmicks[i].position);
+        }
+        // A door: on to its map, standing where it says (metres to field units).
+        if let Some(to) = entered.iter().find_map(|&i| field.gimmicks[i].destination) {
+            let name = maps.get(to.map as usize).ok_or(format!("door to unknown map {}", to.map))?.clone();
+            field = open(&name)?;
+            let at = to.position.map(|v| v * 100.0);
+            p = [at[0], at[2]];
+            y = field.ground.height(p[0], p[1], at[1] + 50.0, 0.0).unwrap_or(at[1]);
+            inside = field.inside([p[0], y, p[1]]);
+            println!("      through the door to {name} (map {}) at ({:.1}, {:.1}, {y:.1}) facing {}", to.map, p[0], p[1], to.facing);
+        }
     }
     Ok(())
 }

@@ -189,6 +189,39 @@ fn floor_height(t: &[[f32; 3]; 3], x: f32, z: f32) -> Option<f32> {
     (l1 >= -1e-4 && l2 >= -1e-4 && l3 >= -1e-4).then(|| l1 * a[1] + l2 * b[1] + l3 * c[1])
 }
 
+/// A field as the player walks it: its walls, its ground and its gimmicks (the doors among
+/// them lead to other fields, `Gimmick::destination`).
+pub struct Field {
+    pub name: String,
+    pub walls: Walls,
+    pub ground: Ground,
+    pub gimmicks: Vec<barrel_formats::gimmick::Gimmick>,
+}
+
+impl Field {
+    /// Loads `<fields>/<name>/<name>.elixir.gz`'s collision and heightmap; `gimmicks` are the
+    /// map's (from the executable's table, `barrel_formats::gimmick::areas`).
+    pub fn load(fields: &std::path::Path, name: &str, gimmicks: Vec<barrel_formats::gimmick::Gimmick>) -> Result<Field, String> {
+        let path = fields.join(name).join(format!("{name}.elixir.gz"));
+        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let container = barrel_formats::elixir::Elixir::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        let entry = container.entries.iter().find(|e| e.name.ends_with("_col.g1co")).ok_or(format!("{name} has no collision"))?;
+        let collision = barrel_formats::g1co::parse(container.data(entry)).map_err(|e| format!("{name}: {e}"))?;
+        let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
+        Ok(Field {
+            name: name.to_string(),
+            walls: Walls::new(&collision, DEFAULT_SLOPE),
+            ground: Ground::new(heightmap, &collision, DEFAULT_SLOPE),
+            gimmicks,
+        })
+    }
+
+    /// The gimmicks a point (field units) stands inside.
+    pub fn inside(&self, p: [f32; 3]) -> Vec<usize> {
+        (0..self.gimmicks.len()).filter(|&i| self.gimmicks[i].contains(p.map(|v| v / 100.0))).collect()
+    }
+}
+
 /// The steepest slope a character walks, degrees: the larger of the field's (the first float
 /// of its record in `field_look::SKY_SETS_EN`, 75 in nearly all) and the character's
 /// `CharaBase.xml` `FMslp` (75 for the player), as `0x14026c3c0` hands them to the collision.

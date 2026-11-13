@@ -344,7 +344,12 @@ feet; with nothing under it the walk does not move (`barrel walk` across AREA_01
 The player runs at 500 units a second, 625 once `EVENT_XG05_110` (event 734) has been seen
 (`game::walk::player_run_speed`): the user brain (`clsFMBrainUser`) reads it from `0x140234910`,
 a test of that event's record and the constants 500 and 625; it does not override the brains'
-`getMoveSpeed` (the base one returns 1). Its move (`0x140234950`, `game::walk::player_move`) takes the stick
+`getMoveSpeed` (the base one returns 1). A field as walked is `game::walk::Field` (its walls, ground and gimmicks, the map's
+from the executable's table); a walk that steps into a door (`FIELDMAP_CHANGE_EX`) goes on in
+the map it names, standing where it says (`Gimmick::destination`, metres): `barrel walk` west
+out of the Atelier (`TOWN_01`, from (600, 1000)) comes out in Marion's office (`TOWN_02`) at
+(820, 1050) and walks on into the room. What the game shows between (a fade, the loading) is
+not done here. Its move (`0x140234950`, `game::walk::player_move`) takes the stick
 (`0x1404d33c0`, its second axis negated): leaning less than 0.2 it is nothing, else along the
 stick at that speed times the lean (at most 1) times the frame's time. Pad button 6 is the run toggle
 ("Run On" / "Run Off", the global `0x141078088`, off at the start): on, the move is half as
