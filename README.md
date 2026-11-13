@@ -22,10 +22,28 @@ The goals:
 - graphics beyond the DX11 originals once the original look is reproduced;
 - uncapped frame rates, any aspect ratio, and UI scaling for handhelds.
 
-Status: started, with Escha & Logy DX first. `crates/formats` reads the elixir containers,
-the event bytecode, the XML tables, the textures and the models' geometry; every one of Escha's files of both kinds reads without error.
-`crates/game` holds the game logic, so far an event player. `crates/cli` is the `barrel` tool for looking at the data. See `docs/survey.md` for the
-games and `docs/formats.md` for the formats.
+## Status
+
+Escha & Logy DX comes first; the other games so far have their archives and a few tables read.
+Barrel does not play Escha yet: the systems below run on their own, from the command line or
+the viewer, and are checked against the original (its executable's code and recorded runs).
+
+| Part | Where | State |
+|---|---|---|
+| Formats | `crates/formats` | Containers, PAK archives (all four keys), tables, events and messages, textures, models, animations, terrain (its layer blending in part), sound and voices, saves (read). Every Escha file of these kinds reads. |
+| Events | `game::event`, `game::stage` | The event bytecode played on a clock: lines, cameras, characters walking, gestures and faces, lights, fades, narration cards, variables and choices. Movies are not played (`docs/engine.md`, "Movies"). |
+| Story | `game::event_start` | Which event starts when: event ends, walks between maps, days passing. Both openings chain as the game plays them. |
+| Battle | `game::battle`, `fight`, `skirmish`, `monster_ai` | Damage, turn order, skills, items, monster rules, falling and guts, rewards and levels. No battle screen; not yet checked against a full recorded battle. |
+| Synthesis | `game::synthesis` | Recipes, effects by element values, traits, quality. Property points are not in. |
+| Field | `game::field_ai`, `encounter`, `gather` | The field enemies' Squirrel scripts in Barrel's own VM, encounters, gathering lists and spots. No player movement or collision. |
+| Calendar | `game::days`, `calendar`, `quest`, `shop`, `rank` | Days passing, requests, shops' restock, the month report and the adventurer rank. |
+| Renderer | `crates/render` | Vulkan: fields with terrain, sky and cloud shadows, characters with motions and faces, events played in a window or to files, upscalers (FSR 1 and 3, GSR 1 and 2), TAA, shadows. |
+| Sound | `crates/audio` | Barrel's own Vorbis decoder, a mixer and SDL3 output: music and voices in events. |
+
+Not started: menus and the game's own screens, a playable loop tying the parts together, and
+Shallie, Ayesha, Sophie 2 and the Ryza games beyond their data. `docs/survey.md` has the games,
+`docs/formats.md`, `docs/tables.md` and `docs/events.md` the data and rules, `docs/renderer.md`,
+`docs/shading.md` and `docs/engine.md` the engine.
 
 ```sh
 cargo build --release
@@ -51,13 +69,16 @@ target/release/barrel g1m-scan "<install>/Data"       # every model
 target/release/barrel g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
-`crates/render` is the Vulkan renderer. Its first tool, `barrel-view`, draws one model with
-its textures offscreen and writes the frame as PNG: one frame, no window, then it exits.
+`crates/render` is the Vulkan renderer. Its tool, `barrel-view`, draws a model, a field or an
+event: to PNG files offscreen, or live in a window (`--window FRAMES`). With an event it plays
+it on (`--at`, `--line`, `--frames`, `--fps`) and with `--chain` goes on to the events the story
+starts after it (`docs/renderer.md`).
 
 ```sh
 target/release/barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
 target/release/barrel-view MODEL#N TEXTURES#N out.png --skeleton BASE_MODEL#N --anim MOTION#N --time 2
 target/release/barrel-view --field "<install>/Data/x64/Field/AREA_01_01" out.png
+target/release/barrel-view --field auto out.png --event "<install>/Event/event/MM01_OP1/EVENT_MM01_OP1_111.ebd" --window 100000 --chain
 BARREL_VALIDATION=1 target/release/barrel-view ...      # with the Khronos validation layer
 ```
 
