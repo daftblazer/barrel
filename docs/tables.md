@@ -789,8 +789,8 @@ inside it (`0x1401bc700`, their size +0x358 allowed for): a line. Any other kind
 candidates whose distance from the centre on the ground (x and z of +0x230) is less than
 their size (+0x358) plus `RADIUS[kind]` (`0x1408041d8`: 50, 350, 450, 650, 900, 1000, 150).
 Over the 532 skills: kind 0 (50, the target alone in practice) 353, 1 (350) 6, 2 (450) 117, 3
-(650) 3, 5 (1000) 49, 6 (a line) 4. So many skills hit everyone near the target; the battle
-loop here keeps one target until fighters have positions (`fight::Fighter::position`, all 0).
+(650) 3, 5 (1000) 49, 6 (a line) 4. So many skills hit everyone near the target; `fight::Battle::area` measures them from each
+fighter's `position`, which the skirmish sets from the formation below.
 
 Where fighters stand: each keeps a home spot (its model's +0x3d8; the model is the fighter's +0x10, while the fighter's own +0x3d8 starts a pointer list) that its position (+0x230)
 returns to. The battle's setup hands over a list of `{fighter, position}` records (read at
@@ -921,8 +921,8 @@ is below 0 keeps no home spot of its own, `0x14019ddd0`). Everyone is first park
 (-100000, 0, 0). The monsters (fighter list 7) are sorted largest first (`+0x358`, comparator
 `0x1401a4a20`); the first stands at the centre, each other at an angle rolled from 0 to 360
 (degrees) and a distance of 200 plus a roll from 0 to 100, times 2: (d sin θ, 0, d cos θ), the
-angle rolled before the distance. Each spot then goes through `0x1401b53b0` (a nudge, not read
-yet) and becomes the monster's home (+0x3d8). Each monster also gets a sector, its angle / 120
+angle rolled before the distance. Each spot then goes through `0x1401b53b0` (the nudge, below)
+and becomes the monster's home (+0x3d8). Each monster also gets a sector, its angle / 120
 (+0x394; the centre one's angle counts as 180, so sector 1; an angle of 360 gives 3, as the game
 has it). The party (list 6) is not scattered: each member's sector is its index (+0x74) mod 3
 (+0x398) and its spot comes from the sector (`0x1401b0b40`, `0x1401b0df0`, `0x1401b0e30`):
@@ -952,8 +952,8 @@ The arena (`0x14019eab0`, `battle::arena_outside`) is a circle of radius 500 (`0
 about the centre: a spot's distance from it past 500, horizontally, else 0. So the scattered
 monsters (200 to 400 out, then nudged) stay within 500, while the party stands at 700 to 800,
 outside it (the party is not nudged). The skirmish (`skirmish::skirmish`) takes the party
-and any number of monsters: each member at its place, the monsters scattered (their sizes are
-not read yet, so all alike: they keep their order, the first at the centre), so the monster
+and any number of monsters: each member at its place, the monsters scattered by their sizes (`Chara.xml` radii, below; one
+not given takes `skirmish::MONSTER_SIZE`), so the monster
 rules' nearest and farthest targets (`Battle::pick_target`) go by real distances. The party's
 stand-in works down the line (the first monster standing). `barrel battle EXE gN --from SAVE`
 fights encounter group N's draw with the save's party: group 12 drew two Ore Rats and two Stray
