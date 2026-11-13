@@ -202,7 +202,14 @@ screen yet (`barrel_game::auto_battle`: the group's monsters drawn as the game d
 against the lead and the other alchemist at level 1 with their base stats, no equipment or
 items, each standing in for the player as `skirmish` does), and the field goes on with that
 enemy gone, whoever won (not yet the game's: no results, no game over). Level 1 without
-equipment is too weak: the Ore Rat of group 10 wins. A town map in free play has its people, placed by the field load's
+equipment is too weak: the Ore Rat of group 10 wins. In the story's free play the encounter
+opens its battle instead: the run starts again (as Return to Title does, the window kept) on
+the area's battle stage (`BF_POINTnn`, the area's word 5) with `--battle GROUP`, the area's look
+and the lead, carrying the story's save text and the way back (`Carry`); when the battle is
+played out the run starts again in the field from that save, where the touch happened, with
+the beaten enemies gone (`Carry::defeated`). From `AREA_01_01` at (4500, 3520) walking west the
+Ore Rat touches Escha, stage 19 plays the battle, and the field comes back at (4140, 3520)
+without it. A town map in free play has its people, placed by the field load's
 conditions over what the story has seen (`town_people`, as `--town-people` does from a save).
 Right after the opening, the Atelier, the Administration Office, the Urban Area and the Apple
 Orchard have one or two each and the Tavern three (chara 14, `PC34`, and two townsfolk,

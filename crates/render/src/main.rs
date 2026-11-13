@@ -1618,6 +1618,11 @@ impl BattlePlay {
         }
     }
 
+    /// Whether the battle is won and played out (a moment after its last event).
+    fn over(&self) -> bool {
+        self.turn.is_none() && self.next > self.outcome.events.len() && self.time >= self.until
+    }
+
     /// Whether a member's turn waits for a command (its events before it all played).
     fn waiting(&self) -> bool {
         self.turn.is_some() && self.next >= self.outcome.events.len() && self.time >= self.until
@@ -1716,8 +1721,9 @@ impl BattlePlay {
         if self.time < self.until {
             return;
         }
-        // Nothing to play: a member's turn waits (the step's time kept for its command).
-        if self.next >= self.outcome.events.len() && self.turn.is_some() {
+        // Nothing to play: a member's turn waits (the step's time kept for its command), or the
+        // battle is played out.
+        if (self.next >= self.outcome.events.len() && self.turn.is_some()) || self.next > self.outcome.events.len() {
             return;
         }
         self.until = self.time + BATTLE_STEP;
@@ -2841,12 +2847,13 @@ fn main() -> Result<()> {
     let mut pump = None;
     // A run ends, or starts again from the title (the menu's Return to Title and Load), with the
     // window kept: everything else is built anew.
+    let mut carry = Carry::default();
     loop {
-        match view(args, pump)? {
+        match view(args, pump, carry)? {
             Ended::Done => return Ok(()),
-            Ended::Restart(a, p) => {
+            Ended::Restart(a, p, c) => {
                 eprintln!("restarting: {}", a.join(" "));
-                (args, pump) = (a, p);
+                (args, pump, carry) = (a, p, c);
             }
         }
     }
@@ -2855,8 +2862,35 @@ fn main() -> Result<()> {
 /// How a run of [`view`] ended.
 enum Ended {
     Done,
-    /// Start again with these arguments and the window.
-    Restart(Vec<String>, Option<window::Pump>),
+    /// Start again with these arguments, the window and what the next run carries over.
+    Restart(Vec<String>, Option<window::Pump>, Carry),
+}
+
+/// What a run hands the next one: the story's save text (loaded as `--load` would), the field
+/// enemies beaten in the field it returns to, and, in a battle, the way back to the field when
+/// the battle ends (its arguments and carry).
+#[derive(Default)]
+struct Carry {
+    save: Option<String>,
+    defeated: Vec<usize>,
+    back: Option<Box<(Vec<String>, Carry)>>,
+}
+
+/// `args` less what picks a scene (as [`title_args`], and the field options `--battle`,
+/// `--look-from`, `--player`, `--walk`, `--creatures`, `--hero`), for a run on another one.
+fn plain_args(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--load" | "--event" | "--at" | "--title" | "--battle" | "--look-from" | "--player" | "--walk" | "--creatures" | "--hero" => {
+                it.next();
+            }
+            "--title-load" | "--chain" | "--free-play" => {}
+            _ => out.push(a.clone()),
+        }
+    }
+    out
 }
 
 /// The arguments to start again at the title (`load_list`: on its Load Game list): `args` less
@@ -2884,9 +2918,10 @@ fn title_args(args: &[String], root: &Path, load_list: bool) -> Vec<String> {
     out
 }
 
-fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended> {
+fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry) -> Result<Ended> {
     let original_args = args.clone();
     let mut restart: Option<Vec<String>> = None;
+    let mut carry_out = Carry::default();
     // --window FRAMES: open a window and present that many frames (the live loop's start).
     if let ["--window", frames] = args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         return window::run(frames.parse()?).map(|()| Ended::Done);
@@ -3602,9 +3637,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     let mut session: Option<barrel_game::session::Session> = None;
     // The gathering tables, loaded at the first gathering.
     let mut gathering: Option<barrel_game::gather::Gathering> = None;
-    if let Some(file) = &load_file {
+    let carried_save = carry.save.take();
+    if load_file.is_some() || carried_save.is_some() {
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--load: give --field with a field of the game install")?.to_path_buf();
-        let text = std::fs::read_to_string(file)?;
+        let file = load_file.clone().unwrap_or_else(|| PathBuf::from("(carried)"));
+        let text = match carried_save {
+            Some(t) => t,
+            None => std::fs::read_to_string(&file)?,
+        };
         let (s, at) = barrel_game::session::Session::load(story_chain(&root)?, &text)?;
         let s = s.with_calendar(barrel_game::days::Data::load(&root)?, barrel_game::rng::Rng::seeded(1));
         let barrel_game::session::Scene::Field(map) = *s.scene() else { return Err("--load: the save is not in free play".into()) };
@@ -4141,6 +4181,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             None => eprintln!("no HUD: the English executable, the font or a WinXls pack is missing"),
         }
     }
+    // The field enemies already beaten (carried back from their battles).
+    if let Some((field, ..)) = creatures.as_mut() {
+        for &k in &carry.defeated {
+            if let Some(d) = field.defeated.get_mut(k) {
+                *d = true;
+            }
+        }
+    }
     let mut battle_keys: std::collections::VecDeque<title::Button> = title::keys(&std::env::var("BARREL_BATTLE_KEYS").unwrap_or_default()).into();
     let mut battle_layer = match battle_play.as_ref() {
         Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
@@ -4379,6 +4427,39 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
             };
             // The encounter is fought out (no battle screen yet: `auto_battle`) and the field
             // goes on, the enemy gone; without the battle tables the field stops there.
+            // In the story's free play the encounter opens its battle: the run starts again on
+            // the area's battle stage, and comes back here when it ends.
+            let to_battle = met.and_then(|k| {
+                let s = session.as_ref()?;
+                let w = walker.as_ref()?;
+                let area = creatures_area?;
+                let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir())?;
+                let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok()?;
+                let pe = barrel_formats::pe::Pe::parse(&exe).ok()?;
+                let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?;
+                let stage = areas.get(area as usize)?.words[5];
+                let stage_dir = root.join("Data/x64/Field").join(format!("BF_POINT{stage:02}"));
+                if stage < 0 || !stage_dir.is_dir() {
+                    return None;
+                }
+                let save = s.save([w.pos[0], w.pos[2]])?;
+                let look = Path::new(&args[1]).file_name()?.to_string_lossy().into_owned();
+                let mut battle = plain_args(&original_args);
+                if battle.len() > 1 {
+                    battle[1] = stage_dir.to_string_lossy().into_owned();
+                }
+                battle.extend(["--look-from".into(), look, "--battle".into(), field.groups[k].to_string(), "--hero".into(), if w.logy { "logy" } else { "escha" }.into()]);
+                let mut defeated: Vec<usize> = (0..field.defeated.len()).filter(|&j| field.defeated[j]).collect();
+                defeated.push(k);
+                eprintln!("frame {frame}: to battle stage {stage} with encounter group {}", field.groups[k]);
+                Some((battle, Carry { back: Some(Box::new((original_args.clone(), Carry { save: Some(save), defeated, back: None }))), ..Carry::default() }))
+            });
+            if let Some((battle, c)) = to_battle {
+                restart = Some(battle);
+                carry_out = c;
+                stop = true;
+                break;
+            }
             if let Some(k) = met {
                 match battles.as_mut() {
                     Some((tables, rng)) => {
@@ -4768,6 +4849,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
                 if presenter.is_none() && play.waiting()
                     && let Some(b) = battle_keys.pop_front() {
                         play.press(b);
+                    }
+                // Over: back to the field it came from.
+                if play.over()
+                    && let Some(back) = carry.back.take() {
+                        eprintln!("frame {frame}: the battle is over, back to the field");
+                        (restart, carry_out) = (Some(back.0), back.1);
+                        stop = true;
+                        break;
                     }
             }
         }
@@ -5943,7 +6032,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>) -> Result<Ended>
     }
     let _ = gpu.physical;
     Ok(match restart {
-        Some(a) => Ended::Restart(a, pump),
+        Some(a) => Ended::Restart(a, pump, carry_out),
         None => Ended::Done,
     })
 }
