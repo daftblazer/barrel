@@ -1264,6 +1264,8 @@ struct Walker {
     /// Logy leads instead of Escha (`BARREL_LEAD=logy`): his swing, its sound and reach, his
     /// jump voices.
     logy: bool,
+    /// The map's field music (`Area::music`), played from the start in a window.
+    music: Option<u32>,
 }
 
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
@@ -1275,11 +1277,9 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let maps = barrel_game::event::field_maps(&pe);
-    let gimmicks = maps
-        .iter()
-        .position(|n| n == name)
-        .and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).map(|a| a.gimmicks.clone()))
-        .unwrap_or_default();
+    let area = maps.iter().position(|n| n == name).and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).cloned());
+    let gimmicks = area.as_ref().map(|a| a.gimmicks.clone()).unwrap_or_default();
+    let music = area.as_ref().and_then(|a| u32::try_from(a.music()).ok());
     let field = barrel_game::walk::Field::load(field_dir.parent().ok_or("no fields folder")?, name, gimmicks)?;
     let ground = &field.ground;
     // Dropped from high above onto whatever is under her.
@@ -1304,7 +1304,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3141,6 +3141,23 @@ fn main() -> Result<()> {
     // The event's music and voices, in a window only (frames written to files are silent):
     // the output, the mixer, the library, and the music now playing.
     let mut sound: Option<(barrel_audio::Output, barrel_audio::Mixer, barrel_audio::Library, Option<barrel_audio::Playing>)> = None;
+    // Walking a field in a window, its music plays from the start, looping as the track does.
+    if let Some(w) = walker.as_ref()
+        && presenter.is_some() {
+            let tracks = barrel_formats::pe::Pe::parse(&std::fs::read(w.root.join("Atelier_Escha_and_Logy_EN.exe"))?)
+                .ok()
+                .and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN))
+                .unwrap_or_default();
+            match barrel_audio::Output::open(0.1) {
+                Ok(out) => {
+                    let (mut mixer, library) = (barrel_audio::Mixer::new(), barrel_audio::Library::new(&w.root, "Voice_EN", tracks));
+                    let playing = w.music.and_then(|t| library.music(t)).map(|m| mixer.play_stream(m.stream, m.volume, m.loop_from));
+                    eprintln!("field music {:?}", w.music);
+                    sound = Some((out, mixer, library, playing));
+                }
+                Err(e) => eprintln!("no sound: {e}"),
+            }
+        }
     let mut motion_names: Vec<String> = Vec::new();
     let messages: Vec<barrel_formats::ebm::Message>;
     let mut speaker_names: Vec<String> = Vec::new();

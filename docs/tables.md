@@ -871,7 +871,9 @@ macro and run (`SQ.execProgramMacroFast`); Escha's weak swing plays `MOTION_LAD`
 `SE_WAND01` (98) in a window; no effects yet. `BARREL_LEAD=logy` puts Logy (`Chara.xml` row 1,
 `PC21`) in the lead: `swordAttack` plays his `LAD` divisions 0 to 3 (0 to 0.2, 0.21 to 0.36, 0.37 to
 0.56, 0.57 to 0.9 s, so the viewer runs it to 0.9 s) with `SE_WAND02` (99) 0.10 s into division 1,
-0.31 s in, and his jumps call out with his voices (11318 to 11320). With field enemies (`--creatures AREA --player X,Z`)
+0.31 s in, and his jumps call out with his voices (11318 to 11320). In a window the field's music
+(`Area::music`, the map record's second word) plays from the start, at the track's volume and
+looping from its loop point; frames written to files stay silent. With field enemies (`--creatures AREA --player X,Z`)
 they watch the player instead of the stand-in, and her strike hits as the game's does: 0.35 to
 0.6 s into the swing, the nearest enemy within reach of a point ahead of her (`encounter::struck`,
 stage 0, radius 130, or Logy's 150), before the touch test: at `AREA_01_01` from (4300, 3520) walking west at
