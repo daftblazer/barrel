@@ -450,12 +450,14 @@ fn ebd_measure(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The operand table for the game installed above `dir`: Shallie DX's or Sophie 2's measured
+/// The operand table for the game installed above `dir`: Shallie DX's, Ayesha DX's or Sophie 2's measured
 /// ones, Escha & Logy DX's otherwise.
 fn operand_table_for(dir: &Path) -> OperandTable {
     let has = |name: &str| dir.ancestors().any(|p| p.join(name).is_file());
     if has("Atelier_Shallie.exe") {
         OperandTable::shallie()
+    } else if has("Atelier_Ayesha.exe") {
+        OperandTable::ayesha()
     } else if has("Atelier_Sophie_2.exe") {
         OperandTable::sophie2()
     } else {

@@ -79,6 +79,10 @@ animations or containers: every 3D asset is a gzipped PSSG file (`Res/x64/**/*.P
 interface and pictures (`ipu*`, `winxls*`). Ayesha needs a PSSG reader for its models, maps and
 animations; the rest carries over.
 
+Checked with Barrel's readers (2026-11-12): the assets are under `Res/x64`, not `Data`: no
+elixir containers, models in PSSG (107 `.PSSG` and gzipped ones), 940 loose `g1t` textures
+(all read), 210 `ktx`. Events, messages and tables read (`docs/events.md`, "Ayesha DX").
+
 ### Sophie 2
 
 The data is in 35 `Data/*.PAK` archives (24 GB). The executable refers to ~405 `.xml`

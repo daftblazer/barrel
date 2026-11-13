@@ -178,7 +178,19 @@ impl<'a> Parser<'a> {
             self.skip_ws();
             let quote = self.rest().chars().next().ok_or(Error::Corrupt("xml: attribute value missing"))?;
             if quote != '"' && quote != '\'' {
-                return Err(Error::Corrupt("xml: attribute value not quoted"));
+                // A value missing its opening quote (Ayesha's `L_POINT_09_C.param.xml` has
+                // `fogDistanceMin=-60.0"`): taken to a quote, whitespace or the tag's end, the
+                // stray closing quote dropped.
+                let r = self.rest();
+                let end = r.find(|c: char| matches!(c, '"' | '\'' | '>' | '/') || c.is_whitespace()).ok_or(Error::Corrupt("xml: attribute value not closed"))?;
+                if end == 0 {
+                    return Err(Error::Corrupt("xml: attribute value not quoted"));
+                }
+                let value = unescape(&r[..end]);
+                let stray = matches!(r[end..].chars().next(), Some('"' | '\''));
+                self.pos += end + usize::from(stray);
+                e.attributes.push((key, value));
+                continue;
             }
             self.pos += 1;
             let end = self.rest().find(quote).ok_or(Error::Corrupt("xml: attribute value not closed"))?;
@@ -234,6 +246,13 @@ pub fn parse(bytes: &[u8]) -> Result<Element, Error> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_value_missing_its_opening_quote_reads() {
+        let t = parse_str(r#"<root><fog fogDensity="0.0" fogDistanceMin=-60.0" fogDistanceMax="500.0" /></root>"#).unwrap();
+        let fog = &t.children[0];
+        assert_eq!((fog.attr("fogDistanceMin"), fog.attr("fogDistanceMax")), (Some("-60.0"), Some("500.0")));
+    }
+
     use super::*;
 
     #[test]

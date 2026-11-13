@@ -1491,3 +1491,13 @@ with 20 operands, `u150` to `u152`) and 7 take other counts:
 `q55` with 14 operands has the shape of Escha's `q54` (the event's point light), so commands
 moved between the two games: Escha's meanings carry over only where Shallie's own executable
 confirms them, command by command.
+
+## Ayesha DX
+
+Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
+13,290 of its 162,098 bodies. Its table is measured from its 3,891 events the same way
+(`ebd_tables::AYESHA`, 262 commands, 7 of varying length; 58 not in Escha's and 13 with other
+counts), and every body decodes with it. Its messages (4,648 files) and tables (136) read with
+Escha's code; one table has a value missing its opening quote (`Res/x64/fieldmap/map/param/
+L_POINT_09_C.param.xml`, `fogDistanceMin=-60.0"`), which the table reader takes to the stray
+quote, as the game must (`table.rs`).
