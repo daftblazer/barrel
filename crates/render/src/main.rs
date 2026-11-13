@@ -23,6 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 mod fsr;
 mod glow;
 mod hud;
+mod hero;
 mod title;
 mod fsr3;
 mod gsr2;
@@ -3025,6 +3026,35 @@ fn main() -> Result<()> {
 
     // --chain: the events the story starts after this one, played on in turn under the same
     // renderer (`event_start::Chain`; `docs/renderer.md`, "Chained events").
+    // The title screen: New Game goes on into the new game; anything else ends here. Offscreen,
+    // `BARREL_TITLE_KEYS` (up, down, confirm, back, comma-separated) picks, and the screen as
+    // it then stands is written to OUT.
+    if let Some(r) = &title_root {
+        let keys: Vec<title::Button> = std::env::var("BARREL_TITLE_KEYS")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|k| match k.trim() {
+                "up" => Some(title::Button::Up),
+                "down" => Some(title::Button::Down),
+                "confirm" => Some(title::Button::Confirm),
+                "left" => Some(title::Button::Left),
+                "right" => Some(title::Button::Right),
+                "back" => Some(title::Button::Back),
+                _ => None,
+            })
+            .collect();
+        let target = title::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+        let window = presenter.as_ref().zip(pump.as_mut());
+        let out = presenter.is_none().then(|| PathBuf::from(&out_path));
+        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, &keys, out.as_deref())?;
+        eprintln!("title: {picked:?}");
+        let Some(title::Start::NewGame { logy }) = picked else { return Ok(()) };
+        // The new game with the lead chosen.
+        hero = u32::from(logy);
+        let first = barrel_game::event_start::new_game_event(logy, false);
+        event_spec = Some(r.join("Event/event").join(barrel_game::event_start::event_file(first)).to_string_lossy().into_owned());
+        eprintln!("new game: {first}");
+    }
     let mut chain = match (&event_spec, chain_on) {
         (Some(e), true) => {
             if args[1] != "auto" {
@@ -3057,30 +3087,6 @@ fn main() -> Result<()> {
     let mut current_event = event_spec.clone();
     let mut frame_base = 0u32;
     let mut first_event = true;
-    // The title screen: New Game goes on into the new game; anything else ends here. Offscreen,
-    // `BARREL_TITLE_KEYS` (up, down, confirm, back, comma-separated) picks, and the screen as
-    // it then stands is written to OUT.
-    if let Some(r) = &title_root {
-        let keys: Vec<title::Button> = std::env::var("BARREL_TITLE_KEYS")
-            .unwrap_or_default()
-            .split(',')
-            .filter_map(|k| match k.trim() {
-                "up" => Some(title::Button::Up),
-                "down" => Some(title::Button::Down),
-                "confirm" => Some(title::Button::Confirm),
-                "back" => Some(title::Button::Back),
-                _ => None,
-            })
-            .collect();
-        let target = title::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-        let window = presenter.as_ref().zip(pump.as_mut());
-        let out = presenter.is_none().then(|| PathBuf::from(&out_path));
-        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, &keys, out.as_deref())?;
-        eprintln!("title: {picked:?}");
-        if picked != Some(title::Entry::NewGame) {
-            return Ok(());
-        }
-    }
     'events: loop {
     let event_spec = current_event.clone();
     // A chained event plays from its start.

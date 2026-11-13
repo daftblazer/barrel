@@ -567,7 +567,10 @@ are ours (`docs/open.md`). `BARREL_NO_HUD` turns it off.
 
 `barrel-view --field auto OUT --title ROOT` starts at the title screen (`crates/render/src/title.rs`,
 layout 1056 and still 9): "Press any button", then the six entries (arrows or W/S, Enter, Space
-or Z to pick, Escape, Backspace or X back). New Game goes on as `--new-game ROOT` and Exit Game
+or Z to pick, Escape, Backspace or X back). New Game opens the hero choice (`hero.rs`, layout
+1023: the two profile cards, left and right switch, confirm asks Yes / No with Yes at the left)
+and its Yes starts the new game with that lead, as `--new-game ROOT [--hero logy]`; Exit Game
 ends; the other entries are not there yet. The screen is drawn with the text layer alone,
 before any field is loaded. Offscreen, `BARREL_TITLE_KEYS=confirm,down` presses buttons and
-writes the screen as it then stands to OUT (`confirm,confirm` goes on into the new game).
+writes the screen as it then stands to OUT (`confirm,confirm,confirm,left,confirm` goes on into
+a new game with Escha).

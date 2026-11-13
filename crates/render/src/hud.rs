@@ -60,6 +60,8 @@ const WHITE: [u8; 4] = [0xff; 4];
 #[derive(Clone, Debug, PartialEq)]
 pub enum Element {
     Sprite { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite at half strength (a choice not taken).
+    Dim { part: i32, cut: i32, at: [i32; 2] },
     Label(layout::Text),
 }
 
@@ -127,8 +129,9 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
     let mut out = Vec::new();
     for e in elements {
         match e {
-            Element::Sprite { part, cut, at } => {
-                let Some(piece) = layout::sprite(pe, *part, *cut, *at) else { continue };
+            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } => {
+                let alpha = if matches!(e, Element::Dim { .. }) { 0.5 } else { 1.0 };
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
                 let [w, h] = sheets.sizes[slot];
                 let [l, t, r, b] = piece.src.map(f32::from);
@@ -136,7 +139,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 out.push(Quad {
                     rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k],
                     uv: [l / w, t / h, r / w, b / h],
-                    color: [1.0; 4],
+                    color: [1.0, 1.0, 1.0, alpha],
                     texture: sheets.first + slot,
                 });
             }

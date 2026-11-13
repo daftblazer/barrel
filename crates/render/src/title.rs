@@ -49,6 +49,8 @@ pub const ENTRIES: [Entry; 6] = [Entry::NewGame, Entry::LoadGame, Entry::Dressin
 pub enum Button {
     Up,
     Down,
+    Left,
+    Right,
     Confirm,
     Back,
 }
@@ -73,6 +75,7 @@ impl Title {
             (Title::Menu(k), Button::Down) => *self = Title::Menu((k + 1) % ENTRIES.len()),
             (Title::Menu(k), Button::Confirm) => return Some(ENTRIES[k]),
             (Title::Menu(_), Button::Back) => *self = Title::PressAny,
+            (Title::Menu(_), Button::Left | Button::Right) => {}
         }
         None
     }
@@ -111,12 +114,46 @@ fn all_elements() -> Vec<Element> {
     out
 }
 
+/// The screens before play: the title, then the hero choice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Front {
+    Title(Title),
+    Hero(crate::hero::Hero),
+}
+
+/// How the screens before play ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// A new game with this lead (Logy when true).
+    NewGame { logy: bool },
+    Exit,
+}
+
+impl Front {
+    fn press(&mut self, b: Button) -> Option<Start> {
+        match self {
+            Front::Title(t) => match t.press(b)? {
+                Entry::NewGame => *self = Front::Hero(crate::hero::Hero::new()),
+                Entry::ExitGame => return Some(Start::Exit),
+                other => eprintln!("title: {other:?} is not there yet"),
+            },
+            Front::Hero(h) => match h.press(b)? {
+                crate::hero::Outcome::Chosen(logy) => return Some(Start::NewGame { logy }),
+                crate::hero::Outcome::Back => *self = Front::Title(Title::Menu(0)),
+            },
+        }
+        None
+    }
+}
+
 /// A key's title button.
 pub fn button(key: winit::keyboard::KeyCode) -> Option<Button> {
     use winit::keyboard::KeyCode as K;
     match key {
         K::ArrowUp | K::KeyW => Some(Button::Up),
         K::ArrowDown | K::KeyS => Some(Button::Down),
+        K::ArrowLeft | K::KeyA => Some(Button::Left),
+        K::ArrowRight | K::KeyD => Some(Button::Right),
         K::Enter | K::Space | K::KeyZ => Some(Button::Confirm),
         K::Escape | K::Backspace | K::KeyX => Some(Button::Back),
         _ => None,
@@ -132,10 +169,10 @@ pub struct Target<'a> {
     pub height: u32,
 }
 
-/// Shows the title screen and returns the entry picked (`None`: the window was closed, or,
-/// offscreen, no entry was picked by `keys`). In a window it runs until an entry it can go on
-/// with (New Game, Exit Game) is picked; offscreen it takes `keys`, draws the screen once and
-/// writes it to `out`.
+/// Shows the title screen and the hero choice, and returns how they ended (`None`: the window
+/// was closed, or, offscreen, `keys` did not end them). In a window it runs until a new game is
+/// chosen or Exit Game is picked; offscreen it takes `keys`, draws the screen once and writes it
+/// to `out`.
 pub fn run(
     gpu: &Gpu,
     pool: vk::CommandPool,
@@ -145,7 +182,8 @@ pub fn run(
     root: &Path,
     keys: &[Button],
     out: Option<&Path>,
-) -> Result<Option<Entry>> {
+) -> Result<Option<Start>> {
+    use crate::hero::Hero;
     let d = &gpu.device;
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -153,10 +191,23 @@ pub fn run(
     let x64 = root.join("Data/x64");
     let still_bytes = std::fs::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| std::fs::read(x64.join(&still.folder).join(&still.file)))?;
     let still_g1t = barrel_formats::g1t::G1t::parse(&still_bytes)?;
-    // The sprites' pictures, each pack read once.
+    let hero_nodes = barrel_formats::layout::placed(&pe, crate::hero::LAYOUT);
+    let texts = |p: &barrel_formats::layout::Placed| barrel_formats::layout::text(&pe, p);
+    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("title: no glyph table")?;
+    let atlas_bytes = std::fs::read(x64.join("Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
+    let font = text::Font { glyphs, size: atlas.textures.first().ok_or("title: an empty font atlas")?.width as f32 };
+    // The sprites' pictures (every state of both screens), each pack read once.
+    let mut every = all_elements();
+    for logy in [false, true] {
+        every.extend(Hero::Choose { logy }.elements(&hero_nodes, texts));
+        for yes in [false, true] {
+            every.extend(Hero::Confirm { logy, yes }.elements(&hero_nodes, texts));
+        }
+    }
     let mut keys_needed: Vec<(String, u32)> = Vec::new();
-    for e in all_elements() {
-        if let Element::Sprite { part, cut, at } = e
+    for e in every {
+        if let Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } = e
             && let Some(p) = barrel_formats::layout::sprite(&pe, part, cut, at) {
                 let key = (p.texture, p.index);
                 if !keys_needed.contains(&key) {
@@ -172,8 +223,9 @@ pub fn run(
         }
     }
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
-    let mut images = vec![still_g1t.textures.first().ok_or("title: an empty background")?];
-    let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
+    // Slots: the font atlas, the title's background, then the sheets.
+    let mut images = vec![&atlas.textures[0], still_g1t.textures.first().ok_or("title: an empty background")?];
+    let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 2 };
     for (name, index) in keys_needed {
         let Some(t) = parsed.iter().find(|(n, _)| *n == name).and_then(|(_, g)| g.textures.get(index as usize)) else { continue };
         sheets.sizes.push([t.width as f32, t.height as f32]);
@@ -182,20 +234,25 @@ pub fn run(
     }
     let mut layer = text::Layer::new(gpu, pool, target.pass, &images)?;
     let (w, h) = (target.width as f32, target.height as f32);
-    let quads = |t: &Title| {
-        // The background over the 1920 × 1080 screen, scaled to the height and centred.
-        let k = h / 1080.0;
-        let dx = (w - 1920.0 * k) / 2.0;
-        let mut q = vec![text::Quad { rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 0 }];
-        q.extend(hud::quads(&pe, None, &sheets, &t.elements(), w, h));
-        q
+    let quads = |f: &Front| match f {
+        Front::Title(t) => {
+            // The background over the 1920 × 1080 screen, scaled to the height and centred.
+            let k = h / 1080.0;
+            let dx = (w - 1920.0 * k) / 2.0;
+            let mut q = vec![text::Quad { rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 1 }];
+            q.extend(hud::quads(&pe, None, &sheets, &t.elements(), w, h));
+            q
+        }
+        Front::Hero(hero) => hud::quads(&pe, Some(&font), &sheets, &hero.elements(&hero_nodes, texts), w, h),
     };
-    let mut title = Title::new();
+    let mut front = Front::Title(Title::new());
     let mut picked = None;
     for &b in keys {
-        picked = title.press(b).or(picked);
+        if picked.is_none() {
+            picked = front.press(b);
+        }
     }
-    layer.set(gpu, &quads(&title))?;
+    layer.set(gpu, &quads(&front))?;
     let draw = |cb: vk::CommandBuffer, layer: &text::Layer, image: usize| unsafe {
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: target.width, height: target.height } };
         d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(target.pass).framebuffer(target.framebuffers[image]).render_area(area), vk::SubpassContents::INLINE);
@@ -207,23 +264,25 @@ pub fn run(
     let result = match (window, offscreen) {
         (Some((presenter, pump)), _) => {
             let (ready, done) = unsafe { (d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?) };
+            let mut shown = None;
             let picked = loop {
                 if !pump.pump() {
                     break None;
                 }
                 let mut chosen = None;
                 for key in pump.take_pressed() {
-                    if let Some(e) = button(key).and_then(|b| title.press(b)) {
-                        match e {
-                            Entry::NewGame | Entry::ExitGame => chosen = Some(e),
-                            other => eprintln!("title: {other:?} is not there yet"),
+                    if let Some(b) = button(key)
+                        && chosen.is_none() {
+                            chosen = front.press(b);
                         }
-                    }
                 }
                 if chosen.is_some() {
                     break chosen;
                 }
-                layer.set(gpu, &quads(&title))?;
+                if shown != Some(front) {
+                    layer.set(gpu, &quads(&front))?;
+                    shown = Some(front);
+                }
                 let Some(image) = presenter.acquire(ready)? else { continue };
                 unsafe {
                     let cb = d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0];

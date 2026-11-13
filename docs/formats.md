@@ -1230,8 +1230,11 @@ that place them are tables in the executable (English addresses; `crates/formats
   from y 538 every 78, cut 0 plain and cut 1 lit; the cursor, layout 1057: bar 0x15c cut 2,
   ornaments part 0x163 cuts 0 and 4 at (-60, -16) and (642, -16); 958's own entries start at
   616, the last ending past the screen's foot). The title's backgrounds are stills 9 to 11
-  (`Ipu/title_bg01` to `03`), 1015 and 1023 the hero choice (Yes/No, then the two
-  profile cards), 1035 the save list, 916 the battle result, 920 party info, 926 field info.
+  (`Ipu/title_bg01` to `03`), 1015 and 1023 the hero choice (on `a15_selection.g1t` over the menu
+  background, layout 357: the figures, layouts 1021 and 1022; the profile cards, Escha's 1024 and
+  Logy's 1025, part 0x141 cut 0 frame, cut 1 or 2 the profile, cut 3 a "Cleared" stamp; the
+  arrows, parts 0x142 and 0x143; the Yes and No tags, 1013 and 1014; "Select your character.";
+  1023 has the cards side by side, Logy's at the left, 1015 the figures alone with the tags), 1035 the save list, 916 the battle result, 920 party info, 926 field info.
 
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
