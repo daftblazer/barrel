@@ -1203,9 +1203,6 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
     Ok((packs, first, bodies))
 }
 
-/// How fast the player runs, units a second: the game's speed before `EVENT_XG05_110` (the
-/// viewer has no save to say it has been seen).
-const PLAYER_RUN_SPEED: f32 = 500.0; // barrel_game::walk::player_run_speed(false)
 
 /// The player walking: her instance, where she stands (field units), her velocity (x, z, units
 /// a second) and the field's walls and ground she walks against (`game::walk`).
@@ -3441,7 +3438,7 @@ fn main() -> Result<()> {
     }
     // The player walking: a step against the field's walls and onto its ground, turned the way
     // she goes, the camera carried along. In a window W A S D steer her (relative to the
-    // camera) at `PLAYER_RUN_SPEED`; offscreen `--walk` does.
+    // camera) at the game's speed (`game::walk::player_move`); offscreen `--walk` does.
     if let Some(w) = walker.as_mut() {
         if let Some(p) = pump.as_ref() {
             use winit::keyboard::KeyCode;
@@ -3450,8 +3447,9 @@ fn main() -> Result<()> {
             let e = turned_eye(eye, target, orbit);
             let f = Vec3::new(target.x - e.x, 0.0, target.z - e.z).normalize_or_zero();
             // Right of the view in render space is (-f.z, 0, f.x); game x is render's mirrored.
-            let v = (f * ahead + Vec3::new(-f.z, 0.0, f.x) * right).normalize_or_zero() * PLAYER_RUN_SPEED;
-            w.velocity = [-v.x, v.z];
+            // Keys lean the stick all the way; the speed a second is the move over one second.
+            let v = (f * ahead + Vec3::new(-f.z, 0.0, f.x) * right).normalize_or_zero();
+            w.velocity = barrel_game::walk::player_move([-v.x, v.z], 1.0, false);
         }
         let moving = w.velocity != [0.0, 0.0];
         if moving != w.running {
