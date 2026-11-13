@@ -1939,7 +1939,12 @@ condition holds (`0x1401ab640`, a switch on +0x14) fires (`0x1401abcd0`, which u
 Condition 8 (`0x1401ab83f`) looks over the fighters the moment concerns for one standing whose
 model's character (+0x10, then +0x81c) is word 2 and whose HP × 100 / max HP is at most word 3:
 so a type-9 reaction fires once, when the boss itself falls to that share of its HP (the Grand
-Dragon at 40%). What firing does with word 0, and condition 10, are not read yet.
+Dragon at 40%). Firing (`0x1401abcd0`, a reaction of class 3, +0x24) queues an action of kind 3
+on the boss (`0x1401b9e10` on its +0x1e0: a `BtlCharaActionSkill`, word 0 at +0x38), whose skill
+is entry word 0 of the block's skill list (the fighter's virtual +0x88, `0x1401b75b0` →
+`0x140111d20`: the second pointer's 16-byte records, entries 0 to 13), not an action slot: the
+Grand Dragon's 2 is its third skill, `Skill_MONSTER_BOSS_DRAGON_01_2`. So the boss answers the
+moment it drops to the share with that skill. Condition 10 (type 14) is not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which
