@@ -101,11 +101,6 @@ likely settle them where static reading failed.
 
 ## Battle
 
-- **Formation / battle areas.** Where the party and enemies stand: battle areas decoded, but the
-  start formation needs the battle setup the field encounter builds (who writes the scene
-  request +0x40). Scans for the party's home positions (±692.8) found nothing; the formation
-  writes through `[fighter+0x10]+0x3d8` (a model's vector pointers). **Live read** during a
-  battle: `[f+0x10]+0x3d8`.
 - **Item power.** The builder of an effect entry's +0x18 for action kind 1 was not found (three
   tries; itemData `effect` is row +0x40).
 - **Item level in battle** (fighter +0x248, from a command copied whole): setter not found.
