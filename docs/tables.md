@@ -2094,7 +2094,13 @@ where the world map's placements mark them, by tag (`A15_WMAP.opl2`): `T0` the t
 Escha on that point's mark (the forest region, its path dots either side). The route records
 (`barrel_formats::world::areas`, `R0` ..., `A0R0` ...: the ids the `R*` and `A0r*` dots carry)
 hold, besides their days, an event number at +0x14 (46 for `R0`, 171 for `R1`, 628 for `A0R1`)
-and at +0x18 and +0x20 (`A0R1`: 50 and 171), presumably when each opens; which points a route
-joins is not in them, not read yet. The routes
+and at +0x18 and +0x20 (`A0R1`: 50 and 171), presumably when each opens. Which points a route joins is not in them; the game's own table
+for it is not read, but the dots show it (`world::route_ends`, `barrel world-routes EXE`: the
+marks nearest the two dots of a route that lie farthest apart). `R0` joins the town to the
+Twilight Forest (`T0` - `A0`, 4 days), `R1` the town to `A2`, `R3` `B1` to the town, `R6` `B1`
+to `D2` (2 days), `R10` `C1` to `E2` and `R11` `D2` to `F1` (7 days each) ...; inside a region the
+paths chain its points (`A0r0` `A0` - `A0p0`, `A0r1` `A0p0` - `A0p1` ...). A route that ends
+beside both a region's mark and its first small point can come out at the small point (`R2`
+`T0` - `A1p0`, the region `A1`'s first point): this way of reading them is this project's. The routes
 and their days are `barrel_formats::world` ("World map" in `docs/formats.md` for the save's
 part).

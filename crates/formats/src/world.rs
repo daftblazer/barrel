@@ -113,6 +113,31 @@ pub fn point_position(placements: &crate::opl2::Placements, name: &str) -> Optio
     placements.objects.iter().flat_map(|t| t.instances.iter()).find(|i| i.tags.split_whitespace().any(|t| t == tag) || i.tags == tag).map(|i| i.position)
 }
 
+/// A route's dots on the world map (placements tagged `tag`: `R0` ... for the routes between
+/// places, `A0r0` ... for the paths inside a region), and the two marks nearest the ends of
+/// their chain (the two dots farthest apart): which points the route joins, as its dots show it
+/// (the game's own table for this is not read). Marks are the points' tags (`T0`, `A0`,
+/// `A0p0` ...).
+pub fn route_ends(placements: &crate::opl2::Placements, tag: &str) -> Option<(String, String, usize)> {
+    let instances: Vec<&crate::opl2::Instance> = placements.objects.iter().flat_map(|t| t.instances.iter()).collect();
+    let has = |i: &crate::opl2::Instance, t: &str| i.tags.split_whitespace().any(|x| x == t);
+    let dots: Vec<[f32; 3]> = instances.iter().filter(|i| has(i, tag)).map(|i| i.position).collect();
+    let d2 = |a: [f32; 3], b: [f32; 3]| (a[0] - b[0]).powi(2) + (a[2] - b[2]).powi(2);
+    let (mut a, mut b, mut best) = (*dots.first()?, *dots.first()?, -1.0f32);
+    for &p in &dots {
+        for &q in &dots {
+            if d2(p, q) > best {
+                (a, b, best) = (p, q, d2(p, q));
+            }
+        }
+    }
+    // The marks: tags of the form T0, A0 (region), A0p0 (small point).
+    let is_mark = |t: &str| t == "T0" || (t.len() == 2 && t.as_bytes()[0].is_ascii_uppercase() && t.as_bytes()[0] != b'R' && t.as_bytes()[1].is_ascii_digit()) || (t.len() >= 4 && t.as_bytes()[2] == b'p');
+    let marks: Vec<(&str, [f32; 3])> = instances.iter().flat_map(|i| i.tags.split_whitespace().filter(|t| is_mark(t)).map(move |t| (t, i.position))).collect();
+    let nearest = |p: [f32; 3]| marks.iter().min_by(|x, y| d2(x.1, p).total_cmp(&d2(y.1, p))).map(|m| m.0.to_string());
+    Some((nearest(a)?, nearest(b)?, dots.len()))
+}
+
 #[cfg(test)]
 mod point_tests {
     #[test]

@@ -61,6 +61,7 @@ usage:
   barrel town-talk EXE ID       one town person's lines (their placement's talk id)
   barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
   barrel world-points EXE       the world map's points and the field maps they open
+  barrel world-routes EXE       the world map's routes and the marks at their ends
   barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
   barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
   barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
@@ -166,6 +167,7 @@ fn main() -> ExitCode {
             Err(_) => Err("MAP is a number".into()),
         },
         ["world-points", exe] => world_points(Path::new(exe)),
+        ["world-routes", exe] => world_routes(Path::new(exe)),
         ["gimmicks", exe] => gimmicks(Path::new(exe), None),
         ["gimmicks", exe, area] => match area.parse() {
             Ok(n) => gimmicks(Path::new(exe), Some(n)),
@@ -634,6 +636,25 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
             y = field.ground.height(p[0], p[1], at[1] + 50.0, 0.0).unwrap_or(at[1]);
             inside = field.inside([p[0], y, p[1]]);
             println!("      through the door to {name} (map {}) at ({:.1}, {:.1}, {y:.1}) facing {}", to.map, p[0], p[1], to.facing);
+        }
+    }
+    Ok(())
+}
+
+/// The world map's routes and the marks at their ends, as their dots lie
+/// (`barrel_formats::world::route_ends`), with each route's days.
+fn world_routes(exe: &Path) -> Result<()> {
+    let bytes = read(exe)?;
+    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
+    let field = read(&exe.parent().ok_or("no folder")?.join("Data/x64/Field/A15_WMAP/A15_WMAP.elixir.gz"))?;
+    let c = Elixir::parse(&field)?;
+    let e = c.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("no placements")?;
+    let placements = barrel_formats::opl2::parse(c.data(e))?;
+    for a in barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no routes")? {
+        let tag = a.id.replace('R', "r").replacen("r", "R", if a.id.starts_with('R') { 1 } else { 0 });
+        match barrel_formats::world::route_ends(&placements, &tag) {
+            Some((from, to, n)) => println!("{:6} {from:>5} - {to:<5} ({n} dots, {} days)", a.id, a.days[0].0),
+            None => println!("{:6} (no dots tagged {tag})", a.id),
         }
     }
     Ok(())
