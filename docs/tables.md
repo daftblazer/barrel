@@ -863,8 +863,12 @@ script manager (`0x140122090`), `wandAttack` for Escha in the lead or `swordAtta
 lead, `0x140df9958` +0x78), or `wandAttackForce` / `swordAttackForce` at stage 1. They are in
 `Script/macro_attacking_escha.nut` and `_logy.nut`: event command lists copied into a program
 macro and run (`SQ.execProgramMacroFast`); Escha's weak swing plays `MOTION_LAD` (50) divisions 0,
-1 and 2 with three node effects on her (geometry 26, 26, 280) and `SE_WAND01`, then waits. Which
-button starts it is in the brain's caller, not read here; the hit plays sound 0x20 for
+1 and 2 with three node effects on her (geometry 26, 26, 280) and `SE_WAND01`, then waits. Escha's `LAD` is her
+`ACT_KNOCK` (`CharaBase.xml`), its divisions back to back (`CharaDiv.xml`: 0 to 0.1, 0.11 to 0.5,
+0.51 to the end), so the macro's motion is that one played through (`barrel play-macro
+.../macro_attacking_escha.nut wandAttack 0` lists its steps). The viewer swings so (K in a window,
+`BARREL_STRIKE_AT=FRAME`), the motion only (no effects or sound yet, no hit test). Which button
+starts it is in the brain's caller, not read here; the hit plays sound 0x20 for
 Escha in the lead, 0x24 for Logy (`0x140160070`), and hands on the enemy's +0x178; begun by a strike, +0x20 = 1, unless the enemy's brain refuses it) or else when
 they touch (`0x140270cc0`; 0: the nearest active enemy whose distance from the player's place
 raised by 100 is at most its field radius, +0x90, × 1.1 plus the player's × 1.5; the enemy's

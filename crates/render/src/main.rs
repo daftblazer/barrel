@@ -1251,6 +1251,11 @@ struct Walker {
     /// `BARREL_JUMP_AT=FRAME` jumps at that frame).
     jump_anim: Option<barrel_formats::g1a::Animation>,
     jump: Option<f32>,
+    /// Her field strike (K in a window; `BARREL_STRIKE_AT=FRAME`): the `wandAttack` macro's
+    /// motion, `LAD` (her `ACT_KNOCK`), whose divisions 0, 1 and 2 the macro plays in turn, back
+    /// to back; and whether one is under way.
+    strike_anim: Option<barrel_formats::g1a::Animation>,
+    striking: bool,
     /// Whether a jump calls out (`game::walk::JumpVoice`), on its own generator.
     jump_voice: barrel_game::walk::JumpVoice,
     rng: barrel_game::rng::Rng,
@@ -1291,9 +1296,10 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let run = motions.get("RUN").cloned().ok_or("the player has no RUN motion")?;
     let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
     let jump_anim = motions.get("JUMP").cloned();
+    let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = field.inside(pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf() };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, field, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_game::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf() };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None }, walker))
 }
 
@@ -3447,6 +3453,7 @@ fn main() -> Result<()> {
     last_frame = now;
     // A jump asked for this frame (J, or `BARREL_JUMP_AT`).
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
+    let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     if let Some(p) = pump.as_mut() {
         if !p.pump() {
             eprintln!("window closed after {frame} frames");
@@ -3466,6 +3473,7 @@ fn main() -> Result<()> {
                 KeyCode::Escape => quit = true,
                 KeyCode::KeyR => orbit = (0.0, 0.0, 1.0),
                 KeyCode::KeyJ => jump_now = true,
+                KeyCode::KeyK => strike_now = true,
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -3629,6 +3637,31 @@ fn main() -> Result<()> {
                     }
                 }
             }
+        // A strike: the swing's motion once through, blended in, then her gait again.
+        if strike_now && !w.striking && w.jump.is_none()
+            && let (Some(anim), Some(b)) = (w.strike_anim.clone(), town_bodies.get_mut(w.body)) {
+                let old = std::mem::replace(&mut b.anim, anim);
+                b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
+                b.clock = Some(0.0);
+                w.striking = true;
+                eprintln!("frame {frame}: strike");
+            }
+        if w.striking
+            && let Some(b) = town_bodies.get_mut(w.body) {
+                let clock = b.clock.unwrap_or(0.0) + dt;
+                b.clock = Some(clock);
+                if let Some((_, c, blend)) = &mut b.from {
+                    *c += dt;
+                    *blend += dt;
+                }
+                if b.from.as_ref().is_some_and(|f| f.2 >= MOTION_BLEND) {
+                    b.from = None;
+                }
+                if clock >= w.strike_anim.as_ref().map_or(0.0, |a| a.duration) {
+                    w.striking = false;
+                    w.gait = barrel_game::walk::Gait::Jump;
+                }
+            }
         let mut lift = 0.0;
         if let Some(t) = w.jump {
             const TAKE_OFF: f32 = 0.1;
@@ -3675,7 +3708,7 @@ fn main() -> Result<()> {
         }
         // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
         // its beginning and is blended in over 0.15 s, the old one playing on meanwhile.
-        if frame > 0 && dt > 0.0 && w.jump.is_none() {
+        if frame > 0 && dt > 0.0 && w.jump.is_none() && !w.striking {
             let (gait, rate) = barrel_game::walk::player_gait(speed, false);
             if let Some(b) = town_bodies.get_mut(w.body) {
                 if gait != w.gait {
