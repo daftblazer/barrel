@@ -16,8 +16,7 @@ scene really looks like, and values the game only computes while running.
   a virtual Xbox 360 pad through uinput (python-evdev), named "Barrel oracle pad"; the game
   takes it as its controller. It is visible system-wide while it exists.
   Start the pad in its own session (`setsid python3 tools/oracle/pad.py ... &`): a pad started
-  inside a command that is later stopped dies with it, and the game does not take a pad
-  plugged in after it started. `pad.sh` waits for the pad's log of finished commands
+  inside a command that is later stopped dies with it. `pad.sh` waits for the pad's log of finished commands
   (`work/oracle/paddone`) and gives up on a command that gets no answer within a minute.
   Remove that log before starting the pad: the pad empties it as it starts, and a helper that
   counted the last run's lines first waits for a line count it never reaches. A pad plugged in
