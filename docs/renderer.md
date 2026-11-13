@@ -417,7 +417,13 @@ brings TOWN_07's ruins from 107 to 96 (game 93, 97, 87) and leaves TOWN_10's str
 (the shader packs agree: `MapSTDNA`, texture × `atColor` only, fits the dome; the others are
 lit). Still open: TOWN_07's `ns_` bush is dark in the game (52) and pale here, as if it took
 less fog (fogged by its own distance it turns dark, but TOWN_10's distant trees then lose
-their haze); and the fogged dome is 1.3 times too dark (176 against 243).
+their haze); and the fogged dome is 1.3 times too dark (176 against 243). The dome's mesh groups name
+`MapSTD` (not `MapSTDNA`, as taken above: `docs/shading.md`, "Which texture is which"), so it
+is lit in the game; lit here as the solid pieces are (field light on its vertex colour) it
+turns darker still (a patch of `EVENT_MM01_OP1_212`'s first shot from 183 to 158), so the
+missing brightness is not that light: what `MapSTD` adds for the dome (its specular, the
+light texture, or the fog's in-scattering at its distance) is still to find, and the dome
+stays unlit until then.
 
 **Accessories.** A character's container holds its body (`<stem>_default.g1m`), its skeleton
 (`<stem>.g1m`) and part models (`<stem>_P_M_*.g1m`). The parts named in
