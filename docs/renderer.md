@@ -577,3 +577,28 @@ folder's next free slot. The screen is drawn with the text layer alone,
 before any field is loaded. Offscreen, `BARREL_TITLE_KEYS=confirm,down` presses buttons and
 writes the screen as it then stands to OUT (`confirm,confirm,confirm,left,confirm` goes on into
 a new game with Escha).
+
+## Controllers
+
+With a window, a game controller works through SDL3's gamepad layer (`crates/render/src/pad.rs`;
+buttons by place, so south is A on an Xbox pad and cross on a PlayStation one; the first pad
+found, looked for again each second while none is open). It drives the same actions as the
+keys (`window::Pump`):
+
+| Pad | Menus | Field |
+| --- | --- | --- |
+| Left stick | steps (leaned past half way) | walks, partway when leaned partway |
+| D-pad | steps | walks |
+| Right stick | | turns the camera |
+| A (south) | confirm | gather |
+| B (east) | back | jump |
+| X (west) | | strike |
+| Y (north) | | running on / off |
+| LB / RB | | camera out / in |
+| Right stick click | | camera back |
+| Start | | pause the event |
+| Back | | save (F5) |
+
+No button quits (Escape). `barrel-view --field auto /dev/null --pad-test` prints the pad's name,
+presses and sticks for ten seconds without a window. Not yet the game's: which button does what
+in the field (the game's own key config is not read).

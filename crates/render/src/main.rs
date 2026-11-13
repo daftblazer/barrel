@@ -23,6 +23,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 mod fsr;
 mod glow;
 mod hud;
+mod pad;
 mod hero;
 mod loadlist;
 mod title;
@@ -2571,6 +2572,24 @@ fn main() -> Result<()> {
             "--travel-to" => travel_to = Some(it.next().ok_or("--travel-to MARK")?.clone()),
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
+            "--pad-test" => {
+                // Prints the pad's name and its presses and sticks for ten seconds, no window.
+                let Some(mut g) = pad::Gamepad::open() else { return Err("no gamepad layer".into()) };
+                let end = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                let mut last = ([0.0f32; 2], [0.0f32; 2]);
+                while std::time::Instant::now() < end {
+                    for b in g.poll() {
+                        eprintln!("pressed {b:?}");
+                    }
+                    let now = (g.left.map(|v| (v * 4.0).round() / 4.0), g.right.map(|v| (v * 4.0).round() / 4.0));
+                    if now != last {
+                        eprintln!("sticks left {:?} right {:?}", now.0, now.1);
+                        last = now;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                }
+                return Ok(());
+            }
             "--new-game" => new_game = Some(PathBuf::from(it.next().ok_or("--new-game ROOT")?)),
             "--title" => {
                 let r = PathBuf::from(it.next().ok_or("--title ROOT")?);
@@ -3734,8 +3753,9 @@ fn main() -> Result<()> {
             break;
         }
         let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
-        orbit.0 += axis(KeyCode::ArrowLeft, KeyCode::ArrowRight) * 1.5 * frame_dt;
-        orbit.1 = (orbit.1 + axis(KeyCode::ArrowDown, KeyCode::ArrowUp) * 1.0 * frame_dt).clamp(-1.2, 1.2);
+        let right_stick = pad::stick(p.sticks().1[0], p.sticks().1[1]);
+        orbit.0 += (axis(KeyCode::ArrowLeft, KeyCode::ArrowRight) + right_stick[0]) * 1.5 * frame_dt;
+        orbit.1 = (orbit.1 + (axis(KeyCode::ArrowDown, KeyCode::ArrowUp) + right_stick[1]) * 1.0 * frame_dt).clamp(-1.2, 1.2);
         let zoom_in = axis(KeyCode::Minus, KeyCode::Equal) + axis(KeyCode::NumpadSubtract, KeyCode::NumpadAdd);
         orbit.2 = (orbit.2 * (1.0 - zoom_in * 1.2 * frame_dt)).clamp(0.1, 10.0);
     }
@@ -3855,13 +3875,23 @@ fn main() -> Result<()> {
         if let Some(p) = pump.as_ref().filter(|_| w.waypoints.is_empty()) {
             use winit::keyboard::KeyCode;
             let axis = |neg: KeyCode, pos: KeyCode| (p.held(pos) as i32 - p.held(neg) as i32) as f32;
-            let (ahead, right) = (axis(KeyCode::KeyS, KeyCode::KeyW), axis(KeyCode::KeyA, KeyCode::KeyD));
+            let (mut ahead, mut right) = (axis(KeyCode::KeyS, KeyCode::KeyW), axis(KeyCode::KeyA, KeyCode::KeyD));
+            // The pad's left stick, leaned partway, walks partway (the game's own dead zone in
+            // `player_move`); keys lean it all the way.
+            let (stick, _) = p.sticks();
+            let tilt = (stick[0] * stick[0] + stick[1] * stick[1]).sqrt().min(1.0);
+            let lean = if tilt > 0.05 {
+                (right, ahead) = (stick[0], stick[1]);
+                tilt
+            } else {
+                1.0
+            };
             let e = turned_eye(eye, target, orbit);
             let f = Vec3::new(target.x - e.x, 0.0, target.z - e.z).normalize_or_zero();
             // Right of the view in render space is (-f.z, 0, f.x); game x is render's mirrored.
-            // Keys lean the stick all the way; the speed a second is the move over one second.
+            // The speed a second is the move over one second.
             let v = (f * ahead + Vec3::new(-f.z, 0.0, f.x) * right).normalize_or_zero();
-            w.velocity = barrel_game::walk::player_move([-v.x, v.z], 1.0, false, w.run_on);
+            w.velocity = barrel_game::walk::player_move([-v.x * lean, v.z * lean], 1.0, false, w.run_on);
         }
         let moving = w.velocity != [0.0, 0.0];
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };

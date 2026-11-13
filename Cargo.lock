@@ -103,6 +103,7 @@ dependencies = [
  "encoding_rs",
  "glam",
  "raw-window-handle",
+ "sdl3-sys",
  "winit",
 ]
 

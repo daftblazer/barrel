@@ -185,6 +185,33 @@ impl ApplicationHandler for App {
 pub struct Pump {
     event_loop: EventLoop<()>,
     state: PumpState,
+    /// A game controller, if SDL's gamepad layer started (one may be plugged in later).
+    pad: Option<crate::pad::Gamepad>,
+    /// Which way the left stick leaned last frame (for menu steps on a lean).
+    lean: (i8, i8),
+}
+
+/// The keys a pad button stands for when pressed: the menus' and the field's (A confirms and
+/// gathers, B goes back and jumps, X strikes, Y turns running on or off, Start pauses an event,
+/// Back saves, the right stick's click puts the camera back, the D-pad steps through menus).
+/// Escape (quit) has no button.
+fn pad_keys(b: crate::pad::Pad) -> &'static [winit::keyboard::KeyCode] {
+    use crate::pad::Pad as P;
+    use winit::keyboard::KeyCode as K;
+    match b {
+        P::South => &[K::Enter, K::KeyG],
+        P::East => &[K::Backspace, K::KeyJ],
+        P::West => &[K::KeyK],
+        P::North => &[K::KeyT],
+        P::Start => &[K::Space],
+        P::Back => &[K::F5],
+        P::RightStick => &[K::KeyR],
+        P::Up => &[K::ArrowUp],
+        P::Down => &[K::ArrowDown],
+        P::Left => &[K::ArrowLeft],
+        P::Right => &[K::ArrowRight],
+        P::LeftShoulder | P::RightShoulder => &[],
+    }
 }
 
 #[derive(Default)]
@@ -250,7 +277,7 @@ impl Pump {
         if state.window.is_none() {
             return Err("the window did not open".into());
         }
-        Ok(Pump { event_loop, state })
+        Ok(Pump { event_loop, state, pad: crate::pad::Gamepad::open(), lean: (0, 0) })
     }
 
     pub fn window(&self) -> &Window {
@@ -262,9 +289,27 @@ impl Pump {
         std::mem::take(&mut self.state.pressed)
     }
 
-    /// Whether `key` is held down now.
+    /// Whether `key` is held down now (on the keyboard, or by the pad: the D-pad holds W, A, S
+    /// and D for walking, the shoulders - and = for the camera's distance).
     pub fn held(&self, key: winit::keyboard::KeyCode) -> bool {
-        self.state.held.contains(&key)
+        use crate::pad::Pad as P;
+        use winit::keyboard::KeyCode as K;
+        let pad = self.pad.as_ref().is_some_and(|g| match key {
+            K::KeyW => g.held(P::Up),
+            K::KeyS => g.held(P::Down),
+            K::KeyA => g.held(P::Left),
+            K::KeyD => g.held(P::Right),
+            K::Minus => g.held(P::LeftShoulder),
+            K::Equal => g.held(P::RightShoulder),
+            _ => false,
+        });
+        pad || self.state.held.contains(&key)
+    }
+
+    /// The pad's sticks as read, (x right, y up) each: the left one walks, the right one turns
+    /// the camera. Zero without a pad.
+    pub fn sticks(&self) -> ([f32; 2], [f32; 2]) {
+        self.pad.as_ref().map_or(([0.0; 2], [0.0; 2]), |g| (g.left, g.right))
     }
 
     /// Whether the window changed size since the last call.
@@ -277,6 +322,22 @@ impl Pump {
         use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
         if let PumpStatus::Exit(_) = self.event_loop.pump_app_events(Some(std::time::Duration::ZERO), &mut self.state) {
             return false;
+        }
+        if let Some(g) = self.pad.as_mut() {
+            for b in g.poll() {
+                self.state.pressed.extend_from_slice(pad_keys(b));
+            }
+            // A lean of the left stick past half way steps through menus like the arrows.
+            let [x, y] = g.left;
+            let lean = (if x > 0.5 { 1 } else if x < -0.5 { -1 } else { 0 }, if y > 0.5 { 1 } else if y < -0.5 { -1 } else { 0 });
+            use winit::keyboard::KeyCode as K;
+            if lean.0 != self.lean.0 && lean.0 != 0 {
+                self.state.pressed.push(if lean.0 > 0 { K::ArrowRight } else { K::ArrowLeft });
+            }
+            if lean.1 != self.lean.1 && lean.1 != 0 {
+                self.state.pressed.push(if lean.1 > 0 { K::ArrowUp } else { K::ArrowDown });
+            }
+            self.lean = lean;
         }
         !self.state.closed
     }
