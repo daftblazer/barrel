@@ -150,7 +150,7 @@ model:
 
 | Type | Entries |
 |---|---|
-| 0x10001 | not decoded yet |
+| 0x10001 | a u32 (0x100), then `count` 64-byte entries (0 in the `_default` models; 12 in `PC20_MODEL`, 7 in `PC21_MODEL`, 2 in `MOB00B_MODEL`, matching neither the materials nor the mesh groups): seven floats (1.0 in every entry seen), a word of nibble flags (`0x111`, `0x1111`, `0x1133`), three zeros, a float (10, 12.75, 25.5), three equal floats (0.25, 0.73, 0.75: a grey) and a mask (`0xffff`, `0xffffff`). What reads it is not found; the renderer does not use it. `barrel g1m-materials` prints the sections the reader keeps raw |
 | 0x10002 | materials: `{u32, u32 texture count, u32, u32}`, then per texture `{u16 index into the model's g1t, u16 layer, u16 type, u16 subtype, u16 tile u, u16 tile v}` |
 | 0x10003 | shader parameter sets (one per submesh's "shader parameters" number): per set `{u32 count}`, then per parameter `{u32 size, u32 name length, u32, u16 value count, u16 kind}`, the name, its float values (`Geometry::shader_params`; `shading.md`, "The materials' own parameters") |
 | 0x10004 | vertex buffers: `{u32, u32 stride, u32 vertex count, u32}`, then the vertices |

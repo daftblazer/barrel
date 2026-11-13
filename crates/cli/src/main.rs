@@ -2767,6 +2767,10 @@ fn g1m_materials(spec: &str) -> Result<()> {
         let colours = if n == 0 { String::new() } else { format!(", vertex colours on {n} vertices, average {:.2?}", sum.map(|v| v / n as f32)) };
         println!("material {i}: {} (submeshes {users:?}){colours}", tex.join(", "));
     }
+    for (kind, count, body) in &g.other_sections {
+        let words: Vec<String> = body.chunks_exact(4).take(400).map(|w| format!("{:x}", u32::from_le_bytes(w.try_into().unwrap()))).collect();
+        println!("section {kind:#x}: {count} entries, {} bytes: {}", body.len(), words.join(" "));
+    }
     for m in &g.mesh_groups {
         println!("lod {} pass {} shader {} {:?}: submeshes {:?}", m.lod, if m.group == 0 { "colour" } else { "shadow" }, m.shader, m.words, m.submeshes);
     }
