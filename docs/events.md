@@ -743,6 +743,21 @@ listener chain:
 - **`u11`** (`ECT_EVENT_SET_TIME_EFFECT`) and **`u64`**: `0x1402f45e0`, called from
   `0x140293cc0`, which first asks the object at its +0x60 (`0x140331bf0`).
 
+The listener's +0x60 is the `PostEffectManager`. Its command handler (`0x140331bf0`, asked
+first by `0x140293cc0`) takes:
+
+- **`u13`** (`ECT_EVENT_SET_POST_EFFECT`, 2,180 uses): reads its operands and sets an effect
+  (`0x140331220`, not read further).
+- **`u14`** (`ECT_EVENT_WAIT_POST_EFFECT`): taken; its wait is the manager's wait check
+  (`0x140331d60`).
+- **`u104`**: `0x1404da730`.
+- **`u139`** (`ECT_EVENT_DEL_POST_EFFECT_ALL`): `0x1404da2b0`.
+
+Any other command goes to each effect in the manager's three lists (+8, 0x18 bytes apart)
+through vtable slot 7, which only `PostEffectBlur` overrides (for `u103`). The wait query
+(`0x140293ef0`) also has its own cases for `u12` (`ECT_EVENT_WAIT_TIME_EFFECT`), `u48` and
+`u115`.
+
 The classes are `PostEffectBase` and its children `PostEffectBattleEnter`, `Blur`, `Color`,
 `CrossFade`, `Fade`, `Gamma`, `Glow`, `Hue`, `Monotone` and `Negative`, under
 `PostEffectManager`. Which class takes `u12`, `u13`, `u106`, `u108` and `u139`, and what each
