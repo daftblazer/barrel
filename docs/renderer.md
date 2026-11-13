@@ -143,6 +143,14 @@ textures must say which map and channels each patch uses for which layers. The v
 blends the first two maps over the first six layers, which is right only where that happens
 to match. Reading the patch tree is open.
 
+**Chained events (open).** `barrel play-event FILE --chain` plays the opening's events one
+after another as text. The viewer cannot yet. `main` builds one scene (a field, one event's
+characters), uploads it once and runs the frame loop over it. Going from one event to the next,
+and from field to field, needs a renderer that stays up while scenes are loaded and dropped
+under it: the device, swapchain, pipelines and post chain kept, the scene's geometry, textures
+and instances rebuilt per scene. That split is the next step for the viewer. Running the
+viewer once per event in turn is not the way (`docs/engine.md`: no throwaway layers).
+
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
 notes; the map number comes from the directory's name through the `FIELDMAP_*` list):
