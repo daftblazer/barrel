@@ -1961,8 +1961,8 @@ fn field_enemies(exe: &Path) -> Result<()> {
     for (k, e) in enemies.iter().enumerate() {
         let fights: Vec<String> = groups.get(e.group as usize).map(|g| g.monsters.iter().map(|&(m, _)| name(m)).collect()).unwrap_or_default();
         println!(
-            "{k:3} area {:3} at ({:.1}, {:.1}, {:.1}) chara {} kind {} ai {}/{} walk {} run {} wait {} sight {} reach {} view {}  group {}: {}",
-            e.area, e.position[0], e.position[1], e.position[2], e.chara, e.kind, e.ai.0, e.ai.1, e.speeds.0, e.speeds.1, e.wait, e.sight, e.reach, e.view, e.group, fights.join(", ")
+            "{k:3} area {:3} at ({:.1}, {:.1}, {:.1}) chara {} model {} kind {} ai {}/{} walk {} run {} wait {} sight {} reach {} view {}  group {}: {}",
+            e.area, e.position[0], e.position[1], e.position[2], e.chara, e.model, e.kind, e.ai.0, e.ai.1, e.speeds.0, e.speeds.1, e.wait, e.sight, e.reach, e.view, e.group, fights.join(", ")
         );
     }
     Ok(())

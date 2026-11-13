@@ -653,10 +653,12 @@ const FIELD_ENEMY_SIZE: usize = 0x68;
 #[derive(Clone, Debug, PartialEq)]
 pub struct FieldEnemy {
     /// The `Chara.xml` row it occupies on the map: a generic slot, "Enemy 1" (418) on, the
-    /// bosses' "Enemy 30" (448); its look comes from its group's monsters.
+    /// bosses' "Enemy 30" (448); its look is `model`.
     pub chara: i32,
-    /// Word +4 (meaning not read yet).
-    pub word4: i32,
+    /// +4: the model it shows, a `CharaBase.xml` row (`MOB00B` for the Poison Squirrel), in place
+    /// of its generic slot's (the field character's +0x7c, `0x14026b860`; a field character made
+    /// with -1 there takes its `Chara` record's word 0, the row its `BaseTag` names).
+    pub model: i32,
     /// +8: a scale, 1 for most.
     pub scale: f32,
     /// +0xc and +0x10: conditions (-1 none), checked with `0x14035f2d0` before it appears.
@@ -766,7 +768,7 @@ pub fn field_enemies(pe: &Pe, builder: u64) -> Option<Vec<FieldEnemy>> {
                 let base = 0x30 + k * FIELD_ENEMY_SIZE;
                 FieldEnemy {
                     chara: w[0] as i32,
-                    word4: w[1] as i32,
+                    model: w[1] as i32,
                     scale: f(w[2]),
                     conditions: (w[3] as i32, w[4] as i32),
                     area: w[5] as i32,

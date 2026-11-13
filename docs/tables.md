@@ -1008,7 +1008,6 @@ Against group 3's five Ore Rats a Bomb now hits two at once, for the same rolled
 skills' area word is record +0x20 (`battle_data::Skill::spread`; it had been read from +0x14,
 another word).
 
-Still to read: monsters' sizes (above).
 
 ### Field enemies
 
@@ -1022,7 +1021,7 @@ or zero, and string pointers), then copies each record into the enemy data (`0x1
 | at | meaning |
 |---|---|
 | +0 | the `Chara.xml` row it takes on the map: generic slots "Enemy 1" (418) to "Enemy 3", the bosses' "Enemy 30" (448) |
-| +4 | not read yet (66, 63, 44... most often) |
+| +4 | the model it shows on the map, a `CharaBase.xml` row (`MOB*`, the monster models: 19, `MOB00B`, for the Poison Squirrels, 44 for the Yellow Elements), in place of the generic slot's: the spawn (`0x140072a03`) hands it to the field character (`0x14026fc20` → `0x14026e490` → `0x14026b860`, which keeps it at +0x7c; made with -1 there, a character takes its `Chara` record's word 0, `0x14026d4c0`, the `CharaBase` row its `BaseTag` names, `0x1402025a0` finding a record by it); the model's 0x1010-byte `CharaBase` record sits at +0x19d80 of the chara data (`0x14026c3c0`) |
 | +8 | a scale, 1 for most |
 | +0xc, +0x10 | event records (-1 none): it appears once the first has been seen and until the second has (`0x14035f2d0`, on the event records at `0x1410a42d0`, 36 bytes each, byte 0 "seen", the save's `event` records; `battle::field_enemy_appears`) |
 | +0x14 | the area it appears in |
