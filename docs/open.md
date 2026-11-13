@@ -153,6 +153,10 @@ likely settle them where static reading failed.
 - **Draw priority of pieces** (`xS1`–`xS3`, the 1024-bucket sort `0x1403387e0`): the writer
   among 100+ candidate stores can't be told statically. **Live read** of the draw queue's +0x20
   buckets during a field frame.
+  Parked (2026-11-13, stage 7): a live read first needs the queue object. At the queuing call
+  (`0x1404d8869`) it is `[r13]` with r13 = rbp + 0x40, rbp the argument of the function at
+  `0x1404d8525`: follow that function's callers to a global, then read the queue's buckets
+  (+0x20, total +0x1020) and sorted entries during a field frame.
 - **Particle effects** (`eff_pack_list.xml`, `.g1e`): not decoded; character-bound effects
   (`0x1401f6cf0`) wait on it. Parked: the opening uses none (no `s38`–`s114` in the
   `MM01_OP1` events, and `barrel opl2` lists no placed effects in any `TOWN_*`; the first fields
