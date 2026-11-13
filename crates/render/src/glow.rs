@@ -211,7 +211,7 @@ impl Targets {
         };
         let (mut x, mut y) = (Vec::new(), Vec::new());
         for level in 0..LEVELS {
-            let (w, h) = ((width / 4 >> level).max(1), (height / 4 >> level).max(1));
+            let (w, h) = (((width / 4) >> level).max(1), ((height / 4) >> level).max(1));
             x.push(target(w, h)?);
             y.push(target(w, h)?);
         }

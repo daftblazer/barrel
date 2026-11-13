@@ -149,12 +149,11 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.live.is_none() {
-            if let Err(e) = self.open(event_loop) {
+        if self.live.is_none()
+            && let Err(e) = self.open(event_loop) {
                 self.error = Some(e.to_string());
                 event_loop.exit();
             }
-        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {

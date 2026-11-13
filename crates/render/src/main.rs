@@ -479,13 +479,12 @@ impl Scene {
                 // The joints and weights, for the GPU (joints past the pose's count or weights of
                 // 0 are dropped); the bounds use the CPU's own skinning of the point.
                 let (mut joint_ix, mut weight_q, mut skinned) = ([0u16; 4], [0u8; 4], pos);
-                if let (None, Some(j), Some(joints)) = (&skin, self.rigid_joint, joints) {
-                    if (j as usize) < joints.len() {
+                if let (None, Some(j), Some(joints)) = (&skin, self.rigid_joint, joints)
+                    && (j as usize) < joints.len() {
                         joint_ix[0] = j;
                         weight_q[0] = 255;
                         skinned = joints[j as usize].transform_point3(pos);
                     }
-                }
                 if let (Some(skin), Some(joints)) = (&skin, joints) {
                     let (j, w) = skin[i];
                     let total: f32 = (0..4).filter(|&k| w[k] > 0.0 && (j[k] as usize) < joints.len()).map(|k| w[k]).sum();
@@ -1069,13 +1068,12 @@ fn outfit(root: &Path, body: usize, head: usize, face: usize) -> Result<Option<(
         let tag = if a.file.is_empty() { format!("{prefix}NONE") } else { format!("{prefix}{}", a.file) };
         let (attached, hidden) = c::resolve(&body_tag, part, &tag, &changes, &hides);
         wear.hidden.extend(hidden);
-        if let Some(tag) = attached {
-            if let Some(adj) = adjusts.iter().find(|x| x.body == body_tag && x.parts == part && x.accessory == tag) {
+        if let Some(tag) = attached
+            && let Some(adj) = adjusts.iter().find(|x| x.body == body_tag && x.parts == part && x.accessory == tag) {
                 let r = glam::Quat::from_euler(glam::EulerRot::XYZ, adj.rotation[0].to_radians(), adj.rotation[1].to_radians(), adj.rotation[2].to_radians());
                 let m = Mat4::from_scale_rotation_translation(Vec3::from(adj.scale), r, Vec3::from(adj.offset));
                 wear.accessories.push((tag.trim_start_matches(prefix).to_string(), node.clone(), m));
             }
-        }
     }
     eprintln!("outfit: body {body} {} ({body_tag}), head {head}, face {face}: hidden {:?}, accessories {:?}", b.base, wear.hidden, wear.accessories.iter().map(|a| &a.0).collect::<Vec<_>>());
     Ok(Some((b.base.clone(), wear)))
@@ -1303,14 +1301,13 @@ fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Re
     let start = field.mobs.first().map_or([0.0; 3], |m| m.creature.position);
     let at = [start[0] + 1500.0, start[1], start[2]];
     let escha = charas.children.first().and_then(|c| c.attr("BaseTag")).and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
-    if let Some(row) = escha {
-        if let Some((body, _)) = add_body(root, scene, tex_base, row, 0, at.map(|v| v as f32), -90.0, "WALK", None, None, |_, _, _, _| Ok(None::<()>))? {
+    if let Some(row) = escha
+        && let Some((body, _)) = add_body(root, scene, tex_base, row, 0, at.map(|v| v as f32), -90.0, "WALK", None, None, |_, _, _, _| Ok(None::<()>))? {
             packs.extend(body.packs);
             if let Some((skeleton, motions, anim, _)) = body.rig {
                 bodies.push(FieldBody { mob: usize::MAX, instance: body.instance, skeleton, motions, column: "WALK".into(), anim, since: 0.0 });
             }
         }
-    }
     Ok((field, bodies, packs, barrel_game::gesture::motions(&pe), at))
 }
 
@@ -1510,11 +1507,10 @@ fn event_characters(
                 0x7300_0004 if o.len() >= 7 => Some((o[0], [o[4], o[5], o[6]], 0.0)),
                 _ => None,
             };
-            if let Some((who, p, angle)) = place {
-                if !first.iter().any(|f| f.0 == who) {
+            if let Some((who, p, angle)) = place
+                && !first.iter().any(|f| f.0 == who) {
                     first.push((who, p.map(|v| v as i32 as f32), angle));
                 }
-            }
         }
     }
     let mut stage_motions: std::collections::HashMap<u32, (String, f32, bool)> = Default::default();
@@ -1543,7 +1539,7 @@ fn event_characters(
     // --line N without --at: from the time line N starts (its camera and stage then).
     let at = at.or_else(|| {
         let n = line?;
-        let t = schedule.as_ref()?.iter().find(|t| matches!(t.step, barrel_game::event::Step::Message { index, .. } if index as usize == n))?;
+        let t = schedule.as_ref()?.iter().find(|t| matches!(t.step, barrel_game::event::Step::Message { index, .. } if index == n))?;
         eprintln!("line {n} starts at {:.2} s", t.time);
         Some(t.time + barrel_game::stage::FRAME)
     });
@@ -1574,11 +1570,10 @@ fn event_characters(
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_game::gesture::motions(&pe)).filter(|m| !m.is_empty()))
             .unwrap_or_default();
         for (&n, b) in &stage.characters {
-            if let Some(m) = b.motion {
-                if let Some(name) = names.get(m.motion as usize) {
+            if let Some(m) = b.motion
+                && let Some(name) = names.get(m.motion as usize) {
                     stage_motions.insert(n, (name.clone(), at - m.since, m.looping));
                 }
-            }
         }
         // The camera in use at that time: the field camera unless a manual one was set after
         // it (the stage's snapshot decides, as during playback).
@@ -1679,11 +1674,10 @@ fn event_fields(event_path: &Path) -> Result<Vec<(u32, PathBuf)>> {
     let steps = barrel_game::event::Player::escha(&event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
     let mut maps: Vec<u32> = Vec::new();
     for t in &steps {
-        if let barrel_game::event::Step::FieldChange { map, .. } = t.step {
-            if !maps.contains(&map) {
+        if let barrel_game::event::Step::FieldChange { map, .. } = t.step
+            && !maps.contains(&map) {
                 maps.push(map);
             }
-        }
     }
     if maps.is_empty() {
         return Err("the event changes to no field; give --field DIR".into());
@@ -3070,7 +3064,7 @@ fn main() -> Result<()> {
         .unwrap_or_default();
     let mut quake_rng = barrel_game::rng::Rng::from_state([0x1234_5678, 0x9abc_def0, 0x0fed_cba9, 0x8765_4321]);
     let mut divisions = barrel_formats::chara_div::Divisions::new();
-    let event_file = if frames > 1 { event_spec.as_ref().map(|e| std::fs::read(e)).transpose()? } else { None };
+    let event_file = if frames > 1 { event_spec.as_ref().map(std::fs::read).transpose()? } else { None };
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
         use barrel_game::stage::{Measures, Playback, Stage};
@@ -3250,11 +3244,10 @@ fn main() -> Result<()> {
         let mut still_list: Vec<(u32, barrel_formats::layout::Still)> = Vec::new();
         if let Some(pe) = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok()) {
             for &n in &still_pictures {
-                if let Some(st) = barrel_formats::layout::still(&pe, n) {
-                    if !still_list.iter().any(|(k, _)| *k == n) {
+                if let Some(st) = barrel_formats::layout::still(&pe, n)
+                    && !still_list.iter().any(|(k, _)| *k == n) {
                         still_list.push((n, st));
                     }
-                }
             }
         }
         let still_bytes: Vec<Option<Vec<u8>>> = still_list
@@ -3428,15 +3421,14 @@ fn main() -> Result<()> {
                 Some(m) => (m.creature.position, m.creature.facing, m.creature.motion.and_then(|m| names.get(m as usize)).cloned()),
                 None => (*player_at, -std::f64::consts::FRAC_PI_2, Some(if *stopped { "F_WAIT" } else { "WALK" }.to_string())),
             };
-            if let Some(column) = motion {
-                if column != b.column {
+            if let Some(column) = motion
+                && column != b.column {
                     if let Some(anim) = b.motions.get(&column).cloned() {
                         b.anim = anim;
                         b.since = *time;
                     }
                     b.column = column;
                 }
-            }
             let turn = glam::Quat::from_rotation_y(facing as f32);
             instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(position.map(|v| v as f32))));
             let joints = pose(&b.skeleton, &b.anim, motion_clock(&b.anim, *time - b.since, true));
@@ -3503,12 +3495,11 @@ fn main() -> Result<()> {
                 let now = w.field.inside(w.pos);
                 let entered = now.iter().find(|i| !w.inside.contains(i)).and_then(|&i| w.field.gimmicks[i].destination);
                 w.inside = now;
-                if let Some(to) = entered {
-                    if let Some(name) = w.maps.get(to.map as usize) {
+                if let Some(to) = entered
+                    && let Some(name) = w.maps.get(to.map as usize) {
                         eprintln!("frame {frame}: through the door to {name} at {:?}", to.position);
                         door = Some((name.clone(), [to.position[0] * 100.0, to.position[2] * 100.0], w.velocity));
                     }
-                }
             }
         }
         // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
@@ -3575,8 +3566,8 @@ fn main() -> Result<()> {
     }
     // The view's up: the event camera's roll turns it (t10).
     let mut up = Vec3::Y;
-    if let Some((play, clock, before, after)) = player.as_mut() {
-        if frame > 0 {
+    if let Some((play, clock, before, after)) = player.as_mut()
+        && frame > 0 {
             // A window takes the real time since the last frame; files take 1/fps.
             let real = if presenter.is_some() {
                 if paused { 0.0 } else { frame_dt as f64 }
@@ -3631,12 +3622,11 @@ fn main() -> Result<()> {
             versions_shown.clone_from(&play.stage.versions_shown);
             event_objects = play.stage.event_objects;
             // The field the event is in now.
-            if let Some(k) = play.stage.field.and_then(|m| field_maps.iter().position(|&f| f == m)) {
-                if k as u16 != current_field {
+            if let Some(k) = play.stage.field.and_then(|m| field_maps.iter().position(|&f| f == m))
+                && k as u16 != current_field {
                     eprintln!("frame {frame}: field {}", field_maps[k]);
                     current_field = k as u16;
                 }
-            }
             if let Some((layer, font, last)) = text_layer.as_mut() {
                 let line = play.stage.line_shown().cloned();
                 // The narration card and its opacity (in 1/1000ths, so a fade redraws each step).
@@ -3769,8 +3759,8 @@ fn main() -> Result<()> {
                 let mut t = a.start + since;
                 // Blend weight of the current motion against the one before it.
                 let mut weight = 1.0;
-                if let Some(m) = staged {
-                    if let Some(column) = motion_names.get(m.motion as usize) {
+                if let Some(m) = staged
+                    && let Some(column) = motion_names.get(m.motion as usize) {
                         if *column != a.column {
                             if let Some(anim) = a.motions.get(column).cloned() {
                                 eprintln!("frame {frame}: character {} plays {column} (blend {:.2} s)", a.who, m.blend);
@@ -3793,7 +3783,6 @@ fn main() -> Result<()> {
                             weight = (t / m.blend).clamp(0.0, 1.0);
                         }
                     }
-                }
                 a.last_t = t;
                 if let Some(&(pos, facing)) = shown.characters.get(&a.who) {
                     // The facing, then the tilt about the character's own x axis (s18 mode 2).
@@ -3857,10 +3846,9 @@ fn main() -> Result<()> {
             scene.write_weights(&gpu, &morph_weights)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
-    }
     // A resized window, or a swapchain gone stale: remake it and the framebuffers.
-    if let (Some(p), Some(pp)) = (presenter.as_mut(), pump.as_mut()) {
-        if pp.take_resized() || stale {
+    if let (Some(p), Some(pp)) = (presenter.as_mut(), pump.as_mut())
+        && (pp.take_resized() || stale) {
             let size = pp.window().inner_size();
             if size.width == 0 || size.height == 0 {
                 continue; // minimised
@@ -3872,7 +3860,6 @@ fn main() -> Result<()> {
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
-    }
     // The image to draw into: the window's next, or the offscreen one.
     let image = match (&presenter, &sync) {
         (Some(p), Some((ready, _))) => match p.acquire(*ready)? {
@@ -4420,7 +4407,7 @@ fn main() -> Result<()> {
     }
     // One frame: OUT.png; several: OUT_000.png, OUT_001.png, ... (with --save-every, only some).
     let shot_number = frame_base + frame;
-    if frames > 1 && (shot_number + 1) % save_every != 0 && shot_number + 1 != frames {
+    if frames > 1 && !(shot_number + 1).is_multiple_of(save_every) && shot_number + 1 != frames {
         continue;
     }
     let path = if frames > 1 {
@@ -4450,8 +4437,8 @@ fn main() -> Result<()> {
     scene.destroy(&gpu);
     frame_base += ran;
     // Through a door: the same again in the next map, the player at the door's spot.
-    if let Some((name, at, velocity)) = door.take() {
-        if let Some(next) = Path::new(&args[1]).parent().map(|p| p.join(&name)) {
+    if let Some((name, at, velocity)) = door.take()
+        && let Some(next) = Path::new(&args[1]).parent().map(|p| p.join(&name)) {
             args[1] = next.to_string_lossy().into_owned();
             player_at = Some(at);
             if player_walk.is_some() {
@@ -4460,7 +4447,6 @@ fn main() -> Result<()> {
             first_event = false;
             continue 'events;
         }
-    }
     let ended = event_spec.as_deref().and_then(|e| Path::new(e).file_stem()).and_then(|s| s.to_str()).unwrap_or("").to_string();
     let next = match chain.as_mut() {
         Some((c, root)) if !stop && frame_base < frames => c.after(&ended).map(|n| root.join("Event/event").join(barrel_game::event_start::event_file(n))),
