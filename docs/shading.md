@@ -265,6 +265,60 @@ between the way to the eye and the sun), and mixes each colour toward the in-sca
 by the extinction. In `TOWN_10`'s town shot the distance turns warm as in the game, if
 duller.
 
+## The shader table (`Saves/shader/shader.xml`)
+
+74 `<Shader Name Id Autoload String EnableDrawOp DrawOpBit File>` rows: each name a material
+can ask for, its id (0 to 73, in order), the short name the engine knows it by (`String`) and
+its program file (`File`, a `.g1s`). The characters' are ids 0 to 18 (`CHARA_MT` ...
+`CHARA_FRA_BODY`, `CharaMT.g1s` ...) and 72, 73 (the eyes); 19 the effects (`KTGLEffect.g1s`,
+not loaded up front, `Autoload` 0); 20 `SWATER`; 21 to 29 the shadow-map programs (`SM_Psm`,
+`SM-B0_Psm` ..., the terrain's `RenderTerrainShadowMap`); 30 to 36 the standard ones (`STD`,
+`Standard`, `STD-B0`, `STD-T0`: several names share a file); 37 to 43 the 2D and screen ones
+(`prim*`, `ipu`, `contrast`); 44, 45 refraction; 46 `battle_enter`; 47 to 51 `constantcolor*`
+(again `Standard` and `STD-B0`/`-T0`); 52 to 65 the fields' (`MapSTD`, `MapSTDHS`, `MapSTDNS`,
+`MapSTD-B0` to `-B2`, `-T0`, `-B0T0`, `MapSTDNF`, `MapSTDNA`, `MapSTDNA-B0`, `MapWater`,
+`MapWaterNS`, `MapWater-B1`); 66 to 71 `E3dS*`, the only ones with `EnableDrawOp` 1 (draw-op
+bit 8 for the `xAdd` ones, 16 for `xSub`: additive and subtractive blending, by the names).
+
+## The field tables' own notes (`Saves/field/_def.xml`)
+
+The game ships a commented template of the field tables (`Saves/field/<FIELD>.xml`), not read
+by it. What its comments say, where it adds to the above:
+
+- **`<camera>`**: `boundary_min`/`_max` bound where the eye may go (metres, y ignored);
+  `center_position` locks the look-at point to a place, `pivot_position` locks it "reversed"
+  (not both); `zoom_mode` is the movement that zooms out: `Y` vertical, `XZ` horizontal (the
+  default), `XYZ` any. `<area tag>` picks how its points blend: `CLOSELY_X`, `_Y`, `_Z`, `_XZ`
+  or `VERTEX_LENGTH`. A `<point>`'s `bumper_follow_speed` is the camera's base speed following
+  its target, rising with the distance between them (negative turns it off; -1 if left out);
+  `bumper_max_distance` the farthest they may be apart (metres); `zoom_time` the seconds to
+  the widest zoom while the target moves, `zoom_distance` how far it pulls back then (metres,
+  0 if left out).
+- **`<fog>`**: `start` where fog begins, `end` where it is full, `ambient` the ambient
+  scattering's strength, `mieG` the Mie scattering's eccentricity (its directionality, 0 ≤ g <
+  1), `rayleighPow` the light's strength (overall scattering), `mieRGB` and `rayleighRGB` the
+  Mie and Rayleigh parts.
+- **`<light>`**: `PARALLEL` `rot` is the light's incoming direction as rotations in degrees.
+  For `POINT` and `SPOT` the notes call `att0` the exponential, `att1` the linear and `att2` the
+  quadratic falloff, and `range` "the square of the light's reach"; the game's code uses them
+  otherwise (`att2` as the share left at the range, `range` × 100 as the reach: see
+  "litAtt" above, checked against the game), so the code wins. `SPOT` adds `rot` (where it
+  points), `inner` (the penumbra angle) and `outer` (the umbra angle), degrees.
+- **`<camera_ct trans_speed camera_radius>`**: things in front of the camera turn see-through;
+  **`<user_zoom relative_limit>`**: how far the player may zoom.
+- **`<wind>`**: `dir` is normalised ("in the game y is up: y and z are swapped"), `power` its
+  strength, `freq` the seconds from strongest to weakest and back, `shift` its phase in seconds.
+- **`<n_shaker>`** (trees and dense grass, by node): `keyword` a part of the node names (the
+  first matching `<n_shaker>` wins), `weight` (30 if left out; larger sways more), `axis` the
+  swing axis in the node's own space ((0, 0, 1)), `max_angle` (10°), `axis_power` the pull back
+  to rest (500), `char_range` the radius the player pushes it within (metres, 0) and
+  `char_power` that push (10).
+- **`<v_shaker>`** (low-polygon grass, by vertex, a sine sway): grass is modelled growing from
+  the node's origin along +z; `weight` (200; larger sways less), `height` the grass's height
+  (metres), `root_height` where it starts below the origin (-5.0 for 5 m down; 0),
+  `shake_time` seconds a sway, `shift_x`/`_z` how much each vertex's world x and z shift the
+  wave's phase (0).
+
 ## Billboards (`MapSTD-B0.g1s`, `-B1`, `-B2`)
 
 Leaf sprays (`obj-xN1_a15_05tree_a_b`, `obj-a15a01_balloon_space_low_town07_leaf` in TOWN_07)
