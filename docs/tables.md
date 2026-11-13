@@ -1648,7 +1648,7 @@ there. A list is 0x60-byte gimmicks ended by -1:
 | 0x1c | three floats: its size (3, 10, 3 for an exit; 1.5, 2, 1.5 for a breakable) |
 | 0x28, 0x2c | the events it appears after and until (-1 for none; `0x14035f2d0`) |
 | 0x30, 0x34 | -1; 256 on the chests, 0 on the others |
-| 0x38, 0x40, 0x48, 0x50 | four pointers, each type using its own: +0x38 the breakables', chests' and forced fights' records (pairs of numbers such as 448/449 and 345, and for a chest 24, 664, 99, not read yet), +0x48 a field map change's arrival (`FIELDMAP_CHANGE_EX`: the target map, 17 or 18, then floats; walked by `0x14006e1e4`), +0x50 the map change infos', message icons' and boxes' pairs of pointers (not followed yet) |
+| 0x38, 0x40, 0x48, 0x50 | four pointers, each type using its own: +0x38 the breakables', chests' and forced fights' records (arrays of i32 the gimmicks point into at differing places, so the record shape is not settled: in them the key items `ITEM_KEY__01` to `__04` (`itemData` rows 345 to 348, the tools a breakable or a passage asks for, by the look of it), the `Chara` rows 448 and 449 ("boss enemy slot" 1 and 2, the forced fights'), a 1 and a percentage (0, 10, 25, 50, 100); a chest's starts with a material (24 Blazing Sun Ore, 22 Flesh and Blood Radish, 29 Foaming Muddy Water, 30 ...), then 664 to 668 and 99, its contents presumably; the code that reads them is not found), +0x48 a field map change's arrival (`FIELDMAP_CHANGE_EX`: the target map, 17 or 18, then floats; walked by `0x14006e1e4`), +0x50 the map change infos', message icons' and boxes' pairs of pointers (not followed yet) |
 | 0x58 | -1, 0 or 1 |
 
 The field builds an object for each (`0x1402712d0`, from the list walk at `0x140276190`): the
