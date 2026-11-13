@@ -1762,8 +1762,9 @@ slots whose act is one the stat takes (`0x1402a20f0`: a roll between the slot's 
 `0x1404ca660`, which is the value itself when they are equal); that sum times
 `(quality × 0.5 + 75) / 100` (the same scale as an item's battle power), truncated. Then, unless
 the item's +0xe is set, each of its three traits adds the amounts of its slots whose kind the
-stat takes by a second list (`0x1402b4770`, not read yet; kind 0x2c is a percentage of `base`,
-the stat's base value). The acts each stat takes (`0x1402b4560`):
+stat takes by a second list (`0x1402b4770`, `equipment::stat_trait_kinds`: the stat's own kind,
+`EQI_ADD_ALLPARAM` for the first five, `BTL_ADD_USEEFFECT` for all, and kind 0x2c `EVOLVE_STATUS`, a
+percentage of `base`, the stat's base value, for the first five). The acts each stat takes (`0x1402b4560`):
 
 | stat | acts |
 |---|---|
