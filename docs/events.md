@@ -911,9 +911,9 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `74300001` | `t1/0x30` | ECT_VARIINDEX_INDEX_START |  | 195 | 0 (195) |
 | `74300002` | `t2/0x30` | ECT_VARIINDEX_INDEX_SETTING (slot to row, see Slots) |  | 6736 | 2 (6736) |
 | `75000001` | `u1` |  | Event | 596 | 0 (596) |
-| `75000002` | `u2` |  | Event | 741 | 1 (741) |
-| `75000003` | `u3` |  | Event | 1297 | 1 (1297) |
-| `75000005` | `u5` |  | Event | 806 | 1 (806) |
+| `75000002` | `u2` | (the setup's preload) | Event (`0x140050fa0`, table at `0x52ddc`/`0x52cf0`, case `0x140051b43`): `u2 {n}` gathers the list `0x140213460 (n)` builds from the 14 lists at `0x14082eb00` and goes through it; see "the event's setup action" | 741 | 1 (741) |
+| `75000003` | `u3` | (label) | Event: `u3 {n}` marks label `n`; its case does nothing when run ("Labels and jumps") | 1297 | 1 (1297) |
+| `75000005` | `u5` | (jump) | Event (case `0x140051435`): `u5 {n}` goes on from label `n` (`0x140210be0`; "Labels and jumps") | 806 | 1 (806) |
 | `75000007` | `u7` |  | Event | 199 | 1 (199) |
 | `75000008` | `u8` |  | Event | 99 | 3 (99) |
 | `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event | 339 | 6 (339) |
