@@ -795,6 +795,30 @@ the terrain and the field's own data:
 `<AREA>_Obj.elixir.gz` holds the object models, `obj-<name>_hi.g1m`, each followed by
 four `dummy` entries.
 
+### Collision (`*.g1co`)
+
+Read by `barrel_formats::g1co` (`barrel g1co-scan DIR`): each field's `<AREA>_col.g1co`, and
+breakable objects' own (`obj-<name>_coll.g1co` in the `_Obj` containers). Little-endian:
+
+```text
+"OC1G", u32 50 ("2"), u32 0x01010000, u32 size (the container's entry can run past it)
+"HVB_" chunk: "HVB_", u32 50, u32 0, u32 chunk size,
+  u32 node count, u32 48 (node size), u32 triangle count, u32 triangles' offset,
+  u32 vertex count, u32 vertices' offset (offsets from the chunk's start)
+nodes at +0x30: f32×4 max, f32×4 min, i32 kind, i32 link, u32 count, u32 first
+triangles: u16×3 vertex numbers each (the block padded to 16)
+vertices: f32×4 (x, y, z, 0), the chunk's last bytes
+```
+
+The nodes are a bounding-volume hierarchy ("HVB" is "BVH" backwards): a leaf (kind 0, link
+65535) covers triangles `first..first + count`, an inner node (kind 2, 3 or 4, presumably the
+axis it splits) covers its children's and links to its second child. Over Escha's 162 files
+(31,354 triangles, 45,162 vertices) every index is within its vertices, every triangle is in
+exactly one leaf and inside that leaf's bounds. The mesh is the walls (upright quads) and the
+floors where the ground is not the heightmap (TOWN_10: the town's outline, the gate squares
+and a stair), in field units, one vertex per corner (not shared). How the game moves a
+character against it is not read yet.
+
 ### Heightmaps (`*.khm`)
 
 Read by `barrel_formats::khm`.

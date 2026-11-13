@@ -21,6 +21,7 @@ usage:
   barrel pssg FILE             print a PSSG file's node tree
   barrel pssg-obj FILE OUT.obj  write a PSSG file's meshes as OBJ
   barrel pssg-textures FILE OUTDIR  write a PSSG file's textures as PNG
+  barrel g1co-scan DIR         read and check every field's collision
   barrel pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
   barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
   barrel xml FILE.xml          print a table's rows
@@ -104,6 +105,7 @@ fn main() -> ExitCode {
         ["ebd-scan", dir] => ebd_scan(Path::new(dir)),
         ["ebd-decode", dir] => ebd_decode(Path::new(dir)),
         ["pssg-scan", dir] => pssg_scan(Path::new(dir)),
+        ["g1co-scan", dir] => g1co_scan(Path::new(dir)),
         ["pssg", file] => pssg_tree(Path::new(file)),
         ["pssg-meshes", file] => pssg_meshes(Path::new(file)),
         ["pssg-obj", file, out] => pssg_obj(Path::new(file), Path::new(out)),
@@ -574,6 +576,40 @@ fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
             }
             None => println!("{name}: {}×{} {} (format not read)", t.width, t.height, t.format),
         }
+    }
+    Ok(())
+}
+
+/// Reads every field's collision (`*_col.g1co` in the containers under DIR) and checks its
+/// hierarchy.
+fn g1co_scan(dir: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    files_ending(dir, ".elixir.gz", &mut files)?;
+    files.sort();
+    let (mut read_ok, mut failed, mut triangles, mut vertices) = (0usize, Vec::new(), 0usize, 0usize);
+    for f in &files {
+        let bytes = read(f)?;
+        let Ok(container) = Elixir::parse(&bytes) else { continue };
+        for e in &container.entries {
+            if !e.name.ends_with(".g1co") {
+                continue;
+            }
+            match barrel_formats::g1co::parse(container.data(e)) {
+                Ok(c) => match c.check() {
+                    None => {
+                        read_ok += 1;
+                        triangles += c.triangles.len();
+                        vertices += c.vertices.len();
+                    }
+                    Some(why) => failed.push(format!("{} {}: {why}", f.display(), e.name)),
+                },
+                Err(err) => failed.push(format!("{} {}: {err}", f.display(), e.name)),
+            }
+        }
+    }
+    println!("{} collision files: {read_ok} read and consistent ({triangles} triangles, {vertices} vertices), {} not", read_ok + failed.len(), failed.len());
+    for f in failed.iter().take(10) {
+        println!("  {f}");
     }
     Ok(())
 }

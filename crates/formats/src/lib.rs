@@ -26,6 +26,7 @@ pub mod gather;
 pub mod gimmick;
 pub mod item_give;
 pub mod npc;
+pub mod g1co;
 pub mod g1h;
 pub mod g1m;
 pub mod g1t;
