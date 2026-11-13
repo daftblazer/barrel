@@ -871,8 +871,10 @@ base from a table by map and slot (`0x1403691b0 (map ≤ 121, slot ≤ 31)`: 12-
 not the enemies', which is `m_userDataFieldMapEnemy` at `0x141087bd0`, `docs/formats.md`), so
 that builder places characters that belong to gimmicks; a live read
 of it in `AREA_01_01` would settle which base the field enemies get. A field enemy's own `Chara.xml` row (418 to 420, "zako enemy slot" 1 to 3, all
-`PUNI`) is a stand-in whose model its group fills, and the records 418 to 420 must be rewritten
-with the area's monsters at run time (not found yet), so `barrel field-sim` takes the radius of
+`PUNI`) is a stand-in: the enemy is made with its own model, its record's +4 (`FieldEnemy::model`, a
+`CharaBase` row: "Field enemies" below), which for every enemy is its group's first monster's,
+and code that sizes a field character looks up the first `Chara` record of that model
+(`0x1402025a0`, from `0x14026c0e6`). `barrel field-sim` takes the radius of
 the group's first monster's row (`battle_data::field_radii`; the Ore Rat 60, the Stray Dog 70; not
 checked against a live +0x90). At `AREA_01_01` the stand-in player walking west touches the
 first Ore Rat after 8.5 s, which starts encounter group 10. scripts' `forceEncount` makes one with kind 1 (`0x14028c650`).
