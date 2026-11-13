@@ -914,13 +914,13 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000002` | `u2` | (the setup's preload) | Event (`0x140050fa0`, table at `0x52ddc`/`0x52cf0`, case `0x140051b43`): `u2 {n}` gathers the list `0x140213460 (n)` builds from the 14 lists at `0x14082eb00` and goes through it; see "the event's setup action" | 741 | 1 (741) |
 | `75000003` | `u3` | (label) | Event: `u3 {n}` marks label `n`; its case does nothing when run ("Labels and jumps") | 1297 | 1 (1297) |
 | `75000005` | `u5` | (jump) | Event (case `0x140051435`): `u5 {n}` goes on from label `n` (`0x140210be0`; "Labels and jumps") | 806 | 1 (806) |
-| `75000007` | `u7` |  | Event | 199 | 1 (199) |
-| `75000008` | `u8` |  | Event | 99 | 3 (99) |
-| `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event | 339 | 6 (339) |
-| `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event | 66 | 1 (66) |
-| `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | Event | 2180 | 8 (1319), 4 (861) |
-| `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event | 637 | 0 (637) |
-| `7500000f` | `u15` |  | Event | 81 | 0 (81) |
+| `75000007` | `u7` |  | Event (case `0x14005145a` of `0x140050fa0`'s switch) | 199 | 1 (199) |
+| `75000008` | `u8` |  | Event (case `0x14005147a` of `0x140050fa0`'s switch) | 99 | 3 (99) |
+| `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 339 | 6 (339) |
+| `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 66 | 1 (66) |
+| `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2180 | 8 (1319), 4 (861) |
+| `7500000e` | `u14` | ECT_EVENT_WAIT_POST_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 637 | 0 (637) |
+| `7500000f` | `u15` |  | Event (case `0x140051412` of `0x140050fa0`'s switch) | 81 | 0 (81) |
 | `75000010` | `u16` |  | B3Balloon | 98 | 2 (98) |
 | `75000011` | `u17` |  | B3Balloon | 2 | 0 (2) |
 | `75000012` | `u18` |  | B3Balloon | 4990 | 2 (4990) |
@@ -946,20 +946,20 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000038` | `u56` |  | EventTelop | 126 | 3 (126) |
 | `75000043` | `u67` |  | B3Balloon | 294 | 1 (294) |
 | `75000044` | `u68` |  | B3Balloon | 194 | 0 (194) |
-| `7500004f` | `u79` |  | Event | 3 | 0 (3) |
+| `7500004f` | `u79` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 3 | 0 (3) |
 | `75000061` | `u97` |  | EventTelop | 65 | 3 (65) |
-| `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET | Event | 862 | 6 (862) |
-| `75000069` | `u105` |  | Event | 2 | 0 (2) |
-| `7500006a` | `u106` |  | Event | 2 | 0 (2) |
-| `7500006b` | `u107` |  | Event | 9 | 1 (9) |
-| `7500006c` | `u108` |  | Event | 9 | 0 (9) |
-| `75000082` | `u130` |  | Event | 2 | 2 (2) |
-| `75000086` | `u134` |  | Event | 22 | 1 (22) |
-| `75000087` | `u135` |  | Event | 5 | 0 (5) |
-| `75000088` | `u136` |  | Event | 5 | 0 (5) |
-| `7500008b` | `u139` | ECT_EVENT_DEL_POST_EFFECT_ALL | Event | 148 | 0 (148) |
+| `75000067` | `u103` | ECT_EVENT_POST_EFFECT_BLUR_SET_TARGET | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 862 | 6 (862) |
+| `75000069` | `u105` |  | Event (case `0x14005157a` of `0x140050fa0`'s switch) | 2 | 0 (2) |
+| `7500006a` | `u106` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2 | 0 (2) |
+| `7500006b` | `u107` |  | Event (case `0x1400515cc` of `0x140050fa0`'s switch) | 9 | 1 (9) |
+| `7500006c` | `u108` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 9 | 0 (9) |
+| `75000082` | `u130` |  | Event (case `0x14005201f` of `0x140050fa0`'s switch) | 2 | 2 (2) |
+| `75000086` | `u134` |  | Event (case `0x140051dbb` of `0x140050fa0`'s switch) | 22 | 1 (22) |
+| `75000087` | `u135` |  | Event (case `0x140051dd9` of `0x140050fa0`'s switch) | 5 | 0 (5) |
+| `75000088` | `u136` |  | Event (case `0x140051e40` of `0x140050fa0`'s switch) | 5 | 0 (5) |
+| `7500008b` | `u139` | ECT_EVENT_DEL_POST_EFFECT_ALL | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 148 | 0 (148) |
 | `75000091` | `u145` |  | BalloonSelectMode, Event | 4 | 7 (4) |
-| `75000092` | `u146` | ECT_EVENT_VOICE_PLAY_TRACK | Event | 2 | 2 (2) |
+| `75000092` | `u146` | ECT_EVENT_VOICE_PLAY_TRACK | Event (case `0x14005192f` of `0x140050fa0`'s switch) | 2 | 2 (2) |
 | `75100001` | `u1/0x10` | ECT_SOUND_SE_PLAY |  | 5 | 5 (5) |
 | `75100003` | `u3/0x10` | ECT_SOUND_BG_PLAY | Event | 805 | 4 (805) |
 | `75100004` | `u4/0x10` | ECT_SOUND_BG_STOP | Event | 19 | 1 (19) |
