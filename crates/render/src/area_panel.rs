@@ -145,18 +145,20 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
 }
 
 /// The world map's travel panel (layout 639: "Time", the trip's days, "Date", the arrival's
-/// month / day), under the player while the cursor stands on another place than the start
-/// (the recording: (688, 640)). Its numbers are 639's digit nodes (kind 29: part 0xcf,
+/// month / day), while the cursor stands on another place than the start, hung under the
+/// cursor's mark: its origin is the mark's screen place plus [`TRAVEL_UNDER`] (the recording at
+/// 1:18: Colseit's mark at (960, 615), the panel at (769, 642)). Its numbers are 639's digit nodes (kind 29: part 0xcf,
 /// `a15_mix.g1t` texture 3, cut = digit, cut 12 the "/"), each number ending near its node:
 /// measured on the recording at 1:18 / 1:25 ("4", "8 /24"), the days' and the month's last
 /// digit stand 20 pixels left of their nodes, the day's 11 right of its node and the "/" 6
 /// right of its. The labels are the recording's tan, not 639's blue. Not yet the game's: those
 /// offsets are measured, not read from the panel's code.
-pub fn travel(pe: &barrel_formats::pe::Pe, days: i32, month: u32, day: u32) -> Vec<Element> {
+pub fn travel(pe: &barrel_formats::pe::Pe, mark: [i32; 2], days: i32, month: u32, day: u32) -> Vec<Element> {
+    let origin = [mark[0] + TRAVEL_UNDER[0], mark[1] + TRAVEL_UNDER[1]];
     let mut out = Vec::new();
     let mut numbers = 0;
     for p in barrel_formats::layout::placed(pe, TRAVEL) {
-        let at = moved(&p, TRAVEL_AT);
+        let at = moved(&p, origin);
         match (p.node.part, barrel_formats::layout::text(pe, &p)) {
             (0x164, Some(t)) if !t.text.is_empty() => out.push(Element::Label(Text { at, colour: TRAVEL_LABEL, ..t })),
             (0x164, _) => {}
@@ -183,7 +185,7 @@ pub fn travel(pe: &barrel_formats::pe::Pe, days: i32, month: u32, day: u32) -> V
 /// The travel panel's labels, as the recording has them.
 const TRAVEL_LABEL: [u8; 4] = [0xff, 0xde, 0xba, 0x70];
 const TRAVEL: u32 = 639;
-const TRAVEL_AT: [i32; 2] = [688, 640];
+const TRAVEL_UNDER: [i32; 2] = [-191, 27];
 const TRAVEL_DIGITS: i32 = 0xcf;
 /// A digit's step (the recording's "24": 31 pixels).
 const TRAVEL_ADVANCE: i32 = 31;

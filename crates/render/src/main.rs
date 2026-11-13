@@ -1173,7 +1173,7 @@ impl AreaMap {
         // The panels' sheets, as any place's panels use them.
         let mut all: Vec<hud::Element> = (0..5).flat_map(|tier| area_panel::elements(&pe, "", "", "", &[], tier, |_, _| 0.0)).collect();
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
-        all.extend(area_panel::travel(&pe, 0, 1, 1));
+        all.extend(area_panel::travel(&pe, [0, 0], 0, 1, 1));
         all.extend(question::elements(&pe, "", true));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
@@ -1297,8 +1297,15 @@ impl AreaMap {
             let sector = format!("{}p", p.tag);
             let sectors: Vec<String> = self.places.iter().enumerate().filter(|(k, q)| q.kind == 1 && q.tag.starts_with(&sector) && !self.closed.get(*k).copied().unwrap_or(false)).map(|(_, q)| q.name.clone()).collect();
             let mut e = area_panel::world_elements(&pe, &p.name, &p.description, &sectors, measure);
-            if let Some((days, month, day)) = trip {
-                e.extend(area_panel::travel(&pe, days, month, day));
+            // Under the cursor's mark, once she stands on it.
+            if let (Some((days, month, day)), Some(mvp), Some(mark)) = (trip, mvp, self.marks[self.at]) {
+                let k = height as f32 / 1080.0;
+                let dx = (width as f32 - 1920.0 * k) / 2.0;
+                let clip = mvp * glam::Vec4::new(-mark[0], mark[1], mark[2], 1.0);
+                if clip.w > 0.0 {
+                    let (x, y) = ((clip.x / clip.w + 1.0) * 0.5 * width as f32, (clip.y / clip.w + 1.0) * 0.5 * height as f32);
+                    e.extend(area_panel::travel(&pe, [((x - dx) / k) as i32, (y / k) as i32], days, month, day));
+                }
             }
             e
         } else {
