@@ -1259,6 +1259,17 @@ by the user's stat 20 percent of it (drain), items do not.
 `barrel_game::battle::skill_damage`, `reduce`, `hit_amount` and `take_hp_damage` are the
 formulas above.
 
+**Checked live** (2026-11-13, the copied save at the Ruins Entrance; fighters found by their
+classes' vtables, the 35 stats at +0x88 read before and after each hit): against a Fake Ruin
+(level 12, 40 HP, defence 30), each member's normal attack (amount 68 to 75) by Escha (level 12,
+attack 13), Katla (11, 31) and Wilbell (15, 41) did 2, 18 and 31. The battle screen showed
+"Damage Rate: 140%" on all three, from the first hit on: the running bonus
+(`0x141077e70` = 40) is already set when the battle starts, and it scales the final damage.
+With it the formula gives Escha 1 to 2 and Wilbell 28 to 32, as seen; Katla 19 to 22 against
+18 seen (one short: not explained yet). Without it Barrel's battles hit 40 % too weakly.
+Party stats agree with "Party growth" plus equipment (Escha at level 12: 35 HP, 47 MP, attack
+13, defence 13, speed 13).
+
 `HEAL_HP` heals `trunc(amount × scale)` (the amount as a float, times the scale, truncated to
 an integer). `HEAL_HP_BY_ATK` (21, `0x1401bedf3`) heals `trunc(trunc(user's attack ×
 amount / 100) × scale)`: Lucille's Vital Check (72 to 80) heals about three quarters of her
