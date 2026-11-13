@@ -337,6 +337,44 @@ mod experience_tests {
 /// The finished item's quality (`0x14030baf0` and on): the cauldron's effect value (its
 /// quality so far, at most [`MAX_EFFECT`]) plus, for each trait the item takes, the amount of
 /// its `ITEM_SUB_ITM_ADD_QUALITY` slots (`0x1402a1fd0` asks for the kind, `0x1402a1ed0` gives
+/// The traits a result takes from `candidates` (trait numbers, in order) with `budget`
+/// property points (`0x1402fa8f0`): each one not already taken, whose `point` the budget
+/// covers and that fits the item (`fits`, `Trait::fits` on its kind), is taken and its point
+/// paid; a taken trait's `ITEM_SUB_POT_COST` slots ("Inherit PP +3" ...) then give their amount
+/// back to the budget. Returns the traits taken and the points left. (Which screen or path
+/// calls this is not found; the trait screen shows the same `point` as each trait's cost.)
+pub fn pick_traits(candidates: &[usize], traits: &[barrel_formats::battle_data::Trait], mut budget: i32, fits: impl Fn(&barrel_formats::battle_data::Trait) -> bool) -> (Vec<usize>, i32) {
+    let mut taken = Vec::new();
+    for &c in candidates {
+        let Some(t) = traits.get(c) else { continue };
+        if taken.contains(&c) || budget < t.point || !fits(t) {
+            continue;
+        }
+        budget -= t.point;
+        taken.push(c);
+        budget += t.slots.iter().take(2).filter(|s| s.kind == "ITEM_SUB_POT_COST").map(|s| s.min).sum::<i32>();
+    }
+    (taken, budget)
+}
+
+#[cfg(test)]
+mod pick_tests {
+    use super::*;
+    use barrel_formats::battle_data::{Trait, TraitSlot};
+
+    #[test]
+    fn traits_are_paid_for_in_order() {
+        let t = |point, kind: &str, amount| Trait { name: String::new(), group: String::new(), level: 0, point, kinds: [true; 9], slots: vec![TraitSlot { kind: kind.into(), min: amount, max: amount }] };
+        let traits = vec![t(2, "ITEM_SUB_ITM_ADD_QUALITY", 5), t(2, "ITEM_SUB_POT_COST", 3), t(4, "ITEM_SUB_ITM_ADD_QUALITY", 5)];
+        // One point buys nothing.
+        assert_eq!(pick_traits(&[0, 1], &traits, 1, |_| true), (vec![], 1));
+        // Inherit PP +3 costs 2 and gives 3 back, so 2 points then cover trait 2's 4 as well.
+        assert_eq!(pick_traits(&[1, 1, 2], &traits, 2, |_| true), (vec![1], 3));
+        assert_eq!(pick_traits(&[1, 0, 2], &traits, 4, |_| true), (vec![1, 0], 3));
+        assert_eq!(pick_traits(&[1, 2], &traits, 3, |_| true), (vec![1, 2], 0));
+    }
+}
+
 /// the amount, a roll in the slot's range), kept within 0 and 120 (`0x1407272a0`).
 pub fn finished_quality(effect_value: f32, traits: &[&barrel_formats::battle_data::Trait], roll: &mut dyn FnMut(i32, i32) -> i32) -> f32 {
     let mut q = effect_value;

@@ -1305,8 +1305,14 @@ costs to carry over. Nothing takes them off in place: the synthesis code's only 
 property-point gain) and the trait screen copying it into its meter (`0x140322c13`); the
 meter slides to the scene's value at `+0x418` (the state sits in the scene at `+0x20`;
 `0x1402fe680` → `0x1403231b0 (meter, value, time)`). So the cost of the chosen traits is
-presumably counted against the budget where they are chosen, not subtracted from it; that
-code is not found yet.
+counted where they are chosen. `0x1402fa8f0 (_, budget, candidates, item)` picks traits for
+an item that way: in the candidates' order, each trait not already taken whose `point` the
+budget covers and that fits the item (`0x1400e2f60`) is taken and its point paid (`sub ebp,
+[trait+0x24]`); a taken trait's `ITEM_SUB_POT_COST` slots (kind 38: the "Inherit PP +3/+5/+7"
+traits, costing 2, 3 and 5 and giving back 3, 5 and 7) then add their amount to the budget
+(`0x1402a1fd0`, `0x1402a1ed0`). `synthesis::pick_traits`. Nothing in the code calls it
+directly or holds its address (only the exception tables name it), so which path uses it is
+not found; the trait screen shows the same `point` per trait (`0x14031abea`).
 
 **The synthesis state** (0x4e0 bytes, one per step):
 
