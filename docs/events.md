@@ -1390,6 +1390,12 @@ also `OP1_032`), so 0 is Escha's route and 1 Logy's. One leaves for the world ma
 the player goes, and `barrel event-starts ROOT new 0|1 0 FROM 0 TO` (with `BARREL_SEEN`) shows
 what a move would start.
 
+`barrel event-chain ROOT START [K.M>K.M ...]` goes on past that with the player's walks
+(`event_start::Chain::walk`): each fires `MAP_FROM_TO_BEFORE` (group 0) as the player leaves,
+then, if nothing starts, `MAP_FROM_TO_AFTER` (group 1) in the new map, with {from kind, from
+map, to kind, to map}. After Escha's opening, `0.3>0.4` (Urban Area to Town Entrance) starts
+`EVENT_MM02_OP2_111` and `0.5>0.4` `EVENT_MM02_OP2_420`, as their check data reads.
+
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
 The field map is taken as none and the day flag as clear. Commands not modelled yet count as

@@ -411,8 +411,40 @@ impl Chain {
     pub fn after(&mut self, name: &str) -> Option<&str> {
         let event = self.names.iter().position(|n| n == name)?;
         self.story.play(event, self.process.get(event).map_or(&[][..], |p| p.as_slice()));
-        let next = self.story.next(&self.checks, &self.lists, 11, &[event as i32], &mut self.rng)?;
+        self.fire(EVENT_END, &[event as i32])
+    }
+
+    /// The player walks from map `from` to map `to` (each {kind, map}: kind 0 the town's
+    /// maps): the event that starts as they leave (`MAP_FROM_TO_BEFORE`), or else once they
+    /// are there (`MAP_FROM_TO_AFTER`, the story then in the new map).
+    pub fn walk(&mut self, from: [i32; 2], to: [i32; 2]) -> Option<&str> {
+        let values = [from[0], from[1], to[0], to[1]];
+        self.story.field_map = Some(from[1]);
+        let before = self.story.next(&self.checks, &self.lists, MAP_FROM_TO_BEFORE, &values, &mut self.rng);
+        self.story.field_map = Some(to[1]);
+        let next = before.or_else(|| self.story.next(&self.checks, &self.lists, MAP_FROM_TO_AFTER, &values, &mut self.rng))?;
         self.names.get(next).map(String::as_str)
+    }
+
+    /// The event that starts when trigger group `group` fires with `values`, if any.
+    pub fn fire(&mut self, group: u8, values: &[i32]) -> Option<&str> {
+        let next = self.story.next(&self.checks, &self.lists, group, values, &mut self.rng)?;
+        self.names.get(next).map(String::as_str)
+    }
+}
+
+/// The trigger groups the story follows: leaving a map, arriving in one, an event's end.
+pub const MAP_FROM_TO_BEFORE: u8 = 0;
+pub const MAP_FROM_TO_AFTER: u8 = 1;
+pub const EVENT_END: u8 = 11;
+
+impl Chain {
+    /// Marks the event named NAME played (seen, its process data applied) without firing its
+    /// end.
+    pub fn play(&mut self, name: &str) {
+        if let Some(event) = self.names.iter().position(|n| n == name) {
+            self.story.play(event, self.process.get(event).map_or(&[][..], |p| p.as_slice()));
+        }
     }
 }
 
@@ -600,6 +632,29 @@ mod tests {
     #[test]
     fn event_files_sit_in_their_chapter() {
         assert_eq!(event_file("EVENT_MM01_OP1_111"), "MM01_OP1/EVENT_MM01_OP1_111.ebd");
+    }
+
+    #[test]
+    fn a_walk_starts_the_event_waiting_on_it() {
+        let event = |groups: Vec<Vec<i32>>| {
+            let mut words = [0; 14];
+            words[1] = 500;
+            words[8..14].copy_from_slice(&[-1; 6]);
+            EventCheck { words, groups }
+        };
+        // Event 1 waits for the walk from town map 3 to 4 (as it leaves), event 2 for the
+        // arrival in map 5 from 4, once event 1 has been seen.
+        let checks = vec![
+            event(vec![vec![]]),
+            event(vec![vec![], vec![0x7000_0000 + 0x7e, 0, 3, 0, 4]]),
+            event(vec![vec![0x7000_001f_u32 as i32, 1], vec![0x7000_0000 + 0x7f, 0, 4, 0, 5]]),
+        ];
+        let names = ["E0", "E1", "E2"].map(String::from).to_vec();
+        let mut chain = Chain::new(checks, vec![], names);
+        assert_eq!(chain.walk([0, 4], [0, 5]), None);
+        assert_eq!(chain.walk([0, 3], [0, 4]), Some("E1"));
+        chain.play("E1");
+        assert_eq!(chain.walk([0, 4], [0, 5]), Some("E2"));
     }
 
     /// Both openings play through as the game chains them, from the real files

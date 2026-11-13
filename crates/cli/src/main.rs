@@ -45,7 +45,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
-  barrel event-chain ROOT START [N]  follow the story from an event in a new game: each event's end starts the next
+  barrel event-chain ROOT START [K.M>K.M ...]  follow the story from an event in a new game: each event's end starts the next; then the walks
   barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
   barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
   barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
@@ -169,11 +169,7 @@ fn main() -> ExitCode {
         ["trait-kinds", exe] => trait_kinds(Path::new(exe)),
         ["macros", root] => macros(Path::new(root)),
         ["nut-parse", root] => nut_parse(Path::new(root)),
-        ["event-chain", root, start] => event_chain(Path::new(root), start, 50),
-        ["event-chain", root, start, n] => match n.parse() {
-            Ok(n) => event_chain(Path::new(root), start, n),
-            Err(_) => Err("N is a number".into()),
-        },
+        ["event-chain", root, start, walks @ ..] => event_chain(Path::new(root), start, walks),
         ["event-starts", root, save, group, values @ ..] => event_starts(Path::new(root), Path::new(save), group, values),
         ["subjects", root] => subjects(Path::new(root), None),
         ["subjects", root, save] => subjects(Path::new(root), Some(Path::new(save))),
@@ -3151,33 +3147,29 @@ fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
 
 /// The assignments (`Saves/subject/SubjectData.xml`, English names from `Saves_EN`), with a game
 /// save's `subject_save` state of each.
-/// Follows the story from event START (a number or an `EVENT_*` name) in a new game: each event
-/// is played (seen, its process data applied), then its end fires (group 11) and the event that
-/// starts is next; it stops when none does or after N events.
-fn event_chain(root: &Path, start: &str, n: usize) -> Result<()> {
-    use barrel_game::event_start as es;
-    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
-    let process = barrel_formats::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
-    let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
-    let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
-    let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
-    let mut event = match start.parse::<usize>() {
-        Ok(e) => e,
-        Err(_) => names.iter().position(|n| *n == start).ok_or("no such event")?,
+/// Follows the story from event START (an `EVENT_*` name) in a new game: each event is played
+/// (seen, its process data applied), then its end fires (group 11) and the event that starts is
+/// next. When none does, the player takes the next walk of WALKS (`K.M>K.M`: from kind and map
+/// to kind and map, kind 0 the town's maps) and the story goes on from what that starts.
+fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
+    let mut chain = story_chain(root)?;
+    let place = |s: &str| -> Result<[i32; 2]> {
+        let (k, m) = s.split_once('.').ok_or("a place is KIND.MAP")?;
+        Ok([k.parse()?, m.parse()?])
     };
-    let lists = es::listings(&checks);
-    let mut story = es::Story::default();
-    let mut rng = barrel_game::rng::Rng::seeded(1);
-    for _ in 0..n {
-        println!("{event:4} {}", names.get(event).unwrap_or(&"?"));
-        story.play(event, process.get(event).map_or(&[][..], |p| p.as_slice()));
-        match story.next(&checks, &lists, 11, &[event as i32], &mut rng) {
-            Some(next) => event = next,
-            None => {
-                println!("     (no event starts when it ends)");
-                break;
-            }
+    let mut walks = walks.iter();
+    let mut event = Some(start.to_string());
+    for _ in 0..200 {
+        if let Some(e) = event.take() {
+            println!("{e}");
+            event = chain.after(&e).map(str::to_string);
+            continue;
         }
+        let Some(w) = walks.next() else { break };
+        let (from, to) = w.split_once('>').ok_or("a walk is FROM>TO")?;
+        let (from, to) = (place(from)?, place(to)?);
+        event = chain.walk(from, to).map(str::to_string);
+        println!("  walk {w}: {}", event.as_deref().unwrap_or("nothing starts"));
     }
     Ok(())
 }
