@@ -1285,6 +1285,13 @@ prints an event's conditions). Events 1 to 7 (`EVENT_MM01_OP1_011` to `040`) hav
 all, only seen / not-seen conditions chaining them (011, 021, 031 and 012, 022, 032 alternate,
 040 after either), and their messages are Japanese even in `Event_EN`: cut scenes, never started.
 
+`barrel_game::session::Session` runs this: a scene is an event or free play in a field; an
+event's end takes the story's next event, else play goes on in the field the event last changed
+to (`event::last_field`). `barrel new-game ROOT [logy]` runs it headless: Escha's opening is
+111 (98.2 s, ends in `TOWN_04`), 121 (25.4 s, `TOWN_03`), 131 (31.6 s, `TOWN_02`), 300 (16.8 s,
+`TOWN_02`), 310 (10.5 s, `TOWN_04`); Logy's 212 (92.8 s), 222 (18.1 s), 232 (44.2 s), then the
+same 300 and 310. Both then play freely in field 3, the Hall (`TOWN_04`).
+
 ### Which event starts (`0x140214d70`, `barrel_game::event_start`)
 
 Called from 31 places with a trigger group. Nothing starts in three cases:

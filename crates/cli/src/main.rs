@@ -51,6 +51,7 @@ usage:
   barrel faces EXE             list each character's facial animation names (by CharaBase row)
   barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
   barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel new-game ROOT [escha|logy]  a new game run headless: each scene in turn (events by name with the field they leave, then free play)
   barrel event-check ROOT EVENT  an event's start conditions: its 14 words and each group's conditions and triggers
   barrel event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N|trip:FROM>TO ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
   barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
@@ -192,6 +193,7 @@ fn main() -> ExitCode {
         ["nut-parse", root] => nut_parse(Path::new(root)),
         ["event-chain", root, start, walks @ ..] => event_chain(Path::new(root), start, walks),
         ["event-check", root, event] => event_check(Path::new(root), event),
+        ["new-game", root, rest @ ..] => new_game(Path::new(root), rest.first() == Some(&"logy")),
         ["event-starts", root, save, group, values @ ..] => event_starts(Path::new(root), Path::new(save), group, values),
         ["subjects", root] => subjects(Path::new(root), None),
         ["subjects", root, save] => subjects(Path::new(root), Some(Path::new(save))),
@@ -3342,6 +3344,42 @@ fn event_check(root: &Path, event: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// A new game run headless: each event played to its end (its steps read for the field it
+/// leaves the player in), until free play.
+fn new_game(root: &Path, logy: bool) -> Result<()> {
+    use barrel_game::session::{Scene, Session};
+    let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
+    let maps = barrel_game::event::field_maps(&pe);
+    let mut session = Session::new_game(story_chain(root)?, logy);
+    let table = OperandTable::escha();
+    for _ in 0..100 {
+        let name = match session.scene() {
+            Scene::Event(name) => name.clone(),
+            Scene::Field(map) => {
+                println!("free play in field {map} ({})", maps.get(*map as usize).map_or("?", |s| s.as_str()));
+                return Ok(());
+            }
+        };
+        let file = root.join("Event/event").join(barrel_game::event_start::event_file(&name));
+        let event = Ebd::parse(&read(&file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+        let messages = match message_file(&file, None) {
+            Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let mut player = barrel_game::event::Player::escha(&event, &messages, &table)?;
+        if logy {
+            player = player.hero(1);
+        }
+        let steps = player.schedule();
+        let last = barrel_game::event::last_field(&steps);
+        let end = steps.last().map_or(0.0, |t| t.time);
+        println!("{name}: {end:.1} s{}", last.map_or(String::new(), |m| format!(", ends in field {m} ({})", maps.get(m as usize).map_or("?", |s| s.as_str()))));
+        session.event_ended(last);
+    }
+    Err("the session did not reach free play in 100 scenes".into())
 }
 
 fn story_chain(root: &Path) -> Result<barrel_game::event_start::Chain> {

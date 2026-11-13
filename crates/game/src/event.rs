@@ -953,6 +953,14 @@ pub fn field_maps(pe: &barrel_formats::pe::Pe) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The field an event leaves the player in: the map of its last field change, if it has one.
+pub fn last_field(steps: &[Timed]) -> Option<u32> {
+    steps.iter().rev().find_map(|t| match t.step {
+        Step::FieldChange { map, .. } => Some(map),
+        _ => None,
+    })
+}
+
 /// The field an event plays in: the map of its first field change, if it has one.
 pub fn first_field(steps: &[Timed]) -> Option<u32> {
     steps.iter().find_map(|t| match t.step {
