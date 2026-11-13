@@ -201,9 +201,10 @@ the game does with a record:
   attack item (1 and 2). The percent is 100, and 125 for level 1 of the `_S` versions;
   `ITEM_MIX_SLUG_SELF_DEFENCE` also has a level 0. The value is word 4 when the item has no
   entry for that level (`0x1400e34e0`). The ids run 0..59 with a gap per item; the base id is
-  level 1's id minus 1, and the `_S` versions' level 2 ids are 560..563. These are not the
-  skill enum (`SKILL_*`, 543 entries at `0x140cf73c0`, all battle actions); what they index
-  is still open.
+  level 1's id minus 1, and the `_S` versions' level 2 ids are 560..563. They are not the
+  skill enum (`SKILL_*`) but `item_effect` rows (698 of them): a leveled item's effect equal to
+  the record's base id becomes its id, so Craft's Phy Damage L turns into M at level 1 and S at
+  level 2 (`0x1400e3480`, `battle::leveled_effects`, under the battle items below).
 - **Words 5 and 6**: cost and time, read by their own getters (`0x1402a263f` and
   `0x1402a3ea0`, which reads the time as a float). Words 3 and 4 have plain getters too
   (`0x1402a25bf`, `0x1402a25ff`).
