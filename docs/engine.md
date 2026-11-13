@@ -319,6 +319,24 @@ the first opening (1280×720) about 1,300 pixels change, all along edges, which 
 smooth. It suits FSR, which expects an anti-aliased input: from half size with 4× MSAA, FSR
 comes to 32.1 dB against the full-size 4× frame, where without it it came to 29.4.
 
+## Movies (open)
+
+Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":
+`u46`). Each is an ASF (`.wmv`) of SMPTE VC-1 video (Advanced profile presumably, 1920 × 1080
+at 59.94 frames a second, 12 Mbit/s) and WMA 9 Professional audio (48 kHz stereo, 192 kbit/s):
+86 s for Escha's intro, 503 s (701 MB) for the ending. Neither codec is small: VC-1 is a
+full video codec (intra and inter frames, overlap transform, loop filter, interlace modes),
+WMA Pro an MDCT codec with its own entropy coding, and Vulkan Video decodes neither (H.264,
+H.265, AV1 and VP9 only). The ways open:
+
+1. Native decoders for both, in Rust: the most work by far, everything in the engine.
+2. The system's FFmpeg (`libavcodec`/`libavformat`) through FFI: small, but a run-time
+   dependency on every target (handhelds included).
+3. The movies converted once, at install time, to a codec the engine decodes anyway (AV1 or
+   H.264 through Vulkan Video, Opus or Vorbis audio, which `barrel-audio` already plays).
+
+Not chosen yet (the user's call). Until then the events go on past `u46` without the movie.
+
 ## Deliberate differences
 
 - **Fixed tick.** The original updates by each frame's measured time
