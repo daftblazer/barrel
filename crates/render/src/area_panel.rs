@@ -146,27 +146,47 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
 
 /// The world map's travel panel (layout 639: "Time", the trip's days, "Date", the arrival's
 /// month / day), under the player while the cursor stands on another place than the start
-/// (the recording: (688, 640)). Not yet the game's: the numbers are text, not 639's digit
-/// sprites (part 0xcf).
+/// (the recording: (688, 640)). Its numbers are 639's digit nodes (kind 29: part 0xcf,
+/// `a15_mix.g1t` texture 3, cut = digit, cut 12 the "/"), each number ending near its node:
+/// measured on the recording at 1:18 / 1:25 ("4", "8 /24"), the days' and the month's last
+/// digit stand 20 pixels left of their nodes, the day's 11 right of its node and the "/" 6
+/// right of its. The labels are the recording's tan, not 639's blue. Not yet the game's: those
+/// offsets are measured, not read from the panel's code.
 pub fn travel(pe: &barrel_formats::pe::Pe, days: i32, month: u32, day: u32) -> Vec<Element> {
     let mut out = Vec::new();
+    let mut numbers = 0;
     for p in barrel_formats::layout::placed(pe, TRAVEL) {
         let at = moved(&p, TRAVEL_AT);
         match (p.node.part, barrel_formats::layout::text(pe, &p)) {
-            (0x164, Some(t)) if !t.text.is_empty() => out.push(Element::Label(Text { at, ..t })),
-            (0x164, _) | (0xcf, _) => {}
+            (0x164, Some(t)) if !t.text.is_empty() => out.push(Element::Label(Text { at, colour: TRAVEL_LABEL, ..t })),
+            (0x164, _) => {}
+            (TRAVEL_DIGITS, _) if p.node.kind == 29 => {
+                let (value, shift) = match numbers {
+                    0 => (days.max(0) as u32, -20),
+                    1 => (month, -20),
+                    _ => (day, 11),
+                };
+                let digits: Vec<i32> = value.to_string().bytes().map(|b| i32::from(b - b'0')).collect();
+                let start = at[0] + shift - TRAVEL_ADVANCE * (digits.len() as i32 - 1);
+                for (k, d) in digits.into_iter().enumerate() {
+                    out.push(Element::Sprite { part: TRAVEL_DIGITS, cut: d, at: [start + TRAVEL_ADVANCE * k as i32, at[1]] });
+                }
+                numbers += 1;
+            }
+            (TRAVEL_DIGITS, _) => out.push(Element::Sprite { part: TRAVEL_DIGITS, cut: p.node.cut.max(0), at: [at[0] + 6, at[1]] }),
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }
     }
-    let number = |text: String, y: i32| Element::Label(Text { at: [TRAVEL_AT[0] + TRAVEL_NUMBER_X, TRAVEL_AT[1] + y], size: 36.0, colour: [0, 0, 0, 0], text, kind: 23 });
-    out.push(number(days.to_string(), 12));
-    out.push(number(format!("{month}/{day}"), 76));
     out
 }
 
+/// The travel panel's labels, as the recording has them.
+const TRAVEL_LABEL: [u8; 4] = [0xff, 0xde, 0xba, 0x70];
 const TRAVEL: u32 = 639;
 const TRAVEL_AT: [i32; 2] = [688, 640];
-const TRAVEL_NUMBER_X: i32 = 352;
+const TRAVEL_DIGITS: i32 = 0xcf;
+/// A digit's step (the recording's "24": 31 pixels).
+const TRAVEL_ADVANCE: i32 = 31;
 const LIST: u32 = 642;
 const LIST_AT: [i32; 2] = [1442, 228];
 /// The world scroll's description stands this much higher than the area map's.
