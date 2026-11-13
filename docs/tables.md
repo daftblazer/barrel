@@ -1902,7 +1902,12 @@ filled by `0x14023e440`) copies three tables out of the executable:
   pointer to the line's English text (the town people's talk is compiled into the executable,
   not in a table file), a second text (48 lines) and a word at +0x18 with a flag at +0x2c (46
   lines). All 779 distinct talk ids of the placements (+0x80) have lines. `barrel town-talk
-  EXE ID` prints one id's lines; nothing prints them all, since they can tell the story ahead.
+  EXE ID` prints one id's lines; nothing prints them all, since they can tell the story ahead. The
+  lines are gathered by id in table order (`0x14023e550 (manager, id, out)`, 9 callers), or by
+  id and speaker (`0x14023e660`). `0x14023ea30` walks the placements again with their
+  condition lists and, for a passing one, gathers its lines; it also reads the delivery state
+  (`0x141098160`, 70 entries of 8 bytes), so some talk depends on deliveries (not read
+  further). What the lines' +0x18 and +0x2c select is not read.
 - **Placements:** 841 records of 0x98 bytes from `0x1408c2cd0` (to +0xc08). Each holds a map
   (+0), five pointers to -1-ended condition lists (+8 to +0x28), a `Chara.xml` row (+0x30) and a
   value passed to the builder (+0x34). Then, by the values:
