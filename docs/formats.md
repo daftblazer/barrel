@@ -1554,6 +1554,15 @@ each with a check mark), the chosen item's card ("Slag Antenna": Alchemy LV, EFF
 the four element icons, Trait, Effect, Property, "1/1") and "Possessed" (basket 6, container
 0), with an "OK" under the grid.
 
+**The shop screen** is likely layout 664 (not confirmed against the running game): an item
+grid with "Empty" slots for the basket and the container, the chosen item's card (its name,
+"Alchemy LV", "Equip. Cost", "EFF", "Stats", "Effect", "Item Info" with trait and effect lines),
+twelve slots of part 0x1be at the right (x 1200 and 1340, every 110 or so from y 280) and the
+amount dialog, layout 660 ("Amount" with two arrows and a count, part 0xcd digits; "Total:" and
+"Pay:" each with a number, part 0x4d digits, and the coin, part 0x101 cut 4). The four shops'
+wares are in `ShopData.xml` (`SHOP_NIO`, `SHOP_NOTIONS`, `SHOP_LIQUOR`, `SHOP_HOM`, 50 rows
+each, gated by `EvStart` / `EvEnd`).
+
 **The synthesis screens** are layouts 720 to 851 on `a15_mix.g1t`; the largest stand alone
 (no layout nests them): 753 (the item's card: picture, "Stats", "Effect", "Property"), 774
 (the recipe and ingredient pick: "Recipe" tabs, "Use" columns, the ingredient list), 789 (the
