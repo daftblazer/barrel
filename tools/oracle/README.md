@@ -41,7 +41,12 @@ keep them short and stop them right after (`stop.sh`), as they count as the play
 
 ## Recording
 
-`ORACLE_HZ=60 tools/oracle/run.sh ...` runs the game at 60 Hz (30 by default).
+`ORACLE_HZ=60 tools/oracle/run.sh ...` runs the game at 60 Hz (30 by default). With
+`ORACLE_AUDIO=1` its sound goes to a PipeWire null sink of its own (`barrel_oracle`, connected
+to no device, so nothing is heard; `stop.sh` removes it) and `record.sh` adds the sink's monitor
+to the recording as FLAC (48 kHz stereo). Check with `pactl list sink-inputs` that the game's
+stream is on that sink before anything plays; without the option Wine's PulseAudio driver is
+off and the sound goes to ALSA's null device.
 `tools/oracle/record.sh OUT.mkv SECONDS` records gamescope's PipeWire stream as it is shown:
 H.264 at quantizer 0 in 4:4:4 (lossless), each frame stamped as it arrives (a 5-second test at
 the title: 298 frames, none more than 25 ms apart). `tools/oracle/frames.sh VIDEO FROM TO DIR`
