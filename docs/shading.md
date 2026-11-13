@@ -177,6 +177,17 @@ multiplies it into the sun's part only (`s · lit · v6`), at the world position
 `mW2Pt` (its scale and scroll not read yet), so it dapples the sunlit ground; it cannot
 explain shade where the sun's part is small (the TOWN_10 walls, mostly ambient).
 
+**Its mapping (`mW2Pt`) comes from the field's `<pattern_map speed_u speed_v area_width
+area_height>`** (`TOWN_10`: -0.005, 0.01, 200, 200). The field loader (`0x14006937a`) reads
+them (missing: speeds 0.0777 and 0.0333, sizes 50) and scales the sizes to field units
+(`0x1404f1990`: +0x14 speed u, +0x18 speed v, +0x1c width, +0x20 height). Each frame
+(`0x1404f1890`, the step in seconds) the offsets move by step × speed and keep their
+fraction (+0xc u, +0x10 v), and the matrix is rebuilt (`0x1405eb280`): a view from
+(0, 1000, 0) towards the origin with +z up (`0x1405c83d0`), then a projection scaling by
+1 / width and 1 / -height and moving by u + 0.5 and v + 0.5: the texture lies flat over the
+field, one repeat per area, drifting. Which way x runs (the view's handedness) is not read
+yet, nor drawn.
+
 ### Wind (plants swaying)
 
 `MapSTD`'s vertex programs bend a field model's vertices (`p` the world position;
