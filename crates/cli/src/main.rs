@@ -1335,7 +1335,29 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
     let seen = |e: &str| if saved.is_some() { seen_events.contains(e) } else { events && starts.contains(e) };
     let path = install.join("Saves/shop/ShopData.xml");
     let wares = barrel_game::shop::wares(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
-    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &|_| true, level: &|_| 0 };
+    // From a save: the board's tests of a request's target against the library's levels
+    // (`quest::monster_request_known`; a synthesis target at 6 or more with its recipe flagged).
+    let (item_names, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
+    let (monster_enum, _) = pe.enum_names("MONSTER_ROCKRAT_00").ok_or("no MONSTER_* enum")?;
+    let monster_names = &monster_enum[monster_enum.iter().position(|t| t.starts_with("MONSTER_")).unwrap_or(0)..];
+    let recipe_of = |item: usize| {
+        (0..265).find(|&k| {
+            let o = at + k * 0x120;
+            data.get(o..o + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap())) == Some(item as i32)
+        })
+    };
+    let known = |r: &barrel_game::quest::Request| {
+        let Some(s) = &saved else { return true };
+        let k = &s.knowledge;
+        match r.kind {
+            Kind::Synthesis => item_names.iter().position(|n| *n == r.target).is_some_and(|i| {
+                k.item.get(i).is_some_and(|&l| l >= 6) && recipe_of(i).and_then(|j| k.recipe.get(j)).is_some_and(|&l| l != 0)
+            }),
+            Kind::Monster => monster_names.iter().position(|n| *n == r.target).is_some_and(|m| barrel_game::quest::monster_request_known(&k.item, m)),
+            Kind::Gathering => true,
+        }
+    };
+    let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &|_| false, known: &known, level: &|_| 0 };
     let rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let mut w = if let (Some(file), Some(summary)) = (from, &saved) {
         // A save's calendar (the main generator is not saved: a fixed one stands in).
