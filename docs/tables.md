@@ -830,9 +830,10 @@ number, +0x78, is 418 to 466. Field characters are built by `0x14026b860 (chara,
 with base -1 takes, when placed (`0x14026d4c0`), `0x1401fab40 (chara, Chara record[chara]+0)`,
 its `Chara` record's base row as resolved there. The other builder's caller (`0x1402760a0`) takes the
 base from a table by map and slot (`0x1403691b0 (map ≤ 121, slot ≤ 31)`: 12-byte records at
-`0x14107c4d0`, the base row at +4), which is the save's `fieldmap/m_userDataFieldMapEnemy`
-(122 maps of 32 slots, written and read by `0x1403682b0`/`0x140368740`); in the oracle save its
-base words are all -1, so they do not fix the enemies' bodies either; a live read
+`0x14107c4d0`, the base row at +4), which is the save's `fieldmap/m_userDataFieldMapGimmick`
+(122 maps of 32 slots, written and read by `0x1403682b0`/`0x140368740`; the gimmicks' state,
+not the enemies', which is `m_userDataFieldMapEnemy` at `0x141087bd0`, `docs/formats.md`), so
+that builder places characters that belong to gimmicks; a live read
 of it in `AREA_01_01` would settle which base the field enemies get. A field enemy's own `Chara.xml` row (418 to 420, "zako enemy slot" 1 to 3, all
 `PUNI`) is a stand-in whose model its group fills, and the records 418 to 420 must be rewritten
 with the area's monsters at run time (not found yet), so `barrel field-sim` takes the radius of
