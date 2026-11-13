@@ -25,6 +25,8 @@ likely settle them where static reading failed.
     then ends the line (and its voice) at once. Auto mode (Y / T) goes on by itself after the
     line's voice. The game's own auto-mode button and timing are not read yet.
 - Some animation transitions don't transition smoothly
+- After each dialogue, the text box flickers. Likely disappearing for a frame then reappearing. 
+- Character select on new game looks wrong
 
 ## Saves
 
