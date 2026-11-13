@@ -6,8 +6,12 @@
 //! the year disc "1" on August 20th of year 1), not read from the HUD code: the empty text
 //! after "Left" is the days left in the assignment period (its last day minus today); the two
 //! big numbers (part 0x57, kind 29, cut = digit) are the month and the day; the year disc's
-//! digit is part 0x8a cut 2 + year. Not yet the game's: the dial's ten segments (part 0x8d cuts
-//! 2 to 11, in the layout's order) as the tenths of the day still free; the button list (620)
+//! digit is part 0x8a cut 2 + year. The dial's ten segments (part 0x8d cuts 2 to 11, in the
+//! layout's order) light as the day's field time is spent, from the top clockwise (checked in the
+//! running game, 2026-11-13: none on arrival, one after a battle, five after a gathering); its
+//! key-shaped hand (layout 610, part 0x8d cut 1, 120 × 24), pointing at the time spent (up for
+//! none, across for half), is left out (the HUD draws no turned sprites yet). Layout 609 lists
+//! the segments clockwise from the top (cuts 2 to 6, then 11 down to 7). Not yet the game's: the button list (620)
 //! moved up 121 pixels, as the screenshot has it (the layout puts the list at y 792, past the
 //! screen's foot); the days left are a kind 22 text, centred on their node; the text size (the node's size × 1.47
 //! over the font's line); how many-digit numbers sit (the first
@@ -39,7 +43,7 @@ pub struct Values {
     pub month: u32,
     pub day: u32,
     pub year: u32,
-    pub tenths_free: u32,
+    pub tenths_spent: u32,
 }
 
 impl Values {
@@ -48,7 +52,7 @@ impl Values {
         use barrel_game::calendar::{period, period_days, Date};
         let left = period(today).map_or(0, |k| period_days(k).1 - today);
         let date = Date::of(today);
-        Values { left, month: date.month, day: date.day, year: date.year, tenths_free: (10 - tenths.clamp(0, 10)) as u32 }
+        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32 }
     }
 }
 
@@ -126,7 +130,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             SMALL_DIGITS if n.kind == 29 => {}
             YEAR if n.cut >= 3 => out.push(Element::Sprite { part: YEAR, cut: (v.year as i32 + 2).clamp(3, 7), at: p.at }),
             DIAL if (2..=11).contains(&n.cut) => {
-                if segment < v.tenths_free {
+                if segment < v.tenths_spent {
                     out.push(Element::Sprite { part: n.part, cut: n.cut, at: p.at });
                 }
                 segment += 1;
@@ -239,10 +243,10 @@ mod tests {
     #[test]
     fn values_follow_the_calendar() {
         // April 1st of year 1: 119 days to the first period's last.
-        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_free: 10 });
+        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0 });
         // August 20th of year 1, as the game's screenshot: "Left 100", "8 /20", year 1.
         let aug20 = barrel_game::calendar::Date { year: 1, month: 8, day: 20 }.number();
-        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_free: 7 });
+        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3 });
     }
 
     #[test]
@@ -257,7 +261,7 @@ mod tests {
             node(&[625, 609], DIAL, 3, 0, [2, 0]),
             node(&[625, 617], 0x10, 0, 0, [0, 0]),
         ];
-        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_free: 1 };
+        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1 };
         let got = elements(&nodes, |_| None, v);
         let sprite = |part, cut, at| Element::Sprite { part, cut, at };
         assert_eq!(got, vec![

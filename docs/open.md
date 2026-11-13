@@ -79,16 +79,15 @@ likely settle them where static reading failed.
   event ops that attach a character to the player; **live read** during such a request once
   one is reachable without spoilers past the opening.
 
-- **Field HUD details.** The time dial's ten segments (part 0x8d, layout 609) are drawn as the
-  tenths of the day still free (the game's screenshot shows them dark in an area: likely the
-  other way round, or time of day); the assignment badges (603), the "Free Time" tab (604),
-  the arrows (602), the small count (part 0xe5), the gathering gauge and notices are not shown.
-  The button list's place (the layout says y 792) and the text size are measured from one
-  screenshot. Way in: the HUD's update code (the layout 625 owner; find who loads layout id
-  625 = 0x271) or a **live read** with the day's time partly spent. Tried once (2026-11-13): the
-  area map shows the assignment panel, the badge row and the gathering gauge but no dial (it is
-  drawn only in a field), and moving between the Southern Ruins' sectors there changed neither
-  the date nor anything shown; next try in a field, before and after a gathering.
+- **Field HUD details.** The time dial is fixed (2026-11-13, the running game: its segments
+  light as field time is spent, clockwise from the top; `crates/render/src/hud.rs`). Left: the
+  dial's hand (layout 610, a turned sprite), the assignment badges (603), the "Free Time" tab
+  (604), the arrows (602), the small count (part 0xe5), the gathering gauge and notices; one
+  gathering took 4 tenths there, against `gather_tenths(0)`'s 5 (a reduction of 1 from
+  something not read). The button list's place (the layout says y 792) and the text size are measured from one
+  screenshot. The area map shows the assignment panel, the badge row and the gathering gauge but
+  no dial. Way in for the rest: the HUD's update code (the layout 625 owner; who loads layout
+  id 625 = 0x271).
 
 - **Which title layout.** Layouts 958 (`a15_title.g1t`) and 1056 (`a15_title64.g1t`) hold the
   same title menu at different places; Barrel uses 1056 (958's last entry ends past the
