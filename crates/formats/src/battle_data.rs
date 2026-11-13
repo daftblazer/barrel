@@ -41,6 +41,45 @@ pub struct LevelStats {
     pub speed: i32,
 }
 
+/// A party member's defaults (`docs/tables.md`, "A new game's party"): 11 records of 0x58
+/// bytes at [`PARTY_DEFAULTS_EN`], read by the new game's member set-up (`0x14032d3a0`).
+pub const PARTY_DEFAULTS_EN: u64 = 0x1_40d8_ef20;
+
+/// One member's defaults.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartyDefault {
+    /// Word 0 (0 or 1; 1 for Escha, not for Logy: not read).
+    pub flag: i32,
+    /// The level and experience it joins at (words 1 and 2).
+    pub level: i32,
+    pub experience: i32,
+    /// Max HP, MP, attack, defence, speed (words 3 to 7).
+    pub stats: LevelStats,
+    /// The four element resistances and one more stat (words 8 to 12).
+    pub more: [i32; 5],
+    /// The items it starts equipped with (words 15 to 18, -1 for none): weapon, armour, then two
+    /// accessories.
+    pub equipment: [i32; 4],
+}
+
+/// The 11 members' defaults, in member order.
+pub fn party_defaults(pe: &Pe, table: u64) -> Option<Vec<PartyDefault>> {
+    let at = pe.offset(table)?;
+    (0..PARTY_COUNT)
+        .map(|c| {
+            let w = |i: usize| i32_at(pe.data, at + 0x58 * c + 4 * i);
+            Some(PartyDefault {
+                flag: w(0)?,
+                level: w(1)?,
+                experience: w(2)?,
+                stats: LevelStats { hp: w(3)?, mp: w(4)?, attack: w(5)?, defense: w(6)?, speed: w(7)? },
+                more: [w(8)?, w(9)?, w(10)?, w(11)?, w(12)?],
+                equipment: [w(15)?, w(16)?, w(17)?, w(18)?],
+            })
+        })
+        .collect()
+}
+
 /// Each party member's stats for levels 1 to 99 (`docs/tables.md`, "Party growth"): blocks of
 /// 100 rows of five i32 (99 levels and a row of zeros), one per member.
 pub fn party_growth(pe: &Pe, table: u64) -> Option<Vec<Vec<LevelStats>>> {
@@ -922,5 +961,21 @@ mod item_level_tests {
         assert_eq!(levels.len(), 49);
         assert_eq!(levels[0], ItemLevel { item: 195, level: 1, to: 1, from: 0 });
         assert_eq!(levels[3], ItemLevel { item: 196, level: 2, to: 5, from: 3 });
+    }
+}
+
+#[cfg(test)]
+mod party_defaults_real {
+    #[test]
+    #[ignore = "needs the game's executable (BARREL_EXE)"]
+    fn escha_starts_with_her_kit() {
+        let Ok(path) = std::env::var("BARREL_EXE") else { return };
+        let exe = std::fs::read(path).unwrap();
+        let pe = crate::pe::Pe::parse(&exe).unwrap();
+        let all = super::party_defaults(&pe, super::PARTY_DEFAULTS_EN).unwrap();
+        assert_eq!(all.len(), 11);
+        assert_eq!((all[0].level, all[0].experience, all[0].stats.hp, all[0].stats.mp), (1, 0, 18, 27));
+        assert_eq!(all[0].equipment, [364, 417, -1, -1]);
+        assert_eq!((all[2].level, all[2].experience), (3, 20));
     }
 }

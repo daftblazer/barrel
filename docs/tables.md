@@ -1809,6 +1809,30 @@ character to whether an operand is non-zero, `0x1401b33f0` sets one for every fi
 so flag 6 is something a story battle sets on purpose (its name is not known). Flag 4 is not a
 byte: `0x1401ae380` answers it by the fighter's HP being at most 25% of its most. `growth::Growth::gain`.
 
+### A new game's party (executable)
+
+The new game's set-up (`0x140168d40`) runs some 30 resets in a row: the money to 100
+(`0x14036a8c0`, the money at `0x1410989f4`; 999,999 its cap), the alchemy level to 3 with 4
+experience (`0x14036a660`), the party (`0x1403619d0`) and more. The party reset clears the
+11-slot squad list (`0x141093530`) to -1 and sets up each of the 11 member records (0x2b0 bytes
+at `0x1410bcb60`, `0x14032d6f0 (record, member)`): member number, level and experience 0, then
+`0x14032d3a0` copies the member's defaults and equips its kit, and the level is worked out from
+experience 0 (level 1, `0x14032d790`). The defaults are 11 records of 0x58 bytes at
+`0x140d8ef20` (`battle_data::party_defaults`):
+
+| Words | What |
+|---|---|
+| 0 | 0 or 1 (1 for Escha, 0 for Logy; not read) |
+| 1, 2 | the level and experience the member joins at (Escha and Logy 1 and 0, Awin 3 and 20, most later members 15 and 1,190, up to 25 and 5,760) |
+| 3 to 7 | max HP, MP, attack, defence, speed (Escha 18, 27, 4, 3, 6) |
+| 8 to 12 | the four element resistances and one more |
+| 13, 14 | 5 and 25 in all |
+| 15 to 18 | the items it starts equipped with, -1 for none: Escha the Traditional Staff (364) and a Cotton Shirt (417), Logy the Phantom Saber (369) and a Leather Coat (438) |
+| 19 to 21 | 0, a float, 1 |
+
+So a new game's members stand at level 1 with their kit on: Barrel's battles so far used the
+base stats alone (no equipment).
+
 ### A party member's stats (executable)
 
 A party member's record keeps three arrays of 32 stats: the base (+0x14, from the growth table
