@@ -164,6 +164,14 @@ pipelines are set up once before the first. A chained event plays from its start
 whole run's; closing the window or Escape ends the chain. From `EVENT_MM01_OP1_111` it runs
 111, 121, 131 and on, as the game does.
 
+**Free play after the story.** With `--free-play` as well (`--event EVENT_MM01_OP1_111.ebd
+--field auto --chain --free-play`, `--hero logy` for Logy's opening and Logy walking), when no
+event starts after one ends the viewer loads the field that event last changed to and puts the
+hero where the event left them, under the player's control (`--player`'s walker). From
+`EVENT_MM01_OP1_310` (its dialogue runs to 104.6 s at reading speed; the plain step schedule
+says 10.5 s) Escha stands at (10000, 10950) in `TOWN_04`. `Playback::end` gives an event's last
+step time.
+
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
 onto the highest of the heightmap and the collision floors), in her wait motion, and points

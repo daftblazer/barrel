@@ -640,6 +640,11 @@ impl<'a> Playback<'a> {
         Playback { stage, steps, next: 0 }
     }
 
+    /// When the last step is due (0 for none).
+    pub fn end(&self) -> f32 {
+        self.steps.last().map_or(0.0, |t| t.time)
+    }
+
     /// Whether every step has been applied.
     pub fn finished(&self) -> bool {
         self.next >= self.steps.len()

@@ -1275,7 +1275,7 @@ struct Walker {
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
 /// ground there (`game::walk::Ground`: the heightmap and the collision floors), in her wait
 /// motion. Her texture packs, where she stands (field units) and her body.
-fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody, Walker)> {
+fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody, Walker)> {
     let name = field_dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
     // The map's gimmicks from the executable's table (its doors lead to other maps).
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
@@ -1284,7 +1284,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let map = maps.iter().position(|n| n == name);
     let area = map.and_then(|m| barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(m).cloned());
     let gimmicks = area.as_ref().map(|a| a.gimmicks.clone()).unwrap_or_default();
-    let logy = std::env::var("BARREL_LEAD").is_ok_and(|v| v.eq_ignore_ascii_case("logy"));
+    let logy = logy || std::env::var("BARREL_LEAD").is_ok_and(|v| v.eq_ignore_ascii_case("logy"));
     // The viewer has no story flags: flag 303 is taken as unset.
     let music = map.zip(area.as_ref()).and_then(|(m, a)| u32::try_from(barrel_game::walk::field_music(m, a.music(), logy, false)).ok());
     let landing = area.as_ref().and_then(|a| barrel_game::walk::landing_sound(a.landing()));
@@ -2002,6 +2002,8 @@ struct SceneSpec {
     player_walk: Option<[f32; 2]>,
     /// `--world-trip`: the waypoints she runs through.
     trip: Vec<[f32; 3]>,
+    /// Logy leads (`--hero logy`): the player walking is Logy.
+    logy: bool,
 }
 
 /// A scene loaded on the CPU side: its geometry, draws and instances, the texture packs, the
@@ -2062,6 +2064,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         player_at,
         player_walk,
         trip,
+        logy,
     } = spec;
     let mut town_bodies = Vec::new();
     // Where playback starts: --at, or --line's start.
@@ -2231,7 +2234,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let field_dir = Path::new(&args[1]);
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--player: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, pos, body, mut w) = player(&root, field_dir, at, &mut scene, base)?;
+        let (packs, pos, body, mut w) = player(&root, field_dir, at, logy, &mut scene, base)?;
         pack_bytes.extend(packs);
         w.body = town_bodies.len();
         town_bodies.push(body);
@@ -2371,6 +2374,7 @@ fn main() -> Result<()> {
     // Print the GPU's time per stage at the end (--timings).
     let mut timings = false;
     let mut hero = 0u32;
+    let mut free_play = false;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
@@ -2508,6 +2512,9 @@ fn main() -> Result<()> {
             "--no-terrain" => no_terrain = true,
             // --chain: when the event ends, the one the story starts after it, and so on.
             "--chain" => chain_on = true,
+            // --free-play (with --chain): when no event starts any more, the hero walks freely
+            // in the field the last event left them in, from where they stood at its end.
+            "--free-play" => free_play = true,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -2997,6 +3004,7 @@ fn main() -> Result<()> {
             player_at,
             player_walk,
             trip: trip_path.clone(),
+            logy: hero == 1,
         })?;
     let event_at = start_at;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
@@ -4777,6 +4785,25 @@ fn main() -> Result<()> {
             first_event = false;
         }
         Some(path) => return Err(format!("{}: no such event file", path.display()).into()),
+        None if free_play && chain.is_some() && !stop && frame_base < frames && current_event.is_some() => {
+            // Free play: the last event's last field, the hero where the event left them.
+            let path = Path::new(current_event.as_deref().unwrap_or_default()).to_path_buf();
+            let fields = event_fields(&path)?;
+            let event = barrel_formats::ebd::Ebd::parse(&std::fs::read(&path)?)?;
+            let steps = barrel_game::event::Player::escha(&event, &[], &barrel_formats::ebd::OperandTable::escha())?.hero(hero).schedule();
+            let last = barrel_game::event::last_field(&steps).and_then(|m| fields.iter().find(|(n, _)| *n == m)).map(|(_, p)| p.clone());
+            let at = player.as_ref().and_then(|(play, ..)| play.stage.snapshot().characters.get(&hero).map(|(p, _)| [p[0], p[2]]));
+            let (Some(dir), Some(at)) = (last, at) else {
+                eprintln!("{ended} ends: no event starts, and no field or hero to play freely");
+                break 'events;
+            };
+            eprintln!("{ended} ends: free play in {} at ({:.0}, {:.0})", dir.display(), at[0], at[1]);
+            args[1] = dir.to_string_lossy().into_owned();
+            current_event = None;
+            player_at = Some(at);
+            chain = None;
+            first_event = false;
+        }
         None => {
             if chain.is_some() && !stop {
                 if frame_base >= frames {
