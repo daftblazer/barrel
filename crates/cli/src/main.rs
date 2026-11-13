@@ -362,7 +362,7 @@ fn ebd_scan(dir: &Path) -> Result<()> {
         commands.len()
     );
     let mut commands: Vec<_> = commands.into_iter().collect();
-    commands.sort_by(|a, b| b.1.cmp(&a.1));
+    commands.sort_by_key(|c| std::cmp::Reverse(c.1));
     for (c, n) in commands.iter().take(40) {
         println!("{n:>7}  {c}");
     }
@@ -416,7 +416,7 @@ fn scan(dir: &Path) -> Result<()> {
     );
     println!("{entries} entries, {dummies} dummies");
     let mut kinds: Vec<_> = kinds.into_iter().collect();
-    kinds.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+    kinds.sort_by_key(|k| std::cmp::Reverse(k.1.0));
     for (k, (n, bytes)) in kinds {
         println!("{n:>7}  {:>8.1} MB  {k}", bytes as f64 / 1e6);
     }
@@ -680,7 +680,7 @@ fn pak_bc6h(files: &[&str]) -> Result<()> {
             let Ok(g) = barrel_formats::g1t::G1t::parse(&data) else { continue };
             for t in g.textures.iter().filter(|t| t.format == barrel_formats::g1t::Format::Bc6h) {
                 for level in &t.levels {
-                    for block in level.chunks_exact(16) {
+                    for block in level.as_chunks::<16>().0 {
                         let low = block[0] & 3;
                         let m = if low < 2 { low } else { block[0] & 31 };
                         let e = modes.entry(m).or_insert((0, entry.name.clone()));
@@ -1150,10 +1150,10 @@ fn save(file: &Path) -> Result<()> {
         println!("{who}'s battle grid ({open} open): {grid:?}{check}");
     }
     // BARREL_EXE: rebuild every character's stats in use from base, equipment and bonuses.
-    if let Some(exe) = std::env::var_os("BARREL_EXE") {
-        if let Err(e) = check_stats(Path::new(&exe), &records, &s) {
-            println!("stats check: {e}");
-        }
+    if let Some(exe) = std::env::var_os("BARREL_EXE")
+        && let Err(e) = check_stats(Path::new(&exe), &records, &s)
+    {
+        println!("stats check: {e}");
     }
     let bonuses: Vec<String> = s.bonus_values.iter().enumerate().filter(|(_, v)| **v != 0).map(|(i, v)| format!("{i}:{v}")).collect();
     println!("bonus values {}", bonuses.join(" "));
@@ -1342,7 +1342,7 @@ fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
     let height = line * lines.len() as i32 + 16;
     let (w, h) = (width.max(1) as usize, height.max(1) as usize);
     let mut img = vec![0u8; w * h * 4];
-    for px in img.chunks_exact_mut(4) {
+    for px in img.as_chunks_mut::<4>().0 {
         px.copy_from_slice(&[40, 40, 48, 255]);
     }
     let mut missing = 0;
@@ -3230,6 +3230,8 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         fn level(&self, c: i32) -> Option<i32> {
             (0..=10).contains(&c).then(|| self.0.party.iter().find(|m| m.character == c)).flatten().map(|m| m.level)
         }
+        // The save's squad is its slot list.
+        #[allow(clippy::misnamed_getters)]
         fn squad(&self) -> &[i32] {
             &self.0.squad_slots
         }
