@@ -1918,8 +1918,14 @@ and has once-only actions at 75% and 50% HP. Its slots 5 to 8 read 0 (the skill 
 skill) because its slot list names only five; whether slots past the list mean something
 else is not checked.
 
-The fourth pointer is set only for some bosses (the Grand
-Dragon's: `2, 9, 48, 40, 1, -1, ...`), not read yet.
+The fourth pointer (words 18, 19; getter `0x140112730 (monster, block)`) is set only for some
+bosses: a list of 20-byte records ended by -1, the block's **reactions**. When a monster fighter
+takes its block (`0x1401b7880`: monster number +0x3a8, block +0x3b0) its reaction list (+0x258,
++0x10) is emptied and each record becomes a `BtlCharaReaction` (0x70 bytes, vtable `0x140807a38`,
+`0x1401ac500` → `0x1401ab400`): word 0 to +0x28, word 1 handed to `0x1401ac120` and
+`0x1401ac2a0`, words 2, 3 and 4 to +0x18, +0x1c and +0x20, and +0x24 set to 3. The Grand
+Dragon's one record is `{2, 9, 48, 40, 1}`. What the words mean (a trigger, a skill, ...) wants
+the reaction's own code; not read yet.
 
 The **drop list** starts with up to four `{item, chance in percent, count}` triples, then
 entries of another shape (skills, probably). Drops of 560 and up (560 to 599 occur) are not items, which
