@@ -33,6 +33,7 @@ mod status;
 mod basket;
 mod assignment;
 mod battlehud;
+mod result;
 mod mix;
 mod fsr3;
 mod gsr2;
@@ -1577,9 +1578,11 @@ struct BattleHud {
     font: text::Font,
     sheets: hud::Sheets,
     nodes: Vec<barrel_formats::layout::Placed>,
+    /// The Result screen's nodes (layout 904), shown instead once a won battle is over.
+    result_nodes: Vec<barrel_formats::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size.
-    shown: Option<(Vec<battlehud::Member>, Option<(Vec<(String, bool)>, usize, String)>, u32, u32)>,
+    shown: Option<(Vec<battlehud::Member>, Option<(Vec<(String, bool)>, usize, String)>, Option<result::Values>, u32, u32)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1593,6 +1596,12 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
     let mut every = battlehud::elements(&nodes, |p| barrel_formats::layout::text(&pe, p), &members);
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
+    // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
+    let result_nodes = barrel_formats::layout::placed(&pe, result::LAYOUT);
+    let sample = result::Values { rows: (0..6).map(|chara| result::Row { chara, level: 1, next: 1, level_up: true }).collect(), exp: 1, money: 1 };
+    every.extend(result::elements(&result_nodes, |p| barrel_formats::layout::text(&pe, p), &sample));
+    every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0x4, cut, at: [0, 0] }));
+    every.extend((0..10).flat_map(|cut| [0x4b, 0x4c].map(|part| hud::Element::Sprite { part, cut, at: [0, 0] })));
     let keys = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
@@ -1606,8 +1615,11 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     }
     let size = images[0].width as f32;
     let layer = text::Layer::new(gpu, pool, pass, &images)?;
-    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, exe, shown: None })
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, result_nodes, exe, shown: None })
 }
+
+/// How long an offscreen run shows a won battle's Result screen before going back.
+const RESULT_SECONDS: f32 = 3.0;
 
 /// The centre of a battle stage (`BF_POINT*`, 16 × 16 cells of 400: taken as the middle of its
 /// ground; not yet read from the game).
@@ -1676,6 +1688,8 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_game::se
         time: 0.0,
         until: BATTLE_FIRST_STEP,
         fight: BattleFight { tables, party: party.to_vec(), monsters, rng, commands: Vec::new() },
+        result: None,
+        result_closed: false,
         turn,
         chosen: 0,
         target: 0,
@@ -1710,6 +1724,10 @@ struct BattlePlay {
     next: usize,
     time: f32,
     until: f32,
+    /// A won battle's Result screen once it is over, with the time it came up, and whether a
+    /// confirm press has closed it.
+    result: Option<(result::Values, f32)>,
+    result_closed: bool,
 }
 
 /// A battle's tables, sides, generator and the commands given so far.
@@ -1762,6 +1780,10 @@ impl BattlePlay {
     /// A button on a member's turn: up and down choose the command, left and right the target,
     /// confirm gives it (the battle is fought again with it, the events after it to play).
     fn press(&mut self, b: title::Button) {
+        if self.result.is_some() {
+            self.result_closed |= b == title::Button::Confirm;
+            return;
+        }
         let Some(turn) = self.turn.clone().filter(|_| self.waiting()) else { return };
         let count = turn.skills.len() + 1;
         let foes = turn.foes.len().max(1);
@@ -5044,16 +5066,30 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     && let Some(b) = battle_keys.pop_front() {
                         play.press(b);
                     }
-                // Over: back to the field it came from.
-                if play.over()
-                    && let Some(mut back) = carry.back.take() {
-                        eprintln!("frame {frame}: the battle is over, back to the field");
-                        // Won: the spoils go into the field's save (money, the fighters' experience).
+                // Over and won: the spoils go into the field's save (money, the fighters'
+                // experience, the drops) and the Result screen comes up with the party's
+                // levels before and after.
+                let won = play.outcome.winner == Some(0);
+                if play.over() && won && play.result.is_none()
+                    && let Some(save) = carry.back.as_mut().and_then(|b| b.1.save.as_mut()) {
                         let (exp, money) = play.fight.tables.spoils(&play.outcome);
-                        if let Some(save) = back.1.save.as_mut().filter(|_| play.outcome.winner == Some(0)) {
-                            *save = barrel_game::session::Session::won_in_save(save, &play.charas, exp, money, &play.outcome.drops, &play.fight.tables.exp);
-                            eprintln!("battle: {exp} experience, {money} money, drops {:?}", play.outcome.drops);
-                        }
+                        let before = barrel_game::session::Session::party_in(save);
+                        *save = barrel_game::session::Session::won_in_save(save, &play.charas, exp, money, &play.outcome.drops, &play.fight.tables.exp);
+                        let after = barrel_game::session::Session::party_in(save);
+                        eprintln!("battle: {exp} experience, {money} money, drops {:?}", play.outcome.drops);
+                        let rows = play.charas.iter().filter_map(|&c| {
+                            let m = after.get(c)?;
+                            let next = barrel_game::growth::to_next(&play.fight.tables.exp, m.level, m.experience, 0).unwrap_or(0);
+                            Some(result::Row { chara: c, level: m.level, next, level_up: before.get(c).is_some_and(|b| m.level > b.level) })
+                        }).collect();
+                        play.result = Some((result::Values { rows, exp, money }, play.time));
+                    }
+                // Then back to the field it came from: a lost battle at once, a won one once its
+                // Result is closed (confirm; offscreen after `RESULT_SECONDS`).
+                let closed = play.result.as_ref().is_some_and(|(_, at)| play.result_closed || (presenter.is_none() && play.time - at >= RESULT_SECONDS));
+                if play.over() && (!won || closed || play.result.is_none() && carry.back.as_ref().and_then(|b| b.1.save.as_ref()).is_none())
+                    && let Some(back) = carry.back.take() {
+                        eprintln!("frame {frame}: the battle is over, back to the field");
                         (restart, carry_out) = (Some(back.0), back.1);
                         stop = true;
                         break;
@@ -5762,14 +5798,22 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if let (Some(h), Some(play)) = (battle_layer.as_mut(), battle_play.as_ref()) {
         let members = play.members();
         let commands = play.commands();
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), width, height))
+        let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), width, height))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
-                let mut elements = battlehud::elements(&h.nodes, |p| barrel_formats::layout::text(&pe, p), &members);
-                if let Some((list, chosen, title)) = &commands {
-                    elements.extend(battlehud::command_list(list, *chosen, title));
-                }
+                let elements = match &shown_result {
+                    // The Result screen, in place of the battle's HUD.
+                    Some(v) => result::elements(&h.result_nodes, |p| barrel_formats::layout::text(&pe, p), v),
+                    None => {
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_formats::layout::text(&pe, p), &members);
+                        if let Some((list, chosen, title)) = &commands {
+                            e.extend(battlehud::command_list(list, *chosen, title));
+                        }
+                        e
+                    }
+                };
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, commands, width, height));
+                h.shown = Some((members, commands, shown_result, width, height));
             }
     }
     let record = |cb: vk::CommandBuffer| unsafe {
