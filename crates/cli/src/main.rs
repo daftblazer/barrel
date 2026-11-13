@@ -593,6 +593,21 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
     let walls = barrel_game::walk::Walls::new(&collision, barrel_game::walk::DEFAULT_SLOPE);
     let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
     let ground = barrel_game::walk::Ground::new(heightmap, &collision, barrel_game::walk::DEFAULT_SLOPE);
+    // The map's gimmicks (map exits, chests ...), from the executable beside the install's
+    // `Data` folder, to say which the walk steps into.
+    let dir_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let gimmicks: Vec<barrel_formats::gimmick::Gimmick> = dir
+        .ancestors()
+        .map(|a| a.join("Atelier_Escha_and_Logy_EN.exe"))
+        .find(|e| e.is_file())
+        .and_then(|e| std::fs::read(e).ok())
+        .and_then(|bytes| {
+            let pe = barrel_formats::pe::Pe::parse(&bytes).ok()?;
+            let map = barrel_game::event::field_maps(&pe).iter().position(|n| n == dir_name)?;
+            Some(barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)?.get(map)?.gimmicks.clone())
+        })
+        .unwrap_or_default();
+    let mut inside: Vec<usize> = Vec::new();
     let [x, y, z] = at.map(|v| v.parse::<f32>());
     let (mut p, mut y) = ([x?, z?], y?);
     let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];
@@ -611,6 +626,11 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
             }
         }
         println!("{k:4}: ({:.1}, {:.1}, {y:.1}){}", p[0], p[1], if blocked { "  (against a wall)" } else { "" });
+        let now: Vec<usize> = (0..gimmicks.len()).filter(|&i| gimmicks[i].contains([p[0] / 100.0, y / 100.0, p[1] / 100.0])).collect();
+        for &i in now.iter().filter(|i| !inside.contains(i)) {
+            println!("      enters {} at {:?}", gimmicks[i].kind_name(), gimmicks[i].position);
+        }
+        inside = now;
     }
     Ok(())
 }

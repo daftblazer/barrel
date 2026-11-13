@@ -1604,6 +1604,15 @@ there. A list is 0x60-byte gimmicks ended by -1:
 | 0x38, 0x40, 0x48, 0x50 | four pointers, each type using its own: +0x38 the breakables', chests' and forced fights' records (pairs of numbers such as 448/449 and 345, and for a chest 24, 664, 99, not read yet), +0x48 a field map change's arrival (`FIELDMAP_CHANGE_EX`: the target map, 17 or 18, then floats; walked by `0x14006e1e4`), +0x50 the map change infos', message icons' and boxes' pairs of pointers (not followed yet) |
 | 0x58 | -1, 0 or 1 |
 
+The field builds an object for each (`0x1402712d0`, from the list walk at `0x140276190`): the
+place × 100 at +0x90, the angle in radians at +0xa0, the size × 100 at +0xa4 (a size with a
+negative part takes the type's default, `0x140dfc1c8` + 0x20, 48 bytes a type, +0xc to +0x14).
+A point is inside it (`0x140281770`, `Gimmick::contains`) when, turned by minus the angle about
+y around the gimmick, it is within half the size along x and along z; the height is not tested.
+`barrel walk` says which gimmicks a walk steps into: in AREA_01_01 west along z = 36.8 m the
+world map exit and its `MAP_CHANGE_INFO` both take her at x = 33.4 m, just before the map's
+edge.
+
 The Forest Entrance has its two exits (each a `WORLDMAP_CHANGE_EX` with a `MAP_CHANGE_INFO`
 at the same place) and three breakable objects; most areas have 4 or 5 gimmicks. Gathering
 points are not among them: they are the points table above. `barrel gimmicks EXE [MAP]` (by map number: towns 0 to 11, the field areas from 12)

@@ -63,6 +63,22 @@ impl Gimmick {
     pub fn kind_name(&self) -> &'static str {
         TYPES.get(self.kind as usize).copied().unwrap_or("?")
     }
+
+    /// Whether a point (metres) stands inside the gimmick's area, as the field tests it
+    /// (`0x140281770`): turned by minus its angle about y, its offset from the gimmick within
+    /// half its size along x and along z (the height is not tested). A gimmick whose size has a
+    /// negative part takes its type's default size (`0x140dfc1c8` + 0x20, 48 bytes a type,
+    /// floats +0xc to +0x14), not read here: such a gimmick contains nothing. (The turn's
+    /// direction is `0x1400c2930`'s, taken as the usual right-handed one.)
+    pub fn contains(&self, p: [f32; 3]) -> bool {
+        if self.size.iter().any(|&v| v < 0.0) {
+            return false;
+        }
+        let (dx, dz) = (p[0] - self.position[0], p[2] - self.position[2]);
+        let (s, c) = self.angle.to_radians().sin_cos();
+        let (x, z) = (c * dx - s * dz, s * dx + c * dz);
+        x.abs() <= self.size[0] * 0.5 && z.abs() <= self.size[2] * 0.5
+    }
 }
 
 /// `count` records from `table` ([`MAPS_EN`] with [`MAP_COUNT`] for every map, [`AREAS_EN`] with
@@ -106,4 +122,19 @@ pub fn areas(pe: &Pe, table: u64, count: usize) -> Option<Vec<Area>> {
         out.push(Area { place: text(q(0x30)), name: text(q(0x38)), words, gimmicks });
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_turned_box_contains_along_its_turn() {
+        let g = Gimmick { kind: 19, id: -1, angle: 90.0, word3: 100, position: [10.0, 0.0, 10.0], size: [6.0, 10.0, 2.0], events: (-1, -1), rest: [0; 0x30] };
+        // Turned a quarter, its long side (x, 6) lies along z.
+        assert!(g.contains([10.0, 50.0, 12.5]));
+        assert!(!g.contains([12.5, 0.0, 10.0]));
+        let square = Gimmick { angle: 0.0, size: [3.0, 10.0, 3.0], ..g.clone() };
+        assert!(square.contains([11.4, 0.0, 8.6]) && !square.contains([11.6, 0.0, 10.0]));
+    }
 }
