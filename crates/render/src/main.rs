@@ -1554,6 +1554,12 @@ fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game:
     Ok((map, from, field, [exit.position[0] * 100.0, exit.position[2] * 100.0], None))
 }
 
+/// The party members' new-game defaults (`battle_data::party_defaults`), none when the
+/// executable does not read.
+fn party_defaults(exe: &[u8]) -> Vec<barrel_formats::battle_data::PartyDefault> {
+    barrel_formats::pe::Pe::parse(exe).ok().and_then(|pe| barrel_formats::battle_data::party_defaults(&pe, barrel_formats::battle_data::PARTY_DEFAULTS_EN)).unwrap_or_default()
+}
+
 /// The battle tables for field encounters (`barrel_game::auto_battle`).
 fn battle_tables(root: &Path) -> Result<barrel_game::auto_battle::Tables> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
@@ -3787,6 +3793,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let s = s.with_calendar(barrel_game::days::Data::load(&root)?, barrel_game::rng::Rng::seeded(1));
         let barrel_game::session::Scene::Field(map) = *s.scene() else { return Err("--load: the save is not in free play".into()) };
         let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let s = s.with_party(&party_defaults(&exe));
         let names = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&exe)?);
         let name = names.get(map as usize).ok_or("--load: no such field map")?;
         args[1] = root.join("Data/x64/Field").join(name).to_string_lossy().into_owned();
@@ -6130,7 +6137,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             if let (Some((c, root)), Some(map)) = (chain.take(), barrel_game::event::last_field(&steps)) {
                 // With the calendar (the main generator not known: a fixed seed stands in).
                 let data = barrel_game::days::Data::load(&root)?;
-                session = Some(barrel_game::session::Session::in_field(c, map, hero == 1).with_calendar(data, barrel_game::rng::Rng::seeded(1)));
+                let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+                session = Some(barrel_game::session::Session::in_field(c, map, hero == 1).with_calendar(data, barrel_game::rng::Rng::seeded(1)).with_party(&party_defaults(&exe)));
             }
             first_event = false;
         }

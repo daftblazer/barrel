@@ -1301,8 +1301,12 @@ to (`event::last_field`). `barrel new-game ROOT [logy]` runs it headless: Escha'
 same 300 and 310. Both then play freely in field 3, the Hall (`TOWN_04`).
 
 A session saves to Barrel's own text format (`Session::save` / `Session::load`, in free play
-only): the lead, the field and the player's spot, the date, each seen event with its day and the
-flags that are not 0, one fact a line under a `barrel-save 1` line. The game's own saves are read
+only): the lead, the field and the player's spot, the date, the money (`money`, a new game's
+100), each party member's level, experience and four equipped items (`member C LEVEL EXP
+e1,e2,e3,e4`; a new game's set by `Session::with_party` from `battle_data::party_defaults`),
+each seen event with its day and the flags that are not 0, one fact a line under a
+`barrel-save 1` line. A save written before the money and member lines loads with a new
+game's money and the party filled in from the defaults. The game's own saves are read
 (`docs/formats.md`, Saves) but not yet written: their records would need a writer and a new
 game's full state as a template.
 

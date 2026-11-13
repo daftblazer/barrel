@@ -4,8 +4,9 @@
 //! player in).
 //!
 //! A session saves to Barrel's own small text format ([`Session::save`], [`Session::load`]),
-//! taken in free play: the lead, the field and where the player stands, and the story (the
-//! date, each seen event with the day it was seen, the flags that are not 0). One fact a line:
+//! taken in free play: the lead, the field and where the player stands, the money, each party
+//! member's level, experience and equipment, and the story (the date, each seen event with the
+//! day it was seen, the flags that are not 0). One fact a line:
 //!
 //! ```text
 //! barrel-save 1
@@ -13,12 +14,28 @@
 //! field 3 10000 10950
 //! today 90
 //! tenths 5
+//! money 100
+//! member 0 1 0 364,417,-1,-1
 //! item 55 60 12,40
 //! seen 8 90
 //! flag 36 1
 //! ```
 
 use crate::event_start::{new_game_event, Chain};
+
+/// The money a new game starts with (`0x14036a8c0`).
+pub const NEW_GAME_MONEY: i32 = 100;
+/// The most money held (`0x14036a8e0`).
+pub const MAX_MONEY: i32 = 999_999;
+
+/// One party member's lasting state (its record at `0x1410bcb60` + 0x2b0 × member).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Member {
+    pub level: i32,
+    pub experience: i32,
+    /// The items equipped, by item number, -1 for none: weapon, armour, two accessories.
+    pub equipment: [i32; 4],
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Scene {
@@ -42,17 +59,20 @@ pub struct Session {
     field: Option<u32>,
     /// Logy leads (the new game's choice).
     pub logy: bool,
+    pub money: i32,
+    /// The 11 party members by member number, once given their defaults ([`Session::with_party`]).
+    pub party: Vec<Member>,
 }
 
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new() }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new() }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -73,6 +93,26 @@ impl Session {
 
     /// The calendar from `data`, starting as a new game's (`days::World::new_game`, the main
     /// generator as `rng`) on the story's date.
+    /// The party as a new game sets it up (`0x1403619d0`): every member at level 1 with no
+    /// experience, in its default kit (`battle_data::party_defaults`). Members a loaded save
+    /// already holds keep their own.
+    pub fn with_party(mut self, defaults: &[barrel_formats::battle_data::PartyDefault]) -> Session {
+        for d in defaults.iter().skip(self.party.len()) {
+            self.party.push(Member { level: 1, experience: 0, equipment: d.equipment });
+        }
+        self
+    }
+
+    /// Money in (or out, when negative), kept within 0 and [`MAX_MONEY`]; false (and nothing
+    /// paid) when there is not enough.
+    pub fn pay(&mut self, amount: i32) -> bool {
+        if self.money + amount < 0 {
+            return false;
+        }
+        self.money = (self.money + amount).min(MAX_MONEY);
+        true
+    }
+
     pub fn with_calendar(mut self, data: crate::days::Data, rng: crate::rng::Rng) -> Session {
         let leader = usize::from(self.logy);
         let mut world = crate::days::World::new_game(rng, leader, &data.wares);
@@ -232,6 +272,11 @@ impl Session {
         if tenths != 0 {
             out += &format!("tenths {tenths}\n");
         }
+        out += &format!("money {}\n", self.money);
+        for (c, m) in self.party.iter().enumerate() {
+            let kit: Vec<String> = m.equipment.iter().map(i32::to_string).collect();
+            out += &format!("member {c} {} {} {}\n", m.level, m.experience, kit.join(","));
+        }
         for g in &self.basket {
             let traits: Vec<String> = g.traits.iter().map(usize::to_string).collect();
             out += &format!("item {} {}{}\n", g.item, g.quality, if traits.is_empty() { String::new() } else { format!(" {}", traits.join(",")) });
@@ -256,6 +301,7 @@ impl Session {
             return Err(BadSave("not a Barrel save (version 1)".into()));
         }
         let (mut logy, mut field, mut at, mut carried, mut basket) = (false, None, [0.0f32; 2], 0, Vec::new());
+        let (mut money, mut party) = (NEW_GAME_MONEY, Vec::<Member>::new());
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -270,6 +316,16 @@ impl Session {
                 }
                 "today" => story.today = num(1)? as i32,
                 "tenths" => carried = num(1)? as i32,
+                "money" => money = (num(1)? as i32).clamp(0, MAX_MONEY),
+                "member" => {
+                    let c = num(1)? as usize;
+                    if c != party.len() {
+                        return Err(bad(line));
+                    }
+                    let kit: Vec<i32> = w.get(4).ok_or_else(|| bad(line))?.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect::<Result<_, _>>()?;
+                    let equipment: [i32; 4] = kit.try_into().map_err(|_| bad(line))?;
+                    party.push(Member { level: num(2)? as i32, experience: num(3)? as i32, equipment });
+                }
                 "item" => basket.push(crate::gather::Got {
                     item: num(1)? as i32,
                     quality: w.get(2).and_then(|v| v.parse().ok()).ok_or_else(|| bad(line))?,
@@ -282,7 +338,7 @@ impl Session {
         }
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party }, at))
     }
 }
 
@@ -302,7 +358,7 @@ mod tests {
         s.chain.story_mut().flags[36] = 1;
         s.scene = Scene::Field(3);
         let text = s.save([10000.0, 10950.5]).unwrap();
-        assert_eq!(text, "barrel-save 1\nlead logy\nfield 3 10000 10950.5\ntoday 90\nseen 8 90\nflag 36 1\n");
+        assert_eq!(text, "barrel-save 1\nlead logy\nfield 3 10000 10950.5\ntoday 90\nmoney 100\nseen 8 90\nflag 36 1\n");
         let (back, at) = Session::load(chain(), &text).unwrap();
         assert_eq!(at, [10000.0, 10950.5]);
         assert!(back.logy);
@@ -336,5 +392,23 @@ mod tests {
         s.spend(5, crate::days::Reason::Gather);
         s.walked(0, 1);
         assert_eq!(s.today(), 94);
+    }
+
+    #[test]
+    fn money_and_the_party_save_and_load() {
+        let kit = |e: [i32; 4]| barrel_formats::battle_data::PartyDefault { flag: 0, level: 1, experience: 0, stats: barrel_formats::battle_data::LevelStats { hp: 1, mp: 1, attack: 1, defense: 1, speed: 1 }, more: [0; 5], equipment: e };
+        let mut s = Session::in_field(chain(), 3, false).with_party(&[kit([364, 417, -1, -1]), kit([369, 438, -1, -1])]);
+        assert_eq!((s.money, s.party.len(), s.party[1].equipment[1]), (100, 2, 438));
+        assert!(s.pay(-60) && !s.pay(-41));
+        assert!(s.pay(2_000_000) && s.money == MAX_MONEY);
+        s.party[0].level = 4;
+        s.party[0].experience = 40;
+        let text = s.save([1.0, 2.0]).unwrap();
+        assert!(text.contains("money 999999\nmember 0 4 40 364,417,-1,-1\nmember 1 1 0 369,438,-1,-1\n"), "{text}");
+        let (back, _) = Session::load(chain(), &text).unwrap();
+        assert_eq!((back.money, &back.party), (MAX_MONEY, &s.party));
+        // A save from before these lines: a new game's money, the party filled in later.
+        let (old, _) = Session::load(chain(), "barrel-save 1\nfield 3 0 0\ntoday 90\n").unwrap();
+        assert_eq!((old.money, old.party.len()), (NEW_GAME_MONEY, 0));
     }
 }
