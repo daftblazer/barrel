@@ -43,6 +43,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // 1 / height (field units), u + 0.5, v + 0.5}, and {on}.
     vec4 pattern;
     vec4 pattern_on;
+    // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
+    // root height, shift x, shift z} each, metres.
+    vec4 sway[16];
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;

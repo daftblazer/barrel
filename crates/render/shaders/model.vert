@@ -76,6 +76,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The field's light texture's mapping (model.frag).
     vec4 pattern;
     vec4 pattern_on;
+    // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
+    // root height, shift x, shift z} each, metres.
+    vec4 sway[16];
 } look;
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
@@ -108,6 +111,21 @@ void main() {
     }
     vec4 w = i.model * pos;
     vec4 prev_w = i.prev_model * prev_pos;
+    // Grass swaying in the wind (MapSTD's vertex programs, docs/shading.md "Wind"), for the
+    // field models of a sway group (flags bits 8-11: its number + 1), in the game's metres and
+    // with its x (render x mirrored): phase = x·shift.x + time + z·shift.z, height =
+    // saturate((y - the model's y - root) / height), moved by wind · sin(phase) · height.
+    uint group = (pc.flags >> 8) & 15u;
+    if (group != 0u && (pc.flags & 1u) == 0u) {
+        vec4 a = look.sway[2u * (group - 1u)];
+        vec4 b = look.sway[2u * (group - 1u) + 1u];
+        vec3 g = vec3(-w.x, w.y, w.z) / 100.0;
+        float phase = g.x * b.z + a.w + g.z * b.w;
+        float h = clamp((g.y - i.model[3].y / 100.0 - b.y) * b.x, 0.0, 1.0);
+        vec3 move = a.xyz * sin(phase) * h * 100.0;
+        w.xyz += vec3(-move.x, move.y, move.z);
+        prev_w.xyz += vec3(-move.x, move.y, move.z);
+    }
     // Billboards: the corner, and the normal, in the camera's frame (MapSTD-B0 program 0).
     mat3 bb = mat3(look.bb_right.xyz, look.bb_up.xyz, look.bb_back.xyz);
     if (in_corner != vec3(0.0)) {

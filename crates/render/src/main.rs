@@ -44,7 +44,7 @@ const PUSH_SIZE: u32 = 124;
 const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-const LOOK_SIZE: u64 = 50 * 16;
+const LOOK_SIZE: u64 = 66 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 const SHADOW_HALF: f32 = 1500.0;
@@ -3335,6 +3335,9 @@ fn main() -> Result<()> {
     let mut shot_field = u16::MAX;
     // The light texture's clock: from the scene's first frame (the game's starts at the field's load).
     let mut pattern_time = 0.0f32;
+    // The grass sway groups' clocks (game::wind::Shaker), and the time stepped this frame.
+    let mut shakers: Vec<barrel_game::wind::Shaker> = Vec::new();
+    let mut sway_dt = 0.0f32;
     let mut ran = 0u32;
     let mut stop = false;
     // A door the player stepped into: the map it leads to, where she stands there, her velocity.
@@ -3452,7 +3455,8 @@ fn main() -> Result<()> {
         }
     }
     if frame > 0 {
-        pattern_time += if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        sway_dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        pattern_time += sway_dt;
     }
     // The player walking: a step against the field's walls and onto its ground, turned the way
     // she goes, the camera carried along. In a window W A S D steer her (relative to the
@@ -3994,7 +3998,7 @@ fn main() -> Result<()> {
         };
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 50];
+        let mut look = [[0f32; 4]; 66];
         // Last frame's view-projection (this frame's on the first), for the motion vectors.
         for (k, col) in prev_mvp.unwrap_or(mvp).to_cols_array_2d().into_iter().enumerate() {
             look[40 + k] = col;
@@ -4051,6 +4055,17 @@ fn main() -> Result<()> {
             let drift = |speed: f32| (pattern_time * speed).rem_euclid(1.0);
             look[48] = [1.0 / (pat.size[0] * 100.0), 1.0 / (pat.size[1] * 100.0), drift(pat.speed[0]) + 0.5, drift(pat.speed[1]) + 0.5];
             look[49] = [1.0, 0.0, 0.0, 0.0];
+        }
+        // The grass sway groups (game::wind): the field's winds at the wind clock, each group's
+        // own clock stepped by the frame's time.
+        if let Some(l) = field_look {
+            let wind = barrel_game::wind::wind(&l.winds, pattern_time);
+            shakers.resize(l.v_shakers.len().min(8), barrel_game::wind::Shaker::default());
+            for (k, (v, sh)) in l.v_shakers.iter().zip(shakers.iter_mut()).enumerate() {
+                let sway = sh.step(v, wind, sway_dt);
+                look[50 + 2 * k] = [sway.wind[0], sway.wind[1], sway.wind[2], sway.time];
+                look[51 + 2 * k] = [sway.inv_height, sway.root_height, sway.shift[0], sway.shift[2]];
+            }
         }
         look[26] = match event_lights.ambient {
             Some(rgb) => [rgb[0], rgb[1], rgb[2], 1.0],
@@ -4202,13 +4217,16 @@ fn main() -> Result<()> {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
         }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
+        let sway_groups: Vec<String> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map(|l| l.v_shakers.iter().take(8).map(|v| v.keyword.clone()).collect()).unwrap_or_default();
         for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
             // The distant view's solid pieces (all but the dome and the clouds) are lit and
             // alpha-tested like the field's models (docs/renderer.md, "Distant view").
             let solid = draw.sky && !draw.name.contains("Sphere_sky") && !draw.name.contains("xEF_");
-            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5;
+            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5
+                // Its grass sway group (bits 8-11, number + 1), by the mesh name's keyword.
+                | sway_groups.iter().position(|k| !k.is_empty() && draw.name.contains(k.as_str())).map_or(0, |k| (k as u32 + 1).min(15)) << 8;
             let mut per_draw = [0u8; 8];
             per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
             per_draw[4..].copy_from_slice(&flags.to_le_bytes());

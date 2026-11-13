@@ -241,8 +241,14 @@ each (`dir` normalised). Each `<v_shaker>` (`0x140285d80`) keeps its own clock, 
 `g_fWindTime` its clock, `g_f3Wind` the summed wind over its `weight`, `g_fInvHeight` 1 over
 its height (the kept height / 100), `g_fRootHeight` its root height (/ 100) and `g_f3Shift`
 (`shift_x`, 0, `shift_z`). `game::wind` does the same (`wind`, `Shaker::step`); the
-`<wind_root>` is read into `FieldLook::winds` and `v_shakers`. The renderer does not sway
-plants yet. (The node shakers, `<n_shaker>`, are a spring per bone, not read.)
+`<wind_root>` is read into `FieldLook::winds` and `v_shakers`. The keywords match the
+placements' names (`.opl2`: `xV1_...`, `xS3_xV1_grass_1` in AREA_05_01; no model file names
+them), and the renderer sways those objects: the look block's `sway` slots hold each group's
+two vectors, a draw's flags bits 8 to 11 its group, and `model.vert` moves the vertices as
+above. It takes the program's space as metres (the game's x, our units / 100: the parser keeps
+height and root height × 100 and the frame divides them back, and AREA_01_01's wind 30 over
+weight 800 sways 4 cm in metres, nothing visible in centimetres); not checked against the
+game. (The node shakers, `<n_shaker>`, are a spring per bone, not read.)
 
 ### Fog (read from the running game)
 

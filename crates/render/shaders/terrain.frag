@@ -45,6 +45,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // 1 / height (field units), u + 0.5, v + 0.5}, and {on}.
     vec4 pattern;
     vec4 pattern_on;
+    // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
+    // root height, shift x, shift z} each, metres.
+    vec4 sway[16];
 } look;
 layout(set = 1, binding = 5) uniform sampler2DShadow shadow_map;
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
