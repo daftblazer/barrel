@@ -1538,7 +1538,30 @@ the 151 event flags (the words at `0x14108a500`) and `u35` (`0x140347dd0`) adds 
 then running the flag's checks, as Escha's do. The other meanings are taken over on that
 footing, to be confirmed where a Shallie event leans on them.
 
-## Ayesha DX
+**Shallie's `q` commands are mostly Escha's one number higher.** Both games run `q` through
+`nspFM::clsFMWorldEvent`'s slot 8 (Escha `0x14028a700`, Shallie `0x1401bb360`), a table of
+targets indexed by the word less `0x71000002` (Escha RVA `0x28b5a4`, 56 entries; Shallie
+`0x1bc228`, 59). Matching each Shallie case to the Escha case whose code (and first call's
+code) has the most similar run of instructions:
+
+| Shallie | Escha | match |
+|---|---|---|
+| `q2`, `q6`, `q11`, `q12` | the same numbers | 0.68 to 1 |
+| `q16`, `q17` | `q15`, `q16` | 1, 0.98 |
+| `q25` | `q24` | 0.93 |
+| `q34`, `q35` | `q33`, `q34` | 0.97, 1 |
+| `q41` to `q46` | `q40` to `q45` | 1 each |
+| `q48`, `q50` | `q49` | 1 |
+| `q51`, `q53` | `q52` | 0.98 |
+| `q55` | `q54` (the point light, as its 14 operands said) | 0.91 |
+| `q56`, `q57` | `q55`, `q56` | 1 |
+
+Short cases that only pass their operands on look alike in both and match many (Escha `q38`,
+`q57`), so they say nothing; `q26`, `q27` and `q59` match weakly (0.44 to 0.62). Shallie passes by
+`q3` to `q5`, `q7` to `q9`, `q13` to `q15`, `q18` to `q20`, `q30`, `q33`, `q36`, `q38` and `q40`
+(Escha `q3` to `q5`, `q7` to `q9`, `q13`, `q14`, `q17` to `q19`, `q29`, `q32`, `q35`, `q37`, `q39`):
+the same one-up shift from `q15` on. Shallie's own operand counts (`ebd_tables::SHALLIE`) agree
+where checked (`q55`'s 14 = Escha `q54`'s).
 
 Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
 13,290 of its 162,098 bodies. Its table is measured from its 3,891 events the same way
