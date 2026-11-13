@@ -127,6 +127,22 @@ same number but for Nio (10), row 11 (the oracle save: Escha, Logy, Linca, Wilbe
 0, 1, 6, 7 and 11; Escha's uniform with her own Fluffy Hat attaches nothing, the hat built into
 the body showing).
 
+**Town ground (open).** In `TOWN_04` and `TOWN_05` the ground around the town people draws
+as one flat colour (beige, green), with no texture. Two things are known:
+
+- **Near ground:** it is not the terrain. It stays with `--no-terrain` and it is not the
+  clear colour. So some other draw covers the ground there (a large ground object or the
+  distant view), not identified yet.
+- **Terrain from afar:** seen from the default camera, the terrain itself (`TOWN_04`: 80 × 80
+  cells of 250, 6 layers) is a flat beige too.
+
+Its layer tiles are detailed (dirt, cracked earth, flagstones, two grasses: extracted from the
+`.ktf` and checked), its blend maps weight them sensibly (flagstones round the plaza), and the
+push constants match `terrain.frag` (field size 20,000 at index 17, scales from index 20). So
+the flat colour comes from somewhere else: the fog, or the sampling of distant texels, both
+unchecked. The `.ktf`'s blend section holds six BC1 maps, not two; the viewer uses the first
+two.
+
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
 notes; the map number comes from the directory's name through the `FIELDMAP_*` list):
