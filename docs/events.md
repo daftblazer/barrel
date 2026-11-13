@@ -1369,6 +1369,17 @@ Code asking for event 8 (`PROGRAM_EXEC`, group 29, value 8) starts `EVENT_MM01_O
 (group 11, value 8, with 8 seen) starts `EVENT_MM01_OP1_121` (its check: 8 seen, 10 not, ended
 by 8). That one's end starts `EVENT_MM01_OP1_131`.
 
+`barrel event-chain ROOT START [N]` follows that through (`event_start::Story`):
+
+1. Each event is marked seen and its process data applied: seen marks (`0x77120001`), flags
+   set (`0x77130004`) and added to (`0x77130002`, `0x14035f6b0` adds).
+2. Its end fires (group 11).
+3. The event that starts is next.
+
+From `EVENT_MM01_OP1_111` the opening runs 111, 121, 131, 300, 310. Then nothing starts on
+an event end; the next one waits for another trigger (a map change, presumably), which the
+chain does not fire.
+
 `barrel event-starts ROOT GAMEDATA GROUP [VALUES...]` runs this over a save: the events listed
 under the trigger group that pass with the save's seen events, days seen, event flags and date.
 The field map is taken as none and the day flag as clear. Commands not modelled yet count as

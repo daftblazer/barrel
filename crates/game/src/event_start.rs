@@ -274,6 +274,121 @@ fn trigger_values(ops: &[i32], fired: &[i32], count: usize, mode: Mode, w: &impl
     })
 }
 
+/// A story state for following events one after another: what has been seen, when, and the
+/// event flags (a new game's by default). Only what events change through their process data
+/// is kept; the rest of the world reads as a new game's.
+#[derive(Clone, Debug)]
+pub struct Story {
+    pub seen: Vec<Option<i32>>,
+    pub flags: Vec<i32>,
+    pub today: i32,
+    pub field_map: Option<i32>,
+}
+
+impl Default for Story {
+    fn default() -> Story {
+        Story { seen: vec![None; 1165], flags: vec![0; 151], today: 90, field_map: None }
+    }
+}
+
+impl World for Story {
+    fn seen(&self, e: i32) -> bool {
+        usize::try_from(e).ok().and_then(|e| self.seen.get(e)).is_some_and(Option::is_some)
+    }
+    fn seen_day(&self, e: i32) -> i32 {
+        usize::try_from(e).ok().and_then(|e| self.seen.get(e)).copied().flatten().unwrap_or(0)
+    }
+    fn today(&self) -> i32 {
+        self.today
+    }
+    fn flag(&self, f: i32) -> i32 {
+        usize::try_from(f).ok().and_then(|f| self.flags.get(f)).copied().unwrap_or(0)
+    }
+    fn region_zero(&self, map: i32) -> bool {
+        (0..12).contains(&map)
+    }
+    fn field_map(&self) -> Option<i32> {
+        self.field_map
+    }
+    fn field_area(&self) -> Option<i32> {
+        None
+    }
+    fn money(&self) -> i32 {
+        0
+    }
+    fn alchemy_level(&self) -> i32 {
+        1
+    }
+    fn friendship(&self, _: i32) -> Option<Option<f32>> {
+        Some(None)
+    }
+    fn item_count(&self, _: Option<i32>, _: f32, _: f32) -> Option<i32> {
+        Some(0)
+    }
+    fn level(&self, _: i32) -> Option<i32> {
+        None
+    }
+    fn squad(&self) -> &[i32] {
+        &[]
+    }
+}
+
+impl Story {
+    /// An event is played: it is marked seen today, then its process data's changes apply
+    /// (seen marks `0x77120001`, flag set `0x77130004` and flag add `0x77130002`; the rest is
+    /// not kept here).
+    pub fn play(&mut self, event: usize, process: &[Vec<u32>]) {
+        if let Some(s) = self.seen.get_mut(event) {
+            *s = Some(self.today);
+        }
+        for group in process {
+            let Ok(cmds) = barrel_formats::event_process::commands(group) else { continue };
+            for (word, ops) in cmds {
+                let (a, b) = (ops.first().copied().unwrap_or(0) as i32, ops.get(1).copied().unwrap_or(0) as i32);
+                match word {
+                    0x7712_0001 => {
+                        if let Some(s) = usize::try_from(a).ok().and_then(|e| self.seen.get_mut(e)) {
+                            *s = (b != 0).then_some(self.today);
+                        }
+                    }
+                    0x7713_0004 => {
+                        if let Some(f) = usize::try_from(a).ok().and_then(|f| self.flags.get_mut(f)) {
+                            *f = b;
+                        }
+                    }
+                    0x7713_0002 => {
+                        if let Some(f) = usize::try_from(a).ok().and_then(|f| self.flags.get_mut(f)) {
+                            *f = f.wrapping_add(b);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// The event that starts when trigger group `group` fires with `values` (none if no event
+    /// passes): the gate (day flag clear), group 0 and the triggering group, as [`pick`].
+    pub fn next(&self, checks: &[EventCheck], lists: &HashMap<u8, Vec<Listed>>, group: u8, values: &[i32], rng: &mut Rng) -> Option<usize> {
+        let list = lists.get(&group)?;
+        pick(
+            list,
+            |event, g| {
+                let check = &checks[event];
+                let gate = Gate { day_flag: false, seen: self.seen(event as i32), flag_1: self.flag(1), today: self.today };
+                if !gate_open(&check.words, &gate) {
+                    return false;
+                }
+                let fired = Fired { group, values, day: self.today, event: event as i32 };
+                check.groups.get(g).is_some_and(|words| {
+                    commands(words).is_ok_and(|cmds| cmds.iter().all(|c| command(c, &fired, self).unwrap_or(false)))
+                })
+            },
+            rng,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,4 +535,31 @@ mod tests {
         let quest = commands(&[0x70000075, 3]).unwrap();
         assert_eq!(command(&quest[0], &f(0, &[]), &W), Some(false));
     }
+
+    #[test]
+    fn a_story_follows_event_ends() {
+        let event = |groups: Vec<Vec<i32>>| {
+            let mut words = [0; 14];
+            words[1] = 500;
+            words[8..14].copy_from_slice(&[-1; 6]);
+            EventCheck { words, groups }
+        };
+        let end = |e: i32| vec![0x7000_008b_u32 as i32, e];
+        let checks = vec![
+            event(vec![vec![]]),
+            event(vec![vec![0x7000_001f_u32 as i32, 0], end(0)]),
+            event(vec![vec![0x7000_0027_u32 as i32, 5, 2], end(1)]),
+        ];
+        let lists = listings(&checks);
+        let mut story = Story::default();
+        let mut rng = Rng::seeded(1);
+        story.play(0, &[]);
+        assert_eq!(story.next(&checks, &lists, 11, &[0], &mut rng), Some(1));
+        // Event 2 waits for flag 5 to reach 2: event 1's process data adds 2.
+        assert_eq!(story.next(&checks, &lists, 11, &[1], &mut rng), None);
+        story.play(1, &[vec![0x7713_0002, 5, 2, 0x7f00_0000]]);
+        assert_eq!(story.flag(5), 2);
+        assert_eq!(story.next(&checks, &lists, 11, &[1], &mut rng), Some(2));
+    }
+
 }
