@@ -680,6 +680,12 @@ confirm lists the basket items that fit (`ItemRow::fits`) and confirm again puts
 Status page's ATK from 6 to 23 and SPD from 6 to 16, and an F5 save and reload keeps it
 (`member 0 1 0 366,417,-1,-1`, the old staff back in the basket). Not yet the game's: plain text
 over the desk, no stat comparison before choosing, one change a visit, both commands the same.
+After a won battle's Result closes, its drops show on a screen of their own (`drops.rs`;
+offscreen `BARREL_DROPS_KEYS`, written to OUT-drops.png): the desk, the drops in the Basket
+page's grid (tab "Drops"), the chosen one's basket count in the "Possessed" box (layout 706,
+where the game has it: 1202, 146) and "OK"; confirm closes it. Checked: an `AREA_01_01` win
+(drops 111 and 9) shows both, the second chosen with 1 possessed. What is not yet the game's is
+in `drops.rs`'s header (the game's narrower grid with check marks, the item card).
 A lost battle (all members down) passes a day in the field's carried save
 (`Session::lost_in_save`) and goes straight back to the field where the enemy was touched, the
 lead's wipe line on the console. Before it goes back the battle fades to white over 2 s

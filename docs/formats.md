@@ -1552,7 +1552,11 @@ heading and one row per party member in the battle (five there: portrait, "Lv 12
 Its drops follow on a screen of their own over the desk: the item grid (the battle's items,
 each with a check mark), the chosen item's card ("Slag Antenna": Alchemy LV, EFF bar, Stats,
 the four element icons, Trait, Effect, Property, "1/1") and "Possessed" (basket 6, container
-0), with an "OK" under the grid.
+0), with an "OK" under the grid. The "Possessed" box is layout 706 (part 0x61 parchment, the
+basket's and the container's icons, part 0x2a cuts 13 and 12, each with a part 0x4c number);
+no layout holds it, nor a grid of the drops screen's shape (five by six, a scroll bar, no "Use"
+headings; layouts 404, 445, 685, 791 and 815 checked), so the screen is put together at run
+time.
 
 **The shop screen** is likely layout 664 (not confirmed against the running game): an item
 grid with "Empty" slots for the basket and the container, the chosen item's card (its name,

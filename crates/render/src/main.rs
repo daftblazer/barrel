@@ -36,6 +36,7 @@ mod battlehud;
 mod result;
 mod shopping;
 mod equipping;
+mod drops;
 mod mix;
 mod fsr3;
 mod gsr2;
@@ -1822,6 +1823,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_game::se
         result_closed: false,
         lost_noted: false,
         wiped: None,
+        drops_shown: false,
         turn,
         chosen: 0,
         target: 0,
@@ -1864,6 +1866,8 @@ struct BattlePlay {
     lost_noted: bool,
     /// A lost battle's wipe: when it began and the day it turns to.
     wiped: Option<(f32, u32)>,
+    /// A won battle's drops screen has been shown.
+    drops_shown: bool,
 }
 
 /// A battle's tables, sides, generator and the commands given so far.
@@ -5309,6 +5313,26 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 // Then back to the field it came from: a lost battle at once, a won one once its
                 // Result is closed (confirm; offscreen after `RESULT_SECONDS`).
                 let closed = play.result.as_ref().is_some_and(|(_, at)| play.result_closed || (presenter.is_none() && play.time - at >= RESULT_SECONDS));
+                // A won battle's drops on their own screen once the Result is closed
+                // (offscreen: `BARREL_DROPS_KEYS`, drawn to OUT-drops.png).
+                if closed && !play.outcome.drops.is_empty() && !play.drops_shown
+                    && let (Some(root), Some(save)) = (hud_root.clone(), carry.back.as_ref().and_then(|b| b.1.save.clone())) {
+                        play.drops_shown = true;
+                        let drops: Vec<(i32, f32)> = play.outcome.drops.iter().flat_map(|&(item, count, quality)| std::iter::repeat_n((item, quality), count.max(0) as usize)).collect();
+                        let held = |item: i32| save.lines().filter(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<i32>().ok()) == Some(item) && l.starts_with("item ")).count() as i32;
+                        let possessed: Vec<i32> = drops.iter().map(|&(item, _)| held(item)).collect();
+                        unsafe { gpu.device.device_wait_idle()? };
+                        let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+                        match (presenter.as_ref(), pump.as_mut(), offscreen.as_ref()) {
+                            (Some(pr), Some(p), _) => drops::run(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, &drops, &possessed, &[], None)?,
+                            (None, _, Some((color, _))) => {
+                                let keys = title::keys(&std::env::var("BARREL_DROPS_KEYS").unwrap_or_default());
+                                let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-drops.png";
+                                drops::run(&gpu, pool, &target, None, Some(*color), &root, &drops, &possessed, &keys, Some(Path::new(&shot)))?;
+                            }
+                            _ => {}
+                        }
+                    }
                 let wiped = play.wiped.is_none_or(|(at, _)| play.time - at >= WIPE_SECONDS);
                 if play.over() && (!won && wiped || closed || won && play.result.is_none() && carry.back.as_ref().and_then(|b| b.1.save.as_ref()).is_none())
                     && let Some(back) = carry.back.take() {
