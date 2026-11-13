@@ -771,7 +771,12 @@ the trip from where she started (`Session::travelled`: the field left passes its
 route's days pass, an event on the road or on arriving plays, the arrival field being the
 region's first sector across its entry's route, or the town's entrance) and lands on the
 region's area map at its entry (`LP_` mark), or in the town's entrance at its world map exit.
-Offscreen `BARREL_WORLD_KEYS` and `BARREL_AREA_KEYS` (each used once a run). Checked: from
+Offscreen `BARREL_WORLD_KEYS` and `BARREL_AREA_KEYS`, `|` parting them by visit (the first
+part for the first scene at that level, and so on). The whole round trip, checked: from the
+Town Entrance, `BARREL_WORLD_KEYS='down,confirm|up,confirm'` and `BARREL_AREA_KEYS=back`:
+the world map at Colseit, R1 to the Southern Ruins (day 90 to 94), its area map, Back, the
+world map at the Southern Ruins, R1 to Colseit (day 98), the Town Entrance at its exit with
+the HUD's date at 4/9. Checked: from
 the Town Entrance (a save at (5700, 3740), `--walk 300,0`), `down,confirm` on the world map:
 R1, four days (90 to 94), the Southern Ruins' area map; `down,back` there: the Ruins
 Entrance, then the world map at the Southern Ruins. On the maps she runs the dots without the

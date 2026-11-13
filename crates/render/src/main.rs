@@ -4942,15 +4942,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut area_map: Option<AreaMap> = None;
     let mut area_enter: Option<AreaPick> = None;
     // Offscreen keys for the world map (`BARREL_WORLD_KEYS`) and the area map
-    // (`BARREL_AREA_KEYS`), each list used once a run (the first scene at that level).
-    static WORLD_KEYS_USED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    static AREA_KEYS_USED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    // (`BARREL_AREA_KEYS`): `|` parts them by visit, the first part for the first scene at
+    // that level, the next for the next.
+    static WORLD_VISITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    static AREA_VISITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let mut area_keys: std::collections::VecDeque<title::Button> = std::collections::VecDeque::new();
     if area_mode {
-        let (name, used) = if world_mode { ("BARREL_WORLD_KEYS", &WORLD_KEYS_USED) } else { ("BARREL_AREA_KEYS", &AREA_KEYS_USED) };
-        if !used.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            area_keys = title::keys(&std::env::var(name).unwrap_or_default()).into_iter().collect();
-        }
+        let (name, visits) = if world_mode { ("BARREL_WORLD_KEYS", &WORLD_VISITS) } else { ("BARREL_AREA_KEYS", &AREA_VISITS) };
+        let visit = visits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let list = std::env::var(name).unwrap_or_default();
+        area_keys = title::keys(list.split('|').nth(visit).unwrap_or("")).into_iter().collect();
     }
     for frame in 0..frames - frame_base {
     ran = frame + 1;
