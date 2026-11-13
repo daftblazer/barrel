@@ -685,18 +685,8 @@ fn travel(exe: &Path, from: &str, to: &str) -> Result<()> {
 /// The world map's routes and the marks at their ends, as their dots lie
 /// (`barrel_formats::world::route_ends`), with each route's days.
 fn world_routes(exe: &Path) -> Result<()> {
-    let bytes = read(exe)?;
-    let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-    let field = read(&exe.parent().ok_or("no folder")?.join("Data/x64/Field/A15_WMAP/A15_WMAP.elixir.gz"))?;
-    let c = Elixir::parse(&field)?;
-    let e = c.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("no placements")?;
-    let placements = barrel_formats::opl2::parse(c.data(e))?;
-    for a in barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no routes")? {
-        let tag = a.id.replace('R', "r").replacen("r", "R", if a.id.starts_with('R') { 1 } else { 0 });
-        match barrel_formats::world::route_ends(&placements, &tag) {
-            Some((from, to, n)) => println!("{:6} {from:>5} - {to:<5} ({n} dots, {} days)", a.id, a.days[0].0),
-            None => println!("{:6} (no dots tagged {tag})", a.id),
-        }
+    for r in world_map(exe)?.routes {
+        println!("{:6} {:>5} - {:<5} ({} days)", r.area.id, r.ends.0, r.ends.1, r.area.days[0].0);
     }
     Ok(())
 }
