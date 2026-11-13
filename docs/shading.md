@@ -270,7 +270,11 @@ steps (`FieldLook::n_shakers` the settings), its cone clamp in the plane of `d` 
 (the game's own, by cross products, is not read through). In the renderer the objects named or
 tagged `xN<n>_` get their own instance (the rest of a field is baked into one), and each frame
 each turns from its rest axis to its spring's tip under the field's wind (seven trees in
-AREA_01_01, their leaves stirring frame to frame); the player's push is not done. A draw's name
+AREA_01_01, their leaves stirring frame to frame). The walking player pushes a tree within its
+`char_range` (measured here from the tree's origin; the game measures from the tip in the
+node's own space), along a random direction drawn as the game does (each part `(rand() % 100 -
+50) / 50`, normalised; a small xorshift stands in for the C library's `rand`): from AREA_01_01's
+start, walking north she brushes one a second in. A draw's name
 is now its object's name and its placement's tags, since the sway keywords may be in either
 (the grass's `xV1_` mostly is in the tags, which the grass sway had missed). The viewer
 says how many sway at load: AREA_01_01 7 trees by node and 41 draws by vertex, AREA_05_01 10

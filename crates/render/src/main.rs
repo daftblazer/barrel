@@ -1204,6 +1204,18 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
 }
 
 
+/// A small xorshift for the trees' push (cosmetic: the game uses its C library's rand()).
+struct SwayRng(u32);
+
+impl SwayRng {
+    fn next(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        self.0
+    }
+}
+
 /// The player walking: her instance, where she stands (field units), her velocity (x, z, units
 /// a second) and the field's walls and ground she walks against (`game::walk`).
 struct Walker {
@@ -3345,6 +3357,9 @@ fn main() -> Result<()> {
     // transform, its shaker in render space, its spring).
     type TreeSpring = (u32, Mat4, barrel_formats::field_look::NShaker, barrel_game::wind::NodeSpring);
     let mut tree_springs: Option<(u16, Vec<TreeSpring>)> = None;
+    // The trees' random push (a small xorshift: the game's rand() for a look, not for play).
+    let mut sway_rng = SwayRng(0x9e37_79b9);
+    let mut brushed = false;
     let mut ran = 0u32;
     let mut stop = false;
     // A door the player stepped into: the map it leads to, where she stands there, her velocity.
@@ -4008,9 +4023,22 @@ fn main() -> Result<()> {
         let w = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map_or([0.0; 3], |l| barrel_game::wind::wind(&l.winds, pattern_time));
         let w = Vec3::new(-w[0], w[1], w[2]);
         let strength = w.length();
+        // The player, in render space, for the trees' push.
+        let player = walker.as_ref().map(|w| Vec3::new(-w.pos[0], w.pos[1], w.pos[2]));
         for (inst, base, n, spring) in springs.iter_mut() {
             let toward = (glam::Mat3::from_mat4(*base).inverse() * w).normalize_or_zero();
-            spring.step(n, toward.to_array(), strength, None, sway_dt);
+            // Within its char_range of the player (metres; here from the tree's origin, the game
+            // measures from its tip in its own space), a push along a random direction, each
+            // part (rand() % 100 - 50) / 50 as the game draws it (`0x140285886`).
+            let push = player.filter(|p| p.distance(base.w_axis.truncate()) < n.char_range * 100.0).map(|_| {
+                let mut part = || ((sway_rng.next() % 100) as f32 - 50.0) / 50.0;
+                Vec3::new(part(), part(), part()).normalize_or_zero().to_array()
+            });
+            if push.is_some() && !brushed {
+                eprintln!("frame {frame}: the player brushes a tree");
+                brushed = true;
+            }
+            spring.step(n, toward.to_array(), strength, push, sway_dt);
             let turn = glam::Quat::from_rotation_arc(Vec3::from(n.axis), Vec3::from(spring.d));
             instances[*inst as usize].model = *base * Mat4::from_quat(turn);
         }
