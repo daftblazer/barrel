@@ -236,7 +236,7 @@ impl EventLights {
 
 #[derive(Clone, Debug, Default)]
 pub struct Stage {
-    /// The first voice clip of the event's lines (`voice::story_start`), when known: line k
+    /// The first voice clip of the event's lines (`voice::first_clips`), when it has voices: line k
     /// then plays clip `story_voice + k` as it comes up (docs/formats.md, "Story lines' voices").
     pub story_voice: Option<u32>,
     /// By the number the event's commands use (a `Chara.xml` row in story events, 10000 and

@@ -713,22 +713,19 @@ first clip, and they run on without gaps: 111 at 12900 (14 lines), 212 at 12914 
 12927 (19), 222 at 12946 (16), 131 at 12962 (44), 232 at 13006 (41), 300 at 13047 (32), 310
 at 13079. The game itself read 12927 for 121's first line. Events whose lines are the same
 scene for the other alchemist share the clips (021 with 121, 022 with 222, 040 with 300), and
-some (011, 012, 031, 032) match nothing well, so they are unvoiced or voiced elsewhere. So a
-story line's clip is its scene's first clip plus its index, the scenes laid end to end in a
-fixed order that is not the files' and not the executable's event list; where that order
-lives in the game is not found yet. Matching sizes to lengths finds it without the game for
-any event with enough lines: `voice::story_start`, and `barrel voice-map INSTALL` runs it over
-every English event (520 with 3 lines or more; 192 match at correlation 0.85 or more, the
-opening's chain among them exactly as the game read it). The weaker matches need checking
-before the engine relies on them. Chaining helps only a little: of the 192 strong ones, 99
-start or end where another strong one does, and growing chains from them (the best-fitting
-event at each chain's end, correlation 0.7 or more) places 13 more, 205 in all of the 521
-events with three lines or more; the strong matches sit in banks 0 to 3 and 10 to 17. Many
-of the rest are unvoiced, and a few placements look doubtful (`MM01_OP1_011` at 10804,
-`_012` at 3153), so another read-log run over other scenes is the way to firm the table up. The viewer
-uses the strong ones: in a window it plays each line's clip from the English banks as the
-line comes up (`stage::Stage::story_voice`; `barrel-view` prints "story voices from clip
-12900 (match 0.89)" for the first opening scene).
+some (011, 012, 031, 032) match nothing well, so they are unvoiced or voiced elsewhere. So a story line's clip is its scene's first
+clip plus its index. The first clips are a table in the executable: an i32 per event in the
+`EVENT_*` order (1,165) at `0x14082d710`, read by `0x140213420 (event)`, -1 for an event without
+voices (`voice::first_clips`). 521 events have voices; the opening's are as the read log found
+(111 at 12900, 121 at 12927, 131 at 12962, 212 at 12914 ...), and 011, 012, 021, 022, 031, 032 and
+040 have none (021, 022 and 040 do not share the other alchemist's clips after all). The
+multi-language executable holds the same table, so the Japanese and English banks share the
+numbering. The viewer plays each line's clip from it as the line comes up
+(`stage::Stage::story_voice`; `barrel-view` prints "story voices from clip 12900" for the first
+opening scene). Matching clip sizes to line lengths (`voice::story_start`) guessed the starts
+before the table was found; `barrel voice-map INSTALL` now compares the two: of its 520 guesses
+135 are the table's, and 111 of the 192 strong ones (correlation 0.85 or more), so it is only a
+cross-check.
 
 **Later games' models.** Ryza 3 adds vertex attribute type 7, four unsigned 16-bit values
 (bone indices in models whose palettes pass 256 slots, and UVs). Escha's rule for bone
