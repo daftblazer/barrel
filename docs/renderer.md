@@ -313,7 +313,8 @@ and zoom about it.
 cross-fade: the stage keeps the latest screen effect and when it started; on the frame a new
 one starts, the last frame's scene image is copied into a "frozen" image before the new frame
 is drawn, and the post pass lays the frozen frame over the live one, its weight falling from
-1 to 0 over the effect's seconds. The other kinds are kept on the stage but not drawn yet.
+1 to 0 over the effect's seconds. The other kinds are kept on the stage but not drawn yet. They are rare: of the `u13`s a raw
+scan of the event files reads (673 of the 2,180), 669 are kind 3 and 4 kind 10 (`PostEffectGamma`).
 
 **Fades.** The stage keeps the latest `u22` fade (preset, seconds, start); the viewer reads
 the presets from the executable and the post pass lays the colour between the preset's two
