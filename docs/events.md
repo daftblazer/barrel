@@ -1574,7 +1574,10 @@ as the `q` cases were, 33 Shallie cases match the Escha case of the same number 
 unambiguous) and none matches a different one but for five that look like generic Escha
 shapes (`s64` to `s66`, `s106`, `s125`, Shallie's additions); both pass by `s22`, `s31`, `s32`,
 `s63`, `s72` to `s77`, `s80`, `s81`, `s105` and `s121`, and Escha also `s78` and `s79`, which
-Shallie runs. So `ebd::shallie_to_escha` leaves the `s` group as it is.
+Shallie runs. So `ebd::shallie_to_escha` leaves the `s` group as it is. The `t` (camera) commands too: both games' `EventExecCamera` slot 8 (Escha
+`0x1401e0f70`, Shallie `0x1402f20f0`) splits them by the same chain of tests, word for word
+(`t24` against the rest, then from `0x74000001` and `0x74000019`, a sub-switch of 13), so
+their numbers have not moved either.
 
 Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
 13,290 of its 162,098 bodies. Its table is measured from its 3,891 events the same way
