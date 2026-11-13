@@ -189,8 +189,12 @@ the game does with a record:
   at +0x70 + 20 × slot in a 0x4e0-byte synthesis state. The game keeps one state per step,
   as an undo history. The value is truncated toward zero before the lookup, and when a step
   changes a slot's effect the screen shows a message (`0x1402fc4b9`). It reads +0x70 + 20 × line,
-  one record past the attribute values at +0x5c + 20 × element that the other code uses;
-  why is still open.
+  one record past the attribute values at +0x5c + 20 × element that the other code uses
+  (`0x140304f2b` writes and caps them at +0x5c, +0x70, +0x84 and +0x98): a slip. The check
+  (`0x1402fc4cd`: the latest state and the one before it, line by line, `0x1402a3bf0` on each)
+  compares line k's effect at element k + 1's value, and line 3's at +0xac, past the four; it
+  only decides when that notice comes up (a change on line k is noticed when element k + 1's
+  value crosses one of line k's steps). The effects the item gets use the right values.
 - **Words 3 and 4, and the levels table**: `0x14029da50` builds `{word 3, value, 2}`, where
   the value comes from a second table at `0x140d196f0`. That table holds 28-byte records:
   `{item, level, id, value, percent, 1.0f, base id}`, ended by -1. There are two levels per
