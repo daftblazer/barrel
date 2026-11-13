@@ -79,6 +79,85 @@ pub fn elements(
     out
 }
 
+/// The world map's panels (the recording `colseit-arrival-60hz.mkv`, 1:15 and 1:25): the
+/// place's name at the top right (637); for a region, the scroll with its description (641's
+/// first text) and the "Map" tab (640's bar, retitled, without the level icon) over its
+/// sectors' list (layout 642's rows and rules at (1442, 228); the description 40 pixels higher
+/// than on the area map's scroll); for the town, no scroll. Not yet
+/// the game's: the list shows every sector, where the game leaves out those not open yet
+/// (Sector Three at the user's 8/20).
+pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str, sectors: &[String], width_of: impl Fn(&str, f32) -> f32) -> Vec<Element> {
+    let texts = |p: &Placed| barrel_formats::layout::text(pe, p);
+    let mut out = Vec::new();
+    for p in barrel_formats::layout::placed(pe, REGION) {
+        if let Some(t) = texts(&p) {
+            out.push(Element::Label(Text { at: moved(&p, REGION_AT), text: name.to_string(), ..t }));
+        }
+    }
+    if description.is_empty() {
+        return out;
+    }
+    out.push(Element::Fill { rect: SCROLL, colour: [0.92, 0.87, 0.72, 0.96] });
+    if let Some((p, t)) = barrel_formats::layout::placed(pe, PANEL).iter().find_map(|p| texts(p).filter(|t| t.filled_in()).map(|t| (p.clone(), t))) {
+        let at = moved(&p, PANEL_AT);
+        for (k, line) in lines(description.trim(), |s| width_of(s, t.size)).into_iter().enumerate() {
+            out.push(Element::Label(Text { at: [at[0], at[1] - WORLD_DESCRIPTION_RISE + LINE_STEP * k as i32], text: line, colour: INK, ..t.clone() }));
+        }
+    }
+    for p in barrel_formats::layout::placed(pe, TAB) {
+        let at = moved(&p, MAP_TAB_AT);
+        match (p.node.part, texts(&p)) {
+            (0x164, Some(t)) => out.push(Element::Label(Text { at, text: "Map".into(), ..t })),
+            (0x69, _) => {}
+            _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
+        }
+    }
+    let mut row = 0;
+    for p in barrel_formats::layout::placed(pe, LIST) {
+        let at = moved(&p, LIST_AT);
+        match (p.node.part, texts(&p)) {
+            (0x164, Some(t)) if t.filled_in() && t.kind == 21 => {
+                if let Some(name) = sectors.get(row) {
+                    out.push(Element::Label(Text { at, text: name.clone(), colour: INK, ..t }));
+                }
+                row += 1;
+            }
+            (0xbe, _) => out.push(Element::Sprite { part: 0xbe, cut: p.node.cut.max(0), at }),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The world map's travel panel (layout 639: "Time", the trip's days, "Date", the arrival's
+/// month / day), under the player while the cursor stands on another place than the start
+/// (the recording: (688, 640)). Not yet the game's: the numbers are text, not 639's digit
+/// sprites (part 0xcf).
+pub fn travel(pe: &barrel_formats::pe::Pe, days: i32, month: u32, day: u32) -> Vec<Element> {
+    let mut out = Vec::new();
+    for p in barrel_formats::layout::placed(pe, TRAVEL) {
+        let at = moved(&p, TRAVEL_AT);
+        match (p.node.part, barrel_formats::layout::text(pe, &p)) {
+            (0x164, Some(t)) if !t.text.is_empty() => out.push(Element::Label(Text { at, ..t })),
+            (0x164, _) | (0xcf, _) => {}
+            _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
+        }
+    }
+    let number = |text: String, y: i32| Element::Label(Text { at: [TRAVEL_AT[0] + TRAVEL_NUMBER_X, TRAVEL_AT[1] + y], size: 36.0, colour: [0, 0, 0, 0], text, kind: 23 });
+    out.push(number(days.to_string(), 12));
+    out.push(number(format!("{month}/{day}"), 76));
+    out
+}
+
+const TRAVEL: u32 = 639;
+const TRAVEL_AT: [i32; 2] = [688, 640];
+const TRAVEL_NUMBER_X: i32 = 352;
+const LIST: u32 = 642;
+const LIST_AT: [i32; 2] = [1442, 228];
+/// The world scroll's description stands this much higher than the area map's.
+const WORLD_DESCRIPTION_RISE: i32 = 40;
+const MAP_TAB_AT: [i32; 2] = [1448, 276];
+
 /// A neighbour's label (layout 638: its text centred), on a plate whose centre stands
 /// [`LABEL_ABOVE`] over the label's place `at` (its route's dot).
 /// Not yet the game's: the plate (a parchment fill; the game's has gilt ends) and the ink

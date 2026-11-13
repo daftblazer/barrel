@@ -1118,12 +1118,14 @@ struct AreaMap {
     layer: text::Layer,
     font: text::Font,
     sheets: hud::Sheets,
-    shown: Option<(usize, u32, u32, bool)>,
+    shown: Option<(usize, u32, u32, bool, Option<(i32, u32, u32)>)>,
     pe_bytes: Vec<u8>,
     /// The world map (the town and the regions, kind 0) rather than a region's area map, and
     /// the place the cursor started on (a trip's start).
     world: bool,
     from: usize,
+    /// The world map's routes (a trip's days), on the world map.
+    trips: Option<barrel_game::travel::WorldMap>,
 }
 
 impl AreaMap {
@@ -1158,7 +1160,10 @@ impl AreaMap {
         let image = atlas.textures.first().ok_or("an empty font atlas")?;
         let font = text::Font { glyphs, size: image.width as f32 };
         // The panels' sheets, as any place's panels use them.
-        let keys = screen::sheet_keys(&pe, area_panel::elements(&pe, "", "", "", |_, _| 0.0));
+        let mut all = area_panel::elements(&pe, "", "", "", |_, _| 0.0);
+        all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
+        all.extend(area_panel::travel(&pe, 0, 1, 1));
+        let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
         let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
         let mut images = vec![image];
@@ -1171,7 +1176,8 @@ impl AreaMap {
         }
         let layer = text::Layer::new(gpu, pool, pass, &images)?;
         drop(images);
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at })
+        let trips = if world { barrel_game::travel::WorldMap::load(&pe, &placements) } else { None };
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -1230,17 +1236,35 @@ impl AreaMap {
             .collect()
     }
 
+    /// On the world map with the cursor away from where it started, the trip's days there
+    /// (`seen`: the events seen, which shorten some routes).
+    fn trip_days(&self, seen: impl Fn(u32) -> bool) -> Option<i32> {
+        let map = self.trips.as_ref().filter(|_| self.at != self.from)?;
+        map.trip(&self.places[self.from].tag, &self.places[self.at].tag, seen).map(|(d, _)| d)
+    }
+
     /// The panels for the place she stands on, redrawn when it changes; with the camera's
-    /// `mvp` (she stands still) the neighbours' labels too.
-    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>) -> Result<()> {
-        if self.shown == Some((self.at, width, height, mvp.is_some())) {
+    /// `mvp` (she stands still) the neighbours' labels too; on the world map, `trip` (days,
+    /// arrival month and day) shows the travel panel.
+    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>) -> Result<()> {
+        if self.shown == Some((self.at, width, height, mvp.is_some(), trip)) {
             return Ok(());
         }
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
         let p = &self.places[self.at];
         let font = &self.font;
         let measure = |s: &str, size: f32| font.width_of(s) * size / text::LINE * 1.47;
-        let mut e = area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, measure);
+        let mut e = if self.world {
+            let sector = format!("{}p", p.tag);
+            let sectors: Vec<String> = self.places.iter().filter(|q| q.kind == 1 && q.tag.starts_with(&sector)).map(|q| q.name.clone()).collect();
+            let mut e = area_panel::world_elements(&pe, &p.name, &p.description, &sectors, measure);
+            if let Some((days, month, day)) = trip {
+                e.extend(area_panel::travel(&pe, days, month, day));
+            }
+            e
+        } else {
+            area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, measure)
+        };
         if let Some(mvp) = mvp {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
             let k = height as f32 / 1080.0;
@@ -1256,7 +1280,7 @@ impl AreaMap {
             }
         }
         self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &self.sheets, &e, width as f32, height as f32))?;
-        self.shown = Some((self.at, width, height, mvp.is_some()));
+        self.shown = Some((self.at, width, height, mvp.is_some(), trip));
         Ok(())
     }
 }
@@ -5409,7 +5433,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         // The neighbours' labels stand while she stands on a point.
         let still = walker.as_ref().is_some_and(|w| w.waypoints.is_empty());
         let mvp = still.then(|| view_proj(eye, target, Vec3::Y, dist, fov, width, height, orbit));
-        a.panel(&gpu, width, height, mvp)?;
+        let seen = session.as_ref().map(|s| s.seen()).unwrap_or_default();
+        let today = session.as_ref().map_or(0, |s| s.today().max(0) as u32);
+        let trip = a.trip_days(|e| seen.get(e as usize).copied().unwrap_or(false)).map(|d| {
+            let v = hud::Values::on(today + d.max(0) as u32, 0);
+            (d, v.month, v.day)
+        });
+        a.panel(&gpu, width, height, mvp, trip)?;
     }
     if area_enter.is_some() {
         stop = true;
