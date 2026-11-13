@@ -583,21 +583,34 @@ fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
 }
 
 /// Walks a character (radius 30, 160 tall) from (X, Y, Z) by (DX, DZ) each step for STEPS
-/// steps against FIELD_DIR's walls (`game::walk`), printing where it stands.
+/// steps against FIELD_DIR's walls, on its ground (`game::walk`), printing where it stands.
 fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> {
     let name = dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
     let bytes = read(&dir.join(format!("{name}.elixir.gz")))?;
     let container = Elixir::parse(&bytes)?;
     let entry = container.entries.iter().find(|e| e.name.ends_with("_col.g1co")).ok_or("the field has no collision")?;
-    let walls = barrel_game::walk::Walls::new(&barrel_formats::g1co::parse(container.data(entry))?);
+    let collision = barrel_formats::g1co::parse(container.data(entry))?;
+    let walls = barrel_game::walk::Walls::new(&collision);
+    let heightmap = container.entries.iter().find(|e| e.name.ends_with(".khm")).and_then(|e| barrel_formats::khm::parse(container.data(e)).ok());
+    let ground = barrel_game::walk::Ground::new(heightmap, &collision);
     let [x, y, z] = at.map(|v| v.parse::<f32>());
-    let (mut p, y) = ([x?, z?], y?);
+    let (mut p, mut y) = ([x?, z?], y?);
     let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];
     for k in 0..steps.parse::<usize>()? {
         let next = walls.step(p, d, y, 160.0, 30.0);
         let blocked = (next[0] - p[0] - d[0]).abs() > 0.01 || (next[1] - p[1] - d[1]).abs() > 0.01;
-        println!("{k:4}: ({:.1}, {:.1}){}", next[0], next[1], if blocked { "  (against a wall)" } else { "" });
-        p = next;
+        // Stand on the ground there (a step up of at most 50); nothing under it: stay put.
+        match ground.height(next[0], next[1], y, 50.0) {
+            Some(h) => {
+                y = h;
+                p = next;
+            }
+            None => {
+                println!("{k:4}: ({:.1}, {:.1}) no ground ahead, stays", p[0], p[1]);
+                continue;
+            }
+        }
+        println!("{k:4}: ({:.1}, {:.1}, {y:.1}){}", p[0], p[1], if blocked { "  (against a wall)" } else { "" });
     }
     Ok(())
 }

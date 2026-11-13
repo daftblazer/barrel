@@ -88,6 +88,54 @@ impl Walls {
     }
 }
 
+/// The ground a character stands on: the field's heightmap (`<AREA>.khm`) and the collision
+/// mesh's floors (its triangles that are not upright).
+pub struct Ground {
+    heightmap: Option<barrel_formats::khm::Heightmap>,
+    floors: Vec<[[f32; 3]; 3]>,
+}
+
+impl Ground {
+    pub fn new(heightmap: Option<barrel_formats::khm::Heightmap>, c: &Collision) -> Ground {
+        let floors = c.triangles.iter().map(|t| t.map(|i| c.vertices[i as usize])).filter(|v| wall(*v).is_none()).collect();
+        Ground { heightmap, floors }
+    }
+
+    /// The heightmap's height at (x, z), bilinear between its vertices; none outside it.
+    fn terrain(&self, x: f32, z: f32) -> Option<f32> {
+        let h = self.heightmap.as_ref()?;
+        let (fx, fz) = (x / h.cell_size, z / h.cell_size);
+        if fx < 0.0 || fz < 0.0 || fx >= h.cells_x as f32 || fz >= h.cells_z as f32 {
+            return None;
+        }
+        let (ix, iz) = (fx as usize, fz as usize);
+        let (tx, tz) = (fx - ix as f32, fz - iz as f32);
+        let row = |z: usize| h.height(ix, z) * (1.0 - tx) + h.height(ix + 1, z) * tx;
+        Some(row(iz) * (1.0 - tz) + row(iz + 1) * tz)
+    }
+
+    /// Where a character with its feet at `y` stands at (x, z): the highest of the heightmap and
+    /// the floors under it that is no more than `step_up` above its feet (higher is a ledge it
+    /// does not climb); none if there is nothing under it.
+    pub fn height(&self, x: f32, z: f32, y: f32, step_up: f32) -> Option<f32> {
+        let floors = self.floors.iter().filter_map(|t| floor_height(t, x, z));
+        self.terrain(x, z).into_iter().chain(floors).filter(|&h| h <= y + step_up).fold(None, |best, h| Some(best.map_or(h, |b: f32| b.max(h))))
+    }
+}
+
+/// The height of a floor triangle at (x, z), if (x, z) is over it.
+fn floor_height(t: &[[f32; 3]; 3], x: f32, z: f32) -> Option<f32> {
+    let [a, b, c] = *t;
+    let d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+    if d.abs() < 1e-6 {
+        return None;
+    }
+    let l1 = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d;
+    let l2 = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d;
+    let l3 = 1.0 - l1 - l2;
+    (l1 >= -1e-4 && l2 >= -1e-4 && l3 >= -1e-4).then(|| l1 * a[1] + l2 * b[1] + l3 * c[1])
+}
+
 /// An upright triangle as a wall: its longest edge seen from above, and its heights.
 fn wall(v: [[f32; 3]; 3]) -> Option<Wall> {
     let (e1, e2) = ([v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]], [v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]]);
@@ -140,6 +188,20 @@ mod tests {
         // Walking diagonally into it keeps the move along it.
         let p = one_wall().step([0.0, 40.0], [50.0, -50.0], 0.0, 150.0, 30.0);
         assert!((p[0] - 50.0).abs() < 1e-3 && (p[1] - 30.0).abs() < 1e-3, "{p:?}");
+    }
+
+    #[test]
+    fn the_ground_is_the_highest_floor_within_a_step() {
+        // A floor 100 high over x 0..100, z 0..100 (two triangles), no heightmap.
+        let c = Collision {
+            nodes: vec![],
+            triangles: vec![[0, 1, 2], [2, 1, 3]],
+            vertices: vec![[0.0, 100.0, 0.0], [100.0, 100.0, 0.0], [0.0, 100.0, 100.0], [100.0, 100.0, 100.0]],
+        };
+        let g = Ground::new(None, &c);
+        assert_eq!(g.height(50.0, 50.0, 90.0, 30.0), Some(100.0), "a step up onto it");
+        assert_eq!(g.height(50.0, 50.0, 0.0, 30.0), None, "too high a ledge from the bottom");
+        assert_eq!(g.height(150.0, 50.0, 100.0, 30.0), None, "off its edge");
     }
 
     #[test]

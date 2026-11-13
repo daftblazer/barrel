@@ -330,7 +330,11 @@ at the wall near z = 11,347 and slides along it). The game moves characters thro
 collision engine (`elixir::EXCollisionScene` over ktgl's broad and narrow phases, `S_CE_BNP_INPUT`
 and `_OUTPUT`), which is not read: the radius (the character's `FMrad` in `CharaBase.xml`, 30
 here), the height, the steps and how corners and slopes are taken are this module's, to be
-replaced by the game's once read. Floors and the heightmap are not followed yet.
+replaced by the game's once read. The ground (`game::walk::Ground`) is the highest of the
+heightmap (`<AREA>.khm`, bilinear between its vertices) and the collision mesh's floors (its
+triangles that are not upright) under the character and no more than a step (50 here) above its
+feet; with nothing under it the walk does not move (`barrel walk` across AREA_01_01 from (3000,
+3000) eastward goes over the valley floor between heights 0 and 46).
 
 ## Movies (open)
 
