@@ -999,7 +999,8 @@ fn shop_visit(
     let cost = |item: i32| usize::try_from(item).ok().and_then(|i| item_rows.children.get(i)).and_then(|r| r.attr("cost")).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
     let basket: Vec<(String, f32, i32)> = s.basket.iter().map(|g| (book.name(g.item).to_string(), g.quality, barrel_game::synthesis::worth(cost(g.item), g.quality, &[]))).collect();
     let name = shown.first().map_or(shop.to_string(), |w| w.shop_name.clone());
-    let lists = shopping::lists(&name, &shown, s.money, &basket);
+    let held = |w: &barrel_game::shop::Ware| item_number(&w.item).map_or(0, |i| s.basket.iter().filter(|g| g.item == i).count() as i32);
+    let lists = shopping::lists(&name, &shown, s.money, &basket, held);
     match shopping::run(gpu, pool, target, window, offscreen, root, &lists, keys, out)? {
         Some(shopping::Deal::Buy(k)) => {
             let w = shown[k];

@@ -2,14 +2,24 @@
 //! list price (`shop::list_price`), or sell one of the basket's items at its worth
 //! (`Session::sell`); left and right change between the two lists.
 //!
-//! Not yet the game's: plain text over the main menu's desk (layout 383); the game's shop screen
-//! (likely layout 664 with the amount dialog 660, `docs/formats.md`, not checked against the
-//! running game) is not drawn yet; one item a visit, no amounts, no stock kept or refilled, the
-//! bought items at the ware's quality with none of its effects or traits.
+//! Buying is drawn from the game's shop screen, layout 664 (`docs/formats.md`; not checked
+//! against the running game, which the copied save cannot reach a shop in): over the desk
+//! (383), the title bar with the shop's name (371), the help bar (372), the money box (370,
+//! part 0x4d digits), the product list (662: the panel with its "Product Name / Inventory /
+//! Possession / Price" heading, 657, and a row, 661, repeated every 52 pixels: the lit bar,
+//! part 0x94, on the chosen one, the name, the count held, part 0x4e, and the price, part 0x50,
+//! with the coin) and the Price / Total panel (659).
+//!
+//! Not yet the game's: the numbers on rows not chosen are white on the parchment (the game
+//! presumably tints them); a five-digit price runs into the Possession column; the Inventory column (no stock kept or refilled) and the "New" tags are
+//! left out; the item card (752), the party's "E" marks (446) and the Amount dialog (660) are
+//! not drawn (one item a deal); the help line's wording; selling is plain text over the desk
+//! (the game's grid, 568, not drawn); the bought items at the ware's quality with none of its
+//! effects or traits.
 
 use std::path::Path;
 
-use barrel_formats::layout::Text;
+use barrel_formats::layout::{Placed, Text};
 use barrel_game::shop::Ware;
 
 use crate::hud::{self, Element};
@@ -42,12 +52,100 @@ pub struct Line {
     pub can: bool,
 }
 
+/// A ware's row in the product list.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Row {
+    pub name: String,
+    pub held: i32,
+    pub price: i32,
+}
+
 /// What the screen shows.
 pub struct Lists {
     pub shop: String,
     pub money: i32,
     pub buy: Vec<Line>,
+    pub rows: Vec<Row>,
     pub sell: Vec<Line>,
+}
+
+pub const LAYOUT: u32 = 664;
+const TITLE: u32 = 371;
+const HELP: u32 = 372;
+const MONEY: u32 = 370;
+const LIST: u32 = 662;
+const ROW: u32 = 661;
+const TOTALS: u32 = 659;
+/// The rows' spacing and how many the panel holds.
+const ROW_STEP: i32 = 52;
+const ROWS: usize = 11;
+const LIT_BAR: i32 = 0x94;
+const HELD_DIGITS: i32 = 0x4e;
+const PRICE_DIGITS: i32 = 0x50;
+const MONEY_DIGITS: i32 = 0x4d;
+const DIGIT_ADVANCE: i32 = 24;
+/// The Inventory column's number (x 418) and the "New" tag (part 0x95 cut 4), left out.
+const INVENTORY_X: i32 = 418;
+
+/// A number's digits ending at `end` (as the game's kind 28 numbers).
+fn digits(value: i32, part: i32, end: i32, y: i32) -> Vec<Element> {
+    let d: Vec<i32> = value.max(0).to_string().bytes().map(|b| i32::from(b - b'0')).collect();
+    let n = d.len() as i32;
+    d.into_iter().enumerate().map(|(i, c)| Element::Sprite { part, cut: c, at: [end - DIGIT_ADVANCE * (n - i as i32), y] }).collect()
+}
+
+/// The buying view from layout 664's placed nodes (`texts` gives a node's text).
+pub fn buy_elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, l: &Lists, chosen: usize, first: usize) -> Vec<Element> {
+    let mut out = Vec::new();
+    let price = l.rows.get(chosen).map_or(0, |r| r.price);
+    for p in nodes {
+        let n = p.node;
+        let Some(&branch) = p.path.get(1) else { continue };
+        match branch {
+            TITLE | HELP if n.part == 0x164 => {
+                if let Some(t) = texts(p) {
+                    let text = if branch == TITLE { l.shop.clone() } else { "Up / Down: choose   Enter: buy   Left / Right: sell   Esc: leave".into() };
+                    out.push(Element::Label(Text { text, ..t }));
+                }
+            }
+            MONEY if n.part == MONEY_DIGITS && n.kind == 28 => out.extend(digits(l.money, MONEY_DIGITS, p.at[0], p.at[1])),
+            TOTALS if n.part == MONEY_DIGITS && n.kind == 28 => {
+                out.extend(digits(price, MONEY_DIGITS, p.at[0], p.at[1]));
+            }
+            LIST if p.path.contains(&ROW) => {
+                for (slot, k) in (first..l.rows.len()).take(ROWS).enumerate() {
+                    let r = &l.rows[k];
+                    let dy = ROW_STEP * slot as i32;
+                    let at = [p.at[0], p.at[1] + dy];
+                    match n.part {
+                        LIT_BAR if k != chosen => {}
+                        // The row's dark backing goes with the lit bar (the chosen row only).
+                        0x95 if n.cut == 2 && k != chosen => {}
+                        0x95 if n.cut == 4 => {}
+                        0x164 => {
+                            if let Some(t) = texts(p) {
+                                let can = l.buy.get(k).is_some_and(|b| b.can);
+                                let colour = match (k == chosen, can) {
+                                    (true, true) => [0xff; 4],
+                                    (true, false) => [0xff, 0xb0, 0xb0, 0xb0],
+                                    (false, true) => t.colour,
+                                    (false, false) => [0xff, 0x80, 0x80, 0x80],
+                                };
+                                out.push(Element::Label(Text { text: r.name.clone(), at, colour, ..t }));
+                            }
+                        }
+                        HELD_DIGITS if n.kind == 28 && p.at[0] == INVENTORY_X => {}
+                        HELD_DIGITS if n.kind == 28 => out.extend(digits(r.held, HELD_DIGITS, at[0], at[1])),
+                        PRICE_DIGITS if n.kind == 28 => out.extend(digits(r.price, PRICE_DIGITS, at[0], at[1])),
+                        _ => out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at }),
+                    }
+                }
+            }
+            TITLE | HELP | MONEY | TOTALS | LIST if n.part != 0x164 => out.push(Element::stored(p)),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Where the screen is: the list (false buying, true selling), the chosen line and the first
@@ -68,7 +166,8 @@ impl Shop {
         match b {
             Button::Up | Button::Down if n > 0 => {
                 self.chosen = if b == Button::Up { (self.chosen + n - 1) % n } else { (self.chosen + 1) % n };
-                self.first = if self.chosen < self.first { self.chosen } else if self.chosen >= self.first + VISIBLE { self.chosen + 1 - VISIBLE } else { self.first };
+                let visible = if self.selling { VISIBLE } else { ROWS };
+                self.first = if self.chosen < self.first { self.chosen } else if self.chosen >= self.first + visible { self.chosen + 1 - visible } else { self.first };
                 None
             }
             Button::Left | Button::Right => {
@@ -79,6 +178,11 @@ impl Shop {
             Button::Back => Some(None),
             _ => None,
         }
+    }
+
+    /// The view: buying from the game's layout (its nodes given), selling as text.
+    pub fn view(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, l: &Lists) -> Vec<Element> {
+        if self.selling { self.elements(l) } else { buy_elements(nodes, texts, l, self.chosen, self.first) }
     }
 
     pub fn elements(&self, l: &Lists) -> Vec<Element> {
@@ -99,15 +203,16 @@ impl Shop {
     }
 }
 
-/// The lines of a shop's lists: its wares on sale (name, price, whether the money covers it) and
-/// the basket's items (name, quality, worth).
-pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)]) -> Lists {
+/// The lines of a shop's lists: its wares on sale (name, price, whether the money covers it,
+/// how many the basket holds: `held(ware)`) and the basket's items (name, quality, worth).
+pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)], held: impl Fn(&Ware) -> i32) -> Lists {
     let buy = wares.iter().map(|w| {
         let price = barrel_game::shop::list_price(w);
         Line { text: format!("{}   {} cole", w.item_name, price), can: price <= money }
     });
+    let rows = wares.iter().map(|w| Row { name: w.item_name.clone(), held: held(w), price: barrel_game::shop::list_price(w) });
     let sell = basket.iter().map(|(name, quality, worth)| Line { text: format!("{name}   quality {quality:.0}   {worth} cole"), can: true });
-    Lists { shop: shop.to_string(), money, buy: buy.collect(), sell: sell.collect() }
+    Lists { shop: shop.to_string(), money, buy: buy.collect(), rows: rows.collect(), sell: sell.collect() }
 }
 
 /// Runs the screen over the desk; the deal made, if any.
@@ -130,7 +235,13 @@ pub fn run(
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("shop: an empty font atlas")?.width as f32 };
     let desk: Vec<Element> = barrel_formats::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
-    let keys_needed = screen::sheet_keys(&pe, desk.clone());
+    let nodes = barrel_formats::layout::placed(&pe, LAYOUT);
+    let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
+    let mut every = desk.clone();
+    every.extend(buy_elements(&nodes, texts, l, 0, 0));
+    every.extend([HELD_DIGITS, PRICE_DIGITS, MONEY_DIGITS].iter().flat_map(|&part| (0..10).map(move |cut| Element::Sprite { part, cut, at: [0, 0] })));
+    every.extend(nodes.iter().filter(|p| p.node.part == LIT_BAR).map(Element::stored));
+    let keys_needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
     let mut images = vec![&atlas.textures[0]];
@@ -144,7 +255,7 @@ pub fn run(
     let (w, h) = (target.width as f32, target.height as f32);
     let quads = |s: &Shop| {
         let mut e = desk.clone();
-        e.extend(s.elements(l));
+        e.extend(s.view(&nodes, texts, l));
         hud::quads(&pe, Some(&font), &sheets, &e, w, h)
     };
     let press = |s: &mut Shop, b: Button| s.press(b, l);
@@ -158,7 +269,7 @@ mod tests {
 
     #[test]
     fn buying_needs_the_money_and_selling_is_a_side_step_away() {
-        let l = Lists { shop: "Shop".into(), money: 50, buy: vec![Line { text: "a".into(), can: false }, Line { text: "b".into(), can: true }], sell: vec![Line { text: "c".into(), can: true }] };
+        let l = Lists { shop: "Shop".into(), money: 50, rows: Vec::new(), buy: vec![Line { text: "a".into(), can: false }, Line { text: "b".into(), can: true }], sell: vec![Line { text: "c".into(), can: true }] };
         let mut s = Shop { selling: false, chosen: 0, first: 0 };
         assert_eq!(s.press(Button::Confirm, &l), None, "too dear: nothing");
         s.press(Button::Down, &l);

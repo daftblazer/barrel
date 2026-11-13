@@ -1558,7 +1558,17 @@ no layout holds it, nor a grid of the drops screen's shape (five by six, a scrol
 headings; layouts 404, 445, 685, 791 and 815 checked), so the screen is put together at run
 time.
 
-**The shop screen** is likely layout 664 (not confirmed against the running game): an item
+**The shop screen** is layout 664 (its pieces fit a shop throughout; not seen in the running
+game). Its branches: 371 the title bar (a text at 570, 40), 372 the help bar (a kind 23 text
+ending at 1856, 1012), 370 the money box (coin, a part 0x4d number ending at 628, 168), 662 the
+product list (657: the panel, its heading sprite "Product Name / Inventory / Possession /
+Price", eleven ruled rows from y 354, 52 apart; 661: one row at y 318, the lit bar part 0x94,
+its dark backing part 0x95 cut 2, the "New" tag part 0x95 cut 4, the name at 116, 340, the
+stock and the count held as part 0x4e numbers ending at x 418 and 492, the price as a part
+0x50 number ending at 602 beside the coin, part 0x116 cut 8), 659 the Price / Total panel
+(two part 0x4d numbers ending at 592, at y 864 and 918), 568 the selling grid, 752 the item
+card, 446 the party's "E" marks (who can equip it), 660 the Amount dialog and 530 a notice at
+the top left. Before this was read it was described as an item
 grid with "Empty" slots for the basket and the container, the chosen item's card (its name,
 "Alchemy LV", "Equip. Cost", "EFF", "Stats", "Effect", "Item Info" with trait and effect lines),
 twelve slots of part 0x1be at the right (x 1200 and 1340, every 110 or so from y 280) and the
