@@ -276,7 +276,17 @@ the time (0.5 s between event stills); the viewer fades the new one in over the 
 **Labels and jumps.** `u3 {n}` marks label `n` in its action (an action's labels are found
 by scanning its words, `0x14020fcd6`); `u5 {n}` goes on from label `n` at once
 (`0x140210be0` → `0x14020fd80` sets the running action's next command, +0x8), `u6 {a, b}`
-from label `a + b`. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
+from label `a + b`. An event has 20 variables (the event data's +0x94, `0x140210cf0` sets one,
+`0x140210d10` reads one), which the jumps can test: `u8 {first, v}` goes on from label
+`first + v`'s value, `u9 {first, v, c}` (case `0x140051499`) from `first + 1` when v's value is
+above `c` and from `first` otherwise, `u10 {first, v, c}` (case `0x1400514bf`) from `first`
+when it equals `c` and from `first + 1` otherwise. They are set from questions the event asks
+its listeners: `u80 {v}` (v 10 when not given) takes the item picked in the event's item
+selection (`0x7600001b`, answered by `EventItemSelectGameMode`), `u82 {v}` the answer to
+`0x7600001c` and `u130 {v, a}` to `0x7600001d {a}` (who answers those two is not read).
+`u7 {n}` goes on from label base + `n`, the base being the runner's +0x5c (none when it is
+negative; where it is set is not read). These `u9` and `u10` are group 0x75's, not the setup
+markers below. `EVENT_MM01_OP1_111` ends with a fade to black, everyone removed, then
 `u5 99`, which jumps over starting actions 64 and 65 (Escha placed in town, the camera handed
 back to play, a fade in) to `u3 99` at the end: that part is reached some other way
 (skipping the event, presumably). `u9`/`u10/0x40` (3,628 uses each, no operands) bracket each
@@ -939,8 +949,8 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `75000002` | `u2` | (the setup's preload) | Event (`0x140050fa0`, table at `0x52ddc`/`0x52cf0`, case `0x140051b43`): `u2 {n}` gathers the list `0x140213460 (n)` builds from the 14 lists at `0x14082eb00` and goes through it; see "the event's setup action" | 741 | 1 (741) |
 | `75000003` | `u3` | (label) | Event: `u3 {n}` marks label `n`; its case does nothing when run ("Labels and jumps") | 1297 | 1 (1297) |
 | `75000005` | `u5` | (jump) | Event (case `0x140051435`): `u5 {n}` goes on from label `n` (`0x140210be0`; "Labels and jumps") | 806 | 1 (806) |
-| `75000007` | `u7` |  | Event (case `0x14005145a` of `0x140050fa0`'s switch) | 199 | 1 (199) |
-| `75000008` | `u8` |  | Event (case `0x14005147a` of `0x140050fa0`'s switch) | 99 | 3 (99) |
+| `75000007` | `u7` | (jump: `{n}` to label base + n) | Event (case `0x14005145a` of `0x140050fa0`'s switch): the base is the runner's +0x5c, nothing when it is negative (where it is set is not read) | 199 | 1 (199) |
+| `75000008` | `u8` | (jump: `{first, v}` to label first + variable v) | Event (case `0x14005147a` of `0x140050fa0`'s switch; "Labels and jumps") | 99 | 3 (99) |
 | `7500000b` | `u11` | ECT_EVENT_SET_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 339 | 6 (339) |
 | `7500000c` | `u12` | ECT_EVENT_WAIT_TIME_EFFECT | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 66 | 1 (66) |
 | `7500000d` | `u13` | ECT_EVENT_SET_POST_EFFECT | `PostEffectManager` (`0x140331bf0` → `0x140331220`; "Screen effects") | 2180 | 8 (1319), 4 (861) |
@@ -978,7 +988,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `7500006a` | `u106` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 2 | 0 (2) |
 | `7500006b` | `u107` |  | Event (case `0x1400515cc` of `0x140050fa0`'s switch) | 9 | 1 (9) |
 | `7500006c` | `u108` |  | Event (its case in `0x140050fa0`'s switch does nothing; done before or by listeners) | 9 | 0 (9) |
-| `75000082` | `u130` |  | Event (case `0x14005201f` of `0x140050fa0`'s switch) | 2 | 2 (2) |
+| `75000082` | `u130` | (`{v, a}`: variable v = the answer to `0x7600001d {a}`) | Event (case `0x14005201f` of `0x140050fa0`'s switch; who answers is not read) | 2 | 2 (2) |
 | `75000086` | `u134` |  | Event (case `0x140051dbb` of `0x140050fa0`'s switch) | 22 | 1 (22) |
 | `75000087` | `u135` |  | Event (case `0x140051dd9` of `0x140050fa0`'s switch) | 5 | 0 (5) |
 | `75000088` | `u136` |  | Event (case `0x140051e40` of `0x140050fa0`'s switch) | 5 | 0 (5) |
