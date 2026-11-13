@@ -2568,6 +2568,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     files.sort();
     let mut terrains = 0usize;
     let mut layers: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut blends: BTreeMap<(usize, usize), usize> = BTreeMap::new();
     let mut failed = Vec::new();
     for path in &files {
         let bytes = read(path)?;
@@ -2580,12 +2581,14 @@ fn ktf_scan(dir: &Path) -> Result<()> {
                 Ok(t) => {
                     terrains += 1;
                     *layers.entry(t.layers.textures.len()).or_default() += 1;
+                    *blends.entry((t.layers.textures.len(), t.blend.textures.len())).or_default() += 1;
                 }
                 Err(err) => failed.push(format!("{}#{i}: {err}", path.display())),
             }
         }
     }
     println!("{terrains} terrains, {} failed; layer counts {layers:?}", failed.len());
+    println!("(layers, blend maps) {blends:?}");
     for f in failed.iter().take(20) {
         println!("failed: {f}");
     }

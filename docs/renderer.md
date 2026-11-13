@@ -132,7 +132,16 @@ view, which keeps no depth, so wherever the distant view's ground reached (the t
 `TOWN_05`) it painted over the terrain as one flat colour. `BARREL_HIDE=sky:` showed the terrain
 textured underneath. The terrain now draws after the distant view, with the shared push constants
 and instance set put back for the field's models after it. `AREA_01_01` looks as before. The
-`.ktf`'s blend section holds six BC1 maps, not two; the viewer uses the first two.
+`.ktf`'s blend section does not hold a fixed two maps. Over the 141 terrains (`barrel
+ktf-scan`), the number of blend maps does not follow the number of layers:
+
+- `TOWN_04`: 6 layers and 6 maps.
+- Elsewhere: 10 layers with 1 map, 4 layers with 5 maps.
+
+So the maps' channels are not simply layers 0 to 5. The patch tree between 0x98 and the layer
+textures must say which map and channels each patch uses for which layers. The viewer still
+blends the first two maps over the first six layers, which is right only where that happens
+to match. Reading the patch tree is open.
 
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
