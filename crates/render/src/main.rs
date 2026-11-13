@@ -2375,6 +2375,11 @@ fn main() -> Result<()> {
     let mut timings = false;
     let mut hero = 0u32;
     let mut free_play = false;
+    // --save FILE: where F5 (or `BARREL_SAVE_AT=FRAME`) saves in free play; --load FILE: start
+    // in free play from such a save.
+    let mut save_file = None::<PathBuf>;
+    let mut new_game = None::<PathBuf>;
+    let mut load_file = None::<PathBuf>;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
@@ -2515,6 +2520,11 @@ fn main() -> Result<()> {
             // --free-play (with --chain): when no event starts any more, the hero walks freely
             // in the field the last event left them in, from where they stood at its end.
             "--free-play" => free_play = true,
+            // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
+            // choice starts (`--hero`), the story after it, then free play.
+            "--new-game" => new_game = Some(PathBuf::from(it.next().ok_or("--new-game ROOT")?)),
+            "--save" => save_file = Some(PathBuf::from(it.next().ok_or("--save FILE")?)),
+            "--load" => load_file = Some(PathBuf::from(it.next().ok_or("--load FILE")?)),
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -2536,6 +2546,14 @@ fn main() -> Result<()> {
     let color_format = presenter.as_ref().map_or(COLOR_FORMAT, |p| p.format);
     if let Some(p) = &presenter {
         eprintln!("window: {width}x{height}, {:?}, {} swapchain images", p.format, p.images.len());
+    }
+    if let Some(root) = &new_game {
+        let first = barrel_game::event_start::new_game_event(hero == 1, false);
+        event_spec = Some(root.join("Event/event").join(barrel_game::event_start::event_file(first)).to_string_lossy().into_owned());
+        args[1] = "auto".into();
+        chain_on = true;
+        free_play = true;
+        eprintln!("new game: {first}");
     }
     let frames = window_frames.unwrap_or(frames);
     let d = &gpu.device;
@@ -2967,6 +2985,22 @@ fn main() -> Result<()> {
         }
         _ => None,
     };
+    // The story in free play (after `--free-play`, or from `--load`), for saving.
+    let mut session: Option<barrel_game::session::Session> = None;
+    if let Some(file) = &load_file {
+        let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--load: give --field with a field of the game install")?.to_path_buf();
+        let text = std::fs::read_to_string(file)?;
+        let (s, at) = barrel_game::session::Session::load(story_chain(&root)?, &text)?;
+        let barrel_game::session::Scene::Field(map) = *s.scene() else { return Err("--load: the save is not in free play".into()) };
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let names = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&exe)?);
+        let name = names.get(map as usize).ok_or("--load: no such field map")?;
+        args[1] = root.join("Data/x64/Field").join(name).to_string_lossy().into_owned();
+        player_at = Some(at);
+        hero = u32::from(s.logy);
+        eprintln!("loaded {}: field {map} ({name}) at ({:.0}, {:.0}), {}", file.display(), at[0], at[1], if s.logy { "Logy" } else { "Escha" });
+        session = Some(s);
+    }
     let mut current_event = event_spec.clone();
     let mut frame_base = 0u32;
     let mut first_event = true;
@@ -3497,6 +3531,7 @@ fn main() -> Result<()> {
     // A jump asked for this frame (J, or `BARREL_JUMP_AT`).
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
+    let mut save_now = std::env::var("BARREL_SAVE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     if let Some(p) = pump.as_mut() {
         if !p.pump() {
             eprintln!("window closed after {frame} frames");
@@ -3517,6 +3552,7 @@ fn main() -> Result<()> {
                 KeyCode::KeyR => orbit = (0.0, 0.0, 1.0),
                 KeyCode::KeyJ => jump_now = true,
                 KeyCode::KeyK => strike_now = true,
+                KeyCode::F5 => save_now = true,
                 KeyCode::KeyT => {
                     if let Some(w) = walker.as_mut() {
                         w.run_on = !w.run_on;
@@ -3706,6 +3742,17 @@ fn main() -> Result<()> {
                     }
                 }
             }
+        // F5 (or `BARREL_SAVE_AT`): the session saved where she stands (`--save FILE`).
+        if save_now {
+            match (session.as_ref().and_then(|s| s.save([w.pos[0], w.pos[2]])), &save_file) {
+                (Some(text), Some(file)) => match std::fs::write(file, text) {
+                    Ok(()) => eprintln!("frame {frame}: saved to {}", file.display()),
+                    Err(e) => eprintln!("frame {frame}: saving to {} failed: {e}", file.display()),
+                },
+                (None, _) => eprintln!("frame {frame}: nothing to save (no story in free play)"),
+                (_, None) => eprintln!("frame {frame}: no --save FILE to save to"),
+            }
+        }
         // A strike: the swing's motion once through, blended in, then her gait again.
         if strike_now && !w.striking && w.jump.is_none()
             && let (Some(anim), Some(b)) = (w.strike_anim.clone(), town_bodies.get_mut(w.body)) {
@@ -4801,7 +4848,10 @@ fn main() -> Result<()> {
             args[1] = dir.to_string_lossy().into_owned();
             current_event = None;
             player_at = Some(at);
-            chain = None;
+            // The story goes on as the session, in free play there.
+            if let (Some((c, _)), Some(map)) = (chain.take(), barrel_game::event::last_field(&steps)) {
+                session = Some(barrel_game::session::Session::in_field(c, map, hero == 1));
+            }
             first_event = false;
         }
         None => {

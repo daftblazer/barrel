@@ -41,6 +41,11 @@ impl Session {
         Session { chain, scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy }
     }
 
+    /// A session already in free play in field `map` with the story where `chain` has it.
+    pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
+        Session { chain, scene: Scene::Field(map), field: Some(map), logy }
+    }
+
     pub fn scene(&self) -> &Scene {
         &self.scene
     }

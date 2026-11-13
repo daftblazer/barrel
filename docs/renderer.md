@@ -172,6 +172,15 @@ hero where the event left them, under the player's control (`--player`'s walker)
 says 10.5 s) Escha stands at (10000, 10950) in `TOWN_04`. `Playback::end` gives an event's last
 step time.
 
+**A new game, saved and loaded.** `barrel-view --field auto OUT --new-game ROOT [--hero logy]
+--window FRAMES` plays a new game: the opening the choice starts (`event_start::new_game_event`),
+the story after it (`--chain`), then free play (`--free-play`), where the story goes on as a
+`session::Session`. With `--save FILE`, F5 (or `BARREL_SAVE_AT=FRAME`, counted in the free-play
+scene) saves it in Barrel's text format; `--load FILE` (with `--field` naming any field of the
+install) starts in free play from such a save. From the end of `EVENT_MM01_OP1_310` a save at
+free-play frame 60 holds Escha at (10000, 10950) in field 3 with events 15, 518, 520 and 521
+seen on day 90, and loading it puts her back there.
+
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
 onto the highest of the heightmap and the collision floors), in her wait motion, and points
