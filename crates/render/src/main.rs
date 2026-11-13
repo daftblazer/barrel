@@ -1154,6 +1154,57 @@ struct FieldBody {
 /// monster in its field wait, and Escha as a stand-in player walking west through them (`mob`
 /// `usize::MAX`), added to the scene; returns the field, the bodies, their texture packs, the
 /// motion names and where the player starts.
+/// The town people the field load (`0x140071d00`) would place on this field: its map number from
+/// the directory's name, each placement whose conditions pass on the save's seen events (or,
+/// without a save, each character's first placement), as a still body at its spot (metres to
+/// field units). Random-companion placements (rows 318 to 322) are left out.
+fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>)> {
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let dir_name = field_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let map = barrel_game::event::field_maps(&pe).iter().position(|n| n == dir_name).ok_or("--town-people: the field's map number is not known")? as i32;
+    let seen: Option<Vec<bool>> = match save {
+        Some(p) => {
+            let data = std::fs::read(p)?;
+            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", p.display()))?.body;
+            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", p.display()))?;
+            let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
+            Some(sum.events.iter().map(|e| e.seen).collect())
+        }
+        None => None,
+    };
+    let is_seen = |e: &i32| seen.as_ref().and_then(|s| usize::try_from(*e).ok().and_then(|e| s.get(e))).copied().unwrap_or(false);
+    let holds = |c: &i32| barrel_formats::npc::condition(&pe, *c).is_some_and(|(want, not)| want.iter().all(is_seen) && !not.iter().any(is_seen));
+    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
+    let mut placed: Vec<i32> = Vec::new();
+    let (mut packs, mut tex_base, mut first) = (Vec::new(), base, None);
+    for p in barrel_formats::npc::places(&pe).ok_or("no placement table")?.iter().filter(|p| p.map == map) {
+        if (318..=322).contains(&p.chara) || placed.contains(&p.chara) {
+            continue;
+        }
+        if seen.is_some() && !((p.conditions[0].is_empty() || p.conditions[0].iter().any(holds)) && !p.conditions[1..].iter().flatten().any(holds)) {
+            continue;
+        }
+        let Some(row) = usize::try_from(p.chara)
+            .ok()
+            .and_then(|r| charas.children.get(r)?.attr("BaseTag"))
+            .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
+        else {
+            continue;
+        };
+        let pos = p.position.map(|v| v * 100.0);
+        let who = 20_000 + placed.len() as u32;
+        let Some((body, _)) = add_body(root, scene, tex_base, row, who, pos, p.angle, "F_WAIT", None, None, |_, _, _, _| Ok(None::<()>))? else { continue };
+        eprintln!("town person chara {} as {:?} at {pos:?} facing {}", p.chara, row.attr("BaseTag"), p.angle);
+        tex_base += body.count;
+        packs.extend(body.packs);
+        placed.push(p.chara);
+        first = first.or(Some(pos));
+    }
+    Ok((packs, first))
+}
+
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -1790,6 +1841,7 @@ fn main() -> Result<()> {
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
     let mut creatures_area = None::<i32>;
+    let mut town_people_from = None::<String>;
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
     // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
     let mut costumes: Vec<(u32, usize, usize, usize)> = Vec::new();
@@ -1879,6 +1931,9 @@ fn main() -> Result<()> {
                 }
             }
             "--creatures" => creatures_area = Some(it.next().ok_or("--creatures AREA")?.parse()?),
+            // --town-people all|GAMEDATA: the town people the field load would place here
+            // (all: each character's first placement; a save: those its seen events allow).
+            "--town-people" => town_people_from = Some(it.next().ok_or("--town-people all|GAMEDATA")?.clone()),
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
             "--pitch" => pitch = it.next().ok_or("--pitch DEG")?.parse::<f32>()?.clamp(-89.0, 89.0),
@@ -2027,6 +2082,17 @@ fn main() -> Result<()> {
             focus = field.mobs.first().map(|m| Vec3::from(m.creature.position.map(|v| v as f32)) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
         }
         creatures = Some((field, bodies, names, 0.0f32, player_at, false));
+    }
+    if let Some(from) = &town_people_from {
+        let field_dir = Path::new(&args[1]);
+        let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--town-people: the field is not inside a game install")?.to_path_buf();
+        let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
+        let save = (from != "all").then(|| PathBuf::from(from));
+        let (packs, first) = town_people(&root, field_dir, save.as_deref(), &mut scene, base)?;
+        pack_bytes.extend(packs);
+        if focus.is_none() {
+            focus = first.map(|p| Vec3::from(p) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
+        }
     }
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();

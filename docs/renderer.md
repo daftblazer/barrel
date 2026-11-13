@@ -127,6 +127,17 @@ same number but for Nio (10), row 11 (the oracle save: Escha, Logy, Linca, Wilbe
 0, 1, 6, 7 and 11; Escha's uniform with her own Fluffy Hat attaches nothing, the hat built into
 the body showing).
 
+**Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
+the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
+notes; the map number comes from the directory's name through the `FIELDMAP_*` list):
+
+- **With a save:** each placement whose conditions pass on the save's seen events.
+- **With `all`:** each character's first placement.
+
+Each stands still at its spot (metres ×100 into field units, x mirrored like the enemies), and
+the camera starts on the first. Random-companion placements are left out. On `TOWN_05` (map 4)
+the oracle save (day 229) places one: `Chara` row 15 (`PC35`), an adventurer by a bench.
+
 **Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as its
 encounter group's first monster (`AREA_01_01`: two `MOB15A`, one `MOB01A`) in its `CharaBase`
