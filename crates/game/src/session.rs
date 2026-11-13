@@ -100,6 +100,11 @@ impl Session {
         self.chain.story().seen.iter().map(Option::is_some).collect()
     }
 
+    /// The tenths of today already spent in the field (0 without a calendar).
+    pub fn field_tenths(&self) -> i32 {
+        self.calendar.as_ref().map_or(0, |(w, _)| w.tenths)
+    }
+
     /// The date (the story's day number; `calendar::Date` reads it).
     pub fn today(&self) -> i32 {
         self.chain.story().today

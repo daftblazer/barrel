@@ -22,6 +22,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 mod fsr;
 mod glow;
+mod hud;
 mod fsr3;
 mod gsr2;
 mod present;
@@ -3515,6 +3516,55 @@ fn main() -> Result<()> {
             _ => eprintln!("no text: the English executable's glyph table, the Font_EN atlas or WinXls_EN/a15_common.g1t is missing"),
         }
     }
+    // The field HUD in free play (`hud`): its layer (the font atlas, then the HUD's pictures),
+    // the font, the pictures' slots, layout 625's nodes, and what it last showed.
+    // The install, from the field drawn (free play has no event to find it by).
+    let hud_root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
+    let hud_exe = match &hud_root {
+        Some(r) if session.is_some() && player.is_none() => std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok(),
+        _ => None,
+    };
+    let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_formats::layout::Placed>, Option<(hud::Values, u32, u32)>)> = None;
+    if session.is_some() && player.is_none() && std::env::var("BARREL_NO_HUD").is_err() {
+        let made = (|| -> Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_formats::layout::Placed>)> {
+            let Some(exe) = hud_exe.as_ref() else {
+                return None;
+            };
+            let root = hud_root.as_ref()?;
+            let pe = barrel_formats::pe::Pe::parse(exe).ok()?;
+            let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN)?;
+            let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
+            let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
+            let nodes = barrel_formats::layout::placed(&pe, hud::FIELD_HUD);
+            let keys = hud::sheet_keys(&pe, &nodes);
+            let mut packs: Vec<(String, Vec<u8>)> = Vec::new();
+            for (name, _) in &keys {
+                if !packs.iter().any(|(n, _)| n == name) {
+                    let x64 = root.join("Data/x64");
+                    match std::fs::read(x64.join("WinXls_EN").join(name)).or_else(|_| std::fs::read(x64.join("WinXls").join(name))) {
+                        Ok(bytes) => packs.push((name.clone(), bytes)),
+                        Err(e) => eprintln!("HUD: {name}: {e}"),
+                    }
+                }
+            }
+            let parsed: Vec<(String, barrel_formats::g1t::G1t)> = packs.iter().filter_map(|(n, b)| Some((n.clone(), barrel_formats::g1t::G1t::parse(b).ok()?))).collect();
+            let mut images = vec![atlas.textures.first()?];
+            let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
+            for (name, index) in keys {
+                let Some(t) = parsed.iter().find(|(n, _)| *n == name).and_then(|(_, g)| g.textures.get(index as usize)) else { continue };
+                sheets.sizes.push([t.width as f32, t.height as f32]);
+                sheets.keys.push((name, index));
+                images.push(t);
+            }
+            let size = images[0].width as f32;
+            let layer = text::Layer::new(&gpu, pool, post_pass, &images).ok()?;
+            Some((layer, text::Font { glyphs, size }, sheets, nodes))
+        })();
+        match made {
+            Some((layer, font, sheets, nodes)) => field_hud = Some((layer, font, sheets, nodes, None)),
+            None => eprintln!("no HUD: the English executable, the font or a WinXls pack is missing"),
+        }
+    }
     // The field drawn (its place in `field_maps`): where the event is when playback starts,
     // else the first.
     let mut current_field: u16 = player
@@ -4634,6 +4684,16 @@ fn main() -> Result<()> {
     targets.frozen_ready = true;
     // Set 1 for the field drawn (its light texture at binding 6).
     let instance_set = scene.instance_set(current_field as usize);
+    // The field HUD with the session's date and field time, rebuilt when they change.
+    if let (Some((layer, font, sheets, nodes, last)), Some(s), Some(exe)) = (field_hud.as_mut(), session.as_ref(), hud_exe.as_ref()) {
+        let v = hud::Values::on(s.today().max(0) as u32, s.field_tenths());
+        if *last != Some((v, width, height))
+            && let Ok(pe) = barrel_formats::pe::Pe::parse(exe) {
+                let elements = hud::elements(nodes, |p| barrel_formats::layout::text(&pe, p), v);
+                layer.set(&gpu, &hud::quads(&pe, font, sheets, &elements, width as f32, height as f32))?;
+                *last = Some((v, width, height));
+            }
+    }
     let record = |cb: vk::CommandBuffer| unsafe {
         if let Some(t) = &timer {
             t.begin(d, cb);
@@ -4835,6 +4895,9 @@ fn main() -> Result<()> {
         if let Some((layer, ..)) = &text_layer {
             layer.record(d, cb, width, height);
         }
+        if let Some((layer, ..)) = &field_hud {
+            layer.record(d, cb, width, height);
+        }
         d.cmd_end_render_pass(cb);
         if let Some(t) = &timer {
             t.mark(d, cb, 4);
@@ -4899,6 +4962,9 @@ fn main() -> Result<()> {
     // The scene's own resources go; the renderer stays for the next.
     unsafe { d.device_wait_idle()? };
     if let Some((layer, ..)) = text_layer.take() {
+        layer.destroy(&gpu);
+    }
+    if let Some((layer, ..)) = field_hud.take() {
         layer.destroy(&gpu);
     }
     unsafe {

@@ -167,6 +167,16 @@ impl Font {
         }
     }
 
+    /// One line of layout text (`<IMnn>` icons and `<CLxx>` colours read) with its top-left at
+    /// (x, y), `scale` screen pixels per atlas pixel.
+    pub fn line(&self, text: &str, x: f32, y: f32, scale: f32, colour: [f32; 4], out: &mut Vec<Quad>) {
+        let mut y = y;
+        for l in plain_lines(text) {
+            self.run(&l, x, y, scale, colour, out);
+            y += LINE * scale;
+        }
+    }
+
     /// The message window for a line on a `width` × `height` screen, as the game lays it out
     /// (`window`): the parchment panel, the name tag and its cord, the name, and the text,
     /// wrapped to the panel. The 1280 × 720 layout is scaled to the height and centred.

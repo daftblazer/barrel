@@ -56,6 +56,14 @@ likely settle them where static reading failed.
 - **Defeated field enemies.** Which enemies stay down after a battle (`0x141087bd0` per map):
   **live read** after one fight.
 
+- **Field HUD details.** The time dial's ten segments (part 0x8d, layout 609) are drawn as the
+  tenths of the day still free (the game's screenshot shows them dark in an area: likely the
+  other way round, or time of day); the assignment badges (603), the "Free Time" tab (604),
+  the arrows (602), the small count (part 0xe5), the gathering gauge and notices are not shown.
+  The button list's place (the layout says y 792) and the text size are measured from one
+  screenshot. Way in: the HUD's update code (the layout 625 owner; find who loads layout id
+  625 = 0x271) or a **live read** with the day's time partly spent.
+
 ## Battle
 
 - **Formation / battle areas.** Where the party and enemies stand: battle areas decoded, but the

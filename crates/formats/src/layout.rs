@@ -122,61 +122,75 @@ impl Text {
     }
 }
 
+/// A node of a layout tree in place: `path` the layouts from the top one down to the one holding
+/// it, `at` its place on the 1920 × 1080 screen, `va` its address (for its text).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placed {
+    pub path: Vec<u32>,
+    pub node: Node,
+    pub at: [i32; 2],
+    pub va: u64,
+}
+
+/// Every sprite and text node of layout `id`, the layouts it nests opened in place (a node part
+/// above 0x164 is that layout, placed at the node without its own place; taken from the node
+/// counts and one screenshot of the game, the drawing code is not read), in drawing order.
+pub fn placed(pe: &Pe, id: u32) -> Vec<Placed> {
+    let mut out = Vec::new();
+    add_placed(pe, &mut vec![id], [0, 0], &mut out);
+    out
+}
+
+fn add_placed(pe: &Pe, path: &mut Vec<u32>, origin: [i32; 2], out: &mut Vec<Placed>) {
+    let id = *path.last().unwrap();
+    let Some(k) = id.checked_sub(FIRST_LAYOUT) else { return };
+    let rec = LAYOUTS_EN + 16 * k as u64;
+    let Some((place, nodes)) = nodes(pe, id) else { return };
+    let Some(first) = u64_at(pe, rec) else { return };
+    // A nested layout's own place is not added (the field HUD's panel, 605 at (0, -32), sits
+    // where the game shows it without it); the top layout's is.
+    let [x, y] = if path.len() == 1 { place } else { [0, 0] };
+    for (i, node) in nodes.into_iter().enumerate() {
+        let at = [origin[0] + x + node.at[0], origin[1] + y + node.at[1]];
+        let nested = node.part > 0x164 && path.len() < 8 && !path.contains(&(node.part as u32));
+        if nested {
+            path.push(node.part as u32);
+            add_placed(pe, path, at, out);
+            path.pop();
+        } else if node.part <= 0x164 {
+            out.push(Placed { path: path.clone(), node, at, va: first + 0x28 * i as u64 });
+        }
+    }
+}
+
+/// The picture of sprite part `part`'s cut `cut`, its top-left at `at`.
+pub fn sprite(pe: &Pe, part: i32, cut: i32, at: [i32; 2]) -> Option<Piece> {
+    let part = u64::try_from(part).ok().filter(|&p| p < 0x164)?;
+    let cuts = u64_at(pe, SPRITES_EN + 8 * part)?;
+    let c = cuts + 20 * u64::try_from(cut).ok()?;
+    let (texture, index) = texture(pe, i32_at(pe, c)?)?;
+    let o = pe.offset(c + 4)?;
+    let w = |i: usize| pe.data.get(o + 2 * i..o + 2 * i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    Some(Piece { texture, index, src: [w(0)?, w(1)?, w(2)?, w(3)?], at })
+}
+
+/// The text of a placed node of part 0x164.
+pub fn text(pe: &Pe, p: &Placed) -> Option<Text> {
+    (p.node.part == 0x164).then_some(())?;
+    let f = |o: u64| i32_at(pe, p.va + o).unwrap_or(0);
+    let text = u64_at(pe, p.va + 0x20).and_then(|t| text_at(pe, t)).unwrap_or_default();
+    let [b, g, r, a] = f(0x1c).to_le_bytes();
+    Some(Text { at: p.at, size: f(0x18) as f32 / 100.0, colour: [a, r, g, b], text, kind: p.node.kind })
+}
+
 /// The texts of layout `id` and the layouts it nests, placed on the screen.
 pub fn texts(pe: &Pe, id: u32) -> Vec<Text> {
-    let mut out = Vec::new();
-    add_texts(pe, id, [0, 0], 0, &mut out);
-    out
+    placed(pe, id).iter().filter_map(|p| text(pe, p)).collect()
 }
 
-fn add_texts(pe: &Pe, id: u32, origin: [i32; 2], depth: u32, out: &mut Vec<Text>) {
-    let k = match id.checked_sub(FIRST_LAYOUT) { Some(k) => k, None => return };
-    let rec = LAYOUTS_EN + 16 * k as u64;
-    let (Some(mut node), Some(x), Some(y)) = (u64_at(pe, rec), i32_at(pe, rec + 8), i32_at(pe, rec + 12)) else { return };
-    let (x, y) = (origin[0] + x, origin[1] + y);
-    for _ in 0..256 {
-        let Some(part) = i32_at(pe, node).filter(|&p| p >= 0) else { break };
-        let f = |o: u64| i32_at(pe, node + o).unwrap_or(0);
-        let at = [x + f(8), y + f(12)];
-        if part == 0x164 {
-            let text = u64_at(pe, node + 0x20).and_then(|p| text_at(pe, p)).unwrap_or_default();
-            let [b, g, r, a] = f(0x1c).to_le_bytes();
-            out.push(Text { at, size: f(0x18) as f32 / 100.0, colour: [a, r, g, b], text, kind: f(16) });
-        } else if part > 0x164 && depth < 8 && part as u32 != id {
-            add_texts(pe, part as u32, at, depth + 1, out);
-        }
-        node += 0x28;
-    }
-}
-
-/// The sprite pieces of layout `id`, placed on the screen, with those of the layouts it nests
-/// (a node part above 0x164 is that layout, placed at the node; taken from the node counts, the
-/// drawing code is not read).
+/// The sprite pieces of layout `id` and the layouts it nests, placed on the screen.
 pub fn pieces(pe: &Pe, id: u32) -> Vec<Piece> {
-    let mut out = Vec::new();
-    add_pieces(pe, id, [0, 0], 0, &mut out);
-    out
-}
-
-fn add_pieces(pe: &Pe, id: u32, origin: [i32; 2], depth: u32, out: &mut Vec<Piece>) {
-    let Some(([x, y], nodes)) = nodes(pe, id) else { return };
-    let (x, y) = (origin[0] + x, origin[1] + y);
-    for n in nodes {
-        let at = [x + n.at[0], y + n.at[1]];
-        if n.part < 0x164 {
-            let piece = (|| {
-                let cuts = u64_at(pe, SPRITES_EN + 8 * n.part as u64)?;
-                let c = cuts + 20 * n.cut.max(0) as u64;
-                let (texture, index) = texture(pe, i32_at(pe, c)?)?;
-                let o = pe.offset(c + 4)?;
-                let w = |i: usize| pe.data.get(o + 2 * i..o + 2 * i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
-                Some(Piece { texture, index, src: [w(0)?, w(1)?, w(2)?, w(3)?], at })
-            })();
-            out.extend(piece);
-        } else if n.part > 0x164 && depth < 8 && n.part as u32 != id {
-            add_pieces(pe, n.part as u32, at, depth + 1, out);
-        }
-    }
+    placed(pe, id).iter().filter_map(|p| sprite(pe, p.node.part, p.node.cut.max(0), p.at)).collect()
 }
 
 /// The event still pictures (`u1/0x30`, `IpuGallery`): 32-byte records `{i32 width, height, f32

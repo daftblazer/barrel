@@ -551,3 +551,14 @@ the commands are then laid out bucket by bucket (`0x1403380d0`, copying `+0x12` 
 the sorted entry): a counting sort, so pieces draw in priority order, and an `xS` tag pushes a
 whole object's pieces up by one or two places. Where a piece's own priority comes from is not traced yet (not
 the mesh groups' spare words, which are 0 or a shadow-pass count and -1), and the viewer does not order by it.
+
+## The field HUD
+
+In free play (a session, no event playing) the viewer draws the game's field HUD over the frame
+from its own layout (`crates/render/src/hud.rs`; the layouts in `docs/formats.md`, "Interface
+layouts"): layout 625's assignment panel (605), time dial (609) and button list (620), with the
+session's date. Checked against a screenshot of the game on August 20th of year 1 ("Left 100",
+"8 /20", the year disc "1"): the text after "Left" is the days to the assignment period's last
+day, the two big numbers the month and the day. The offsets measured from that screenshot (the
+list's rise, the days' number, the text size) and the dial as the tenths of the day still free
+are ours (`docs/open.md`). `BARREL_NO_HUD` turns it off.
