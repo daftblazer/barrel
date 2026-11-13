@@ -2372,27 +2372,11 @@ fn gather(install: &Path, only: Option<u32>) -> Result<()> {
 /// default), BARREL_PICKS picks (1), each item with its quality and traits; with a save, items
 /// it knows well are not boosted.
 fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
-    use barrel_game::gather;
     let env = |k: &str, d: i32| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
-    let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
-    let data = read(&exe)?;
-    let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let rows = barrel_formats::gather::gathering(&pe, barrel_formats::gather::GATHER_EN).ok_or("no gathering table")?;
-    let points = barrel_formats::gather::points(&pe, barrel_formats::gather::POINTS_EN).ok_or("no gathering points")?;
-    let p = point.parse::<usize>().ok().and_then(|n| points.get(n)).ok_or("no such point")?;
-    let level = env("BARREL_TABLE_LEVEL", 0);
-    let k = gather::list_index(p.alchemy, level, level, 0);
-    let list = *p.lists.get(k).or(p.lists.last()).ok_or("the point has no lists")?;
-    let records: Vec<&barrel_formats::gather::Gather> = rows.iter().filter(|g| g.list == list).collect();
+    let g = barrel_game::gather::Gathering::load(install)?;
+    let n: usize = point.parse().map_err(|_| "POINT is a number")?;
+    let p = g.points.get(n).ok_or("no such point")?;
     let items = table_rows(&install.join("Saves_EN/item/itemData.xml"))?;
-    let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
-    let effects = barrel_formats::battle_data::item_effects(&barrel_formats::table::parse(&read(&install.join("Saves_EN/item/item_effect.xml"))?).map_err(|e| e.to_string())?, &acts);
-    let tags: Vec<&str> = effects.iter().map(|r| r.tag.as_str()).collect();
-    let traits = barrel_formats::battle_data::traits(&barrel_formats::table::parse(&read(&install.join("Saves_EN/item/item_potential.xml"))?).map_err(|e| e.to_string())?, &tags);
-    const KINDS: [&str; 13] = [
-        "ITEM_KIND_MATERIAL", "ITEM_KIND_MIX", "ITEM_KIND_ATTACK", "ITEM_KIND_HEAL", "ITEM_KIND_SUPPORT", "ITEM_KIND_FIELD", "ITEM_KIND_EQUIPMENT",
-        "ITEM_KIND_IMPORTANT", "ITEM_KIND_BOOK", "ITEM_KIND_ITEM", "ITEM_KIND_WEAPON", "ITEM_KIND_ARMOR", "ITEM_KIND_ACCESSORY",
-    ];
     let knowledge: Vec<i32> = match save {
         Some(file) => {
             let data = read(file)?;
@@ -2403,22 +2387,11 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
         None => Vec::new(),
     };
     let mut rng = barrel_game::rng::Rng::from_state([env("BARREL_SEED", 1) as u32, 2, 3, 4]);
-    let weights = gather::weights(&records, |item| knowledge.get(item as usize).copied().unwrap_or(0), &mut rng);
-    println!("point {point}: map {}, list {list} (tier {k}), weights {weights:?}", p.map);
-    for _ in 0..env("BARREL_PICKS", 1) {
-        let Some(i) = gather::pick(&records, &weights, &mut rng) else { break };
-        let g = records[i];
-        let Some(row) = items.get(g.item.max(0) as usize) else { continue };
-        let stacks = row.attr("isStack") == Some("ITEM_STACK_TYPE_STACK");
-        let effect: f32 = row.attr("effect").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-        let base = row.attr("base").and_then(|b| KINDS.iter().position(|k| *k == b)).unwrap_or(0) as i32;
-        let quality = gather::quality(stacks, effect, g, 0, &mut rng);
-        let mut got: Vec<usize> = g.traits.iter().map(|&t| t as usize).collect();
-        if base != 0 && g.word13 == -1 {
-            got.extend(gather::random_traits(&traits, (g.unread[1], g.unread[2]), g.unread[0], |t| traits[t].fits(base), &mut rng));
-        }
-        let names: Vec<&str> = got.iter().filter_map(|&t| traits.get(t)).map(|t| t.name.as_str()).collect();
-        println!("  {} at quality {quality}, traits {names:?}", row.attr("ItemName").unwrap_or("?"));
+    let level = env("BARREL_TABLE_LEVEL", 0);
+    println!("point {point}: map {}, at {:?} m, lists {:?}", p.map, p.position, p.lists);
+    for got in g.gather(n, level, |item| knowledge.get(item as usize).copied().unwrap_or(0), env("BARREL_PICKS", 1).max(0) as u32, &mut rng) {
+        let name = items.get(got.item.max(0) as usize).and_then(|r| r.attr("ItemName")).unwrap_or("?");
+        println!("  {name} at quality {}, traits {:?}", got.quality, got.traits);
     }
     Ok(())
 }

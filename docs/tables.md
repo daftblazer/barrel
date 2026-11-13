@@ -1581,6 +1581,11 @@ Grass, Mountain Feather, Eagle Feather", and list 71 is Moss Grass (weight 50), 
 items with traits (list 1: a Craft with trait 0; list 2: a Bomb with trait 3), chests by the look
 of them. `barrel gather INSTALL [LIST]` prints them (`barrel_formats::gather`); `barrel gather-sim INSTALL POINT [SAVE]` runs one gather at a point (the tier from `BARREL_TABLE_LEVEL`, `BARREL_PICKS` picks, the save's item knowledge for the boosts).
 
+In play, `gather::Gathering` loads the lists, points, items and traits and makes one gathering
+(`gather`: the point's tier list, the draw, quality and traits); `session::Session::gathered`
+puts what it gave in the session's basket and passes its field time (half a day). How many picks
+one gathering makes is passed in by its caller, not read yet: play uses one.
+
 **The gathering points** come just before, at `0x1408825a0`: 356 records of 88 bytes
 (`gather::points`; `0x14023b8f0` copies both tables into one object). A point holds up to seven
 list numbers (words 0 to 6, -1 for none; five in most, one list five times in some), two words

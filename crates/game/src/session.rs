@@ -13,6 +13,7 @@
 //! field 3 10000 10950
 //! today 90
 //! tenths 5
+//! item 55 60 12,40
 //! seen 8 90
 //! flag 36 1
 //! ```
@@ -34,6 +35,8 @@ pub struct Session {
     calendar: Option<(crate::days::World, crate::days::Data)>,
     /// Field time carried from a loaded save, for the calendar once it is given.
     carried: i32,
+    /// What the player holds (gathered so far): the basket.
+    pub basket: Vec<crate::gather::Got>,
     scene: Scene,
     /// The field the player is in (the last an event changed to), if any yet.
     field: Option<u32>,
@@ -44,12 +47,12 @@ pub struct Session {
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, scene: Scene::Field(map), field: Some(map), logy }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -83,6 +86,13 @@ impl Session {
     /// time): whole days pass for `reason`.
     pub fn spend(&mut self, tenths: i32, reason: crate::days::Reason) {
         self.time(|w, t| w.spend_time(tenths, reason, t));
+    }
+
+    /// A gathering gave `got`: into the basket, and its field time passes (`days::gather_tenths`
+    /// with no reduction: half a day).
+    pub fn gathered(&mut self, got: Vec<crate::gather::Got>) {
+        self.basket.extend(got);
+        self.spend(crate::days::gather_tenths(0), crate::days::Reason::Gather);
     }
 
     /// The date (the story's day number; `calendar::Date` reads it).
@@ -164,6 +174,10 @@ impl Session {
         if tenths != 0 {
             out += &format!("tenths {tenths}\n");
         }
+        for g in &self.basket {
+            let traits: Vec<String> = g.traits.iter().map(usize::to_string).collect();
+            out += &format!("item {} {}{}\n", g.item, g.quality, if traits.is_empty() { String::new() } else { format!(" {}", traits.join(",")) });
+        }
         for (e, day) in story.seen.iter().enumerate() {
             if let Some(d) = day {
                 out += &format!("seen {e} {d}\n");
@@ -183,7 +197,7 @@ impl Session {
         if lines.next() != Some("barrel-save 1") {
             return Err(BadSave("not a Barrel save (version 1)".into()));
         }
-        let (mut logy, mut field, mut at, mut carried) = (false, None, [0.0f32; 2], 0);
+        let (mut logy, mut field, mut at, mut carried, mut basket) = (false, None, [0.0f32; 2], 0, Vec::new());
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -198,6 +212,11 @@ impl Session {
                 }
                 "today" => story.today = num(1)? as i32,
                 "tenths" => carried = num(1)? as i32,
+                "item" => basket.push(crate::gather::Got {
+                    item: num(1)? as i32,
+                    quality: w.get(2).and_then(|v| v.parse().ok()).ok_or_else(|| bad(line))?,
+                    traits: w.get(3).map_or(Ok(Vec::new()), |t| t.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect())?,
+                }),
                 "seen" => *story.seen.get_mut(num(1)? as usize).ok_or_else(|| bad(line))? = Some(num(2)? as i32),
                 "flag" => *story.flags.get_mut(num(1)? as usize).ok_or_else(|| bad(line))? = num(2)? as i32,
                 _ => return Err(bad(line)),
@@ -205,7 +224,7 @@ impl Session {
         }
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
-        Ok((Session { chain, calendar: None, carried, scene: Scene::Field(field), field: Some(field), logy }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy }, at))
     }
 }
 
@@ -248,9 +267,16 @@ mod tests {
         assert_eq!(s.today(), 93);
         s.walked(13, 0);
         assert_eq!(s.today(), 93);
+        // A gathering: into the basket, half a day; saved and loaded back.
+        s.gathered(vec![crate::gather::Got { item: 55, quality: 60.0, traits: vec![12, 40] }]);
+        s.gathered(Vec::new());
+        assert_eq!(s.today(), 94);
+        let text = s.save([0.0, 0.0]).unwrap();
+        assert!(text.contains("item 55 60 12,40\n"), "{text}");
+        assert_eq!(Session::load(chain(), &text).unwrap().0.basket, s.basket);
         // Town maps carry nothing.
         s.spend(5, crate::days::Reason::Gather);
         s.walked(0, 1);
-        assert_eq!(s.today(), 93);
+        assert_eq!(s.today(), 94);
     }
 }

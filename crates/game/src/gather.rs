@@ -114,6 +114,93 @@ pub fn pick(records: &[&Gather], weights: &[f32], rng: &mut crate::rng::Rng) -> 
     Some(weights[..records.len() - 1].iter().position(|&w| w > 0.0).unwrap_or(records.len() - 1))
 }
 
+/// An item a gathering gave: its `itemData` row, quality and traits (`item_potential` rows).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Got {
+    pub item: i32,
+    pub quality: f32,
+    pub traits: Vec<usize>,
+}
+
+/// The kinds an item's `base` names, in `ITEM_KIND_*` order (a trait fits a kind).
+const KINDS: [&str; 13] = [
+    "ITEM_KIND_MATERIAL", "ITEM_KIND_MIX", "ITEM_KIND_ATTACK", "ITEM_KIND_HEAL", "ITEM_KIND_SUPPORT", "ITEM_KIND_FIELD", "ITEM_KIND_EQUIPMENT",
+    "ITEM_KIND_IMPORTANT", "ITEM_KIND_BOOK", "ITEM_KIND_ITEM", "ITEM_KIND_WEAPON", "ITEM_KIND_ARMOR", "ITEM_KIND_ACCESSORY",
+];
+
+/// One gatherable item's row as the draw reads it: whether it stacks, its `effect`, its kind.
+#[derive(Clone, Debug)]
+struct ItemRow {
+    stacks: bool,
+    effect: f32,
+    kind: i32,
+}
+
+/// What gathering needs, loaded from an install: the lists and points compiled into the
+/// English executable, the items and the traits.
+pub struct Gathering {
+    pub rows: Vec<Gather>,
+    pub points: Vec<barrel_formats::gather::Point>,
+    items: Vec<ItemRow>,
+    traits: Vec<barrel_formats::battle_data::Trait>,
+}
+
+impl Gathering {
+    pub fn load(root: &std::path::Path) -> Result<Gathering, String> {
+        let read = |rel: &str| std::fs::read(root.join(rel)).map_err(|e| format!("{rel}: {e}"));
+        let table = |rel: &str| -> Result<barrel_formats::table::Element, String> { barrel_formats::table::parse(&read(rel)?).map_err(|e| format!("{rel}: {e}")) };
+        let exe = read("Atelier_Escha_and_Logy_EN.exe")?;
+        let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("executable: {e}"))?;
+        let rows = barrel_formats::gather::gathering(&pe, barrel_formats::gather::GATHER_EN).ok_or("no gathering table")?;
+        let points = barrel_formats::gather::points(&pe, barrel_formats::gather::POINTS_EN).ok_or("no gathering points")?;
+        let items = table("Saves_EN/item/itemData.xml")?
+            .children
+            .iter()
+            .map(|r| ItemRow {
+                stacks: r.attr("isStack") == Some("ITEM_STACK_TYPE_STACK"),
+                effect: r.attr("effect").and_then(|v| v.parse().ok()).unwrap_or(0.0),
+                kind: r.attr("base").and_then(|b| KINDS.iter().position(|k| *k == b)).unwrap_or(0) as i32,
+            })
+            .collect();
+        let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
+        let effects = barrel_formats::battle_data::item_effects(&table("Saves_EN/item/item_effect.xml")?, &acts);
+        let tags: Vec<&str> = effects.iter().map(|r| r.tag.as_str()).collect();
+        let traits = barrel_formats::battle_data::traits(&table("Saves_EN/item/item_potential.xml")?, &tags);
+        Ok(Gathering { rows, points, items, traits })
+    }
+
+    /// The points standing in field map `map`.
+    pub fn points_in(&self, map: i32) -> impl Iterator<Item = (usize, &barrel_formats::gather::Point)> {
+        self.points.iter().enumerate().filter(move |(_, p)| p.map == map)
+    }
+
+    /// One gathering at point `point` with the table level `level` (both upgrades' levels; 0
+    /// with none), the player's item knowledge, `picks` picks: what it gives, each as the draw
+    /// makes it (`0x14023c210`): the point's tier list, weights with the unknown-item bonus,
+    /// the picked record's quality, its fixed traits and, for a made item's record without a
+    /// fixed trait word, random traits.
+    pub fn gather(&self, point: usize, level: i32, knowledge: impl Fn(i32) -> i32, picks: u32, rng: &mut crate::rng::Rng) -> Vec<Got> {
+        let Some(p) = self.points.get(point) else { return Vec::new() };
+        let k = list_index(p.alchemy, level, level, 0);
+        let Some(&list) = p.lists.get(k).or(p.lists.last()) else { return Vec::new() };
+        let records: Vec<&Gather> = self.rows.iter().filter(|g| g.list == list).collect();
+        let weights = weights(&records, knowledge, rng);
+        let mut out = Vec::new();
+        for _ in 0..picks {
+            let Some(i) = pick(&records, &weights, rng) else { break };
+            let g = records[i];
+            let Some(row) = self.items.get(g.item.max(0) as usize) else { continue };
+            let quality = quality(row.stacks, row.effect, g, 0, rng);
+            let mut traits: Vec<usize> = g.traits.iter().map(|&t| t as usize).collect();
+            if row.kind != 0 && g.word13 == -1 {
+                traits.extend(random_traits(&self.traits, (g.unread[1], g.unread[2]), g.unread[0], |t| self.traits[t].fits(row.kind), rng));
+            }
+            out.push(Got { item: g.item, quality, traits });
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
