@@ -1129,6 +1129,8 @@ struct AreaMap {
     /// The gathering tables (a sector's gatherables) and the items' names.
     gathering: Option<barrel_game::gather::Gathering>,
     item_names: Vec<String>,
+    /// The area routes' tags not known yet (`Session::known_routes`): their dots are not drawn.
+    hidden_routes: Vec<String>,
     /// The places closed to the player (`Session::closed`), and the sectors not known yet
     /// (`Session::known`): no way there, no label, not listed.
     closed: Vec<bool>,
@@ -1185,7 +1187,7 @@ impl AreaMap {
         let trips = if world { barrel_game::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_game::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
         let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new() })
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), hidden_routes: Vec::new() })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -1193,6 +1195,11 @@ impl AreaMap {
         let tag = &self.places[at].tag;
         let region = tag.split_once('p').map_or(tag.as_str(), |(r, _)| r);
         self.places.iter().find(|p| p.tag == region).map_or("", |p| p.name.as_str())
+    }
+
+    /// Whether a draw (by its name: object and placement tags) is a dot of a route not known.
+    fn hides(&self, name: &str) -> bool {
+        !self.hidden_routes.is_empty() && name.split_whitespace().any(|w| self.hidden_routes.iter().any(|r| r == w))
     }
 
     /// The open place across the route in way `way` from where she stands.
@@ -5443,6 +5450,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         }
                         None => Vec::new(),
                     };
+                    if let Some(s) = session.as_ref() {
+                        let known = s.known_routes(&a.places);
+                        let area_routes: std::collections::BTreeSet<i32> = a.places.iter().filter(|p| p.kind == 1).flat_map(|p| p.links).filter(|&r| r >= 0).collect();
+                        a.hidden_routes = area_routes.difference(&known).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
+                    }
                     area_map = Some(a);
                 }
                 Err(e) => {
@@ -6609,7 +6621,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
+            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
                 // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
             // 32: their texture on their vertex colour, as the distant view's clouds.
             let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
@@ -6687,7 +6699,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
         let sway_groups: Vec<String> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map(|l| l.v_shakers.iter().take(8).map(|v| v.keyword.clone()).collect()).unwrap_or_default();
-        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name)) {
+        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
             // The distant view's solid pieces (all but the dome and the clouds) are lit and

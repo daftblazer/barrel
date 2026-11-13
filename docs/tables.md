@@ -2381,7 +2381,10 @@ Sector One visited, Sector Two and its route seen, Sector Three (behind its obst
 Ruins Courtyard (two routes off) unknown. The world map's "Map" list and the area map show
 only known sectors; the world level's own places also open with the story (place 5, one
 route from Colseit, is unknown there; not read yet). Barrel keeps the visits as its save's
-`visited K` lines.
+`visited K` lines. A route's dots (the world map's placements tagged with its id, `A2r2`)
+are drawn only when the route is known (the recording at 0:45: no dots down from Sector One
+to Sector Three); the game draws a seen route's dots green and a walked one's white (Barrel
+draws all white: not yet the game's).
 
 A sector's "Gatherable Items" (the area map's scroll) are the items of its gathering points'
 lists at the table level (the first list at level 0), each once, by item number

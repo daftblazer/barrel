@@ -62,6 +62,12 @@ pub fn known(places: &[Place], visited: &std::collections::BTreeSet<usize>, clos
     out
 }
 
+/// The routes the player knows (the save's `worldmap/knowledgeRoute`): those from a place
+/// visited to an open place (the user's save at 8/20: exactly these at the area level).
+pub fn known_routes(places: &[Place], visited: &std::collections::BTreeSet<usize>, closed: impl Fn(usize) -> bool) -> std::collections::BTreeSet<i32> {
+    visited.iter().filter(|&&k| k < places.len()).flat_map(|&k| neighbours(places, k)).filter(|&(_, j)| !closed(j)).map(|(r, _)| r).collect()
+}
+
 /// A direction on the map, as the link slots order them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Way {
@@ -91,6 +97,7 @@ mod tests {
         let visited = [1].into_iter().collect();
         // Sector One visited: the Entrance and Sector Two seen, Sector Three shut, the Courtyard two routes off.
         assert_eq!(known(&places, &visited, |k| k == 2), [true, true, false, true, false]);
+        assert_eq!(known_routes(&places, &visited, |k| k == 2).into_iter().collect::<Vec<_>>(), [25, 27]);
     }
 
     #[test]
