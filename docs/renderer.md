@@ -303,8 +303,13 @@ along its dots (`world::route_path`, queued as the walker's waypoints) to the ne
 mark; the panel shows the place's name and description; Enter walks into the field the point
 opens (`world::point_maps`, through `Session::walked`, so an event there plays) at its arrival
 place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, Enter: field 26,
-`AREA_03_02`, at its arrival. Not yet the game's: the camera (it follows her close; the game
-looks down on the region), the panel (plain text at the right, not layouts 641 and 642), the
+`AREA_03_02`, at its arrival. The camera looks down on her from the south (screen up is -z, left -x) at 55 degrees from
+2200 units with a 30-degree view (`AREA_CAMERA_*`), sized against the recording
+(`ruins-entrance-lost-battle-60hz.mkv` at 0:45, Sector One: the claw-shaped ruin east of her
+the same size on screen); the pitch is a guess. In the game Escha is drawn about 1.5 times as
+large there, and the neighbours' labels (layout 638, "Ruins Entrance", "Sector Two") stand on
+the route beside her, a step out each way, not on the neighbour's mark. Not yet the game's:
+her size, the panel (plain text at the right, not layouts 641 and 642), the
 buttons (636), the place labels (638), the party member's "Enter / Quit" prompt and Back to
 the world map. A lost battle lands there too, as the game's wipe does (`docs/events.md`, "A
 lost battle"): the carried save comes back with `to_area_map`, so the run starts on the world

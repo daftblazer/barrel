@@ -1752,6 +1752,10 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
     Ok(barrel_formats::world::point_position(&placements, name).ok_or(format!("no point {name} on {stem}"))?)
 }
 
+/// The area map's camera: its pitch (degrees) and distance from the player (units).
+const AREA_CAMERA_PITCH: f32 = 55.0;
+const AREA_CAMERA_DISTANCE: f32 = 2200.0;
+
 /// The world map point field area `map` stands for (`SP_A0P0` ...) and where it is (x, z), none
 /// for the town's maps and fields on no point.
 fn area_point(root: &Path, map: u32) -> Result<Option<(String, [f32; 2])>> {
@@ -4291,6 +4295,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         fov = c.fov.clamp(10.0, 120.0).to_radians();
         dist = c.distance;
         eprintln!("event camera: target {:?}, distance {}, yaw {}, pitch {}, fov {}", c.target, c.distance, c.yaw, c.pitch, c.fov);
+    }
+    // The area map looks down on the player from the south (screen up is -z): sized from the
+    // recording (about 2700 units across the screen; the pitch is a guess, not yet the game's).
+    if area_mode && let Some(c) = focus {
+        let p = AREA_CAMERA_PITCH.to_radians();
+        target = c;
+        dist = AREA_CAMERA_DISTANCE;
+        fov = 30f32.to_radians();
+        eye = c + Vec3::new(0.0, p.sin(), p.cos()) * dist;
     }
     // The camera can be turned about its target and moved in or out from the window
     // (arrows, + and -): `orbit` holds the turn (yaw, pitch in radians) and the zoom factor.
