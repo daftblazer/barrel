@@ -194,7 +194,10 @@ session takes the trip (`Session::travelled`: leaving a field area passes its ca
 route's days pass, an event on the road or on arriving plays) and the field the mark opens is
 loaded with the player at that field's own world map exit. From the Town Entrance (map 4, its
 exit at (6010, 3740)) `--travel-to A0p0` passes four days (90 to 94) and arrives in
-`AREA_01_01` at (3200, 3680).
+`AREA_01_01` at (3200, 3680). In the story's free play a field area (map 12 on) has its enemies out as
+`--creatures` has them (their scripts, the touch and strike checks); from (4500, 3520) in
+`AREA_01_01` walking west, the first Ore Rat closes in and touches Escha at frame 68
+(encounter group 10). The encounter only stops the field so far (the battle is stage 4).
 
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above

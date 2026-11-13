@@ -3054,6 +3054,14 @@ fn main() -> Result<()> {
             unsafe { Ok((d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?)) }
         })
         .transpose()?;
+    // In the story's free play a field area (map 12 on) has its enemies out
+    // (`--creatures`'s field AI), a town none.
+    if session.is_some() && current_event.is_none()
+        && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()) {
+            let maps = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
+            let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n));
+            creatures_area = here.filter(|&m| m >= barrel_formats::gimmick::TOWN_MAPS).map(|m| m as i32);
+        }
     // The scene: loaded, then uploaded under the renderer set up above.
     let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, mut town_bodies, start_at, start_field, patterns, mut walker } =
         load_scene(SceneSpec {
@@ -3652,8 +3660,15 @@ fn main() -> Result<()> {
             let (position, facing, motion) = match field.mobs.get(b.mob) {
                 Some(m) => (m.creature.position, m.creature.facing, m.creature.motion.and_then(|m| names.get(m as usize)).cloned()),
                 None if walker.is_some() => {
-                    // The stand-in is not needed with the player there: hidden.
+                    // The stand-in is not needed with the player there: hidden (its model and its
+                    // joints both collapsed, as a skinned body draws through its joints).
                     instances[b.instance as usize].model = Mat4::from_scale(Vec3::ZERO);
+                    let base = instances[b.instance as usize].palette as usize;
+                    for k in 0..b.skeleton.joints.len() {
+                        if let Some(slot) = palette.get_mut(base + k) {
+                            *slot = Mat4::from_scale(Vec3::ZERO);
+                        }
+                    }
                     continue;
                 }
                 None => (*player_at, -std::f64::consts::FRAC_PI_2, Some(if *stopped { "F_WAIT" } else { "WALK" }.to_string())),
