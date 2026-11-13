@@ -398,6 +398,13 @@ yet, so the board's tables see no held items, every request as known and no assi
 The main random generator is not saved by the game either; a fixed seed stands in. Saves keep
 the carried time (`tenths N`).
 
+## Arriving from the world map (not yet the game's)
+
+A trip's player arrives at the field's own world map exit (its first `WORLDMAP_CHANGE_EX`
+gimmick), standing in it (so it does not send them straight back). Where the game puts them was
+not found in three tries (the field load `0x140076760` and its callers; `docs/loop-archive.md`
+707, 754); an oracle run (stage 7) can read it.
+
 ## Play camera follow (not yet the game's)
 
 The field's play camera follows the player with `play_camera::Follow`, rebuilt from what

@@ -124,6 +124,30 @@ impl Session {
         self.chain.story_mut().today = date;
     }
 
+    /// A world-map trip from mark `from` to mark `to` (`travel::WorldMap`), leaving field `left`
+    /// and arriving in field `field`: leaving a field area with time carried passes a day, the
+    /// trip's days pass (on the calendar when there is one), then an event on the road or on
+    /// arriving plays, else play goes on in `field`. `None` when there is no way there.
+    pub fn travelled(&mut self, map: &crate::travel::WorldMap, left: u32, from: &str, to: &str, field: u32) -> Option<&Scene> {
+        if left as usize >= barrel_formats::gimmick::TOWN_MAPS {
+            self.time(|w, t| w.leave_field(t));
+        }
+        let before = self.today();
+        let (event, days) = self.chain.travel(map, from, to, field as i32);
+        let event = event.map(str::to_string);
+        let days = days?;
+        if self.calendar.is_some() {
+            self.chain.story_mut().today = before;
+            self.time(|w, t| w.advance(days.max(0) as u32, crate::days::Reason::Travel, t));
+        }
+        self.field = Some(field);
+        self.scene = match event {
+            Some(e) => Scene::Event(e),
+            None => Scene::Field(field),
+        };
+        Some(&self.scene)
+    }
+
     /// The story, to play events on ([`Session::in_field`] takes it back).
     pub fn into_chain(self) -> Chain {
         self.chain

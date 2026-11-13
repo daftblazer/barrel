@@ -97,6 +97,8 @@ pub struct Destination {
 /// `FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX`: a door to another map (the town's; the field
 /// areas have only world map exits, `WORLDMAP_CHANGE_EX`, 27).
 pub const FIELDMAP_CHANGE_EX: i32 = 26;
+/// A world map exit (27).
+pub const WORLDMAP_CHANGE_EX: i32 = 27;
 
 impl Gimmick {
     pub fn kind_name(&self) -> &'static str {

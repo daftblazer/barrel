@@ -1344,6 +1344,34 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
     Ok(barrel_formats::world::point_position(&placements, name).ok_or(format!("no point {name} on {stem}"))?)
 }
 
+/// A trip off a field's world-map exit to mark `to`: the world map (its routes from the world
+/// map field's placements), the mark the field `from_map` stands for, and the field map `to`
+/// opens with the place to arrive at there: that field's own world-map exit
+/// (`WORLDMAP_CHANGE_EX`, field units; a stand-in, see `docs/engine.md`).
+fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_game::travel::WorldMap, String, u32, [f32; 2])> {
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let wmap = root.join("Data/x64/Field/A15_WMAP");
+    let bytes = std::fs::read(wmap.join("A15_WMAP.elixir.gz"))?;
+    let container = Elixir::parse(&bytes)?;
+    let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the world map has no placements")?;
+    let placements = barrel_formats::opl2::parse(container.data(entry))?;
+    let map = barrel_game::travel::WorldMap::load(&pe, &placements).ok_or("no routes")?;
+    let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
+    let tag = |p: u32| names.get(p as usize).and_then(|n| barrel_formats::world::point_tag(n));
+    let points = barrel_formats::world::point_maps(&pe).unwrap_or_default();
+    // The town's maps all stand for its mark, T0.
+    let from = if (from_map as usize) < barrel_formats::gimmick::TOWN_MAPS {
+        "T0".to_string()
+    } else {
+        points.iter().find(|(_, m, _)| *m == from_map).and_then(|(p, _, _)| tag(*p)).ok_or(format!("field {from_map} is on no world map mark"))?
+    };
+    let field = points.iter().find(|(p, _, _)| tag(*p).as_deref() == Some(to)).map(|(_, m, _)| *m).ok_or(format!("{to} opens no field"))?;
+    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT).ok_or("no map table")?;
+    let exit = areas.get(field as usize).and_then(|a| a.gimmicks.iter().find(|g| g.kind == barrel_formats::gimmick::WORLDMAP_CHANGE_EX)).ok_or(format!("field {field} has no world map exit"))?;
+    Ok((map, from, field, [exit.position[0] * 100.0, exit.position[2] * 100.0]))
+}
+
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -2381,6 +2409,7 @@ fn main() -> Result<()> {
     // in free play from such a save.
     let mut save_file = None::<PathBuf>;
     let mut new_game = None::<PathBuf>;
+    let mut travel_to = None::<String>;
     let mut load_file = None::<PathBuf>;
     let (mut skeleton_spec, mut anim_spec, mut time) = (None::<String>, None::<String>, 0f32);
     let mut event_spec = None::<String>;
@@ -2522,6 +2551,9 @@ fn main() -> Result<()> {
             // --free-play (with --chain): when no event starts any more, the hero walks freely
             // in the field the last event left them in, from where they stood at its end.
             "--free-play" => free_play = true,
+            // --travel-to MARK: where a world map exit takes the player (there is no world
+            // map screen yet): `A0`, `A0p0` ... (`barrel world-routes`).
+            "--travel-to" => travel_to = Some(it.next().ok_or("--travel-to MARK")?.clone()),
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
             "--new-game" => new_game = Some(PathBuf::from(it.next().ok_or("--new-game ROOT")?)),
@@ -3517,6 +3549,8 @@ fn main() -> Result<()> {
     let mut stop = false;
     // A door the player stepped into: the map it leads to, where she stands there, her velocity.
     let mut door: Option<(String, [f32; 2], [f32; 2])> = None;
+    // The player stepped onto the world map.
+    let mut world_exit = false;
     for frame in 0..frames - frame_base {
     ran = frame + 1;
     // Chained: the event over (every step applied), the next one takes the window.
@@ -3712,6 +3746,11 @@ fn main() -> Result<()> {
                 // A door she steps into: the scene is rebuilt in the map it leads to.
                 let now = w.field.inside(w.pos);
                 let entered = now.iter().find(|i| !w.inside.contains(i)).and_then(|&i| w.field.gimmicks[i].destination);
+                // A world map exit: the trip is taken after the frame (`--travel-to`).
+                if now.iter().any(|&i| !w.inside.contains(&i) && w.field.gimmicks[i].kind == barrel_formats::gimmick::WORLDMAP_CHANGE_EX) {
+                    eprintln!("frame {frame}: onto the world map");
+                    world_exit = true;
+                }
                 w.inside = now;
                 if let Some(to) = entered
                     && let Some(name) = w.maps.get(to.map as usize) {
@@ -3933,7 +3972,7 @@ fn main() -> Result<()> {
                 out.pump(mixer);
             }
     }
-    if door.is_some() {
+    if door.is_some() || world_exit {
         break;
     }
     // Town people: each posed in its wait motion on the viewer's clock.
@@ -4845,6 +4884,39 @@ fn main() -> Result<()> {
     }
     scene.destroy(&gpu);
     frame_base += ran;
+    // Onto the world map: the trip to `--travel-to`, through the session (its days, an event on
+    // the road or on arriving), then the field it opens, the player at its own world map exit.
+    if world_exit {
+        let Some(to) = travel_to.clone() else {
+            eprintln!("on the world map: no --travel-to MARK, so the run ends here");
+            break 'events;
+        };
+        let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the field is not inside a game install")?.to_path_buf();
+        let maps = barrel_game::event::field_maps(&barrel_formats::pe::Pe::parse(&std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
+        let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).ok_or("this field is not in the map table")? as u32;
+        let (map, from, field, arrive) = world_exit_trip(&root, here, &to)?;
+        let scene = match session.as_mut() {
+            Some(s) => s.travelled(&map, here, &from, &to, field).cloned().ok_or(format!("no way from {from} to {to}"))?,
+            None => barrel_game::session::Scene::Field(field),
+        };
+        eprintln!("trip {from} to {to}{}: {scene:?}", session.as_ref().map_or(String::new(), |s| format!(", day {}", s.today())));
+        match scene {
+            barrel_game::session::Scene::Event(e) => {
+                let s = session.take().ok_or("an event without a session")?;
+                chain = Some((s.into_chain(), root.clone()));
+                current_event = Some(root.join("Event/event").join(barrel_game::event_start::event_file(&e)).to_string_lossy().into_owned());
+                args[1] = "auto".into();
+                player_at = None;
+            }
+            barrel_game::session::Scene::Field(m) => {
+                args[1] = root.join("Data/x64/Field").join(maps.get(m as usize).ok_or("no such field")?).to_string_lossy().into_owned();
+                player_at = Some(arrive);
+                player_walk = player_walk.map(|_| [0.0, 0.0]);
+            }
+        }
+        first_event = false;
+        continue 'events;
+    }
     // Through a door: the same again in the next map, the player at the door's spot.
     if let Some((name, at, velocity)) = door.take()
         && let Some(next) = Path::new(&args[1]).parent().map(|p| p.join(&name)) {

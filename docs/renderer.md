@@ -188,7 +188,13 @@ Office (map 2) would start `EVENT_MM02_OP2_510` (`barrel event-chain ROOT EVENT_
 gathering point of the map within its reach (the point's size, 2 m in most, from its place on
 the ground; the game's own reach is not read): one pick (`gather::Gathering::gather`) into the
 session's basket, half a day of field time. In `AREA_01_01` from (3700, 4100) point 0, 76 units
-away, gave item 0 at quality 50. The points are not drawn yet.
+away, gave item 0 at quality 50. The points are not drawn yet. A world map exit (`WORLDMAP_CHANGE_EX`) takes the player onto the world map;
+with no world map screen yet, `--travel-to MARK` says where to (`barrel world-routes`): the
+session takes the trip (`Session::travelled`: leaving a field area passes its carried time, the
+route's days pass, an event on the road or on arriving plays) and the field the mark opens is
+loaded with the player at that field's own world map exit. From the Town Entrance (map 4, its
+exit at (6010, 3740)) `--travel-to A0p0` passes four days (90 to 94) and arrives in
+`AREA_01_01` at (3200, 3680).
 
 **The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
