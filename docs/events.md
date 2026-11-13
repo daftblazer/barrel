@@ -1292,6 +1292,12 @@ to (`event::last_field`). `barrel new-game ROOT [logy]` runs it headless: Escha'
 `TOWN_02`), 310 (10.5 s, `TOWN_04`); Logy's 212 (92.8 s), 222 (18.1 s), 232 (44.2 s), then the
 same 300 and 310. Both then play freely in field 3, the Hall (`TOWN_04`).
 
+A session saves to Barrel's own text format (`Session::save` / `Session::load`, in free play
+only): the lead, the field and the player's spot, the date, each seen event with its day and the
+flags that are not 0, one fact a line under a `barrel-save 1` line. The game's own saves are read
+(`docs/formats.md`, Saves) but not yet written: their records would need a writer and a new
+game's full state as a template.
+
 ### Which event starts (`0x140214d70`, `barrel_game::event_start`)
 
 Called from 31 places with a trigger group. Nothing starts in three cases:

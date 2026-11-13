@@ -413,6 +413,15 @@ impl Chain {
         Chain { checks, process, names, lists, story: Story::default(), rng: Rng::seeded(1) }
     }
 
+    /// The story state: what has been seen, the flags, the date.
+    pub fn story(&self) -> &Story {
+        &self.story
+    }
+
+    pub fn story_mut(&mut self) -> &mut Story {
+        &mut self.story
+    }
+
     /// The event named NAME has played: the name of the one that starts when it ends, if any.
     pub fn after(&mut self, name: &str) -> Option<&str> {
         let event = self.names.iter().position(|n| n == name)?;
