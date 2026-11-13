@@ -1567,6 +1567,15 @@ install) with Shallie's table and puts its command words into Escha's where they
 the unmatched ones marked as Shallie's own (passed by), the other groups as they are. 600 of
 its events play through so.
 
+**Shallie's `s` commands keep Escha's numbers.** Both games' `EventExecChara` run them in slot 8
+(Escha `0x1401efea0`, Shallie `0x14006e410`) through a table indexed by the word less
+`0x73000003` (Escha RVA `0x1f2540`, 121 entries; Shallie `0x70e70`, 123). Matched by their code
+as the `q` cases were, 33 Shallie cases match the Escha case of the same number (0.9 or more,
+unambiguous) and none matches a different one but for five that look like generic Escha
+shapes (`s64` to `s66`, `s106`, `s125`, Shallie's additions); both pass by `s22`, `s31`, `s32`,
+`s63`, `s72` to `s77`, `s80`, `s81`, `s105` and `s121`, and Escha also `s78` and `s79`, which
+Shallie runs. So `ebd::shallie_to_escha` leaves the `s` group as it is.
+
 Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
 13,290 of its 162,098 bodies. Its table is measured from its 3,891 events the same way
 (`ebd_tables::AYESHA`, 262 commands, 7 of varying length; 58 not in Escha's and 13 with other
