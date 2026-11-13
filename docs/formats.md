@@ -898,7 +898,12 @@ shared texture pack, `eff_texture.g1t`. All 536 begin the same way:
 Further in, the devil aura (`701_FE_DEVIL_AURA_01`, 5,008 bytes) has 4 × 4 matrices (identity,
 then one with -1 on the axis) and, at 0x110, a list of increasing offsets (0x20, 0x24c, 0x478,
 0x6e4, 0x950, 0xddc), presumably its parts. Colours and sizes follow (runs of 1.0, 0.1, 40.0).
-The parts' layout is not decoded yet. The executable reads the 0x14-byte header
+Comparing the six same-size aura variants (701–706, 5,008 bytes each) shows where some
+settings sit. An RGB colour is at 0x15c–0x164 and again at 0x18c–0x194: red (1, 0.1, 0.1) in 01
+and 02, blue (0.2, 0.2, 1) in 03 and 04, yellow (1, 0.8, 0.2) in 05 and 06. A scale is at 0x2f0,
+0x318, 0x520 and 0x548: 1 in the odd variants, 2 in the even ones, so each colour comes in a
+small and a large aura. Only two other words differ, at 0x134 and 0xd0c. The parts' layout is
+not decoded yet. The executable reads the 0x14-byte header
 (`0x1406162f0`), checks it (`0x140618f10`: `XF1G`, version at least `5200`), allocates that
 object and constructs it with `0x140615be0` (the effect object, vtable `0x14097f1c8`, its
 parts at +0xa0, 0xe8 bytes each, built by `0x140611d60`, vtable `0x14097f140`). The data is
