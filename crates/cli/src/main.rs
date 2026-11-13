@@ -1851,6 +1851,9 @@ fn layouts(exe: &Path) -> Result<()> {
     for id in layout::FIRST_LAYOUT..layout::FIRST_LAYOUT + 4096 {
         let Some((at, nodes)) = layout::nodes(&pe, id) else { break };
         println!("layout {id} at {at:?}: {} nodes", nodes.len());
+        for t in layout::texts(&pe, id) {
+            println!("  text at {:?} size {} colour {:02x?} kind {}{}: {:?}", t.at, t.size, t.colour, t.kind, if t.filled_in() { " (filled in)" } else { "" }, t.text);
+        }
         let pieces = layout::pieces(&pe, id);
         let mut sprites = pieces.iter();
         for n in &nodes {

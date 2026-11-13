@@ -1212,12 +1212,18 @@ that place them are tables in the executable (English addresses; `crates/formats
   OUT.png ID...` draws layouts).
 - Coordinates are on a 1920 × 1080 screen.
 - **Nesting**: a node part above 0x164 is another layout, by id, placed at the node (its own
-  place added): 105 layouts are not nested in any other, the screens. Part 0x164 itself (kinds
-  21, 22, 23: 625 nodes) is not a sprite; most likely text or a number (not read). The node
-  `kind` values seen: 0 (2,623), 21, 28, 4, 22, 36, 15, 19, 29, 7, ... (widget, not read).
+  place added): 105 layouts are not nested in any other, the screens. Part 0x164 (kinds 21, 22, 23) is a text:
+  +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
+  as 0xAARRGGBB (0: the widget's own), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
+  number such as 19213, unread). Fixed labels are the string itself, with `<IMnn>` button
+  icons ("<IM24> Search Equip"); texts the game fills in hold filler kana ("あいうえお…", as
+  long as the room it has) (`layout::texts`, `Text::filled_in`). The node `kind` values seen:
+  0 (2,623), 21, 28, 4, 22, 36, 15, 19, 29, 7, ... (widget, not read).
 - **Screens found** by drawing the top layouts (`barrel layout-png`): 625 the field HUD (top
-  left: the assignment's days "0/0", the year disc, the time-of-day dial, the "Free Time" tab,
-  the collection badges; it also nests the request poster and other pop-ups), 958 the title
+  left, layout 605: "Left" and the assignment's days "0/0", the year disc, the time-of-day
+  dial, the "Free Time" tab, the collection badges; bottom left, 620: the button list "<IM24>
+  Search Equip", "<IM19> Requests", "<IM11> Assignment", "<IM15> Leave Map", "<IM29> Running
+  OFF", "<IM20> Message Log"; at the right, 618 ×5: the gathered-item notices; it also nests the request poster and other pop-ups), 958 the title
   menu (logo; New Game, Load Game, Dressing Room, Extras, Options, Exit Game; "Press any
   button"; 1056 the same over a fade), 1015 and 1023 the hero choice (Yes/No, then the two
   profile cards), 1035 the save list, 916 the battle result, 920 party info, 926 field info.

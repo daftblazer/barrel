@@ -53,7 +53,7 @@ fn u64_at(pe: &Pe, va: u64) -> Option<u64> {
 
 fn text_at(pe: &Pe, va: u64) -> Option<String> {
     let o = pe.offset(va)?;
-    let end = pe.data.get(o..)?.iter().take(96).position(|&b| b == 0)?;
+    let end = pe.data.get(o..)?.iter().take(256).position(|&b| b == 0)?;
     String::from_utf8(pe.data[o..o + end].to_vec()).ok()
 }
 
@@ -99,6 +99,54 @@ pub fn nodes(pe: &Pe, id: u32) -> Option<([i32; 2], Vec<Node>)> {
         node += 0x28;
     }
     Some(([x, y], out))
+}
+
+/// One text of a layout (a node of part 0x164): `at` its place on the 1920 × 1080 screen,
+/// `size` the node's +0x18 in hundredths (27.0 for the HUD's "Left"; the unit is not read),
+/// `colour` its +0x1c as (a, r, g, b) (0: the widget's own), `text` its +0x20 string, `kind`
+/// the node's widget kind (21, 22, 23). Texts the game fills in at run time hold filler kana
+/// ("あいうえお…", [`Text::filled_in`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Text {
+    pub at: [i32; 2],
+    pub size: f32,
+    pub colour: [u8; 4],
+    pub text: String,
+    pub kind: i32,
+}
+
+impl Text {
+    /// Whether the text is a stand-in the game replaces (its filler starts "あいう").
+    pub fn filled_in(&self) -> bool {
+        self.text.starts_with("あいう")
+    }
+}
+
+/// The texts of layout `id` and the layouts it nests, placed on the screen.
+pub fn texts(pe: &Pe, id: u32) -> Vec<Text> {
+    let mut out = Vec::new();
+    add_texts(pe, id, [0, 0], 0, &mut out);
+    out
+}
+
+fn add_texts(pe: &Pe, id: u32, origin: [i32; 2], depth: u32, out: &mut Vec<Text>) {
+    let k = match id.checked_sub(FIRST_LAYOUT) { Some(k) => k, None => return };
+    let rec = LAYOUTS_EN + 16 * k as u64;
+    let (Some(mut node), Some(x), Some(y)) = (u64_at(pe, rec), i32_at(pe, rec + 8), i32_at(pe, rec + 12)) else { return };
+    let (x, y) = (origin[0] + x, origin[1] + y);
+    for _ in 0..256 {
+        let Some(part) = i32_at(pe, node).filter(|&p| p >= 0) else { break };
+        let f = |o: u64| i32_at(pe, node + o).unwrap_or(0);
+        let at = [x + f(8), y + f(12)];
+        if part == 0x164 {
+            let text = u64_at(pe, node + 0x20).and_then(|p| text_at(pe, p)).unwrap_or_default();
+            let [b, g, r, a] = f(0x1c).to_le_bytes();
+            out.push(Text { at, size: f(0x18) as f32 / 100.0, colour: [a, r, g, b], text, kind: f(16) });
+        } else if part > 0x164 && depth < 8 && part as u32 != id {
+            add_texts(pe, part as u32, at, depth + 1, out);
+        }
+        node += 0x28;
+    }
 }
 
 /// The sprite pieces of layout `id`, placed on the screen, with those of the layouts it nests
