@@ -1579,6 +1579,8 @@ Shallie runs. So `ebd::shallie_to_escha` leaves the `s` group as it is. The `t` 
 (`t24` against the rest, then from `0x74000001` and `0x74000019`, a sub-switch of 13), so
 their numbers have not moved either.
 
+## Ayesha DX
+
 Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
 13,290 of its 162,098 bodies. Its table is measured from its 3,891 events the same way
 (`ebd_tables::AYESHA`, 262 commands, 7 of varying length; 58 not in Escha's and 13 with other
@@ -1586,3 +1588,12 @@ counts), and every body decodes with it. Its messages (4,648 files) and tables (
 Escha's code; one table has a value missing its opening quote (`Res/x64/fieldmap/map/param/
 L_POINT_09_C.param.xml`, `fogDistanceMin=-60.0"`), which the table reader takes to the stray
 quote, as the game must (`table.rs`).
+
+**Ayesha's `u` commands lay out as Escha's.** Ayesha's `u` switch (`0x1400805ba`, a byte table at
+RVA `0x81fe8` into targets at `0x81efc`, `u2` to `u145`; a second at `0x140083878`) passes by
+81 commands to Escha's 82, 79 of them the same; Ayesha also passes by `u15` and `u133`, Escha
+also `u141` to `u143`. That points to the same numbering, but Ayesha's code is compiled
+differently enough that matching the cases by their instructions (as for Shallie) finds no
+confident pair either way, so only the switch's layout says so. Its other switches: `s` at
+`0x1400decf8` (from `0x73000003`, 111 entries, RVA `0xe10b0`) and `q` at `0x140495ba5` (from
+`0x71000002`, 40 entries, RVA `0x49672c`), not compared yet.
