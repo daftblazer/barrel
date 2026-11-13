@@ -1526,6 +1526,18 @@ with 20 operands, `u150` to `u152`) and 7 take other counts:
 moved between the two games: Escha's meanings carry over only where Shallie's own executable
 confirms them, command by command.
 
+**Shallie's `u` commands line up with Escha's.** Shallie's `Event` (vtable `0x14077ae18`, 12
+slots as Escha's) runs its commands in slot 8, `0x1400ec0c0`; its `u` switch indexes a byte
+table (RVA `0xee120`, targets `0xee030`) by the word less `0x75000002`, `u2` to `u152`, with
+`0x1400ee004` its end. 86 of its `u` commands go straight to the end (the listeners' or none),
+the 82 Escha passes by among them, and four more: `u71`, `u72`, `u150`, `u151`; every command
+Escha's event runs itself, Shallie's runs too. `u18`, `u22`, `u81`, `u102`, `u121`, `u122` and
+`u149` share one case, `u26` and `u145` another. So unlike the `q` group the `u` numbers did not
+move between the games, and the two checked mean the same: `u34` (`0x140347d40`) sets one of
+the 151 event flags (the words at `0x14108a500`) and `u35` (`0x140347dd0`) adds to one, each
+then running the flag's checks, as Escha's do. The other meanings are taken over on that
+footing, to be confirmed where a Shallie event leans on them.
+
 ## Ayesha DX
 
 Ayesha DX's events are in the same format, with their own command set: Escha's table fails on
