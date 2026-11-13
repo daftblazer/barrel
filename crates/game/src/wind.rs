@@ -9,7 +9,7 @@
 //! over its `weight`, `g_fInvHeight` one over its height, `g_fRootHeight` its root height,
 //! `g_f3Shift` (`shift_x`, 0, `shift_z`).
 
-use barrel_formats::field_look::{VShaker, Wind};
+use barrel_formats::field_look::{NShaker, VShaker, Wind};
 
 /// Keeps a clock within 0 to 3600, as the game does (it adds or takes 3600 until it is).
 fn wrap(t: f32) -> f32 {
@@ -55,6 +55,60 @@ impl Shaker {
     }
 }
 
+/// The longest step a node spring takes (`0x1402855f0` caps the frame's time at 1/30 s).
+pub const NODE_STEP: f32 = 1.0 / 30.0;
+
+/// One `<n_shaker>` node's spring (`0x1402855f0`): its tip direction `d` (unit, the node's own
+/// space, starting on the rest axis) and velocity `v`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NodeSpring {
+    pub d: [f32; 3],
+    pub v: [f32; 3],
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn unit(a: [f32; 3]) -> [f32; 3] {
+    let l = dot(a, a).sqrt();
+    if l > 0.0 { a.map(|x| x / l) } else { a }
+}
+
+impl NodeSpring {
+    pub fn new(n: &NShaker) -> NodeSpring {
+        NodeSpring { d: n.axis, v: [0.0; 3] }
+    }
+
+    /// A step of `dt` seconds (at most [`NODE_STEP`]) under a wind of strength `strength`
+    /// along `toward` (a unit vector in the node's own space), with `push` the player's random
+    /// push (a unit vector) when within its `char_range`:
+    /// 1. unless the wind is nearly along the tip (`|toward · d| ≥ 0.9`), `v += toward ×
+    ///    strength × dt / weight`; 2. `v += push × char_power × dt`; 3. `v += (axis - d) ×
+    ///    axis_power × 100 × dt` (the parser keeps it × 100); 4. `d += v × dt`, normalised;
+    /// 5. past `max_angle` from the axis, `d` is put back on that cone (in the plane of `d` and
+    ///    the axis: this module's, the game's cross-product version not being read through).
+    pub fn step(&mut self, n: &NShaker, toward: [f32; 3], strength: f32, push: Option<[f32; 3]>, dt: f32) {
+        let dt = dt.min(NODE_STEP);
+        if dot(toward, self.d).abs() < 0.9 {
+            let k = strength * dt / n.weight;
+            self.v = [0, 1, 2].map(|i| self.v[i] + toward[i] * k);
+        }
+        if let Some(r) = push {
+            self.v = [0, 1, 2].map(|i| self.v[i] + r[i] * n.char_power * dt);
+        }
+        let pull = n.axis_power * 100.0 * dt;
+        self.v = [0, 1, 2].map(|i| self.v[i] + (n.axis[i] - self.d[i]) * pull);
+        self.d = unit([0, 1, 2].map(|i| self.d[i] + self.v[i] * dt));
+        let limit = n.max_angle.to_radians();
+        let c = dot(n.axis, self.d);
+        if c < limit.cos() {
+            let side = unit([0, 1, 2].map(|i| self.d[i] - n.axis[i] * c));
+            self.d = [0, 1, 2].map(|i| n.axis[i] * limit.cos() + side[i] * limit.sin());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,6 +120,22 @@ mod tests {
         assert!((wind(&w, 0.0)[0] - 25.0).abs() < 1e-3);
         assert!((wind(&w, 2.5)[0] - 50.0).abs() < 1e-3);
         assert!(wind(&w, 7.5)[0].abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_node_bends_with_the_wind_but_no_further_than_its_angle() {
+        let n = NShaker { keyword: "xN1_".into(), weight: 15.0, axis: [0.0, 0.0, 1.0], max_angle: 10.0, axis_power: 0.0, char_range: 0.0, char_power: 0.0 };
+        let mut s = NodeSpring::new(&n);
+        for _ in 0..300 {
+            s.step(&n, [1.0, 0.0, 0.0], 50.0, None, 1.0 / 30.0);
+        }
+        // With no pull back it leans to its limit, toward the wind.
+        assert!((s.d[2] - 10f32.to_radians().cos()).abs() < 1e-4 && s.d[0] > 0.0, "{:?}", s.d);
+        // A pull back with no wind brings it home.
+        let n2 = NShaker { axis_power: 50.0, ..n.clone() };
+        let mut s2 = NodeSpring { d: s.d, v: [0.0; 3] };
+        s2.step(&n2, [1.0, 0.0, 0.0], 0.0, None, 1.0 / 30.0);
+        assert!(s2.d[0] < s.d[0]);
     }
 
     #[test]

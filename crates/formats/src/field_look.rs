@@ -89,6 +89,24 @@ pub struct FieldLook {
     pub winds: Vec<Wind>,
     /// `<wind_root><v_shaker>`: the grass that sways by vertex, by mesh name.
     pub v_shakers: Vec<VShaker>,
+    /// `<wind_root><n_shaker>`: the trees that sway by node, by placement name.
+    pub n_shakers: Vec<NShaker>,
+}
+
+/// Trees and dense grass swaying by node (`<n_shaker keyword weight axis max_angle axis_power
+/// char_range char_power>`): a spring per node about its rest `axis` (normalised, the node's
+/// own space), `max_angle` degrees at most, `char_range` metres; defaults as the game's notes
+/// give them (weight 30, axis (0, 0, 1), max angle 10, axis power 500, char range 0, char
+/// power 10).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NShaker {
+    pub keyword: String,
+    pub weight: f32,
+    pub axis: [f32; 3],
+    pub max_angle: f32,
+    pub axis_power: f32,
+    pub char_range: f32,
+    pub char_power: f32,
 }
 
 /// A wind (`<wind dir power freq shift>`): blowing along `dir` (normalised), `power` strong at
@@ -274,6 +292,19 @@ pub fn read(root: &Element) -> FieldLook {
                                 power: number(w, "power").unwrap_or(0.0),
                                 freq: number(w, "freq").unwrap_or(1.0),
                                 shift: number(w, "shift").unwrap_or(0.0),
+                            });
+                        }
+                        "n_shaker" => {
+                            let a: [f32; 3] = numbers(w, "axis").unwrap_or([0.0, 0.0, 1.0]);
+                            let len = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+                            look.n_shakers.push(NShaker {
+                                keyword: w.attr("keyword").unwrap_or("").to_string(),
+                                weight: number(w, "weight").unwrap_or(30.0),
+                                axis: if len > 0.0 { a.map(|v| v / len) } else { [0.0, 0.0, 1.0] },
+                                max_angle: number(w, "max_angle").unwrap_or(10.0),
+                                axis_power: number(w, "axis_power").unwrap_or(500.0),
+                                char_range: number(w, "char_range").unwrap_or(0.0),
+                                char_power: number(w, "char_power").unwrap_or(10.0),
                             });
                         }
                         "v_shaker" => look.v_shakers.push(VShaker {

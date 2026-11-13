@@ -255,8 +255,9 @@ normalised (+0x24 to +0x30, the rest direction), `axis_power` × 100 (+0x34), `m
 direction `d` (+0x48, unit) and a velocity `v` (+0x58), and each frame (`0x1402856c0` on, `dt`
 the frame's time):
 
-1. the wind, taken into the node's space as a unit vector `u` with a strength `s` (how is
-   before `0x1402856c0`, not read): unless `|u · d| ≥ 0.9`, `v += u × s × dt / weight`;
+1. the wind: the field's summed wind's length `s` and its direction turned into the node's
+   space `u` (by the inverse of the node's matrix kept when it was set up, `0x1402855f0`; the
+   frame's time is capped at 1/30 s): unless `|u · d| ≥ 0.9`, `v += u × s × dt / weight`;
 2. within `char_range` of the player: `v += r × char_power × dt`, `r` a random unit vector
    (each part `(rand() % 100 - 50) / 50`, normalised);
 3. `v += (rest − d) × axis_power × dt` (pulled back to the axis);
@@ -264,7 +265,10 @@ the frame's time):
 5. past `max_angle` from the rest direction (`cos(max_angle) > rest · d`), `d` is put back on
    that cone (`0x140285b7b` on, through the cross products of the two; not read further).
 
-The node is then turned from the rest direction to `d`. Not done in the renderer yet.
+The node is then turned from the rest direction to `d`. `game::wind::NodeSpring` does these
+steps (`FieldLook::n_shakers` the settings), its cone clamp in the plane of `d` and the axis
+(the game's own, by cross products, is not read through); the renderer does not turn the
+nodes yet.
 
 ### Fog (read from the running game)
 
