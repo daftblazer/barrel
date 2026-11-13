@@ -3595,40 +3595,57 @@ fn main() -> Result<()> {
                     }
             }
         }
-        // A jump (`game::walk::jump_height`): her `JUMP` motion at 1.5 from its start, blended in,
-        // and the lift of a launch at 5 m/s; when she is back down the motion skips to its landing
-        // (1.5 s in, the crouch; the viewer's stand-in for the game's landing phase, whose trigger
-        // is not read) and her gait takes over once it ends.
+        // A jump (`docs/engine.md`, "Walking"): her `JUMP` motion at 1.5, blended in, through its
+        // divisions (`CharaDiv.xml`: 0 the take-off to 0.1 s, 1 and 2 the rise and the fall, 3,
+        // 1.1 to 1.5 s, looping while she is still up, 4 from 1.5 s the landing). The launch (5 m/s,
+        // `game::walk::jump_height`) comes as the take-off ends; touching the ground again starts
+        // the landing, and her gait takes over when the motion ends.
         if jump_now && w.jump.is_none()
             && let (Some(anim), Some(b)) = (w.jump_anim.clone(), town_bodies.get_mut(w.body)) {
                 let old = std::mem::replace(&mut b.anim, anim);
                 b.from = Some((old, b.clock.unwrap_or(0.0), 0.0));
                 b.clock = Some(0.0);
-                w.jump = Some(0.0);
+                w.jump = Some(-1.0);
                 eprintln!("frame {frame}: jump");
             }
         let mut lift = 0.0;
-        if let Some(t) = w.jump.as_mut() {
-            if dt > 0.0 {
-                *t += dt;
-            }
-            let h = barrel_game::walk::jump_height(barrel_game::walk::JUMP_SPEED, *t);
+        if let Some(t) = w.jump {
+            const TAKE_OFF: f32 = 0.1;
+            const LOOP: (f32, f32) = (1.1, 1.5);
             let duration = w.jump_anim.as_ref().map_or(0.0, |a| a.duration);
             if let Some(b) = town_bodies.get_mut(w.body) {
-                if h > 0.0 {
-                    lift = h;
-                } else if b.clock.unwrap_or(0.0) < 1.5 {
-                    b.clock = Some(1.5);
+                let mut clock = b.clock.unwrap_or(0.0) + dt * 1.5;
+                let mut t = t;
+                if t < 0.0 {
+                    // The take-off: launched once its division has played.
+                    if clock >= TAKE_OFF {
+                        t = 0.0;
+                    }
+                } else {
+                    t += dt;
+                    let h = barrel_game::walk::jump_height(barrel_game::walk::JUMP_SPEED, t);
+                    if h > 0.0 {
+                        lift = h;
+                        // Still up past the fall: division 3 loops.
+                        if clock >= LOOP.1 {
+                            clock = LOOP.0 + (clock - LOOP.0) % (LOOP.1 - LOOP.0);
+                        }
+                    } else if t > 0.0 && clock < LOOP.1 {
+                        // Down: the landing division.
+                        clock = LOOP.1;
+                        t = f32::INFINITY;
+                    }
                 }
-                b.clock = Some(b.clock.unwrap_or(0.0) + dt * 1.5);
-                if let Some((_, clock, blend)) = &mut b.from {
-                    *clock += dt;
+                b.clock = Some(clock);
+                if let Some((_, c, blend)) = &mut b.from {
+                    *c += dt;
                     *blend += dt;
                 }
                 if b.from.as_ref().is_some_and(|f| f.2 >= MOTION_BLEND) {
                     b.from = None;
                 }
-                if h <= 0.0 && b.clock.unwrap_or(0.0) >= duration {
+                w.jump = Some(t);
+                if t == f32::INFINITY && clock >= duration {
                     w.jump = None;
                     // The gait picks her motion again from the next frame (blended from here).
                     w.gait = barrel_game::walk::Gait::Jump;
