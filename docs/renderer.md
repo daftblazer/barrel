@@ -374,7 +374,8 @@ point light units (metres blow the workshop out, clamped or not) explain them.
 line and field, to pair the viewer's frames with oracle shots by what is on screen. Escha's
 town tour (`EVENT_MM01_OP1_111`, cards 42 to 44 from 100.5, 111.2 and 120.9 s) matches the game
 card for card in framing and cast; the differences left are the sky (a bright sunset there,
-dull here) and the glowing lamp on the bureau's dome (emissive, not drawn).
+dull here) and the glowing lamp on the bureau's dome (not checked again since the point
+lights' fix).
 
 **Distant view order.** The distant view draws without depth, so its models go back to
 front by kind: the dome (`Sphere_sky`), the clouds (`xEF_`), then everything else (ground,
@@ -447,12 +448,12 @@ paired with the viewer by line or narration card (`BARREL_SCHEDULE_LOG`):
 | Event | Field | What was compared | Result |
 |---|---|---|---|
 | `EVENT_MM01_OP1_111` | TOWN_11, 10, 09, 04 | workshop lines, close-up, town tour cards 38–44 | match; sky and outdoor shade darker in the game |
-| `EVENT_MM01_OP1_121` | TOWN_03 | Marion's name card, lines 1–4 | match; desk lamp glow missing |
+| `EVENT_MM01_OP1_121` | TOWN_03 | Marion's name card, lines 1–4 | match |
 | `EVENT_MM01_OP1_131` | R&D room | room pan, lines 0–3, Logy's arrival (lines 7, 8) | match |
 | `EVENT_MM01_OP1_212` | TOWN_07 | Logy's lines 1–6, overhead shot | match; sky too dark, `ns_` bush paler |
-| `EVENT_MM01_OP1_222` | TOWN_03 | Colland's lines 0, 1, 7, 10 | match; desk lamp glow missing |
+| `EVENT_MM01_OP1_222` | TOWN_03 | Colland's lines 0, 1, 7, 10 | match; desk lamp as the game since the point lights' `att2` fix |
 
 Cameras, cuts, positions, walks, gestures, faces, name cards, line breaks and the window art
 agree. The gaps left are lighting: the sky dome's brightness, the outdoor ambient (walls in
-shade), lamps that glow, the cloud-shadow light texture and the glow's level combination
+shade), the cloud-shadow light texture and the glow's level combination
 (`docs/shading.md`).

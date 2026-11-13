@@ -162,8 +162,9 @@ metres. Point light distances are in field units, as for characters. Checked aga
 TOWN_03 (Colland's office, event `EVENT_MM01_OP1_222`): taking metres there makes the desk
 lamp glow as in the game but blows Escha's workshop out to white (101, 65, 67 become 255,
 242, 254), so field units stand. The quadratic term was the error (below: the table's `att2`
-is the light left at the range); the lamp's own shade against the game's is not measured
-again yet (the viewer's line-start shot is not the game's lamp shot).
+is the light left at the range). With it the desk lamp in `EVENT_MM01_OP1_222`'s line 10
+(82.3 s on, the game's shot `logy_c/12`) is as the game's: shade 255, 255, 255 (game the
+same, 129, 147, 111 before), brass base 226, 218, 96 (game 237, 220, 58).
 
 **The light texture is the field's `<AREA>_pat.g1t`.** Outdoor fields carry a real one
 (`TOWN_10_pat.g1t`: one 512 × 512 BC1 texture, grey, mean 0.61, black to white: drifting cloud
