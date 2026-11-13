@@ -346,14 +346,15 @@ The player runs at 500 units a second, 625 once `EVENT_XG05_110` (event 734) has
 a test of that event's record and the constants 500 and 625; it does not override the brains'
 `getMoveSpeed` (the base one returns 1). Its move (`0x140234950`, `game::walk::player_move`) takes the stick
 (`0x1404d33c0`, its second axis negated): leaning less than 0.2 it is nothing, else along the
-stick at that speed times the lean (at most 1) times the frame's time. A pad button (6) toggles a
-global (`0x141078088`) that, when set, overwrites the move with a constant (1.5, 1.5): a debug
-aid presumably, not reproduced. Her motion follows how fast she went this frame (`0x140235410`,
+stick at that speed times the lean (at most 1) times the frame's time. Pad button 6 is the run toggle
+("Run On" / "Run Off", the global `0x141078088`, off at the start): on, the move is half as
+fast again (× 1.5: 750 units a second at full lean). Her motion follows how fast she went this frame (`0x140235410`,
 `game::walk::player_gait`): `MOTION_RUN` (33) from 0.42 of the run speed, `MOTION_WALK` (32)
 below it, waiting when still, blended in over 0.15 seconds and played at the speed times
 0.00225 (never slower than normal: 1.125 at 500). The viewer starts a new motion from its
-beginning without the blend. The user brain's button 1 is the jump (`MOTION_JUMP`, 49), not
-read yet.
+beginning without the blend. The user brain's button 1 starts an action in
+`MOTION_JUMP` (49; the player's `JUMP` column, `PC20_ACT_JUMP`) played at 1.5 with sound 0x23,
+then timed at +0x124 and +0x128 (1.7 s): not read further.
 
 ## Movies (open)
 

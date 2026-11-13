@@ -1221,6 +1221,8 @@ struct Walker {
     facing: f32,
     /// The motion her body is in.
     gait: barrel_game::walk::Gait,
+    /// The run toggle (T in a window; the game's pad button 6), off at the start.
+    run_on: bool,
     walls: barrel_game::walk::Walls,
     ground: barrel_game::walk::Ground,
 }
@@ -1259,7 +1261,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
     let walk = motions.get("WALK").cloned().ok_or("the player has no WALK motion")?;
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let walls = barrel_game::walk::Walls::new(&collision, barrel_game::walk::DEFAULT_SLOPE);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, walls, ground };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_game::walk::Gait::Wait, run_on: false, walls, ground };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0) }, walker))
 }
 
@@ -3365,6 +3367,12 @@ fn main() -> Result<()> {
                 }
                 KeyCode::Escape => quit = true,
                 KeyCode::KeyR => orbit = (0.0, 0.0, 1.0),
+                KeyCode::KeyT => {
+                    if let Some(w) = walker.as_mut() {
+                        w.run_on = !w.run_on;
+                        eprintln!("run {}", if w.run_on { "on" } else { "off" });
+                    }
+                }
                 _ => {}
             }
         }
@@ -3453,7 +3461,7 @@ fn main() -> Result<()> {
             // Right of the view in render space is (-f.z, 0, f.x); game x is render's mirrored.
             // Keys lean the stick all the way; the speed a second is the move over one second.
             let v = (f * ahead + Vec3::new(-f.z, 0.0, f.x) * right).normalize_or_zero();
-            w.velocity = barrel_game::walk::player_move([-v.x, v.z], 1.0, false);
+            w.velocity = barrel_game::walk::player_move([-v.x, v.z], 1.0, false, w.run_on);
         }
         let moving = w.velocity != [0.0, 0.0];
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };

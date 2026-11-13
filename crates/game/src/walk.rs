@@ -17,18 +17,23 @@ pub fn player_run_speed(faster: bool) -> f32 {
     if faster { 625.0 } else { 500.0 }
 }
 
+/// How much faster the player goes with the run toggle on.
+pub const RUN_TOGGLE: f32 = 1.5;
+
 /// How far the stick has to lean before the player moves at all.
 pub const STICK_DEAD_ZONE: f32 = 0.2;
 
 /// The player's move over `dt` seconds for a stick leaning `stick` (x, z; each -1 to 1): none
 /// inside the dead zone, else along the stick at the run speed times how far it leans (at most
-/// 1), as the user brain does (`0x140234950`).
-pub fn player_move(stick: [f32; 2], dt: f32, faster: bool) -> [f32; 2] {
+/// 1), half as fast again with the run toggle on (`run_on`: pad button 6, "Run On" / "Run
+/// Off", off at the start), as the user brain does (`0x140234950`).
+pub fn player_move(stick: [f32; 2], dt: f32, faster: bool, run_on: bool) -> [f32; 2] {
     let tilt = (stick[0] * stick[0] + stick[1] * stick[1]).sqrt();
     if tilt < STICK_DEAD_ZONE {
         return [0.0, 0.0];
     }
-    let scale = player_run_speed(faster) * dt * tilt.min(1.0) / tilt;
+    let toggle = if run_on { RUN_TOGGLE } else { 1.0 };
+    let scale = player_run_speed(faster) * dt * tilt.min(1.0) / tilt * toggle;
     [stick[0] * scale, stick[1] * scale]
 }
 
@@ -266,10 +271,11 @@ mod tests {
 
     #[test]
     fn the_stick_leans_the_speed() {
-        assert_eq!(player_move([0.1, 0.1], 1.0, false), [0.0, 0.0], "inside the dead zone");
-        let half = player_move([0.0, 0.5], 1.0, false);
+        assert_eq!(player_move([0.1, 0.1], 1.0, false, false), [0.0, 0.0], "inside the dead zone");
+        let half = player_move([0.0, 0.5], 1.0, false, false);
         assert!((half[1] - 250.0).abs() < 1e-3 && half[0] == 0.0, "{half:?}");
-        let full = player_move([3.0, 4.0], 0.5, true);
+        assert!((player_move([0.0, 1.0], 1.0, false, true)[1] - 750.0).abs() < 1e-3, "run toggle on");
+        let full = player_move([3.0, 4.0], 0.5, true, false);
         assert!((full[0] - 187.5).abs() < 1e-3 && (full[1] - 250.0).abs() < 1e-3, "past full lean: {full:?}");
     }
 
