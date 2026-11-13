@@ -130,10 +130,9 @@ pub fn run<S: Clone + PartialEq, O>(
 
 /// The (pack, picture) keys of the sprites among `elements`, each once.
 pub fn sheet_keys(pe: &barrel_formats::pe::Pe, elements: impl IntoIterator<Item = crate::hud::Element>) -> Vec<(String, u32)> {
-    use crate::hud::Element;
     let mut keys: Vec<(String, u32)> = Vec::new();
     for e in elements {
-        if let Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } = e
+        if let Some((part, cut, at)) = e.sprite()
             && let Some(p) = barrel_formats::layout::sprite(pe, part, cut, at) {
                 let key = (p.texture, p.index);
                 if !keys.contains(&key) {

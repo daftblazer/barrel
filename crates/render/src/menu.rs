@@ -189,7 +189,7 @@ impl Menu {
                     }
                 }
                 _ if n.part == NEW => {}
-                _ => out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at: p.at }),
+                _ => out.push(Element::stored(p)),
             }
         }
         out

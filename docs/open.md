@@ -31,6 +31,12 @@ likely settle them where static reading failed.
     for 0.6 s after a line (bridging that tick and the short pauses between some lines); a
     stand-in until the game's own window rule is read (`docs/engine.md`).
 - Character select on new game looks wrong
+  - Fixed (2026-11-13), checked against a screenshot of the game's confirm step: mirrored pieces
+    (node kind 2: the bottom parchment's right half, the right rope) were drawn unmirrored;
+    the confirm step now hides the cards and arrows and shows the chosen figure in colour,
+    moved to the middle; the desk picture, the tags' lit cut, the question line and centred
+    texts (kind 22) as the game has them. Left: the Yes tag's tilt, Logy's confirm figure place
+    (no screenshot of it).
 
 ## Saves
 

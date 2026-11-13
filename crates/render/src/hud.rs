@@ -8,8 +8,8 @@
 //! big numbers (part 0x57, kind 29, cut = digit) are the month and the day; the year disc's
 //! digit is part 0x8a cut 2 + year. Not yet the game's: the dial's ten segments (part 0x8d cuts
 //! 2 to 11, in the layout's order) as the tenths of the day still free; the button list (620)
-//! moved up 121 pixels and the days left 28 to the left, as the screenshot has them (the
-//! layout puts the list at y 792, past the screen's foot); the text size (the node's size × 1.47
+//! moved up 121 pixels, as the screenshot has it (the layout puts the list at y 792, past the
+//! screen's foot); the days left are a kind 22 text, centred on their node; the text size (the node's size × 1.47
 //! over the font's line); how many-digit numbers sit (the first
 //! right-aligned on its node, the second left-aligned, 32 pixels a digit); white for texts
 //! without a colour and for the days left. The arrows (602), the assignment badges (603), the
@@ -31,8 +31,6 @@ const DIAL: i32 = 0x8d;
 const DIGIT_ADVANCE: i32 = 32;
 const BUTTON_LIST: u32 = 620;
 const BUTTON_LIST_SHIFT: i32 = -121;
-/// The days left start this far left of their node (measured).
-const LEFT_SHIFT: i32 = -28;
 
 /// What the HUD shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,7 +60,29 @@ pub enum Element {
     Sprite { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite at half strength (a choice not taken).
     Dim { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite mirrored left to right (node kind 2).
+    Mirrored { part: i32, cut: i32, at: [i32; 2] },
     Label(layout::Text),
+}
+
+/// Node kind of a sprite drawn mirrored left to right (the right halves of symmetric pieces:
+/// the save list's and hero choice's parchment, the right-hand rope).
+pub const MIRRORED: i32 = 2;
+
+impl Element {
+    /// A placed node's sprite as the layout stores it (mirrored for kind 2).
+    pub fn stored(p: &Placed) -> Element {
+        let (part, cut, at) = (p.node.part, p.node.cut.max(0), p.at);
+        if p.node.kind == MIRRORED { Element::Mirrored { part, cut, at } } else { Element::Sprite { part, cut, at } }
+    }
+
+    /// The sprite's part, cut and place, if it is one.
+    pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
+        match *self {
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } => Some((part, cut, at)),
+            Element::Label(_) => None,
+        }
+    }
 }
 
 /// The HUD's elements for `v`, from layout 625's placed nodes (`texts` gives a node's text).
@@ -83,7 +103,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             0x164 => match texts(p) {
                 // The text after "Left": the days left.
                 Some(t) if t.text.is_empty() && p.path.len() == 2 && p.path[1] == 605 && n.kind == 22 && !left_shown => {
-                    out.push(Element::Label(layout::Text { text: v.left.to_string(), colour: WHITE, at: [at[0] + LEFT_SHIFT, at[1]], ..t }));
+                    out.push(Element::Label(layout::Text { text: v.left.to_string(), colour: WHITE, at, ..t }));
                     left_shown = true;
                 }
                 Some(t) if !t.text.is_empty() && !t.filled_in() => out.push(Element::Label(layout::Text { at, ..t })),
@@ -106,7 +126,10 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
                 }
                 segment += 1;
             }
-            _ => out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at }),
+            _ => out.push(match Element::stored(p) {
+                Element::Mirrored { part, cut, .. } => Element::Mirrored { part, cut, at },
+                e => e.sprite().map_or(e, |(part, cut, _)| Element::Sprite { part, cut, at }),
+            }),
         }
     }
     out
@@ -129,7 +152,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
     let mut out = Vec::new();
     for e in elements {
         match e {
-            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } => {
+            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at } => {
                 let alpha = if matches!(e, Element::Dim { .. }) { 0.5 } else { 1.0 };
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
@@ -138,7 +161,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [x, y] = piece.at.map(|v| v as f32);
                 out.push(Quad {
                     rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k],
-                    uv: [l / w, t / h, r / w, b / h],
+                    uv: if matches!(e, Element::Mirrored { .. }) { [r / w, t / h, l / w, b / h] } else { [l / w, t / h, r / w, b / h] },
                     color: [1.0, 1.0, 1.0, alpha],
                     texture: sheets.first + slot,
                 });
@@ -149,8 +172,14 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let colour = if a == 0 { [1.0; 4] } else { [r, g, b, a].map(|c| f32::from(c) / 255.0) };
                 let scale = t.size * k / text::LINE * 1.47;
                 // Kind 23 texts end at their node (the numbers at x 1800 in the save list's
-                // details); the others start there.
-                let x = dx + t.at[0] as f32 * k - if t.kind == 23 { font.width_of(&t.text) * scale } else { 0.0 };
+                // details), kind 22 are centred on it ("Select your character." at x 954, the
+                // HUD's days left), the others start there.
+                let width = font.width_of(&t.text) * scale;
+                let x = dx + t.at[0] as f32 * k - match t.kind {
+                    23 => width,
+                    22 => width / 2.0,
+                    _ => 0.0,
+                };
                 font.line(&t.text, x, t.at[1] as f32 * k, scale, colour, &mut out);
             }
         }

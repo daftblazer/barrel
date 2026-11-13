@@ -209,6 +209,9 @@ pub fn run(
     let still_bytes = std::fs::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| std::fs::read(x64.join(&still.folder).join(&still.file)))?;
     let still_g1t = barrel_formats::g1t::G1t::parse(&still_bytes)?;
     let hero_nodes = barrel_formats::layout::placed(&pe, crate::hero::LAYOUT);
+    // The hero choice's confirming line, from the system messages.
+    let sys_mess = std::fs::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| barrel_formats::sys_text::sys_mess(&t)).unwrap_or_default();
+    let question = sys_mess.get(crate::hero::QUESTION_ROW).map_or_else(|| "Do you want to use this character?".to_string(), |m| m.text.clone());
     let load_nodes = barrel_formats::layout::placed(&pe, crate::loadlist::LAYOUT);
     let texts = |p: &barrel_formats::layout::Placed| barrel_formats::layout::text(&pe, p);
     let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("title: no glyph table")?;
@@ -218,9 +221,9 @@ pub fn run(
     // The sprites' pictures (every state of both screens), each pack read once.
     let mut every = all_elements();
     for logy in [false, true] {
-        every.extend(Hero::Choose { logy }.elements(&hero_nodes, texts));
+        every.extend(Hero::Choose { logy }.elements(&hero_nodes, texts, &question));
         for yes in [false, true] {
-            every.extend(Hero::Confirm { logy, yes }.elements(&hero_nodes, texts));
+            every.extend(Hero::Confirm { logy, yes }.elements(&hero_nodes, texts, &question));
         }
     }
     // The list's sprites as stored, and the cuts it swaps in (the stamps, the "Load" heading).
@@ -231,7 +234,7 @@ pub fn run(
     }
     let mut keys_needed: Vec<(String, u32)> = Vec::new();
     for e in every {
-        if let Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } = e
+        if let Some((part, cut, at)) = e.sprite()
             && let Some(p) = barrel_formats::layout::sprite(&pe, part, cut, at) {
                 let key = (p.texture, p.index);
                 if !keys_needed.contains(&key) {
@@ -266,7 +269,7 @@ pub fn run(
             q.extend(hud::quads(&pe, None, &sheets, &t.elements(), w, h));
             q
         }
-        Front::Hero(hero) => hud::quads(&pe, Some(&font), &sheets, &hero.elements(&hero_nodes, texts), w, h),
+        Front::Hero(hero) => hud::quads(&pe, Some(&font), &sheets, &hero.elements(&hero_nodes, texts, &question), w, h),
         Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
     let mut front = Front::Title(Title::new());

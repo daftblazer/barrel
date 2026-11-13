@@ -1212,7 +1212,7 @@ that place them are tables in the executable (English addresses; `crates/formats
   OUT.png ID...` draws layouts).
 - Coordinates are on a 1920 × 1080 screen.
 - **Nesting**: a node part above 0x164 is another layout, by id, placed at the node (its own
-  place added): 105 layouts are not nested in any other, the screens. Part 0x164 (kinds 21, 22, 23) is a text (kind 23 ends at its node, right-aligned: the save list's numbers at x 1800; kinds
+  place added): 105 layouts are not nested in any other, the screens. Part 0x164 (kinds 21, 22, 23) is a text (kind 23 ends at its node, right-aligned: the save list's numbers at x 1800; kind 22 is centred on it: "Select your character." at x 954, the field HUD's days left; kinds
   21 and 22 start there):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as 0xAARRGGBB (0: the widget's own), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
@@ -1241,6 +1241,15 @@ that place them are tables in the executable (English addresses; `crates/formats
   "New SaveData" or "Game Data 999", the date line and "9999/99/99 00:00:00"; the heading part
   0x157, cut 0 "Save", 1 "Load", 2 "Delete"; the details panel 1044 with "Play Time",
   "Protagoist" (sic), "LV", "Alchemy LV", "Money" and eleven party rows, layout 1046), 916 the battle result, 920 party info, 926 field info.
+
+A sprite node of kind 2 is drawn mirrored left to right (25 nodes: the right halves of
+symmetric pieces, as the hero choice's bottom parchment, layout 695, one half at [750, 0] as
+stored and at [0, 0] mirrored, and its right-hand rope, layout 1017 at x 1284, the left one,
+1016, mirrored). Kind 7 (the hero choice's Yes tag) is likely a tilt: the game draws that tag
+turned a few degrees. Some pictures are stored at half alpha (at most 128: the hero choice's
+grey figure sketches, cut 0 of parts 0x138 and 0x139, whose cut 1 is the same in colour at
+full alpha). The desk under a screen is chosen at run time: the hero choice's layout names
+part 0 cut 0 with the overlay 357 (cuts 4 and 5), but the game shows part 0 cut 1 there.
 
 The main menu opened in play is layouts 383 (the desk background, `a15_menu.g1t` picture 0),
 361 (the lead's figure: nested 957 on `a15_menu_chara01.g1t`) and 374 (placed at [0, 90]: a dark
