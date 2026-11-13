@@ -330,7 +330,7 @@ pub fn run(
             eprintln!("menu: {c:?} is not there yet");
             None
         }
-        Outcome::Option(o @ (OptionRow::ChangeBgm | OptionRow::Options)) => {
+        Outcome::Option(o @ OptionRow::ChangeBgm) => {
             eprintln!("menu: {o:?} is not there yet");
             None
         }

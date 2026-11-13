@@ -38,6 +38,7 @@ mod shopping;
 mod equipping;
 mod area_panel;
 mod graphics_options;
+mod options;
 mod drops;
 mod mix;
 mod fsr3;
@@ -4866,6 +4867,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let color = *color;
             equip_visit(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
         }
+    // The Options screen's graphics page offscreen (`BARREL_OPTIONS_AT`, `BARREL_OPTIONS_KEYS`),
+    // drawn to OUT-options.png; the run goes on.
+    if presenter.is_none() && std::env::var("BARREL_OPTIONS_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+            let keys = title::keys(&std::env::var("BARREL_OPTIONS_KEYS").unwrap_or_default());
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-options.png";
+            let kept = options::run(&gpu, pool, &target, None, Some(*color), &root, settings, settings, &keys, Some(Path::new(&shot)))?;
+            eprintln!("frame {frame}: options: {kept:?}");
+        }
     // A town shop (B in free play in town; `BARREL_SHOP_AT` offscreen, `BARREL_SHOP_KEYS`).
     let mut open_shop = false;
     if presenter.is_none() && std::env::var("BARREL_SHOP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
@@ -5019,6 +5030,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
                     stop = true;
                     break;
+                }
+                // Option → Options: the graphics page (not applied live yet: the run reports it).
+                Some(menu::Outcome::Option(menu::OptionRow::Options)) => {
+                    unsafe { gpu.device.device_wait_idle()? };
+                    let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, settings, settings, &[], None)?;
+                    eprintln!("frame {frame}: options: {kept:?}");
                 }
                 Some(menu::Outcome::Command(menu::Command::AdventureEquip | menu::Command::BattleEquip)) => {
                     unsafe { gpu.device.device_wait_idle()? };

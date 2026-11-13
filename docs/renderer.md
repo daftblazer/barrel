@@ -774,6 +774,17 @@ them (a test walks every open choice three deep from each preset), so the page n
 what the renderer would undo. Dropping the scale under 100% under native AA makes FSR 3 the
 upscaler; raising it to 100% drops GSR 2 and its anti-aliasing.
 
+The page (`options.rs`) opens from the menu's Option → Options (offscreen: `BARREL_OPTIONS_AT`
+with `BARREL_OPTIONS_KEYS`, drawn to OUT-options.png): the Options screen's desk and its
+"Option" title bar (layout 511), the six rows in the sound page's pieces (layout 408: the name
+on its bar 0x3c, the value in a 0x3d box between "< >", the rules 0x28, the cursor 0x32), then
+"Default" and "Confirm". Left / right step a row to its next open choice; a row with no other
+open choice shows its value grey without arrows; the help bar at the foot names the closed
+choices with their reason. Checked offscreen: Native AA greys the upscaler and sharpening;
+150% greys every upscaler ("Upscalers need a render scale under 100%."). Not yet: applying
+the choice live, keeping it across runs, the sound page beside it, and the game's own look
+of the page title and help bar.
+
 ## Controllers
 
 With a window, a game controller works through SDL3's gamepad layer (`crates/render/src/pad.rs`;
