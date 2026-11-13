@@ -2630,6 +2630,9 @@ fn g1m_materials(spec: &str) -> Result<()> {
         let colours = if n == 0 { String::new() } else { format!(", vertex colours on {n} vertices, average {:.2?}", sum.map(|v| v / n as f32)) };
         println!("material {i}: {} (submeshes {users:?}){colours}", tex.join(", "));
     }
+    for m in &g.mesh_groups {
+        println!("lod {} pass {} shader {}: submeshes {:?}", m.lod, if m.group == 0 { "colour" } else { "shadow" }, m.shader, m.submeshes);
+    }
     for (k, m) in g.submeshes.iter().filter_map(|s| g.simple_mesh(s).ok()).enumerate().filter(|(_, m)| !m.corners.is_empty()) {
         let first: Vec<String> = m.corners.iter().take(4).map(|c| format!("{c:.1?}")).collect();
         println!("submesh {k}: billboard, {} corners, first quad {}", m.corners.len(), first.join(" "));

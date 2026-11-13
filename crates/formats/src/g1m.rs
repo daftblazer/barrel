@@ -30,7 +30,9 @@
 //!
 //! | 0x10003 | shader parameter sets (a submesh names one): per set `{u32 count}`, then per parameter `{u32 record size, u32 name length, u32 0, u16 value count, u16 type, name (padded), values}`; type 1 floats (`atEdge` 0.2, `atOutCol` (0.8, 0.8, 0.8), `g_specularPower`, `g_UVOffsetScaleL`, ...) |
 //!
-//! Types 0x10001 and 0x10009 (LOD groups) are kept as raw sections for now.
+//! | 0x10009 | mesh groups (`{u32 block count}` in the header's count): per block nine words `{lod, group, first entry, count1, count2, lod range start, lod range length, -1, 0}`, then `count1 + count2` entries `{16-byte name, u32 0, u32 -1, u32 n, n submesh numbers}`. The name is the shader the submeshes draw with: group 0 the colour pass (`MapSTD`, `MapSTD-T0`, `CharaMTDS`, `CharaEYEL` ...: the `String`s of `Saves/shader/shader.xml`), group 1 the shadow pass (`SM`) |
+//!
+//! Type 0x10001 is kept as a raw section for now.
 
 use crate::{Error, u32_at};
 
@@ -203,8 +205,28 @@ pub struct Geometry<'a> {
     pub bone_maps: Vec<Vec<BoneRef>>,
     /// Shader parameter sets (a submesh's `shader_params` picks one).
     pub shader_params: Vec<Vec<ShaderParam>>,
+    /// Mesh groups (section 0x10009): which shader draws which submeshes, per pass.
+    pub mesh_groups: Vec<MeshGroup>,
     /// Sections not decoded yet: (type, count, body).
     pub other_sections: Vec<(u32, u32, &'a [u8])>,
+}
+
+/// Submeshes drawn with one shader in one pass (G1MG section 0x10009).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MeshGroup {
+    pub lod: u32,
+    /// 0 the colour pass, 1 the shadow pass.
+    pub group: u32,
+    /// The shader's name (`Saves/shader/shader.xml`'s `String`: `MapSTD`, `CharaMTDS`, `SM` ...).
+    pub shader: String,
+    pub submeshes: Vec<u32>,
+}
+
+impl Geometry<'_> {
+    /// The shader a submesh is drawn with in the colour pass (group 0), if the model says.
+    pub fn shader_of(&self, submesh: usize) -> Option<&str> {
+        self.mesh_groups.iter().find(|m| m.group == 0 && m.submeshes.contains(&(submesh as u32))).map(|m| m.shader.as_str())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -372,6 +394,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         submeshes: Vec::new(),
         bone_maps: Vec::new(),
         shader_params: Vec::new(),
+        mesh_groups: Vec::new(),
         other_sections: Vec::new(),
     };
     let mut at = 36;
@@ -526,6 +549,21 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
                         index_start: f[12] as usize,
                         index_count: f[13] as usize,
                     });
+                }
+            }
+            0x10009 => {
+                for _ in 0..n {
+                    let (lod, group) = (u32_at(sec, p)?, u32_at(sec, p + 4)?);
+                    let entries = bounded(u32_at(sec, p + 12)?)? + bounded(u32_at(sec, p + 16)?)?;
+                    p += 36;
+                    for _ in 0..entries {
+                        let name = sec.get(p..p + 16).ok_or(Error::Corrupt("g1mg mesh group past the end"))?;
+                        let shader = String::from_utf8_lossy(name.split(|&b| b == 0).next().unwrap_or_default()).into_owned();
+                        let k = bounded(u32_at(sec, p + 24)?)?;
+                        let submeshes = (0..k).map(|i| u32_at(sec, p + 28 + 4 * i)).collect::<Result<_, _>>()?;
+                        g.mesh_groups.push(MeshGroup { lod, group, shader, submeshes });
+                        p += 28 + 4 * k;
+                    }
                 }
             }
             _ => g.other_sections.push((kind, count, &sec[12..])),
