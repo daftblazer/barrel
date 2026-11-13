@@ -4661,7 +4661,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                                 let (exp, money) = tables.spoils(&o);
                                 if let Some(s) = session.as_mut().filter(|_| o.winner == Some(0)) {
                                     s.won(&[party[0].0, party[1].0], exp, money, &tables.exp);
-                                    eprintln!("battle: {exp} experience, {money} money (now {})", s.money);
+                                    s.found(&o.drops);
+                                    eprintln!("battle: {exp} experience, {money} money (now {}), drops {:?}", s.money, o.drops);
                                 }
                             }
                             Err(e) => eprintln!("battle: {e}"),
@@ -5050,8 +5051,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         // Won: the spoils go into the field's save (money, the fighters' experience).
                         let (exp, money) = play.fight.tables.spoils(&play.outcome);
                         if let Some(save) = back.1.save.as_mut().filter(|_| play.outcome.winner == Some(0)) {
-                            *save = barrel_game::session::Session::won_in_save(save, &play.charas, exp, money, &play.fight.tables.exp);
-                            eprintln!("battle: {exp} experience, {money} money");
+                            *save = barrel_game::session::Session::won_in_save(save, &play.charas, exp, money, &play.outcome.drops, &play.fight.tables.exp);
+                            eprintln!("battle: {exp} experience, {money} money, drops {:?}", play.outcome.drops);
                         }
                         (restart, carry_out) = (Some(back.0), back.1);
                         stop = true;

@@ -1813,7 +1813,11 @@ bonus raises every drop slot's chance: a defeated monster's roll (`0x1401b76e0`)
 when a percent roll falls under its chance plus that bonus plus the monster's own (+0x2a8),
 and makes the item (`0x140111bc0`: a drop pool's draw for items 560 and up, else the item as it
 is; it is also handed two battle values, `0x141077dec` and `0x141077df0`, which it never reads
-and nothing writes; `battle::monster_drops`). What fills
+and nothing writes; `battle::monster_drops`). Barrel rolls them as a won battle ends
+(`auto_battle::Outcome::drops`, on the battle's generator after its last action, each defeated
+monster in order, no bonuses yet; a pool's item at a quality drawn in its entry's range, an
+order not read) and puts them in the basket (`Session::found`; through the carried save,
+`Session::won_in_save`): group 10's two Ore Rats dropped items 111 and 9 in one run. What fills
 the fighters' three is not read (equipment or traits, presumably). The result screen (`0x1401d85b0`) then raises the experience by bonus value 1,
 the experience rate (`0x14002f2f0 (1)`: total × (100 + rate) / 100), and hands it and the
 money to the party's display (`0x1401ce940`).

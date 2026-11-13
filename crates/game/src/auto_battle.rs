@@ -23,6 +23,8 @@ const MONSTER_SIZE: f32 = 100.0;
 /// The tables a battle reads, loaded once.
 pub struct Tables {
     monsters: Vec<Monster>,
+    /// The drop pools (`battle_data::drop_pools`), for drop slots naming items 560 and up.
+    pools: Vec<Vec<bd::PoolEntry>>,
     skills: Vec<Skill>,
     lists: Vec<Vec<PartySkill>>,
     growth: Vec<Vec<LevelStats>>,
@@ -78,6 +80,7 @@ impl Tables {
         };
         Ok(Tables {
             monsters: bd::monsters(pe, bd::MONSTERS_EN).ok_or("no monster table")?,
+            pools: bd::drop_pools(pe, bd::DROP_POOLS_EN).unwrap_or_default(),
             skills: bd::skills(pe, bd::SKILLS_EN).ok_or("no skill table")?,
             lists: bd::party_skills(pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists")?,
             growth: bd::party_growth(pe, bd::PARTY_GROWTH_EN).ok_or("no party growth table")?,
@@ -118,6 +121,8 @@ pub struct Outcome {
     pub winner: Option<u8>,
     /// The monsters fought, by monster number.
     pub monsters: Vec<usize>,
+    /// What the defeated monsters dropped (a won battle only): item, count, quality.
+    pub drops: Vec<(i32, i32, f32)>,
 }
 
 impl Outcome {
@@ -204,7 +209,29 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
         }
         Some(commands) => run_commanded(&members, &foes, &sizes, rules, rng, commands),
     };
-    Ok((Outcome { names, start, events, winner, monsters: drawn.to_vec() }, turn))
+    // Won: each defeated monster's drop slots, in order, on the battle's generator
+    // (`0x140192f10` → `battle::monster_drops`, no bonuses yet); a slot naming a drop pool draws
+    // from it (`encounter::pick_pool`, every entry eligible) and the item comes at a quality
+    // drawn in the entry's range (the draw's order not read: not yet the game's). Any other
+    // item is made as it is, at quality 50 (`0x14029ce00`).
+    let mut drops = Vec::new();
+    if winner == Some(0) && turn.is_none() {
+        for &m in drawn {
+            for (item, count) in t.monsters.get(m).map(|m| crate::battle::monster_drops(m, 0, 0, rng)).unwrap_or_default() {
+                let pool = usize::try_from(item - bd::DROP_POOL_FIRST).ok().and_then(|k| t.pools.get(k));
+                match pool {
+                    Some(pool) => {
+                        if let Some(e) = crate::encounter::pick_pool(pool, |_| true, rng) {
+                            let quality = rng.range(e.quality.0, e.quality.1);
+                            drops.push((e.item, count, quality as f32));
+                        }
+                    }
+                    None => drops.push((item, count, 50.0)),
+                }
+            }
+        }
+    }
+    Ok((Outcome { names, start, events, winner, monsters: drawn.to_vec(), drops }, turn))
 }
 
 /// A member's turn waiting for a command: who, the skills it may use (name, MP cost, whether it
@@ -262,6 +289,7 @@ mod tests {
             events: vec![Event::Acted { who: 0, skill: "Attack".into(), target: 1, damage: 12, hp_left: 0, mp_left: 0 }],
             winner: Some(0),
             monsters: vec![0],
+            drops: Vec::new(),
         };
         assert_eq!(o.lines(), vec!["Escha uses Attack on Puni: 12 damage (0 HP left)".to_string(), "the party wins".into()]);
     }

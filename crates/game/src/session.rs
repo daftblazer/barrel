@@ -158,6 +158,15 @@ impl Session {
         true
     }
 
+    /// A won battle's drops (item, count, quality) into the basket, with no traits.
+    pub fn found(&mut self, drops: &[(i32, i32, f32)]) {
+        for &(item, count, quality) in drops {
+            for _ in 0..count.max(0) {
+                self.basket.push(crate::gather::Got { item, quality, traits: Vec::new() });
+            }
+        }
+    }
+
     pub fn with_calendar(mut self, data: crate::days::Data, rng: crate::rng::Rng) -> Session {
         let leader = usize::from(self.logy);
         let mut world = crate::days::World::new_game(rng, leader, &data.wares);
@@ -324,7 +333,7 @@ impl Session {
 
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
-    pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, exp_table: &[(i32, i32)]) -> String {
+    pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
         let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text) };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
@@ -344,6 +353,12 @@ impl Session {
                 out += line;
                 out += "\n";
             }
+        }
+        // The drops join the basket: its `item` lines (in any order: `load` reads them all).
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new() };
+        found.found(drops);
+        for g in &found.basket {
+            out += &format!("item {} {}\n", g.item, g.quality);
         }
         out
     }
@@ -512,7 +527,11 @@ mod tests {
         let mut t = Session::in_field(chain(), 3, false).with_party(&[kit([-1; 4]), kit([-1; 4]), kit([-1; 4])]);
         let text = t.save([0.0, 0.0]).unwrap();
         t.won(&[0, 1], 25, 12, &table);
-        assert_eq!(Session::won_in_save(&text, &[0, 1], 25, 12, &table), t.save([0.0, 0.0]).unwrap());
+        assert_eq!(Session::won_in_save(&text, &[0, 1], 25, 12, &[], &table), t.save([0.0, 0.0]).unwrap());
+        // Drops land in the basket, through the save too.
+        let with = Session::won_in_save(&text, &[0, 1], 25, 12, &[(111, 2, 50.0)], &table);
+        let (back, _) = Session::load(chain(), &with).unwrap();
+        assert_eq!(back.basket.iter().map(|g| (g.item, g.quality)).collect::<Vec<_>>(), vec![(111, 50.0), (111, 50.0)]);
     }
 
     #[test]
