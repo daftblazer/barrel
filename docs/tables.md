@@ -1950,8 +1950,14 @@ fighters it struck (gathered by `0x140189fc0`), which condition 8 searches. `bat
 (each block's `reactions`; `barrel monsters` lists them) and the skirmish's `react` follow this:
 after every action, a standing monster's type-9 reaction fires when a struck fighter of its
 character is at or below the share, and the monster uses that skill at once. The game queues it
-on the monster's command list instead; when that list runs (at once, or at the monster's next
-turn) is not read. Condition 10 (type 14, `0x1401abb2a`: only the Ancient Beast King, monster
+on the monster's command list instead (+0x1e0; `0x1401aeda0` reads its front, `0x1401aed20` drops
+it) and aims it there (`0x1401abde0` and on): the target is the first, of the reaction's own
+fighter (+0x30) and two fighters the moment is handed (presumably the action's actor and target),
+on the side the skill aims at (the side from the command's virtual +0x10), its number at the
+command's +0x18 (`0x1401b9c70`); with none, the command is dropped. A use is taken only while the
+uses are above 0. When the battle runs a queued command (the readers of the front around
+`0x1401d4308` to `0x1401d5d4f`) is not read; the skirmish uses it at once, on its own pick of
+target. Condition 10 (type 14, `0x1401abb2a`: only the Ancient Beast King, monster
 130, `{3, 14, 0, -1, -1}` in both its blocks) holds while the monster stands and a battle global
 (`0x141077e34`) equals word 2, which it then sets back to -1. The global is -1 as the battle starts
 (`0x1401b4728`) and, after each effect (`0x1401c0707`), becomes the side of a target that has just
