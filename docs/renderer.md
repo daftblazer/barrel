@@ -170,7 +170,11 @@ onto the highest of the heightmap and the collision floors), in her wait motion,
 the camera at her. The spot has to be one she could walk to: over a rock that has no collision
 floor on top (AREA_01_01's plateaus) the ground found is the valley under it. AREA_01_01's
 start, (5577, 3520), has her on the valley floor (`BARREL_HIDE=tree --pitch 50` to see her past
-the trees). Walking her about is next.
+the trees). `--walk DX,DZ` has her run that way (DX and DZ units a second, her `RUN` motion,
+`PC20_ACT_RUN`; `WALK` is the slow one) through `game::walk` each frame, against the field's
+walls and onto its ground, turned the way she goes (as the field creatures are, from +z), the
+camera carried along with her: `--player 5577,3520 --walk -300,0 --frames 30 --fps 30` runs her
+300 units west along the valley. A window's keyboard does not steer her yet.
 
 **Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC

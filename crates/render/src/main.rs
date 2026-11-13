@@ -1203,10 +1203,20 @@ fn town_people(root: &Path, field_dir: &Path, save: Option<&Path>, scene: &mut S
     Ok((packs, first, bodies))
 }
 
+/// The player walking: her instance, where she stands (field units), her velocity (x, z, units
+/// a second) and the field's walls and ground she walks against (`game::walk`).
+struct Walker {
+    instance: u32,
+    pos: [f32; 3],
+    velocity: [f32; 2],
+    walls: barrel_game::walk::Walls,
+    ground: barrel_game::walk::Ground,
+}
+
 /// The player (Escha, `Chara.xml` row 0) standing at (x, z) on the field in FIELD_DIR: on its
 /// ground there (`game::walk::Ground`: the heightmap and the collision floors), in her wait
 /// motion. Her texture packs, where she stands (field units) and her body.
-fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody)> {
+fn player(root: &Path, field_dir: &Path, at: [f32; 2], walking: bool, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody, Walker)> {
     let name = field_dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
     let bytes = std::fs::read(field_dir.join(format!("{name}.elixir.gz")))?;
     let container = Elixir::parse(&bytes)?;
@@ -1230,10 +1240,14 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], scene: &mut Scene, base: 
         .and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)))
         .ok_or("no row for the player")?;
     let pos = [at[0], y, at[1]];
-    let (body, _) = add_body(root, scene, base, row, 21_000, pos, 0.0, "F_WAIT", None, None, |_, _, _, _| Ok(None::<()>))?.ok_or("the player's model did not load")?;
-    let (skeleton, _, anim, _) = body.rig.ok_or("the player has no skeleton")?;
+    // Running when she walks (her `RUN` column, `ACT_RUN`; `WALK` is the slow one), else waiting.
+    let column = if walking { "RUN" } else { "F_WAIT" };
+    let (body, _) = add_body(root, scene, base, row, 21_000, pos, 0.0, column, None, None, |_, _, _, _| Ok(None::<()>))?.ok_or("the player's model did not load")?;
+    let (skeleton, _, anim, _) = body.rig.ok_or("the player has no skeleton (or no such motion)")?;
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
-    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim }))
+    let walls = barrel_game::walk::Walls::new(&collision);
+    let walker = Walker { instance: body.instance, pos, velocity: [0.0; 2], walls, ground };
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim }, walker))
 }
 
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_game::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
@@ -1883,6 +1897,8 @@ struct SceneSpec {
     town_people_from: Option<String>,
     /// `--player X,Z`: the player standing there.
     player_at: Option<[f32; 2]>,
+    /// `--walk DX,DZ`: and walking that way (units a second).
+    player_walk: Option<[f32; 2]>,
 }
 
 /// A scene loaded on the CPU side: its geometry, draws and instances, the texture packs, the
@@ -1908,6 +1924,8 @@ struct Loaded {
     start_field: Option<u32>,
     /// Each field's light texture pack (`<AREA>_pat.g1t`), in `field_maps` order.
     patterns: Vec<Option<Vec<u8>>>,
+    /// `--player` with `--walk`: the player walking.
+    walker: Option<Walker>,
 }
 
 /// The story from a new game, over the install at ROOT (`event_start::Chain`).
@@ -1939,10 +1957,12 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         creatures_area,
         town_people_from,
         player_at,
+        player_walk,
     } = spec;
     let mut town_bodies = Vec::new();
     // Where playback starts: --at, or --line's start.
     let mut start_at = event_at;
+    let mut walker: Option<Walker> = None;
     // The field the event is in where playback starts.
     let mut start_field = None;
     // CPU side: the vertices and draws, and the texture pack.
@@ -2107,12 +2127,14 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let field_dir = Path::new(&args[1]);
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--player: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let (packs, pos, body) = player(&root, field_dir, at, &mut scene, base)?;
+        let (packs, pos, body, mut w) = player(&root, field_dir, at, player_walk.is_some(), &mut scene, base)?;
         pack_bytes.extend(packs);
         town_bodies.push(body);
+        w.velocity = player_walk.unwrap_or_default();
+        walker = Some(w);
         focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
     }
-    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field, patterns })
+    Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, town_bodies, start_at, start_field, patterns, walker })
 }
 
 /// Lays each draw's overlay over its base texture into a new RGBA texture (width, height,
@@ -2248,6 +2270,7 @@ fn main() -> Result<()> {
     let mut creatures_area = None::<i32>;
     let mut town_people_from = None::<String>;
     let mut player_at = None::<[f32; 2]>;
+    let mut player_walk = None::<[f32; 2]>;
     let mut town_time = 0.0f32;
     // --costume WHO:BODY:HEAD[:FACE] (repeatable): an event character in outfit BODY with head
     // HEAD and face FACE (rows of CostumeBody.xml, CostumeHead.xml and CostumeFace.xml).
@@ -2347,6 +2370,12 @@ fn main() -> Result<()> {
                 let v = it.next().ok_or("--player X,Z")?;
                 let (x, z) = v.split_once(',').ok_or("--player X,Z")?;
                 player_at = Some([x.parse()?, z.parse()?]);
+            }
+            // --walk DX,DZ: the player walks that way, DX and DZ units a second.
+            "--walk" => {
+                let v = it.next().ok_or("--walk DX,DZ")?;
+                let (x, z) = v.split_once(',').ok_or("--walk DX,DZ")?;
+                player_walk = Some([x.parse()?, z.parse()?]);
             }
             "--free-camera" => use_event_camera = false,
             "--no-terrain" => no_terrain = true,
@@ -2821,7 +2850,7 @@ fn main() -> Result<()> {
         })
         .transpose()?;
     // The scene: loaded, then uploaded under the renderer set up above.
-    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at, start_field, patterns } =
+    let Loaded { mut scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, mut actors, absent, mut creatures, town_bodies, start_at, start_field, patterns, mut walker } =
         load_scene(SceneSpec {
             field,
             args: args.clone(),
@@ -2839,6 +2868,7 @@ fn main() -> Result<()> {
             creatures_area,
             town_people_from: town_people_from.clone(),
             player_at,
+            player_walk,
         })?;
     let event_at = start_at;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
@@ -3395,6 +3425,23 @@ fn main() -> Result<()> {
     }
     if frame > 0 {
         pattern_time += if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+    }
+    // The player walking: a step against the field's walls and onto its ground, turned the way
+    // she goes, the camera carried along.
+    if let Some(w) = walker.as_mut().filter(|w| w.velocity != [0.0, 0.0]) {
+        let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
+        if frame > 0 && dt > 0.0 {
+            let delta = [w.velocity[0] * dt, w.velocity[1] * dt];
+            let next = w.walls.step([w.pos[0], w.pos[2]], delta, w.pos[1], 160.0, 48.0);
+            if let Some(y) = w.ground.height(next[0], next[1], w.pos[1], 50.0) {
+                let moved = Vec3::new(next[0] - w.pos[0], y - w.pos[1], next[1] - w.pos[2]) * Vec3::new(-1.0, 1.0, 1.0);
+                w.pos = [next[0], y, next[1]];
+                eye += moved;
+                target += moved;
+            }
+        }
+        let turn = glam::Quat::from_rotation_y(w.velocity[0].atan2(w.velocity[1]));
+        instances[w.instance as usize].model = render_space(Mat4::from_rotation_translation(turn, Vec3::from(w.pos)));
     }
     // Town people: each posed in its wait motion on the viewer's clock.
     if !town_bodies.is_empty() {
