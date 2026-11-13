@@ -427,6 +427,19 @@ impl Stage {
                 let (dx, dz) = (at[0] - b.position[0], at[2] - b.position[2]);
                 b.facing = if dx == 0.0 && dz == 0.0 { 0.0 } else { dx.atan2(dz) };
             }
+            Step::CopyFacing { character, from, .. } => {
+                let Some((_, yaw)) = self.resolve_anchored(from) else {
+                    self.unresolved += 1;
+                    return;
+                };
+                match self.characters.get_mut(character) {
+                    Some(b) => {
+                        b.facing = yaw;
+                        b.turn = None;
+                    }
+                    None => self.unresolved += 1,
+                }
+            }
             Step::CharacterMove { character, extra, movement, .. } => {
                 let Some((to, yaw)) = self.resolve_anchored(movement.to()) else {
                     self.unresolved += 1;
@@ -767,6 +780,20 @@ mod tests {
         assert!((f.to_degrees() - 355.0).abs() < 1e-3);
         assert_eq!(m.characters[&2], ([5.0; 3], 0.0));
         assert_eq!((m.eye, m.target), (Some([1.0; 3]), Some([1.0, 0.0, 0.0])));
+    }
+
+    #[test]
+    fn a_character_takes_anothers_facing() {
+        let of = |id: u32| Position { anchor: Anchor::Thing { kind: 3, id, point: 0 }, offset: [0.0; 3] };
+        let steps = vec![
+            Timed { time: 0.0, action: 0, step: Step::Place { action: 0, character: 1, position: [0.0; 3] } },
+            Timed { time: 0.0, action: 0, step: Step::Place { action: 0, character: 2, position: [100.0, 0.0, 0.0] } },
+            Timed { time: 0.0, action: 0, step: Step::Turn { action: 0, character: 1, rotation: [0.0, 1.25, 0.0] } },
+            Timed { time: 1.0, action: 0, step: Step::CopyFacing { action: 0, character: 2, from: of(1) } },
+        ];
+        let stage = Stage::default().play(&steps, |_, _| {});
+        assert!((stage.characters[&2].facing - 1.25).abs() < 1e-6);
+        assert_eq!(stage.characters[&2].position, [100.0, 0.0, 0.0]);
     }
 
     #[test]

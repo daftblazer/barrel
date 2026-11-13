@@ -221,6 +221,10 @@ pub const SOUND_BG_FADEOUT: u32 = 0x7510_0005;
 pub const CHARA_ROT_SET: u32 = 0x7300_0017;
 /// `s24` (`ECT_CHARA_ROT_SET_TARGET`): `{character, position (6)}`.
 pub const CHARA_ROT_SET_TARGET: u32 = 0x7300_0018;
+/// `s84` (no name; the facing-only sibling of `s85`, `ECT_CHARA_ROT_SET_COPY_TARGET_ALL`):
+/// `{character, target (6)}`, the character takes the target's facing (`0x1401f0a93`: the
+/// target's rotation from `0x1402f1640`, its y copied into +0x244).
+pub const CHARA_ROT_COPY_TARGET: u32 = 0x7300_0054;
 /// `s26` (`ECT_CHARA_ROT_MOVE_SET`): `{character, x, y, z, seconds ×100, curve}`.
 pub const CHARA_ROT_MOVE: u32 = 0x7300_001a;
 /// `s29` (`ECT_CHARA_ROT_MOVE_WAIT`): `{character}`: waits for its timed turn (`s26`) to end.
@@ -340,6 +344,8 @@ pub enum Step<'a> {
     /// `ECT_CHARA_ROT_SET_TARGET`; `0x1401f4f50`: yaw from the direction, 0 when the position
     /// is where the character stands).
     Face { action: usize, character: u32, toward: crate::camera::Position },
+    /// A character takes the facing of what `from` is anchored to (`s84`).
+    CopyFacing { action: usize, character: u32, from: crate::camera::Position },
     /// A character starts moving (`s18`, `ECT_CHARA_MOVE_SET`; [`crate::camera::Move`]).
     CharacterMove { action: usize, character: u32, extra: u32, movement: crate::camera::Move },
     /// A command the player does not handle itself.
@@ -623,6 +629,10 @@ impl<'a> Player<'a> {
             (CHARA_ROT_SET_TARGET, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
                 let (toward, _) = crate::camera::Position::read(rest).unwrap();
                 out.push(Step::Face { action, character: self.slot(*character), toward: self.slot_position(toward) })
+            }
+            (CHARA_ROT_COPY_TARGET, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
+                let (from, _) = crate::camera::Position::read(rest).unwrap();
+                out.push(Step::CopyFacing { action, character: self.slot(*character), from: self.slot_position(from) })
             }
             (CHARA_MOVE, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
                 let (extra, movement) = crate::camera::Move::read_with_extra(rest).unwrap();
@@ -1062,7 +1072,7 @@ mod tests {
                 },
                 Step::FieldChange { map, .. } => format!("field {map}"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
-                Step::Turn { character, .. } | Step::Face { character, .. } | Step::TurnOver { character, .. } => {
+                Step::Turn { character, .. } | Step::Face { character, .. } | Step::CopyFacing { character, .. } | Step::TurnOver { character, .. } => {
                     format!("{character} turns")
                 }
             })

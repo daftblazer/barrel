@@ -2943,6 +2943,10 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
                 let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
                 println!("{action:3} {who} faces {}", describe_position(&toward));
             }
+            Step::CopyFacing { action, character, from } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
+                println!("{action:3} {who} takes the facing of {}", describe_position(&from));
+            }
             Step::CharacterMove { action, character, extra, movement } => {
                 let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
                 println!("{action:3} {who} {} (extra {extra})", describe_move(&movement));
