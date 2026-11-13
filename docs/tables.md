@@ -1300,7 +1300,13 @@ before, each learnt skill's record +0x14 (0 in every record) is raised by the
 In the running game a Craft from two Spiky Buds (each carrying trait 22, `point` 2) and a
 Mixed Lubricant, made with 1 property point, went straight from "Synthesize" to the finished
 item with no trait screen: no trait could be paid for, which fits `point` being what a trait
-costs to carry over (the code that takes the points off is not found yet).
+costs to carry over. Nothing takes them off in place: the synthesis code's only accesses to
++0x3f8 are a skill effect adding to it (`0x1403051a3`, the effect switch's case 1: a
+property-point gain) and the trait screen copying it into its meter (`0x140322c13`); the
+meter slides to the scene's value at `+0x418` (the state sits in the scene at `+0x20`;
+`0x1402fe680` → `0x1403231b0 (meter, value, time)`). So the cost of the chosen traits is
+presumably counted against the budget where they are chosen, not subtracted from it; that
+code is not found yet.
 
 **The synthesis state** (0x4e0 bytes, one per step):
 
