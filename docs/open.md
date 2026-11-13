@@ -150,11 +150,14 @@ likely settle them where static reading failed.
 
 ## Rendering
 
-- **Lighting gaps.** Sky dome too dark (lighting it as a field model made it darker: the MapSTD
-  pixel program's extra terms are missing); outdoor ambient; lamp glow (no emissive parameters,
-  the glow must come from a bright pass); cloud shadows; the glow combine. Parked four times.
-- **Distant view too pale** (buildings and bushes far off): the real fog rule for the distant
-  view is unknown.
+- **Lighting gaps.** Checked against the reference recording of the opening (2026-11-13): the
+  lamp glow matches (Colland's office, `EVENT_MM01_OP1_121` at 9.5 s: lamp shade 253 against
+  243, cabinet, floor, books and Marion's face within 1 to 4 of 255); the ambient and the
+  glow match since the glow's real threshold; the sky dome since its own-distance fog (within
+  about 20 in green and blue at the top of `TOWN_09`'s sky). Left: the cloud shadows' phase
+  (the drift starts at the field's load in the game; not reproducible), the terrain's
+  specular term (not drawn), `cDiff`'s alpha.
+- **Distant view too pale**: fixed (`TOWN_04`'s plaza and haze match the recording).
 - **Terrain details.** The blend is read and drawn (docs/formats.md, "Patches and their
   draws"; checked by eye on AREA_01_01, AREA_03_01 and AREA_04_01, not yet against the
   game's pixels). Open: whether a draw's layer numbers count in a per-patch texture list, the
