@@ -35,6 +35,7 @@ mod assignment;
 mod battlehud;
 mod result;
 mod shopping;
+mod equipping;
 mod mix;
 mod fsr3;
 mod gsr2;
@@ -1012,6 +1013,48 @@ fn shop_visit(
             eprintln!("frame {frame}: sold {} for {paid}; {} cole now", book.name(item), s.money);
         }
         None => eprintln!("frame {frame}: left the shop"),
+    }
+    Ok(())
+}
+
+/// The Equip page (the menu's Battle Equip; `BARREL_EQUIP_AT` offscreen with
+/// `BARREL_EQUIP_KEYS`): one change through `Session::equip`.
+#[allow(clippy::too_many_arguments)]
+fn equip_visit(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    target: &screen::Target,
+    window: Option<(&present::Presenter, &mut window::Pump)>,
+    offscreen: Option<vk::Image>,
+    root: &Path,
+    session: Option<&mut barrel_game::session::Session>,
+    keys: &[title::Button],
+    out: Option<&Path>,
+    frame: u32,
+) -> Result<()> {
+    let Some(s) = session else { return Ok(()) };
+    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let book = barrel_game::cauldron::Book::load(&exe, root)?;
+    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let items: Vec<barrel_game::equipment::ItemRow> = table.children.iter().map(barrel_game::equipment::ItemRow::from_row).collect();
+    let name = |item: i32| if item < 0 { "(none)".to_string() } else { book.name(item).to_string() };
+    let members: Vec<equipping::Member> = s.party.iter().enumerate().map(|(c, m)| equipping::Member {
+        name: ["Escha", "Logy"].get(c).map_or(format!("Member {c}"), |n| n.to_string()),
+        worn: m.equipment.map(name),
+        fitting: std::array::from_fn(|slot| s.basket.iter().enumerate()
+            .filter(|(_, g)| usize::try_from(g.item).ok().and_then(|i| items.get(i)).is_some_and(|r| r.fits(c, slot)))
+            .map(|(k, g)| (k, format!("{}   quality {:.0}", book.name(g.item), g.quality)))
+            .collect()),
+    }).collect();
+    match equipping::run(gpu, pool, target, window, offscreen, root, &members, keys, out)? {
+        Some((member, slot, pick)) => {
+            let item = s.basket[pick].item;
+            match s.equip(member, slot, pick, &items) {
+                Ok(()) => eprintln!("frame {frame}: {} now wears {} ({:?})", members[member].name, book.name(item), s.party[member].equipment),
+                Err(e) => eprintln!("frame {frame}: equip: {e}"),
+            }
+        }
+        None => eprintln!("frame {frame}: equipment unchanged"),
     }
     Ok(())
 }
@@ -4540,6 +4583,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut open_menu = false;
     // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` offscreen).
     let mut open_mix = presenter.is_none() && std::env::var("BARREL_MIX_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
+    // The Equip page offscreen at a frame (`BARREL_EQUIP_AT`, `BARREL_EQUIP_KEYS`); the run goes on.
+    if presenter.is_none() && std::env::var("BARREL_EQUIP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+            let keys = title::keys(&std::env::var("BARREL_EQUIP_KEYS").unwrap_or_default());
+            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let color = *color;
+            equip_visit(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
+        }
     // A town shop (B in free play in town; `BARREL_SHOP_AT` offscreen, `BARREL_SHOP_KEYS`).
     let mut open_shop = false;
     if presenter.is_none() && std::env::var("BARREL_SHOP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
@@ -4661,6 +4712,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
                     stop = true;
                     break;
+                }
+                Some(menu::Outcome::Command(menu::Command::AdventureEquip | menu::Command::BattleEquip)) => {
+                    unsafe { gpu.device.device_wait_idle()? };
+                    let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+                    equip_visit(&gpu, pool, &target, Some((pr, &mut *p)), None, &root.clone(), session.as_mut(), &[], None, frame)?;
                 }
                 Some(_) => {}
             }

@@ -672,7 +672,15 @@ while the task's event is unseen, and the chosen task's name and description. In
 first that fit) and the quality it would come out at; confirm makes it (`Session::synthesize`:
 the materials leave the basket, the item goes in, its days pass). Not yet the game's: plain text
 over the desk (the game's synthesis screens, layouts 720 to 851 on `a15_mix.g1t`, not drawn),
-no choosing among fitting materials, no skills, traits or count. In a town map (0 to 11) B opens a shop (`shopping.rs`; offscreen `BARREL_SHOP_AT` and
+no choosing among fitting materials, no skills, traits or count. The menu's Adventure Equip and Battle Equip open the Equip page (`equipping.rs`; offscreen
+`BARREL_EQUIP_AT` and `BARREL_EQUIP_KEYS`, the run going on): left / right choose the member, up /
+down a slot (weapon, armour, two accessories; a slot with nothing in the basket to fit it grey),
+confirm lists the basket items that fit (`ItemRow::fits`) and confirm again puts one on
+(`Session::equip`). Checked: Escha's Traditional Staff swapped for a Feather Staff raises her
+Status page's ATK from 6 to 23 and SPD from 6 to 16, and an F5 save and reload keeps it
+(`member 0 1 0 366,417,-1,-1`, the old staff back in the basket). Not yet the game's: plain text
+over the desk, no stat comparison before choosing, one change a visit, both commands the same.
+In a town map (0 to 11) B opens a shop (`shopping.rs`; offscreen `BARREL_SHOP_AT` and
 `BARREL_SHOP_KEYS`): the shop with the most wares on sale (`Saves_EN/shop/ShopData.xml` against
 the events seen; right after the opening the Homunculus Shop, ten wares from 90 to 15,000
 cole), its list with the prices (those the money does not cover grey), left / right for the
