@@ -19,6 +19,9 @@ scene really looks like, and values the game only computes while running.
   inside a command that is later stopped dies with it, and the game does not take a pad
   plugged in after it started. `pad.sh` waits for the pad's log of finished commands
   (`work/oracle/paddone`) and gives up on a command that gets no answer within a minute.
+  Remove that log before starting the pad: the pad empties it as it starts, and a helper that
+  counted the last run's lines first waits for a line count it never reaches. A pad plugged in
+  after the game started works.
 - `xkey.c`: key taps through XTest (`cc -O2 -o work/xkey xkey.c -lX11 -lXtst`), to the run's
   X display (`DISPLAY=:2`).
 - `readlog.c`: a preload library that logs the game's file reads (path, offset, length, time)
@@ -36,3 +39,13 @@ with no Steam variables, the executable exits with 0 after a second, the Steam A
 check asking Steam to start it instead. Getting around that would mean replacing or patching
 the game's `steam_api64.dll`, which this project does not do. So oracle runs go through Steam:
 keep them short and stop them right after (`stop.sh`), as they count as the player's playtime.
+
+## Recording
+
+`ORACLE_HZ=60 tools/oracle/run.sh ...` runs the game at 60 Hz (30 by default).
+`tools/oracle/record.sh OUT.mkv SECONDS` records gamescope's PipeWire stream as it is shown:
+H.264 at quantizer 0 in 4:4:4 (lossless), each frame stamped as it arrives (a 5-second test at
+the title: 298 frames, none more than 25 ms apart). `tools/oracle/frames.sh VIDEO FROM TO DIR`
+writes every frame in a time range as PNG with the timestamps in `DIR/times.txt`, so a frame
+shown twice or skipped can be told from the game's own animation. Recordings are references
+kept outside the repository (they are the game's pictures), on a large disk.

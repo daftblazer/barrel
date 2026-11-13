@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts Escha & Logy DX for an oracle run: headless gamescope (1280x720, 30 Hz), its own
+# Starts Escha & Logy DX for an oracle run: headless gamescope (1280x720, 30 Hz or ORACLE_HZ), its own
 # Proton prefix under work/ (never the player's), no audio drivers. Prints gamescope's pid.
 #   tools/oracle/run.sh INSTALL_DIR PROTON_DIR
 # Stop it with tools/oracle/stop.sh.
@@ -21,7 +21,7 @@ export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf:$here/work/oracle/asound.conf
 export WINEDLLOVERRIDES="winepulse.drv=d"
 cd "$install"
 # Its own session, so stop.sh ends exactly this run's processes (not a game the player has open).
-setsid gamescope --backend headless -W 1280 -H 720 -r 30 -- \
+setsid gamescope --backend headless -W 1280 -H 720 -r "${ORACLE_HZ:-30}" -- \
     "$proton/proton" run ./Atelier_Escha_and_Logy_EN.exe \
     >"$here/work/oracle/game.log" 2>&1 &
 echo $! >"$here/work/oracle/session"
