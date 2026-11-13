@@ -442,7 +442,15 @@ like `TOWN_04`'s 145 against 127.) The terrain's vertex program has no point lig
 in `model.vert`); it changed nothing at these spots, away from the lamps. Its pixel program 9
 (`TOWN_09`) is the renderer's: shadow × `sLit` × the sun's part plus `v2`, times the blended
 layers, plus the specular (`v8 + s·lit·v7`) × the layers' alpha (not drawn: it can only
-brighten), the fog, × 0.5. What leaves the ground 1.14 times the game's is not found yet.
+brighten), the fog, × 0.5; program 8 (one layer, most of `TOWN_09`'s ground: kind 0x20
+program 0 draws 5,146 of its lit indices) the same with `sLand0` alone. What is left is the
+sun's part: with it off, the arch shot's near ground is 105, 85, 60 (the game 111, 89, 51, the
+renderer with it 127, 99, 60) and the shaded middle ground, which takes no sun, 117, 97, 67
+against 114, 94, 60. The game's near ground takes about a quarter of the renderer's sun there.
+The sun's part is the one multiplied by the drifting light texture (cloud shadows), whose phase
+is the game's from the field's load and the renderer's from its first frame, so where the
+clouds fall in a given shot cannot match; that, not a lighting term, is taken as the cause.
+(The renderer's ground is also 7 to 9 bluer, ambient or fog, small.)
 
 ## Shadows (what is known)
 
