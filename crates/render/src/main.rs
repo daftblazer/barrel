@@ -4657,6 +4657,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                                 for line in o.lines() {
                                     eprintln!("battle: {line}");
                                 }
+                                // The spoils: money in, experience for the members who fought.
+                                let (exp, money) = tables.spoils(&o);
+                                if let Some(s) = session.as_mut().filter(|_| o.winner == Some(0)) {
+                                    s.won(&[party[0].0, party[1].0], exp, money, &tables.exp);
+                                    eprintln!("battle: {exp} experience, {money} money (now {})", s.money);
+                                }
                             }
                             Err(e) => eprintln!("battle: {e}"),
                         }

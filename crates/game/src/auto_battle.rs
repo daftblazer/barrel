@@ -36,9 +36,21 @@ pub struct Tables {
     kit: Vec<[i32; 9]>,
     /// `itemData.xml`'s equipment values, for [`Tables::equip`].
     items: Vec<crate::equipment::ItemRow>,
+    /// The experience table (`battle_data::exp_table`).
+    pub exp: Vec<(i32, i32)>,
 }
 
 impl Tables {
+    /// What a battle the party won gives (`battle::rewards`, no bonuses): experience and money;
+    /// nothing for a battle lost or called off.
+    pub fn spoils(&self, o: &Outcome) -> (i32, i32) {
+        if o.winner != Some(0) {
+            return (0, 0);
+        }
+        let defeated: Vec<i32> = o.monsters.iter().map(|&m| m as i32).collect();
+        crate::battle::rewards(&self.monsters, &defeated, 0, 0)
+    }
+
     /// Member `member` fights in `items` (item numbers, -1 for none) instead of its new-game
     /// kit: a session's equipment. Made as fresh items too (quality 50, no traits or effects:
     /// a held item's own quality and traits are not carried yet).
@@ -76,6 +88,7 @@ impl Tables {
             radii: chara.map(bd::chara_radii).unwrap_or_default(),
             kit,
             items: rows,
+            exp: bd::exp_table(pe, bd::EXP_TABLE_EN).unwrap_or_default(),
         })
     }
 }
@@ -103,6 +116,8 @@ pub struct Outcome {
     pub start: Vec<[i32; 4]>,
     pub events: Vec<Event>,
     pub winner: Option<u8>,
+    /// The monsters fought, by monster number.
+    pub monsters: Vec<usize>,
 }
 
 impl Outcome {
@@ -189,7 +204,7 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
         }
         Some(commands) => run_commanded(&members, &foes, &sizes, rules, rng, commands),
     };
-    Ok((Outcome { names, start, events, winner }, turn))
+    Ok((Outcome { names, start, events, winner, monsters: drawn.to_vec() }, turn))
 }
 
 /// A member's turn waiting for a command: who, the skills it may use (name, MP cost, whether it
@@ -246,6 +261,7 @@ mod tests {
             start: vec![[10; 4], [10; 4]],
             events: vec![Event::Acted { who: 0, skill: "Attack".into(), target: 1, damage: 12, hp_left: 0, mp_left: 0 }],
             winner: Some(0),
+            monsters: vec![0],
         };
         assert_eq!(o.lines(), vec!["Escha uses Attack on Puni: 12 damage (0 HP left)".to_string(), "the party wins".into()]);
     }
@@ -275,5 +291,11 @@ mod tests {
         assert_eq!(wins(&stripped), without);
         eprintln!("Escha and Logy at level 1 against an Ore Rat: {with} of 200 won in their kit, {without} without");
         assert!(with > without);
+        // A won battle's spoils: the Ore Rat's experience and money.
+        let mut rng = Rng::from_state([1, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]);
+        let won = fight_drawn(&kit, &[(0, 1), (1, 1)], &[rat], &mut rng).unwrap();
+        let m = &kit.monsters[rat];
+        assert_eq!(kit.spoils(&won), (m.exp, m.money));
+        eprintln!("an Ore Rat gives {} experience and {} money", m.exp, m.money);
     }
 }

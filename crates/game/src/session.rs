@@ -113,6 +113,20 @@ impl Session {
         true
     }
 
+    /// A battle won by `fighters` (member numbers): the money comes in and each of them gains
+    /// the experience (`growth::Growth::gain`, no level-limit bonus), going up the levels it
+    /// reaches in `exp_table`.
+    pub fn won(&mut self, fighters: &[usize], exp: i32, money: i32, exp_table: &[(i32, i32)]) {
+        self.pay(money);
+        for &c in fighters {
+            if let Some(m) = self.party.get_mut(c) {
+                let mut g = crate::growth::Growth { level: m.level, exp: m.experience, gained: 0 };
+                g.gain(exp_table, exp, 0, false);
+                (m.level, m.experience) = (g.level, g.exp);
+            }
+        }
+    }
+
     pub fn with_calendar(mut self, data: crate::days::Data, rng: crate::rng::Rng) -> Session {
         let leader = usize::from(self.logy);
         let mut world = crate::days::World::new_game(rng, leader, &data.wares);
@@ -426,5 +440,16 @@ mod tests {
         // A save from before these lines: a new game's money, the party filled in later.
         let (old, _) = Session::load(chain(), "barrel-save 1\nfield 3 0 0\ntoday 90\n").unwrap();
         assert_eq!((old.money, old.party.len()), (NEW_GAME_MONEY, 0));
+    }
+
+    #[test]
+    fn a_won_battle_pays_and_grows_the_fighters() {
+        let kit = |e: [i32; 4]| barrel_formats::battle_data::PartyDefault { flag: 0, level: 1, experience: 0, stats: barrel_formats::battle_data::LevelStats { hp: 1, mp: 1, attack: 1, defense: 1, speed: 1 }, more: [0; 5], equipment: e };
+        let mut s = Session::in_field(chain(), 3, false).with_party(&[kit([-1; 4]), kit([-1; 4]), kit([-1; 4])]);
+        let table = [(0, 0), (10, 0), (20, 0), (40, 0)];
+        s.won(&[0, 1], 25, 12, &table);
+        assert_eq!(s.money, 112);
+        assert_eq!((s.party[0].level, s.party[0].experience), (3, 25));
+        assert_eq!((s.party[2].level, s.party[2].experience), (1, 0), "a member not fighting gains nothing");
     }
 }

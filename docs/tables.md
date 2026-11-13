@@ -1766,7 +1766,10 @@ its +0x10 method, is 1): the battle's experience (its +0x8) gains the monster's 
 (record +0x10) times 100 plus the experience bonus percent (`0x141077df8`) over 100, and its
 money (+0xc) likewise with the money bonus (`0x141077df4`), each cut toward zero per monster;
 then the monster's four drop slots are rolled through its +0x110 method into the spoils list
-(`0x140d8de30`; below). `barrel_game::battle::rewards`. The bonuses are set as the battle starts
+(`0x140d8de30`; below). `barrel_game::battle::rewards`; a field battle the viewer fights
+pays them into the session (`auto_battle::Tables::spoils`, `Session::won`: the money in, each
+fighting member's experience through `growth::Growth::gain`; an Ore Rat gives 3 experience and
+1 money; the bonuses and drops not yet). The bonuses are set as the battle starts
 (`0x1401b4b60`): the largest among the party's fighters (their kind 0) of each one's +0x108
 (experience), +0x10c (money) and +0x110 (drops, kept at `0x141077de8`), none
 below 0; while the field's state (`0x1410783b0`, the gathering one) is in mode 6, its first value
