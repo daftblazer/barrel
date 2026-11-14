@@ -4,7 +4,7 @@
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
-//!                 [--window [--fullscreen]] [--preset NAME]
+//!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
@@ -52,6 +52,8 @@ struct Args {
     hide: Vec<String>,
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
+    /// The camera's vertical field of view, degrees (`--fov`).
+    fov: Option<f32>,
     window: bool,
     /// Graphics: a preset by name (`RenderSettings::preset`), and fullscreen.
     preset: Option<RenderSettings>,
@@ -80,7 +82,7 @@ fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2] };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2] };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -99,6 +101,7 @@ fn args() -> Result<Args> {
             "--distance" => a.distance = Some(value()?.parse()?),
             "--hide" => a.hide.push(value()?),
             "--no-shadows" => a.no_shadows = true,
+            "--fov" => a.fov = Some(value()?.parse()?),
             "--window" => a.window = true,
             "--fullscreen" => a.fullscreen = true,
             "--preset" => {
@@ -423,7 +426,7 @@ fn main() -> Result<()> {
     let follow = (rig.is_some() && (pump.is_some() || a.look_at.is_none())).then(|| {
         install.read(&barrel_ryza::camera::FreeCamera::path(&a.field)).ok().and_then(|b| barrel_ryza::camera::FreeCamera::parse(&b).map_err(|e| eprintln!("{e}")).ok()).unwrap_or(barrel_ryza::camera::FreeCamera::DEFAULT)
     });
-    let fov = follow.map_or(30.0, |c| c.fov).to_radians();
+    let fov = a.fov.unwrap_or(follow.map_or(30.0, |c| c.fov)).to_radians();
     // How high above her feet the camera looks: a stand-in (110). Her `CamH` (160) with the
     // field camera's `at_diff_y` put the camera inside the garden gate's tree, where the game's
     // view is clear: what they are is not known (`docs/ryza/open.md`).
