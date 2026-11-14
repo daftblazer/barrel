@@ -26,40 +26,45 @@ pub struct Terrain<'a> {
     pub heightmap: khm::Heightmap,
     /// The undecoded block between the header and the layer textures.
     pub settings: &'a [u8],
+    /// How many layer records the settings block holds (the header's u32 at 0x28).
+    pub layer_count: usize,
+}
+
+/// A ground layer, as its record gives it (32 bytes, from 0x1c into the settings block, the
+/// count at 0x28): `{u16 colour texture, u16 normal map texture (0xffff: none), u16, u8 n, u8 n,
+/// f32 u scale, f32 v scale, 16 bytes of 0}`, the textures counted in the layer pack. Escha's
+/// layers have no normal maps and texture k for layer k; the Ryza games pair each colour tile
+/// with a normal map (layer k: textures 2k and 2k + 1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Layer {
+    pub colour: u16,
+    pub normal: Option<u16>,
+    /// The tile repeats every `repeat` cells (its scale is 1 / (cell size × repeat)).
+    pub repeat: u8,
+    pub scale: f32,
 }
 
 impl Terrain<'_> {
-    /// Each layer's tile scale (1 / world units per tile repeat), from the layer records
-    /// that start 0x1c into the settings block: 32 bytes each, `{u16 layer, u16 0xffff,
-    /// u16, u8, u8, f32 u scale, f32 v scale, ...}`, one per layer texture.
-    pub fn layer_scales(&self) -> Vec<f32> {
-        let mut out = Vec::new();
-        let mut at = 0x1c;
-        while at + 16 <= self.settings.len() && out.len() < self.layers.textures.len() {
-            let s = &self.settings[at..];
-            if u16::from_le_bytes([s[2], s[3]]) != 0xffff {
-                break;
-            }
-            out.push(f32::from_le_bytes([s[8], s[9], s[10], s[11]]));
-            at += 0x20;
-        }
-        out
+    /// The ground layers, in the numbering the draws use.
+    pub fn layer_list(&self) -> Vec<Layer> {
+        (0..self.layer_count)
+            .map_while(|k| {
+                let s = self.settings.get(0x1c + 0x20 * k..0x1c + 0x20 * k + 16)?;
+                let u16_at = |o: usize| u16::from_le_bytes([s[o], s[o + 1]]);
+                let normal = u16_at(2);
+                Some(Layer {
+                    colour: u16_at(0),
+                    normal: (normal != 0xffff).then_some(normal),
+                    repeat: s[6].max(1),
+                    scale: f32::from_le_bytes([s[8], s[9], s[10], s[11]]),
+                })
+            })
+            .collect()
     }
 
-    /// Each layer's repeat in cells (the record's first `n`; the tile scale is 1 / (cell size
-    /// × n)).
+    /// Each layer's repeat in cells.
     pub fn layer_repeats(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        let mut at = 0x1c;
-        while at + 16 <= self.settings.len() && out.len() < self.layers.textures.len() {
-            let s = &self.settings[at..];
-            if u16::from_le_bytes([s[2], s[3]]) != 0xffff {
-                break;
-            }
-            out.push(s[6].max(1));
-            at += 0x20;
-        }
-        out
+        self.layer_list().iter().map(|l| l.repeat).collect()
     }
 }
 
@@ -277,5 +282,6 @@ pub fn parse(d: &[u8]) -> Result<Terrain<'_>, Error> {
         blend: G1t::parse(&d[blend_at..height_at])?,
         heightmap: khm::parse(&d[height_at..size])?,
         settings: &d[0x98..layers_at],
+        layer_count: u32_at(d, 0x28)? as usize,
     })
 }

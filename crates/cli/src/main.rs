@@ -3419,16 +3419,15 @@ fn ryza_field(root: &Path, only: Option<&str>) -> Result<()> {
             let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement::default();
             let (pack, _) = barrel_engine::field::load(&f.area, &main, &objects, &mut scene, 0, &place)?;
             let textures = barrel_formats::g1t::G1t::parse(&pack)?.textures.len();
-            if only.is_some()
-                && let Some(ktf) = barrel_engine::field::named(&main, &format!("{}.ktf", f.area))
+            if let Some(ktf) = barrel_engine::field::named(&main, &format!("{}.ktf", f.area))
             {
                 let m = barrel_formats::ktf::mesh(ktf)?;
                 let mut kinds = std::collections::BTreeMap::new();
-                for d in &m.draws {
-                    *kinds.entry((d.kind, d.program, d.layers.len())).or_insert(0usize) += 1;
+                for d in m.draws.iter().filter(|d| d.kind != 0) {
+                    *kinds.entry((d.kind, d.flags)).or_insert(0usize) += 1;
                 }
                 println!(
-                    "terrain: {} patches ({} leaves), {} draws, {} vertices, {} indices; draws by (kind, program, layers): {kinds:?}",
+                    "terrain: {} patches ({} leaves), {} draws, {} vertices, {} indices; not depth draws by (kind, flags {{program, kind}}): {kinds:?}",
                     m.patches.len(),
                     m.patches.iter().filter(|p| p.leaf).count(),
                     m.draws.len(),
@@ -3461,6 +3460,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     let mut blends: BTreeMap<(usize, usize), usize> = BTreeMap::new();
     let mut failed = Vec::new();
     let (mut meshes, mut heights) = (0usize, (0usize, 0usize));
+    let mut layer_records_differ = 0usize;
     let mut draw_flags: std::collections::BTreeMap<[u8; 2], usize> = std::collections::BTreeMap::new();
     for path in &files {
         let bytes = read(path)?;
@@ -3474,6 +3474,11 @@ fn ktf_scan(dir: &Path) -> Result<()> {
                     terrains += 1;
                     *layers.entry(t.layers.textures.len()).or_default() += 1;
                     *blends.entry((t.layers.textures.len(), t.blend.textures.len())).or_default() += 1;
+                    let list = t.layer_list();
+                    if list.len() != t.layers.textures.len() || list.iter().enumerate().any(|(k, l)| usize::from(l.colour) != k || l.normal.is_some()) {
+                        layer_records_differ += 1;
+                        println!("  {}: {} textures, layers {list:?}", path.display(), t.layers.textures.len());
+                    }
                     match barrel_formats::ktf::mesh(e.data(entry)) {
                         Ok(m) => {
                             meshes += 1;
@@ -3509,6 +3514,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     println!("(layers, blend maps) {blends:?}");
     println!("{meshes} meshes read; {} of {} vertices within 0.5 of the heightmap", heights.0, heights.1);
     println!("draws by flags {{program, kind}}: {draw_flags:?}");
+    println!("{layer_records_differ} terrains whose layer records are not texture k for layer k without normal maps");
     for f in failed.iter().take(20) {
         println!("failed: {f}");
     }

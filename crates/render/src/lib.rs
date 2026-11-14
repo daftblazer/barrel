@@ -1100,9 +1100,15 @@ pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, Terrai
         for i in 0..TERRAIN_MAPS {
             tex.push(upload_texture(gpu, pool, bundle.blend.textures.get(i).unwrap_or(&black_tex))?);
         }
-        let layer_count = bundle.layers.textures.len().clamp(1, TERRAIN_LAYERS);
+        // Each layer's colour tile, by the layer records (the Ryza games put a normal map after
+        // each; not drawn yet), the last again for the slots past them.
+        // Records naming a texture outside the pack are not layer records (Escha's battle
+        // terrain): texture k for layer k then.
+        let count = bundle.layers.textures.len();
+        let colours: Vec<usize> = bundle.layer_list().iter().map(|l| usize::from(l.colour)).collect();
+        let colours = if colours.is_empty() || colours.iter().any(|&c| c >= count) { (0..count.max(1)).collect() } else { colours };
         for i in 0..TERRAIN_LAYERS {
-            tex.push(upload_texture(gpu, pool, &bundle.layers.textures[i.min(layer_count - 1)])?);
+            tex.push(upload_texture(gpu, pool, &bundle.layers.textures[colours[i.min(colours.len() - 1)]])?);
         }
         grounds.push(scene_gpu::GroundData { field: *field, textures: tex, patches: t.patches.clone(), cell: t.cell, extent: t.extent });
     }

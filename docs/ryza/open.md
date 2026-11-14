@@ -18,12 +18,12 @@ achievements are the player's own, and the DX version has not been played there)
 - **Field lighting.** `barrel-ryza` draws fields unlit (texture times vertex colour) until
   Ryza's lights are read: `_light.bin` in the field container, `_env.bin` and the `_ad` / `_as`
   probes in `_env`. Ryza has no Escha-style look table per field.
-- **Terrain against the models.** Rasenboden's terrain draws since its flag bits are read
-  apart (docs/formats.md, terrain draws), but in the village close-up it lies over the sandy
-  canyon path the models make, and one layer shows flat blue where the streams run (the field
-  has a `_river.bin`: a water surface drawn over it?). Open: whether the flag bits (kind bit 0,
-  program bit 4) cut holes or mark another height; compare a frame of the game at that spot
-  (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`).
+- **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
+  heights match the heightmap) lies at grass level over the sandy canyon path the cliff models
+  make in the village close-up (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`). Every
+  Ryza lit terrain draw has kind bit 0, so that bit hides nothing; program bit 4 (on some
+  draws) is unread. Needs a frame of the game at that spot, or the field shader pack's terrain
+  programs. The layers' normal maps are not drawn yet.
 - **The sand square** in the overview (`obj-A21-S06-FLOOR-01` at 0,0,0?) sits where no ground is
   expected.
 - **The environment container** (`<field>_env.elixir.gz`: `<field>_env.bin`, `_ad.g1t`,

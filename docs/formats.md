@@ -857,9 +857,14 @@ it:
 
 The layer tiles' alpha is 0 throughout, so alpha means something other than opacity there.
 
-The settings block starts with layer records at 0x1c (file offset 0xb4), 32 bytes each and
-one per layer texture: `{u16 layer, u16 0xffff, u16 0, u8 n, u8 n, f32 u scale, f32 v
-scale, 16 bytes of 0}`. The scale is 1 / (100 × n): the layer repeats every n cells.
+The settings block starts with layer records at 0x1c (file offset 0xb4), 32 bytes each, as
+many as the header's u32 at 0x28 says: `{u16 colour texture, u16 normal map texture (0xffff:
+none), u16 0, u8 n, u8 n, f32 u scale, f32 v scale, 16 bytes of 0}` (`ktf::Layer`). The scale
+is 1 / (cell size × n): the layer repeats every n cells. Escha's layers are texture k for layer k
+with no normal map, one per texture (all 140 readable terrains; the battle terrain's records
+sit elsewhere). **Ryza DX** pairs each colour tile with a normal map: Rasenboden's 6 textures
+are 3 layers (grass, sand, cobblestone; records `{0, 1}`, `{2, 3}`, `{4, 5}`, the third u16
+0x101, n = 1 at 1024×1024), so the draws' layer numbers count records, not textures.
 The blend maps do not pair with the layers as two maps for six: over the 141 terrains the
 count of maps does not follow the count of layers (10 layers with 1 map, 4 layers with 5;
 `barrel ktf-scan` prints the pairs). So which map and channel weights which layer is set per

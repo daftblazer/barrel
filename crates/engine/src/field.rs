@@ -41,7 +41,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
     // A flat placeholder terrain (every height 0, one layer: TOWN_03, TOWN_07) is not drawn: the
     // town's ground is its models, and events stand characters below it (TOWN_07's at y -255).
     let terrain = named(&main, &format!("{area}.ktf")).map(|b| ktf::parse(b).map(|t| (b, t))).transpose()?.filter(|(_, t)| {
-        let flat = t.heightmap.heights.iter().all(|&v| v == 0.0) && t.layers.textures.len() <= 1;
+        let flat = t.heightmap.heights.iter().all(|&v| v == 0.0) && t.layer_list().len() <= 1;
         if flat {
             eprintln!("{area}: flat placeholder terrain, not drawn");
         }
@@ -64,7 +64,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
             h.cells_x,
             h.cells_z,
             h.cell_size,
-            t.layers.textures.len(),
+            t.layer_list().len(),
             t.blend.textures.len(),
             index_count / 3
         );
