@@ -37,8 +37,10 @@ achievements are the player's own, and the DX version has not been played there)
   the sky 98, 161, 157 to 87, 199, 199 against the still's 172, 218, 233, the 90th
   percentile 168. The clouds are lit by the light on an upward surface (a stand-in for
   the dome's own lighting, docs/shading.md): at the gate's noon they match the still's
-  (ten regions' RGB error 197 to 151). The clear sky between them is a more saturated cyan
-  than the still's (97, 201, 199 against 172, 218, 233). The shade's colour: the default override's
+  (ten regions' RGB error 197 to 151). The clear sky between them comes out 163, 201, 199 against the still's
+  172, 218, 233 with the sky plane's light scaled by a fitted 2.5 (`SKY_SCALE`; the
+  game's own scale is not read); its green and blue stay put whatever the scale or the path
+  length, so the remaining gap is in the sky's hue, not its brightness. The shade's colour: the default override's
   `indirectStage_IDLScalerOfAmbientDiffuseMap` 2.5 × `..ColorRGB` (1.642, 1.978, 4.0) tints
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no

@@ -178,6 +178,12 @@ const TINT_STRENGTH: f32 = 0.4;
 /// brighter but worse, 30 and up at the exposure cap). The sky stays darker than the still's.
 const EXPOSURE_DIVISOR: f32 = 22.0;
 
+/// The sky plane's in-scattered light scaled up, fitted to the gate's noon still (a stand-in:
+/// the game's own scale is not read). The sky region comes out 162, 201, 199 against the
+/// still's 172, 218, 233, ten regions' RGB error 145 to 137 (2 and 3 the same, 5 worse); the
+/// path length's factor changes nothing there (docs/ryza/open.md).
+const SKY_SCALE: f32 = 2.5;
+
 /// One exposure for the frame, standing in for the game's adaptation (`trueHDR_`, not read):
 /// see `EXPOSURE_DIVISOR`.
 fn exposure(c: &[[f32; 3]; 9], light: &Light) -> f32 {
@@ -923,7 +929,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         // glow (`docs/ryza/open.md`).
         {
             let f = *sky_fog;
-            let sun = light.parallel[0].color.map(|v| v * f.power * k);
+            let sun = light.parallel[0].color.map(|v| v * f.power * k * SKY_SCALE);
             let ext: [f32; 3] = std::array::from_fn(|i| f.rayleigh[i] + f.mie[i]);
             let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
             let ray_k = 3.0 / (16.0 * std::f32::consts::PI);
