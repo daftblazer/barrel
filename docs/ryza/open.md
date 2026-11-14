@@ -295,6 +295,16 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   objects (26 `_mid`, 14 `_low` in Rasenboden's objects, mostly flowers, carts and the woods; the
   cliffs have only `_hi`), and the PC game runs with `use_lod` off. Whether the RP6 needs more
   than the culling we have is for its own timings.
+- **On the RP6 itself** (Adreno 740, Turnip, Mesa 26.2.4; 2026-11-14; the aarch64 package
+  from `tools/package.sh aarch64 … ryza`, the game read from the device's own install on its SD
+  card; offscreen, 1920x1080, the garden gate at noon, 240 frames, median of 237). It runs
+  unchanged and draws as on the PC. Desktop preset: 18.8 ms (shadow map 2.67, scene 15.73, glow
+  and AA 0.24, post 0.18), 225 MB of textures, 44,015 plants: short of 60 fps. Handheld preset
+  (75 % scale, Middle tables, mip bias 1): 14.5 ms (shadow map 1.25, scene 11.83, glow, AA and
+  upscale 1.20, post 0.19), 59 MB of textures, 32,980 plants: 60 fps with about 2 ms to spare
+  at the gate. The scene pass is three times the PC's and still most of the frame; the
+  landmarks' triangles (above) are where it goes next, and a walk through the village (not
+  only the gate) is still to be timed.
 - **Floors on models**: read, see "Ryza in the field".
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
