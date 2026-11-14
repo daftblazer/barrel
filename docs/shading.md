@@ -581,6 +581,13 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
     frame, turned to view space by `mWV`, octahedral-encoded in xy), and `sSpMap.a ×
     vSpcScl.w` (roughness or gloss) packed in w;
   - targets 3 and 4: 1.
+  `barrel-ryza` draws the normal map (`model.frag`'s flag 8192, the map in the mask slot):
+  its tangent frame comes from the screen derivatives of the position and UV (the vertices
+  carry no tangent here), and with the mapped normal the sun's Lambert term and the cube
+  map's light are taken again per pixel (the vertex's light otherwise). Every field draw at
+  Rasenboden has one; it shows as relief on the rocks and bark, the shade included, for about
+  0.07 ms at 1280×720 on the PC. Whether green points up or down in the tangent frame is not
+  checked against the game.
   The red maps of the attic's furniture (green and blue near 0) give the colour tile as the
   diffuse and no specular: albedo times light, as `barrel-ryza` draws them.
 

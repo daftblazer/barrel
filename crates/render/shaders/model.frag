@@ -48,8 +48,11 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
     // root height, shift x, shift z} each, metres.
     vec4 sway[16];
-    // Slots 66 to 86: the vertex program's and the sky plane's.
-    vec4 others[21];
+    // Slot 66: the cube map's light on (x > 0.5); 67 to 75 its spherical-harmonic
+    // coefficients (model.vert's `environment_light`); 76 to 86 the sky plane's.
+    vec4 sh_on;
+    vec4 sh[9];
+    vec4 others[11];
     // The far shadow square (lib.rs SHADOW_FAR_SLOT): view-projection, {texel, layer (0:
     // none), fade start, fade end}.
     mat4 shadow_far;
@@ -130,6 +133,17 @@ float sun_shadow(vec3 p) {
     float fade = clamp((distance(p, look.eye.xyz) - look.shadow_far_info.z) / max(look.shadow_far_info.w - look.shadow_far_info.z, 1.0), 0.0, 1.0);
     return mix(far, 1.0, fade);
 }
+// The field's light from its cube map on normal n (as model.vert's `environment_light`).
+vec3 environment_light(vec3 n) {
+    vec3 g = normalize(vec3(-n.x, n.y, n.z));
+    float b[9] = float[9](0.282095, 0.488603 * g.y, 0.488603 * g.z, 0.488603 * g.x, 1.092548 * g.x * g.y,
+        1.092548 * g.y * g.z, 0.315392 * (3.0 * g.z * g.z - 1.0), 1.092548 * g.x * g.z, 0.546274 * (g.x * g.x - g.y * g.y));
+    vec3 c = vec3(0.0);
+    for (int k = 0; k < 9; k++) {
+        c += look.sh[k].rgb * b[k];
+    }
+    return max(c, vec3(0.0));
+}
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec4 c = texture(tex, uv);
@@ -151,7 +165,32 @@ void main() {
         // packed as unorm8 in the outline colour's word; 0: none) multiplies the colour.
         uint tint = floatBitsToUint(pc.outline_colour);
         vec3 at_color = tint != 0u && (pc.flags & 128u) == 0u ? unpackUnorm4x8(tint).rgb : vec3(1.0);
-        vec3 lit = field_light + sun_part * sun_shadow(world) * cloud_light(world);
+        vec3 sun_now = sun_part;
+        vec3 field_now = field_light;
+        // Flag 8192: a normal map in the mask slot (Ryza's `sNMap`: x = red × alpha, y =
+        // green, to -1..1, z rebuilt), in a tangent frame from the screen derivatives of the
+        // position and UV; the sun's Lambert term taken again per pixel with it.
+        if ((pc.flags & 8192u) != 0u) {
+            vec4 t = texture(mask, uv);
+            vec2 xy = vec2(t.r * t.a, t.g) * 2.0 - 1.0;
+            vec3 tn = vec3(xy, sqrt(max(1.0 - dot(xy, xy), 0.0)));
+            vec3 dp1 = dFdx(world), dp2 = dFdy(world);
+            vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+            vec3 p2 = cross(dp2, n), p1 = cross(n, dp1);
+            vec3 tg = p2 * du1.x + p1 * du2.x;
+            vec3 bt = p2 * du1.y + p1 * du2.y;
+            float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
+            vec3 nm = normalize(mat3(tg * inv, bt * inv, n) * tn);
+            float after = max(dot(nm, -normalize(look.sun_dir.xyz)), 0.0);
+            vec2 material = unpackUnorm2x16(pc.light);
+            sun_now = look.sun_color.rgb * material.x * after;
+            // The ambient, too, taken again on the mapped normal (the vertex's replaced).
+            if (look.sh_on.x > 0.5) {
+                field_now = max(field_now + (environment_light(nm) - environment_light(n)) * material.y, 0.0);
+            }
+            n = nm;
+        }
+        vec3 lit = field_now + sun_now * sun_shadow(world) * cloud_light(world);
         // A Ryza character (flag 128): the rim (its word in the tint's place: sharpness / 64
         // and strength / 4 as unorm8), where the eye looks into the sun, `pow(1 - N·V,
         // sharpness) × strength` of the sun's colour, up to the full sun; then the toon ramp (the mask slot holds

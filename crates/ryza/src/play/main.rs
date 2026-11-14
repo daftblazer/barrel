@@ -39,6 +39,8 @@ use glam::{Mat4, Vec3};
 const UNLIT: u32 = 32;
 /// `model.vert`'s flag for a sky dome lit by the look's `DOME_LIGHT_SLOT`.
 const DOME_LIT: u32 = 4096;
+/// `model.frag`'s flag for a normal map in the mask slot (a field model's `sNMap`).
+const NORMAL_MAPPED: u32 = 8192;
 
 struct Args {
     install: String,
@@ -425,6 +427,13 @@ fn main() -> Result<()> {
             vertices[i as usize].color = [255; 4];
         }
     }
+    // A field model's normal map goes in the mask slot (unused by the field's models
+    // otherwise; `NORMAL_MAPPED`); her draws keep the toon ramp there.
+    for d in draws.iter_mut() {
+        if !d.sky && d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
+            d.mask = d.normal_map;
+        }
+    }
     for d in draws.iter_mut() {
         // Ryza's models' lighting material (G1MG section 0x10001) holds ambient 0: their
         // shaders light from the environment, not `cAmb`. Full until those shaders are read
@@ -600,7 +609,17 @@ fn main() -> Result<()> {
     let material = |d: &Draw| {
         // The sky dome's clouds lit by the light on an upward-facing surface (flag 4096, look
         // slot `DOME_LIGHT_SLOT`): the game lights them (`PBSkyDome`, its scales not read).
-        let base = if environment.is_some() { if d.sky { DOME_LIT } else { 0 } } else { UNLIT };
+        let base = if environment.is_some() {
+            if d.sky {
+                DOME_LIT
+            } else if d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
+                NORMAL_MAPPED
+            } else {
+                0
+            }
+        } else {
+            UNLIT
+        };
         match ramp_rows.get(&(d.first_index, d.instance)) {
             Some(&(row, has_rim)) if ramp_pack.is_some() && environment.is_some() => {
                 let r = rim.map_or(0, |r| if has_rim { rim_word(r.sharpness, r.strength) } else { rim_word(r.hair_sharpness, r.hair_strength) });

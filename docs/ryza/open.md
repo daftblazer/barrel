@@ -57,8 +57,8 @@ achievements are the player's own, and the DX version has not been played there)
 - **Emissive and odd materials.** `PBB-EmN` submeshes (the attic wall's windows) have an
   emission mask (texture kind 19) and flicker parameters (`emFrq`, `emRange`, `emStart`), not
   drawn. Not drawn yet from the G-buffer model
-  (docs/shading.md, "Ryza DX: the deferred G-buffer"): normal maps, the specular map (metal
-  flag, specular amount, roughness), and the lighting pass (`pbb-*_cll.g1s`). Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
+  (docs/shading.md, "Ryza DX: the deferred G-buffer"; normal maps are drawn now, their
+  green's sign unchecked): the specular map (metal flag, specular amount, roughness), and the lighting pass (`pbb-*_cll.g1s`). Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
   heights match the heightmap) lies at grass level over the sandy canyon path the cliff models
   make in the village close-up (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`). Every

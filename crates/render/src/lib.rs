@@ -124,6 +124,9 @@ pub struct Draw {
     /// The material's mask (`docs/shading.md`, "Which texture is which"), if it has one; for
     /// an eye, its highlights.
     pub mask: Option<usize>,
+    /// The material's normal map (its kind-3 texture), if it has one. Drawn only where a game
+    /// puts it in the mask slot (`model.frag`'s flag 8192, Ryza's field models).
+    pub normal_map: Option<usize>,
     /// Shaded as an eye (`CharaEYE`: `docs/shading.md`, "Eyes").
     pub eye: bool,
     /// Part of a field's distant view (unlit: its texture on its vertex colour).
@@ -536,6 +539,7 @@ impl Scene {
             d.texture += base;
             d.overlay = d.overlay.map(|o| o + base);
             d.mask = d.mask.map(|m| m + base);
+            d.normal_map = d.normal_map.map(|m| m + base);
         }
         Ok(instance)
     }
@@ -658,8 +662,9 @@ impl Scene {
                     m.textures[at + 1..].iter().find(|t| t.subtype == 0).map(|t| (t.index as usize).min(textures.saturating_sub(1)))
                 })
             };
+            let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
         }
         Ok(())
     }
