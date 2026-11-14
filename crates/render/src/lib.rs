@@ -793,6 +793,7 @@ impl Targets {
         samples: vk::SampleCountFlags,
         motion: bool,
         show_motion: bool,
+        scene_format: vk::Format,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let (scene_width, scene_height) = scene_size;
@@ -820,18 +821,18 @@ impl Targets {
             )
         };
         let (scene, scene_memory) =
-            image(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)?;
-        let (frozen, frozen_memory) = image(SCENE_FORMAT, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
-        let frozen_view = view(frozen, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
-        let scene_view = view(scene, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?;
+            image(scene_format, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)?;
+        let (frozen, frozen_memory) = image(scene_format, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
+        let frozen_view = view(frozen, scene_format, vk::ImageAspectFlags::COLOR)?;
+        let scene_view = view(scene, scene_format, vk::ImageAspectFlags::COLOR)?;
         // Depth is cleared and never stored (the scene pass): transient.
         // Depth is transient unless GSR 2 reads it (then the scene pass stores it).
         let depth_usage = if gsr2_pipelines.is_some() || fsr3_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::TRANSIENT_ATTACHMENT };
         let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | depth_usage, samples)?;
         // With samples, the multisampled colour the pass resolves into the scene: transient too.
         let multisample = if samples != vk::SampleCountFlags::TYPE_1 {
-            let (image, memory) = image_with(SCENE_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
-            Some((image, memory, view(image, SCENE_FORMAT, vk::ImageAspectFlags::COLOR)?))
+            let (image, memory) = image_with(scene_format, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
+            Some((image, memory, view(image, scene_format, vk::ImageAspectFlags::COLOR)?))
         } else {
             None
         };

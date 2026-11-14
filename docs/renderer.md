@@ -539,7 +539,10 @@ The game's own sampler states are not read (by the look, not yet the game's sett
 asks (`Frame::tone_white`, `Frame::saturation`; Escha passes 0 for both and is unchanged) a
 tone curve, `c (1 + c / w²) / (1 + c)` with white point w, and a saturation scale per channel
 about the BT.601 luma. Ryza takes w from its set's `fLumiMax` and the scale from its
-`vSaturationScale` (docs/ryza/open.md).
+`vSaturationScale` (docs/ryza/open.md). The scene image is 8-bit RGBA at half range (so 2.0 at
+most), or with `RenderSettings::hdr_scene` (a game's choice, Ryza's) `B10G11R11_UFLOAT`, the
+same size, unclipped for the tone curve; the TAA and upscaler targets take the scene's
+format, GSR 2 and FSR 3 are float already.
 
 **Shadows.** The sun's shadow map: one 2048² depth map from the field's first directional
 light, an orthographic square 3,000 field units across around the camera's target

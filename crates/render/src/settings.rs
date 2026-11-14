@@ -45,11 +45,15 @@ pub struct RenderSettings {
     /// game keeps the ground's cobbles sharp far along it, as anisotropic filtering does
     /// (docs/renderer.md, "Texture filtering"); the device's limit caps it.
     pub anisotropy: u32,
+    /// The scene drawn into a float target (`B10G11R11_UFLOAT`, the same size as 8-bit RGBA)
+    /// instead of 8-bit RGBA, so what passes the half range's 2.0 keeps for the tone curve
+    /// (`Frame::tone_white`). A game's choice, not a config entry (Ryza's trueHDR; Escha 8-bit).
+    pub hdr_scene: bool,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 16 };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 16, hdr_scene: false };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
     /// The desktop with FSR 3.1 as anti-aliasing at full resolution (its "native AA").
@@ -60,7 +64,7 @@ impl RenderSettings {
     pub const DESKTOP_TAA: RenderSettings = RenderSettings { taa: true, motion: true, jitter: true, sharpen: true, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 4 };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 4, hdr_scene: false };
 
     /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `desktop-fsr3`, `handheld`, `handheld-gsr2`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
@@ -133,6 +137,11 @@ impl RenderSettings {
     }
 
     /// The settings a config gives, over the desktop preset, resolved; unknown lines are skipped.
+    /// The scene image's format (`hdr_scene`).
+    pub fn scene_format(&self) -> ash::vk::Format {
+        if self.hdr_scene { ash::vk::Format::B10G11R11_UFLOAT_PACK32 } else { crate::SCENE_FORMAT }
+    }
+
     pub fn from_config(text: &str) -> RenderSettings {
         let mut s = Self::DESKTOP;
         for line in text.lines() {

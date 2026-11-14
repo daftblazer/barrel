@@ -31,8 +31,12 @@ achievements are the player's own, and the DX version has not been played there)
   is stored at half range in 8 bits, so what passes 2.0 is clipped before the curve, and the
   curve maps 2.0 to 0.74: nothing in the frame reaches white. That is why the sky, the
   clouds (unlit, at most 1.0: mid-grey, against the still's white) and the 90th percentile
-  (166 against 219) come out low. Needed: an HDR scene target for Ryza (a float format;
-  Escha keeps its 8-bit one), then the exposure and curve refitted. The shade's colour: the default override's
+  (166 against 219) come out low. Ryza now draws its scene into a float target
+  (`RenderSettings::hdr_scene`, `B10G11R11_UFLOAT`, the same size as 8-bit RGBA; TAA and the
+  upscalers' targets follow it; Escha keeps 8 bits): error 183 to 163 at the same exposure,
+  the sky 98, 161, 157 to 87, 199, 199 against the still's 172, 218, 233, the 90th
+  percentile 168. The clouds stay grey: the dome is unlit at most 1.0 (its lit shader's
+  scales are not read, docs/shading.md). The shade's colour: the default override's
   `indirectStage_IDLScalerOfAmbientDiffuseMap` 2.5 × `..ColorRGB` (1.642, 1.978, 4.0) tints
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no

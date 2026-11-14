@@ -9,7 +9,6 @@ use glam::Vec3;
 
 use crate::{Gpu, Result};
 
-const FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv"));
 const TAA_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/taa.frag.spv"));
 /// How much of each new frame goes into the history.
@@ -34,6 +33,8 @@ pub fn is_cut(before: Shot, now: Shot) -> bool {
 }
 
 pub struct Pipelines {
+    /// Its targets' format: the scene's (`RenderSettings::scene_format`).
+    format: vk::Format,
     pass: vk::RenderPass,
     set_layout: vk::DescriptorSetLayout,
     layout: vk::PipelineLayout,
@@ -57,10 +58,10 @@ pub struct Targets {
 }
 
 impl Pipelines {
-    pub fn new(gpu: &Gpu) -> Result<Pipelines> {
+    pub fn new(gpu: &Gpu, format: vk::Format) -> Result<Pipelines> {
         let d = &gpu.device;
         let attachment = [vk::AttachmentDescription::default()
-            .format(FORMAT)
+            .format(format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::DONT_CARE)
             .store_op(vk::AttachmentStoreOp::STORE)
@@ -129,7 +130,7 @@ impl Pipelines {
                 .layout(layout)
                 .render_pass(pass);
             let pipeline = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0];
-            Ok(Pipelines { pass, set_layout, layout, modules, pipeline })
+            Ok(Pipelines { format, pass, set_layout, layout, modules, pipeline })
         }
     }
 
@@ -155,7 +156,7 @@ impl Targets {
             let (image, memory) = gpu.image(
                 &vk::ImageCreateInfo::default()
                     .image_type(vk::ImageType::TYPE_2D)
-                    .format(FORMAT)
+                    .format(p.format)
                     .extent(vk::Extent3D { width: size.0, height: size.1, depth: 1 })
                     .mip_levels(1)
                     .array_layers(1)
@@ -167,7 +168,7 @@ impl Targets {
                     &vk::ImageViewCreateInfo::default()
                         .image(image)
                         .view_type(vk::ImageViewType::TYPE_2D)
-                        .format(FORMAT)
+                        .format(p.format)
                         .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1)),
                     None,
                 )?

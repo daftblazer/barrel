@@ -289,7 +289,7 @@ impl Renderer {
         // at the end of the pass (in tile memory on the handhelds).
         let single_attachments = [
             vk::AttachmentDescription::default()
-                .format(SCENE_FORMAT)
+                .format(settings.scene_format())
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -306,7 +306,7 @@ impl Renderer {
         ];
         let multi_attachments = [
             vk::AttachmentDescription::default()
-                .format(SCENE_FORMAT)
+                .format(settings.scene_format())
                 .samples(samples)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::DONT_CARE)
@@ -314,7 +314,7 @@ impl Renderer {
                 .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
             single_attachments[1].samples(samples),
             vk::AttachmentDescription::default()
-                .format(SCENE_FORMAT)
+                .format(settings.scene_format())
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(vk::AttachmentLoadOp::DONT_CARE)
                 .store_op(vk::AttachmentStoreOp::STORE)
@@ -423,12 +423,12 @@ impl Renderer {
         };
         let glow_pipelines = glow::Pipelines::new(&gpu)?;
         let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
-        let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode)?) } else { None };
-        let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
+        let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode, settings.scene_format())?) } else { None };
+        let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu, settings.scene_format())?) } else { None };
         let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
         let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
         let timer = if timings { timing::Timer::new(&gpu)? } else { None };
-        let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+        let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion, settings.scene_format())?;
 
         // Pipeline.
         let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -925,7 +925,7 @@ impl Renderer {
     pub fn rebuild_targets(&mut self, gpu: &Gpu, presenter: Option<&Presenter>, width: u32, height: u32) -> Result<()> {
         self.targets.destroy(gpu);
         let s = &self.settings;
-        self.targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion)?;
+        self.targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format())?;
         Ok(())
     }
 

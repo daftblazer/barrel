@@ -171,9 +171,9 @@ const TINT_STRENGTH: f32 = 0.4;
 /// upward-facing surface over this. Fitted with the tone curve (`Frame::tone_white`, the set's
 /// `fLumiMax`) and the exposure cap (`vExposureRange`'s top) taken in the game's units as they
 /// are, against the game's still at the garden gate (noon, the player's save): its grey
-/// percentiles 25 / 50 / 90 come out 58 / 69 / 166 against 55 / 70 / 219, nine regions' RGB
-/// error 183 (16 with our light at 0.75 of the game's units: 45 / 54 / 149, error 190; the
-/// sky stays darker than the still's either way).
+/// percentiles 25 / 50 / 90 come out 58 / 69 / 168 against 55 / 70 / 219, nine regions' RGB
+/// error 163 with the float scene (`RenderSettings::hdr_scene`; 183 in 8 bits; 26 and up
+/// brighter but worse, 30 and up at the exposure cap). The sky stays darker than the still's.
 const EXPOSURE_DIVISOR: f32 = 22.0;
 
 /// One exposure for the frame, standing in for the game's adaptation (`trueHDR_`, not read):
@@ -469,6 +469,9 @@ fn main() -> Result<()> {
         .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)))
         .unwrap_or(RenderSettings::DESKTOP)
         .resolved();
+    // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
+    // (`Frame::tone_white`) sees past the half range's 2.0.
+    let graphics = RenderSettings { hdr_scene: true, ..graphics };
     let display = match config.as_deref() {
         Some(text) => settings::Display::from_config(text),
         None => settings::Display { width, height, fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1") },
