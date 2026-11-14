@@ -1059,6 +1059,33 @@ read by the object's own methods: `0x140617180` sets its flags (+0x9c) from the 
 `0x140612780` on each part. The classes are the framework's (`elixir::EXEffectObject`,
 `EXEffectManager`) under the game's `EffectObject` and `EffectManager`.
 
+### Ryza field lights (`<FIELD>_light.bin`)
+
+In the field container of Atelier Ryza DX and Ryza 2 DX (Ryza 3 DX's fields have none; they
+carry `_version.bin` and `_commonInfo.bin` instead). Read by `barrel_ryza::light`; all of Ryza
+DX's fields read, with 0 to 55 lights each (`barrel ryza-field INSTALL`). A u32 count, then 40
+bytes a light:
+
+| Offset | What |
+|---|---|
+| 0 | f32 x, y, z: where it stands, in field units (Rasenboden's 24 at lamp height through the village; the attic's 2 near its floor) |
+| 12 | f32: 5 in every light read |
+| 16, 20 | f32 × 2: 2.55 and 1.5 in the attic, 4.9 and 0.157 in Rasenboden: strength and falloff, by the look |
+| 24 | f32: the range (700, 800, 1000) |
+| 28, 32 | f32 × 2: 0.5 / 0.3 in the attic, 0.45 / 0.2 in Rasenboden |
+| 36 | u32 kind: 0 in the attic, 2 in Rasenboden |
+
+There is no colour, so these are not the whole light: see "Ryza field environment".
+
+### Ryza field environment (`<field>_env.elixir.gz`)
+
+Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin` (97,920 bytes
+in the attic) and two cube maps, `<FIELD>_ad.g1t` (256 × 256 BC6H, 6 faces, 1 level) and
+`<FIELD>_as.g1t` (the same with 6 levels). So the fields are lit from HDR cube maps, a diffuse
+irradiance map and a pre-filtered specular one, unlike Escha's per-field light table.
+`_env.bin` opens with floats that look like exposure and fog settings (4.2, 15, 1, 1000; 8000
+and -1200 at 0x84; small scattering-like constants from 0xa0); its layout is not read yet.
+
 ### Placement lists (`*.opl2`)
 
 Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 effects.

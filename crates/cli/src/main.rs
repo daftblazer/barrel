@@ -3435,7 +3435,8 @@ fn ryza_field(root: &Path, only: Option<&str>) -> Result<()> {
                     m.indices.len()
                 );
             }
-            Ok(format!("{} draws, {} textures, {} vertices, env {}", scene.draws.len(), textures, scene.vertices.len(), if f.env.is_some() { "yes" } else { "no" }))
+            let lights = barrel_engine::field::named(&main, &format!("{}_light.bin", f.area)).map(barrel_ryza::light::parse).transpose()?.map_or(0, |l| l.len());
+            Ok(format!("{} draws, {} textures, {} vertices, {lights} lights, env {}", scene.draws.len(), textures, scene.vertices.len(), if f.env.is_some() { "yes" } else { "no" }))
         })();
         match loaded {
             Ok(s) => println!("{name}: {s}"),

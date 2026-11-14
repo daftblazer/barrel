@@ -15,9 +15,11 @@ achievements are the player's own, and the DX version has not been played there)
   `s45_m_underground_01`, `s53_m_starbottle_01`, `s76`/`s78`/`s80`/`s82` battle points) fails
   with "ktf section offsets"; the other 87 fields load (`barrel ryza-field INSTALL`). Way in:
   compare one's header with a field that reads (docs/formats.md, the terrain section).
-- **Field lighting.** `barrel-ryza` draws fields unlit (texture times vertex colour) until
-  Ryza's lights are read: `_light.bin` in the field container, `_env.bin` and the `_ad` / `_as`
-  probes in `_env`. Ryza has no Escha-style look table per field.
+- **Field lighting.** `barrel-ryza` draws fields unlit. Ryza lights them from per-field HDR
+  cube maps (`_ad` diffuse, `_as` specular, BC6H) plus the `_light.bin` point lights (read, no
+  colour) and `_env.bin` (98 KB, layout unread): docs/formats.md, "Ryza field environment".
+  Way in: the diffuse cube map as the ambient (needs BC6H cube upload), then `_env.bin`'s
+  exposure, then the field's own shaders (`.g1s`) for the exact model.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
   heights match the heightmap) lies at grass level over the sandy canyon path the cliff models
   make in the village close-up (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`). Every
@@ -26,8 +28,6 @@ achievements are the player's own, and the DX version has not been played there)
   programs. The layers' normal maps are not drawn yet.
 - **The sand square** in the overview (`obj-A21-S06-FLOOR-01` at 0,0,0?) sits where no ground is
   expected.
-- **The environment container** (`<field>_env.elixir.gz`: `<field>_env.bin`, `_ad.g1t`,
-  `_as.g1t`, likely diffuse and specular light probes) is new; nothing reads it yet.
 - **Other field files** not in Escha: `.trmd`, `.g1pf`, `.koc` next to the containers.
 
 ## Running the original

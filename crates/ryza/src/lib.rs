@@ -3,3 +3,4 @@
 //! share moves into `barrel_formats` and `barrel_engine` (`docs/ryza/`).
 
 pub mod install;
+pub mod light;
