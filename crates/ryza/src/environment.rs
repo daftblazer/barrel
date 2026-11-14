@@ -118,13 +118,37 @@ const MAIN_AMBIENT: usize = 0x484;
 const PARALLEL: usize = 0x494;
 const PARALLEL_SIZE: usize = 0x18;
 
+/// The set for `time` in `weather` from a whole `_env.bin`.
+fn set_of(env: &[u8], time: Time, weather: Weather) -> Result<&[u8], String> {
+    if env.len() != SET_SIZE * SETS {
+        return Err(format!("environment: {} bytes, not {} sets of {SET_SIZE}", env.len(), SETS));
+    }
+    Ok(&env[(weather as usize * 4 + time as usize) * SET_SIZE..][..SET_SIZE])
+}
+
+/// Where a set names its sky dome (`SkyDome_`'s `SkyDomeDisplaySetFactory`, structure
+/// +0x41c in the executable): a zero-ended name, at most 64 bytes.
+const SKY_DOME: usize = 0x3d8;
+const SKY_DOME_LEN: usize = 0x40;
+
+/// The sky dome model the set shows, as its container in the archives
+/// (`\data\x64\field\skydome\<name>.elixir.gz`, the name lower-cased); none when the set
+/// names none (most sets: only the field's usual ones are filled in).
+pub fn sky_dome(env: &[u8], time: Time, weather: Weather) -> Result<Option<String>, String> {
+    let set = set_of(env, time, weather)?;
+    let raw = &set[SKY_DOME..SKY_DOME + SKY_DOME_LEN];
+    let name = &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())];
+    if name.is_empty() {
+        return Ok(None);
+    }
+    let name = std::str::from_utf8(name).map_err(|_| "environment: the sky dome's name is not text".to_string())?;
+    Ok(Some(format!("\\data\\x64\\field\\skydome\\{}.elixir.gz", name.to_ascii_lowercase())))
+}
+
 impl Light {
     /// The light of `time` in `weather` from a whole `_env.bin`.
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Light, String> {
-        if env.len() != SET_SIZE * SETS {
-            return Err(format!("environment: {} bytes, not {} sets of {SET_SIZE}", env.len(), SETS));
-        }
-        let set = &env[(weather as usize * 4 + time as usize) * SET_SIZE..][..SET_SIZE];
+        let set = set_of(env, time, weather)?;
         let f = |o: usize| f32::from_le_bytes([set[o], set[o + 1], set[o + 2], set[o + 3]]);
         let rgb = |o: usize| [f(o), f(o + 4), f(o + 8)];
         let parallel = |k: usize| {
@@ -155,6 +179,14 @@ mod tests {
         assert_eq!((l.lumi_max, l.middle_gray, l.ambient[0]), (4.2, 0.18, 2.0));
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
+    }
+
+    #[test]
+    fn sky_dome_of_a_set() {
+        let mut env = vec![0u8; SET_SIZE * SETS];
+        env[SKY_DOME..SKY_DOME + 16].copy_from_slice(b"MORNING_SUNNY_02");
+        assert_eq!(sky_dome(&env, Time::Morning, Weather::Sunny).unwrap().as_deref(), Some("\\data\\x64\\field\\skydome\\morning_sunny_02.elixir.gz"));
+        assert_eq!(sky_dome(&env, Time::Noon, Weather::Sunny).unwrap(), None);
     }
 
     #[test]

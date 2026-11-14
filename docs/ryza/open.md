@@ -55,7 +55,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   units across each way); the game's cascades (`shadowMap_`) are not read, so far ground
   stays unshadowed, and the shade comes out lighter than the game's.
 - **The sky.** The game shows a blue sky with haze toward the horizon; `barrel-ryza` draws none
-  (the clear colour).
+  (the clear colour). The set's cloud dome is named (`environment::sky_dome`, docs/formats.md)
+  but not drawn yet; the blue itself is the sky shader's (`skyplane.g1s`, the sky glow block),
+  not read; where the dome sits (`SkyDomeWorldPosition`, `WorldScale`) not placed.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Black slats** on the path near the gate, not in the game (some object drawn black).
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky

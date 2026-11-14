@@ -1141,6 +1141,17 @@ directional light (1, 1, 1 at 7°, 45°), an ambient colour, and the diffuse cub
 offsets are not placed yet. The first words of set 0 for comparison: 4.2, 15, 1, 1000 (fog
 on, 1000; noon has 0 and 10,000).
 
+**The sky.** A set names its sky dome at 0x3d8 (64 bytes, zero-ended; `SkyDome_`'s
+`SkyDomeDisplaySetFactory` in the executable, whose reader also reads `SkyDomeLightGroupID`,
+`SkyDomeWorldPosition`, `SkyDomeWorldScale` and two more): a container
+`\data\x64\field\skydome\<name lower-cased>.elixir.gz`. Rasenboden: sunny morning and evening
+`MORNING_SUNNY_02`, noon `MORNING_SUNNY`, night `obj-A21-TEST-NIGHTSKY-01_hi`, the other
+weathers none; the attic and the living room only noon (`obj-A21-TEST-SKYCLOUD-ANIMATION-01_hi`).
+`MORNING_SUNNY_02` is one model (two submeshes, shader `PBSkyDome-NT0Tn`: colour, normal map,
+alpha-cut) of clouds alone, 148 km across and 29 km high around the origin: the blue behind
+them is the sky shader's (`skyplane.g1s`, the sky glow block at 0x180), not a texture.
+
+
 ### Placement lists (`*.opl2`)
 
 Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 effects.
