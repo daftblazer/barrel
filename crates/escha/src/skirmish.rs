@@ -207,6 +207,12 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         self.party.get(who).map_or(Vec::new(), |m| m.skills.iter().map(|&(s, c)| (s, c, c <= mp)).collect())
     }
 
+    /// The timeline's entries in turn order, each a fighter standing or `None` (a free entry or
+    /// a fallen fighter's): the turn bar's slots.
+    pub fn slots(&self) -> Vec<Option<usize>> {
+        self.battle.timeline.slots().into_iter().map(|c| c.map(|c| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down()))).collect()
+    }
+
     /// The fighters standing, in turn order (the timeline's: the next to act first).
     pub fn order(&self) -> Vec<usize> {
         self.battle.timeline.entries.iter().map(|&(c, _)| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down())).collect()

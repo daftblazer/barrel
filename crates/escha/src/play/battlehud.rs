@@ -109,7 +109,9 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 continue;
             }
             let Some(&face) = order.get(place(k)) else { continue };
+            // A free entry (no fighter) leaves its slot empty, the bar showing through.
             let (part, cut) = match (n.part, n.cut) {
+                SLOT_FIRST if face.is_none() => continue,
                 SLOT_FIRST => SLOT_FIRST,
                 (FACE, _) => match face {
                     Some(c) => (FACE, c as i32),

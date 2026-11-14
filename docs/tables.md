@@ -505,7 +505,11 @@ recorded battle the list gave the six fighters every other entry (Wilbell, Katla
 Escha, two monsters; characters 2, 1, 5, 0, 6, 7) with five non-acting characters between
 (presumably the two reserve members and others not read), so the fighters started 100 apart.
 How the list is ordered (its first loop skips characters by their virtual +0x10) is not read
-yet; `fight::Battle::new` starts everyone at 500 in party-then-monster order instead.
+yet; the recorded order is the fighters by speed, fastest first (30, 18, 15, 13, 8, 8), which
+`fight::Battle::new` follows (`battle::Timeline::setup`: the fighters 100 apart, free entries
+between and on to 16, `battle::FREE`; the test `the_setup_and_a_turn_match_the_live_timeline`
+replays the two reads). Which non-acting characters stand between the fighters, and whether a
+battle not opened by a strike starts the same, are not read.
 `0x14018cf20 (timeline, character)` puts a joining character in a free slot with wait 500
 (1000 when its +0x10 value is negative). After a character acts, `0x14018d180 (timeline,
 character, wait)` gives it the action's wait (the action's virtual +0x30):

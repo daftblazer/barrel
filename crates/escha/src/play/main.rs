@@ -1486,7 +1486,7 @@ impl BattlePlay {
             at: self.row,
             skills: (self.choosing == Choosing::Skill).then(|| (list, self.chosen)),
             title: String::new(),
-            marked: target.filter(|_| plate.is_some()).and_then(|k| turn.order.iter().skip(1).position(|&o| o == k)).map(|p| p + 1),
+            marked: target.filter(|_| plate.is_some()).and_then(|k| turn.slots.iter().skip(1).position(|&o| o == Some(k))).map(|p| p + 1),
             plate,
         })
     }
@@ -1557,7 +1557,8 @@ impl BattlePlay {
             Some(&c) => Some(c),
             None => self.outcome.monsters.get(k - party).map(|&m| battlehud::MONSTER_FACES + m),
         };
-        self.turn.as_ref().map_or(Vec::new(), |t| t.order.iter().map(|&k| face(k)).collect())
+        // One slot a timeline entry, free ones empty (`Turn::slots`).
+        self.turn.as_ref().map_or(Vec::new(), |t| t.slots.iter().map(|k| k.and_then(face)).collect())
     }
 
     /// The party as the HUD shows it.

@@ -637,7 +637,36 @@ pub struct Timeline {
 
 pub const MAX_WAIT: i32 = 1000;
 
+/// A free entry's character: the timeline always holds [`ENTRIES`] entries, the fighters and
+/// free ones (character -1 in the game, +0x10 negative) that never act and keep the turn bar's
+/// empty slots (`docs/tables.md`, "Turn order").
+pub const FREE: u32 = u32::MAX;
+pub const ENTRIES: usize = 16;
+/// The waits the battle's setup gives its entries one after another.
+pub const SETUP_STEP: i32 = 50;
+
 impl Timeline {
+    /// The battle's start (`0x14018c0c0`): one entry per character of the battle's list, 50
+    /// apart from 0, and free entries on to 16. `fighters` is that list's acting characters in
+    /// its order, each followed by a non-acting one (the recorded battle's: the escha-battle-timeline
+    /// recording, the fighters 100 apart with free entries between).
+    pub fn setup(fighters: &[u32]) -> Timeline {
+        let mut entries = Vec::with_capacity(ENTRIES.max(fighters.len() * 2));
+        for &c in fighters {
+            entries.push(c);
+            entries.push(FREE);
+        }
+        while entries.len() < ENTRIES {
+            entries.push(FREE);
+        }
+        Timeline { entries: entries.into_iter().enumerate().map(|(k, c)| (c, k as i32 * SETUP_STEP)).collect() }
+    }
+
+    /// The characters in turn order, the free entries as `None` (the turn bar's slots).
+    pub fn slots(&self) -> Vec<Option<u32>> {
+        self.entries.iter().map(|&(c, _)| (c != FREE).then_some(c)).collect()
+    }
+
     fn index(&self, who: u32) -> Option<usize> {
         self.entries.iter().position(|&(c, _)| c == who)
     }
@@ -658,6 +687,7 @@ impl Timeline {
     /// and the time taken off is the first entry still in the running's wait, off it and every
     /// entry after it.
     pub fn advance_with(&mut self, out: impl Fn(u32) -> bool) -> i32 {
+        let out = |c: u32| c == FREE || out(c);
         self.entries.sort_by_key(|&(_, w)| w);
         let mut first = 0;
         while first < self.entries.len() && out(self.entries[first].0) {
@@ -854,6 +884,24 @@ mod tests {
         assert_eq!(state_group(0x19), Some(9));
         assert_eq!(state_group(0x2d), Some(9));
         assert_eq!(state_group(0x34), None);
+    }
+
+    #[test]
+    fn the_setup_and_a_turn_match_the_live_timeline() {
+        // The escha-battle-timeline recording: characters 2, 1, 5, 0, 6, 7 fastest first.
+        let mut t = Timeline::setup(&[2, 1, 5, 0, 6, 7]);
+        let waits: Vec<i32> = t.entries.iter().map(|e| e.1).collect();
+        assert_eq!(waits, (0..16).map(|k| k * 50).collect::<Vec<_>>());
+        assert_eq!(t.advance(), 0);
+        assert_eq!(t.entries[0].0, 2);
+        // Wilbell's Attack: speed 30, wait 564; then time moves on to Katla.
+        t.entries[0].1 = 564;
+        assert_eq!(t.advance(), 100);
+        let f = FREE;
+        assert_eq!(
+            t.entries,
+            [(1, 0), (f, 50), (5, 100), (f, 150), (0, 200), (f, 250), (6, 300), (f, 350), (7, 400), (f, 450), (2, 464), (f, 500), (f, 550), (f, 600), (f, 650), (f, 1000)]
+        );
     }
 
     #[test]

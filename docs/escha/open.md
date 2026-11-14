@@ -210,7 +210,8 @@ likely settle them where static reading failed.
   2026-11-14); not implemented yet.
 - World map colour grading: our world map is warmer and lighter than the recording (colseit-arrival 1:25: the Old Highway's green `_off` mark draws olive-yellow, the clouds cream); the map shader's light or tone, not the marks' choice.
 
-- Battle turn bar spacing (stage 17; READ: the gaps are the timeline's free slots, 16 entries
+- Battle turn bar spacing (stage 17; DONE in Barrel 2026-11-14 for the recorded case, the
+  start order by speed an inference; READ: the gaps are the timeline's free slots, 16 entries
   in all, docs/tables.md "Turn order"; to do: Barrel's Timeline keeps the free slots, and how
   the battle start sets the waits 0, 50, … 750 (a strike-opened battle; a plain one not read).
   This is battle logic, not only the bar: the game's fighters start 100 apart where
