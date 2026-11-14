@@ -1285,7 +1285,21 @@ azimuth, extension}`), `fog_` 0xd4c, `stageAmbientLight_` 0xd78, `indirectStage_
 `twinkle_` 0x1f40. The file matches those offsets up to the HDR block at least, but holds the
 ambient and the lights 0x44 bytes earlier: `mainAmbientLight_` at 0x484, the sun at 0x494, the
 second light at 0x4ac (`barrel_ryza::environment::Light`). Where the 0x44 starts is not placed,
-and later blocks shift again (`indirectStage_` is not at 0xd5c). Read that way, Rasenboden's
+and later blocks shift again (`indirectStage_` is not at 0xd5c). The HDR block in the file, at the
+executable's offsets (Rasenboden's sunny sets morning / noon / evening / night): 0x00
+`fLumiMax` (4.2 / 4.3 / 2.5 / 4.2), 0x18 `fLumiThreshold` (0.3, evening 0.8), 0x1c
+`fMiddleGray` 0.18, 0x20 `vExposureRange` (0.7 / 0.9 / 0.9 / 0.9 to 2.4: not the default
+override's 0.9 to 1.2), 0x28 `fLightAdaptedScale` 0.5, 0x2c `fDarkAdaptedScale` (0.5,
+evening 0.3), the FXAA four 0x30 (0.5, 0.5, 8, 2), 0x40 `fGamma` (2.2, noon 1.8), 0x44
+`vSaturationScale` per channel ((1.2, 1.2, 1.0) / (1.27, 1.3, 1.2) / (1.2, 1.1, 1.0) /
+(1.2, 1.2, 1.2)), 0x50 `vColorScale` (1, 1, 1; placed by the override's values), 0x5c
+`fBloomWeight` (0.4, evening 0.6); `barrel_ryza::environment::Light` reads them. The same
+three saturation words recur at 0x2f4. Comparing the four sets word by word, the others that
+differ: 0x08 and 0x0c (1, 1000; noon 0, 10000), the height fog's colours (0x8c on, 0x110 the
+second layer's (0.543, 1.41, 2) as the override's), the sky plane glow from 0x178, the clouds
+from 0x1ac, 0x274 (200, night 600), 0x310 to 0x34f, 0x460 to 0x48f (0x478 a grey triple 2 /
+3 / 3 / 7 before the ambient), the lights, and blocks from 0x4f8 to 0x7a0, 0xff0, 0x17f0.
+Read that way, Rasenboden's
 sunny sets give: morning sun (5, 4.62, 3.5) at 30° elevation, 65° azimuth, ambient (21.6, 30,
 27.2); noon ambient (3, 3, 4); evening sun (5, 2.07, 1) at 30°, -30°, ambient (2, 1.4, 0.8);
 night ambient (0.39, 0.53, 0.77); the second light a dim blue (0.12, 0.14, 0.3) at 10°, -164.5°.

@@ -103,6 +103,13 @@ pub struct Light {
     /// `trueHDR_fLumiMax` and `fMiddleGray`.
     pub lumi_max: f32,
     pub middle_gray: f32,
+    /// `trueHDR_vExposureRange`, `fGamma`, `vSaturationScale` (per channel) and `fBloomWeight`:
+    /// the set's own, not the override's (Rasenboden's noon: 0.9 to 2.4, 1.8, (1.27, 1.3,
+    /// 1.2), 0.4).
+    pub exposure_range: (f32, f32),
+    pub gamma: f32,
+    pub saturation: [f32; 3],
+    pub bloom_weight: f32,
     /// `mainAmbientLight_color`.
     pub ambient: [f32; 3],
     /// `parallelLight00` (the sun) and `parallelLight01`.
@@ -114,6 +121,10 @@ pub struct Light {
 /// file has them; where the two start to differ is not placed yet.
 const LUMI_MAX: usize = 0x00;
 const MIDDLE_GRAY: usize = 0x1c;
+const EXPOSURE_RANGE: usize = 0x20;
+const GAMMA: usize = 0x40;
+const SATURATION: usize = 0x44;
+const BLOOM_WEIGHT: usize = 0x5c;
 const MAIN_AMBIENT: usize = 0x484;
 const PARALLEL: usize = 0x494;
 const PARALLEL_SIZE: usize = 0x18;
@@ -188,7 +199,14 @@ impl Light {
             let at = PARALLEL + PARALLEL_SIZE * k;
             ParallelLight { color: rgb(at), elevation: f(at + 12), azimuth: f(at + 16) }
         };
-        Ok(Light { lumi_max: f(LUMI_MAX), middle_gray: f(MIDDLE_GRAY), ambient: rgb(MAIN_AMBIENT), parallel: [parallel(0), parallel(1)] })
+        Ok(Light {
+            lumi_max: f(LUMI_MAX),
+            middle_gray: f(MIDDLE_GRAY),
+            exposure_range: (f(EXPOSURE_RANGE), f(EXPOSURE_RANGE + 4)),
+            gamma: f(GAMMA),
+            saturation: rgb(SATURATION),
+            bloom_weight: f(BLOOM_WEIGHT),
+            ambient: rgb(MAIN_AMBIENT), parallel: [parallel(0), parallel(1)] })
     }
 }
 
@@ -205,11 +223,20 @@ mod tests {
         put(0, 4.2);
         put(0x1c, 0.18);
         put(0x484, 2.0);
+        for (k, v) in [0.9, 2.4].into_iter().enumerate() {
+            put(0x20 + 4 * k, v);
+        }
+        put(0x40, 2.2);
+        for (k, v) in [1.2, 1.1, 1.0].into_iter().enumerate() {
+            put(0x44 + 4 * k, v);
+        }
+        put(0x5c, 0.6);
         for (k, v) in [5.0, 2.074, 1.0, 30.0, -30.0].into_iter().enumerate() {
             put(0x494 + 4 * k, v);
         }
         let l = Light::read(&env, Time::Evening, Weather::Sunny).unwrap();
         assert_eq!((l.lumi_max, l.middle_gray, l.ambient[0]), (4.2, 0.18, 2.0));
+        assert_eq!((l.exposure_range, l.gamma, l.saturation, l.bloom_weight), ((0.9, 2.4), 2.2, [1.2, 1.1, 1.0], 0.6));
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
     }

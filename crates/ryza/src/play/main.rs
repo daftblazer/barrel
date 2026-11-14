@@ -230,10 +230,10 @@ fn main() -> Result<()> {
         None => None,
     };
     eprintln!("character rim: {rim:?}");
-    // The finished frame's saturation (`trueHDR_vSaturationScale`, the same override).
-    // The exposure's bounds (`trueHDR_vExposureRange`, the same override; `exposure`).
+    // The exposure's cap (`exposure`): the default override's `trueHDR_vExposureRange` top.
+    // The sets hold their own range (`Light::exposure_range`, 0.9 to 2.4 at Rasenboden), whose
+    // top would leave evening uncapped: how the game's adaptation uses it is not read.
     let exposure_range = install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::override_values(&b, "trueHDR_vExposureRange").ok()).filter(|v| v.len() == 2).map(|v| (v[0], v[1]));
-    let saturation = install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::override_number(&b, "trueHDR_vSaturationScale").ok()).unwrap_or(0.0);
     let rim_word = |sharpness: f32, strength: f32| u32::from_le_bytes([(sharpness / 64.0 * 255.0).round().clamp(0.0, 255.0) as u8, (strength / 4.0 * 255.0).round().clamp(0.0, 255.0) as u8, 0, 0]);
     let mut rig: Option<Rig> = None;
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
@@ -744,7 +744,8 @@ fn main() -> Result<()> {
             shadow_vp: view.shadow_vp,
             alpha_cutoff: 0.3,
             glow: (1.0, 0.0),
-            saturation,
+            // The set's own saturation per channel (`Light::saturation`).
+            saturation: environment.as_ref().map_or([0.0; 3], |(_, l, _)| l.saturation),
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
             frozen_weight: 0.0,

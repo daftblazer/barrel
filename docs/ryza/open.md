@@ -18,7 +18,9 @@ achievements are the player's own, and the DX version has not been played there)
   (2) one exposure mapping a sixteenth of the light on an upward surface to `fMiddleGray`,
   fitted to the game's noon still at the garden gate (`work/ryza-ref/rasen-gate-noon.png`:
   grey percentiles 25 / 50 / 90 come out 53 / 67 / 225 against 55 / 70 / 219), capped at the
-  override's `vExposureRange` top (1.2, our light units taken as 0.75 of the game's) so evening
+  override's `vExposureRange` top (1.2, our light units taken as 0.75 of the game's; the sets'
+  own range, 0.9 to 2.4, would leave evening uncapped, and noon's gamma is 1.8 against 2.2:
+  the game's tone chain is not read) so evening
   and night are not lifted to noon (exposure 0.9 instead of 1.73 and 1.04); the game adapts
   within the range, which is not read. Morning's set has ten times noon's ambient and is
   exposed at 0.30 uncapped; night comes out too bright and green (the moon's colour 1, 4, 5);
@@ -27,7 +29,7 @@ achievements are the player's own, and the DX version has not been played there)
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no
   per-set values (`env.bin` holds none of them; its words 0x2c4 on are SSAO's, then a per-set
-  saturation scale, noon 1.27, 1.3, 1.2, not used yet), so `barrel-ryza` keeps the set's
+  saturation scale as at 0x44, now used per channel), so `barrel-ryza` keeps the set's
   colour and tints it by the tint's hue (over its luma): at the gate's noon the tree shade
   comes out 54, 55, 72 against the still's 45, 64, 70 (the set's colour alone: 68, 58, 38);
   shaded stones are too blue (37, 64, 158 against 21, 62, 80), morning turns cyan; (3) the ambient's shape: the game

@@ -5212,7 +5212,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         shadow_vp,
         alpha_cutoff,
         glow,
-        saturation: 0.0,
+        saturation: [0.0; 3],
         camera: renderer::Camera { jitter: frame_jitter, fov, near: dist * 0.01 * zoom, far: (dist * 20.0 * zoom).max(80_000.0), dt: frame_dt, same: same_camera },
         freeze_now,
         frozen_weight,

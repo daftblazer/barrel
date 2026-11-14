@@ -120,8 +120,8 @@ pub struct Frame<'a> {
     pub alpha_cutoff: f32,
     /// The glow: its bright pass's threshold and its rate (0: none).
     pub glow: (f32, f32),
-    /// The finished frame's saturation scale (0: none).
-    pub saturation: f32,
+    /// The finished frame's saturation scale per channel (0: none).
+    pub saturation: [f32; 3],
     pub camera: Camera,
     /// Copy this frame's scene into the frozen image (a cross-fade starts), and how much of
     /// the frozen image the post pass mixes in.
@@ -562,7 +562,7 @@ impl Renderer {
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
         ];
-        let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 32 }];
+        let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 48 }];
         let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
         let no_input = vk::PipelineVertexInputStateCreateInfo::default();
         let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
@@ -887,11 +887,13 @@ impl Renderer {
             );
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[targets.post_set()], &[]);
-            let mut post_push = [0u8; 32];
+            let mut post_push = [0u8; 48];
             post_push[..4].copy_from_slice(&rate.to_le_bytes());
             post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
             post_push[8..12].copy_from_slice(&(if show_motion { 1.0f32 } else { 0.0 }).to_le_bytes());
-            post_push[12..16].copy_from_slice(&saturation.to_le_bytes());
+            for (k, v) in saturation.iter().enumerate() {
+                post_push[32 + 4 * k..36 + 4 * k].copy_from_slice(&v.to_le_bytes());
+            }
             for (k, v) in overlay.iter().enumerate() {
                 post_push[16 + 4 * k..20 + 4 * k].copy_from_slice(&v.to_le_bytes());
             }
