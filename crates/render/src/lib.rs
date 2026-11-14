@@ -281,7 +281,11 @@ impl Gpu {
         let entry = unsafe { ash::Entry::load()? };
         let validation = std::env::var("BARREL_VALIDATION").is_ok_and(|v| v == "1");
         let layers: Vec<*const std::ffi::c_char> = if validation { vec![c"VK_LAYER_KHRONOS_validation".as_ptr()] } else { vec![] };
-        let app = vk::ApplicationInfo::default().application_name(c"barrel-escha").api_version(vk::API_VERSION_1_1);
+        // The application's name as drivers and compositors see it (per-application settings):
+        // the program's own (barrel-escha, barrel-ryza, barrel).
+        let name = std::env::current_exe().ok().and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned())).unwrap_or_else(|| "barrel".into());
+        let name = std::ffi::CString::new(name).unwrap_or_else(|_| c"barrel".into());
+        let app = vk::ApplicationInfo::default().application_name(&name).api_version(vk::API_VERSION_1_1);
         let instance = unsafe {
             let extensions = match display {
                 Some(d) => present::instance_extensions(d)?,
