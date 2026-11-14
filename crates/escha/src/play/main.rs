@@ -355,10 +355,16 @@ impl AreaMap {
         if !self.seen_routes.is_empty() && name.contains("point_r") && name.split_whitespace().any(|w| self.seen_routes.iter().any(|r| r == w)) { SEEN_ROUTE } else { 0 }
     }
 
-    /// Whether a draw (by its name: object and placement tags) is a dot of a route not known,
+    /// Whether a draw (by its name: object and placement tags) is a sector's mark or dot on
+    /// the world map, a dot of a route not known,
     /// or the mark of a sector closed or not known yet (the recording at 0:45 has no marks
     /// for Sector One's unknown neighbours south of her, A2p2 and A2p4).
     fn hides(&self, name: &str) -> bool {
+        // The world map shows the regions' marks and the routes between them, not the sectors'
+        // marks and dots (the colseit-arrival recording at 1:12: none south of her).
+        if self.world && (name.contains("point_sm_") || name.contains("ns_a15_point_r_off")) {
+            return true;
+        }
         name.split_whitespace().any(|w| {
             self.hidden_routes.iter().any(|r| r == w)
                 || self.places.iter().zip(&self.closed).any(|(p, &shut)| shut && p.kind == 1 && p.tag == w)

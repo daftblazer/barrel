@@ -341,7 +341,9 @@ yet are not drawn, like the dots of routes not known (the recording at 0:45 show
 A2p2 and A2p4 south of Sector One). Each sector has two marks placed on it, `point_sm_on` (red) and
 `point_sm_off` (yellow); the recording has Ruins Entrance (visited) red, so a visited sector
 shows the first and one only seen the second (Barrel's rule, matching the save's 15 / 10
-knowledge values; a seen sector's mark not yet checked on screen). The maps draw no sun shadow (the recordings show
+knowledge values; a seen sector's mark not yet checked on screen). The world map leaves out the sectors' marks and dots
+altogether (`point_sm_*`, `ns_a15_point_r_off`): the recording at 1:12 shows only the regions'
+marks and the routes between them. The maps draw no sun shadow (the recordings show
 none under her; the ruins' dark undersides are in their own textures). The map cursors `E3D_WMAP_CUR00` / `CUR01`
 (CharaBase rows with Directory "Obj", `Data/x64/Obj`, each with a 3.37 s looping
 `BASE_MOTION1`; CHARA enum 705 and 740) are upright markers, claws around a blue crystal, 260
