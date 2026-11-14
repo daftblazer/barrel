@@ -4052,7 +4052,19 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         let area_routes: std::collections::BTreeSet<i32> = a.places.iter().filter(|p| p.kind == 1).flat_map(|p| p.links).filter(|&r| r >= 0).collect();
                         a.hidden_routes = area_routes.difference(&known).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
                         let walked = s.walked_routes(&a.places);
-                        a.seen_routes = known.difference(&walked).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
+                        // The routes between the regions (the world level's places' links) show
+                        // once walked, both ends visited: the world's places open with the story,
+                        // not by lying next to one visited (the user's save at 8/20 knows only
+                        // R0, R1 and R2, all walked, and none of Colseit's other routes).
+                        // A route's ends are the route table's (`T0` - `A1p0` for R2), not the
+                        // places whose links hold it (R2 is in the Old Highway region's links).
+                        let world_routes: std::collections::BTreeSet<i32> = a.places.iter().filter(|p| p.kind == 0).flat_map(|p| p.links).filter(|&r| r >= 0).collect();
+                        let visited_tag = |tag: &str| a.places.iter().position(|p| p.tag == tag).is_some_and(|k| s.visited(k));
+                        let world_walked: std::collections::BTreeSet<String> = a.trips.as_ref().map_or_else(Default::default, |m| {
+                            m.routes.iter().filter(|r| visited_tag(&r.ends.0) && visited_tag(&r.ends.1)).map(|r| r.area.id.clone()).collect()
+                        });
+                        a.hidden_routes.extend(world_routes.iter().filter_map(|&r| a.routes.get(r as usize)).filter(|tag| !world_walked.contains(*tag)).cloned());
+                        a.seen_routes = known.difference(&walked).filter(|r| !world_routes.contains(r)).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
                     }
                     area_map = Some(a);
                 }

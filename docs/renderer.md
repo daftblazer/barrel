@@ -343,7 +343,12 @@ A2p2 and A2p4 south of Sector One). Each sector has two marks placed on it, `poi
 shows the first and one only seen the second (Barrel's rule, matching the save's 15 / 10
 knowledge values; a seen sector's mark not yet checked on screen). The world map leaves out the sectors' marks and dots
 altogether (`point_sm_*`, `ns_a15_point_r_off`): the recording at 1:12 shows only the regions'
-marks and the routes between them. The maps draw no sun shadow (the recordings show
+marks and the routes between them. The routes between regions show only once walked (both
+ends visited, the ends as the route table has them: R2 is `T0` - `A1p0`, though it sits in the
+Old Highway region's links), white; the others are not drawn. The world's places open with the
+story, not by lying next to a visited one: the user's save at 8/20 (`barrel save`, "knowledge
+route") knows R0, R1 and R2, all at 15, and none of Colseit's other routes, and the recording at
+1:12 shows the same. The maps draw no sun shadow (the recordings show
 none under her; the ruins' dark undersides are in their own textures). The map cursors `E3D_WMAP_CUR00` / `CUR01`
 (CharaBase rows with Directory "Obj", `Data/x64/Obj`, each with a 3.37 s looping
 `BASE_MOTION1`; CHARA enum 705 and 740) are upright markers, claws around a blue crystal, 260

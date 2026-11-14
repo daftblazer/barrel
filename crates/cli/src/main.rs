@@ -1812,6 +1812,11 @@ fn save(file: &Path) -> Result<()> {
     for (name, v) in [("item", &k.item), ("recipe", &k.recipe), ("book", &k.book), ("fieldMap", &k.field_map), ("monster", &k.monster), ("mixEsp", &k.mix_esp), ("potential", &k.potential), ("eff", &k.eff)] {
         println!("knowledge {name} ({}): {}", v.len(), levels(v));
     }
+    // The world map's knowledge by record (routes as `barrel world-routes` lists them, places by
+    // place number): 10 seen, 15 walked or visited.
+    let listed = |v: &[i32]| v.iter().enumerate().filter(|(_, x)| **x != 0).map(|(i, x)| format!("{i}:{x}")).collect::<Vec<_>>().join(" ");
+    println!("knowledge route ({}): {}", s.route_knowledge.len(), listed(&s.route_knowledge));
+    println!("knowledge place ({}): {}", s.place_knowledge.len(), listed(&s.place_knowledge));
     // BARREL_ITEMS=path/to/itemData.xml names the items.
     let names: Vec<String> = std::env::var("BARREL_ITEMS")
         .ok()
