@@ -1969,3 +1969,15 @@ The DX release's graphics options are tables of presets, one element per `Type`,
 - `waterqualitypreset.xml`: `EnableShoreBubble` on High only, `EnableCaustics` off on Low.
 - `aapreset` (Off 0, Fxaa 1, Taa 2), `texturefilterpreset` (Linear 0, Anisotropic 1) and
   `bloompreset`, `dofpreset`, `lightshaftpreset`, `ssaopreset` (`Enable` 0 / 1): switches.
+
+## Ryza DX: `saves/envoverride/env_override.xml`
+
+40 rows of `Name`, `Weather`, `Time`, `SaturationScaleEx` over 20 light set names (`Dummy`,
+`LGT01_DEFAULT_01` to `LGT09_TOWER_01`, `S999_CHARA_LIGHT`, `EVENT_C29`, ...); -1 for any
+weather or time. `LGT01_DEFAULT_01`: 1.2 for any, then clear morning 1.4, noon 1.6, evening
+1.6, night 1.5. The names are the executable's (with `LGT07_INROOM_01` first); no table found
+says which a field uses. The executable also names five time zones: `TIME_ZONE_MORNING`,
+`_NOON`, `_EVENING`, `_NIGHT`, `_MIDNIGHT` (and `_NONE`), against the environment's four sets.
+`saves/fieldmap/sky/sky_default.xml` gives each weather and time (0 to 3) a sky tag
+(`FM_SKY_MORNING_CLEAR`, `FM_SKY_DAY_RAIN`, ...) and its particle effects (rain 1754 / 1756
+every 0.5 s, thunder 1755 / 1757, mist 1759, snow at scale 1 every 0.75 s).

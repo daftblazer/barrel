@@ -326,3 +326,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   levels at upload (`g1t::Texture::without_top_levels`, kept at 4 × 4 or more): Rasenboden's
   526 textures take 224.9 MB on the desktop preset and 59.3 MB on the handheld's (bias 1), at
   the gate 5.73 against 5.60 ms (PC); the picture softens as the game's Middle does.
+- **`SaturationScaleEx`** (`env_override.xml`, docs/formats.md): if Rasenboden is
+  `LGT01_DEFAULT_01`, a saturation of 1.6 at noon on top of (or instead of) the environment's
+  `vSaturationScale` (1.27, 1.3, 1.2), which matched the noon still worse when laid on as
+  saturation (so Barrel applies none). Which set a field uses and where the game lays the
+  scale (everything, or the characters: `S999_CHARA_LIGHT`) are unknown; a reference frame of
+  a saturated object at noon against Barrel's with each guess would tell. Also the fifth time
+  zone, `TIME_ZONE_MIDNIGHT`, and which of the four sets it shows.
