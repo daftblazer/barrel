@@ -138,8 +138,15 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   and y swapped) and `a21-s06-floor-01` (four meshes tens of thousands of units outside the
   model: likely in field space; "the sand square" above). `a21-s09-stair-03`'s hull fits.
   `.g1pf` is not a placement list (an `FP1G` grid over 128,000 units: likely navigation).
-  Where the game puts these meshes is not known; the terrain already slopes over the stairs
-  (6182 to 6001), so walking would work without the mesh.
+  `a21-s06-floor-01` is placed at the origin unturned, and its four meshes land near it (x -3144
+  to 4223, z -1207 to 1867), but its model's geometry is in field coordinates (x 1210 to 56805,
+  z 33342 to 53823): the meshes are not. The tunnel rocks are placed turned about 86° round z,
+  and their meshes look like their models already turned once more. Nothing found places the
+  meshes: the stair model's chunks hold no offset (`MM1G` an identity matrix, `FM1G` zeros, one
+  joint at the origin), the container's slots around the meshes are empty `dummy` entries, and
+  the mesh files have no transform. Where the game puts these meshes is not known; the terrain
+  already slopes over the stairs (6182 to 6001), so walking would work without the mesh. Until
+  then a walk from the gate cannot go down these stairs (the mesh's end is a face 390 high).
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no
