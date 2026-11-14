@@ -1,0 +1,39 @@
+//! Atelier Escha & Logy DX: its rules, its data (the tables compiled into its executable, its
+//! saves, its own XML tables: `data`) and, on Barrel's engine, its play.
+
+pub mod data;
+pub mod area_map;
+pub mod auto_battle;
+pub mod battle;
+pub mod bonus;
+pub mod calendar;
+pub mod cauldron;
+pub mod creature;
+pub mod days;
+pub mod delivery;
+pub mod duel;
+pub mod encounter;
+pub mod equipment;
+pub mod event_start;
+pub mod explore;
+pub mod face;
+pub mod field_ai;
+pub mod fight;
+pub mod gather;
+pub mod gesture;
+pub mod growth;
+pub mod inventory;
+pub mod library;
+pub mod macros;
+pub mod monster_ai;
+pub mod player;
+pub mod quest;
+pub mod rank;
+pub mod saves;
+pub mod session;
+pub mod shop;
+pub mod skirmish;
+pub mod sq_consts;
+pub mod subject;
+pub mod synthesis;
+pub mod travel;

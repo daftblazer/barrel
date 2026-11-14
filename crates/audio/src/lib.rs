@@ -291,13 +291,22 @@ fn mix_stream(s: &mut Streamed, at: &mut f64, step: f64, mut level: Level, out: 
     *at -= done as f64;
 }
 
+/// A music track: its file under `Data/x64/Sound/BGM/` ("ev_usual01.kvs"), its volume and
+/// its title.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Track {
+    pub file: String,
+    pub volume: f32,
+    pub title: String,
+}
+
 /// The game's sounds from its install folder, decoded on first use and kept: voice clips by
 /// number (`Data/x64/Sound/<voices>/SeriesNNNN.fpl` and `.fp`, a bank per thousand) and music
 /// tracks by the executable's list (`Data/x64/Sound/BGM/<file>`, with its volume and loop).
 pub struct Library {
     sound: std::path::PathBuf,
     voices: String,
-    tracks: Vec<barrel_formats::bgm::Track>,
+    tracks: Vec<Track>,
     banks: std::collections::HashMap<u32, Option<(Vec<Option<(usize, usize)>>, Vec<u8>)>>,
     /// The sound effect bank (`Sound/SE/A15_bank_se`): each sound's first block and the data.
     effects: Option<Option<(Vec<Option<barrel_formats::kwb::Block>>, Vec<u8>)>>,
@@ -329,8 +338,8 @@ pub struct Music {
 
 impl Library {
     /// `install` is the game's folder; `voices` the voice folder under `Sound/` (`Voice` for
-    /// Japanese, `Voice_EN` for English); `tracks` from `barrel_formats::bgm::tracks`.
-    pub fn new(install: &std::path::Path, voices: &str, tracks: Vec<barrel_formats::bgm::Track>) -> Library {
+    /// Japanese, `Voice_EN` for English); `tracks` the game's music list (Escha's: `barrel_escha::data::bgm::tracks`).
+    pub fn new(install: &std::path::Path, voices: &str, tracks: Vec<Track>) -> Library {
         Library { sound: install.join("Data/x64/Sound"), voices: voices.to_string(), tracks, banks: Default::default(), effects: None }
     }
 

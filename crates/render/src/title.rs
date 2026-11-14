@@ -139,7 +139,7 @@ impl Front {
         match self {
             Front::Title(t) => match t.press(b)? {
                 Entry::NewGame => *self = Front::Hero(crate::hero::Hero::new()),
-                Entry::LoadGame => *self = Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_game::saves::list).unwrap_or_default())),
+                Entry::LoadGame => *self = Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())),
                 Entry::ExitGame => return Some(Start::Exit),
                 Entry::Options => return Some(Start::Options),
                 other => eprintln!("title: {other:?} is not there yet"),
@@ -208,17 +208,17 @@ pub fn run(
     use crate::hero::Hero;
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let still = barrel_formats::layout::still(&pe, BACKGROUND).ok_or("title: no background picture")?;
+    let still = barrel_escha::data::layout::still(&pe, BACKGROUND).ok_or("title: no background picture")?;
     let x64 = root.join("Data/x64");
     let still_bytes = std::fs::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| std::fs::read(x64.join(&still.folder).join(&still.file)))?;
     let still_g1t = barrel_formats::g1t::G1t::parse(&still_bytes)?;
-    let hero_nodes = barrel_formats::layout::placed(&pe, crate::hero::LAYOUT);
+    let hero_nodes = barrel_escha::data::layout::placed(&pe, crate::hero::LAYOUT);
     // The hero choice's confirming line, from the system messages.
-    let sys_mess = std::fs::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| barrel_formats::sys_text::sys_mess(&t)).unwrap_or_default();
+    let sys_mess = std::fs::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| barrel_escha::data::sys_text::sys_mess(&t)).unwrap_or_default();
     let question = sys_mess.get(crate::hero::QUESTION_ROW).map_or_else(|| "Do you want to use this character?".to_string(), |m| m.text.clone());
-    let load_nodes = barrel_formats::layout::placed(&pe, crate::loadlist::LAYOUT);
-    let texts = |p: &barrel_formats::layout::Placed| barrel_formats::layout::text(&pe, p);
-    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("title: no glyph table")?;
+    let load_nodes = barrel_escha::data::layout::placed(&pe, crate::loadlist::LAYOUT);
+    let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("title: no glyph table")?;
     let atlas_bytes = std::fs::read(x64.join("Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("title: an empty font atlas")?.width as f32 };
@@ -239,7 +239,7 @@ pub fn run(
     let mut keys_needed: Vec<(String, u32)> = Vec::new();
     for e in every {
         if let Some((part, cut, at)) = e.sprite()
-            && let Some(p) = barrel_formats::layout::sprite(&pe, part, cut, at) {
+            && let Some(p) = barrel_escha::data::layout::sprite(&pe, part, cut, at) {
                 let key = (p.texture, p.index);
                 if !keys_needed.contains(&key) {
                     keys_needed.push(key);
@@ -277,7 +277,7 @@ pub fn run(
         Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
     // On the Load Game list (the in-play menu's Load), else the title.
-    let mut front = if load_list { Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_game::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
+    let mut front = if load_list { Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
     crate::screen::run(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out)
 }
 

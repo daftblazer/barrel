@@ -20,7 +20,7 @@
 
 use std::path::Path;
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 use crate::title::Button;
@@ -76,7 +76,7 @@ impl Task {
 /// has been seen).
 pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool) -> crate::Result<Vec<Option<Task>>> {
     let mut squares: Vec<Option<Task>> = vec![None; SIDE * SIDE];
-    let Some(k) = barrel_game::calendar::period(today) else { return Ok(squares) };
+    let Some(k) = barrel_escha::calendar::period(today) else { return Ok(squares) };
     let tag = format!("CARD_{k:02}");
     let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/subject/SubjectData.xml"))?)?;
     for row in table.children.iter().filter(|r| r.attr("CardTag") == Some(tag.as_str())) {

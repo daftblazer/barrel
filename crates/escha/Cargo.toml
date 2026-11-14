@@ -1,0 +1,11 @@
+[package]
+name = "barrel-escha"
+description = "Atelier Escha & Logy DX on Barrel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+barrel-formats = { path = "../formats" }
+barrel-engine = { path = "../engine" }
+barrel-audio = { path = "../audio" }

@@ -1,9 +1,0 @@
-[package]
-name = "barrel-game"
-description = "Barrel's game logic: events, and later the systems that run the games"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-
-[dependencies]
-barrel-formats = { path = "../formats" }

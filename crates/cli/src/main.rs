@@ -615,23 +615,24 @@ fn pssg_textures(file: &Path, out: &Path) -> Result<()> {
 /// Walks the player (radius 48 and 150 tall: `FMrad` and `FMhig` in her `CharaBase.xml` row) from (X, Y, Z) by (DX, DZ) each step for STEPS
 /// steps against FIELD_DIR's walls, on its ground (`game::walk`), printing where it stands.
 fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> {
-    use barrel_game::walk::Field;
+    use barrel_engine::walk::Field;
     let fields = dir.parent().ok_or("FIELD_DIR has no parent folder")?;
     // The maps' names and gimmicks, from the executable beside the install's `Data` folder (none
     // without it: the walk then only follows walls and ground).
     let exe = dir.ancestors().map(|a| a.join("Atelier_Escha_and_Logy_EN.exe")).find(|e| e.is_file()).map(std::fs::read).transpose()?;
     let pe = exe.as_deref().map(barrel_formats::pe::Pe::parse).transpose()?;
-    let maps = pe.as_ref().map(barrel_game::event::field_maps).unwrap_or_default();
-    let areas = pe.as_ref().and_then(|pe| barrel_formats::gimmick::areas(pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT)).unwrap_or_default();
-    let open = |name: &str| -> Result<Field> {
+    let maps = pe.as_ref().map(barrel_escha::data::maps::field_maps).unwrap_or_default();
+    let areas = pe.as_ref().and_then(|pe| barrel_escha::data::gimmick::areas(pe, barrel_escha::data::gimmick::MAPS_EN, barrel_escha::data::gimmick::MAP_COUNT)).unwrap_or_default();
+    use barrel_escha::data::gimmick::inside as inside_of;
+    let open = |name: &str| -> Result<(Field, Vec<barrel_escha::data::gimmick::Gimmick>)> {
         let gimmicks = maps.iter().position(|n| n == name).and_then(|m| areas.get(m)).map(|a| a.gimmicks.clone()).unwrap_or_default();
-        Ok(Field::load(fields, name, gimmicks)?)
+        Ok((Field::load(fields, name)?, gimmicks))
     };
-    let mut field = open(dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?)?;
+    let (mut field, mut gimmicks) = open(dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?)?;
     let [x, y, z] = at.map(|v| v.parse::<f32>());
     let (mut p, mut y) = ([x?, z?], y?);
     let d = [delta[0].parse::<f32>()?, delta[1].parse::<f32>()?];
-    let mut inside = field.inside([p[0], y, p[1]]);
+    let mut inside = inside_of(&gimmicks, [p[0], y, p[1]]);
     for k in 0..steps.parse::<usize>()? {
         let next = field.walls.step(p, d, y, 150.0, 48.0);
         let blocked = (next[0] - p[0] - d[0]).abs() > 0.01 || (next[1] - p[1] - d[1]).abs() > 0.01;
@@ -647,20 +648,20 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
             }
         }
         println!("{k:4}: ({:.1}, {:.1}, {y:.1}){}", p[0], p[1], if blocked { "  (against a wall)" } else { "" });
-        let now = field.inside([p[0], y, p[1]]);
+        let now = inside_of(&gimmicks, [p[0], y, p[1]]);
         let entered: Vec<usize> = now.iter().copied().filter(|i| !inside.contains(i)).collect();
         inside = now;
         for &i in &entered {
-            println!("      enters {} at {:?}", field.gimmicks[i].kind_name(), field.gimmicks[i].position);
+            println!("      enters {} at {:?}", gimmicks[i].kind_name(), gimmicks[i].position);
         }
         // A door: on to its map, standing where it says (metres to field units).
-        if let Some(to) = entered.iter().find_map(|&i| field.gimmicks[i].destination) {
+        if let Some(to) = entered.iter().find_map(|&i| gimmicks[i].destination) {
             let name = maps.get(to.map as usize).ok_or(format!("door to unknown map {}", to.map))?.clone();
-            field = open(&name)?;
+            (field, gimmicks) = open(&name)?;
             let at = to.position.map(|v| v * 100.0);
             p = [at[0], at[2]];
             y = field.ground.height(p[0], p[1], at[1] + 50.0, 0.0).unwrap_or(at[1]);
-            inside = field.inside([p[0], y, p[1]]);
+            inside = inside_of(&gimmicks, [p[0], y, p[1]]);
             println!("      through the door to {name} (map {}) at ({:.1}, {:.1}, {y:.1}) facing {}", to.map, p[0], p[1], to.facing);
         }
     }
@@ -669,14 +670,14 @@ fn walk(dir: &Path, at: [&str; 3], delta: [&str; 2], steps: &str) -> Result<()> 
 
 /// The world map's routes with their ends (as their dots lie), from the executable and the
 /// world map field beside it.
-fn world_map(exe: &Path) -> Result<barrel_game::travel::WorldMap> {
+fn world_map(exe: &Path) -> Result<barrel_escha::travel::WorldMap> {
     let bytes = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
     let field = read(&exe.parent().ok_or("no folder")?.join("Data/x64/Field/A15_WMAP/A15_WMAP.elixir.gz"))?;
     let c = Elixir::parse(&field)?;
     let e = c.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("no placements")?;
     let placements = barrel_formats::opl2::parse(c.data(e))?;
-    Ok(barrel_game::travel::WorldMap::load(&pe, &placements).ok_or("no routes")?)
+    Ok(barrel_escha::travel::WorldMap::load(&pe, &placements).ok_or("no routes")?)
 }
 
 /// A trip on the world map from mark FROM to mark TO (`T0`, `A0`, `A0p0` ...) in a new game
@@ -687,11 +688,11 @@ fn travel(exe: &Path, from: &str, to: &str) -> Result<()> {
     println!("{from} to {to}: {days} days by {}", path.join(", "));
     let bytes = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-    let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
-    let maps = barrel_game::event::field_maps(&pe);
-    for (point, m, _) in barrel_formats::world::point_maps(&pe).unwrap_or_default() {
+    let names = barrel_escha::data::world::point_names(&pe).unwrap_or_default();
+    let maps = barrel_escha::data::maps::field_maps(&pe);
+    for (point, m, _) in barrel_escha::data::world::point_maps(&pe).unwrap_or_default() {
         let name = names.get(point as usize).map_or("", |s| s.as_str());
-        if barrel_formats::world::point_tag(name).as_deref() == Some(to) {
+        if barrel_escha::data::world::point_tag(name).as_deref() == Some(to) {
             println!("  opens map {m} {}", maps.get(m as usize).map_or("?", |s| s.as_str()));
         }
     }
@@ -699,7 +700,7 @@ fn travel(exe: &Path, from: &str, to: &str) -> Result<()> {
 }
 
 /// The world map's routes and the marks at their ends, as their dots lie
-/// (`barrel_formats::world::route_ends`), with each route's days.
+/// (`barrel_escha::data::world::route_ends`), with each route's days.
 fn world_routes(exe: &Path) -> Result<()> {
     for r in world_map(exe)?.routes {
         println!("{:6} {:>5} - {:<5} ({} days)", r.area.id, r.ends.0, r.ends.1, r.area.days[0].0);
@@ -707,12 +708,12 @@ fn world_routes(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The world map's points and the field maps they open (`barrel_formats::world::point_maps`).
+/// The world map's points and the field maps they open (`barrel_escha::data::world::point_maps`).
 fn world_points(exe: &Path) -> Result<()> {
     let bytes = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-    let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
-    let maps = barrel_game::event::field_maps(&pe);
+    let names = barrel_escha::data::world::point_names(&pe).unwrap_or_default();
+    let maps = barrel_escha::data::maps::field_maps(&pe);
     // Where each point stands, from the world map field's placements beside the executable.
     let placements = exe
         .parent()
@@ -723,11 +724,11 @@ fn world_points(exe: &Path) -> Result<()> {
             let e = c.entries.iter().find(|e| e.name.ends_with(".opl2"))?;
             barrel_formats::opl2::parse(c.data(e)).ok()
         });
-    for (point, map, event) in barrel_formats::world::point_maps(&pe).ok_or("no point table")? {
+    for (point, map, event) in barrel_escha::data::world::point_maps(&pe).ok_or("no point table")? {
         let name = names.get(point as usize).map_or("?", |s| s.as_str());
         let field = maps.get(map as usize).map_or("?", |s| s.as_str());
         let after = if event >= 0 { format!(" after event {event}") } else { String::new() };
-        let at = placements.as_ref().and_then(|p| barrel_formats::world::point_position(p, name)).map(|p| format!(" at ({:.0}, {:.0}, {:.0})", p[0], p[1], p[2])).unwrap_or_default();
+        let at = placements.as_ref().and_then(|p| barrel_escha::data::world::point_position(p, name)).map(|p| format!(" at ({:.0}, {:.0}, {:.0})", p[0], p[1], p[2])).unwrap_or_default();
         println!("point {point:3} {name:10} -> map {map:3} {field}{after}{at}");
     }
     Ok(())
@@ -738,7 +739,7 @@ fn world_points(exe: &Path) -> Result<()> {
 fn world_places(exe: &Path) -> Result<()> {
     let bytes = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-    for (k, p) in barrel_formats::world::places(&pe, barrel_formats::world::PLACES_EN).ok_or("no place table")?.iter().enumerate() {
+    for (k, p) in barrel_escha::data::world::places(&pe, barrel_escha::data::world::PLACES_EN).ok_or("no place table")?.iter().enumerate() {
         println!("{k:2} {:6} kind {} links {:?} extra {:?} {} | {}", p.tag, p.kind, p.links, p.extra, p.name, p.description.replace('\n', " "));
     }
     Ok(())
@@ -1003,8 +1004,8 @@ fn ebd_ops(dir: &Path, word: &str, filter: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn describe_position(p: &barrel_game::camera::Position) -> String {
-    use barrel_game::camera::Anchor;
+fn describe_position(p: &barrel_engine::camera::Position) -> String {
+    use barrel_engine::camera::Anchor;
     let [x, y, z] = p.offset;
     match p.anchor {
         Anchor::World => format!("({x}, {y}, {z})"),
@@ -1013,8 +1014,8 @@ fn describe_position(p: &barrel_game::camera::Position) -> String {
     }
 }
 
-fn describe_move(m: &barrel_game::camera::Move) -> String {
-    use barrel_game::camera::Move;
+fn describe_move(m: &barrel_engine::camera::Move) -> String {
+    use barrel_engine::camera::Move;
     let to = describe_position(m.to());
     match *m {
         Move::Straight { seconds, ease, .. } => format!("moves to {to} in {seconds:.2} s (ease {ease})"),
@@ -1270,7 +1271,7 @@ fn pak_xml_e(file: &Path) -> Result<()> {
 
 /// Every request, from `Saves/quest/Quest{Alc,Btl,Gat}.xml`.
 fn quests(install: &Path) -> Result<()> {
-    use barrel_game::quest::{requests, Kind};
+    use barrel_escha::quest::{requests, Kind};
     let mut total = 0;
     for (file, kind) in [("QuestAlc", Kind::Synthesis), ("QuestBtl", Kind::Monster), ("QuestGat", Kind::Gathering)] {
         let path = install.join(format!("Saves/quest/{file}.xml"));
@@ -1280,7 +1281,7 @@ fn quests(install: &Path) -> Result<()> {
         for r in rs.iter().take(5) {
             let prizes: Vec<String> = r.prizes.iter().map(|(t, n)| format!("{t} x{n}")).collect();
             let date = |n: i32| {
-                let d = barrel_game::calendar::Date::of(n.max(0) as u32);
+                let d = barrel_escha::calendar::Date::of(n.max(0) as u32);
                 format!("Y{} {}/{}", d.year, d.month, d.day)
             };
             println!("  {:<32} {:>6.2} pt  days {}-{} ({} to {})  {}", r.target, r.points, r.from_day, r.to_day, date(r.from_day), date(r.to_day), prizes.join(", "));
@@ -1291,12 +1292,12 @@ fn quests(install: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The request board as it would be redrawn on `day` (see `barrel_game::quest::draw_board`):
+/// The request board as it would be redrawn on `day` (see `barrel_escha::quest::draw_board`):
 /// no assignment cleared, the seed offset given (0 by default), the targets' states
 /// taken as known, battle candidates sorted by their monster's first stat block level.
 fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Result<()> {
     let offset: i32 = offset.map_or(Ok(0), |v| v.parse().map_err(|_| format!("{v}: not a number")))?;
-    use barrel_game::quest::{draw_board, requests, Kind};
+    use barrel_escha::quest::{draw_board, requests, Kind};
     let day: i32 = day.parse().map_err(|_| format!("{day}: not a day number"))?;
     let mut all = Vec::new();
     for (file, kind) in [("QuestAlc", Kind::Synthesis), ("QuestBtl", Kind::Monster), ("QuestGat", Kind::Gathering)] {
@@ -1307,9 +1308,9 @@ fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Resul
     let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
     let data = read(&exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let monsters = barrel_formats::battle_data::monsters(&pe, barrel_formats::battle_data::MONSTERS_EN).ok_or("no monster table")?;
+    let monsters = barrel_escha::data::battle_data::monsters(&pe, barrel_escha::data::battle_data::MONSTERS_EN).ok_or("no monster table")?;
     let (tags, _) = pe.enum_names("MONSTER_ROCKRAT_00").ok_or("no MONSTER_* enum")?;
-    let level = |r: &barrel_game::quest::Request| {
+    let level = |r: &barrel_escha::quest::Request| {
         // The array holds several enums; the monsters' numbers count from its first MONSTER_ tag.
         let first = tags.iter().position(|t| t.starts_with("MONSTER_")).unwrap_or(0);
         tags.iter().position(|t| *t == r.target).and_then(|i| i.checked_sub(first)).and_then(|i| monsters.get(i)).and_then(|m| m.blocks.first()).map_or(0, |b| b.level)
@@ -1317,8 +1318,8 @@ fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Resul
     let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
     let seen = |e: &str| events && starts.contains(e);
     let slots = draw_board(&all, day, offset, seen, |_| false, |_| true, level);
-    let d = barrel_game::calendar::Date::of(day.max(0) as u32);
-    println!("day {day} (Y{} {}/{}){}", d.year, d.month, d.day, if barrel_game::calendar::board_day(day.max(0) as u32) { ", a redraw day" } else { ", not a redraw day (drawn as if it were)" });
+    let d = barrel_escha::calendar::Date::of(day.max(0) as u32);
+    println!("day {day} (Y{} {}/{}){}", d.year, d.month, d.day, if barrel_escha::calendar::board_day(day.max(0) as u32) { ", a redraw day" } else { ", not a redraw day (drawn as if it were)" });
     for (k, s) in slots.iter().enumerate() {
         let what = ["synthesis", "synthesis", "synthesis", "battle", "battle", "battle", "battle", "gathering", "gathering", "gathering"][k];
         match s {
@@ -1329,11 +1330,11 @@ fn board(install: &Path, day: &str, events: bool, offset: Option<&str>) -> Resul
     Ok(())
 }
 
-/// A new game's first `n` days on `barrel_game::days::World` (fixed generator state, everyone in
+/// A new game's first `n` days on `barrel_escha::days::World` (fixed generator state, everyone in
 /// the list in slot order, no assignment cleared, the item states taken as high enough).
 fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()> {
-    use barrel_game::days::{Reason, Tables, World};
-    use barrel_game::quest::{requests, Kind};
+    use barrel_escha::days::{Reason, Tables, World};
+    use barrel_escha::quest::{requests, Kind};
     let n: u32 = n.parse().map_err(|_| format!("{n}: not a number of days"))?;
     let mut all = Vec::new();
     for (file, kind) in [("QuestAlc", Kind::Synthesis), ("QuestBtl", Kind::Monster), ("QuestGat", Kind::Gathering)] {
@@ -1341,7 +1342,7 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         all.extend(requests(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?, kind));
     }
     let path = install.join("Saves/rank/RankData.xml");
-    let ranks = barrel_game::rank::ranks(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
+    let ranks = barrel_escha::rank::ranks(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
     // A recipe's price: its item (the first word of its 0x120-byte record at 0x140d19c70) and
     // that item's itemData cost.
     let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
@@ -1357,11 +1358,11 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
     };
     let starts: std::collections::HashSet<String> = all.iter().filter_map(|r| r.from_event.clone()).collect();
     // From a save: the events it has seen (its event records, in EVENT_* order).
-    let saved = from.map(|file| -> Result<barrel_formats::save::Summary> {
+    let saved = from.map(|file| -> Result<barrel_escha::data::save::Summary> {
         let data = read(file)?;
-        let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
-        let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
-        Ok(barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?))
+        let body = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+        let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+        Ok(barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?))
     }).transpose()?;
     let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
     let exe_data = read(&exe)?;
@@ -1372,7 +1373,7 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
     };
     let seen = |e: &str| if saved.is_some() { seen_events.contains(e) } else { events && starts.contains(e) };
     let path = install.join("Saves/shop/ShopData.xml");
-    let wares = barrel_game::shop::wares(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
+    let wares = barrel_escha::shop::wares(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?);
     // From a save: the board's tests of a request's target against the library's levels
     // (`quest::monster_request_known`; a synthesis target at 6 or more with its recipe flagged).
     let (item_names, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
@@ -1384,14 +1385,14 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
             data.get(o..o + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap())) == Some(item as i32)
         })
     };
-    let known = |r: &barrel_game::quest::Request| {
+    let known = |r: &barrel_escha::quest::Request| {
         let Some(s) = &saved else { return true };
         let k = &s.knowledge;
         match r.kind {
             Kind::Synthesis => item_names.iter().position(|n| *n == r.target).is_some_and(|i| {
                 k.item.get(i).is_some_and(|&l| l >= 6) && recipe_of(i).and_then(|j| k.recipe.get(j)).is_some_and(|&l| l != 0)
             }),
-            Kind::Monster => monster_names.iter().position(|n| *n == r.target).is_some_and(|m| barrel_game::quest::monster_request_known(&k.item, m)),
+            Kind::Monster => monster_names.iter().position(|n| *n == r.target).is_some_and(|m| barrel_escha::quest::monster_request_known(&k.item, m)),
             Kind::Gathering => true,
         }
     };
@@ -1407,19 +1408,19 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
     // The battle requests' sort key (`0x14035cc80`): how many of item row m the player holds
     // (the basket's and the container's stacks), m being the monster's number: the same slip as
     // `quest::monster_request_known`.
-    let level = |r: &barrel_game::quest::Request| {
+    let level = |r: &barrel_escha::quest::Request| {
         let Some(s) = &saved else { return 0 };
         let Some(m) = monster_names.iter().position(|n| *n == r.target) else { return 0 };
-        barrel_game::quest::held(s.basket.iter().chain(&s.container).chain(&s.materials).map(|u| (u.item as i32, u.counts[3] as i32)), m as i32)
+        barrel_escha::quest::held(s.basket.iter().chain(&s.container).chain(&s.materials).map(|u| (u.item as i32, u.counts[3] as i32)), m as i32)
     };
     let t = Tables { requests: &all, wares: &wares, ranks: &ranks, recipe_cost: &recipe_cost, seen: &seen, cleared: &cleared, known: &known, level: &level };
-    let rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
+    let rng = barrel_engine::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let mut w = if let (Some(file), Some(summary)) = (from, &saved) {
         // A save's calendar (the main generator is not saved: a fixed one stands in).
         let (items, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
         let (names, _) = pe.enum_names("MONSTER_ROCKRAT_00").ok_or("no MONSTER_* enum")?;
         let monsters = &names[names.iter().position(|t| t.starts_with("MONSTER_")).unwrap_or(0)..];
-        let board = barrel_game::quest::board_from_save(&summary.board, &all, &items, monsters);
+        let board = barrel_escha::quest::board_from_save(&summary.board, &all, &items, monsters);
         let w = World::from_save(summary, rng, &wares, board);
         println!("{} of {} events seen", seen_events.len(), summary.events.len());
         let posted: Vec<&str> = w.board.iter().map(|s| s.map_or("-", |i| all[i].target.as_str())).collect();
@@ -1427,14 +1428,14 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         // Each saved slot's rolled rewards beside the ones `quest::rewards` gives for its day.
         for (slot, i) in summary.board.iter().zip(&board) {
             if let (Some(slot), Some(i)) = (slot, i) {
-                let period = barrel_game::calendar::period(slot.posted.max(0) as u32).unwrap_or(9);
-                let left = barrel_game::quest::days_to_deadline(period, slot.posted.max(0) as u32);
-                let (points, prizes) = barrel_game::quest::rewards(&all[*i], slot.wanted, left);
+                let period = barrel_escha::calendar::period(slot.posted.max(0) as u32).unwrap_or(9);
+                let left = barrel_escha::quest::days_to_deadline(period, slot.posted.max(0) as u32);
+                let (points, prizes) = barrel_escha::quest::rewards(&all[*i], slot.wanted, left);
                 let rolled: Vec<i32> = prizes.iter().map(|p| p.1).collect();
                 println!("  {}: wanted {}, done {}, posted {}, until {}, saved {} {:?}, rolled {points} {rolled:?} ({left} days left)", all[*i].target, slot.wanted, slot.progress, slot.posted, slot.until, slot.value, slot.prizes.map(|p| p.1));
             }
         }
-        let d = barrel_game::calendar::Date::of(w.date);
+        let d = barrel_escha::calendar::Date::of(w.date);
         println!("from {}: day {} (Y{} {}/{}), rank {} ({} points), squad {:?}", file.display(), w.date, d.year, d.month, d.day, w.rank.rank, w.rank.points, w.joined);
         w
     } else {
@@ -1443,7 +1444,7 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         for s in &mut w.stock {
             s.count = 0;
         }
-        w.joined = (0..barrel_game::days::MEMBERS).collect();
+        w.joined = (0..barrel_escha::days::MEMBERS).collect();
         for (k, s) in w.slot.iter_mut().enumerate() {
             *s = Some(k);
         }
@@ -1454,7 +1455,7 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
         let board = w.board;
         let closed: Vec<u8> = w.months.iter().map(|m| m.state).collect();
         let refilled = w.advance(1, Reason::One, &t);
-        let d = barrel_game::calendar::Date::of(w.date);
+        let d = barrel_escha::calendar::Date::of(w.date);
         if !refilled.is_empty() {
             println!("day {} (Y{} {}/{}): {} wares restocked", w.date, d.year, d.month, d.day, refilled.len());
         }
@@ -1474,7 +1475,7 @@ fn days(install: &Path, n: &str, events: bool, from: Option<&Path>) -> Result<()
 
 /// `Bonus.xml`'s rows and their actions.
 fn bonuses(file: &Path, exe: Option<&Path>) -> Result<()> {
-    use barrel_game::bonus::{self, KINDS};
+    use barrel_escha::bonus::{self, KINDS};
     // The item categories, for the synthesis bonuses kept per category (from the executable).
     let data = exe.map(read).transpose()?;
     let pe = data.as_deref().map(barrel_formats::pe::Pe::parse).transpose().map_err(|e| format!("{e}"))?;
@@ -1512,7 +1513,7 @@ fn voice_map(install: &Path) -> Result<()> {
     for f in &files {
         let Ok(msgs) = barrel_formats::ebm::parse(&read(f)?) else { continue };
         let lengths: Vec<usize> = msgs.iter().map(|m| m.repaired_text().chars().count()).collect();
-        if let Some((start, r)) = barrel_formats::voice::story_start(&sizes, &lengths) {
+        if let Some((start, r)) = barrel_escha::data::voice::story_start(&sizes, &lengths) {
             let name = f.file_stem().map(|s| s.to_string_lossy().trim_start_matches("EVENT_MESSAGE_").to_string()).unwrap_or_default();
             found.push((start, lengths.len(), r, name));
         }
@@ -1522,7 +1523,7 @@ fn voice_map(install: &Path) -> Result<()> {
     let exe = read(&install.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("executable: {e}"))?;
     let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
-    let table = barrel_formats::voice::first_clips(&pe, barrel_formats::voice::FIRST_CLIPS_EN).ok_or("no voice table")?;
+    let table = barrel_escha::data::voice::first_clips(&pe, barrel_escha::data::voice::FIRST_CLIPS_EN).ok_or("no voice table")?;
     let actual = |name: &str| names.iter().position(|n| n.strip_prefix("EVENT_") == Some(name)).and_then(|k| table.get(k).copied().flatten());
     let (mut agree, mut strong, mut strong_agree) = (0, 0, 0);
     for (start, n, r, name) in &found {
@@ -1542,7 +1543,7 @@ fn voice_map(install: &Path) -> Result<()> {
 
 /// Rebuilds each `Party` record's stats in use (`equipment::in_use`) and compares them with
 /// the saved ones.
-/// The game's save as a Barrel save (`barrel_game::session::Session::load`'s text): the lead,
+/// The game's save as a Barrel save (`barrel_escha::session::Session::load`'s text): the lead,
 /// the date, money, the party (levels, experience, equipment), the basket, the items known, the
 /// places visited, opened and worn, the field effect, the events seen and the event flags. The
 /// game's save keeps no field position Barrel reads yet: it loads on the area map of the region
@@ -1550,7 +1551,7 @@ fn voice_map(install: &Path) -> Result<()> {
 /// arrival spot. The container, the battle item grids, requests, shops and the library's other
 /// lists are not carried over yet.
 fn import_save(install: &Path, file: &Path) -> Result<()> {
-    use barrel_formats::save::{self, Body};
+    use barrel_escha::data::save::{self, Body};
     let data = read(file)?;
     let body = save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
     let state = save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
@@ -1558,7 +1559,7 @@ fn import_save(install: &Path, file: &Path) -> Result<()> {
     let s = save::summary(&records);
     let exe = read(&install.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let places = barrel_formats::world::places(&pe, barrel_formats::world::PLACES_EN).ok_or("no place table")?;
+    let places = barrel_escha::data::world::places(&pe, barrel_escha::data::world::PLACES_EN).ok_or("no place table")?;
     let group = |name: &str, child: &str| -> Option<Vec<u8>> {
         let r = records.iter().find(|r| r.name == name)?.child(child)?;
         match &r.body {
@@ -1569,13 +1570,13 @@ fn import_save(install: &Path, file: &Path) -> Result<()> {
     // Where the party is: its place on the world map, and the field that place opens.
     let (place, _) = s.world_position.ok_or("no worldmap/chara record")?;
     let place = usize::try_from(place).ok().filter(|&k| k < places.len()).ok_or("the party's place is not in the table")?;
-    let names = barrel_formats::world::point_names(&pe).ok_or("no world map points")?;
+    let names = barrel_escha::data::world::point_names(&pe).ok_or("no world map points")?;
     let field = names
         .iter()
-        .position(|n| barrel_formats::world::point_tag(n).as_deref() == Some(places[place].tag.as_str()))
-        .and_then(|point| barrel_formats::world::point_maps(&pe)?.into_iter().find(|(p, _, _)| *p as usize == point).map(|(_, m, _)| m))
+        .position(|n| barrel_escha::data::world::point_tag(n).as_deref() == Some(places[place].tag.as_str()))
+        .and_then(|point| barrel_escha::data::world::point_maps(&pe)?.into_iter().find(|(p, _, _)| *p as usize == point).map(|(_, m, _)| m))
         .ok_or_else(|| format!("place {place} ({}) opens no field", places[place].name))?;
-    let arrival = barrel_formats::world::arrival(&pe, field).ok_or_else(|| format!("field {field} has no arrival spot"))?;
+    let arrival = barrel_escha::data::world::arrival(&pe, field).ok_or_else(|| format!("field {field} has no arrival spot"))?;
     eprintln!("the party is at place {place} ({}): field {field}", places[place].name);
     let mut out = format!(
         "barrel-save 1\nlead {}\nfield {field} {} {}\ntoday {}\nmoney {}\n",
@@ -1639,9 +1640,9 @@ fn import_save(install: &Path, file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_formats::save::Summary) -> Result<()> {
-    use barrel_formats::battle_data as bd;
-    use barrel_game::equipment::{self, ItemRow, Tables, STATS};
+fn check_stats(exe: &Path, records: &[barrel_escha::data::save::Record], s: &barrel_escha::data::save::Summary) -> Result<()> {
+    use barrel_escha::data::battle_data as bd;
+    use barrel_escha::equipment::{self, ItemRow, Tables, STATS};
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
@@ -1656,14 +1657,14 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table")?;
     let lists = bd::party_skills(&pe, bd::PARTY_SKILLS_EN).ok_or("no party skill lists")?;
     let Some(party) = records.iter().find(|r| r.name == "party") else { return Err("no party record".into()) };
-    let barrel_formats::save::Body::Group(children) = &party.body else { return Err("party is not a group".into()) };
+    let barrel_escha::data::save::Body::Group(children) = &party.body else { return Err("party is not a group".into()) };
     let words = |d: &[u8], at: usize| -> [i32; STATS] { std::array::from_fn(|k| d.get(at + 4 * k..at + 4 * k + 4).map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()))) };
     let (mut same, mut all) = (0, 0);
     for r in children.iter().filter(|r| r.name == "Party") {
-        let (barrel_formats::save::Body::Data(d) | barrel_formats::save::Body::Raw(d)) = &r.body else { continue };
+        let (barrel_escha::data::save::Body::Data(d) | barrel_escha::data::save::Body::Raw(d)) = &r.body else { continue };
         let who = words(d, 0)[0];
         let (base, extra, saved) = (words(d, 0x18), words(d, 0x98), words(d, 0x118));
-        let equipped = barrel_formats::save::item_units(d.get(0x19c..0x19c + 4 * barrel_formats::save::ITEM_UNIT).unwrap_or(&[]));
+        let equipped = barrel_escha::data::save::item_units(d.get(0x19c..0x19c + 4 * barrel_escha::data::save::ITEM_UNIT).unwrap_or(&[]));
         let hero = s.hero.is_some_and(|h| h == who);
         let mut lo = |a: i32, _b: i32| a;
         let mut hi = |_a: i32, b: i32| b;
@@ -1689,7 +1690,7 @@ fn check_stats(exe: &Path, records: &[barrel_formats::save::Record], s: &barrel_
         let learnt: Vec<&str> = mix_skills.iter().zip(&s.mix_skills_learnt).filter(|(_, l)| **l).map(|(m, _)| m.name.as_str()).collect();
         println!("synthesis skills learnt: {}", learnt.join(", "));
         for (user, who) in ["Escha", "Logy"].iter().enumerate() {
-            println!("{who} starts a synthesis with {} CP", barrel_game::synthesis::start_cp(user as i32, level, &s.mix_bonus, &s.mix_skills_learnt, &mix_skills));
+            println!("{who} starts a synthesis with {} CP", barrel_escha::synthesis::start_cp(user as i32, level, &s.mix_bonus, &s.mix_skills_learnt, &mix_skills));
         }
     }
     Ok(())
@@ -1701,7 +1702,7 @@ fn chara_radii_near(exe: &Path) -> Vec<f32> {
         .map(|root| root.join("Saves/chara/Chara.xml"))
         .and_then(|p| read(&p).ok())
         .and_then(|b| barrel_formats::table::parse(&b).ok())
-        .map(|t| barrel_formats::battle_data::chara_radii(&t))
+        .map(|t| barrel_escha::data::battle_data::chara_radii(&t))
         .unwrap_or_default()
 }
 
@@ -1712,13 +1713,13 @@ fn save(file: &Path) -> Result<()> {
     let body = if file.file_name().is_some_and(|n| n.to_string_lossy().starts_with("SYSDATA")) {
         &data[..]
     } else {
-        let s = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?;
+        let s = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?;
         let t = s.saved_at;
         println!("saved {:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
         println!("summary {:?}", s.summary);
         s.body
     };
-    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+    let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
     println!("{} coded bytes → {} bytes of state", body.len(), state.len());
     // BARREL_SAVE_STATE=path: write the decoded state there.
     if let Ok(out) = std::env::var("BARREL_SAVE_STATE") {
@@ -1733,8 +1734,8 @@ fn save(file: &Path) -> Result<()> {
         let hex: Vec<String> = d.iter().take(n).map(|b| format!("{b:02x}")).collect();
         format!(" {}", hex.join(""))
     }
-    fn show(r: &barrel_formats::save::Record, depth: usize) {
-        use barrel_formats::save::Body;
+    fn show(r: &barrel_escha::data::save::Record, depth: usize) {
+        use barrel_escha::data::save::Body;
         let pad = "  ".repeat(depth);
         match &r.body {
             Body::Data(d) => println!("{pad}{} [{}]{}", r.name, d.len(), peek(d)),
@@ -1747,13 +1748,13 @@ fn save(file: &Path) -> Result<()> {
             }
         }
     }
-    let records = barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
+    let records = barrel_escha::data::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?;
     for r in &records {
         show(r, 0);
     }
-    let s = barrel_formats::save::summary(&records);
+    let s = barrel_escha::data::save::summary(&records);
     let date = s.day.map(|d| {
-        let c = barrel_game::calendar::Date::of(d);
+        let c = barrel_escha::calendar::Date::of(d);
         format!("{d} (year {}, {}/{})", c.year, c.month, c.day)
     });
     println!("money {:?}, alchemy (level, exp) {:?}, day {}, sizes {:?}", s.money, s.alchemy, date.unwrap_or_else(|| "?".into()), s.limits);
@@ -1773,13 +1774,13 @@ fn save(file: &Path) -> Result<()> {
         .map(|t| t.children.iter().map(|r| r.attr("EquipCost").and_then(|v| v.trim().parse().ok()).unwrap_or(1)).collect())
         .unwrap_or_default();
     for (who, (slots, grid)) in ["Escha", "Logy"].iter().zip(s.battle_item_slots.iter().zip(&s.battle_grid)) {
-        let open = grid.iter().take_while(|&&g| g != barrel_game::explore::LOCKED).count();
+        let open = grid.iter().take_while(|&&g| g != barrel_escha::explore::LOCKED).count();
         // Each item's own equip cost (unit +0x18), which traits can lower from itemData's.
         let placed: Vec<(usize, u32)> = slots.iter().enumerate().filter_map(|(k, u)| Some((k, u.as_ref()?.equip_cost.max(0) as u32))).collect();
         let check = if costs.is_empty() {
             String::new()
         } else {
-            match barrel_game::explore::grid(&placed, open) {
+            match barrel_escha::explore::grid(&placed, open) {
                 Some(g) if g[..] == grid[..] => ", rebuilt from the items' equip costs".into(),
                 _ => ", NOT what the items' costs give".into(),
             }
@@ -1796,8 +1797,8 @@ fn save(file: &Path) -> Result<()> {
     println!("bonus values {}", bonuses.join(" "));
     // BARREL_EXE=path/to/the executable: the recipes' revealed effects, by the recipe table.
     let recipes = std::env::var("BARREL_EXE").ok().and_then(|p| read(Path::new(&p)).ok()).and_then(|d| {
-        let at = barrel_formats::recipe::find(&d, ESCHA_FIRST_RECIPE)?;
-        barrel_formats::recipe::parse(&d, at).ok()
+        let at = barrel_escha::data::recipe::find(&d, ESCHA_FIRST_RECIPE)?;
+        barrel_escha::data::recipe::parse(&d, at).ok()
     });
     for (r, flags) in s.recipe_effects.iter().enumerate().filter(|(_, f)| f.iter().any(|&b| b)) {
         let shown: Vec<usize> = (0..10).filter(|&j| flags[j]).collect();
@@ -1954,8 +1955,8 @@ fn telops(exe: &Path) -> Result<()> {
     let bytes = std::fs::read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
     for card in 0..=50 {
-        let Some(id) = barrel_formats::layout::telop_layout(&pe, card) else { continue };
-        let pieces = barrel_formats::layout::pieces(&pe, id);
+        let Some(id) = barrel_escha::data::layout::telop_layout(&pe, card) else { continue };
+        let pieces = barrel_escha::data::layout::pieces(&pe, id);
         let list: Vec<String> = pieces.iter().map(|p| format!("{} {:?} at {:?}", p.texture, p.src, p.at)).collect();
         println!("card {card:2} layout {id}: {}", list.join("; "));
     }
@@ -1965,7 +1966,7 @@ fn telops(exe: &Path) -> Result<()> {
 /// Every interface layout: its place, then each node (part, cut, place, kind) and, for sprite
 /// parts, the texture rectangle it shows.
 fn layouts(exe: &Path) -> Result<()> {
-    use barrel_formats::layout;
+    use barrel_escha::data::layout;
     let bytes = std::fs::read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
     for id in layout::FIRST_LAYOUT..layout::FIRST_LAYOUT + 4096 {
@@ -1987,7 +1988,7 @@ fn layouts(exe: &Path) -> Result<()> {
 fn layout_png(root: &Path, ids: &[u32], out: &Path) -> Result<()> {
     let bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-    let pieces: Vec<_> = ids.iter().flat_map(|&id| barrel_formats::layout::pieces(&pe, id)).collect();
+    let pieces: Vec<_> = ids.iter().flat_map(|&id| barrel_escha::data::layout::pieces(&pe, id)).collect();
     draw_pieces(root, &pieces, 1920, 1080, out)
 }
 
@@ -1997,7 +1998,7 @@ fn sprite_png(root: &Path, part: i32, out: &Path) -> Result<()> {
     let pe = barrel_formats::pe::Pe::parse(&bytes)?;
     let (mut pieces, mut y, mut w) = (Vec::new(), 0i32, 1i32);
     for cut in 0..256 {
-        let Some(p) = barrel_formats::layout::sprite(&pe, part, cut, [0, y]) else { break };
+        let Some(p) = barrel_escha::data::layout::sprite(&pe, part, cut, [0, y]) else { break };
         let [l, t, r, b] = p.src.map(i32::from);
         println!("cut {cut}: {}#{} [{l}, {t}, {r}, {b}] at y {y}", p.texture, p.index);
         w = w.max(r - l);
@@ -2007,7 +2008,7 @@ fn sprite_png(root: &Path, part: i32, out: &Path) -> Result<()> {
     draw_pieces(root, &pieces, w.max(1) as usize, y.max(1) as usize, out)
 }
 
-fn draw_pieces(root: &Path, pieces: &[barrel_formats::layout::Piece], w: usize, h: usize, out: &Path) -> Result<()> {
+fn draw_pieces(root: &Path, pieces: &[barrel_escha::data::layout::Piece], w: usize, h: usize, out: &Path) -> Result<()> {
     use barrel_formats::g1t::G1t;
     let mut img: Vec<u8> = [48u8, 48, 48, 255].repeat(w * h);
     let mut sheets: std::collections::HashMap<(String, u32), Option<(usize, usize, Vec<u8>)>> = std::collections::HashMap::new();
@@ -2048,7 +2049,8 @@ fn draw_pieces(root: &Path, pieces: &[barrel_formats::layout::Piece], w: usize, 
 /// Writes `text` in the English font, white on dark gray, to a PNG (a check of the glyph
 /// table against the atlas).
 fn font_text(exe: &Path, g1t: &Path, out: &Path, text: &str) -> Result<()> {
-    use barrel_formats::{font, g1t as tex};
+    use barrel_formats::g1t as tex;
+    use barrel_escha::data::font;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     // The English executable has its one table; the multi-language one a table per font folder,
@@ -2164,7 +2166,7 @@ fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
     let dir = lang.map_or_else(|| "Saves".to_string(), |l| format!("Saves_{l}"));
     let file = install.join(dir).join("shop/ShopData.xml");
     let table = barrel_formats::table::parse(&read(&file)?).map_err(|e| format!("{}: {e}", file.display()))?;
-    let wares = barrel_game::shop::wares(&table);
+    let wares = barrel_escha::shop::wares(&table);
     let mut last = "";
     for w in &wares {
         if w.shop != last {
@@ -2188,7 +2190,7 @@ fn shops(install: &Path, lang: Option<&str>) -> Result<()> {
 /// Every monster: each stat block's level, HP/ATK/DEF/SPD and skills.
 /// Lists the field enemies: area, position, model row, AI scripts and the group they fight as.
 fn field_enemies(exe: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let enemies = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemy builder at the English executable's address")?;
@@ -2207,7 +2209,7 @@ fn field_enemies(exe: &Path) -> Result<()> {
     let table = |name: &str| exe.parent().and_then(|d| std::fs::read(d.join("Saves/chara").join(name)).ok()).and_then(|b| barrel_formats::table::parse(&b).ok());
     if let (Some(charas), Some(bases)) = (table("Chara.xml"), table("CharaBase.xml")) {
         let own = |e: &bd::FieldEnemy| {
-            let tag = barrel_game::field_ai::body_row(&groups, e).and_then(|r| charas.children.get(r)?.attr("BaseTag"))?;
+            let tag = barrel_escha::field_ai::body_row(&groups, e).and_then(|r| charas.children.get(r)?.attr("BaseTag"))?;
             bases.children.iter().position(|b| b.attr("BaseTag") == Some(tag))
         };
         let tag = |m: i32| usize::try_from(m).ok().and_then(|m| bases.children.get(m)?.attr("BaseTag")).unwrap_or("?");
@@ -2223,23 +2225,23 @@ fn field_enemies(exe: &Path) -> Result<()> {
 /// Fights field enemy WHICH (counting from 0) of AREA (a field map number or name, e.g. 12 or
 /// AREA_01_01) with SAVE's party: its encounter group's draw (`battle_from_save`).
 fn encounter(exe: &Path, area: &str, which: &str, save: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let maps = barrel_game::event::field_maps(&pe);
+    let maps = barrel_escha::data::maps::field_maps(&pe);
     let area: i32 = match area.parse() {
         Ok(n) => n,
         Err(_) => maps.iter().position(|m| m == area).ok_or_else(|| format!("{area}: no such field map"))? as i32,
     };
     // The save's seen events decide who is out (`battle::field_enemy_appears`).
     let save_data = read(save)?;
-    let body = barrel_formats::save::parse(&save_data).map_err(|e| format!("{}: {e}", save.display()))?.body;
-    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
-    let summary = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", save.display()))?);
+    let body = barrel_escha::data::save::parse(&save_data).map_err(|e| format!("{}: {e}", save.display()))?.body;
+    let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
+    let summary = barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| format!("{}: {e}", save.display()))?);
     let seen = |k: i32| usize::try_from(k).ok().and_then(|k| summary.events.get(k)).is_some_and(|e| e.seen);
     let all: Vec<bd::FieldEnemy> = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).ok_or("no field enemies")?.into_iter().filter(|e| e.area == area).collect();
     let total = all.len();
-    let here: Vec<bd::FieldEnemy> = all.into_iter().filter(|e| barrel_game::battle::field_enemy_appears(e.conditions, seen)).collect();
+    let here: Vec<bd::FieldEnemy> = all.into_iter().filter(|e| barrel_escha::battle::field_enemy_appears(e.conditions, seen)).collect();
     let map = maps.get(area as usize).map_or("?", String::as_str);
     println!("{map} (field map {area}): {} of its {total} enemies out at this point of the save", here.len());
     for (k, e) in here.iter().enumerate() {
@@ -2252,7 +2254,7 @@ fn encounter(exe: &Path, area: &str, which: &str, save: &Path) -> Result<()> {
 
 /// Lists the encounter groups: counts and monsters (by name) with their weights.
 fn encounters(exe: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
@@ -2266,7 +2268,7 @@ fn encounters(exe: &Path) -> Result<()> {
 }
 
 fn monsters(exe: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
@@ -2303,7 +2305,7 @@ fn monsters(exe: &Path) -> Result<()> {
 }
 
 fn party(exe: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let growth = bd::party_growth(&pe, bd::PARTY_GROWTH_EN).ok_or("no party growth table at the English executable's address")?;
@@ -2321,7 +2323,7 @@ fn party(exe: &Path) -> Result<()> {
 
 /// Each party member's skill list: command, skill, the level it is learnt at, MP cost.
 fn party_skills(exe: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let skills = bd::skills(&pe, bd::SKILLS_EN).ok_or("no skill table at the English executable's address")?;
@@ -2339,9 +2341,9 @@ fn party_skills(exe: &Path) -> Result<()> {
 }
 
 /// A partial battle between two monsters (by number) trading normal attacks; see
-/// `barrel_game::duel` for what it leaves out.
+/// `barrel_escha::duel` for what it leaves out.
 fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
-    use barrel_formats::battle_data as bd;
+    use barrel_escha::data::battle_data as bd;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
@@ -2361,7 +2363,7 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
             let stats = g.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
             let name = format!("{} (level {l})", party_names.get(m).unwrap_or(&"?"));
             let attack = lists[m].iter().find(|e| e.command == 0).and_then(|e| skills.get(e.skill as usize)).ok_or("no party attack")?;
-            return Ok((name, barrel_game::duel::party_block(l as i32, stats), attack));
+            return Ok((name, barrel_escha::duel::party_block(l as i32, stats), attack));
         }
         let n: usize = s.parse().map_err(|_| format!("{s}: not a monster number"))?;
         let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{s}: no such monster"))?;
@@ -2376,23 +2378,23 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
         let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
         let k = table.children.iter().position(|r| r.attr("ItemName") == Some(name)).ok_or_else(|| format!("no item named {name}"))?;
         // The item as made at that quality, with no effects or traits (equipment::item_stat).
-        let items: Vec<barrel_game::equipment::ItemRow> = table.children.iter().map(barrel_game::equipment::ItemRow::from_row).collect();
-        let t = barrel_game::equipment::Tables { items: &items, effects: &[], traits: &[], acts: &[] };
-        let unit = barrel_formats::save::ItemUnit { serial: 0, item: k as i16, quality, traits: [-1; 3], word_e: 0, effects: [-1; 4], equip_cost: 0, word_1a: 0, counts: [0; 4] };
+        let items: Vec<barrel_escha::equipment::ItemRow> = table.children.iter().map(barrel_escha::equipment::ItemRow::from_row).collect();
+        let t = barrel_escha::equipment::Tables { items: &items, effects: &[], traits: &[], acts: &[] };
+        let unit = barrel_escha::data::save::ItemUnit { serial: 0, item: k as i16, quality, traits: [-1; 3], word_e: 0, effects: [-1; 4], equip_cost: 0, word_1a: 0, counts: [0; 4] };
         let mut roll = |lo: i32, _hi: i32| lo;
-        let mut add = |stat: usize, base: i32| base + barrel_game::equipment::item_stat(&t, &unit, stat, base, &mut roll);
+        let mut add = |stat: usize, base: i32| base + barrel_escha::equipment::item_stat(&t, &unit, stat, base, &mut roll);
         ba.hp = add(0, ba.hp);
         ba.attack = add(2, ba.attack);
         ba.defense = add(3, ba.defense);
         ba.speed = add(4, ba.speed);
         println!("{na} equips {name} (quality {quality}): attack {}, defence {}, speed {}", ba.attack, ba.defense, ba.speed);
     }
-    let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
+    let mut rng = barrel_engine::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     // Monsters pick by their rules from the skill table; party members use the normal attack.
     let table = |s: &str| (!s.starts_with('p')).then_some(&skills[..]);
-    let fa = barrel_game::duel::Fighter { block: ba, normal: aa, skills: table(a), death_immune: false, chara: -1 };
-    let fb = barrel_game::duel::Fighter { block: bb, normal: ab, skills: table(b), death_immune: false, chara: -1 };
-    let hits = barrel_game::duel::duel(&fa, &fb, &mut rng, 1000);
+    let fa = barrel_escha::duel::Fighter { block: ba, normal: aa, skills: table(a), death_immune: false, chara: -1 };
+    let fb = barrel_escha::duel::Fighter { block: bb, normal: ab, skills: table(b), death_immune: false, chara: -1 };
+    let hits = barrel_escha::duel::duel(&fa, &fb, &mut rng, 1000);
     for h in &hits {
         let (x, y) = if h.attacker == 0 { (&na, &nb) } else { (&nb, &na) };
         if h.skill == "poison" {
@@ -2403,7 +2405,7 @@ fn duel(exe: &Path, a: &str, b: &str, equip: Option<&str>) -> Result<()> {
             println!("{x} uses {} on {y}: {} damage ({} HP left)", h.skill, h.damage, h.hp_left);
         }
     }
-    println!("{} hits (partial battle: no traits or start rules, states only poison and stat buffs; see barrel_game::duel)", hits.len());
+    println!("{} hits (partial battle: no traits or start rules, states only poison and stat buffs; see barrel_escha::duel)", hits.len());
     Ok(())
 }
 
@@ -2414,7 +2416,7 @@ fn item_effects(exe: &Path) -> Result<()> {
     let (acts, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
     let path = exe.parent().ok_or("no install folder")?.join("Saves_EN/item/item_effect.xml");
     let root = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
-    let rows = barrel_formats::battle_data::item_effects(&root, &acts);
+    let rows = barrel_escha::data::battle_data::item_effects(&root, &acts);
     let elements = ["fire", "water", "wind", "earth"];
     for (i, r) in rows.iter().enumerate() {
         let effects: Vec<String> = r
@@ -2431,10 +2433,10 @@ fn item_effects(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Party members against a monster: see `barrel_game::skirmish`.
+/// Party members against a monster: see `barrel_escha::skirmish`.
 fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
-    use barrel_formats::battle_data as bd;
-    use barrel_game::fight::Event;
+    use barrel_escha::data::battle_data as bd;
+    use barrel_escha::fight::Event;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table at the English executable's address")?;
@@ -2459,9 +2461,9 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
         let (m, l) = s.strip_prefix('p').and_then(|r| r.split_once(':')).ok_or_else(|| format!("{s}: write p<member>:<level>"))?;
         let (m, l): (usize, usize) = (m.parse().map_err(|_| format!("{s}: member"))?, l.parse().map_err(|_| format!("{s}: level"))?);
         let stats = growth.get(m).and_then(|levels| levels.get(l.wrapping_sub(1))).ok_or_else(|| format!("{s}: no such member or level"))?;
-        let block = barrel_game::duel::party_block(l as i32, stats);
-        let mut member = barrel_game::skirmish::Member::new(block, stats.mp, &lists[m], &skills).ok_or("no party attack")?;
-        member.size = barrel_formats::battle_data::party_size(&chara_radii_near(exe), m).unwrap_or(0.0);
+        let block = barrel_escha::duel::party_block(l as i32, stats);
+        let mut member = barrel_escha::skirmish::Member::new(block, stats.mp, &lists[m], &skills).ok_or("no party attack")?;
+        member.size = barrel_escha::data::battle_data::party_size(&chara_radii_near(exe), m).unwrap_or(0.0);
         for item in parts {
             // <ids>@<quality>x<count>: heals and revives aim at the user's side, the rest at the
             // foe; the action's wait is not read yet (the normal attack's 600 is taken).
@@ -2484,10 +2486,10 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             let ids: Vec<i16> = if let Some(values) = ids.strip_prefix('~') {
                 let b = row.ok_or_else(|| format!("{item}: ~ needs the item id (#<item>:)"))?;
                 let values: Vec<i32> = values.split(',').map(|v| v.parse().map_err(|_| format!("{item}: element value"))).collect::<std::result::Result<_, String>>()?;
-                let at = barrel_formats::recipe::find(&data, ESCHA_FIRST_RECIPE).ok_or("no recipe table found")?;
-                let recipes = barrel_formats::recipe::parse(&data, at).map_err(|e| format!("recipes: {e}"))?;
+                let at = barrel_escha::data::recipe::find(&data, ESCHA_FIRST_RECIPE).ok_or("no recipe table found")?;
+                let recipes = barrel_escha::data::recipe::parse(&data, at).map_err(|e| format!("recipes: {e}"))?;
                 let r = recipes.iter().find(|r| i32::from(r.item) == b.item).ok_or_else(|| format!("{item}: no recipe makes item {}", b.item))?;
-                (0..4).filter_map(|k| barrel_formats::recipe::effect_at(&r.lines[k], values.get(k).copied().unwrap_or(0))).map(|e| e as i16).collect()
+                (0..4).filter_map(|k| barrel_escha::data::recipe::effect_at(&r.lines[k], values.get(k).copied().unwrap_or(0))).map(|e| e as i16).collect()
             } else {
                 ids.split(',').map(|v| v.parse().map_err(|_| format!("{item}: effect id"))).collect::<std::result::Result<_, String>>()?
             };
@@ -2503,7 +2505,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
                 }
                 None => effect_names,
             };
-            let mut action = barrel_game::battle::item_action(&name, 2, row.map_or(0, |b| b.area), 600, &ids, &item_rows);
+            let mut action = barrel_escha::battle::item_action(&name, 2, row.map_or(0, |b| b.area), 600, &ids, &item_rows);
             if action.effects.iter().any(|e| matches!(e.act, 19 | 21 | 81)) {
                 action.target = 1;
             }
@@ -2518,7 +2520,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
                 let all = bd::traits(&barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?, &tags);
                 trait_ids.split(',').map(|t| t.parse::<usize>().ok().and_then(|k| all.get(k).cloned()).ok_or_else(|| format!("{item}: trait {t}"))).collect::<std::result::Result<Vec<_>, String>>()?
             };
-            member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(quality), count, traits });
+            member.items.push(barrel_escha::skirmish::Held { action, power: barrel_escha::battle::item_power(quality), count, traits });
         }
         members.push(member);
         names.push(format!("{} ({l})", member_names[m]));
@@ -2526,14 +2528,14 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
     let n: usize = monster.parse().map_err(|_| format!("{monster}: not a monster number"))?;
     let m = monsters.get(n).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("{monster}: no such monster"))?;
     names.push(m.name.clone());
-    let foe = barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]), death_immune: m.death_immune, chara: barrel_formats::battle_data::MONSTER_CHARA_FIRST as i32 + n as i32 };
-    let mut rng = barrel_game::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
+    let foe = barrel_escha::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]), death_immune: m.death_immune, chara: barrel_escha::data::battle_data::MONSTER_CHARA_FIRST as i32 + n as i32 };
+    let mut rng = barrel_engine::rng::Rng::from_state([123456789, 362436069, 521288629, 88675123]);
     let acts = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
-    let rules = barrel_game::skirmish::ItemRules { acts: &acts, kinds: &kinds, effects: &item_rows };
+    let rules = barrel_escha::skirmish::ItemRules { acts: &acts, kinds: &kinds, effects: &item_rows };
     let radii = chara_radii_near(exe);
-    let sizes: Vec<f32> = barrel_formats::battle_data::monster_size(&radii, n).into_iter().collect();
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, std::slice::from_ref(&foe), &sizes, rules, &mut rng, 1000);
+    let sizes: Vec<f32> = barrel_escha::data::battle_data::monster_size(&radii, n).into_iter().collect();
+    let (events, winner) = barrel_escha::skirmish::skirmish(&members, std::slice::from_ref(&foe), &sizes, rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),
@@ -2561,12 +2563,12 @@ fn gather(install: &Path, only: Option<u32>) -> Result<()> {
     let exe = install.join("Atelier_Escha_and_Logy_EN.exe");
     let data = read(&exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let rows = barrel_formats::gather::gathering(&pe, barrel_formats::gather::GATHER_EN).ok_or("no gathering table")?;
+    let rows = barrel_escha::data::gather::gathering(&pe, barrel_escha::data::gather::GATHER_EN).ok_or("no gathering table")?;
     let items = table_rows(&install.join("Saves_EN/item/itemData.xml"))?;
     let name = |n: usize| items.get(n).and_then(|r| r.attr("ItemName")).unwrap_or("?").to_string();
     let lists: std::collections::BTreeSet<u32> = rows.iter().map(|g| g.list).collect();
     println!("{} records in {} lists", rows.len(), lists.len());
-    let points = barrel_formats::gather::points(&pe, barrel_formats::gather::POINTS_EN).ok_or("no gathering points")?;
+    let points = barrel_escha::data::gather::points(&pe, barrel_escha::data::gather::POINTS_EN).ok_or("no gathering points")?;
     for (n, p) in points.iter().enumerate().filter(|(_, p)| only.is_none_or(|l| p.lists.contains(&l))) {
         println!("point {n:3}: map {:3} at ({:.1}, {:.1}, {:.1}), lists {:?}", p.map, p.position[0], p.position[1], p.position[2], p.lists);
     }
@@ -2583,23 +2585,23 @@ fn gather(install: &Path, only: Option<u32>) -> Result<()> {
 /// it knows well are not boosted.
 fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
     let env = |k: &str, d: i32| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
-    let g = barrel_game::gather::Gathering::load(install)?;
+    let g = barrel_escha::gather::Gathering::load(install)?;
     let n: usize = point.parse().map_err(|_| "POINT is a number")?;
     let p = g.points.get(n).ok_or("no such point")?;
     let items = table_rows(&install.join("Saves_EN/item/itemData.xml"))?;
     let knowledge: Vec<i32> = match save {
         Some(file) => {
             let data = read(file)?;
-            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
-            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
-            barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?).knowledge.item
+            let body = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+            let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+            barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?).knowledge.item
         }
         None => Vec::new(),
     };
-    let mut rng = barrel_game::rng::Rng::from_state([env("BARREL_SEED", 1) as u32, 2, 3, 4]);
+    let mut rng = barrel_engine::rng::Rng::from_state([env("BARREL_SEED", 1) as u32, 2, 3, 4]);
     let level = env("BARREL_TABLE_LEVEL", 0);
     println!("point {point}: map {}, at {:?} m, lists {:?}", p.map, p.position, p.lists);
-    for got in g.gather(n, barrel_game::gather::Levels::tables(level), |item| knowledge.get(item as usize).copied().unwrap_or(0), env("BARREL_PICKS", 1).max(0) as u32, &mut rng) {
+    for got in g.gather(n, barrel_escha::gather::Levels::tables(level), |item| knowledge.get(item as usize).copied().unwrap_or(0), env("BARREL_PICKS", 1).max(0) as u32, &mut rng) {
         let name = items.get(got.item.max(0) as usize).and_then(|r| r.attr("ItemName")).unwrap_or("?");
         println!("  {name} at quality {}, traits {:?}", got.quality, got.traits);
     }
@@ -2611,7 +2613,7 @@ fn gather_sim(install: &Path, point: &str, save: Option<&Path>) -> Result<()> {
 fn town_talk(exe: &Path, id: i32) -> Result<()> {
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    for l in barrel_formats::npc::lines(&pe).ok_or("no talk table")?.iter().filter(|l| l.id == id) {
+    for l in barrel_escha::data::npc::lines(&pe).ok_or("no talk table")?.iter().filter(|l| l.id == id) {
         println!("chara {:4} ({:3}) {}{}", l.chara, l.word_8, l.text, if l.second.is_empty() { String::new() } else { format!("  [{}]", l.second) });
     }
     Ok(())
@@ -2620,7 +2622,7 @@ fn town_talk(exe: &Path, id: i32) -> Result<()> {
 /// Lists the compiled placements of town people (or one map's): character, and the events their
 /// conditions want seen and not seen.
 fn town_people(exe: &Path, only: Option<i32>, save: Option<&Path>) -> Result<()> {
-    use barrel_formats::npc;
+    use barrel_escha::data::npc;
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let places = npc::places(&pe).ok_or("no placement table")?;
@@ -2633,9 +2635,9 @@ fn town_people(exe: &Path, only: Option<i32>, save: Option<&Path>) -> Result<()>
     let seen: Option<Vec<bool>> = match save {
         Some(f) => {
             let data = read(f)?;
-            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", f.display()))?.body;
-            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", f.display()))?;
-            let sum = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?);
+            let body = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", f.display()))?.body;
+            let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", f.display()))?;
+            let sum = barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| e.to_string())?);
             Some(sum.events.iter().map(|e| e.seen).collect())
         }
         None => None,
@@ -2665,7 +2667,7 @@ fn town_people(exe: &Path, only: Option<i32>, save: Option<&Path>) -> Result<()>
 fn gimmicks(exe: &Path, only: Option<usize>) -> Result<()> {
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let areas = barrel_formats::gimmick::areas(&pe, barrel_formats::gimmick::MAPS_EN, barrel_formats::gimmick::MAP_COUNT).ok_or("no gimmick table")?;
+    let areas = barrel_escha::data::gimmick::areas(&pe, barrel_escha::data::gimmick::MAPS_EN, barrel_escha::data::gimmick::MAP_COUNT).ok_or("no gimmick table")?;
     for (k, a) in areas.iter().enumerate().filter(|(k, _)| only.is_none_or(|o| o == *k)) {
         println!("{k:3} {} ({}), words {:?}: {} gimmicks", a.name, a.place, a.words, a.gimmicks.len());
         if only.is_some() {
@@ -2683,14 +2685,14 @@ fn gimmicks(exe: &Path, only: Option<usize>) -> Result<()> {
 fn routes(exe: &Path, save: Option<&Path>) -> Result<()> {
     let data = std::fs::read(exe).map_err(|e| format!("{}: {e}", exe.display()))?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let areas = barrel_formats::world::areas(&pe, barrel_formats::world::AREAS_EN).ok_or("no area table")?;
+    let areas = barrel_escha::data::world::areas(&pe, barrel_escha::data::world::AREAS_EN).ok_or("no area table")?;
     let events = pe.enum_names("EVENT_MM01_OP1_111").map(|(n, _)| n).unwrap_or_default();
     let seen: Vec<bool> = match save {
         Some(file) => {
             let data = read(file)?;
-            let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
-            let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
-            let summary = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?);
+            let body = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+            let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+            let summary = barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?);
             summary.events.iter().map(|e| e.seen).collect()
         }
         None => Vec::new(),
@@ -2719,7 +2721,7 @@ fn enum_list(exe: &Path, name: &str) -> Result<()> {
 fn faces(exe: &Path) -> Result<()> {
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    let t = barrel_game::face::Tables::read(&pe);
+    let t = barrel_escha::face::Tables::read(&pe);
     let mut rows: Vec<&u32> = t.brow.keys().chain(t.eye.keys()).chain(t.mouth.keys()).collect();
     rows.sort();
     rows.dedup();
@@ -2737,7 +2739,7 @@ fn faces(exe: &Path) -> Result<()> {
 const ESCHA_FIRST_RECIPE: u32 = 195;
 
 fn recipes(exe: &Path) -> Result<()> {
-    use barrel_formats::recipe::{self, Ingredient};
+    use barrel_escha::data::recipe::{self, Ingredient};
     let data = read(exe)?;
     let at = recipe::find(&data, ESCHA_FIRST_RECIPE).ok_or("no recipe table found")?;
     let list = recipe::parse(&data, at).map_err(|e| format!("recipes: {e}"))?;
@@ -2785,15 +2787,15 @@ fn table_rows(path: &Path) -> Result<Vec<barrel_formats::table::Element>> {
     Ok(root.children)
 }
 
-/// What a basket (`ITEM:QUALITY` each) can make (`barrel_game::cauldron`), and the first of
+/// What a basket (`ITEM:QUALITY` each) can make (`barrel_escha::cauldron`), and the first of
 /// those made from it.
 fn cauldron(install: &Path, items: &[&str]) -> Result<()> {
     let exe = read(&install.join("Atelier_Escha_and_Logy_EN.exe"))?;
-    let book = barrel_game::cauldron::Book::load(&exe, install)?;
+    let book = barrel_escha::cauldron::Book::load(&exe, install)?;
     let mut basket = Vec::new();
     for it in items {
         let (item, quality) = it.split_once(':').unwrap_or((it, "50"));
-        basket.push(barrel_game::gather::Got { item: item.parse().map_err(|_| format!("{it}: ITEM:QUALITY"))?, quality: quality.parse().map_err(|_| format!("{it}: ITEM:QUALITY"))?, traits: Vec::new() });
+        basket.push(barrel_escha::gather::Got { item: item.parse().map_err(|_| format!("{it}: ITEM:QUALITY"))?, quality: quality.parse().map_err(|_| format!("{it}: ITEM:QUALITY"))?, traits: Vec::new() });
     }
     let makeable = book.makeable(&basket);
     for &r in &makeable {
@@ -2803,7 +2805,7 @@ fn cauldron(install: &Path, items: &[&str]) -> Result<()> {
     let Some(&r) = makeable.first() else {
         println!("nothing can be made; the first recipes take:");
         for recipe in book.recipes.iter().filter(|r| !r.slots.is_empty()).take(6) {
-            let wants: Vec<String> = barrel_game::synthesis::order(recipe).into_iter().map(|i| book.ingredient(i)).collect();
+            let wants: Vec<String> = barrel_escha::synthesis::order(recipe).into_iter().map(|i| book.ingredient(i)).collect();
             println!("  {} ({}): {}", book.name(i32::from(recipe.item)), recipe.item, wants.join(", "));
         }
         return Ok(());
@@ -2816,8 +2818,8 @@ fn cauldron(install: &Path, items: &[&str]) -> Result<()> {
 }
 
 fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
-    use barrel_formats::recipe;
-    use barrel_game::synthesis::{Material, Synthesis};
+    use barrel_escha::data::recipe;
+    use barrel_escha::synthesis::{Material, Synthesis};
     let number = |s: &str| s.parse::<usize>().map_err(|_| format!("not an item number: {s}"));
     // The install has the game for each language plus a launcher and a settings tool; use
     // the first that holds the table.
@@ -2849,7 +2851,7 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
         rows.get(n).and_then(|r| r.attr(attr)).unwrap_or("?").to_string()
     };
     println!("{} ({item})", name(&items, item, "ItemName"));
-    let wanted = barrel_game::synthesis::order(recipe);
+    let wanted = barrel_escha::synthesis::order(recipe);
     // The cost points to spend: BARREL_CP, or 99 (more than any alchemist starts with).
     let cp = std::env::var("BARREL_CP").ok().and_then(|v| v.parse().ok()).unwrap_or(99);
     let mut s = Synthesis::with_cp(cp);
@@ -2862,7 +2864,7 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
             .map(|n| n as u16)
             .collect();
         match wanted.get(i) {
-            Some(&w) if barrel_game::synthesis::fits(w, m as u16, &cats) => {}
+            Some(&w) if barrel_escha::synthesis::fits(w, m as u16, &cats) => {}
             Some(w) => println!("  ! material {} does not fit {w:?} (the game takes them in order without Freestyle)", i + 1),
             None => println!("  ! material {} is one more than the recipe takes ({})", i + 1, wanted.len()),
         }
@@ -2883,10 +2885,10 @@ fn synth(install: &Path, item: &str, materials: &[&str]) -> Result<()> {
     // The finished item (no traits picked, one made, a first synthesis at alchemy level 1).
     let r = recipes.iter().position(|x| std::ptr::eq(x, recipe)).unwrap_or(0);
     let int = |n: usize, attr: &str| items.get(n).and_then(|row| row.attr(attr)).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
-    let f = barrel_game::synthesis::Finish { recipe: (r, recipe), level: int(item, "level"), equip_cost: int(item, "EquipCost"), traits: [-1; 3], trait_table: &[], count: 1, exp_rate: 0, alchemy_level: 1, categories: [-1; 4], mix: &[], extra_uses: 0, compression: 0 };
-    let mut k = barrel_formats::save::Knowledge { item: vec![0; 560], recipe: vec![0; 265], eff: vec![0; 698], potential: vec![0; 400], mix_esp: vec![0; 90], ..Default::default() };
+    let f = barrel_escha::synthesis::Finish { recipe: (r, recipe), level: int(item, "level"), equip_cost: int(item, "EquipCost"), traits: [-1; 3], trait_table: &[], count: 1, exp_rate: 0, alchemy_level: 1, categories: [-1; 4], mix: &[], extra_uses: 0, compression: 0 };
+    let mut k = barrel_escha::data::save::Knowledge { item: vec![0; 560], recipe: vec![0; 265], eff: vec![0; 698], potential: vec![0; 400], mix_esp: vec![0; 90], ..Default::default() };
     let mut revealed = vec![[false; 10]; recipes.len()];
-    let (unit, exp) = barrel_game::synthesis::finish(&s, &f, 0, &mut k, &mut revealed, &mut |lo, _| lo);
+    let (unit, exp) = barrel_escha::synthesis::finish(&s, &f, 0, &mut k, &mut revealed, &mut |lo, _| lo);
     let made: Vec<String> = unit.effects.iter().filter(|&&e| e >= 0).map(|&e| name(&effects, e as usize, "ItemEffectName")).collect();
     println!("made: quality {}, uses {}, equip cost {}, effects {}; {exp} experience; recipe effects revealed {:?}", unit.quality, unit.counts[1], unit.equip_cost, made.join(", "), (0..10).filter(|&j| revealed[r][j]).collect::<Vec<_>>());
     Ok(())
@@ -3492,22 +3494,22 @@ fn message_file(event: &Path, lang: Option<&str>) -> Option<PathBuf> {
 /// character and the camera are (positions in field units, facings in degrees).
 fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
     let fps: Option<f64> = fps.map(|h| h.parse()).transpose().map_err(|_| "--fps HZ is a number")?;
-    use barrel_game::event::Player;
-    use barrel_game::stage::Stage;
+    use barrel_engine::event::Player;
+    use barrel_engine::stage::Stage;
     let event = Ebd::parse(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     let table = OperandTable::escha();
     let messages = match message_file(file, None) {
         Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).unwrap_or_default(),
         _ => Vec::new(),
     };
-    let steps = Player::escha(&event, &messages, &table)?.schedule();
+    let steps = Player::new(&event, &messages, &table)?.schedule();
     // Story events number their characters by Chara.xml row.
     let measures = file
         .ancestors()
         .find(|p| p.join("Saves").is_dir())
         .and_then(|root| read(&root.join("Saves/chara/Chara.xml")).ok())
         .and_then(|b| barrel_formats::table::parse(&b).ok())
-        .map(|t| barrel_game::stage::Measures::table(&t))
+        .map(|t| barrel_engine::stage::Measures::table(&t))
         .unwrap_or_default();
     let mut last = None;
     let show = |p: [f32; 3]| format!("({:.0}, {:.0}, {:.0})", p[0], p[1], p[2]);
@@ -3535,16 +3537,16 @@ fn stage_event(file: &Path, fps: Option<&str>) -> Result<()> {
         .find(|p| p.join("Saves").is_dir())
         .and_then(|root| read(&root.join("Saves/curve/curve_data.xml")).ok())
         .and_then(|b| barrel_formats::table::parse(&b).ok())
-        .map(|t| barrel_game::curve::Curve::table(&t))
+        .map(|t| barrel_engine::curve::Curve::table(&t))
         .unwrap_or_default();
     println!("({} curves)", curves.len());
     // As a renderer drawing HZ frames a second drives it: the clock decides the ticks; the
     // end state must not depend on HZ (docs/engine.md, "Timing").
     if let Some(hz) = fps {
-        use barrel_game::clock::Clock;
+        use barrel_engine::clock::Clock;
         let end = steps.last().map_or(0.0, |t| t.time as f64) + 1.0;
         let mut clock = Clock::default();
-        let mut play = barrel_game::stage::Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
+        let mut play = barrel_engine::stage::Playback::new(Stage { measures, curves, ..Stage::default() }, steps);
         let mut frames = 0u64;
         while clock.time() < end {
             for _ in 0..clock.advance(1.0 / hz).ticks {
@@ -3587,7 +3589,7 @@ fn play_chain(file: &Path, lang: Option<&str>) -> Result<()> {
             println!("=== (no event starts when {stem} ends)");
             break;
         };
-        path = root.join("Event/event").join(barrel_game::event_start::event_file(next));
+        path = root.join("Event/event").join(barrel_escha::event_start::event_file(next));
         if !path.is_file() {
             return Err(format!("{}: no such event file", path.display()).into());
         }
@@ -3599,7 +3601,7 @@ fn play_chain(file: &Path, lang: Option<&str>) -> Result<()> {
 /// Prints an event's start conditions (`EventCheckDataAll.ecd`): its words, then each group's
 /// commands by name with their operands, triggers marked with their group.
 fn event_check(root: &Path, event: &str) -> Result<()> {
-    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let checks = barrel_escha::data::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
     let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
     let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
@@ -3607,7 +3609,7 @@ fn event_check(root: &Path, event: &str) -> Result<()> {
     let c = checks.get(n).ok_or("no check for that event")?;
     println!("{} (event {n}): words {:?}", names.get(n).copied().unwrap_or("?"), c.words);
     for (g, group) in c.groups.iter().enumerate() {
-        for cmd in barrel_formats::event_check::commands(group).map_err(|e| e.to_string())? {
+        for cmd in barrel_escha::data::event_check::commands(group).map_err(|e| e.to_string())? {
             let trigger = cmd.trigger().map_or(String::new(), |t| format!(" [trigger group {t}]"));
             println!("  group {g}: {} {:?}{trigger}", cmd.name(), cmd.operands);
         }
@@ -3618,10 +3620,10 @@ fn event_check(root: &Path, event: &str) -> Result<()> {
 /// A new game run headless: each event played to its end (its steps read for the field it
 /// leaves the player in), until free play.
 fn new_game(root: &Path, logy: bool) -> Result<()> {
-    use barrel_game::session::{Scene, Session};
+    use barrel_escha::session::{Scene, Session};
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
-    let maps = barrel_game::event::field_maps(&pe);
+    let maps = barrel_escha::data::maps::field_maps(&pe);
     let mut session = Session::new_game(story_chain(root)?, logy);
     let table = OperandTable::escha();
     for _ in 0..100 {
@@ -3634,18 +3636,18 @@ fn new_game(root: &Path, logy: bool) -> Result<()> {
                 return Ok(());
             }
         };
-        let file = root.join("Event/event").join(barrel_game::event_start::event_file(&name));
+        let file = root.join("Event/event").join(barrel_escha::event_start::event_file(&name));
         let event = Ebd::parse(&read(&file)?).map_err(|e| format!("{}: {e}", file.display()))?;
         let messages = match message_file(&file, None) {
             Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).unwrap_or_default(),
             _ => Vec::new(),
         };
-        let mut player = barrel_game::event::Player::escha(&event, &messages, &table)?;
+        let mut player = barrel_engine::event::Player::new(&event, &messages, &table)?;
         if logy {
             player = player.hero(1);
         }
         let steps = player.schedule();
-        let last = barrel_game::event::last_field(&steps);
+        let last = barrel_engine::event::last_field(&steps);
         let end = steps.last().map_or(0.0, |t| t.time);
         println!("{name}: {end:.1} s{}", last.map_or(String::new(), |m| format!(", ends in field {m} ({})", maps.get(m as usize).map_or("?", |s| s.as_str()))));
         session.event_ended(last);
@@ -3653,13 +3655,13 @@ fn new_game(root: &Path, logy: bool) -> Result<()> {
     Err("the session did not reach free play in 100 scenes".into())
 }
 
-fn story_chain(root: &Path) -> Result<barrel_game::event_start::Chain> {
-    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
-    let process = barrel_formats::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
+fn story_chain(root: &Path) -> Result<barrel_escha::event_start::Chain> {
+    let checks = barrel_escha::data::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let process = barrel_escha::data::event_process::parse(&read(&root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
     let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
     let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
-    Ok(barrel_game::event_start::Chain::new(checks, process, names.iter().map(|n| n.to_string()).collect()))
+    Ok(barrel_escha::event_start::Chain::new(checks, process, names.iter().map(|n| n.to_string()).collect()))
 }
 
 /// Plays a script macro (ROOT/Script/FILE.nut's function NAME) as an event with one action,
@@ -3668,10 +3670,10 @@ fn play_macro(script: &Path, name: &str, args: &[&str], timed: bool) -> Result<(
     let root = script.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("no game root above the script")?;
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
-    let names = barrel_game::macros::Names::escha(&barrel_game::gesture::motions(&pe));
+    let names = barrel_escha::macros::Names::escha(&barrel_escha::gesture::motions(&pe));
     let bytes = read(script)?;
     let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
-    let m = barrel_game::macros::read(&text).into_iter().find(|m| m.name == name).ok_or_else(|| format!("{name}: no such macro"))?;
+    let m = barrel_escha::macros::read(&text).into_iter().find(|m| m.name == name).ok_or_else(|| format!("{name}: no such macro"))?;
     let args: Vec<u32> = args.iter().map(|a| a.parse()).collect::<std::result::Result<_, _>>()?;
     let words = m.words(&names, &args).map_err(|u| format!("{name}: {} unknown (arguments: {})", u.0, m.params.join(", ")))?;
     let event = Ebd { actions: vec![barrel_formats::ebd::Action { flags: 0, name: name.as_bytes().to_vec(), description: vec![], words }], resources: vec![] };
@@ -3680,7 +3682,7 @@ fn play_macro(script: &Path, name: &str, args: &[&str], timed: bool) -> Result<(
 
 /// Prints an event's steps (FILE: where it came from, to find the game's tables).
 fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> {
-    use barrel_game::event::{Player, Step};
+    use barrel_engine::event::{Player, Step};
     let messages = match message_file(file, lang) {
         Some(m) if m.is_file() => barrel_formats::ebm::parse(&read(&m)?).map_err(|e| format!("{}: {e}", m.display()))?,
         _ => Vec::new(),
@@ -3708,22 +3710,22 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
             ["Atelier_Escha_and_Logy_EN.exe", "Atelier_Escha_and_Logy.exe"].iter().map(|n| root.join(n)).find(|p| p.is_file())
         })
         .and_then(|exe| read(&exe).ok())
-        .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::gesture::motions(&pe)).unwrap_or_default())
+        .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_escha::gesture::motions(&pe)).unwrap_or_default())
         .unwrap_or_default();
     let fields: Vec<String> = file
         .ancestors()
         .find(|p| p.join("Saves").is_dir())
         .and_then(|root| ["Atelier_Escha_and_Logy_EN.exe", "Atelier_Escha_and_Logy.exe"].iter().map(|n| root.join(n)).find(|p| p.is_file()))
         .and_then(|exe| read(&exe).ok())
-        .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_game::event::field_maps(&pe)).unwrap_or_default())
+        .map(|data| barrel_formats::pe::Pe::parse(&data).map(|pe| barrel_escha::data::maps::field_maps(&pe)).unwrap_or_default())
         .unwrap_or_default();
     // The music list, from the English executable (where its address is known).
-    let tracks: Vec<barrel_formats::bgm::Track> = file
+    let tracks: Vec<barrel_escha::data::bgm::Track> = file
         .ancestors()
         .find(|p| p.join("Saves").is_dir())
         .map(|root| root.join("Atelier_Escha_and_Logy_EN.exe"))
         .and_then(|exe| read(&exe).ok())
-        .and_then(|data| barrel_formats::pe::Pe::parse(&data).ok().and_then(|pe| barrel_formats::bgm::tracks(&pe, barrel_formats::bgm::TRACKS_EN)))
+        .and_then(|data| barrel_formats::pe::Pe::parse(&data).ok().and_then(|pe| barrel_escha::data::bgm::tracks(&pe, barrel_escha::data::bgm::TRACKS_EN)))
         .unwrap_or_default();
     // BARREL_GAME=sophie2: an Atelier Sophie 2 event, carried over to Escha's commands by name.
     let sophie2 = std::env::var("BARREL_GAME").is_ok_and(|g| g == "sophie2");
@@ -3732,10 +3734,10 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
     // Escha's words where they mean the same (`ebd::shallie_to_escha`).
     let shallie = file.ancestors().any(|p| p.join("Atelier_Shallie.exe").is_file());
     let (event, table) = if shallie { event.translate(&OperandTable::shallie(), barrel_formats::ebd::shallie_to_escha)? } else { (event, table) };
-    let player = if sophie2 { Player::translated(&event, &messages, &table, barrel_game::names::SOPHIE2)? } else { Player::escha(&event, &messages, &table)? };
+    let player = if sophie2 { Player::translated(&event, &messages, &table, barrel_formats::ebd_names::SOPHIE2)? } else { Player::new(&event, &messages, &table)? };
     let steps: Vec<(Option<f32>, Step)> = if timed {
         // BARREL_READ: hold each line its unattended reading time, as the viewer does.
-        let player = if std::env::var("BARREL_READ").is_ok() { player.reading_time(barrel_game::event::reading_time) } else { player };
+        let player = if std::env::var("BARREL_READ").is_ok() { player.reading_time(barrel_engine::event::reading_time) } else { player };
         player.schedule().into_iter().map(|t| (Some(t.time), t.step)).collect()
     } else {
         player.map(|s| (None, s)).collect()
@@ -3755,7 +3757,7 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
             Step::EventFlagAdd { flag, amount } => println!("      (event flag {flag} += {amount})"),
             Step::EndGroup { group } => println!("      (the end runs process group {group})"),
 Step::Planboard { first } => println!("      (the planning board opens from {first})"),
-                        Step::GameMode { mode } => println!("      (then game mode {})", barrel_game::event::GAME_MODES.get(mode as usize).unwrap_or(&"?")),
+                        Step::GameMode { mode } => println!("      (then game mode {})", barrel_engine::event::GAME_MODES.get(mode as usize).unwrap_or(&"?")),
             Step::Trophy { trophy } => println!("      (achievement {trophy}: left out)"),
             Step::Movie { movie } => println!("      movie {movie} (not played yet)"),
             Step::MarkEvent { event, seen } => println!("      (event {event} marked {})", if seen { "seen" } else { "unseen" }),
@@ -3834,7 +3836,7 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
                 println!("{action:3} --- screen effect {kind} ({name}), {param}, over {seconds} s");
             }
             Step::FieldCamera { action, change } => {
-                use barrel_game::field_camera::Change as C;
+                use barrel_engine::field_camera::Change as C;
                 let rel = |r: bool| if r { "by" } else { "to" };
                 let what = match change {
                     C::All { yaw, fov, pitch, distance, target, offset } => format!("yaw {yaw}°, pitch {pitch}°, field of view {fov}°, {distance} away from {target:?} + {offset:?}"),
@@ -3852,7 +3854,7 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
                 println!("{action:3} --- field camera: {what}");
             }
             Step::Camera { action, part, change } => {
-                use barrel_game::camera::Change;
+                use barrel_engine::camera::Change;
                 let what = match change {
                     Change::Set(p) => format!("at {}", describe_position(&p)),
                     Change::Move(m) => describe_move(&m),
@@ -3889,12 +3891,12 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
     Ok(())
 }
 
-/// Message gestures (`barrel_game::gesture`): each entry's two forms as motion names.
+/// Message gestures (`barrel_escha::gesture`): each entry's two forms as motion names.
 fn gestures(exe: &Path, numbers: &[&str]) -> Result<()> {
     let data = read(exe)?;
-    let table = barrel_game::gesture::read(&data).ok_or("gesture table not found")?;
+    let table = barrel_escha::gesture::read(&data).ok_or("gesture table not found")?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{e}"))?;
-    let names = barrel_game::gesture::motions(&pe);
+    let names = barrel_escha::gesture::motions(&pe);
     let name = |m: u32| names.get(m as usize).cloned().unwrap_or_else(|| m.to_string());
     let picked: Vec<usize> = if numbers.is_empty() { (0..table.len()).collect() } else { numbers.iter().filter_map(|n| n.parse().ok()).collect() };
     for n in picked {
@@ -3902,8 +3904,8 @@ fn gestures(exe: &Path, numbers: &[&str]) -> Result<()> {
         for (k, form) in entry.iter().enumerate() {
             let Some(f) = form else { continue };
             let steps: Vec<String> = f.steps.iter().map(|s| match s {
-                barrel_game::gesture::Step::Motion(m) => name(*m),
-                barrel_game::gesture::Step::Repeat(r) => format!("x{r}"),
+                barrel_escha::gesture::Step::Motion(m) => name(*m),
+                barrel_escha::gesture::Step::Repeat(r) => format!("x{r}"),
             }).collect();
             println!("{n:3}.{k}: {} {} end {}", name(f.first), steps.join(" "), f.end);
         }
@@ -3911,11 +3913,11 @@ fn gestures(exe: &Path, numbers: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// The delivery table (`barrel_game::delivery`): each assignment card's items and bonuses.
+/// The delivery table (`barrel_escha::delivery`): each assignment card's items and bonuses.
 fn deliveries(install: &Path) -> Result<()> {
     let path = install.join("Saves/delivery/DeliveryData.xml");
     let table = barrel_formats::table::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
-    let all = barrel_game::delivery::deliveries(&table);
+    let all = barrel_escha::delivery::deliveries(&table);
     for d in all.iter().filter(|d| !d.tag.starts_with("DELIVERY_TEST")) {
         let items: Vec<String> = d.items.iter().map(|(t, s)| format!("{t} {s}")).collect();
         let mut extra = Vec::new();
@@ -3952,7 +3954,7 @@ fn acts(exe: &Path) -> Result<()> {
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let (names, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
-    for (k, a) in barrel_formats::battle_data::acts(&pe, barrel_formats::battle_data::ACTS_EN).iter().enumerate() {
+    for (k, a) in barrel_escha::data::battle_data::acts(&pe, barrel_escha::data::battle_data::ACTS_EN).iter().enumerate() {
         let flags: Vec<String> = a.flags.iter().enumerate().filter(|(_, f)| **f).map(|(i, _)| i.to_string()).collect();
         println!("{k:3} {:32} flags {:20} limit {} last {}", names.get(k).map_or("?".to_string(), |n| n.to_string()), flags.join(","), a.limit, a.last);
     }
@@ -3967,17 +3969,17 @@ fn acts(exe: &Path) -> Result<()> {
 fn nut_run(root: &Path, file: &str, ticks: usize) -> Result<()> {
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
-    let motions = barrel_game::gesture::motions(&pe);
-    let names = barrel_game::macros::Names::escha(&motions);
-    let load = |name: &str| -> Result<Vec<barrel_game::squirrel::Stmt>> {
+    let motions = barrel_escha::gesture::motions(&pe);
+    let names = barrel_escha::macros::Names::escha(&motions);
+    let load = |name: &str| -> Result<Vec<barrel_engine::squirrel::Stmt>> {
         let bytes = read(&root.join("Script").join(name))?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
-        barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}").into())
+        barrel_engine::squirrel::parse(&text).map_err(|e| format!("{name}: {e}").into())
     };
-    let mut c = barrel_game::creature::Creature::new([0.0; 3], barrel_game::rng::Rng::from_state([1, 2, 3, 4]));
+    let mut c = barrel_escha::creature::Creature::new([0.0; 3], barrel_engine::rng::Rng::from_state([1, 2, 3, 4]));
     c.player = [600.0, 0.0, 0.0];
     c.constants = names.all().map(|(n, v)| (n.to_string(), v as i32 as i64)).collect();
-    let mut vm = barrel_game::squirrel::Interp::new();
+    let mut vm = barrel_engine::squirrel::Interp::new();
     vm.run(&load("utility.nut")?, &mut c).map_err(|e| format!("utility.nut: {e}"))?;
     let script = load(file)?;
     let mut last = String::new();
@@ -4000,16 +4002,16 @@ fn nut_run(root: &Path, file: &str, ticks: usize) -> Result<()> {
 fn field_sim(root: &Path, area: &str, frames: usize) -> Result<()> {
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
-    let motions = barrel_game::gesture::motions(&pe);
-    let script = |name: &str| -> std::result::Result<Vec<barrel_game::squirrel::Stmt>, String> {
+    let motions = barrel_escha::gesture::motions(&pe);
+    let script = |name: &str| -> std::result::Result<Vec<barrel_engine::squirrel::Stmt>, String> {
         let bytes = read(&root.join("Script").join(format!("{name}.nut"))).map_err(|e| format!("{name}: {e}"))?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
-        barrel_game::squirrel::parse(&text).map_err(|e| format!("{name}: {e}"))
+        barrel_engine::squirrel::parse(&text).map_err(|e| format!("{name}: {e}"))
     };
     let area: i32 = area.parse().map_err(|_| "the area is a field map number (12 is AREA_01_01)")?;
     let xml = |name: &str| read(&root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (chara, base) = (xml("Chara.xml"), xml("CharaBase.xml"));
-    let (mut field, enemies) = barrel_game::field_ai::build(&pe, area, script, chara.as_ref(), base.as_ref())?;
+    let (mut field, enemies) = barrel_escha::field_ai::build(&pe, area, script, chara.as_ref(), base.as_ref())?;
     let player_radius = field.player_radius;
     println!("radii: player {player_radius}, enemies {:?}", field.radii);
     let start = field.mobs[0].creature.position;
@@ -4059,7 +4061,7 @@ fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
             continue;
         }
         let Some(w) = walks.next() else { break };
-        use barrel_game::event_start::Days;
+        use barrel_escha::event_start::Days;
         event = match w.split_once(':') {
             // trip:FROM>TO: a world map trip between two marks, into the field TO opens first.
             Some(("trip", ends)) => {
@@ -4068,11 +4070,11 @@ fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
                 let map = world_map(&exe)?;
                 let bytes = read(&exe)?;
                 let pe = barrel_formats::pe::Pe::parse(&bytes)?;
-                let names = barrel_formats::world::point_names(&pe).unwrap_or_default();
-                let field = barrel_formats::world::point_maps(&pe)
+                let names = barrel_escha::data::world::point_names(&pe).unwrap_or_default();
+                let field = barrel_escha::data::world::point_maps(&pe)
                     .unwrap_or_default()
                     .into_iter()
-                    .find(|(p, _, _)| names.get(*p as usize).and_then(|n| barrel_formats::world::point_tag(n)).as_deref() == Some(to))
+                    .find(|(p, _, _)| names.get(*p as usize).and_then(|n| barrel_escha::data::world::point_tag(n)).as_deref() == Some(to))
                     .map(|(_, m, _)| m as i32)
                     .ok_or(format!("{to} opens no field"))?;
                 let (started, days) = chain.travel(&map, from, to, field);
@@ -4102,31 +4104,31 @@ fn event_chain(root: &Path, start: &str, walks: &[&str]) -> Result<()> {
 /// Which events the save would start when trigger group GROUP fires with VALUES (in the town or
 /// a field nobody is in; the commands not modelled yet count as failing and are tallied).
 fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Result<()> {
-    use barrel_game::event_start::{self as es, World as _};
+    use barrel_escha::event_start::{self as es, World as _};
     let group: u8 = group.parse().map_err(|_| "GROUP is a number")?;
     let fired: Vec<i32> = values.iter().map(|v| v.parse()).collect::<std::result::Result<_, _>>().map_err(|_| "VALUES are numbers")?;
-    let checks = barrel_formats::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let checks = barrel_escha::data::event_check::parse(&read(&root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
     // `new`: a new game's state (nothing seen, no flags, April 1st of year 1: day 90).
     let sum = if save == Path::new("new") {
         // BARREL_SEEN=a,b,...: events taken as seen.
-        let mut events = vec![barrel_formats::save::EventRecord { seen: false, day: -31, count: 0, roll: 0, value: 0 }; 1165];
+        let mut events = vec![barrel_escha::data::save::EventRecord { seen: false, day: -31, count: 0, roll: 0, value: 0 }; 1165];
         for e in std::env::var("BARREL_SEEN").unwrap_or_default().split(',').filter_map(|v| v.trim().parse::<usize>().ok()) {
             if let Some(r) = events.get_mut(e) {
                 r.seen = true;
                 r.day = 90;
             }
         }
-        barrel_formats::save::Summary { day: Some(90), events, ..Default::default() }
+        barrel_escha::data::save::Summary { day: Some(90), events, ..Default::default() }
     } else {
         let data = read(save)?;
-        let body = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", save.display()))?.body;
-        let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
-        barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?)
+        let body = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", save.display()))?.body;
+        let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", save.display()))?;
+        barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| e.to_string())?)
     };
     let exe_data = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe_data).map_err(|e| e.to_string())?;
     let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
-    struct W<'a>(&'a barrel_formats::save::Summary);
+    struct W<'a>(&'a barrel_escha::data::save::Summary);
     impl es::World for W<'_> {
         fn seen(&self, e: i32) -> bool {
             usize::try_from(e).ok().and_then(|e| self.0.events.get(e)).is_some_and(|r| r.seen)
@@ -4141,7 +4143,7 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
             usize::try_from(f).ok().and_then(|f| self.0.event_flags.get(f)).copied().unwrap_or(0)
         }
         fn region_zero(&self, map: i32) -> bool {
-            usize::try_from(map).is_ok_and(|m| m < barrel_formats::gimmick::TOWN_MAPS)
+            usize::try_from(map).is_ok_and(|m| m < barrel_escha::data::gimmick::TOWN_MAPS)
         }
         fn field_map(&self) -> Option<i32> {
             None
@@ -4169,7 +4171,7 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
         }
         fn item_count(&self, item: Option<i32>, low: f32, high: f32) -> Option<i32> {
             let held = self.0.basket.iter().chain(&self.0.container);
-            let hit = |u: &&barrel_formats::save::ItemUnit| item.is_none_or(|i| i32::from(u.item) == i) && (low..=high).contains(&u.quality);
+            let hit = |u: &&barrel_escha::data::save::ItemUnit| item.is_none_or(|i| i32::from(u.item) == i) && (low..=high).contains(&u.quality);
             Some(held.filter(hit).map(|u| i32::from(u.counts[3])).sum())
         }
     }
@@ -4182,7 +4184,7 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
             return false;
         }
         let Some(words) = check.groups.get(g) else { return false };
-        let Ok(cmds) = barrel_formats::event_check::commands(words) else { return false };
+        let Ok(cmds) = barrel_escha::data::event_check::commands(words) else { return false };
         cmds.iter().all(|c| match es::command(c, &es::Fired { group, values: &fired, day: w.today(), event: event as i32 }, &w) {
             Some(ok) => ok,
             None => {
@@ -4206,17 +4208,17 @@ fn event_starts(root: &Path, save: &Path, group: &str, values: &[&str]) -> Resul
 }
 
 fn subjects(root: &Path, save: Option<&Path>) -> Result<()> {
-    use barrel_formats::subject as sb;
+    use barrel_escha::data::subject as sb;
     let rows = sb::subjects(&barrel_formats::table::parse(&read(&root.join("Saves/subject/SubjectData.xml"))?)?);
     let en = read(&root.join("Saves_EN/subject/SubjectData.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| sb::subjects(&t)).unwrap_or_default();
     let state = match save {
         Some(p) => {
             let data = read(p)?;
-            let s = barrel_formats::save::parse(&data).map_err(|e| format!("{}: {e}", p.display()))?;
-            let st = barrel_formats::save::decode(s.body).map_err(|e| e.to_string())?;
-            let recs = barrel_formats::save::state_records(&st).map_err(|e| e.to_string())?;
-            fn find<'a>(rs: &'a [barrel_formats::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
-                use barrel_formats::save::Body;
+            let s = barrel_escha::data::save::parse(&data).map_err(|e| format!("{}: {e}", p.display()))?;
+            let st = barrel_escha::data::save::decode(s.body).map_err(|e| e.to_string())?;
+            let recs = barrel_escha::data::save::state_records(&st).map_err(|e| e.to_string())?;
+            fn find<'a>(rs: &'a [barrel_escha::data::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
+                use barrel_escha::data::save::Body;
                 rs.iter().find_map(|r| match &r.body {
                     Body::Raw(d) | Body::Data(d) if r.name == name => Some(*d),
                     Body::Group(g) => find(g, name),
@@ -4237,7 +4239,7 @@ fn subjects(root: &Path, save: Option<&Path>) -> Result<()> {
 
 /// The costume tables (`Saves/costume`): each outfit's model and the accessories adjusted to it.
 fn costumes(root: &Path, sysdata: Option<&Path>) -> Result<()> {
-    use barrel_formats::costume as c;
+    use barrel_escha::data::costume as c;
     let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&read(&root.join("Saves/costume").join(n))?)?) };
     let names = |n: &str| -> Option<barrel_formats::table::Element> { barrel_formats::table::parse(&read(&root.join("Saves_EN/costume").join(n)).ok()?).ok() };
     let bodies = c::bodies(&table("CostumeBody.xml")?);
@@ -4252,10 +4254,10 @@ fn costumes(root: &Path, sysdata: Option<&Path>) -> Result<()> {
     }
     println!("{} heads ({} with a model), {} faces, {} adjustments, {} hiding rules", heads.len(), heads.iter().filter(|h| !h.file.is_empty()).count(), faces.len(), adjusts.len(), hides.len());
     if let Some(path) = sysdata {
-        let state = barrel_formats::save::decode(&read(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
-        let records = barrel_formats::save::state_records(&state).map_err(|e| e.to_string())?;
-        fn find<'a>(rs: &'a [barrel_formats::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
-            use barrel_formats::save::Body;
+        let state = barrel_escha::data::save::decode(&read(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        let records = barrel_escha::data::save::state_records(&state).map_err(|e| e.to_string())?;
+        fn find<'a>(rs: &'a [barrel_escha::data::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
+            use barrel_escha::data::save::Body;
             rs.iter().find_map(|r| match &r.body {
                 Body::Raw(d) | Body::Data(d) if r.name == name => Some(*d),
                 Body::Group(g) => find(g, name),
@@ -4280,7 +4282,7 @@ fn nut_parse(root: &Path) -> Result<()> {
     for path in &paths {
         let bytes = read(path)?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
-        match barrel_game::squirrel::parse(&text) {
+        match barrel_engine::squirrel::parse(&text) {
             Ok(s) => println!("{:<24} {} statements", path.file_name().unwrap().to_string_lossy(), s.len()),
             Err(e) => {
                 bad += 1;
@@ -4295,14 +4297,14 @@ fn nut_parse(root: &Path) -> Result<()> {
 fn macros(root: &Path) -> Result<()> {
     let exe = read(&root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("exe: {e}"))?;
-    let names = barrel_game::macros::Names::escha(&barrel_game::gesture::motions(&pe));
+    let names = barrel_escha::macros::Names::escha(&barrel_escha::gesture::motions(&pe));
     let table = barrel_formats::ebd::OperandTable::escha();
     let mut paths: Vec<_> = std::fs::read_dir(root.join("Script"))?.flatten().map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("macro_"))).collect();
     paths.sort();
     for path in paths {
         let bytes = read(&path)?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
-        for m in barrel_game::macros::read(&text) {
+        for m in barrel_escha::macros::read(&text) {
             let args: Vec<u32> = (0..m.params.len() as u32).map(|k| 10000 + k).collect();
             match m.words(&names, &args) {
                 Ok(words) => match barrel_formats::ebd::decode(&words, &table) {
@@ -4313,7 +4315,7 @@ fn macros(root: &Path) -> Result<()> {
                             .words
                             .iter()
                             .filter_map(|t| match t {
-                                barrel_game::macros::Token::Name(n) if n.starts_with("ECT_") => Some(n.clone()),
+                                barrel_escha::macros::Token::Name(n) if n.starts_with("ECT_") => Some(n.clone()),
                                 _ => None,
                             })
                             .filter(|n| names_word(n).is_some_and(|w| table.get(w).is_none()))
@@ -4329,13 +4331,13 @@ fn macros(root: &Path) -> Result<()> {
 }
 
 fn names_word(name: &str) -> Option<u32> {
-    barrel_game::macros::Names::escha(&[]).value(name)
+    barrel_escha::macros::Names::escha(&[]).value(name)
 }
 
 fn trait_kinds(exe: &Path) -> Result<()> {
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
-    for (k, n) in barrel_formats::battle_data::trait_kinds(&pe).iter().enumerate() {
+    for (k, n) in barrel_escha::data::battle_data::trait_kinds(&pe).iter().enumerate() {
         println!("{k:3} {n}");
     }
     Ok(())
@@ -4344,8 +4346,8 @@ fn trait_kinds(exe: &Path) -> Result<()> {
 /// A battle with a save's squad (its first three: levels, equipped stats, HP and MP now, skills)
 /// and the alchemists' battle items, against a monster.
 fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
-    use barrel_formats::battle_data as bd;
-    use barrel_game::fight::Event;
+    use barrel_escha::data::battle_data as bd;
+    use barrel_escha::fight::Event;
     let data = read(exe)?;
     let pe = barrel_formats::pe::Pe::parse(&data).map_err(|e| format!("{}: {e}", exe.display()))?;
     let monsters = bd::monsters(&pe, bd::MONSTERS_EN).ok_or("no monster table")?;
@@ -4365,9 +4367,9 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
         .collect();
     let table = bd::item_battles(&pe, bd::ITEM_BATTLE_EN, bd::ITEM_BATTLE_END_EN);
     let save_data = read(file)?;
-    let body = barrel_formats::save::parse(&save_data).map_err(|e| format!("{}: {e}", file.display()))?.body;
-    let state = barrel_formats::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
-    let s = barrel_formats::save::summary(&barrel_formats::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?);
+    let body = barrel_escha::data::save::parse(&save_data).map_err(|e| format!("{}: {e}", file.display()))?.body;
+    let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{}: {e}", file.display()))?;
+    let s = barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| format!("{}: {e}", file.display()))?);
     let member_names = ["Escha", "Logy", "Awin", "Threia", "Reyfer", "Lucille", "Linca", "Wilbell", "Micie", "Katla", "Nio"];
     let mut names = Vec::new();
     let mut members = Vec::new();
@@ -4375,48 +4377,48 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
         let saved = s.party.iter().find(|m| m.character == c).ok_or_else(|| format!("character {c}: no party record"))?;
         let c = c as usize;
         let stats = growth.get(c).and_then(|l| l.get((saved.level as usize).wrapping_sub(1))).ok_or_else(|| format!("character {c}: no growth row"))?;
-        let mut block = barrel_game::duel::party_block(saved.level, stats);
+        let mut block = barrel_escha::duel::party_block(saved.level, stats);
         let [max_hp, max_mp, attack, defense, speed] = saved.equipped;
         (block.hp, block.attack, block.defense, block.speed) = (max_hp, attack, defense, speed);
-        let mut member = barrel_game::skirmish::Member::new(block, max_mp, &lists[c], &skills).ok_or("no party attack")?;
-        member.size = barrel_formats::battle_data::party_size(&chara_radii_near(exe), c).unwrap_or(0.0);
+        let mut member = barrel_escha::skirmish::Member::new(block, max_mp, &lists[c], &skills).ok_or("no party attack")?;
+        member.size = barrel_escha::data::battle_data::party_size(&chara_radii_near(exe), c).unwrap_or(0.0);
         member.now = Some((saved.hp, saved.mp));
         for u in s.battle_items.get(c).into_iter().flatten() {
             let Some(row) = table.iter().find(|b| b.item == u.item as i32) else { continue };
             let name = item_names.get(u.item as usize).cloned().unwrap_or_default();
-            let action = barrel_game::battle::item_action(&name, row.target, row.area, row.wait, &u.effects, &item_rows);
+            let action = barrel_escha::battle::item_action(&name, row.target, row.area, row.wait, &u.effects, &item_rows);
             let held_traits = u.traits.iter().filter_map(|&t| usize::try_from(t).ok().and_then(|t| traits.get(t)).cloned()).collect();
-            member.items.push(barrel_game::skirmish::Held { action, power: barrel_game::battle::item_power(u.quality), count: u.counts[0].max(0) as u32, traits: held_traits });
+            member.items.push(barrel_escha::skirmish::Held { action, power: barrel_escha::battle::item_power(u.quality), count: u.counts[0].max(0) as u32, traits: held_traits });
         }
         let items: Vec<String> = member.items.iter().map(|h| format!("{} ×{}", h.action.name, h.count)).collect();
         println!("{} level {}: HP {}/{}, MP {}/{}, attack {} defense {} speed {}{}", member_names.get(c).unwrap_or(&"?"), saved.level, saved.hp, max_hp, saved.mp, max_mp, attack, defense, speed, if items.is_empty() { String::new() } else { format!(", items {}", items.join(", ")) });
         names.push(format!("{} ({})", member_names.get(c).unwrap_or(&"?"), saved.level));
         members.push(member);
     }
-    let mut rng = barrel_game::rng::Rng::seeded(1);
+    let mut rng = barrel_engine::rng::Rng::seeded(1);
     // MONSTER: a monster number, or gN for encounter group N drawn as the game does.
     let drawn: Vec<usize> = match monster.strip_prefix('g') {
         Some(g) => {
             let g: usize = g.parse().map_err(|_| format!("{monster}: group number"))?;
             let group = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN).into_iter().nth(g).ok_or("no such group")?;
-            barrel_game::battle::encounter_monsters(&group, &mut rng).into_iter().map(|m| m as usize).collect()
+            barrel_escha::battle::encounter_monsters(&group, &mut rng).into_iter().map(|m| m as usize).collect()
         }
         None => vec![monster.parse::<usize>().map_err(|_| format!("{monster}: monster number"))?],
     };
     let mut foes = Vec::new();
     for &k in &drawn {
         let m = monsters.get(k).filter(|m| !m.blocks.is_empty()).ok_or_else(|| format!("monster {k}: none"))?;
-        foes.push(barrel_game::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]), death_immune: m.death_immune, chara: barrel_formats::battle_data::MONSTER_CHARA_FIRST as i32 + k as i32 });
+        foes.push(barrel_escha::duel::Fighter { block: m.blocks[0].clone(), normal: skills.get(1).ok_or("no skill 1")?, skills: Some(&skills[..]), death_immune: m.death_immune, chara: barrel_escha::data::battle_data::MONSTER_CHARA_FIRST as i32 + k as i32 });
         names.push(m.name.clone());
     }
     println!("against {}", names[members.len()..].join(", "));
     let acts_info = bd::acts(&pe, bd::ACTS_EN);
     let kinds = bd::trait_kinds(&pe);
-    let rules = barrel_game::skirmish::ItemRules { acts: &acts_info, kinds: &kinds, effects: &item_rows };
+    let rules = barrel_escha::skirmish::ItemRules { acts: &acts_info, kinds: &kinds, effects: &item_rows };
     let radii = chara_radii_near(exe);
-    let sizes: Vec<f32> = drawn.iter().map(|&k| barrel_formats::battle_data::monster_size(&radii, k).unwrap_or(100.0)).collect();
+    let sizes: Vec<f32> = drawn.iter().map(|&k| barrel_escha::data::battle_data::monster_size(&radii, k).unwrap_or(100.0)).collect();
     println!("sizes {sizes:?}");
-    let (events, winner) = barrel_game::skirmish::skirmish(&members, &foes, &sizes, rules, &mut rng, 1000);
+    let (events, winner) = barrel_escha::skirmish::skirmish(&members, &foes, &sizes, rules, &mut rng, 1000);
     for e in &events {
         match e {
             Event::Felled { who, skill, target } => println!("{} uses {skill} on {}: felled", names[*who], names[*target]),

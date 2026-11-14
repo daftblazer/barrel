@@ -1,4 +1,4 @@
-//! Text on screen in the game's font (`barrel_formats::font`): laying lines out into quads
+//! Text on screen in the game's font (`barrel_escha::data::font`): laying lines out into quads
 //! (plain code, tested without a GPU) and a layer that draws them over the scene, alpha
 //! blended, in screen pixels.
 //!
@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use ash::vk;
-use barrel_formats::font::Glyph;
+use barrel_escha::data::font::Glyph;
 
 use crate::{upload_texture, Gpu, Result};
 

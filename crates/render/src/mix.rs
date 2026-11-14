@@ -9,9 +9,9 @@
 
 use std::path::Path;
 
-use barrel_formats::layout::Text;
-use barrel_game::cauldron::Book;
-use barrel_game::gather::Got;
+use barrel_escha::data::layout::Text;
+use barrel_escha::cauldron::Book;
+use barrel_escha::gather::Got;
 
 use crate::hud::{self, Element};
 use crate::screen;
@@ -142,11 +142,11 @@ pub fn run(
 ) -> Result<Option<(usize, Vec<usize>)>> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("synthesis: no glyph table")?;
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("synthesis: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("synthesis: an empty font atlas")?.width as f32 };
-    let desk: Vec<Element> = barrel_formats::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
     let keys_needed = screen::sheet_keys(&pe, desk.clone());
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;

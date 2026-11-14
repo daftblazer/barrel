@@ -149,7 +149,7 @@ pub fn sheet_keys(pe: &barrel_formats::pe::Pe, elements: impl IntoIterator<Item 
             continue;
         }
         if let Some((part, cut, at)) = e.sprite()
-            && let Some(p) = barrel_formats::layout::sprite(pe, part, cut, at) {
+            && let Some(p) = barrel_escha::data::layout::sprite(pe, part, cut, at) {
                 let key = (p.texture, p.index);
                 if !keys.contains(&key) {
                     keys.push(key);

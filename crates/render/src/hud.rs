@@ -1,4 +1,4 @@
-//! The field HUD, drawn from the game's own layout (`barrel_formats::layout`, layout 625):
+//! The field HUD, drawn from the game's own layout (`barrel_escha::data::layout`, layout 625):
 //! the assignment panel at the top left (605: "Left", the days, the year disc), the time dial
 //! (609) and the button list at the bottom left (620), filled with the calendar's values.
 //!
@@ -20,7 +20,7 @@
 //! "Free Time" tab (604), the small count (part 0xe5) and the pop-ups (the poster, gathering
 //! notices, the gathering gauge) are left out until their conditions are known.
 
-use barrel_formats::layout::{self, Placed};
+use barrel_escha::data::layout::{self, Placed};
 
 use crate::text::{self, Quad};
 
@@ -49,7 +49,7 @@ pub struct Values {
 impl Values {
     /// The values on day `today` with `tenths` of it spent in the field.
     pub fn on(today: u32, tenths: i32) -> Values {
-        use barrel_game::calendar::{period, period_days, Date};
+        use barrel_escha::calendar::{period, period_days, Date};
         let left = period(today).map_or(0, |k| period_days(k).1 - today);
         let date = Date::of(today);
         Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32 }
@@ -276,7 +276,7 @@ pub fn sheet_keys(pe: &barrel_formats::pe::Pe, nodes: &[Placed]) -> Vec<(String,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use barrel_formats::layout::Node;
+    use barrel_escha::data::layout::Node;
 
     fn node(path: &[u32], part: i32, cut: i32, kind: i32, at: [i32; 2]) -> Placed {
         Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind }, at, va: 0 }
@@ -287,7 +287,7 @@ mod tests {
         // April 1st of year 1: 119 days to the first period's last.
         assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0 });
         // August 20th of year 1, as the game's screenshot: "Left 100", "8 /20", year 1.
-        let aug20 = barrel_game::calendar::Date { year: 1, month: 8, day: 20 }.number();
+        let aug20 = barrel_escha::calendar::Date { year: 1, month: 8, day: 20 }.number();
         assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3 });
     }
 

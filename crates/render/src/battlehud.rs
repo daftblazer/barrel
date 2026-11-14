@@ -10,7 +10,7 @@
 //! state icons (layouts 873, 875), the plates' numbers (kind 28), the action banner and the
 //! target panel left out; the Support gauge as stored (0).
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 

@@ -11,7 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 barrel-formats = { path = "../formats" }
-barrel-game = { path = "../game" }
+barrel-engine = { path = "../engine" }
+barrel-escha = { path = "../escha" }
 barrel-audio = { path = "../audio" }
 sdl3-sys = { version = "=0.7.2", default-features = false, features = ["use-pkg-config"] }
 encoding_rs = "0.8"

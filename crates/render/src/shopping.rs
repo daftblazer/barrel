@@ -28,8 +28,8 @@
 
 use std::path::Path;
 
-use barrel_formats::layout::{Placed, Text};
-use barrel_game::shop::Ware;
+use barrel_escha::data::layout::{Placed, Text};
+use barrel_escha::shop::Ware;
 
 use crate::hud::{self, Element};
 use crate::screen;
@@ -279,10 +279,10 @@ impl Shop {
 /// how many the basket holds: `held(ware)`) and the basket's items (name, quality, worth).
 pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)], held: impl Fn(&Ware) -> i32, items: Vec<crate::basket::Item>) -> Lists {
     let buy = wares.iter().map(|w| {
-        let price = barrel_game::shop::list_price(w);
+        let price = barrel_escha::shop::list_price(w);
         Line { text: format!("{}   {} cole", w.item_name, price), can: price <= money }
     });
-    let rows = wares.iter().map(|w| Row { name: w.item_name.clone(), held: held(w), price: barrel_game::shop::list_price(w) });
+    let rows = wares.iter().map(|w| Row { name: w.item_name.clone(), held: held(w), price: barrel_escha::shop::list_price(w) });
     let sell = basket.iter().map(|(name, quality, worth)| Line { text: format!("{name}   quality {quality:.0}   {worth} cole"), can: true });
     let worth = basket.iter().map(|b| b.2).collect();
     Lists { shop: shop.to_string(), money, buy: buy.collect(), rows: rows.collect(), sell: sell.collect(), items, worth }
@@ -303,13 +303,13 @@ pub fn run(
 ) -> Result<Option<Deal>> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("shop: no glyph table")?;
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("shop: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("shop: an empty font atlas")?.width as f32 };
-    let desk: Vec<Element> = barrel_formats::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
-    let nodes = barrel_formats::layout::placed(&pe, LAYOUT);
-    let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let nodes = barrel_escha::data::layout::placed(&pe, LAYOUT);
+    let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let mut every = desk.clone();
     every.extend(buy_elements(&nodes, texts, l, 0, 0));
     every.extend(sell_elements(&nodes, texts, l, 0));

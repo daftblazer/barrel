@@ -16,7 +16,7 @@ use crate::{Gpu, Result};
 /// Opens a 1280×720 window, presents `frames` frames and exits.
 pub fn run(frames: u32) -> Result<()> {
     let event_loop = EventLoop::new()?;
-    let mut app = App { frames_left: frames.clamp(1, 100_000), live: None, error: None, clock: barrel_game::clock::Clock::default(), last: None, shown: 0 };
+    let mut app = App { frames_left: frames.clamp(1, 100_000), live: None, error: None, clock: barrel_engine::clock::Clock::default(), last: None, shown: 0 };
     event_loop.run_app(&mut app)?;
     match app.error {
         Some(e) => Err(e.into()),
@@ -41,7 +41,7 @@ struct App {
     frames_left: u32,
     live: Option<Live>,
     error: Option<String>,
-    clock: barrel_game::clock::Clock,
+    clock: barrel_engine::clock::Clock,
     last: Option<std::time::Instant>,
     shown: u32,
 }

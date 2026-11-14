@@ -19,7 +19,7 @@
 //! the buttons at half strength while the Option list is open; "NEW" never shown; the figure always Escha's; no party plates (layout 365), help line, money
 //! or date; no opening or closing motion.
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 use crate::title::Button;
@@ -240,7 +240,7 @@ pub fn run(
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
     logy: bool,
-    lead: Option<&barrel_game::session::Member>,
+    lead: Option<&barrel_escha::session::Member>,
     basket: &[(i32, f32)],
     card: &[Option<crate::assignment::Task>],
     keys: &[Button],
@@ -249,21 +249,21 @@ pub fn run(
     use crate::{hud, screen, text};
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     // The Status page: its nodes over the desk, and the lead's values.
-    let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let values = crate::status::Values::lead(&pe, logy, lead, &item_rows.children).ok_or("menu: no party tables")?;
     // The Basket page: the grid over the desk, and the basket's items.
     let items = crate::basket::items(basket, &item_rows.children);
-    let grid_nodes: Vec<Placed> = [BACKGROUND, crate::basket::GRID].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let grid_nodes: Vec<Placed> = [BACKGROUND, crate::basket::GRID].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     let basket_elements = |b: &crate::basket::Basket, texts: &dyn Fn(&Placed) -> Option<Text>| {
         let mut e: Vec<crate::hud::Element> = grid_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
         e.extend(b.elements(&grid_nodes, texts, &items));
         e
     };
     // The Assignment page: the card over the desk.
-    let card_nodes: Vec<Placed> = [BACKGROUND, crate::assignment::LAYOUT].iter().flat_map(|&id| barrel_formats::layout::placed(&pe, id)).collect();
+    let card_nodes: Vec<Placed> = [BACKGROUND, crate::assignment::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     let assignment_elements = |a: &crate::assignment::Assignment, texts: &dyn Fn(&Placed) -> Option<Text>| {
         let mut e: Vec<crate::hud::Element> = card_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
         e.extend(a.elements(&card_nodes, texts, card));
@@ -274,8 +274,8 @@ pub fn run(
         e.extend(crate::status::elements(&status_nodes, texts, &values));
         e
     };
-    let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
-    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("menu: no glyph table")?;
+    let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("menu: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("menu: an empty font atlas")?.width as f32 };
@@ -342,7 +342,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use barrel_formats::layout::Node;
+    use barrel_escha::data::layout::Node;
 
     #[test]
     fn moves_scrolls_and_opens_options() {

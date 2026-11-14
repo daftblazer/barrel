@@ -6,15 +6,15 @@
 //! the time it was saved), the heading (part 0x157: cut 0 "Save", 1 "Load", 2 "Delete") and the
 //! details panel (layout 1044).
 //!
-//! Barrel's slots are its own saves (`barrel_game::saves`). Not yet the game's: the date line's
+//! Barrel's slots are its own saves (`barrel_escha::saves`). Not yet the game's: the date line's
 //! wording ("Escha  Year 1, 4/1"; the layout's filler is the Japanese "【ロジー編】 １年目１２月２４日");
 //! the details panel showing only the protagonist (Barrel's saves keep no play time, levels,
 //! money or party); how many slots the list has (the saved ones and one empty after them, at
 //! least four) and its scrolling (the chosen slot kept in view); the party rows (layout 1046)
 //! left out; no help line.
 
-use barrel_formats::layout::{Placed, Text};
-use barrel_game::saves::Slot;
+use barrel_escha::data::layout::{Placed, Text};
+use barrel_escha::saves::Slot;
 
 use crate::hud::Element;
 use crate::title::Button;
@@ -85,7 +85,7 @@ impl LoadList {
 
     /// The elements to draw, from layout 1035's placed nodes (`texts` gives a node's text).
     pub fn elements(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>) -> Vec<Element> {
-        use barrel_game::calendar::Date;
+        use barrel_escha::calendar::Date;
         let mut out = Vec::new();
         let name = |logy: bool| if logy { "Logy" } else { "Escha" };
         for p in nodes {
@@ -109,7 +109,7 @@ impl LoadList {
                             let d = Date::of(s.today.max(0) as u32);
                             Some(format!("{}  Year {}, {}/{}", name(s.logy), d.year, d.month, d.day))
                         }
-                        (Some(s), w) if w.starts_with("9999/") => s.written.map(barrel_game::saves::stamp),
+                        (Some(s), w) if w.starts_with("9999/") => s.written.map(barrel_escha::saves::stamp),
                         _ => None,
                     };
                     out.extend(text.map(|text| Element::Label(Text { text, ..t })));

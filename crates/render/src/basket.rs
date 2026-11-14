@@ -16,7 +16,7 @@
 //! cursor over several cells) drawn as plain cells at their places; more than 25 items
 //! scrolling by rows.
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 use crate::title::Button;

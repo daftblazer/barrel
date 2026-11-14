@@ -12,7 +12,7 @@
 //! Not yet the game's: the scroll itself (a flat parchment fill: 641's part 0x280 has no
 //! sheet), the name's placing on it, the "X →" button at the scroll's foot.
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 
@@ -46,16 +46,16 @@ pub fn elements(
     tier: usize,
     width_of: impl Fn(&str, f32) -> f32,
 ) -> Vec<Element> {
-    let texts = |p: &Placed| barrel_formats::layout::text(pe, p);
+    let texts = |p: &Placed| barrel_escha::data::layout::text(pe, p);
     let mut out = Vec::new();
-    for p in barrel_formats::layout::placed(pe, REGION) {
+    for p in barrel_escha::data::layout::placed(pe, REGION) {
         if let Some(t) = texts(&p) {
             out.push(Element::Label(Text { at: moved(&p, REGION_AT), text: region.to_string(), ..t }));
         }
     }
     out.push(Element::Fill { rect: SCROLL, colour: [0.92, 0.87, 0.72, 0.96] });
     out.push(Element::Label(Text { at: NAME_AT, size: 36.0, colour: INK, text: name.to_string(), kind: 22 }));
-    let panel = barrel_formats::layout::placed(pe, PANEL);
+    let panel = barrel_escha::data::layout::placed(pe, PANEL);
     let mut first_text = true;
     let mut row = 0;
     for p in &panel {
@@ -82,7 +82,7 @@ pub fn elements(
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }
     }
-    for p in barrel_formats::layout::placed(pe, TAB) {
+    for p in barrel_escha::data::layout::placed(pe, TAB) {
         let at = moved(&p, TAB_AT);
         match texts(&p) {
             Some(t) if p.node.part == 0x164 => out.push(Element::Label(Text { at, text: "Gatherable Items".into(), ..t })),
@@ -102,9 +102,9 @@ pub fn elements(
 /// the game's: the list shows every sector, where the game leaves out those not open yet
 /// (Sector Three at the user's 8/20).
 pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str, sectors: &[String], width_of: impl Fn(&str, f32) -> f32) -> Vec<Element> {
-    let texts = |p: &Placed| barrel_formats::layout::text(pe, p);
+    let texts = |p: &Placed| barrel_escha::data::layout::text(pe, p);
     let mut out = Vec::new();
-    for p in barrel_formats::layout::placed(pe, REGION) {
+    for p in barrel_escha::data::layout::placed(pe, REGION) {
         if let Some(t) = texts(&p) {
             out.push(Element::Label(Text { at: moved(&p, REGION_AT), text: name.to_string(), ..t }));
         }
@@ -113,13 +113,13 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
         return out;
     }
     out.push(Element::Fill { rect: SCROLL, colour: [0.92, 0.87, 0.72, 0.96] });
-    if let Some((p, t)) = barrel_formats::layout::placed(pe, PANEL).iter().find_map(|p| texts(p).filter(|t| t.filled_in()).map(|t| (p.clone(), t))) {
+    if let Some((p, t)) = barrel_escha::data::layout::placed(pe, PANEL).iter().find_map(|p| texts(p).filter(|t| t.filled_in()).map(|t| (p.clone(), t))) {
         let at = moved(&p, PANEL_AT);
         for (k, line) in lines(description.trim(), |s| width_of(s, t.size)).into_iter().enumerate() {
             out.push(Element::Label(Text { at: [at[0], at[1] - WORLD_DESCRIPTION_RISE + LINE_STEP * k as i32], text: line, colour: INK, ..t.clone() }));
         }
     }
-    for p in barrel_formats::layout::placed(pe, TAB) {
+    for p in barrel_escha::data::layout::placed(pe, TAB) {
         let at = moved(&p, MAP_TAB_AT);
         match (p.node.part, texts(&p)) {
             (0x164, Some(t)) => out.push(Element::Label(Text { at, text: "Map".into(), ..t })),
@@ -128,7 +128,7 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
         }
     }
     let mut row = 0;
-    for p in barrel_formats::layout::placed(pe, LIST) {
+    for p in barrel_escha::data::layout::placed(pe, LIST) {
         let at = moved(&p, LIST_AT);
         match (p.node.part, texts(&p)) {
             (0x164, Some(t)) if t.filled_in() && t.kind == 21 => {
@@ -157,9 +157,9 @@ pub fn travel(pe: &barrel_formats::pe::Pe, mark: [i32; 2], days: i32, month: u32
     let origin = [mark[0] + TRAVEL_UNDER[0], mark[1] + TRAVEL_UNDER[1]];
     let mut out = Vec::new();
     let mut numbers = 0;
-    for p in barrel_formats::layout::placed(pe, TRAVEL) {
+    for p in barrel_escha::data::layout::placed(pe, TRAVEL) {
         let at = moved(&p, origin);
-        match (p.node.part, barrel_formats::layout::text(pe, &p)) {
+        match (p.node.part, barrel_escha::data::layout::text(pe, &p)) {
             (0x164, Some(t)) if !t.text.is_empty() => out.push(Element::Label(Text { at, colour: TRAVEL_LABEL, ..t })),
             (0x164, _) => {}
             (TRAVEL_DIGITS, _) if p.node.kind == 29 => {
@@ -204,7 +204,7 @@ pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, width: f32) 
     let half = (width / 2.0) as i32 + 28;
     let mut out = vec![Element::Fill { rect: [at[0] - half, at[1] - 22, at[0] + half, at[1] + 24], colour: [0.93, 0.88, 0.74, 0.95] }];
     // The layout's white text, at its node less the node's own centre (320, -4).
-    if let Some(t) = barrel_formats::layout::placed(pe, LABEL).iter().filter_map(|p| barrel_formats::layout::text(pe, p)).find(|t| t.colour[0] == 0) {
+    if let Some(t) = barrel_escha::data::layout::placed(pe, LABEL).iter().filter_map(|p| barrel_escha::data::layout::text(pe, p)).find(|t| t.colour[0] == 0) {
         out.push(Element::Label(Text { at: [at[0], at[1] - LABEL_RISE], text: name.to_string(), colour: INK, ..t }));
     }
     out

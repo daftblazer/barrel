@@ -11,7 +11,7 @@
 //! Not yet the game's: the lead's victory pose, the rows' and numbers' motion, "Skill Get!"
 //! (layout 897, no skills learnt yet), the level-up panel, the drops' screen that follows.
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 

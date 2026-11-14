@@ -30,8 +30,8 @@ pub fn elements(pe: &barrel_formats::pe::Pe, question: &str, yes: bool) -> Vec<E
     out.push(Element::Slice { pack: COMMON.into(), index: 4, src: [src[0], src[1], src[0] + end, src[3]], rect: [rect[0], rect[1], rect[0] + end as i32, rect[3]] });
     out.push(Element::Slice { pack: COMMON.into(), index: 4, src: [src[0] + end, src[1], src[2] - end, src[3]], rect: [rect[0] + end as i32, rect[1], rect[2] - end as i32, rect[3]] });
     out.push(Element::Slice { pack: COMMON.into(), index: 4, src: [src[2] - end, src[1], src[2], src[3]], rect: [rect[2] - end as i32, rect[1], rect[2], rect[3]] });
-    if let Some(t) = barrel_formats::layout::placed(pe, WINDOW).iter().filter_map(|p| barrel_formats::layout::text(pe, p)).find(|t| t.filled_in()) {
-        out.push(Element::Label(barrel_formats::layout::Text { text: question.into(), colour: INK, ..t }));
+    if let Some(t) = barrel_escha::data::layout::placed(pe, WINDOW).iter().filter_map(|p| barrel_escha::data::layout::text(pe, p)).find(|t| t.filled_in()) {
+        out.push(Element::Label(barrel_escha::data::layout::Text { text: question.into(), colour: INK, ..t }));
     }
     // The choice box over the window's top edge.
     out.extend(nine(COMMON, 23, [1.0, 239.0, 169.0, 383.0], [1124, 676, 1388, 862], 24.0));
@@ -40,7 +40,7 @@ pub fn elements(pe: &barrel_formats::pe::Pe, question: &str, yes: bool) -> Vec<E
     let lit = if yes { 728 } else { 774 };
     out.push(Element::Slice { pack: COMMON.into(), index: 3, src: [460.0, 673.0, 712.0, 716.0], rect: [1136, lit, 1376, lit + 42] });
     for (k, word) in ["Yes", "No"].into_iter().enumerate() {
-        out.push(Element::Label(barrel_formats::layout::Text { at: [1172, 732 + 46 * k as i32], size: 36.0, colour: INK, text: word.into(), kind: 21 }));
+        out.push(Element::Label(barrel_escha::data::layout::Text { at: [1172, 732 + 46 * k as i32], size: 36.0, colour: INK, text: word.into(), kind: 21 }));
     }
     out.push(Element::Slice { pack: COMMON.into(), index: 16, src: [27.0, 5.0, 88.0, 92.0], rect: [1096, lit - 52, 1144, lit + 16] });
     out

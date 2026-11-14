@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::{self, Element};
 use crate::screen;
@@ -217,13 +217,13 @@ pub fn run(
 ) -> Result<Option<(usize, usize, usize)>> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("equip: no glyph table")?;
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("equip: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("equip: an empty font atlas")?.width as f32 };
-    let desk: Vec<Element> = barrel_formats::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
-    let nodes = barrel_formats::layout::placed(&pe, LAYOUT);
-    let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let nodes = barrel_escha::data::layout::placed(&pe, LAYOUT);
+    let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let mut every = desk.clone();
     for member in 0..members.len() {
         every.extend(view(&Equip::Slots { member, slot: 0 }, &nodes, texts, members));

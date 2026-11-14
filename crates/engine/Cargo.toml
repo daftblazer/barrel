@@ -1,0 +1,9 @@
+[package]
+name = "barrel-engine"
+description = "Barrel's engine: what every game's play shares"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+barrel-formats = { path = "../formats" }

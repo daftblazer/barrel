@@ -73,9 +73,26 @@ dependencies = [
 name = "barrel-cli"
 version = "0.1.0"
 dependencies = [
+ "barrel-engine",
+ "barrel-escha",
  "barrel-formats",
- "barrel-game",
  "encoding_rs",
+]
+
+[[package]]
+name = "barrel-engine"
+version = "0.1.0"
+dependencies = [
+ "barrel-formats",
+]
+
+[[package]]
+name = "barrel-escha"
+version = "0.1.0"
+dependencies = [
+ "barrel-audio",
+ "barrel-engine",
+ "barrel-formats",
 ]
 
 [[package]]
@@ -86,20 +103,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "barrel-game"
-version = "0.1.0"
-dependencies = [
- "barrel-formats",
-]
-
-[[package]]
 name = "barrel-render"
 version = "0.1.0"
 dependencies = [
  "ash",
  "barrel-audio",
+ "barrel-engine",
+ "barrel-escha",
  "barrel-formats",
- "barrel-game",
  "encoding_rs",
  "glam",
  "libc",

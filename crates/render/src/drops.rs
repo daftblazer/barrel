@@ -13,7 +13,7 @@
 
 use std::path::Path;
 
-use barrel_formats::layout::{Placed, Text};
+use barrel_escha::data::layout::{Placed, Text};
 
 use crate::basket::{Basket, Item};
 use crate::hud::{self, Element};
@@ -83,16 +83,16 @@ pub fn run(
 ) -> Result<()> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let glyphs = barrel_formats::font::glyphs(&pe, barrel_formats::font::FONT_EN).ok_or("drops: no glyph table")?;
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("drops: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("drops: an empty font atlas")?.width as f32 };
     let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let items = crate::basket::items(drops, &item_rows.children);
-    let desk: Vec<Element> = barrel_formats::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
-    let grid = barrel_formats::layout::placed(&pe, crate::basket::GRID);
-    let boxed = barrel_formats::layout::placed(&pe, POSSESSED);
-    let texts = |p: &Placed| barrel_formats::layout::text(&pe, p);
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let grid = barrel_escha::data::layout::placed(&pe, crate::basket::GRID);
+    let boxed = barrel_escha::data::layout::placed(&pe, POSSESSED);
+    let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let all = |b: &Basket| {
         let mut e = desk.clone();
         e.extend(elements(&grid, &boxed, texts, b, &items, possessed));

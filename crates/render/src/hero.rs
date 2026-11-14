@@ -21,7 +21,7 @@
 //! whole and the other at half strength, the step the oracle path's second A passes (left out),
 //! the "Cleared" stamp (cut 3 of the cards) never shown, no motion.
 
-use barrel_formats::layout::Placed;
+use barrel_escha::data::layout::Placed;
 
 use crate::hud::Element;
 use crate::title::Button;
@@ -90,7 +90,7 @@ impl Hero {
 
     /// The elements to draw, from layout 1023's placed nodes (`texts` gives a node's text;
     /// `question` is the confirm step's line).
-    pub fn elements(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<barrel_formats::layout::Text>, question: &str) -> Vec<Element> {
+    pub fn elements(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<barrel_escha::data::layout::Text>, question: &str) -> Vec<Element> {
         let (logy, yes) = match *self {
             Hero::Choose { logy } => (logy, None),
             Hero::Confirm { logy, yes } => (logy, Some(yes)),
@@ -102,7 +102,7 @@ impl Hero {
             if n.part == 0x164 {
                 let Some(t) = texts(p).filter(|t| !t.text.is_empty()) else { continue };
                 let text = if confirming { question.to_string() } else { t.text.clone() };
-                out.push(Element::Label(barrel_formats::layout::Text { text, ..t }));
+                out.push(Element::Label(barrel_escha::data::layout::Text { text, ..t }));
                 continue;
             }
             let (part, cut, at) = (n.part, n.cut.max(0), p.at);
@@ -149,7 +149,7 @@ impl Default for Hero {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use barrel_formats::layout::Node;
+    use barrel_escha::data::layout::Node;
 
     #[test]
     fn choose_then_confirm_yes_on_the_left() {
