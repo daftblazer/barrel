@@ -673,6 +673,27 @@ offscreen), and offscreen frames are byte-identical with and without overlap. On
 (`handheld`), offscreen, 300 frames: Sector One 8.95 → 8.12 ms a frame, the opening's town
 7.90 → 7.11 ms, each now the GPU's own time (8.04 and 7.28): the GPU is what is left.
 
+## View culling
+
+A field object wholly outside the view is left out of the scene pass, and one wholly outside the
+sun's shadow volume out of the shadow map (`Bounds`): its box in model space (its vertices on the
+scene's starting joints, padded by a quarter of its longest side and a metre for the grass sway
+and the trees' springs, and by its longest billboard corner) goes through the instance's model
+matrix each frame and is tested against the six planes of the view-projection drawn with
+(`view_planes`). Characters and the distant view are always drawn. `BARREL_NO_CULL=1` draws
+everything; frames are byte-identical either way (32 frames: Sector One, the opening from 20 s,
+TOWN_04 from four sides). `--timings` also prints the draws recorded every 100 frames.
+
+The gain is small: only the current field's objects were drawn before too (an event's other
+fields wait), and from the third-person camera most of a field is in view. On the RP6 at native
+1080p: Sector One 179 → 171 scene draws and 131 → 106 shadow draws (shadow 0.73 → 0.65 ms); the
+opening's town 168 → 112 scene draws (scene 7.82 → 7.64 ms).
+
+What the scene pass costs there is mostly per pixel: in Sector One at native 8.48 ms, 75% 5.87,
+50% 5.53, 25% 2.44 (75% to 50% is a step in the tiler's bins, not a fixed cost). The distant view
+alone is 2.4 ms of the 8.48 at native (6.04 without it): drawn first, its layered dome meshes
+shade the whole screen, most of it then covered by the field.
+
 ## Checked against the game
 
 Oracle frames (headless runs of the original, `tools/oracle`) taken through both openings and

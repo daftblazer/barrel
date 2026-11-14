@@ -169,6 +169,76 @@ struct Draw {
     light: u32,
     /// Its `atColor` set at run time (unorm8 RGBA; 0: none, the material's white).
     tint: u32,
+    /// A field object's bounds, for leaving it out when it is wholly outside the view
+    /// (`docs/renderer.md`, "View culling"); None (always drawn) for characters and the sky.
+    bounds: Option<Bounds>,
+}
+
+/// A draw's box in its model's space (its vertices on the scene's starting joints) and how far
+/// beyond it the GPU may still move them, in render units: the grass sway, the trees' node
+/// springs, a billboard's corners.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Bounds {
+    lo: Vec3,
+    hi: Vec3,
+    pad: f32,
+}
+
+impl Bounds {
+    /// The draw's vertices (`first_index`, `index_count`) skinned as the vertex shader does on
+    /// `palette` from `base`, then padded: a quarter of the box's longest side plus a metre for
+    /// the sway and springs (a spring bends a tree at most its `max_angle`, ten-odd degrees),
+    /// and the longest billboard corner.
+    fn of(vertices: &[Vertex], indices: &[u32], first_index: u32, index_count: u32, palette: &[Mat4], base: u32) -> Option<Bounds> {
+        let (mut lo, mut hi, mut corner) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN), 0f32);
+        for &i in indices.get(first_index as usize..(first_index + index_count) as usize)? {
+            let v = vertices.get(i as usize)?;
+            let mut p = Vec3::from(v.pos);
+            let total: u32 = v.weights.iter().map(|&w| u32::from(w)).sum();
+            if total > 0 {
+                let mut skinned = Vec3::ZERO;
+                for (&j, &w) in v.joints.iter().zip(&v.weights) {
+                    if w > 0 {
+                        let m = palette.get(base as usize + usize::from(j)).copied().unwrap_or(Mat4::IDENTITY);
+                        skinned += m.transform_point3(p) * f32::from(w);
+                    }
+                }
+                p = skinned / total as f32;
+            }
+            lo = lo.min(p);
+            hi = hi.max(p);
+            corner = corner.max(Vec3::from(v.corner).length());
+        }
+        (lo.x <= hi.x).then(|| Bounds { lo, hi, pad: (hi - lo).max_element() * 0.25 + 100.0 + corner })
+    }
+
+    /// Whether any of it may be inside the view of `planes` ([`view_planes`]) placed by `model`:
+    /// its box's corners through the model matrix, padded, against each plane.
+    fn seen(&self, model: &Mat4, planes: &[glam::Vec4; 6]) -> bool {
+        let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        for k in 0..8 {
+            let c = Vec3::new(
+                if k & 1 == 0 { self.lo.x } else { self.hi.x },
+                if k & 2 == 0 { self.lo.y } else { self.hi.y },
+                if k & 4 == 0 { self.lo.z } else { self.hi.z },
+            );
+            let w = model.transform_point3(c);
+            lo = lo.min(w);
+            hi = hi.max(w);
+        }
+        let (lo, hi) = (lo - Vec3::splat(self.pad), hi + Vec3::splat(self.pad));
+        planes.iter().all(|p| {
+            let far = Vec3::new(if p.x >= 0.0 { hi.x } else { lo.x }, if p.y >= 0.0 { hi.y } else { lo.y }, if p.z >= 0.0 { hi.z } else { lo.z });
+            p.truncate().dot(far) + p.w >= 0.0
+        })
+    }
+}
+
+/// The six planes of a view-projection's clip volume (Vulkan's: depth 0 to 1), each as
+/// (normal, distance) with the inside where `n · p + d >= 0`.
+fn view_planes(m: &Mat4) -> [glam::Vec4; 6] {
+    let (r0, r1, r2, r3) = (m.row(0), m.row(1), m.row(2), m.row(3));
+    [r3 + r0, r3 - r0, r3 + r1, r3 - r1, r2, r3 - r2]
 }
 
 /// `cDiff` and `cAmb` both 1.
@@ -601,7 +671,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0 });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None });
         }
         Ok(())
     }
@@ -4549,6 +4619,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         scene.terrains.clear();
     }
     let Scene { vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, mut morph_weights, .. } = scene;
+    // The field objects' bounds, for view culling (characters and the sky are always drawn;
+    // `BARREL_NO_CULL=1` draws everything).
+    let cull = std::env::var_os("BARREL_NO_CULL").is_none_or(|v| v != "1");
+    for d in draws.iter_mut().filter(|d| cull && d.field.is_some() && !d.sky) {
+        let base = instances.get(d.instance as usize).map_or(0, |i| i.palette);
+        d.bounds = Bounds::of(&vertices, &indices, d.first_index, d.index_count, &palette, base);
+    }
     // Lay each overlay over its base texture into a new RGBA texture.
     let composites = composite_overlays(&mut draws, &all_textures);
     let composite_textures: Vec<barrel_formats::g1t::Texture> = composites
@@ -6450,6 +6527,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     } else {
         mvp
     };
+    // The view's planes, for leaving out the field objects wholly outside it
+    // (`BARREL_NO_CULL=1`: draw them all, to compare).
+    let view_planes_now = view_planes(&draw_vp);
     // With motion vectors, this frame's and last frame's transforms and joints every frame (a
     // frame that moves nothing still has last frame's movement to forget).
     if settings.motion {
@@ -6763,6 +6843,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // read back (8 MB a frame at 1080p).
     let shot_number = frame_base + frame;
     let saved_shot = frames == 1 || (shot_number + 1).is_multiple_of(save_every) || shot_number + 1 == frames;
+    // The draws recorded this frame (scene, shadow), reported with `--timings`.
+    let drawn = std::cell::Cell::new([0u32; 2]);
     let record = |cb: vk::CommandBuffer| unsafe {
         // The frame before may still be drawing (frames in flight): its passes finish, their
         // writes made visible, before this frame's begin on the same targets.
@@ -6812,7 +6894,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            for draw in draws.iter().filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
+            let shadow_planes = view_planes(&shadow_vp);
+            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes))).filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
                 // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
             // 32: their texture on their vertex colour, as the distant view's clouds.
             let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
@@ -6822,6 +6905,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                drawn.set([drawn.get()[0], drawn.get()[1] + 1]);
             }
             d.cmd_end_render_pass(cb);
         }
@@ -6890,7 +6974,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
         let sway_groups: Vec<String> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map(|l| l.v_shakers.iter().take(8).map(|v| v.keyword.clone()).collect()).unwrap_or_default();
-        for draw in draws.iter().filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
+        for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
             // The instance, and whether it is shaded as a character (not part of a field) and
             // as an eye.
             // The distant view's solid pieces (all but the dome and the clouds) are lit and
@@ -6909,6 +6993,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
             d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+            drawn.set([drawn.get()[0] + 1, drawn.get()[1]]);
         }
         }
         // The outlines: the outlined materials again, pushed out, with the outline texture.
@@ -7030,6 +7115,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if let Some(c) = cpu.as_mut() {
             c.mark("record");
         }
+        if timings && frame % 100 == 10 {
+            let [scene_draws, shadow_draws] = drawn.get();
+            eprintln!("frame {frame}: {scene_draws} draws in the scene, {shadow_draws} in the shadow map");
+        }
         let drawn = f.submit(&gpu, cb, image, p.images.len())?;
         stale |= p.present(&gpu, image as u32, drawn)?;
         if let Some(c) = cpu.as_mut() {
@@ -7060,6 +7149,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         if let Some(c) = cpu.as_mut() {
             c.mark("record");
+        }
+        if timings && frame % 100 == 10 {
+            let [scene_draws, shadow_draws] = drawn.get();
+            eprintln!("frame {frame}: {scene_draws} draws in the scene, {shadow_draws} in the shadow map");
         }
         f.submit_offscreen(&gpu, cb)?;
         if saved_shot || !overlap {
