@@ -38,7 +38,9 @@ achievements are the player's own, and the DX version has not been played there)
   programs. The layers' normal maps are not drawn yet.
 - **The sand square** in the overview (`obj-A21-S06-FLOOR-01` at 0,0,0?) sits where no ground is
   expected.
-- **Other field files** not in Escha: `.trmd`, `.g1pf`, `.koc` next to the containers.
+- **Other field files** not in Escha: `.trmd` (`TRMD`, 5 MB, 1024 × 1024 header words then
+  runs of `24 ff ff ff ff`), `.g1pf` (`FP1G`, a grid over 128,000 units, likely navigation),
+  `.koc` (read: the field walls) next to the containers.
 
 ## Against the game
 
@@ -126,10 +128,18 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   twice as long, its top 105 higher, with a landing at z 30284 to 30330. Starting there
   (`--ryza 32537,0,30300`) she is inside the mesh's end, between faces 33 units apart: a walk
   cannot get out (a run's longer steps can). Not a mirror or a turn of the model (no flip of
-  y or z fits), so either the mesh is read wrong or it is not the walking surface (the game
-  may use `_cbvh` meshes for something else on stairs). `a21-s09-stair-02`'s mesh is off from
-  its model too (y ±485 against ±380, z -278 to 97 against ±258); `a21-s09-stair-03`'s hull
-  fits. A view of the collision drawn over the field would show which.
+  y or z fits). The mesh is read right (8 distinct corners of a ramp: its top slopes 369 over
+  1057, 19°, as the model's step edges do, 350 over 1000), but it lies about 180 units toward
+  -z from the model (its ends -208 and -155 past the model's, its plane 56 above the step
+  edges, which a 180 shift along the slope also gives). Across Rasenboden's 37 `_cbvh` meshes
+  most lie inside their model's bounds (parts of it); the ones that do not: this one,
+  `a21-s09-stair-02` (y ±485 against ±380, z -278 to 97 against ±258), the tunnel rocks
+  (`a21-common-rock-tunnel-01/02`: 1314 × 202 × 1352 against the model's 216 × 1341 × 1364, x
+  and y swapped) and `a21-s06-floor-01` (four meshes tens of thousands of units outside the
+  model: likely in field space; "the sand square" above). `a21-s09-stair-03`'s hull fits.
+  `.g1pf` is not a placement list (an `FP1G` grid over 128,000 units: likely navigation).
+  Where the game puts these meshes is not known; the terrain already slopes over the stairs
+  (6182 to 6001), so walking would work without the mesh.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no
