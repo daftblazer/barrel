@@ -20,8 +20,14 @@ achievements are the player's own, and the DX version has not been played there)
   ambient colour with the cube map (multiplied here), with `indirectStage_`'s scale unplaced
   (the file's blocks shift against the executable's structure after the HDR block). The
   field's shaders (`.g1s`) and a reference frame would settle all three.
-- **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as 0 with Escha's
-  layout (`cDiff` / `cAmb`), so `barrel-ryza` gives every draw the full material.
+- **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds
+  diffuse 0.8 and ambient 0 (`barrel g1m-materials`): their shaders (`PBB-N`, `PBB-EmN`, ...)
+  take the ambient from the environment, not `cAmb`. `barrel-ryza` gives every draw the full
+  material until those shaders are read.
+- **Emissive and odd materials.** `PBB-EmN` submeshes (the attic wall's windows) have an
+  emission mask (texture kind 19) and flicker parameters (`emFrq`, `emRange`, `emStart`), not
+  drawn. The attic's cabinet (`obj-A21-S01-CABINET-01`) shows red and black: its material is
+  not read right. Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
   heights match the heightmap) lies at grass level over the sandy canyon path the cliff models
   make in the village close-up (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`). Every

@@ -2,12 +2,13 @@
 //!
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
-//!                 [--weather sunny|cloudy|foggy]
+//!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
 //! or looks at X,Y,Z (field units, as the placement list gives them) from D away. The light is
-//! the field environment's set for the time and weather (noon, sunny by default). Every draw is shown unlit
+//! the field environment's set for the time and weather (noon, sunny by default). `--hide`
+//! leaves out the objects whose placement names contain NAME (to find which object is which). Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
 
 use std::path::Path;
@@ -36,13 +37,14 @@ struct Args {
     distance: Option<f32>,
     time: Time,
     weather: Weather,
+    hide: Vec<String>,
 }
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new() };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -59,6 +61,7 @@ fn args() -> Result<Args> {
                 a.look_at = Some(Vec3::new(x, y, z));
             }
             "--distance" => a.distance = Some(value()?.parse()?),
+            "--hide" => a.hide.push(value()?),
             "--time" => {
                 a.time = match value()?.as_str() {
                     "morning" => Time::Morning,
@@ -117,8 +120,9 @@ fn main() -> Result<()> {
     let textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     let Scene { vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
     for d in draws.iter_mut() {
-        // Ryza's models' lighting material (G1MG section 0x10001) is not Escha's `cDiff` /
-        // `cAmb` (read that way it is 0): full until it is read (`docs/ryza/open.md`).
+        // Ryza's models' lighting material (G1MG section 0x10001) holds ambient 0: their
+        // shaders light from the environment, not `cAmb`. Full until those shaders are read
+        // (`docs/ryza/open.md`).
         d.light = FULL_LIGHT;
         let base = instances.get(d.instance as usize).map_or(0, |i| i.palette);
         d.bounds = Bounds::of(&vertices, &indices, d.first_index, d.index_count, &palette, base);
@@ -202,7 +206,7 @@ fn main() -> Result<()> {
     let bytes = u64::from(width) * u64::from(height) * 4;
     let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
     let hidden = vec![false; instances.len()];
-    let shown = |_: &Draw| true;
+    let shown = |d: &Draw| !a.hide.iter().any(|h| d.name.contains(h.as_str()));
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     let material = |_: &Draw| (if environment.is_some() { 0 } else { UNLIT }, 0);
     let layers: Vec<&text::Layer> = Vec::new();
