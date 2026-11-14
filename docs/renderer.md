@@ -640,6 +640,37 @@ released when the window loses focus); turning and zooming go by each frame's re
 With the camera as it starts, frames are pixel-identical to before. Not yet driven by real
 key presses in a test: headless gamescope has no keyboard.
 
+## Frames in flight
+
+The CPU prepares a frame while the GPU draws the one before (`ring.rs`), in a window and
+offscreen alike. On the RP6 a frame was about 0.3 ms of simulation and 0.8 ms of recording on the
+CPU and 8 ms on the GPU, and the loop used to wait for each frame before starting the next, so
+the frame took the sum; now it takes the larger.
+
+- Two slots (`ring::SLOTS`). The frame being prepared is `Gpu::frame`, counted up at each
+  submit; its data goes into slot `frame % 2`. At the top of each frame the loop waits for the
+  fence of that slot's last frame (two back), then frees its command buffer
+  (`ring::Frames::wait_slot`).
+- Per-frame data the CPU writes lives in `ring::Ring` buffers, one copy per slot, mapped once:
+  the scene's instances, joint palette (this frame's, then last frame's) and morph weights, and
+  the lighting block (`Look`). The scene's set 1 exists per slot and field
+  (`SceneGpu::instance_set`). A text layer keeps a vertex buffer per slot: the first change
+  in a frame goes to the one no frame in flight draws from, later ones in the same frame to
+  that one again. FSR 3.1's constant buffers have a copy per frame parity, as its sets do.
+- Each frame's commands start with a full barrier (all commands, memory writes to reads and
+  writes), so the GPU finishes the frame before on the shared targets (scene, depth, glow,
+  upscaler and TAA histories) before this one starts on them.
+- The post pass has explicit dependencies: in, its layout change waits at the colour output
+  stage (the one the acquire semaphore guards); out, offscreen, the move to TRANSFER_SRC is
+  done before the readback copy.
+- Offscreen, a frame written to a file is waited for and read back; the others stay in flight.
+  `--timings` keeps one frame at a time (its timestamps are read after each frame).
+- Each swapchain image has its own "drawn" semaphore for its present; each slot its own acquire
+  semaphore and fence.
+
+Checked with the Khronos validation layer's synchronisation checks (no hazards, window and
+offscreen), and offscreen frames are byte-identical with and without overlap.
+
 ## Checked against the game
 
 Oracle frames (headless runs of the original, `tools/oracle`) taken through both openings and

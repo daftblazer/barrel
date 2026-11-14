@@ -7,6 +7,7 @@ use ash::vk;
 
 use glam::Mat4;
 
+use crate::ring::{Ring, SLOTS};
 use crate::{Gpu, Instance, Result};
 
 fn bytes<T>(s: &[T]) -> &[u8] {
@@ -76,12 +77,13 @@ pub struct Ground {
 }
 
 /// What a scene's sets point at that the renderer owns: the layouts, the texture sampler, the
-/// character lighting buffer (binding 4) and the sun's shadow map (binding 5).
+/// character lighting buffer (binding 4: each slot's range of the renderer's ring) and the sun's
+/// shadow map (binding 5).
 pub struct Shared {
     pub set_layout: vk::DescriptorSetLayout,
     pub sampler: vk::Sampler,
     pub instance_layout: vk::DescriptorSetLayout,
-    pub look: vk::Buffer,
+    pub look: [vk::DescriptorBufferInfo; SLOTS],
     pub shadow_sampler: vk::Sampler,
     pub shadow_view: vk::ImageView,
     pub terrain_layout: vk::DescriptorSetLayout,
@@ -94,17 +96,19 @@ pub struct SceneGpu {
     imem: vk::DeviceMemory,
     textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     pool: vk::DescriptorPool,
-    instance_mem: vk::DeviceMemory,
-    /// The joint palette's memory: this frame's joints, then last frame's at `half`.
-    palette_mem: vk::DeviceMemory,
+    /// The per-frame data, one slot per frame in flight: the instances, the joint palette (this
+    /// frame's joints, then last frame's at `half`) and the morph weights.
+    instances: Ring,
+    palette: Ring,
     half: u64,
-    weight_mem: vk::DeviceMemory,
-    buffers: [vk::Buffer; 4],
+    weights: Ring,
+    delta_buf: vk::Buffer,
     delta_mem: vk::DeviceMemory,
     inst_pool: vk::DescriptorPool,
-    /// Set 1, one for each field: instances (0), palette (1), morph offsets (2) and weights (3),
-    /// lighting (4), shadow (5), the field's light texture (6).
+    /// Set 1, for each slot and each field (slot-major): instances (0), palette (1), morph
+    /// offsets (2) and weights (3), lighting (4), shadow (5), the field's light texture (6).
     instance_sets: Vec<vk::DescriptorSet>,
+    fields: usize,
     patterns: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     ground_pool: Option<vk::DescriptorPool>,
     pub grounds: Vec<Ground>,
@@ -142,33 +146,36 @@ impl SceneGpu {
         }
 
         let storage = vk::BufferUsageFlags::STORAGE_BUFFER;
-        let (instance_buf, instance_mem) = host(bytes(data.instances), storage)?;
+        let instances = Ring::new(gpu, bytes(data.instances).len() as u64, storage)?;
+        instances.write_all(0, bytes(data.instances));
         let half = bytes(data.palette).len() as u64;
-        let (palette_buf, palette_mem) = gpu.buffer((2 * half).max(64), storage, true)?;
-        gpu.upload(palette_mem, bytes(data.palette))?;
-        gpu.upload_at(palette_mem, half, bytes(data.palette))?;
+        let palette = Ring::new(gpu, (2 * half).max(64), storage)?;
+        palette.write_all(0, bytes(data.palette));
+        palette.write_all(half, bytes(data.palette));
         let (delta_buf, delta_mem) = host(bytes(data.deltas), storage)?;
-        let (weight_buf, weight_mem) = host(bytes(data.weights), storage)?;
+        let weights = Ring::new(gpu, bytes(data.weights).len() as u64, storage)?;
+        weights.write_all(0, bytes(data.weights));
         let fields = data.patterns.len().max(1);
-        let n = fields as u32;
+        let n = (fields * SLOTS) as u32;
         let inst_sizes = [
             vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 * n },
             vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: n },
             vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 * n },
         ];
         let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&inst_sizes), None)? };
-        let inst_layouts = vec![shared.instance_layout; fields];
+        let inst_layouts = vec![shared.instance_layout; fields * SLOTS];
         let instance_sets = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(inst_pool).set_layouts(&inst_layouts))? };
-        let whole = |b| [vk::DescriptorBufferInfo::default().buffer(b).offset(0).range(vk::WHOLE_SIZE)];
-        let infos = [whole(instance_buf), whole(palette_buf), whole(delta_buf), whole(weight_buf)];
-        let look_info = whole(shared.look);
+        let delta_info = [vk::DescriptorBufferInfo::default().buffer(delta_buf).offset(0).range(vk::WHOLE_SIZE)];
         let image = |sampler, view| [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let shadow_info = image(shared.shadow_sampler, shared.shadow_view);
         let white_view = textures[data.white].2;
         let pattern_infos: Vec<_> = (0..fields)
             .map(|k| image(shared.sampler, data.patterns.get(k).and_then(|p| p.as_ref()).map_or(white_view, |p| p.2)))
             .collect();
-        for (set, pattern_info) in instance_sets.iter().zip(&pattern_infos) {
+        for (k, set) in instance_sets.iter().enumerate() {
+            let (slot, pattern_info) = (k / fields, &pattern_infos[k % fields]);
+            let infos = [[instances.info(slot)], [palette.info(slot)], delta_info, [weights.info(slot)]];
+            let look_info = [shared.look[slot]];
             let mut writes: Vec<_> = infos
                 .iter()
                 .enumerate()
@@ -220,38 +227,43 @@ impl SceneGpu {
             imem,
             textures,
             pool,
-            instance_mem,
-            palette_mem,
+            instances,
+            palette,
             half,
-            weight_mem,
-            buffers: [instance_buf, palette_buf, delta_buf, weight_buf],
+            weights,
+            delta_buf,
             delta_mem,
             inst_pool,
             instance_sets,
+            fields,
             patterns,
             sets,
         })
     }
 
-    /// Set 1 for field `field` (the first's for a scene without fields).
-    pub fn instance_set(&self, field: usize) -> vk::DescriptorSet {
-        self.instance_sets[field.min(self.instance_sets.len() - 1)]
+    /// Set 1 for field `field` (the first's for a scene without fields) in the slot of the
+    /// frame being prepared.
+    pub fn instance_set(&self, gpu: &Gpu, field: usize) -> vk::DescriptorSet {
+        self.instance_sets[gpu.slot() * self.fields + field.min(self.fields - 1)]
     }
 
     /// This frame's instances (their model matrices and last frame's).
     pub fn write_instances(&self, gpu: &Gpu, instances: &[Instance]) -> Result<()> {
-        gpu.upload(self.instance_mem, bytes(instances))
+        self.instances.write(gpu, 0, bytes(instances));
+        Ok(())
     }
 
     /// This frame's joints and last frame's.
     pub fn write_palette(&self, gpu: &Gpu, palette: &[Mat4], prev: &[Mat4]) -> Result<()> {
-        gpu.upload(self.palette_mem, bytes(palette))?;
-        gpu.upload_at(self.palette_mem, self.half, bytes(prev))
+        self.palette.write(gpu, 0, bytes(palette));
+        self.palette.write(gpu, self.half, bytes(prev));
+        Ok(())
     }
 
     /// The morph targets' weights.
     pub fn write_weights(&self, gpu: &Gpu, weights: &[f32]) -> Result<()> {
-        gpu.upload(self.weight_mem, bytes(weights))
+        self.weights.write(gpu, 0, bytes(weights));
+        Ok(())
     }
 
     pub fn destroy(self, gpu: &Gpu) {
@@ -267,15 +279,16 @@ impl SceneGpu {
                 d.destroy_image(image, None);
                 d.free_memory(mem, None);
             }
-            for (b, m) in self.buffers.into_iter().zip([self.instance_mem, self.palette_mem, self.delta_mem, self.weight_mem]) {
-                d.destroy_buffer(b, None);
-                d.free_memory(m, None);
-            }
+            d.destroy_buffer(self.delta_buf, None);
+            d.free_memory(self.delta_mem, None);
             d.destroy_buffer(self.vbuf, None);
             d.free_memory(self.vmem, None);
             d.destroy_buffer(self.ibuf, None);
             d.free_memory(self.imem, None);
         }
+        self.instances.destroy(gpu);
+        self.palette.destroy(gpu);
+        self.weights.destroy(gpu);
     }
 }
 

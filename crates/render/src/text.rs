@@ -258,7 +258,9 @@ struct Vertex {
 }
 
 /// What draws text and the window: its textures ([`FONT`], [`UI`]), a pipeline (no depth,
-/// alpha blending) and a vertex buffer rewritten when what it shows changes.
+/// alpha blending) and vertex buffers rewritten when what it shows changes: one per frame in
+/// flight (`ring::SLOTS`), the first change in a frame going to the one the frames before are
+/// not drawing from.
 pub struct Layer {
     textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     sampler: vk::Sampler,
@@ -270,7 +272,11 @@ pub struct Layer {
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     modules: [vk::ShaderModule; 2],
-    buffer: Option<(vk::Buffer, vk::DeviceMemory, usize)>,
+    /// The vertex buffers (buffer, memory, capacity, mapped), the one drawn from, and the frame
+    /// it was last written in.
+    buffers: [Option<(vk::Buffer, vk::DeviceMemory, usize, *mut u8)>; crate::ring::SLOTS],
+    current: usize,
+    written: Option<u64>,
     count: u32,
 }
 
@@ -354,7 +360,7 @@ impl Layer {
                 .layout(layout)
                 .render_pass(render_pass);
             let pipeline = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0];
-            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, modules, buffer: None, count: 0 })
+            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0 })
         }
     }
 
@@ -379,8 +385,12 @@ impl Layer {
             return Ok(());
         }
         let bytes = unsafe { std::slice::from_raw_parts(verts.as_ptr() as *const u8, verts.len() * size_of::<Vertex>()) };
-        if self.buffer.as_ref().is_none_or(|(_, _, cap)| *cap < bytes.len()) {
-            if let Some((b, m, _)) = self.buffer.take() {
+        // Written already this frame: that buffer again (no frame has drawn from it yet); else
+        // the other one, whose last frame the window loop has waited for.
+        let frame = gpu.frame.get();
+        let slot = if self.written == Some(frame) { self.current } else { (self.current + 1) % crate::ring::SLOTS };
+        if self.buffers[slot].is_none_or(|(_, _, cap, _)| cap < bytes.len()) {
+            if let Some((b, m, _, _)) = self.buffers[slot].take() {
                 unsafe {
                     gpu.device.device_wait_idle()?;
                     gpu.device.destroy_buffer(b, None);
@@ -389,10 +399,13 @@ impl Layer {
             }
             let cap = bytes.len().next_power_of_two().max(4096);
             let (b, m) = gpu.buffer(cap as u64, vk::BufferUsageFlags::VERTEX_BUFFER, true)?;
-            self.buffer = Some((b, m, cap));
+            let ptr = unsafe { gpu.device.map_memory(m, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())? as *mut u8 };
+            self.buffers[slot] = Some((b, m, cap, ptr));
         }
-        let (_, mem, _) = self.buffer.as_ref().unwrap();
-        gpu.upload(*mem, bytes)
+        let (_, _, _, ptr) = self.buffers[slot].unwrap();
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
+        (self.current, self.written) = (slot, Some(frame));
+        Ok(())
     }
 
     /// Records the draw into a render pass that is under way (viewport and scissor set).
@@ -400,7 +413,7 @@ impl Layer {
     /// # Safety
     /// `cb` is recording inside a render pass compatible with the one the layer was made for.
     pub unsafe fn record(&self, d: &ash::Device, cb: vk::CommandBuffer, width: u32, height: u32) {
-        let Some((buf, _, _)) = self.buffer.filter(|_| self.count > 0) else { return };
+        let Some((buf, ..)) = self.buffers[self.current].filter(|_| self.count > 0) else { return };
         unsafe {
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
             let screen = [width as f32, height as f32];
@@ -416,7 +429,8 @@ impl Layer {
     pub fn destroy(self, gpu: &Gpu) {
         let d = &gpu.device;
         unsafe {
-            if let Some((b, m, _)) = self.buffer {
+            for (b, m, ..) in self.buffers.into_iter().flatten() {
+                d.unmap_memory(m);
                 d.destroy_buffer(b, None);
                 d.free_memory(m, None);
             }

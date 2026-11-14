@@ -575,7 +575,9 @@ impl Targets {
             index.insert(name, images.len());
             images.push(Image { image, memory, views });
         }
-        let (cb, cb_mem) = gpu.buffer(3 * CB_STRIDE, vk::BufferUsageFlags::UNIFORM_BUFFER, true)?;
+        // Three constant buffers (main, SPD, RCAS) for each parity: a frame writes its own
+        // parity's while the GPU may still read the frame before's (frames in flight).
+        let (cb, cb_mem) = gpu.buffer(6 * CB_STRIDE, vk::BufferUsageFlags::UNIFORM_BUFFER, true)?;
         let lut: Vec<u8> = lanczos_lut().iter().flat_map(|v| v.to_le_bytes()).collect();
         let (staging, staging_mem) = gpu.buffer(lut.len() as u64, vk::BufferUsageFlags::TRANSFER_SRC, true)?;
         gpu.upload(staging_mem, &lut)?;
@@ -625,7 +627,7 @@ impl Targets {
                                 SpdConstants => 1,
                                 _ => 2,
                             };
-                            buffers.push([vk::DescriptorBufferInfo::default().buffer(cb).offset(slot * CB_STRIDE).range(CB_STRIDE)]);
+                            buffers.push([vk::DescriptorBufferInfo::default().buffer(cb).offset((3 * parity as u64 + slot) * CB_STRIDE).range(CB_STRIDE)]);
                         }
                         Sampler => samplers.push([vk::DescriptorImageInfo::default().sampler(p.linear)]),
                     }
@@ -717,9 +719,10 @@ impl Targets {
         let parity = (self.frame & 1) as usize;
         // The constant buffers: main, SPD, RCAS.
         let (groups, spd) = spd_setup(self.render.0, self.render.1);
-        gpu.upload_at(self.constants.1, 0, self.state.bytes())?;
-        gpu.upload_at(self.constants.1, CB_STRIDE, &spd.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>())?;
-        gpu.upload_at(self.constants.1, 2 * CB_STRIDE, &rcas_config(SHARPNESS).iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>())?;
+        let base = 3 * parity as u64 * CB_STRIDE;
+        gpu.upload_at(self.constants.1, base, self.state.bytes())?;
+        gpu.upload_at(self.constants.1, base + CB_STRIDE, &spd.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>())?;
+        gpu.upload_at(self.constants.1, base + 2 * CB_STRIDE, &rcas_config(SHARPNESS).iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>())?;
 
         let all = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(vk::REMAINING_MIP_LEVELS).layer_count(1);
         let to_general = |image: vk::Image, old: vk::ImageLayout| {

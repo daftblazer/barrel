@@ -126,7 +126,7 @@ impl CpuTimer {
             return;
         }
         let mut total = 0.0;
-        for (name, v) in &self.stages {
+        for (name, v) in self.stages.iter().filter(|(n, _)| !n.is_empty()) {
             let v: Vec<f64> = v.iter().skip(3).copied().collect();
             if v.is_empty() {
                 continue;

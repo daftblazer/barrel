@@ -45,6 +45,7 @@ mod mix;
 mod fsr3;
 mod gsr2;
 mod present;
+mod ring;
 mod scene_gpu;
 mod settings;
 mod shadow;
@@ -192,6 +193,12 @@ struct Gpu {
     memory: vk::PhysicalDeviceMemoryProperties,
     /// The most anisotropic filtering the device allows (1 without the feature).
     max_anisotropy: f32,
+    /// The alignment of a uniform or storage buffer binding's offset (`ring::Ring` slots).
+    offset_alignment: u64,
+    /// The window loop's frame being prepared, counted up as each is submitted: the CPU writes
+    /// its per-frame data into slot `frame % ring::SLOTS` while the GPU may still draw the frame
+    /// before (`docs/renderer.md`, "Frames in flight").
+    frame: std::cell::Cell<u64>,
 }
 
 impl Gpu {
@@ -257,7 +264,8 @@ impl Gpu {
         };
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let memory = unsafe { instance.get_physical_device_memory_properties(physical) };
-        Ok(Gpu { _entry: entry, instance, physical, device, queue, queue_family, memory, max_anisotropy })
+        let offset_alignment = props.limits.min_uniform_buffer_offset_alignment.max(props.limits.min_storage_buffer_offset_alignment).max(16);
+        Ok(Gpu { _entry: entry, instance, physical, device, queue, queue_family, memory, max_anisotropy, offset_alignment, frame: std::cell::Cell::new(0) })
     }
 
     fn memory_type(&self, bits: u32, flags: vk::MemoryPropertyFlags) -> Result<u32> {
@@ -283,6 +291,11 @@ impl Gpu {
         };
         unsafe { d.bind_buffer_memory(buffer, mem, 0)? };
         Ok((buffer, mem))
+    }
+
+    /// The slot of the frame being prepared (`ring::SLOTS` of them).
+    fn slot(&self) -> usize {
+        (self.frame.get() % ring::SLOTS as u64) as usize
     }
 
     fn upload(&self, mem: vk::DeviceMemory, bytes: &[u8]) -> Result<()> {
@@ -3931,7 +3944,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             .stage_flags(vk::ShaderStageFlags::VERTEX)
     };
     // And the field's character lighting (binding 4, for the fragment shader).
-    let (look_buf, look_mem) = gpu.buffer(LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER, true)?;
+    // The lighting block, one slot per frame in flight.
+    let look_ring = ring::Ring::new(&gpu, LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER)?;
     let inst_binding = [
         storage(0),
         storage(1),
@@ -3975,7 +3989,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         set_layout,
         sampler,
         instance_layout,
-        look: look_buf,
+        look: std::array::from_fn(|slot| look_ring.info(slot)),
         shadow_sampler: shadow_target.sampler,
         shadow_view: shadow_target.view,
         terrain_layout,
@@ -4135,7 +4149,25 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         .final_layout(if presenter.is_some() { vk::ImageLayout::PRESENT_SRC_KHR } else { vk::ImageLayout::TRANSFER_SRC_OPTIMAL })];
     let post_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
     let post_subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&post_ref)];
-    let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass), None)? };
+    // In: the image's move to COLOR_ATTACHMENT waits at the colour output stage, the one the
+    // swapchain image's acquire semaphore holds. Out: offscreen, the move to TRANSFER_SRC is
+    // done before the readback copies (in a window, the present waits on its own semaphore).
+    let post_dependencies = [
+        vk::SubpassDependency::default()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE),
+        vk::SubpassDependency::default()
+            .src_subpass(0)
+            .dst_subpass(vk::SUBPASS_EXTERNAL)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_stage_mask(if presenter.is_some() { vk::PipelineStageFlags::BOTTOM_OF_PIPE } else { vk::PipelineStageFlags::TRANSFER })
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_access_mask(if presenter.is_some() { vk::AccessFlags::empty() } else { vk::AccessFlags::TRANSFER_READ }),
+    ];
+    let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
     // The post pass's one texture: the scene.
     let post_binding = [0, 1, 2].map(|b| {
         vk::DescriptorSetLayoutBinding::default()
@@ -4432,12 +4464,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // Render each frame: read it back to a file, or present it in the window.
     let bytes = (width * height * 4) as u64;
     let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
-    let sync = presenter
-        .as_ref()
-        .map(|_| -> Result<(vk::Semaphore, vk::Semaphore)> {
-            unsafe { Ok((d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?)) }
-        })
-        .transpose()?;
+    // In a window, frames in flight (`ring::Frames`): the CPU prepares a frame while the GPU
+    // draws the one before; with `--timings` one at a time (the timestamps are read each frame).
+    // Offscreen the same, but for the frames written to files (waited for, then read back).
+    let mut sync = Some(ring::Frames::new(&gpu)?);
+    let overlap = timer.is_none();
     town_seen = None;
     // In the story's free play a field area (map 12 on) has its enemies out
     // (`--creatures`'s field AI), a town none.
@@ -5093,6 +5124,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     ran = frame + 1;
     if let Some(c) = cpu.as_mut() {
         c.begin();
+    }
+    // The slot this frame's data goes into is free once the frame two back has been drawn.
+    if let Some(f) = sync.as_mut() {
+        f.wait_slot(&gpu, pool)?;
+        if let Some(c) = cpu.as_mut() {
+            c.mark("wait for the frame two back");
+        }
     }
     // Chained: the event over (every step applied), the next one takes the window.
     if chain.is_some() && frame > 0 && player.as_ref().is_some_and(|p| p.0.finished()) {
@@ -6335,7 +6373,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
     // The image to draw into: the window's next, or the offscreen one.
     let image = match (&presenter, &sync) {
-        (Some(p), Some((ready, _))) => match p.acquire(*ready)? {
+        (Some(p), Some(f)) => match p.acquire(f.acquired(&gpu))? {
             Some(i) => i as usize,
             None => {
                 stale = true;
@@ -6638,7 +6676,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             look[14 + k] = [att[0], att[1], att[2], 0.0];
             look[18 + k] = *ambient;
         }
-        gpu.upload(look_mem, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) })?;
+        look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
     }
     prev_mvp = Some(mvp);
     let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -6650,7 +6688,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         c.mark("camera, lights, sway");
     }
     // Set 1 for the field drawn (its light texture at binding 6).
-    let instance_set = scene.instance_set(current_field as usize);
+    let instance_set = scene.instance_set(&gpu, current_field as usize);
     // The field HUD with the session's date and field time, rebuilt when they change.
     if let (Some((layer, font, sheets, nodes, last)), Some(s), Some(exe)) = (field_hud.as_mut(), session.as_ref(), hud_exe.as_ref()) {
         let v = hud::Values::on(s.today().max(0) as u32, s.field_tenths());
@@ -6696,6 +6734,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let shot_number = frame_base + frame;
     let saved_shot = frames == 1 || (shot_number + 1).is_multiple_of(save_every) || shot_number + 1 == frames;
     let record = |cb: vk::CommandBuffer| unsafe {
+        // The frame before may still be drawing (frames in flight): its passes finish, their
+        // writes made visible, before this frame's begin on the same targets.
+        d.cmd_pipeline_barrier(
+            cb,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::DependencyFlags::empty(),
+            &[vk::MemoryBarrier::default().src_access_mask(vk::AccessFlags::MEMORY_WRITE).dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)],
+            &[],
+            &[],
+        );
         if let Some(t) = &timer {
             t.begin(d, cb);
         }
@@ -6939,42 +6988,60 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if let Some(c) = cpu.as_mut() {
         c.mark("HUD layers");
     }
-    if let (Some(p), Some((ready, done))) = (&presenter, &sync) {
-        // Wait for the image, draw, signal, present; the fence keeps one frame in flight.
+    if let (Some(p), Some(f)) = (&presenter, sync.as_mut()) {
+        // Draw into the acquired image, signal, present; the next frame is prepared while the
+        // GPU draws this one (its slot's fence is waited for two frames on).
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0] };
         unsafe {
             d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
             record(cb);
             d.end_command_buffer(cb)?;
+        }
+        if let Some(c) = cpu.as_mut() {
+            c.mark("record");
+        }
+        let drawn = f.submit(&gpu, cb, image, p.images.len())?;
+        stale |= p.present(&gpu, image as u32, drawn)?;
+        if let Some(c) = cpu.as_mut() {
+            c.mark("submit + present");
+        }
+        if !overlap {
+            f.wait_submitted(&gpu)?;
             if let Some(c) = cpu.as_mut() {
-                c.mark("record");
+                c.mark("wait for the GPU");
             }
-            let fence = d.create_fence(&vk::FenceCreateInfo::default(), None)?;
-            let (waits, stages, cbs, signals) = ([*ready], [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT], [cb], [*done]);
-            d.queue_submit(
-                gpu.queue,
-                &[vk::SubmitInfo::default().wait_semaphores(&waits).wait_dst_stage_mask(&stages).command_buffers(&cbs).signal_semaphores(&signals)],
-                fence,
-            )?;
-            stale |= p.present(&gpu, image as u32, *done)?;
-            if let Some(c) = cpu.as_mut() {
-                c.mark("submit + present");
-            }
-            d.wait_for_fences(&[fence], true, u64::MAX)?;
-            if let Some(c) = cpu.as_mut() {
-                c.end("wait for the GPU");
-            }
-            d.destroy_fence(fence, None);
-            d.free_command_buffers(pool, &cbs);
+        }
+        if let Some(c) = cpu.as_mut() {
+            c.end("");
         }
         if let Some(t) = timer.as_mut() {
             t.collect(&gpu)?;
         }
+        gpu.frame.set(gpu.frame.get() + 1);
         continue;
     }
-    gpu.submit(pool, record)?;
-    if let Some(c) = cpu.as_mut() {
-        c.end("record + GPU (offscreen)");
+    {
+        let f = sync.as_mut().ok_or("no frame sync")?;
+        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0] };
+        unsafe {
+            d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
+            record(cb);
+            d.end_command_buffer(cb)?;
+        }
+        if let Some(c) = cpu.as_mut() {
+            c.mark("record");
+        }
+        f.submit_offscreen(&gpu, cb)?;
+        if saved_shot || !overlap {
+            f.wait_submitted(&gpu)?;
+            if let Some(c) = cpu.as_mut() {
+                c.mark("wait for the GPU");
+            }
+        }
+        if let Some(c) = cpu.as_mut() {
+            c.end("");
+        }
+        gpu.frame.set(gpu.frame.get() + 1);
     }
     if let Some(t) = timer.as_mut() {
         t.collect(&gpu)?;
@@ -7017,9 +7084,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     unsafe {
         d.destroy_buffer(readback, None);
         d.free_memory(rmem, None);
-        if let Some((ready, done)) = sync {
-            d.destroy_semaphore(ready, None);
-            d.destroy_semaphore(done, None);
+        if let Some(f) = sync.take() {
+            f.destroy(&gpu, pool)?;
         }
     }
     scene.destroy(&gpu);
@@ -7342,9 +7408,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         d.destroy_descriptor_set_layout(set_layout, None);
         d.destroy_sampler(sampler, None);
-        d.destroy_buffer(look_buf, None);
-        d.free_memory(look_mem, None);
     }
+    look_ring.destroy(&gpu);
     shadow_target.destroy(&gpu);
     unsafe {
         d.destroy_descriptor_set_layout(instance_layout, None);
