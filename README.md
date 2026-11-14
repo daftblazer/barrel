@@ -32,7 +32,7 @@ Sophie 2's and the Ryza games' archives, but for two Japanese test-event message
 (`barrel pssg-obj`), textures, skeletons and motions; materials and drawing them not yet.
 Escha plays from its own title screen through the opening into free play (fields, world and
 area maps, gathering, battles, the cauldron, shops, menus, saves), on the desktop and on an
-aarch64 handheld; `docs/escha-remaining.md` lists what is left for the whole game. The systems
+aarch64 handheld; `docs/escha/remaining.md` lists what is left for the whole game. The systems
 below are checked against the original (its executable's code and recorded runs).
 
 | Part | Where | State |

@@ -1,0 +1,24 @@
+# Ryza DX: open problems
+
+Everything Barrel is stuck on for Atelier Ryza DX, has not worked out yet, or knows to be wrong
+(addresses are in `Atelier_Ryza_DX.exe`, which is not DRM-wrapped). Same rules as
+`docs/escha/open.md`; problems in the shared engine are in `docs/open.md`.
+
+The original Ryza DX is never run through Steam without asking first (its playtime and
+achievements are the player's own, and the DX version has not been played there).
+
+## Fields
+
+- **Object placements (`.opl2`)**: Ryza's field containers hold the same kinds of files as
+  Escha's (terrain `.ktf`, shaders `.g1s`, textures, `.opl2`, heightmap `.khm`, plus
+  `_light.bin`, `_coll.bin`, `_grass.bin` / `_grass.g1t`), but the `.opl2` reader stops at its
+  instance count (`s01_i_attic`). Its layout is to be read against Escha's (`docs/formats.md`).
+- **The environment container** (`<field>_env.elixir.gz`: `<field>_env.bin`, `_ad.g1t`,
+  `_as.g1t`, likely diffuse and specular light probes) is new; nothing reads it yet.
+- **Other field files** not in Escha: `.trmd`, `.g1pf`, `.koc` next to the containers.
+
+## Running the original
+
+- **Without the Steam client**: the executable imports `steam_api64.dll` (callbacks,
+  achievements, Steam saves) but no restart-through-Steam check was found among its strings;
+  whether it starts without the client is unchecked.

@@ -3,7 +3,7 @@
 Work on Escha & Logy DX paused on 2026-11-13 to start on a second game. This is where it
 stands and what is left, grouped by area, roughly in the order a full playthrough would need
 it. The detail for each open problem (what is known, what was tried, how to check a fix) is in
-`docs/open.md`; the topic docs hold what was worked out.
+`docs/escha/open.md`; the topic docs hold what was worked out.
 
 ## Where it stands
 
@@ -29,9 +29,9 @@ through in Barrel.
 - Events through the whole story: their start conditions are read (`game::event_start`), but
   only the opening's chain has been checked in play. Every later event, cutscene and character
   event needs a pass against the running game.
-- Story NPCs in events (characters 10048 and up, `docs/open.md` "Field NPC spawns") and town
+- Story NPCs in events (characters 10048 and up, `docs/escha/open.md` "Field NPC spawns") and town
   people placed in free play (`clsFMDataNpc`, its 1,494 records unread).
-- Assignments: their counters per condition (`docs/open.md` "Assignment counters"), the
+- Assignments: their counters per condition (`docs/escha/open.md` "Assignment counters"), the
   assignment screen and its rewards at the end of each period.
 - The request board: accepting and handing in requests (the session does not hold accepted
   requests yet), the board's points.
@@ -46,7 +46,7 @@ through in Barrel.
 
 - Rules: traits, states, support attacks, items in battle, guard and flee
   (`crates/game/src/duel.rs`'s header lists what the partial battle leaves out); item power,
-  item level, the reaction queue's timing (`docs/open.md`, "Battle").
+  item level, the reaction queue's timing (`docs/escha/open.md`, "Battle").
 - The game's battle screen: its command layout, target marker, turn order bar, damage numbers,
   effects and sounds, the battle camera and light (the stage centre is a guess), running to
   targets and per-skill motions.
@@ -57,8 +57,8 @@ through in Barrel.
 - The game's own synthesis screens (layouts 720 to 851): choosing materials, the material
   loop, synthesis skills and CP, picking traits, the count.
 - Recipe books and recipe ideas, the alchemy level and experience, refining, equipment
-  synthesis, property points (`docs/open.md`, "Property point spending").
-- Made items keeping their effects and traits in the save; prices (`docs/open.md`).
+  synthesis, property points (`docs/escha/open.md`, "Property point spending").
+- Made items keeping their effects and traits in the save; prices (`docs/escha/open.md`).
 
 ## Menus and screens
 
@@ -80,7 +80,7 @@ through in Barrel.
 
 - The play camera: `bumper_follow_speed` / `bumper_max_distance`, blending between camera
   areas (Barrel snaps), the zoom's way back.
-- Gathering: picks per gathering, the reach of a point (`docs/open.md`).
+- Gathering: picks per gathering, the reach of a point (`docs/escha/open.md`).
 - Followers on escort requests (unconfirmed).
 - The field HUD's remaining pieces: the dial's hand, the assignment badges, "Free Time", the
   gathering gauge and notices.
@@ -90,7 +90,7 @@ through in Barrel.
 - Particle effects (`.g1e`, `eff_pack_list.xml`) and the character-bound effects that use them;
   the first fields with placed effects are `AREA_06_*` and `AREA_08_*`.
 - Terrain: its specular term, the coarse patches at a distance, `battle`'s terrain, the open
-  questions in `docs/open.md` ("Terrain details").
+  questions in `docs/escha/open.md` ("Terrain details").
 - The draw priority of pieces (`xS1`-`xS3`, a live read of the draw queue).
 - The cloud shadows' phase, the fog values' conversion, `cDiff`'s alpha.
 - Plant sway and tree spring units against the game.
@@ -113,9 +113,5 @@ through in Barrel.
   the RP6 and did not gain from drawing the sky last: its cost is still to be found.
 - The `handheld` preset still upscales with FSR 1 from 75%; GSR 1 does the same upscale for
   0.29 ms against FSR 1's 1.17 on the RP6 and should replace it.
-- One GPU hang on the RP6 (the driver's hangcheck, `VK_ERROR_DEVICE_LOST`) about 0.7 s after
-  the opening moved from the talk with Clone to `TOWN_10`, right after three camera cuts in a
-  row; not reproduced offscreen or in play since. A camera log (`BARREL_SHOTS=1`) and the
-  kernel's GPU dump within 5 minutes of a hang would locate it.
-- The CPU's per-draw name checks (hiding, sway groups, event objects) run every frame and could
-  be decided once per scene.
+- The GPU hang seen once on the RP6 and the per-draw name checks are engine problems
+  (`docs/open.md`).

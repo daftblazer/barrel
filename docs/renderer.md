@@ -745,7 +745,7 @@ session's date. Checked against a screenshot of the game on August 20th of year 
 "8 /20", the year disc "1"): the text after "Left" is the days to the assignment period's last
 day, the two big numbers the month and the day. The offsets measured from that screenshot (the
 list's rise, the days' number, the text size) and the dial as the tenths of the day still free
-are ours (`docs/open.md`). `BARREL_NO_HUD` turns it off.
+are ours (`docs/escha/open.md`). `BARREL_NO_HUD` turns it off.
 
 ## The title screen
 
