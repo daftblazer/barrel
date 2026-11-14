@@ -111,6 +111,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   others begin are not read yet (the executable names `time_zone`, `EVENT_SET_TIMEZONE`). Night has no reference
   frame yet, so its colour (too bright and green here) cannot be checked.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
+  Its plants (flowers, weeds, tufts, wheat) come from `_grass.bin` / `_grass.g1t` (a grid of
+  plant kinds per 500 units and 8 card textures, docs/formats.md): read, not drawn yet. To
+  find: which card each kind draws, the kind record's floats, and whether the dense short
+  grass is these cards or something of the terrain's own.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
   evening 0.8) on the stored scene and its `fBloomWeight` (0.4, evening 0.6): a soft halo on
