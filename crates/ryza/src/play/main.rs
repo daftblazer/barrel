@@ -808,9 +808,11 @@ fn main() -> Result<()> {
                 if length > full {
                     lean = lean.map(|v| v / length * full);
                 }
-                // Against the camera, in render space (x mirrored), then game space.
+                // Against the camera, in render space (x mirrored), then game space. Right on
+                // screen is the right-handed view's left, (-cos, 0, sin): the projection mirrors
+                // clip-space x (as in Escha's walk).
                 let y = yaw.to_radians();
-                let (forward, side) = (Vec3::new(-y.sin(), 0.0, -y.cos()), Vec3::new(y.cos(), 0.0, -y.sin()));
+                let (forward, side) = (Vec3::new(-y.sin(), 0.0, -y.cos()), Vec3::new(-y.cos(), 0.0, y.sin()));
                 let way = forward * lean[1] + side * lean[0];
                 r.player.step([-way.x, way.z], dt, r.ground.as_ref(), r.walls.as_ref());
                 // Her pose: the motion playing, the last one mixed out over it.
