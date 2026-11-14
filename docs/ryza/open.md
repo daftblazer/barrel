@@ -15,6 +15,11 @@ achievements are the player's own, and the DX version has not been played there)
   `s45_m_underground_01`, `s53_m_starbottle_01`, `s76`/`s78`/`s80`/`s82` battle points) fails
   with "ktf section offsets"; the other 87 fields load (`barrel ryza-field INSTALL`). Way in:
   compare one's header with a field that reads (docs/formats.md, the terrain section).
+- **Field lighting.** `barrel-ryza` draws fields unlit (texture times vertex colour) until
+  Ryza's lights are read: `_light.bin` in the field container, `_env.bin` and the `_ad` / `_as`
+  probes in `_env`. Ryza has no Escha-style look table per field.
+- **Field framing.** Rasenboden's bounds reach far past the village (some object placed far
+  out), so the whole-bounds camera shows it tiny; needs a start point (an event's or the map's).
 - **The environment container** (`<field>_env.elixir.gz`: `<field>_env.bin`, `_ad.g1t`,
   `_as.g1t`, likely diffuse and specular light probes) is new; nothing reads it yet.
 - **Other field files** not in Escha: `.trmd`, `.g1pf`, `.koc` next to the containers.

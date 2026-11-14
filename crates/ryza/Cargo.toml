@@ -5,7 +5,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "barrel-ryza"
+path = "src/play/main.rs"
+
 [dependencies]
 barrel-formats = { path = "../formats" }
 barrel-engine = { path = "../engine" }
 barrel-render = { path = "../render" }
+ash = "0.38"
+glam = "0.33"

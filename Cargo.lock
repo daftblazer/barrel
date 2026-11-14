@@ -129,9 +129,11 @@ dependencies = [
 name = "barrel-ryza"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "barrel-engine",
  "barrel-formats",
  "barrel-render",
+ "glam",
 ]
 
 [[package]]

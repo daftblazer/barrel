@@ -196,7 +196,8 @@ void main() {
         }
 
         fog_keep = min(exp2(s * look.scat[0].xyz), vec3(1.0));
-        float c = dot(normalize(e), normalize(look.sun_dir.xyz));
+        // No sun (a field whose lights are not read): no Mie lobe toward it, rather than NaN.
+        float c = dot(look.sun_dir.xyz, look.sun_dir.xyz) > 0.0 ? dot(normalize(e), normalize(look.sun_dir.xyz)) : 0.0;
         fog_add = look.scat[3].xyz * pow(max(look.scat[2].w * c + look.scat[3].w, 0.0001), -1.5) + (1.0 + c * c) * look.scat[2].xyz + look.scat[1].xyz;
     }
     if ((pc.flags & 4u) != 0u) {
