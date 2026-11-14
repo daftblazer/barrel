@@ -107,6 +107,17 @@ mod tests {
     }
 
     #[test]
+    fn a_wall_stops_her() {
+        let wall = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: 300.0 };
+        let walls = Walls::from_walls(vec![wall], 1000.0);
+        let mut p = Player::new(Vec3::ZERO, 0.0);
+        for _ in 0..120 {
+            p.step([0.0, 1.0], 1.0 / 60.0, None, Some(&walls));
+        }
+        assert!((p.at.z - (200.0 - RADIUS)).abs() < 1.0, "{:?}", p.at);
+    }
+
+    #[test]
     fn she_turns_toward_the_lean() {
         let mut p = Player::new(Vec3::ZERO, 0.0);
         for _ in 0..60 {

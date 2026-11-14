@@ -75,7 +75,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   shared `walk::Ground::of_heightmap`): at the garden gate she stands on the stepping stones as
   in the game. The fields have no `_col.g1co` as Escha's do; their collision is likely in
   `<FIELD>_coll.bin` (224 bytes in Rasenboden), `.g1pf` or `_le.koc`. The `.koc` walls are
-  read (`barrel_ryza::koc`, docs/formats.md) and stop her in a window; its sloped and flat
+  read (`barrel_ryza::koc`, docs/formats.md) and stop her in a window (run from the garden
+  gate toward the house, she stops at the quad across its front, z 28966, her radius short of
+  it). Some quads there cross each other in an X behind that one, so not every quad may be a
+  plain wall (volumes outlined by quads?). Its sloped and flat
   quads, `_coll.bin`'s boxes and floors on models (bridges, stairs) are not.
 - **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
   not read from the game: the speeds (walk 150, run 480 units a second), the lean that starts a
