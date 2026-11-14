@@ -3,18 +3,22 @@
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
+//!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
 //! or looks at X,Y,Z (field units, as the placement list gives them) from D away. The light is
 //! the field environment's set for the time and weather (noon, sunny by default). `--hide`
-//! leaves out the objects whose placement names contain NAME (to find which object is which). Every draw is shown unlit
+//! leaves out the objects whose placement names contain NAME (to find which object is which).
+//! `--ryza` stands Ryza (`pc00a`) at X,Y,Z turned DEG about y, posed by her motion N
+//! (`pc00a_<N>`, default 00000) at S seconds. Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
 
 use std::path::Path;
 
 use ash::vk;
 use barrel_formats::elixir::Elixir;
+use barrel_formats::g1m::G1m;
 use barrel_formats::g1t::G1t;
 use barrel_render::renderer::{Camera, Frame, Renderer};
 use barrel_render::settings::RenderSettings;
@@ -38,13 +42,14 @@ struct Args {
     time: Time,
     weather: Weather,
     hide: Vec<String>,
+    ryza: Option<(Vec3, f32, String, f32)>,
 }
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new() };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -62,6 +67,14 @@ fn args() -> Result<Args> {
             }
             "--distance" => a.distance = Some(value()?.parse()?),
             "--hide" => a.hide.push(value()?),
+            "--ryza" => {
+                let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
+                let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
+                a.ryza = Some((Vec3::new(x, y, z), 0.0, "00000".into(), 0.0));
+            }
+            "--turn" => a.ryza.as_mut().ok_or("--turn after --ryza")?.1 = value()?.parse()?,
+            "--motion" => a.ryza.as_mut().ok_or("--motion after --ryza")?.2 = value()?,
+            "--motion-time" => a.ryza.as_mut().ok_or("--motion-time after --ryza")?.3 = value()?.parse()?,
             "--time" => {
                 a.time = match value()?.as_str() {
                     "morning" => Time::Morning,
@@ -117,7 +130,39 @@ fn main() -> Result<()> {
     let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement::default();
     let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
-    let textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
+    let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
+    // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the
+    // field's. Lit as the field's models are until her own shaders are read
+    // (`docs/ryza/open.md`).
+    let ryza_files = match &a.ryza {
+        Some((_, _, motion, _)) => {
+            let dir = "\\data\\x64\\character\\pc00a\\";
+            Some((install.read(&format!("{dir}pc00a_model.elixir.gz"))?, install.read(&format!("{dir}pc00a_model.g1t"))?, install.read(&format!("{dir}pc00a_{motion}.elixir.gz"))?))
+        }
+        None => None,
+    };
+    let ryza_pack = ryza_files.as_ref().map(|(_, t, _)| G1t::parse(t)).transpose()?;
+    if let (Some((at, turn, _, time)), Some((model, _, motion)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
+        let model = Elixir::parse(model)?;
+        let skeleton = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL.g1m").ok_or("no PC00A_MODEL.g1m")?)?.skeleton.ok_or("Ryza's model has no skeleton")?;
+        let mesh = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL_default.g1m").ok_or("no PC00A_MODEL_default.g1m")?)?;
+        let geometry = mesh.geometry.as_ref().ok_or("Ryza's mesh has no geometry")?;
+        let motion = Elixir::parse(motion)?;
+        let anim = barrel_formats::g1a::parse(motion.entries.iter().find(|e| !e.is_dummy()).map(|e| motion.data(e)).ok_or("empty motion")?)?;
+        let joints = barrel_engine::skin::pose(&skeleton, &anim, *time);
+        let first = scene.draws.len();
+        let instance = scene.instance(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(turn.to_radians()), *at));
+        scene.add_posed(geometry, Mat4::IDENTITY, rp.textures.len(), Some(&joints), instance)?;
+        for d in &mut scene.draws[first..] {
+            d.texture += textures.len();
+            d.mask = d.mask.map(|m| m + textures.len());
+            d.overlay = d.overlay.map(|o| o + textures.len());
+            d.field = Some(0);
+            d.name = "ryza".into();
+        }
+        eprintln!("Ryza: {} draws, {} joints, motion {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
+        textures.extend(rp.textures.iter());
+    }
     let Scene { mut vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
     // The models' Color0 does not reach their materials: the G-buffer programs (`pbb-*_gb.g1s`,
     // docs/shading.md) take no COLOR0, and some models hold masks there (the attic's
