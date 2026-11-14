@@ -333,6 +333,32 @@ the first opening (1280×720) about 1,300 pixels change, all along edges, which 
 smooth. It suits FSR, which expects an anti-aliased input: from half size with 4× MSAA, FSR
 comes to 32.1 dB against the full-size 4× frame, where without it it came to 29.4.
 
+## Mods: a core feature
+
+Mod support is part of the engine's design from the start, though its own work comes after
+each game is playable. Planned: texture packs and model overrides (PNG and glTF accepted, not
+only the game's formats), shader packs with access to the scene's depth, normals and what each
+pixel is (characters, terrain, sky), new outfits as added slots rather than overwrites, new
+items, recipes and events as data, photo mode, and a Mods page in the game's own Settings
+menu (no launcher). So everything built now follows these rules:
+
+- **One way to find a file.** Every asset is read by its game path through one lookup (for
+  Ryza `barrel_ryza::Install`, where a later archive already wins); a mod folder becomes one more
+  layer in front of it. Nothing keeps archive offsets or handles of its own.
+- **Lists, not fixed slots.** Outfits, items, recipes, characters and the like are held as
+  growable lists keyed by name, never as arrays sized by the original's counts; menus show what
+  the list holds.
+- **Saves by name.** Barrel's own save data refers to content by a stable name, so adding a mod
+  never shifts others, and a removed mod's content falls back cleanly instead of breaking the
+  save. (Reading the original's saves maps its numbers to these names.)
+- **Data stays data.** Tables, events and scripts are loaded and interpreted (the event player
+  runs the game's own scripts from a command table), not compiled in, so new ones can be added.
+- **Formats behind loaders.** A texture or model is loaded by kind through one function, so a
+  PNG or glTF can stand in where a `.g1t` or `.g1m` is expected.
+- **Shaders replaceable.** The renderer's shaders are compiled in today (SPIR-V through
+  `include_bytes!`); a shader pack needs them loaded from files with these as the fallback, and
+  the scene's buffers kept available to post-processing.
+
 ## Walking (not yet the game's)
 
 A character walks against its field's collision mesh (`<AREA>_col.g1co`, `docs/formats.md`,
