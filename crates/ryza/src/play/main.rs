@@ -15,7 +15,8 @@
 //! (`pc00a_<N>`, default 00000) at S seconds. Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
 //!
-//! `--window` opens a window instead of writing OUT, and with `--ryza` the player walks her:
+//! `--ryza` with no `--look-at` frames her as the play camera does (the field's free camera,
+//! behind her). `--window` opens a window instead of writing OUT, and with `--ryza` the player walks her:
 //! W, A, S, D (or the left stick, a light lean walking) move her against the camera, Shift
 //! walks, the arrows (or the right stick) turn the camera, - and = (the shoulders) bring it
 //! nearer or farther, Escape quits. She stands on the field's heightmap and stops at its
@@ -357,10 +358,22 @@ fn main() -> Result<()> {
         }
         (None, None) => ((lo + hi) * 0.5, (hi - lo).length() * 0.5),
     };
-    let fov = 30f32.to_radians();
-    let (mut yaw, mut pitch) = (a.yaw, a.pitch);
-    let mut dist = a.distance.unwrap_or(if pump.is_some() && rig.is_some() { FOLLOW_DISTANCE } else { radius / (fov * 0.5).sin() * 1.05 }).max(1.0);
-    let mut center = center;
+    // Following Ryza (in a window, or offscreen with no --look-at): the field's free camera (its field of view, distance and pitch
+    // with their ranges), behind her (its yaw is against her facing).
+    let follow = (rig.is_some() && (pump.is_some() || a.look_at.is_none())).then(|| {
+        install.read(&barrel_ryza::camera::FreeCamera::path(&a.field)).ok().and_then(|b| barrel_ryza::camera::FreeCamera::parse(&b).map_err(|e| eprintln!("{e}")).ok()).unwrap_or(barrel_ryza::camera::FreeCamera::DEFAULT)
+    });
+    let fov = follow.map_or(30.0, |c| c.fov).to_radians();
+    let (mut yaw, mut pitch) = match (follow, &rig) {
+        (Some(c), Some(r)) => (c.yaw - r.player.turn.to_degrees(), c.pitch),
+        _ => (a.yaw, a.pitch),
+    };
+    let mut dist = a.distance.or(follow.map(|c| c.length)).unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
+    let (pitch_range, length_range) = follow.map_or(((-10.0, 70.0), (150.0, 3000.0)), |c| (c.pitch_range, c.length_range));
+    let mut center = match (follow, &rig) {
+        (Some(_), Some(r)) => (r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
+        _ => center,
+    };
     let shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
 
     let hidden = vec![false; instances.len()];
@@ -391,8 +404,8 @@ fn main() -> Result<()> {
             let key = |k: K| if p.held(k) { 1.0 } else { 0.0 };
             let (left, right) = p.sticks();
             yaw -= (key(K::ArrowRight) - key(K::ArrowLeft) + right[0]) * CAMERA_TURN * dt;
-            pitch = (pitch + (key(K::ArrowUp) - key(K::ArrowDown) - right[1]) * CAMERA_TURN * dt).clamp(-10.0, 70.0);
-            dist = (dist * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(150.0, 3000.0);
+            pitch = (pitch + (key(K::ArrowUp) - key(K::ArrowDown) - right[1]) * CAMERA_TURN * dt).clamp(pitch_range.0, pitch_range.1);
+            dist = (dist * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(length_range.0, length_range.1);
             if let Some(r) = rig.as_mut() {
                 let mut lean = [key(K::KeyD) - key(K::KeyA) + left[0] + a.lean[0], key(K::KeyW) - key(K::KeyS) + left[1] + a.lean[1]];
                 let length = (lean[0] * lean[0] + lean[1] * lean[1]).sqrt();
@@ -542,8 +555,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// The camera behind Ryza in a window: how far, and how high above her feet it looks.
-const FOLLOW_DISTANCE: f32 = 500.0;
+/// How high above her feet the camera behind Ryza looks (a stand-in: the field camera's
+/// `at_diff_y` is not placed, `docs/ryza/open.md`).
 const FOLLOW_HEIGHT: f32 = 110.0;
 /// How fast the camera turns, degrees a second.
 const CAMERA_TURN: f32 = 120.0;

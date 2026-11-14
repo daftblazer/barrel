@@ -1117,6 +1117,21 @@ ones to the shared walker as walls. Beside it: `_coll.bin` in the main container
 (`FP1G`, over a 128,000-unit square: path-finding, not read) and `.trmd` (`TRMD`, 1024 × 1024
 cells of 5 bytes: likely the ground's material, not read).
 
+### Ryza field cameras (`saves\fieldmap\cameraparam\<field>.xml`)
+
+One per field (100 files; Shift-JIS XML). `free_camera/base_setting` is the player's camera:
+`fov_default` (Rasenboden 45), `yaw_default` (180: behind the player, against her facing),
+`pitch_min/max/default` (-30, 45, 8, degrees), `length_min/max/default` (200, 550, 400 units)
+and `at_diff_y` (0.1, not placed). `camera_func/look_up` (`max_at_diff_add`,
+`min/max_length_by_pitch`, `look_up_start_pitch`, `eye_down_end_pitch`) changes the look point
+and distance as the camera pitches up, not read. Then `landmark_camera`s (indexed 1, 2, ... in
+file order, chosen by gimmicks), `disp_range` (draw distances for characters, effects,
+gimmicks, near/middle/far/landmark objects, shadows), `lod`, `light_map` (marked unused),
+`RLR` (screen-space reflection steps) and `ambient_effect` (effects per time and weather).
+`barrel_ryza::camera` reads the free camera. With it (vertical field of view taken as 45°)
+and a look point 110 units above her feet, Rasenboden's gate frames as in the game, the
+player a little larger.
+
 ### Ryza field environment (`<field>_env.elixir.gz`)
 
 Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin` (97,920 bytes

@@ -80,8 +80,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 - **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
   not read from the game: the speeds (walk 150, run 480 units a second), the lean that starts a
   run (0.6), how fast she turns, her size against the walls (radius 30, step 60), and the
-  camera (500 units behind, looking 110 above her feet; the field's own camera settings are in
-  `saves\fieldmap\cameraparam\<field>.xml`, not read). Only the loops play: no start or
+  camera's look point (110 above her feet). The camera's field of view, distance and pitch are
+  the field's (`barrel_ryza::camera`); `at_diff_y` and the look-up adjustment are not placed,
+  and whether the field of view is vertical is not known. At the gate she comes out a little
+  larger and higher in the frame than in the game's still. Only the loops play: no start or
   stop motions (10, 12, 20, 22) and no blending between motions, so she snaps from one to the
   next.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
