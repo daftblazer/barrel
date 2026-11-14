@@ -62,7 +62,12 @@ achievements are the player's own, and the DX version has not been played there)
   parameters (set at run time). `barrel-ryza` draws the map as light (`model.frag` flag
   32768, the map bound as the draw's set 3) at a stand-in strength by time of day
   (`EMISSION_BY_TIME`: none by day, 2 at evening, 3 at night): the house's window glows at
-  night. The flicker is not done. Not drawn yet from the G-buffer model
+  night. The flicker is not done: no pass of `PBB-EmN` (`_gb`, `_gba2`, `_cll`) reads
+  `emFrq`, `emRange` or `emStart`; all three take only `emScl` (+16 in the G-buffer passes'
+  block, +96 in the lighting pass's), so the game works the flicker out on the CPU into
+  `emScl` each frame. Its curve (a wave between `emRange`'s two ends at `emFrq`, offset by
+  `emStart`, would fit the names; `emRange` (1, 1) would then hold still) is a guess until a
+  run reads `emScl` over a few seconds (tools/oracle/README.md). Not drawn yet from the G-buffer model
   (docs/shading.md, "Ryza DX: the deferred G-buffer"; normal maps are drawn now, their
   green's sign unchecked): the specular map (metal flag, specular amount, roughness), and the lighting pass (`pbb-*_cll.g1s`). Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its

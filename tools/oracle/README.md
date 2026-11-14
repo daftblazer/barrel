@@ -75,7 +75,8 @@ to read in one short run at the garden gate (the player's save, noon) with the p
   `vAmbParam`, `vAmbDifScl`, `vAmbSpcWgt` follow at +384 to +416, the same as the field models').
 - **The emission strength** `emScl` (+96 in `pbb-emn_cll`'s pixel block, after `litDir`,
   `litCol`, `ambLit`, `vEye`; its `vFadeDist` at +152): at noon, and at evening if the run's
-  clock can be moved there.
+  clock can be moved there. Read it ten times a second for a few seconds by a window with `emRange`
+  (0, 1): the flicker is worked out on the CPU from `emFrq`, `emRange`, `emStart` into it.
 
 ## Recording
 
