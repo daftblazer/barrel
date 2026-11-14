@@ -3390,9 +3390,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         Some(r) if session.is_some() && player.is_none() => std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok(),
         _ => None,
     };
-    let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32)>)> = None;
-    // The field's HUD (layout 625); the area map has its own panels instead.
-    if session.is_some() && player.is_none() && !area_mode && std::env::var("BARREL_NO_HUD").is_err() {
+    let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32, Option<bool>)>)> = None;
+    // The field's HUD (layout 625); on the maps its date panel and the maps' button lists (636).
+    if session.is_some() && player.is_none() && true && std::env::var("BARREL_NO_HUD").is_err() {
         let made = (|| -> Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>)> {
             let Some(exe) = hud_exe.as_ref() else {
                 return None;
@@ -3402,7 +3402,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN)?;
             let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
             let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
-            let nodes = barrel_escha::data::layout::placed(&pe, hud::FIELD_HUD);
+            let mut nodes = barrel_escha::data::layout::placed(&pe, hud::FIELD_HUD);
+            if area_mode {
+                nodes.extend(barrel_escha::data::layout::placed(&pe, hud::MAP_LIST));
+            }
             let keys = hud::sheet_keys(&pe, &nodes);
             let mut packs: Vec<(String, Vec<u8>)> = Vec::new();
             for (name, _) in &keys {
@@ -5134,11 +5137,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The field HUD with the session's date and field time, rebuilt when they change.
     if let (Some((layer, font, sheets, nodes, last)), Some(s), Some(exe)) = (field_hud.as_mut(), session.as_ref(), hud_exe.as_ref()) {
         let v = hud::Values::on(s.today().max(0) as u32, s.field_tenths());
-        if *last != Some((v, width, height))
+        let map = area_map.as_ref().map(|a| a.world);
+        if *last != Some((v, width, height, map))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(exe) {
-                let elements = hud::elements(nodes, |p| barrel_escha::data::layout::text(&pe, p), v);
+                let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
+                let elements = match area_map.as_ref() {
+                    Some(a) => [hud::date_panel(nodes, texts, v), hud::map_list(nodes, texts, if a.world { hud::AREA_INFO } else { hud::RETURN })].concat(),
+                    None => hud::elements(nodes, texts, v),
+                };
                 layer.set(&gpu, &hud::quads(&pe, Some(font), sheets, &elements, width as f32, height as f32))?;
-                *last = Some((v, width, height));
+                *last = Some((v, width, height, map));
             }
     }
     // The battle HUD with the party's HP and MP, rebuilt when they change.

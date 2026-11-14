@@ -171,6 +171,41 @@ pub fn date_panel(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Te
     elements(&panel, texts, v)
 }
 
+/// The maps' button lists (layout 636: Info, Assignment, System on the left, Requests and
+/// Message Log on the right), placed by the game at run time where the recording has them.
+pub const MAP_LIST: u32 = 636;
+pub const MAP_LIST_AT: [i32; 2] = [6, 854];
+/// The left list's first row as the game words it (strings in the executable next to each
+/// other): on the world map, and on an area map.
+pub const AREA_INFO: &str = "<IM04> Area Info";
+pub const RETURN: &str = "<IM02> Return";
+
+/// The maps' button lists (`MAP_LIST`'s placed nodes, as stored at its own place), the first
+/// row's text `first`.
+pub fn map_list(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, first: &str) -> Vec<Element> {
+    let mut out = Vec::new();
+    let mut first_done = false;
+    for p in nodes.iter().filter(|p| p.path.first() == Some(&MAP_LIST)) {
+        let at = [p.at[0] + MAP_LIST_AT[0], p.at[1] + MAP_LIST_AT[1]];
+        if p.node.part == 0x164 {
+            match texts(p) {
+                Some(t) if !t.text.is_empty() && !first_done => {
+                    out.push(Element::Label(layout::Text { at, text: first.to_string(), ..t }));
+                    first_done = true;
+                }
+                Some(t) if !t.text.is_empty() => out.push(Element::Label(layout::Text { at, ..t })),
+                _ => {}
+            }
+        } else {
+            out.push(match Element::stored(p) {
+                Element::Mirrored { part, cut, axis, .. } => Element::Mirrored { part, cut, at, axis },
+                e => e.sprite().map_or(e, |(part, cut, _)| Element::Sprite { part, cut, at }),
+            });
+        }
+    }
+    out
+}
+
 /// The HUD's textures in a text layer after the font atlas: each (pack, picture) and its size.
 pub struct Sheets {
     pub keys: Vec<(String, u32)>,

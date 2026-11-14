@@ -1691,7 +1691,12 @@ full alpha). The desk under a screen is chosen at run time: the hero choice's la
 part 0 cut 0 with the overlay 357 (cuts 4 and 5), but the game shows part 0 cut 1 there. A mirrored node's word 5 (the
 word after the kind) is the axis: 0 left to right, 1 top to bottom, 2 both. Layout 649 draws
 one corner of a dark red vignette (a15_common #25, 964 × 548) four times with 0, 0, 1 and 2,
-and 650 a diamond border the same way; together they frame the world and area maps.
+and 650 a diamond border the same way; together they frame the world and area maps. The
+maps' button lists are layout 636 (Info, Assignment, System at the left; Requests, Message Log
+at the right), nested in no other layout: the game places it at run time, at (6, 854) by the
+recording, and words the first row by the map, `<IM04> Area Info` on the world map and
+`<IM02> Return` on an area map (strings side by side in the executable). Above it the maps
+show the field HUD's date panel (625's branch 605) without the time dial.
 
 The main menu opened in play is layouts 383 (the desk background, `a15_menu.g1t` picture 0),
 361 (the lead's figure: nested 957 on `a15_menu_chara01.g1t`) and 374 (placed at [0, 90]: a dark
