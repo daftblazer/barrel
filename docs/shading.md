@@ -560,3 +560,27 @@ their mesh groups the dome, far ground, plants and stones of `set-a15_01_sphere`
 `MapSTD` (the lit field program, with fog and scattering) and the clouds `MapSTD-T0`, so the
 dome's brightness comes through the field's lights and scattering, which the unlit draw here
 leaves out: the likely cause of the sky being too dark (`docs/renderer.md`).
+
+## Ryza DX: the deferred G-buffer (`Data/x64/shader/pbb-*_gb.g1s`)
+
+Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-N`,
+`PBB-EmN`, ... in the model, `barrel g1m-materials`) names two packs in `\data\x64\shader`:
+`pbb-<name>_gb.g1s` (or `_gba2`, `_dsgb`) writes the G-buffer, `pbb-<name>_cll.g1s` (about
+190 KB) lights it. `pbb-n_gb.g1s` (Ryza DX), read with `barrel g1s`:
+
+- **Vertex programs** (0 rigid, 1 skinned, 2 one joint) take position, normal, UV and tangent:
+  **no `COLOR0`**. So the models' vertex colours do not reach these materials, and
+  `barrel-ryza` draws them white (the attic's cabinet holds masks there for other passes).
+- **Pixel program 3**, textures `sStage0` (the colour tile, kind 1), `sSpMap` (kind 2), `sNMap`
+  (kind 3); constants `vDifScl`, `vSpcScl`, `atColor`. With `m` = `sSpMap.g` and metal =
+  `sSpMap.b` ≥ 0.5:
+  - target 0, diffuse: the colour tile (metal: × 0.2 m), × `vDifScl`, then `atColor` as
+    `c × sat(atColor) + sat(atColor - 1)`;
+  - target 1, specular colour: `m` as gray (metal: the colour tile × (1 - m)), × `vSpcScl.xyz`;
+  - target 2: the normal (normal map red × alpha and green to -1..1, z rebuilt, in the tangent
+    frame, turned to view space by `mWV`, octahedral-encoded in xy), and `sSpMap.a ×
+    vSpcScl.w` (roughness or gloss) packed in w;
+  - targets 3 and 4: 1.
+  The red maps of the attic's furniture (green and blue near 0) give the colour tile as the
+  diffuse and no specular: albedo times light, as `barrel-ryza` draws them.
+

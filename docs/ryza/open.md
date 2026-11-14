@@ -26,10 +26,9 @@ achievements are the player's own, and the DX version has not been played there)
   material until those shaders are read.
 - **Emissive and odd materials.** `PBB-EmN` submeshes (the attic wall's windows) have an
   emission mask (texture kind 19) and flicker parameters (`emFrq`, `emRange`, `emStart`), not
-  drawn. Color0 is not a colour in Ryza's models: most are
-  white, but some (the attic's cabinet and a shelf part) hold 0 to 255 in every channel, alpha
-  included, pure red at edges: masks or weights for the `PBB-*` shaders. `barrel-ryza` sets the
-  models' vertex colours white (the terrain's baked shade kept) until those shaders are read. Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
+  drawn. Not drawn yet from the G-buffer model
+  (docs/shading.md, "Ryza DX: the deferred G-buffer"): normal maps, the specular map (metal
+  flag, specular amount, roughness), and the lighting pass (`pbb-*_cll.g1s`). Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
   heights match the heightmap) lies at grass level over the sandy canyon path the cliff models
   make in the village close-up (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`). Every

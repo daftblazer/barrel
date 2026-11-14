@@ -119,9 +119,9 @@ fn main() -> Result<()> {
     let pack = G1t::parse(&pack)?;
     let textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     let Scene { mut vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
-    // The models' Color0 is not a colour in Ryza's shaders (`PBB-*`): some hold masks in it
-    // (the attic's cabinet: 0 to 255 in every channel, red at its edges). White until those
-    // shaders are read (`docs/ryza/open.md`); the terrain's (its baked shade) is kept.
+    // The models' Color0 does not reach their materials: the G-buffer programs (`pbb-*_gb.g1s`,
+    // docs/shading.md) take no COLOR0, and some models hold masks there (the attic's
+    // cabinet). So white; the terrain's (its baked shade) is kept.
     for d in &draws {
         for &i in &indices[d.first_index as usize..(d.first_index + d.index_count) as usize] {
             vertices[i as usize].color = [255; 4];
