@@ -245,8 +245,8 @@ pub struct Turn {
     pub order: Vec<usize>,
     /// The timeline's entries in turn order (`Skirmish::slots`): the turn bar's slots.
     pub slots: Vec<Option<usize>>,
-    /// The turn bar's next-turn mark (`Skirmish::next_place`).
-    pub next_place: usize,
+    /// The turn bar's next-turn mark for each command, the attack first (`Skirmish::next_places`).
+    pub next_places: Vec<usize>,
 }
 
 /// Monsters already drawn against `party` with the player's `commands`, one per member turn in
@@ -275,7 +275,7 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
             Some(&c) => events.extend(s.command(who, c, rng)),
             None => {
                 let skills = s.skills(who).into_iter().map(|(k, cost, can)| (k.name.clone(), cost, can)).collect();
-                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_place: s.next_place(who) }));
+                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who) }));
             }
         }
     }

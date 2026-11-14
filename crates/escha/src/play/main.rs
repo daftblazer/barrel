@@ -1487,7 +1487,8 @@ impl BattlePlay {
             skills: (self.choosing == Choosing::Skill).then(|| (list, self.chosen)),
             title: String::new(),
             marked: target.filter(|_| plate.is_some()).and_then(|k| turn.slots.iter().skip(1).position(|&o| o == Some(k))).map(|p| p + 1),
-            next: turn.next_place,
+            // The mark follows the command under the cursor: the skill's in the skill list.
+            next: turn.next_places.get(if self.choosing == Choosing::Skill { 1 + self.chosen } else { 0 }).or(turn.next_places.first()).copied().unwrap_or(0),
             plate,
         })
     }

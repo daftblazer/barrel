@@ -213,12 +213,18 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         self.battle.timeline.slots().into_iter().map(|c| c.map(|c| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down()))).collect()
     }
 
-    /// Where `who`'s next turn would land after a normal attack (wait 600, `battle::action_wait`
-    /// without states): how many entries wait less than the first entry's wait plus it, as the
-    /// turn bar's next-turn mark counts them (`0x1401900c0`).
-    pub fn next_place(&self, who: usize) -> usize {
+    /// Where `who`'s next turn would land after each of its commands (the attack, then its
+    /// skills): how many entries wait less than the first entry's wait plus the command's
+    /// wait (`battle::action_wait` as the action would take it, states left out), as the turn
+    /// bar's next-turn mark counts them (`0x1401900c0`).
+    pub fn next_places(&self, who: usize) -> Vec<usize> {
+        let Some(member) = self.party.get(who) else { return Vec::new() };
+        std::iter::once(member.attack).chain(member.skills.iter().map(|&(s, _)| s)).map(|s| self.next_place(who, s.wait)).collect()
+    }
+
+    fn next_place(&self, who: usize, wait: i32) -> usize {
         let speed = self.battle.fighters.get(who).map_or(0, |f| f.stats[stat::SPEED]);
-        let wait = battle::action_wait(600, speed, None, None, &mut -1);
+        let wait = battle::action_wait(wait, speed, None, None, &mut self.battle.pending());
         let entries = &self.battle.timeline.entries;
         let first = entries.first().map_or(0, |e| e.1);
         entries.iter().filter(|e| e.1 < first + wait).count()

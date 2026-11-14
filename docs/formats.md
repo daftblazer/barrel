@@ -1970,8 +1970,9 @@ spanned by the game's code: the sprite at the left end, mirrored at the right, i
 stretched between) and the glint, part 0xf3 cut 4 at [-16, -18]. It lands at bar x
 1012 − 63n + 60 (n 0: 1032 + 60; `0x14071c348` = 60) and its line runs on to bar x 1071 + 15,
 under the Action slot (`0x14080a57c` = 1071, `0x14071cfe8` = 15). Barrel:
-`battlehud::next_mark_x`, `hud::Element::Spanned`, `Skirmish::next_place` (a normal attack's
-wait, 600 at the actor's speed; the chosen skill's own wait is not used yet).
+`battlehud::next_mark_x`, `hud::Element::Spanned`, `Skirmish::next_places` (each command's
+wait at the actor's speed, states left out; the mark follows the command under the cursor, the
+skill's in the skill list: whether the game moves it as the cursor moves is not checked).
 layout 877 (glints over the party plates' bars, at y 916 to 952: not the target panel, as
 once thought). The target plate is layout 920 on its own: the frame (part 0x102 cut 3, 336 × 96),
 the red HP bar (cut 6, 246 × 20 at [40, 48]), the name (kind 22 at [160, 6]), the state icon

@@ -157,6 +157,11 @@ impl Battle {
         Battle { fighters, timeline, pending: -1 }
     }
 
+    /// The pending wait change (`action_wait`'s `pending`), as the next action would find it.
+    pub fn pending(&self) -> i32 {
+        self.pending
+    }
+
     /// The side that has won: the other side has nobody standing.
     pub fn winner(&self) -> Option<u8> {
         let standing = |side| self.fighters.iter().any(|f| f.side == side && !f.down());
