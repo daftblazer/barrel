@@ -122,8 +122,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   as the field's models with an upward normal (a camera-facing one made them pale; up, they
   take the ground's light, darker and bluer in the shade than the game's green). Thinned out
   from 8000 to 15000 units from the eye (the game's Middle grass preset) by a screen pattern
-  (`model.frag` flag 16384, look slot 93). The game's plant program reads a pigment map
-  (`sPigmentMap`, `g_vFieldRange`), likely tinting plants by the ground; not read. Whether the dense
+  (`model.frag` flag 16384, look slot 93). The game's plant program mixes the vertex colour
+  with a field-wide pigment map by `g_vPigmentMapScale` and shrinks far plants rather than
+  thinning them (docs/shading.md, "Ryza DX: the plants"); which texture is the pigment and
+  the scale's values are set at run time, not read. Whether the dense
   short grass is these cards or the terrain's own is not known.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,

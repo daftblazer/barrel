@@ -750,3 +750,32 @@ light), with `βR = o+0x160`, `βM = o+0x170` (RGB each), `g = o+0x17c`, `s = o+
 at +0x58..+0x84 and copies them to +0x128..+0x17c each update (0x14035b200, 0x140543de0,
 0x140546e20).
 
+
+## Ryza DX: the plants (`ObjectGrassPBS.g1s`)
+
+The field's plants (`_grass.bin`, docs/formats.md) are quads the game builds on the CPU,
+drawn with `ObjectGrassPBS`. Vertex program 1 (the one with the pigment map):
+
+- **Size and fade.** The vertex's `PSIZE` (the card's corner) is scaled by `g_fWidthScale` /
+  `g_fHeightScale` (cb0[36]) and by a factor going from 1 down to 0 between
+  `g_fFarClipBegin` and `g_fFarClipEnd` (cb0[39].x, .y) of distance from the eye; nearer than
+  `g_fNearClip` (cb0[39].z) the card collapses to nothing. Between `g_fFarScaleBegin` and
+  `End` (cb0[40].y, .z) it grows by `g_fWidthScale`-like factors (cb0[39].w, cb0[40].x): far
+  plants drawn larger. So the game shrinks plants away with distance where `barrel-ryza`
+  thins them by a screen pattern.
+- **Sway.** `frac(POSITION.x)` (the plant's own phase, kept in the position's fraction) times
+  `g_vAttCache0.x` (cb0[37]) plus `g_fPhase` / `g_fOscPhase`, through sines, leans the card's
+  top; the lean grows with the card's height.
+- **Pigment.** `sPigmentMap` (t9) is sampled at the plant's ground point, `(x, z) -
+  g_vFieldRange.xy` over `g_vFieldRange.zw` (cb0[41]), clamped: a map over the whole field.
+- **Billboard.** `mBbL2W` (cb0[12] to cb0[14]) turns the corner; the card's normal and tangent
+  go out turned by it too.
+
+The pixel program (3) alpha-tests the card (`vATest`), and its colour is the card texture
+times `(COLOR0 × fPtn.x + fPtn.w) × cDiff × g_vPigmentMapScale.y + pigment ×
+g_vPigmentMapScale.x` (cb0[7], cb0[6], cb0[23]): the vertex colour and the pigment map
+weighted together, the pigment's share set by the game. Which texture is the pigment map and
+the scale's values are set at run time (not read): `_grass.g1t`'s second texture, a flat
+red, may be it (or a placeholder). It then normal-maps (`sNMap`, the cards' normal maps) and
+lights as the field's models do. `barrel-ryza` draws the plants with neither the pigment nor
+the sway (docs/ryza/open.md).
