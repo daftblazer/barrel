@@ -5187,10 +5187,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let drawn;
     let layers: Vec<&text::Layer> = [
         text_layer.as_ref().map(|(l, ..)| l),
+        // The maps' layer (their frame: the vignette and border, then their panels) under the
+        // HUD's date panel and button lists, as the game draws them.
+        area_map.as_ref().map(|a| &a.layer),
         field_hud.as_ref().map(|(l, ..)| l),
         battle_layer.as_ref().map(|h| &h.layer),
         notice.as_ref().map(|(l, _)| l),
-        area_map.as_ref().map(|a| &a.layer),
     ]
     .into_iter()
     .flatten()
