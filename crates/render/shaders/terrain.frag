@@ -54,8 +54,14 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
     // root height, shift x, shift z} each, metres.
     vec4 sway[16];
+    // Slots 66 to 86: the vertex program's and the sky plane's.
+    vec4 others[21];
+    // The far shadow layer (lib.rs SHADOW_FAR_SLOT): view-projection, {texel, on, fade
+    // start, fade end}.
+    mat4 shadow_far;
+    vec4 shadow_far_info;
 } look;
-layout(set = 1, binding = 5) uniform sampler2DShadow shadow_map;
+layout(set = 1, binding = 5) uniform sampler2DArrayShadow shadow_map;
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
 // and a half apart), 1 lit to 0 shadowed (atColor white: the full strength).
 layout(set = 1, binding = 6) uniform sampler2D pattern_map;
@@ -74,21 +80,33 @@ float cloud_light(vec3 p) {
     return texture(pattern_map, uv).r;
 }
 
-float sun_shadow(vec3 p) {
-    if (look.shadow_info.y < 0.5) return 1.0;
-    vec4 c = look.shadow_vp * vec4(p, 1.0);
+// One shadow layer's light at p (16 taps over 1.5 texels), or -1 outside it.
+float shadow_layer(mat4 vp, float layer, float t, vec3 p) {
+    vec4 c = vp * vec4(p, 1.0);
     vec3 s = c.xyz / c.w;
     vec2 at = s.xy * 0.5 + 0.5;
-    if (any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))) || s.z > 1.0) return 1.0;
-    float t = look.shadow_info.x, lit = 0.0;
+    if (any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))) || s.z > 1.0) return -1.0;
+    float lit = 0.0;
     for (int i = 0; i < 4; i++) {
         vec2 o = vec2(float(i & 1) * 2.0 - 1.0, float(i >> 1) * 2.0 - 1.0) * t * 0.75;
         for (int k = 0; k < 4; k++) {
             vec2 q = vec2(float(k & 1), float(k >> 1)) * t * 0.5;
-            lit += texture(shadow_map, vec3(at + o + q, s.z));
+            lit += texture(shadow_map, vec4(at + o + q, layer, s.z));
         }
     }
     return lit / 16.0;
+}
+
+float sun_shadow(vec3 p) {
+    if (look.shadow_info.y < 0.5) return 1.0;
+    float near = shadow_layer(look.shadow_vp, 0.0, look.shadow_info.x, p);
+    if (near >= 0.0) return near;
+    // Past the near square: the far layer, if on, fading to lit with the distance.
+    if (look.shadow_far_info.y < 0.5) return 1.0;
+    float far = shadow_layer(look.shadow_far, 1.0, look.shadow_far_info.x, p);
+    if (far < 0.0) return 1.0;
+    float fade = clamp((distance(p, look.eye.xyz) - look.shadow_far_info.z) / max(look.shadow_far_info.w - look.shadow_far_info.z, 1.0), 0.0, 1.0);
+    return mix(far, 1.0, fade);
 }
 
 layout(location = 0) out vec4 color;

@@ -58,6 +58,10 @@ pub struct Renderer {
     pub terrain_gpu: TerrainGpu,
     pub settings: RenderSettings,
     pub show_motion: bool,
+    /// What the far shadow layer holds: nothing yet (None), cleared (Some(None)) or drawn
+    /// with that view-projection. It is drawn again only when the frame's differs, so the
+    /// game moves its square in steps; `forget_far_shadow` after the scene changes.
+    pub far_shadow: std::cell::Cell<Option<Option<Mat4>>>,
 }
 
 /// The images the post pass draws into: the window's swapchain images, or the offscreen one.
@@ -114,6 +118,9 @@ pub struct Frame<'a> {
     pub draw_vp: Mat4,
     pub view_planes: [glam::Vec4; 6],
     pub shadow_vp: Mat4,
+    /// The far shadow layer's view-projection (look slots 87 to 91 say how it is read), if
+    /// any.
+    pub shadow_far: Option<Mat4>,
     pub alpha_cutoff: f32,
     /// The glow: its bright pass's threshold and its rate (0: none).
     pub glow: (f32, f32),
@@ -134,6 +141,11 @@ pub struct Frame<'a> {
 }
 
 impl Renderer {
+    /// The far shadow layer is drawn again next frame (the scene's casters changed).
+    pub fn forget_far_shadow(&self) {
+        self.far_shadow.set(None);
+    }
+
     /// A renderer for `settings` (resolved: `RenderSettings::resolved`), drawing into the
     /// window `presenter` shows, or offscreen at `width` × `height`; `timings` times the GPU's
     /// stages, `show_motion` shows the motion vectors in place of the frame.
@@ -584,7 +596,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion, far_shadow: Default::default() })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -595,7 +607,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_far, alpha_cutoff, glow, saturation, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -629,15 +641,27 @@ impl Renderer {
             } else if !frozen_ready {
                 barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
             }
-            // The sun's shadow map: every caster but the distant view, from the sun.
-            {
+            // The sun's shadow map: every caster but the distant view, from the sun, into the
+            // near layer and, when the game gives one, the far layer (else cleared only).
+            let cascades = [Some(shadow_vp), shadow_far];
+            for (layer, cascade) in cascades.iter().enumerate() {
+                if layer > 0 {
+                    if self.far_shadow.get() == Some(*cascade) {
+                        continue;
+                    }
+                    self.far_shadow.set(Some(*cascade));
+                }
                 let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
                 let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow_target.size, height: shadow_target.size } };
                 d.cmd_begin_render_pass(
                     cb,
-                    &vk::RenderPassBeginInfo::default().render_pass(shadow_target.pass).framebuffer(shadow_target.framebuffer).render_area(full).clear_values(&clear),
+                    &vk::RenderPassBeginInfo::default().render_pass(shadow_target.pass).framebuffer(shadow_target.framebuffers[layer]).render_area(full).clear_values(&clear),
                     vk::SubpassContents::INLINE,
                 );
+                let Some(shadow_vp) = *cascade else {
+                    d.cmd_end_render_pass(cb);
+                    continue;
+                };
                 d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: shadow_target.size as f32, height: shadow_target.size as f32, min_depth: 0.0, max_depth: 1.0 }]);
                 d.cmd_set_scissor(cb, 0, &[full]);
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);

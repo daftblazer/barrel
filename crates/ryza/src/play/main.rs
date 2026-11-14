@@ -710,6 +710,7 @@ fn main() -> Result<()> {
             draw_vp: view.vp,
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
+            shadow_far: view.shadow_far,
             alpha_cutoff: 0.3,
             glow: (1.0, 0.0),
             saturation,
@@ -796,6 +797,7 @@ struct View {
     look: [[f32; 4]; LOOK_SLOTS],
     vp: Mat4,
     shadow_vp: Mat4,
+    shadow_far: Option<Mat4>,
     sky_plane: bool,
     near: f32,
     far: f32,
@@ -819,6 +821,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     let vp = proj * view;
     let mut look = [[0f32; 4]; LOOK_SLOTS];
     let mut shadow_vp = vp;
+    let mut shadow_far = None;
     for (k, (now, before)) in vp.to_cols_array_2d().into_iter().zip(prev_vp.unwrap_or(vp).to_cols_array_2d()).enumerate() {
         look[40 + k] = before;
         look[44 + k] = now;
@@ -877,8 +880,24 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
                 look[27 + k] = col;
             }
             look[31] = [1.0 / size as f32, 1.0, 0.0, 0.0];
+            // Past it, the far layer: a square out to where the game's shadows end
+            // (`shadowMap_ShadowEraseFarEnd`), fading to lit from `ShadowEraseFarStart` (the
+            // default override's 20000 and 30000; its three near cascades, 1200 / 6000 /
+            // 13000, are the near square here).
+            let (fade_start, fade_end) = (20000.0, 30000.0);
+            // Its centre steps on a 2000-unit grid: the layer is drawn again only when it
+            // moves (`Renderer::far_shadow`; a whole-field draw, about 10 ms at 1080p), so
+            // far swaying trees' shadows hold still between steps.
+            let step = 2000.0;
+            let snapped = Vec3::new((center.x / step).round() * step, (center.y / step).round() * step, (center.z / step).round() * step);
+            let far = shadow::sun_view_proj(snapped, sun, fade_end, 20000.0);
+            for (k, col) in far.to_cols_array_2d().into_iter().enumerate() {
+                look[SHADOW_FAR_SLOT + k] = col;
+            }
+            look[SHADOW_FAR_SLOT + 4] = [1.0 / size as f32, 1.0, fade_start, fade_end];
+            shadow_far = Some(far);
         }
         exposure_k = Some(k);
     }
-    View { look, vp, shadow_vp, sky_plane, near, far, exposure: exposure_k }
+    View { look, vp, shadow_vp, shadow_far, sky_plane, near, far, exposure: exposure_k }
 }

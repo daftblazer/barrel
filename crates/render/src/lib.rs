@@ -48,7 +48,11 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// the field's sun, fill and ambient (5 vec4s).
 /// The look block's slots (vec4s; model.vert's `Look`, then the sky plane's 11 from
 /// `SKY_SLOT`, sky.frag).
-pub const LOOK_SLOTS: usize = 87;
+/// Then the far shadow layer: its view-projection (87 to 90) and {texel, on, fade start, fade
+/// end} (91; the fade by distance from the eye, to lit).
+pub const LOOK_SLOTS: usize = 92;
+/// The far shadow layer's first look slot.
+pub const SHADOW_FAR_SLOT: usize = 87;
 /// The first of the sky plane's look slots (sky.frag): {on}, Scat[4], skyPos, fog, the sun's
 /// way, the glow's direction, colour and parameters.
 pub const SKY_SLOT: usize = 76;

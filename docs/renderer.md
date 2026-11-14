@@ -548,6 +548,20 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
+The map is an array of two layers (`shadow::CASCADES`). Layer 0 is the square above; layer 1
+is a far square a game may give (`Frame::shadow_far`, look slots 87 to 91: its
+view-projection and {texel, on, fade start, fade end}): receivers outside the near square
+read it, fading to lit with the distance from the eye. Escha gives none: the layer is cleared
+once and never read, and its frames are unchanged. The far layer is drawn only when its
+matrix differs from what it holds (`Renderer::far_shadow`; `forget_far_shadow` after the
+casters change), so a game steps its square: Ryza's centre snaps to a 2000-unit grid and
+its square reaches 30000 units each way (the default environment override's
+`shadowMap_ShadowEraseFarEnd`, fading from `ShadowEraseFarStart` 20000). Drawing it is the
+whole field at once: at Rasenboden's gate (1920x1080) the shadow pass takes 11.4 ms on such a
+frame against 1.7 ms otherwise; the median frame went from 5.71 to 5.98 ms (the receivers'
+second lookup). The game's own cascades (`shadowMap_ShadowCascadeStart` 1200, 6000, 13000)
+are not copied: the near square stands for the first three.
+
 **`xEF_` models are not lit.** Field objects whose names hold `xEF_` (TOWN_03's
 `obj-xEF_windows_tw03`, the light through the bureau's windows; TOWN_11's `obj-xEF_einn`,
 `_eine`, `_einw`) are drawn as the distant view's clouds are: their texture on their vertex
