@@ -287,6 +287,12 @@ fn main() -> Result<()> {
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
         let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
         (player.radius, player.height) = (chara.radius, chara.height);
+        // Her speeds: those at which her planted feet keep still in the walk and run loops
+        // (`motion::stride_speed`), at her model's scale.
+        let stride = |m: u32| anims.iter().find(|(n, _)| *n == m).and_then(|(_, a)| barrel_ryza::motion::stride_speed(&skeleton, a)).map(|v| v * chara.size[2]);
+        if let Some(v) = stride(barrel_ryza::motion::WALK) { player.walk_speed = v; }
+        if let Some(v) = stride(barrel_ryza::motion::RUN) { player.run_speed = v; }
+        eprintln!("Ryza: walk {:.0}, run {:.0} units a second", player.walk_speed, player.run_speed);
         rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut });
         textures.extend(rp.textures.iter());
     }

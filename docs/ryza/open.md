@@ -97,12 +97,13 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   their 256-unit cell (`walk::Ground`): 0.6 µs a height in Rasenboden on the PC, from 1.8 ms
   searching all 282,000 triangles.
 - **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
-  not read from the game: the speeds (walk 150, run 480 units a second), the lean that starts a
-  run (0.6), how fast she turns, the step she climbs (60), and the camera's look point (110
+  not read from the game: the lean that starts a run (0.6), how fast she turns, the step she climbs (60), and the camera's look point (110
   above her feet; `chara.xml`'s `CamH` 160 for it puts the gate view inside a tree). With it
   and the field camera's 45°, 400 and 8° (vertical field of view), the scene at the garden gate
   frames as in the game's still (the fence, the path and its steps, the light pole, the trees in
-  the same places); she stands nearer the camera in the save than at the spot used here. Her size against the walls (28 by 150)
+  the same places); she stands nearer the camera in the save than at the spot used here. Her speeds (walk 71, run 432 units a second) are those her
+  feet keep still at (docs/formats.md, "Ryza's speeds"): whether the game moves her that fast
+  is unchecked. Her size against the walls (28 by 150)
   and her model's scale (1.04) are the character tables' (`barrel_ryza::chara`). The camera's field of view, distance and pitch are
   the field's (`barrel_ryza::camera`); `at_diff_y` and the look-up adjustment are not placed,
   and the field of view taken as vertical frames the gate as the game does. Setting off plays the gait's
@@ -110,6 +111,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   walk and run change loop to loop, each change mixing the last motion out over 0.2 s. How
   the game moves her during the start and stop (here eased in and out) and its mixing time
   are not read.
+- **The garden stairs' hull** (`a21-s07-stair-01`, `_cplh`, 20 triangles) has a landing at
+  y 6290 from z 30284 to 30330, about 105 units above the stairs model's top and the ground
+  where she stands at the gate (6182), then slopes down to 5901 by z 30971. At
+  `--ryza 32537,0,30300` she starts inside its end, between faces 33 units apart: a walk
+  cannot get out (a run's longer steps can). Whether the hull's centre or placement is off
+  (it is kept y-up by the fitting) or the model's floors should lift her is not checked.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no

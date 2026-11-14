@@ -66,11 +66,14 @@ pub struct Player {
     /// Her size against the walls (radius, height).
     pub radius: f32,
     pub height: f32,
+    /// Her full walking and running speeds, units a second.
+    pub walk_speed: f32,
+    pub run_speed: f32,
 }
 
 impl Player {
     pub fn new(at: Vec3, turn: f32, lengths: &[(u32, f32)]) -> Player {
-        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT }
+        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT, walk_speed: WALK_SPEED, run_speed: RUN_SPEED }
     }
 
     fn length(&self, m: u32) -> f32 {
@@ -140,7 +143,7 @@ impl Player {
             return;
         }
         // Along where she faces (so a stop carries on her way).
-        let full = if self.moving == Gait::Run { RUN_SPEED } else { WALK_SPEED };
+        let full = if self.moving == Gait::Run { self.run_speed } else { self.walk_speed };
         let delta = [self.turn.sin() * full * speed * dt, self.turn.cos() * full * speed * dt];
         let to = match walls {
             // A wall whose top is within a step of her feet (a floor's edge, a kerb) she steps

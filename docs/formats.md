@@ -1124,6 +1124,16 @@ rim table (`cRimTbl`) and the clustered lights. The parts tables
 (`charapartsdefaultvisible.xml`, `charapartschange.xml`, `charapartsmodel.xml`) have no rows for
 `PC00A`: all her parts show.
 
+### Ryza's speeds
+
+No table gives how fast she walks or runs (`charabase.xml`, `charamotionset.xml`,
+`basemotion.xml` and the field tables have no speeds; `basemotion.xml` only lists the base
+motions' numbers: 0, 11, 21, 131, 30, 40, 70 to 72, 200 to 250, 1000 to 1020). Her loops play in
+place, so `barrel_ryza::motion::stride_speed` takes the speed at which a planted foot
+(`SK_L_Foot` 11, `SK_R_Foot` 12, within 1.5 units of its lowest) does not slide: walk loop
+(11) 68.4, run loop (21) 415.7 units a second, 71 and 432 at her model's scale (1.04). A
+step-length check agrees (the walk's foot swings 47 units over a 1.35 s cycle of two steps).
+
 ### Swing settings (`*.swg`)
 
 Next to a Ryza character's model, `<MODEL>Oid.bin` names its bones (`barrel_formats::oid`):
