@@ -1695,7 +1695,13 @@ node names (at `0x141a61b38`, by pointers to the strings): `name99`, `name00` to
 (the character name cards, `a21_charatelop`), `telop00` to `telop26`, then `telop36` to
 `telop86`. `u65 N` names entry N: the opening's 15 to 26 are `telop00` to `telop11`, the
 ending's 29 to 40 `telop14` to `telop25` (the second atlas, whose lines echo the opening's).
-`barrel_ryza::telop` (`Node::of`, `strips`) reads both. (`str_telop.xml` holds the field
+`barrel_ryza::telop` (`Node::of`, `strips`) reads both. The layout's positions are in a
+1280 × 720 space and the strips are drawn at 2160 lines, so a strip shows at a third of its
+`uvwh` size: `telop00`'s image at (240, 333) puts the 2380 × 156 strip at 240 to 1033 across
+and 333 to 385 down, centred, as the opening recording shows it to the pixel. The `uvwh`
+rectangles are in the `neo_` atlases' pixels (`res_<lang>\ui\neo\neo_a21_telopNN.g1t`, 2400
+× 2048 BC7), the plain atlases (1200 × 1024) half that (`telop::place`, `telop::quad`;
+`barrel-ryza ... --telop N` draws one over a frame, from the `neo_` atlas above 1080 lines). (`str_telop.xml` holds the field
 notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie

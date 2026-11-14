@@ -87,6 +87,8 @@ struct Args {
     /// Each pass's GPU time, reported at the end (`--timings`).
     timings: bool,
     lean: [f32; 2],
+    /// `--telop N`: a telop (`u65`'s number) shown over the frame, as an event shows it.
+    telop: Option<u32>,
 }
 
 /// Ryza as posed and walked: her skeleton, her motions by number, her instance, the field's
@@ -106,9 +108,9 @@ struct Rig {
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
-    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
+    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2] };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -137,6 +139,7 @@ fn args() -> Result<Args> {
             }
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
+            "--telop" => a.telop = Some(value()?.parse()?),
             "--lean" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y] = v[..] else { return Err("--lean X,Y".into()) };
@@ -171,6 +174,31 @@ fn args() -> Result<Args> {
         }
     }
     Ok(a)
+}
+
+/// A layer showing telop `n` (`u65`'s number) at full opacity on a `screen`-sized frame.
+fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, n: u32, screen: (u32, u32)) -> Result<text::Layer> {
+    use barrel_ryza::telop;
+    let node = match telop::Node::of(n) {
+        Some(telop::Node::Caption(k)) => format!("telop{k:02}"),
+        Some(telop::Node::Name(_)) => return Err(format!("--telop {n}: a name card (not drawn yet)").into()),
+        None => return Err(format!("--telop {n}: no such telop").into()),
+    };
+    let layout = install.read("\\saves\\ui_en\\a21_telop\\uil_a21_telop01.xml")?;
+    let (at, image) = telop::place(&layout, &node)?.ok_or(format!("--telop {n}: no {node} in the layout"))?;
+    let strips = telop::strips(&install.read("\\saves\\ui_en\\etc\\uis_a21_telop.xml")?)?;
+    let strip = strips.get(image as usize).ok_or(format!("--telop {n}: no strip {image}"))?;
+    let hd = screen.1 > 1080;
+    let file = strip.texture.trim_start_matches("ui/");
+    let path = if hd { format!("\\data\\x64\\res_en\\ui\\neo\\neo_{file}") } else { format!("\\data\\x64\\res_en\\ui\\{file}") };
+    let bytes = install.read(&path)?;
+    let g = barrel_formats::g1t::G1t::parse(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    let t = g.textures.first().ok_or(format!("{path}: no texture"))?;
+    let (rect, uv) = telop::quad(strip, at, screen, (t.width, t.height), if hd { 1.0 } else { 0.5 });
+    eprintln!("telop {n}: {node}, strip {image} of {path} at {rect:?}");
+    let mut layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[t])?;
+    layer.set(gpu, &[text::Quad { rect, uv, color: [1.0; 4], texture: 0 }])?;
+    Ok(layer)
 }
 
 /// The way a directional light travels, in render space: from `elevation` degrees above the
@@ -759,7 +787,13 @@ fn main() -> Result<()> {
             _ => (base, 0),
         }
     };
-    let layers: Vec<&text::Layer> = Vec::new();
+    // A telop over the frame (`--telop`): its strip from the layout, drawn from the hd atlas
+    // (`neo_`) on screens taller than 1080 lines, else the plain one (English).
+    let telop_layer = match a.telop {
+        Some(n) => Some(telop_layer(&install, &gpu, &renderer, n, (width, height))?),
+        None => None,
+    };
+    let layers: Vec<&text::Layer> = telop_layer.iter().collect();
     let bytes = u64::from(width) * u64::from(height) * 4;
     let readback = match pump {
         Some(_) => None,
