@@ -922,7 +922,7 @@ fn pssg_scan(dir: &Path) -> Result<()> {
     if failed.is_empty() { Ok(()) } else { Err("some files did not read".into()) }
 }
 
-/// The operand table for the game installed above `dir`: Shallie DX's, Ayesha DX's or Sophie 2's measured
+/// The operand table for the game installed above `dir`: Shallie DX's, Ayesha DX's, Sophie 2's or Ryza DX's measured
 /// ones, Escha & Logy DX's otherwise.
 fn operand_table_for(dir: &Path) -> OperandTable {
     let has = |name: &str| dir.ancestors().any(|p| p.join(name).is_file());
@@ -932,6 +932,8 @@ fn operand_table_for(dir: &Path) -> OperandTable {
         OperandTable::ayesha()
     } else if has("Atelier_Sophie_2.exe") {
         OperandTable::sophie2()
+    } else if has("Atelier_Ryza_DX.exe") {
+        OperandTable::ryza()
     } else {
         OperandTable::escha()
     }

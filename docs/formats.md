@@ -1994,3 +1994,12 @@ under each `event_<lang>` (8,415 in all). The folders are the story chapters and
 over the island, "On an ordinary island called Kurken..."); its actions are named in
 Japanese as Escha's (`初期設定` set-up, `風景カメラ` landscape camera, `ライザ初期設定` Ryza's
 set-up, `波エフェクト` wave effect, `歩き始め` start walking, `停止` stop).
+
+Their command words have their own operand counts: `ebd_tables::RYZA` (`OperandTable::ryza`,
+measured by `barrel ebd-measure` from the 2,333 scripts as Sophie 2's were: 299 commands, 14
+with varying counts) decodes all 52,464 action bodies into 281,196 commands; Escha's table
+fails on 45,701 of them. Ryza's counts are Sophie 2's for 239 of the 258 commands both use, and
+Escha's for only 60 of 144: the newer games' command set. `barrel ebd-decode` takes Ryza's table
+under an install holding `Atelier_Ryza_DX.exe`. The opening's commonest commands: `w1` (140),
+`s40` (116), `p1` (79), `s2` (47), `s36` (41), `t25`, `s105` (34 each), `u17` (30), `u66` (29).
+What they do is not read yet (Sophie 2's names, where its commands match, are the first guess).

@@ -251,6 +251,11 @@ impl OperandTable {
         Self::new(crate::ebd_tables::SOPHIE2)
     }
 
+    /// Atelier Ryza DX's (measured, `ebd_tables::RYZA`).
+    pub fn ryza() -> Self {
+        Self::new(crate::ebd_tables::RYZA)
+    }
+
     /// The table measured from a game's own bodies: for each command, the number of words up
     /// to the next command word (or `END`); a command always followed by the same number gets
     /// that count, one seen with several gets `None` (runs to the next command). Operands that
