@@ -197,6 +197,71 @@ fn exposure(c: &[[f32; 3]; 9], light: &Light) -> f32 {
     if lit > 0.0 { light.middle_gray / lit } else { 1.0 }
 }
 
+/// The plant card each kind draws from `_grass.g1t`'s atlas (4 × 2 cards: 0 to 3 the top row,
+/// weeds, a leafy stem, a flower, a bush; 4 to 7 the bottom, wheat, a grass tuft, cornflowers,
+/// lupins). The game picks them in its code (not read): a stand-in by the stills, kind 7 (the
+/// large yellow fields) as wheat and kind 6 (along the paths) as the grass tuft.
+const PLANT_CARDS: [u32; 19] = [1, 0, 2, 3, 0, 0, 5, 4, 2, 6, 7, 1, 3, 0, 5, 5, 6, 4, 5];
+/// The most plants a field draws (Rasenboden: about 36,000 at the kinds' densities).
+const PLANT_LIMIT: usize = 200_000;
+/// Plants are grouped into draws of this many grid cells a side, so the view culls them.
+const PLANT_BLOCK: usize = 8;
+
+/// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
+/// per block of grid cells, the atlas being texture `atlas`.
+fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize) {
+    let Some(ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
+        .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
+        .and_then(|b| barrel_formats::khm::parse(b).ok())
+        .map(barrel_engine::walk::Ground::of_heightmap)
+    else {
+        return;
+    };
+    let plants = g.plants(PLANT_LIMIT, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
+    let [cx, cz] = g.cell();
+    let mut blocks: std::collections::BTreeMap<(usize, usize), Vec<&barrel_ryza::grass::Plant>> = Default::default();
+    for p in &plants {
+        blocks.entry(((p.at[0] / cx) as usize / PLANT_BLOCK, (p.at[2] / cz) as usize / PLANT_BLOCK)).or_default().push(p);
+    }
+    let instance = scene.instance(Mat4::IDENTITY);
+    for list in blocks.values() {
+        let first_index = scene.indices.len() as u32;
+        for p in list {
+            let card = PLANT_CARDS.get(p.kind as usize).copied().unwrap_or(0);
+            let (u, v) = ((card % 4) as f32 * 0.25, (card / 4) as f32 * 0.5);
+            let [w, h] = p.size;
+            // Vertices are built in render space: game x mirrored (`render_space`).
+            let centre = [-p.at[0], p.at[1] + h * 0.5, p.at[2]];
+            let base = scene.vertices.len() as u32;
+            for (dx, dy, uv) in [(-0.5, -0.5, [u, v + 0.5]), (0.5, -0.5, [u + 0.25, v + 0.5]), (0.5, 0.5, [u + 0.25, v]), (-0.5, 0.5, [u, v])] {
+                scene.vertices.push(Vertex { pos: centre, normal: [0.0, 0.0, 1.0], uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0] });
+            }
+            scene.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+        scene.draws.push(Draw {
+            first_index,
+            index_count: scene.indices.len() as u32 - first_index,
+            texture: atlas,
+            overlay: None,
+            instance,
+            mask: None,
+            normal_map: None,
+            eye: false,
+            sky: false,
+            outline: None,
+            field: Some(0),
+            casts: false,
+            name: "plants".into(),
+            version: None,
+            light: 0,
+            tint: 0,
+            bounds: None,
+            class: 0,
+        });
+    }
+    eprintln!("plants: {} in {} draws", plants.len(), blocks.len());
+}
+
 fn main() -> Result<()> {
     let a = args()?;
     let install = Install::open(Path::new(&a.install))?;
@@ -211,6 +276,9 @@ fn main() -> Result<()> {
     let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, ..Default::default() };
     let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
+    // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
+    let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
+    let grass_pack = barrel_engine::field::named(&main, &format!("{}_grass.g1t", files.area)).and_then(|b| G1t::parse(b).ok());
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the
     // field's. Lit as the field's models are until her own shaders are read
@@ -417,6 +485,12 @@ fn main() -> Result<()> {
         }
         eprintln!("sky dome {}: {} draws", dome_files.as_ref().unwrap().0, scene.draws.len() - first);
         textures.extend(dp.textures.iter());
+    }
+    if let (Some(g), Some(gp)) = (&grass, &grass_pack) {
+        if let Some(atlas) = gp.textures.first() {
+            add_plants(&mut scene, g, &main, &files.area, textures.len());
+            textures.push(atlas);
+        }
     }
     let Scene { mut vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, morph_weights, .. } = scene;
     // The models' Color0 does not reach their materials: the G-buffer programs (`pbb-*_gb.g1s`,
@@ -910,6 +984,15 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     let mut sky_plane = false;
     let mut exposure_k = None;
     look[4] = [eye.x, eye.y, eye.z, 1.0];
+    // The billboards' axes (model.vert; the field's plants): upright cards turning about the
+    // vertical, the camera's right flattened (render space is mirrored, so the view's -x).
+    {
+        let r = Vec3::new(view.row(0).x, 0.0, view.row(0).z).normalize_or(Vec3::X);
+        let back = r.cross(Vec3::Y);
+        look[37] = [-r.x, -r.y, -r.z, 0.0];
+        look[38] = [0.0, 1.0, 0.0, 0.0];
+        look[39] = [back.x, back.y, back.z, 0.0];
+    }
     look[26] = [1.0, 1.0, 1.0, 1.0];
     // The environment's light instead, when the field has one: the cube map's light times the
     // ambient colour (model.vert's `sh`), the sun and the second light as the field's two

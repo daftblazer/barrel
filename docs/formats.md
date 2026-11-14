@@ -1205,7 +1205,7 @@ vertex programs take position, normal, colour, UV, tangent and a billboard size,
 sway phase `g_fPhase`, `g_fOscPhase`), so the choice is in the executable. The grass quality
 and range presets (`saves/graphicssetting/grassqualitypreset.xml`, `grassrangepreset.xml`):
 density 1 and fading from 8000 to 15000 units at Middle, the highest. `barrel_ryza::grass`
-reads the file. Not drawn yet (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes
+reads the file; `barrel-ryza` draws the plants (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes
 (position, rotation in radians, three sizes, then two words: 2 and 15 in all of Rasenboden's;
 44 bytes each), then a u32 count of cylinders (position, rotation, radius, height, the same two
 words; 40 bytes). Rasenboden's four boxes are tall and thin (38 × 715 × 37 by its first, near

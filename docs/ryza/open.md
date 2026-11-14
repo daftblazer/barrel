@@ -112,9 +112,16 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   frame yet, so its colour (too bright and green here) cannot be checked.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
   Its plants (flowers, weeds, tufts, wheat) come from `_grass.bin` / `_grass.g1t` (a grid of
-  plant kinds per 500 units and 8 card textures, docs/formats.md): read, not drawn yet. To
-  find: which card each kind draws, the kind record's floats, and whether the dense short
-  grass is these cards or something of the terrain's own.
+  plant kinds per 500 units and 8 card textures, docs/formats.md): `barrel-ryza` draws them
+  as upright cards turning about the vertical (look slots 37 to 39), on the heightmap, one
+  draw per 8 × 8 cells: Rasenboden's 44,015 plants in 66 draws, about 0.14 ms at the gate
+  view on the PC. Stand-ins, not read: the spread (a kind's last float as plants per 100 ×
+  100 units, its first two as height and spread, the next two as width and spread), which card
+  each kind draws (`PLANT_CARDS`, by the stills: kind 6 along the paths as the grass tuft,
+  kind 7 in the yellow fields as wheat), no sway (`g_fPhase`), no fading out (the Middle
+  preset fades from 8000 to 15000 units), no shadows cast, lit as the field's models with a
+  card normal facing the camera (they come out paler than the game's). Whether the dense
+  short grass is these cards or the terrain's own is not known.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
   evening 0.8) on the stored scene and its `fBloomWeight` (0.4, evening 0.6): a soft halo on

@@ -69,6 +69,53 @@ impl Grass {
     }
 }
 
+/// One plant: where its foot stands (game units), its size and which kind it is.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plant {
+    pub at: [f32; 3],
+    /// Width and height, game units.
+    pub size: [f32; 2],
+    pub kind: u32,
+}
+
+/// A small fixed hash to a number in [0, 1), so a field's plants come out the same each run.
+fn unit(mut v: u32) -> f32 {
+    v ^= v >> 16;
+    v = v.wrapping_mul(0x7feb_352d);
+    v ^= v >> 15;
+    v = v.wrapping_mul(0x846c_a68b);
+    v ^= v >> 16;
+    (v >> 8) as f32 / (1u32 << 24) as f32
+}
+
+impl Grass {
+    /// The plants of every cell, at most `limit`, standing on `ground` (cells it has no height
+    /// for are left out). A stand-in for the game's own spread, which is not read: a kind's
+    /// last float taken as plants per 100 × 100 units, its first two as the height and its
+    /// spread, the next two as the width and its spread.
+    pub fn plants(&self, limit: usize, ground: impl Fn(f32, f32) -> Option<f32>) -> Vec<Plant> {
+        let [cx, cz] = self.cell();
+        let mut out = Vec::new();
+        for (c, &kind) in self.cells.iter().enumerate() {
+            let Some(k) = self.kinds.get(kind as usize) else { continue };
+            let (i, j) = ((c % self.size[0] as usize) as f32, (c / self.size[0] as usize) as f32);
+            let count = (k[4] * cx * cz / 10_000.0).round().max(0.0) as u32;
+            for n in 0..count {
+                if out.len() >= limit {
+                    return out;
+                }
+                let seed = (c as u32).wrapping_mul(9781).wrapping_add(n.wrapping_mul(6271));
+                let (x, z) = ((i + unit(seed)) * cx, (j + unit(seed ^ 0x5bd1_e995)) * cz);
+                let Some(y) = ground(x, z) else { continue };
+                let h = k[0] + k[1] * (unit(seed ^ 0x68e3_1da4) - 0.5);
+                let w = k[2] + k[3] * (unit(seed ^ 0x1b56_c4e9) - 0.5);
+                out.push(Plant { at: [x, y, z], size: [w.max(1.0), h.max(1.0)], kind });
+            }
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +156,18 @@ mod tests {
         assert_eq!(g.kind_at(10.0, 10.0), None);
         assert_eq!(g.kind_at(-1.0, 10.0), None);
         assert_eq!(g.kind_at(200000.0, 10.0), None);
+    }
+
+    #[test]
+    fn plants_fill_their_cells_on_the_ground() {
+        // One kind at 1 plant per 100 × 100 units over 64000-unit cells: 409,600 a cell.
+        let g = Grass::parse(&file(&[[100.0, 0.0, 60.0, 0.0, 1.0]], &[NONE, 0, NONE, NONE], 2, 0)).unwrap();
+        let p = g.plants(1000, |x, _| Some(x / 1000.0));
+        assert_eq!(p.len(), 1000);
+        assert!(p.iter().all(|p| (64000.0..128000.0).contains(&p.at[0]) && p.at[2] < 64000.0));
+        assert!(p.iter().all(|p| p.at[1] == p.at[0] / 1000.0 && p.size == [60.0, 100.0] && p.kind == 0));
+        assert_eq!(p, g.plants(1000, |x, _| Some(x / 1000.0)));
+        assert!(g.plants(1000, |_, _| None).is_empty());
     }
 
     #[test]
