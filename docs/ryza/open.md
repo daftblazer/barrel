@@ -15,15 +15,15 @@ achievements are the player's own, and the DX version has not been played there)
   `s45_m_underground_01`, `s53_m_starbottle_01`, `s76`/`s78`/`s80`/`s82` battle points) fails
   with "ktf section offsets"; the other 87 fields load (`barrel ryza-field INSTALL`). Way in:
   compare one's header with a field that reads (docs/formats.md, the terrain section).
-- **Field lighting.** `barrel-ryza` lights fields with the environment's diffuse cube map
-  alone (as an ambient, spherical harmonics): dim, no sun, no point lights. The cube maps are
-  shared between fields, so the field's own light (sun direction and colour, exposure) must be
-  in `_env.bin` (12 sets by weather and time; docs/formats.md). The sun, the second light
-  and the main ambient are placed (`barrel_ryza::environment::Light`); not yet used by
-  `barrel-ryza`, and `indirectStage_` (the cube map's scale, `IDLScalerOfAmbientDiffuseMap`)
-  is not placed: the file's blocks shift against the executable's structure (0x44 by the
-  lights, more later). Also open: how the game turns elevation and azimuth into a direction,
-  and its exposure (`trueHDR_`: middle gray 0.18, `fLumiMax`).
+- **Field lighting.** `barrel-ryza --time T --weather W` lights a field with its environment
+  set: the cube map's light times `mainAmbientLight` as the ambient, the sun and the second
+  light as directional lights. Stand-ins, not read from the game: (1) the angles' convention
+  (azimuth from +z toward +x, elevation up; the noon sun may come from the wrong side);
+  (2) one exposure mapping an upward surface of albedo 0.25 to `fMiddleGray`, where the game
+  adapts within `vExposureRange` (night comes out too bright); (3) how the game combines the
+  ambient colour with the cube map (multiplied here), with `indirectStage_`'s scale unplaced
+  (the file's blocks shift against the executable's structure after the HDR block). The
+  field's shaders (`.g1s`) and a reference frame would settle all three.
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as 0 with Escha's
   layout (`cDiff` / `cAmb`), so `barrel-ryza` gives every draw the full material.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its

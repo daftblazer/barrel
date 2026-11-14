@@ -1,11 +1,13 @@
 //! `barrel-ryza`: Atelier Ryza DX on Barrel. For now it draws one field offscreen:
 //!
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
-//!                 [--look-at X,Y,Z] [--distance D]
+//!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
+//!                 [--weather sunny|cloudy|foggy]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
-//! or looks at X,Y,Z (field units, as the placement list gives them) from D away. Every draw is shown unlit
+//! or looks at X,Y,Z (field units, as the placement list gives them) from D away. The light is
+//! the field environment's set for the time and weather (noon, sunny by default). Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
 
 use std::path::Path;
@@ -16,6 +18,7 @@ use barrel_formats::g1t::G1t;
 use barrel_render::renderer::{Camera, Frame, Renderer};
 use barrel_render::settings::RenderSettings;
 use barrel_render::*;
+use barrel_ryza::environment::{Light, Time, Weather};
 use barrel_ryza::install::Install;
 use glam::{Mat4, Vec3};
 
@@ -31,13 +34,15 @@ struct Args {
     pitch: f32,
     look_at: Option<Vec3>,
     distance: Option<f32>,
+    time: Time,
+    weather: Weather,
 }
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
-    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D]";
+    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -54,10 +59,48 @@ fn args() -> Result<Args> {
                 a.look_at = Some(Vec3::new(x, y, z));
             }
             "--distance" => a.distance = Some(value()?.parse()?),
+            "--time" => {
+                a.time = match value()?.as_str() {
+                    "morning" => Time::Morning,
+                    "noon" => Time::Noon,
+                    "evening" => Time::Evening,
+                    "night" => Time::Night,
+                    t => return Err(format!("--time {t}: morning, noon, evening or night").into()),
+                }
+            }
+            "--weather" => {
+                a.weather = match value()?.as_str() {
+                    "sunny" => Weather::Sunny,
+                    "cloudy" => Weather::Cloudy,
+                    "foggy" => Weather::Foggy,
+                    w => return Err(format!("--weather {w}: sunny, cloudy or foggy").into()),
+                }
+            }
             _ => return Err(format!("unknown option {flag}").into()),
         }
     }
     Ok(a)
+}
+
+/// The way a directional light travels, in render space: from `elevation` degrees above the
+/// horizon and `azimuth` degrees around y from +z toward +x (game space; the convention is a
+/// stand-in, not read from the game, `docs/ryza/open.md`), x mirrored.
+fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
+    let (e, a) = (elevation.to_radians(), azimuth.to_radians());
+    let toward = Vec3::new(e.cos() * a.sin(), e.sin(), e.cos() * a.cos());
+    -toward * Vec3::new(-1.0, 1.0, 1.0)
+}
+
+/// One exposure for the frame, standing in for the game's adaptation (`trueHDR_`, not read):
+/// what maps the light on an upward-facing surface of average albedo (0.25) to the set's
+/// middle gray.
+fn exposure(c: &[[f32; 3]; 9], light: &Light) -> f32 {
+    let luma = |v: [f32; 3]| 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+    let up = barrel_ryza::environment::basis([0.0, 1.0, 0.0]);
+    let sky: [f32; 3] = std::array::from_fn(|ch| (0..9).map(|i| c[i][ch] * up[i]).sum::<f32>() * light.ambient[ch]);
+    let sun = light.parallel.iter().map(|p| luma(p.color) * p.elevation.to_radians().sin().max(0.0)).sum::<f32>();
+    let lit = (luma(sky) + sun) * 0.25;
+    if lit > 0.0 { light.middle_gray / lit } else { 1.0 }
 }
 
 fn main() -> Result<()> {
@@ -83,13 +126,16 @@ fn main() -> Result<()> {
     if draws.is_empty() {
         return Err("nothing to draw".into());
     }
-    // The field's diffuse light, from its environment's cube map.
-    let harmonics = match files.env.as_deref().map(Elixir::parse).transpose()? {
+    // The field's light: its environment's diffuse cube map, and the set for the time and
+    // weather (sun, second light, ambient colour).
+    let environment = match files.env.as_deref().map(Elixir::parse).transpose()? {
         Some(env) => {
             let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
-            let (c, means) = barrel_ryza::environment::diffuse_harmonics(ad)?;
-            eprintln!("diffuse light: face means (+x -x +y -y +z -z) {:.3?}; constant term {:.3?}", means, c[0]);
-            Some(c)
+            let (c, _) = barrel_ryza::environment::diffuse_harmonics(ad)?;
+            let bin = barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)).ok_or("environment has no settings")?;
+            let light = Light::read(bin, a.time, a.weather)?;
+            eprintln!("light ({:?}, {:?}): {light:?}", a.time, a.weather);
+            Some((c, light))
         }
         None => None,
     };
@@ -135,12 +181,21 @@ fn main() -> Result<()> {
     let mut look = [[0f32; 4]; LOOK_SLOTS];
     look[4] = [eye.x, eye.y, eye.z, 1.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
-    // The environment's diffuse light instead, when the field has one (model.vert's `sh`).
-    if let Some(c) = harmonics {
+    // The environment's light instead, when the field has one: the cube map's light times the
+    // ambient colour (model.vert's `sh`), the sun and the second light as the field's two
+    // directional lights, all scaled by one exposure (`exposure`).
+    if let Some((c, light)) = environment {
+        let k = exposure(&c, &light);
         look[66] = [1.0, 0.0, 0.0, 0.0];
-        for (k, [r, g, b]) in c.into_iter().enumerate() {
-            look[67 + k] = [r, g, b, 0.0];
+        for (i, [r, g, b]) in c.into_iter().enumerate() {
+            look[67 + i] = [r * light.ambient[0] * k, g * light.ambient[1] * k, b * light.ambient[2] * k, 0.0];
         }
+        for (slot, p) in [22usize, 24].into_iter().zip(light.parallel) {
+            let d = from_light(p.elevation, p.azimuth);
+            look[slot] = [d.x, d.y, d.z, 0.0];
+            look[slot + 1] = [p.color[0] * k, p.color[1] * k, p.color[2] * k, 1.0];
+        }
+        eprintln!("exposure {k:.4}");
     }
     renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
 
@@ -149,7 +204,7 @@ fn main() -> Result<()> {
     let hidden = vec![false; instances.len()];
     let shown = |_: &Draw| true;
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
-    let material = |_: &Draw| (if harmonics.is_some() { 0 } else { UNLIT }, 0);
+    let material = |_: &Draw| (if environment.is_some() { 0 } else { UNLIT }, 0);
     let layers: Vec<&text::Layer> = Vec::new();
     let frame = Frame {
         image: 0,
