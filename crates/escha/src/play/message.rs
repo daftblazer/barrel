@@ -246,7 +246,8 @@ mod tests {
         let mut f = font();
         f.glyphs.insert('\u{410}', Glyph { x: 0, y: 0, width: 10, height: 20, x_offset: 0, y_offset: 10, advance: 10 });
         let mut out = Vec::new();
-        let line = &plain_lines("a<CLGR>b<CLNR>c<IM00>")[0];
+        // <IM02> (cancel) draws glyph 0 (B) with the confirm button on A (`western`).
+        let line = &plain_lines("a<CLGR>b<CLNR>c<IM02>")[0];
         run(&f, line, 0.0, 0.0, 1.0, [0.5; 4], &mut out);
         let colours: Vec<[f32; 4]> = out.iter().map(|q| q.color).collect();
         assert_eq!(colours, [[0.5; 4], colour([0, 0xaa, 0]), [0.5; 4], [1.0; 4]]);
