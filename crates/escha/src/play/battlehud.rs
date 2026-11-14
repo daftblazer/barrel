@@ -36,6 +36,11 @@ const TURN_BAR: u32 = 864;
 const SLOT: u32 = 860;
 const SLOTS: usize = 15;
 const SLOT_FIRST: (i32, i32) = (0xf4, 7);
+/// A slot's target marks, shown on the target's next turn while a member picks it (the
+/// ruins-entrance-battle-stats recording at 322 s): the gold frame (layout 861 nested at
+/// [-6, -4], part 0xf3) and the arrow under the slot (part 0x111 at [16, 76]).
+const SLOT_FRAME: u32 = 861;
+const SLOT_ARROW: i32 = 0x111;
 const FACE: i32 = 0xe6;
 /// The first monster's portrait cut (the party's 11 before it).
 pub const MONSTER_FACES: usize = 11;
@@ -65,7 +70,8 @@ fn share((now, max): (i32, i32)) -> f32 {
 pub const FAST_FORWARD_SPEEDS: [f32; 3] = [1.0, 1.5, 2.0];
 pub const FAST_FORWARD_LABELS: [&str; 3] = ["Fast Forward Off", "Fast Forward(x1.5)", "Fast Forward(x2)"];
 
-pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize) -> Vec<Element> {
+/// `marked`: the place in `order` of the target's next turn, while one is being picked.
+pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>) -> Vec<Element> {
     let mut out = Vec::new();
     // The turn order's slot a node is in (counted as their first nodes come), and that slot's
     // corner (the Action slot's scaling centre).
@@ -80,9 +86,14 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
             continue;
         }
         if p.path.contains(&TURN_BAR) {
+            // The order's place slot k shows: the Action slot the one acting, slot k of the 15
+            // the (15 - k)th after it.
+            let place = |k: usize| if k >= SLOTS { 0 } else { SLOTS - k };
             if p.path.last() != Some(&SLOT) {
                 if !p.path.contains(&SLOT) {
                     out.push(Element::stored(p));
+                } else if p.path.last() == Some(&SLOT_FRAME) && slot.is_some_and(|k| marked == Some(place(k))) {
+                    out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at: p.at });
                 }
                 continue;
             }
@@ -91,8 +102,13 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 slot_at = p.at;
             }
             let Some(k) = slot else { continue };
-            // The Action slot shows the one acting; slot k of the 15 the (15 - k)th after it.
-            let Some(&face) = order.get(if k >= SLOTS { 0 } else { SLOTS - k }) else { continue };
+            if n.part == SLOT_ARROW {
+                if marked == Some(place(k)) {
+                    out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at: p.at });
+                }
+                continue;
+            }
+            let Some(&face) = order.get(place(k)) else { continue };
             let (part, cut) = match (n.part, n.cut) {
                 SLOT_FIRST => SLOT_FIRST,
                 (FACE, _) => match face {
@@ -203,8 +219,9 @@ pub struct Commands {
     pub at: usize,
     pub skills: Option<(Vec<(String, bool)>, usize)>,
     pub title: String,
-    /// The target's plate while choosing it.
+    /// The target's plate while choosing it, and the place in the turn order of its next turn.
     pub plate: Option<Plate>,
+    pub marked: Option<usize>,
 }
 
 /// The target plate (layout 920: the frame, part 0x102 cut 3, the red HP bar, cut 6, and the

@@ -209,3 +209,8 @@ likely settle them where static reading failed.
 - **Movies**: to be played by native Rust decoders (ASF, VC-1, WMA Pro; the user's choice,
   2026-11-14); not implemented yet.
 - World map colour grading: our world map is warmer and lighter than the recording (colseit-arrival 1:25: the Old Highway's green `_off` mark draws olive-yellow, the clouds cream); the map shader's light or tone, not the marks' choice.
+
+- Battle turn bar spacing (stage 17): the game places each portrait by the time until that
+  turn (ruins-entrance-battle-stats at 322 s: about two slots, 128 px, apart), Barrel packs
+  the order into neighbouring slots. Needs the timeline's wait values mapped to the bar (read
+  how the bar's code places a face: its slot or a pixel offset).
