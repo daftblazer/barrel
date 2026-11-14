@@ -28,7 +28,11 @@ achievements are the player's own, and the DX version has not been played there)
   extended Reinhard with the set's `fLumiMax` as white, Rasenboden's noon 4.3: the
   still's sunlit grass 182, 216, 69, ours 168, 214, 47 instead of 241, 254, 22; the 90th
   percentile drops to about 175 against the still's 219, its sky being brighter). The scene
-  is stored at half range in 8 bits, so what passes 2.0 is clipped before the curve. The shade's colour: the default override's
+  is stored at half range in 8 bits, so what passes 2.0 is clipped before the curve, and the
+  curve maps 2.0 to 0.74: nothing in the frame reaches white. That is why the sky, the
+  clouds (unlit, at most 1.0: mid-grey, against the still's white) and the 90th percentile
+  (166 against 219) come out low. Needed: an HDR scene target for Ryza (a float format;
+  Escha keeps its 8-bit one), then the exposure and curve refitted. The shade's colour: the default override's
   `indirectStage_IDLScalerOfAmbientDiffuseMap` 2.5 × `..ColorRGB` (1.642, 1.978, 4.0) tints
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no

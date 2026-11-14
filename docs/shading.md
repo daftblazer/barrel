@@ -677,6 +677,18 @@ highlight map (`sAlbedoRetouch2HighlightMap`, the material's kind-66 texture: Ry
 by its alpha, at the hair's UV shifted along v by `dot(V, alr2HDir) × alr2HAdj` (`alr2HDir`
 (0,1,0), `alr2HAdj` -0.11: the band slides up and down the hair with the view's pitch).
 `barrel-ryza` composites it unshifted at load (`composite_overlays`, as Escha's eyes).
+Ryza's sky dome (`data\x64\field\skydome\<time>_<weather>.elixir.gz`, Rasenboden's noon
+takes `morning_sunny`: two submeshes, a band of thin clouds and one of big ones, 2048 × 1024
+and 2048 × 512 BC3, scrolled by `txC0` 0.004 and 0.002) draws with `PBSkyDome-NT0Tn`
+(`skydomepbs-nt0tn_cll.g1s`, program 2): the cloud texture is lit as a surface, (the ambient
+light map along the normal × `vAmbParam.x` × `vAmbDifScl` + `ambLit` + `litCol` × N·L) ×
+albedo, plus a specular term from the kind-3 map and the ambient specular map, then the
+height fog layers (`cHFog`, `hFogParam`, a sum of 20-odd sines for their wavy top). The
+dome's normals point inward and down (y -0.5 to -0.76), so the sun's N·L is 0 overhead and
+the clouds take the ambient and the specular: how bright they come out rests on run-time
+scales not read (`vAmbParam`, `vAmbDifScl`, `cb0[48..50]`). `barrel-ryza` draws the dome
+unlit (its texture on its vertex colour) for now.
+
 The overrides present are `env_default`, two fields' (`s02_l_hap_main`,
 `s04_l_sad_main`) and test ones. `trueHDR_vSaturationScale` (1.2) is applied in the post pass
 (`post.frag`, its `pad.y`; 0 for Escha: unchanged). `barrel_ryza::environment::Rim` reads the rim: on her draws whose
