@@ -47,6 +47,13 @@ likely settle them where static reading failed.
     (no screenshot of it).
 - (2026-11-14) Battles don't really work yet: Barrel's battle is an auto-battle with a stand-in
   playback and a text command list (stage 17 in the plan).
+- (2026-11-14) The area map's ring under her (blue rim, dark purple middle, about 1.3 times a
+  sector mark: colseit-arrival 0:45) is not drawn. Not a placement, not the CUR00 / CUR01
+  markers, not a tint of the mark. Likely an effect from `Effect/000_All` (rings: 210_RING_01,
+  331_RING_02, 458_R_RING_GROUND_01, ...; Barrel plays no effects yet). Way in: what the map's
+  setup creates after CUR00 (`0x140383c8e` on), and who calls the effect player there. Also
+  open: the lead is drawn 3.2 times on the maps by `0x140388820`, Barrel's fitted 1.75 (area)
+  and 3.7 (world) say otherwise; which model and base scale the map uses.
 - (2026-11-14) The maps don't quite look the same yet (stage 15). Done: the vignette (649) and
   diamond border (650), and the screen texture filter (the red-orange rim, docs/shading.md).
   Still different against colseit-arrival 0:45: the middle of the map is paler than the game's
