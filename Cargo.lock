@@ -84,6 +84,7 @@ name = "barrel-engine"
 version = "0.1.0"
 dependencies = [
  "barrel-formats",
+ "barrel-render",
  "glam",
 ]
 

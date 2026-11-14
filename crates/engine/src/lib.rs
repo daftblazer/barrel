@@ -5,6 +5,7 @@ pub mod camera;
 pub mod clock;
 pub mod curve;
 pub mod event;
+pub mod field;
 pub mod field_camera;
 pub mod play_camera;
 pub mod rng;

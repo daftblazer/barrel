@@ -18,6 +18,7 @@ use barrel_formats::g1t::{Format, G1t};
 use glam::{Mat4, Vec3};
 
 use barrel_render::*;
+use barrel_engine::field::named;
 use barrel_engine::skin::{bind_world, local_pose, mix_pose, pose, skin, skin_world, Trs};
 
 mod hud;
@@ -1920,104 +1921,24 @@ fn face_weights(anim: &barrel_formats::g1a::Animation, targets: usize, time: f32
 }
 
 /// The entry of `container` named `name`, if any.
-fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
-    container.entries.iter().find(|e| e.name == name && !e.is_dummy()).map(|e| container.data(e))
-}
-
-/// A field's placed objects and its shared texture pack.
-/// Adds a field's ground and objects to the scene, as field `scene.field`, its textures taken
-/// to start at `base` in the scene's list; returns its texture pack.
-/// A field's models and terrain into the scene: its texture pack, and its light texture
-/// (`<AREA>_pat.g1t`; indoor fields carry a 64-byte stub, taken as none).
+/// A field's models and terrain into the scene (`barrel_engine::field::load`), from its folder's
+/// two containers, with Escha's tags: objects that sway by node (named or tagged `xN<n>_`, the
+/// `<n_shaker>` keywords) get their own instance so the tree's spring can turn them; only those
+/// marked `xDS_` cast the sun's shadow (TOWN_11's workshop: its furniture and a second, `xDS_`
+/// ceiling; the ceiling drawn does not cast); `xAM_..._ver<N>` shows in version N only.
 fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, Option<Vec<u8>>)> {
-    let first_draw = scene.draws.len();
     let area = dir.file_name().ok_or("field directory has no name")?.to_string_lossy().into_owned();
     let main_bytes = std::fs::read(dir.join(format!("{area}.elixir.gz")))?;
     let main = Elixir::parse(&main_bytes)?;
     let obj_bytes = std::fs::read(dir.join(format!("{area}_Obj.elixir.gz")))?;
     let objects = Elixir::parse(&obj_bytes)?;
-    let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
-    let pattern = named(&main, &format!("{area}_pat.g1t")).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty())).map(<[u8]>::to_vec);
-    let texture_count = G1t::parse(&textures)?.textures.len();
-    // A flat placeholder terrain (every height 0, one layer: TOWN_03, TOWN_07) is not drawn: the
-    // town's ground is its models, and events stand characters below it (TOWN_07's at y -255).
-    let terrain = named(&main, &format!("{area}.ktf")).map(|b| barrel_formats::ktf::parse(b).map(|t| (b, t))).transpose()?.filter(|(_, t)| {
-        let flat = t.heightmap.heights.iter().all(|&v| v == 0.0) && t.layers.textures.len() <= 1;
-        if flat {
-            eprintln!("{area}: flat placeholder terrain, not drawn");
-        }
-        !flat
-    });
-    if let Some((bytes, t)) = terrain {
-        let h = &t.heightmap;
-        let mesh = barrel_formats::ktf::mesh(bytes)?;
-        let patches = scene.add_terrain(&mesh, &t.layer_repeats());
-        let index_count: u32 = patches.iter().map(|p| p.index_count).sum();
-        let (mut lo, mut hi) = (f32::MAX, f32::MIN);
-        for z in 0..=h.cells_z {
-            for x in 0..=h.cells_x {
-                let v = h.height(x, z);
-                (lo, hi) = (lo.min(v), hi.max(v));
-            }
-        }
-        eprintln!(
-            "{area}: terrain {}x{} cells of {}, heights {lo}..{hi}, {} layers, {} maps, {} triangles",
-            h.cells_x,
-            h.cells_z,
-            h.cell_size,
-            t.layers.textures.len(),
-            t.blend.textures.len(),
-            index_count / 3
-        );
-        scene.terrains.push((
-            scene.field.unwrap_or(0),
-            TerrainDraw { patches, cell: mesh.cell_size, extent: [h.cells_x as f32 * h.cell_size, h.cells_z as f32 * h.cell_size], ktf: bytes.to_vec() },
-        ));
-    }
-    let placements = barrel_formats::opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
-    let (mut placed, mut missing) = (0usize, 0usize);
-    for t in &placements.objects {
-        let Some(bytes) = named(&objects, &format!("{}_hi.g1m", t.name)) else {
-            missing += t.instances.len();
-            continue;
-        };
-        let model = G1m::parse(bytes)?;
-        let Some(geometry) = model.geometry.as_ref() else { continue };
-        for i in &t.instances {
-            // Scale, then rotate about x, y and z in that order, then move.
-            let rotation = glam::Quat::from_euler(glam::EulerRot::ZYX, i.rotation[2], i.rotation[1], i.rotation[0]);
-            let transform = Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position));
-            let before = scene.draws.len();
-            // Objects that sway by node (named or tagged `xN<n>_`, the `<n_shaker>` keywords)
-            // get their own instance, so the tree's spring can turn it; the rest are baked.
-            let node_sway = |s: &str| s.match_indices("xN").any(|(k, _)| s[k + 2..].chars().next().is_some_and(|c| c.is_ascii_digit()) && s[k + 3..].starts_with('_'));
-            if node_sway(&t.name) || node_sway(&i.tags) {
-                let instance = scene.instance(transform);
-                scene.add_posed(geometry, Mat4::IDENTITY, texture_count, None, instance)?;
-            } else {
-                scene.add(geometry, transform, texture_count)?;
-            }
-            // Only the objects marked xDS_ cast the sun's shadow (TOWN_11's workshop: its
-            // furniture and a second, xDS_ ceiling; the ceiling drawn does not cast).
-            let casts = t.name.contains("xDS_") || i.tags.contains("xDS_");
-            let version = object_version(&i.tags);
-            for d in &mut scene.draws[before..] {
-                d.casts = casts;
-                // The object's name and its placement's tags (the sway keywords, xV1_ / xN1_,
-                // may be in either).
-                d.name = if i.tags.is_empty() { t.name.clone() } else { format!("{} {}", t.name, i.tags) };
-                d.version = version;
-            }
-            placed += 1;
-        }
-    }
-    eprintln!("{area}: {placed} objects placed, {missing} without a model");
-    for d in &mut scene.draws[first_draw..] {
-        d.texture += base;
-        d.overlay = d.overlay.map(|o| o + base);
-        d.mask = d.mask.map(|m| m + base);
-    }
-    Ok((textures, pattern))
+    let node_sway = |s: &str| s.match_indices("xN").any(|(k, _)| s[k + 2..].chars().next().is_some_and(|c| c.is_ascii_digit()) && s[k + 3..].starts_with('_'));
+    let place = |t: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement {
+        own_instance: node_sway(&t.name) || node_sway(&i.tags),
+        casts: t.name.contains("xDS_") || i.tags.contains("xDS_"),
+        version: object_version(&i.tags),
+    };
+    barrel_engine::field::load(&area, &main, &objects, scene, base, &place)
 }
 
 /// The version a placement's tags give it: `<N>` from `xAM_balloon_ver<N>` (TOWN_07's dock

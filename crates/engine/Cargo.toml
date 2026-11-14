@@ -7,4 +7,5 @@ license.workspace = true
 
 [dependencies]
 barrel-formats = { path = "../formats" }
+barrel-render = { path = "../render" }
 glam = "0.33"
