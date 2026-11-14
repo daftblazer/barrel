@@ -300,7 +300,20 @@ fn main() -> Result<()> {
         // Her submeshes' ramp rows (`rampIndex`), one draw each in order for those with UVs and
         // normals (the others draw nothing, `Scene::add_posed`); the ramp texture follows her
         // own.
-        let rows: Vec<(u32, bool)> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).map(|s| (geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255), geometry.param_record(s, "rmIndex").is_some())).collect();
+        let drawn: Vec<&barrel_formats::g1m::Submesh> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).collect();
+        let rows: Vec<(u32, bool)> = drawn.iter().map(|s| (geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255), geometry.param_record(s, "rmIndex").is_some())).collect();
+        // Her hair's highlight (`sAlbedoRetouch2HighlightMap`, texture kind 66): laid over the
+        // hair's colour by its alpha. The game shifts it along v by `dot(V, alr2HDir) ×
+        // alr2HAdj` (-0.11 at most, about 0.015 at the field camera's pitch): laid on unshifted
+        // (docs/shading.md).
+        let highlights: Vec<Option<usize>> = drawn.iter().map(|s| geometry.materials.get(s.material as usize).and_then(|m| m.textures.iter().find(|t| t.kind == 66)).map(|t| t.index as usize)).collect();
+        if scene.draws.len() - first == highlights.len() {
+            for (d, h) in scene.draws[first..].iter_mut().zip(&highlights) {
+                if let Some(h) = h {
+                    d.overlay = Some(*h);
+                }
+            }
+        }
         if scene.draws.len() - first == rows.len() {
             for (d, &row) in scene.draws[first..].iter().zip(&rows) {
                 ramp_rows.insert((d.first_index, d.instance), row);
@@ -461,6 +474,13 @@ fn main() -> Result<()> {
     }
     let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
     let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
+    // Her hair's highlights laid over its colour (`composite_overlays`, as Escha's eyes).
+    let composites = barrel_render::composite_overlays(&mut draws, &textures);
+    let composite_textures: Vec<barrel_formats::g1t::Texture> = composites
+        .iter()
+        .map(|(w, h, px)| barrel_formats::g1t::Texture { width: *w, height: *h, format: barrel_formats::g1t::Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&px[..]] })
+        .collect();
+    let textures: Vec<&barrel_formats::g1t::Texture> = textures.iter().copied().chain(composite_textures.iter()).collect();
     let (uploaded, outline_tex, white) = upload_textures(&gpu, renderer.pool, &textures, None)?;
     let grounds = upload_grounds(&gpu, renderer.pool, &terrains)?;
     let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![None], white };
