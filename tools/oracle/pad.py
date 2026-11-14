@@ -28,7 +28,10 @@ os.mkfifo(fifo)
 done = open(os.path.join(work, "paddone"), "a", buffering=1)
 
 BUTTONS = {
-    "A": e.BTN_SOUTH, "B": e.BTN_EAST, "X": e.BTN_WEST, "Y": e.BTN_NORTH,
+    # As the kernel's xpad driver reports an Xbox 360 pad: X is BTN_X and Y is BTN_Y (whose
+    # aliases, BTN_NORTH and BTN_WEST, read the other way round; SDL and the game take X as the
+    # west button). Before 2026-11-14 X and Y were swapped here.
+    "A": e.BTN_SOUTH, "B": e.BTN_EAST, "X": e.BTN_X, "Y": e.BTN_Y,
     "LB": e.BTN_TL, "RB": e.BTN_TR, "BACK": e.BTN_SELECT, "START": e.BTN_START,
     "GUIDE": e.BTN_MODE, "LS": e.BTN_THUMBL, "RS": e.BTN_THUMBR,
 }

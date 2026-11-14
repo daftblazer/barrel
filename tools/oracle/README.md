@@ -14,7 +14,8 @@ scene really looks like, and values the game only computes while running.
 - `shot.sh OUT.png`: a screenshot through `gamescopectl` (absolute paths only reach it).
 - `pad.py` (in the background, started before the game) and `pad.sh "tap A" "dpad LEFT" "stick L 0 -1 800" ...`:
   a virtual Xbox 360 pad through uinput (python-evdev), named "Barrel oracle pad"; the game
-  takes it as its controller. It is visible system-wide while it exists.
+  takes it as its controller. Its X and Y were swapped until 2026-11-14 (runs and notes before then that
+  say "X" mean Y). It is visible system-wide while it exists.
   Start the pad in its own session (`setsid python3 tools/oracle/pad.py ... &`): a pad started
   inside a command that is later stopped dies with it. `pad.sh` waits for the pad's log of finished commands
   (`work/oracle/paddone`) and gives up on a command that gets no answer within a minute.

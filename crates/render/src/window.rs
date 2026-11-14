@@ -23,26 +23,21 @@ pub struct Pump {
     pub pending: Option<crate::settings::Display>,
 }
 
-/// The keys a pad button stands for when pressed: the menus' and the field's (A confirms and
-/// gathers, B goes back and jumps, X strikes, Y turns running on or off, Start pauses an event,
-/// Back saves, the right stick's click puts the camera back, the D-pad steps through menus).
-/// Escape (quit) has no button.
+/// The keys a pad button stands for on every screen: the game's menus confirm with A and go
+/// back with B and step with the D-pad (`docs/engine.md`, "Controller"). The rest of the pad
+/// means something else on each screen; the field and events read it as pad buttons
+/// ([`Pump::take_input`]). Escape (quit) has no button.
 fn pad_keys(b: crate::pad::Pad) -> &'static [winit::keyboard::KeyCode] {
     use crate::pad::Pad as P;
     use winit::keyboard::KeyCode as K;
     match b {
-        P::South => &[K::Enter, K::KeyG],
-        P::East => &[K::Backspace, K::KeyJ],
-        P::West => &[K::KeyK],
-        P::North => &[K::KeyT],
-        P::Start => &[K::Space],
-        P::Back => &[K::F5],
-        P::RightStick => &[K::KeyR],
+        P::South => &[K::Enter],
+        P::East => &[K::Backspace],
         P::Up => &[K::ArrowUp],
         P::Down => &[K::ArrowDown],
         P::Left => &[K::ArrowLeft],
         P::Right => &[K::ArrowRight],
-        P::LeftShoulder | P::RightShoulder => &[],
+        _ => &[],
     }
 }
 
@@ -58,6 +53,8 @@ struct PumpState {
     /// Keys held down now, and keys pressed since the last `take_pressed`.
     held: std::collections::HashSet<winit::keyboard::KeyCode>,
     pressed: Vec<winit::keyboard::KeyCode>,
+    /// Pad buttons pressed since the last `take_input` (or `take_pressed`, which drops them).
+    pad_pressed: Vec<crate::pad::Pad>,
 }
 
 impl PumpState {
@@ -161,23 +158,26 @@ impl Pump {
         self.state.window.as_ref().expect("open made the window")
     }
 
-    /// Keys pressed (not repeats) since the last call.
+    /// Keys pressed (not repeats) since the last call; the pad's own presses are dropped (a
+    /// screen reads the pad through the keys it stands for).
     pub fn take_pressed(&mut self) -> Vec<winit::keyboard::KeyCode> {
-        std::mem::take(&mut self.state.pressed)
+        self.take_input().0
     }
 
-    /// Whether `key` is held down now (on the keyboard, or by the pad: the D-pad holds W, A, S
-    /// and D for walking, the shoulders - and = for the camera's distance).
+    /// Keys pressed since the last call, and the pad's buttons pressed (each also among the
+    /// keys if it stands for one on every screen).
+    pub fn take_input(&mut self) -> (Vec<winit::keyboard::KeyCode>, Vec<crate::pad::Pad>) {
+        (std::mem::take(&mut self.state.pressed), std::mem::take(&mut self.state.pad_pressed))
+    }
+
+    /// Whether `key` is held down now (on the keyboard, or by the pad: the triggers hold - and
+    /// = for the camera's distance; not checked against the game).
     pub fn held(&self, key: winit::keyboard::KeyCode) -> bool {
         use crate::pad::Pad as P;
         use winit::keyboard::KeyCode as K;
         let pad = self.pad.as_ref().is_some_and(|g| match key {
-            K::KeyW => g.held(P::Up),
-            K::KeyS => g.held(P::Down),
-            K::KeyA => g.held(P::Left),
-            K::KeyD => g.held(P::Right),
-            K::Minus => g.held(P::LeftShoulder),
-            K::Equal => g.held(P::RightShoulder),
+            K::Minus => g.held(P::LeftTrigger),
+            K::Equal => g.held(P::RightTrigger),
             _ => false,
         });
         pad || self.state.held.contains(&key)
@@ -203,6 +203,7 @@ impl Pump {
         if let Some(g) = self.pad.as_mut() {
             for b in g.poll() {
                 self.state.pressed.extend_from_slice(pad_keys(b));
+                self.state.pad_pressed.push(b);
             }
             // A lean of the left stick past half way steps through menus like the arrows.
             let [x, y] = g.left;

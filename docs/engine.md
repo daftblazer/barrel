@@ -374,11 +374,52 @@ mask}`): slot 0 X, 1 Y, 2 A, 3 B (the PlayStation order: square, triangle, cross
 byte, y negated). The DirectInput path (`0x1405d1280`) fills the same slots from its button
 bits.
 
-Above that the game asks for its own numbered buttons, not slots: `0x1404d3960 (button 0 to 6,
-...)` answers the menus' questions (used by the menu cursor `EXPadController`, vtable
-`0x140795168`), passing on to `0x1404d3d70` with internal numbers from 14 up; the field's
-jump is game button 1 and its run toggle game button 6. Which slot each game button reads, in
-each part of the game, is being read (`docs/escha/loop.md`, stage 17b).
+Above that the game asks for its own numbered buttons (`0x1404d3d70 (button, ...)`; the
+menus' cursor asks `0x1404d3960 (0 to 6)`, which passes on 14 and up). A game button reads the
+slot in the table at `0x14095a040`: 0 X, 1 A, 2 B, 3 Y, 4 LB, 5 LT, 6 L3, 7 RB, 8 RT, 9 R3,
+10 Back, 11 Start, 12 to 15 the D-pad left, right, up, down, 16 Y, 17 A, 18 LB, 19 L3. Before
+the table, buttons 1 and 2 trade places unless `Setting.ini`'s `[Pad] AB_SET` is set (the byte
+`0x140de5ea0`, read at start-up by `0x1404d3770`; 0 without the file, as on a fresh install:
+read live), and 17 and 18 always read buttons 1 and 2's places. So by default game button 1 (the
+field's jump) is B and 2 is A. The game's settings tool (`Atelier_Escha_and_LogyEnv.exe`)
+writes `Setting.ini` (`[Pad] AB_SET`, the keyboard's `KPAD_1` to `KPAD_7`, `[Input]
+MOUSE_ENABLE`).
+
+What each button does, read off the original on a fresh install with an Xbox 360 pad (the
+escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
+
+| Where | Button | Does | Barrel |
+|---|---|---|---|
+| Title | any | leaves "Press any button" | yes |
+| Menus, lists, messages | A / B / D-pad | confirm / back / move; a message window goes on with A or B | yes |
+| Field | left stick | walk (the game's 0.2 dead zone) | yes |
+| Field | right stick | turn the camera | yes |
+| Field | A | gather, talk | yes |
+| Field | B | jump (game button 1) | yes |
+| Field | X | strike | yes |
+| Field | Y | the main menu | yes |
+| Field | L3 | "Run On" / off (game button 6) | yes |
+| Field | R3 | the camera back behind | yes (not checked in the game) |
+| Field | D-pad | "Search Equip" | not yet |
+| Field | Menu (Start) | "Requests" | not yet |
+| Field | View (Back) | "Message Log" | not yet |
+| Field | LB | "Assignment" | not yet |
+| Field | RB | "Leave Map" | not yet |
+| Field | LT, RT | move the camera (zoom or turn: not settled) | Barrel: hold for the camera's distance |
+| Area map | B | "Return" | yes |
+| Area map | LB / RB | "Assignment" / "System" | not yet |
+| Area map | Menu / View | "Requests" / "Message Log" | not yet |
+| Area map | X | scroll the panel's list | not yet |
+| Battle | D-pad left/right, A, B | the command row, confirm, back | yes |
+| Battle | L3 | "Fast Forward" on/off | not yet |
+| Battle | View | "Field Information" | not yet |
+| Events | A | the next line | yes |
+| Events | Y / Start | Barrel's auto lines / pause (the game's not read yet) | Barrel's own |
+
+Barrel reads the pad through SDL3 by place: A, B and the D-pad stand for Enter, Backspace and
+the arrows on every screen (`render::window::pad_keys`); the field and events take the other
+buttons as pad buttons by what is on screen (`Pump::take_input`). The D-pad no longer walks
+and the shoulders no longer move the camera: the game uses them for other things.
 
 ## Walking (not yet the game's)
 

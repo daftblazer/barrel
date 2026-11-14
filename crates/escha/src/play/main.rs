@@ -3895,7 +3895,34 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         use winit::keyboard::KeyCode;
         let mut quit = false;
         let battle_waits = battle_play.as_ref().is_some_and(BattlePlay::waiting);
-        for key in p.take_pressed() {
+        let (keys, pads) = p.take_input();
+        // The pad as the game reads it here (`docs/engine.md`, "Controller"; A, B and the D-pad
+        // came in as Enter, Backspace and the arrows): in free play X strikes, Y opens the main
+        // menu, B jumps, A gathers, the left stick's click turns running on or off and the right
+        // one's puts the camera back; in events Y turns auto on or off and Start pauses (both
+        // Barrel's, not checked against the game).
+        let mut keys = keys;
+        for b in pads {
+            use pad::Pad as P;
+            let free_play = walker.is_some() && area_map.is_none() && battle_play.is_none();
+            let key = match b {
+                P::West if free_play => Some(KeyCode::KeyK),
+                P::North if free_play && field_hud.is_some() => Some(KeyCode::Space),
+                P::East if free_play => Some(KeyCode::KeyJ),
+                P::South if free_play => Some(KeyCode::KeyG),
+                P::LeftStick if free_play => Some(KeyCode::KeyT),
+                P::RightStick if free_play => Some(KeyCode::KeyR),
+                P::North if player.is_some() => Some(KeyCode::KeyT),
+                P::Start if player.is_some() => Some(KeyCode::Space),
+                _ => None,
+            };
+            if let Some(k) = key {
+                keys.push(k);
+            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) {
+                eprintln!("frame {frame}: pad {b:?} does nothing here yet");
+            }
+        }
+        for key in keys {
             // A member's turn: the arrows choose the command and target, Enter gives it.
             if battle_waits {
                 let b = match key {

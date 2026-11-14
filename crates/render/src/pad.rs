@@ -21,14 +21,18 @@ pub enum Pad {
     Start,
     LeftShoulder,
     RightShoulder,
+    LeftStick,
     RightStick,
+    /// The triggers, pressed once past [`TRIGGER`].
+    LeftTrigger,
+    RightTrigger,
     Up,
     Down,
     Left,
     Right,
 }
 
-const BUTTONS: [(Pad, SDL_GamepadButton); 13] = [
+const BUTTONS: [(Pad, SDL_GamepadButton); 14] = [
     (Pad::South, SDL_GAMEPAD_BUTTON_SOUTH),
     (Pad::East, SDL_GAMEPAD_BUTTON_EAST),
     (Pad::West, SDL_GAMEPAD_BUTTON_WEST),
@@ -37,12 +41,17 @@ const BUTTONS: [(Pad, SDL_GamepadButton); 13] = [
     (Pad::Start, SDL_GAMEPAD_BUTTON_START),
     (Pad::LeftShoulder, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER),
     (Pad::RightShoulder, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER),
+    (Pad::LeftStick, SDL_GAMEPAD_BUTTON_LEFT_STICK),
     (Pad::RightStick, SDL_GAMEPAD_BUTTON_RIGHT_STICK),
     (Pad::Up, SDL_GAMEPAD_BUTTON_DPAD_UP),
     (Pad::Down, SDL_GAMEPAD_BUTTON_DPAD_DOWN),
     (Pad::Left, SDL_GAMEPAD_BUTTON_DPAD_LEFT),
     (Pad::Right, SDL_GAMEPAD_BUTTON_DPAD_RIGHT),
 ];
+
+/// How far a trigger must be pulled to count as pressed: the game's 30 of 255
+/// (`0x1405d11e8`).
+pub const TRIGGER: f32 = 30.0 / 255.0;
 
 /// How far a stick must lean before it counts.
 pub const DEAD_ZONE: f32 = 0.25;
@@ -118,6 +127,14 @@ impl Gamepad {
             }
         }
         let axis = |a| f32::from(unsafe { SDL_GetGamepadAxis(self.pad, a) }) / 32767.0;
+        for (b, a) in [(Pad::LeftTrigger, SDL_GAMEPAD_AXIS_LEFT_TRIGGER), (Pad::RightTrigger, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)] {
+            let down = axis(a) > TRIGGER;
+            if down && self.held.insert(b) {
+                pressed.push(b);
+            } else if !down {
+                self.held.remove(&b);
+            }
+        }
         self.left = [axis(SDL_GAMEPAD_AXIS_LEFTX).clamp(-1.0, 1.0), (-axis(SDL_GAMEPAD_AXIS_LEFTY)).clamp(-1.0, 1.0)];
         self.right = [axis(SDL_GAMEPAD_AXIS_RIGHTX).clamp(-1.0, 1.0), (-axis(SDL_GAMEPAD_AXIS_RIGHTY)).clamp(-1.0, 1.0)];
         pressed
