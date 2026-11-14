@@ -80,6 +80,16 @@ layout(location = 0) out vec4 color;
 layout(location = 9) in vec4 cur_clip;
 layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
+layout(location = 11) flat in vec4 tint_mul;
+layout(location = 12) flat in vec4 tint_add;
+
+// The instance's colour transform on a texel, in display (sRGB) terms; none unless it is on.
+vec3 tinted(vec3 c) {
+    if (tint_add.w < 0.5) return c;
+    vec3 s = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+    s = clamp(s * tint_mul.rgb + tint_add.rgb, 0.0, 1.0);
+    return mix(s / 12.92, pow((s + 0.055) / 1.055, vec3(2.4)), step(0.04045, s));
+}
 
 // The game's soft-light blend of a colour k over a, weighted by w (k first divided by its
 // largest channel, at least 1).
@@ -152,6 +162,7 @@ vec3 environment_light(vec3 n) {
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec4 c = texture(tex, uv);
+    c.rgb = tinted(c.rgb);
     if ((pc.flags & 8u) != 0u) {
         // The distant view, blended by its alpha (clouds over the dome); its solid pieces
         // (flag 16: ground, stones, trees, cliffs) alpha-tested like the field's models.

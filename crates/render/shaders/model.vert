@@ -17,7 +17,7 @@ layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; 
 // matrices begin in the palette. Instance 0 is the identity, for geometry baked in place.
 // info: x the palette's first joint, y the first morph weight, z last frame's first joint;
 // prev_model last frame's model matrix (both for the motion vectors).
-struct Instance { mat4 model; uvec4 info; mat4 prev_model; };
+struct Instance { mat4 model; uvec4 info; mat4 prev_model; vec4 tint_mul; vec4 tint_add; };
 layout(std430, set = 1, binding = 0) readonly buffer Instances { Instance inst[]; } instances;
 // Joint matrices (bind pose to posed, render space) of every posed model.
 layout(std430, set = 1, binding = 1) readonly buffer Palette { mat4 joint[]; } palette;
@@ -96,6 +96,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
 layout(location = 10) out vec4 prev_clip;
+// The instance's colour transform (lib.rs `Instance::tint_mul` / `tint_add`).
+layout(location = 11) flat out vec4 tint_mul;
+layout(location = 12) flat out vec4 tint_add;
 // The environment light map's light on a surface facing n (render space), from its nine
 // coefficients (game space: x mirrored back).
 vec3 environment_light(vec3 n) {
@@ -237,6 +240,8 @@ void main() {
         sun_part = vec3(0.0);
     }
     gl_Position = pc.view_proj * w;
+    tint_mul = i.tint_mul;
+    tint_add = i.tint_add;
     cur_clip = look.view_proj * w;
     prev_clip = look.prev_view_proj * prev_w;
     // Fog: extinction exp2(s × Scat0) (Scat0 holds -(βR + βM) log2 e), s the eye distance mapped

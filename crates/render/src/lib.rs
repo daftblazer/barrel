@@ -101,7 +101,7 @@ pub struct Vertex {
     pub corner: [f32; 3],
 }
 
-/// A model's placement on the GPU (std430: 80 bytes): its matrix and where its joints'
+/// A model's placement on the GPU (std430: 176 bytes): its matrix and where its joints'
 /// matrices start in the palette.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -116,6 +116,19 @@ pub struct Instance {
     pub _pad: u32,
     /// Its last frame's model matrix, for the motion vectors.
     pub prev_model: Mat4,
+    /// A colour transform on its texels in display (sRGB) terms, `c * tint_mul + tint_add`;
+    /// on only when `tint_add.w` is 1 (`Instance::UNTINTED` otherwise).
+    pub tint_mul: [f32; 4],
+    pub tint_add: [f32; 4],
+}
+
+impl Instance {
+    pub const UNTINTED: ([f32; 4], [f32; 4]) = ([1.0; 4], [0.0; 4]);
+
+    /// Turns its colour transform on (`mul`, `add` on the display colour), or off with `None`.
+    pub fn set_tint(&mut self, tint: Option<([f32; 3], [f32; 3])>) {
+        (self.tint_mul, self.tint_add) = tint.map_or(Self::UNTINTED, |([a, b, c], [d, e, f])| ([a, b, c, 1.0], [d, e, f, 1.0]));
+    }
 }
 
 pub struct Draw {
@@ -526,7 +539,7 @@ impl Scene {
             draws: Vec::new(),
             terrains: Vec::new(),
             field: None,
-            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, weights: 0, prev_palette: 0, _pad: 0, prev_model: Mat4::IDENTITY }],
+            instances: vec![Instance { model: Mat4::IDENTITY, palette: 0, weights: 0, prev_palette: 0, _pad: 0, prev_model: Mat4::IDENTITY, tint_mul: Instance::UNTINTED.0, tint_add: Instance::UNTINTED.1 }],
             palette: vec![Mat4::IDENTITY],
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
@@ -541,7 +554,7 @@ impl Scene {
 
     /// A new instance placed by `transform` (game space); returns its number.
     pub fn instance(&mut self, transform: Mat4) -> u32 {
-        self.instances.push(Instance { model: render_space(transform), palette: 0, weights: 0, prev_palette: 0, _pad: 0, prev_model: render_space(transform) });
+        self.instances.push(Instance { model: render_space(transform), palette: 0, weights: 0, prev_palette: 0, _pad: 0, prev_model: render_space(transform), tint_mul: Instance::UNTINTED.0, tint_add: Instance::UNTINTED.1 });
         (self.instances.len() - 1) as u32
     }
 

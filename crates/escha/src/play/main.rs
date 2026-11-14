@@ -366,6 +366,27 @@ impl AreaMap {
         self.places.iter().find(|p| p.tag == region).map_or("", |p| p.name.as_str())
     }
 
+    /// Whether a draw (by its name: object and placement tags) is on the way chosen: the
+    /// mark of the place she started from, the cursor's place's mark, and the dots of the
+    /// route between them (the colseit-arrival recording at 1:17: those blue, the dots past
+    /// the cursor's place white). The ring under her in the recordings is her mark so tinted.
+    fn chosen(&self, name: &str) -> bool {
+        let tags = || name.split_whitespace();
+        if mark_state(name).is_some() || name.contains("point_mat_") {
+            let (from, at) = (&self.places[self.from].tag, &self.places[self.at].tag);
+            return tags().any(|w| w == from || w == at);
+        }
+        if self.at == self.from || !name.contains("point_r") {
+            return false;
+        }
+        let place = &self.places[self.from];
+        let route = [barrel_escha::area_map::Way::Right, barrel_escha::area_map::Way::Left, barrel_escha::area_map::Way::Down, barrel_escha::area_map::Way::Up]
+            .into_iter()
+            .find(|&way| barrel_escha::area_map::step(&self.places, self.from, way) == Some(self.at))
+            .and_then(|way| self.routes.get(place.links[way as usize] as usize));
+        route.is_some_and(|r| tags().any(|w| w == r))
+    }
+
     /// A draw's run-time tint: green for a dot of a route seen but not walked.
     fn tint(&self, name: &str) -> u32 {
         if !self.seen_routes.is_empty() && name.contains("point_r") && name.split_whitespace().any(|w| self.seen_routes.iter().any(|r| r == w)) { SEEN_ROUTE } else { 0 }
@@ -556,6 +577,13 @@ impl AreaMap {
 
 /// A seen route's dots, as unorm8 RGBA: the recording's green (0:45: (0.77, 0.97, 0.75) where
 /// a walked route's are (0.95, 0.95, 0.91)), matched by eye on Barrel's lighting.
+/// The maps' blue for the way chosen, on the display colour: `c * mul + add` (the
+/// colseit-arrival recording at 1:12 and 1:17: a white dot (221, 212, 196) turns (156, 218,
+/// 250), the town mark's cream rim (236, 227, 207) (160, 224, 251), its red middle (180, 94,
+/// 77) (126, 99, 142); not a plain multiply, the blue rises on dark texels). Applied to the
+/// texel, before Barrel's (brighter) map light: green 0.9 rather than the fitted 1.03, so the
+/// lit result matches (1:25: dot (131, 217, 251), mark middle (108, 92, 155)).
+const CHOSEN_TINT: ([f32; 3], [f32; 3]) = ([0.69, 0.9, 0.91], [0.0, 0.0, 0.28]);
 const SEEN_ROUTE: u32 = u32::from_le_bytes([170, 255, 170, 255]);
 
 /// The area map's Back question (the executable's string at `0x140949850`).
@@ -2024,7 +2052,8 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
     let objects = Elixir::parse(&obj_bytes)?;
     let node_sway = |s: &str| s.match_indices("xN").any(|(k, _)| s[k + 2..].chars().next().is_some_and(|c| c.is_ascii_digit()) && s[k + 3..].starts_with('_'));
     let place = |t: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement {
-        own_instance: node_sway(&t.name) || node_sway(&i.tags),
+        // The maps' marks and dots take their own instances, to be tinted (`AreaMap::chosen`).
+        own_instance: node_sway(&t.name) || node_sway(&i.tags) || (area == "A15_WMAP" && t.name.contains("point_")),
         casts: t.name.contains("xDS_") || i.tags.contains("xDS_"),
         version: object_version(&i.tags),
         ..Default::default()
@@ -5123,6 +5152,22 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             instances[*inst as usize].model = *base * Mat4::from_quat(turn);
         }
         scene.write_instances(&gpu, &instances)?;
+    }
+    // The maps' chosen way in their blue (`AreaMap::chosen`): the start's mark, the cursor's,
+    // and the route's dots between them.
+    if let Some(a) = area_map.as_ref() {
+        let mut changed = false;
+        for d in draws.iter().filter(|d| d.instance != 0) {
+            let want = a.chosen(&d.name).then_some(CHOSEN_TINT);
+            let i = &mut instances[d.instance as usize];
+            if (i.tint_add[3] > 0.5) != want.is_some() {
+                i.set_tint(want);
+                changed = true;
+            }
+        }
+        if changed {
+            scene.write_instances(&gpu, &instances)?;
+        }
     }
     // The current field's distant view follows the eye (plus the field's sphere offset).
     if let Some(Some(inst)) = sky_instances.get(current_field as usize) {

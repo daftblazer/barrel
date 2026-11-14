@@ -355,9 +355,14 @@ none under her; the ruins' dark undersides are in their own textures). The map c
 wide and 385 tall, CUR00 with an additive glow (a 4 × 512 purple-to-teal strip). The map's
 setup creates CUR00 (`0x140383c42`), and `0x140388820` sets the walker's model by its
 character: 705 shows CUR00 at scale 1, the lead character is drawn at 3.2 times (+0x250,
-`0x140d65518`), anyone else at 1. The blue ring under her in the recording (dark purple in
-the middle, about 1.3 times a sector mark) is neither of them, nor a placement, nor a tint of
-`point_sm_on` (its colours fit no multiply); docs/escha/open.md. Not yet the game's:
+`0x140d65518`), anyone else at 1. The blue ring under her in the recordings is her start
+mark tinted: the maps tint the way chosen (`AreaMap::chosen`: the start's mark, the cursor's
+place's mark and the dots of the route between them; colseit-arrival 1:17, the dots past the
+cursor's place white) by a per-channel transform on the display colour, `c * mul + add`
+(`CHOSEN_TINT`: red 0.69, green 0.9, blue 0.91 + 0.28; fitted on a white dot, the town mark's
+rim and its red middle, which is why no plain multiply fitted). The renderer's instances carry
+it (`Instance::tint_mul` / `tint_add`, off by default: Escha's and Ryza's frames unchanged), so
+the maps' marks and dots take their own instances. Not yet the game's:
 her shadow there (the recording shows none), the labels' plates (the neighbours' names now stand on their routes' third dot,
 48 pixels up, while she stands still: `area_panel::label`), the routes not yet open (the
 recording at Sector One shows no way down to Sector Three: Barrel draws and takes every
@@ -959,8 +964,7 @@ Southern Ruins and goes up R1; its size matches). She waits in her F_WAIT pose,
 turned as she started. The cursor plays its one motion on a loop: an object's CharaBase row
 (Directory "Obj") names no motion columns, its motion is `<FileHead>.g1a` in its `Motion1`
 container (`E3D_WMAP_CUR00_BASE_MOTION1`), asked for as `BASE_MOTION1`. Not yet the game's:
-the cursor's ring (blue rim, purple middle, where the mark was) and its float (a little higher
-in the recording), the route's dots turning blue behind it, the routes the
+the cursor's float (a little higher in the recording), the routes the
 story has not opened yet (R3 west of Colseit is unknown on the user's save),
 the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
 to World Map?" question is `question.rs`.
