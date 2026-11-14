@@ -1228,6 +1228,8 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
     let mut every = battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face);
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
+    let all_commands: Vec<i32> = (0..9).collect();
+    every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
     // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
     let result_nodes = barrel_escha::data::layout::placed(&pe, result::LAYOUT);
     let sample = result::Values { rows: (0..6).map(|chara| result::Row { chara, level: 1, next: 1, level_up: true }).collect(), exp: 1, money: 1 };
@@ -5383,7 +5385,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     None => {
                         let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1);
                         if let Some((list, chosen, title)) = &commands {
-                            e.extend(battlehud::command_list(list, *chosen, title));
+                            // The game's row: the attack chosen, else the skills (whose list
+                            // stays Barrel's own for now).
+                            use battlehud::command::*;
+                            e.extend(battlehud::command_row(&[ATTACK, SKILL, MOVE, WAIT, CHANGE, RUN], usize::from(*chosen > 0)));
+                            if *chosen > 0 {
+                                e.extend(battlehud::command_list(list, *chosen, title));
+                            }
                         }
                         e
                     }

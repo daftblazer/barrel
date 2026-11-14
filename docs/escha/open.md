@@ -45,6 +45,7 @@ likely settle them where static reading failed.
     moved to the middle; the desk picture, the tags' lit cut, the question line and centred
     texts (kind 22) as the game has them. Left: the Yes tag's tilt, Logy's confirm figure place
     (no screenshot of it).
+- (2026-11-14) Battle command row: drawn from the game's pieces, but the input is still Barrel's (Up/Down through Attack and a text list of skills, Left/Right the target); Move, Wait, Change and Run are shown, not given; Item for the alchemists not in the row yet; kind-36 flipbooks at their first frame.
 - (2026-11-14) Turn order bar: shows the order at the member turn waiting (`Turn::order`), not as the events play out.
 - (2026-11-14) Battles don't really work yet: Barrel's battle is an auto-battle with a stand-in
   playback and a text command list (stage 17 in the plan).

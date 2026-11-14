@@ -313,7 +313,11 @@ item jingle (6). The boot's logo splashes are stills (the still table at `0x1408
 (the Koei Tecmo Games logo, 1920 × 1080 in the top-left of a 2048 × 2048 texture), each with
 `_EN` / `_SC` / `_TC` copies. `Ipu/logo_havok.g1t` and `logo_dolby.g1t` are on the disc but no
 still names them. Track 8 is the Gust jingle (`_gust_ondo.kvs`, volume 0.5), but the PC install
-has no such file. Layout nodes of kind 4 draw their sprite scaled by word 5, in percent, about the node: the
+has no such file. Layout nodes of kind 36 are flipbooks: word 5 cuts from the node's, in turn (the battle
+command row's diamond, 0xe8 cuts 2 to 5, and its arrows, 6 to 9 and 10 to 13; the rate is not
+read yet). The battle's commands (layout 887's row of 859) take icon 0xe7 and label 0xec cut by
+command: 0 Attack, 1 Item, 2 Draw, 3 Skill, 4 Special, 5 Move, 6 Wait, 7 Change, 8 Run.
+Layout nodes of kind 4 draw their sprite scaled by word 5, in percent, about the node: the
 title's logo (layout 1056's first node, part 0x15c) at 80 (escha-boot at 17 s; RMSE of the
 title 0.202 at full size, 0.030 at 80%). The title's "Press any button" (0x15c cut 1) pulses: a
 triangle wave in opacity, 1 down to 0.2 and back over 2.4 s, from 1 as the title starts.

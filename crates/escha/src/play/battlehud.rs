@@ -131,8 +131,64 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
     out
 }
 
-/// Where the command list stands and its lines' spacing (not the game's command layout, which
-/// is not identified yet).
+/// The command row (layout 887: nine places of layout 859 at y 584, 104 to 106 apart; a
+/// member's commands take the first ones, centred on the screen: the battle-stats recording at
+/// about 300 s, Katla's six centred at x 958). Each command's icon is part 0xe7 and its label
+/// part 0xec, cut by command in this order.
+pub mod command {
+    pub const ATTACK: i32 = 0;
+    pub const ITEM: i32 = 1;
+    pub const DRAW: i32 = 2;
+    pub const SKILL: i32 = 3;
+    pub const SPECIAL: i32 = 4;
+    pub const MOVE: i32 = 5;
+    pub const WAIT: i32 = 6;
+    pub const CHANGE: i32 = 7;
+    pub const RUN: i32 = 8;
+}
+const ROW_X: [i32; 9] = [420, 524, 630, 736, 840, 944, 1050, 1156, 1260];
+const ROW_Y: i32 = 584;
+/// A place's centre from its node (layout 859's icon, 856, at (98, 56)).
+const ROW_CENTRE: [i32; 2] = [98, 56];
+const ICON: i32 = 0xe7;
+const ROW_PARTS: i32 = 0xe8;
+const LABEL: i32 = 0xec;
+
+/// The command row: `commands` (icon cuts) in their places, the chosen one on the diamond
+/// (layout 857) with the arrows either side and its label on a plate below (858), the others
+/// in their dark frames (855).
+///
+/// The diamond and the arrows are nodes of kind 36, a flipbook of word 5 cuts from the node's
+/// (4: the diamond cuts 2 to 5, the arrows 6 to 9 and 10 to 13); drawn at their first frame
+/// until the HUD has a clock.
+pub fn command_row(commands: &[i32], chosen: usize) -> Vec<Element> {
+    let n = commands.len().clamp(1, ROW_X.len());
+    let shift = 960 - ((ROW_X[0] + ROW_X[n - 1]) / 2 + ROW_CENTRE[0]);
+    let mut out = Vec::new();
+    // The chosen one last: its arrows lie over its neighbours (the recording's right arrow over
+    // the Skill icon).
+    let order = (0..n).filter(|&k| k != chosen).chain((chosen < n).then_some(chosen));
+    for k in order {
+        let c = commands[k];
+        let node = [ROW_X[k] + shift, ROW_Y];
+        let at = |x: i32, y: i32| [node[0] + x, node[1] + y];
+        if k == chosen {
+            out.push(Element::Sprite { part: ROW_PARTS, cut: 2, at: at(96 - 66, 50 - 72) });
+            out.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
+            out.push(Element::Sprite { part: ROW_PARTS, cut: 6, at: at(-12, 20) });
+            out.push(Element::Sprite { part: ROW_PARTS, cut: 10, at: at(154, 20) });
+            out.push(Element::Sprite { part: LABEL, cut: 9, at: at(4, 100) });
+            out.push(Element::Sprite { part: LABEL, cut: c, at: at(48, 112) });
+        } else {
+            out.push(Element::Sprite { part: ROW_PARTS, cut: 0, at: at(96 - 48, 54 - 48) });
+            out.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
+        }
+    }
+    out
+}
+
+/// Where the command list stands and its lines' spacing (the skills' list, until the game's
+/// skill window is in).
 const LIST_AT: [i32; 2] = [1500, 360];
 const LIST_STEP: i32 = 44;
 const LIST_SIZE: f32 = 33.0;
