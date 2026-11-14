@@ -689,7 +689,18 @@ fields wait), and from the third-person camera most of a field is in view. On th
 1080p: Sector One 179 → 171 scene draws and 131 → 106 shadow draws (shadow 0.73 → 0.65 ms); the
 opening's town 168 → 112 scene draws (scene 7.82 → 7.64 ms).
 
-What the scene pass costs there is mostly per pixel: in Sector One at native 8.48 ms, 75% 5.87,
+**The distant view after the field.** The scene pass draws the terrain and the field's models
+first and the distant view last, with a viewport whose depth range is 1 to 1: its clipping is as
+before, every fragment of it lands on the far plane, and with the depth test at less-or-equal and
+no depth write it passes only where the depth is still the cleared 1.0, the pixels nothing
+covered. The field pass is opaque (no blending), so the frame is the one drawing the sky first
+gave, and the sky's layers still blend among themselves in their order; the covered sky is no
+longer shaded. Frames are byte-identical to the old order (36 frames: Sector One, the opening,
+TOWN_04 and AREA_01_01 from four sides each, and Sector One with MSAA 4×). RP6, Sector One:
+native 8.48 → 6.17 ms scene (GPU 9.52 → 7.21 ms), 75% with FSR 1 5.87 → 4.51 ms. The opening's
+town at 20 s is unchanged (7.65 ms native): its cost lies elsewhere.
+
+What the scene pass cost there before this was mostly per pixel: in Sector One at native 8.48 ms, 75% 5.87,
 50% 5.53, 25% 2.44 (75% to 50% is a step in the tiler's bins, not a fixed cost). The distant view
 alone is 2.4 ms of the 8.48 at native (6.04 without it): drawn first, its layered dome meshes
 shade the whole screen, most of it then covered by the field.

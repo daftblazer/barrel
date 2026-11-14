@@ -4373,8 +4373,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
     };
 
-    // The distant view: drawn first, behind everything (no depth test or write).
-    let no_depth = vk::PipelineDepthStencilStateCreateInfo::default();
+    // The distant view: drawn after the field's opaque geometry with a viewport whose depth range
+    // is 1 to 1 (its clipping unchanged, every fragment on the far plane), where the depth is
+    // still the cleared 1.0: only the pixels nothing covers are shaded. No depth write, so its
+    // layers all pass and blend in their order.
+    let no_depth = vk::PipelineDepthStencilStateCreateInfo::default()
+        .depth_test_enable(true)
+        .depth_write_enable(false)
+        .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
     // Alpha-blended: its clouds are soft-edged layers over the dome.
     let sky_blend_att = [vk::PipelineColorBlendAttachmentState::default()
         .blend_enable(true)
@@ -6958,9 +6964,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
         d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        // The current field's distant view first, then the terrain and the rest over it (the
-        // distant view does not keep depth, so the terrain drawn before it would be covered).
-        for (pass_sky, pipe) in [(true, sky_pipeline), (false, pipeline)] {
+        // The terrain and the field's models first, then the current field's distant view where
+        // they leave the far plane bare (as if drawn first and covered, without shading the
+        // covered part).
+        for (pass_sky, pipe) in [(false, pipeline), (true, sky_pipeline)] {
         if !pass_sky {
             {
                 let tg = &terrain_gpu;
@@ -6985,6 +6992,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
         }
         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
+        // The distant view's fragments on the far plane (see `sky_pipeline`).
+        let depth_range = if pass_sky { (1.0, 1.0) } else { (0.0, 1.0) };
+        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: depth_range.0, max_depth: depth_range.1 }]);
         let sway_groups: Vec<String> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map(|l| l.v_shakers.iter().take(8).map(|v| v.keyword.clone()).collect()).unwrap_or_default();
         for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
             // The instance, and whether it is shaded as a character (not part of a field) and
@@ -7008,6 +7018,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             drawn.set([drawn.get()[0] + 1, drawn.get()[1]]);
         }
         }
+        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
         // The outlines: the outlined materials again, pushed out, with the outline texture.
         if let Some(outline_tex) = outline_tex {
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
