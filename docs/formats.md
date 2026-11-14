@@ -1137,7 +1137,12 @@ player a little larger.
 Beside each model's `<model>_hi.g1m` (entry names without the placement's `obj-`), its collision
 in the model's space, in four kinds by suffix: `_cbvh[N]` is a triangle mesh in Escha's field
 collision form (`OC1G`, one `HVB_` chunk, `barrel_formats::g1co`; Rasenboden: all 37 read, on
-cliffs, rocks, trees, the floors and stairs), `_cplh[N]` an `HLP_` chunk (likely convex hulls),
+cliffs, rocks, trees, the floors and stairs), `_cplh[N]` one convex hull in an `HLP_` chunk
+(offsets from the chunk's start: at 16 the triangle count, the triangles' offset and the vertex
+count, u32 each, then the vertices' and the adjacency's offsets, u16 each; at 0x20 eight
+(offset, count) pairs into the adjacency; at 0x40 the centre; the triangles as u16 triples; the
+vertices as (x, y, z, 0) floats from the centre, the cliff's lowest at the mesh's lowest; then
+each vertex's neighbours),
 `_cbox[N]` boxes and `_ccap[N]` capsules; two stumps carry `_Group<N>.g1co` meshes. A box or
 capsule file is `OC1G` (16 bytes, the version and size as the others), a kind byte (0 a box, 3 a
 capsule), then floats with no chunk: a box's centre, its three axes and its half-sizes, each four

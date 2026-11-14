@@ -85,7 +85,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   used too (boxes as boxes, capsules as eight-sided prisms): kept as they are when they lie mostly
   inside their model's bounds, turned from z-up to y-up when that fits better (the light poles),
   left out when neither fits (the bags): a stand-in until where the game places them is known
-  (a z-up flag, or the model's own data). Not read: the hulls (`_cplh`, `HLP_`). The camera keeps out of
+  (a z-up flag, or the model's own data). The hulls (`_cplh`) are read
+  and used the same way (Rasenboden: 449 of them; with the meshes, boxes and capsules 1,577
+  placed shapes, 293,000 triangles). The camera keeps out of
   the ground behind her (`camera::clear_distance`: pulled in where terrain or a floor comes
   within 30 below to 400 above its line, no nearer than 60, easing back out): banks no longer
   swallow it; it also stops short of the first wall its line passes through

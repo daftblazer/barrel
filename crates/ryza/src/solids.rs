@@ -4,8 +4,8 @@
 //! hulls), `_cbox*` (boxes) and `_ccap*` (capsules), in the model's own space. Here the meshes,
 //! and the boxes and capsules made into meshes (a capsule as an eight-sided prism), each placed
 //! as its placement puts the model, give the walk its walls and the floors on models (stairs,
-//! raised floors, rocks, crates); tree trunks are capsules. The hulls are not read
-//! (`docs/ryza/open.md`). Some boxes are in a z-up space where the model is y-up (the light
+//! raised floors, rocks, crates); tree trunks are capsules, and the hulls (`HLP_`, read by
+//! `hull`) cover the cliffs and the trees' roots. Some boxes are in a z-up space where the model is y-up (the light
 //! poles), which nothing in the file says: a box or capsule is kept as it is if it lies mostly
 //! inside its model's bounds, turned from z-up to y-up if that lies more inside, and left out
 //! if neither does (a stand-in, `docs/ryza/open.md`). Docs: docs/formats.md, "Ryza model collision".
@@ -35,6 +35,8 @@ pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Col
             g1co::parse(data).ok()
         } else if kind.starts_with("cbox") || kind.starts_with("ccap") {
             shape(data).and_then(|c| fitted(c, model_bounds.get(&model.to_ascii_lowercase())?))
+        } else if kind.starts_with("cplh") {
+            hull(data).and_then(|c| fitted(c, model_bounds.get(&model.to_ascii_lowercase())?))
         } else {
             None
         };
@@ -109,6 +111,46 @@ fn fitted(c: Collision, bounds: &[f32; 6]) -> Option<Collision> {
     (fit >= 0.2).then_some(best)
 }
 
+/// A hull file (`OC1G`, then an `HLP_` chunk) as a triangle mesh. In the chunk (offsets from
+/// its start): at 16 the triangle count, the triangles' offset and the vertex count (u32 each),
+/// then the vertices' offset and the adjacency's (u16 each); at 0x40 the centre (3 floats); the
+/// triangles as u16 triples; the vertices as (x, y, z, 0) floats from the centre. The rest
+/// (each vertex's neighbours, for the game's hull tests) is not needed here.
+fn hull(d: &[u8]) -> Option<Collision> {
+    let c = d.get(16..)?;
+    if c.get(..4) != Some(b"HLP_") {
+        return None;
+    }
+    let u32_at = |o: usize| c.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
+    let u16_at = |o: usize| c.get(o..o + 2).map(|b| u16::from_le_bytes(b.try_into().unwrap()));
+    let f32_at = |o: usize| c.get(o..o + 4).map(|b| f32::from_le_bytes(b.try_into().unwrap()));
+    let (count, at, vertex_count) = (u32_at(16)?, u32_at(20)?, u32_at(24)?);
+    let vertex_at = u16_at(28)? as usize;
+    let centre = [f32_at(0x40)?, f32_at(0x44)?, f32_at(0x48)?];
+    let mut vertices = Vec::with_capacity(vertex_count);
+    for k in 0..vertex_count {
+        let o = vertex_at + 16 * k;
+        vertices.push([f32_at(o)? + centre[0], f32_at(o + 4)? + centre[1], f32_at(o + 8)? + centre[2]]);
+    }
+    let mut triangles = Vec::with_capacity(count);
+    for k in 0..count {
+        let t = [u16_at(at + 6 * k)?, u16_at(at + 6 * k + 2)?, u16_at(at + 6 * k + 4)?];
+        if t.iter().any(|&i| i as usize >= vertex_count) {
+            return None;
+        }
+        triangles.push(t);
+    }
+    let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for v in &vertices {
+        for a in 0..3 {
+            lo[a] = lo[a].min(v[a]);
+            hi[a] = hi[a].max(v[a]);
+        }
+    }
+    let node = g1co::Node { max: hi, min: lo, kind: 0, link: 65535, count: count as u32, first: 0 };
+    Some(Collision { nodes: vec![node], triangles, vertices })
+}
+
 /// A prism about `c`: the polygon `ring` (offsets from its middle, in order around) at `c - up`
 /// and at `c + up`, closed at both ends; one leaf node over it all.
 fn prism(c: Vec3, up: Vec3, ring: &[Vec3]) -> Collision {
@@ -176,6 +218,34 @@ mod tests {
         assert_eq!(c.triangles.len(), 12);
         let (lo, hi) = (c.nodes[0].min, c.nodes[0].max);
         assert_eq!((lo, hi), ([-30.0, 0.0, -10.0], [30.0, 40.0, 10.0]));
+    }
+
+    #[test]
+    fn a_hull_is_its_triangles_about_its_centre() {
+        let mut c = vec![0u8; 0x80];
+        c[..4].copy_from_slice(b"HLP_");
+        for (o, v) in [(16usize, 1u32), (20, 0x50), (24, 3)] {
+            c[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        c[28..30].copy_from_slice(&0x60u16.to_le_bytes());
+        for (k, v) in [10.0f32, 20.0, 30.0].iter().enumerate() {
+            c[0x40 + 4 * k..0x44 + 4 * k].copy_from_slice(&v.to_le_bytes());
+        }
+        for (k, i) in [0u16, 1, 2].iter().enumerate() {
+            c[0x50 + 2 * k..0x52 + 2 * k].copy_from_slice(&i.to_le_bytes());
+        }
+        c.resize(0x60 + 48, 0);
+        for (k, p) in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]].iter().enumerate() {
+            for (a, v) in p.iter().enumerate() {
+                let o = 0x60 + 16 * k + 4 * a;
+                c[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        let mut d = b"OC1G2\0\0\0\0\0\x01\x02\0\0\0\0".to_vec();
+        d.extend(c);
+        let h = super::hull(&d).unwrap();
+        assert_eq!(h.triangles, vec![[0, 1, 2]]);
+        assert_eq!(h.vertices[1], [11.0, 20.0, 30.0]);
     }
 
     #[test]
