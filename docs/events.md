@@ -1674,7 +1674,20 @@ executable names but that do what an Escha command does are mapped by word
 The opening (`event_mm00_010`) then starts its actions, sets field 5 and the camera, places
 and turns its characters, adds their effects, plays the voice and music cues, and shows its
 lines from 6 on (33 in all, timed: the talk in Ryza's room to the room tutorial at 110.8 s).
-The narration's first six lines are not shown: `u65` / `u66` (15, 16 with `0 100 100`,
-`100 0 50`; around the voice) are the likely carriers. 303 commands stay unmapped; the
+The narration's six lines are not message lines on screen: the game shows them as telops,
+pre-drawn text strips (each line in two halves, as the opening recording shows: "On an
+ordinary island called Kurken," then "in an ordinary village called Rasenboden..."). `u65 N`
+(likely `EVENT_TELOP_SET`; the executable names `EVENT_TELOP_SET`, `_FADE_SET`, `_MOVE_SET`,
+`_FADE_WAIT`, `_MOVE_WAIT`, `_TIME_WAIT`, `EVENT_MULTI_TELOP_FADE`, `_WAIT`, `EVENT_TELOP_WAIT`)
+picks one, `u66 {from, to, time}` fades it (0 to 100 over 1 s, 100 to 0 over 0.5 s), and `u28`
+(`ECT_EVENT_VOICE_PLAY`) plays the line's voice between. The strips are 108 images
+(`saves/ui_<lang>/etc/uis_a21_telop.xml`: `etc_a21_telop_0000` on, each `uvwh` a 2380 × 156
+strip of `ui/a21_telop01.g1t` to `09`, 12 to an atlas, at 2160-line resolution), shown by the
+layout `saves/ui_<lang>/a21_telop/uil_a21_telop01.xml` (node `telopN` shows image N at
+240, 333, with fade-in / fade-out). The opening's 12 halves are images 0 to 11 (`telop01`);
+`u65`'s IDs run 1 to 92 across 26 events (the opening 15 to 26, the ending `mm09_120` 29 to 40,
+60 alone in seven), so an ID → image table sits in the executable (not a plain int array;
+not `str_telop.xml`, which holds field notices) and is not found yet. `u28`'s operand is a
+voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie
 2), `t25` (Ryza only), `u17`'s neighbours `u66`, `q5` (`_ADDITION_EX`, 13 against 14), `t18`.
