@@ -669,7 +669,9 @@ the frame took the sum; now it takes the larger.
   semaphore and fence.
 
 Checked with the Khronos validation layer's synchronisation checks (no hazards, window and
-offscreen), and offscreen frames are byte-identical with and without overlap.
+offscreen), and offscreen frames are byte-identical with and without overlap. On the RP6 at 1080p
+(`handheld`), offscreen, 300 frames: Sector One 8.95 → 8.12 ms a frame, the opening's town
+7.90 → 7.11 ms, each now the GPU's own time (8.04 and 7.28): the GPU is what is left.
 
 ## Checked against the game
 
