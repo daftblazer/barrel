@@ -327,6 +327,21 @@ fn main() -> Result<()> {
         }
         None => None,
     };
+    // The event's camera, unless --look-at gives one: its eye and target as this view's
+    // target, turn, pitch and distance (render space mirrors x), and its field of view.
+    if let (Some(stage), None) = (&event_stage, a.look_at) {
+        let snap = stage.snapshot();
+        if let (Some(eye), Some(target)) = (snap.eye, snap.target) {
+            let d = Vec3::new(-(eye[0] - target[0]), eye[1] - target[1], eye[2] - target[2]);
+            let dist = d.length().max(1.0);
+            a.look_at = Some(Vec3::from(target));
+            a.distance = Some(dist);
+            a.pitch = (d.y / dist).asin().to_degrees();
+            a.yaw = d.x.atan2(d.z).to_degrees();
+            a.fov = a.fov.or(snap.fov);
+            eprintln!("event camera: eye {eye:?}, target {target:?}, fov {:?}", snap.fov);
+        }
+    }
     if a.field == "-" {
         let map = event_stage.as_ref().and_then(|s| s.field).ok_or("FIELD -: needs an --event that sets a field")?;
         let exe = std::fs::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;

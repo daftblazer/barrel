@@ -675,5 +675,8 @@ pub static RYZA: &[(u32, &str)] = &[
 /// (the opening steps through its lines one by one, `u17 6 6`, `u17 7 7`, ...); `u65` `{telop}`
 /// picks a telop as Escha's `u55` picks a narration card (the number is Ryza's own,
 /// `barrel_ryza::telop::Node::of`), and `u66` `{from, to, hundredths}` fades it as `u56` does
-/// (the opening: `u65 15`, `u66 0 100 100`, the voice, a wait, `u66 100 0 50`).
-pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[(0x75000011, 0x75000012), (0x75000041, 0x75000037), (0x75000042, 0x75000038)];
+/// (the opening: `u65 15`, `u66 0 100 100`, the voice, a wait, `u66 100 0 50`). `t25/0x10`
+/// (`ECT_FIELDMAP_CAMERA_ALL_ABSOLUTE`, 11 operands) sets the whole field camera as Escha's
+/// `t20/0x10` does: yaw, roll, field of view, pitch (hundredths of a degree), distance, target,
+/// offset (3,347 uses: mostly yaw 180°, fov 22.5°, pitch 8°, distance 400, offset (0, 9, 0)).
+pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[(0x75000011, 0x75000012), (0x75000041, 0x75000037), (0x75000042, 0x75000038), (0x74100019, 0x74100014)];

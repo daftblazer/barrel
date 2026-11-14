@@ -1709,7 +1709,16 @@ field-map numbers (`q2` / `q12`, the `field N` steps) are the executable's `FIEL
 from `FIELDMAP_S01_I_ATTIC` (0) to `FIELDMAP_S00_COMMON_MODEL` (341 names, reserves and DLC
 included; `barrel_ryza::maps`): the opening's field 5 is `s06_t_rasen`, and its characters
 stand on Rasenboden's beach (46373, 4089, 22678), as the recording shows. With FIELD `-`,
-`barrel-ryza` loads the event's field. (`str_telop.xml` holds the field
+`barrel-ryza` loads the event's field. Ryza's `t25/0x10` (`ECT_FIELDMAP_CAMERA_ALL_ABSOLUTE`)
+is Escha's `t20/0x10` with the same eleven operands (yaw, roll, field of view and pitch in
+hundredths of a degree, distance, target, offset; across 3,347 uses mostly 180°, 0, 22.5°, 8°,
+400 and offset (0, 9, 0): the field camera's own defaults). The opening's first shot is
+`t25 -182 0 3500 3406 188 46420 4051 22616 0 9 0`, looking 34° down at the sand from 188
+units; drawn from the stage's camera (`--event mm00_010 --at 4`, no `--look-at`) it frames the
+beach as the recording does, the rocks in the same places (the shell, an effect on character
+543, is not drawn). `t18/0x10` takes five operands in Ryza (`{x, y, z, hundredths, flag}`; the
+opening's `46401 4051 22615 1200 0`, likely the target moving there over 12 s) against
+Escha's two: not mapped yet. (`str_telop.xml` holds the field
 notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie

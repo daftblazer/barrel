@@ -981,7 +981,7 @@ fn ebd_ops(dir: &Path, word: &str, filter: Option<&str>) -> Result<()> {
         .map(|f| f.split_once('=').and_then(|(n, v)| Some((n.parse::<usize>().ok()?.checked_sub(1)?, v.parse::<i32>().ok()?))))
         .map(|f| f.ok_or("the filter is N=V, e.g. 9=3"))
         .transpose()?;
-    let table = if std::env::var("BARREL_GAME").is_ok_and(|g| g == "sophie2") { OperandTable::sophie2() } else { OperandTable::escha() };
+    let table = match std::env::var("BARREL_GAME").as_deref() { Ok("sophie2") => OperandTable::sophie2(), Ok("ryza") => OperandTable::ryza(), _ => OperandTable::escha() };
     let mut files = Vec::new();
     files_ending(dir, ".ebd", &mut files)?;
     let mut uses = 0usize;
