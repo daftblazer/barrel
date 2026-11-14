@@ -1686,8 +1686,13 @@ strip of `ui/a21_telop01.g1t` to `09`, 12 to an atlas, at 2160-line resolution),
 layout `saves/ui_<lang>/a21_telop/uil_a21_telop01.xml` (node `telopN` shows image N at
 240, 333, with fade-in / fade-out). The opening's 12 halves are images 0 to 11 (`telop01`);
 `u65`'s IDs run 1 to 92 across 26 events (the opening 15 to 26, the ending `mm09_120` 29 to 40,
-60 alone in seven), so an ID → image table sits in the executable (not a plain int array;
-not `str_telop.xml`, which holds field notices) and is not found yet. `u28`'s operand is a
+60 alone in seven), and the executable keeps the table that turns an ID into a node: a list of 93 layout
+node names (at `0x141a61b38`, by pointers to the strings): `name99`, `name00` to `name13`
+(the character name cards, `a21_charatelop`), `telop00` to `telop26`, then `telop36` to
+`telop86`. `u65 N` names entry N: the opening's 15 to 26 are `telop00` to `telop11`, the
+ending's 29 to 40 `telop14` to `telop25` (the second atlas, whose lines echo the opening's).
+`barrel_ryza::telop` (`Node::of`, `strips`) reads both. (`str_telop.xml` holds the field
+notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie
 2), `t25` (Ryza only), `u17`'s neighbours `u66`, `q5` (`_ADDITION_EX`, 13 against 14), `t18`.
