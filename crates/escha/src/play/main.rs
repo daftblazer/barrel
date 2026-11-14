@@ -3803,6 +3803,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut open_menu = false;
+    // The page the menu opens on (the field's LB: Assignment).
+    let mut menu_page: Option<menu::Page> = None;
     // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` renderer.offscreen).
     let mut open_mix = presenter.is_none() && std::env::var("BARREL_MIX_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     // The Equip page renderer.offscreen at a frame (`BARREL_EQUIP_AT`, `BARREL_EQUIP_KEYS`); the run goes on.
@@ -3864,7 +3866,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
             let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, renderer.pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, Some(Path::new(&out_path)))?;
+            let picked = menu::run(&gpu, renderer.pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, None, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
                 restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
@@ -3912,6 +3914,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 P::East if free_play => Some(KeyCode::KeyJ),
                 P::South if free_play => Some(KeyCode::KeyG),
                 P::LeftStick if free_play => Some(KeyCode::KeyT),
+                // LB: "Assignment", the main menu's page on its own.
+                P::LeftShoulder if free_play && field_hud.is_some() => {
+                    open_menu = true;
+                    menu_page = Some(menu::Page::Assignment(assignment::Assignment::default()));
+                    None
+                }
                 P::RightStick if free_play => Some(KeyCode::KeyR),
                 P::West if player.is_some() => Some(KeyCode::KeyT),
                 P::East if player.is_some() => Some(KeyCode::Enter),
@@ -3919,7 +3927,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             };
             if let Some(k) = key {
                 keys.push(k);
-            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) {
+            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !(b == P::LeftShoulder && open_menu) {
                 eprintln!("frame {frame}: pad {b:?} does nothing here yet");
             }
         }
@@ -4008,7 +4016,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), None)?;
+            let picked = menu::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), menu_page.take(), None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {

@@ -93,6 +93,9 @@ pub struct Menu {
     pub option: Option<usize>,
     /// The page open over the menu, if any.
     pub page: Option<Page>,
+    /// Opened straight on its page (the field's LB opens Assignment): closing the page closes
+    /// the menu.
+    pub direct: bool,
 }
 
 /// A command's page.
@@ -115,7 +118,19 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None, page: None }
+        Menu { chosen: 0, first: 0, option: None, page: None, direct: false }
+    }
+
+    /// The menu opened straight on `page`, as the field's shortcuts do; backing out of the page
+    /// goes back to play.
+    pub fn at(page: Page) -> Menu {
+        let chosen = COMMANDS.iter().position(|&c| match page {
+            Page::Status => c == Command::Status,
+            Page::Basket(_) => c == Command::Basket,
+            Page::Assignment(_) => c == Command::Assignment,
+        });
+        let chosen = chosen.unwrap_or(0);
+        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page: Some(page), direct: true, ..Menu::new() }
     }
 
     /// A button press, with `count` items in the basket (for its page).
@@ -128,6 +143,9 @@ impl Menu {
         };
         if close {
             self.page = None;
+            if self.direct {
+                return Some(Outcome::Close);
+            }
         }
         None
     }
@@ -244,6 +262,7 @@ pub fn run(
     basket: &[(i32, f32)],
     card: &[Option<crate::assignment::Task>],
     keys: &[Button],
+    start: Option<Page>,
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<Outcome>> {
     use crate::{hud, screen, text};
@@ -283,12 +302,12 @@ pub fn run(
     let mut every = Vec::new();
     for chosen in 0..COMMANDS.len() {
         let first = chosen.saturating_sub(VISIBLE - 1);
-        every.extend(Menu { chosen, first, option: None, page: None }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: 0, option: None, page: None }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None, page: None }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first, option: None, page: None, direct: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: 0, option: None, page: None, direct: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None, page: None, direct: false }.elements(&nodes, texts));
     }
     for row in 0..OPTION_ROWS.len() {
-        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), page: None }.elements(&nodes, texts));
+        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), page: None, direct: false }.elements(&nodes, texts));
     }
     every.extend(status_elements(&texts));
     // Every cell lit and not, with every item.
@@ -322,7 +341,7 @@ pub fn run(
         };
         hud::quads(&pe, Some(&font), &sheets, &e, w, h)
     };
-    let mut menu = Menu::new();
+    let mut menu = start.map_or_else(Menu::new, Menu::at);
     // Barrel acts on Close and on the Option rows it has; the rest only report.
     let count = items.len();
     let press = |m: &mut Menu, b: Button| match m.press(b, count)? {
@@ -343,6 +362,17 @@ pub fn run(
 mod tests {
     use super::*;
     use barrel_escha::data::layout::Node;
+
+    #[test]
+    fn a_shortcut_page_closes_back_to_play() {
+        let mut m = Menu::at(Page::Assignment(crate::assignment::Assignment::default()));
+        assert_eq!(COMMANDS[m.chosen], Command::Assignment);
+        assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
+        let mut m = Menu::new();
+        m.page = Some(Page::Status);
+        assert_eq!(m.press(Button::Back, 0), None);
+        assert_eq!(m.page, None);
+    }
 
     #[test]
     fn moves_scrolls_and_opens_options() {
