@@ -57,7 +57,9 @@ Escha does. It does not take the virtual pad; keyboard and mouse through `xkey` 
 past the title, W/A/S/D to move (`down:w` ... `up:w`), the left mouse button (`click:1`)
 confirms and advances text, Space asks to skip an event (W/S pick Yes/No), F auto-plays, R
 fast-forwards. A new game starts on the opening monologue, then the attic event, then free
-play in the Rasen District.
+play in the Rasen District. The player's own save (near the start) may be copied into the run's
+prefix (`.../AppData/Local/KoeiTecmo/Atelier Ryza DX`), never the other way: the player's
+prefix is only ever read.
 
 ## Recording
 
