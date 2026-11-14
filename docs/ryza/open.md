@@ -18,8 +18,10 @@ achievements are the player's own, and the DX version has not been played there)
 - **Field lighting.** `barrel-ryza` draws fields unlit (texture times vertex colour) until
   Ryza's lights are read: `_light.bin` in the field container, `_env.bin` and the `_ad` / `_as`
   probes in `_env`. Ryza has no Escha-style look table per field.
-- **Field framing.** Rasenboden's bounds reach far past the village (some object placed far
-  out), so the whole-bounds camera shows it tiny; needs a start point (an event's or the map's).
+- **Terrain draws nothing.** Rasenboden's `.ktf` reads (128×128 cells of 500, heights 1766 to
+  7000, 6 layers) but gives 0 triangles: no kind 0x20 draws as Escha's have. Its ground is
+  mostly models (cliffs, paths), so the gap shows little up close; the overview has a flat
+  sand square (`obj-A21-S06-FLOOR-01` at 0,0,0?) where terrain may belong.
 - **The environment container** (`<field>_env.elixir.gz`: `<field>_env.bin`, `_ad.g1t`,
   `_as.g1t`, likely diffuse and specular light probes) is new; nothing reads it yet.
 - **Other field files** not in Escha: `.trmd`, `.g1pf`, `.koc` next to the containers.

@@ -1,8 +1,11 @@
 //! `barrel-ryza`: Atelier Ryza DX on Barrel. For now it draws one field offscreen:
 //!
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
+//!                 [--look-at X,Y,Z] [--distance D]
 //!
-//! FIELD is a field's folder name in the archives (`s01_i_attic`). Every draw is shown unlit
+//! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
+//! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
+//! or looks at X,Y,Z (field units, as the placement list gives them) from D away. Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
 
 use std::path::Path;
@@ -26,13 +29,15 @@ struct Args {
     size: (u32, u32),
     yaw: f32,
     pitch: f32,
+    look_at: Option<Vec3>,
+    distance: Option<f32>,
 }
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
-    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]";
+    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0 };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -43,6 +48,12 @@ fn args() -> Result<Args> {
             }
             "--yaw" => a.yaw = value()?.parse()?,
             "--pitch" => a.pitch = value()?.parse()?,
+            "--look-at" => {
+                let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
+                let [x, y, z] = v[..] else { return Err("--look-at X,Y,Z".into()) };
+                a.look_at = Some(Vec3::new(x, y, z));
+            }
+            "--distance" => a.distance = Some(value()?.parse()?),
             _ => return Err(format!("unknown option {flag}").into()),
         }
     }
@@ -82,10 +93,23 @@ fn main() -> Result<()> {
     let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![None], white };
     let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
-    // The camera frames the field's bounds from the given side, as Escha's viewer does.
-    let (center, radius) = ((lo + hi) * 0.5, (hi - lo).length() * 0.5);
+    // The camera: on the given point, or framing the ground (render space mirrors x: the
+    // terrain spans x -extent..0, z 0..extent), or everything when there is no terrain.
+    let ground = terrains.first().map(|(_, t)| t.extent);
+    let (center, radius) = match (a.look_at, ground) {
+        (Some(p), _) => (p * Vec3::new(-1.0, 1.0, 1.0), 0.0),
+        (None, Some([ex, ez])) => {
+            let (mut ylo, mut yhi) = (f32::MAX, f32::MIN);
+            for v in vertices.iter().filter(|v| v.pos[0] <= 0.0 && v.pos[0] >= -ex && v.pos[2] >= 0.0 && v.pos[2] <= ez) {
+                (ylo, yhi) = (ylo.min(v.pos[1]), yhi.max(v.pos[1]));
+            }
+            let y = if ylo <= yhi { (ylo + yhi) * 0.5 } else { (lo.y + hi.y) * 0.5 };
+            (Vec3::new(-ex * 0.5, y, ez * 0.5), Vec3::new(ex, yhi - ylo, ez).length() * 0.5)
+        }
+        (None, None) => ((lo + hi) * 0.5, (hi - lo).length() * 0.5),
+    };
     let fov = 30f32.to_radians();
-    let dist = radius / (fov * 0.5).sin() * 1.05;
+    let dist = a.distance.unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
     let (y, p) = (a.yaw.to_radians(), a.pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
