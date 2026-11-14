@@ -61,6 +61,22 @@ play in the Rasen District. The player's own save (near the start) may be copied
 prefix (`.../AppData/Local/KoeiTecmo/Atelier Ryza DX`), never the other way: the player's
 prefix is only ever read.
 
+### Ryza DX's run-time constants still wanted
+
+Values `barrel-ryza` stands in for because the game sets them while running (docs/ryza/open.md),
+to read in one short run at the garden gate (the player's save, noon) with the plants in view:
+
+- **The plants' vertex constants** (`ObjectGrassPBS` program 1, 672 bytes, docs/shading.md "Ryza
+  DX: the plants"): `scan_pair.py 8000 15000 1` finds `g_fFarClipBegin` / `End` at +624 / +628
+  (the Middle preset); the block from 624 bytes before holds `g_fWidthScale` / `g_fHeightScale`,
+  `g_vAttCache0` (the sway), `g_fPhase` / `g_fOscPhase` (read twice, a second apart, for their
+  speed), `g_fNearClip`, `g_fFarScaleBegin` / `End` and `g_vFieldRange` (+656).
+- **The plants' pixel constants**: `g_vPigmentMapScale` (+368 of a 432-byte block whose
+  `vAmbParam`, `vAmbDifScl`, `vAmbSpcWgt` follow at +384 to +416, the same as the field models').
+- **The emission strength** `emScl` (+96 in `pbb-emn_cll`'s pixel block, after `litDir`,
+  `litCol`, `ambLit`, `vEye`; its `vFadeDist` at +152): at noon, and at evening if the run's
+  clock can be moved there.
+
 ## Recording
 
 `ORACLE_HZ=60 tools/oracle/run.sh ...` runs the game at 60 Hz (30 by default). With
