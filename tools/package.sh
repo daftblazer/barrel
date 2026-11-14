@@ -1,6 +1,6 @@
 #!/bin/bash
 # tools/package.sh <x86_64|aarch64> <out folder>: build Barrel and make its Kintsugi engine folder
-# (`run`, the stripped barrel-view and, for aarch64, the arm64 SDL3 it links in lib/).
+# (`run`, the stripped barrel-escha and, for aarch64, the arm64 SDL3 it links in lib/).
 #
 # aarch64 is cross-built: set BARREL_AARCH64_SYSROOT (an arm64 root filesystem with the Vulkan
 # loader and libwayland-client) and BARREL_AARCH64_DEPS (a prefix with arm64 SDL3: lib/libSDL3.so.0,
@@ -12,20 +12,20 @@ OUT=${2:?usage: package.sh <x86_64|aarch64> <out folder>}
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 case "$ARCH" in
 x86_64)
-    tools/capped.sh cargo build --offline --release -p barrel-render
-    BIN=target/release/barrel-view ;;
+    tools/capped.sh cargo build --offline --release -p barrel-escha
+    BIN=target/release/barrel-escha ;;
 aarch64)
     : "${BARREL_AARCH64_SYSROOT:?set BARREL_AARCH64_SYSROOT (arm64 root filesystem)}"
     : "${BARREL_AARCH64_DEPS:?set BARREL_AARCH64_DEPS (prefix with arm64 SDL3)}"
     export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$PWD/tools/aarch64-cc.sh"
     export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=
     export PKG_CONFIG_LIBDIR="$BARREL_AARCH64_DEPS/lib/pkgconfig:$BARREL_AARCH64_SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$BARREL_AARCH64_SYSROOT/usr/share/pkgconfig"
-    tools/capped.sh cargo build --offline --release --target aarch64-unknown-linux-gnu -p barrel-render
-    BIN=target/aarch64-unknown-linux-gnu/release/barrel-view ;;
+    tools/capped.sh cargo build --offline --release --target aarch64-unknown-linux-gnu -p barrel-escha
+    BIN=target/aarch64-unknown-linux-gnu/release/barrel-escha ;;
 *) echo "unknown architecture $ARCH" >&2; exit 1 ;;
 esac
 rm -rf "$OUT" && mkdir -p "$OUT"
-llvm-strip --strip-debug -o "$OUT/barrel-view" "$BIN"
+llvm-strip --strip-debug -o "$OUT/barrel-escha" "$BIN"
 if [ "$ARCH" = aarch64 ]; then
     mkdir -p "$OUT/lib"
     cp -L "$BARREL_AARCH64_DEPS/lib/libSDL3.so.0" "$OUT/lib/"
@@ -48,7 +48,7 @@ fi
 state=${XDG_STATE_HOME:-$HOME/.local/state}/barrel
 mkdir -p "$state"
 cd "$here"
-exec ./barrel-view --field auto /dev/null --title "$game" --window 0 >"$state/barrel.log" 2>&1
+exec ./barrel-escha --field auto /dev/null --title "$game" --window 0 >"$state/barrel.log" 2>&1
 RUN
 chmod +x "$OUT/run"
 echo "engine folder: $OUT"

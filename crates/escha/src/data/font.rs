@@ -26,16 +26,7 @@ pub const FONT_EN: u64 = 0x1407_9ee58;
 
 const RECORD: usize = 28;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Glyph {
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-    pub x_offset: i32,
-    pub y_offset: i32,
-    pub advance: u32,
-}
+pub use barrel_render::text::Glyph;
 
 /// The glyphs by character.
 pub fn glyphs(pe: &Pe, name: u64) -> Option<std::collections::HashMap<char, Glyph>> {

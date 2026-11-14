@@ -2333,7 +2333,7 @@ across, heights -19 to 528), a placement list and a small collision mesh; `A15_W
 objects, named by region (`A0_obj` 30 placements, `B1_obj` 22, `E2_obj` 45 ... and the clouds,
 `xxCLOUD_*xx`). Its look is `Saves/field/A15_WMAP.xml` (fog, one `PARALLEL` light, the sphere
 following the camera, the character shader, and `<tex_filter_world>` / `<tex_filter_area>`
-overlay modifiers 2 and 3, not read). `barrel-view --field .../A15_WMAP OUT --player 32000,32000`
+overlay modifiers 2 and 3, not read). `barrel-escha --field .../A15_WMAP OUT --player 32000,32000`
 draws it with Escha standing on it. The places on it are not in these files: the executable
 names them `WM_POINTER_LP_T0`, `WM_POINTER_LP_A0` to `_F2` (a large point per place, by the
 names) and `WM_POINTER_SP_A0P0` ... (small points along the routes), parsed from names with the
@@ -2354,7 +2354,7 @@ where the world map's placements mark them, by tag (`A15_WMAP.opl2`): `T0` the t
 (`a15wmap_point_sm_on`/`_off`, `SP_A0P0` ...); `A0r0` ... tag the dots along a region's paths
 (`a15_point_r_off`, 271) and `R0` to `R14` the routes' marks (`a15_point_r_big_bwr`, 112)
 (`world::point_tag`, `point_position`; `barrel world-points` prints them: the town at (26250,
-27000), the Twilight Forest's points 750 apart east of it). `barrel-view --field .../A15_WMAP OUT --world-point SP_A0P2` stands
+27000), the Twilight Forest's points 750 apart east of it). `barrel-escha --field .../A15_WMAP OUT --world-point SP_A0P2` stands
 Escha on that point's mark (the forest region, its path dots either side).
 
 **The places** (the area map's names and panel texts) are a table of 96 records of 0x60 bytes

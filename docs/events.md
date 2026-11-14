@@ -152,7 +152,7 @@ y, z, 0, angle in degrees, ...}` in field coordinates (all 14 operands below, "A
 removing characters"); `ECT_CHARA_POS_SET` (`s4`) is
 `{character, 0, 0, 0, x, y, z}`. A character's model is found through its `Chara.xml` row's
 `BaseTag` and that tag's `Model` in `CharaBase.xml` (`PC20/PC20_MODEL`, under
-`Data/x64/Character/`). `barrel-view --field <TOWN_04> --event FILE.ebd` draws an event's
+`Data/x64/Character/`). `barrel-escha --field <TOWN_04> --event FILE.ebd` draws an event's
 opening: the field and each character at its first placement. `EVENT_MM08_AS4_130` (field
 3, `TOWN_04`) puts Escha and Logy on the grass by a curved stone wall and Threia and Reyfer a
 few metres off, all standing at ground height.
@@ -190,7 +190,7 @@ camera back to play, so a scene never draws with it; the stage keeps the flag
 
 The camera looks at target + offset from `distance` away, turned by yaw and pitch. In
 `EVENT_MM08_AS4_130` that opens on Threia and Reyfer by the plaza's planter, with a market
-stall and flowerbeds behind them and Escha coming into frame. `barrel-view --event` uses the
+stall and flowerbeds behind them and Escha coming into frame. `barrel-escha --event` uses the
 event's camera; `--free-camera` places the view on the characters instead. The field of
 view is not in the command (40° is used for now).
 
@@ -207,7 +207,7 @@ the executable reads a command's operands (`0x1401ddcbe` and the like, after the
 resolved), each that equals 749 becomes what `0x14035ebb0` returns: the global `0x141098a48`,
 which the new game's choice screen sets (`0x1400ce4f3`: 1 if the choice is Logy, else 0). So
 749 is row 0, Escha, or row 1, Logy. `Player::hero` sets the choice (Escha by default;
-`barrel-view --hero logy`) and `Player::slot` swaps 749 for it, the camera's follow (`t18`)
+`barrel-escha --hero logy`) and `Player::slot` swaps 749 for it, the camera's follow (`t18`)
 included. The save keeps the choice in its `global` record (+0x38; `docs/formats.md`, Saves).
 
 **Where the eye is** (`0x1401e68f0`, settled from the code). The point looked at is the
@@ -652,7 +652,7 @@ executable's `FIELDMAP_*` enum (122 names, found by `FIELDMAP_TOWN_01`): `TOWN_0
 `A15_WMAP`. Without the prefix the names are the field directories under `Data/x64/Field`.
 `EVENT_MM08_AS4_130` changes to 3, `TOWN_04` (the plaza it is drawn in), `_110` to 2
 (`TOWN_03`) and `_020` to 8 (`TOWN_09`). `play-event` prints the change with its name, and
-`barrel-view --field auto --event FILE` draws the event in its own field
+`barrel-escha --field auto --event FILE` draws the event in its own field
 (`event::field_maps`, `event::first_field`). 512 of the 1,021 story events change field; the
 others play wherever the player already is (their field is not in the event).
 
@@ -700,7 +700,7 @@ removes it, and `s5`/`s10` set the motion it plays. `s5` (`ECT_CHARA_MOTION_SET`
 +0x828 (not read); `s10` passes 0 there and then clears the motion's play range
 (`0x1402036d0` with -1, -1), so it loops from the start. With `--at` the viewer poses each
 character in its stage motion that far in (looping ones wrap).
-`barrel-view --field <DIR> --event FILE.ebd --at SECONDS` draws the stage as it stands at that
+`barrel-escha --field <DIR> --event FILE.ebd --at SECONDS` draws the stage as it stands at that
 time: every character where it has walked to and facing where it turned, seen from the
 stage's camera when the event has set its eye and target (the skill camera), otherwise from
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events

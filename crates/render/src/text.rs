@@ -1,4 +1,4 @@
-//! Text on screen in the game's font (`barrel_escha::data::font`): laying lines out into quads
+//! Text on screen in a game's font (Escha's: `barrel_escha::data::font`): laying lines out into quads
 //! (plain code, tested without a GPU) and a layer that draws them over the scene, alpha
 //! blended, in screen pixels.
 //!
@@ -9,9 +9,21 @@
 use std::collections::HashMap;
 
 use ash::vk;
-use barrel_escha::data::font::Glyph;
 
 use crate::{upload_texture, Gpu, Result};
+
+/// A character in a font atlas: its box in the atlas, where it sits against the pen and how
+/// far the pen moves on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Glyph {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub x_offset: i32,
+    pub y_offset: i32,
+    pub advance: u32,
+}
 
 /// The font's line height in atlas pixels (the Latin glyphs reach 53 below a line's top; the
 /// game's own spacing is not read).

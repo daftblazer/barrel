@@ -721,7 +721,7 @@ voices (`voice::first_clips`). 521 events have voices; the opening's are as the 
 040 have none (021, 022 and 040 do not share the other alchemist's clips after all). The
 multi-language executable holds the same table, so the Japanese and English banks share the
 numbering. The viewer plays each line's clip from it as the line comes up
-(`stage::Stage::story_voice`; `barrel-view` prints "story voices from clip 12900" for the first
+(`stage::Stage::story_voice`; `barrel-escha` prints "story voices from clip 12900" for the first
 opening scene). Matching clip sizes to line lengths (`voice::story_start`) guessed the starts
 before the table was found; `barrel voice-map INSTALL` now compares the two: of its 520 guesses
 135 are the table's, and 111 of the 192 strong ones (correlation 0.85 or more), so it is only a

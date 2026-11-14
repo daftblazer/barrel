@@ -90,9 +90,15 @@ dependencies = [
 name = "barrel-escha"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "barrel-audio",
  "barrel-engine",
  "barrel-formats",
+ "barrel-render",
+ "encoding_rs",
+ "glam",
+ "raw-window-handle",
+ "winit",
 ]
 
 [[package]]
@@ -107,11 +113,7 @@ name = "barrel-render"
 version = "0.1.0"
 dependencies = [
  "ash",
- "barrel-audio",
- "barrel-engine",
- "barrel-escha",
  "barrel-formats",
- "encoding_rs",
  "glam",
  "libc",
  "raw-window-handle",

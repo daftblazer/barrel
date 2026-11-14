@@ -75,17 +75,17 @@ target/release/barrel g1m-scan "<install>/Data"       # every model
 target/release/barrel g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
-`crates/render` is the Vulkan renderer. Its tool, `barrel-view`, draws a model, a field or an
+`crates/render` is the Vulkan renderer. Its tool, `barrel-escha`, draws a model, a field or an
 event: to PNG files offscreen, or live in a window (`--window FRAMES`). With an event it plays
 it on (`--at`, `--line`, `--frames`, `--fps`) and with `--chain` goes on to the events the story
 starts after it (`docs/renderer.md`).
 
 ```sh
-target/release/barrel-view MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
-target/release/barrel-view MODEL#N TEXTURES#N out.png --skeleton BASE_MODEL#N --anim MOTION#N --time 2
-target/release/barrel-view --field "<install>/Data/x64/Field/AREA_01_01" out.png
-target/release/barrel-view --field auto out.png --event "<install>/Event/event/MM01_OP1/EVENT_MM01_OP1_111.ebd" --window 100000 --chain
-BARREL_VALIDATION=1 target/release/barrel-view ...      # with the Khronos validation layer
+target/release/barrel-escha MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
+target/release/barrel-escha MODEL#N TEXTURES#N out.png --skeleton BASE_MODEL#N --anim MOTION#N --time 2
+target/release/barrel-escha --field "<install>/Data/x64/Field/AREA_01_01" out.png
+target/release/barrel-escha --field auto out.png --event "<install>/Event/event/MM01_OP1/EVENT_MM01_OP1_111.ebd" --window 100000 --chain
+BARREL_VALIDATION=1 target/release/barrel-escha ...      # with the Khronos validation layer
 ```
 
 Building the renderer needs `glslc` (shaderc, part of the Vulkan SDK) to compile its shaders;

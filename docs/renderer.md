@@ -1,9 +1,9 @@
 # Renderer
 
 `crates/render` draws the games' data with Vulkan 1.1 through `ash`. For now it is a single
-tool, `barrel-view`, that renders one model offscreen and writes the frame as PNG.
+tool, `barrel-escha`, that renders one model offscreen and writes the frame as PNG.
 
-`barrel-view --field FIELD_DIR out.png` draws a field's objects: every instance in the
+`barrel-escha --field FIELD_DIR out.png` draws a field's objects: every instance in the
 field's placement list, with its model from the `_Obj` container and the field's shared
 texture pack (the object models carry no textures of their own). Each instance is scaled,
 rotated (x, then y, then z, in radians) and moved on the CPU. AREA_01_01 places 112
@@ -158,7 +158,7 @@ ktf-scan`), the number of blend maps does not follow the number of layers:
 So the maps' channels are not simply layers 0 to 5: each patch's draws name their layers
 and their map and channels, and the viewer now follows them (above).
 
-**Chained events.** `barrel-view --field auto OUT.png --event FILE.ebd --chain` plays the
+**Chained events.** `barrel-escha --field auto OUT.png --event FILE.ebd --chain` plays the
 event, then each one the story starts after it (`event_start::Chain`, as `barrel play-event
 --chain`): when every step of the event has been applied, its scene is dropped (its geometry,
 textures, instances, text layer, readback buffer and semaphores) and the next event's is loaded
@@ -176,7 +176,7 @@ hero where the event left them, under the player's control (`--player`'s walker)
 says 10.5 s) Escha stands at (10000, 10950) in `TOWN_04`. `Playback::end` gives an event's last
 step time.
 
-**A new game, saved and loaded.** `barrel-view --field auto OUT --new-game ROOT [--hero logy]
+**A new game, saved and loaded.** `barrel-escha --field auto OUT --new-game ROOT [--hero logy]
 --window FRAMES` plays a new game: the opening the choice starts (`event_start::new_game_event`),
 the story after it (`--chain`), then free play (`--free-play`), where the story goes on as a
 `session::Session`. With `--save FILE`, F5 (or `BARREL_SAVE_AT=FRAME`, counted in the free-play
@@ -227,7 +227,7 @@ Orchard have one or two each and the Tavern three (chara 14, `PC34`, and two tow
 `NPC00B` and `NPC04B`); the Plaza has none yet (its regular, chara 8, waits for
 `XF01_080`).
 
-**The player.** `barrel-view --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
+**The player.** `barrel-escha --field DIR OUT.png --player X,Z` stands Escha (`Chara.xml`
 row 0, `PC20`) at (X, Z) on the field's ground there (`game::walk::Ground`, dropped from above
 onto the highest of the heightmap and the collision floors), in her wait motion, and points
 the camera at her. The spot has to be one she could walk to: over a rock that has no collision
@@ -251,7 +251,7 @@ Marion's office are framed from their own settings; `--free-camera` carries the 
 along instead. (The game moves between settings smoothly and follows with the bumper speed;
 here the camera takes each setting at once.)
 
-**Town people.** `barrel-view --field DIR OUT.png --town-people all|GAMEDATA` adds the people
+**Town people.** `barrel-escha --field DIR OUT.png --town-people all|GAMEDATA` adds the people
 the field load would place on that field (`docs/tables.md`, "Town people" in the field NPC
 notes; the map number comes from the directory's name through the `FIELDMAP_*` list):
 
@@ -305,7 +305,7 @@ neighbours' labels go while it asks. Stretched pieces are `hud::Element::Slice` 
 keeps a panel's corners). Checked side by side with the recording.
 
 **The area map.** With `--load SAVE`, `--area-map` starts on the area map at the save's
-field's point (as a lost battle does). `barrel-view --field .../A15_WMAP OUT --world-point SP_A2P0 --area-map` puts
+field's point (as a lost battle does). `barrel-escha --field .../A15_WMAP OUT --world-point SP_A2P0 --area-map` puts
 Escha on a region's point of the world map with the area map's cursor (`AreaMap`, over
 `game::area_map`): W A S D (offscreen `BARREL_AREA_KEYS`, up / down / left / right / confirm,
 one a frame once she stands still) take the route in that way's link slot, which she runs
@@ -336,7 +336,7 @@ carried field time passes, as between fields): from (3700, 3680) in `AREA_01_01`
 the exit at frame 6, the Forest Entrance (`SP_A0P0`), confirm, back in `AREA_01_01` at its
 arrival place. The town's exit still ends the run (no world map screen).
 
-**Field enemies.** `barrel-view --field DIR OUT.png --creatures AREA --frames N` adds field
+**Field enemies.** `barrel-escha --field DIR OUT.png --creatures AREA --frames N` adds field
 area AREA's enemies (12 is `AREA_01_01`; `barrel_game::field_ai::build`), each drawn as the
 model the game gives it (`FieldEnemy::model`, a `CharaBase` row; its encounter group's first
 monster when missing, which agrees: `AREA_01_01`: two `MOB15A`, one `MOB01A`) in its `CharaBase`
@@ -366,7 +366,7 @@ of view (the angles kept in radians), the look offset, the position, then `bumpe
 view 22.5). The camera keeps the last four as tweens (+0x150, +0x168, +0x1b0, +0x1c8); nothing
 in `CameraCFieldMap`'s own code reads them back, so what they do is not found.
 
-**Playing events.** `barrel-view --field DIR OUT.png --event FILE.ebd [--at S] --frames N
+**Playing events.** `barrel-escha --field DIR OUT.png --event FILE.ebd [--at S] --frames N
 --fps HZ` builds the scene once, then plays the event on (one frame too: the event runs up to
 `--at` first, so a still shows what its commands have set by then, such as the Atelier's
 `xEV_` west wall that `q10 1` shows from 3 s into `EVENT_MM01_OP1_111`; a still once skipped
@@ -424,16 +424,11 @@ face changes by writing its weights, like a pose by writing its palette. The wei
 from the line's expression (`--line`): in `EVENT_MM08_AS4_130`, line 2, 108 weights over three
 faces, 3 not zero (the mouths), and the frame is pixel-identical to the CPU-morphed one.
 
-**Live window.** `barrel-view --window FRAMES` (0: until the player quits, as a game launch
-uses it) opens a 1280×720 window (winit 0.30, Wayland or
-X11) and presents through a FIFO swapchain (`present.rs`: the surface, the swapchain, acquire
-and present; vsync, so the display paces the loop), with the engine clock taking each
-frame's real time (`docs/engine.md`, "Timing"). It clears each frame to a colour that moves
-with the logic time, a bounded smoke test of the window, swapchain and clock; drawing the
-event's scene into it is next. Run inside headless gamescope (1280×720 at 30 Hz), 60
-frames present and the clock runs 112 logic ticks: about 1.9 s at 60 ticks a second, the
-display pacing the loop. `Gpu::new` takes the window's display handle to add the
-surface and swapchain extensions.
+**Live window.** `--window FRAMES` (0: until the player quits, as a game launch uses it) opens
+a 1280×720 window (winit 0.30, Wayland or X11) and presents through a FIFO swapchain
+(`present.rs`: the surface, the swapchain, acquire and present; vsync, so the display paces the
+loop), with the engine clock taking each frame's real time (`docs/engine.md`, "Timing").
+`Gpu::new` takes the window's display handle to add the surface and swapchain extensions.
 
 **Events in the window.** `--window FRAMES` with `--field`/`--event` plays the event live:
 the window is opened first (`window::Pump`, winit's events pumped once a frame without
@@ -749,7 +744,7 @@ are ours (`docs/escha/open.md`). `BARREL_NO_HUD` turns it off.
 
 ## The title screen
 
-`barrel-view --field auto OUT --title ROOT` starts at the title screen (`crates/render/src/title.rs`,
+`barrel-escha --field auto OUT --title ROOT` starts at the title screen (`crates/render/src/title.rs`,
 layout 1056 and still 9): "Press any button", then the six entries (arrows or W/S, Enter, Space
 or Z to pick, Escape, Backspace or X back). New Game opens the hero choice (`hero.rs`, layout
 1023: the two profile cards, left and right switch, confirm asks Yes / No with Yes at the left)
@@ -949,7 +944,7 @@ keys (`window::Pump`):
 | Start | | the main menu in free play; pause the event |
 | Back | | save (F5) |
 
-No button quits (Escape). `barrel-view --field auto /dev/null --pad-test` prints the pad's name,
+No button quits (Escape). `barrel-escha --field auto /dev/null --pad-test` prints the pad's name,
 presses and sticks for ten seconds without a window. Not yet the game's: which button does what
 in the field (the game's own key config is not read).
 
