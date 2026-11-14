@@ -175,7 +175,20 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   and take the frame from 5.97 to 5.89 or 5.88 ms, since the landmarks (3000 m) carry the cost.
   Whether the units are metres is a guess (the near class at 70 would be 70 units otherwise,
   a few steps). Choosing the Switch's ranges belongs with the handheld preset (a graphics
-  setting, not yet). LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) is not applied. The placements'
+  setting, not yet). LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) is not applied.
+  Where the frame goes at the gate (1920x1080, desktop preset, 57 frames, median 5.83 ms): the
+  shadow map 1.70 ms, the scene 4.04, the rest 0.08. After view culling, by placement class
+  (draws / triangles):
+
+  | pass | near | middle | far | landmark |
+  |---|---|---|---|---|
+  | scene | 39 / 51k (with Ryza) | 62 / 67k | 146 / 67k | 472 / 430k |
+  | shadow map | 72 / 54k | 27 / 21k | 53 / 20k | 142 / 160k |
+
+  The shadow map (3000 units square around her, ±8000 along the sun) draws 255k triangles,
+  the scene 615k: about the same cost a triangle, and two thirds of both are landmarks (the
+  canyon's cliffs). The game's own shadow range (`disp_range` `shadow`, 300 m) cuts nothing
+  here. For the RP6: the landmarks' triangles, then the shadow map's casters. The placements'
   classes (docs/formats.md, "Placement lists") put the cost in the landmark class: leaving each
   class out in turn (1080p, 37 frames), near saves 0.36 ms, middle 0.39, far 0.51, landmark 3.9
   of 5.9 (646 cliffs and mountains, 1.26 of the 1.85 million triangles). Landmarks are drawn to
