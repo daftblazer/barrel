@@ -313,4 +313,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   High preset's (8000, 20000, 40000), so the desktop draws as before, and the handheld's Middle
   (7000, 15000, 30000) drops some far small objects: 7.14 to 6.77 ms in a far view (PC). How
   the game really combines the field's `disp_range` with the preset is unknown (an oracle read
-  of the ranges in use would tell). The shadow distance (`ShadowDistType`) is not taken yet.
+  of the ranges in use would tell). The shadow distance (`ShadowDistType`: 1, 0.7, 0.5) scales the far
+  shadow layer's fade (20000 to 30000 on High; 14000 to 21000 on the handheld's Middle): a
+  guess at what it scales, as the game's cascades (1200 / 6000 / 13000) are not drawn as such.
+  In the far view 0.5% of the pixels change and the time does not (the far layer is redrawn
+  only when it moves).

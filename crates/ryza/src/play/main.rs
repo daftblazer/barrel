@@ -866,7 +866,7 @@ fn main() -> Result<()> {
             }
             _ => dist,
         };
-        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size);
+        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         view.look[50] = [PLANT_SWAY[0], PLANT_SWAY[1], PLANT_SWAY[2], started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED];
@@ -1027,10 +1027,11 @@ struct View {
 /// The view from `dist` away from `center` (render space) at `yaw` and `pitch` degrees, and
 /// its look block (`barrel_render`'s `Look`): the eye, the view-projection and last frame's
 /// (`prev_vp`; this one's when there is none), and the environment's light, sky and the sun's
-/// shadow (`shadow_size`: the shadow map's, none without shadows). With no environment, a
+/// shadow (`shadow_size`: the shadow map's, none without shadows; `shadow_reach`: the preset's
+/// scale of the far layer's reach). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, exposure_range: Option<(f32, f32)>, shadow_size: Option<u32>) -> View {
+fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, exposure_range: Option<(f32, f32)>, shadow_size: Option<u32>, shadow_reach: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -1128,8 +1129,10 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             // Past it, the far layer: a square out to where the game's shadows end
             // (`shadowMap_ShadowEraseFarEnd`), fading to lit from `ShadowEraseFarStart` (the
             // default override's 20000 and 30000; its three near cascades, 1200 / 6000 /
-            // 13000, are the near square here).
-            let (fade_start, fade_end) = (20000.0, 30000.0);
+            // 13000, are the near square here), scaled by the general preset's shadow distance
+            // (`shadow_reach`: 1 on High, 0.7 on Middle; how the game applies it to its
+            // cascades is not known, docs/ryza/open.md).
+            let (fade_start, fade_end) = (20000.0 * shadow_reach, 30000.0 * shadow_reach);
             // Its centre steps on a 2000-unit grid: the layer is drawn again only when it
             // moves (`Renderer::far_shadow`; a whole-field draw, about 10 ms at 1080p), so
             // far swaying trees' shadows hold still between steps.
