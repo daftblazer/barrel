@@ -52,8 +52,11 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// fade start, fade end} (91; the fade by distance from the eye, to lit).
 /// Then the light on an upward-facing surface ({rgb}, 92: `model.vert`'s flag 4096, a sky dome
 /// lit so).
-pub const LOOK_SLOTS: usize = 93;
+/// Then where faded draws thin out ({begin, end} from the eye, `model.frag`'s flag 16384: a
+/// field's plants).
+pub const LOOK_SLOTS: usize = 94;
 pub const DOME_LIGHT_SLOT: usize = 92;
+pub const FADE_SLOT: usize = 93;
 /// The far shadow layer's first look slot.
 pub const SHADOW_FAR_SLOT: usize = 87;
 /// The first of the sky plane's look slots (sky.frag): {on}, Scat[4], skyPos, fog, the sun's

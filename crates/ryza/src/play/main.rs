@@ -41,6 +41,11 @@ const UNLIT: u32 = 32;
 const DOME_LIT: u32 = 4096;
 /// `model.frag`'s flag for a normal map in the mask slot (a field model's `sNMap`).
 const NORMAL_MAPPED: u32 = 8192;
+/// `model.frag`'s flag for draws thinned out over the look's `FADE_SLOT` range (the plants).
+const FADED: u32 = 16384;
+/// The plants' fade range from the eye, the game's highest grass preset (`Middle` in
+/// `grassrangepreset.xml`: FarClipBegin 8000, FarClipEnd 15000).
+const PLANT_FADE: [f32; 2] = [8000.0, 15000.0];
 
 struct Args {
     install: String,
@@ -206,6 +211,9 @@ const PLANT_CARDS: [u32; 19] = [1, 0, 2, 3, 0, 0, 5, 4, 2, 6, 7, 1, 3, 0, 5, 5, 
 const PLANT_LIMIT: usize = 200_000;
 /// Plants are grouped into draws of this many grid cells a side, so the view culls them.
 const PLANT_BLOCK: usize = 8;
+/// The plants' normal in the card's frame (turned by the billboard axes): up, so a plant takes
+/// the light of the ground it stands on rather than of a wall facing the camera.
+const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
 /// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
 /// per block of grid cells, the atlas being texture `atlas`.
@@ -234,7 +242,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             let centre = [-p.at[0], p.at[1] + h * 0.5, p.at[2]];
             let base = scene.vertices.len() as u32;
             for (dx, dy, uv) in [(-0.5, -0.5, [u, v + 0.5]), (0.5, -0.5, [u + 0.25, v + 0.5]), (0.5, 0.5, [u + 0.25, v]), (-0.5, 0.5, [u, v])] {
-                scene.vertices.push(Vertex { pos: centre, normal: [0.0, 0.0, 1.0], uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0] });
+                scene.vertices.push(Vertex { pos: centre, normal: PLANT_NORMAL, uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0] });
             }
             scene.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }
@@ -686,6 +694,8 @@ fn main() -> Result<()> {
         let base = if environment.is_some() {
             if d.sky {
                 DOME_LIT
+            } else if d.name == "plants" {
+                FADED
             } else if d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
                 NORMAL_MAPPED
             } else {
@@ -993,6 +1003,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         look[38] = [0.0, 1.0, 0.0, 0.0];
         look[39] = [back.x, back.y, back.z, 0.0];
     }
+    look[FADE_SLOT] = [PLANT_FADE[0], PLANT_FADE[1], 0.0, 0.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
     // The environment's light instead, when the field has one: the cube map's light times the
     // ambient colour (model.vert's `sh`), the sun and the second light as the field's two

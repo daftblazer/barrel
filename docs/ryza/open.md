@@ -118,9 +118,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   view on the PC. Stand-ins, not read: the spread (a kind's last float as plants per 100 ×
   100 units, its first two as height and spread, the next two as width and spread), which card
   each kind draws (`PLANT_CARDS`, by the stills: kind 6 along the paths as the grass tuft,
-  kind 7 in the yellow fields as wheat), no sway (`g_fPhase`), no fading out (the Middle
-  preset fades from 8000 to 15000 units), no shadows cast, lit as the field's models with a
-  card normal facing the camera (they come out paler than the game's). Whether the dense
+  kind 7 in the yellow fields as wheat), no sway (`g_fPhase`), no shadows cast, lit
+  as the field's models with an upward normal (a camera-facing one made them pale; up, they
+  take the ground's light, darker and bluer in the shade than the game's green). Thinned out
+  from 8000 to 15000 units from the eye (the game's Middle grass preset) by a screen pattern
+  (`model.frag` flag 16384, look slot 93). The game's plant program reads a pigment map
+  (`sPigmentMap`, `g_vFieldRange`), likely tinting plants by the ground; not read. Whether the dense
   short grass is these cards or the terrain's own is not known.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
