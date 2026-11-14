@@ -114,8 +114,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); the deferred character lighting pass is
-  `\data\x64\shader\dschara-cll.g1s`. Her face's expressions, eyes and blinks
-  (`face\`) and her hair's swing (`.swg`) are not read.
+  `\data\x64\shader\dschara-cll.g1s`. Her face takes its default expression
+  and blinks (every 4 s, a stand-in timing); the other expressions, the eyes' directions and
+  her hair's swing (`.swg`) are not used.
 
 ## On handhelds
 

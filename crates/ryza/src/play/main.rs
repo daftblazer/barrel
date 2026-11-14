@@ -76,6 +76,9 @@ struct Rig {
     walls: Option<barrel_engine::walk::Walls>,
     player: barrel_ryza::player::Player,
     chara: barrel_ryza::chara::Chara,
+    /// Her face's expression and her shut eyes (`barrel_ryza::face`).
+    face: Option<barrel_ryza::face::Face>,
+    shut: Option<barrel_ryza::face::Face>,
 }
 
 fn args() -> Result<Args> {
@@ -211,7 +214,20 @@ fn main() -> Result<()> {
             anims.push((*n, barrel_formats::g1a::parse(c.entries.iter().find(|e| !e.is_dummy()).map(|e| c.data(e)).ok_or("empty motion")?)?));
         }
         let anim = &anims[0].1;
-        let joints = barrel_engine::skin::pose(&skeleton, anim, *time);
+        // Her face (`barrel_ryza::face`): the default expression over the body's pose, and the
+        // shut eyes for blinking.
+        let face_of = |name: &str| -> Option<barrel_ryza::face::Face> {
+            let bytes = install.read(&barrel_ryza::face::path("PC00A", name)).ok()?;
+            let c = Elixir::parse(&bytes).ok()?;
+            let anim = barrel_formats::g1a::parse(c.data(c.entries.iter().find(|e| !e.is_dummy())?)).ok()?;
+            Some(barrel_ryza::face::Face::new(&skeleton, &anim))
+        };
+        let (face, shut) = (face_of("expression_default"), face_of("closeeye_down"));
+        let mut locals = barrel_engine::skin::local_pose(&skeleton, anim, *time);
+        if let Some(f) = &face {
+            f.apply(&mut locals, None, 0.0);
+        }
+        let joints = barrel_engine::skin::skin(&skeleton, &locals);
         // Her feet on the ground: the field's heightmap under her (the given height when there
         // is none, or she is off it).
         let mut ground = barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase()))
@@ -271,7 +287,7 @@ fn main() -> Result<()> {
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
         let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
         (player.radius, player.height) = (chara.radius, chara.height);
-        rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara });
+        rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut });
         textures.extend(rp.textures.iter());
     }
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -491,10 +507,14 @@ fn main() -> Result<()> {
                 // Her pose: the motion playing, the last one mixed out over it.
                 let local = |(m, t): (u32, f32)| barrel_engine::skin::local_pose(&r.skeleton, &r.anims.iter().find(|(n, _)| *n == m).unwrap_or(&r.anims[0]).1, t);
                 let (now, from) = r.player.pose();
-                let joints = match from {
-                    Some((before, left)) => barrel_engine::skin::skin(&r.skeleton, &barrel_engine::skin::mix_pose(&local(now), &local(before), left)),
-                    None => barrel_engine::skin::skin(&r.skeleton, &local(now)),
+                let mut locals = match from {
+                    Some((before, left)) => barrel_engine::skin::mix_pose(&local(now), &local(before), left),
+                    None => local(now),
                 };
+                if let Some(f) = &r.face {
+                    f.apply(&mut locals, r.shut.as_ref(), barrel_ryza::face::blink(started.elapsed().as_secs_f32()));
+                }
+                let joints = barrel_engine::skin::skin(&r.skeleton, &locals);
                 prev_palette.copy_from_slice(&palette);
                 let base = instances[r.instance as usize].palette as usize;
                 for (slot, j) in palette[base..].iter_mut().zip(&joints) {

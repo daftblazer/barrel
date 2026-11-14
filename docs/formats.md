@@ -1098,7 +1098,10 @@ mesh `PC00A_MODEL_default.g1m`, `PC00A_MODELOid.bin` (likely the bones' names) a
 the motions (`pc00a_<NNNNN>`, "Ryza's motions") and `face\` with 30 small containers: the
 expressions (`pc00a_face_expression_<name>`: default, smile, anger, sadness, surprise, wink, ...),
 the eyes' directions (`pc00a_face_eye_<dir>`), blinks (`closeeye_up/down`) and
-`pc00a_face_pronunciation`, not read. Her mesh groups name their shaders by a 32-bit hash
+`pc00a_face_pronunciation`. Each holds one `.g1a` of one frame (0.017 s) with 67 tracks: bone 0
+and the face's bones 300 to 365, which her field motions (96 tracks, none at 300 or above) do not
+move. `barrel_ryza::face` lays `expression_default` over her pose and blinks toward
+`closeeye_down`; the rest are not used yet. Her mesh groups name their shaders by a 32-bit hash
 (`@CB0965E5`, `@4196223C`, ... in `barrel g1m-materials`; submeshes 0 to 7 and 20, 21 also
 carry the numbers 20000 to 20006); the hashes match none of the 212 shader packs' names
 (`\data\x64\shader\*.g1s`, CRC32 or FNV-1/1a or djb2 or sdbm, any case). The parts tables
