@@ -259,9 +259,7 @@ impl Rim {
     pub const DEFAULT_PATH: &'static str = "\\saves\\fieldmap\\override_env\\env_default.xml";
 
     pub fn parse(bytes: &[u8]) -> Result<Rim, String> {
-        let root = barrel_formats::table::parse(bytes).map_err(|e| format!("override env: {e}"))?;
-        let e = if root.name == "root" { &root } else { root.children.iter().find(|c| c.name == "root").ok_or("override env: no root")? };
-        let num = |k: &str| e.attr(k).and_then(|v| v.split(',').next()?.trim().parse::<f32>().ok()).ok_or(format!("override env: no {k}"));
+        let num = |k: &str| override_number(bytes, k);
         Ok(Rim {
             sharpness: num("ir_rimSharpness")?,
             strength: num("ir_rimScaler")? * num("ir_rimColorScaler")?,
@@ -269,6 +267,13 @@ impl Rim {
             hair_strength: num("ir_hairRimScaler")? * num("ir_hairRimColorScaler")?,
         })
     }
+}
+
+/// One number from an environment override (its first component for a vector).
+pub fn override_number(bytes: &[u8], key: &str) -> Result<f32, String> {
+    let root = barrel_formats::table::parse(bytes).map_err(|e| format!("override env: {e}"))?;
+    let e = if root.name == "root" { &root } else { root.children.iter().find(|c| c.name == "root").ok_or("override env: no root")? };
+    e.attr(key).and_then(|v| v.split(',').next()?.trim().parse::<f32>().ok()).ok_or(format!("override env: no {key}"))
 }
 
 #[cfg(test)]
@@ -279,5 +284,7 @@ mod rim_tests {
         let r = super::Rim::parse(xml).unwrap();
         assert_eq!((r.sharpness, r.hair_sharpness, r.hair_strength), (10.0, 10.0, 0.0));
         assert!((r.strength - 1.5).abs() < 1e-5);
+        let s = br#"<root trueHDR_vSaturationScale="1.200000, 1.200000, 1.200000"></root>"#;
+        assert_eq!(super::override_number(s, "trueHDR_vSaturationScale"), Ok(1.2));
     }
 }

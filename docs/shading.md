@@ -677,7 +677,9 @@ highlight map (`sAlbedoRetouch2HighlightMap`, the material's kind-66 texture: Ry
 by its alpha, at the hair's UV shifted along v by `dot(V, alr2HDir) × alr2HAdj` (`alr2HDir`
 (0,1,0), `alr2HAdj` -0.11: the band slides up and down the hair with the view's pitch).
 `barrel-ryza` composites it unshifted at load (`composite_overlays`, as Escha's eyes).
-`barrel_ryza::environment::Rim` reads the rim: on her draws whose
+The overrides present are `env_default`, two fields' (`s02_l_hap_main`,
+`s04_l_sad_main`) and test ones. `trueHDR_vSaturationScale` (1.2) is applied in the post pass
+(`post.frag`, its `pad.y`; 0 for Escha: unchanged). `barrel_ryza::environment::Rim` reads the rim: on her draws whose
 material has an `rmIndex`, `pow(1 - N·V, 10) × 1.5` of the sun's colour where the eye faces
 into the sun, saturated with the sun's `N·L` as the pass does (`model.frag`, the rim word in
 the tint's place).

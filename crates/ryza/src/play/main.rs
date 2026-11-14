@@ -223,6 +223,8 @@ fn main() -> Result<()> {
         None => None,
     };
     eprintln!("character rim: {rim:?}");
+    // The finished frame's saturation (`trueHDR_vSaturationScale`, the same override).
+    let saturation = install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::override_number(&b, "trueHDR_vSaturationScale").ok()).unwrap_or(0.0);
     let rim_word = |sharpness: f32, strength: f32| u32::from_le_bytes([(sharpness / 64.0 * 255.0).round().clamp(0.0, 255.0) as u8, (strength / 4.0 * 255.0).round().clamp(0.0, 255.0) as u8, 0, 0]);
     let mut rig: Option<Rig> = None;
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
@@ -710,6 +712,7 @@ fn main() -> Result<()> {
             shadow_vp: view.shadow_vp,
             alpha_cutoff: 0.3,
             glow: (1.0, 0.0),
+            saturation,
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
             frozen_weight: 0.0,

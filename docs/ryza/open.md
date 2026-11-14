@@ -70,7 +70,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   `WorldScale`) is not placed.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
-  (left over: exposure, `trueHDR_`).
+  (left over: exposure, `trueHDR_`). The default environment override's
+  `trueHDR_vSaturationScale` (1.2) is laid on the finished frame about its BT.601 luma (where
+  in the game's HDR chain it applies is not read); its bloom weight (0.3), FXAA and exposure
+  range (0.9 to 1.2) are not. Only `s02_l_hap_main` and `s04_l_sad_main` have their own
+  overrides (`env_<field>.xml`): every field takes `env_default.xml` here.
 
 ## Ryza in the field
 
