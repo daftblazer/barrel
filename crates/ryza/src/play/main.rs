@@ -177,7 +177,7 @@ fn main() -> Result<()> {
             let mut motions = vec![(motion.parse::<u32>()?, install.read(&format!("{dir}pc00a_{motion}.elixir.gz"))?)];
             if a.window {
                 use barrel_ryza::motion as m;
-                for n in [m::STAND, m::WALK, m::RUN] {
+                for n in [m::STAND, m::WALK_START, m::WALK, m::WALK_STOP, m::RUN_START, m::RUN, m::RUN_STOP] {
                     motions.push((n, install.read(&barrel_ryza::motion::path("PC00A", n))?));
                 }
             }
@@ -228,7 +228,9 @@ fn main() -> Result<()> {
             d.casts = true;
         }
         eprintln!("Ryza: {} draws, {} joints, motion {motion} {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
-        rig = Some(Rig { skeleton, anims, instance, ground, walls, player: barrel_ryza::player::Player::new(*at, turn.to_radians()) });
+        let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
+        let player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
+        rig = Some(Rig { skeleton, anims, instance, ground, walls, player });
         textures.extend(rp.textures.iter());
     }
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -418,9 +420,13 @@ fn main() -> Result<()> {
                 let (forward, side) = (Vec3::new(-y.sin(), 0.0, -y.cos()), Vec3::new(y.cos(), 0.0, -y.sin()));
                 let way = forward * lean[1] + side * lean[0];
                 r.player.step([-way.x, way.z], dt, r.ground.as_ref(), r.walls.as_ref());
-                let (m, t) = r.player.motion();
-                let anim = &r.anims.iter().find(|(n, _)| *n == m).unwrap_or(&r.anims[0]).1;
-                let joints = barrel_engine::skin::pose(&r.skeleton, anim, t % anim.duration.max(1e-3));
+                // Her pose: the motion playing, the last one mixed out over it.
+                let local = |(m, t): (u32, f32)| barrel_engine::skin::local_pose(&r.skeleton, &r.anims.iter().find(|(n, _)| *n == m).unwrap_or(&r.anims[0]).1, t);
+                let (now, from) = r.player.pose();
+                let joints = match from {
+                    Some((before, left)) => barrel_engine::skin::skin(&r.skeleton, &barrel_engine::skin::mix_pose(&local(now), &local(before), left)),
+                    None => barrel_engine::skin::skin(&r.skeleton, &local(now)),
+                };
                 prev_palette.copy_from_slice(&palette);
                 let base = instances[r.instance as usize].palette as usize;
                 for (slot, j) in palette[base..].iter_mut().zip(&joints) {
@@ -431,7 +437,7 @@ fn main() -> Result<()> {
                 i.model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(r.player.turn), r.player.at));
                 center = (r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
                 if frame_no % 60 == 0 {
-                    eprintln!("frame {frame_no} ({:.2}s): Ryza at {:?}, {:?}", started.elapsed().as_secs_f32(), r.player.at, r.player.gait);
+                    eprintln!("frame {frame_no} ({:.2}s): Ryza at {:?}, {:?}, motion {} at {:.2}s", started.elapsed().as_secs_f32(), r.player.at, r.player.gait, r.player.motion, r.player.clock);
                 }
             }
             // A resized window, or a swapchain gone stale: remake it and the targets.
