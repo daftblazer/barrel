@@ -1699,6 +1699,10 @@ that place them are tables in the executable (English addresses; `crates/formats
   pixels (57, 27, 6), though the stored alpha byte is 0xe1). The maps' header is layout 652 at the
   screen's top-left: the feather (part 0x92 cut 2) at (1392, -2), layout 651 at (1260, 114)
   (the dark band, cut 11, and the gold line, cut 3) and the region's name (637) at (1440, 66).
+  The world map's scroll is the same picture cut off 700 rows down with its own top roll (its
+  first 60 rows) laid over the cut 666 below the scroll's top, and no button (colseit-arrival
+  1:12: the roll by patch search, its height fitted at 1080p); the list's rules under the roll
+  are not drawn.
   The area map's scroll is layout 645: the scroll (0x92 cut 8), the item panel 641 at its
   top-left (which is why the rules sit 7 below where Barrel's texts put 641) and the button
   646 at (248, 678): the arrow plate (part 0x39 cut 14) and a pad button (part 0x41 cut 4 at

@@ -38,6 +38,24 @@ const TAB_AT: [i32; 2] = [1448, 305];
 const SCROLL_PART: i32 = 0x92;
 const SCROLL_CUT: i32 = 8;
 const SCROLL_AT: [i32; 2] = [1446, 150];
+/// The world map's scroll: the same picture cut off [`WORLD_SCROLL_LENGTH`] rows down, with its
+/// own top roll (its first [`ROLL_ROWS`] rows) laid over the cut [`ROLL_DOWN`] below the
+/// scroll's top (the colseit-arrival recording at 1:12: the roll found at (1449, 820) at 1080p
+/// by patch search, its height fitted to 4 rows less; no button). The list's rules under the roll
+/// are not drawn.
+const WORLD_SCROLL_LENGTH: i32 = 700;
+const ROLL_ROWS: i32 = 60;
+const ROLL_DOWN: i32 = 666;
+
+/// The world map's scroll, shorter and rolled at its foot.
+fn rolled_scroll(pe: &barrel_formats::pe::Pe) -> Vec<Element> {
+    let Some(m) = barrel_escha::data::layout::sprite(pe, SCROLL_PART, SCROLL_CUT, [0, 0]) else { return Vec::new() };
+    let [l, t, r, _] = m.src.map(f32::from);
+    let w = r - l;
+    let [x, y] = SCROLL_AT;
+    let piece = |rows: i32, top: i32| Element::Slice { pack: m.texture.clone(), index: m.index, src: [l, t, r, t + rows as f32], rect: [x, top, x + w as i32, top + rows] };
+    vec![piece(WORLD_SCROLL_LENGTH, y), piece(ROLL_ROWS, y + ROLL_DOWN)]
+}
 /// The scroll's own layout is 645: the scroll, 641 (the item panel) at its top-left, 646 (the
 /// button) at (248, 678).
 const NEXT_BUTTON: u32 = 646;
@@ -157,7 +175,7 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
     if description.is_empty() {
         return out;
     }
-    out.push(Element::Sprite { part: SCROLL_PART, cut: SCROLL_CUT, at: SCROLL_AT });
+    out.extend(rolled_scroll(pe));
     if let Some((p, t)) = barrel_escha::data::layout::placed(pe, PANEL).iter().find_map(|p| texts(p).filter(|t| t.filled_in()).map(|t| (p.clone(), t))) {
         let at = moved(&p, PANEL_AT);
         for (k, line) in lines(description.trim(), |s| width_of(s, t.size)).into_iter().enumerate() {
@@ -182,7 +200,7 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
                 }
                 row += 1;
             }
-            (0xbe, _) => out.push(Element::Sprite { part: 0xbe, cut: p.node.cut.max(0), at }),
+            (0xbe, _) if at[1] < SCROLL_AT[1] + ROLL_DOWN => out.push(Element::Sprite { part: 0xbe, cut: p.node.cut.max(0), at }),
             _ => {}
         }
     }
