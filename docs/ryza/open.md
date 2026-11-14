@@ -24,7 +24,11 @@ achievements are the player's own, and the DX version has not been played there)
   and night are not lifted to noon (exposure 0.9 instead of 1.73 and 1.04); the game adapts
   within the range, which is not read. Morning's set has ten times noon's ambient and is
   exposed at 0.30 uncapped; night comes out too bright and green (the moon's colour 1, 4, 5);
-  its sunlit ground clips. The shade's colour: the default override's
+  its sunlit ground clipped until a tone curve went on the finished frame (`post.frag`, an
+  extended Reinhard with the set's `fLumiMax` × 0.75 as white, Rasenboden's noon 3.2: the
+  still's sunlit grass 182, 216, 69, ours 168, 214, 47 instead of 241, 254, 22; the 90th
+  percentile drops to about 175 against the still's 219, its sky being brighter). The scene
+  is stored at half range in 8 bits, so what passes 2.0 is clipped before the curve. The shade's colour: the default override's
   `indirectStage_IDLScalerOfAmbientDiffuseMap` 2.5 × `..ColorRGB` (1.642, 1.978, 4.0) tints
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no

@@ -6,7 +6,8 @@ layout(set = 0, binding = 0) uniform sampler2D scene;
 layout(set = 0, binding = 1) uniform sampler2D glow;
 layout(set = 0, binding = 2) uniform sampler2D frozen;
 // The fade's colour (u22), laid over by its alpha. saturation: a scale per channel about the
-// BT.601 luma (0: none; Ryza's `trueHDR_vSaturationScale`).
+// BT.601 luma (0: none; Ryza's `trueHDR_vSaturationScale`), and in w a tone curve's white
+// point (extended Reinhard, c (1 + c / w²) / (1 + c); 0: none).
 layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; } pc;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
@@ -20,6 +21,10 @@ void main() {
     vec3 live = texture(scene, uv).rgb * 2.0 + texture(glow, uv).rgb * pc.rate;
     vec3 before = texture(frozen, uv).rgb * 2.0;
     vec3 c = mix(live, before, pc.frozen_weight);
+    if (pc.saturation.w > 0.0) {
+        float w2 = pc.saturation.w * pc.saturation.w;
+        c = c * (1.0 + c / w2) / (1.0 + c);
+    }
     if (pc.saturation.x > 0.0) {
         float y = dot(c, vec3(0.299, 0.587, 0.114));
         c = max(mix(vec3(y), c, pc.saturation.xyz), 0.0);

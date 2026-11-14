@@ -753,6 +753,11 @@ fn main() -> Result<()> {
             glow: environment.as_ref().map_or((1.0, 0.0), |(_, l, _)| (l.lumi_threshold, l.bloom_weight)),
             // The set's own saturation per channel (`Light::saturation`).
             saturation: environment.as_ref().map_or([0.0; 3], |(_, l, _)| l.saturation),
+            // A tone curve with the set's `fLumiMax` in our light units as its white point:
+            // fitted at the gate's noon still, its sunlit grass comes out 168, 214, 47 against
+            // 182, 216, 69 (241, 254, 22 clipped without; nine regions' RGB error 165 against
+            // 247). How the game's tone chain uses `fLumiMax` is not read.
+            tone_white: environment.as_ref().map_or(0.0, |(_, l, _)| l.lumi_max * LIGHT_UNIT),
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
             frozen_weight: 0.0,
