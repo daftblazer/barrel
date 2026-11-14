@@ -38,6 +38,12 @@ const TAB_AT: [i32; 2] = [1448, 305];
 const SCROLL_PART: i32 = 0x92;
 const SCROLL_CUT: i32 = 8;
 const SCROLL_AT: [i32; 2] = [1446, 150];
+/// The scroll's own layout is 645: the scroll, 641 (the item panel) at its top-left, 646 (the
+/// button) at (248, 678).
+const NEXT_BUTTON: u32 = 646;
+const NEXT_BUTTON_AT: [i32; 2] = [248, 678];
+/// The pad buttons' sprites (cuts in pairs, as the font's `<IMnn>`: see `message::western`).
+const BUTTON_ICONS: i32 = 0x41;
 const NAME_AT: [i32; 2] = [1673, 158];
 /// The scroll's ink: the layouts' text colour (58, 26, 8), drawn opaque (the recording's
 /// darkest text pixels are (57, 27, 6); the layouts' alpha byte 0xe1 would lighten it).
@@ -83,6 +89,12 @@ pub fn elements(
         }
     }
     out.push(Element::Sprite { part: SCROLL_PART, cut: SCROLL_CUT, at: SCROLL_AT });
+    // The button at the scroll's foot (layout 646 at (248, 678) in the scroll's layout 645:
+    // the arrow plate and the button's icon).
+    for p in barrel_escha::data::layout::placed(pe, NEXT_BUTTON) {
+        let cut = if p.node.part == BUTTON_ICONS { crate::message::western(p.node.cut.max(0) as u32) as i32 } else { p.node.cut.max(0) };
+        out.push(Element::Sprite { part: p.node.part, cut, at: [SCROLL_AT[0] + NEXT_BUTTON_AT[0] + p.at[0], SCROLL_AT[1] + NEXT_BUTTON_AT[1] + p.at[1]] });
+    }
     out.push(Element::Label(Text { at: NAME_AT, size: 36.0, colour: INK, text: name.to_string(), kind: 22 }));
     let panel = barrel_escha::data::layout::placed(pe, PANEL);
     let mut first_text = true;

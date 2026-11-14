@@ -1683,7 +1683,13 @@ that place them are tables in the executable (English addresses; `crates/formats
   the texts are in the layouts' ink (58, 26, 8) drawn opaque (the recording's darkest text
   pixels (57, 27, 6), though the stored alpha byte is 0xe1). The maps' header is layout 652 at the
   screen's top-left: the feather (part 0x92 cut 2) at (1392, -2), layout 651 at (1260, 114)
-  (the dark band, cut 11, and the gold line, cut 3) and the region's name (637) at (1440, 66):
+  (the dark band, cut 11, and the gold line, cut 3) and the region's name (637) at (1440, 66).
+  The area map's scroll is layout 645: the scroll (0x92 cut 8), the item panel 641 at its
+  top-left (which is why the rules sit 7 below where Barrel's texts put 641) and the button
+  646 at (248, 678): the arrow plate (part 0x39 cut 14) and a pad button (part 0x41 cut 4 at
+  (8, 6)). Part 0x41's cuts run in pairs like the font's `<IMnn>` icons (B, A, Y, X, each with
+  a dim twin) and name roles in the Japanese layout: the English release swaps A/B and Y/X
+  (cut 4 and `<IM04> Area Info` both show X in the recording):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
