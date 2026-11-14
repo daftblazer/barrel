@@ -3419,6 +3419,23 @@ fn ryza_field(root: &Path, only: Option<&str>) -> Result<()> {
             let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement::default();
             let (pack, _) = barrel_engine::field::load(&f.area, &main, &objects, &mut scene, 0, &place)?;
             let textures = barrel_formats::g1t::G1t::parse(&pack)?.textures.len();
+            if only.is_some()
+                && let Some(ktf) = barrel_engine::field::named(&main, &format!("{}.ktf", f.area))
+            {
+                let m = barrel_formats::ktf::mesh(ktf)?;
+                let mut kinds = std::collections::BTreeMap::new();
+                for d in &m.draws {
+                    *kinds.entry((d.kind, d.program, d.layers.len())).or_insert(0usize) += 1;
+                }
+                println!(
+                    "terrain: {} patches ({} leaves), {} draws, {} vertices, {} indices; draws by (kind, program, layers): {kinds:?}",
+                    m.patches.len(),
+                    m.patches.iter().filter(|p| p.leaf).count(),
+                    m.draws.len(),
+                    m.vertices.len(),
+                    m.indices.len()
+                );
+            }
             Ok(format!("{} draws, {} textures, {} vertices, env {}", scene.draws.len(), textures, scene.vertices.len(), if f.env.is_some() { "yes" } else { "no" }))
         })();
         match loaded {
@@ -3444,6 +3461,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     let mut blends: BTreeMap<(usize, usize), usize> = BTreeMap::new();
     let mut failed = Vec::new();
     let (mut meshes, mut heights) = (0usize, (0usize, 0usize));
+    let mut draw_flags: std::collections::BTreeMap<[u8; 2], usize> = std::collections::BTreeMap::new();
     for path in &files {
         let bytes = read(path)?;
         let e = Elixir::parse(&bytes).map_err(|err| format!("{}: {err}", path.display()))?;
@@ -3459,6 +3477,9 @@ fn ktf_scan(dir: &Path) -> Result<()> {
                     match barrel_formats::ktf::mesh(e.data(entry)) {
                         Ok(m) => {
                             meshes += 1;
+                            for d in &m.draws {
+                                *draw_flags.entry(d.flags).or_default() += 1;
+                            }
                             // The vertices' heights against the heightmap's at the same cell.
                             let hm = &t.heightmap;
                             let (mut near, mut all) = (0usize, 0usize);
@@ -3487,6 +3508,7 @@ fn ktf_scan(dir: &Path) -> Result<()> {
     println!("{terrains} terrains, {} failed; layer counts {layers:?}", failed.len());
     println!("(layers, blend maps) {blends:?}");
     println!("{meshes} meshes read; {} of {} vertices within 0.5 of the heightmap", heights.0, heights.1);
+    println!("draws by flags {{program, kind}}: {draw_flags:?}");
     for f in failed.iter().take(20) {
         println!("failed: {f}");
     }

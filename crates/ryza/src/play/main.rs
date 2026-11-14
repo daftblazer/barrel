@@ -117,9 +117,11 @@ fn main() -> Result<()> {
     proj.y_axis.y *= -1.0;
     proj.x_axis.x *= -1.0;
     let vp = proj * view;
-    // The look block (`barrel_render`'s `Look`): only the eye for now; no lights, no fog.
+    // The look block (`barrel_render`'s `Look`): the eye, and a white ambient alone (the
+    // terrain, which has no unlit flag, shows its colours as they are); no sun, no fog.
     let mut look = [[0f32; 4]; 66];
     look[4] = [eye.x, eye.y, eye.z, 1.0];
+    look[26] = [1.0, 1.0, 1.0, 1.0];
     renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
 
     let bytes = u64::from(width) * u64::from(height) * 4;

@@ -90,11 +90,16 @@ impl Vertex {
 /// within the kind (in the lit kind, the field shader pack's program less 8), the two bytes
 /// after it (not settled), the layers it mixes (none, one or two) and its vertex range (the
 /// lowest and the count up to the highest its indices use, counted from the patch's first
-/// vertex like the indices themselves) and index range.
+/// vertex like the indices themselves) and index range. The kind is the byte's high nibble and
+/// the program its low one; the rest of each byte is `flags` (Escha's terrains set none; the
+/// Ryza games set kind bit 0 and program bit 4 on every lit or one-layer draw, meaning not
+/// read yet).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draw {
     pub program: u8,
     pub kind: u8,
+    /// The program byte's high nibble and the kind byte's low one, as {program, kind}.
+    pub flags: [u8; 2],
     pub extra: [u8; 2],
     pub layers: Vec<u8>,
     pub first_vertex: u32,
@@ -195,8 +200,9 @@ pub fn mesh(d: &[u8]) -> Result<Mesh, Error> {
         let o = at + 24 * k;
         let n = (d[o + 4] as usize).min(3);
         m.draws.push(Draw {
-            program: d[o],
-            kind: d[o + 1],
+            program: d[o] & 0x0f,
+            kind: d[o + 1] & 0xf0,
+            flags: [d[o] & 0xf0, d[o + 1] & 0x0f],
             extra: [d[o + 2], d[o + 3]],
             layers: d[o + 5..o + 5 + n].to_vec(),
             first_vertex: w(o + 8),

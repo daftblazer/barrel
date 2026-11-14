@@ -964,6 +964,12 @@ executable reads them as a 16-byte and an 8-byte part):
 | 5, 6 | those layers (0xff where none) |
 | 8–23 | first vertex, vertex count, first index, index count |
 
+**Atelier Ryza DX** sets two more bits on every lit and one-layer draw: bit 0 of byte 1 (kinds
+0x11 and 0x21) and bit 4 of byte 0 (programs 0x10 to 0x17; the depth draws stay 0x00). So the
+kind is byte 1's high nibble, the program byte 0's low one, and the rest flags (`ktf::Draw::flags`;
+over Escha's 8,512 terrain draws, `barrel ktf-scan`, none is set). What the bits change is not
+read yet; S06_T_RASEN (Rasenboden): 16 patches, 86 draws, programs 0–7 as in Escha.
+
 In the lit kind byte 0 + 8 is the shader pack's program: 0 is one tile (program 8), 1–3 two
 tiles under a map's channel pairs (programs 9–11), 4 one tile plus the bake (12) and 5–7 two
 tiles plus the bake (13–15). **The bake:** the one-layer draws (kind 0x10, programs 5–7 by

@@ -85,6 +85,12 @@ layout(std140, set = 1, binding = 4) uniform Look {
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
 layout(location = 10) out vec4 prev_clip;
+// A directional light's Lambert term on normal n; a light with no direction (one the field
+// does not have) gives none, rather than NaN.
+float lambert(vec3 n, vec3 dir) {
+    return dot(dir, dir) > 0.0 ? max(dot(n, -normalize(dir)), 0.0) : 0.0;
+}
+
 void main() {
     Instance i = instances.inst[pc.instance];
     vec4 pos = vec4(in_pos, 1.0);
@@ -152,7 +158,7 @@ void main() {
     // point lights' diffuse, and the sun's diffuse; the material colours are taken as white.
     vec3 wn = normalize(mat3(i.model) * n);
     vec3 amb = look.ambient.rgb;
-    vec3 diffuse = max(dot(wn, -normalize(look.fill_dir.xyz)), 0.0) * look.fill_color.rgb;
+    vec3 diffuse = lambert(wn, look.fill_dir.xyz) * look.fill_color.rgb;
     // The terrain (flag 64) takes no point lights: its vertex program (the field's `.g1s`
     // program 2) has only the two directional lights and the ambient.
     int points = (pc.flags & 64u) != 0u ? 0 : int(look.misc.y);
@@ -165,7 +171,7 @@ void main() {
             amb += att * look.point_ambient[k].rgb;
         }
     }
-    vec3 sun = max(dot(wn, -normalize(look.sun_dir.xyz)), 0.0) * look.sun_color.rgb;
+    vec3 sun = lambert(wn, look.sun_dir.xyz) * look.sun_color.rgb;
     // MapSTD: d = vertex colour x cDiff takes the lights' diffuse, the ambient takes the vertex
     // colour x cAmb (the model's lighting material, 1 in nearly every field model).
     vec2 material = unpackUnorm2x16(pc.light);
