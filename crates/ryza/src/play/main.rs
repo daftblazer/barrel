@@ -153,6 +153,17 @@ fn main() -> Result<()> {
         let motion = Elixir::parse(motion)?;
         let anim = barrel_formats::g1a::parse(motion.entries.iter().find(|e| !e.is_dummy()).map(|e| motion.data(e)).ok_or("empty motion")?)?;
         let joints = barrel_engine::skin::pose(&skeleton, &anim, *time);
+        // Her feet on the ground: the field's heightmap under her (the given height when there
+        // is none, or she is off it).
+        let ground = barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase()))
+            .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
+            .and_then(|b| barrel_formats::khm::parse(b).ok())
+            .map(barrel_engine::walk::Ground::of_heightmap);
+        let at = &match ground.as_ref().and_then(|g| g.height(at.x, at.z, f32::MAX / 2.0, 0.0)) {
+            Some(y) => Vec3::new(at.x, y, at.z),
+            None => *at,
+        };
+        eprintln!("Ryza stands at {at:?}");
         let first = scene.draws.len();
         let instance = scene.instance(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(turn.to_radians()), *at));
         scene.add_posed(geometry, Mat4::IDENTITY, rp.textures.len(), Some(&joints), instance)?;

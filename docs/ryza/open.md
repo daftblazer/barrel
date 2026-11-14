@@ -71,6 +71,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 
 ## Ryza in the field
 
+- **Ground and walls.** `--ryza` stands her on the field's heightmap (`<FIELD>.khm`, through the
+  shared `walk::Ground::of_heightmap`): at the garden gate she stands on the stepping stones as
+  in the game. The fields have no `_col.g1co` as Escha's do; their collision is likely in
+  `<FIELD>_coll.bin` (224 bytes in Rasenboden), `.g1pf` or `_le.koc`, none read: no walls and
+  no floors on models (bridges, stairs) yet.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read.
 

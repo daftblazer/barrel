@@ -102,6 +102,12 @@ impl Ground {
         Ground { heightmap, floors }
     }
 
+    /// A ground of the heightmap alone (a field whose collision is not read: the Ryza games
+    /// keep theirs in other files, `docs/ryza/open.md`).
+    pub fn of_heightmap(heightmap: barrel_formats::khm::Heightmap) -> Ground {
+        Ground { heightmap: Some(heightmap), floors: Vec::new() }
+    }
+
     /// The heightmap's height at (x, z), bilinear between its vertices; none outside it.
     fn terrain(&self, x: f32, z: f32) -> Option<f32> {
         let h = self.heightmap.as_ref()?;
