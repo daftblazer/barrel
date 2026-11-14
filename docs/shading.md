@@ -776,5 +776,5 @@ g_vPigmentMapScale.x` (cb0[7], cb0[6], cb0[23]): the vertex colour and the pigme
 weighted together, the pigment's share set by the game. Which texture is the pigment map and
 the scale's values are set at run time (not read): `_grass.g1t`'s second texture, a flat
 red, may be it (or a placeholder). It then normal-maps (`sNMap`, the cards' normal maps) and
-lights as the field's models do. `barrel-ryza` draws the plants with neither the pigment nor
-the sway (docs/ryza/open.md).
+lights as the field's models do. `barrel-ryza` draws the plants without the pigment, and sways their
+tops by stand-in values (docs/ryza/open.md).

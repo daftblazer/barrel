@@ -166,6 +166,15 @@ void main() {
         float shrink = 1.0;
         if ((pc.flags & 16384u) != 0u) {
             shrink = clamp(1.0 - (distance(w.xyz, look.eye.xyz) - look.fade.x) / max(look.fade.y - look.fade.x, 1.0), 0.0, 1.0);
+            // And its top corners lean with the wind (sway slots 0 and 1: {wind per unit of
+            // height, time}, {-, -, phase per unit of x, of z}), its foot staying put.
+            if (in_corner.y > 0.0) {
+                vec4 a = look.sway[0];
+                vec4 b = look.sway[1];
+                vec3 lean = a.xyz * sin(a.w + w.x * b.z + w.z * b.w) * in_corner.y * shrink;
+                w.xyz += lean;
+                prev_w.xyz += lean;
+            }
         }
         w.xyz += bb * in_corner * shrink;
         prev_w.xyz += bb * in_corner * shrink;

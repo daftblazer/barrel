@@ -47,6 +47,12 @@ const FADED: u32 = 16384;
 /// The plants' fade range from the eye, the game's highest grass preset (`Middle` in
 /// `grassrangepreset.xml`: FarClipBegin 8000, FarClipEnd 15000).
 const PLANT_FADE: [f32; 2] = [8000.0, 15000.0];
+/// The plants' sway (model.vert, flag 16384): the lean per unit of height, its speed (radians
+/// a second) and how the phase runs across the field (radians per unit of x and z). Stand-ins:
+/// the game's (`g_vAttCache0`, `g_fPhase`, `g_fOscPhase`) are set at run time, not read.
+const PLANT_SWAY: [f32; 3] = [0.06, 0.0, 0.03];
+const PLANT_SWAY_SPEED: f32 = 2.2;
+const PLANT_SWAY_SPREAD: [f32; 2] = [0.004, 0.0027];
 
 struct Args {
     install: String,
@@ -819,6 +825,9 @@ fn main() -> Result<()> {
         };
         let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
+        // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
+        view.look[50] = [PLANT_SWAY[0], PLANT_SWAY[1], PLANT_SWAY[2], started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED];
+        view.look[51] = [0.0, 0.0, PLANT_SWAY_SPREAD[0], PLANT_SWAY_SPREAD[1]];
         if frame_no == 0
             && let Some(k) = view.exposure
         {

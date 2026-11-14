@@ -118,7 +118,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   view on the PC. Stand-ins, not read: the spread (a kind's last float as plants per 100 ×
   100 units, its first two as height and spread, the next two as width and spread), which card
   each kind draws (`PLANT_CARDS`, by the stills: kind 6 along the paths as the grass tuft,
-  kind 7 in the yellow fields as wheat), no sway (`g_fPhase`), no shadows cast, lit
+  kind 7 in the yellow fields as wheat), a sway of the cards' tops by stand-in wind
+  values (`PLANT_SWAY`: the game's `g_vAttCache0` / `g_fPhase` are set at run time; sway
+  slots 0 and 1, free in Ryza's fields), no shadows cast, lit
   as the field's models with an upward normal (a camera-facing one made them pale; up, they
   take the ground's light, darker and bluer in the shade than the game's green). They shrink away
   from 8000 to 15000 units from the eye as the game's do (the Middle grass preset;
