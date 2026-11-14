@@ -696,7 +696,9 @@ fn main() -> Result<()> {
         "off" => None,
         which => {
             let bytes = install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))?;
-            Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?)
+            // Capped by the general preset's object ranges (a guess at how the game combines
+            // the two: the field's own are at or under the High preset's, docs/ryza/open.md).
+            Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?.limit(presets.objects))
         }
     };
     let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {

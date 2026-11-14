@@ -14,11 +14,14 @@ pub struct Graphics {
     /// Where an object's full model gives way to its middle level of detail, and that to its
     /// low one, from the eye (`LODDistType`: `Lod_hi_dist`, `Lod_mid_dist`).
     pub lod: [f32; 2],
+    /// How far the near, middle and far field objects are drawn (`DispRangeType`: `ObjNear`,
+    /// `ObjMiddle`, `ObjFar`); the field's own ranges cap them (`camera::DrawRanges::limit`).
+    pub objects: [f32; 3],
 }
 
 impl Graphics {
     /// The game's `High` general preset, as shipped.
-    pub const HIGH: Graphics = Graphics { grass: grass::Preset::MIDDLE, lod: [10000.0, 30000.0] };
+    pub const HIGH: Graphics = Graphics { grass: grass::Preset::MIDDLE, lod: [10000.0, 30000.0], objects: [8000.0, 20000.0, 40000.0] };
 
     /// The general preset `general` ("High", "Middle", "Low"), its tables read through `read`
     /// (a file name under `saves/graphicssetting`).
@@ -26,13 +29,15 @@ impl Graphics {
         let file = |n: &str| read(n).ok_or_else(|| format!("no {n}"));
         let g = element(&file("generalpreset.xml")?, "GeneralPreset", general)?;
         let kind = |k: &str| g.attr(k).map(str::to_owned).ok_or_else(|| format!("GeneralPreset {general}: no {k}"));
-        let (quality, range, lod) = (kind("GrassQualityType")?, kind("GrassRangeType")?, kind("LODDistType")?);
+        let (quality, range, lod, disp) = (kind("GrassQualityType")?, kind("GrassRangeType")?, kind("LODDistType")?, kind("DispRangeType")?);
         let q = element(&file("grassqualitypreset.xml")?, "GrassQualityPreset", &quality)?;
         let r = element(&file("grassrangepreset.xml")?, "GrassRangePreset", &range)?;
         let l = element(&file("loddistpreset.xml")?, "LODDistPreset", &lod)?;
+        let d = element(&file("disprangepreset.xml")?, "DispRangePreset", &disp)?;
         Ok(Graphics {
             grass: grass::Preset { density: number(&q, "Density")?, far: [number(&r, "FarClipBegin")?, number(&r, "FarClipEnd")?] },
             lod: [number(&l, "Lod_hi_dist")?, number(&l, "Lod_mid_dist")?],
+            objects: [number(&d, "ObjNear")?, number(&d, "ObjMiddle")?, number(&d, "ObjFar")?],
         })
     }
 }
@@ -61,10 +66,11 @@ mod tests {
     fn tables(n: &str) -> Option<Vec<u8>> {
         Some(
             match n {
-                "generalpreset.xml" => r#"<Root><GeneralPreset Field="Default" Type="High" GrassRangeType="Middle" GrassQualityType="Middle" LODDistType="High"/><GeneralPreset Field="Default" Type="Middle" GrassRangeType="Low" GrassQualityType="Low" LODDistType="Middle"/></Root>"#,
+                "generalpreset.xml" => r#"<Root><GeneralPreset Field="Default" Type="High" GrassRangeType="Middle" GrassQualityType="Middle" LODDistType="High" DispRangeType="High"/><GeneralPreset Field="Default" Type="Middle" GrassRangeType="Low" GrassQualityType="Low" LODDistType="Middle" DispRangeType="Middle"/></Root>"#,
                 "grassqualitypreset.xml" => r#"<Root><GrassQualityPreset Field="Default" Type="Middle" Density="1"/><GrassQualityPreset Field="Default" Type="Low" Density="0.75"/></Root>"#,
                 "grassrangepreset.xml" => r#"<Root><GrassRangePreset Field="Default" Type="Middle" FarClipBegin="8000" FarClipEnd="15000"/><GrassRangePreset Field="Default" Type="Low" FarClipBegin="3000" FarClipEnd="3100"/></Root>"#,
                 "loddistpreset.xml" => r#"<Root><LODDistPreset Field="Default" Type="High" Lod_hi_dist="10000" Lod_mid_dist="30000"/><LODDistPreset Field="OTHER" Type="Middle" Lod_hi_dist="1" Lod_mid_dist="2"/><LODDistPreset Field="Default" Type="Middle" Lod_hi_dist="8000" Lod_mid_dist="25000"/></Root>"#,
+                "disprangepreset.xml" => r#"<Root><DispRangePreset Field="Default" Type="High" ObjFar="40000" ObjMiddle="20000" ObjNear="8000"/><DispRangePreset Field="Default" Type="Middle" ObjFar="30000" ObjMiddle="15000" ObjNear="7000"/></Root>"#,
                 _ => return None,
             }
             .as_bytes()
@@ -77,7 +83,7 @@ mod tests {
         assert_eq!(Graphics::read("High", &tables).unwrap(), Graphics::HIGH);
         assert_eq!(
             Graphics::read("Middle", &tables).unwrap(),
-            Graphics { grass: grass::Preset { density: 0.75, far: [3000.0, 3100.0] }, lod: [8000.0, 25000.0] }
+            Graphics { grass: grass::Preset { density: 0.75, far: [3000.0, 3100.0] }, lod: [8000.0, 25000.0], objects: [7000.0, 15000.0, 30000.0] }
         );
         assert!(Graphics::read("Low", &tables).is_err());
         assert!(Graphics::read("High", &|_| None).is_err());

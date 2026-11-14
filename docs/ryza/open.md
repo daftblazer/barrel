@@ -307,4 +307,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   lower levels. The graphics' `foliage` picks the game's general preset
   (`barrel_ryza::presets::Graphics`: full High, reduced Middle, least Low), and the plants and
   these distances come from the tables it names (Middle 8000 / 25000 on the handheld preset).
-  The draw ranges and shadow distance of the same tables are not taken yet.
+  The general preset's object draw ranges (`DispRangeType`) cap the field's own
+  (`DrawRanges::limit`: the smaller of the two for near, middle and far; landmarks keep the
+  field's). That rule is a guess: Rasenboden's own (7000, 20000, 40000) are at or under the
+  High preset's (8000, 20000, 40000), so the desktop draws as before, and the handheld's Middle
+  (7000, 15000, 30000) drops some far small objects: 7.14 to 6.77 ms in a far view (PC). How
+  the game really combines the field's `disp_range` with the preset is unknown (an oracle read
+  of the ranges in use would tell). The shadow distance (`ShadowDistType`) is not taken yet.

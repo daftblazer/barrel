@@ -39,6 +39,16 @@ impl DrawRanges {
         Ok(DrawRanges([f("obj_near")?, f("obj_middle")?, f("obj_far")?, f("obj_landmark")?]))
     }
 
+    /// These ranges capped by a graphics preset's for the near, middle and far objects (the
+    /// landmarks keep theirs): the smaller of the field's and the preset's.
+    pub fn limit(self, objects: [f32; 3]) -> DrawRanges {
+        let mut r = self.0;
+        for (r, o) in r.iter_mut().zip(objects) {
+            *r = r.min(o);
+        }
+        DrawRanges(r)
+    }
+
     /// Whether a box (`lo`, `hi`) is close enough to `eye` for its class to be drawn.
     pub fn shows(&self, class: u8, eye: glam::Vec3, lo: glam::Vec3, hi: glam::Vec3) -> bool {
         let range = self.0[(class & 3) as usize];
@@ -119,6 +129,8 @@ mod tests {
         let (lo, hi) = (glam::Vec3::new(10000.0, 0.0, 0.0), glam::Vec3::new(10100.0, 50.0, 100.0));
         assert!(!pc.shows(0, glam::Vec3::ZERO, lo, hi));
         assert!(pc.shows(1, glam::Vec3::ZERO, lo, hi));
+        assert_eq!(pc.limit([8000.0, 20000.0, 40000.0]).0, pc.0);
+        assert_eq!(pc.limit([7000.0, 15000.0, 30000.0]).0, [7000.0, 15000.0, 30000.0, 300000.0]);
     }
 
     use super::*;
