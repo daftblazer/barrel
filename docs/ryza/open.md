@@ -75,8 +75,15 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   shared `walk::Ground::of_heightmap`): at the garden gate she stands on the stepping stones as
   in the game. The fields have no `_col.g1co` as Escha's do; their collision is likely in
   `<FIELD>_coll.bin` (224 bytes in Rasenboden), `.g1pf` or `_le.koc`. The `.koc` walls are
-  read (`barrel_ryza::koc`, docs/formats.md) but not yet used by a walk; its sloped and flat
+  read (`barrel_ryza::koc`, docs/formats.md) and stop her in a window; its sloped and flat
   quads, `_coll.bin`'s boxes and floors on models (bridges, stairs) are not.
+- **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
+  not read from the game: the speeds (walk 150, run 480 units a second), the lean that starts a
+  run (0.6), how fast she turns, her size against the walls (radius 30, step 60), and the
+  camera (500 units behind, looking 110 above her feet; the field's own camera settings are in
+  `saves\fieldmap\cameraparam\<field>.xml`, not read). Only the loops play: no start or
+  stop motions (10, 12, 20, 22) and no blending between motions, so she snaps from one to the
+  next.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read.
 

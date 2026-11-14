@@ -7,3 +7,4 @@ pub mod install;
 pub mod koc;
 pub mod light;
 pub mod motion;
+pub mod player;

@@ -4,6 +4,7 @@
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
+//!                 [--window]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
@@ -13,6 +14,12 @@
 //! `--ryza` stands Ryza (`pc00a`) at X,Y,Z turned DEG about y, posed by her motion N
 //! (`pc00a_<N>`, default 00000) at S seconds. Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
+//!
+//! `--window` opens a window instead of writing OUT, and with `--ryza` the player walks her:
+//! W, A, S, D (or the left stick, a light lean walking) move her against the camera, Shift
+//! walks, the arrows (or the right stick) turn the camera, - and = (the shoulders) bring it
+//! nearer or farther, Escape quits. She stands on the field's heightmap and stops at its
+//! `_le.koc` walls (`barrel_ryza::player`).
 
 use std::path::Path;
 
@@ -44,13 +51,30 @@ struct Args {
     hide: Vec<String>,
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
+    window: bool,
+    /// In a window: quit after this many frames, and a lean held all along (for tests).
+    frames: Option<u32>,
+    /// Each pass's GPU time, reported at the end (`--timings`).
+    timings: bool,
+    lean: [f32; 2],
+}
+
+/// Ryza as posed and walked: her skeleton, her motions by number, her instance, the field's
+/// ground and walls under her, and the player's state.
+struct Rig {
+    skeleton: barrel_formats::g1m::Skeleton,
+    anims: Vec<(u32, barrel_formats::g1a::Animation)>,
+    instance: u32,
+    ground: Option<barrel_engine::walk::Ground>,
+    walls: Option<barrel_engine::walk::Walls>,
+    player: barrel_ryza::player::Player,
 }
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, window: false, timings: false, frames: None, lean: [0.0; 2] };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -69,6 +93,14 @@ fn args() -> Result<Args> {
             "--distance" => a.distance = Some(value()?.parse()?),
             "--hide" => a.hide.push(value()?),
             "--no-shadows" => a.no_shadows = true,
+            "--window" => a.window = true,
+            "--timings" => a.timings = true,
+            "--frames" => a.frames = Some(value()?.parse()?),
+            "--lean" => {
+                let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
+                let [x, y] = v[..] else { return Err("--lean X,Y".into()) };
+                a.lean = [x, y];
+            }
             "--ryza" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
@@ -140,25 +172,44 @@ fn main() -> Result<()> {
     let ryza_files = match &a.ryza {
         Some((_, _, motion, _)) => {
             let dir = "\\data\\x64\\character\\pc00a\\";
-            Some((install.read(&format!("{dir}pc00a_model.elixir.gz"))?, install.read(&format!("{dir}pc00a_model.g1t"))?, install.read(&format!("{dir}pc00a_{motion}.elixir.gz"))?))
+            // The motion asked for, and in a window the ones the player plays.
+            let mut motions = vec![(motion.parse::<u32>()?, install.read(&format!("{dir}pc00a_{motion}.elixir.gz"))?)];
+            if a.window {
+                use barrel_ryza::motion as m;
+                for n in [m::STAND, m::WALK, m::RUN] {
+                    motions.push((n, install.read(&barrel_ryza::motion::path("PC00A", n))?));
+                }
+            }
+            Some((install.read(&format!("{dir}pc00a_model.elixir.gz"))?, install.read(&format!("{dir}pc00a_model.g1t"))?, motions))
         }
         None => None,
     };
     let ryza_pack = ryza_files.as_ref().map(|(_, t, _)| G1t::parse(t)).transpose()?;
-    if let (Some((at, turn, _, time)), Some((model, _, motion)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
+    let mut rig: Option<Rig> = None;
+    if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
         let model = Elixir::parse(model)?;
         let skeleton = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL.g1m").ok_or("no PC00A_MODEL.g1m")?)?.skeleton.ok_or("Ryza's model has no skeleton")?;
         let mesh = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL_default.g1m").ok_or("no PC00A_MODEL_default.g1m")?)?;
         let geometry = mesh.geometry.as_ref().ok_or("Ryza's mesh has no geometry")?;
-        let motion = Elixir::parse(motion)?;
-        let anim = barrel_formats::g1a::parse(motion.entries.iter().find(|e| !e.is_dummy()).map(|e| motion.data(e)).ok_or("empty motion")?)?;
-        let joints = barrel_engine::skin::pose(&skeleton, &anim, *time);
+        let mut anims = Vec::new();
+        for (n, bytes) in motions {
+            let c = Elixir::parse(bytes)?;
+            anims.push((*n, barrel_formats::g1a::parse(c.entries.iter().find(|e| !e.is_dummy()).map(|e| c.data(e)).ok_or("empty motion")?)?));
+        }
+        let anim = &anims[0].1;
+        let joints = barrel_engine::skin::pose(&skeleton, anim, *time);
         // Her feet on the ground: the field's heightmap under her (the given height when there
         // is none, or she is off it).
         let ground = barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase()))
             .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
             .and_then(|b| barrel_formats::khm::parse(b).ok())
             .map(barrel_engine::walk::Ground::of_heightmap);
+        // And the field's walls (`<field>_le.koc`), when it has them.
+        let walls = install
+            .read(&format!("\\data\\x64\\field\\{0}\\{0}_le.koc", a.field.to_ascii_lowercase()))
+            .ok()
+            .and_then(|b| barrel_ryza::koc::parse(&b).ok())
+            .map(|q| barrel_engine::walk::Walls::from_walls(barrel_ryza::koc::walls(&q), 2000.0));
         let at = &match ground.as_ref().and_then(|g| g.height(at.x, at.z, f32::MAX / 2.0, 0.0)) {
             Some(y) => Vec3::new(at.x, y, at.z),
             None => *at,
@@ -175,7 +226,8 @@ fn main() -> Result<()> {
             d.name = "ryza".into();
             d.casts = true;
         }
-        eprintln!("Ryza: {} draws, {} joints, motion {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
+        eprintln!("Ryza: {} draws, {} joints, motion {motion} {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
+        rig = Some(Rig { skeleton, anims, instance, ground, walls, player: barrel_ryza::player::Player::new(*at, turn.to_radians()) });
         textures.extend(rp.textures.iter());
     }
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -219,7 +271,7 @@ fn main() -> Result<()> {
         eprintln!("sky dome {}: {} draws", dome_files.as_ref().unwrap().0, scene.draws.len() - first);
         textures.extend(dp.textures.iter());
     }
-    let Scene { mut vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
+    let Scene { mut vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, morph_weights, .. } = scene;
     // The models' Color0 does not reach their materials: the G-buffer programs (`pbb-*_gb.g1s`,
     // docs/shading.md) take no COLOR0, and some models hold masks there (the attic's
     // cabinet). So white; the terrain's (its baked shade) is kept.
@@ -255,10 +307,33 @@ fn main() -> Result<()> {
     };
     eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, textures.len());
 
-    let (width, height) = a.size;
-    let gpu = Gpu::new(None)?;
-    let mut renderer = Renderer::new(&gpu, RenderSettings::DESKTOP.resolved(), None, width, height, false, false)?;
+    let (mut width, mut height) = a.size;
+    // A window to play in (--window), or an offscreen image.
+    let mut pump = a.window.then(|| window::Pump::open(settings::Display { width, height, fullscreen: false })).transpose()?;
+    let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
+    let gpu = Gpu::new(display)?;
+    let mut presenter = match (&pump, display) {
+        (Some(p), Some(display)) => {
+            let handle = raw_window_handle::HasWindowHandle::window_handle(p.window())?.as_raw();
+            let size = p.window().inner_size();
+            Some(present::Presenter::new(&gpu, display, handle, size.width, size.height)?)
+        }
+        _ => None,
+    };
+    if let Some(p) = &presenter {
+        (width, height) = (p.extent.width, p.extent.height);
+        eprintln!("window: {width}x{height}");
+    }
+    let mut renderer = Renderer::new(&gpu, RenderSettings::DESKTOP.resolved(), presenter.as_ref(), width, height, a.timings, false)?;
     let d = &gpu.device;
+    // In a window the joints move: last frame's go to the palette's second half (the motion
+    // vectors').
+    let mut prev_palette = palette.clone();
+    if pump.is_some() {
+        for i in &mut instances {
+            i.prev_palette = i.palette + palette.len() as u32;
+        }
+    }
     let vbytes = unsafe { std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * size_of::<Vertex>()) };
     let ibytes = unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4) };
     let (uploaded, outline_tex, white) = upload_textures(&gpu, renderer.pool, &textures, None)?;
@@ -266,8 +341,9 @@ fn main() -> Result<()> {
     let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![None], white };
     let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
-    // The camera: on the given point, or framing the ground (render space mirrors x: the
-    // terrain spans x -extent..0, z 0..extent), or everything when there is no terrain.
+    // The camera: on the given point (or on Ryza in a window), framing the ground (render
+    // space mirrors x: the terrain spans x -extent..0, z 0..extent), or everything when there
+    // is no terrain.
     let ground = terrains.first().map(|(_, t)| t.extent);
     let (center, radius) = match (a.look_at, ground) {
         (Some(p), _) => (p * Vec3::new(-1.0, 1.0, 1.0), 0.0),
@@ -282,34 +358,242 @@ fn main() -> Result<()> {
         (None, None) => ((lo + hi) * 0.5, (hi - lo).length() * 0.5),
     };
     let fov = 30f32.to_radians();
-    let dist = a.distance.unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
-    let (y, p) = (a.yaw.to_radians(), a.pitch.to_radians());
+    let (mut yaw, mut pitch) = (a.yaw, a.pitch);
+    let mut dist = a.distance.unwrap_or(if pump.is_some() && rig.is_some() { FOLLOW_DISTANCE } else { radius / (fov * 0.5).sin() * 1.05 }).max(1.0);
+    let mut center = center;
+    let shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
+
+    let hidden = vec![false; instances.len()];
+    let shown = |d: &Draw| !a.hide.iter().any(|h| d.name.contains(h.as_str()));
+    // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
+    let material = |_: &Draw| (if environment.is_some() { 0 } else { UNLIT }, 0);
+    let layers: Vec<&text::Layer> = Vec::new();
+    let bytes = u64::from(width) * u64::from(height) * 4;
+    let readback = match pump {
+        Some(_) => None,
+        None => Some(gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?),
+    };
+    let mut sync = ring::Frames::new(&gpu)?;
+    let mut prev_vp = None;
+    let mut last = std::time::Instant::now();
+    let started = last;
+    let (mut stale, mut frame_no) = (false, 0u32);
+    loop {
+        // The player's input, in a window: her lean against the camera, the camera's turn.
+        if let Some(p) = pump.as_mut() {
+            use winit::keyboard::KeyCode as K;
+            if !p.pump() || p.take_pressed().contains(&K::Escape) || a.frames.is_some_and(|n| frame_no >= n) {
+                break;
+            }
+            let now = std::time::Instant::now();
+            let dt = (now - last).as_secs_f32().min(0.1);
+            last = now;
+            let key = |k: K| if p.held(k) { 1.0 } else { 0.0 };
+            let (left, right) = p.sticks();
+            yaw -= (key(K::ArrowRight) - key(K::ArrowLeft) + right[0]) * CAMERA_TURN * dt;
+            pitch = (pitch + (key(K::ArrowUp) - key(K::ArrowDown) - right[1]) * CAMERA_TURN * dt).clamp(-10.0, 70.0);
+            dist = (dist * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(150.0, 3000.0);
+            if let Some(r) = rig.as_mut() {
+                let mut lean = [key(K::KeyD) - key(K::KeyA) + left[0] + a.lean[0], key(K::KeyW) - key(K::KeyS) + left[1] + a.lean[1]];
+                let length = (lean[0] * lean[0] + lean[1] * lean[1]).sqrt();
+                let full = if p.held(K::ShiftLeft) || p.held(K::ShiftRight) { 0.4 } else { 1.0 };
+                if length > full {
+                    lean = lean.map(|v| v / length * full);
+                }
+                // Against the camera, in render space (x mirrored), then game space.
+                let y = yaw.to_radians();
+                let (forward, side) = (Vec3::new(-y.sin(), 0.0, -y.cos()), Vec3::new(y.cos(), 0.0, -y.sin()));
+                let way = forward * lean[1] + side * lean[0];
+                r.player.step([-way.x, way.z], dt, r.ground.as_ref(), r.walls.as_ref());
+                let (m, t) = r.player.motion();
+                let anim = &r.anims.iter().find(|(n, _)| *n == m).unwrap_or(&r.anims[0]).1;
+                let joints = barrel_engine::skin::pose(&r.skeleton, anim, t % anim.duration.max(1e-3));
+                prev_palette.copy_from_slice(&palette);
+                let base = instances[r.instance as usize].palette as usize;
+                for (slot, j) in palette[base..].iter_mut().zip(&joints) {
+                    *slot = render_space(*j);
+                }
+                let i = &mut instances[r.instance as usize];
+                i.prev_model = i.model;
+                i.model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(r.player.turn), r.player.at));
+                center = (r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
+                if frame_no % 60 == 0 {
+                    eprintln!("frame {frame_no} ({:.2}s): Ryza at {:?}, {:?}", started.elapsed().as_secs_f32(), r.player.at, r.player.gait);
+                }
+            }
+            // A resized window, or a swapchain gone stale: remake it and the targets.
+            if let Some(pr) = presenter.as_mut()
+                && (p.take_resized() || stale)
+            {
+                let size = p.window().inner_size();
+                if size.width == 0 || size.height == 0 {
+                    continue;
+                }
+                pr.rebuild(&gpu, size.width, size.height)?;
+                (width, height) = (pr.extent.width, pr.extent.height);
+                renderer.rebuild_targets(&gpu, Some(&*pr), width, height)?;
+                stale = false;
+            }
+        }
+        sync.wait_slot(&gpu, renderer.pool)?;
+        if pump.is_some() {
+            scene.write_instances(&gpu, &instances)?;
+            scene.write_palette(&gpu, &palette, &prev_palette)?;
+        }
+        let view = look_for(center, yaw, pitch, dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size);
+        if frame_no == 0
+            && let Some(k) = view.exposure
+        {
+            eprintln!("exposure {k:.4}");
+        }
+        prev_vp = Some(view.vp);
+        renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(view.look.as_ptr() as *const u8, LOOK_SIZE as usize) });
+        // The image to draw into: the window's next, or the offscreen one.
+        let image = match &presenter {
+            Some(p) => match p.acquire(sync.acquired(&gpu))? {
+                Some(i) => i as usize,
+                None => {
+                    stale = true;
+                    continue;
+                }
+            },
+            None => 0,
+        };
+        let frame = Frame {
+            image,
+            width,
+            height,
+            scene: &scene,
+            instance_set: scene.instance_set(&gpu, 0),
+            draws: &draws,
+            instances: &instances,
+            sets: &scene.sets,
+            white,
+            outline_tex,
+            current_field: 0,
+            hidden: &hidden,
+            shown: &shown,
+            material: &material,
+            draw_vp: view.vp,
+            view_planes: view_planes(&view.vp),
+            shadow_vp: view.shadow_vp,
+            alpha_cutoff: 0.3,
+            glow: (1.0, 0.0),
+            camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
+            freeze_now: false,
+            frozen_weight: 0.0,
+            overlay: [0.0; 4],
+            layers: &layers,
+            readback: readback.map(|(b, _)| b),
+            sky_plane: view.sky_plane,
+        };
+        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
+        unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
+        let drawn = renderer.record(&gpu, cb, &frame);
+        unsafe { d.end_command_buffer(cb)? };
+        match (&presenter, readback) {
+            (Some(p), _) => {
+                let done = sync.submit(&gpu, cb, image, p.images.len())?;
+                stale |= p.present(&gpu, image as u32, done)?;
+            }
+            (None, Some((_, rmem))) => {
+                sync.submit_offscreen(&gpu, cb)?;
+                sync.wait_submitted(&gpu)?;
+                eprintln!("{} draws in the scene", drawn[0]);
+                let mut pixels = vec![0u8; bytes as usize];
+                unsafe {
+                    let p = d.map_memory(rmem, 0, bytes, vk::MemoryMapFlags::empty())? as *const u8;
+                    std::ptr::copy_nonoverlapping(p, pixels.as_mut_ptr(), pixels.len());
+                    d.unmap_memory(rmem);
+                }
+                std::fs::write(&a.out, barrel_formats::png::encode_rgba(width, height, &pixels))?;
+                eprintln!("wrote {}", a.out);
+                break;
+            }
+            (None, None) => unreachable!("offscreen frames have a readback"),
+        }
+        if let Some(t) = renderer.timer.as_mut() {
+            t.collect(&gpu)?;
+        }
+        gpu.frame.set(gpu.frame.get() + 1);
+        frame_no += 1;
+    }
+
+    if let Some(t) = &renderer.timer {
+        t.report();
+    }
+    unsafe {
+        d.device_wait_idle()?;
+        if let Some((b, m)) = readback {
+            d.destroy_buffer(b, None);
+            d.free_memory(m, None);
+        }
+    }
+    sync.destroy(&gpu, renderer.pool)?;
+    if let Some(p) = presenter {
+        p.destroy(&gpu);
+    }
+    scene.destroy(&gpu);
+    renderer.destroy(&gpu)?;
+    unsafe {
+        d.destroy_device(None);
+        gpu.instance.destroy_instance(None);
+    }
+    Ok(())
+}
+
+/// The camera behind Ryza in a window: how far, and how high above her feet it looks.
+const FOLLOW_DISTANCE: f32 = 500.0;
+const FOLLOW_HEIGHT: f32 = 110.0;
+/// How fast the camera turns, degrees a second.
+const CAMERA_TURN: f32 = 120.0;
+
+/// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
+type Environment = ([[f32; 3]; 9], Light, barrel_ryza::environment::Fog);
+
+/// A frame's view: the look block and what goes with it.
+struct View {
+    look: [[f32; 4]; LOOK_SLOTS],
+    vp: Mat4,
+    shadow_vp: Mat4,
+    sky_plane: bool,
+    near: f32,
+    far: f32,
+    exposure: Option<f32>,
+}
+
+/// The view from `dist` away from `center` (render space) at `yaw` and `pitch` degrees, and
+/// its look block (`barrel_render`'s `Look`): the eye, the view-projection and last frame's
+/// (`prev_vp`; this one's when there is none), and the environment's light, sky and the sun's
+/// shadow (`shadow_size`: the shadow map's, none without shadows). With no environment, a
+/// white ambient alone (the terrain shows its colours as they are).
+#[allow(clippy::too_many_arguments)]
+fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>) -> View {
+    let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let mut proj = Mat4::perspective_rh(fov, width as f32 / height as f32, dist * 0.01, (dist * 20.0).max(80_000.0));
+    let (near, far) = (dist * 0.01, (dist * 20.0).max(80_000.0));
+    let mut proj = Mat4::perspective_rh(fov, width as f32 / height as f32, near, far);
     proj.y_axis.y *= -1.0;
     proj.x_axis.x *= -1.0;
     let vp = proj * view;
-    // The look block (`barrel_render`'s `Look`): the eye, and a white ambient alone (the
-    // terrain, which has no unlit flag, shows its colours as they are); no sun, no fog.
     let mut look = [[0f32; 4]; LOOK_SLOTS];
     let mut shadow_vp = vp;
-    // This frame's view-projection (and, with no frame before it, last frame's): motion
-    // vectors and the sky plane's view rays.
-    for (k, col) in vp.to_cols_array_2d().into_iter().enumerate() {
-        look[40 + k] = col;
-        look[44 + k] = col;
+    for (k, (now, before)) in vp.to_cols_array_2d().into_iter().zip(prev_vp.unwrap_or(vp).to_cols_array_2d()).enumerate() {
+        look[40 + k] = before;
+        look[44 + k] = now;
     }
     let mut sky_plane = false;
+    let mut exposure_k = None;
     look[4] = [eye.x, eye.y, eye.z, 1.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
     // The environment's light instead, when the field has one: the cube map's light times the
     // ambient colour (model.vert's `sh`), the sun and the second light as the field's two
     // directional lights, all scaled by one exposure (`exposure`).
     if let Some((c, light, sky_fog)) = environment {
-        let k = exposure(&c, &light);
+        let k = exposure(c, light);
         look[66] = [1.0, 0.0, 0.0, 0.0];
-        for (i, [r, g, b]) in c.into_iter().enumerate() {
+        for (i, [r, g, b]) in c.iter().copied().enumerate() {
             look[67 + i] = [r * light.ambient[0] * k, g * light.ambient[1] * k, b * light.ambient[2] * k, 0.0];
         }
         for (slot, p) in [22usize, 24].into_iter().zip(light.parallel) {
@@ -323,7 +607,7 @@ fn main() -> Result<()> {
         // ten times as wide, so the zenith is one fog span and the horizon about 4.6) and no
         // glow (`docs/ryza/open.md`).
         {
-            let f = sky_fog;
+            let f = *sky_fog;
             let sun = light.parallel[0].color.map(|v| v * f.power * k);
             let ext: [f32; 3] = std::array::from_fn(|i| f.rayleigh[i] + f.mie[i]);
             let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
@@ -346,81 +630,15 @@ fn main() -> Result<()> {
         }
         // The sun's shadow map: one square over the camera's target, wide enough for the
         // view (the game's cascades, `shadowMap_`, are not read), unless --no-shadows.
-        if !a.no_shadows {
+        if let Some(size) = shadow_size {
             let sun = from_light(light.parallel[0].elevation, light.parallel[0].azimuth);
             shadow_vp = shadow::sun_view_proj(center, sun, (dist * 1.5).clamp(SHADOW_HALF, 6000.0), 8000.0);
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
-            look[31] = [1.0 / renderer.shadow_target.size as f32, 1.0, 0.0, 0.0];
+            look[31] = [1.0 / size as f32, 1.0, 0.0, 0.0];
         }
-        eprintln!("exposure {k:.4}");
+        exposure_k = Some(k);
     }
-    renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
-
-    let bytes = u64::from(width) * u64::from(height) * 4;
-    let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
-    let hidden = vec![false; instances.len()];
-    let shown = |d: &Draw| !a.hide.iter().any(|h| d.name.contains(h.as_str()));
-    // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
-    let material = |_: &Draw| (if environment.is_some() { 0 } else { UNLIT }, 0);
-    let layers: Vec<&text::Layer> = Vec::new();
-    let frame = Frame {
-        image: 0,
-        width,
-        height,
-        scene: &scene,
-        instance_set: scene.instance_set(&gpu, 0),
-        draws: &draws,
-        instances: &instances,
-        sets: &scene.sets,
-        white,
-        outline_tex,
-        current_field: 0,
-        hidden: &hidden,
-        shown: &shown,
-        material: &material,
-        draw_vp: vp,
-        view_planes: view_planes(&vp),
-        shadow_vp,
-        alpha_cutoff: 0.3,
-        glow: (1.0, 0.0),
-        camera: Camera { fov, near: dist * 0.01, far: (dist * 20.0).max(80_000.0), ..Camera::default() },
-        freeze_now: false,
-        frozen_weight: 0.0,
-        overlay: [0.0; 4],
-        layers: &layers,
-        readback: Some(readback),
-        sky_plane,
-    };
-    let mut sync = ring::Frames::new(&gpu)?;
-    let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
-    unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
-    let drawn = renderer.record(&gpu, cb, &frame);
-    unsafe { d.end_command_buffer(cb)? };
-    sync.submit_offscreen(&gpu, cb)?;
-    sync.wait_submitted(&gpu)?;
-    eprintln!("{} draws in the scene", drawn[0]);
-    let mut pixels = vec![0u8; bytes as usize];
-    unsafe {
-        let p = d.map_memory(rmem, 0, bytes, vk::MemoryMapFlags::empty())? as *const u8;
-        std::ptr::copy_nonoverlapping(p, pixels.as_mut_ptr(), pixels.len());
-        d.unmap_memory(rmem);
-    }
-    std::fs::write(&a.out, barrel_formats::png::encode_rgba(width, height, &pixels))?;
-    eprintln!("wrote {}", a.out);
-
-    unsafe {
-        d.device_wait_idle()?;
-        d.destroy_buffer(readback, None);
-        d.free_memory(rmem, None);
-    }
-    sync.destroy(&gpu, renderer.pool);
-    scene.destroy(&gpu);
-    renderer.destroy(&gpu)?;
-    unsafe {
-        d.destroy_device(None);
-        gpu.instance.destroy_instance(None);
-    }
-    Ok(())
+    View { look, vp, shadow_vp, sky_plane, near, far, exposure: exposure_k }
 }

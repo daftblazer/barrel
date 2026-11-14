@@ -134,6 +134,8 @@ dependencies = [
  "barrel-formats",
  "barrel-render",
  "glam",
+ "raw-window-handle",
+ "winit",
 ]
 
 [[package]]
