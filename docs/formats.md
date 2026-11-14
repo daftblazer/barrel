@@ -1664,7 +1664,11 @@ that place them are tables in the executable (English addresses; `crates/formats
   node in 625 (-20, -40) (same recording; the node is likely its slide-in's start). Its two
   texts stay at their nodes: "Left" (kind 22) starts at its node (x 78 at 1080p, node 80),
   the days left are centred on theirs (x 138 to 183, node 160), about 15% larger than "Left"
-  though both nodes say size 27. No word of the node tells the two apart (words 5 to 9 alike):
+  though both nodes say size 27. No word of the node tells the two apart (words 5 to 9 alike). Under
+  the date, layout 603 (at the panel's ten 0x25b nodes, five a row, the second staggered) is
+  one card per request slot taken (`quest/player`): part 0x8b cut 3 (a scroll) while open, cut
+  5 (pink) with the red tick (cut 1) once done, cut 6 (blank) for an empty slot, each pinned
+  (cut 12); only six slots show on the user's save (rank 3), the rule not read:
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a

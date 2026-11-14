@@ -28,6 +28,28 @@ pub const NEW_GAME_MONEY: i32 = 100;
 /// The most money held (`0x14036a8e0`).
 pub const MAX_MONEY: i32 = 999_999;
 
+/// A request taken from the board (`quest/player`'s slots, `save::BoardSlot`): its kind (0
+/// synthesis, 1 monster, 2 gathering), target, how many are wanted and done so far, and the
+/// days it was posted and is due.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Taken {
+    pub kind: i32,
+    pub target: i32,
+    pub wanted: i32,
+    pub progress: i32,
+    pub posted: i32,
+    pub until: i32,
+}
+
+impl Taken {
+    pub fn done(&self) -> bool {
+        self.progress >= self.wanted
+    }
+}
+
+/// The requests a player can hold at once (the board's ten slots).
+pub const TAKEN_SLOTS: usize = 10;
+
 /// One party member's lasting state (its record at `0x1410bcb60` + 0x2b0 × member).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Member {
@@ -75,17 +97,19 @@ pub struct Session {
     /// the save's `fieldmap/m_userDataFieldMapData`: the user's at 8/20 reads 45, mode 4, 2).
     pub field_gauge: i32,
     pub field_state: crate::gather::FieldState,
+    /// The requests taken, by slot.
+    pub taken: [Option<Taken>; TAKEN_SLOTS],
 }
 
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default() }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default() }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -429,7 +453,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default() };
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -450,7 +474,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default() };
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -504,6 +528,11 @@ impl Session {
             let [a, b, c] = self.field_state.values;
             out += &format!("field-effect {} {} {a} {b} {c}\n", self.field_gauge, self.field_state.mode);
         }
+        for (k, t) in self.taken.iter().enumerate() {
+            if let Some(t) = t {
+                out += &format!("taken {k} {} {} {} {} {} {}\n", t.kind, t.target, t.progress, t.wanted, t.posted, t.until);
+            }
+        }
         for (k, d) in &self.worn {
             out += &format!("worn {k} {d}\n");
         }
@@ -532,6 +561,7 @@ impl Session {
         let (mut opened, mut worn) = (std::collections::BTreeSet::new(), std::collections::BTreeMap::new());
         let mut visited = std::collections::BTreeSet::new();
         let (mut field_gauge, mut field_state) = (0, crate::gather::FieldState::default());
+        let mut taken = [None; TAKEN_SLOTS];
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -566,6 +596,11 @@ impl Session {
                     field_gauge = num(1)? as i32;
                     field_state = crate::gather::FieldState { mode: num(2)? as i32, values: [num(3)? as i32, num(4)? as i32, num(5)? as i32] };
                 }
+                "taken" => {
+                    let k = num(1)? as usize;
+                    let slot = taken.get_mut(k).ok_or_else(|| bad(line))?;
+                    *slot = Some(Taken { kind: num(2)? as i32, target: num(3)? as i32, progress: num(4)? as i32, wanted: num(5)? as i32, posted: num(6)? as i32, until: num(7)? as i32 });
+                }
                 "visited" => {
                     visited.insert(num(1)? as usize);
                 }
@@ -583,7 +618,7 @@ impl Session {
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state, taken }, at))
     }
 }
 
@@ -593,6 +628,16 @@ mod tests {
 
     fn chain() -> Chain {
         Chain::new(Vec::new(), Vec::new(), vec!["EVENT_A".into()])
+    }
+
+    #[test]
+    fn taken_requests_survive_a_save() {
+        let mut s = Session::in_field(chain(), 12, false);
+        s.taken[0] = Some(Taken { kind: 2, target: 44, wanted: 2, progress: 2, posted: 220, until: 329 });
+        s.taken[3] = Some(Taken { kind: 0, target: 4, wanted: 1, progress: 0, posted: 221, until: 329 });
+        let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
+        assert_eq!(back.taken, s.taken);
+        assert!(back.taken[0].unwrap().done() && !back.taken[3].unwrap().done());
     }
 
     #[test]

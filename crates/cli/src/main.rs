@@ -1623,6 +1623,11 @@ fn import_save(install: &Path, file: &Path) -> Result<()> {
     if let Some((gauge, mode, [a, b, c])) = group("fieldmap", "m_userDataFieldMapData").as_deref().and_then(save::field_effect) {
         out += &format!("field-effect {gauge} {mode} {a} {b} {c}\n");
     }
+    for (k, t) in s.taken.iter().enumerate().take(barrel_escha::session::TAKEN_SLOTS) {
+        if let Some(t) = t {
+            out += &format!("taken {k} {} {} {} {} {} {}\n", t.kind, t.target, t.progress, t.wanted, t.posted, t.until);
+        }
+    }
     for (e, r) in s.events.iter().enumerate().filter(|(_, r)| r.seen) {
         out += &format!("seen {e} {}\n", r.day);
     }
@@ -1819,6 +1824,11 @@ fn save(file: &Path) -> Result<()> {
     }
     println!("squad {:?}", s.squad);
     println!("board seed {:?}, rank (rank, points) {:?}", s.board_seed, s.rank);
+    for (k, t) in s.taken.iter().enumerate() {
+        if let Some(t) = t {
+            println!("taken {k}: kind {} target {} {}/{} posted {} until {}", t.kind, t.target, t.progress, t.wanted, t.posted, t.until);
+        }
+    }
     println!("hero {}", match s.hero { Some(0) => "Escha", Some(1) => "Logy", Some(_) => "?", None => "-" });
     for (k, shop) in s.shops.iter().enumerate() {
         let listed: Vec<String> = shop.iter().take(8).map(|w| format!("{}/{}/{}", w[0], w[1], w[2])).collect();

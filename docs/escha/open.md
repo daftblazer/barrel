@@ -103,7 +103,10 @@ likely settle them where static reading failed.
   The button list's place (the layout says y 792) and the text size are measured from one
   screenshot; so are the assignment panel's (+20, +8) rest and its texts' alignment ("Left"
   starts at its node, the days left are centred and ~15% larger: no node word says so; Barrel
-  keeps their size equal). The area map shows the assignment panel, the badge row and the gathering gauge but
+  keeps their size equal). The request cards under the date: how many slots show (six on the
+  user's save at rank 3; Barrel fixes six) and the cards of a failed request or of other
+  kinds (cuts 2 and 4 unseen). Way in: the board's take check (who writes `quest/player`
+  slots, near `0x14033ab30`) for the slot limit. The area map shows the assignment panel, the badge row and the gathering gauge but
   no dial. Way in for the rest: the HUD's update code (the layout 625 owner; who loads layout
   id 625 = 0x271).
 

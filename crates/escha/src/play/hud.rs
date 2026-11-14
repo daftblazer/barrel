@@ -17,7 +17,13 @@
 //! moved up 121 pixels, as the screenshot has it (the layout puts the list at y 792, past the
 //! screen's foot); the days left are a kind 22 text, centred on their node; the text size (the node's size × 1.47
 //! over the font's line); white for texts
-//! without a colour and for the days left. The arrows (602), the assignment badges (603), the
+//! without a colour and for the days left. Under the date, the ten request cards (layout 603
+//! at the panel's ten 0x25b nodes, five a row, the second row staggered): one per slot of the
+//! requests taken, part 0x8b cut 3 (a scroll) while open, cut 5 (pink) with the red tick
+//! (cut 1, the layout's second node) once done, cut 6 (blank) for an empty slot, each with its
+//! pin (cut 12); the user's save at 8/20 (one gathering done, two open) against the
+//! colseit-arrival recording. Only six slots are shown there (`CARDS_SHOWN`). Not yet seen: a failed request (likely cut 4 grey with the blue
+//! cross, cut 2) or one of another kind. The arrows (602), the
 //! "Free Time" tab (604), the small count (part 0xe5) and the pop-ups (the poster, gathering
 //! notices, the gathering gauge) are left out until their conditions are known.
 
@@ -28,7 +34,16 @@ use crate::text::{self, Quad};
 /// The HUD's top layout and the parts of it that are drawn.
 pub const FIELD_HUD: u32 = 625;
 const SHOWN: [u32; 3] = [605, 609, 620];
-const LEFT_OUT: [u32; 3] = [602, 603, 604];
+const LEFT_OUT: [u32; 2] = [602, 604];
+/// A request card (layout 603) and its sprites.
+const CARD: u32 = 603;
+const CARD_OPEN: i32 = 3;
+const CARD_DONE: i32 = 5;
+const CARD_EMPTY: i32 = 6;
+const CARD_TICK: i32 = 1;
+/// The slots the game shows: six on the user's save (rank 3: the first row and the second
+/// row's first card), the rule (rank, story) not yet read; the rest are not drawn.
+const CARDS_SHOWN: usize = 6;
 const DIGITS: i32 = 0x57;
 const SMALL_DIGITS: i32 = 0xe5;
 const YEAR: i32 = 0x8a;
@@ -53,6 +68,26 @@ pub struct Values {
     pub day: u32,
     pub year: u32,
     pub tenths_spent: u32,
+    /// The request cards, by slot.
+    pub cards: [Card; 10],
+}
+
+/// The request cards for the requests taken.
+pub fn cards(taken: &[Option<barrel_escha::session::Taken>; 10]) -> [Card; 10] {
+    taken.map(|t| match t {
+        None => Card::Empty,
+        Some(t) if t.done() => Card::Done,
+        Some(_) => Card::Open,
+    })
+}
+
+/// A request card under the date: an empty slot, a request taken and open, or done.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Card {
+    #[default]
+    Empty,
+    Open,
+    Done,
 }
 
 impl Values {
@@ -61,7 +96,7 @@ impl Values {
         use barrel_escha::calendar::{period, period_days, Date};
         let left = period(today).map_or(0, |k| period_days(k).1 - today);
         let date = Date::of(today);
-        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32 }
+        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32, cards: [Card::Empty; 10] }
     }
 }
 
@@ -129,6 +164,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
     let mut numbers = 0;
     let mut segment = 0;
     let mut left_shown = false;
+    let mut card = 0usize;
     for p in nodes {
         let Some(&branch) = p.path.get(1) else { continue };
         if !SHOWN.contains(&branch) || p.path.iter().any(|l| LEFT_OUT.contains(l)) {
@@ -146,6 +182,31 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
         let p = &Placed { at: [p.at[0] + shift[0], p.at[1] + shift[1]], ..p.clone() };
         let n = p.node;
         let at = p.at;
+        if p.path.last() == Some(&CARD) {
+            if card >= CARDS_SHOWN {
+                continue;
+            }
+            let c = v.cards.get(card).copied().unwrap_or_default();
+            match n.cut {
+                CARD_OPEN => out.push(Element::Sprite {
+                    part: n.part,
+                    cut: match c {
+                        Card::Empty => CARD_EMPTY,
+                        Card::Open => CARD_OPEN,
+                        Card::Done => CARD_DONE,
+                    },
+                    at,
+                }),
+                CARD_TICK if c == Card::Done => out.push(Element::Sprite { part: n.part, cut: CARD_TICK, at }),
+                CARD_TICK => {}
+                _ => {
+                    // The pin: a card's last node.
+                    out.push(Element::Sprite { part: n.part, cut: n.cut, at });
+                    card += 1;
+                }
+            }
+            continue;
+        }
         match n.part {
             0x164 => match texts(p) {
                 // The text after "Left": the days left.
@@ -346,10 +407,10 @@ mod tests {
     #[test]
     fn values_follow_the_calendar() {
         // April 1st of year 1: 119 days to the first period's last.
-        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0 });
+        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0, cards: [Card::Empty; 10] });
         // August 20th of year 1, as the game's screenshot: "Left 100", "8 /20", year 1.
         let aug20 = barrel_escha::calendar::Date { year: 1, month: 8, day: 20 }.number();
-        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3 });
+        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3, cards: [Card::Empty; 10] });
     }
 
     #[test]
@@ -364,7 +425,7 @@ mod tests {
             node(&[625, 609], DIAL, 3, 0, [2, 0]),
             node(&[625, 617], 0x10, 0, 0, [0, 0]),
         ];
-        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1 };
+        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1, cards: [Card::Empty; 10] };
         let got = elements(&nodes, |_| None, v);
         let sprite = |part, cut, at| Element::Sprite { part, cut, at };
         assert_eq!(got, vec![
@@ -374,8 +435,20 @@ mod tests {
             sprite(DIGITS, 2, [216, 128]),
             sprite(DIGITS, 0, [252, 128]),
             sprite(YEAR, 4, [306, 124]),
+            sprite(0x8b, 6, [20, 8]),
             sprite(DIAL, 0, [0, 0]),
             sprite(DIAL, 2, [1, 0]),
         ]);
+    }
+
+    #[test]
+    fn request_cards_by_slot() {
+        let card = |cut, at| node(&[625, 605, CARD], 0x8b, cut, 0, at);
+        let nodes = vec![card(3, [0, 0]), card(1, [4, 12]), card(12, [20, -2]), card(3, [66, 0]), card(1, [70, 12]), card(12, [86, -2]), card(3, [132, 0]), card(1, [136, 12]), card(12, [152, -2])];
+        let mut v = Values::on(90, 0);
+        v.cards[0] = Card::Done;
+        v.cards[1] = Card::Open;
+        let got: Vec<i32> = elements(&nodes, |_| None, v).iter().filter_map(|e| e.sprite()).map(|(_, cut, _)| cut).collect();
+        assert_eq!(got, vec![5, 1, 12, 3, 12, 6, 12]);
     }
 }
