@@ -188,7 +188,13 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   The shadow map (3000 units square around her, ±8000 along the sun) draws 255k triangles,
   the scene 615k: about the same cost a triangle, and two thirds of both are landmarks (the
   canyon's cliffs). The game's own shadow range (`disp_range` `shadow`, 300 m) cuts nothing
-  here. For the RP6: the landmarks' triangles, then the shadow map's casters. The placements'
+  here. For the RP6: the landmarks' triangles, then the shadow map's casters. The scene's
+  landmark triangles at the gate by model: `a21-common-cliff-block-30m-02` 110k (80 draws),
+  `a21-common-desert-cliff-06` 52k, `a21-s06-windmill-01` 35k (95 draws), the houses
+  (`a21-s06-house-01`, `-03`, `-04`) 20k to 26k each, `a21-common-mountain-02` 18k, the rest
+  under 15k. None of these has a `_mid` or `_low` model, and a `_hi` model holds one level (its
+  mesh groups are all LOD 0), so the game's LOD would not lighten them; whether 615k triangles
+  and 717 draws are too many for the RP6 is for its timings. The placements'
   classes (docs/formats.md, "Placement lists") put the cost in the landmark class: leaving each
   class out in turn (1080p, 37 frames), near saves 0.36 ms, middle 0.39, far 0.51, landmark 3.9
   of 5.9 (646 cliffs and mountains, 1.26 of the 1.85 million triangles). Landmarks are drawn to
