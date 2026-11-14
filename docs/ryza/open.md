@@ -42,13 +42,6 @@ achievements are the player's own, and the DX version has not been played there)
 
 ## Ryza in the field
 
-- **Her head under a motion.** `barrel-ryza --ryza X,Y,Z` stands her (`pc00a`: skeleton in
-  `PC00A_MODEL.g1m`, mesh in `PC00A_MODEL_default.g1m`, textures in `pc00a_model.g1t`,
-  motions `pc00a_<N>.elixir.gz`). Unposed she draws right (all 15 draws textured); posed by
-  `pc00a_00000` (96 tracks, 179 joints) her body and arms are right but her head and hair
-  turn wrong, the back of her hair where her face is. The same through Escha's viewer
-  (`--skeleton --anim`), so the shared posing maps a track to the wrong joint, or her head's
-  joints work differently from Escha's.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read.
 

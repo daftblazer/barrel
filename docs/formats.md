@@ -197,6 +197,13 @@ placeholder joint and the index map alone. The Oid.bin names are the scene's nod
 joints one for one (helpers such as the thigh-twist nodes sit in between), so naming the
 joints needs the index map; that is still to be worked out.
 
+Motions (`.g1a`) name bones by id, and the base skeleton's index map turns an id into a joint
+(`Skeleton::joint`). Escha's maps send every animated id to itself, so using the id as the
+joint worked there; Ryza's do not: `pc00a` (179 joints) maps ids 0-24 to themselves, leaves
+25-49 unused (0xffff) and sends 50 on to joints 25 on, and her stand motion animates ids 0-24,
+50-81, 100-125, 130-144. Read as joints, those tracks turn the wrong ones (her head faced
+backwards).
+
 ### Skinning
 
 The semantics are Direct3D's declaration usages: 0 position, 1 blend weights, 2 blend

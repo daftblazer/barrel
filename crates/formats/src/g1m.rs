@@ -273,6 +273,19 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
+    /// The joint a bone id (as motions and the geometry name bones) stands for, through the
+    /// index map: ids the map leaves out (0xffff) or runs short of have no joint. Escha's
+    /// skeletons map their animated ids to themselves; Ryza's leave gaps (ids 25-49 unused,
+    /// 50 on for joints 25 on).
+    pub fn joint(&self, bone: u32) -> Option<usize> {
+        match self.index_map.get(bone as usize) {
+            Some(&j) if j != 0xffff && (j as usize) < self.joints.len() => Some(j as usize),
+            Some(_) => None,
+            None if self.index_map.is_empty() && (bone as usize) < self.joints.len() => Some(bone as usize),
+            None => None,
+        }
+    }
+
     /// The joints in an order where every parent comes before its children (file order in
     /// most models; a few list a child before its parent). The parser has ruled out cycles.
     pub fn order(&self) -> Vec<usize> {
@@ -854,6 +867,14 @@ impl Geometry<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bone_ids_go_through_the_index_map() {
+        let joint = Joint { scale: [1.0; 3], parent: None, rotation: [0.0, 0.0, 0.0, 1.0], position: [0.0; 3] };
+        // Ryza's shape: ids 0-1 to themselves, 2 unused, 3 to joint 2.
+        let sk = Skeleton { joints: vec![joint; 3], index_map: vec![0, 1, 0xffff, 2], layer: 0 };
+        assert_eq!([0, 1, 2, 3, 4].map(|b| sk.joint(b)), [Some(0), Some(1), None, Some(2), None]);
+    }
 
     #[test]
     fn a_child_may_come_before_its_parent() {

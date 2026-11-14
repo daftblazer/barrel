@@ -12,13 +12,14 @@ pub fn pose(skeleton: &Skeleton, anim: &Animation, time: f32) -> Vec<Mat4> {
 /// A joint's local transform: scale, rotation, translation.
 pub type Trs = (Vec3, Quat, Vec3);
 
-/// Each joint's local transform for an animation at `time`. Joints without a track keep their
+/// Each joint's local transform for an animation at `time` (tracks name bone ids, mapped to
+/// joints by the skeleton's index map). Joints without a track keep their
 /// bind pose; rotation-only tracks keep the joint's bind translation and scale.
 pub fn local_pose(skeleton: &Skeleton, anim: &Animation, time: f32) -> Vec<Trs> {
     let bind = |j: &Joint| (Vec3::from(j.scale), Quat::from_array(j.rotation).normalize(), Vec3::from(j.position));
     let mut out: Vec<Trs> = skeleton.joints.iter().map(bind).collect();
     for t in &anim.tracks {
-        let Some(slot) = out.get_mut(t.bone as usize) else { continue };
+        let Some(slot) = skeleton.joint(t.bone).and_then(|j| out.get_mut(j)) else { continue };
         if let Some((r, p, s)) = t.pose(time) {
             *slot = (Vec3::from(s), Quat::from_array(r).normalize(), Vec3::from(p));
         } else if let Some(r) = t.rotation(time) {
