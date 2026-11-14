@@ -447,7 +447,16 @@ impl AreaMap {
                     return None;
                 }
                 let path = barrel_escha::data::world::route_path(&self.placements, tag, from);
-                let mid = *path.get(2).or(path.last()).or(self.marks[next].as_ref())?;
+                // On the world map the route's middle dot, of two the one nearer the town
+                // (colseit-arrival 1:25: R0's 3 dots → the 2nd, R1's 4 → the 2nd, R2's 6 → the
+                // 3rd from Colseit; 1:12: R1's 3rd from the Southern Ruins); on an area map the
+                // third dot out.
+                let k = match (self.world, self.places[self.at].tag == "T0") {
+                    (true, true) => path.len().saturating_sub(1) / 2,
+                    (true, false) => path.len() / 2,
+                    (false, _) => 2,
+                };
+                let mid = *path.get(k).or(path.last()).or(self.marks[next].as_ref())?;
                 Some((next, mid, way))
             })
             .collect()
@@ -513,6 +522,14 @@ impl AreaMap {
                     barrel_escha::area_map::Way::Down => area_panel::Side::Below,
                     _ if at[0] < 960 => area_panel::Side::Left,
                     _ => area_panel::Side::Right,
+                };
+                // The world map's labels stand farther off their dots than the area map's
+                // (colseit-arrival 1:25, measured at 720p, the Left one mirrored, unseen).
+                let at = match (self.world, side) {
+                    (true, area_panel::Side::Below) => [at[0], at[1] - WORLD_LABEL_LIFT],
+                    (true, area_panel::Side::Right) => [at[0] - WORLD_LABEL_SIDE[0], at[1] - WORLD_LABEL_SIDE[1]],
+                    (true, area_panel::Side::Left) => [at[0] + WORLD_LABEL_SIDE[0], at[1] - WORLD_LABEL_SIDE[1]],
+                    _ => at,
                 };
                 e.extend(area_panel::label(&pe, at, name, side));
             }
@@ -1056,6 +1073,11 @@ const AREA_CAMERA_AHEAD: f32 = 178.0;
 /// points at 720p, best at a 21-degree view (15 degrees: 9; the earlier 15 degrees, 12000 and
 /// 400 ahead, fitted by eye on the 1:12 frame: 16).
 const WORLD_CAMERA_PITCH: f32 = 35.0;
+/// How much higher a label under its route stands on the world map than on an area map, and
+/// how much farther in and higher one beside it (1080p; the recording at 1:25: the Southern
+/// Ruins' plate 59 and the Twilight Forest's 35 left and 13 higher at 720p).
+const WORLD_LABEL_LIFT: i32 = 88;
+const WORLD_LABEL_SIDE: [i32; 2] = [52, 20];
 const WORLD_CAMERA_FOV: f32 = 21.0;
 const WORLD_CAMERA_DISTANCE: f32 = 8016.0;
 const WORLD_CAMERA_AHEAD: f32 = 357.0;

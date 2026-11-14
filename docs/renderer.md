@@ -941,10 +941,14 @@ screen as on the area map. Its panels (`area_panel::world_elements`, `travel`; t
 region the scroll with its description and the "Map" tab over its sectors (the item panel 641's rows and
 rules, as on the area map but 38 higher: rows 45 apart in the recording at 1:12, not 642's 50;
 the scroll shorter, rolled at its foot); for the town no scroll; and, while the cursor stands on another place than
-the start, the travel panel (639, hung under the cursor's mark: the mark's screen place plus (-191, 27), as at 1:18): the trip's days
+the start, the travel panel (639, hung under the cursor's mark: the mark's screen place plus (-191, 11), refitted at 1:25 with the refitted camera): the trip's days
 (`WorldMap::trip`, the events seen shortening routes) and the arrival's month / day in 639's
 digit sprites (part 0xcf: cut = digit, cut 12 the "/"; placed as measured on the recording at
-1:18 and 1:25, the labels in its tan). Checked
+1:18 and 1:25, the labels in its tan). The neighbours' labels stand on their route's middle dot,
+of two the one nearer the town (1:25 from Colseit: R0's 3 dots → the 2nd, R1's 4 → the 2nd,
+R2's 6 → the 3rd; 1:12 from the Southern Ruins: R1's 3rd), farther off it than on an area map:
+one under its route 88 higher, one beside it 52 farther in and 20 higher (1080p; the Left one
+mirrored, not yet seen); the game likely places them in world units. Checked
 against the recording's Southern Ruins scroll (the same lines, the same places to within a
 few pixels; the game's list rows are a little closer than 642's 50). Not yet the game's: the
 world map's own cursor (a compass mark while the cursor moves; Barrel walks her), the routes the

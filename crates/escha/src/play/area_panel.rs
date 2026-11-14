@@ -253,7 +253,8 @@ pub fn travel(pe: &barrel_formats::pe::Pe, mark: [i32; 2], days: i32, month: u32
 /// The travel panel's labels, as the recording has them.
 const TRAVEL_LABEL: [u8; 4] = [0xff, 0xde, 0xba, 0x70];
 const TRAVEL: u32 = 639;
-const TRAVEL_UNDER: [i32; 2] = [-191, 27];
+/// (Refitted at 1:25 with the world camera of 3dab6a6: 16 higher than 1:18's measure.)
+const TRAVEL_UNDER: [i32; 2] = [-191, 11];
 const TRAVEL_DIGITS: i32 = 0xcf;
 /// A digit's step (the recording's "24": 31 pixels).
 const TRAVEL_ADVANCE: i32 = 31;
