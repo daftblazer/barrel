@@ -34,11 +34,22 @@ pub const ICONS: u32 = 0x410;
 /// The icon drawn for `<IMnn>` with the confirm button on A (the Western layout the English
 /// release shows, and Barrel's): the font's glyphs 0 and 1 are B, 2 and 3 A, and the text
 /// names them by role (00/01 confirm, 02/03 cancel, the Japanese layout), so the two pairs
-/// swap: the maps' "<IM02> Return" shows B, as the recording does. So do the next two pairs
-/// (4 and 5 Y, 6 and 7 X; the button sprite part 0x41's cuts in the same order): the world
-/// map's "<IM04> Area Info" and the area map scroll's button (cut 4) show X in the
-/// colseit-arrival recording.
+/// swap: the maps' "<IM02> Return" shows B, as the recording does. The next two pairs are
+/// left as they are: the world map's "<IM04> Area Info" shows the font's glyph 4, X, in the
+/// colseit-arrival recording (the button sprite part 0x41 orders them the other way, see
+/// [`western_sprite`]).
 pub fn western(n: u32) -> u32 {
+    match n {
+        0..=1 => n + 2,
+        2..=3 => n - 2,
+        _ => n,
+    }
+}
+
+/// The button sprite (part 0x41) cut shown for cut `n` in the Western layout: its cuts run B,
+/// A, Y, X (each then dimmed), and both pairs swap: the area map scroll's button (cut 4) shows
+/// X in the colseit-arrival recording.
+pub fn western_sprite(n: u32) -> u32 {
     match n {
         0..=1 | 4..=5 => n + 2,
         2..=3 | 6..=7 => n - 2,

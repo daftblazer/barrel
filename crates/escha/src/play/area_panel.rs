@@ -92,7 +92,7 @@ pub fn elements(
     // The button at the scroll's foot (layout 646 at (248, 678) in the scroll's layout 645:
     // the arrow plate and the button's icon).
     for p in barrel_escha::data::layout::placed(pe, NEXT_BUTTON) {
-        let cut = if p.node.part == BUTTON_ICONS { crate::message::western(p.node.cut.max(0) as u32) as i32 } else { p.node.cut.max(0) };
+        let cut = if p.node.part == BUTTON_ICONS { crate::message::western_sprite(p.node.cut.max(0) as u32) as i32 } else { p.node.cut.max(0) };
         out.push(Element::Sprite { part: p.node.part, cut, at: [SCROLL_AT[0] + NEXT_BUTTON_AT[0] + p.at[0], SCROLL_AT[1] + NEXT_BUTTON_AT[1] + p.at[1]] });
     }
     out.push(Element::Label(Text { at: NAME_AT, size: 36.0, colour: INK, text: name.to_string(), kind: 22 }));
