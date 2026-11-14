@@ -36,7 +36,10 @@ achievements are the player's own, and the DX version has not been played there)
   199, 47). (4) **the sky**: the sky plane's light scaled by a fitted 0.7 and the dome's by
   2.5 (`SKY_SCALE`, `DOME_SCALE`); morning's sky comes out pale. (5) no saturation pass
   (`vSaturationScale`, `SaturationScaleEx`: both worsen the match). Evening, morning and night
-  have no reference frame.
+  have no reference frame. Ryza takes the characters' light (`indirectChara_` in the set: the
+  sun at 0.8, the set's ambient at 0.2 plus the light map's mean at 1.5 × (0.8, 1, 1), flat
+  rather than by her normals; `barrel_ryza::environment::CharaLight`): her colours come out
+  as the still's, a little brighter (her hat 240, 232, 215 against 225, 215, 195).
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds
   diffuse 0.8 and ambient 0 (`barrel g1m-materials`): their shaders (`PBB-N`, `PBB-EmN`, ...)
   take the ambient from the environment, not `cAmb`. `barrel-ryza` gives every draw the full

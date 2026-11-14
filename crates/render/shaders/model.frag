@@ -214,7 +214,7 @@ void main() {
             // As in the game, the rim and the sun's N·L are saturated together: the rim adds
             // only what N·L leaves of the sun.
             float nl = max(dot(n, -normalize(look.sun_dir.xyz)), 0.0);
-            lit += look.sun_color.rgb * min(rim, 1.0 - nl);
+            lit += look.sun_color.rgb * unpackUnorm2x16(pc.light).x * min(rim, 1.0 - nl);
             float h = dot(n, -normalize(look.sun_dir.xyz)) * 0.5 + 0.5;
             float row = float((pc.flags >> 16) & 255u);
             lit *= textureLod(mask, vec2(clamp(h, 0.0, 1.0), (row + 0.5) / 256.0), 0.0).rgb;

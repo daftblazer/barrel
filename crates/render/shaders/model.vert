@@ -207,7 +207,8 @@ void main() {
     // Fields: ambient (and each point light's ambient) on the vertex colour, the fill and the
     // point lights' diffuse, and the sun's diffuse; the material colours are taken as white.
     vec3 wn = normalize(mat3(i.model) * n);
-    vec3 amb = look.sh_on.x > 0.5 ? environment_light(wn) : look.ambient.rgb;
+    // (A Ryza character, flag 128, takes the flat ambient: its own, not the stage's.)
+    vec3 amb = look.sh_on.x > 0.5 && (pc.flags & 128u) == 0u ? environment_light(wn) : look.ambient.rgb;
     vec3 diffuse = lambert(wn, look.fill_dir.xyz) * look.fill_color.rgb;
     // The terrain (flag 64) takes no point lights: its vertex program (the field's `.g1s`
     // program 2) has only the two directional lights and the ambient.

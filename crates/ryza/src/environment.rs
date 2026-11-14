@@ -192,6 +192,35 @@ impl Fog {
     }
 }
 
+/// How the characters take the set's light (`indirectChara_`, right after `skyFog_` in the
+/// file; the members by the executable's reader, docs/shading.md): the diffuse light map's
+/// scale and colour, and the scales on the set's ambient colour and on the sun. Rasenboden's
+/// noon: 1.5, (0.8, 1, 1), 0.2 and 0.8, the last two as read from the running game's
+/// character lighting blocks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CharaLight {
+    pub diffuse_map: f32,
+    pub diffuse_map_color: [f32; 3],
+    pub ambient: f32,
+    pub key: f32,
+}
+
+const INDIRECT_CHARA: usize = 0x5d0;
+
+impl CharaLight {
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<CharaLight, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |o: usize| f32::from_le_bytes(set[INDIRECT_CHARA + o..INDIRECT_CHARA + o + 4].try_into().unwrap());
+        Ok(CharaLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], ambient: f(0x30), key: f(0x34) })
+    }
+
+    /// The flat ambient a character takes: the set's ambient colour and the light map's mean
+    /// (`harmonics`' first coefficient), each at its scale.
+    pub fn ambient_light(&self, light: &Light, harmonics: &[[f32; 3]; 9]) -> [f32; 3] {
+        std::array::from_fn(|ch| light.ambient[ch] * self.ambient + harmonics[0][ch] * 0.282_095 * self.diffuse_map * self.diffuse_map_color[ch])
+    }
+}
+
 impl Light {
     /// The light of `time` in `weather` from a whole `_env.bin`.
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Light, String> {
@@ -245,6 +274,24 @@ mod tests {
         assert_eq!(l.lumi_threshold, 0.8);
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
+    }
+
+    #[test]
+    fn chara_light_of_a_set() {
+        let mut env = vec![0u8; SET_SIZE * SETS];
+        // Noon, sunny: set 1.
+        let at = SET_SIZE + 0x5d0;
+        for (k, v) in [(0, 1.5f32), (8, 0.8), (12, 1.0), (16, 1.0), (0x30, 0.2), (0x34, 0.8)] {
+            env[at + k..at + k + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let c = CharaLight::read(&env, Time::Noon, Weather::Sunny).unwrap();
+        assert_eq!(c, CharaLight { diffuse_map: 1.5, diffuse_map_color: [0.8, 1.0, 1.0], ambient: 0.2, key: 0.8 });
+        let mut light = Light::read(&env, Time::Noon, Weather::Sunny).unwrap();
+        light.ambient = [3.0, 3.0, 4.0];
+        let mut h = [[0.0; 3]; 9];
+        h[0] = [1.0 / 0.282_095; 3];
+        let a = c.ambient_light(&light, &h);
+        assert!((a[0] - 1.8).abs() < 1e-5 && (a[2] - 2.3).abs() < 1e-5);
     }
 
     #[test]
