@@ -411,7 +411,7 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Area map | LB | "Assignment": the page alone, B back to the map | yes |
 | Area map | RB | "System": the Option list alone (Save, Load, Erase Save Data, Change BGM, Dressing Room, Options, Return to Title), B back to the map | yes (Barrel's list lacks Erase Save Data and Dressing Room) |
 | Area map | Menu / View | "Requests" / "Message Log" | not yet |
-| Area map | X | the panel: Gatherable Items ↔ Monsters | not yet |
+| Area map | X | the panel: Gatherable Items ↔ Monsters (the sector's out enemies' groups, each monster once: `field_ai::sector_monsters`) | yes |
 | Battle | D-pad left/right, A, B | the command row, confirm, back | yes |
 | Battle | L3 | "Fast Forward" on/off | not yet |
 | Battle | View | "Field Information" | not yet |

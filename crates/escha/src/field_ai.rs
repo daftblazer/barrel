@@ -146,3 +146,37 @@ pub fn body_row(pe_groups: &[crate::data::battle_data::EncounterGroup], enemy: &
     let m = pe_groups.iter().find(|g| g.id == enemy.group)?.monsters.first()?.0;
     Some(crate::data::battle_data::MONSTER_CHARA_FIRST + usize::try_from(m).ok()?)
 }
+
+/// The monsters of field map `map` as its area map panel lists them (X on the area map:
+/// "Monsters"): each out enemy's group's monsters, the first time each comes, in the enemy
+/// table's order. An enemy whose conditions keep it away (`battle::field_enemy_appears`, `seen`
+/// by event number) brings none (the escha-areamap-buttons recording: Sector One lists Guard,
+/// Mini-Slag, Fake Ruin; its fourth enemy, after event 750, is not out on the user's save).
+pub fn sector_monsters(enemies: &[crate::data::battle_data::FieldEnemy], groups: &[crate::data::battle_data::EncounterGroup], map: i32, seen: impl Fn(i32) -> bool) -> Vec<i32> {
+    let mut out = Vec::new();
+    for e in enemies.iter().filter(|e| e.area == map && crate::battle::field_enemy_appears(e.conditions, &seen)) {
+        for &(m, _) in groups.iter().find(|g| g.id == e.group).map_or(&[][..], |g| &g.monsters[..]) {
+            if !out.contains(&m) {
+                out.push(m);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod sector_tests {
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn sector_one_lists_the_recordings_monsters() {
+        use crate::data::battle_data as bd;
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let exe = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
+        let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
+        let names = bd::monsters(&pe, bd::MONSTERS_EN).unwrap();
+        let enemies = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).unwrap();
+        let list: Vec<&str> = super::sector_monsters(&enemies, &groups, 26, |_| false).iter().map(|&m| names[m as usize].name.as_str()).collect();
+        assert_eq!(list, ["Guard", "Mini-Slag", "Fake Ruin"]);
+    }
+}

@@ -261,7 +261,13 @@ struct AreaMap {
     layer: text::Layer,
     font: text::Font,
     sheets: hud::Sheets,
-    shown: Option<(usize, u32, u32, bool, Option<(i32, u32, u32)>, Option<bool>)>,
+    shown: Option<(usize, u32, u32, bool, Option<(i32, u32, u32)>, Option<bool>, bool)>,
+    /// The panel lists the sector's monsters (X), not its gatherables.
+    monsters_shown: bool,
+    /// The field enemies and encounter groups (a sector's monsters) and the monsters' names.
+    field_enemies: Vec<barrel_escha::data::battle_data::FieldEnemy>,
+    groups: Vec<barrel_escha::data::battle_data::EncounterGroup>,
+    monster_names: Vec<String>,
     pe_bytes: Vec<u8>,
     /// The world map (the town and the regions, kind 0) rather than a region's area map, and
     /// the place the cursor started on (a trip's start).
@@ -328,7 +334,7 @@ impl AreaMap {
         let image = atlas.textures.first().ok_or("an empty font atlas")?;
         let font = text::Font { glyphs, size: image.width as f32 };
         // The panels' sheets, as any place's panels use them.
-        let mut all: Vec<hud::Element> = (0..5).flat_map(|tier| area_panel::elements(&pe, "", "", "", &[], tier, |_, _| 0.0)).collect();
+        let mut all: Vec<hud::Element> = (0..5).flat_map(|tier| area_panel::elements(&pe, "", "", "", &[], Some(tier), |_, _| 0.0)).collect();
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, [0, 0], 0, 1, 1));
         all.extend(area_panel::frame(&pe));
@@ -352,7 +358,11 @@ impl AreaMap {
         let trips = if world { barrel_escha::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_escha::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
         let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), visited: Vec::new(), hidden_routes: Vec::new(), seen_routes: Vec::new(), asking: None })
+        use barrel_escha::data::battle_data as bd;
+        let field_enemies = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).unwrap_or_default();
+        let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
+        let monster_names = bd::monsters(&pe, bd::MONSTERS_EN).unwrap_or_default().into_iter().map(|m| m.name).collect();
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), visited: Vec::new(), hidden_routes: Vec::new(), seen_routes: Vec::new(), asking: None, monsters_shown: false, field_enemies, groups, monster_names })
     }
 
     /// Whether the cursor stands on the town (`T0`, Colseit): no area to show info for.
@@ -504,8 +514,8 @@ impl AreaMap {
     /// The panels for the place she stands on, redrawn when it changes; with the camera's
     /// `mvp` (she stands still) the neighbours' labels too; on the world map, `trip` (days,
     /// arrival month and day) shows the travel panel.
-    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>, knows: impl Fn(i32) -> bool, levels: barrel_escha::gather::Levels) -> Result<()> {
-        if self.shown == Some((self.at, width, height, mvp.is_some(), trip, self.asking)) {
+    fn panel(&mut self, gpu: &Gpu, width: u32, height: u32, mvp: Option<Mat4>, trip: Option<(i32, u32, u32)>, knows: impl Fn(i32) -> bool, levels: barrel_escha::gather::Levels, seen: &[bool]) -> Result<()> {
+        if self.shown == Some((self.at, width, height, mvp.is_some(), trip, self.asking, self.monsters_shown)) {
             return Ok(());
         }
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
@@ -533,7 +543,18 @@ impl AreaMap {
                 (Some(g), Some(map)) => g.field_items(map as i32, levels).into_iter().map(|i| if knows(i) { self.item_names.get(i as usize).cloned().unwrap_or_default() } else { "????".into() }).collect(),
                 _ => Vec::new(),
             };
-            area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, levels.tier(false), measure)
+            if self.monsters_shown {
+                let seen = |k: i32| usize::try_from(k).ok().and_then(|k| seen.get(k)).copied().unwrap_or(false);
+                let monsters: Vec<String> = self.fields[self.at]
+                    .map(|map| barrel_escha::field_ai::sector_monsters(&self.field_enemies, &self.groups, map as i32, seen))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|m| self.monster_names.get(m as usize).cloned().unwrap_or_default())
+                    .collect();
+                area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &monsters, None, measure)
+            } else {
+                area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, Some(levels.tier(false)), measure)
+            }
         };
         if let Some(mvp) = mvp.filter(|_| self.asking.is_none()) {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
@@ -571,7 +592,7 @@ impl AreaMap {
         }
         let mut e = [area_panel::frame(&pe), e].concat();
         self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &self.sheets, &e, width as f32, height as f32))?;
-        self.shown = Some((self.at, width, height, mvp.is_some(), trip, self.asking));
+        self.shown = Some((self.at, width, height, mvp.is_some(), trip, self.asking, self.monsters_shown));
         Ok(())
     }
 }
@@ -3928,6 +3949,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     menu_page = Some(menu::Start::Page(menu::Page::Assignment(assignment::Assignment::default())));
                     None
                 }
+                // X on an area map (not the world's): the panel's list, gatherables or monsters.
+                P::West if on_area_map => {
+                    if let Some(a) = area_map.as_mut().filter(|a| !a.world) {
+                        a.monsters_shown = !a.monsters_shown;
+                    }
+                    None
+                }
                 // The area map (the escha-areamap-buttons recording): Y the main menu, LB the
                 // Assignment page, RB "System" (the Option list alone).
                 P::North | P::LeftShoulder | P::RightShoulder if on_area_map => {
@@ -3946,7 +3974,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             };
             if let Some(k) = key {
                 keys.push(k);
-            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !open_menu && !world_exit {
+            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !open_menu && !world_exit && !(b == P::West && area_map.is_some()) {
                 eprintln!("frame {frame}: pad {b:?} does nothing here yet");
             }
         }
@@ -4333,7 +4361,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let v = hud::Values::on(today + d.max(0) as u32, 0);
             (d, v.month, v.day)
         });
-        a.panel(&gpu, width, height, mvp, trip, |i| session.as_ref().is_some_and(|s| s.knows(i)), session.as_ref().map(|s| s.levels()).unwrap_or_default())?;
+        a.panel(&gpu, width, height, mvp, trip, |i| session.as_ref().is_some_and(|s| s.knows(i)), session.as_ref().map(|s| s.levels()).unwrap_or_default(), &session.as_ref().map(|s| s.seen()).unwrap_or_default())?;
     }
     if area_enter.is_some() {
         stop = true;
