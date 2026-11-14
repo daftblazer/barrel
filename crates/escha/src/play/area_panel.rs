@@ -9,8 +9,11 @@
 //! The item lines are the sector's gatherables (`Gathering::field_items`), "????" for those
 //! the player does not know yet (`Session::knows`).
 //!
-//! Not yet the game's: the scroll itself (a flat parchment fill: 641's part 0x280 has no
-//! sheet), the name's placing on it, the "X →" button at the scroll's foot.
+//! The scroll is part 0x92 cut 8 (462 × 750, `a15_common.g1t` picture 13, beside the tab's
+//! and the rules' cuts 4 and 5), its top-left at (1446, 150) at its own size (found in the
+//! recording by its roll; 641's part 0x280 is layout 640 nested, not a sheet).
+//!
+//! Not yet the game's: the name's placing on it, the "X →" button at the scroll's foot.
 
 use barrel_escha::data::layout::{Placed, Text};
 
@@ -22,8 +25,10 @@ const PANEL: u32 = 641;
 const REGION_AT: [i32; 2] = [1434, 61];
 const PANEL_AT: [i32; 2] = [1450, 143];
 const TAB_AT: [i32; 2] = [1448, 305];
-/// The scroll's stand-in (left, top, right, bottom) and the name's centre on its top.
-const SCROLL: [i32; 4] = [1464, 160, 1868, 872];
+/// The scroll's sprite and its top-left, and the name's centre on its top.
+const SCROLL_PART: i32 = 0x92;
+const SCROLL_CUT: i32 = 8;
+const SCROLL_AT: [i32; 2] = [1446, 150];
 const NAME_AT: [i32; 2] = [1673, 158];
 const INK: [u8; 4] = [0xe1, 0x3a, 0x2c, 0x1e];
 /// The description's widest line (screen pixels), as the game breaks "A sector of the /
@@ -62,7 +67,7 @@ pub fn elements(
             out.push(Element::Label(Text { at: moved(&p, REGION_AT), text: region.to_string(), ..t }));
         }
     }
-    out.push(Element::Fill { rect: SCROLL, colour: [0.92, 0.87, 0.72, 0.96] });
+    out.push(Element::Sprite { part: SCROLL_PART, cut: SCROLL_CUT, at: SCROLL_AT });
     out.push(Element::Label(Text { at: NAME_AT, size: 36.0, colour: INK, text: name.to_string(), kind: 22 }));
     let panel = barrel_escha::data::layout::placed(pe, PANEL);
     let mut first_text = true;
@@ -121,7 +126,7 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
     if description.is_empty() {
         return out;
     }
-    out.push(Element::Fill { rect: SCROLL, colour: [0.92, 0.87, 0.72, 0.96] });
+    out.push(Element::Sprite { part: SCROLL_PART, cut: SCROLL_CUT, at: SCROLL_AT });
     if let Some((p, t)) = barrel_escha::data::layout::placed(pe, PANEL).iter().find_map(|p| texts(p).filter(|t| t.filled_in()).map(|t| (p.clone(), t))) {
         let at = moved(&p, PANEL_AT);
         for (k, line) in lines(description.trim(), |s| width_of(s, t.size)).into_iter().enumerate() {

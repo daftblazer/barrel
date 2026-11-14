@@ -1668,7 +1668,9 @@ that place them are tables in the executable (English addresses; `crates/formats
   the date, layout 603 (at the panel's ten 0x25b nodes, five a row, the second staggered) is
   one card per request slot taken (`quest/player`): part 0x8b cut 3 (a scroll) while open, cut
   5 (pink) with the red tick (cut 1) once done, cut 6 (blank) for an empty slot, each pinned
-  (cut 12); only six slots show on the user's save (rank 3), the rule not read:
+  (cut 12); only six slots show on the user's save (rank 3), the rule not read. The area map's scroll is part 0x92 cut 8 (462 × 750, `a15_common.g1t`
+  picture 13), drawn at its own size with its top-left at (1446, 150), found in the
+  recording by its roll; part 0x280 in layout 641 is layout 640 nested (the tab), not a sheet:
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
