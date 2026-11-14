@@ -1661,7 +1661,10 @@ that place them are tables in the executable (English addresses; `crates/formats
   left of its node, the "20" a glyph left of its; measured on the colseit-arrival recording's
   area map by patch search). Nested layouts sit at their node (776 four times in 788), but the
   field HUD's assignment panel 605 rests at its own place (0, -32), 20 right and 8 down of its
-  node in 625 (-20, -40) (same recording; the node is likely its slide-in's start):
+  node in 625 (-20, -40) (same recording; the node is likely its slide-in's start). Its two
+  texts stay at their nodes: "Left" (kind 22) starts at its node (x 78 at 1080p, node 80),
+  the days left are centred on theirs (x 138 to 183, node 160), about 15% larger than "Left"
+  though both nodes say size 27. No word of the node tells the two apart (words 5 to 9 alike):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a

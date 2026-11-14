@@ -136,7 +136,9 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
         }
         let shift = if p.path.contains(&BUTTON_LIST) {
             [0, BUTTON_LIST_SHIFT]
-        } else if p.path.contains(&PANEL) {
+        } else if p.path.contains(&PANEL) && p.node.part != 0x164 {
+            // Its texts stay at their nodes (measured: "Left" and the days left sit 8
+            // pixels higher than the sprites' shift would put them).
             PANEL_SHIFT
         } else {
             [0, 0]
@@ -151,6 +153,9 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
                     out.push(Element::Label(layout::Text { text: v.left.to_string(), colour: WHITE, at, ..t }));
                     left_shown = true;
                 }
+                // "Left" starts at its node (measured on the recording: x 78 to 122 at 1080p,
+                // its node at 80), though kind 22 texts elsewhere are centred.
+                Some(t) if p.path.len() == 2 && p.path[1] == PANEL && !t.text.is_empty() => out.push(Element::Label(layout::Text { at, kind: 21, ..t })),
                 Some(t) if !t.text.is_empty() && !t.filled_in() => out.push(Element::Label(layout::Text { at, ..t })),
                 _ => {}
             },

@@ -101,7 +101,9 @@ likely settle them where static reading failed.
   confirmed (a live read of the carried tenths, `0x1410782e4`: 0 on arrival, 6 after a battle
   and a gathering, 11 → a new day with 1 carried after a second gathering, as `days` has it).
   The button list's place (the layout says y 792) and the text size are measured from one
-  screenshot. The area map shows the assignment panel, the badge row and the gathering gauge but
+  screenshot; so are the assignment panel's (+20, +8) rest and its texts' alignment ("Left"
+  starts at its node, the days left are centred and ~15% larger: no node word says so; Barrel
+  keeps their size equal). The area map shows the assignment panel, the badge row and the gathering gauge but
   no dial. Way in for the rest: the HUD's update code (the layout 625 owner; who loads layout
   id 625 = 0x271).
 
