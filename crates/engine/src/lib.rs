@@ -8,6 +8,7 @@ pub mod event;
 pub mod field_camera;
 pub mod play_camera;
 pub mod rng;
+pub mod skin;
 pub mod squirrel;
 pub mod stage;
 pub mod walk;
