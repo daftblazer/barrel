@@ -1955,7 +1955,13 @@ the turn order along the top (layout 864: fifteen face frames and "Action"), the
 plates (layout 878: three of layout 870 at x 424, 798 and 1168, y 796; the reserve row, three
 of layout 868, at y 966), the battle cries' speech bubbles over each (layout 882, kind 22
 "…!!" texts), the action banner (885), the Support gauge with "Fast Forward(×1.5)" (884) and
-the target panel (877: a plate and the state icons). A plate (870): its frame (part 0xee cut
+layout 877 (glints over the party plates' bars, at y 916 to 952: not the target panel, as
+once thought). The target plate is layout 920 on its own: the frame (part 0x102 cut 3, 336 × 96),
+the red HP bar (cut 6, 246 × 20 at [40, 48]), the name (kind 22 at [160, 6]), the state icon
+rows (nested 917 to 919: 0x395 to 0x397) and a strip under them (cut 4). The game shows it
+while a member picks a target (the ruins-entrance-battle-stats recording at 322 and 354 s): its
+top at y 186 on the 1080 screen for every target, its left edge near the target's place on
+screen (8 to the left, within about 20). How the game places it is not read yet. A plate (870): its frame (part 0xee cut
 5), the portrait (layout 869: part 0xf2, cut = the member's number, 0 Escha to 10 Nio, under a
 ring, part 0xee cut 4), the HP bar (part 0xee cut 11, 124 × 16 at [126, 54]) and the MP bar
 (cut 10 at [126, 104]), numbers (parts 0xde and 0xdf, kind 28) and state icons (layouts 873,

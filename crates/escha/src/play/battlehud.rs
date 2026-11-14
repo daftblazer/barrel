@@ -195,6 +195,50 @@ pub struct Commands {
     pub at: usize,
     pub skills: Option<(Vec<(String, bool)>, usize)>,
     pub title: String,
+    /// The target's plate while choosing it.
+    pub plate: Option<Plate>,
+}
+
+/// The target plate (layout 920: the frame, part 0x102 cut 3, the red HP bar, cut 6, and the
+/// name): over the target while a member chooses it (the ruins-entrance-battle-stats recording
+/// at 322 and 354 s: "Fake Ruin" with its HP, at the same height whichever monster, its left
+/// edge near the monster's place on screen).
+pub const TARGET_PLATE: u32 = 920;
+/// The plate's top on the 1920 × 1080 screen, and its left edge off the target's place (both
+/// measured on the recording; the game's own placing code not read yet).
+pub const PLATE_TOP: i32 = 186;
+pub const PLATE_LEFT: i32 = -8;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plate {
+    pub name: String,
+    pub hp: (i32, i32),
+    /// The target's place on the 1920 × 1080 screen.
+    pub at: [i32; 2],
+}
+
+/// The target plate's elements from layout 920's placed nodes (`texts` gives a node's text). Its
+/// state icons (nested layouts 917 to 919) and the strip under them (cut 4) wait for states.
+pub fn target_plate(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, plate: &Plate) -> Vec<Element> {
+    let origin = [plate.at[0] + PLATE_LEFT, PLATE_TOP];
+    let at = |p: &Placed| [origin[0] + p.at[0], origin[1] + p.at[1]];
+    let mut out = Vec::new();
+    for p in nodes.iter().filter(|p| p.path.len() == 1) {
+        match (p.node.part, p.node.cut) {
+            (0x102, 3) => out.push(Element::Sprite { part: 0x102, cut: 3, at: at(p) }),
+            (0x102, 6) => {
+                let fill = if plate.hp.1 > 0 { (plate.hp.0.max(0) as f32 / plate.hp.1 as f32).min(1.0) } else { 0.0 };
+                out.push(Element::Cropped { part: 0x102, cut: 6, at: at(p), fill });
+            }
+            (0x164, _) => {
+                if let Some(t) = texts(p) {
+                    out.push(Element::Label(Text { at: at(p), text: plate.name.clone(), ..t }));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Where the command list stands and its lines' spacing (the skills' list, until the game's

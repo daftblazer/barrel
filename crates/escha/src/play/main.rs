@@ -1228,6 +1228,8 @@ struct BattleHud {
     font: text::Font,
     sheets: hud::Sheets,
     nodes: Vec<barrel_escha::data::layout::Placed>,
+    /// The target plate's nodes (layout 920).
+    plate_nodes: Vec<barrel_escha::data::layout::Placed>,
     /// The Result screen's nodes (layout 904), shown instead once a won battle is over.
     result_nodes: Vec<barrel_escha::data::layout::Placed>,
     /// The field HUD's nodes (layout 625), for its date panel over a lost battle's white.
@@ -1251,6 +1253,8 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
     every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
+    let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
+    every.extend(battlehud::target_plate(&plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), &battlehud::Plate { name: String::new(), hp: (1, 1), at: [0, 0] }));
     // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
     let result_nodes = barrel_escha::data::layout::placed(&pe, result::LAYOUT);
     let sample = result::Values { rows: (0..6).map(|chara| result::Row { chara, level: 1, next: 1, level_up: true }).collect(), exp: 1, money: 1 };
@@ -1275,7 +1279,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     }
     let size = images[0].width as f32;
     let layer = text::Layer::new(gpu, pool, pass, &images)?;
-    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, result_nodes, field_nodes, exe, shown: None })
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, result_nodes, field_nodes, exe, shown: None })
 }
 
 /// How long an offscreen run shows a won battle's Result screen before going back.
@@ -1464,17 +1468,27 @@ impl BattlePlay {
 
     /// The command list: the attack, then the member's skills (with their MP costs; those it
     /// cannot pay for marked), and the chosen target's name.
-    fn commands(&self) -> Option<battlehud::Commands> {
+    /// `screen`: a fighter's place on the 1920 × 1080 screen (for the target plate).
+    fn commands(&self, screen: impl Fn(usize) -> Option<[i32; 2]>) -> Option<battlehud::Commands> {
         let turn = self.turn.as_ref().filter(|_| self.waiting())?;
-        let target = turn.foes.get(self.target).and_then(|&k| self.outcome.names.get(k)).cloned().unwrap_or_default();
-        let who = self.outcome.names.get(turn.who).cloned().unwrap_or_default();
+        let target = turn.foes.get(self.target).copied();
+        let plate = target.filter(|_| matches!(self.choosing, Choosing::Target { .. })).and_then(|k| {
+            let v = self.now.get(k)?;
+            Some(battlehud::Plate { name: self.outcome.names.get(k).cloned().unwrap_or_default(), hp: (v[0], v[1]), at: screen(k)? })
+        });
         let list: Vec<(String, bool)> = turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)).collect();
         Some(battlehud::Commands {
             row: COMMAND_ROW.to_vec(),
             at: self.row,
             skills: (self.choosing == Choosing::Skill).then(|| (list, self.chosen)),
-            title: if matches!(self.choosing, Choosing::Target { .. }) { format!("{who} → {target}") } else { String::new() },
+            title: String::new(),
+            plate,
         })
+    }
+
+    /// Fighter `k`'s body, if it has one.
+    fn body_of(&self, k: usize) -> Option<usize> {
+        self.fighters.get(k)?.as_ref().map(|f| f.body)
     }
 
     /// A button on a member's turn: up and down choose the command, left and right the target,
@@ -5497,7 +5511,20 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The battle HUD with the party's HP and MP, rebuilt when they change.
     if let (Some(h), Some(play)) = (battle_layer.as_mut(), battle_play.as_ref()) {
         let members = (play.members(), play.order());
-        let commands = play.commands();
+        // A fighter's place on the 1920 × 1080 layout screen (scaled to the height, centred).
+        let screen = |k: usize| -> Option<[i32; 2]> {
+            let b = town_bodies.get(play.body_of(k)?)?;
+            let p = instances.get(b.instance as usize)?.model.w_axis;
+            let clip = mvp * glam::Vec4::new(p.x, p.y, p.z, 1.0);
+            if clip.w <= 0.0 {
+                return None;
+            }
+            let k = height as f32 / 1080.0;
+            let dx = (width as f32 - 1920.0 * k) / 2.0;
+            let (x, y) = ((clip.x / clip.w + 1.0) * 0.5 * width as f32, (clip.y / clip.w + 1.0) * 0.5 * height as f32);
+            Some([((x - dx) / k) as i32, (y / k) as i32])
+        };
+        let commands = play.commands(screen);
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
@@ -5512,6 +5539,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.
                             e.extend(battlehud::command_row(&c.row, c.at));
+                            if let Some(plate) = &c.plate {
+                                e.extend(battlehud::target_plate(&h.plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), plate));
+                            }
                             match &c.skills {
                                 Some((list, chosen)) => e.extend(battlehud::command_list(list, *chosen, &c.title)),
                                 None if !c.title.is_empty() => e.extend(battlehud::command_list(&[], 0, &c.title)),
