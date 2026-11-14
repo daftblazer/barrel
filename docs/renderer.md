@@ -958,8 +958,9 @@ digit sprites (part 0xcf: cut = digit, cut 12 the "/"; placed as measured on the
 1:18 and 1:25, the labels in its tan). The neighbours' labels stand on their route's middle dot,
 of two the one nearer the town (1:25 from Colseit: R0's 3 dots → the 2nd, R1's 4 → the 2nd,
 R2's 6 → the 3rd; 1:12 from the Southern Ruins: R1's 3rd), farther off it than on an area map:
-one under its route 88 higher, one beside it 52 farther in and 20 higher (1080p; the Left one
-mirrored, not yet seen); the game likely places them in world units. Checked
+one under its route 80 higher, one beside it 56 farther in and 11 higher (1080p; the Left one
+mirrored, not yet seen; refitted by patch search of the plates' ends), each name 8 higher on
+its plate than 623's text node (both maps); the game likely places them in world units. Checked
 against the recording's Southern Ruins scroll (the same lines, the same places to within a
 few pixels; the game's list rows are a little closer than 642's 50). The marks of regions and the town show as their place is known: the `_on` model (red) once
 visited, the `_off` one (olive green in `A15_WMAP.g1t` 0; the Old Highway at 1:25, seen not

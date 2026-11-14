@@ -1119,8 +1119,8 @@ const WORLD_CAMERA_PITCH: f32 = 35.0;
 /// How much higher a label under its route stands on the world map than on an area map, and
 /// how much farther in and higher one beside it (1080p; the recording at 1:25: the Southern
 /// Ruins' plate 59 and the Twilight Forest's 35 left and 13 higher at 720p).
-const WORLD_LABEL_LIFT: i32 = 88;
-const WORLD_LABEL_SIDE: [i32; 2] = [52, 20];
+const WORLD_LABEL_LIFT: i32 = 80;
+const WORLD_LABEL_SIDE: [i32; 2] = [56, 11];
 const WORLD_CAMERA_FOV: f32 = 21.0;
 const WORLD_CAMERA_DISTANCE: f32 = 8016.0;
 const WORLD_CAMERA_AHEAD: f32 = 357.0;

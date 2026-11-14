@@ -31,7 +31,9 @@ fn header(pe: &barrel_formats::pe::Pe) -> Vec<Element> {
 }
 const TAB: u32 = 640;
 const PANEL: u32 = 641;
-const REGION_AT: [i32; 2] = [1434, 61];
+/// (Refitted 2026-11-14 by patch search on both maps' recordings: 6 right and 1 up of the first
+/// measure.)
+const REGION_AT: [i32; 2] = [1440, 60];
 const PANEL_AT: [i32; 2] = [1450, 143];
 const TAB_AT: [i32; 2] = [1448, 305];
 /// The scroll's sprite and its top-left, and the name's centre on its top.
@@ -179,13 +181,13 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
     if let Some((p, t)) = barrel_escha::data::layout::placed(pe, PANEL).iter().find_map(|p| texts(p).filter(|t| t.filled_in()).map(|t| (p.clone(), t))) {
         let at = moved(&p, PANEL_AT);
         for (k, line) in lines(description.trim(), |s| width_of(s, t.size)).into_iter().enumerate() {
-            out.push(Element::Label(Text { at: [at[0], at[1] - WORLD_DESCRIPTION_RISE + LINE_STEP * k as i32], text: line, colour: INK, ..t.clone() }));
+            out.push(Element::Label(Text { at: [at[0] - WORLD_TEXT_LEFT, at[1] - WORLD_DESCRIPTION_RISE + LINE_STEP * k as i32], text: line, colour: INK, ..t.clone() }));
         }
     }
     for p in barrel_escha::data::layout::placed(pe, TAB) {
         let at = moved(&p, MAP_TAB_AT);
         match (p.node.part, texts(&p)) {
-            (0x164, Some(t)) => out.push(Element::Label(Text { at, text: "Map".into(), ..t })),
+            (0x164, Some(t)) => out.push(Element::Label(Text { at: [at[0] - WORLD_TEXT_LEFT, at[1]], text: "Map".into(), ..t })),
             (0x69, _) => {}
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }
@@ -201,7 +203,7 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
             (0x164, Some(t)) if first_text && t.filled_in() => first_text = false,
             (0x164, Some(t)) if t.filled_in() => {
                 if let Some(name) = sectors.get(row) {
-                    out.push(Element::Label(Text { at, text: name.clone(), colour: INK, ..t }));
+                    out.push(Element::Label(Text { at: [at[0] - WORLD_TEXT_LEFT, at[1]], text: name.clone(), colour: INK, ..t }));
                 }
                 row += 1;
             }
@@ -231,19 +233,22 @@ pub fn travel(pe: &barrel_formats::pe::Pe, mark: [i32; 2], days: i32, month: u32
             (0x164, Some(t)) if !t.text.is_empty() => out.push(Element::Label(Text { at, colour: TRAVEL_LABEL, ..t })),
             (0x164, _) => {}
             (TRAVEL_DIGITS, _) if p.node.kind == 29 => {
+                // Each number's last digit from its node (measured on the recording at 1:25,
+                // "4" and "8 /24", side by side at 300%: the days' 18 left, the month's 19
+                // left, the day's 2 right; the "/" 2 left of its node).
                 let (value, shift) = match numbers {
-                    0 => (days.max(0) as u32, -20),
-                    1 => (month, -20),
-                    _ => (day, 11),
+                    0 => (days.max(0) as u32, -18),
+                    1 => (month, -19),
+                    _ => (day, 2),
                 };
                 let digits: Vec<i32> = value.to_string().bytes().map(|b| i32::from(b - b'0')).collect();
                 let start = at[0] + shift - TRAVEL_ADVANCE * (digits.len() as i32 - 1);
                 for (k, d) in digits.into_iter().enumerate() {
-                    out.push(Element::Sprite { part: TRAVEL_DIGITS, cut: d, at: [start + TRAVEL_ADVANCE * k as i32, at[1]] });
+                    out.push(Element::Sprite { part: TRAVEL_DIGITS, cut: d, at: [start + TRAVEL_ADVANCE * k as i32, at[1] + TRAVEL_DIGITS_DOWN] });
                 }
                 numbers += 1;
             }
-            (TRAVEL_DIGITS, _) => out.push(Element::Sprite { part: TRAVEL_DIGITS, cut: p.node.cut.max(0), at: [at[0] + 6, at[1]] }),
+            (TRAVEL_DIGITS, _) => out.push(Element::Sprite { part: TRAVEL_DIGITS, cut: p.node.cut.max(0), at: [at[0] - 2, at[1] + TRAVEL_DIGITS_DOWN] }),
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }
     }
@@ -258,12 +263,18 @@ const TRAVEL_UNDER: [i32; 2] = [-191, 11];
 const TRAVEL_DIGITS: i32 = 0xcf;
 /// A digit's step (the recording's "24": 31 pixels).
 const TRAVEL_ADVANCE: i32 = 31;
+/// The digits stand this much lower than their nodes (the recording at 1:25, patch search).
+const TRAVEL_DIGITS_DOWN: i32 = 5;
 /// The world map's sector list: the item panel's rows (641) this much higher than on the area
-/// map (the recording at 1:12: rows 45 apart as 641 has them, not 642's 50).
-const WORLD_LIST_RISE: i32 = 38;
+/// map (the recording at 1:12: rows 45 apart as 641 has them, not 642's 50; the height by patch
+/// search of the rows' names).
+const WORLD_LIST_RISE: i32 = 42;
 /// The world scroll's description stands this much higher than the area map's.
 const WORLD_DESCRIPTION_RISE: i32 = 40;
-const MAP_TAB_AT: [i32; 2] = [1448, 276];
+/// The world scroll's texts (description, "Map", the sectors) stand this much further left
+/// than the area map's (the recording at 1:12: 3 pixels at 720p, all alike).
+const WORLD_TEXT_LEFT: i32 = 4;
+const MAP_TAB_AT: [i32; 2] = [1448, 272];
 
 /// A neighbour's label: layout 623, the plate part 0x27 (kind 19, three cuts: the left end
 /// with the body 192 wide, a 48-wide middle repeated, the 48-wide right end, 72 high) at a
@@ -310,7 +321,7 @@ pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, side: Side) 
     out.push(Element::Sprite { part: PLATE, cut: 2, at: [left + PLATE_WIDTH - PLATE_END, top] });
     for p in barrel_escha::data::layout::placed(pe, LABEL) {
         if let Some(t) = barrel_escha::data::layout::text(pe, &p) {
-            out.push(Element::Label(Text { at: [left + p.at[0], top + p.at[1]], text: name.to_string(), ..t }));
+            out.push(Element::Label(Text { at: [left + p.at[0], top + p.at[1] - LABEL_TEXT_RISE], text: name.to_string(), ..t }));
         }
     }
     out.push(ornament);
@@ -318,6 +329,10 @@ pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, side: Side) 
 }
 
 const LABEL: u32 = 623;
+/// The name stands this much higher on its plate than 623's text node puts it (colseit-arrival
+/// 1:25: each of three plates' names 5 pixels too low at 720p against the plate, by patch
+/// search of the name and of the plate's end apart).
+const LABEL_TEXT_RISE: i32 = 8;
 const PLATE: i32 = 0x27;
 const PLATE_WIDTH: i32 = 352;
 const PLATE_HEIGHT: i32 = 72;
