@@ -1670,7 +1670,13 @@ that place them are tables in the executable (English addresses; `crates/formats
   5 (pink) with the red tick (cut 1) once done, cut 6 (blank) for an empty slot, each pinned
   (cut 12); only six slots show on the user's save (rank 3), the rule not read. The area map's scroll is part 0x92 cut 8 (462 × 750, `a15_common.g1t`
   picture 13), drawn at its own size with its top-left at (1446, 150), found in the
-  recording by its roll; part 0x280 in layout 641 is layout 640 nested (the tab), not a sheet:
+  recording by its roll; part 0x280 in layout 641 is layout 640 nested (the tab), not a sheet. A
+  neighbour's label is layout 623: plate part 0x27 (kind 19; cut 0 the left end and body 192
+  wide, cut 1 a 48-wide middle repeated, cut 2 the 48-wide right end, 72 high) at a fixed 352
+  wide, its kind 22 text at (176, 18) in dark ink; layouts 633 / 634 add the gilt ornament on
+  the right / left (parts 0x90, 0x91 through layouts 627 to 630, kind 7), 631 / 632 above /
+  below. In the recording the plate's centre stands 52 over its route's dot, ~25 nearer the
+  screen's middle:
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a

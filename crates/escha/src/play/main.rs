@@ -318,6 +318,7 @@ impl AreaMap {
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, [0, 0], 0, 1, 1));
         all.extend(area_panel::frame(&pe));
+        all.extend(area_panel::label(&pe, [0, 0], "", 0.0));
         all.extend(question::elements(&pe, "", true));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;

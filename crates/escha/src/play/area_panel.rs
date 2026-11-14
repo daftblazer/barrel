@@ -209,26 +209,46 @@ const LIST_AT: [i32; 2] = [1442, 228];
 const WORLD_DESCRIPTION_RISE: i32 = 40;
 const MAP_TAB_AT: [i32; 2] = [1448, 276];
 
-/// A neighbour's label (layout 638: its text centred), on a plate whose centre stands
-/// [`LABEL_ABOVE`] over the label's place `at` (its route's dot).
-/// Not yet the game's: the plate (a parchment fill; the game's has gilt ends) and the ink
-/// (the layout's texts are white over a shadow; the game's label reads dark on the plate).
-pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, width: f32) -> Vec<Element> {
-    let at = [at[0], at[1] - LABEL_ABOVE];
-    let half = (width / 2.0) as i32 + 28;
-    let mut out = vec![Element::Fill { rect: [at[0] - half, at[1] - 22, at[0] + half, at[1] + 24], colour: [0.93, 0.88, 0.74, 0.95] }];
-    // The layout's white text, at its node less the node's own centre (320, -4).
-    if let Some(t) = barrel_escha::data::layout::placed(pe, LABEL).iter().filter_map(|p| barrel_escha::data::layout::text(pe, p)).find(|t| t.colour[0] == 0) {
-        out.push(Element::Label(Text { at: [at[0], at[1] - LABEL_RISE], text: name.to_string(), colour: INK, ..t }));
+/// A neighbour's label: layout 623, the plate part 0x27 (kind 19, three cuts: the left end
+/// with the body 192 wide, a 48-wide middle repeated, the 48-wide right end, 72 high) at a
+/// fixed 352 wide (its text's node at 176, centred; both labels of the recording are 352
+/// whatever their name's length), the name centred on it in its dark ink. The plate's centre
+/// stands [`LABEL_ABOVE`] over the label's place `at` (its route's dot), [`LABEL_IN`] nearer
+/// the screen's middle (where the player stands): the recording's two labels, -22 and +28.
+/// Not yet the game's: the gilt ornament on the label's outer end (layouts 633 and 634: parts
+/// 0x90 and 0x91 turned, layout kind 7).
+pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, _width: f32) -> Vec<Element> {
+    let inward = if at[0] < 960 { LABEL_IN } else { -LABEL_IN };
+    let left = at[0] + inward - PLATE_WIDTH / 2;
+    let top = at[1] - LABEL_ABOVE - PLATE_HEIGHT / 2;
+    let mut out = vec![Element::Sprite { part: PLATE, cut: 0, at: [left, top] }];
+    if let Some(m) = barrel_escha::data::layout::sprite(pe, PLATE, 1, [0, 0]) {
+        let [x0, y0, x1, y1] = m.src.map(f32::from);
+        let (mut x, end) = (left + PLATE_LEFT, left + PLATE_WIDTH - PLATE_END);
+        while x < end {
+            let w = (end - x).min(PLATE_END);
+            out.push(Element::Slice { pack: m.texture.clone(), index: m.index, src: [x0, y0, x0 + (x1 - x0) * w as f32 / PLATE_END as f32, y1], rect: [x, top, x + w, top + PLATE_HEIGHT] });
+            x += w;
+        }
+    }
+    out.push(Element::Sprite { part: PLATE, cut: 2, at: [left + PLATE_WIDTH - PLATE_END, top] });
+    for p in barrel_escha::data::layout::placed(pe, LABEL) {
+        if let Some(t) = barrel_escha::data::layout::text(pe, &p) {
+            out.push(Element::Label(Text { at: [left + p.at[0], top + p.at[1]], text: name.to_string(), ..t }));
+        }
     }
     out
 }
 
-const LABEL: u32 = 638;
-/// How far the label's centre stands over its dot (the recording: 48 pixels).
-const LABEL_ABOVE: i32 = 48;
-/// The label's text top above its centre.
-const LABEL_RISE: i32 = 20;
+const LABEL: u32 = 623;
+const PLATE: i32 = 0x27;
+const PLATE_WIDTH: i32 = 352;
+const PLATE_HEIGHT: i32 = 72;
+const PLATE_LEFT: i32 = 192;
+const PLATE_END: i32 = 48;
+/// How far the plate's centre stands over its dot, and nearer the screen's middle.
+const LABEL_ABOVE: i32 = 52;
+const LABEL_IN: i32 = 25;
 
 /// `text` broken at spaces into lines no wider than [`DESCRIPTION_WIDTH`].
 fn lines(text: &str, width: impl Fn(&str) -> f32) -> Vec<String> {
