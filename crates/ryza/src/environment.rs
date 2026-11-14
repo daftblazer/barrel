@@ -145,6 +145,39 @@ pub fn sky_dome(env: &[u8], time: Time, weather: Weather) -> Result<Option<Strin
     Ok(Some(format!("\\data\\x64\\field\\skydome\\{}.elixir.gz", name.to_ascii_lowercase())))
 }
 
+/// One of a set's two scattering blocks (`fog_` for the scene, `skyFog_` for the sky): the
+/// executable's `EnvDataFog` reader, members `start`, `end`, `mie`, `g`, `rayleigh`, `power`,
+/// `ambient` (names from the environment XMLs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fog {
+    pub start: f32,
+    pub end: f32,
+    pub mie: [f32; 3],
+    /// The Mie phase function's asymmetry.
+    pub g: f32,
+    pub rayleigh: [f32; 3],
+    pub power: f32,
+    pub ambient: f32,
+}
+
+/// Where the set holds `fog_` and `skyFog_` (the file is laid out tighter than the
+/// executable's structure, where they are at 0xd4c and 0x1604).
+const FOG: usize = 0x4fc;
+const SKY_FOG: usize = 0x5a4;
+
+impl Fog {
+    fn at(set: &[u8], o: usize) -> Fog {
+        let f = |k: usize| f32::from_le_bytes(set[o + 4 * k..o + 4 * k + 4].try_into().unwrap());
+        Fog { start: f(0), end: f(1), mie: [f(2), f(3), f(4)], g: f(5), rayleigh: [f(6), f(7), f(8)], power: f(9), ambient: f(10) }
+    }
+
+    /// The scene's (`fog_`) and the sky's (`skyFog_`) scattering for `time` in `weather`.
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<(Fog, Fog), String> {
+        let set = set_of(env, time, weather)?;
+        Ok((Fog::at(set, FOG), Fog::at(set, SKY_FOG)))
+    }
+}
+
 impl Light {
     /// The light of `time` in `weather` from a whole `_env.bin`.
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Light, String> {
@@ -179,6 +212,17 @@ mod tests {
         assert_eq!((l.lumi_max, l.middle_gray, l.ambient[0]), (4.2, 0.18, 2.0));
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
+    }
+
+    #[test]
+    fn fog_of_a_set() {
+        let mut env = vec![0u8; SET_SIZE * SETS];
+        // Rasenboden's sunny morning sky.
+        for (k, v) in [1453.7f32, 400000.0, 4.0, 3.414, 2.535, 0.984, 1.5, 1.983, 3.0, 10.0, 1.0].into_iter().enumerate() {
+            env[SKY_FOG + 4 * k..SKY_FOG + 4 * k + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let (_, sky) = Fog::read(&env, Time::Morning, Weather::Sunny).unwrap();
+        assert_eq!(sky, Fog { start: 1453.7, end: 400000.0, mie: [4.0, 3.414, 2.535], g: 0.984, rayleigh: [1.5, 1.983, 3.0], power: 10.0, ambient: 1.0 });
     }
 
     #[test]

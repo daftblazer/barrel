@@ -1151,6 +1151,16 @@ weathers none; the attic and the living room only noon (`obj-A21-TEST-SKYCLOUD-A
 alpha-cut) of clouds alone, 148 km across and 29 km high around the origin: the blue behind
 them is the sky shader's (`skyplane.g1s`, the sky glow block at 0x180), not a texture.
 
+**Fog and sky scattering.** Two blocks of the same shape (the executable's `EnvDataFog` reader,
+for `fog_` at structure +0xd4c and `skyFog_` at +0x1604; member names from the environment
+XMLs): `{f32 start, f32 end, f32 mie[3], f32 g, f32 rayleigh[3], f32 power, f32 ambient}`, in
+the file at 0x4fc (`fog_`) and 0x5a4 (`skyFog_`). Rasenboden's sunny morning sky: start 1454,
+end 400,000, mie (4.0, 3.41, 2.54), g 0.984, rayleigh (1.5, 1.98, 3.0), power 10; noon: 1000,
+300,000, mie 0.71 each, g 0.974, rayleigh (0.02, 0.12, 1.0), power 40. The default XML's: fog
+1000, 500,000, g 0.85, power 20, mie (2, 0.95, 0.5), rayleigh (0.075, 0.183, 0.75); sky 1000,
+1,000,000, g 0.9, power 30, mie (3, 1.95, 1.5), rayleigh (0.4, 0.76, 4.0). How they become the
+shaders' `Scat` constants is not read yet (docs/shading.md, "Ryza DX: the sky").
+
 
 ### Placement lists (`*.opl2`)
 

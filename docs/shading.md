@@ -614,3 +614,24 @@ the default XML's `indirectStage_IDLScalerOfAmbientDiffuseMap` (2.5) and its `Co
 1.98, 4.0) fit `vAmbParam.x` and `vAmbDifScl`, and the file's 0x484 values (2 to 4 in the
 attic) fit that RGB rather than an ambient colour.
 
+## Ryza DX: the sky
+
+`skyplane.g1s` draws the sky as a full-screen plane at the far plane. Vertex program 0: the
+corner `v0.xy` is the position (depth `fProjFarZ`), the view ray is `mC2W` applied to
+(x, y, far, 1), and `fog.xy` passes on. Pixel programs 1 to 4 share a single-scattering sky
+(program 1 without the glow, 2 to 4 with it; their differences are not read). With `d` the
+normalized view ray (game space, y up) and `cosθ = d · -litDir`:
+
+- **Path length**: `L = |-d.y × skyPos.x - sqrt(d.y² × skyPos.y + skyPos.z)| × fog.x + fog.y`
+  (the distance out through a sphere of atmosphere from a point inside it).
+- **Extinction**: `T = 1 - min(exp(L × Scat[0].rgb), 1)` (`Scat[0]` negative).
+- **In-scattering**: `S = (1 + cos²θ) × Scat[2].rgb` (Rayleigh) `+ (cosθ × Scat[2].w +
+  Scat[3].w)^-1.5 × Scat[3].rgb` (Mie, Henyey-Greenstein's form with the g terms folded into
+  `.w`) `+ Scat[1].rgb`.
+- **Glow**: `k = saturate(d · vGlowDir × hGlowParam.x + hGlowParam.y) × saturate(cGlow.w)`.
+- **Colour**: `S × T` mixed `k` of the way to `cGlow.rgb`; alpha 1. `litCol` is not used here.
+
+The environment's `skyFog_` block (docs/formats.md, "Fog and sky scattering") holds the
+coefficients these come from; the step from `rayleigh`, `mie`, `g`, `power`, `start`, `end` to
+`Scat`, `skyPos` and `fog` is in the executable, not read yet.
+
