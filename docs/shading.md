@@ -643,7 +643,11 @@ light), with `βR = o+0x160`, `βM = o+0x170` (RGB each), `g = o+0x17c`, `s = o+
 - `[3] = (βM × (1 - g²)/(4π) × c × s / (βR + βM), 1 + g²)`.
 
 `[2]` and `[3]` are the sky shader's `Scat[2]` and `Scat[3]` (the phase terms match). Not read
-yet: which `skyFog_` members fill `o` (+0x154, +0x158, `s`), and how `[0]` and `[1]` become
+yet: which `skyFog_` members fill `o` (+0x154, +0x158, `s`; the object keeps its live values
+at +0x58..+0x84 and copies them to +0x128..+0x17c each update, 0x14035b200, 0x140543de0,
+0x140546e20; the per-frame blend of the environment's blocks, 0x140757250 per float, writes
+a structure of the same layout that its readers reach through a pointer, so the offsets do not
+find them), and how `[0]` and `[1]` become
 `Scat[0]` (used as the extinction, `exp(L × Scat[0])`) and `Scat[1]` (added to the
 in-scattering); also `skyPos` and `fog`. A second user of 3/(16π) is at 0x140a715f4.
 
