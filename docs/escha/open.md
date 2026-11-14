@@ -52,8 +52,7 @@ likely settle them where static reading failed.
   Still different against colseit-arrival 0:45: the middle of the map is paler than the game's
   (about 0.84, 0.75, 0.53 of Barrel's: perhaps `A15_WMAP.xml`'s light, ambient (0.35, 0.2, 0.1)
   and sun (0.8, 0.7, 0.55), not reaching the map's terrain as the game applies it); the gauge under the date panel (45%, "Rare Material Changed") is not
-  drawn on the maps (the date panel and button lists are; the date panel, here as in the field HUD: "Left" blue where the
-  game has it tan on a dark plate, the date's digits spaced "8/ 20" against the game's "8 /20",
+  drawn on the maps (the date panel and button lists are; the date panel, here as in the field HUD: the date's digits spaced "8/ 20" against the game's "8 /20",
   and a black box under it where the game shows the assignment icons row); the centre's colour is not the fog (forcing it in turns the map bluer) and the
   map's terrain shader pack is the same as a town's; the scroll and label plates are flat stand-ins; event points are red dots and the
   cursor a blue ring under Escha in the game.

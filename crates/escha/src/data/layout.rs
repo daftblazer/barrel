@@ -106,7 +106,7 @@ pub fn nodes(pe: &Pe, id: u32) -> Option<([i32; 2], Vec<Node>)> {
 
 /// One text of a layout (a node of part 0x164): `at` its place on the 1920 × 1080 screen,
 /// `size` the node's +0x18 in hundredths (27.0 for the HUD's "Left"; the unit is not read),
-/// `colour` its +0x1c as (a, r, g, b) (0: the widget's own), `text` its +0x20 string, `kind`
+/// `colour` its +0x1c (stored r, g, b, a) as (a, r, g, b) (0: the widget's own), `text` its +0x20 string, `kind`
 /// the node's widget kind (21, 22, 23). Texts the game fills in at run time hold filler kana
 /// ("あいうえお…", [`Text::filled_in`]).
 #[derive(Clone, Debug, PartialEq)]
@@ -182,7 +182,9 @@ pub fn text(pe: &Pe, p: &Placed) -> Option<Text> {
     (p.node.part == 0x164).then_some(())?;
     let f = |o: u64| i32_at(pe, p.va + o).unwrap_or(0);
     let text = u64_at(pe, p.va + 0x20).and_then(|t| text_at(pe, t)).unwrap_or_default();
-    let [b, g, r, a] = f(0x1c).to_le_bytes();
+    // Stored R, G, B, A ("Left" is (184, 146, 69): the date panel's tan; the panels' ink
+    // (58, 26, 8), the `BR` colour).
+    let [r, g, b, a] = f(0x1c).to_le_bytes();
     Some(Text { at: p.at, size: f(0x18) as f32 / 100.0, colour: [a, r, g, b], text, kind: p.node.kind })
 }
 
