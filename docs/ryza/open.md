@@ -296,8 +296,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   cliffs have only `_hi`), and the PC game runs with `use_lod` off. Whether the RP6 needs more
   than the culling we have is for its own timings.
 - **Floors on models**: read, see "Ryza in the field".
-- **The files.** A Rasenboden run reads `PACK00_02.PAK`, `PACK00_03.PAK` and `PACK02.PAK`
-  (about 16 GB of the install's 28 GB).
+- **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
+  `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
+  her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
+  and walls, the sky dome) and `PACK02.PAK` (0.05 GB: the tables under `saves`), 18.8 GB of
+  the install's 21. The voice archives `PACK00_04_*` (3.6 GB) and `Data/x64` (6.1 GB: sound
+  and UI resources) are not read yet.
 
 ## Running the original
 
