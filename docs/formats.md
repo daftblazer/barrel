@@ -1263,7 +1263,10 @@ ambient term (model.vert's `sh`). Its values (about 0.3) want a scale, presumabl
 **`_env.bin`** is 12 sets of 0x1fe0 bytes (97,920 in every field read), one per weather and
 time of day: set = weather × 4 + time, times morning, noon, evening, night (0–3), weathers
 sunny, cloudy, foggy (`saves/fieldmap/cameraparam/env/envtemplate.xml` names both; it also
-lists an after-rain weather the file has no sets for). Only about 150 of a set's 2,040 words
+lists an after-rain weather the file has no sets for). The field HUD shows the current time of day as
+one of four clock icons in the same order (`gen_a21_field01_clock_icon__xLIST01` to `04` in
+`ui/a21_field.g1t`, texture 3, 180-pixel cells in a 4096 space over the 2048 texture); the
+game's 10 AM shows the second, noon. Only about 150 of a set's 2,040 words
 differ between sets, and about 2,000 words between the attic and Rasenboden, mostly before
 0x800. The parameters are named in `saves/fieldmap/override_env/env_*.xml` (250 attributes,
 `<block>_<member>`: trueHDR, ambientLight, parallelLight00/01, indirectStage, heightFog, skyFog,

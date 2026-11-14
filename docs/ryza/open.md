@@ -104,9 +104,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (`work/ryza-ref/rasen-path-start.png`, the clock at 10 AM) looks like our noon set there:
   deep shade, blue-lit path and rocks, a clear blue sky. Our morning set comes out pale and
   hazy with hardly any shade: its ambient is ten times noon's (19.7, 29.6, 35.6) and its
-  `skyFog_` a thick grey haze (mie 4, 3.4, 2.5; rayleigh 1.5, 2, 3). So either 10 AM is
-  already the noon set, or the game blends the sets by the hour; which hours pick which set
-  is not read (`envtemplate.xml` names the sets but has no hours). Night has no reference
+  `skyFog_` a thick grey haze (mie 4, 3.4, 2.5; rayleigh 1.5, 2, 3). The HUD's clock shows which:
+  its icon is one of four (`gen_a21_field01_clock_icon` in `ui/a21_field.g1t`: rising sun,
+  full sun, setting sun, moon, in the set order morning, noon, evening, night), and at 10 AM
+  in every still it is the full sun, so 10 AM is already the noon set. The hours where the
+  others begin are not read yet (the executable names `time_zone`, `EVENT_SET_TIMEZONE`). Night has no reference
   frame yet, so its colour (too bright and green here) cannot be checked.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
