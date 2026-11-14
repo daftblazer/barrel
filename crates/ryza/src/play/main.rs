@@ -73,6 +73,7 @@ struct Rig {
     ground: Option<barrel_engine::walk::Ground>,
     walls: Option<barrel_engine::walk::Walls>,
     player: barrel_ryza::player::Player,
+    chara: barrel_ryza::chara::Chara,
 }
 
 fn args() -> Result<Args> {
@@ -249,7 +250,11 @@ fn main() -> Result<()> {
         });
         eprintln!("model collision: {} meshes, {} triangles", solids.len(), solids.iter().map(|c| c.triangles.len()).sum::<usize>());
         let first = scene.draws.len();
-        let instance = scene.instance(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(turn.to_radians()), *at));
+        // Her settings from the character tables (`barrel_ryza::chara`): her model's scale, her
+        // size against the walls, the camera's look height.
+        let chara = barrel_ryza::chara::Chara::read(&install.read("\\saves\\chara\\chara.xml")?, &install.read("\\saves\\chara\\charabase.xml")?, "PC00A")?;
+        eprintln!("Ryza: {chara:?}");
+        let instance = scene.instance(Mat4::from_scale_rotation_translation(Vec3::from(chara.size), glam::Quat::from_rotation_y(turn.to_radians()), *at));
         scene.add_posed(geometry, Mat4::IDENTITY, rp.textures.len(), Some(&joints), instance)?;
         for d in &mut scene.draws[first..] {
             d.texture += textures.len();
@@ -261,8 +266,9 @@ fn main() -> Result<()> {
         }
         eprintln!("Ryza: {} draws, {} joints, motion {motion} {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
-        let player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
-        rig = Some(Rig { skeleton, anims, instance, ground, walls, player });
+        let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
+        (player.radius, player.height) = (chara.radius, chara.height);
+        rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara });
         textures.extend(rp.textures.iter());
     }
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -418,6 +424,10 @@ fn main() -> Result<()> {
         install.read(&barrel_ryza::camera::FreeCamera::path(&a.field)).ok().and_then(|b| barrel_ryza::camera::FreeCamera::parse(&b).map_err(|e| eprintln!("{e}")).ok()).unwrap_or(barrel_ryza::camera::FreeCamera::DEFAULT)
     });
     let fov = follow.map_or(30.0, |c| c.fov).to_radians();
+    // How high above her feet the camera looks: a stand-in (110). Her `CamH` (160) with the
+    // field camera's `at_diff_y` put the camera inside the garden gate's tree, where the game's
+    // view is clear: what they are is not known (`docs/ryza/open.md`).
+    let look_height = LOOK_HEIGHT;
     let (mut yaw, mut pitch) = match (follow, &rig) {
         (Some(c), Some(r)) => (c.yaw - r.player.turn.to_degrees(), c.pitch),
         _ => (a.yaw, a.pitch),
@@ -425,7 +435,7 @@ fn main() -> Result<()> {
     let mut dist = a.distance.or(follow.map(|c| c.length)).unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
     let (pitch_range, length_range) = follow.map_or(((-10.0, 70.0), (150.0, 3000.0)), |c| (c.pitch_range, c.length_range));
     let mut center = match (follow, &rig) {
-        (Some(_), Some(r)) => (r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
+        (Some(_), Some(r)) => (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
         _ => center,
     };
     let shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
@@ -489,8 +499,8 @@ fn main() -> Result<()> {
                 }
                 let i = &mut instances[r.instance as usize];
                 i.prev_model = i.model;
-                i.model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(r.player.turn), r.player.at));
-                center = (r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
+                i.model = render_space(Mat4::from_scale_rotation_translation(Vec3::from(r.chara.size), glam::Quat::from_rotation_y(r.player.turn), r.player.at));
+                center = (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
                 // The sky dome goes with her (centred under the look point, as it was placed).
                 if let Some(i) = dome_instance.and_then(|k| instances.get_mut(k as usize)) {
                     i.prev_model = i.model;
@@ -524,7 +534,7 @@ fn main() -> Result<()> {
             (Some(_), Some((r, g))) => {
                 let (y, p) = (yaw.to_radians(), pitch.to_radians());
                 let way = Vec3::new(-y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
-                let clear = barrel_ryza::camera::clear_distance(g, r.walls.as_ref(), r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0), way, dist);
+                let clear = barrel_ryza::camera::clear_distance(g, r.walls.as_ref(), r.player.at + Vec3::new(0.0, look_height, 0.0), way, dist);
                 let d = match view_dist {
                     Some(v) if clear > v => v + (clear - v) * (frame_dt * 4.0).min(1.0),
                     _ => clear,
@@ -643,9 +653,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// How high above her feet the camera behind Ryza looks (a stand-in: the field camera's
-/// `at_diff_y` is not placed, `docs/ryza/open.md`).
-const FOLLOW_HEIGHT: f32 = 110.0;
+/// How high above her feet the camera behind Ryza looks (a stand-in).
+const LOOK_HEIGHT: f32 = 110.0;
 /// How fast the camera turns, degrees a second.
 const CAMERA_TURN: f32 = 120.0;
 

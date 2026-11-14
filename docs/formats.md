@@ -1161,6 +1161,18 @@ the file marks, and the bags' boxes fit their mesh in neither way.
 (`field::placement_transform`): in Rasenboden 956 placed meshes, 282,000 triangles, giving the
 walk its walls (upright triangles) and floors (the rest) beside the `_le.koc` quads.
 
+### Ryza's character tables
+
+`saves\chara\chara.xml` has a `<Chara BaseTag=...>` row per character: `Size` (the model's
+scale; Ryza `PC00A` 1.04), `Height` and `Radius` (154, 44), `CamH` and `CamR` (160, 50), `Foot`,
+`Body`, `Face`, `Head`, `Extra`, `bbScale`, `EncHeight` and others. `saves\chara\charabase.xml`
+has a `<CharaBase BaseTag=...>` row: the model and texture paths, `FMrad`, `FMhig`, `FMslp` (the
+field collision's radius and height in metres and its steepest slope: Ryza 0.28, 1.5, 75, as
+Escha's), `clothWindScale`, `localGravity`, `wetMax` and the motion sets (`motset0`,
+`motset1`). `barrel_ryza::chara` reads the scale and the collision; `CamH` is read, but taken as
+the camera's look height it puts Rasenboden's gate view inside a tree where the game's is
+clear, so its meaning is open.
+
 ### Ryza field environment (`<field>_env.elixir.gz`)
 
 Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin` (97,920 bytes

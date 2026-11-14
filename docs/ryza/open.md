@@ -99,8 +99,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   searching all 282,000 triangles.
 - **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
   not read from the game: the speeds (walk 150, run 480 units a second), the lean that starts a
-  run (0.6), how fast she turns, her size against the walls (radius 30, step 60), and the
-  camera's look point (110 above her feet). The camera's field of view, distance and pitch are
+  run (0.6), how fast she turns, the step she climbs (60), and the camera's look point (110
+  above her feet; `chara.xml`'s `CamH` 160 for it puts the gate view inside a tree, and the
+  game's camera there is lower and farther than ours). Her size against the walls (28 by 150)
+  and her model's scale (1.04) are the character tables' (`barrel_ryza::chara`). The camera's field of view, distance and pitch are
   the field's (`barrel_ryza::camera`); `at_diff_y` and the look-up adjustment are not placed,
   and whether the field of view is vertical is not known. At the gate she comes out a little
   larger and higher in the frame than in the game's still. Setting off plays the gait's

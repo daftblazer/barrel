@@ -3,6 +3,7 @@
 //! share moves into `barrel_formats` and `barrel_engine` (`docs/ryza/`).
 
 pub mod camera;
+pub mod chara;
 pub mod environment;
 pub mod install;
 pub mod koc;

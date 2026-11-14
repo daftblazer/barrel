@@ -19,7 +19,8 @@ pub const RUN_SPEED: f32 = 480.0;
 pub const RUN_LEAN: f32 = 0.6;
 /// How fast she turns toward where she goes, radians a second.
 pub const TURN_RATE: f32 = 12.0;
-/// Her size against the walls, and the highest step she climbs.
+/// Her size against the walls when the character tables give none (`chara::Chara`), and the
+/// highest step she climbs.
 pub const RADIUS: f32 = 30.0;
 pub const HEIGHT: f32 = 170.0;
 pub const STEP_UP: f32 = 60.0;
@@ -62,11 +63,14 @@ pub struct Player {
     lengths: Vec<(u32, f32)>,
     /// The gait she moves at (the last moving one while she stops).
     moving: Gait,
+    /// Her size against the walls (radius, height).
+    pub radius: f32,
+    pub height: f32,
 }
 
 impl Player {
     pub fn new(at: Vec3, turn: f32, lengths: &[(u32, f32)]) -> Player {
-        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand }
+        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT }
     }
 
     fn length(&self, m: u32) -> f32 {
@@ -141,7 +145,7 @@ impl Player {
         let to = match walls {
             // A wall whose top is within a step of her feet (a floor's edge, a kerb) she steps
             // over: the walls see her from a step up.
-            Some(w) => w.step([self.at.x, self.at.z], delta, self.at.y + STEP_UP, HEIGHT - STEP_UP, RADIUS),
+            Some(w) => w.step([self.at.x, self.at.z], delta, self.at.y + STEP_UP, self.height - STEP_UP, self.radius),
             None => [self.at.x + delta[0], self.at.z + delta[1]],
         };
         match ground {
