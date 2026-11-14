@@ -796,7 +796,9 @@ fn main() -> Result<()> {
             // neither walks her nor turns the camera).
             let (left, right) = p.sticks();
             let (left, right) = (barrel_render::pad::stick(left[0], left[1]), barrel_render::pad::stick(right[0], right[1]));
-            yaw -= (key(K::ArrowRight) - key(K::ArrowLeft) + right[0]) * CAMERA_TURN * dt;
+            // Right (the stick or the arrow key) swings the camera the way the game's does (the
+            // other sign was mirrored against it, tried on a handheld).
+            yaw += (key(K::ArrowRight) - key(K::ArrowLeft) + right[0]) * CAMERA_TURN * dt;
             pitch = (pitch + (key(K::ArrowUp) - key(K::ArrowDown) - right[1]) * CAMERA_TURN * dt).clamp(pitch_range.0, pitch_range.1);
             dist = (dist * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(length_range.0, length_range.1);
             if let Some(r) = rig.as_mut() {
