@@ -224,7 +224,7 @@ const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
 /// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
 /// per block of grid cells, the atlas being texture `atlas`.
-fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize) {
+fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>) {
     let Some(ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
         .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
         .and_then(|b| barrel_formats::khm::parse(b).ok())
@@ -259,8 +259,8 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             texture: atlas,
             overlay: None,
             instance,
-            mask: None,
-            normal_map: None,
+            mask: normals,
+            normal_map: normals,
             eye: false,
             sky: false,
             outline: None,
@@ -503,8 +503,11 @@ fn main() -> Result<()> {
     }
     if let (Some(g), Some(gp)) = (&grass, &grass_pack) {
         if let Some(atlas) = gp.textures.first() {
-            add_plants(&mut scene, g, &main, &files.area, textures.len());
+            // The cards' normal maps (the pack's third texture), for `NORMAL_MAPPED`.
+            let normals = gp.textures.get(2).map(|_| textures.len() + 1);
+            add_plants(&mut scene, g, &main, &files.area, textures.len(), normals);
             textures.push(atlas);
+            textures.extend(gp.textures.get(2));
         }
     }
     let Scene { mut vertices, indices, mut draws, terrains, lo, hi, mut instances, mut palette, deltas, morph_weights, .. } = scene;
@@ -702,7 +705,8 @@ fn main() -> Result<()> {
             if d.sky {
                 DOME_LIT
             } else if d.name == "plants" {
-                FADED
+                // Normal-mapped by the cards' own normal maps, as `ObjectGrassPBS` does.
+                FADED | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 }
             } else if d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
                 NORMAL_MAPPED
             } else {

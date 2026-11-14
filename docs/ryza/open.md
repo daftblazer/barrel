@@ -121,8 +121,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   kind 7 in the yellow fields as wheat), a sway of the cards' tops by stand-in wind
   values (`PLANT_SWAY`: the game's `g_vAttCache0` / `g_fPhase` are set at run time; sway
   slots 0 and 1, free in Ryza's fields), no shadows cast, lit
-  as the field's models with an upward normal (a camera-facing one made them pale; up, they
-  take the ground's light, darker and bluer in the shade than the game's green). They shrink away
+  as the field's models with an upward normal, normal-mapped by the cards' own normal maps
+  (`_grass.g1t`'s third texture, flag 8192, as the game's plant program does). In the shade
+  they come out teal where the game's are green: the cards are green (the grass tuft's opaque
+  pixels average 60, 83, 25) but the sky light from above is blue (noon's 2.7, 3.0, 5.2 ×
+  the cube map); the game's pigment mix most likely carries the green. They shrink away
   from 8000 to 15000 units from the eye as the game's do (the Middle grass preset;
   `model.vert` flag 16384, look slot 93); the near clip and the far scale-up are not done. The game's plant program mixes the vertex colour
   with a field-wide pigment map by `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the
