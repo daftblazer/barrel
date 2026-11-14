@@ -1678,7 +1678,10 @@ that place them are tables in the executable (English addresses; `crates/formats
   below. Layout node kind 7 turns its sprite a quarter clockwise about the node (the
   ornaments: 0x90 points up, turned it points right; 0x91 down, turned left; each has four
   cuts, likely its bob). In the recording the plate's centre stands 52 over its route's dot,
-  ~25 nearer the screen's middle:
+  ~25 nearer the
+  screen's middle. On the scroll, 641's rules (part 0xbe cut 5) sit 7 below their nodes and
+  the texts are in the layouts' ink (58, 26, 8) drawn opaque (the recording's darkest text
+  pixels (57, 27, 6), though the stored alpha byte is 0xe1):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
