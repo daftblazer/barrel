@@ -207,6 +207,11 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         self.party.get(who).map_or(Vec::new(), |m| m.skills.iter().map(|&(s, c)| (s, c, c <= mp)).collect())
     }
 
+    /// The fighters standing, in turn order (the timeline's: the next to act first).
+    pub fn order(&self) -> Vec<usize> {
+        self.battle.timeline.entries.iter().map(|&(c, _)| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down())).collect()
+    }
+
     /// The monsters still standing.
     pub fn foes_standing(&self) -> Vec<usize> {
         (self.party.len()..self.battle.fighters.len()).filter(|&k| !self.battle.fighters[k].down()).collect()

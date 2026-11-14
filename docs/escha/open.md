@@ -45,6 +45,7 @@ likely settle them where static reading failed.
     moved to the middle; the desk picture, the tags' lit cut, the question line and centred
     texts (kind 22) as the game has them. Left: the Yes tag's tilt, Logy's confirm figure place
     (no screenshot of it).
+- (2026-11-14) Turn order bar: the monsters' portraits (part 0xe6 on `a15_battle.g1t#5`, 224 cuts: 0 to 9 the party in `PARTY_*` order, cut 10 at (0, 768), monsters after) are not mapped to monster numbers yet; their slots show the frame only. The bar shows the order at the member turn waiting (`Turn::order`), not as the events play out.
 - (2026-11-14) Battles don't really work yet: Barrel's battle is an auto-battle with a stand-in
   playback and a text command list (stage 17 in the plan).
 - (2026-11-14) The lead is drawn 3.2 times on the maps by `0x140388820`, Barrel's fitted 1.75 (area)

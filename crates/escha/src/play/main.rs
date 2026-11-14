@@ -1213,7 +1213,7 @@ struct BattleHud {
     field_nodes: Vec<barrel_escha::data::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
-    shown: Option<(Vec<battlehud::Member>, Option<(Vec<(String, bool)>, usize, String)>, Option<result::Values>, Option<(u32, u32)>, u32, u32)>,
+    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<(Vec<(String, bool)>, usize, String)>, Option<result::Values>, Option<(u32, u32)>, u32, u32)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1225,7 +1225,8 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     let nodes = barrel_escha::data::layout::placed(&pe, battlehud::LAYOUT);
     // Every picture it may show: each member's portrait, the bars.
     let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
-    let mut every = battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members);
+    let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
+    let mut every = battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face);
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
     let result_nodes = barrel_escha::data::layout::placed(&pe, result::LAYOUT);
@@ -1463,6 +1464,12 @@ impl BattlePlay {
             }
             title::Button::Back => {}
         }
+    }
+
+    /// The turn order bar's portraits, the one acting first: a party member's portrait cut, or
+    /// `None` for a monster (whose portrait is not mapped yet).
+    fn order(&self) -> Vec<Option<usize>> {
+        self.turn.as_ref().map_or(Vec::new(), |t| t.order.iter().map(|&k| self.charas.get(k).copied()).collect())
     }
 
     /// The party as the HUD shows it.
@@ -5358,7 +5365,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     // The battle HUD with the party's HP and MP, rebuilt when they change.
     if let (Some(h), Some(play)) = (battle_layer.as_mut(), battle_play.as_ref()) {
-        let members = play.members();
+        let members = (play.members(), play.order());
         let commands = play.commands();
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
@@ -5369,7 +5376,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members);
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1);
                         if let Some((list, chosen, title)) = &commands {
                             e.extend(battlehud::command_list(list, *chosen, title));
                         }
