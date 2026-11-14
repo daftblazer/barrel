@@ -313,8 +313,9 @@ item jingle (6). The boot's logo splashes are stills (the still table at `0x1408
 (the Koei Tecmo Games logo, 1920 × 1080 in the top-left of a 2048 × 2048 texture), each with
 `_EN` / `_SC` / `_TC` copies. `Ipu/logo_havok.g1t` and `logo_dolby.g1t` are on the disc but no
 still names them. Track 8 is the Gust jingle (`_gust_ondo.kvs`, volume 0.5), but the PC install
-has no such file. The splashes' order and timing are not read from the code yet (no reference
-to stills 4 and 5 found by immediate search); a boot recording gives them.
+has no such file. The boot (escha-boot recording): Loading plate, Koei Tecmo then Gust (each
+0.5 s fade from black, 2 s held, 0.5 s fade out, back to back), the pre-title movie
+`avantitle.wmv`, the title fading in from white over 0.3 s.
 The title screen's music is track 1 (`sy_title01_piano`, played once: its KOVS +0x10 is 1;
 168 is the same piece as `_2ch`, 2 the orchestral title, 216 `sy_op_loop` the title's loop).
 `barrel_formats::bgm::tracks` reads the list and `barrel play-event` prints the

@@ -60,7 +60,9 @@ likely settle them where static reading failed.
   gamescope's stream (record.sh then took the first stream named gamescope; it now takes its own
   run's) and was deleted. Make it when no other game runs under gamescope.
 - (2026-11-14) No intro movie on startup (movies: native decoders, chosen 2026-11-14).
-- (2026-11-14) No company logo splash screens before the title. Found: stills 5 (Koei Tecmo) and 4 (Gust), docs/formats.md; shown by play/splash.rs (Koei Tecmo then Gust, 0.5 s fade in, 2 s hold, 0.5 s fade out, from black; any button skips): order, times, colour of the fades and whether a button skips are guesses until the boot recording.
+- (2026-11-14) No company logo splash screens before the title. Found: stills 5 (Koei Tecmo) and 4 (Gust), docs/formats.md; shown by play/splash.rs, order and times confirmed by the escha-boot recording. Still open: whether a button skips them (Barrel: any button does).
+- (2026-11-14) The pre-title movie `Movie_EN/avantitle.wmv` (96 s, VC-1 1920 × 1080 with WMA Pro sound) plays after the logos and before the title; Barrel goes straight to the title. Needs a VC-1 / WMA Pro decoder (Proton has none either: its recording shows 4 s of colour bars). Same for `opening*.wmv`, `sequence_*.wmv` and `ending.wmv`.
+- (2026-11-14) The title fades in from white (0.3 s, the escha-boot recording at 16.25 s); Barrel's title appears at once.
 
 ## Saves
 

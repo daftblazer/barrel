@@ -1,8 +1,11 @@
 //! The boot's logo splashes before the title: Koei Tecmo's, then Gust's, each a full-screen still
 //! faded in from black, held and faded out again (`docs/formats.md`, the still table).
 //!
-//! The order and the times are provisional until a boot recording gives them
-//! (`docs/escha/open.md`).
+//! Order and times as the escha-boot recording (2026-11-14, 60 Hz): Koei Tecmo fading in from
+//! black at 6.08 s, full at 6.62, fading out from 8.62, black at 9.10 as Gust starts fading in
+//! (no gap), Gust full 9.63 to 11.62, black at 12.10. Before them the game shows its Loading
+//! plate while it reads its data (Barrel needs none); after them come the pre-title movie
+//! (`Movie_EN/avantitle.wmv`, not played yet: `docs/escha/open.md`) and the title.
 
 use std::path::Path;
 use std::time::Instant;
@@ -34,7 +37,7 @@ pub fn at(t: f32) -> Option<(usize, u8)> {
 }
 
 /// Shows the splashes: in a window until they end (a button skips the rest; whether the game
-/// allows that is open), offscreen the frame at `shown_at` seconds, written to `out`.
+/// allows that is open: the recording pressed nothing), offscreen the frame at `shown_at` seconds, written to `out`.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     gpu: &Gpu,
