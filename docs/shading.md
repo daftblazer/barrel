@@ -632,6 +632,18 @@ normalized view ray (game space, y up) and `cosθ = d · -litDir`:
 - **Colour**: `S × T` mixed `k` of the way to `cGlow.rgb`; alpha 1. `litCol` is not used here.
 
 The environment's `skyFog_` block (docs/formats.md, "Fog and sky scattering") holds the
-coefficients these come from; the step from `rayleigh`, `mie`, `g`, `power`, `start`, `end` to
-`Scat`, `skyPos` and `fog` is in the executable, not read yet.
+coefficients these come from. The executable's builder (0x140b08b10, found by the phase
+constants 3/(16π) at 0x1417927d0 and 1/(4π) at 0x1417a7378) fills four float4s at its render
+object's +0x64a0 from a scattering object (`o`) and a light's colour `c` (zero without a
+light), with `βR = o+0x160`, `βM = o+0x170` (RGB each), `g = o+0x17c`, `s = o+0x16c`:
+
+- `[0] = (βR, o+0x154)`, `[1] = (βM, o+0x158)`;
+- `[2] = (βR × 3/(16π) × c × s / (βR + βM), -2g)` (per channel; the division only where
+  `βR > 0`);
+- `[3] = (βM × (1 - g²)/(4π) × c × s / (βR + βM), 1 + g²)`.
+
+`[2]` and `[3]` are the sky shader's `Scat[2]` and `Scat[3]` (the phase terms match). Not read
+yet: which `skyFog_` members fill `o` (+0x154, +0x158, `s`), and how `[0]` and `[1]` become
+`Scat[0]` (used as the extinction, `exp(L × Scat[0])`) and `Scat[1]` (added to the
+in-scattering); also `skyPos` and `fog`. A second user of 3/(16π) is at 0x140a715f4.
 
