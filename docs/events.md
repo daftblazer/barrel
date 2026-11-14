@@ -1716,9 +1716,16 @@ hundredths of a degree, distance, target, offset; across 3,347 uses mostly 180°
 `t25 -182 0 3500 3406 188 46420 4051 22616 0 9 0`, looking 34° down at the sand from 188
 units; drawn from the stage's camera (`--event mm00_010 --at 4`, no `--look-at`) it frames the
 beach as the recording does, the rocks in the same places (the shell, an effect on character
-543, is not drawn). `t18/0x10` takes five operands in Ryza (`{x, y, z, hundredths, flag}`; the
-opening's `46401 4051 22615 1200 0`, likely the target moving there over 12 s) against
-Escha's two: not mapped yet. (`str_telop.xml` holds the field
+543, is not drawn). Ryza's single-part camera moves follow `t25`'s order, each `{value, hundredths, curve}`:
+`t7/0x10` yaw (438 uses), `t10` roll, `t12` field of view, `t14` pitch, `t16` distance, `t18`
+target (`{x, y, z, hundredths, curve}`), `t20` offset; the yaw, field of view, pitch, distance
+and target play as Escha's `t3`, `t7`, `t9`, `t11`, `t13` (`RYZA_SAME_AS_ESCHA`, the curve not
+read). The opening's `t18 46401 4051 22615 1200 0` slides the first shot's target 19 units
+across over 12 s; at 9 s its frame matches the recording's (the narration's second half over
+the sand). From 10.9 s the event switches to the free camera (`t3`, `t4`, `t6`, `t7`: eye and
+target at points, moving over 10 s), already Escha's: at 13 s the cove's rocks and the sky
+through the arch stand as in the recording, Ryza (character 0, placed by `s2`) not drawn yet,
+and the free camera's field of view (`t24`, `ECT_CAMERA_FOV_SET` 24°) not applied. (`str_telop.xml` holds the field
 notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie

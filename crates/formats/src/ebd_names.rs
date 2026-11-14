@@ -679,4 +679,19 @@ pub static RYZA: &[(u32, &str)] = &[
 /// (`ECT_FIELDMAP_CAMERA_ALL_ABSOLUTE`, 11 operands) sets the whole field camera as Escha's
 /// `t20/0x10` does: yaw, roll, field of view, pitch (hundredths of a degree), distance, target,
 /// offset (3,347 uses: mostly yaw 180°, fov 22.5°, pitch 8°, distance 400, offset (0, 9, 0)).
-pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[(0x75000011, 0x75000012), (0x75000041, 0x75000037), (0x75000042, 0x75000038), (0x74100019, 0x74100014)];
+/// Ryza's single-part field camera moves are Escha's absolute ones in the same order, each
+/// `{value, hundredths, curve}` (the target `{x, y, z, hundredths, curve}`): `t7/0x10` the yaw
+/// (Escha's `t3`), `t12` the field of view (`t7`), `t14` the pitch (`t9`), `t16` the distance
+/// (`t11`), `t18` the target (`t13`); the curve (0, 1, 3, 13) is not read. Their other words,
+/// `t10` (a roll: 0 or 5 to 15°), `t20` (the offset, (0, 9, 0)) and `t22`, have no Escha match.
+pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[
+    (0x75000011, 0x75000012),
+    (0x75000041, 0x75000037),
+    (0x75000042, 0x75000038),
+    (0x74100019, 0x74100014),
+    (0x74100007, 0x74100003),
+    (0x7410000c, 0x74100007),
+    (0x7410000e, 0x74100009),
+    (0x74100010, 0x7410000b),
+    (0x74100012, 0x7410000d),
+];

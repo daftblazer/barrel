@@ -503,7 +503,8 @@ impl<'a> Player<'a> {
     /// carried over to Escha's words by name (`game_names`, the game's word → `ECT_*` name) where
     /// both games give the name the same operand count; the others stay as they are, which
     /// the player does not know and passes over. `same` names commands by what they do where
-    /// neither game's executable names them (the game's word, Escha's): taken before the names.
+    /// neither game's executable names them (the game's word, Escha's): taken before the names,
+    /// also where the game's command adds operands after Escha's (they are not read).
     pub fn translated(event: &'a Ebd, messages: &'a [Message], table: &OperandTable, game_names: &[(u32, &str)], same: &[(u32, u32)]) -> Result<Self, Error> {
         let escha = OperandTable::escha();
         let by_name: HashMap<&str, u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, n)| (n, w)).collect();
@@ -511,7 +512,13 @@ impl<'a> Player<'a> {
         let mut p = Self::new(event, messages, table)?;
         let escha_named: std::collections::HashSet<u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, _)| w).collect();
         for c in p.actions.iter_mut().flatten() {
-            if let Some(&(_, w)) = same.iter().find(|&&(g, w)| g == c.word && escha.get(w) == table.get(c.word)) {
+            // A `same` entry carries over when Escha's command takes no more operands than the
+            // game's: extra trailing ones (Ryza's camera moves add a curve) are left to the end.
+            let fits = |w: u32| match (escha.get(w), table.get(c.word)) {
+                (Some(Some(e)), Some(Some(g))) => e <= g,
+                (e, g) => e == g,
+            };
+            if let Some(&(_, w)) = same.iter().find(|&&(g, w)| g == c.word && fits(w)) {
                 c.word = w;
                 continue;
             }
