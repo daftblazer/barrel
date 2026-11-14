@@ -343,5 +343,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   middle of the 8.7 to 10.5 seen), and the plants' own phases differ from the game's since
   Barrel places its plants itself. The plants sample no pigment map at the gate, so their
   teal is not a missing pigment: the pixel side (`cDiff`, `fPtn`, the ambient terms of
-  `objectgrasspbs`'s 416-byte block) is next, from the saved ring. `emScl` by evening and its
+  `objectgrasspbs`'s 416-byte block) is not in the saved ring where looked: the lit blocks
+  beside the plants' vertex blocks (sun (−0.354, −0.707, −0.612), `litCol` (4.78, 5.0, 3.5),
+  `ambLit` (3, 3, 4), `cDiff` 1 or 0.8, `fPtn` (1, 1, 1, 20)) end in matrices, not the ambient
+  terms, so they are other programs'. Against the matched still (`rasen-gate-noon.png`) the
+  game's plants at the gate are dark green (about 12, 44, 36 in a clean patch) where Barrel's
+  are lighter and bluer: too much of the bluish ambient, or a darker card texture. A run that
+  reads the block by its own layout (the 416 bytes after `vEye` at +80 with `vATest` at +176)
+  would settle it. `emScl` by evening and its
   flicker need a run at evening.
