@@ -11,6 +11,7 @@ pub mod presets;
 pub mod install;
 pub mod koc;
 pub mod light;
+pub mod maps;
 pub mod motion;
 pub mod player;
 pub mod solids;

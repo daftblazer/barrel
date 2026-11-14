@@ -300,7 +300,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
 }
 
 fn main() -> Result<()> {
-    let a = args()?;
+    let mut a = args()?;
     // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
     // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
@@ -315,6 +315,25 @@ fn main() -> Result<()> {
     // (`Frame::tone_white`) sees past the half range's 2.0.
     let graphics = RenderSettings { hdr_scene: true, ..graphics };
     let install = Install::open(Path::new(&a.install))?;
+    // `--event NAME --at T`: the event's stage T seconds in; with FIELD `-`, its field (the
+    // field map it last changed to, by the executable's `FIELDMAP_*` names).
+    let event_stage = match &a.event {
+        Some((name, at)) => {
+            let path = barrel_ryza::event::path(name).ok_or(format!("--event {name}: not an event name"))?;
+            let event = barrel_formats::ebd::Ebd::parse(&install.read(&path)?).map_err(|e| format!("{path}: {e}"))?;
+            let stage = barrel_ryza::event::stage_at(barrel_ryza::event::schedule(&event)?, *at);
+            eprintln!("event {name} at {at} s: field {:?}, telop {:?}", stage.field, barrel_ryza::event::telop(&stage));
+            Some(stage)
+        }
+        None => None,
+    };
+    if a.field == "-" {
+        let map = event_stage.as_ref().and_then(|s| s.field).ok_or("FIELD -: needs an --event that sets a field")?;
+        let exe = std::fs::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
+        a.field = barrel_ryza::maps::field_maps(&pe).get(map as usize).cloned().ok_or(format!("field map {map}: not named"))?;
+        eprintln!("field map {map}: {}", a.field);
+    }
     let files = install.field(&a.field)?;
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
     let mut scene = Scene::new();
@@ -794,14 +813,8 @@ fn main() -> Result<()> {
     // A telop over the frame (`--telop`): its strip from the layout, drawn from the hd atlas
     // (`neo_`) on screens taller than 1080 lines, else the plain one (English).
     // `--event`: the telop the event shows at that moment, at its opacity.
-    let telop = match &a.event {
-        Some((name, at)) => {
-            let path = barrel_ryza::event::path(name).ok_or(format!("--event {name}: not an event name"))?;
-            let event = barrel_formats::ebd::Ebd::parse(&install.read(&path)?).map_err(|e| format!("{path}: {e}"))?;
-            let shown = barrel_ryza::event::telop(&barrel_ryza::event::stage_at(barrel_ryza::event::schedule(&event)?, *at));
-            eprintln!("event {name} at {at} s: telop {shown:?}");
-            shown
-        }
+    let telop = match &event_stage {
+        Some(stage) => barrel_ryza::event::telop(stage),
         None => a.telop.map(|n| (n, 1.0)),
     };
     let telop_layer = match telop {

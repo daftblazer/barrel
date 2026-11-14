@@ -1704,7 +1704,12 @@ rectangles are in the `neo_` atlases' pixels (`res_<lang>\ui\neo\neo_a21_telopNN
 `barrel-ryza ... --telop N` draws one over a frame, from the `neo_` atlas above 1080 lines).
 `barrel_ryza::event` reads an event from the archives (`event_jp\<chapter>\`), schedules it
 and plays it on the shared stage's clock; `barrel-ryza ... --event mm00_010 --at T` draws the
-telop the stage shows T seconds in at its opacity (2.5 s: the first half-faded in). (`str_telop.xml` holds the field
+telop the stage shows T seconds in at its opacity (2.5 s: the first half-faded in). The
+field-map numbers (`q2` / `q12`, the `field N` steps) are the executable's `FIELDMAP_*` enum
+from `FIELDMAP_S01_I_ATTIC` (0) to `FIELDMAP_S00_COMMON_MODEL` (341 names, reserves and DLC
+included; `barrel_ryza::maps`): the opening's field 5 is `s06_t_rasen`, and its characters
+stand on Rasenboden's beach (46373, 4089, 22678), as the recording shows. With FIELD `-`,
+`barrel-ryza` loads the event's field. (`str_telop.xml` holds the field
 notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie
