@@ -33,6 +33,10 @@ done = open(os.path.join(work, "done"), "a", buffering=1)
 subprocess.run([os.path.join(here, "tools", "oracle", "run.sh"), sys.argv[1], sys.argv[2]], check=True)
 
 
+# The game's executable (run.sh's ORACLE_EXE), without its extension.
+exe_name = os.path.splitext(os.environ.get("ORACLE_EXE", "Atelier_Escha_and_Logy_EN.exe"))[0]
+
+
 def game_pid():
     """The process with the game's executable mapped at its image base."""
     for p in os.listdir("/proc"):
@@ -40,7 +44,7 @@ def game_pid():
             continue
         try:
             with open(f"/proc/{p}/maps") as m:
-                if any(l.startswith("140000000-") and "Atelier_Escha_and_Logy" in l for l in m):
+                if any(l.startswith("140000000-") and exe_name in l for l in m):
                     return int(p)
         except OSError:
             continue

@@ -58,12 +58,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (the clear colour). The set's cloud dome is named (`environment::sky_dome`, docs/formats.md)
   but not drawn yet; the blue is the sky shader's single scattering (docs/shading.md, "Ryza
   DX: the sky"), its coefficients in `skyFog_` (read); how the executable turns them into the
-  shader's `Scat`, `skyPos` and `fog` is partly read (docs/shading.md); the rest can be read
-  from a running game: the sky's `Scat[2].w = -2g` and `Scat[3].w = 1 + g²` (-1.968, 1.968
-  for Rasenboden's sunny morning, g 0.984) mark the block in memory; where the dome sits
+  shader's `Scat` is measured (docs/shading.md); `skyPos`, `fog`, `litDir` and the glow are
+  not; where the dome sits
   (`SkyDomeWorldPosition`, `WorldScale`) not placed.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
-- **Black slats** on the path near the gate, not in the game (some object drawn black).
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`).
 

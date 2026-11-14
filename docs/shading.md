@@ -631,23 +631,28 @@ normalized view ray (game space, y up) and `cosθ = d · -litDir`:
 - **Glow**: `k = saturate(d · vGlowDir × hGlowParam.x + hGlowParam.y) × saturate(cGlow.w)`.
 - **Colour**: `S × T` mixed `k` of the way to `cGlow.rgb`; alpha 1. `litCol` is not used here.
 
-The environment's `skyFog_` block (docs/formats.md, "Fog and sky scattering") holds the
-coefficients these come from. The executable's builder (0x140b08b10, found by the phase
+**The constants, measured** (read from the running game's memory at Rasenboden's sunny noon,
+where they sit in every lit draw's constants too; checked channel by channel):
+
+- `Scat[0] = (-(rayleigh + mie) × log2(e), 1)`: the extinction, scaled for the shader's `exp`,
+  which is base 2 (noon: rayleigh (0.02, 0.118, 1.0), mie 0.713 each, gives (-1.0576, -1.1990,
+  -2.4715), as read).
+- `Scat[1] = (0, 0, 0, 1)` there (the term added to the in-scattering).
+- `Scat[2] = (rayleigh × 3/(16π) × c / (rayleigh + mie), -2g)`,
+  `Scat[3] = (mie × (1 - g)²/(4π) × c / (rayleigh + mie), 1 + g²)`, with `c` the sun's colour
+  (`parallelLight00`) times `skyFog_.power`: noon's (4.781, 5, 3.5) × 40 gives the read
+  (0.3114, 1.6948, 4.8775) and (0.01025, 0.00945, 0.00321) to four figures; g = 0.9737.
+  (The builder at 0x140b08b10 computes these; its Mie factor reads as `1 - g²` in the
+  disassembly above, but the values need `(1 - g)²`, so a step was misread there.)
+
+The coefficients come straight from `skyFog_` (docs/formats.md, "Fog and sky scattering"),
+unscaled. Not read yet: `skyPos`, `fog` (the path length's terms), `litDir` and the glow's
+three constants.
+
+The executable's builder (0x140b08b10, found by the phase
 constants 3/(16π) at 0x1417927d0 and 1/(4π) at 0x1417a7378) fills four float4s at its render
 object's +0x64a0 from a scattering object (`o`) and a light's colour `c` (zero without a
-light), with `βR = o+0x160`, `βM = o+0x170` (RGB each), `g = o+0x17c`, `s = o+0x16c`:
-
-- `[0] = (βR, o+0x154)`, `[1] = (βM, o+0x158)`;
-- `[2] = (βR × 3/(16π) × c × s / (βR + βM), -2g)` (per channel; the division only where
-  `βR > 0`);
-- `[3] = (βM × (1 - g²)/(4π) × c × s / (βR + βM), 1 + g²)`.
-
-`[2]` and `[3]` are the sky shader's `Scat[2]` and `Scat[3]` (the phase terms match). Not read
-yet: which `skyFog_` members fill `o` (+0x154, +0x158, `s`; the object keeps its live values
-at +0x58..+0x84 and copies them to +0x128..+0x17c each update, 0x14035b200, 0x140543de0,
-0x140546e20; the per-frame blend of the environment's blocks, 0x140757250 per float, writes
-a structure of the same layout that its readers reach through a pointer, so the offsets do not
-find them), and how `[0]` and `[1]` become
-`Scat[0]` (used as the extinction, `exp(L × Scat[0])`) and `Scat[1]` (added to the
-in-scattering); also `skyPos` and `fog`. A second user of 3/(16π) is at 0x140a715f4.
+light), with `βR = o+0x160`, `βM = o+0x170` (RGB each), `g = o+0x17c`, `s = o+0x16c`; the object keeps its live values
+at +0x58..+0x84 and copies them to +0x128..+0x17c each update (0x14035b200, 0x140543de0,
+0x140546e20).
 
