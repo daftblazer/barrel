@@ -672,5 +672,8 @@ pub static RYZA: &[(u32, &str)] = &[
 
 /// Atelier Ryza DX's words that are Escha's commands by what they do, where no executable names
 /// them (Ryza's word, Escha's): `u17` `{first, last}` shows messages as Escha's `u18` does
-/// (the opening steps through its lines one by one, `u17 6 6`, `u17 7 7`, ...).
-pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[(0x75000011, 0x75000012)];
+/// (the opening steps through its lines one by one, `u17 6 6`, `u17 7 7`, ...); `u65` `{telop}`
+/// picks a telop as Escha's `u55` picks a narration card (the number is Ryza's own,
+/// `barrel_ryza::telop::Node::of`), and `u66` `{from, to, hundredths}` fades it as `u56` does
+/// (the opening: `u65 15`, `u66 0 100 100`, the voice, a wait, `u66 100 0 50`).
+pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[(0x75000011, 0x75000012), (0x75000041, 0x75000037), (0x75000042, 0x75000038)];

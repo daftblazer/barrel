@@ -1669,7 +1669,11 @@ switch for the macros, Sophie 2's names for the rest). A name only the other gam
 word Escha leaves unnamed with the same operand count, now carries over as that word (Ryza
 names `w1` `ECT_MACRO_INDEX_CHANGE`; Escha never registered a name for it). Commands that no
 executable names but that do what an Escha command does are mapped by word
-(`ebd_names::RYZA_SAME_AS_ESCHA`): `u17` `{first, last}` is Escha's `u18`, show messages.
+(`ebd_names::RYZA_SAME_AS_ESCHA`): `u17` `{first, last}` is Escha's `u18`, show messages;
+`u65` `{telop}` and `u66` `{from, to, hundredths}` are Escha's `u55` and `u56`, a narration
+card picked and faded (the number is Ryza's own, below). The opening's twelve telops then play
+at 2.0, 5.5, 10.9, 15.4, 32.4, 37.5 s ... (`--timed`), each faded in over 1 s and out over
+0.5 or 1 s.
 
 The opening (`event_mm00_010`) then starts its actions, sets field 5 and the camera, places
 and turns its characters, adds their effects, plays the voice and music cues, and shows its
