@@ -167,6 +167,47 @@ fn main() -> Result<()> {
         eprintln!("Ryza: {} draws, {} joints, motion {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
         textures.extend(rp.textures.iter());
     }
+    // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
+    // drawn as the distant view (unlit, after the sky plane, alpha-blended). Where the game
+    // puts it (`SkyDomeWorldPosition`, `WorldScale`) is not read: centred under the view's
+    // target at height 0 (`docs/ryza/open.md`).
+    let dome_files = match files.env.as_deref().map(Elixir::parse).transpose()? {
+        Some(env) => match barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)) {
+            Some(bin) => match barrel_ryza::environment::sky_dome(bin, a.time, a.weather)? {
+                Some(path) => Some((path.clone(), install.read(&path)?)),
+                None => None,
+            },
+            None => None,
+        },
+        None => None,
+    };
+    let dome_container = dome_files.as_ref().map(|(_, b)| Elixir::parse(b)).transpose()?;
+    let dome_parts = match &dome_container {
+        Some(c) => {
+            let real: Vec<_> = c.entries.iter().filter(|e| !e.is_dummy()).collect();
+            let model = real.iter().find_map(|e| G1m::parse(c.data(e)).ok().filter(|m| m.geometry.is_some()));
+            let pack = real.iter().find_map(|e| G1t::parse(c.data(e)).ok());
+            model.zip(pack)
+        }
+        None => None,
+    };
+    if let Some((model, dp)) = &dome_parts {
+        let at = a.look_at.unwrap_or(Vec3::ZERO);
+        let first = scene.draws.len();
+        let instance = scene.instance(Mat4::from_translation(Vec3::new(at.x, 0.0, at.z)));
+        scene.add_posed(model.geometry.as_ref().unwrap(), Mat4::IDENTITY, dp.textures.len(), None, instance)?;
+        for d in &mut scene.draws[first..] {
+            d.texture += textures.len();
+            d.mask = d.mask.map(|m| m + textures.len());
+            d.overlay = d.overlay.map(|o| o + textures.len());
+            d.field = Some(0);
+            d.sky = true;
+            d.casts = false;
+            d.name = "sky dome".into();
+        }
+        eprintln!("sky dome {}: {} draws", dome_files.as_ref().unwrap().0, scene.draws.len() - first);
+        textures.extend(dp.textures.iter());
+    }
     let Scene { mut vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
     // The models' Color0 does not reach their materials: the G-buffer programs (`pbb-*_gb.g1s`,
     // docs/shading.md) take no COLOR0, and some models hold masks there (the attic's
