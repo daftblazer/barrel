@@ -3645,6 +3645,15 @@ fn plain_args(args: &[String]) -> Vec<String> {
     out
 }
 
+/// `args` with `--field auto` (a run started at the title) made a field of the install at
+/// `root`, as a carried save needs to find the install (the save says which field it loads).
+fn with_install_field(mut args: Vec<String>, root: &Path) -> Vec<String> {
+    if args.len() > 1 && args[0] == "--field" && args[1] == "auto" {
+        args[1] = root.join("Data/x64/Field/TOWN_04").to_string_lossy().into_owned();
+    }
+    args
+}
+
 /// The arguments to start again at the title (`load_list`: on its Load Game list): `args` less
 /// what picks a start (`--load`, `--event`, `--at`, `--title`, `--title-load`, `--chain`,
 /// `--free-play`), with `--field auto` and `--title ROOT`.
@@ -5469,7 +5478,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         }
                         if let (Some(s), Some(w)) = (session.as_ref(), walker.as_ref())
                             && let Some(text) = s.save([w.pos[0], w.pos[2]]) {
-                                restart = Some(without_settings_flags(&plain_args(&original_args)));
+                                restart = Some(with_install_field(without_settings_flags(&plain_args(&original_args)), root));
                                 carry_out = Carry { save: Some(text), ..Carry::default() };
                                 stop = true;
                                 break;
@@ -5551,7 +5560,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 let mut defeated: Vec<usize> = (0..field.defeated.len()).filter(|&j| field.defeated[j]).collect();
                 defeated.push(k);
                 eprintln!("frame {frame}: to battle stage {stage} with encounter group {}", field.groups[k]);
-                Some((battle, Carry { back: Some(Box::new((original_args.clone(), Carry { save: Some(save), defeated, back: None, notice: None, to_area_map: false }))), ..Carry::default() }))
+                // The way back: this run's arguments less what picked its start (a title, a save
+                // file: the carried save says where), in a field of the install.
+                let back = with_install_field(plain_args(&original_args), root);
+                Some((battle, Carry { back: Some(Box::new((back, Carry { save: Some(save), defeated, back: None, notice: None, to_area_map: false }))), ..Carry::default() }))
             });
             if let Some((battle, c)) = to_battle {
                 restart = Some(battle);
@@ -7553,6 +7565,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
 #[cfg(test)]
 mod restart_tests {
     use super::*;
+
+    #[test]
+    fn a_title_launch_restarts_in_a_field_of_the_install() {
+        // Kintsugi's launch, then Options kept in play: the carried save needs a real field.
+        let a: Vec<String> = ["--field", "auto", "/dev/null", "--title", "/g", "--window", "0"].map(String::from).to_vec();
+        let again = with_install_field(without_settings_flags(&plain_args(&a)), Path::new("/g"));
+        assert_eq!(again, ["--field", "/g/Data/x64/Field/TOWN_04", "/dev/null", "--window", "0"].map(String::from).to_vec());
+        // A run started in a field keeps its own.
+        let b: Vec<String> = ["--field", "/g/Data/x64/Field/AREA_03_02", "out.png"].map(String::from).to_vec();
+        assert_eq!(with_install_field(b.clone(), Path::new("/g")), b);
+    }
 
     #[test]
     fn title_args_drop_the_start() {
