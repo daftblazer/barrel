@@ -936,8 +936,9 @@ from 12000 units at a point on the ground 400 units north of her, a 15-degree vi
 (`WORLD_CAMERA_*`); she is drawn 3.7 times her size there (`WORLD_MAP_SCALE`), as tall on
 screen as on the area map. Its panels (`area_panel::world_elements`, `travel`; the recording
 `colseit-arrival-60hz.mkv` at 1:15 and 1:25): the place's name at the top right (637); for a
-region the scroll with its description and the "Map" tab over its sectors (layout 642's rows
-at (1442, 228)); for the town no scroll; and, while the cursor stands on another place than
+region the scroll with its description and the "Map" tab over its sectors (the item panel 641's rows and
+rules, as on the area map but 38 higher: rows 45 apart in the recording at 1:12, not 642's 50;
+the scroll shorter, rolled at its foot); for the town no scroll; and, while the cursor stands on another place than
 the start, the travel panel (639, hung under the cursor's mark: the mark's screen place plus (-191, 27), as at 1:18): the trip's days
 (`WorldMap::trip`, the events seen shortening routes) and the arrival's month / day in 639's
 digit sprites (part 0xcf: cut = digit, cut 12 the "/"; placed as measured on the recording at

@@ -190,17 +190,22 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
         }
     }
+    // The sectors: the item panel's rows and rules (641, as on the area map), standing
+    // [`WORLD_LIST_RISE`] higher with the tab.
     let mut row = 0;
-    for p in barrel_escha::data::layout::placed(pe, LIST) {
-        let at = moved(&p, LIST_AT);
+    let mut first_text = true;
+    for p in barrel_escha::data::layout::placed(pe, PANEL) {
+        let [x, y] = moved(&p, PANEL_AT);
+        let at = [x, y - WORLD_LIST_RISE];
         match (p.node.part, texts(&p)) {
-            (0x164, Some(t)) if t.filled_in() && t.kind == 21 => {
+            (0x164, Some(t)) if first_text && t.filled_in() => first_text = false,
+            (0x164, Some(t)) if t.filled_in() => {
                 if let Some(name) = sectors.get(row) {
                     out.push(Element::Label(Text { at, text: name.clone(), colour: INK, ..t }));
                 }
                 row += 1;
             }
-            (0xbe, _) if at[1] < SCROLL_AT[1] + ROLL_DOWN => out.push(Element::Sprite { part: 0xbe, cut: p.node.cut.max(0), at }),
+            (RULE, _) if at[1] + RULE_DROP < SCROLL_AT[1] + ROLL_DOWN => out.push(Element::Sprite { part: RULE, cut: p.node.cut.max(0), at: [at[0], at[1] + RULE_DROP] }),
             _ => {}
         }
     }
@@ -252,8 +257,9 @@ const TRAVEL_UNDER: [i32; 2] = [-191, 27];
 const TRAVEL_DIGITS: i32 = 0xcf;
 /// A digit's step (the recording's "24": 31 pixels).
 const TRAVEL_ADVANCE: i32 = 31;
-const LIST: u32 = 642;
-const LIST_AT: [i32; 2] = [1442, 228];
+/// The world map's sector list: the item panel's rows (641) this much higher than on the area
+/// map (the recording at 1:12: rows 45 apart as 641 has them, not 642's 50).
+const WORLD_LIST_RISE: i32 = 38;
 /// The world scroll's description stands this much higher than the area map's.
 const WORLD_DESCRIPTION_RISE: i32 = 40;
 const MAP_TAB_AT: [i32; 2] = [1448, 276];
