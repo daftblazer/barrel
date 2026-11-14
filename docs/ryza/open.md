@@ -63,8 +63,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (1.5, 1.98, 3.0), nearly grey), where the game's opening shows a blue morning sky: the path
   length's terms or the glow must carry more there. The set's cloud dome is drawn (unlit,
   texture × vertex colour, alpha-blended over the sky plane; its shader `PBSkyDome-NT0Tn` lights
-  it with a normal map, not read) centred under the view's target at height 0: where the game
-  puts it (`SkyDomeWorldPosition`, `WorldScale`) is not placed.
+  it with a normal map, not read) centred under the view's target (or under Ryza, and moving
+  with her in a window) at height 0: where the game puts it (`SkyDomeWorldPosition`,
+  `WorldScale`) is not placed.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`).

@@ -289,10 +289,12 @@ fn main() -> Result<()> {
         }
         None => None,
     };
+    let mut dome_instance = None;
     if let Some((model, dp)) = &dome_parts {
-        let at = a.look_at.unwrap_or(Vec3::ZERO);
+        let at = a.look_at.or(a.ryza.as_ref().map(|r| r.0)).unwrap_or(Vec3::ZERO);
         let first = scene.draws.len();
         let instance = scene.instance(Mat4::from_translation(Vec3::new(at.x, 0.0, at.z)));
+        dome_instance = Some(instance);
         scene.add_posed(model.geometry.as_ref().unwrap(), Mat4::IDENTITY, dp.textures.len(), None, instance)?;
         for d in &mut scene.draws[first..] {
             d.texture += textures.len();
@@ -489,6 +491,11 @@ fn main() -> Result<()> {
                 i.prev_model = i.model;
                 i.model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(r.player.turn), r.player.at));
                 center = (r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
+                // The sky dome goes with her (centred under the look point, as it was placed).
+                if let Some(i) = dome_instance.and_then(|k| instances.get_mut(k as usize)) {
+                    i.prev_model = i.model;
+                    i.model = render_space(Mat4::from_translation(Vec3::new(r.player.at.x, 0.0, r.player.at.z)));
+                }
                 if frame_no % 60 == 0 {
                     eprintln!("frame {frame_no} ({:.2}s): Ryza at {:?}, {:?}, motion {} at {:.2}s", started.elapsed().as_secs_f32(), r.player.at, r.player.gait, r.player.motion, r.player.clock);
                 }
