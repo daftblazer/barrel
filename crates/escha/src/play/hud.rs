@@ -23,9 +23,10 @@
 //! (cut 1, the layout's second node) once done, cut 6 (blank) for an empty slot, each with its
 //! pin (cut 12); the user's save at 8/20 (one gathering done, two open) against the
 //! colseit-arrival recording. Only six slots are shown there (`CARDS_SHOWN`). Not yet seen: a failed request (likely cut 4 grey with the blue
-//! cross, cut 2) or one of another kind. The arrows (602), the
-//! "Free Time" tab (604), the small count (part 0xe5) and the pop-ups (the poster, gathering
-//! notices, the gathering gauge) are left out until their conditions are known.
+//! cross, cut 2) or one of another kind. Under them, the field
+//! effect's gauge (layout 614, see `GAUGE`). The arrows (602), the "Free Time" tab (604), the
+//! small count (part 0xe5) and the pop-ups (the poster, gathering notices) are left out until
+//! their conditions are known.
 
 use barrel_escha::data::layout::{self, Placed};
 
@@ -33,7 +34,29 @@ use crate::text::{self, Quad};
 
 /// The HUD's top layout and the parts of it that are drawn.
 pub const FIELD_HUD: u32 = 625;
-const SHOWN: [u32; 3] = [605, 609, 620];
+const SHOWN: [u32; 4] = [605, 609, 614, 620];
+/// The field effect's gauge (layout 614, at (32, 246) in 625) and its pieces: the notice's
+/// plate (0x69 cut 4) and text (0x6e), the box (cut 2), the fill (cut 6, red at the top to
+/// green at the foot, shown from the foot up to the percentage over 200), the tube over it
+/// (cut 17, its notches at 100), the percentage (0xe5, kind 28) and its sign (0xe5 cut 13),
+/// "MAX" (0xf0) in their place from 200 (`0x1402823fa`). Left out: the effect's choice
+/// panel (cut 5 and layouts 611 to 613, shown in the field at 100) and the glows (0x6f).
+const GAUGE: u32 = 614;
+/// The gauge rests 4 pixels right of its node (the colseit-arrival recording's area map, a
+/// shift fitted at 1080p against the 720p frame: box, fill and notice alike), as the panel
+/// rests off its own.
+const GAUGE_SHIFT: [i32; 2] = [4, 0];
+const GAUGE_PARTS: i32 = 0x69;
+const GAUGE_PLATE: i32 = 4;
+const GAUGE_CHOICE: i32 = 5;
+const GAUGE_FILL: i32 = 6;
+const GAUGE_FULL: i32 = 200;
+const NOTICE: i32 = 0x6e;
+const GLOW: i32 = 0x6f;
+const MAX: i32 = 0xf0;
+const PERCENT: i32 = 13;
+/// The small digits' advance (their glyph's width).
+const SMALL_ADVANCE: i32 = 18;
 const LEFT_OUT: [u32; 2] = [602, 604];
 /// A request card (layout 603) and its sprites.
 const CARD: u32 = 603;
@@ -70,6 +93,24 @@ pub struct Values {
     pub tenths_spent: u32,
     /// The request cards, by slot.
     pub cards: [Card; 10],
+    /// The field effect's gauge (layout 614), when shown.
+    pub gauge: Option<Gauge>,
+}
+
+/// The field effect's gauge under the request cards: its percentage (0 to 200, the field
+/// effect's `fieldmap/m_userDataFieldMapData` gauge) and the effect's mode (its notice).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Gauge {
+    pub percent: i32,
+    pub mode: i32,
+}
+
+impl Gauge {
+    /// The notice's cut (part 0x6e: Collection Quantity, Rare Material, Relic, Battle, Land,
+    /// Report): modes 3 to 8 in order (`0x140283a60`'s jump table); any other mode, none.
+    pub fn notice(self) -> Option<i32> {
+        (3..=8).contains(&self.mode).then_some(self.mode - 3)
+    }
 }
 
 /// The request cards for the requests taken.
@@ -96,7 +137,7 @@ impl Values {
         use barrel_escha::calendar::{period, period_days, Date};
         let left = period(today).map_or(0, |k| period_days(k).1 - today);
         let date = Date::of(today);
-        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32, cards: [Card::Empty; 10] }
+        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32, cards: [Card::Empty; 10], gauge: None }
     }
 }
 
@@ -115,6 +156,8 @@ pub enum Element {
     Turned { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite's left `fill` (0 to 1) only: a bar.
     Cropped { part: i32, cut: i32, at: [i32; 2], fill: f32 },
+    /// A sprite's bottom `fill` (0 to 1) only, at its place: a gauge filling upwards.
+    Rising { part: i32, cut: i32, at: [i32; 2], fill: f32 },
     /// A whole picture of a pack chosen at run time (an item's picture), `size` on the
     /// 1920 × 1080 screen, at half strength when `dim`.
     Picture { pack: String, index: u32, size: [f32; 2], at: [i32; 2], dim: bool },
@@ -155,7 +198,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
@@ -179,12 +222,45 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             // Its texts stay at their nodes (measured: "Left" and the days left sit 8
             // pixels higher than the sprites' shift would put them).
             PANEL_SHIFT
+        } else if branch == GAUGE {
+            GAUGE_SHIFT
         } else {
             [0, 0]
         };
         let p = &Placed { at: [p.at[0] + shift[0], p.at[1] + shift[1]], ..p.clone() };
         let n = p.node;
         let at = p.at;
+        if branch == GAUGE {
+            let Some(g) = v.gauge else { continue };
+            if p.path.len() > 2 {
+                // The choice panel's icons (611 to 613).
+                continue;
+            }
+            let full = g.percent >= GAUGE_FULL;
+            match (n.part, n.cut) {
+                (GAUGE_PARTS, GAUGE_PLATE) if g.notice().is_none() => {}
+                (GAUGE_PARTS, GAUGE_CHOICE) | (GLOW, _) => {}
+                (GAUGE_PARTS, GAUGE_FILL) => out.push(Element::Rising { part: n.part, cut: n.cut, at, fill: g.percent.clamp(0, GAUGE_FULL) as f32 / GAUGE_FULL as f32 }),
+                (NOTICE, _) => {
+                    if let Some(cut) = g.notice() {
+                        out.push(Element::Sprite { part: n.part, cut, at });
+                    }
+                }
+                (SMALL_DIGITS, _) if full => {}
+                (SMALL_DIGITS, PERCENT) => out.push(Element::Sprite { part: n.part, cut: n.cut, at }),
+                (SMALL_DIGITS, _) => {
+                    // The percentage ends at its node.
+                    let digits: Vec<i32> = g.percent.max(0).to_string().bytes().map(|b| i32::from(b - b'0')).collect();
+                    let start = at[0] - SMALL_ADVANCE * digits.len() as i32;
+                    for (k, d) in digits.into_iter().enumerate() {
+                        out.push(Element::Sprite { part: SMALL_DIGITS, cut: d, at: [start + SMALL_ADVANCE * k as i32, at[1]] });
+                    }
+                }
+                (MAX, _) if !full => {}
+                _ => out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at }),
+            }
+            continue;
+        }
         if p.path.last() == Some(&CARD) {
             if card >= CARDS_SHOWN {
                 continue;
@@ -250,9 +326,10 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
 }
 
 /// The assignment panel alone (605: "Left" and the days, the date, the year disc), as the
-/// game shows it on white while a lost battle's day passes.
+/// game shows it on white while a lost battle's day passes, and with the field effect's gauge
+/// (when `v` has it) on the maps.
 pub fn date_panel(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, v: Values) -> Vec<Element> {
-    let panel: Vec<Placed> = nodes.iter().filter(|p| p.path.get(1) == Some(&605)).cloned().collect();
+    let panel: Vec<Placed> = nodes.iter().filter(|p| matches!(p.path.get(1), Some(&PANEL) | Some(&GAUGE))).cloned().collect();
     elements(&panel, texts, v)
 }
 
@@ -344,6 +421,15 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [x, y] = piece.at.map(|v| v as f32);
                 out.push(Quad { turn: false, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
             }
+            &Element::Rising { part, cut, at, fill } => {
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let top = b - (b - t) * fill.clamp(0.0, 1.0);
+                let [x, y] = piece.at.map(|v| v as f32);
+                out.push(Quad { turn: false, rect: [dx + x * k, (y + top - t) * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, top / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+            }
             Element::Picture { pack, index, size, at, dim } => {
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
                 let [x, y] = at.map(|v| v as f32);
@@ -418,10 +504,10 @@ mod tests {
     #[test]
     fn values_follow_the_calendar() {
         // April 1st of year 1: 119 days to the first period's last.
-        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0, cards: [Card::Empty; 10] });
+        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0, cards: [Card::Empty; 10], gauge: None });
         // August 20th of year 1, as the game's screenshot: "Left 100", "8 /20", year 1.
         let aug20 = barrel_escha::calendar::Date { year: 1, month: 8, day: 20 }.number();
-        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3, cards: [Card::Empty; 10] });
+        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3, cards: [Card::Empty; 10], gauge: None });
     }
 
     #[test]
@@ -436,7 +522,7 @@ mod tests {
             node(&[625, 609], DIAL, 3, 0, [2, 0]),
             node(&[625, 617], 0x10, 0, 0, [0, 0]),
         ];
-        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1, cards: [Card::Empty; 10] };
+        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1, cards: [Card::Empty; 10], gauge: None };
         let got = elements(&nodes, |_| None, v);
         let sprite = |part, cut, at| Element::Sprite { part, cut, at };
         assert_eq!(got, vec![
@@ -461,5 +547,43 @@ mod tests {
         v.cards[1] = Card::Open;
         let got: Vec<i32> = elements(&nodes, |_| None, v).iter().filter_map(|e| e.sprite()).map(|(_, cut, _)| cut).collect();
         assert_eq!(got, vec![5, 1, 12, 3, 12, 6, 12]);
+    }
+
+    #[test]
+    fn field_gauge_as_the_area_map_shows_it() {
+        let g = |part, cut, kind, at| node(&[625, GAUGE], part, cut, kind, at);
+        let nodes = vec![
+            g(0x69, 4, 0, [120, 252]),
+            g(0x69, 5, 0, [120, 314]),
+            g(0x69, 2, 0, [32, 246]),
+            g(0xe5, 0, 28, [96, 262]),
+            g(0x69, 6, 0, [58, 310]),
+            g(0x6e, 0, 0, [134, 258]),
+            node(&[625, GAUGE, 611], 0x69, 3, 0, [132, 332]),
+            g(0x6f, 0, 36, [50, 360]),
+            g(0x69, 17, 0, [50, 298]),
+            g(0xe5, 13, 0, [96, 266]),
+            g(0xf0, 0, 36, [38, 256]),
+        ];
+        let mut v = Values::on(90, 0);
+        assert!(elements(&nodes, |_| None, v).is_empty(), "no gauge, nothing drawn");
+        // The user's save: 45, mode 4 ("Rare Material Changed").
+        v.gauge = Some(Gauge { percent: 45, mode: 4 });
+        let got = elements(&nodes, |_| None, v);
+        let s = |part, cut, at: [i32; 2]| Element::Sprite { part, cut, at: [at[0] + 4, at[1]] };
+        assert_eq!(got, vec![
+            s(0x69, 4, [120, 252]),
+            s(0x69, 2, [32, 246]),
+            s(0xe5, 4, [60, 262]),
+            s(0xe5, 5, [78, 262]),
+            Element::Rising { part: 0x69, cut: 6, at: [62, 310], fill: 0.225 },
+            s(0x6e, 1, [134, 258]),
+            s(0x69, 17, [50, 298]),
+            s(0xe5, 13, [96, 266]),
+        ]);
+        // No effect: no plate or notice; full: "MAX" for the number.
+        v.gauge = Some(Gauge { percent: 200, mode: -1 });
+        let got: Vec<(i32, i32)> = elements(&nodes, |_| None, v).iter().filter_map(|e| e.sprite()).map(|(p, c, _)| (p, c)).collect();
+        assert_eq!(got, vec![(0x69, 2), (0x69, 6), (0x69, 17), (0xf0, 0)]);
     }
 }

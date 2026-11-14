@@ -51,9 +51,7 @@ likely settle them where static reading failed.
   diamond border (650), and the screen texture filter (the red-orange rim, docs/shading.md).
   Still different against colseit-arrival 0:45: the middle of the map is paler than the game's
   (about 0.84, 0.75, 0.53 of Barrel's: perhaps `A15_WMAP.xml`'s light, ambient (0.35, 0.2, 0.1)
-  and sun (0.8, 0.7, 0.55), not reaching the map's terrain as the game applies it); the gauge under the date panel (45%, "Rare Material Changed") is not
-  drawn on the maps (the date panel and button lists are; the date panel, here as in the field HUD: the date's digits spaced "8/ 20" against the game's "8 /20",
-  and a black box under it where the game shows the assignment icons row); the centre's colour is not the fog (forcing it in turns the map bluer) and the
+  and sun (0.8, 0.7, 0.55), not reaching the map's terrain as the game applies it); the centre's colour is not the fog (forcing it in turns the map bluer) and the
   map's terrain shader pack is the same as a town's; the scroll and label plates are flat stand-ins; event points are red dots and the
   cursor a blue ring under Escha in the game.
 - (2026-11-14) No title screen music.
@@ -97,7 +95,12 @@ likely settle them where static reading failed.
 - **Field HUD details.** The time dial is fixed (2026-11-13, the running game: its segments
   light as field time is spent, clockwise from the top; `crates/render/src/hud.rs`). Left: the
   dial's hand (layout 610, a turned sprite), the assignment badges (603), the "Free Time" tab
-  (604), the arrows (602), the small count (part 0xe5), the gathering gauge and notices; the gathering's time is
+  (604), the arrows (602), the small count (part 0xe5); the field effect gauge's choice panel
+  (614's cut 5 and 611 to 613, open in the field at 100: what it offers and how one is picked),
+  its glows (0x6f), and when the game clears it (`0x140283070`: the world map shows 0% with no
+  notice after the Southern Ruins at 45; callers `0x14016ec80` for scene kinds 12, 13, 94, 95,
+  `0x14028cc34`, `0x140387980`, `0x1403a1313`; Barrel shows 0 on the world map and keeps the
+  session's value) and whether a town shows it (Barrel: no); the gathering's time is
   confirmed (a live read of the carried tenths, `0x1410782e4`: 0 on arrival, 6 after a battle
   and a gathering, 11 → a new day with 1 carried after a second gathering, as `days` has it).
   The button list's place (the layout says y 792) and the text size are measured from one

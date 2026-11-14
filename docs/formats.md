@@ -1668,7 +1668,19 @@ that place them are tables in the executable (English addresses; `crates/formats
   the date, layout 603 (at the panel's ten 0x25b nodes, five a row, the second staggered) is
   one card per request slot taken (`quest/player`): part 0x8b cut 3 (a scroll) while open, cut
   5 (pink) with the red tick (cut 1) once done, cut 6 (blank) for an empty slot, each pinned
-  (cut 12); only six slots show on the user's save (rank 3), the rule not read. The area map's scroll is part 0x92 cut 8 (462 × 750, `a15_common.g1t`
+  (cut 12); only six slots show on the user's save (rank 3), the rule not read. Below them, the
+  field effect's gauge is layout 614 (node 0x266 in 625 at (32, 246), drawn 4 right of it):
+  the box (part 0x69 cut 2), the fill (cut 6, 48 × 108, red at the top to green at the foot)
+  shown from its foot up to the gauge over 200 (45 shows its bottom 22.5%), the tube over it
+  (cut 17, notched at 100), the percentage (small digits 0xe5, kind 28, ending at its node, 18
+  a digit) with its sign (0xe5 cut 13); from 200 "MAX" (0xf0) in their place (`0x1402823fa`).
+  The gauge is `fieldmap/m_userDataFieldMapData`'s second word (`0x1410783ac`, kept within 0 and
+  200 by `0x140283920`, which also notes crossing 100); its mode (`0x1410783b0`) picks the
+  notice beside it (`0x140283a60`): modes 3 to 8 show part 0x6e cuts 0 to 5 ("Collection
+  Quantity Changed", "Rare Material Changed", "Relic", "Battle", "Land", "Report Change in
+  Effect") on the plate (0x69 cut 4), any other none. `0x140283070` clears both (mode -1,
+  values 0, gauge 0). Cut 5 under the plate with layouts 611 to 613 (three choice icons) is
+  the effect's choice, shown in the field at 100; 0x6f (kind 36) are glows. The area map's scroll is part 0x92 cut 8 (462 × 750, `a15_common.g1t`
   picture 13), drawn at its own size with its top-left at (1446, 150), found in the
   recording by its roll; part 0x280 in layout 641 is layout 640 nested (the tab), not a sheet. A
   neighbour's label is layout 623: plate part 0x27 (kind 19; cut 0 the left end and body 192

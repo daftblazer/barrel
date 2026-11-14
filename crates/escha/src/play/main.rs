@@ -1126,7 +1126,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     every.extend((0..10).flat_map(|cut| [0x4b, 0x4c].map(|part| hud::Element::Sprite { part, cut, at: [0, 0] })));
     // And the field HUD's date panel (a lost battle's wipe), every digit and year.
     let field_nodes = barrel_escha::data::layout::placed(&pe, hud::FIELD_HUD);
-    every.extend(hud::date_panel(&field_nodes, |p| barrel_escha::data::layout::text(&pe, p), hud::Values { left: 0, month: 10, day: 23, year: 1, tenths_spent: 0, cards: Default::default() }));
+    every.extend(hud::date_panel(&field_nodes, |p| barrel_escha::data::layout::text(&pe, p), hud::Values { left: 0, month: 10, day: 23, year: 1, tenths_spent: 0, cards: Default::default(), gauge: None }));
     every.extend((0..10).map(|cut| hud::Element::Sprite { part: 0x57, cut, at: [0, 0] }));
     every.extend((3..8).map(|cut| hud::Element::Sprite { part: 0x8a, cut, at: [0, 0] }));
     let keys = screen::sheet_keys(&pe, every);
@@ -5140,6 +5140,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if let (Some((layer, font, sheets, nodes, last)), Some(s), Some(exe)) = (field_hud.as_mut(), session.as_ref(), hud_exe.as_ref()) {
         let mut v = hud::Values::on(s.today().max(0) as u32, s.field_tenths());
         v.cards = hud::cards(&s.taken);
+        // The field effect's gauge: on the world map at 0 without a notice (the colseit-arrival
+        // recording, after leaving the Southern Ruins at 45); in a field area and on its area
+        // map, the session's; none in town (not checked against the game).
+        v.gauge = match area_map.as_ref() {
+            Some(a) if a.world => Some(hud::Gauge { percent: 0, mode: -1 }),
+            Some(_) => Some(hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
+            None => s.field().filter(|&m| m as usize >= barrel_escha::data::gimmick::TOWN_MAPS).map(|_| hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
+        };
         let map = area_map.as_ref().map(|a| a.world);
         if *last != Some((v, width, height, map))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(exe) {
