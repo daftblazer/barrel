@@ -22,7 +22,15 @@ achievements are the player's own, and the DX version has not been played there)
   and night are not lifted to noon (exposure 0.9 instead of 1.73 and 1.04); the game adapts
   within the range, which is not read. Morning's set has ten times noon's ambient and is
   exposed at 0.30 uncapped; night comes out too bright and green (the moon's colour 1, 4, 5);
-  ours is warmer and its sunlit ground clips, against the still's cooler shade; (3) the ambient's shape: the game
+  its sunlit ground clips. The shade's colour: the default override's
+  `indirectStage_IDLScalerOfAmbientDiffuseMap` 2.5 × `..ColorRGB` (1.642, 1.978, 4.0) tints
+  the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
+  ambient colour out; the field has one light map for all times (`_ad`) and the override no
+  per-set values (`env.bin` holds none of them; its words 0x2c4 on are SSAO's, then a per-set
+  saturation scale, noon 1.27, 1.3, 1.2, not used yet), so `barrel-ryza` keeps the set's
+  colour and tints it by the tint's hue (over its luma): at the gate's noon the tree shade
+  comes out 54, 55, 72 against the still's 45, 64, 70 (the set's colour alone: 68, 58, 38);
+  shaded stones are too blue (37, 64, 158 against 21, 62, 80), morning turns cyan; (3) the ambient's shape: the game
   adds `ambLit` to the cube map's light times `vAmbParam.x × vAmbDifScl` (docs/shading.md,
   the lighting pass), `barrel-ryza` multiplies the cube map by the 0x484 colour, with `indirectStage_`'s scale unplaced
   (the file's blocks shift against the executable's structure after the HDR block). The

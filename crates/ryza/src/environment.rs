@@ -269,6 +269,18 @@ impl Rim {
     }
 }
 
+/// The stage's ambient from an environment override: the diffuse light map is scaled by
+/// `indirectStage_IDLScalerOfAmbientDiffuseMap` times `..ColorRGB` (the default: 2.5 × (1.642,
+/// 1.978, 4.0), a blue tint), and the set's `mainAmbientLight` by
+/// `indirectStage_AmbientLightScale` (0 in the default: unused). None if the override lacks
+/// them.
+pub fn stage_ambient(bytes: &[u8]) -> Option<([f32; 3], f32)> {
+    let scale = override_number(bytes, "indirectStage_IDLScalerOfAmbientDiffuseMap").ok()?;
+    let rgb = override_values(bytes, "indirectStage_IDLScalerOfAmbientDiffuseMapColorRGB").ok().filter(|v| v.len() == 3)?;
+    let main = override_number(bytes, "indirectStage_AmbientLightScale").ok()?;
+    Some(([rgb[0] * scale, rgb[1] * scale, rgb[2] * scale], main))
+}
+
 /// One number from an environment override (its first component for a vector).
 pub fn override_number(bytes: &[u8], key: &str) -> Result<f32, String> {
     override_values(bytes, key)?.first().copied().ok_or(format!("override env: {key} empty"))
@@ -294,5 +306,8 @@ mod rim_tests {
         assert_eq!(super::override_number(s, "trueHDR_vSaturationScale"), Ok(1.2));
         let r = br#"<root trueHDR_vExposureRange="0.900000, 1.200000"></root>"#;
         assert_eq!(super::override_values(r, "trueHDR_vExposureRange"), Ok(vec![0.9, 1.2]));
+        let a = br#"<root indirectStage_IDLScalerOfAmbientDiffuseMap="2.5" indirectStage_IDLScalerOfAmbientDiffuseMapColorRGB="1.642000, 1.978000, 4.000000" indirectStage_AmbientLightScale="0"></root>"#;
+        let (rgb, main) = super::stage_ambient(a).unwrap();
+        assert!((rgb[0] - 4.105).abs() < 1e-4 && (rgb[2] - 10.0).abs() < 1e-4 && main == 0.0);
     }
 }

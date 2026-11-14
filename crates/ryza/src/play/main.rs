@@ -429,7 +429,20 @@ fn main() -> Result<()> {
             let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
             let (c, _) = barrel_ryza::environment::diffuse_harmonics(ad)?;
             let bin = barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)).ok_or("environment has no settings")?;
-            let light = Light::read(bin, a.time, a.weather)?;
+            let mut light = Light::read(bin, a.time, a.weather)?;
+            // The ambient's colour: the set's (per time of day) tinted by the hue of the
+            // stage's ambient tint (`environment::stage_ambient`, the default override: the
+            // tint over its luma, about 0.80, 0.96, 1.95). A stand-in: the game scales the light
+            // map by the tint and leaves the set's colour out (`AmbientLightScale` 0), but the
+            // field has one light map for all times and the tint is the same for all, so the
+            // time of day's colour would be lost. Against the gate's noon still the shade comes
+            // out blue-grey as the game's (the set's colour alone drew it brown).
+            if let Some((tint, _)) = install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::stage_ambient(&b)) {
+                let luma = 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2];
+                if luma > 0.0 {
+                    light.ambient = std::array::from_fn(|ch| light.ambient[ch] * tint[ch] / luma);
+                }
+            }
             let (_, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
             eprintln!("light ({:?}, {:?}): {light:?}", a.time, a.weather);
             Some((c, light, sky_fog))
