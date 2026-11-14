@@ -52,7 +52,7 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// fade start, fade end} (91; the fade by distance from the eye, to lit).
 /// Then the light on an upward-facing surface ({rgb}, 92: `model.vert`'s flag 4096, a sky dome
 /// lit so).
-/// Then where faded draws thin out ({begin, end} from the eye, `model.frag`'s flag 16384: a
+/// Then where billboards shrink away ({begin, end} from the eye, `model.vert`'s flag 16384: a
 /// field's plants).
 pub const LOOK_SLOTS: usize = 94;
 pub const DOME_LIGHT_SLOT: usize = 92;

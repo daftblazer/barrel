@@ -57,9 +57,6 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // none), fade start, fade end}.
     mat4 shadow_far;
     vec4 shadow_far_info;
-    // Slot 92: the dome's light (model.vert's); 93: the fade range {begin, end} (flag 16384).
-    vec4 dome_light;
-    vec4 fade;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -161,14 +158,6 @@ void main() {
         return;
     }
     if (c.a < pc.params.x) discard;
-    // Flag 16384: thinned out with the distance from the eye over the look's fade range, by a
-    // fixed screen pattern (a field's plants: the game fades them from FarClipBegin to End).
-    if ((pc.flags & 16384u) != 0u) {
-        float f = clamp((distance(world, look.eye.xyz) - look.fade.x) / max(look.fade.y - look.fade.x, 1.0), 0.0, 1.0);
-        vec2 q = floor(gl_FragCoord.xy);
-        float noise = fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))));
-        if (noise < f) discard;
-    }
     vec3 n = normalize(normal);
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the

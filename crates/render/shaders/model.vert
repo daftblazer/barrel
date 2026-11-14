@@ -90,6 +90,8 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 vert_pad[16];
     // The light an upward-facing surface takes ({rgb}, lib.rs DOME_LIGHT_SLOT): flag 4096.
     vec4 dome_light;
+    // The fade range from the eye {begin, end} (lib.rs FADE_SLOT): flag 16384.
+    vec4 fade;
 } look;
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
@@ -159,8 +161,14 @@ void main() {
     // Billboards: the corner, and the normal, in the camera's frame (MapSTD-B0 program 0).
     mat3 bb = mat3(look.bb_right.xyz, look.bb_up.xyz, look.bb_back.xyz);
     if (in_corner != vec3(0.0)) {
-        w.xyz += bb * in_corner;
-        prev_w.xyz += bb * in_corner;
+        // Flag 16384 (a field's plants, `ObjectGrassPBS`): the card shrinks to nothing from
+        // the fade range's begin to its end, by its foot's distance from the eye.
+        float shrink = 1.0;
+        if ((pc.flags & 16384u) != 0u) {
+            shrink = clamp(1.0 - (distance(w.xyz, look.eye.xyz) - look.fade.x) / max(look.fade.y - look.fade.x, 1.0), 0.0, 1.0);
+        }
+        w.xyz += bb * in_corner * shrink;
+        prev_w.xyz += bb * in_corner * shrink;
         n = bb * n;
     }
     world = w.xyz;

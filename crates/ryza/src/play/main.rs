@@ -41,7 +41,8 @@ const UNLIT: u32 = 32;
 const DOME_LIT: u32 = 4096;
 /// `model.frag`'s flag for a normal map in the mask slot (a field model's `sNMap`).
 const NORMAL_MAPPED: u32 = 8192;
-/// `model.frag`'s flag for draws thinned out over the look's `FADE_SLOT` range (the plants).
+/// `model.vert`'s flag for billboards shrinking away over the look's `FADE_SLOT` range (the
+/// plants, as `ObjectGrassPBS` does).
 const FADED: u32 = 16384;
 /// The plants' fade range from the eye, the game's highest grass preset (`Middle` in
 /// `grassrangepreset.xml`: FarClipBegin 8000, FarClipEnd 15000).

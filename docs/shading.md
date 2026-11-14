@@ -761,8 +761,7 @@ drawn with `ObjectGrassPBS`. Vertex program 1 (the one with the pigment map):
   `g_fFarClipBegin` and `g_fFarClipEnd` (cb0[39].x, .y) of distance from the eye; nearer than
   `g_fNearClip` (cb0[39].z) the card collapses to nothing. Between `g_fFarScaleBegin` and
   `End` (cb0[40].y, .z) it grows by `g_fWidthScale`-like factors (cb0[39].w, cb0[40].x): far
-  plants drawn larger. So the game shrinks plants away with distance where `barrel-ryza`
-  thins them by a screen pattern.
+  plants drawn larger. `barrel-ryza` shrinks them the same way (`model.vert` flag 16384).
 - **Sway.** `frac(POSITION.x)` (the plant's own phase, kept in the position's fraction) times
   `g_vAttCache0.x` (cb0[37]) plus `g_fPhase` / `g_fOscPhase`, through sines, leans the card's
   top; the lean grows with the card's height.
