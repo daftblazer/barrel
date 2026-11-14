@@ -271,9 +271,15 @@ impl Rim {
 
 /// One number from an environment override (its first component for a vector).
 pub fn override_number(bytes: &[u8], key: &str) -> Result<f32, String> {
+    override_values(bytes, key)?.first().copied().ok_or(format!("override env: {key} empty"))
+}
+
+/// A value's components from an environment override ("0.900000, 1.200000").
+pub fn override_values(bytes: &[u8], key: &str) -> Result<Vec<f32>, String> {
     let root = barrel_formats::table::parse(bytes).map_err(|e| format!("override env: {e}"))?;
     let e = if root.name == "root" { &root } else { root.children.iter().find(|c| c.name == "root").ok_or("override env: no root")? };
-    e.attr(key).and_then(|v| v.split(',').next()?.trim().parse::<f32>().ok()).ok_or(format!("override env: no {key}"))
+    let v = e.attr(key).ok_or(format!("override env: no {key}"))?;
+    v.split(',').map(|c| c.trim().parse::<f32>().map_err(|_| format!("override env: {key} = {v}"))).collect()
 }
 
 #[cfg(test)]
@@ -286,5 +292,7 @@ mod rim_tests {
         assert!((r.strength - 1.5).abs() < 1e-5);
         let s = br#"<root trueHDR_vSaturationScale="1.200000, 1.200000, 1.200000"></root>"#;
         assert_eq!(super::override_number(s, "trueHDR_vSaturationScale"), Ok(1.2));
+        let r = br#"<root trueHDR_vExposureRange="0.900000, 1.200000"></root>"#;
+        assert_eq!(super::override_values(r, "trueHDR_vExposureRange"), Ok(vec![0.9, 1.2]));
     }
 }

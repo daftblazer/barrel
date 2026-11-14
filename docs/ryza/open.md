@@ -15,8 +15,14 @@ achievements are the player's own, and the DX version has not been played there)
   set: the cube map's light times `mainAmbientLight` as the ambient, the sun and the second
   light as directional lights. Stand-ins, not read from the game: (1) the angles' convention
   (azimuth from +z toward +x, elevation up; the noon sun may come from the wrong side);
-  (2) one exposure mapping an upward surface of albedo 0.25 to `fMiddleGray`, where the game
-  adapts within `vExposureRange` (night comes out too bright); (3) the ambient's shape: the game
+  (2) one exposure mapping a sixteenth of the light on an upward surface to `fMiddleGray`,
+  fitted to the game's noon still at the garden gate (`work/ryza-ref/rasen-gate-noon.png`:
+  grey percentiles 25 / 50 / 90 come out 53 / 67 / 225 against 55 / 70 / 219), capped at the
+  override's `vExposureRange` top (1.2, our light units taken as 0.75 of the game's) so evening
+  and night are not lifted to noon (exposure 0.9 instead of 1.73 and 1.04); the game adapts
+  within the range, which is not read. Morning's set has ten times noon's ambient and is
+  exposed at 0.30 uncapped; night comes out too bright and green (the moon's colour 1, 4, 5);
+  ours is warmer and its sunlit ground clips, against the still's cooler shade; (3) the ambient's shape: the game
   adds `ambLit` to the cube map's light times `vAmbParam.x × vAmbDifScl` (docs/shading.md,
   the lighting pass), `barrel-ryza` multiplies the cube map by the 0x484 colour, with `indirectStage_`'s scale unplaced
   (the file's blocks shift against the executable's structure after the HDR block). The
