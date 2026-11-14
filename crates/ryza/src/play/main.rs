@@ -56,7 +56,8 @@ struct Args {
     /// Graphics: a preset by name (`RenderSettings::preset`), and fullscreen.
     preset: Option<RenderSettings>,
     fullscreen: bool,
-    /// In a window: quit after this many frames, and a lean held all along (for tests).
+    /// Frames to draw: in a window, quit after this many; offscreen, the same frame this many
+    /// times, the last written (for `--timings`). And a lean held all along in a window (tests).
     frames: Option<u32>,
     /// Each pass's GPU time, reported at the end (`--timings`).
     timings: bool,
@@ -541,6 +542,11 @@ fn main() -> Result<()> {
                 let done = sync.submit(&gpu, cb, image, p.images.len())?;
                 stale |= p.present(&gpu, image as u32, done)?;
             }
+            // Offscreen: the same frame `--frames` times (for `--timings`), the last one written.
+            (None, Some(_)) if frame_no + 1 < a.frames.unwrap_or(1) => {
+                sync.submit_offscreen(&gpu, cb)?;
+                sync.wait_submitted(&gpu)?;
+            }
             (None, Some((_, rmem))) => {
                 sync.submit_offscreen(&gpu, cb)?;
                 sync.wait_submitted(&gpu)?;
@@ -563,10 +569,12 @@ fn main() -> Result<()> {
         gpu.frame.set(gpu.frame.get() + 1);
         frame_no += 1;
     }
-
-    if let Some(t) = &renderer.timer {
-        t.report();
+    if let Some(t) = renderer.timer.as_mut()
+        && presenter.is_none()
+    {
+        t.collect(&gpu)?;
     }
+
     unsafe {
         d.device_wait_idle()?;
         if let Some((b, m)) = readback {

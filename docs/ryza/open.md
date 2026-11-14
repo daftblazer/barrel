@@ -94,6 +94,19 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read.
 
+## On handhelds
+
+- **Geometry, not pixels.** Rasenboden from the garden gate draws 2,087 draws and 1.85 million
+  triangles, every placed object at full detail. On the PC (RX 9070 XT, 1920x1080, offscreen,
+  60 frames, median) the frame is 5.97 ms at the desktop preset and 5.89 ms at the handheld one
+  (75 % scale): the scene pass barely changes with the resolution, so it is bound by vertices
+  and draws. The field's draw distances (`disp_range`: near / middle / far / landmark objects,
+  characters, shadows) and LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) are in
+  `saves\fieldmap\cameraparam\<field>.xml` and not applied yet: the first thing to try on the
+  RP6. What the units of `disp_range` are (70, 200, 400, 3000) is not known.
+- **The files.** A Rasenboden run reads `PACK00_02.PAK`, `PACK00_03.PAK` and `PACK02.PAK`
+  (about 16 GB of the install's 28 GB).
+
 ## Running the original
 
 - **Without the Steam client**: the executable imports `steam_api64.dll` (callbacks,
