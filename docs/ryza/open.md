@@ -71,8 +71,10 @@ achievements are the player's own, and the DX version has not been played there)
   Ryza lit terrain draw has kind bit 0, so that bit hides nothing; program bit 4 (on some
   draws) is unread. Needs a frame of the game at that spot, or the field shader pack's terrain
   programs. The layers' normal maps are not drawn yet.
-- **The sand square** in the overview (`obj-A21-S06-FLOOR-01` at 0,0,0?) sits where no ground is
-  expected.
+- **`obj-A21-S06-FLOOR-01`** (placed at the origin, its geometry in field coordinates, x 1210
+  to 56805, z 33342 to 53823) is the stone paving along the canal and its bridge: hidden
+  (`--hide FLOOR-01`), the overview shows a hole there. It draws where it belongs; only its
+  collision meshes are off (below). Not a stray "sand square", as first noted.
 - **Other field files** not in Escha: `.trmd` (`TRMD`, 5 MB, 1024 × 1024 header words then
   runs of `24 ff ff ff ff`), `.g1pf` (`FP1G`, a grid over 128,000 units, likely navigation),
   `.koc` (read: the field walls) next to the containers.
@@ -217,7 +219,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   `a21-s09-stair-02` (y ±485 against ±380, z -278 to 97 against ±258), the tunnel rocks
   (`a21-common-rock-tunnel-01/02`: 1314 × 202 × 1352 against the model's 216 × 1341 × 1364, x
   and y swapped) and `a21-s06-floor-01` (four meshes tens of thousands of units outside the
-  model: likely in field space; "the sand square" above). `a21-s09-stair-03`'s hull fits.
+  model: likely in field space; the canal's paving, above). `a21-s09-stair-03`'s hull fits.
   `.g1pf` is not a placement list (an `FP1G` grid over 128,000 units: likely navigation).
   `a21-s06-floor-01` is placed at the origin unturned, and its four meshes land near it (x -3144
   to 4223, z -1207 to 1867), but its model's geometry is in field coordinates (x 1210 to 56805,
