@@ -327,11 +327,14 @@ along its dots (`world::route_path`, queued as the walker's waypoints) to the ne
 mark; the panel shows the place's name and description; Enter walks into the field the point
 opens (`world::point_maps`, through `Session::walked`, so an event there plays) at its arrival
 place. Checked: the Ruins Entrance, down along `A2r1` (7 dots) to Sector One, Enter: field 26,
-`AREA_03_02`, at its arrival. The camera looks down on her from the south (screen up is -z, left -x) at 43 degrees from
-5400 units with a 15-degree view, at a point on the ground 150 units north of her (`AREA_CAMERA_*`), fitted
-to the recording (`ruins-entrance-lost-battle-60hz.mkv` at 0:45: Sector One's row of dots, 150
-units apart and 116 pixels apart at her depth, and the column of dots toward the region's
-entry: 7 pixels RMS over 14 dots; a view of 12 to 20 degrees fits nearly as well). She is drawn 1.75 times
+`AREA_03_02`, at its arrival. The camera looks down on her from the south (screen up is -z, left -x) at 35 degrees from
+7600 units with a 10.7-degree view, at a point on the ground 178 units north of her (`AREA_CAMERA_*`), fitted
+to the recordings (`colseit-arrival-60hz.mkv` and `ruins-entrance-lost-battle-60hz.mkv` at 0:45,
+the same view: Sector One's row of dots at z 31300 and the column toward Ruins Entrance at x
+26250, z 30000 to 31000, their centres found in the frame and the projection fitted to them:
+0.85 pixels RMS over 14 dots at 720p; view and distance trade off, 10 degrees from 8150 fits
+within 1.1). The earlier fit by eye (43 degrees, 5400, 15 degrees) was 28 pixels off on the
+column, the far side spread too much. She is drawn 1.75 times
 her size there (`AREA_MAP_SCALE`, as the recording has her), and the neighbours' labels (layout 638, "Ruins Entrance", "Sector Two") stand on
 the route beside her, a step out each way, not on the neighbour's mark. Not yet the game's:
 her shadow there (the recording shows none), the labels' plates (the neighbours' names now stand on their routes' third dot,
@@ -908,7 +911,7 @@ field's walls (a mark's collision held her short of it), and no faster than reac
 next waypoint in a frame (at 5 fps a 100-unit step overshot the 30-unit reach both ways).
 Its camera is fitted the same way as the area map's (`colseit-arrival-60hz.mkv` at 1:12, the
 cursor on the Southern Ruins: Colseit's mark and the route dots, 16 pixels RMS): 35 degrees
-from 12000 units at a point on the ground 400 units north of her, the same 15-degree view
+from 12000 units at a point on the ground 400 units north of her, a 15-degree view (`WORLD_CAMERA_FOV`)
 (`WORLD_CAMERA_*`); she is drawn 3.7 times her size there (`WORLD_MAP_SCALE`), as tall on
 screen as on the area map. Its panels (`area_panel::world_elements`, `travel`; the recording
 `colseit-arrival-60hz.mkv` at 1:15 and 1:25): the place's name at the top right (637); for a

@@ -1004,18 +1004,21 @@ fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
 }
 
 /// The area map's camera: its pitch (degrees), distance (units) and field of view (degrees),
-/// looking at a point [`AREA_CAMERA_AHEAD`] units north of the player. Fitted to the recording
-/// (`ruins-entrance-lost-battle-60hz.mkv` at 0:45: Sector One's row of dots, 150 units apart
-/// and 116 pixels apart at her depth, and the column of dots toward the region's entry): 7
-/// pixels RMS over 14 dots, the field of view the least sure (12 to 20 fit nearly as well).
-const AREA_CAMERA_PITCH: f32 = 43.0;
-const AREA_CAMERA_DISTANCE: f32 = 5400.0;
-const AREA_CAMERA_FOV: f32 = 15.0;
-const AREA_CAMERA_AHEAD: f32 = 150.0;
+/// looking at a point [`AREA_CAMERA_AHEAD`] units north of the player. Fitted to the recordings
+/// (`colseit-arrival-60hz.mkv` and `ruins-entrance-lost-battle-60hz.mkv` at 0:45, the same
+/// view): Sector One's row of dots (z 31300) and the column toward Ruins Entrance (x 26250, z
+/// 30000 to 31000), their centres found in the frame: 0.85 pixels RMS over 14 dots at 720p
+/// (the earlier 43 degrees, 5400 and 15 degrees: 28). The field of view and distance trade off
+/// (10 degrees at 8150 fits within 1.1 pixels).
+const AREA_CAMERA_PITCH: f32 = 35.0;
+const AREA_CAMERA_DISTANCE: f32 = 7600.0;
+const AREA_CAMERA_FOV: f32 = 10.7;
+const AREA_CAMERA_AHEAD: f32 = 178.0;
 /// The world map's camera, fitted the same way to `colseit-arrival-60hz.mkv` at 1:12 (the
 /// cursor on the Southern Ruins: Colseit's mark, the route dots north and east, 16 pixels RMS;
-/// the area map's 15-degree view kept): steeper and farther than the area map's.
+/// with a 15-degree view, not refitted since).
 const WORLD_CAMERA_PITCH: f32 = 35.0;
+const WORLD_CAMERA_FOV: f32 = 15.0;
 const WORLD_CAMERA_DISTANCE: f32 = 12000.0;
 const WORLD_CAMERA_AHEAD: f32 = 400.0;
 
@@ -3067,7 +3070,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         // On the ground (the focus stands 80 units up, at her chest), that far north.
         target = c - Vec3::new(0.0, 80.0, ahead);
         dist = distance;
-        fov = AREA_CAMERA_FOV.to_radians();
+        fov = if world_mode { WORLD_CAMERA_FOV } else { AREA_CAMERA_FOV }.to_radians();
         eye = target + Vec3::new(0.0, p.sin(), p.cos()) * dist;
     }
     // The camera can be turned about its target and moved in or out from the window
