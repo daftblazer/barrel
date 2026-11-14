@@ -743,7 +743,9 @@ fn main() -> Result<()> {
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
             alpha_cutoff: 0.3,
-            glow: (1.0, 0.0),
+            // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
+            // stored, half its range as Escha's) and `fBloomWeight` as the rate.
+            glow: environment.as_ref().map_or((1.0, 0.0), |(_, l, _)| (l.lumi_threshold, l.bloom_weight)),
             // The set's own saturation per channel (`Light::saturation`).
             saturation: environment.as_ref().map_or([0.0; 3], |(_, l, _)| l.saturation),
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },

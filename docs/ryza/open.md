@@ -89,7 +89,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   `WorldScale`) is not placed.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
-  (left over: exposure, `trueHDR_`). The default environment override's
+  (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
+  evening 0.8) on the stored scene and its `fBloomWeight` (0.4, evening 0.6): a soft halo on
+  the sunlit leaves at the gate, the still's haze is wider; which space the game thresholds
+  in is not read. Against the still the leaves' and rocks' shade is too blue (the ambient
+  tint's hue, below). The default environment override's
   `trueHDR_vSaturationScale` (1.2) is laid on the finished frame about its BT.601 luma (where
   in the game's HDR chain it applies is not read); its bloom weight (0.3), FXAA and exposure
   range (0.9 to 1.2) are not. Only `s02_l_hap_main` and `s04_l_sad_main` have their own

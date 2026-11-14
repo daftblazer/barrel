@@ -110,6 +110,8 @@ pub struct Light {
     pub gamma: f32,
     pub saturation: [f32; 3],
     pub bloom_weight: f32,
+    /// `trueHDR_fLumiThreshold`: the bloom's bright-pass threshold (0.3; Rasenboden's evening 0.8).
+    pub lumi_threshold: f32,
     /// `mainAmbientLight_color`.
     pub ambient: [f32; 3],
     /// `parallelLight00` (the sun) and `parallelLight01`.
@@ -123,6 +125,7 @@ const LUMI_MAX: usize = 0x00;
 const MIDDLE_GRAY: usize = 0x1c;
 const EXPOSURE_RANGE: usize = 0x20;
 const GAMMA: usize = 0x40;
+const LUMI_THRESHOLD: usize = 0x18;
 const SATURATION: usize = 0x44;
 const BLOOM_WEIGHT: usize = 0x5c;
 const MAIN_AMBIENT: usize = 0x484;
@@ -206,6 +209,7 @@ impl Light {
             gamma: f(GAMMA),
             saturation: rgb(SATURATION),
             bloom_weight: f(BLOOM_WEIGHT),
+            lumi_threshold: f(LUMI_THRESHOLD),
             ambient: rgb(MAIN_AMBIENT), parallel: [parallel(0), parallel(1)] })
     }
 }
@@ -231,12 +235,14 @@ mod tests {
             put(0x44 + 4 * k, v);
         }
         put(0x5c, 0.6);
+        put(0x18, 0.8);
         for (k, v) in [5.0, 2.074, 1.0, 30.0, -30.0].into_iter().enumerate() {
             put(0x494 + 4 * k, v);
         }
         let l = Light::read(&env, Time::Evening, Weather::Sunny).unwrap();
         assert_eq!((l.lumi_max, l.middle_gray, l.ambient[0]), (4.2, 0.18, 2.0));
         assert_eq!((l.exposure_range, l.gamma, l.saturation, l.bloom_weight), ((0.9, 2.4), 2.2, [1.2, 1.1, 1.0], 0.6));
+        assert_eq!(l.lumi_threshold, 0.8);
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
     }
