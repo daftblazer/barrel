@@ -18,9 +18,12 @@ achievements are the player's own, and the DX version has not been played there)
 - **Field lighting.** `barrel-ryza` lights fields with the environment's diffuse cube map
   alone (as an ambient, spherical harmonics): dim, no sun, no point lights. The cube maps are
   shared between fields, so the field's own light (sun direction and colour, exposure) must be
-  in `_env.bin` (12 sets by weather and time; docs/formats.md). Next: place the sun
-  (`EnvDataParallelLight`), the ambient and `IDLScalerOfAmbientDiffuseMap` in a set, through
-  the executable's reflection table (xrefs to its member-name strings).
+  in `_env.bin` (12 sets by weather and time; docs/formats.md). The sun, the second light
+  and the main ambient are placed (`barrel_ryza::environment::Light`); not yet used by
+  `barrel-ryza`, and `indirectStage_` (the cube map's scale, `IDLScalerOfAmbientDiffuseMap`)
+  is not placed: the file's blocks shift against the executable's structure (0x44 by the
+  lights, more later). Also open: how the game turns elevation and azimuth into a direction,
+  and its exposure (`trueHDR_`: middle gray 0.18, `fLumiMax`).
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as 0 with Escha's
   layout (`cDiff` / `cAmb`), so `barrel-ryza` gives every draw the full material.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
