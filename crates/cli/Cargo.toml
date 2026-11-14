@@ -13,4 +13,6 @@ path = "src/main.rs"
 barrel-formats = { path = "../formats" }
 barrel-engine = { path = "../engine" }
 barrel-escha = { path = "../escha" }
+barrel-ryza = { path = "../ryza" }
+barrel-render = { path = "../render" }
 encoding_rs = "0.8"

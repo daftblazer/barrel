@@ -76,6 +76,8 @@ dependencies = [
  "barrel-engine",
  "barrel-escha",
  "barrel-formats",
+ "barrel-render",
+ "barrel-ryza",
  "encoding_rs",
 ]
 
@@ -121,6 +123,15 @@ dependencies = [
  "raw-window-handle",
  "sdl3-sys",
  "winit",
+]
+
+[[package]]
+name = "barrel-ryza"
+version = "0.1.0"
+dependencies = [
+ "barrel-engine",
+ "barrel-formats",
+ "barrel-render",
 ]
 
 [[package]]

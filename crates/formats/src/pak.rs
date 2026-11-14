@@ -117,6 +117,87 @@ impl Pak {
     }
 }
 
+/// An archive file opened for reading: its table, and its entries read from it on demand
+/// (positional reads: no seeking, so a shared reference reads).
+pub struct Archive {
+    file: std::fs::File,
+    pub pak: Pak,
+    pub game: Game,
+}
+
+impl Archive {
+    pub fn open(path: &std::path::Path) -> Result<Archive, String> {
+        use std::io::Read;
+        let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+        let mut file = std::fs::File::open(path).map_err(|e| err(&e))?;
+        let mut header = [0u8; 16];
+        file.read_exact(&mut header).map_err(|e| err(&e))?;
+        let size = Pak::table_size(&header).map_err(|e| err(&e))?;
+        let mut table = header.to_vec();
+        table.resize(size, 0);
+        file.read_exact(&mut table[16..]).map_err(|e| err(&e))?;
+        let (pak, game) = Pak::parse_any(&table).map_err(|e| err(&e))?;
+        Ok(Archive { file, pak, game })
+    }
+
+    /// An entry's data, unscrambled.
+    pub fn read(&self, entry: &Entry) -> std::io::Result<Vec<u8>> {
+        use std::os::unix::fs::FileExt;
+        let mut data = vec![0u8; entry.size as usize];
+        self.file.read_exact_at(&mut data, entry.offset)?;
+        self.pak.unscramble(entry, 0, &mut data);
+        Ok(data)
+    }
+}
+
+/// A game's archives (`Data/*.PAK`), their files found by name in any case (`\data\x64\...`).
+/// A name in more than one archive is taken from the last in name order (Ryza DX's
+/// `PACK03.PAK` repeats two of `PACK00_02.PAK`'s, as an update would).
+pub struct Archives {
+    archives: Vec<Archive>,
+    index: std::collections::HashMap<String, (usize, usize)>,
+}
+
+impl Archives {
+    /// Every `*.PAK` in `data` (an install's `Data` folder).
+    pub fn open_dir(data: &std::path::Path) -> Result<Archives, String> {
+        let mut paths: Vec<_> = std::fs::read_dir(data)
+            .map_err(|e| format!("{}: {e}", data.display()))?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("pak")))
+            .collect();
+        paths.sort();
+        if paths.is_empty() {
+            return Err(format!("{}: no PAK archives", data.display()));
+        }
+        let archives = paths.iter().map(|p| Archive::open(p)).collect::<Result<Vec<_>, _>>()?;
+        let mut index = std::collections::HashMap::new();
+        for (a, archive) in archives.iter().enumerate() {
+            for (e, entry) in archive.pak.entries.iter().enumerate() {
+                index.insert(entry.name.to_ascii_lowercase(), (a, e));
+            }
+        }
+        Ok(Archives { archives, index })
+    }
+
+    /// The game whose key the archives open with.
+    pub fn game(&self) -> Game {
+        self.archives[0].game
+    }
+
+    /// Every file's name, lower case.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.index.keys().map(String::as_str)
+    }
+
+    /// A file by name (any case); `None` when no archive has it.
+    pub fn read(&self, name: &str) -> Option<std::io::Result<Vec<u8>>> {
+        let &(a, e) = self.index.get(&name.to_ascii_lowercase())?;
+        let archive = &self.archives[a];
+        Some(archive.read(&archive.pak.entries[e]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -40,6 +40,8 @@ usage:
   barrel ebm-scan DIR          read every message file under DIR
   barrel opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
                                in PAK archives: Sophie 2, the Ryza games)
+  barrel ryza-field INSTALL [FIELD]  a Ryza DX field loaded from the archives into a scene (no
+                               FIELD: every field, one line each)
   barrel opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
@@ -145,6 +147,8 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["opl2-scan", paks @ ..] => opl2_scan_paks(paks),
         ["opl2", file] => opl2_list(file),
+        ["ryza-field", root] => ryza_field(Path::new(root), None),
+        ["ryza-field", root, field] => ryza_field(Path::new(root), Some(field)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a", file] => g1a(file, None),
         ["g1a", file, bone] => bone.parse().map_err(|_| format!("{bone}: not a bone number").into()).and_then(|b| g1a(file, Some(b))),
@@ -1071,22 +1075,13 @@ fn xml(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn open_pak(file: &Path) -> Result<(std::fs::File, barrel_formats::pak::Pak)> {
-    use barrel_formats::pak::Pak;
-    use std::io::Read;
-    let mut f = std::fs::File::open(file).map_err(|e| format!("{}: {e}", file.display()))?;
-    let mut header = [0u8; 16];
-    f.read_exact(&mut header).map_err(|e| format!("{}: {e}", file.display()))?;
-    let size = Pak::table_size(&header).map_err(|e| format!("{}: {e}", file.display()))?;
-    let mut table = header.to_vec();
-    table.resize(size, 0);
-    f.read_exact(&mut table[16..]).map_err(|e| format!("{}: {e}", file.display()))?;
-    let (pak, _) = Pak::parse_any(&table).map_err(|e| format!("{}: {e}", file.display()))?;
-    Ok((f, pak))
+fn open_pak(file: &Path) -> Result<barrel_formats::pak::Archive> {
+    Ok(barrel_formats::pak::Archive::open(file)?)
 }
 
 fn pak_ls(file: &Path) -> Result<()> {
-    let (_, pak) = open_pak(file)?;
+    let archive = open_pak(file)?;
+    let pak = &archive.pak;
     for e in &pak.entries {
         println!("{:>10} {}", e.size, e.name);
     }
@@ -1094,23 +1089,11 @@ fn pak_ls(file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn pak_read(
-    f: &mut std::fs::File,
-    pak: &barrel_formats::pak::Pak,
-    entry: &barrel_formats::pak::Entry,
-) -> std::io::Result<Vec<u8>> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut data = vec![0u8; entry.size as usize];
-    f.seek(SeekFrom::Start(entry.offset))?;
-    f.read_exact(&mut data)?;
-    pak.unscramble(entry, 0, &mut data);
-    Ok(data)
-}
-
 fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
-    let (mut f, pak) = open_pak(file)?;
+    let archive = open_pak(file)?;
+    let pak = &archive.pak;
     let entry = pak.entries.iter().find(|e| e.name.eq_ignore_ascii_case(name)).ok_or("no such file in the archive")?;
-    let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{}: {e}", file.display()))?;
+    let data = archive.read(entry).map_err(|e| format!("{}: {e}", file.display()))?;
     std::fs::write(out, &data).map_err(|e| format!("{}: {e}", out.display()))?;
     Ok(())
 }
@@ -1118,11 +1101,12 @@ fn pak_get(file: &Path, name: &str, out: &Path) -> Result<()> {
 /// Every entry whose name contains `part` (any case), written under `out` by its path in the
 /// archive.
 fn pak_extract(file: &Path, part: &str, out: &Path) -> Result<()> {
-    let (mut f, pak) = open_pak(file)?;
+    let archive = open_pak(file)?;
+    let pak = &archive.pak;
     let part = part.to_ascii_lowercase();
     let mut n = 0;
     for entry in pak.entries.iter().filter(|e| e.name.to_ascii_lowercase().contains(&part)) {
-        let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{}: {e}", file.display()))?;
+        let data = archive.read(entry).map_err(|e| format!("{}: {e}", file.display()))?;
         let rel: PathBuf = entry.name.split(['\\', '/']).filter(|c| !c.is_empty() && *c != "..").collect();
         let path = out.join(rel);
         if let Some(dir) = path.parent() {
@@ -1152,12 +1136,13 @@ fn check_entry(data: &[u8]) -> Option<(&'static str, std::result::Result<(), Str
 fn pak_bc6h(files: &[&str]) -> Result<()> {
     let mut modes: BTreeMap<u8, (usize, String)> = BTreeMap::new();
     for file in files {
-        let (mut fh, pak) = open_pak(Path::new(file))?;
+        let archive = open_pak(Path::new(file))?;
+    let pak = &archive.pak;
         for entry in &pak.entries {
             if !entry.name.ends_with(".g1t") || entry.size > 256 << 20 {
                 continue;
             }
-            let data = pak_read(&mut fh, &pak, entry).map_err(|e| format!("{file}: {e}"))?;
+            let data = archive.read(entry).map_err(|e| format!("{file}: {e}"))?;
             let Ok(g) = barrel_formats::g1t::G1t::parse(&data) else { continue };
             for t in g.textures.iter().filter(|t| t.format == barrel_formats::g1t::Format::Bc6h) {
                 for level in &t.levels {
@@ -1193,14 +1178,15 @@ fn pak_scan(files: &[&str]) -> Result<()> {
         }
     };
     for file in files {
-        let (mut fh, pak) = open_pak(Path::new(file))?;
+        let archive = open_pak(Path::new(file))?;
+    let pak = &archive.pak;
         for entry in &pak.entries {
             let name = entry.name.as_str();
             let interesting = [".g1t", ".g1m", ".g1a", ".g1h", ".elixir.gz", ".ebd", ".ebm"].iter().any(|x| name.ends_with(x));
             if !interesting || entry.size > 512 << 20 {
                 continue;
             }
-            let data = pak_read(&mut fh, &pak, entry).map_err(|e| format!("{file}: {e}"))?;
+            let data = archive.read(entry).map_err(|e| format!("{file}: {e}"))?;
             if name.ends_with(".elixir.gz") {
                 match Elixir::parse(&data) {
                     Ok(e) => {
@@ -1240,12 +1226,13 @@ fn xml_e(file: &Path, out: &Path) -> Result<()> {
 }
 
 fn pak_xml_e(file: &Path) -> Result<()> {
-    let (mut f, pak) = open_pak(file)?;
+    let archive = open_pak(file)?;
+    let pak = &archive.pak;
     let by_name: BTreeMap<&str, &barrel_formats::pak::Entry> =
         pak.entries.iter().map(|e| (e.name.as_str(), e)).collect();
     let (mut same, mut differ, mut alone, mut failed) = (0, 0, 0, 0);
     for e in pak.entries.iter().filter(|e| e.name.ends_with(".xml.e")) {
-        let data = pak_read(&mut f, &pak, e).map_err(|err| format!("{}: {err}", file.display()))?;
+        let data = archive.read(e).map_err(|err| format!("{}: {err}", file.display()))?;
         let plain = match barrel_formats::xml_e::decrypt(&data) {
             Ok(p) => p,
             Err(err) => {
@@ -1256,7 +1243,7 @@ fn pak_xml_e(file: &Path) -> Result<()> {
         };
         match by_name.get(&e.name[..e.name.len() - 2]) {
             Some(twin) => {
-                let t = pak_read(&mut f, &pak, twin).map_err(|err| format!("{}: {err}", file.display()))?;
+                let t = archive.read(twin).map_err(|err| format!("{}: {err}", file.display()))?;
                 if t == plain {
                     same += 1;
                 } else {
@@ -3390,9 +3377,10 @@ fn opl2_scan_paks(paks: &[&str]) -> Result<()> {
     let (mut lists, mut objects, mut effects, mut types) = (0usize, 0usize, 0usize, 0usize);
     let mut failed = Vec::new();
     for file in paks {
-        let (mut f, pak) = open_pak(Path::new(file))?;
+        let archive = open_pak(Path::new(file))?;
+    let pak = &archive.pak;
         for entry in pak.entries.iter().filter(|e| e.name.ends_with(".elixir.gz") && e.name.contains("\\field\\") && !e.name.ends_with("_obj.elixir.gz") && !e.name.ends_with("_env.elixir.gz")) {
-            let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{file}: {e}"))?;
+            let data = archive.read(entry).map_err(|e| format!("{file}: {e}"))?;
             let Ok(c) = Elixir::parse(&data) else { continue };
             for e in c.entries.iter().filter(|e| e.name.ends_with(".opl2")) {
                 match barrel_formats::opl2::parse(c.data(e)) {
@@ -3412,6 +3400,39 @@ fn opl2_scan_paks(paks: &[&str]) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
+}
+
+/// Ryza DX fields through `barrel_engine::field::load` (no tags read yet: nothing casts or
+/// sways), with what the scene got.
+fn ryza_field(root: &Path, only: Option<&str>) -> Result<()> {
+    let install = barrel_ryza::install::Install::open(root)?;
+    let names = match only {
+        Some(f) => vec![f.to_string()],
+        None => install.fields(),
+    };
+    let mut failed = 0;
+    for name in &names {
+        let loaded = (|| -> Result<String> {
+            let f = install.field(name)?;
+            let (main, objects) = (Elixir::parse(&f.main)?, Elixir::parse(&f.objects)?);
+            let mut scene = barrel_render::Scene::new();
+            let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement::default();
+            let (pack, _) = barrel_engine::field::load(&f.area, &main, &objects, &mut scene, 0, &place)?;
+            let textures = barrel_formats::g1t::G1t::parse(&pack)?.textures.len();
+            Ok(format!("{} draws, {} textures, {} vertices, env {}", scene.draws.len(), textures, scene.vertices.len(), if f.env.is_some() { "yes" } else { "no" }))
+        })();
+        match loaded {
+            Ok(s) => println!("{name}: {s}"),
+            Err(e) => {
+                failed += 1;
+                println!("{name}: FAILED {e}");
+            }
+        }
+    }
+    if names.len() > 1 {
+        println!("{} fields, {failed} failed", names.len());
+    }
+    if failed == 0 { Ok(()) } else { Err("some fields did not load".into()) }
 }
 
 fn ktf_scan(dir: &Path) -> Result<()> {

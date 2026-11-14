@@ -1,0 +1,11 @@
+[package]
+name = "barrel-ryza"
+description = "Atelier Ryza DX on Barrel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+barrel-formats = { path = "../formats" }
+barrel-engine = { path = "../engine" }
+barrel-render = { path = "../render" }
