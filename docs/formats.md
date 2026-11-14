@@ -857,6 +857,12 @@ it:
 
 The layer tiles' alpha is 0 throughout, so alpha means something other than opacity there.
 
+**A heightmap alone.** Nine of Ryza DX's fields (`S35_S_COVE_03`, `S40`/`S41_M_TOWER`,
+`S45_M_UNDERGROUND_01`, `S53_M_STARBOTTLE_01`, battle points `S76`, `S78`, `S80`, `S82`) have a
+4.9 KB terrain whose layer and blend offsets are 0, with no layers and no patches: only the
+heightmap (at 0x1f0). Their ground is drawn by their models; the terrain is read with empty
+texture packs and not drawn.
+
 The settings block starts with layer records at 0x1c (file offset 0xb4), 32 bytes each, as
 many as the header's u32 at 0x28 says: `{u16 colour texture, u16 normal map texture (0xffff:
 none), u16 0, u8 n, u8 n, f32 u scale, f32 v scale, 16 bytes of 0}` (`ktf::Layer`). The scale

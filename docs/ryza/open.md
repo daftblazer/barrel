@@ -11,10 +11,6 @@ achievements are the player's own, and the DX version has not been played there)
 
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
   first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").
-- **Terrain (`.ktf`) in 9 fields** (`s35_s_cove_03`, `s40_m_tower_02`, `s41_m_tower_03`,
-  `s45_m_underground_01`, `s53_m_starbottle_01`, `s76`/`s78`/`s80`/`s82` battle points) fails
-  with "ktf section offsets"; the other 87 fields load (`barrel ryza-field INSTALL`). Way in:
-  compare one's header with a field that reads (docs/formats.md, the terrain section).
 - **Field lighting.** `barrel-ryza --time T --weather W` lights a field with its environment
   set: the cube map's light times `mainAmbientLight` as the ambient, the sun and the second
   light as directional lights. Stand-ins, not read from the game: (1) the angles' convention

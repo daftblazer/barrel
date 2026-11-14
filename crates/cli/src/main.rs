@@ -3420,6 +3420,7 @@ fn ryza_field(root: &Path, only: Option<&str>) -> Result<()> {
             let (pack, _) = barrel_engine::field::load(&f.area, &main, &objects, &mut scene, 0, &place)?;
             let textures = barrel_formats::g1t::G1t::parse(&pack)?.textures.len();
             if let Some(ktf) = barrel_engine::field::named(&main, &format!("{}.ktf", f.area))
+                && !barrel_formats::ktf::parse(ktf)?.layers.textures.is_empty()
             {
                 let m = barrel_formats::ktf::mesh(ktf)?;
                 let mut kinds = std::collections::BTreeMap::new();

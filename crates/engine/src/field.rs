@@ -45,7 +45,12 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         if flat {
             eprintln!("{area}: flat placeholder terrain, not drawn");
         }
-        !flat
+        // A heightmap alone has nothing to draw (the Ryza games' model-built fields).
+        let bare = t.layers.textures.is_empty();
+        if bare {
+            eprintln!("{area}: heightmap-only terrain, not drawn");
+        }
+        !flat && !bare
     });
     if let Some((bytes, t)) = terrain {
         let h = &t.heightmap;

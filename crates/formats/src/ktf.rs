@@ -274,6 +274,15 @@ pub fn parse(d: &[u8]) -> Result<Terrain<'_>, Error> {
     }
     let size = u32_at(d, 0x0c)? as usize;
     let (layers_at, blend_at, height_at) = (u32_at(d, 0x10)? as usize, u32_at(d, 0x14)? as usize, u32_at(d, 0x1c)? as usize);
+    let empty = || G1t { version: *b"0000", platform: 0, textures: Vec::new() };
+    // A heightmap alone (no layer textures nor blend maps, offsets 0; no layers, no patches):
+    // ground to stand on that the field's models draw (Ryza DX's S35_S_COVE_03 and 8 more).
+    if layers_at == 0 && blend_at == 0 {
+        if size > d.len() || !(0x98 <= height_at && height_at < size) {
+            return Err(Error::Corrupt("ktf section offsets"));
+        }
+        return Ok(Terrain { layers: empty(), blend: empty(), heightmap: khm::parse(&d[height_at..size])?, settings: &d[0x98..height_at], layer_count: 0 });
+    }
     if size > d.len() || !(0x98 <= layers_at && layers_at < blend_at && blend_at < height_at && height_at < size) {
         return Err(Error::Corrupt("ktf section offsets"));
     }
