@@ -1089,8 +1089,27 @@ only. The diffuse map's faces are in the game's axes, y up: +y is the sky's blue
 0.42), -y a warm ground bounce (0.47, 0.36, 0.28), the sides about 0.3. `barrel-ryza` turns it
 into nine spherical-harmonic coefficients (`barrel_ryza::environment`) for the renderer's
 ambient term (model.vert's `sh`). Its values (about 0.3) want a scale, presumably from
-`_env.bin`. `_env.bin` opens with floats that look like exposure and fog settings (4.2, 15, 1, 1000; 8000
-and -1200 at 0x84; small scattering-like constants from 0xa0); its layout is not read yet.
+`_env.bin`.
+
+**`_env.bin`** is 12 sets of 0x1fe0 bytes (97,920 in every field read), one per weather and
+time of day: set = weather × 4 + time, times morning, noon, evening, night (0–3), weathers
+sunny, cloudy, foggy (`saves/fieldmap/cameraparam/env/envtemplate.xml` names both; it also
+lists an after-rain weather the file has no sets for). Only about 150 of a set's 2,040 words
+differ between sets, and about 2,000 words between the attic and Rasenboden, mostly before
+0x800. The parameters are named in `saves/fieldmap/override_env/env_*.xml` (250 attributes,
+`<block>_<member>`: trueHDR, ambientLight, parallelLight00/01, indirectStage, heightFog, skyFog,
+fog, cloud, cloudParticle, gust, shadowMap, ssao, rlr, ir, outline, ...), and the executable
+holds a reflection table of the classes (`EnvDataParallelLight`, `EnvDataHemiLight`,
+`EnvDataLightShaft`, ...) with their members in order, from about 0x13ce900 in the file. The
+binary keeps the blocks in another order than the XML. Placed so far (set 0): 0x00 `fLumiMax`
+(4.2), 0x1c `fMiddleGray` (0.18), 0x20 `vExposureRange` (0.9, 1.2), FXAA from about 0x28,
+the height fog layers from 0x78 to 0x12c, the clouds from 0x1a4 to 0x1ec, the cloud particles
+from 0x210 to 0x244, the reflections (`rlr_`) from 0x254. The default XML gives the shape of
+the lighting: the sun (`parallelLight00`: colour 8, 8, 8, elevation 22°, azimuth -20°), a second
+directional light (1, 1, 1 at 7°, 45°), an ambient colour, and the diffuse cube map scaled by
+`indirectStage_IDLScalerOfAmbientDiffuseMap` (2.5) times an RGB (1.64, 1.98, 4.0). Their
+offsets are not placed yet. The first words of set 0 for comparison: 4.2, 15, 1, 1000 (fog
+on, 1000; noon has 0 and 10,000).
 
 ### Placement lists (`*.opl2`)
 
