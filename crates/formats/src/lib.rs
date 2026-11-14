@@ -33,6 +33,7 @@ pub mod pe;
 pub mod quake;
 pub mod png;
 pub mod pssg;
+pub mod swg;
 pub mod table;
 pub mod voice;
 pub mod vorbis;

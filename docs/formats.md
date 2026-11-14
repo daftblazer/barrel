@@ -1093,8 +1093,8 @@ There is no colour, so these are not the whole light: see "Ryza field environmen
 ### Ryza's character files
 
 `\data\x64\character\pc00a\`: `pc00a_model.elixir.gz` (the skeleton `PC00A_MODEL.g1m`, the
-mesh `PC00A_MODEL_default.g1m`, `PC00A_MODELOid.bin` (likely the bones' names) and
-`PC00A_MODEL.swg` (likely the hair and cloth swing), not read), `pc00a_model.g1t` (her textures),
+mesh `PC00A_MODEL_default.g1m`, `PC00A_MODELOid.bin` (the bones' names, "Swing settings") and
+`PC00A_MODEL.swg` (the swing settings)), `pc00a_model.g1t` (her textures),
 the motions (`pc00a_<NNNNN>`, "Ryza's motions") and `face\` with 30 small containers: the
 expressions (`pc00a_face_expression_<name>`: default, smile, anger, sadness, surprise, wink, ...),
 the eyes' directions (`pc00a_face_eye_<dir>`), blinks (`closeeye_up/down`) and
@@ -1123,6 +1123,32 @@ G-buffer (six targets `sGBuf0`..`5`, depth) with a ramp (`sRamp`, `rampCoordScal
 rim table (`cRimTbl`) and the clustered lights. The parts tables
 (`charapartsdefaultvisible.xml`, `charapartschange.xml`, `charapartsmodel.xml`) have no rows for
 `PC00A`: all her parts show.
+
+### Swing settings (`*.swg`)
+
+Next to a Ryza character's model, `<MODEL>Oid.bin` names its bones (`barrel_formats::oid`):
+after `HeaderCharaOid`, `ObjectID:<MODEL>` and a version, each entry is `id,name`
+(`0,root`, `6,SK_Head`, `300,F_Head_Down`, `952,SWING500_Hair000`; `oid::by_id`). The ids are
+the skeleton's bone ids: `SK_*` the body, 300 and up the face (`F_*`), 500 to 1151 the
+swinging parts (652 bones in Ryza's: `SWING000` the bust, `SWING100` the head, `SWING150`,
+`SWING200`, `SWING300`, `SWING400` the skirt's bottom, `SWING500` the hair, `SWING600` the
+options, most in left and right chains of 25).
+
+`<MODEL>.swg` (`barrel_formats::swg`, `barrel swg FILE#N OID#N`): magic `SWGQ`, `{u32 header
+size 0x24, u32 count, 8-byte name, f32 1.0, 12 bytes 0}`, then records of 0x48 bytes `{u16
+group, u16 bone id, 15 floats, 4 u16}`. Ryza's (`def014`) has 10, on the bust (500, 501), the
+skirt's bottom (902, 927) and the hair (952, 953 and the side locks 1052, 1053, 1077, 1078):
+
+| group | floats | words |
+|---|---|---|
+| 0 bust | 60 20 25 25 0 0 3 1 2 2 0 0 0 1 0 | 10 3 25 25 |
+| 400 skirt | 90 90 90 90, then 0 | 25 4 25 100 |
+| 500 hair | 45 and 0 to 45 (four), 0 ..., 0.8 (-69 on the side locks' roots), 5 | 25 4 15 or 25 100 |
+
+The first four floats look like angle limits in degrees. The other swing bones (the head,
+150 to 300, the options, the rest of each chain) have no record: their settings, and how the
+game moves the chains (its own physics), are not known. Her field motions do not move the
+swing bones, so they keep the bind pose.
 
 ### Ryza's motions
 

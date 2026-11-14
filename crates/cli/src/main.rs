@@ -44,6 +44,7 @@ usage:
                                FIELD: every field, one line each)
   barrel opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
   barrel ktf-scan DIR          read every field terrain in the containers
+  barrel swg FILE#N OID#N      a character's swing settings, bones named from its Oid list
   barrel g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
   barrel g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
   barrel g1a-scan DIR          read every animation in the containers
@@ -150,6 +151,7 @@ fn main() -> ExitCode {
         ["ryza-field", root] => ryza_field(Path::new(root), None),
         ["ryza-field", root, field] => ryza_field(Path::new(root), Some(field)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
+        ["swg", file, oid] => swg(file, oid),
         ["g1a", file] => g1a(file, None),
         ["g1a", file, bone] => bone.parse().map_err(|_| format!("{bone}: not a bone number").into()).and_then(|b| g1a(file, Some(b))),
         ["g1a-moves", file, rest @ ..] => g1a_moves(file, rest.first().copied()),
@@ -3090,6 +3092,18 @@ fn g1m_obj(spec: &str, out: &Path) -> Result<()> {
     }
     std::fs::write(out, obj)?;
     println!("{} submeshes written to {}", g.submeshes.len(), out.display());
+    Ok(())
+}
+
+fn swg(spec: &str, oid: &str) -> Result<()> {
+    let s = barrel_formats::swg::parse(&file_or_entry(spec)?).map_err(|e| format!("{spec}: {e}"))?;
+    let list = barrel_formats::oid::parse(&file_or_entry(oid)?).map_err(|e| format!("{oid}: {e}"))?;
+    let names = barrel_formats::oid::by_id(&list);
+    println!("{} ({}): {} records", s.name, s.value, s.records.len());
+    for r in &s.records {
+        let f: Vec<String> = r.floats.iter().map(|v| format!("{v}")).collect();
+        println!("  {:3} {:4} {:22} [{}] {:?}", r.group, r.bone, names.get(&(r.bone as u32)).copied().unwrap_or("?"), f.join(" "), r.words);
+    }
     Ok(())
 }
 

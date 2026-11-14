@@ -116,8 +116,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   pack, table string or executable bytes match). The deferred character lighting pass
   (`DSChara-Cll`: a ramp, a rim table) and the eyes' `EYET` are named in `shader.xml`; her
   G-buffer programs are likely `PBB` variants picked by her materials' textures. Her face takes its default expression
-  and blinks (every 4 s, a stand-in timing); the other expressions, the eyes' directions and
-  her hair's swing (`.swg`) are not used.
+  and blinks (every 4 s, a stand-in timing); the other expressions and the eyes' directions
+  are not used. Her hair, skirt and bust do not swing: the settings (`.swg`, 10 records over
+  652 swing bones, docs/formats.md "Swing settings") are read but their floats are not
+  understood, and the game's swing physics is not.
 
 ## On handhelds
 
