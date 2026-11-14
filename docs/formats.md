@@ -1981,3 +1981,16 @@ says which a field uses. The executable also names five time zones: `TIME_ZONE_M
 `saves/fieldmap/sky/sky_default.xml` gives each weather and time (0 to 3) a sky tag
 (`FM_SKY_MORNING_CLEAR`, `FM_SKY_DAY_RAIN`, ...) and its particle effects (rain 1754 / 1756
 every 0.5 s, thunder 1755 / 1757, mist 1759, snow at scale 1 every 0.75 s).
+
+## Ryza DX: events (`\event\...`)
+
+As Escha's: an event is a script (`.ebd`, the commands and their named actions) and its
+messages per language (`.ebm`); `barrel ebd` and `barrel ebm` read Ryza's as they are. The
+scripts are only under `\event\event_jp\` (2,333, one for every language); the messages are
+under each `event_<lang>` (8,415 in all). The folders are the story chapters and kinds:
+`mm00` to `mm09`, `mm20` (main story), `ms01` to `ms20`, `qc*` / `qn*` (quests), `xs*`, `xf*`,
+`xg*`, `xq*`, `xx*`, `zz*`, `aa01`, `am00`, `dx00` (the DX additions), `tt01`, and
+`event\skill` (650). The new game's first event is `event_mm00_010` (the opening monologue
+over the island, "On an ordinary island called Kurken..."); its actions are named in
+Japanese as Escha's (`初期設定` set-up, `風景カメラ` landscape camera, `ライザ初期設定` Ryza's
+set-up, `波エフェクト` wave effect, `歩き始め` start walking, `停止` stop).
