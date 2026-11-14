@@ -115,24 +115,47 @@ impl Walls {
 pub struct Ground {
     heightmap: Option<barrel_formats::khm::Heightmap>,
     floors: Vec<[[f32; 3]; 3]>,
+    /// The floors by square cells of `FLOOR_CELL` on the ground (x, z): each floor in every
+    /// cell its box (widened by `floor_height`'s tolerance) touches, so a height looks only at
+    /// its own cell's floors.
+    cells: std::collections::HashMap<(i32, i32), Vec<u32>>,
 }
+
+/// The side of `Ground`'s floor cells, units.
+const FLOOR_CELL: f32 = 256.0;
 
 impl Ground {
     /// The floors are the collision mesh's triangles no steeper than `max_slope` (degrees).
     pub fn new(heightmap: Option<barrel_formats::khm::Heightmap>, c: &Collision, max_slope: f32) -> Ground {
-        let floors = c.triangles.iter().map(|t| t.map(|i| c.vertices[i as usize])).filter(|v| wall(*v, max_slope).is_none()).collect();
-        Ground { heightmap, floors }
+        let mut g = Ground { heightmap, floors: Vec::new(), cells: Default::default() };
+        g.add_floors(c, max_slope);
+        g
     }
 
     /// A ground of the heightmap alone (a field whose collision is not read: the Ryza games
     /// keep theirs in other files, `docs/ryza/open.md`).
     pub fn of_heightmap(heightmap: barrel_formats::khm::Heightmap) -> Ground {
-        Ground { heightmap: Some(heightmap), floors: Vec::new() }
+        Ground { heightmap: Some(heightmap), floors: Vec::new(), cells: Default::default() }
     }
 
     /// More floors: a collision mesh's triangles no steeper than `max_slope` (degrees).
     pub fn add_floors(&mut self, c: &Collision, max_slope: f32) {
+        let first = self.floors.len();
         self.floors.extend(c.triangles.iter().map(|t| t.map(|i| c.vertices[i as usize])).filter(|v| wall(*v, max_slope).is_none()));
+        for (k, t) in self.floors.iter().enumerate().skip(first) {
+            let (mut lo, mut hi) = ([f32::MAX; 2], [f32::MIN; 2]);
+            for v in t {
+                lo = [lo[0].min(v[0]), lo[1].min(v[2])];
+                hi = [hi[0].max(v[0]), hi[1].max(v[2])];
+            }
+            let margin = (hi[0] - lo[0]).max(hi[1] - lo[1]) * 1e-3 + 1.0;
+            let cell = |v: f32| (v / FLOOR_CELL).floor() as i32;
+            for cx in cell(lo[0] - margin)..=cell(hi[0] + margin) {
+                for cz in cell(lo[1] - margin)..=cell(hi[1] + margin) {
+                    self.cells.entry((cx, cz)).or_default().push(k as u32);
+                }
+            }
+        }
     }
 
     /// The heightmap's height at (x, z), bilinear between its vertices; none outside it.
@@ -152,7 +175,8 @@ impl Ground {
     /// the floors under it that is no more than `step_up` above its feet (higher is a ledge it
     /// does not climb); none if there is nothing under it.
     pub fn height(&self, x: f32, z: f32, y: f32, step_up: f32) -> Option<f32> {
-        let floors = self.floors.iter().filter_map(|t| floor_height(t, x, z));
+        let cell = ((x / FLOOR_CELL).floor() as i32, (z / FLOOR_CELL).floor() as i32);
+        let floors = self.cells.get(&cell).into_iter().flatten().filter_map(|&k| floor_height(&self.floors[k as usize], x, z));
         self.terrain(x, z).into_iter().chain(floors).filter(|&h| h <= y + step_up).fold(None, |best, h| Some(best.map_or(h, |b: f32| b.max(h))))
     }
 }

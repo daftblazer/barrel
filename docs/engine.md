@@ -353,7 +353,9 @@ to be replaced by the game's once read. The ground (`game::walk::Ground`) is the
 heightmap (`<AREA>.khm`, bilinear between its vertices) and the collision mesh's floors (its
 triangles that are not upright) under the character and no more than a step (50 here) above its
 feet; with nothing under it the walk does not move (`barrel walk` across AREA_01_01 from (3000,
-3000) eastward goes over the valley floor between heights 0 and 46).
+3000) eastward goes over the valley floor between heights 0 and 46). The floors are kept in
+square cells of 256 units on the ground, each in every cell it reaches, so a height looks only
+at its own cell's floors.
 
 The player runs at 500 units a second, 625 once `EVENT_XG05_110` (event 734) has been seen
 (`game::walk::player_run_speed`): the user brain (`clsFMBrainUser`) reads it from `0x140234910`,
