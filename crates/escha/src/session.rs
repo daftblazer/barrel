@@ -245,6 +245,11 @@ impl Session {
         self.visited.insert(k);
     }
 
+    /// Whether place `k` has been visited.
+    pub fn visited(&self, k: usize) -> bool {
+        self.visited.contains(&k)
+    }
+
     /// Which places the player knows, by place number.
     pub fn known(&self, places: &[crate::data::world::Place]) -> Vec<bool> {
         crate::area_map::known(places, &self.visited, |k| self.closed(places, k))

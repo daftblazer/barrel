@@ -280,6 +280,9 @@ struct AreaMap {
     /// The places closed to the player (`Session::closed`), and the sectors not known yet
     /// (`Session::known`): no way there, no label, not listed.
     closed: Vec<bool>,
+    /// The places visited (`Session::visited`): a sector's mark lit (`point_sm_on`, red) once
+    /// visited, else unlit (`point_sm_off`, yellow).
+    visited: Vec<bool>,
 }
 
 impl AreaMap {
@@ -337,7 +340,7 @@ impl AreaMap {
         let trips = if world { barrel_escha::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_escha::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
         let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
-        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), hidden_routes: Vec::new(), seen_routes: Vec::new(), asking: None })
+        Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), visited: Vec::new(), hidden_routes: Vec::new(), seen_routes: Vec::new(), asking: None })
     }
 
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
@@ -359,6 +362,9 @@ impl AreaMap {
         name.split_whitespace().any(|w| {
             self.hidden_routes.iter().any(|r| r == w)
                 || self.places.iter().zip(&self.closed).any(|(p, &shut)| shut && p.kind == 1 && p.tag == w)
+                || (!self.visited.is_empty() && (name.contains("point_sm_on") || name.contains("point_sm_off")) && self.places.iter().enumerate().any(|(k, p)| {
+                    p.kind == 1 && p.tag == w && self.visited.get(k).copied().unwrap_or(false) != name.contains("point_sm_on")
+                }))
         })
     }
 
@@ -4035,6 +4041,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         None => Vec::new(),
                     };
                     if let Some(s) = session.as_ref() {
+                        a.visited = (0..a.places.len()).map(|k| s.visited(k)).collect();
                         let known = s.known_routes(&a.places);
                         let area_routes: std::collections::BTreeSet<i32> = a.places.iter().filter(|p| p.kind == 1).flat_map(|p| p.links).filter(|&r| r >= 0).collect();
                         a.hidden_routes = area_routes.difference(&known).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
