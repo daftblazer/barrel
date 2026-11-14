@@ -3544,7 +3544,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     };
     let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32, Option<(bool, bool)>)>)> = None;
     // The field's HUD (layout 625); on the maps its date panel and the maps' button lists (636).
-    if session.is_some() && player.is_none() && true && std::env::var("BARREL_NO_HUD").is_err() {
+    // Not in a battle: the game shows only the battle's own HUD there (the battle recordings).
+    if session.is_some() && player.is_none() && battle_play.is_none() && std::env::var("BARREL_NO_HUD").is_err() {
         let made = (|| -> Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>)> {
             let Some(exe) = hud_exe.as_ref() else {
                 return None;
