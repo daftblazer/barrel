@@ -778,3 +778,26 @@ the scale's values are set at run time (not read): `_grass.g1t`'s second texture
 red, may be it (or a placeholder). It then normal-maps (`sNMap`, the cards' normal maps) and
 lights as the field's models do. `barrel-ryza` draws the plants without the pigment, and sways their
 tops by stand-in values (docs/ryza/open.md).
+
+### Ryza DX: the plants' constants as the game sets them (measured)
+
+Read from the running game at Rasenboden's garden gate, 10 AM, the High preset (2026-11-14,
+`<reference>/ryza-gate-constants-60hz.mkv`; a 32 MB snapshot of the
+constant ring is kept locally). The plants draw with `objectgrasspbs`'s 656-byte vertex block,
+the variant without `g_vFieldRange`: no pigment map is sampled at the gate. Per draw:
+
+- `g_vAttCache0` = (a, a, a/2, −a/2) with a, the sway's strength, wandering between about 8.7
+  and 10.5 over seconds (gusts; 8.94 and 10.13 held for seconds at a time, 10.54 seen too);
+  `g_fAttCache1` 1.
+- `g_fPhase` 0; `g_fOscPhase` climbs 0.0232 a frame (1.39 radians a second at 60 Hz) and wraps
+  at 2π.
+- `g_vEyePosition` the eye (32527, 6363, 29945 here).
+- `g_fFarClipBegin` / `End` 8000 / 15000 (the Middle grass preset: as Barrel has it),
+  `g_fNearClip` 10.
+- `g_fWidthScale` / `g_fHeightScale` 0 (no growth far off), `g_fFarScaleBegin` / `End` 1000 /
+  2000.
+
+The lighting pass's blocks (`litDir`, `litCol`, `ambLit`, `vEye`, then `emScl` at +96) hold
+the sun's direction (−0.354, −0.707, −0.612), `litCol` (4.781, 5.0, 3.5) with `ambLit`
+(3, 3, 4) in one kind and (3.825, 4, 2.8) with (0.6, 0.6, 0.8) in another, and `emScl` 0 at
+10 AM (the windows do not glow by day, as `EMISSION_BY_TIME` has it).
