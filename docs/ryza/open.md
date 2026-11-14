@@ -317,4 +317,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   shadow layer's fade (20000 to 30000 on High; 14000 to 21000 on the handheld's Middle): a
   guess at what it scales, as the game's cascades (1200 / 6000 / 13000) are not drawn as such.
   In the far view 0.5% of the pixels change and the time does not (the far layer is redrawn
-  only when it moves).
+  only when it moves). The texture mip bias (`TextureType`) leaves out each texture's largest
+  levels at upload (`g1t::Texture::without_top_levels`, kept at 4 × 4 or more): Rasenboden's
+  526 textures take 224.9 MB on the desktop preset and 59.3 MB on the handheld's (bias 1), at
+  the gate 5.73 against 5.60 ms (PC); the picture softens as the game's Middle does.

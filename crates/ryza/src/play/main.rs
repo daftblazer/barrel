@@ -644,7 +644,11 @@ fn main() -> Result<()> {
         .iter()
         .map(|(w, h, px)| barrel_formats::g1t::Texture { width: *w, height: *h, format: barrel_formats::g1t::Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&px[..]] })
         .collect();
-    let textures: Vec<&barrel_formats::g1t::Texture> = textures.iter().copied().chain(composite_textures.iter()).collect();
+    // Without their largest mip levels on a lower preset (`presets.texture_bias`: the game's
+    // texture mip bias, 1 on the handheld's Middle), saving memory and bandwidth.
+    let biased: Vec<barrel_formats::g1t::Texture> = textures.iter().copied().chain(composite_textures.iter()).map(|t| t.without_top_levels(presets.texture_bias)).collect();
+    let textures: Vec<&barrel_formats::g1t::Texture> = biased.iter().collect();
+    eprintln!("textures: {} at {:.1} MB (mip bias {})", textures.len(), textures.iter().map(|t| t.levels.iter().map(|l| l.len()).sum::<usize>()).sum::<usize>() as f64 / 1e6, presets.texture_bias);
     let (uploaded, outline_tex, white) = upload_textures(&gpu, renderer.pool, &textures, None)?;
     let grounds = upload_grounds(&gpu, renderer.pool, &terrains)?;
     let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![None], white };

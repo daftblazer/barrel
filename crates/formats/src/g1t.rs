@@ -84,6 +84,22 @@ pub struct Texture<'a> {
     pub levels: Vec<&'a [u8]>,
 }
 
+impl<'a> Texture<'a> {
+    /// The texture without its `n` largest mip levels (a game's texture mip bias: half the size
+    /// per level dropped), where it has levels to spare and stays at least 4 × 4 (a compressed
+    /// block); as it is otherwise, and always for a cube map or volume.
+    pub fn without_top_levels(&self, n: usize) -> Texture<'a> {
+        let mut t = self.clone();
+        if n == 0 || self.layers != 1 || self.volume || self.levels.len() <= n || (self.width >> n) < 4 || (self.height >> n) < 4 {
+            return t;
+        }
+        t.width >>= n;
+        t.height >>= n;
+        t.levels.drain(..n);
+        t
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct G1t<'a> {
     pub version: [u8; 4],
@@ -229,6 +245,16 @@ impl Texture<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn drops_top_levels_while_blocks_remain() {
+        let px = [0u8; 64];
+        let t = Texture { width: 16, height: 8, format: Format::Bc1, format_code: 0, layers: 1, volume: false, levels: vec![&px[..64], &px[..16], &px[..8]] };
+        let one = t.without_top_levels(1);
+        assert_eq!((one.width, one.height, one.levels.len()), (8, 4, 2));
+        assert_eq!(t.without_top_levels(2).width, 16);
+        assert_eq!(t.without_top_levels(0).levels.len(), 3);
+    }
+
     use super::*;
 
     fn pack(format: u8, dims: u8, ext: Option<(u32, u32)>, body: &[u8]) -> Vec<u8> {

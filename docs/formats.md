@@ -1957,6 +1957,15 @@ The DX release's graphics options are tables of presets, one element per `Type`,
 - `grassqualitypreset.xml` / `grassrangepreset.xml`: see `_grass.bin` above.
 - Read by `barrel_ryza::presets::Graphics::read`: the general preset's `GrassQualityType`,
   `GrassRangeType` and `LODDistType`, then those tables' `Field="Default"` rows.
-- Also `aapreset`, `bloompreset`, `dofpreset`, `effectpreset`, `lightshaftpreset`,
-  `pointlightpreset`, `rlrpreset`, `shadowpreset`, `ssaopreset`, `texturefilterpreset`,
-  `texturepreset`, `waterqualitypreset` (not read yet).
+- `texturepreset.xml`: `TextureMipBias` High 0, Middle 1, Low 2 (Barrel leaves out that many
+  of each texture's largest levels).
+- `shadowpreset.xml`: the three cascades' map sizes, High 4096² each; Middle 2000 × 2400,
+  2000 × 2400, 1600²; Low 1200 × 1600, 1200 × 1600, 1024².
+- `pointlightpreset.xml`: `ClusterFarLimitZ` Middle 100000, Low 50000, VeryLow 10000 (how far
+  point lights are gathered), `LightFadeOutRange` 2000 for all.
+- `rlrpreset.xml` (screen-space reflections): `MaxRaySamples` 256 / 128 / 64, `PixelsPerStep`
+  1 / 2 / 4.
+- `effectpreset.xml`: `ReducedBufferLevel` High 2, Middle 1, Low 0.
+- `waterqualitypreset.xml`: `EnableShoreBubble` on High only, `EnableCaustics` off on Low.
+- `aapreset` (Off 0, Fxaa 1, Taa 2), `texturefilterpreset` (Linear 0, Anisotropic 1) and
+  `bloompreset`, `dofpreset`, `lightshaftpreset`, `ssaopreset` (`Enable` 0 / 1): switches.

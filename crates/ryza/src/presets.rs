@@ -19,11 +19,14 @@ pub struct Graphics {
     pub objects: [f32; 3],
     /// A scale of how far the sun's shadows reach (`ShadowDistType`: `Distance`, 1 on High).
     pub shadow: f32,
+    /// How many of each texture's largest mip levels are left out (`TextureType`:
+    /// `TextureMipBias`, 0 on High).
+    pub texture_bias: usize,
 }
 
 impl Graphics {
     /// The game's `High` general preset, as shipped.
-    pub const HIGH: Graphics = Graphics { grass: grass::Preset::MIDDLE, lod: [10000.0, 30000.0], objects: [8000.0, 20000.0, 40000.0], shadow: 1.0 };
+    pub const HIGH: Graphics = Graphics { grass: grass::Preset::MIDDLE, lod: [10000.0, 30000.0], objects: [8000.0, 20000.0, 40000.0], shadow: 1.0, texture_bias: 0 };
 
     /// The general preset `general` ("High", "Middle", "Low"), its tables read through `read`
     /// (a file name under `saves/graphicssetting`).
@@ -33,16 +36,19 @@ impl Graphics {
         let kind = |k: &str| g.attr(k).map(str::to_owned).ok_or_else(|| format!("GeneralPreset {general}: no {k}"));
         let (quality, range, lod, disp) = (kind("GrassQualityType")?, kind("GrassRangeType")?, kind("LODDistType")?, kind("DispRangeType")?);
         let shadow = kind("ShadowDistType")?;
+        let texture = kind("TextureType")?;
         let q = element(&file("grassqualitypreset.xml")?, "GrassQualityPreset", &quality)?;
         let r = element(&file("grassrangepreset.xml")?, "GrassRangePreset", &range)?;
         let l = element(&file("loddistpreset.xml")?, "LODDistPreset", &lod)?;
         let d = element(&file("disprangepreset.xml")?, "DispRangePreset", &disp)?;
         let s = element(&file("shadowdistpreset.xml")?, "ShadowDistPreset", &shadow)?;
+        let t = element(&file("texturepreset.xml")?, "TexturePreset", &texture)?;
         Ok(Graphics {
             grass: grass::Preset { density: number(&q, "Density")?, far: [number(&r, "FarClipBegin")?, number(&r, "FarClipEnd")?] },
             lod: [number(&l, "Lod_hi_dist")?, number(&l, "Lod_mid_dist")?],
             objects: [number(&d, "ObjNear")?, number(&d, "ObjMiddle")?, number(&d, "ObjFar")?],
             shadow: number(&s, "Distance")?,
+            texture_bias: number(&t, "TextureMipBias")? as usize,
         })
     }
 }
@@ -71,12 +77,13 @@ mod tests {
     fn tables(n: &str) -> Option<Vec<u8>> {
         Some(
             match n {
-                "generalpreset.xml" => r#"<Root><GeneralPreset Field="Default" Type="High" GrassRangeType="Middle" GrassQualityType="Middle" LODDistType="High" DispRangeType="High" ShadowDistType="High"/><GeneralPreset Field="Default" Type="Middle" GrassRangeType="Low" GrassQualityType="Low" LODDistType="Middle" DispRangeType="Middle" ShadowDistType="Middle"/></Root>"#,
+                "generalpreset.xml" => r#"<Root><GeneralPreset Field="Default" Type="High" GrassRangeType="Middle" GrassQualityType="Middle" LODDistType="High" DispRangeType="High" ShadowDistType="High" TextureType="High"/><GeneralPreset Field="Default" Type="Middle" GrassRangeType="Low" GrassQualityType="Low" LODDistType="Middle" DispRangeType="Middle" ShadowDistType="Middle" TextureType="Middle"/></Root>"#,
                 "grassqualitypreset.xml" => r#"<Root><GrassQualityPreset Field="Default" Type="Middle" Density="1"/><GrassQualityPreset Field="Default" Type="Low" Density="0.75"/></Root>"#,
                 "grassrangepreset.xml" => r#"<Root><GrassRangePreset Field="Default" Type="Middle" FarClipBegin="8000" FarClipEnd="15000"/><GrassRangePreset Field="Default" Type="Low" FarClipBegin="3000" FarClipEnd="3100"/></Root>"#,
                 "loddistpreset.xml" => r#"<Root><LODDistPreset Field="Default" Type="High" Lod_hi_dist="10000" Lod_mid_dist="30000"/><LODDistPreset Field="OTHER" Type="Middle" Lod_hi_dist="1" Lod_mid_dist="2"/><LODDistPreset Field="Default" Type="Middle" Lod_hi_dist="8000" Lod_mid_dist="25000"/></Root>"#,
                 "disprangepreset.xml" => r#"<Root><DispRangePreset Field="Default" Type="High" ObjFar="40000" ObjMiddle="20000" ObjNear="8000"/><DispRangePreset Field="Default" Type="Middle" ObjFar="30000" ObjMiddle="15000" ObjNear="7000"/></Root>"#,
                 "shadowdistpreset.xml" => r#"<Root><ShadowDistPreset Field="Default" Type="High" Distance="1"/><ShadowDistPreset Field="Default" Type="Middle" Distance="0.7"/></Root>"#,
+                "texturepreset.xml" => r#"<Root><TexturePreset Field="Default" Type="High" TextureMipBias="0"/><TexturePreset Field="Default" Type="Middle" TextureMipBias="1"/></Root>"#,
                 _ => return None,
             }
             .as_bytes()
@@ -89,7 +96,7 @@ mod tests {
         assert_eq!(Graphics::read("High", &tables).unwrap(), Graphics::HIGH);
         assert_eq!(
             Graphics::read("Middle", &tables).unwrap(),
-            Graphics { grass: grass::Preset { density: 0.75, far: [3000.0, 3100.0] }, lod: [8000.0, 25000.0], objects: [7000.0, 15000.0, 30000.0], shadow: 0.7 }
+            Graphics { grass: grass::Preset { density: 0.75, far: [3000.0, 3100.0] }, lod: [8000.0, 25000.0], objects: [7000.0, 15000.0, 30000.0], shadow: 0.7, texture_bias: 1 }
         );
         assert!(Graphics::read("Low", &tables).is_err());
         assert!(Graphics::read("High", &|_| None).is_err());
