@@ -5,3 +5,4 @@
 pub mod environment;
 pub mod install;
 pub mod light;
+pub mod motion;

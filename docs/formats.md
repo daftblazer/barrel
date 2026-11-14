@@ -1090,6 +1090,20 @@ bytes a light:
 
 There is no colour, so these are not the whole light: see "Ryza field environment".
 
+### Ryza's motions
+
+A character's motion set is named in `saves\chara\charamotionset.xml` (`MotionsetTag`,
+`Directory`, `BaseName`; Ryza `PC00A`, the townspeople's sets with a `SkeletonBase` height),
+and each motion is its own container `\data\x64\character\<set>\<set>_<NNNNN>.elixir.gz`
+holding one `.g1a` (Ryza: 107 of them, 00000 to 09120). `saves\chara\basemotion.xml` lists the
+ones every set has: 0, 11, 21, 131, 30, 40, 70 to 72, 200 to 250, 1000 to 1020. The field's
+come in threes, start / loop / stop: 10, 11, 12 walking (0.63, 1.35, 0.67 s), 20, 21, 22
+running (0.25, 0.75, 0.65 s); 0 is the idle stand (2.52 s). Posed side on, 11 is a walk and 21
+a run. They stay in place: the root bone (joint 1, the hips at 86 to 89 units) does not
+travel, so the speed she moves at is the game's. Motion 131 lowers the hips to 77 (a crouch);
+30, 40 and the rest are not identified yet. The tracks name bone ids, mapped to joints through
+the skeleton's index map ("Skeletons" above).
+
 ### Ryza field environment (`<field>_env.elixir.gz`)
 
 Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin` (97,920 bytes
