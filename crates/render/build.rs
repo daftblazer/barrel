@@ -7,7 +7,7 @@ fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     // Included by others.
     println!("cargo:rerun-if-changed=shaders/gsr2_common.glsl");
-    for name in ["model.vert", "model.frag", "terrain.frag", "text.vert", "text.frag", "post.vert", "post.frag", "glow.frag", "shadow.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
+    for name in ["model.vert", "model.frag", "terrain.frag", "text.vert", "text.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "glow.frag", "shadow.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
         let src = PathBuf::from("shaders").join(name);
         println!("cargo:rerun-if-changed={}", src.display());
         let dst = out.join(format!("{name}.spv"));

@@ -32,6 +32,8 @@ pub mod graphics_options;
 
 pub const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
 pub const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
+pub const SKY_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.vert.spv"));
+pub const SKY_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv"));
 pub const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 pub const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
@@ -44,8 +46,12 @@ pub const GLOW_THRESHOLD: f32 = 0.5;
 pub const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-/// The look block's slots (vec4s; model.vert's `Look`).
-pub const LOOK_SLOTS: usize = 76;
+/// The look block's slots (vec4s; model.vert's `Look`, then the sky plane's 11 from
+/// `SKY_SLOT`, sky.frag).
+pub const LOOK_SLOTS: usize = 87;
+/// The first of the sky plane's look slots (sky.frag): {on}, Scat[4], skyPos, fog, the sun's
+/// way, the glow's direction, colour and parameters.
+pub const SKY_SLOT: usize = 76;
 pub const LOOK_SIZE: u64 = LOOK_SLOTS as u64 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").

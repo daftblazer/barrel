@@ -43,6 +43,11 @@ pub struct Renderer {
     pub pipeline_layout: vk::PipelineLayout,
     pub pipeline: vk::Pipeline,
     pub sky_pipeline: vk::Pipeline,
+    /// The sky plane (sky.vert/frag): drawn first among the far plane's fragments when a
+    /// frame asks (`Frame::sky_plane`).
+    pub sky_plane_pipeline: vk::Pipeline,
+    pub sky_vs: vk::ShaderModule,
+    pub sky_fs: vk::ShaderModule,
     pub outline_pipeline: vk::Pipeline,
     pub shadow_fs: vk::ShaderModule,
     pub shadow_pipeline: vk::Pipeline,
@@ -122,6 +127,8 @@ pub struct Frame<'a> {
     pub layers: &'a [&'a text::Layer],
     /// Offscreen, the buffer this frame is copied into (a frame to keep).
     pub readback: Option<vk::Buffer>,
+    /// Draw the sky plane (its look slots from `SKY_SLOT`) behind the distant view.
+    pub sky_plane: bool,
 }
 
 impl Renderer {
@@ -497,6 +504,17 @@ impl Renderer {
         let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att[..colour_targets]);
         let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
         let sky_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_info], None).map_err(|(_, e)| e)?[0] };
+        // The sky plane: a screen-covering triangle (no vertices) on the far plane where nothing
+        // covers it, like the distant view, unblended (the clouds blend over it after).
+        let (sky_vs, sky_fs) = (module(SKY_VERT)?, module(SKY_FRAG)?);
+        let sky_stages = [
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(sky_vs).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(sky_fs).name(c"main"),
+        ];
+        let sky_input = vk::PipelineVertexInputStateCreateInfo::default();
+        let sky_raster = raster.cull_mode(vk::CullModeFlags::NONE);
+        let sky_plane_info = pipeline_info.stages(&sky_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).depth_stencil_state(&no_depth).color_blend_state(&blend);
+        let sky_plane_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_plane_info], None).map_err(|(_, e)| e)?[0] };
 
         // The characters' outline pass: the same shaders in outline mode, front faces culled (an
         // inverted hull: only the pushed-out back faces show, as a rim).
@@ -564,7 +582,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -575,8 +593,8 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, ref camera, freeze_now, frozen_weight, overlay, layers, readback } = *frame;
-        let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
         let (scene_width, scene_height) = targets.scene_size;
@@ -714,6 +732,11 @@ impl Renderer {
             // The distant view's fragments on the far plane (see `sky_pipeline`).
             let depth_range = if pass_sky { (1.0, 1.0) } else { (0.0, 1.0) };
             d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: depth_range.0, max_depth: depth_range.1 }]);
+            if pass_sky && sky_plane {
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, sky_plane_pipeline);
+                d.cmd_draw(cb, 3, 1, 0, 0);
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
+            }
             for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d)) {
                 // The instance, and whether it is shaded as a character (not part of a field), as
                 // an eye and as the distant view; the game's own material bits and tint.
@@ -854,6 +877,9 @@ impl Renderer {
             d.destroy_pipeline(self.shadow_pipeline, None);
             d.destroy_shader_module(self.shadow_fs, None);
             d.destroy_pipeline(self.sky_pipeline, None);
+            d.destroy_pipeline(self.sky_plane_pipeline, None);
+            d.destroy_shader_module(self.sky_vs, None);
+            d.destroy_shader_module(self.sky_fs, None);
             d.destroy_pipeline(self.pipeline, None);
             d.destroy_pipeline_layout(self.pipeline_layout, None);
             d.destroy_shader_module(self.vs, None);

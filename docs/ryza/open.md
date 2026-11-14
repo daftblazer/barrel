@@ -54,13 +54,13 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   to compare) over one square around the target (`1.5 ×` the camera distance, 1500 to 6000
   units across each way); the game's cascades (`shadowMap_`) are not read, so far ground
   stays unshadowed, and the shade comes out lighter than the game's.
-- **The sky.** The game shows a blue sky with haze toward the horizon; `barrel-ryza` draws none
-  (the clear colour). The set's cloud dome is named (`environment::sky_dome`, docs/formats.md)
-  but not drawn yet; the blue is the sky shader's single scattering (docs/shading.md, "Ryza
-  DX: the sky"), its coefficients in `skyFog_` (read); how the executable turns them into the
-  shader's `Scat` is measured (docs/shading.md); `skyPos`, `fog`, `litDir` and the glow are
-  not; where the dome sits
-  (`SkyDomeWorldPosition`, `WorldScale`) not placed.
+- **The sky.** `barrel-ryza` draws the sky plane with the game's measured scattering (the set's
+  `skyFog_`, the sun times its power). Stand-ins: the path length's terms (`skyPos`, `fog`:
+  an atmosphere `end` thick over a ground ten times as wide) and no glow around the sun
+  (`vGlowDir`, `cGlow`, `hGlowParam` not read). Against the game at Rasenboden's noon the blue
+  comes out deeper and without the white haze toward the horizon, which the path length and the
+  glow shape. The set's cloud dome (`environment::sky_dome`) is not drawn yet; where it sits
+  (`SkyDomeWorldPosition`, `WorldScale`) is not placed.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`).

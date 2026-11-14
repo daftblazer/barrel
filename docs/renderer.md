@@ -563,6 +563,14 @@ card for card in framing and cast; the differences left are the sky (a bright su
 dull here) and the glowing lamp on the bureau's dome (not checked again since the point
 lights' fix).
 
+**The sky plane** (the Ryza games). A frame with `Frame::sky_plane` set draws, first among the
+far plane's fragments (the distant view's pass: depth range 1 to 1, compared `LESS_OR_EQUAL`
+against the cleared depth, no depth write), a triangle over the screen with `sky.vert` /
+`sky.frag`: each pixel's view ray from the look's eye and inverted `view_proj` (slots 4 and
+44), shaded as `skyplane.g1s` does (docs/shading.md, "Ryza DX: the sky") from the look's slots
+`SKY_SLOT` (76) to 86. The distant view's draws (the cloud dome) blend over it. Escha never sets
+it, so its frames are unchanged.
+
 **Distant view order.** The distant view draws without depth, so its models go back to
 front by kind: the dome (`Sphere_sky`), the clouds (`xEF_`), then everything else (ground,
 stones, `ns_` trees, `xS3_` cliffs) in file order. In file order the clouds came after

@@ -195,8 +195,9 @@ fn main() -> Result<()> {
             let (c, _) = barrel_ryza::environment::diffuse_harmonics(ad)?;
             let bin = barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)).ok_or("environment has no settings")?;
             let light = Light::read(bin, a.time, a.weather)?;
+            let (_, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
             eprintln!("light ({:?}, {:?}): {light:?}", a.time, a.weather);
-            Some((c, light))
+            Some((c, light, sky_fog))
         }
         None => None,
     };
@@ -241,12 +242,19 @@ fn main() -> Result<()> {
     // terrain, which has no unlit flag, shows its colours as they are); no sun, no fog.
     let mut look = [[0f32; 4]; LOOK_SLOTS];
     let mut shadow_vp = vp;
+    // This frame's view-projection (and, with no frame before it, last frame's): motion
+    // vectors and the sky plane's view rays.
+    for (k, col) in vp.to_cols_array_2d().into_iter().enumerate() {
+        look[40 + k] = col;
+        look[44 + k] = col;
+    }
+    let mut sky_plane = false;
     look[4] = [eye.x, eye.y, eye.z, 1.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
     // The environment's light instead, when the field has one: the cube map's light times the
     // ambient colour (model.vert's `sh`), the sun and the second light as the field's two
     // directional lights, all scaled by one exposure (`exposure`).
-    if let Some((c, light)) = environment {
+    if let Some((c, light, sky_fog)) = environment {
         let k = exposure(&c, &light);
         look[66] = [1.0, 0.0, 0.0, 0.0];
         for (i, [r, g, b]) in c.into_iter().enumerate() {
@@ -256,6 +264,33 @@ fn main() -> Result<()> {
             let d = from_light(p.elevation, p.azimuth);
             look[slot] = [d.x, d.y, d.z, 0.0];
             look[slot + 1] = [p.color[0] * k, p.color[1] * k, p.color[2] * k, 1.0];
+        }
+        // The sky plane (docs/shading.md, "Ryza DX: the sky"): Scat as measured in the game,
+        // from `skyFog_` and the sun's colour times its power (scaled by the frame's exposure).
+        // Stand-ins, not read: the path length's terms (an atmosphere `end` thick over a ground
+        // ten times as wide, so the zenith is one fog span and the horizon about 4.6) and no
+        // glow (`docs/ryza/open.md`).
+        {
+            let f = sky_fog;
+            let sun = light.parallel[0].color.map(|v| v * f.power * k);
+            let ext: [f32; 3] = std::array::from_fn(|i| f.rayleigh[i] + f.mie[i]);
+            let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
+            let ray_k = 3.0 / (16.0 * std::f32::consts::PI);
+            let mie_k = (1.0 - f.g) * (1.0 - f.g) / (4.0 * std::f32::consts::PI);
+            let s0 = SKY_SLOT;
+            look[s0] = [1.0, 0.0, 0.0, 0.0];
+            look[s0 + 1] = [-ext[0] * std::f32::consts::LOG2_E, -ext[1] * std::f32::consts::LOG2_E, -ext[2] * std::f32::consts::LOG2_E, 1.0];
+            look[s0 + 2] = [0.0, 0.0, 0.0, 1.0];
+            look[s0 + 3] = [ray_k * sun[0] * part(f.rayleigh, 0), ray_k * sun[1] * part(f.rayleigh, 1), ray_k * sun[2] * part(f.rayleigh, 2), -2.0 * f.g];
+            look[s0 + 4] = [mie_k * sun[0] * part(f.mie, 0), mie_k * sun[1] * part(f.mie, 1), mie_k * sun[2] * part(f.mie, 2), 1.0 + f.g * f.g];
+            let thick = (f.end - f.start).max(1.0);
+            let ground = 10.0 * thick;
+            let top = ground + thick;
+            look[s0 + 5] = [ground, ground * ground, top * top - ground * ground, 0.0];
+            look[s0 + 6] = [1.0 / thick, 0.0, 0.0, 0.0];
+            let sun_way = from_light(light.parallel[0].elevation, light.parallel[0].azimuth);
+            look[s0 + 7] = [sun_way.x, sun_way.y, sun_way.z, 0.0];
+            sky_plane = true;
         }
         // The sun's shadow map: one square over the camera's target, wide enough for the
         // view (the game's cascades, `shadowMap_`, are not read), unless --no-shadows.
@@ -304,6 +339,7 @@ fn main() -> Result<()> {
         overlay: [0.0; 4],
         layers: &layers,
         readback: Some(readback),
+        sky_plane,
     };
     let mut sync = ring::Frames::new(&gpu)?;
     let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
