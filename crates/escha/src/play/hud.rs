@@ -64,8 +64,8 @@ pub enum Element {
     Sprite { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite at half strength (a choice not taken).
     Dim { part: i32, cut: i32, at: [i32; 2] },
-    /// A sprite mirrored left to right (node kind 2).
-    Mirrored { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite mirrored (node kind 2): `axis` 0 left to right, 1 top to bottom, 2 both.
+    Mirrored { part: i32, cut: i32, at: [i32; 2], axis: i32 },
     /// A sprite's left `fill` (0 to 1) only: a bar.
     Cropped { part: i32, cut: i32, at: [i32; 2], fill: f32 },
     /// A whole picture of a pack chosen at run time (an item's picture), `size` on the
@@ -102,13 +102,13 @@ impl Element {
     /// A placed node's sprite as the layout stores it (mirrored for kind 2).
     pub fn stored(p: &Placed) -> Element {
         let (part, cut, at) = (p.node.part, p.node.cut.max(0), p.at);
-        if p.node.kind == MIRRORED { Element::Mirrored { part, cut, at } } else { Element::Sprite { part, cut, at } }
+        if p.node.kind == MIRRORED { Element::Mirrored { part, cut, at, axis: p.node.mirror } } else { Element::Sprite { part, cut, at } }
     }
 
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at } | Element::Cropped { part, cut, at, .. } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } => Some((part, cut, at)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
@@ -156,7 +156,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
                 segment += 1;
             }
             _ => out.push(match Element::stored(p) {
-                Element::Mirrored { part, cut, .. } => Element::Mirrored { part, cut, at },
+                Element::Mirrored { part, cut, axis, .. } => Element::Mirrored { part, cut, at, axis },
                 e => e.sprite().map_or(e, |(part, cut, _)| Element::Sprite { part, cut, at }),
             }),
         }
@@ -188,7 +188,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
     let mut out = Vec::new();
     for e in elements {
         match e {
-            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at } => {
+            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at, .. } => {
                 let alpha = if matches!(e, Element::Dim { .. }) { 0.5 } else { 1.0 };
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
@@ -197,7 +197,12 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [x, y] = piece.at.map(|v| v as f32);
                 out.push(Quad {
                     rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k],
-                    uv: if matches!(e, Element::Mirrored { .. }) { [r / w, t / h, l / w, b / h] } else { [l / w, t / h, r / w, b / h] },
+                    uv: match *e {
+                        Element::Mirrored { axis: 1, .. } => [l / w, b / h, r / w, t / h],
+                        Element::Mirrored { axis: 2, .. } => [r / w, b / h, l / w, t / h],
+                        Element::Mirrored { .. } => [r / w, t / h, l / w, b / h],
+                        _ => [l / w, t / h, r / w, b / h],
+                    },
                     color: [1.0, 1.0, 1.0, alpha],
                     texture: sheets.first + slot,
                 });
@@ -279,7 +284,7 @@ mod tests {
     use barrel_escha::data::layout::Node;
 
     fn node(path: &[u32], part: i32, cut: i32, kind: i32, at: [i32; 2]) -> Placed {
-        Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind }, at, va: 0 }
+        Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind, mirror: 0 }, at, va: 0 }
     }
 
     #[test]

@@ -59,7 +59,7 @@ pub fn elements(grid: &[Placed], boxed: &[Placed], texts: impl Fn(&Placed) -> Op
             }
             0x4d => {}
             _ => out.push(match Element::stored(p) {
-                Element::Mirrored { part, cut, .. } => Element::Mirrored { part, cut, at },
+                Element::Mirrored { part, cut, axis, .. } => Element::Mirrored { part, cut, at, axis },
                 e => e.sprite().map_or(e, |(part, cut, _)| Element::Sprite { part, cut, at }),
             }),
         }

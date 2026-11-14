@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! layout id ≥ 0x165:  LAYOUTS[id - 0x165]      = {u64 nodes, i32 x, i32 y}          16 bytes
-//! node:               {i32 part, i32 cut, i32 x, i32 y, i32 kind, ...}             0x28 bytes,
+//! node:               {i32 part, i32 cut, i32 x, i32 y, i32 kind, i32 mirror, ...}             0x28 bytes,
 //!                     the list ending with part -1; x, y from the layout's place
 //! part < 0x164:       SPRITES[part]            = u64 cuts
 //! cut:               {i32 texture, u16 x0, u16 y0, u16 x1, u16 y1, i32, i32}     20 bytes
@@ -80,6 +80,9 @@ pub struct Node {
     pub cut: i32,
     pub at: [i32; 2],
     pub kind: i32,
+    /// For a mirrored node (kind 2), its word 5: 0 left to right, 1 top to bottom, 2 both
+    /// (layout 649's quarter vignette is drawn four ways with 0, 1 and 2).
+    pub mirror: i32,
 }
 
 /// Layout `id`'s place on the 1920 × 1080 screen and its nodes, or `None` past the table.
@@ -95,7 +98,7 @@ pub fn nodes(pe: &Pe, id: u32) -> Option<([i32; 2], Vec<Node>)> {
             break;
         }
         let f = |i: u64| i32_at(pe, node + 4 * i).unwrap_or(0);
-        out.push(Node { part, cut: f(1), at: [f(2), f(3)], kind: f(4) });
+        out.push(Node { part, cut: f(1), at: [f(2), f(3)], kind: f(4), mirror: f(5) });
         node += 0x28;
     }
     Some(([x, y], out))

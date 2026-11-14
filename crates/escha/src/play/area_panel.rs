@@ -37,6 +37,15 @@ fn moved(p: &Placed, by: [i32; 2]) -> [i32; 2] {
 
 /// The panels for place `name` (with `description`) in region `region`; `width_of` measures a
 /// text at size `size` in screen pixels, for breaking the description into lines.
+/// The maps' frame, under every panel: layout 649's dark red vignette (one corner sheet,
+/// a15_common #25, mirrored to the four corners) and 650's diamond border.
+pub const FRAME: [u32; 2] = [649, 650];
+
+/// The world and area maps' frame (`FRAME`), as the layouts store it.
+pub fn frame(pe: &barrel_formats::pe::Pe) -> Vec<Element> {
+    FRAME.iter().flat_map(|&id| barrel_escha::data::layout::placed(pe, id)).map(|p| Element::stored(&p)).collect()
+}
+
 pub fn elements(
     pe: &barrel_formats::pe::Pe,
     region: &str,

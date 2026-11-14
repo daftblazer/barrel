@@ -47,7 +47,13 @@ likely settle them where static reading failed.
     (no screenshot of it).
 - (2026-11-14) Battles don't really work yet: Barrel's battle is an auto-battle with a stand-in
   playback and a text command list (stage 17 in the plan).
-- (2026-11-14) The maps don't quite look the same yet (stage 15).
+- (2026-11-14) The maps don't quite look the same yet (stage 15). Done: the vignette (649) and
+  diamond border (650). Still different against colseit-arrival 0:45: the game's vignette is a
+  warm red-orange glow and the map a more saturated orange (Barrel's vignette alpha-blended is
+  a faint brown: the blend or a colour on 649 is not read); the field HUD (date panel, gauge)
+  and the button lists (Return / Assignment / System, Requests / Message Log) are not drawn on
+  the maps; the scroll and label plates are flat stand-ins; event points are red dots and the
+  cursor a blue ring under Escha in the game.
 - (2026-11-14) No title screen music.
 - (2026-11-14) No intro movie on startup (movies: native decoders, chosen 2026-11-14).
 - (2026-11-14) No company logo splash screens before the title.

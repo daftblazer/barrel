@@ -1688,7 +1688,10 @@ stored and at [0, 0] mirrored, and its right-hand rope, layout 1017 at x 1284, t
 turned a few degrees. Some pictures are stored at half alpha (at most 128: the hero choice's
 grey figure sketches, cut 0 of parts 0x138 and 0x139, whose cut 1 is the same in colour at
 full alpha). The desk under a screen is chosen at run time: the hero choice's layout names
-part 0 cut 0 with the overlay 357 (cuts 4 and 5), but the game shows part 0 cut 1 there.
+part 0 cut 0 with the overlay 357 (cuts 4 and 5), but the game shows part 0 cut 1 there. A mirrored node's word 5 (the
+word after the kind) is the axis: 0 left to right, 1 top to bottom, 2 both. Layout 649 draws
+one corner of a dark red vignette (a15_common #25, 964 × 548) four times with 0, 0, 1 and 2,
+and 650 a diamond border the same way; together they frame the world and area maps.
 
 The main menu opened in play is layouts 383 (the desk background, `a15_menu.g1t` picture 0),
 361 (the lead's figure: nested 957 on `a15_menu_chara01.g1t`) and 374 (placed at [0, 90]: a dark

@@ -317,6 +317,7 @@ impl AreaMap {
         let mut all: Vec<hud::Element> = (0..5).flat_map(|tier| area_panel::elements(&pe, "", "", "", &[], tier, |_, _| 0.0)).collect();
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, [0, 0], 0, 1, 1));
+        all.extend(area_panel::frame(&pe));
         all.extend(question::elements(&pe, "", true));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
@@ -481,6 +482,7 @@ impl AreaMap {
         if let Some(yes) = self.asking {
             e.extend(question::elements(&pe, RETURN_TO_WORLD_MAP, yes));
         }
+        let mut e = [area_panel::frame(&pe), e].concat();
         self.layer.set(gpu, &hud::quads(&pe, Some(&self.font), &self.sheets, &e, width as f32, height as f32))?;
         self.shown = Some((self.at, width, height, mvp.is_some(), trip, self.asking));
         Ok(())

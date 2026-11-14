@@ -150,7 +150,7 @@ impl LoadList {
                 }
                 _ => {}
             }
-            out.push(if n.kind == crate::hud::MIRRORED { Element::Mirrored { part, cut, at } } else { Element::Sprite { part, cut, at } });
+            out.push(if n.kind == crate::hud::MIRRORED { Element::Mirrored { part, cut, at, axis: n.mirror } } else { Element::Sprite { part, cut, at } });
         }
         out
     }
