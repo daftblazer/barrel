@@ -25,6 +25,9 @@ pub struct Placement {
     pub version: Option<u32>,
     /// Its draw class (`Draw::class`).
     pub class: u8,
+    /// Also its `_mid` and `_low` models where the container has them, each draw marked with
+    /// its level (`Draw::lod`) for the game to pick by distance.
+    pub lods: bool,
 }
 
 /// Where a placement puts its model: scale, then rotate about x, y and z in that order, then
@@ -96,25 +99,32 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         };
         let model = G1m::parse(bytes)?;
         let Some(geometry) = model.geometry.as_ref() else { continue };
+        // Its lower levels of detail, for a game that draws them (`Placement::lods`).
+        let lower: Vec<G1m> = ["_mid", "_low"].iter().filter_map(|l| named(&objects, &format!("{}{l}.g1m", t.name)).and_then(|b| G1m::parse(b).ok())).filter(|m| m.geometry.is_some()).collect();
         for i in &t.instances {
             let transform = placement_transform(i);
-            let before = scene.draws.len();
             let how = place(t, i);
-            // An object the game moves (a tree's spring) gets its own instance; the rest are
-            // baked.
-            if how.own_instance {
-                let instance = scene.instance(transform);
-                scene.add_posed(geometry, Mat4::IDENTITY, texture_count, None, instance)?;
-            } else {
-                scene.add(geometry, transform, texture_count)?;
-            }
-            for d in &mut scene.draws[before..] {
-                d.casts = how.casts;
-                // The object's name and its placement's tags (the sway keywords, xV1_ / xN1_,
-                // may be in either).
-                d.name = if i.tags.is_empty() { t.name.clone() } else { format!("{} {}", t.name, i.tags) };
-                d.version = how.version;
-                d.class = how.class;
+            let levels: Vec<&barrel_formats::g1m::Geometry> = std::iter::once(geometry).chain(if how.lods { lower.iter().filter_map(|m| m.geometry.as_ref()).collect() } else { Vec::new() }).collect();
+            for (level, g) in levels.iter().enumerate() {
+                let before = scene.draws.len();
+                // An object the game moves (a tree's spring) gets its own instance; the rest
+                // are baked.
+                if how.own_instance {
+                    let instance = scene.instance(transform);
+                    scene.add_posed(g, Mat4::IDENTITY, texture_count, None, instance)?;
+                } else {
+                    scene.add(g, transform, texture_count)?;
+                }
+                let lod = if levels.len() < 2 { 0 } else { level as u8 + 1 | if level + 1 == levels.len() { barrel_render::LOD_LAST } else { 0 } };
+                for d in &mut scene.draws[before..] {
+                    d.casts = how.casts;
+                    // The object's name and its placement's tags (the sway keywords, xV1_ /
+                    // xN1_, may be in either).
+                    d.name = if i.tags.is_empty() { t.name.clone() } else { format!("{} {}", t.name, i.tags) };
+                    d.version = how.version;
+                    d.class = how.class;
+                    d.lod = lod;
+                }
             }
             placed += 1;
         }
@@ -124,6 +134,8 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         d.texture += base;
         d.overlay = d.overlay.map(|o| o + base);
         d.mask = d.mask.map(|m| m + base);
+        d.normal_map = d.normal_map.map(|m| m + base);
+        d.emission = d.emission.map(|m| m + base);
     }
     Ok((textures, pattern))
 }

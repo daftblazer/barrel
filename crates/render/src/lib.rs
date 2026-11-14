@@ -154,6 +154,10 @@ pub struct Draw {
     /// The version a field object belongs to (its placement tag `xAM_…_ver<N>`): drawn only
     /// while the event shows that version (`q15`, `Stage::versions_shown`).
     pub version: Option<u32>,
+    /// Which of its object's levels of detail it is (`LOD_HI`, `LOD_MID`, `LOD_LOW`, with
+    /// `LOD_LAST` on the object's last one), when the field draws them by distance; 0 for a
+    /// draw always shown.
+    pub lod: u8,
     /// Its model's lighting material (`cDiff`, `cAmb`: g1m section 0x10001, grey in every
     /// field model), packed as two unorm16 for the push constants; [`FULL_LIGHT`] without one.
     pub light: u32,
@@ -674,7 +678,7 @@ impl Scene {
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
         }
         Ok(())
     }
@@ -993,6 +997,13 @@ impl Targets {
         }
     }
 }
+
+/// `Draw::lod`: an object's full model, its middle and its low level of detail, and the mark
+/// of its last level (shown at any distance past its start).
+pub const LOD_HI: u8 = 1;
+pub const LOD_MID: u8 = 2;
+pub const LOD_LOW: u8 = 3;
+pub const LOD_LAST: u8 = 4;
 
 /// A game-space placement as a render-space matrix: the vertices are mirrored in x as they are
 /// built, so a placement T becomes S·T·S with S the x mirror (a rotation stays a rotation).

@@ -299,3 +299,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 - **Without the Steam client**: the executable imports `steam_api64.dll` (callbacks,
   achievements, Steam saves) but no restart-through-Steam check was found among its strings;
   whether it starts without the client is unchecked.
+- **Levels of detail.** Rasenboden's object container holds 138 `_hi` models, 26 `_mid` and
+  14 `_low`. `barrel-ryza` loads all three (`Placement::lods`, `Draw::lod`) and shows each by
+  the distance from the eye to its box's centre at the game's High LOD preset (10000, 30000;
+  docs/formats.md, "the graphics presets"). In a far view of the village it saves about
+  0.08 ms of 7.2 on the PC with 12 pixels changed; the landmarks (cliffs, windmills) have no
+  lower levels. The Middle and Low presets (8000 / 25000, 6000 / 20000), for the handhelds,
+  wait for a quality setting that picks the game's general preset.

@@ -219,6 +219,10 @@ fn exposure(c: &[[f32; 3]; 9], light: &Light) -> f32 {
 const PLANT_CARDS: [u32; 19] = [1, 0, 2, 3, 0, 0, 5, 4, 2, 6, 7, 1, 3, 0, 5, 5, 6, 4, 5];
 /// The most plants a field draws (Rasenboden: about 36,000 at the kinds' densities).
 const PLANT_LIMIT: usize = 200_000;
+/// Where an object's full model gives way to its middle level of detail, and that to its low
+/// one, from the eye: the game's High LOD preset (`loddistpreset.xml`: `Lod_hi_dist` 10000,
+/// `Lod_mid_dist` 30000; docs/formats.md, "the graphics presets").
+const LOD_DIST: [f32; 2] = [10000.0, 30000.0];
 /// Plants are grouped into draws of this many grid cells a side, so the view culls them.
 const PLANT_BLOCK: usize = 8;
 /// The plants' normal in the card's frame (turned by the billboard axes): up, so a plant takes
@@ -272,6 +276,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             casts: false,
             name: "plants".into(),
             version: None,
+            lod: 0,
             light: 0,
             tint: 0,
             bounds: None,
@@ -305,7 +310,7 @@ fn main() -> Result<()> {
     // casts the sun's shadow; nothing sways yet (`docs/ryza/open.md`).
     // Each keeps its placement's draw class (near, middle, far, landmark), for the field's draw
     // distances.
-    let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, ..Default::default() };
+    let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, lods: true, ..Default::default() };
     let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
@@ -713,6 +718,21 @@ fn main() -> Result<()> {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
             }
+            // An object's level of detail by its distance from the eye (the game's LOD
+            // distances, `LOD_DIST`): its full model nearer than the first, its middle one to
+            // the second, its low one past it; without a box (draw ranges off), the full one.
+            && (d.lod == 0
+                || boxes.get(&(d.first_index, d.instance)).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
+                    let far = ((lo + hi) * 0.5).distance(eye_now.get());
+                    let level = d.lod & 3;
+                    let start = match level {
+                        LOD_HI => 0.0,
+                        LOD_MID => LOD_DIST[0],
+                        _ => LOD_DIST[1],
+                    };
+                    let end = if d.lod & LOD_LAST != 0 { f32::INFINITY } else if level == LOD_HI { LOD_DIST[0] } else { LOD_DIST[1] };
+                    far >= start && far < end
+                }))
     };
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     // Her draws take the toon ramp (flag 128, the row in bits 16-23).
