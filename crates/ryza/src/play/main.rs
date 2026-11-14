@@ -4,7 +4,7 @@
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
-//!                 [--window]
+//!                 [--window [--fullscreen]] [--preset NAME]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
@@ -53,6 +53,9 @@ struct Args {
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
     window: bool,
+    /// Graphics: a preset by name (`RenderSettings::preset`), and fullscreen.
+    preset: Option<RenderSettings>,
+    fullscreen: bool,
     /// In a window: quit after this many frames, and a lean held all along (for tests).
     frames: Option<u32>,
     /// Each pass's GPU time, reported at the end (`--timings`).
@@ -75,7 +78,7 @@ fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, window: false, timings: false, frames: None, lean: [0.0; 2] };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2] };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -95,6 +98,11 @@ fn args() -> Result<Args> {
             "--hide" => a.hide.push(value()?),
             "--no-shadows" => a.no_shadows = true,
             "--window" => a.window = true,
+            "--fullscreen" => a.fullscreen = true,
+            "--preset" => {
+                let name = value()?;
+                a.preset = Some(RenderSettings::preset(&name).ok_or(format!("--preset {name}: no such preset"))?);
+            }
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
             "--lean" => {
@@ -312,7 +320,25 @@ fn main() -> Result<()> {
 
     let (mut width, mut height) = a.size;
     // A window to play in (--window), or an offscreen image.
-    let mut pump = a.window.then(|| window::Pump::open(settings::Display { width, height, fullscreen: false })).transpose()?;
+    // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
+    // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
+    // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
+    let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
+    let graphics = a
+        .preset
+        .or(config.as_deref().map(RenderSettings::from_config))
+        .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)))
+        .unwrap_or(RenderSettings::DESKTOP)
+        .resolved();
+    let display = match config.as_deref() {
+        Some(text) => settings::Display::from_config(text),
+        None => settings::Display { width, height, fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1") },
+    };
+    let display = settings::Display { fullscreen: display.fullscreen || a.fullscreen, ..display };
+    if a.window {
+        eprintln!("graphics: {graphics:?}, {display:?}");
+    }
+    let mut pump = a.window.then(|| window::Pump::open(display)).transpose()?;
     let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
     let gpu = Gpu::new(display)?;
     let mut presenter = match (&pump, display) {
@@ -327,7 +353,7 @@ fn main() -> Result<()> {
         (width, height) = (p.extent.width, p.extent.height);
         eprintln!("window: {width}x{height}");
     }
-    let mut renderer = Renderer::new(&gpu, RenderSettings::DESKTOP.resolved(), presenter.as_ref(), width, height, a.timings, false)?;
+    let mut renderer = Renderer::new(&gpu, graphics, presenter.as_ref(), width, height, a.timings, false)?;
     let d = &gpu.device;
     // In a window the joints move: last frame's go to the palette's second half (the motion
     // vectors').

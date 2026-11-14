@@ -119,13 +119,15 @@ The name comes from the series' running "Barrel!" joke.
 
 Barrel runs as a [Kintsugi](https://github.com/daftblazer/kintsugi) engine: in the game's
 Properties > Compatibility, force the Kintsugi tool, and Steam starts Barrel at the title screen
-on the game's own files instead of the Windows game. Escha & Logy DX (app 1152310) is the one
-wired up so far.
+on the game's own files instead of the Windows game. Escha & Logy DX (app 1152310) is wired up;
+Ryza DX (app 3365030) starts Ryza walking Rasenboden from her garden gate (no title or story
+yet).
 
 ```
 tools/deploy.sh                 # build for this machine and install the engine here
 tools/deploy.sh user@host       # cross-build for aarch64 and install it on a handheld over SSH
-tools/package.sh ARCH OUT       # just make the engine folder (x86_64 or aarch64)
+BARREL_GAME=ryza tools/deploy.sh [user@host]   # the same for Ryza DX
+tools/package.sh ARCH OUT [escha|ryza]         # just make the engine folder (x86_64 or aarch64)
 ```
 
 The aarch64 build needs an arm64 root filesystem (glibc no newer than the device's, the Vulkan
