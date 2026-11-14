@@ -420,6 +420,13 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Events | View | "Message Log" | not yet |
 | Events | Start, Y, LB, RB | nothing seen | nothing |
 
+The "not yet" rows wait for screens or systems Barrel does not have yet: the Message Log
+(View in the field, events and the area map), the Requests page (Menu), the field's search
+equipment (the D-pad), the pages' LB/RB tabs (the Assignment page's "Change Entry", with its
+Bonus tab), the System list's Erase Save Data and Dressing Room rows, and the battle's Fast
+Forward (L3) and Field Information (View), which come with the battle (`docs/escha/loop.md`,
+stage 17). Each gets its button as it comes; the table says which.
+
 Barrel reads the pad through SDL3 by place: A, B and the D-pad stand for Enter, Backspace and
 the arrows on every screen (`render::window::pad_keys`); the field and events take the other
 buttons as pad buttons by what is on screen (`Pump::take_input`). The D-pad no longer walks
