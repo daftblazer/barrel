@@ -250,14 +250,29 @@ const MAP_TAB_AT: [i32; 2] = [1448, 276];
 /// at (306 + 88, 0)) and 634 (left: part 0x91 through 630 and 628 at (82, 0), the plate at
 /// (36, 32)) place it, turned a quarter clockwise about its node (layout kind 7), the plate 32
 /// below the layout's top. Not yet the game's: the ornament's bob (its four cuts).
-pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, _width: f32) -> Vec<Element> {
-    let inward = if at[0] < 960 { LABEL_IN } else { -LABEL_IN };
-    let left = at[0] + inward - PLATE_WIDTH / 2;
-    let top = at[1] - LABEL_ABOVE - PLATE_HEIGHT / 2;
+pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, side: Side) -> Vec<Element> {
+    let (left, top, ornament) = match side {
+        Side::Left | Side::Right => {
+            let inward = if side == Side::Left { LABEL_IN } else { -LABEL_IN };
+            let left = at[0] + inward - PLATE_WIDTH / 2;
+            let top = at[1] - LABEL_ABOVE - PLATE_HEIGHT / 2;
+            // The layout's top-left, then the ornament's node in it.
+            let (x0, y0) = if inward > 0 { (left - 36, top - 32) } else { (left, top - 32) };
+            let ornament = if inward > 0 { Element::Turned { part: 0x91, cut: 0, at: [x0 + 82, y0] } } else { Element::Turned { part: 0x90, cut: 0, at: [x0 + 306 + 88, y0] } };
+            (left, top, ornament)
+        }
+        // Layouts 631 (the ornament 0x90 upright over the plate, the plate 64 down) and 632 (the
+        // plate first, 0x91 hanging 44 down), centred on the route.
+        Side::Above => {
+            let (left, top) = (at[0] + LABEL_UP_X - PLATE_WIDTH / 2, at[1] - LABEL_UP - PLATE_HEIGHT / 2);
+            (left, top, Element::Sprite { part: 0x90, cut: 0, at: [left + 102, top - 64] })
+        }
+        Side::Below => {
+            let (left, top) = (at[0] + LABEL_UP_X - PLATE_WIDTH / 2, at[1] + LABEL_DOWN - PLATE_HEIGHT / 2);
+            (left, top, Element::Sprite { part: 0x91, cut: 0, at: [left + 102, top + 44] })
+        }
+    };
     let mut out = vec![Element::Sprite { part: PLATE, cut: 0, at: [left, top] }];
-    // The layout's top-left, then the ornament's node in it.
-    let (x0, y0) = if inward > 0 { (left - 36, top - 32) } else { (left, top - 32) };
-    let ornament = if inward > 0 { Element::Turned { part: 0x91, cut: 0, at: [x0 + 82, y0] } } else { Element::Turned { part: 0x90, cut: 0, at: [x0 + 306 + 88, y0] } };
     if let Some(m) = barrel_escha::data::layout::sprite(pe, PLATE, 1, [0, 0]) {
         let [x0, y0, x1, y1] = m.src.map(f32::from);
         let (mut x, end) = (left + PLATE_LEFT, left + PLATE_WIDTH - PLATE_END);
@@ -286,6 +301,24 @@ const PLATE_END: i32 = 48;
 /// How far the plate's centre stands over its dot, and nearer the screen's middle.
 const LABEL_ABOVE: i32 = 52;
 const LABEL_IN: i32 = 25;
+/// A label on a route going up or down the screen: its plate's centre that far over (under)
+/// the route's third dot, and right of it. Above: the colseit-arrival recording at 1:12
+/// (Colseit's label north of the Southern Ruins, fitted at 1080p: 11 under the dot, 6 right).
+/// Below: no recording yet, taken as the mirror.
+const LABEL_UP: i32 = -11;
+const LABEL_DOWN: i32 = -11;
+const LABEL_UP_X: i32 = 6;
+
+/// Where a neighbour's label stands by its route: beside it on a route going left or right
+/// (layouts 634 / 633, the ornament on the outer end), above or below on one going up or down
+/// (631 / 632, the ornament over or under the plate).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
+    Above,
+    Below,
+}
 
 /// `text` broken at spaces into lines no wider than [`DESCRIPTION_WIDTH`].
 fn lines(text: &str, width: impl Fn(&str) -> f32) -> Vec<String> {

@@ -321,8 +321,9 @@ impl AreaMap {
         all.extend(area_panel::world_elements(&pe, "", "-", &[], |_, _| 0.0));
         all.extend(area_panel::travel(&pe, [0, 0], 0, 1, 1));
         all.extend(area_panel::frame(&pe));
-        all.extend(area_panel::label(&pe, [0, 0], "", 0.0));
-        all.extend(area_panel::label(&pe, [1920, 0], "", 0.0));
+        for side in [area_panel::Side::Left, area_panel::Side::Right, area_panel::Side::Above, area_panel::Side::Below] {
+            all.extend(area_panel::label(&pe, [960, 540], "", side));
+        }
         all.extend(question::elements(&pe, "", true));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
@@ -428,7 +429,7 @@ impl AreaMap {
 
     /// Where each neighbour's label stands (world, game space): its route's third dot out (as
     /// the recording has "Ruins Entrance" and "Sector Two" either side of Sector One).
-    fn label_places(&self) -> Vec<(usize, [f32; 3])> {
+    fn label_places(&self) -> Vec<(usize, [f32; 3], barrel_escha::area_map::Way)> {
         use barrel_escha::area_map::Way;
         let Some(from) = self.marks[self.at] else { return Vec::new() };
         [Way::Right, Way::Left, Way::Down, Way::Up]
@@ -438,7 +439,7 @@ impl AreaMap {
                 let tag = self.routes.get(self.places[self.at].links[way as usize] as usize)?;
                 let path = barrel_escha::data::world::route_path(&self.placements, tag, from);
                 let mid = *path.get(2).or(path.last()).or(self.marks[next].as_ref())?;
-                Some((next, mid))
+                Some((next, mid, way))
             })
             .collect()
     }
@@ -488,14 +489,23 @@ impl AreaMap {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
             let k = height as f32 / 1080.0;
             let dx = (width as f32 - 1920.0 * k) / 2.0;
-            for (next, at) in self.label_places() {
+            for (next, at, way) in self.label_places() {
                 let clip = mvp * glam::Vec4::new(-at[0], at[1], at[2], 1.0);
                 if clip.w <= 0.0 {
                     continue;
                 }
                 let (x, y) = ((clip.x / clip.w + 1.0) * 0.5 * width as f32, (clip.y / clip.w + 1.0) * 0.5 * height as f32);
                 let name = &self.places[next].name;
-                e.extend(area_panel::label(&pe, [((x - dx) / k) as i32, (y / k) as i32], name, measure(name, 36.0)));
+                let at = [((x - dx) / k) as i32, (y / k) as i32];
+                // A route going up or down (her own way) gets its label over or under it; one
+                // going sideways beside it, toward the screen's middle.
+                let side = match way {
+                    barrel_escha::area_map::Way::Up => area_panel::Side::Above,
+                    barrel_escha::area_map::Way::Down => area_panel::Side::Below,
+                    _ if at[0] < 960 => area_panel::Side::Left,
+                    _ => area_panel::Side::Right,
+                };
+                e.extend(area_panel::label(&pe, at, name, side));
             }
         }
         if let Some(yes) = self.asking {

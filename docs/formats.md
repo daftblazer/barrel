@@ -1687,7 +1687,10 @@ that place them are tables in the executable (English addresses; `crates/formats
   wide, cut 1 a 48-wide middle repeated, cut 2 the 48-wide right end, 72 high) at a fixed 352
   wide, its kind 22 text at (176, 18) in dark ink; layouts 633 / 634 add the gilt ornament on
   the right / left (parts 0x90, 0x91 through layouts 627 to 630, kind 7), 631 / 632 above /
-  below. Layout node kind 7 turns its sprite a quarter clockwise about the node (the
+  below (631: 0x90 upright at (102, 0) over the plate at (0, 64), text (176, 82); 632: the plate
+  first, 0x91 at (102, 44) under it). A route going up or down the screen gets those, centred
+  on it: the world map's Colseit label north of the Southern Ruins (colseit-arrival 1:12) stands
+  11 under its route's third dot and 6 right of it. Layout node kind 7 turns its sprite a quarter clockwise about the node (the
   ornaments: 0x90 points up, turned it points right; 0x91 down, turned left; each has four
   cuts, likely its bob). In the recording the plate's centre stands 52 over its route's dot,
   ~25 nearer the
