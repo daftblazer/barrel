@@ -40,23 +40,20 @@ const TAB_AT: [i32; 2] = [1448, 305];
 const SCROLL_PART: i32 = 0x92;
 const SCROLL_CUT: i32 = 8;
 const SCROLL_AT: [i32; 2] = [1446, 150];
-/// The world map's scroll: the same picture cut off [`WORLD_SCROLL_LENGTH`] rows down, with its
-/// own top roll (its first [`ROLL_ROWS`] rows) laid over the cut [`ROLL_DOWN`] below the
-/// scroll's top (the colseit-arrival recording at 1:12: the roll found at (1449, 820) at 1080p
-/// by patch search, its height fitted to 4 rows less; no button). The list's rules under the roll
-/// are not drawn.
-const WORLD_SCROLL_LENGTH: i32 = 700;
-const ROLL_ROWS: i32 = 60;
-const ROLL_DOWN: i32 = 666;
+/// The world map's scroll: the same picture upside down (its flat foot with the folded corners
+/// on top, its roll at the foot), [`WORLD_SCROLL_RISE`] higher than the area map's (the
+/// colseit-arrival recording at 1:12: the flat top and the roll by RMSE, 0.103 and 0.047 against
+/// 0.138 and 0.107 for the upright picture cut short with its roll laid at the foot); no button.
+/// The list's rules from [`WORLD_ROLL_TOP`] down, under the roll, are not drawn.
+const WORLD_SCROLL_RISE: i32 = 9;
+const WORLD_ROLL_TOP: i32 = 681;
 
-/// The world map's scroll, shorter and rolled at its foot.
+/// The world map's scroll, upside down.
 fn rolled_scroll(pe: &barrel_formats::pe::Pe) -> Vec<Element> {
     let Some(m) = barrel_escha::data::layout::sprite(pe, SCROLL_PART, SCROLL_CUT, [0, 0]) else { return Vec::new() };
-    let [l, t, r, _] = m.src.map(f32::from);
-    let w = r - l;
-    let [x, y] = SCROLL_AT;
-    let piece = |rows: i32, top: i32| Element::Slice { pack: m.texture.clone(), index: m.index, src: [l, t, r, t + rows as f32], rect: [x, top, x + w as i32, top + rows] };
-    vec![piece(WORLD_SCROLL_LENGTH, y), piece(ROLL_ROWS, y + ROLL_DOWN)]
+    let [l, t, r, b] = m.src.map(f32::from);
+    let [x, y] = [SCROLL_AT[0], SCROLL_AT[1] - WORLD_SCROLL_RISE];
+    vec![Element::Slice { pack: m.texture.clone(), index: m.index, src: [l, b, r, t], rect: [x, y, x + (r - l) as i32, y + (b - t) as i32] }]
 }
 /// The scroll's own layout is 645: the scroll, 641 (the item panel) at its top-left, 646 (the
 /// button) at (248, 678).
@@ -207,7 +204,7 @@ pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str
                 }
                 row += 1;
             }
-            (RULE, _) if at[1] + RULE_DROP < SCROLL_AT[1] + ROLL_DOWN => out.push(Element::Sprite { part: RULE, cut: p.node.cut.max(0), at: [at[0], at[1] + RULE_DROP] }),
+            (RULE, _) if at[1] + RULE_DROP < SCROLL_AT[1] + WORLD_ROLL_TOP => out.push(Element::Sprite { part: RULE, cut: p.node.cut.max(0), at: [at[0], at[1] + RULE_DROP] }),
             _ => {}
         }
     }

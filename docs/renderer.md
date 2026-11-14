@@ -951,7 +951,7 @@ screen as on the area map. Its panels (`area_panel::world_elements`, `travel`; t
 `colseit-arrival-60hz.mkv` at 1:15 and 1:25): the place's name at the top right (637); for a
 region the scroll with its description and the "Map" tab over its sectors (the item panel 641's rows and
 rules, as on the area map but 38 higher: rows 45 apart in the recording at 1:12, not 642's 50;
-the scroll shorter, rolled at its foot); for the town no scroll; and, while the cursor stands on another place than
+the scroll upside down, flat on top and rolled at its foot); for the town no scroll; and, while the cursor stands on another place than
 the start, the travel panel (639, hung under the cursor's mark: the mark's screen place plus (-191, 11), refitted at 1:25 with the refitted camera): the trip's days
 (`WorldMap::trip`, the events seen shortening routes) and the arrival's month / day in 639's
 digit sprites (part 0xcf: cut = digit, cut 12 the "/"; placed as measured on the recording at
