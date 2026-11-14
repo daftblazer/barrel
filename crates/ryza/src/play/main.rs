@@ -201,7 +201,7 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     let (rect, uv) = telop::quad(strip, at, screen, (t.width, t.height), if hd { 1.0 } else { 0.5 });
     eprintln!("telop {n}: {node}, strip {image} of {path} at {rect:?}");
     let mut layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[t])?;
-    layer.set(gpu, &[text::Quad { rect, uv, color: [1.0, 1.0, 1.0, alpha], texture: 0 }])?;
+    layer.set(gpu, &[text::Quad { turn: false, rect, uv, color: [1.0, 1.0, 1.0, alpha], texture: 0 }])?;
     Ok(layer)
 }
 

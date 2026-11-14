@@ -110,6 +110,9 @@ pub enum Element {
     Dim { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite mirrored (node kind 2): `axis` 0 left to right, 1 top to bottom, 2 both.
     Mirrored { part: i32, cut: i32, at: [i32; 2], axis: i32 },
+    /// A sprite turned a quarter clockwise about its node `at` (a layout node of kind 7: the
+    /// area map labels' ornaments), so it lies left of and below the node.
+    Turned { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite's left `fill` (0 to 1) only: a bar.
     Cropped { part: i32, cut: i32, at: [i32; 2], fill: f32 },
     /// A whole picture of a pack chosen at run time (an item's picture), `size` on the
@@ -152,7 +155,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
@@ -312,7 +315,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [w, h] = sheets.sizes[slot];
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let [x, y] = piece.at.map(|v| v as f32);
-                out.push(Quad {
+                out.push(Quad { turn: false,
                     rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k],
                     uv: match *e {
                         Element::Mirrored { axis: 1, .. } => [l / w, b / h, r / w, t / h],
@@ -324,6 +327,14 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     texture: sheets.first + slot,
                 });
             }
+            &Element::Turned { part, cut, at } => {
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let [x, y] = piece.at.map(|v| v as f32);
+                out.push(Quad { turn: true, rect: [dx + (x - (b - t)) * k, y * k, dx + x * k, (y + r - l) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+            }
             &Element::Cropped { part, cut, at, fill } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
@@ -331,12 +342,12 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let r = l + (r - l) * fill.clamp(0.0, 1.0);
                 let [x, y] = piece.at.map(|v| v as f32);
-                out.push(Quad { rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                out.push(Quad { turn: false, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             Element::Picture { pack, index, size, at, dim } => {
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
                 let [x, y] = at.map(|v| v as f32);
-                out.push(Quad {
+                out.push(Quad { turn: false,
                     rect: [dx + x * k, y * k, dx + (x + size[0]) * k, (y + size[1]) * k],
                     uv: [0.0, 0.0, 1.0, 1.0],
                     color: [1.0, 1.0, 1.0, if *dim { 0.5 } else { 1.0 }],
@@ -347,7 +358,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
                 let [w, h] = sheets.sizes[slot];
                 let x = |v: i32| dx + v as f32 * k;
-                out.push(Quad {
+                out.push(Quad { turn: false,
                     rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k],
                     uv: [src[0] / w, src[1] / h, src[2] / w, src[3] / h],
                     color: [1.0; 4],
@@ -356,7 +367,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
             }
             Element::Fill { rect: [l, t, r, b], colour } => {
                 let x = |v: i32| dx + v as f32 * k;
-                out.push(Quad { rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k], uv: [-1.0, 0.0, 0.0, 0.0], color: *colour, texture: 0 });
+                out.push(Quad { turn: false, rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k], uv: [-1.0, 0.0, 0.0, 0.0], color: *colour, texture: 0 });
             }
             Element::Label(t) => {
                 let Some(font) = font else { continue };

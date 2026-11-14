@@ -1675,8 +1675,10 @@ that place them are tables in the executable (English addresses; `crates/formats
   wide, cut 1 a 48-wide middle repeated, cut 2 the 48-wide right end, 72 high) at a fixed 352
   wide, its kind 22 text at (176, 18) in dark ink; layouts 633 / 634 add the gilt ornament on
   the right / left (parts 0x90, 0x91 through layouts 627 to 630, kind 7), 631 / 632 above /
-  below. In the recording the plate's centre stands 52 over its route's dot, ~25 nearer the
-  screen's middle:
+  below. Layout node kind 7 turns its sprite a quarter clockwise about the node (the
+  ornaments: 0x90 points up, turned it points right; 0x91 down, turned left; each has four
+  cuts, likely its bob). In the recording the plate's centre stands 52 over its route's dot,
+  ~25 nearer the screen's middle:
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a

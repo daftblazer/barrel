@@ -319,6 +319,7 @@ impl AreaMap {
         all.extend(area_panel::travel(&pe, [0, 0], 0, 1, 1));
         all.extend(area_panel::frame(&pe));
         all.extend(area_panel::label(&pe, [0, 0], "", 0.0));
+        all.extend(area_panel::label(&pe, [1920, 0], "", 0.0));
         all.extend(question::elements(&pe, "", true));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
@@ -4580,7 +4581,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         for (picture, alpha) in layers {
                             if let Some(&(texture, [w, h])) = picture.and_then(|p| still_slots.get(&p)) {
                                 let rect = [cx - w * k / 2.0, cy - h * k / 2.0, cx + w * k / 2.0, cy + h * k / 2.0];
-                                quads.push(text::Quad { rect, uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, alpha], texture });
+                                quads.push(text::Quad { turn: false, rect, uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, alpha], texture });
                             }
                         }
                     }
@@ -4610,7 +4611,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             eprintln!("frame {frame}: narration card {:?} at {a:.2}", card);
                         }
                         for &(texture, uv, [l, t, r, b]) in pieces {
-                            quads.push(text::Quad { rect: [dx + l * k, t * k, dx + r * k, b * k], uv, color: [1.0, 1.0, 1.0, a], texture });
+                            quads.push(text::Quad { turn: false, rect: [dx + l * k, t * k, dx + r * k, b * k], uv, color: [1.0, 1.0, 1.0, a], texture });
                         }
                     }
                     layer.set(&gpu, &quads)?;

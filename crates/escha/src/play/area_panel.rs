@@ -215,13 +215,18 @@ const MAP_TAB_AT: [i32; 2] = [1448, 276];
 /// whatever their name's length), the name centred on it in its dark ink. The plate's centre
 /// stands [`LABEL_ABOVE`] over the label's place `at` (its route's dot), [`LABEL_IN`] nearer
 /// the screen's middle (where the player stands): the recording's two labels, -22 and +28.
-/// Not yet the game's: the gilt ornament on the label's outer end (layouts 633 and 634: parts
-/// 0x90 and 0x91 turned, layout kind 7).
+/// The gilt ornament on its outer end, as layouts 633 (right: part 0x90 through 629 and 627
+/// at (306 + 88, 0)) and 634 (left: part 0x91 through 630 and 628 at (82, 0), the plate at
+/// (36, 32)) place it, turned a quarter clockwise about its node (layout kind 7), the plate 32
+/// below the layout's top. Not yet the game's: the ornament's bob (its four cuts).
 pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, _width: f32) -> Vec<Element> {
     let inward = if at[0] < 960 { LABEL_IN } else { -LABEL_IN };
     let left = at[0] + inward - PLATE_WIDTH / 2;
     let top = at[1] - LABEL_ABOVE - PLATE_HEIGHT / 2;
     let mut out = vec![Element::Sprite { part: PLATE, cut: 0, at: [left, top] }];
+    // The layout's top-left, then the ornament's node in it.
+    let (x0, y0) = if inward > 0 { (left - 36, top - 32) } else { (left, top - 32) };
+    let ornament = if inward > 0 { Element::Turned { part: 0x91, cut: 0, at: [x0 + 82, y0] } } else { Element::Turned { part: 0x90, cut: 0, at: [x0 + 306 + 88, y0] } };
     if let Some(m) = barrel_escha::data::layout::sprite(pe, PLATE, 1, [0, 0]) {
         let [x0, y0, x1, y1] = m.src.map(f32::from);
         let (mut x, end) = (left + PLATE_LEFT, left + PLATE_WIDTH - PLATE_END);
@@ -237,6 +242,7 @@ pub fn label(pe: &barrel_formats::pe::Pe, at: [i32; 2], name: &str, _width: f32)
             out.push(Element::Label(Text { at: [left + p.at[0], top + p.at[1]], text: name.to_string(), ..t }));
         }
     }
+    out.push(ornament);
     out
 }
 

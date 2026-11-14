@@ -269,7 +269,7 @@ pub fn run(
             // The background over the 1920 × 1080 screen, scaled to the height and centred.
             let k = h / 1080.0;
             let dx = (w - 1920.0 * k) / 2.0;
-            let mut q = vec![text::Quad { rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 1 }];
+            let mut q = vec![text::Quad { turn: false, rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 1 }];
             q.extend(hud::quads(&pe, None, &sheets, &t.elements(), w, h));
             q
         }
