@@ -118,7 +118,15 @@ fn main() -> Result<()> {
     let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     let textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
-    let Scene { vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
+    let Scene { mut vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
+    // The models' Color0 is not a colour in Ryza's shaders (`PBB-*`): some hold masks in it
+    // (the attic's cabinet: 0 to 255 in every channel, red at its edges). White until those
+    // shaders are read (`docs/ryza/open.md`); the terrain's (its baked shade) is kept.
+    for d in &draws {
+        for &i in &indices[d.first_index as usize..(d.first_index + d.index_count) as usize] {
+            vertices[i as usize].color = [255; 4];
+        }
+    }
     for d in draws.iter_mut() {
         // Ryza's models' lighting material (G1MG section 0x10001) holds ambient 0: their
         // shaders light from the environment, not `cAmb`. Full until those shaders are read
