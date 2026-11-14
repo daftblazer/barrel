@@ -1104,7 +1104,23 @@ move. `barrel_ryza::face` lays `expression_default` over her pose and blinks tow
 `closeeye_down`; the rest are not used yet. Her mesh groups name their shaders by a 32-bit hash
 (`@CB0965E5`, `@4196223C`, ... in `barrel g1m-materials`; submeshes 0 to 7 and 20, 21 also
 carry the numbers 20000 to 20006); the hashes match none of the 212 shader packs' names
-(`\data\x64\shader\*.g1s`, CRC32 or FNV-1/1a or djb2 or sdbm, any case). The parts tables
+(`\data\x64\shader\*.g1s`, CRC32 or FNV-1/1a or djb2 or sdbm, any case), nor any string in
+`saves\shader\shader.xml` or in the packs' headers, and their bytes (either order) and text
+are in no pack and not in the executable, which embeds no character shaders (one `_S2G` pack
+of stage names, 113 bare DXBC blobs) and compiles none at run time (no `D3DCompile`).
+
+`saves\shader\shader.xml` (`<shader Name Type Autoload Id OutlineFlg Scm String File>`, 274
+rows) maps the names models use (`String`) to packs (`File`) by kind (`Type`): 8 the G-buffer
+programs (205: `STD`, `PBB`, `PBB_Gb`, `PBBA2`, ... mostly onto `PBB_Cll.g1s` and its `_Gb`
+twins), 5 the shadow maps (14: `SM`, `SM-C`, `SM-B0`, ...), 14 the deferred lighting passes
+(`DS-Cll`, `DS-EmCll`, `DSChara-Cll`, `DS-CllRr`, ...), 26 the eyes (`EYET`, `EYET_DSGb`), 10
+grass, 11 rivers, 7 plain colour programs, and one each for the sky, clouds, stars, water,
+decals and effects. `chara_shader_param.xml` names the character passes' shared textures:
+`sEnv` (`Shader/texture/defaultref.g1t`), `sOutline` (`outline.g1t`), `sToon` (`toon.g1t`),
+`sReflection` (`defaultmask.g1t`). Each pack's header names its variant after the magic
+(`DSChara-Cll.g1s`: `PBDS-CllEEmIra3lnhIriLr`). `DSChara-Cll`'s pixel program lights the
+G-buffer (six targets `sGBuf0`..`5`, depth) with a ramp (`sRamp`, `rampCoordScaler`, ...), a
+rim table (`cRimTbl`) and the clustered lights. The parts tables
 (`charapartsdefaultvisible.xml`, `charapartschange.xml`, `charapartsmodel.xml`) have no rows for
 `PC00A`: all her parts show.
 
