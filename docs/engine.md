@@ -407,9 +407,11 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Field | RB | "Leave Map": onto the area map at the field's point (the town: the world map), as its exit | yes |
 | Field | LT, RT | nothing (held 1.5 s and 3 s: the camera stays; escha-triggers recording) | nothing |
 | Area map | B | "Return" | yes |
-| Area map | LB / RB | "Assignment" / "System" | not yet |
+| Area map | Y | the main menu (escha-areamap-buttons recording) | yes |
+| Area map | LB | "Assignment": the page alone, B back to the map | yes |
+| Area map | RB | "System": the Option list alone (Save, Load, Erase Save Data, Change BGM, Dressing Room, Options, Return to Title), B back to the map | yes (Barrel's list lacks Erase Save Data and Dressing Room) |
 | Area map | Menu / View | "Requests" / "Message Log" | not yet |
-| Area map | X | scroll the panel's list | not yet |
+| Area map | X | the panel: Gatherable Items ↔ Monsters | not yet |
 | Battle | D-pad left/right, A, B | the command row, confirm, back | yes |
 | Battle | L3 | "Fast Forward" on/off | not yet |
 | Battle | View | "Field Information" | not yet |

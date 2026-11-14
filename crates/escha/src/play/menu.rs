@@ -106,6 +106,14 @@ pub enum Page {
     Assignment(crate::assignment::Assignment),
 }
 
+/// Where a shortcut opens the menu: on a page, or on the Option list alone (the area map's RB,
+/// "System").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    Page(Page),
+    System,
+}
+
 /// What a button did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -123,14 +131,19 @@ impl Menu {
 
     /// The menu opened straight on `page`, as the field's shortcuts do; backing out of the page
     /// goes back to play.
-    pub fn at(page: Page) -> Menu {
-        let chosen = COMMANDS.iter().position(|&c| match page {
-            Page::Status => c == Command::Status,
-            Page::Basket(_) => c == Command::Basket,
-            Page::Assignment(_) => c == Command::Assignment,
+    pub fn at(start: Start) -> Menu {
+        let chosen = COMMANDS.iter().position(|&c| match start {
+            Start::Page(Page::Status) => c == Command::Status,
+            Start::Page(Page::Basket(_)) => c == Command::Basket,
+            Start::Page(Page::Assignment(_)) => c == Command::Assignment,
+            Start::System => c == Command::Option,
         });
         let chosen = chosen.unwrap_or(0);
-        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page: Some(page), direct: true, ..Menu::new() }
+        let (page, option) = match start {
+            Start::Page(p) => (Some(p), None),
+            Start::System => (None, Some(0)),
+        };
+        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true }
     }
 
     /// A button press, with `count` items in the basket (for its page).
@@ -157,6 +170,7 @@ impl Menu {
                 Button::Up => *row = (*row + n - 1) % n,
                 Button::Down => *row = (*row + 1) % n,
                 Button::Left | Button::Right => {}
+                Button::Back if self.direct => return Some(Outcome::Close),
                 Button::Back => self.option = None,
                 Button::Confirm => return Some(Outcome::Option(OPTION_ROWS[*row].0)),
             }
@@ -262,7 +276,7 @@ pub fn run(
     basket: &[(i32, f32)],
     card: &[Option<crate::assignment::Task>],
     keys: &[Button],
-    start: Option<Page>,
+    start: Option<Start>,
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<Outcome>> {
     use crate::{hud, screen, text};
@@ -365,7 +379,10 @@ mod tests {
 
     #[test]
     fn a_shortcut_page_closes_back_to_play() {
-        let mut m = Menu::at(Page::Assignment(crate::assignment::Assignment::default()));
+        let mut m = Menu::at(Start::System);
+        assert_eq!((COMMANDS[m.chosen], m.option), (Command::Option, Some(0)));
+        assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
+        let mut m = Menu::at(Start::Page(Page::Assignment(crate::assignment::Assignment::default())));
         assert_eq!(COMMANDS[m.chosen], Command::Assignment);
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
         let mut m = Menu::new();

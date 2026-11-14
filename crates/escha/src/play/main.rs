@@ -3804,7 +3804,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut open_menu = false;
     // The page the menu opens on (the field's LB: Assignment).
-    let mut menu_page: Option<menu::Page> = None;
+    let mut menu_page: Option<menu::Start> = None;
     // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` renderer.offscreen).
     let mut open_mix = presenter.is_none() && std::env::var("BARREL_MIX_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     // The Equip page renderer.offscreen at a frame (`BARREL_EQUIP_AT`, `BARREL_EQUIP_KEYS`); the run goes on.
@@ -3908,6 +3908,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         for b in pads {
             use pad::Pad as P;
             let free_play = walker.is_some() && area_map.is_none() && battle_play.is_none();
+            let on_area_map = walker.is_some() && area_map.is_some() && battle_play.is_none();
             let key = match b {
                 P::West if free_play => Some(KeyCode::KeyK),
                 P::North if free_play && field_hud.is_some() => Some(KeyCode::Space),
@@ -3924,7 +3925,18 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 // LB: "Assignment", the main menu's page on its own.
                 P::LeftShoulder if free_play && field_hud.is_some() => {
                     open_menu = true;
-                    menu_page = Some(menu::Page::Assignment(assignment::Assignment::default()));
+                    menu_page = Some(menu::Start::Page(menu::Page::Assignment(assignment::Assignment::default())));
+                    None
+                }
+                // The area map (the escha-areamap-buttons recording): Y the main menu, LB the
+                // Assignment page, RB "System" (the Option list alone).
+                P::North | P::LeftShoulder | P::RightShoulder if on_area_map => {
+                    open_menu = true;
+                    menu_page = match b {
+                        P::LeftShoulder => Some(menu::Start::Page(menu::Page::Assignment(assignment::Assignment::default()))),
+                        P::RightShoulder => Some(menu::Start::System),
+                        _ => None,
+                    };
                     None
                 }
                 P::RightStick if free_play => Some(KeyCode::KeyR),
@@ -3934,7 +3946,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             };
             if let Some(k) = key {
                 keys.push(k);
-            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !(b == P::LeftShoulder && open_menu) && !(b == P::RightShoulder && world_exit) {
+            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !open_menu && !world_exit {
                 eprintln!("frame {frame}: pad {b:?} does nothing here yet");
             }
         }
