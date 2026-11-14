@@ -26,6 +26,9 @@ pub struct Instance {
     pub rotation: [f32; 3],
     pub scale: [f32; 3],
     pub tags: String,
+    /// The word 24 bytes into the 32 after the tags. Ryza DX: bits 0-1 the draw-distance class
+    /// (near, middle, far, landmark), other bits not read (docs/formats.md).
+    pub word: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -73,11 +76,12 @@ fn list(d: &[u8], p: &mut usize, extra: usize) -> Result<Vec<PlacedType>, Error>
             let tags = d.get(*p + 52..*p + 52 + tag_len).ok_or(Error::Corrupt("opl2 tags past the end"))?;
             let end = tags.iter().position(|&b| b == 0).unwrap_or(tags.len());
             let tags = String::from_utf8_lossy(&tags[..end]).into_owned();
+            let word = u32_at(d, *p + 52 + tag_len + 24)?;
             *p += 52 + tag_len + 32;
             if *p > d.len() {
                 return Err(Error::Corrupt("opl2 instance past the end"));
             }
-            instances.push(Instance { position, rotation, scale, tags });
+            instances.push(Instance { position, rotation, scale, tags, word });
         }
         out.push(PlacedType { name, instances });
     }

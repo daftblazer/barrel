@@ -1213,7 +1213,11 @@ Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 
 effects list: the file ends after the objects. A type is `u32 name length`, the name without
 a 0, a word (0, 13, 26, ... in `s01_i_attic`: 13 apart from type to type), 48 bytes of 0xff,
 288 of 0, then the instance count. Their 32 bytes after an instance's tags hold 16 zero bytes,
-8 of 0xff and a word (0x2b, 0x6b, 0x1402b in the attic; not read). All read: Ryza DX 96 lists
+8 of 0xff and a word (`opl2::Instance::word`). Its bits 0-1 look like the draw-distance class
+of the field camera file's `disp_range` (0 near, 1 middle, 2 far, 3 landmark: in Rasenboden bags
+and pots are 0, grapes and fallen trees 1, stumps and fences 2, cliffs, mountains and the far-end
+trees 3; 102, 222, 225 and 646 placements). Bits 0xc000 are on floors and stairs and 0x12000 on
+stairs and bridges (walkable? not checked); the rest (0x08, 0x20, 0x40, 0x80, 0x100) not read. All read: Ryza DX 96 lists
 (6,741 types, 53,698 objects), Ryza 2 DX 105 (8,037 types, 78,588 objects). **Ryza 3 DX's**
 differ again (116 of 117 fail at the first instance count): not read yet.
 

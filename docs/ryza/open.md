@@ -103,7 +103,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   and draws. The field's draw distances (`disp_range`: near / middle / far / landmark objects,
   characters, shadows) and LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) are in
   `saves\fieldmap\cameraparam\<field>.xml` and not applied yet: the first thing to try on the
-  RP6. What the units of `disp_range` are (70, 200, 400, 3000) is not known.
+  RP6. What the units of `disp_range` are (70, 200, 400, 3000) is not known. The placements'
+  classes (docs/formats.md, "Placement lists") put the cost in the landmark class: leaving each
+  class out in turn (1080p, 37 frames), near saves 0.36 ms, middle 0.39, far 0.51, landmark 3.9
+  of 5.9 (646 cliffs and mountains, 1.26 of the 1.85 million triangles). Landmarks are drawn to
+  3000 (the farthest), so distance culling saves little; lower-detail models exist for few
+  objects (26 `_mid`, 14 `_low` in Rasenboden's objects, mostly flowers, carts and the woods; the
+  cliffs have only `_hi`), and the PC game runs with `use_lod` off. Whether the RP6 needs more
+  than the culling we have is for its own timings.
+- **Floors on models.** The objects container holds collision meshes per model
+  (`<model>_cbvh.g1co`, `_cplh.g1co`, `_cbox001.g1co`): likely the bridges' and stairs' floors
+  the walk lacks (`Ryza in the field`), not read.
 - **The files.** A Rasenboden run reads `PACK00_02.PAK`, `PACK00_03.PAK` and `PACK02.PAK`
   (about 16 GB of the install's 28 GB).
 
