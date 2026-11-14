@@ -38,6 +38,12 @@ const DIGIT_ADVANCE: i32 = 36;
 const DIGIT_CENTRE: i32 = 18;
 const BUTTON_LIST: u32 = 620;
 const BUTTON_LIST_SHIFT: i32 = -121;
+/// The assignment panel (605) rests 20 right and 8 down of its node in 625 (-20, -40): at its
+/// own place (0, -32), as the colseit-arrival recording's area map has it (patch search on the
+/// date's digits). Reused layouts sit at their nodes (776 four times in 788), so this is not
+/// the general rule; likely where the HUD's slide-in ends.
+const PANEL: u32 = 605;
+const PANEL_SHIFT: [i32; 2] = [20, 8];
 
 /// What the HUD shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,9 +134,16 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
         if !SHOWN.contains(&branch) || p.path.iter().any(|l| LEFT_OUT.contains(l)) {
             continue;
         }
+        let shift = if p.path.contains(&BUTTON_LIST) {
+            [0, BUTTON_LIST_SHIFT]
+        } else if p.path.contains(&PANEL) {
+            PANEL_SHIFT
+        } else {
+            [0, 0]
+        };
+        let p = &Placed { at: [p.at[0] + shift[0], p.at[1] + shift[1]], ..p.clone() };
         let n = p.node;
-        let shift = if p.path.contains(&BUTTON_LIST) { BUTTON_LIST_SHIFT } else { 0 };
-        let at = [p.at[0], p.at[1] + shift];
+        let at = p.at;
         match n.part {
             0x164 => match texts(p) {
                 // The text after "Left": the days left.
@@ -350,12 +363,12 @@ mod tests {
         let got = elements(&nodes, |_| None, v);
         let sprite = |part, cut, at| Element::Sprite { part, cut, at };
         assert_eq!(got, vec![
-            sprite(DIGITS, 1, [84, 120]),
-            sprite(DIGITS, 2, [120, 120]),
-            sprite(DIGITS, 1, [160, 120]),
-            sprite(DIGITS, 2, [196, 120]),
-            sprite(DIGITS, 0, [232, 120]),
-            sprite(YEAR, 4, [286, 116]),
+            sprite(DIGITS, 1, [104, 128]),
+            sprite(DIGITS, 2, [140, 128]),
+            sprite(DIGITS, 1, [180, 128]),
+            sprite(DIGITS, 2, [216, 128]),
+            sprite(DIGITS, 0, [252, 128]),
+            sprite(YEAR, 4, [306, 124]),
             sprite(DIAL, 0, [0, 0]),
             sprite(DIAL, 2, [1, 0]),
         ]);

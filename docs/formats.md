@@ -1659,7 +1659,9 @@ that place them are tables in the executable (English addresses; `crates/formats
   21 and 22 start there). A kind 29 node is a number's place: the HUD date's month and day
   (part 0x57, 36 pixels a digit) are each centred on their node ("8 /20": the "8" half a glyph
   left of its node, the "20" a glyph left of its; measured on the colseit-arrival recording's
-  area map by patch search):
+  area map by patch search). Nested layouts sit at their node (776 four times in 788), but the
+  field HUD's assignment panel 605 rests at its own place (0, -32), 20 right and 8 down of its
+  node in 625 (-20, -40) (same recording; the node is likely its slide-in's start):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
