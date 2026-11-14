@@ -338,10 +338,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   a saturated object at noon against Barrel's with each guess would tell. Also the fifth time
   zone, `TIME_ZONE_MIDNIGHT`, and which of the four sets it shows.
 - **Plants against the measured constants** (docs/shading.md, "the plants' constants as the
-  game sets them"): Barrel's sway stand-ins (`PLANT_SWAY` [0.06, 0, 0.03], speed 2.2) are to be
-  replaced by the game's `g_vAttCache0` (a, a, a/2, −a/2; a about 8.7 to 10.5, gusting) and
-  `g_fOscPhase` (1.39 radians a second), through the shader's own use of them; the gust's curve
-  over time is not read (only its range). The plants sample no pigment map at the gate, so their
+  game sets them"): the sway is now the game's own formula with its measured `g_vAttCache0` and
+  `g_fOscPhase` speed; only the gusts' curve over time is not read (the strength holds 9.6, the
+  middle of the 8.7 to 10.5 seen), and the plants' own phases differ from the game's since
+  Barrel places its plants itself. The plants sample no pigment map at the gate, so their
   teal is not a missing pigment: the pixel side (`cDiff`, `fPtn`, the ambient terms of
   `objectgrasspbs`'s 416-byte block) is next, from the saved ring. `emScl` by evening and its
   flicker need a run at evening.

@@ -166,14 +166,25 @@ void main() {
         float shrink = 1.0;
         if ((pc.flags & 16384u) != 0u) {
             shrink = clamp(1.0 - (distance(w.xyz, look.eye.xyz) - look.fade.x) / max(look.fade.y - look.fade.x, 1.0), 0.0, 1.0);
-            // And its top corners lean with the wind (sway slots 0 and 1: {wind per unit of
-            // height, time}, {-, -, phase per unit of x, of z}), its foot staying put.
-            if (in_corner.y > 0.0) {
-                vec4 a = look.sway[0];
-                vec4 b = look.sway[1];
-                vec3 lean = a.xyz * sin(a.w + w.x * b.z + w.z * b.w) * in_corner.y * shrink;
-                w.xyz += lean;
-                prev_w.xyz += lean;
+            // And its top corners lean with the wind as `ObjectGrassPBS`'s program 0 leans
+            // them (sway slot 0 `g_vAttCache0`, slot 1 {`g_fAttCache1`, `g_fPhase`,
+            // `g_fOscPhase`}; the plant's own phase is its position's fraction): a lean of
+            // the card's height times 0.01 of the wind, normalised back to the height, so the
+            // top swings on an arc and the foot stays put. In game space, x mirrored here.
+            float hh = in_corner.y * shrink;
+            if (hh > 0.01) {
+                vec4 c = look.sway[0];
+                vec4 p = look.sway[1];
+                float f = fract(-w.x) * p.x * 6.283185;
+                float k = 1.0 - p.x;
+                float swing = sin(f + p.y) * 0.5 + 1.0;
+                float sx = sin(f + p.z) - cos(p.z) * k;
+                float cz = cos(f + p.z) - sin(p.z) * k;
+                vec4 r = hh * 0.01 * c;
+                vec3 lean = normalize(vec3(r.x * swing + r.z * sx, hh, r.y * swing + r.w * cz)) * hh;
+                vec3 move = vec3(-lean.x, lean.y - hh, lean.z);
+                w.xyz += move;
+                prev_w.xyz += move;
             }
         }
         w.xyz += bb * in_corner * shrink;

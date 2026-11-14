@@ -762,9 +762,15 @@ drawn with `ObjectGrassPBS`. Vertex program 1 (the one with the pigment map):
   `g_fNearClip` (cb0[39].z) the card collapses to nothing. Between `g_fFarScaleBegin` and
   `End` (cb0[40].y, .z) it grows by `g_fWidthScale`-like factors (cb0[39].w, cb0[40].x): far
   plants drawn larger. `barrel-ryza` shrinks them the same way (`model.vert` flag 16384).
-- **Sway.** `frac(POSITION.x)` (the plant's own phase, kept in the position's fraction) times
-  `g_vAttCache0.x` (cb0[37]) plus `g_fPhase` / `g_fOscPhase`, through sines, leans the card's
-  top; the lean grows with the card's height.
+- **Sway** (program 0's own code). With f = 2π · frac(POSITION.x) · `g_fAttCache1` (the
+  plant's phase, kept in its position's fraction), h the corner's height after the fade, k = 1
+  − `g_fAttCache1`, s = sin(f + `g_fPhase`) · 0.5 + 1 and r = h · 0.01 · `g_vAttCache0`: the
+  lean L = (r.x · s + r.z · (sin(f + Osc) − cos(Osc) · k), h, r.y · s + r.w · (cos(f + Osc) −
+  sin(Osc) · k)), Osc = `g_fOscPhase`; the corner moves by normalize(L) · h − (0, h, 0), only
+  where h > 0.01 (the top corners): the card bends on an arc and keeps its height. With the
+  measured (a, a, a/2, −a/2) the top leans steadily toward +x +z (about 0.01 · a · √2 of the
+  height: some 8°) and circles by a/2 · 0.01 as Osc turns. `barrel-ryza` does exactly this
+  (`model.vert` flag 16384, sway slots 0 and 1), the strength held at 9.6.
 - **Pigment.** `sPigmentMap` (t9) is sampled at the plant's ground point, `(x, z) -
   g_vFieldRange.xy` over `g_vFieldRange.zw` (cb0[41]), clamped: a map over the whole field.
 - **Billboard.** `mBbL2W` (cb0[12] to cb0[14]) turns the corner; the card's normal and tangent

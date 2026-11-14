@@ -50,12 +50,13 @@ const EMISSIVE: u32 = 32768;
 /// units: a stand-in, the game's `emScl` is set at run time (not read): its windows and lamps
 /// unlit by day, lit at evening and night.
 const EMISSION_BY_TIME: [f32; 4] = [0.0, 0.0, 2.0, 3.0];
-/// The plants' sway (model.vert, flag 16384): the lean per unit of height, its speed (radians
-/// a second) and how the phase runs across the field (radians per unit of x and z). Stand-ins:
-/// the game's (`g_vAttCache0`, `g_fPhase`, `g_fOscPhase`) are set at run time, not read.
-const PLANT_SWAY: [f32; 3] = [0.06, 0.0, 0.03];
-const PLANT_SWAY_SPEED: f32 = 2.2;
-const PLANT_SWAY_SPREAD: [f32; 2] = [0.004, 0.0027];
+/// The plants' wind (model.vert, flag 16384: `g_vAttCache0` = (a, a, a/2, -a/2)): measured at
+/// the garden gate wandering between about 8.7 and 10.5 in gusts (docs/shading.md); its curve
+/// over time is not read, so it holds the middle of that range.
+const PLANT_WIND: f32 = 9.6;
+/// How fast the plants' `g_fOscPhase` turns: radians a second (0.0232 a frame at 60 Hz,
+/// measured; it wraps at 2π).
+const PLANT_SWAY_SPEED: f32 = 1.39;
 
 struct Args {
     install: String,
@@ -873,8 +874,9 @@ fn main() -> Result<()> {
         let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
-        view.look[50] = [PLANT_SWAY[0], PLANT_SWAY[1], PLANT_SWAY[2], started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED];
-        view.look[51] = [0.0, 0.0, PLANT_SWAY_SPREAD[0], PLANT_SWAY_SPREAD[1]];
+        // `g_vAttCache0` (a, a, a/2, -a/2) and {`g_fAttCache1` 1, `g_fPhase` 0, `g_fOscPhase`}.
+        view.look[50] = [PLANT_WIND, PLANT_WIND, PLANT_WIND * 0.5, -PLANT_WIND * 0.5];
+        view.look[51] = [1.0, 0.0, (started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED) % std::f32::consts::TAU, 0.0];
         view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
         view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
         if frame_no == 0
