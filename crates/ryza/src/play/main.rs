@@ -439,6 +439,8 @@ fn main() -> Result<()> {
     let mut last = std::time::Instant::now();
     let started = last;
     let (mut stale, mut frame_no) = (false, 0u32);
+    // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
+    let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
     loop {
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
@@ -449,6 +451,7 @@ fn main() -> Result<()> {
             let now = std::time::Instant::now();
             let dt = (now - last).as_secs_f32().min(0.1);
             last = now;
+            frame_dt = dt;
             let key = |k: K| if p.held(k) { 1.0 } else { 0.0 };
             let (left, right) = p.sticks();
             yaw -= (key(K::ArrowRight) - key(K::ArrowLeft) + right[0]) * CAMERA_TURN * dt;
@@ -505,7 +508,22 @@ fn main() -> Result<()> {
             scene.write_instances(&gpu, &instances)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
-        let view = look_for(center, yaw, pitch, dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size);
+        // Following her: no nearer than the ground behind her allows (`camera::clear_distance`).
+        let drawn_dist = match (follow, rig.as_ref().and_then(|r| r.ground.as_ref().map(|g| (r, g)))) {
+            (Some(_), Some((r, g))) => {
+                let (y, p) = (yaw.to_radians(), pitch.to_radians());
+                let way = Vec3::new(-y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
+                let clear = barrel_ryza::camera::clear_distance(g, r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0), way, dist);
+                let d = match view_dist {
+                    Some(v) if clear > v => v + (clear - v) * (frame_dt * 4.0).min(1.0),
+                    _ => clear,
+                };
+                view_dist = Some(d);
+                d
+            }
+            _ => dist,
+        };
+        let view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size);
         if frame_no == 0
             && let Some(k) = view.exposure
         {

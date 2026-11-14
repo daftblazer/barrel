@@ -48,6 +48,27 @@ impl FreeCamera {
     }
 }
 
+/// How far the camera may stand from `target` along `way` (game space, a unit vector from the
+/// target toward the eye), up to `dist`: the line is followed in steps, and the first point
+/// with ground (`ground`: terrain and floors) from 30 below it to 400 above it stops it a step
+/// short (no less than `MIN_CLEAR`). Not the game's (its camera collision is not read,
+/// `docs/ryza/open.md`): ground only, no walls, and a tree's top far above is not ground here.
+pub fn clear_distance(ground: &barrel_engine::walk::Ground, target: glam::Vec3, way: glam::Vec3, dist: f32) -> f32 {
+    const STEP: f32 = 25.0;
+    let mut t = STEP;
+    while t <= dist {
+        let p = target + way * t;
+        if ground.height(p.x, p.z, p.y + 400.0, 0.0).is_some_and(|h| h > p.y - 30.0) {
+            return (t - STEP).max(MIN_CLEAR);
+        }
+        t += STEP;
+    }
+    dist
+}
+
+/// The nearest the camera comes to her when the ground pulls it in.
+pub const MIN_CLEAR: f32 = 60.0;
+
 /// The first element down `path` from `e` (the root itself may be the first name's parent).
 fn find<'a>(e: &'a Element, path: &[&str]) -> Option<&'a Element> {
     match path.split_first() {
@@ -59,6 +80,21 @@ fn find<'a>(e: &'a Element, path: &[&str]) -> Option<&'a Element> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bank_behind_her_pulls_the_camera_in() {
+        // A floor 100 above her look point, from 200 behind her on.
+        let c = barrel_formats::g1co::Collision {
+            nodes: Vec::new(),
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+            vertices: vec![[-1000.0, 100.0, -200.0], [1000.0, 100.0, -200.0], [1000.0, 100.0, -5000.0], [-1000.0, 100.0, -5000.0]],
+        };
+        let g = barrel_engine::walk::Ground::new(None, &c, 75.0);
+        let back = glam::Vec3::new(0.0, 0.0, -1.0);
+        assert_eq!(clear_distance(&g, glam::Vec3::ZERO, back, 400.0), 175.0);
+        // Looking the other way, nothing in the way.
+        assert_eq!(clear_distance(&g, glam::Vec3::ZERO, -back, 400.0), 400.0);
+    }
 
     #[test]
     fn free_camera_of_a_file() {
