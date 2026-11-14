@@ -343,8 +343,10 @@ pub const AREA_INFO: &str = "<IM04> Area Info";
 pub const RETURN: &str = "<IM02> Return";
 
 /// The maps' button lists (`MAP_LIST`'s placed nodes, as stored at its own place), the first
-/// row's text `first`.
-pub fn map_list(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, first: &str) -> Vec<Element> {
+/// row's text `first`; with none (the world map's cursor on the town), no first row: the left
+/// plate (part 0x8f cut 0, three 64-pixel rows) from its second row down, as the
+/// colseit-arrival recording has it at 1:25 (Assignment and System where they always stand).
+pub fn map_list(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, first: Option<&str>) -> Vec<Element> {
     let mut out = Vec::new();
     let mut first_done = false;
     for p in nodes.iter().filter(|p| p.path.first() == Some(&MAP_LIST)) {
@@ -352,12 +354,16 @@ pub fn map_list(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
         if p.node.part == 0x164 {
             match texts(p) {
                 Some(t) if !t.text.is_empty() && !first_done => {
-                    out.push(Element::Label(layout::Text { at, text: first.to_string(), ..t }));
+                    if let Some(first) = first {
+                        out.push(Element::Label(layout::Text { at, text: first.to_string(), ..t }));
+                    }
                     first_done = true;
                 }
                 Some(t) if !t.text.is_empty() => out.push(Element::Label(layout::Text { at, ..t })),
                 _ => {}
             }
+        } else if first.is_none() && p.node.part == LIST_PLATE && p.node.cut == 0 {
+            out.push(Element::Rising { part: LIST_PLATE, cut: 0, at, fill: 2.0 / 3.0 });
         } else {
             out.push(match Element::stored(p) {
                 Element::Mirrored { part, cut, axis, .. } => Element::Mirrored { part, cut, at, axis },
@@ -367,6 +373,9 @@ pub fn map_list(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
     }
     out
 }
+
+/// The button lists' plates (layout 636's left one: cut 0, its three rows in one).
+const LIST_PLATE: i32 = 0x8f;
 
 /// The HUD's textures in a text layer after the font atlas: each (pack, picture) and its size.
 pub struct Sheets {

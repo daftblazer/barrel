@@ -1753,7 +1753,7 @@ and 650 a diamond border the same way; together they frame the world and area ma
 maps' button lists are layout 636 (Info, Assignment, System at the left; Requests, Message Log
 at the right), nested in no other layout: the game places it at run time, at (6, 854) by the
 recording, and words the first row by the map, `<IM04> Area Info` on the world map and
-`<IM02> Return` on an area map (strings side by side in the executable). Above it the maps
+`<IM02> Return` on an area map (strings side by side in the executable); with the world map's cursor on the town (Colseit) there is no first row: the left plate (part 0x8f cut 0, three 64-pixel rows in one) shows from its second row down, Assignment and System where they always stand (colseit-arrival 1:25). Above it the maps
 show the field HUD's date panel (625's branch 605) without the time dial.
 
 The main menu opened in play is layouts 383 (the desk background, `a15_menu.g1t` picture 0),

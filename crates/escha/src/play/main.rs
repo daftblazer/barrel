@@ -344,6 +344,11 @@ impl AreaMap {
         Ok(AreaMap { places, marks, routes, fields, placements, at, layer, font, sheets, shown: None, pe_bytes, world, from: at, trips, gathering, item_names, closed: Vec::new(), visited: Vec::new(), hidden_routes: Vec::new(), seen_routes: Vec::new(), asking: None })
     }
 
+    /// Whether the cursor stands on the town (`T0`, Colseit): no area to show info for.
+    fn on_town(&self) -> bool {
+        self.places[self.at].tag == "T0"
+    }
+
     /// The name of the region place `at` is in (`A2p1`'s is `A2`'s: "Southern Ruins").
     fn region_name(&self, at: usize) -> &str {
         let tag = &self.places[at].tag;
@@ -437,6 +442,10 @@ impl AreaMap {
             .filter_map(|way| {
                 let next = self.step(way)?;
                 let tag = self.routes.get(self.places[self.at].links[way as usize] as usize)?;
+                // No label across a route not shown (Upland Forest west of Colseit at 8/20).
+                if self.hidden_routes.contains(tag) {
+                    return None;
+                }
                 let path = barrel_escha::data::world::route_path(&self.placements, tag, from);
                 let mid = *path.get(2).or(path.last()).or(self.marks[next].as_ref())?;
                 Some((next, mid, way))
@@ -3422,7 +3431,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         Some(r) if session.is_some() && player.is_none() => std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok(),
         _ => None,
     };
-    let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32, Option<bool>)>)> = None;
+    let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32, Option<(bool, bool)>)>)> = None;
     // The field's HUD (layout 625); on the maps its date panel and the maps' button lists (636).
     if session.is_some() && player.is_none() && true && std::env::var("BARREL_NO_HUD").is_err() {
         let made = (|| -> Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>)> {
@@ -5192,12 +5201,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             Some(_) => Some(hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
             None => s.field().filter(|&m| m as usize >= barrel_escha::data::gimmick::TOWN_MAPS).map(|_| hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
         };
-        let map = area_map.as_ref().map(|a| a.world);
+        let map = area_map.as_ref().map(|a| (a.world, a.on_town()));
         if *last != Some((v, width, height, map))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(exe) {
                 let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
                 let elements = match area_map.as_ref() {
-                    Some(a) => [hud::date_panel(nodes, texts, v), hud::map_list(nodes, texts, if a.world { hud::AREA_INFO } else { hud::RETURN })].concat(),
+                    Some(a) => [hud::date_panel(nodes, texts, v), hud::map_list(nodes, texts, match (a.world, a.on_town()) {
+                        (true, true) => None,
+                        (true, false) => Some(hud::AREA_INFO),
+                        (false, _) => Some(hud::RETURN),
+                    })].concat(),
                     None => hud::elements(nodes, texts, v),
                 };
                 layer.set(&gpu, &hud::quads(&pe, Some(font), sheets, &elements, width as f32, height as f32))?;
