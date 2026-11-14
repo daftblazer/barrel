@@ -413,8 +413,10 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Battle | D-pad left/right, A, B | the command row, confirm, back | yes |
 | Battle | L3 | "Fast Forward" on/off | not yet |
 | Battle | View | "Field Information" | not yet |
-| Events | A | the next line | yes |
-| Events | Y / Start | Barrel's auto lines / pause (the game's not read yet) | Barrel's own |
+| Events | A or B | the next line | yes |
+| Events | X | "Fast Forward" on/off (the legend's; the escha-event-buttons recording) | Barrel's auto lines in its place |
+| Events | View | "Message Log" | not yet |
+| Events | Start, Y, LB, RB | nothing seen | nothing |
 
 Barrel reads the pad through SDL3 by place: A, B and the D-pad stand for Enter, Backspace and
 the arrows on every screen (`render::window::pad_keys`); the field and events take the other

@@ -3899,8 +3899,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         // The pad as the game reads it here (`docs/engine.md`, "Controller"; A, B and the D-pad
         // came in as Enter, Backspace and the arrows): in free play X strikes, Y opens the main
         // menu, B jumps, A gathers, the left stick's click turns running on or off and the right
-        // one's puts the camera back; in events Y turns auto on or off and Start pauses (both
-        // Barrel's, not checked against the game).
+        // one's puts the camera back; in events X turns "Fast Forward" on or off (Barrel's lines
+        // going on by themselves stand in for it; the escha-event-buttons recording: the event's
+        // legend shows X Fast Forward and View Message Log, Start and Y do nothing).
         let mut keys = keys;
         for b in pads {
             use pad::Pad as P;
@@ -3912,8 +3913,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 P::South if free_play => Some(KeyCode::KeyG),
                 P::LeftStick if free_play => Some(KeyCode::KeyT),
                 P::RightStick if free_play => Some(KeyCode::KeyR),
-                P::North if player.is_some() => Some(KeyCode::KeyT),
-                P::Start if player.is_some() => Some(KeyCode::Space),
+                P::West if player.is_some() => Some(KeyCode::KeyT),
+                P::East if player.is_some() => Some(KeyCode::Enter),
                 _ => None,
             };
             if let Some(k) = key {
