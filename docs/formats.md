@@ -1331,7 +1331,8 @@ a 0, a word (0, 13, 26, ... in `s01_i_attic`: 13 apart from type to type), 48 by
 of the field camera file's `disp_range` (0 near, 1 middle, 2 far, 3 landmark: in Rasenboden bags
 and pots are 0, grapes and fallen trees 1, stumps and fences 2, cliffs, mountains and the far-end
 trees 3; 102, 222, 225 and 646 placements). Bits 0xc000 are on floors and stairs and 0x12000 on
-stairs and bridges (walkable? not checked); the rest (0x08, 0x20, 0x40, 0x80, 0x100) not read. All read: Ryza DX 96 lists
+stairs and bridges; in Rasenboden the 0xc000 ones are exactly the placements whose collision
+meshes do not lie on their models (`barrel_ryza::solids::NO_COLLISION` leaves them out); the rest (0x08, 0x20, 0x40, 0x80, 0x100) not read. All read: Ryza DX 96 lists
 (6,741 types, 53,698 objects), Ryza 2 DX 105 (8,037 types, 78,588 objects). **Ryza 3 DX's**
 differ again (116 of 117 fail at the first instance count): not read yet.
 

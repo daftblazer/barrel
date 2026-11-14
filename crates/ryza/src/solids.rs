@@ -15,6 +15,18 @@ use barrel_formats::g1co::{self, Collision};
 use barrel_formats::opl2;
 use glam::Vec3;
 
+/// Placement word bits (`opl2::Instance::word`) on the placements whose collision meshes do
+/// not lie on their models: in Rasenboden exactly `a21-s06-floor-01`, the four
+/// `a21-s07-stair-01` and `a21-s09-stair-02`, and none whose meshes fit. Their meshes are
+/// left out; the terrain carries her over those stairs (a stand-in for what the bits mean,
+/// `docs/ryza/open.md`).
+pub const NO_COLLISION: u32 = 0xc000;
+
+/// Whether a placement's collision meshes are used (`NO_COLLISION`).
+pub fn collides(i: &opl2::Instance) -> bool {
+    i.word & NO_COLLISION != NO_COLLISION
+}
+
 /// Each placed model's collision meshes, in game space.
 pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Collision> {
     // The meshes by model name (the entries' names drop the placement's `obj-`).
@@ -48,7 +60,7 @@ pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Col
     for t in &placements.objects {
         let name = t.name.strip_prefix("obj-").unwrap_or(&t.name).to_ascii_lowercase();
         let Some(list) = meshes.get(&name) else { continue };
-        for i in &t.instances {
+        for i in t.instances.iter().filter(|i| collides(i)) {
             let m = barrel_engine::field::placement_transform(i);
             for c in list {
                 out.push(placed(c, |v| m.transform_point3(Vec3::from(v)).to_array()));
@@ -235,6 +247,14 @@ fn placed(c: &Collision, f: impl Fn([f32; 3]) -> [f32; 3]) -> Collision {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn floors_and_stairs_marked_0xc000_have_no_collision() {
+        let i = |word| barrel_formats::opl2::Instance { position: [0.0; 3], rotation: [0.0; 3], scale: [1.0; 3], tags: String::new(), word };
+        assert!(!super::collides(&i(0x0c0ab)));
+        assert!(super::collides(&i(0x120a9)));
+        assert!(super::collides(&i(0x000ab)));
+    }
+
     fn file(kind: u8, floats: &[f32]) -> Vec<u8> {
         let mut d = b"OC1G2\0\0\0\0\0\x01\0\0\0\0\0".to_vec();
         d.push(kind);

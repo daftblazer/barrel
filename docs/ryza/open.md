@@ -113,7 +113,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   walk and run change loop to loop, each change mixing the last motion out over 0.2 s. How
   the game moves her during the start and stop (here eased in and out) and its mixing time
   are not read.
-- **The garden stairs' collision** (`a21-s07-stair-01`, placed at 32507, 6006, 30997 nearly
+- **The garden stairs' collision** (worked around; `a21-s07-stair-01`, placed at 32507, 6006, 30997 nearly
   unturned): its `_cbvh` mesh (20 triangles; `_cbvh1` and `_cbvh2` are a thin side piece) spans
   local z -707 to 391 and y -279 to 295, its model z -499 to 546 and y -252 to 181 (one joint at
   the origin, no offset; the mesh's header has no transform). Down the stairs' middle (x 32537)
@@ -144,9 +144,14 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   and their meshes look like their models already turned once more. Nothing found places the
   meshes: the stair model's chunks hold no offset (`MM1G` an identity matrix, `FM1G` zeros, one
   joint at the origin), the container's slots around the meshes are empty `dummy` entries, and
-  the mesh files have no transform. Where the game puts these meshes is not known; the terrain
-  already slopes over the stairs (6182 to 6001), so walking would work without the mesh. Until
-  then a walk from the gate cannot go down these stairs (the mesh's end is a face 390 high).
+  the mesh files have no transform. Their placements tell them apart: the placement word
+  (`opl2::Instance::word`) of `a21-s06-floor-01`, the four `a21-s07-stair-01` and
+  `a21-s09-stair-02` all have bits 0xc000 (`0x0c0ab`), and no placement whose meshes fit has
+  them (`a21-s09-stair-03`, whose hull fits, has 0x12000; cliffs `0x000ab`, rocks `0x000a9`,
+  trees `0x0006b`, tunnel rocks `0x0002b`). `solids::NO_COLLISION` leaves those placements'
+  meshes out (a stand-in for what the bits mean): the terrain carries her over the stairs, and
+  a walk from the gate goes down them. The tunnel rocks' meshes (no such bits) are still used
+  as they are.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no
