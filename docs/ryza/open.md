@@ -27,11 +27,7 @@ achievements are the player's own, and the DX version has not been played there)
   its sunlit ground clipped until a tone curve went on the finished frame (`post.frag`, an
   extended Reinhard with the set's `fLumiMax` as white, Rasenboden's noon 4.3: the
   still's sunlit grass 182, 216, 69, ours 168, 214, 47 instead of 241, 254, 22; the 90th
-  percentile drops to about 175 against the still's 219, its sky being brighter). The scene
-  is stored at half range in 8 bits, so what passes 2.0 is clipped before the curve, and the
-  curve maps 2.0 to 0.74: nothing in the frame reaches white. That is why the sky, the
-  clouds (unlit, at most 1.0: mid-grey, against the still's white) and the 90th percentile
-  (166 against 219) come out low. Ryza now draws its scene into a float target
+  percentile drops to about 175 against the still's 219, its sky being brighter). Ryza now draws its scene into a float target
   (`RenderSettings::hdr_scene`, `B10G11R11_UFLOAT`, the same size as 8-bit RGBA; TAA and the
   upscalers' targets follow it; Escha keeps 8 bits): error 183 to 163 at the same exposure,
   the sky 98, 161, 157 to 87, 199, 199 against the still's 172, 218, 233, the 90th
@@ -99,11 +95,19 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   comes out deeper and without the white haze toward the horizon, which the path length and the
   glow shape. The sunny morning's sky comes out dark grey (its `skyFog_`: power 10, rayleigh
   (1.5, 1.98, 3.0), nearly grey), where the game's opening shows a blue morning sky: the path
-  length's terms or the glow must carry more there. The set's cloud dome is drawn (unlit,
-  texture × vertex colour, alpha-blended over the sky plane; its shader `PBSkyDome-NT0Tn` lights
-  it with a normal map, not read) centred under the view's target (or under Ryza, and moving
+  length's terms or the glow must carry more there. The set's cloud dome is drawn (texture × vertex
+  colour, lit by the light on an upward surface, alpha-blended over the sky plane; its shader
+  `PBSkyDome-NT0Tn` lights it with a normal map, not read) centred under the view's target (or under Ryza, and moving
   with her in a window) at height 0: where the game puts it (`SkyDomeWorldPosition`,
   `WorldScale`) is not placed.
+- **Which set at which hour.** The game's first view of free play
+  (`work/ryza-ref/rasen-path-start.png`, the clock at 10 AM) looks like our noon set there:
+  deep shade, blue-lit path and rocks, a clear blue sky. Our morning set comes out pale and
+  hazy with hardly any shade: its ambient is ten times noon's (19.7, 29.6, 35.6) and its
+  `skyFog_` a thick grey haze (mie 4, 3.4, 2.5; rayleigh 1.5, 2, 3). So either 10 AM is
+  already the noon set, or the game blends the sets by the hour; which hours pick which set
+  is not read (`envtemplate.xml` names the sets but has no hours). Night has no reference
+  frame yet, so its colour (too bright and green here) cannot be checked.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
