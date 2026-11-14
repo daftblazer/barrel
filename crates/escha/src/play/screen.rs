@@ -36,10 +36,11 @@ pub fn run<S: Clone + PartialEq, O>(
     keys: &[Button],
     out: Option<&Path>,
 ) -> Result<Option<O>> {
-    run_with(gpu, pool, target, window, offscreen, images, state, quads, press, keys, out, || {})
+    run_with(gpu, pool, target, window, offscreen, images, state, quads, press, keys, out, |_| None)
 }
 
-/// [`run`], with `tick` called once a frame in a window (the title's music).
+/// [`run`], with `tick` called once a frame in a window (the title's music, the splashes'
+/// clock): it may move the state, or end the screen with an outcome.
 #[allow(clippy::too_many_arguments)]
 pub fn run_with<S: Clone + PartialEq, O>(
     gpu: &Gpu,
@@ -53,7 +54,7 @@ pub fn run_with<S: Clone + PartialEq, O>(
     mut press: impl FnMut(&mut S, Button) -> Option<O>,
     keys: &[Button],
     out: Option<&Path>,
-    mut tick: impl FnMut(),
+    mut tick: impl FnMut(&mut S) -> Option<O>,
 ) -> Result<Option<O>> {
     let d = &gpu.device;
     let mut layer = text::Layer::new(gpu, pool, target.pass, images)?;
@@ -90,8 +91,7 @@ pub fn run_with<S: Clone + PartialEq, O>(
                 if !pump.pump() {
                     break None;
                 }
-                tick();
-                let mut chosen = None;
+                let mut chosen = tick(state);
                 for key in pump.take_pressed() {
                     if let Some(b) = button(key)
                         && chosen.is_none() {

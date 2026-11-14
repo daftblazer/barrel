@@ -60,7 +60,7 @@ likely settle them where static reading failed.
   gamescope's stream (record.sh then took the first stream named gamescope; it now takes its own
   run's) and was deleted. Make it when no other game runs under gamescope.
 - (2026-11-14) No intro movie on startup (movies: native decoders, chosen 2026-11-14).
-- (2026-11-14) No company logo splash screens before the title. Found: stills 5 (Koei Tecmo) and 4 (Gust), docs/formats.md; their order, fades and timing wait for the boot recording.
+- (2026-11-14) No company logo splash screens before the title. Found: stills 5 (Koei Tecmo) and 4 (Gust), docs/formats.md; shown by play/splash.rs (Koei Tecmo then Gust, 0.5 s fade in, 2 s hold, 0.5 s fade out, from black; any button skips): order, times, colour of the fades and whether a button skips are guesses until the boot recording.
 
 ## Saves
 

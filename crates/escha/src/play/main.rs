@@ -25,6 +25,7 @@ mod hud;
 mod hero;
 mod loadlist;
 mod title;
+mod splash;
 mod screen;
 mod menu;
 mod message;
@@ -2548,6 +2549,9 @@ fn with_install_field(mut args: Vec<String>, root: &Path) -> Vec<String> {
 /// The arguments to start again at the title (`load_list`: on its Load Game list): `args` less
 /// what picks a start (`--load`, `--event`, `--at`, `--title`, `--title-load`, `--chain`,
 /// `--free-play`), with `--field auto` and `--title ROOT`.
+/// Whether this process has shown the logo splashes (they show once a launch).
+static SPLASHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn title_args(args: &[String], root: &Path, load_list: bool) -> Vec<String> {
     let mut out = Vec::new();
     let mut it = args.iter();
@@ -2919,6 +2923,18 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let out = presenter.is_none().then(|| PathBuf::from(&out_path));
         let saves = saves_dir.clone().or_else(barrel_escha::saves::default_dir);
         let mut window = window;
+        // The logo splashes, once a launch (not on a return to the title, nor after the
+        // graphics options start Barrel again): in a window before the title; offscreen only
+        // with `BARREL_SPLASH_AT` (seconds in), whose frame is written to OUT and ends the run.
+        let splash_at = std::env::var("BARREL_SPLASH_AT").ok().and_then(|v| v.parse::<f32>().ok());
+        if !title_load && std::env::var_os("BARREL_SPLASHED").is_none() && !SPLASHED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            if let Some((pr, p)) = window.as_mut() {
+                splash::run(&gpu, renderer.pool, &target, Some((*pr, &mut **p)), None, r, 0.0, None)?;
+            } else if let Some(t) = splash_at {
+                splash::run(&gpu, renderer.pool, &target, None, renderer.offscreen.as_ref().map(|(c, _)| *c), r, t, out.as_deref())?;
+                return Ok(Ended::Done);
+            }
+        }
         // The scripted keys (`BARREL_TITLE_KEYS`) press on the first showing only.
         let mut keys = keys;
         let picked = loop {
@@ -2937,7 +2953,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 unsafe { d.device_wait_idle()? };
                 use std::os::unix::process::CommandExt;
                 let exe = std::env::current_exe()?;
-                return Err(std::process::Command::new(exe).args(std::env::args_os().skip(1)).exec().into());
+                return Err(std::process::Command::new(exe).args(std::env::args_os().skip(1)).env("BARREL_SPLASHED", "1").exec().into());
             }
         };
         eprintln!("title: {picked:?}");

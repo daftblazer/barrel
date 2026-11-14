@@ -297,10 +297,11 @@ pub fn run(
             Some((out, mixer, playing))
         })
         .flatten();
-    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out, || {
+    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out, |_| {
         if let Some((out, mixer, _)) = music.as_mut() {
             out.pump(mixer);
         }
+        None
     })
 }
 
