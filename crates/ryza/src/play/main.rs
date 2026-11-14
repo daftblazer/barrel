@@ -50,9 +50,6 @@ const EMISSIVE: u32 = 32768;
 /// units: a stand-in, the game's `emScl` is set at run time (not read): its windows and lamps
 /// unlit by day, lit at evening and night.
 const EMISSION_BY_TIME: [f32; 4] = [0.0, 0.0, 2.0, 3.0];
-/// The plants' fade range from the eye, the game's highest grass preset (`Middle` in
-/// `grassrangepreset.xml`: FarClipBegin 8000, FarClipEnd 15000).
-const PLANT_FADE: [f32; 2] = [8000.0, 15000.0];
 /// The plants' sway (model.vert, flag 16384): the lean per unit of height, its speed (radians
 /// a second) and how the phase runs across the field (radians per unit of x and z). Stand-ins:
 /// the game's (`g_vAttCache0`, `g_fPhase`, `g_fOscPhase`) are set at run time, not read.
@@ -230,7 +227,7 @@ const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
 /// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
 /// per block of grid cells, the atlas being texture `atlas`.
-fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>) {
+fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) {
     let Some(ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
         .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
         .and_then(|b| barrel_formats::khm::parse(b).ok())
@@ -238,7 +235,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
     else {
         return;
     };
-    let plants = g.plants(PLANT_LIMIT, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
+    let plants = g.plants(PLANT_LIMIT, density, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
     let [cx, cz] = g.cell();
     let mut blocks: std::collections::BTreeMap<(usize, usize), Vec<&barrel_ryza::grass::Plant>> = Default::default();
     for p in &plants {
@@ -286,6 +283,19 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
 
 fn main() -> Result<()> {
     let a = args()?;
+    // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
+    // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
+    // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
+    let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
+    let graphics = a
+        .preset
+        .or(config.as_deref().map(RenderSettings::from_config))
+        .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)))
+        .unwrap_or(RenderSettings::DESKTOP)
+        .resolved();
+    // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
+    // (`Frame::tone_white`) sees past the half range's 2.0.
+    let graphics = RenderSettings { hdr_scene: true, ..graphics };
     let install = Install::open(Path::new(&a.install))?;
     let files = install.field(&a.field)?;
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
@@ -301,6 +311,20 @@ fn main() -> Result<()> {
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
     let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
     let grass_pack = barrel_engine::field::named(&main, &format!("{}_grass.g1t", files.area)).and_then(|b| G1t::parse(b).ok());
+    // The game's grass preset for the graphics' foliage (`barrel_ryza::grass::Preset`).
+    let plant_preset = {
+        let kind = match graphics.foliage {
+            settings::Foliage::Full => "Middle",
+            settings::Foliage::Reduced => "Low",
+            settings::Foliage::Least => "VeryLow",
+        };
+        let read = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}"));
+        match (read("grassqualitypreset.xml"), read("grassrangepreset.xml")) {
+            (Ok(q), Ok(r)) => barrel_ryza::grass::Preset::read(&q, &r, kind).unwrap_or(barrel_ryza::grass::Preset::MIDDLE),
+            _ => barrel_ryza::grass::Preset::MIDDLE,
+        }
+    };
+    eprintln!("plants: {:?} {plant_preset:?}", graphics.foliage);
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the
     // field's. Lit as the field's models are until her own shaders are read
@@ -512,7 +536,7 @@ fn main() -> Result<()> {
         if let Some(atlas) = gp.textures.first() {
             // The cards' normal maps (the pack's third texture), for `NORMAL_MAPPED`.
             let normals = gp.textures.get(2).map(|_| textures.len() + 1);
-            add_plants(&mut scene, g, &main, &files.area, textures.len(), normals);
+            add_plants(&mut scene, g, &main, &files.area, textures.len(), normals, plant_preset.density);
             textures.push(atlas);
             textures.extend(gp.textures.get(2));
         }
@@ -575,19 +599,6 @@ fn main() -> Result<()> {
 
     let (mut width, mut height) = a.size;
     // A window to play in (--window), or an offscreen image.
-    // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
-    // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
-    // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
-    let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
-    let graphics = a
-        .preset
-        .or(config.as_deref().map(RenderSettings::from_config))
-        .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)))
-        .unwrap_or(RenderSettings::DESKTOP)
-        .resolved();
-    // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
-    // (`Frame::tone_white`) sees past the half range's 2.0.
-    let graphics = RenderSettings { hdr_scene: true, ..graphics };
     let display = match config.as_deref() {
         Some(text) => settings::Display::from_config(text),
         None => settings::Display { width, height, fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1") },
@@ -839,6 +850,7 @@ fn main() -> Result<()> {
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         view.look[50] = [PLANT_SWAY[0], PLANT_SWAY[1], PLANT_SWAY[2], started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED];
         view.look[51] = [0.0, 0.0, PLANT_SWAY_SPREAD[0], PLANT_SWAY_SPREAD[1]];
+        view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
         view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
         if frame_no == 0
             && let Some(k) = view.exposure
@@ -1025,7 +1037,6 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         look[38] = [0.0, 1.0, 0.0, 0.0];
         look[39] = [back.x, back.y, back.z, 0.0];
     }
-    look[FADE_SLOT] = [PLANT_FADE[0], PLANT_FADE[1], 0.0, 0.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
     // The environment's light instead, when the field has one: the cube map's light times the
     // ambient colour (model.vert's `sh`), the sun and the second light as the field's two

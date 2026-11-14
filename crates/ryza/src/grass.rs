@@ -92,8 +92,9 @@ impl Grass {
     /// The plants of every cell, at most `limit`, standing on `ground` (cells it has no height
     /// for are left out). A stand-in for the game's own spread, which is not read: a kind's
     /// last float taken as plants per 100 × 100 units, its first two as the height and its
-    /// spread, the next two as the width and its spread.
-    pub fn plants(&self, limit: usize, ground: impl Fn(f32, f32) -> Option<f32>) -> Vec<Plant> {
+    /// spread, the next two as the width and its spread. `density` (a preset's, 0 to 1) keeps
+    /// that share of them, the same ones each run.
+    pub fn plants(&self, limit: usize, density: f32, ground: impl Fn(f32, f32) -> Option<f32>) -> Vec<Plant> {
         let [cx, cz] = self.cell();
         let mut out = Vec::new();
         for (c, &kind) in self.cells.iter().enumerate() {
@@ -105,6 +106,9 @@ impl Grass {
                     return out;
                 }
                 let seed = (c as u32).wrapping_mul(9781).wrapping_add(n.wrapping_mul(6271));
+                if unit(seed ^ 0x2545_f491) >= density {
+                    continue;
+                }
                 let (x, z) = ((i + unit(seed)) * cx, (j + unit(seed ^ 0x5bd1_e995)) * cz);
                 let Some(y) = ground(x, z) else { continue };
                 let h = k[0] + k[1] * (unit(seed ^ 0x68e3_1da4) - 0.5);
@@ -113,6 +117,41 @@ impl Grass {
             }
         }
         out
+    }
+}
+
+/// A grass preset of the game's (`saves/graphicssetting/grassqualitypreset.xml` and
+/// `grassrangepreset.xml`, `Field="Default"`): how many of the plants are drawn, and the
+/// distances from the eye over which they shrink away.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Preset {
+    pub density: f32,
+    pub far: [f32; 2],
+}
+
+impl Preset {
+    /// The game's highest (`Middle`): every plant, shrinking from 8000 to 15000 units.
+    pub const MIDDLE: Preset = Preset { density: 1.0, far: [8000.0, 15000.0] };
+
+    /// The preset of `kind` ("Middle", "Low", "VeryLow") from the two tables.
+    pub fn read(quality: &[u8], range: &[u8], kind: &str) -> Result<Preset, String> {
+        let entry = |bytes: &[u8], tag: &str| -> Result<barrel_formats::table::Element, String> {
+            let root = barrel_formats::table::parse(bytes).map_err(|e| format!("{tag}: {e}"))?;
+            let mut all = vec![&root];
+            let mut found = None;
+            while let Some(e) = all.pop() {
+                if e.name == tag && e.attr("Type") == Some(kind) && e.attr("Field").is_none_or(|f| f == "Default") {
+                    found = Some(e.clone());
+                    break;
+                }
+                all.extend(e.children.iter());
+            }
+            found.ok_or_else(|| format!("{tag}: no {kind}"))
+        };
+        let q = entry(quality, "GrassQualityPreset")?;
+        let r = entry(range, "GrassRangePreset")?;
+        let f = |e: &barrel_formats::table::Element, k: &str| e.attr(k).and_then(|v| v.trim().parse::<f32>().ok()).ok_or_else(|| format!("{}: no {k}", e.name));
+        Ok(Preset { density: f(&q, "Density")?, far: [f(&r, "FarClipBegin")?, f(&r, "FarClipEnd")?] })
     }
 }
 
@@ -162,12 +201,25 @@ mod tests {
     fn plants_fill_their_cells_on_the_ground() {
         // One kind at 1 plant per 100 × 100 units over 64000-unit cells: 409,600 a cell.
         let g = Grass::parse(&file(&[[100.0, 0.0, 60.0, 0.0, 1.0]], &[NONE, 0, NONE, NONE], 2, 0)).unwrap();
-        let p = g.plants(1000, |x, _| Some(x / 1000.0));
+        let p = g.plants(1000, 1.0, |x, _| Some(x / 1000.0));
         assert_eq!(p.len(), 1000);
         assert!(p.iter().all(|p| (64000.0..128000.0).contains(&p.at[0]) && p.at[2] < 64000.0));
         assert!(p.iter().all(|p| p.at[1] == p.at[0] / 1000.0 && p.size == [60.0, 100.0] && p.kind == 0));
-        assert_eq!(p, g.plants(1000, |x, _| Some(x / 1000.0)));
-        assert!(g.plants(1000, |_, _| None).is_empty());
+        assert_eq!(p, g.plants(1000, 1.0, |x, _| Some(x / 1000.0)));
+        assert!(g.plants(1000, 1.0, |_, _| None).is_empty());
+        // A preset's density keeps about that share.
+        let all = g.plants(usize::MAX, 1.0, |_, _| Some(0.0)).len() as f32;
+        let some = g.plants(usize::MAX, 0.5, |_, _| Some(0.0)).len() as f32;
+        assert!((some / all - 0.5).abs() < 0.01, "{some} of {all}");
+    }
+
+    #[test]
+    fn reads_the_presets() {
+        let q = br#"<Root><GrassQualityPreset Field="Default" Type="Middle" Density="1"/><GrassQualityPreset Field="Default" Type="Low" Density="0.75"/></Root>"#;
+        let r = br#"<Root><GrassRangePreset Field="Default" Type="Middle" FarClipBegin="8000" FarClipEnd="15000"/><GrassRangePreset Field="Default" Type="Low" FarClipBegin="3000" FarClipEnd="3100"/></Root>"#;
+        assert_eq!(Preset::read(q, r, "Middle").unwrap(), Preset::MIDDLE);
+        assert_eq!(Preset::read(q, r, "Low").unwrap(), Preset { density: 0.75, far: [3000.0, 3100.0] });
+        assert!(Preset::read(q, r, "VeryLow").is_err());
     }
 
     #[test]

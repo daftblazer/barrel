@@ -132,8 +132,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   they come out teal where the game's are green: the cards are green (the grass tuft's opaque
   pixels average 60, 83, 25) but the sky light from above is blue (noon's 2.7, 3.0, 5.2 ×
   the cube map); the game's pigment mix most likely carries the green. They shrink away
-  from 8000 to 15000 units from the eye as the game's do (the Middle grass preset;
-  `model.vert` flag 16384, look slot 93); the near clip and the far scale-up are not done. The game's plant program mixes the vertex colour
+  over the game's grass preset's range as the game's do (`model.vert` flag 16384, look slot
+  93); the near clip and the far scale-up are not done. The preset follows the graphics'
+  `foliage` (full: Middle, density 1, 8000 to 15000; reduced, the handheld preset: Low, 0.75,
+  3000 to 3100; least: VeryLow, 0.5, 2000 to 2100; `barrel_ryza::grass::Preset`): at the gate
+  44,015 plants and 5.91 ms on the desktop preset, 32,980 and 5.71 ms on the handheld one
+  (PC). The game's plant program mixes the vertex colour
   with a field-wide pigment map by `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the
   plants"); which texture is the pigment and
   the scale's values are set at run time, not read. Whether the dense

@@ -1025,3 +1025,9 @@ A model draw binds three single-texture sets: 0 its colour, 2 its mask (or, for 
 models, the normal map; for her, the toon ramp) and 3 its emission map (`Draw::emission`, the
 material's kind-19 texture), white where a draw has none. The fragment program reads set 3
 only under flag 32768, so a game that never sets it (Escha) draws as before.
+
+## Foliage
+
+`RenderSettings::foliage` (full, reduced, least; config `foliage`) is how much of a field's
+plants a game draws, named for the game's own grass presets (Ryza: Middle, Low, VeryLow, with
+their density and draw range). The desktop presets take full, the handheld ones reduced.
