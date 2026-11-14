@@ -245,7 +245,8 @@ pub struct Turn {
     pub order: Vec<usize>,
     /// The timeline's entries in turn order (`Skirmish::slots`): the turn bar's slots.
     pub slots: Vec<Option<usize>>,
-    /// The turn bar's next-turn mark for each command, the attack first (`Skirmish::next_places`).
+    /// The turn bar's next-turn mark for each command: the attack, the skills, Wait
+    /// (`Skirmish::next_places`).
     pub next_places: Vec<usize>,
 }
 

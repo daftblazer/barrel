@@ -544,6 +544,14 @@ So speed takes up to a quarter off every wait (at speed 125 and more). When `RET
 count resets is still to be read. `barrel_game::battle::Timeline` (`advance`, `delay`, `hasten`), `action_wait`,
 `wait_after_action` and `knockback` do the above.
 
+The row commands are actions too (`0x1401ba0a0` builds them, 0x40 bytes each; RTTI
+`BtlCharaActionEscape`, `…Change`, `…Move`, `…Wait`, besides `…Item` and `…Skill`), their
+waits from virtual +0x30 and so through the same formula: **Wait 320** (+0x38 set to 0x140; its
+execute, `0x14019be80`, only plays a pose when the character's test `0x1401ae380(…, 2)` holds:
+no other effect), **Move 300**, **Run 250** (a constant method, `0x1401ba6a0`), Change the value
+its caller gives. `battle::WAIT_COMMAND` / `MOVE_COMMAND` / `RUN_COMMAND`; Barrel gives Wait
+(`fight::Battle::wait_turn`).
+
 ### Falling and guts (executable)
 
 After each effect on a target (`0x1401c0676` and on) the game sets the MP power back to 100,

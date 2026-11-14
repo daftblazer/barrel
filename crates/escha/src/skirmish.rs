@@ -120,6 +120,8 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
 pub enum Command {
     Attack { target: usize },
     Skill { skill: usize, target: usize },
+    /// The Wait command: no action, its wait only.
+    Wait,
 }
 
 /// A skirmish fought a turn at a time: whoever's turn comes ([`Skirmish::begin_turn`]) acts
@@ -214,12 +216,12 @@ impl<'p, 'a> Skirmish<'p, 'a> {
     }
 
     /// Where `who`'s next turn would land after each of its commands (the attack, then its
-    /// skills): how many entries wait less than the first entry's wait plus the command's
+    /// skills, then Wait): how many entries wait less than the first entry's wait plus the command's
     /// wait (`battle::action_wait` as the action would take it, states left out), as the turn
     /// bar's next-turn mark counts them (`0x1401900c0`).
     pub fn next_places(&self, who: usize) -> Vec<usize> {
         let Some(member) = self.party.get(who) else { return Vec::new() };
-        std::iter::once(member.attack).chain(member.skills.iter().map(|&(s, _)| s)).map(|s| self.next_place(who, s.wait)).collect()
+        std::iter::once(member.attack.wait).chain(member.skills.iter().map(|&(s, _)| s.wait)).chain([battle::WAIT_COMMAND]).map(|w| self.next_place(who, w)).collect()
     }
 
     fn next_place(&self, who: usize, wait: i32) -> usize {
@@ -255,6 +257,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
                 events.extend(self.battle.act(who, s, None, valid(target), rng));
             }
             Command::Skill { target, .. } | Command::Attack { target } => events.extend(self.battle.act(who, member.attack, None, valid(target), rng)),
+            Command::Wait => self.battle.wait_turn(who, rng),
         }
         let mut all = events;
         let from = 0;

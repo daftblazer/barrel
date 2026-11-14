@@ -157,6 +157,12 @@ impl Battle {
         Battle { fighters, timeline, pending: -1 }
     }
 
+    /// `who` waits (the Wait command, `BtlCharaActionWait`): nothing happens but its next wait,
+    /// [`battle::WAIT_COMMAND`] taken as an action's (its execute only plays a pose).
+    pub fn wait_turn(&mut self, who: usize, rng: &mut Rng) {
+        self.end_action(who, battle::WAIT_COMMAND, rng);
+    }
+
     /// The pending wait change (`action_wait`'s `pending`), as the next action would find it.
     pub fn pending(&self) -> i32 {
         self.pending
@@ -400,7 +406,7 @@ impl Battle {
         }
         }
         events.append(&mut felled);
-        self.end_action(who, skill, rng);
+        self.end_action(who, skill.wait, rng);
         events
     }
 
@@ -466,9 +472,9 @@ impl Battle {
 
     /// Its next wait (`0x1401b9b70`, `0x14018c9d0`) and the action counted (`0x1401aecda`); an
     /// action that wins the battle ends it before the wait.
-    fn end_action(&mut self, who: usize, skill: &Skill, rng: &mut Rng) {
+    fn end_action(&mut self, who: usize, wait: i32, rng: &mut Rng) {
         if self.winner().is_none() {
-            let wait = battle::action_wait(skill.wait, self.fighters[who].stats[stat::SPEED], None, None, &mut self.pending);
+            let wait = battle::action_wait(wait, self.fighters[who].stats[stat::SPEED], None, None, &mut self.pending);
             let wait = battle::wait_after_action(wait, None, None, true, rng);
             let i = self.timeline.entries.iter().position(|&(c, _)| c as usize == who).unwrap();
             self.timeline.entries[i].1 = wait;
@@ -483,6 +489,17 @@ mod tests {
 
     fn block(hp: i32) -> StatBlock {
         StatBlock { level: 10, hp, attack: 30, defense: 0, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() }
+    }
+
+    #[test]
+    fn wait_takes_320_at_the_speed_formula() {
+        let mut b = Battle::new(vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 1, 999)]);
+        let who = b.next();
+        let mut rng = Rng::seeded(1);
+        b.wait_turn(who, &mut rng);
+        let entry = b.timeline.entries.iter().find(|e| e.0 as usize == who).unwrap();
+        assert_eq!(entry.1, battle::action_wait(battle::WAIT_COMMAND, 20, None, None, &mut -1));
+        assert!(b.fighters.iter().all(|f| f.stats[stat::HP] == 100));
     }
 
     #[test]

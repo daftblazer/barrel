@@ -1428,7 +1428,7 @@ enum Choosing {
 }
 
 /// The command row a member's turn shows (the battle-stats recording: Katla's Attack, Skill,
-/// Move, Wait, Change and Run). Move, Wait, Change and Run are not given yet.
+/// Move, Wait, Change and Run). Move, Change and Run are not given yet.
 const COMMAND_ROW: [i32; 6] = {
     use battlehud::command::*;
     [ATTACK, SKILL, MOVE, WAIT, CHANGE, RUN]
@@ -1488,7 +1488,11 @@ impl BattlePlay {
             title: String::new(),
             marked: target.filter(|_| plate.is_some()).and_then(|k| turn.slots.iter().skip(1).position(|&o| o == Some(k))).map(|p| p + 1),
             // The mark follows the command under the cursor: the skill's in the skill list.
-            next: turn.next_places.get(if self.choosing == Choosing::Skill { 1 + self.chosen } else { 0 }).or(turn.next_places.first()).copied().unwrap_or(0),
+            next: turn.next_places.get(match self.choosing {
+                Choosing::Skill => 1 + self.chosen,
+                Choosing::Row if COMMAND_ROW[self.row] == battlehud::command::WAIT => turn.skills.len() + 1,
+                _ => 0,
+            }).or(turn.next_places.first()).copied().unwrap_or(0),
             plate,
         })
     }
@@ -1516,6 +1520,7 @@ impl BattlePlay {
             (Choosing::Row, Confirm) => match COMMAND_ROW[self.row] {
                 battlehud::command::ATTACK => self.choosing = Choosing::Target { skill: None },
                 battlehud::command::SKILL if !turn.skills.is_empty() => self.choosing = Choosing::Skill,
+                battlehud::command::WAIT => self.give(barrel_escha::auto_battle::Command::Wait),
                 c => eprintln!("battle: command {c} is not given yet"),
             },
             (Choosing::Skill, Up) => self.chosen = (self.chosen + skills - 1) % skills,
@@ -1528,10 +1533,19 @@ impl BattlePlay {
             (Choosing::Target { skill }, Confirm) => {
                 use barrel_escha::auto_battle::Command;
                 let target = turn.foes.get(self.target).copied().unwrap_or(0);
-                let command = match skill {
+                self.give(match skill {
                     None => Command::Attack { target },
                     Some(skill) => Command::Skill { skill, target },
-                };
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// Gives the waiting member `command` and plays the battle on to the next member's turn.
+    fn give(&mut self, command: barrel_escha::auto_battle::Command) {
+        {
+            {
                 self.fight.commands.push(command);
                 let f = &self.fight;
                 match barrel_escha::auto_battle::fight_commanded(&f.tables, &f.party, &f.monsters, f.rng, &f.commands) {
@@ -1547,7 +1561,6 @@ impl BattlePlay {
                 (self.chosen, self.target, self.row, self.choosing) = (0, 0, 0, Choosing::Row);
                 self.until = self.time;
             }
-            _ => {}
         }
     }
 

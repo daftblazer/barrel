@@ -645,6 +645,13 @@ pub const ENTRIES: usize = 16;
 /// The waits the battle's setup gives its entries one after another.
 pub const SETUP_STEP: i32 = 50;
 
+/// The row commands' waits, as the action factory (`0x1401ba0a0`) sets the actions' +0x38 that
+/// their virtual +0x30 returns: Wait (`BtlCharaActionWait`) 320, Move 300, Run
+/// (`BtlCharaActionEscape`, a constant method) 250. Change's comes from its caller.
+pub const WAIT_COMMAND: i32 = 320;
+pub const MOVE_COMMAND: i32 = 300;
+pub const RUN_COMMAND: i32 = 250;
+
 impl Timeline {
     /// The battle's start (`0x14018c0c0`): one entry per character of the battle's list, 50
     /// apart from 0, and free entries on to 16. `fighters` is that list's acting characters in
