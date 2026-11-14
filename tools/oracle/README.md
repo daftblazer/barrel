@@ -12,10 +12,16 @@ scene really looks like, and values the game only computes while running.
   device: without one its effect player reads a sound bank that was never made and crashes.
 - `stop.sh`: ends exactly the run's session.
 - `shot.sh OUT.png`: a screenshot through `gamescopectl` (absolute paths only reach it).
+- `display.sh`: this run's gamescope display (`gamescope-N`), from run.sh's session; `shot.sh`
+  uses it and fails when the run is not up. Never assume `gamescope-0`: another project's test
+  gamescope may hold it (on 2026-11-14 a failed start left shot.sh shooting another game's run).
 - `pad.py` (in the background, started before the game) and `pad.sh "tap A" "dpad LEFT" "stick L 0 -1 800" ...`:
   a virtual Xbox 360 pad through uinput (python-evdev), named "Barrel oracle pad"; the game
   takes it as its controller. Its X and Y were swapped until 2026-11-14 (runs and notes before then that
   say "X" mean Y). It is visible system-wide while it exists.
+  The pad is system-wide: any game reading pads gets its presses, so `pad.sh` presses only while
+  this run's game is up (or `PAD_TARGET_PID`, a Barrel test run's pid, is alive); stop the pad
+  as soon as the run ends.
   Start the pad in its own session (`setsid python3 tools/oracle/pad.py ... &`): a pad started
   inside a command that is later stopped dies with it. `pad.sh` waits for the pad's log of finished commands
   (`work/oracle/paddone`) and gives up on a command that gets no answer within a minute.
