@@ -3,7 +3,7 @@
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
-//!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]]
+//!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
@@ -43,13 +43,14 @@ struct Args {
     weather: Weather,
     hide: Vec<String>,
     ryza: Option<(Vec3, f32, String, f32)>,
+    no_shadows: bool,
 }
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -67,6 +68,7 @@ fn args() -> Result<Args> {
             }
             "--distance" => a.distance = Some(value()?.parse()?),
             "--hide" => a.hide.push(value()?),
+            "--no-shadows" => a.no_shadows = true,
             "--ryza" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
@@ -126,8 +128,9 @@ fn main() -> Result<()> {
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
     let mut scene = Scene::new();
     scene.field = Some(0);
-    // No tag is read yet: nothing casts a shadow or sways (`docs/ryza/open.md`).
-    let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement::default();
+    // Ryza's placements carry no tags (Escha marks its casters `xDS_`): every placed model
+    // casts the sun's shadow; nothing sways yet (`docs/ryza/open.md`).
+    let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, ..Default::default() };
     let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
@@ -159,6 +162,7 @@ fn main() -> Result<()> {
             d.overlay = d.overlay.map(|o| o + textures.len());
             d.field = Some(0);
             d.name = "ryza".into();
+            d.casts = true;
         }
         eprintln!("Ryza: {} draws, {} joints, motion {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
         textures.extend(rp.textures.iter());
@@ -236,6 +240,7 @@ fn main() -> Result<()> {
     // The look block (`barrel_render`'s `Look`): the eye, and a white ambient alone (the
     // terrain, which has no unlit flag, shows its colours as they are); no sun, no fog.
     let mut look = [[0f32; 4]; LOOK_SLOTS];
+    let mut shadow_vp = vp;
     look[4] = [eye.x, eye.y, eye.z, 1.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
     // The environment's light instead, when the field has one: the cube map's light times the
@@ -251,6 +256,16 @@ fn main() -> Result<()> {
             let d = from_light(p.elevation, p.azimuth);
             look[slot] = [d.x, d.y, d.z, 0.0];
             look[slot + 1] = [p.color[0] * k, p.color[1] * k, p.color[2] * k, 1.0];
+        }
+        // The sun's shadow map: one square over the camera's target, wide enough for the
+        // view (the game's cascades, `shadowMap_`, are not read), unless --no-shadows.
+        if !a.no_shadows {
+            let sun = from_light(light.parallel[0].elevation, light.parallel[0].azimuth);
+            shadow_vp = shadow::sun_view_proj(center, sun, (dist * 1.5).clamp(SHADOW_HALF, 6000.0), 8000.0);
+            for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
+                look[27 + k] = col;
+            }
+            look[31] = [1.0 / renderer.shadow_target.size as f32, 1.0, 0.0, 0.0];
         }
         eprintln!("exposure {k:.4}");
     }
@@ -280,7 +295,7 @@ fn main() -> Result<()> {
         material: &material,
         draw_vp: vp,
         view_planes: view_planes(&vp),
-        shadow_vp: vp,
+        shadow_vp,
         alpha_cutoff: 0.3,
         glow: (1.0, 0.0),
         camera: Camera { fov, near: dist * 0.01, far: (dist * 20.0).max(80_000.0), ..Camera::default() },

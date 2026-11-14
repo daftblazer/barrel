@@ -49,8 +49,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 `barrel-ryza INSTALL s06_t_rasen OUT --look-at 32400,6350,30600 --distance 800 --pitch 12 --yaw 150
 --time morning`. What differs there, largest first:
 
-- **Shadows.** The game's path and rocks lie in the trees' shade, lit blue by the sky; nothing
-  casts a shadow in `barrel-ryza` (the shared renderer has sun shadow maps, not turned on here).
+- **Shadows.** The game's path and rocks lie in the trees' shade, lit blue by the sky.
+  `barrel-ryza` now casts the sun's shadow from every placed model and Ryza (`--no-shadows`
+  to compare) over one square around the target (`1.5 ×` the camera distance, 1500 to 6000
+  units across each way); the game's cascades (`shadowMap_`) are not read, so far ground
+  stays unshadowed, and the shade comes out lighter than the game's.
 - **The sky.** The game shows a blue sky with haze toward the horizon; `barrel-ryza` draws none
   (the clear colour).
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
