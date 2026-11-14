@@ -707,7 +707,7 @@ fn add_body<F>(
         let mut motions = Motions::new(root, model, row)?;
         let anim = motions.get(column)?.clone();
         let skeleton = G1m::parse(named(&container, &format!("{stem}.g1m"))?).ok()?.skeleton?;
-        eprintln!("character {who}: motion {column} = {}_{}", motions.head, motions.columns[column]);
+        eprintln!("character {who}: motion {column} = {}_{}", motions.head, motions.columns.get(column).map_or("(its own)", String::as_str));
         let t0 = motion_time.map_or(0.5, |(t, _)| t);
         let joints = pose(&skeleton, &anim, motion_clock(&anim, t0, looping));
         Some((joints, skeleton, motions, anim, t0))
@@ -989,7 +989,7 @@ struct Walker {
     follow: barrel_engine::play_camera::Follow,
     /// On the world map, the cursor's own model (`E3D_WMAP_CUR00`'s instance) and where she
     /// stays meanwhile: the walker is the cursor there, she waits on her start mark.
-    cursor: Option<(u32, [f32; 3])>,
+    cursor: Option<(u32, [f32; 3], f32)>,
     /// Logy leads instead of Escha (`BARREL_LEAD=logy`): his swing, its sound and reach, his
     /// jump voices.
     logy: bool,
@@ -1668,7 +1668,7 @@ impl Motions {
     fn new(root: &Path, model: &str, row: &barrel_formats::table::Element) -> Option<Motions> {
         let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
         Some(Motions {
-            char_dir: root.join("Data/x64/Character").join(dir),
+            char_dir: root.join(if row.attr("Directory") == Some("Obj") { "Data/x64/Obj" } else { "Data/x64/Character" }).join(dir),
             head: row.attr("FileHead")?.to_string(),
             container: row.attr("Motion1")?.to_string(),
             columns: row.attributes.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
@@ -1680,8 +1680,11 @@ impl Motions {
     /// The motion in `column`, if the row has one and its file is there.
     fn get(&mut self, column: &str) -> Option<&barrel_formats::g1a::Animation> {
         if !self.loaded.contains_key(column) {
-            let anim = self.columns.get(column).and_then(|value| {
-                let name = format!("{}_{value}.g1a", self.head);
+            // An object's row (the map cursors) names no motions: its one motion is
+            // `<FileHead>.g1a` in its `Motion1` container, asked for as `BASE_MOTION1`.
+            let base = (column == BASE_MOTION && !self.columns.contains_key(column)).then(String::new);
+            let anim = self.columns.get(column).cloned().or(base).and_then(|value| {
+                let name = if value.is_empty() { format!("{}.g1a", self.head) } else { format!("{}_{value}.g1a", self.head) };
                 let from = |file: String| -> Option<Vec<u8>> {
                     let bytes = std::fs::read(self.char_dir.join(file)).ok()?;
                     let c = Elixir::parse(&bytes).ok()?;
@@ -1695,6 +1698,9 @@ impl Motions {
         self.loaded.get(column).and_then(Option::as_ref)
     }
 }
+
+/// The motion name an object's own motion is asked for by.
+const BASE_MOTION: &str = "BASE_MOTION1";
 
 /// An event character's placement: number, position and facing angle in degrees.
 type Placement = (u32, [f32; 3], f32);
@@ -2377,7 +2383,11 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             match row.map(|row| add_body(&root, &mut scene, base, &row, 21_001, pos, 0.0, "BASE_MOTION1", None, None, |_, _, _, _| Ok(None::<()>))) {
                 Some(Ok(Some((body, _)))) => {
                     pack_bytes.extend(body.packs);
-                    w.cursor = Some((body.instance, pos));
+                    w.cursor = Some((body.instance, pos, w.facing));
+                    // Its motion loops on the town clock (3.37 s).
+                    if let Some((skeleton, _, anim, _)) = body.rig {
+                        town_bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new(), hidden: false });
+                    }
                 }
                 other => eprintln!("the world map's cursor did not load: {:?}", other.map(|r| r.map(|b| b.is_some()))),
             }
@@ -4407,8 +4417,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         // Her motion from how fast she went (`game::walk::player_gait`): a new one starts from
         // its beginning and is blended in over 0.15 s, the old one playing on meanwhile.
+        // On the world map, while the cursor is away, she waits where she started.
+        let waiting = w.cursor.is_some_and(|(_, home, _)| world_mode && (w.pos[0] - home[0]).hypot(w.pos[2] - home[2]) > CURSOR_LEAVES);
         if frame > 0 && dt > 0.0 && w.jump.is_none() && !w.striking {
-            let (gait, rate) = barrel_escha::player::player_gait(speed, false);
+            let (gait, rate) = if waiting { (barrel_escha::player::Gait::Wait, 1.0) } else { barrel_escha::player::player_gait(speed, false) };
             if let Some(b) = town_bodies.get_mut(w.body) {
                 if gait != w.gait {
                     w.gait = gait;
@@ -4459,10 +4471,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             _ => 1.0,
         };
         // On the world map, away from her start, the cursor moves and she waits there.
-        let away = w.cursor.filter(|&(_, home)| world_mode && (w.pos[0] - home[0]).hypot(w.pos[2] - home[2]) > CURSOR_LEAVES);
-        let at = away.map_or(w.pos, |(_, home)| home);
-        instances[w.instance as usize].model = render_space(Mat4::from_scale_rotation_translation(Vec3::splat(size), turn, Vec3::from(at) + Vec3::Y * lift));
-        if let Some((cursor, _)) = w.cursor {
+        let away = w.cursor.filter(|&(_, home, _)| world_mode && (w.pos[0] - home[0]).hypot(w.pos[2] - home[2]) > CURSOR_LEAVES);
+        let (at, her_turn) = away.map_or((w.pos, turn), |(_, home, facing)| (home, glam::Quat::from_rotation_y(facing)));
+        instances[w.instance as usize].model = render_space(Mat4::from_scale_rotation_translation(Vec3::splat(size), her_turn, Vec3::from(at) + Vec3::Y * lift));
+        if let Some((cursor, ..)) = w.cursor {
             instances[cursor as usize].model = match away {
                 Some(_) => render_space(Mat4::from_scale_rotation_translation(Vec3::ONE, turn, Vec3::from(w.pos) + Vec3::Y * lift)),
                 None => Mat4::from_scale(Vec3::ZERO),

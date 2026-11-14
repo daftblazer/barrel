@@ -955,8 +955,12 @@ visited, the `_off` one (olive green in `A15_WMAP.g1t` 0; the Old Highway at 1:2
 visited) before, as the sectors' marks do. The world map's cursor: once the walker leaves her start (60 units), `E3D_WMAP_CUR00` (its
 CharaBase row's Directory "Obj": `Data/x64/Obj`) stands at the walker's place at scale 1 and
 she waits on her start mark (colseit-arrival 1:16 to 1:25: the crystal leaves her on the
-Southern Ruins and goes up R1; its size matches). Not yet the game's: the cursor's
-ring and its looping motion, the route's dots turning blue behind it, her waiting pose, the routes the
+Southern Ruins and goes up R1; its size matches). She waits in her F_WAIT pose,
+turned as she started. The cursor plays its one motion on a loop: an object's CharaBase row
+(Directory "Obj") names no motion columns, its motion is `<FileHead>.g1a` in its `Motion1`
+container (`E3D_WMAP_CUR00_BASE_MOTION1`), asked for as `BASE_MOTION1`. Not yet the game's:
+the cursor's ring (blue rim, purple middle, where the mark was) and its float (a little higher
+in the recording), the route's dots turning blue behind it, the routes the
 story has not opened yet (R3 west of Colseit is unknown on the user's save),
 the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
 to World Map?" question is `question.rs`.
