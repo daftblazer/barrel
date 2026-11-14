@@ -313,7 +313,11 @@ item jingle (6). The boot's logo splashes are stills (the still table at `0x1408
 (the Koei Tecmo Games logo, 1920 × 1080 in the top-left of a 2048 × 2048 texture), each with
 `_EN` / `_SC` / `_TC` copies. `Ipu/logo_havok.g1t` and `logo_dolby.g1t` are on the disc but no
 still names them. Track 8 is the Gust jingle (`_gust_ondo.kvs`, volume 0.5), but the PC install
-has no such file. The boot (escha-boot recording): Loading plate, Koei Tecmo then Gust (each
+has no such file. Layout nodes of kind 4 draw their sprite scaled by word 5, in percent, about the node: the
+title's logo (layout 1056's first node, part 0x15c) at 80 (escha-boot at 17 s; RMSE of the
+title 0.202 at full size, 0.030 at 80%). The title's "Press any button" (0x15c cut 1) pulses: a
+triangle wave in opacity, 1 down to 0.2 and back over 2.4 s, from 1 as the title starts.
+The boot (escha-boot recording): Loading plate, Koei Tecmo then Gust (each
 0.5 s fade from black, 2 s held, 0.5 s fade out, back to back), the pre-title movie
 `avantitle.wmv`, the title fading in from white over 0.3 s.
 The title screen's music is track 1 (`sy_title01_piano`, played once: its KOVS +0x10 is 1;

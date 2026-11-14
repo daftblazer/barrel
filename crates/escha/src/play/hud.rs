@@ -149,8 +149,13 @@ pub enum Element {
     Sprite { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite at half strength (a choice not taken).
     Dim { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite at `alpha` of 255 (the title's pulsing prompt).
+    Faded { part: i32, cut: i32, at: [i32; 2], alpha: u8 },
     /// A sprite mirrored (node kind 2): `axis` 0 left to right, 1 top to bottom, 2 both.
     Mirrored { part: i32, cut: i32, at: [i32; 2], axis: i32 },
+    /// A sprite scaled to `percent` about its node `at` (a layout node of kind 4, its word 5:
+    /// the title's logo at 80).
+    Scaled { part: i32, cut: i32, at: [i32; 2], percent: i32 },
     /// A sprite turned a quarter clockwise about its node `at` (a layout node of kind 7: the
     /// area map labels' ornaments), so it lies left of and below the node.
     Turned { part: i32, cut: i32, at: [i32; 2] },
@@ -198,7 +203,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
@@ -394,15 +399,20 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
     let mut out = Vec::new();
     for e in elements {
         match e {
-            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at, .. } => {
-                let alpha = if matches!(e, Element::Dim { .. }) { 0.5 } else { 1.0 };
+            &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at, .. } | &Element::Scaled { part, cut, at, .. } | &Element::Faded { part, cut, at, .. } => {
+                let scale = if let Element::Scaled { percent, .. } = *e { percent as f32 / 100.0 } else { 1.0 };
+                let alpha = match *e {
+                    Element::Dim { .. } => 0.5,
+                    Element::Faded { alpha, .. } => f32::from(alpha) / 255.0,
+                    _ => 1.0,
+                };
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
                 let [w, h] = sheets.sizes[slot];
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let [x, y] = piece.at.map(|v| v as f32);
                 out.push(Quad { turn: false,
-                    rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k],
+                    rect: [dx + x * k, y * k, dx + (x + (r - l) * scale) * k, (y + (b - t) * scale) * k],
                     uv: match *e {
                         Element::Mirrored { axis: 1, .. } => [l / w, b / h, r / w, t / h],
                         Element::Mirrored { axis: 2, .. } => [r / w, b / h, l / w, t / h],

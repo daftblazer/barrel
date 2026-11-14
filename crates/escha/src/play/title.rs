@@ -22,6 +22,9 @@ use crate::{text, Gpu, Result};
 pub const BACKGROUND: u32 = 9;
 const LOGO: i32 = 0x15c;
 const LOGO_AT: [i32; 2] = [310, 30];
+/// The logo's size: its node (layout 1056's first) is of kind 4, scaled, with word 5 = 80 (the
+/// escha-boot recording at 17 s: the logo 0.8 of the picture's size, its corner at the node).
+const LOGO_PERCENT: i32 = 80;
 const CURSOR: i32 = 0x163;
 /// The entries' parts, top to bottom, and their place.
 const ENTRY_PARTS: [i32; 6] = [0x15d, 0x15e, 0x162, 0x15f, 0x160, 0x161];
@@ -82,9 +85,9 @@ impl Title {
 
     /// The sprites to draw over the background, on the 1920 × 1080 screen.
     pub fn elements(&self) -> Vec<Element> {
-        let mut out = vec![Element::Sprite { part: LOGO, cut: 0, at: LOGO_AT }];
+        let mut out = vec![Element::Scaled { part: LOGO, cut: 0, at: LOGO_AT, percent: LOGO_PERCENT }];
         match *self {
-            Title::PressAny => out.push(Element::Sprite { part: LOGO, cut: 1, at: [570, 660] }),
+            Title::PressAny => out.push(Element::Sprite { part: LOGO, cut: PROMPT_CUT, at: [570, 660] }),
             Title::Menu(chosen) => {
                 let y = ENTRY_Y + ENTRY_STEP * chosen as i32 - CURSOR_RISE;
                 out.push(Element::Sprite { part: LOGO, cut: 2, at: [584, y] });
@@ -205,6 +208,20 @@ const TITLE_MUSIC: u32 = 1;
 const WHITE_FADE: f32 = 0.3;
 static WHITE: [u8; 64] = [255; 64];
 
+/// "Press any button" pulses: its opacity falls in a straight line from 1 to [`PROMPT_LOW`]
+/// over half of [`PROMPT_PERIOD`] seconds and rises back the same way, from 1 as the title
+/// starts (the escha-boot recording from 16.25 s: the prompt's opacity fitted frame by frame
+/// against ours drawn at full and half strength, a triangle wave within 0.003).
+const PROMPT_PERIOD: f32 = 2.4;
+const PROMPT_LOW: f32 = 0.2;
+const PROMPT_CUT: i32 = 1;
+
+/// The prompt's opacity (0 to 255) at `t` seconds into the title.
+fn prompt_at(t: f32) -> u8 {
+    let x = (t.max(0.0) / PROMPT_PERIOD).fract();
+    ((PROMPT_LOW + (1.0 - PROMPT_LOW) * (1.0 - 2.0 * x).abs()) * 255.0).round() as u8
+}
+
 /// The veil's opacity (0 to 255) at `t` seconds.
 fn white_at(t: f32) -> u8 {
     ((1.0 - t / WHITE_FADE).clamp(0.0, 1.0) * 255.0).round() as u8
@@ -285,21 +302,26 @@ pub fn run(
     let white_slot = images.len();
     images.push(&white);
     let (w, h) = (target.width as f32, target.height as f32);
-    let front_quads = |f: &Front| match f {
+    let front_quads = |f: &Front, pulse: u8| match f {
         Front::Title(t) => {
             // The background over the 1920 × 1080 screen, scaled to the height and centred.
             let k = h / 1080.0;
             let dx = (w - 1920.0 * k) / 2.0;
             let mut q = vec![text::Quad { turn: false, rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 1 }];
-            q.extend(hud::quads(&pe, None, &sheets, &t.elements(), w, h));
+            // The prompt pulsing.
+            let e = t.elements().into_iter().map(|e| match e {
+                Element::Sprite { part: LOGO, cut: PROMPT_CUT, at } => Element::Faded { part: LOGO, cut: PROMPT_CUT, at, alpha: pulse },
+                e => e,
+            });
+            q.extend(hud::quads(&pe, None, &sheets, &e.collect::<Vec<_>>(), w, h));
             q
         }
         Front::Hero(hero) => hud::quads(&pe, Some(&font), &sheets, &hero.elements(&hero_nodes, texts, &question), w, h),
         Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
     // On the Load Game list (the in-play menu's Load), else the title.
-    let quads = |(f, white): &(Front, u8)| {
-        let mut q = front_quads(f);
+    let quads = |(f, white, pulse): &(Front, u8, u8)| {
+        let mut q = front_quads(f, *pulse);
         if *white > 0 {
             q.push(text::Quad { turn: false, rect: [0.0, 0.0, w, h], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, f32::from(*white) / 255.0], texture: white_slot });
         }
@@ -324,11 +346,13 @@ pub fn run(
     let fading = !load_list && (window.is_some() || fade_at.is_some());
     let start = std::time::Instant::now();
     let shift = fade_at.unwrap_or(0.0);
-    let mut state = (front, if fading { white_at(shift) } else { 0 });
-    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, _), b| f.press(b, saves), keys, out, |(_, white)| {
+    let mut state = (front, if fading { white_at(shift) } else { 0 }, prompt_at(shift));
+    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, ..), b| f.press(b, saves), keys, out, |(_, white, pulse)| {
+        let t = shift + start.elapsed().as_secs_f32();
         if *white > 0 {
-            *white = white_at(shift + start.elapsed().as_secs_f32());
+            *white = white_at(t);
         }
+        *pulse = prompt_at(t);
         if let Some((out, mixer, _)) = music.as_mut() {
             out.pump(mixer);
         }
@@ -356,6 +380,9 @@ mod tests {
 
     #[test]
     fn lit_entry_and_cursor() {
+        assert_eq!(prompt_at(0.0), 255);
+        assert_eq!(prompt_at(1.2), 51);
+        assert_eq!(prompt_at(2.4), 255);
         assert_eq!(white_at(0.0), 255);
         assert_eq!(white_at(0.15), 128);
         assert_eq!(white_at(0.31), 0);
