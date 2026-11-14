@@ -44,7 +44,9 @@ pub const GLOW_THRESHOLD: f32 = 0.5;
 pub const PUSH_INSTANCE: u32 = 112;
 /// The field look's uniform block (see `model.frag`): 6 vec4s, 4 point lights × 4 vec4s, then
 /// the field's sun, fill and ambient (5 vec4s).
-pub const LOOK_SIZE: u64 = 66 * 16;
+/// The look block's slots (vec4s; model.vert's `Look`).
+pub const LOOK_SLOTS: usize = 76;
+pub const LOOK_SIZE: u64 = LOOK_SLOTS as u64 * 16;
 /// Half the side of the sun's shadow map square, in field units (calibrated against oracle
 /// frames; docs/renderer.md, "Shadows").
 pub const SHADOW_HALF: f32 = 1500.0;

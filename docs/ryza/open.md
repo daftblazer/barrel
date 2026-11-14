@@ -15,11 +15,13 @@ achievements are the player's own, and the DX version has not been played there)
   `s45_m_underground_01`, `s53_m_starbottle_01`, `s76`/`s78`/`s80`/`s82` battle points) fails
   with "ktf section offsets"; the other 87 fields load (`barrel ryza-field INSTALL`). Way in:
   compare one's header with a field that reads (docs/formats.md, the terrain section).
-- **Field lighting.** `barrel-ryza` draws fields unlit. Ryza lights them from per-field HDR
-  cube maps (`_ad` diffuse, `_as` specular, BC6H) plus the `_light.bin` point lights (read, no
-  colour) and `_env.bin` (98 KB, layout unread): docs/formats.md, "Ryza field environment".
-  Way in: the diffuse cube map as the ambient (needs BC6H cube upload), then `_env.bin`'s
-  exposure, then the field's own shaders (`.g1s`) for the exact model.
+- **Field lighting.** `barrel-ryza` lights fields with the environment's diffuse cube map
+  alone (as an ambient, spherical harmonics): dim, no sun, no point lights. The cube maps are
+  shared between fields, so the field's own light (sun direction and colour, exposure) must be
+  in `_env.bin` (98 KB, layout unread). Next: read `_env.bin` (compare the attic's and
+  Rasenboden's; several time-of-day sets?).
+- **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as 0 with Escha's
+  layout (`cDiff` / `cAmb`), so `barrel-ryza` gives every draw the full material.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its
   heights match the heightmap) lies at grass level over the sandy canyon path the cliff models
   make in the village close-up (`--look-at 31261,5466,30776 --distance 6000 --pitch 25`). Every

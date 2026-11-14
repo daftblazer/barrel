@@ -74,12 +74,25 @@ fn main() -> Result<()> {
     let textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     let Scene { vertices, indices, mut draws, terrains, lo, hi, instances, palette, deltas, morph_weights, .. } = scene;
     for d in draws.iter_mut() {
+        // Ryza's models' lighting material (G1MG section 0x10001) is not Escha's `cDiff` /
+        // `cAmb` (read that way it is 0): full until it is read (`docs/ryza/open.md`).
+        d.light = FULL_LIGHT;
         let base = instances.get(d.instance as usize).map_or(0, |i| i.palette);
         d.bounds = Bounds::of(&vertices, &indices, d.first_index, d.index_count, &palette, base);
     }
     if draws.is_empty() {
         return Err("nothing to draw".into());
     }
+    // The field's diffuse light, from its environment's cube map.
+    let harmonics = match files.env.as_deref().map(Elixir::parse).transpose()? {
+        Some(env) => {
+            let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
+            let (c, means) = barrel_ryza::environment::diffuse_harmonics(ad)?;
+            eprintln!("diffuse light: face means (+x -x +y -y +z -z) {:.3?}; constant term {:.3?}", means, c[0]);
+            Some(c)
+        }
+        None => None,
+    };
     eprintln!("{} draws, {} vertices, {} triangles, {} textures", draws.len(), vertices.len(), indices.len() / 3, textures.len());
 
     let (width, height) = a.size;
@@ -119,16 +132,24 @@ fn main() -> Result<()> {
     let vp = proj * view;
     // The look block (`barrel_render`'s `Look`): the eye, and a white ambient alone (the
     // terrain, which has no unlit flag, shows its colours as they are); no sun, no fog.
-    let mut look = [[0f32; 4]; 66];
+    let mut look = [[0f32; 4]; LOOK_SLOTS];
     look[4] = [eye.x, eye.y, eye.z, 1.0];
     look[26] = [1.0, 1.0, 1.0, 1.0];
+    // The environment's diffuse light instead, when the field has one (model.vert's `sh`).
+    if let Some(c) = harmonics {
+        look[66] = [1.0, 0.0, 0.0, 0.0];
+        for (k, [r, g, b]) in c.into_iter().enumerate() {
+            look[67 + k] = [r, g, b, 0.0];
+        }
+    }
     renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
 
     let bytes = u64::from(width) * u64::from(height) * 4;
     let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
     let hidden = vec![false; instances.len()];
     let shown = |_: &Draw| true;
-    let material = |_: &Draw| (UNLIT, 0);
+    // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
+    let material = |_: &Draw| (if harmonics.is_some() { 0 } else { UNLIT }, 0);
     let layers: Vec<&text::Layer> = Vec::new();
     let frame = Frame {
         image: 0,

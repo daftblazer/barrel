@@ -81,10 +81,28 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
     // root height, shift x, shift z} each, metres.
     vec4 sway[16];
+    // The ambient from an environment light map (the Ryza games' `_ad` cube map) as nine
+    // spherical-harmonic coefficients over the game's axes (x not mirrored), when x of `sh_on`
+    // is 1; otherwise `ambient` alone.
+    vec4 sh_on;
+    vec4 sh[9];
 } look;
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
 layout(location = 10) out vec4 prev_clip;
+// The environment light map's light on a surface facing n (render space), from its nine
+// coefficients (game space: x mirrored back).
+vec3 environment_light(vec3 n) {
+    vec3 g = normalize(vec3(-n.x, n.y, n.z));
+    float b[9] = float[9](0.282095, 0.488603 * g.y, 0.488603 * g.z, 0.488603 * g.x, 1.092548 * g.x * g.y,
+        1.092548 * g.y * g.z, 0.315392 * (3.0 * g.z * g.z - 1.0), 1.092548 * g.x * g.z, 0.546274 * (g.x * g.x - g.y * g.y));
+    vec3 c = vec3(0.0);
+    for (int k = 0; k < 9; k++) {
+        c += look.sh[k].rgb * b[k];
+    }
+    return max(c, vec3(0.0));
+}
+
 // A directional light's Lambert term on normal n; a light with no direction (one the field
 // does not have) gives none, rather than NaN.
 float lambert(vec3 n, vec3 dir) {
@@ -157,7 +175,7 @@ void main() {
     // Fields: ambient (and each point light's ambient) on the vertex colour, the fill and the
     // point lights' diffuse, and the sun's diffuse; the material colours are taken as white.
     vec3 wn = normalize(mat3(i.model) * n);
-    vec3 amb = look.ambient.rgb;
+    vec3 amb = look.sh_on.x > 0.5 ? environment_light(wn) : look.ambient.rgb;
     vec3 diffuse = lambert(wn, look.fill_dir.xyz) * look.fill_color.rgb;
     // The terrain (flag 64) takes no point lights: its vertex program (the field's `.g1s`
     // program 2) has only the two directional lights and the ambient.

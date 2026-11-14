@@ -5003,7 +5003,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         };
         let m = |d: [f32; 3]| [-d[0], d[1], d[2], 0.0];
         let e = turned_eye(eye, target, orbit);
-        let mut look = [[0f32; 4]; 66];
+        let mut look = [[0f32; 4]; LOOK_SLOTS];
         // Last frame's view-projection (this frame's on the first), for the motion vectors.
         for (k, col) in prev_mvp.unwrap_or(mvp).to_cols_array_2d().into_iter().enumerate() {
             look[40 + k] = col;

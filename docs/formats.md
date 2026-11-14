@@ -1083,7 +1083,13 @@ Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin`
 in the attic) and two cube maps, `<FIELD>_ad.g1t` (256 × 256 BC6H, 6 faces, 1 level) and
 `<FIELD>_as.g1t` (the same with 6 levels). So the fields are lit from HDR cube maps, a diffuse
 irradiance map and a pre-filtered specular one, unlike Escha's per-field light table.
-`_env.bin` opens with floats that look like exposure and fog settings (4.2, 15, 1, 1000; 8000
+The cube maps are not the field's own: the attic's and Rasenboden's `_ad.g1t` are the same
+file byte for byte (their `_env.bin` differ), and the env containers come in a few sizes
+only. The diffuse map's faces are in the game's axes, y up: +y is the sky's blue (0.19, 0.26,
+0.42), -y a warm ground bounce (0.47, 0.36, 0.28), the sides about 0.3. `barrel-ryza` turns it
+into nine spherical-harmonic coefficients (`barrel_ryza::environment`) for the renderer's
+ambient term (model.vert's `sh`). Its values (about 0.3) want a scale, presumably from
+`_env.bin`. `_env.bin` opens with floats that look like exposure and fog settings (4.2, 15, 1, 1000; 8000
 and -1200 at 0x84; small scattering-like constants from 0xa0); its layout is not read yet.
 
 ### Placement lists (`*.opl2`)

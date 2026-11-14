@@ -182,6 +182,18 @@ impl Texture<'_> {
         Some(self.decode(&level[start..(start + size).min(level.len())]))
     }
 
+    /// Layer `layer` of the largest level as linear RGB, for the HDR formats (BC6H); `None`
+    /// for others or past the last layer.
+    pub fn layer_rgb(&self, layer: u32) -> Option<Vec<[f32; 3]>> {
+        let size = self.format.level_size(self.width, self.height);
+        let start = size * layer as usize;
+        let level = self.levels.first()?;
+        if self.format != Format::Bc6h || layer >= self.layers.max(1) || start + size > level.len() {
+            return None;
+        }
+        Some(crate::bc6h::decode_rgb(&level[start..start + size], self.width as usize, self.height as usize, false))
+    }
+
     fn decode(&self, src: &[u8]) -> Vec<u8> {
         let (w, h) = (self.width as usize, self.height as usize);
         match self.format {

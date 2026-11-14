@@ -187,7 +187,18 @@ pub fn decode_block(block: &[u8; 16], signed: bool) -> [[u16; 3]; 16] {
 /// A whole image as RGBA8 for viewing: each channel mapped by x / (1 + x) (Reinhard), then
 /// gamma 2.2.
 pub fn decode(src: &[u8], width: usize, height: usize, signed: bool) -> Vec<u8> {
-    let mut out = vec![0u8; width * height * 4];
+    decode_rgb(src, width, height, signed)
+        .into_iter()
+        .flat_map(|p| {
+            let t = |f: f32| ((f.max(0.0) / (1.0 + f.max(0.0))).powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
+            [t(p[0]), t(p[1]), t(p[2]), 255]
+        })
+        .collect()
+}
+
+/// An image's linear RGB values, rows top to bottom.
+pub fn decode_rgb(src: &[u8], width: usize, height: usize, signed: bool) -> Vec<[f32; 3]> {
+    let mut out = vec![[0f32; 3]; width * height];
     let bw = width.div_ceil(4);
     for (b, block) in src.chunks_exact(16).enumerate() {
         let (bx, by) = (b % bw * 4, b / bw * 4);
@@ -197,15 +208,9 @@ pub fn decode(src: &[u8], width: usize, height: usize, signed: bool) -> Vec<u8> 
         let px = decode_block(block.try_into().unwrap(), signed);
         for (i, p) in px.iter().enumerate() {
             let (x, y) = (bx + i % 4, by + i / 4);
-            if x >= width || y >= height {
-                continue;
+            if x < width && y < height {
+                out[y * width + x] = p.map(half_to_f32);
             }
-            let o = (y * width + x) * 4;
-            for c in 0..3 {
-                let f = half_to_f32(p[c]).max(0.0);
-                out[o + c] = ((f / (1.0 + f)).powf(1.0 / 2.2) * 255.0 + 0.5) as u8;
-            }
-            out[o + 3] = 255;
         }
     }
     out
