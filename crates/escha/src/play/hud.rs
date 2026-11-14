@@ -6,7 +6,9 @@
 //! the year disc "1" on August 20th of year 1), not read from the HUD code: the empty text
 //! after "Left" is the days left in the assignment period (its last day minus today); the two
 //! big numbers (part 0x57, kind 29, cut = digit) are the month and the day; the year disc's
-//! digit is part 0x8a cut 2 + year. The dial's ten segments (part 0x8d cuts 2 to 11, in the
+//! digit is part 0x8a cut 2 + year. Both numbers are centred on their node, 36 pixels a digit
+//! (the glyph's width): "8 /20" as the game draws it (the colseit-arrival recording's area map,
+//! measured by patch search: the month's "8" and the day's "20" each centred on its node). The dial's ten segments (part 0x8d cuts 2 to 11, in the
 //! layout's order) light as the day's field time is spent, from the top clockwise (checked in the
 //! running game, 2026-11-13: none on arrival, one after a battle, five after a gathering); its
 //! key-shaped hand (layout 610, part 0x8d cut 1, 120 × 24), pointing at the time spent (up for
@@ -14,8 +16,7 @@
 //! the segments clockwise from the top (cuts 2 to 6, then 11 down to 7). Not yet the game's: the button list (620)
 //! moved up 121 pixels, as the screenshot has it (the layout puts the list at y 792, past the
 //! screen's foot); the days left are a kind 22 text, centred on their node; the text size (the node's size × 1.47
-//! over the font's line); how many-digit numbers sit (the first
-//! right-aligned on its node, the second left-aligned, 32 pixels a digit); white for texts
+//! over the font's line); white for texts
 //! without a colour and for the days left. The arrows (602), the assignment badges (603), the
 //! "Free Time" tab (604), the small count (part 0xe5) and the pop-ups (the poster, gathering
 //! notices, the gathering gauge) are left out until their conditions are known.
@@ -32,7 +33,9 @@ const DIGITS: i32 = 0x57;
 const SMALL_DIGITS: i32 = 0xe5;
 const YEAR: i32 = 0x8a;
 const DIAL: i32 = 0x8d;
-const DIGIT_ADVANCE: i32 = 32;
+const DIGIT_ADVANCE: i32 = 36;
+/// Half a digit glyph (36 wide): numbers are centred on their node.
+const DIGIT_CENTRE: i32 = 18;
 const BUTTON_LIST: u32 = 620;
 const BUTTON_LIST_SHIFT: i32 = -121;
 
@@ -141,7 +144,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             DIGITS if n.kind == 29 => {
                 let value = if numbers == 0 { v.month } else { v.day };
                 let digits: Vec<i32> = value.to_string().bytes().map(|b| i32::from(b - b'0')).collect();
-                let start = if numbers == 0 { p.at[0] - DIGIT_ADVANCE * (digits.len() as i32 - 1) } else { p.at[0] };
+                let start = p.at[0] - DIGIT_CENTRE * digits.len() as i32;
                 for (k, d) in digits.into_iter().enumerate() {
                     out.push(Element::Sprite { part: DIGITS, cut: d, at: [start + DIGIT_ADVANCE * k as i32, p.at[1]] });
                 }
@@ -347,11 +350,11 @@ mod tests {
         let got = elements(&nodes, |_| None, v);
         let sprite = |part, cut, at| Element::Sprite { part, cut, at };
         assert_eq!(got, vec![
-            sprite(DIGITS, 1, [88, 120]),
+            sprite(DIGITS, 1, [84, 120]),
             sprite(DIGITS, 2, [120, 120]),
-            sprite(DIGITS, 1, [214, 120]),
-            sprite(DIGITS, 2, [246, 120]),
-            sprite(DIGITS, 0, [278, 120]),
+            sprite(DIGITS, 1, [160, 120]),
+            sprite(DIGITS, 2, [196, 120]),
+            sprite(DIGITS, 0, [232, 120]),
             sprite(YEAR, 4, [286, 116]),
             sprite(DIAL, 0, [0, 0]),
             sprite(DIAL, 2, [1, 0]),

@@ -1656,7 +1656,10 @@ that place them are tables in the executable (English addresses; `crates/formats
 - Coordinates are on a 1920 × 1080 screen.
 - **Nesting**: a node part above 0x164 is another layout, by id, placed at the node (its own
   place added): 105 layouts are not nested in any other, the screens. Part 0x164 (kinds 21, 22, 23) is a text (kind 23 ends at its node, right-aligned: the save list's numbers at x 1800; kind 22 is centred on it: "Select your character." at x 954, the field HUD's days left; kinds
-  21 and 22 start there):
+  21 and 22 start there). A kind 29 node is a number's place: the HUD date's month and day
+  (part 0x57, 36 pixels a digit) are each centred on their node ("8 /20": the "8" half a glyph
+  left of its node, the "20" a glyph left of its; measured on the colseit-arrival recording's
+  area map by patch search):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
