@@ -23,13 +23,17 @@ const FADE_IN: f32 = 0.5;
 const HOLD: f32 = 2.0;
 const FADE_OUT: f32 = 0.5;
 const EACH: f32 = FADE_IN + HOLD + FADE_OUT;
+/// Black between the last logo and the pre-title movie (the recording: 12.10 to 12.25 s).
+const MOVIE_GAP: f32 = 0.15;
+/// The pre-title movie, played in the slot after the logos.
+pub const INTRO_MOVIE: &str = "avantitle.wmv";
 
 /// Which logo shows and how bright (0 black to 255 full), at `t` seconds; `None` once all have
-/// shown.
+/// shown and the black before the movie has passed.
 pub fn at(t: f32) -> Option<(usize, u8)> {
     let logo = (t.max(0.0) / EACH) as usize;
     if logo >= LOGOS.len() {
-        return None;
+        return (t < EACH * LOGOS.len() as f32 + MOVIE_GAP).then_some((LOGOS.len() - 1, 0));
     }
     let s = t - logo as f32 * EACH;
     let level = if s < FADE_IN { s / FADE_IN } else if s < FADE_IN + HOLD { 1.0 } else { (EACH - s) / FADE_OUT };
@@ -85,7 +89,20 @@ pub fn run(
         *s = at(start.elapsed().as_secs_f32());
         s.is_none().then_some(())
     })?;
+    intro_movie(root);
     Ok(())
+}
+
+/// The movie slot between the logos and the title: the game plays `Movie_EN/avantitle.wmv`
+/// (96 s, skippable as the game allows) there. Stand-in until the VC-1 and WMA Pro decoders
+/// land (stage 18): it is named in the log and skipped.
+fn intro_movie(root: &Path) {
+    let x64 = root.join("Data/x64");
+    let file = [x64.join("Movie_EN").join(INTRO_MOVIE), x64.join("Movie").join(INTRO_MOVIE)].into_iter().find(|p| p.exists());
+    match file {
+        Some(p) => eprintln!("splash: intro movie {} not played yet (no VC-1 decoder)", p.display()),
+        None => eprintln!("splash: no intro movie {INTRO_MOVIE}"),
+    }
 }
 
 #[cfg(test)]
@@ -98,6 +115,7 @@ mod tests {
         assert_eq!(at(FADE_IN), Some((0, 255)));
         assert_eq!(at(EACH - FADE_OUT / 2.0), Some((0, 128)));
         assert_eq!(at(EACH + 1.0).map(|(l, _)| l), Some(1));
-        assert_eq!(at(2.0 * EACH + 0.01), None);
+        assert_eq!(at(2.0 * EACH + 0.01), Some((1, 0)));
+        assert_eq!(at(2.0 * EACH + MOVIE_GAP + 0.01), None);
     }
 }
