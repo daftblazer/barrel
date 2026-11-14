@@ -30,11 +30,16 @@ const SCROLL_PART: i32 = 0x92;
 const SCROLL_CUT: i32 = 8;
 const SCROLL_AT: [i32; 2] = [1446, 150];
 const NAME_AT: [i32; 2] = [1673, 158];
-const INK: [u8; 4] = [0xe1, 0x3a, 0x2c, 0x1e];
+/// The scroll's ink: the layouts' text colour (58, 26, 8), drawn opaque (the recording's
+/// darkest text pixels are (57, 27, 6); the layouts' alpha byte 0xe1 would lighten it).
+const INK: [u8; 4] = [0xff, 0x3a, 0x1a, 0x08];
 /// The description's widest line (screen pixels), as the game breaks "A sector of the /
 /// enormous ruins.".
 const DESCRIPTION_WIDTH: f32 = 330.0;
 const LINE_STEP: i32 = 38;
+/// The item lines' rule (641's part 0xbe cut 5) and how far below its node the game draws it.
+const RULE: i32 = 0xbe;
+const RULE_DROP: i32 = 7;
 
 fn moved(p: &Placed, by: [i32; 2]) -> [i32; 2] {
     [p.at[0] + by[0], p.at[1] + by[1]]
@@ -91,6 +96,9 @@ pub fn elements(
             }
             // "...ETC" past the tenth.
             (0x164, Some(t)) if items.len() > 10 => out.push(Element::Label(Text { at, colour: INK, ..t })),
+            // The rules, 7 lower than their nodes (the recording: each rule's line 4.5 to 5
+            // pixels lower at 720p, the texts over them where their nodes put them).
+            (RULE, _) => out.push(Element::Sprite { part: RULE, cut: p.node.cut.max(0), at: [at[0], at[1] + RULE_DROP] }),
             // Its own tab (layout 640 stands in its place).
             (0x164, _) | (0x92, _) | (0x280, _) => {}
             _ => out.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
