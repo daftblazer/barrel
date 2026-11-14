@@ -168,6 +168,11 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
 /// save): it matches its brightness spread, 25th / 50th / 90th percentile grey 53 / 67 / 225
 /// against the game's 55 / 70 / 219 (a quarter, the earlier stand-in, drew it 4 times too
 /// dark).
+/// How much of the stage ambient tint's hue the set's ambient takes (a power on it): fitted
+/// to six shaded regions of the gate's noon still (RGB error 77 at 0.4, 80 at 0.6, 118 at the
+/// full hue, 95 without).
+const TINT_STRENGTH: f32 = 0.4;
+
 /// Our light's units in the game's (fitted: the gate's noon still at the exposure range's low
 /// end, 0.9).
 const LIGHT_UNIT: f32 = 0.75;
@@ -440,7 +445,7 @@ fn main() -> Result<()> {
             if let Some((tint, _)) = install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::stage_ambient(&b)) {
                 let luma = 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2];
                 if luma > 0.0 {
-                    light.ambient = std::array::from_fn(|ch| light.ambient[ch] * tint[ch] / luma);
+                    light.ambient = std::array::from_fn(|ch| light.ambient[ch] * (tint[ch] / luma).powf(TINT_STRENGTH));
                 }
             }
             let (_, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
