@@ -672,7 +672,7 @@ fn main() -> Result<()> {
             }
             _ => dist,
         };
-        let view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size);
+        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if frame_no == 0
             && let Some(k) = view.exposure
@@ -680,6 +680,16 @@ fn main() -> Result<()> {
             eprintln!("exposure {k:.4}");
         }
         prev_vp = Some(view.vp);
+        // The far shadow square the renderer has ready (its layer; 0 none yet).
+        if let Some((want, mut info)) = view.shadow_far
+            && let Some((vp, layer)) = renderer.far_shadow(Some(want))
+        {
+            for (k, col) in vp.to_cols_array_2d().into_iter().enumerate() {
+                view.look[SHADOW_FAR_SLOT + k] = col;
+            }
+            info[1] = layer as f32;
+            view.look[SHADOW_FAR_SLOT + 4] = info;
+        }
         renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(view.look.as_ptr() as *const u8, LOOK_SIZE as usize) });
         // The image to draw into: the window's next, or the offscreen one.
         let image = match &presenter {
@@ -710,7 +720,6 @@ fn main() -> Result<()> {
             draw_vp: view.vp,
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
-            shadow_far: view.shadow_far,
             alpha_cutoff: 0.3,
             glow: (1.0, 0.0),
             saturation,
@@ -797,7 +806,8 @@ struct View {
     look: [[f32; 4]; LOOK_SLOTS],
     vp: Mat4,
     shadow_vp: Mat4,
-    shadow_far: Option<Mat4>,
+    /// The far shadow square wanted and its look slot (texel, layer to fill, fades).
+    shadow_far: Option<(Mat4, [f32; 4])>,
     sky_plane: bool,
     near: f32,
     far: f32,
@@ -890,12 +900,8 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             // far swaying trees' shadows hold still between steps.
             let step = 2000.0;
             let snapped = Vec3::new((center.x / step).round() * step, (center.y / step).round() * step, (center.z / step).round() * step);
-            let far = shadow::sun_view_proj(snapped, sun, fade_end, 20000.0);
-            for (k, col) in far.to_cols_array_2d().into_iter().enumerate() {
-                look[SHADOW_FAR_SLOT + k] = col;
-            }
-            look[SHADOW_FAR_SLOT + 4] = [1.0 / size as f32, 1.0, fade_start, fade_end];
-            shadow_far = Some(far);
+            // The renderer says which far square the receivers read (`Renderer::far_shadow`).
+            shadow_far = Some((shadow::sun_view_proj(snapped, sun, fade_end, 20000.0), [1.0 / size as f32, 0.0, fade_start, fade_end]));
         }
         exposure_k = Some(k);
     }

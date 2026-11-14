@@ -1,6 +1,7 @@
 //! The sun's shadow map: a depth image of `CASCADES` layers (the near square over the
-//! camera's target; a wider one when the game gives it, else cleared) the field's casters are
-//! drawn into from the sun, and a comparison sampler the field's receivers read it through (`model.frag`, `terrain.frag`;
+//! camera's target; two for a wider square when the game asks for one, `Far`: one read while
+//! the other is drawn) the field's casters are drawn into from the sun, and a comparison
+//! sampler the field's receivers read it through (`model.frag`, `terrain.frag`;
 //! `docs/renderer.md`, "Shadows").
 
 use ash::vk;
@@ -20,8 +21,54 @@ impl Shadows {
     pub const HANDHELD: Shadows = Shadows { size: 1024, format: vk::Format::D16_UNORM };
 }
 
-/// The map's layers: the near square, then the far one.
-pub const CASCADES: usize = 2;
+/// The map's layers: the near square, then the far square's two.
+pub const CASCADES: usize = 3;
+/// Over how many frames a moved far square is drawn (the old one read meanwhile).
+pub const FAR_FRAMES: u64 = 8;
+
+/// The far square's layers (1 and 2): the one the receivers read, with its view-projection,
+/// and the one being drawn, a slice of the casters a frame, until it takes over.
+#[derive(Default)]
+pub struct Far {
+    pub shown: Option<(glam::Mat4, usize)>,
+    pub build: Option<FarBuild>,
+    /// Both layers cleared once (a game without a far square never reads them).
+    pub cleared: bool,
+}
+
+pub struct FarBuild {
+    pub vp: glam::Mat4,
+    pub layer: usize,
+    /// The next draw (by index in the frame's draws) to draw, and the indices a frame
+    /// (None: all at once, when nothing is shown yet).
+    pub next: usize,
+    pub budget: Option<u64>,
+    pub spread: bool,
+}
+
+impl Far {
+    /// This frame's far square: `want` is where the game would have it. Gives what the
+    /// receivers read (its view-projection and layer; None: nothing yet) and plans the drawing.
+    pub fn plan(&mut self, want: Option<glam::Mat4>) -> Option<(glam::Mat4, usize)> {
+        let Some(vp) = want else {
+            self.build = None;
+            return None;
+        };
+        if self.shown.is_some_and(|(m, _)| m == vp) {
+            self.build = None;
+            return self.shown;
+        }
+        if !self.build.as_ref().is_some_and(|b| b.vp == vp) {
+            let layer = if self.shown.is_some_and(|(_, l)| l == 1) { 2 } else { 1 };
+            self.build = Some(FarBuild { vp, layer, next: 0, budget: None, spread: self.shown.is_some() });
+        }
+        // With nothing shown, the new square is drawn whole this frame, before the scene.
+        match (self.shown, &self.build) {
+            (None, Some(b)) => Some((b.vp, b.layer)),
+            _ => self.shown,
+        }
+    }
+}
 
 pub struct ShadowTarget {
     pub image: vk::Image,
@@ -31,6 +78,8 @@ pub struct ShadowTarget {
     layer_views: [vk::ImageView; CASCADES],
     pub sampler: vk::Sampler,
     pub pass: vk::RenderPass,
+    /// The same, keeping the layer's depth (a far square's later slices).
+    pub pass_load: vk::RenderPass,
     /// One per layer, to draw into.
     pub framebuffers: [vk::Framebuffer; CASCADES],
     pub size: u32,
@@ -100,12 +149,14 @@ impl ShadowTarget {
                 dependency_flags: vk::DependencyFlags::empty(),
             }];
             let pass = d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachment).subpasses(&subpass).dependencies(&deps), None)?;
+            let attachment_load = [attachment[0].load_op(vk::AttachmentLoadOp::LOAD).initial_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+            let pass_load = d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachment_load).subpasses(&subpass).dependencies(&deps), None)?;
             let mut framebuffers = [vk::Framebuffer::null(); CASCADES];
             for (f, v) in framebuffers.iter_mut().zip(&layer_views) {
                 let views = [*v];
                 *f = d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(&views).width(size).height(size).layers(1), None)?;
             }
-            Ok(ShadowTarget { image, memory, view, layer_views, sampler, pass, framebuffers, size })
+            Ok(ShadowTarget { image, memory, view, layer_views, sampler, pass, pass_load, framebuffers, size })
         }
     }
 
@@ -117,6 +168,7 @@ impl ShadowTarget {
                 d.destroy_image_view(*v, None);
             }
             d.destroy_render_pass(self.pass, None);
+            d.destroy_render_pass(self.pass_load, None);
             d.destroy_sampler(self.sampler, None);
             d.destroy_image_view(self.view, None);
             d.destroy_image(self.image, None);

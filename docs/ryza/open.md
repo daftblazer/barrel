@@ -55,9 +55,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   `barrel-ryza` now casts the sun's shadow from every placed model and Ryza (`--no-shadows`
   to compare) over one square around the target (`1.5 ×` the camera distance, 1500 to 6000
   units across each way) and a far layer out to 30000 units, fading from 20000 (the
-  override's `shadowMap_ShadowErase*`; docs/renderer.md, "Shadows"). The far layer is drawn
-  again whenever its 2000-unit grid step changes, a ~10 ms frame on the PC: on the RP6 this
-  hitch needs measuring (spread over frames, or the handheld preset without it). The shade
+  override's `shadowMap_ShadowErase*`; docs/renderer.md, "Shadows"). The far square moves in
+  2000-unit steps and is drawn again over 8 frames (about 1 ms each on the PC; on the RP6 to
+  be measured). The shade
   comes out lighter than the game's.
 - **The sky.** `barrel-ryza` draws the sky plane with the game's measured scattering (the set's
   `skyFog_`, the sun times its power). Stand-ins: the path length's terms (`skyPos`, `fog`:

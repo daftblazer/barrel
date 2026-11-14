@@ -50,8 +50,8 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 sway[16];
     // Slots 66 to 86: the vertex program's and the sky plane's.
     vec4 others[21];
-    // The far shadow layer (lib.rs SHADOW_FAR_SLOT): view-projection, {texel, on, fade
-    // start, fade end}.
+    // The far shadow square (lib.rs SHADOW_FAR_SLOT): view-projection, {texel, layer (0:
+    // none), fade start, fade end}.
     mat4 shadow_far;
     vec4 shadow_far_info;
 } look;
@@ -125,7 +125,7 @@ float sun_shadow(vec3 p) {
     if (near >= 0.0) return near;
     // Past the near square: the far layer, if on, fading to lit with the distance.
     if (look.shadow_far_info.y < 0.5) return 1.0;
-    float far = shadow_layer(look.shadow_far, 1.0, look.shadow_far_info.x, p);
+    float far = shadow_layer(look.shadow_far, look.shadow_far_info.y, look.shadow_far_info.x, p);
     if (far < 0.0) return 1.0;
     float fade = clamp((distance(p, look.eye.xyz) - look.shadow_far_info.z) / max(look.shadow_far_info.w - look.shadow_far_info.z, 1.0), 0.0, 1.0);
     return mix(far, 1.0, fade);

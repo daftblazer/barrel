@@ -58,10 +58,9 @@ pub struct Renderer {
     pub terrain_gpu: TerrainGpu,
     pub settings: RenderSettings,
     pub show_motion: bool,
-    /// What the far shadow layer holds: nothing yet (None), cleared (Some(None)) or drawn
-    /// with that view-projection. It is drawn again only when the frame's differs, so the
-    /// game moves its square in steps; `forget_far_shadow` after the scene changes.
-    pub far_shadow: std::cell::Cell<Option<Option<Mat4>>>,
+    /// The far shadow square's layers (`shadow::Far`): a game asks `far_shadow` each frame
+    /// before writing its look block.
+    pub far_shadow: std::cell::RefCell<shadow::Far>,
 }
 
 /// The images the post pass draws into: the window's swapchain images, or the offscreen one.
@@ -118,9 +117,6 @@ pub struct Frame<'a> {
     pub draw_vp: Mat4,
     pub view_planes: [glam::Vec4; 6],
     pub shadow_vp: Mat4,
-    /// The far shadow layer's view-projection (look slots 87 to 91 say how it is read), if
-    /// any.
-    pub shadow_far: Option<Mat4>,
     pub alpha_cutoff: f32,
     /// The glow: its bright pass's threshold and its rate (0: none).
     pub glow: (f32, f32),
@@ -141,9 +137,16 @@ pub struct Frame<'a> {
 }
 
 impl Renderer {
-    /// The far shadow layer is drawn again next frame (the scene's casters changed).
+    /// This frame's far shadow square (`shadow::Far::plan`): `want` where the game would have
+    /// it (in steps: a moved square is drawn over `FAR_FRAMES` frames); gives the
+    /// view-projection and layer for the look block's far slots, None while there is none.
+    pub fn far_shadow(&self, want: Option<Mat4>) -> Option<(Mat4, usize)> {
+        self.far_shadow.borrow_mut().plan(want)
+    }
+
+    /// The far square is drawn again from scratch (the scene's casters changed).
     pub fn forget_far_shadow(&self) {
-        self.far_shadow.set(None);
+        *self.far_shadow.borrow_mut() = shadow::Far { cleared: true, ..Default::default() };
     }
 
     /// A renderer for `settings` (resolved: `RenderSettings::resolved`), drawing into the
@@ -607,7 +610,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_far, alpha_cutoff, glow, saturation, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -642,23 +645,27 @@ impl Renderer {
                 barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
             }
             // The sun's shadow map: every caster but the distant view, from the sun, into the
-            // near layer and, when the game gives one, the far layer (else cleared only).
-            let cascades = [Some(shadow_vp), shadow_far];
-            for (layer, cascade) in cascades.iter().enumerate() {
-                if layer > 0 {
-                    if self.far_shadow.get() == Some(*cascade) {
-                        continue;
-                    }
-                    self.far_shadow.set(Some(*cascade));
-                }
+            // near layer; the far layers cleared once, and a slice of a moved far square's
+            // casters into its layer (`shadow::Far`).
+            let mut far = self.far_shadow.borrow_mut();
+            let mut jobs: Vec<(usize, Option<Mat4>, bool)> = vec![(0, Some(shadow_vp), false)];
+            if !far.cleared {
+                far.cleared = true;
+                jobs.extend((1..shadow::CASCADES).map(|l| (l, None, false)));
+            }
+            if let Some(b) = &far.build {
+                jobs.push((b.layer, Some(b.vp), b.next > 0));
+            }
+            for (layer, cascade, load) in jobs {
                 let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
                 let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow_target.size, height: shadow_target.size } };
+                let pass = if load { shadow_target.pass_load } else { shadow_target.pass };
                 d.cmd_begin_render_pass(
                     cb,
-                    &vk::RenderPassBeginInfo::default().render_pass(shadow_target.pass).framebuffer(shadow_target.framebuffers[layer]).render_area(full).clear_values(&clear),
+                    &vk::RenderPassBeginInfo::default().render_pass(pass).framebuffer(shadow_target.framebuffers[layer]).render_area(full).clear_values(&clear),
                     vk::SubpassContents::INLINE,
                 );
-                let Some(shadow_vp) = *cascade else {
+                let Some(shadow_vp) = cascade else {
                     d.cmd_end_render_pass(cb);
                     continue;
                 };
@@ -676,10 +683,36 @@ impl Renderer {
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
                 let shadow_planes = view_planes(&shadow_vp);
-                for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes))).filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d)) {
+                // In a far layer, casters whose box is under four of its texels across (the
+                // map's side over its size) cast nothing seen: left out.
+                let least = if layer > 0 { 4.0 * 2.0 / (shadow_vp.x_axis.x.hypot(shadow_vp.y_axis.x).hypot(shadow_vp.z_axis.x) * shadow_target.size as f32) } else { 0.0 };
+                let big = |d: &Draw| least == 0.0 || d.bounds.is_none_or(|b| b.extent(&instances[d.instance as usize].model) >= least);
+                let casts = |d: &Draw| big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d);
+                // A far slice: from the build's next draw, about `budget` indices (a
+                // FAR_FRAMES-th of its casters' when spread, all of them otherwise).
+                let (start, budget) = match (layer, &mut far.build) {
+                    (0, _) | (_, None) => (0, u64::MAX),
+                    (_, Some(b)) => {
+                        if b.budget.is_none() {
+                            let total: u64 = draws.iter().filter(|d| casts(d)).map(|d| u64::from(d.index_count)).sum();
+                            b.budget = Some(if b.spread { total.div_ceil(shadow::FAR_FRAMES).max(1) } else { u64::MAX });
+                        }
+                        (b.next, b.budget.unwrap_or(u64::MAX))
+                    }
+                };
+                let (mut spent, mut stop) = (0u64, draws.len());
+                for (k, draw) in draws.iter().enumerate().skip(start) {
+                    if spent >= budget {
+                        stop = k;
+                        break;
+                    }
+                    if !casts(draw) {
+                        continue;
+                    }
+                    spent += u64::from(draw.index_count);
                     // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
-                // 32: their texture on their vertex colour, as the distant view's clouds.
-                let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
+                    // 32: their texture on their vertex colour, as the distant view's clouds.
+                    let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
                     let mut per_draw = [0u8; 8];
                     per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
                     per_draw[4..].copy_from_slice(&flags.to_le_bytes());
@@ -689,7 +722,15 @@ impl Renderer {
                     drawn[1] += 1;
                 }
                 d.cmd_end_render_pass(cb);
+                if layer > 0 && let Some(b) = far.build.take() {
+                    if stop >= draws.len() {
+                        far.shown = Some((b.vp, b.layer));
+                    } else {
+                        far.build = Some(shadow::FarBuild { next: stop, ..b });
+                    }
+                }
             }
+            drop(far);
             if let Some(t) = &timer {
                 t.mark(d, cb, 1);
             }

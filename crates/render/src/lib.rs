@@ -48,8 +48,8 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// the field's sun, fill and ambient (5 vec4s).
 /// The look block's slots (vec4s; model.vert's `Look`, then the sky plane's 11 from
 /// `SKY_SLOT`, sky.frag).
-/// Then the far shadow layer: its view-projection (87 to 90) and {texel, on, fade start, fade
-/// end} (91; the fade by distance from the eye, to lit).
+/// Then the far shadow square: its view-projection (87 to 90) and {texel, layer (0: none),
+/// fade start, fade end} (91; the fade by distance from the eye, to lit).
 pub const LOOK_SLOTS: usize = 92;
 /// The far shadow layer's first look slot.
 pub const SHADOW_FAR_SLOT: usize = 87;
@@ -193,6 +193,12 @@ impl Bounds {
 
     /// Whether any of it may be inside the view of `planes` ([`view_planes`]) placed by `model`:
     /// its box's corners through the model matrix, padded, against each plane.
+    /// The box's longest side once placed by `model` (its axes' scale), unpadded.
+    pub fn extent(&self, model: &Mat4) -> f32 {
+        let size = self.hi - self.lo;
+        (model.x_axis.truncate() * size.x).length().max((model.y_axis.truncate() * size.y).length()).max((model.z_axis.truncate() * size.z).length())
+    }
+
     pub fn seen(&self, model: &Mat4, planes: &[glam::Vec4; 6]) -> bool {
         let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
         for k in 0..8 {
