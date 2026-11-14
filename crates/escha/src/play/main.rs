@@ -25,6 +25,7 @@ mod loadlist;
 mod title;
 mod screen;
 mod menu;
+mod message;
 mod status;
 mod basket;
 mod assignment;
@@ -437,7 +438,7 @@ impl AreaMap {
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
         let p = &self.places[self.at];
         let font = &self.font;
-        let measure = |s: &str, size: f32| font.width_of(s) * size / text::LINE * 1.47;
+        let measure = |s: &str, size: f32| message::width_of(font, s) * size / message::LINE * 1.47;
         let mut e = if self.world {
             let sector = format!("{}p", p.tag);
             let sectors: Vec<String> = self.places.iter().enumerate().filter(|(k, q)| q.kind == 1 && q.tag.starts_with(&sector) && !self.closed.get(*k).copied().unwrap_or(false)).map(|(_, q)| q.name.clone()).collect();
@@ -3588,7 +3589,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let images = [atlas.textures.first()?, common.textures.get(4)?];
             let font = text::Font { glyphs, size: images[0].width as f32 };
             let mut layer = text::Layer::new(&gpu, renderer.pool, renderer.post_pass, &images).ok()?;
-            layer.set(&gpu, &font.dialogue(Some(&speaker), &line, width as f32, height as f32)).ok()?;
+            layer.set(&gpu, &message::dialogue(&font, Some(&speaker), &line, width as f32, height as f32)).ok()?;
             Some(layer)
         })();
         match made {
@@ -4734,7 +4735,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             if std::env::var("BARREL_TEXT_LOG").is_ok() {
                                 eprintln!("frame {frame}: line {:?}: {}", name, l.text);
                             }
-                            font.dialogue(name, &l.text, width as f32, height as f32)
+                            message::dialogue(&font, name, &l.text, width as f32, height as f32)
                         }
                         None => Vec::new(),
                     });
