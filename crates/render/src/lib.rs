@@ -50,7 +50,10 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// `SKY_SLOT`, sky.frag).
 /// Then the far shadow square: its view-projection (87 to 90) and {texel, layer (0: none),
 /// fade start, fade end} (91; the fade by distance from the eye, to lit).
-pub const LOOK_SLOTS: usize = 92;
+/// Then the light on an upward-facing surface ({rgb}, 92: `model.vert`'s flag 4096, a sky dome
+/// lit so).
+pub const LOOK_SLOTS: usize = 93;
+pub const DOME_LIGHT_SLOT: usize = 92;
 /// The far shadow layer's first look slot.
 pub const SHADOW_FAR_SLOT: usize = 87;
 /// The first of the sky plane's look slots (sky.frag): {on}, Scat[4], skyPos, fog, the sun's

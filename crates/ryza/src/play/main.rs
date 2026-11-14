@@ -37,6 +37,8 @@ use glam::{Mat4, Vec3};
 
 /// The renderer's material bit for a draw shown with its texture alone, unlit (`model.frag`).
 const UNLIT: u32 = 32;
+/// `model.vert`'s flag for a sky dome lit by the look's `DOME_LIGHT_SLOT`.
+const DOME_LIT: u32 = 4096;
 
 struct Args {
     install: String,
@@ -590,7 +592,9 @@ fn main() -> Result<()> {
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     // Her draws take the toon ramp (flag 128, the row in bits 16-23).
     let material = |d: &Draw| {
-        let base = if environment.is_some() { 0 } else { UNLIT };
+        // The sky dome's clouds lit by the light on an upward-facing surface (flag 4096, look
+        // slot `DOME_LIGHT_SLOT`): the game lights them (`PBSkyDome`, its scales not read).
+        let base = if environment.is_some() { if d.sky { DOME_LIT } else { 0 } } else { UNLIT };
         match ramp_rows.get(&(d.first_index, d.instance)) {
             Some(&(row, has_rim)) if ramp_pack.is_some() && environment.is_some() => {
                 let r = rim.map_or(0, |r| if has_rim { rim_word(r.sharpness, r.strength) } else { rim_word(r.hair_sharpness, r.hair_strength) });
@@ -889,6 +893,17 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         // 3, 3, 4) and wants an exposure of 0.30. The game's adaptation itself is not read.
         let k = exposure(c, light);
         let k = exposure_range.map_or(k, |(_, hi)| k.min(hi));
+        // The light on an upward-facing surface, for the sky dome's clouds: the light map
+        // upward times the ambient colour, and the two lights by their elevation.
+        {
+            let up = barrel_ryza::environment::basis([0.0, 1.0, 0.0]);
+            let rgb: [f32; 3] = std::array::from_fn(|ch| {
+                let sky = (0..9).map(|i| c[i][ch] * up[i]).sum::<f32>() * light.ambient[ch];
+                let sun = light.parallel.iter().map(|p| p.color[ch] * p.elevation.to_radians().sin().max(0.0)).sum::<f32>();
+                (sky + sun) * k
+            });
+            look[DOME_LIGHT_SLOT] = [rgb[0], rgb[1], rgb[2], 1.0];
+        }
         look[66] = [1.0, 0.0, 0.0, 0.0];
         for (i, [r, g, b]) in c.iter().copied().enumerate() {
             look[67 + i] = [r * light.ambient[0] * k, g * light.ambient[1] * k, b * light.ambient[2] * k, 0.0];

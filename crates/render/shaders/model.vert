@@ -86,6 +86,10 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // is 1; otherwise `ambient` alone.
     vec4 sh_on;
     vec4 sh[9];
+    // Slots 76 to 91: the sky plane's and the far shadow square's.
+    vec4 vert_pad[16];
+    // The light an upward-facing surface takes ({rgb}, lib.rs DOME_LIGHT_SLOT): flag 4096.
+    vec4 dome_light;
 } look;
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
@@ -199,7 +203,8 @@ void main() {
     // (flag 16: its solid pieces, lit as the field's models are); nor are the field's xEF_
     // models (flag 32: window light).
     if ((pc.flags & 24u) == 8u || (pc.flags & 32u) != 0u) {
-        field_light = in_color.rgb;
+        // Flag 4096: lit by the light on an upward-facing surface (Ryza's sky dome).
+        field_light = (pc.flags & 4096u) != 0u ? in_color.rgb * look.dome_light.rgb : in_color.rgb;
         sun_part = vec3(0.0);
     }
     gl_Position = pc.view_proj * w;

@@ -686,8 +686,13 @@ albedo, plus a specular term from the kind-3 map and the ambient specular map, t
 height fog layers (`cHFog`, `hFogParam`, a sum of 20-odd sines for their wavy top). The
 dome's normals point inward and down (y -0.5 to -0.76), so the sun's N·L is 0 overhead and
 the clouds take the ambient and the specular: how bright they come out rests on run-time
-scales not read (`vAmbParam`, `vAmbDifScl`, `cb0[48..50]`). `barrel-ryza` draws the dome
-unlit (its texture on its vertex colour) for now.
+scales not read (`vAmbParam`, `vAmbDifScl`, `cb0[48..50]`). `barrel-ryza` lights the dome
+with the light an upward-facing surface takes (the light map upward times the ambient colour,
+plus the two lights by their elevation, times the exposure; look slot 92, `model.vert`'s flag
+4096): a stand-in for the game's lighting, whose scales are not read. The cloud texture's
+colour is an even blue (about 110, 155, 190 at every alpha; its alpha is the density), so lit
+so the clouds come out white-blue: at the gate's noon 145, 215, 228 against the still's 149,
+216, 218 (83, 149, 160 unlit), and orange at evening.
 
 The overrides present are `env_default`, two fields' (`s02_l_hap_main`,
 `s04_l_sad_main`) and test ones. `trueHDR_vSaturationScale` (1.2) is applied in the post pass

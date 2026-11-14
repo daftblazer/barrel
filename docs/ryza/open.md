@@ -35,8 +35,10 @@ achievements are the player's own, and the DX version has not been played there)
   (`RenderSettings::hdr_scene`, `B10G11R11_UFLOAT`, the same size as 8-bit RGBA; TAA and the
   upscalers' targets follow it; Escha keeps 8 bits): error 183 to 163 at the same exposure,
   the sky 98, 161, 157 to 87, 199, 199 against the still's 172, 218, 233, the 90th
-  percentile 168. The clouds stay grey: the dome is unlit at most 1.0 (its lit shader's
-  scales are not read, docs/shading.md). The shade's colour: the default override's
+  percentile 168. The clouds are lit by the light on an upward surface (a stand-in for
+  the dome's own lighting, docs/shading.md): at the gate's noon they match the still's
+  (ten regions' RGB error 197 to 151). The clear sky between them is a more saturated cyan
+  than the still's (97, 201, 199 against 172, 218, 233). The shade's colour: the default override's
   `indirectStage_IDLScalerOfAmbientDiffuseMap` 2.5 × `..ColorRGB` (1.642, 1.978, 4.0) tints
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no
