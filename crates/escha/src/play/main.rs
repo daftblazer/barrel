@@ -285,6 +285,16 @@ struct AreaMap {
     visited: Vec<bool>,
 }
 
+/// A mark's model's state: `Some(true)` for the visited one (`point_sm_on`, `point_big_on`,
+/// `point_mat_on`: red), `Some(false)` for the one only seen (`_off`: yellow for a sector,
+/// green for a region, as the colseit-arrival recording at 1:25 has the Old Highway).
+fn mark_state(name: &str) -> Option<bool> {
+    ["point_sm_", "point_big_", "point_mat_"].iter().find_map(|k| {
+        let rest = &name[name.find(k)? + k.len()..];
+        if rest.starts_with("on") { Some(true) } else if rest.starts_with("off") { Some(false) } else { None }
+    })
+}
+
 impl AreaMap {
     fn new(wmap: &Path, pos: [f32; 3], world: bool, gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass) -> Result<AreaMap> {
         let root = wmap.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("not inside a game install")?;
@@ -374,9 +384,9 @@ impl AreaMap {
         name.split_whitespace().any(|w| {
             self.hidden_routes.iter().any(|r| r == w)
                 || self.places.iter().zip(&self.closed).any(|(p, &shut)| shut && p.kind == 1 && p.tag == w)
-                || (!self.visited.is_empty() && (name.contains("point_sm_on") || name.contains("point_sm_off")) && self.places.iter().enumerate().any(|(k, p)| {
-                    p.kind == 1 && p.tag == w && self.visited.get(k).copied().unwrap_or(false) != name.contains("point_sm_on")
-                }))
+                || (!self.visited.is_empty() && mark_state(name).is_some_and(|on| self.places.iter().enumerate().any(|(k, p)| {
+                    p.tag == w && self.visited.get(k).copied().unwrap_or(false) != on
+                })))
         })
     }
 
