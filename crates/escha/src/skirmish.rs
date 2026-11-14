@@ -213,6 +213,17 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         self.battle.timeline.slots().into_iter().map(|c| c.map(|c| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down()))).collect()
     }
 
+    /// Where `who`'s next turn would land after a normal attack (wait 600, `battle::action_wait`
+    /// without states): how many entries wait less than the first entry's wait plus it, as the
+    /// turn bar's next-turn mark counts them (`0x1401900c0`).
+    pub fn next_place(&self, who: usize) -> usize {
+        let speed = self.battle.fighters.get(who).map_or(0, |f| f.stats[stat::SPEED]);
+        let wait = battle::action_wait(600, speed, None, None, &mut -1);
+        let entries = &self.battle.timeline.entries;
+        let first = entries.first().map_or(0, |e| e.1);
+        entries.iter().filter(|e| e.1 < first + wait).count()
+    }
+
     /// The fighters standing, in turn order (the timeline's: the next to act first).
     pub fn order(&self) -> Vec<usize> {
         self.battle.timeline.entries.iter().map(|&(c, _)| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down())).collect()

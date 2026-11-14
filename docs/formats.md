@@ -1962,8 +1962,16 @@ whose wait is under the first entry's plus `wait` and puts its marker at x 1012 
 (the icon's place as floats plus the constants at `0x14071c348` and `0x14080a538`). The
 recording at 322 s shows the portraits one empty slot apart, so the game's timeline then held
 entries between them that show no portrait (free or scheduled entries, `docs/tables.md` "Turn
-order"); Barrel's timeline holds the fighters only, so its portraits sit side by side. To read
-live: the entries (battle +0xa28) at that point of a battle.
+order": free entries, which Barrel's `battle::Timeline` now keeps too).
+
+The marker is the next-turn mark, layout 865, nested in the bar at [938, 130]: the line, part
+0x10a (an L corner, 16 × 48: a stub down from the mark and the start of the run; node kind 17,
+spanned by the game's code: the sprite at the left end, mirrored at the right, its last column
+stretched between) and the glint, part 0xf3 cut 4 at [-16, -18]. It lands at bar x
+1012 − 63n + 60 (n 0: 1032 + 60; `0x14071c348` = 60) and its line runs on to bar x 1071 + 15,
+under the Action slot (`0x14080a57c` = 1071, `0x14071cfe8` = 15). Barrel:
+`battlehud::next_mark_x`, `hud::Element::Spanned`, `Skirmish::next_place` (a normal attack's
+wait, 600 at the actor's speed; the chosen skill's own wait is not used yet).
 layout 877 (glints over the party plates' bars, at y 916 to 952: not the target panel, as
 once thought). The target plate is layout 920 on its own: the frame (part 0x102 cut 3, 336 × 96),
 the red HP bar (cut 6, 246 × 20 at [40, 48]), the name (kind 22 at [160, 6]), the state icon

@@ -30,7 +30,7 @@ const MP_BAR: i32 = 10;
 const PLATE_FIRST: (i32, i32) = (PLATE_PARTS, 5);
 /// Left out: the turn order, the reserve row, the state icons, the target panel, the battle
 /// cries' speech bubbles (layout 882: one over each plate, "…!!") and the action banner (885).
-const LEFT_OUT: [u32; 7] = [865, 868, 873, 875, 877, 882, 885];
+const LEFT_OUT: [u32; 6] = [868, 873, 875, 877, 882, 885];
 /// The turn order bar and its slots (layout 860, the 16th the Action slot).
 const TURN_BAR: u32 = 864;
 const SLOT: u32 = 860;
@@ -40,6 +40,20 @@ const SLOT_FIRST: (i32, i32) = (0xf4, 7);
 /// ruins-entrance-battle-stats recording at 322 s): the gold frame (layout 861 nested at
 /// [-6, -4], part 0xf3) and the arrow under the slot (part 0x111 at [16, 76]).
 const SLOT_FRAME: u32 = 861;
+/// The next-turn mark while a member chooses (layout 865, nested in the bar at [938, 130]): the
+/// line (part 0x10a, spanned) and the glint (part 0xf3 cut 4, at [-16, -18] off it). The game
+/// (`0x1401900c0` → `0x1401cdf20`) puts it at bar x 1012 − 63 × n + 60 (n the entries due
+/// before the actor's next turn; n 0: x 1032 + 60), and spans the line to bar x 1071 + 15
+/// under the Action slot (the recording at 322 s: from 636 to 1406 on the screen).
+const NEXT_MARK: u32 = 865;
+const NEXT_LINE: (i32, i32) = (0x10a, 0);
+const NEXT_GLINT: (i32, i32) = (0xf3, 4);
+const NEXT_LINE_END: i32 = 1071 + 15;
+
+/// The next-turn mark's x in the bar, for `n` entries due before it.
+pub fn next_mark_x(n: usize) -> i32 {
+    if n == 0 { 1032 + 60 } else { 1012 - 63 * n as i32 + 60 }
+}
 const SLOT_ARROW: i32 = 0x111;
 const FACE: i32 = 0xe6;
 /// The first monster's portrait cut (the party's 11 before it).
@@ -71,7 +85,8 @@ pub const FAST_FORWARD_SPEEDS: [f32; 3] = [1.0, 1.5, 2.0];
 pub const FAST_FORWARD_LABELS: [&str; 3] = ["Fast Forward Off", "Fast Forward(x1.5)", "Fast Forward(x2)"];
 
 /// `marked`: the place in `order` of the target's next turn, while one is being picked.
-pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>) -> Vec<Element> {
+/// `next`: the next-turn mark's entry count while a member chooses.
+pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>) -> Vec<Element> {
     let mut out = Vec::new();
     // The turn order's slot a node is in (counted as their first nodes come), and that slot's
     // corner (the Action slot's scaling centre).
@@ -89,6 +104,19 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
             // The order's place slot k shows: the Action slot the one acting, slot k of the 15
             // the (15 - k)th after it.
             let place = |k: usize| if k >= SLOTS { 0 } else { SLOTS - k };
+            if p.path.last() == Some(&NEXT_MARK) {
+                if let Some(n) = next {
+                    // The layout puts the mark at its node; the game moves it by n.
+                    // The mark's own origin (the layout's at bar x 938), moved to the game's x.
+                    let at = [p.at[0] - 938 + next_mark_x(n), p.at[1]];
+                    match (p.node.part, p.node.cut) {
+                        NEXT_LINE => out.push(Element::Spanned { part: NEXT_LINE.0, cut: NEXT_LINE.1, at, width: NEXT_LINE_END - next_mark_x(n) }),
+                        NEXT_GLINT => out.push(Element::Sprite { part: NEXT_GLINT.0, cut: NEXT_GLINT.1, at }),
+                        _ => {}
+                    }
+                }
+                continue;
+            }
             if p.path.last() != Some(&SLOT) {
                 if !p.path.contains(&SLOT) {
                     out.push(Element::stored(p));
@@ -224,6 +252,8 @@ pub struct Commands {
     /// The target's plate while choosing it, and the place in the turn order of its next turn.
     pub plate: Option<Plate>,
     pub marked: Option<usize>,
+    /// The next-turn mark's entry count (`Turn::next_place`).
+    pub next: usize,
 }
 
 /// The target plate (layout 920: the frame, part 0x102 cut 3, the red HP bar, cut 6, and the

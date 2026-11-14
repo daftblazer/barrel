@@ -1249,7 +1249,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     // Every picture it may show: each member's portrait, the bars.
     let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
     let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
-    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face, f, Some(1))).collect();
+    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face, f, Some(1), Some(3))).collect();
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
     every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
@@ -1487,6 +1487,7 @@ impl BattlePlay {
             skills: (self.choosing == Choosing::Skill).then(|| (list, self.chosen)),
             title: String::new(),
             marked: target.filter(|_| plate.is_some()).and_then(|k| turn.slots.iter().skip(1).position(|&o| o == Some(k))).map(|p| p + 1),
+            next: turn.next_place,
             plate,
         })
     }
@@ -5549,7 +5550,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked));
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().map(|c| c.next));
                         if let Some(c) = &commands {
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.

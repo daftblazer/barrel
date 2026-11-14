@@ -159,6 +159,10 @@ pub enum Element {
     /// A sprite turned a quarter clockwise about its node `at` (a layout node of kind 7: the
     /// area map labels' ornaments), so it lies left of and below the node.
     Turned { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite spanned to `width` (a layout node of kind 17, sized by the game's code: the turn
+    /// bar's next-turn line, an L corner): the sprite at the left end, mirrored at the right
+    /// end, its last column stretched between.
+    Spanned { part: i32, cut: i32, at: [i32; 2], width: i32 },
     /// A sprite's left `fill` (0 to 1) only: a bar.
     Cropped { part: i32, cut: i32, at: [i32; 2], fill: f32 },
     /// A sprite's bottom `fill` (0 to 1) only, at its place: a gauge filling upwards.
@@ -203,7 +207,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
@@ -422,6 +426,20 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     color: [1.0, 1.0, 1.0, alpha],
                     texture: sheets.first + slot,
                 });
+            }
+            &Element::Spanned { part, cut, at, width } => {
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let [x, y] = piece.at.map(|v| v as f32);
+                let half = r - l;
+                let width = (width as f32).max(half * 2.0);
+                let (top, bottom) = (y * k, (y + b - t) * k);
+                let mut quad = |x0: f32, x1: f32, u0: f32, u1: f32| out.push(Quad { turn: false, rect: [dx + x0 * k, top, dx + x1 * k, bottom], uv: [u0 / w, t / h, u1 / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                quad(x, x + half, l, l + half);
+                quad(x + half, x + width - half, r - 1.0, r - 0.5);
+                quad(x + width - half, x + width, r, l);
             }
             &Element::Turned { part, cut, at } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
