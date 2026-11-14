@@ -614,6 +614,40 @@ the default XML's `indirectStage_IDLScalerOfAmbientDiffuseMap` (2.5) and its `Co
 1.98, 4.0) fit `vAmbParam.x` and `vAmbDifScl`, and the file's 0x484 values (2 to 4 in the
 attic) fit that RGB rather than an ambient colour.
 
+## Ryza DX: the character lighting pass (`Data/x64/shader/dschara-cll.g1s`)
+
+`shader.xml`'s `DSChara-Cll` (header variant `PBDS-CllEEmIra3lnhIriLr`) lights the G-buffer's
+character pixels: a full-screen vertex program and one pixel program (8480 bytes) reading depth
+(`t4`, 1 is the sky: discarded), `sGBuf0..5` (`t5`..`t10`), the ramp (`sRamp`, `t3`) and the
+clustered lights (`tCllLightIndices/Positions/Attributes`). What it does, from the code
+(`barrel g1s dschara-cll.g1s 1`):
+
+- **Normal**: GBuf2's `xy`, octahedral (`2v - 1`, the folded lower half), turned to world by
+  `mV2W`; the position from depth through `mP2W`. GBuf1 is the specular colour (`xyz`) and a
+  byte of flags in `w` (bit 0: a lit emissive in GBuf3, times 32); GBuf0 the albedo (`xyz`) and
+  an occlusion (`w`); GBuf4 `x, y` select the rim row (`x × 255`, at most 15) and the ramp row
+  (`y`), `z` a back-light amount, `w` an occlusion; GBuf5 an occlusion and gloss (`w`, `2^(10w+1)`).
+- **Rim**: `cRimTbl[16]` (one float4 each): `pow(1 - N·V, rim.w) × rim.x`, added to each
+  directional light's clamped `N·L` weighted by how much the eye faces into the light
+  (`sat(L·V)`), so it shows when she is backlit.
+- **Lights**: the two directional lights (`litDir[2]`, `litCol[2]`) and the cluster's point
+  lights (an exponential fall-off, `exp(-d² × a) × b`), each with a Blinn-Phong specular
+  (Schlick Fresnel from GBuf1's colour, normalised by `gloss × 0.125 + 0.25`). The diffuse is
+  `litCol × (rim + N·L) + litCol × N·L × back-light`, times the albedo mixed toward white by the
+  occlusion (`fOccAlbScl`).
+- **Ramp** (toon): its u is each directional light's half-Lambert (`N·L × 0.5 + 0.5` after a
+  signed power, `rampCoordScaler`), times the light's luminance pulled toward 1
+  (`rampCoordBias`), the larger of the two, clamped to `rampCoordRange`; its v the GBuf4 ramp
+  row over `rampTexHeight`. The diffuse is multiplied by the ramp's colour when GBuf0's flag
+  says so; the output is specular plus diffuse.
+
+The ramp texture (`Data/x64/shader/texture/chara_rmp.g1t`, 256 × 256 BC7) is white but for a
+few thin rows going from a dark tint to white (a reddish one at the top, browns and greys
+below): one row per kind of material. Which rows Ryza's materials pick, their rim rows and
+the constants' values (`cRimTbl`, `rampCoord*`, `fOccAlbScl`, set at run time) come from her
+G-buffer programs and the game's code, neither found (her shaders' `@hash` names,
+`docs/formats.md`, "Ryza's character files").
+
 ## Ryza DX: the sky
 
 `skyplane.g1s` draws the sky as a full-screen plane at the far plane. Vertex program 0: the

@@ -156,7 +156,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no
   pack, table string or executable bytes match). The deferred character lighting pass
-  (`DSChara-Cll`: a ramp, a rim table) and the eyes' `EYET` are named in `shader.xml`; her
+  (`DSChara-Cll`: a ramp, a rim table; read in docs/shading.md, its inputs from her G-buffer
+  programs and run-time constants unknown) and the eyes' `EYET` are named in `shader.xml`; her
   G-buffer programs are likely `PBB` variants picked by her materials' textures. Her face takes its default expression
   and blinks (every 4 s, a stand-in timing); the other expressions and the eyes' directions
   are not used. Her hair, skirt and bust do not swing: the settings (`.swg`, 10 records over
