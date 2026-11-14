@@ -30,8 +30,10 @@ own measured event command table), and every texture, model, animation, event an
 Sophie 2's and the Ryza games' archives, but for two Japanese test-event message files
 (`docs/formats.md`). Ayesha's models and motions are in the older PSSG format: its files read, with their meshes
 (`barrel pssg-obj`), textures, skeletons and motions; materials and drawing them not yet.
-Barrel does not play Escha yet: the systems below run on their own, from the command line or
-the viewer, and are checked against the original (its executable's code and recorded runs).
+Escha plays from its own title screen through the opening into free play (fields, world and
+area maps, gathering, battles, the cauldron, shops, menus, saves), on the desktop and on an
+aarch64 handheld; `docs/escha-remaining.md` lists what is left for the whole game. The systems
+below are checked against the original (its executable's code and recorded runs).
 
 | Part | Where | State |
 |---|---|---|
@@ -45,8 +47,7 @@ the viewer, and are checked against the original (its executable's code and reco
 | Renderer | `crates/render` | Vulkan: fields with terrain, sky and cloud shadows, characters with motions and faces, events played in a window or to files, upscalers (FSR 1 and 3, GSR 1 and 2), TAA, shadows. |
 | Sound | `crates/audio` | Barrel's own Vorbis decoder, a mixer and SDL3 output: music and voices in events. |
 
-Not started: menus and the game's own screens, a playable loop tying the parts together, and
-Shallie, Ayesha, Sophie 2 and the Ryza games beyond their data. `docs/survey.md` has the games,
+Not started: Shallie, Ayesha, Sophie 2 and the Ryza games beyond their data. `docs/survey.md` has the games,
 `docs/formats.md`, `docs/tables.md` and `docs/events.md` the data and rules, `docs/renderer.md`,
 `docs/shading.md` and `docs/engine.md` the engine.
 
