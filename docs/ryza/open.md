@@ -15,17 +15,17 @@ achievements are the player's own, and the DX version has not been played there)
   set: the cube map's light times `mainAmbientLight` as the ambient, the sun and the second
   light as directional lights. Stand-ins, not read from the game: (1) the angles' convention
   (azimuth from +z toward +x, elevation up; the noon sun may come from the wrong side);
-  (2) one exposure mapping a sixteenth of the light on an upward surface to `fMiddleGray`,
-  fitted to the game's noon still at the garden gate (`work/ryza-ref/rasen-gate-noon.png`:
-  grey percentiles 25 / 50 / 90 come out 53 / 67 / 225 against 55 / 70 / 219), capped at the
-  override's `vExposureRange` top (1.2, our light units taken as 0.75 of the game's; the sets'
-  own range, 0.9 to 2.4, would leave evening uncapped, and noon's gamma is 1.8 against 2.2:
-  the game's tone chain is not read) so evening
-  and night are not lifted to noon (exposure 0.9 instead of 1.73 and 1.04); the game adapts
-  within the range, which is not read. Morning's set has ten times noon's ambient and is
+  (2) one exposure mapping the light on an upward surface over 22 to `fMiddleGray`, capped
+  at the default override's `vExposureRange` top (1.2), with a tone curve whose white point is
+  the set's `fLumiMax` (below), all fitted together against the game's noon still at the
+  garden gate (`work/ryza-ref/rasen-gate-noon.png`: grey percentiles 25 / 50 / 90 come out
+  58 / 69 / 166 against 55 / 70 / 219, the sky darker than the still's). Our light is taken
+  in the game's units as is (an earlier fit had it at 0.75 of them). The sets' own range (0.9
+  to 2.4) would leave evening and night uncapped, and noon's gamma is 1.8 against 2.2: the
+  game's tone chain is not read. Morning's set has ten times noon's ambient and is
   exposed at 0.30 uncapped; night comes out too bright and green (the moon's colour 1, 4, 5);
   its sunlit ground clipped until a tone curve went on the finished frame (`post.frag`, an
-  extended Reinhard with the set's `fLumiMax` × 0.75 as white, Rasenboden's noon 3.2: the
+  extended Reinhard with the set's `fLumiMax` as white, Rasenboden's noon 4.3: the
   still's sunlit grass 182, 216, 69, ours 168, 214, 47 instead of 241, 254, 22; the 90th
   percentile drops to about 175 against the still's 219, its sky being brighter). The scene
   is stored at half range in 8 bits, so what passes 2.0 is clipped before the curve. The shade's colour: the default override's

@@ -162,27 +162,28 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
     -toward * Vec3::new(-1.0, 1.0, 1.0)
 }
 
-/// One exposure for the frame, standing in for the game's adaptation (`trueHDR_`, not read):
-/// what maps a sixteenth of the light falling on an upward-facing surface to the set's middle
-/// gray. The sixteenth is fitted to the game's still at the garden gate (noon, the player's
-/// save): it matches its brightness spread, 25th / 50th / 90th percentile grey 53 / 67 / 225
-/// against the game's 55 / 70 / 219 (a quarter, the earlier stand-in, drew it 4 times too
-/// dark).
 /// How much of the stage ambient tint's hue the set's ambient takes (a power on it): fitted
 /// to six shaded regions of the gate's noon still (RGB error 77 at 0.4, 80 at 0.6, 118 at the
 /// full hue, 95 without).
 const TINT_STRENGTH: f32 = 0.4;
 
-/// Our light's units in the game's (fitted: the gate's noon still at the exposure range's low
-/// end, 0.9).
-const LIGHT_UNIT: f32 = 0.75;
+/// What the frame's exposure maps to the set's middle gray: the light falling on an
+/// upward-facing surface over this. Fitted with the tone curve (`Frame::tone_white`, the set's
+/// `fLumiMax`) and the exposure cap (`vExposureRange`'s top) taken in the game's units as they
+/// are, against the game's still at the garden gate (noon, the player's save): its grey
+/// percentiles 25 / 50 / 90 come out 58 / 69 / 166 against 55 / 70 / 219, nine regions' RGB
+/// error 183 (16 with our light at 0.75 of the game's units: 45 / 54 / 149, error 190; the
+/// sky stays darker than the still's either way).
+const EXPOSURE_DIVISOR: f32 = 22.0;
 
+/// One exposure for the frame, standing in for the game's adaptation (`trueHDR_`, not read):
+/// see `EXPOSURE_DIVISOR`.
 fn exposure(c: &[[f32; 3]; 9], light: &Light) -> f32 {
     let luma = |v: [f32; 3]| 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
     let up = barrel_ryza::environment::basis([0.0, 1.0, 0.0]);
     let sky: [f32; 3] = std::array::from_fn(|ch| (0..9).map(|i| c[i][ch] * up[i]).sum::<f32>() * light.ambient[ch]);
     let sun = light.parallel.iter().map(|p| luma(p.color) * p.elevation.to_radians().sin().max(0.0)).sum::<f32>();
-    let lit = (luma(sky) + sun) / 16.0;
+    let lit = (luma(sky) + sun) / EXPOSURE_DIVISOR;
     if lit > 0.0 { light.middle_gray / lit } else { 1.0 }
 }
 
@@ -753,11 +754,11 @@ fn main() -> Result<()> {
             glow: environment.as_ref().map_or((1.0, 0.0), |(_, l, _)| (l.lumi_threshold, l.bloom_weight)),
             // The set's own saturation per channel (`Light::saturation`).
             saturation: environment.as_ref().map_or([0.0; 3], |(_, l, _)| l.saturation),
-            // A tone curve with the set's `fLumiMax` in our light units as its white point:
-            // fitted at the gate's noon still, its sunlit grass comes out 168, 214, 47 against
-            // 182, 216, 69 (241, 254, 22 clipped without; nine regions' RGB error 165 against
-            // 247). How the game's tone chain uses `fLumiMax` is not read.
-            tone_white: environment.as_ref().map_or(0.0, |(_, l, _)| l.lumi_max * LIGHT_UNIT),
+            // A tone curve with the set's `fLumiMax` as its white point (fitted with the
+            // exposure, `EXPOSURE_DIVISOR`: without it the sunlit grass clipped to 241, 254, 22
+            // against the still's 182, 216, 69). How the game's tone chain uses `fLumiMax` is
+            // not read.
+            tone_white: environment.as_ref().map_or(0.0, |(_, l, _)| l.lumi_max),
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
             frozen_weight: 0.0,
@@ -879,13 +880,12 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     // ambient colour (model.vert's `sh`), the sun and the second light as the field's two
     // directional lights, all scaled by one exposure (`exposure`).
     if let Some((c, light, sky_fog)) = environment {
-        // Capped by the override's exposure range's top in the game's light units (ours are
-        // 0.75 of them, which puts the gate's noon, the fitted still, on the range's low end):
-        // evening and night would otherwise be lifted to noon's brightness. Its low end is
+        // Capped by the override's exposure range's top (1.2): evening and night would
+        // otherwise be lifted to noon's brightness. Its low end is
         // not applied: the morning set's ambient is ten times noon's (21.6, 30, 27.2 against
         // 3, 3, 4) and wants an exposure of 0.30. The game's adaptation itself is not read.
         let k = exposure(c, light);
-        let k = exposure_range.map_or(k, |(_, hi)| k.min(hi * LIGHT_UNIT));
+        let k = exposure_range.map_or(k, |(_, hi)| k.min(hi));
         look[66] = [1.0, 0.0, 0.0, 0.0];
         for (i, [r, g, b]) in c.iter().copied().enumerate() {
             look[67 + i] = [r * light.ambient[0] * k, g * light.ambient[1] * k, b * light.ambient[2] * k, 0.0];
