@@ -294,6 +294,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             tint: 0,
             bounds: None,
             class: 0,
+            shader: String::new(),
         });
     }
     eprintln!("plants: {} in {} draws", plants.len(), blocks.len());

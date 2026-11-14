@@ -132,6 +132,8 @@ impl Instance {
 }
 
 pub struct Draw {
+    /// The shader its model names for the colour pass (`MapSTD`, `MapSTDNA` ...; empty if none).
+    pub shader: String,
     pub first_index: u32,
     pub index_count: u32,
     pub texture: usize,
@@ -606,7 +608,7 @@ impl Scene {
             }
         }
         let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
-        for s in &geometry.submeshes {
+        for (submesh, s) in geometry.submeshes.iter().enumerate() {
             let mesh = geometry.simple_mesh(s)?;
             if mesh.uvs.is_empty() || mesh.normals.is_empty() {
                 continue;
@@ -695,7 +697,7 @@ impl Scene {
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
         }
         Ok(())
     }

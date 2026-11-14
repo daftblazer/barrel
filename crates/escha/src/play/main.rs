@@ -583,7 +583,7 @@ impl AreaMap {
 /// 77) (126, 99, 142); not a plain multiply, the blue rises on dark texels). Applied to the
 /// texel, before Barrel's (brighter) map light: green 0.9 rather than the fitted 1.03, so the
 /// lit result matches (1:25: dot (131, 217, 251), mark middle (108, 92, 155)).
-const CHOSEN_TINT: ([f32; 3], [f32; 3]) = ([0.75, 1.07, 0.91], [0.0, 0.0, 0.38]);
+const CHOSEN_TINT: ([f32; 3], [f32; 3]) = ([0.8, 0.97, 0.91], [0.0, 0.0, 0.28]);
 const SEEN_ROUTE: u32 = u32::from_le_bytes([170, 255, 170, 255]);
 
 /// The area map's Back question (the executable's string at `0x140949850`).
@@ -5395,7 +5395,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         // models (window light) are not lit; the grass sway group (bits 8-11, number + 1) by
         // the mesh name's keyword.
         let solid = draw.sky && !draw.name.contains("Sphere_sky") && !draw.name.contains("xEF_");
-        let bits = u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5
+        // Not lit either: models drawn with `MapSTDNA` (the maps' marks and dots: their texels
+        // as they are on screen, colseit-arrival 1:05).
+        let unlit = !draw.sky && (draw.name.contains("xEF_") || draw.shader == "MapSTDNA");
+        let bits = u32::from(solid) << 4 | u32::from(unlit) << 5
             | sway_groups.iter().position(|k| !k.is_empty() && draw.name.contains(k.as_str())).map_or(0, |k| (k as u32 + 1).min(15)) << 8;
         let tint = if draw.tint != 0 { draw.tint } else { area_map.as_ref().map_or(0, |a| a.tint(&draw.name)) };
         (bits, tint)
