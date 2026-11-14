@@ -16,8 +16,9 @@ achievements are the player's own, and the DX version has not been played there)
   light as directional lights. Stand-ins, not read from the game: (1) the angles' convention
   (azimuth from +z toward +x, elevation up; the noon sun may come from the wrong side);
   (2) one exposure mapping an upward surface of albedo 0.25 to `fMiddleGray`, where the game
-  adapts within `vExposureRange` (night comes out too bright); (3) how the game combines the
-  ambient colour with the cube map (multiplied here), with `indirectStage_`'s scale unplaced
+  adapts within `vExposureRange` (night comes out too bright); (3) the ambient's shape: the game
+  adds `ambLit` to the cube map's light times `vAmbParam.x × vAmbDifScl` (docs/shading.md,
+  the lighting pass), `barrel-ryza` multiplies the cube map by the 0x484 colour, with `indirectStage_`'s scale unplaced
   (the file's blocks shift against the executable's structure after the HDR block). The
   field's shaders (`.g1s`) and a reference frame would settle all three.
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds

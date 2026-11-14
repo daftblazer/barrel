@@ -584,3 +584,26 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
   The red maps of the attic's furniture (green and blue near 0) give the colour tile as the
   diffuse and no specular: albedo times light, as `barrel-ryza` draws them.
 
+**The lighting pass** (`pbb-n_cll.g1s`, pixel program 3, 168 KB: a forward pass that samples the
+colour, specular and normal maps itself, with the shadow maps, the light grid `sLit`, the
+light-propagation volume `sLPVBuffer`, and the field's cube maps `sAmbDif` (`_ad`) and
+`sAmbSpc0` (`_as`)). Its constants: `litDir`, `litCol` (two directional lights), `ambLit`,
+`fDiffuseScale` (cb0[11].y), `vAmdLerpParam` (cb0[71]), `vAmbParam` (cb0[72]), `vAmbDifScl`
+(cb0[73]), `vAmbSpcWgt` (cb0[74]), `atColor` (cb0[81]). The end of the program:
+
+- **Diffuse ambient**: `A = sAmbDif(n) × vAmbParam.x × vAmbDifScl.rgb`; with the volume's
+  light `L = LPV(n) × fDiffuseScale`, `vAmdLerpParam.w` picks 0: `L + A`, 1: a lerp from `L` to
+  `A` over distance (`vAmdLerpParam.y`, `.z`), 2: `L + A × that lerp`; then `+ ambLit` and `+`
+  the direct lights. All of it times the diffuse colour.
+- **Specular ambient**: `sAmbSpc0` at the reflected view direction, mip level from the
+  roughness (`vAmbParam.z`), × `vAmbSpcWgt.x × vAmbParam.y`, × a Schlick term (`(1 - x)^5`) on
+  the specular colour, plus the direct specular.
+- Two height-fog layers (constants from cb0[12] on, each with five-term wave sums), then
+  `atColor` as in the G-buffer program.
+
+So the cube map's light is scaled, not multiplied by an ambient colour, and an ambient colour is
+added. Which environment values become `vAmbParam`, `vAmbDifScl` and `ambLit` is not placed:
+the default XML's `indirectStage_IDLScalerOfAmbientDiffuseMap` (2.5) and its `ColorRGB` (1.64,
+1.98, 4.0) fit `vAmbParam.x` and `vAmbDifScl`, and the file's 0x484 values (2 to 4 in the
+attic) fit that RGB rather than an ambient colour.
+
