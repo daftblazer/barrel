@@ -2002,4 +2002,14 @@ fails on 45,701 of them. Ryza's counts are Sophie 2's for 239 of the 258 command
 Escha's for only 60 of 144: the newer games' command set. `barrel ebd-decode` takes Ryza's table
 under an install holding `Atelier_Ryza_DX.exe`. The opening's commonest commands: `w1` (140),
 `s40` (116), `p1` (79), `s2` (47), `s36` (41), `t25`, `s105` (34 each), `u17` (30), `u66` (29).
-What they do is not read yet (Sophie 2's names, where its commands match, are the first guess).
+Ryza's executable names a word through a compiled switch rather than one Squirrel constant
+each (`tools/ect_switch_names.py` walks it): it names only the macros (`p1`
+`ECT_MACRO_TIME_WAIT`, `p2`, `p3`, `p5`, `p6`, `w1` `ECT_MACRO_INDEX_CHANGE`) and
+`ECT_CALL_SHADOW_ACTION`; every other word comes back `(unknown)` (the names were stripped:
+114 `ECT_` strings in all). Where it names one, Sophie 2's word agrees, so the table takes
+Sophie 2's name for a word with the same count (156 of 299 named, in `ebd_tables::RYZA`'s
+comments): the opening's `s40` `ECT_CHARA_MOTION_SET_LOOP`, `s2` `ECT_CHARA_POS_SET`, `s36`
+`ECT_CHARA_MOTION_WAIT`, `s105` `ECT_CHARA_FACIAL_MOTION_SET`, `s13` `ECT_CHARA_ROT_SET`, `s17`
+`ECT_CHARA_ROT_MOVE_SET_TARGET`, `t18` `ECT_CAMERA_ROT_MOVE_SET`, `q10`
+`ECT_FIELDMAP_CHARA_COLLISION_FLAG`, `q5` `ECT_FIELDMAP_CHARA_ADDITION_EX`, `u44`
+`ECT_EVENT_SET_POST_EFFECT`; unnamed in both: `u17`, `u66`, `u65`, `t25` (Ryza only).

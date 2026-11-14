@@ -1165,37 +1165,39 @@ pub static AYESHA: &[(u32, Option<u8>)] = &[
 /// Atelier Ryza DX's operand counts, measured from its 2,333 events (`barrel ebd-measure`: the
 /// words to the next command, `None` where they vary; 299 commands, 14 varying). Close to
 /// Sophie 2's (239 of the 258 commands both have agree) more than Escha's (60 of 144); not yet
-/// checked against its executable's handlers.
+/// checked against its executable's handlers. The names: Ryza's own where its word-to-name
+/// switch has one (the macros, `tools/ect_switch_names.py`: the rest were stripped), else
+/// Sophie 2's for the same word with the same count (a first guess; 156 named).
 pub static RYZA: &[(u32, Option<u8>)] = &[
-    (0x70000001, Some(1)), // p1
-    (0x70000002, Some(0)), // p2
-    (0x70000003, Some(1)), // p3
-    (0x70000005, Some(0)), // p5
-    (0x70000006, Some(2)), // p6
+    (0x70000001, Some(1)), // p1 ECT_MACRO_TIME_WAIT
+    (0x70000002, Some(0)), // p2 ECT_MACRO_FIELDMAP_CAMERA_MOVE_WAIT
+    (0x70000003, Some(1)), // p3 ECT_MACRO_CHARA_WAIT
+    (0x70000005, Some(0)), // p5 ECT_MACRO_CAMERA_WAIT
+    (0x70000006, Some(2)), // p6 ECT_MACRO_TIME_WAIT_RANDOM
     (0x71000001, Some(1)), // q1
-    (0x71000002, Some(1)), // q2
-    (0x71000004, Some(1)), // q4
-    (0x71000005, Some(13)), // q5
-    (0x71000007, Some(1)), // q7
-    (0x71000008, Some(0)), // q8
-    (0x71000009, Some(1)), // q9
-    (0x7100000a, Some(5)), // q10
+    (0x71000002, Some(1)), // q2 ECT_FIELDMAP_CHANGE_NOT_BGM
+    (0x71000004, Some(1)), // q4 ECT_FIELDMAP_CHARA_ADDITION
+    (0x71000005, Some(13)), // q5 ECT_FIELDMAP_CHARA_ADDITION_EX
+    (0x71000007, Some(1)), // q7 ECT_FIELDMAP_CHARA_DELETE
+    (0x71000008, Some(0)), // q8 ECT_FIELDMAP_CHARA_DELETE_ALL
+    (0x71000009, Some(1)), // q9 ECT_FIELDMAP_CHARA_SET_EVENT_MODE
+    (0x7100000a, Some(5)), // q10 ECT_FIELDMAP_CHARA_COLLISION_FLAG
     (0x7100000b, Some(2)), // q11
-    (0x7100000d, Some(0)), // q13
-    (0x7100000f, Some(0)), // q15
+    (0x7100000d, Some(0)), // q13 ECT_FIELDMAP_NPC_ENEMY_RESET_SYNC
+    (0x7100000f, Some(0)), // q15 ECT_FIELDMAP_GIMMICK_RESET
     (0x71000015, Some(3)), // q21
-    (0x71000019, Some(1)), // q25
-    (0x7100001a, Some(1)), // q26
-    (0x71000021, Some(2)), // q33
-    (0x71000024, Some(4)), // q36
-    (0x71000025, Some(6)), // q37
+    (0x71000019, Some(1)), // q25 ECT_FIELDMAP_GIMMICK_ALL_NOT_VISIBLE
+    (0x7100001a, Some(1)), // q26 ECT_FIELDMAP_GIMMICK_ALL_VISIBLE_RECOVER
+    (0x71000021, Some(2)), // q33 ECT_FIELDMAP_SET_DISP_SHADOW
+    (0x71000024, Some(4)), // q36 ECT_FIELDMAP_SET_FIELD_COLOR
+    (0x71000025, Some(6)), // q37 ECT_FIELDMAP_SET_FIELD_COLOR_MOVE
     (0x71000028, Some(2)), // q40
     (0x71000029, Some(0)), // q41
     (0x7100002a, Some(6)), // q42
-    (0x7100002b, Some(1)), // q43
+    (0x7100002b, Some(1)), // q43 ECT_FIELDMAP_LIGHT_PARALLEL_ORG
     (0x7100002e, Some(14)), // q46
     (0x7100003c, Some(1)), // q60
-    (0x72000004, Some(2)), // r4
+    (0x72000004, Some(2)), // r4 ECT_BATTLE_ADD_EFFECT_ID
     (0x72000008, Some(1)), // r8
     (0x7200000d, Some(4)), // r13
     (0x7200000e, Some(6)), // r14
@@ -1209,92 +1211,92 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x72000028, Some(17)), // r40
     (0x7200002a, Some(1)), // r42
     (0x7200002b, Some(2)), // r43
-    (0x73000001, Some(2)), // s1
-    (0x73000002, Some(7)), // s2
+    (0x73000001, Some(2)), // s1 ECT_CHARA_TIME_WAIT
+    (0x73000002, Some(7)), // s2 ECT_CHARA_POS_SET
     (0x73000003, Some(7)), // s3
-    (0x73000005, None), // s5
-    (0x73000006, Some(1)), // s6
-    (0x73000008, Some(2)), // s8
+    (0x73000005, None), // s5 ECT_CHARA_MOVE_SET
+    (0x73000006, Some(1)), // s6 ECT_CHARA_MOVE_WAIT
+    (0x73000008, Some(2)), // s8 ECT_CHARA_MOVE_PRE_WAIT
     (0x73000009, None), // s9
-    (0x7300000d, Some(4)), // s13
-    (0x7300000e, Some(7)), // s14
-    (0x7300000f, Some(7)), // s15
-    (0x73000010, Some(6)), // s16
-    (0x73000011, Some(9)), // s17
-    (0x73000012, Some(9)), // s18
-    (0x73000013, Some(1)), // s19
-    (0x73000014, Some(2)), // s20
-    (0x73000017, Some(1)), // s23
-    (0x73000018, Some(6)), // s24
-    (0x73000019, Some(6)), // s25
+    (0x7300000d, Some(4)), // s13 ECT_CHARA_ROT_SET
+    (0x7300000e, Some(7)), // s14 ECT_CHARA_ROT_SET_TARGET
+    (0x7300000f, Some(7)), // s15 ECT_CHARA_ROT_SET_TARGET_ALL
+    (0x73000010, Some(6)), // s16 ECT_CHARA_ROT_MOVE_SET
+    (0x73000011, Some(9)), // s17 ECT_CHARA_ROT_MOVE_SET_TARGET
+    (0x73000012, Some(9)), // s18 ECT_CHARA_ROT_MOVE_SET_TARGET_ALL
+    (0x73000013, Some(1)), // s19 ECT_CHARA_ROT_MOVE_WAIT
+    (0x73000014, Some(2)), // s20 ECT_CHARA_ROT_SET_DEFAULT
+    (0x73000017, Some(1)), // s23 ECT_CHARA_ROT_STOP
+    (0x73000018, Some(6)), // s24 ECT_CHARA_OFFSET_ROT_MOVE
+    (0x73000019, Some(6)), // s25 ECT_CHARA_OFFSET_ROT_MOVE_WITHOUT_SORTROT
     (0x7300001a, Some(7)), // s26
-    (0x7300001b, Some(7)), // s27
-    (0x7300001c, Some(9)), // s28
-    (0x7300001e, Some(1)), // s30
-    (0x73000022, None), // s34
-    (0x73000023, Some(5)), // s35
-    (0x73000024, Some(1)), // s36
-    (0x73000026, Some(4)), // s38
-    (0x73000027, Some(2)), // s39
-    (0x73000028, Some(5)), // s40
-    (0x73000029, Some(5)), // s41
-    (0x7300002b, Some(4)), // s43
+    (0x7300001b, Some(7)), // s27 ECT_CHARA_ROT_SET_COPY_TARGET_ALL
+    (0x7300001c, Some(9)), // s28 ECT_CHARA_ROT_MOVE_SET_COPY_TARGET
+    (0x7300001e, Some(1)), // s30 ECT_CHARA_SET_PROGRAM_ROT
+    (0x73000022, None), // s34 ECT_CHARA_MOTION_SET
+    (0x73000023, Some(5)), // s35 ECT_CHARA_MOTION_SET_WITHOUT_ACTION
+    (0x73000024, Some(1)), // s36 ECT_CHARA_MOTION_WAIT
+    (0x73000026, Some(4)), // s38 ECT_CHARA_MOTION_SET_DIV
+    (0x73000027, Some(2)), // s39 ECT_CHARA_MOTION_SET_SPEED
+    (0x73000028, Some(5)), // s40 ECT_CHARA_MOTION_SET_LOOP
+    (0x73000029, Some(5)), // s41 ECT_CHARA_MOTION_SET_LOOP_WITHOUT_ACTION
+    (0x7300002b, Some(4)), // s43 ECT_CHARA_MOTION_SPEED_MOVE_SET
     (0x7300002e, Some(7)), // s46
-    (0x73000032, Some(5)), // s50
-    (0x73000033, Some(7)), // s51
-    (0x73000034, Some(1)), // s52
-    (0x73000037, Some(2)), // s55
-    (0x73000038, Some(3)), // s56
-    (0x7300003e, Some(4)), // s62
-    (0x7300003f, Some(6)), // s63
-    (0x73000040, Some(1)), // s64
-    (0x73000045, Some(25)), // s69
-    (0x73000046, Some(2)), // s70
-    (0x73000048, None), // s72
-    (0x73000049, Some(2)), // s73
+    (0x73000032, Some(5)), // s50 ECT_CHARA_COLOR_SET
+    (0x73000033, Some(7)), // s51 ECT_CHARA_COLOR_MOVE_SET
+    (0x73000034, Some(1)), // s52 ECT_CHARA_COLOR_MOVE_WAIT
+    (0x73000037, Some(2)), // s55 ECT_CHARA_SET_DISP
+    (0x73000038, Some(3)), // s56 ECT_CHARA_SET_PARTS_MODEL_VISIBLE
+    (0x7300003e, Some(4)), // s62 ECT_CHARA_SCALE_SET
+    (0x7300003f, Some(6)), // s63 ECT_CHARA_SCALE_MOVE_SET
+    (0x73000040, Some(1)), // s64 ECT_CHARA_SCALE_MOVE_WAIT
+    (0x73000045, Some(25)), // s69 ECT_CHARA_EFF_ADD
+    (0x73000046, Some(2)), // s70 ECT_CHARA_EFF_WAIT
+    (0x73000048, None), // s72 ECT_CHARA_EFF_MOVE_SET
+    (0x73000049, Some(2)), // s73 ECT_CHARA_EFF_MOVE_WAIT
     (0x7300004b, Some(3)), // s75
-    (0x7300004c, Some(2)), // s76
-    (0x7300004d, Some(2)), // s77
-    (0x7300004e, Some(2)), // s78
-    (0x7300004f, Some(21)), // s79
-    (0x73000050, Some(2)), // s80
-    (0x73000051, Some(2)), // s81
-    (0x73000052, Some(2)), // s82
+    (0x7300004c, Some(2)), // s76 ECT_CHARA_EFF_STOP
+    (0x7300004d, Some(2)), // s77 ECT_CHARA_EFF_KILL
+    (0x7300004e, Some(2)), // s78 ECT_CHARA_EFF_FADEOUT
+    (0x7300004f, Some(21)), // s79 ECT_CHARA_NODEEFF_ADD
+    (0x73000050, Some(2)), // s80 ECT_CHARA_NODEEFF_STOP
+    (0x73000051, Some(2)), // s81 ECT_CHARA_NODEEFF_KILL
+    (0x73000052, Some(2)), // s82 ECT_CHARA_NODEEFF_FADEOUT
     (0x73000053, Some(2)), // s83
-    (0x73000058, Some(4)), // s88
-    (0x73000059, Some(7)), // s89
-    (0x7300005a, Some(6)), // s90
-    (0x7300005b, Some(9)), // s91
-    (0x7300005c, Some(1)), // s92
+    (0x73000058, Some(4)), // s88 ECT_CHARA_LOOK_SET
+    (0x73000059, Some(7)), // s89 ECT_CHARA_LOOK_SET_TARGET
+    (0x7300005a, Some(6)), // s90 ECT_CHARA_LOOK_MOVE_SET
+    (0x7300005b, Some(9)), // s91 ECT_CHARA_LOOK_MOVE_SET_TARGET
+    (0x7300005c, Some(1)), // s92 ECT_CHARA_LOOK_MOVE_WAIT
     (0x7300005d, Some(10)), // s93
-    (0x7300005e, Some(1)), // s94
-    (0x73000063, Some(12)), // s99
-    (0x73000064, Some(2)), // s100
-    (0x73000065, Some(1)), // s101
-    (0x73000066, Some(2)), // s102
-    (0x73000069, Some(4)), // s105
-    (0x7300006a, Some(2)), // s106
-    (0x7300006b, Some(3)), // s107
-    (0x7300006c, Some(3)), // s108
-    (0x7300006d, Some(3)), // s109
-    (0x7300006e, Some(4)), // s110
-    (0x7300006f, Some(4)), // s111
-    (0x73000070, Some(3)), // s112
+    (0x7300005e, Some(1)), // s94 ECT_CHARA_LOOK_CLEAR
+    (0x73000063, Some(12)), // s99 ECT_CHARA_NODECHARA_ADD
+    (0x73000064, Some(2)), // s100 ECT_CHARA_NODECHARA_DETACHCHILD
+    (0x73000065, Some(1)), // s101 ECT_CHARA_NODECHARA_DETACH
+    (0x73000066, Some(2)), // s102 ECT_CHARA_NODECHARA_DETACHCHILD_VISIBLE_OFF
+    (0x73000069, Some(4)), // s105 ECT_CHARA_FACIAL_MOTION_SET
+    (0x7300006a, Some(2)), // s106 ECT_CHARA_FACIAL_MOUTH_MOTION_SET_SPEED
+    (0x7300006b, Some(3)), // s107 ECT_CHARA_FACIAL_BROW_MOTION_SET_LOOP
+    (0x7300006c, Some(3)), // s108 ECT_CHARA_FACIAL_EYE_MOTION_SET_LOOP
+    (0x7300006d, Some(3)), // s109 ECT_CHARA_FACIAL_MOUTH_MOTION_SET_LOOP
+    (0x7300006e, Some(4)), // s110 ECT_CHARA_FACIAL_BROW_MOTION_SET_LOOP_WITH_BLEND
+    (0x7300006f, Some(4)), // s111 ECT_CHARA_FACIAL_EYE_MOTION_SET_LOOP_WITH_BLEND
+    (0x73000070, Some(3)), // s112 ECT_CHARA_FACIAL_MOUTH_SET_DIV
     (0x73000071, Some(2)), // s113
     (0x73000073, Some(4)), // s115
-    (0x73000076, Some(6)), // s118
-    (0x73000079, Some(3)), // s121
-    (0x7300007a, Some(7)), // s122
-    (0x7300007c, Some(6)), // s124
-    (0x73000080, Some(1)), // s128
+    (0x73000076, Some(6)), // s118 ECT_CHARA_SE_NON_STREAM_PLAY
+    (0x73000079, Some(3)), // s121 ECT_CHARA_VOICE_PLAY
+    (0x7300007a, Some(7)), // s122 ECT_CHARA_VOICE_PLAY_RAND
+    (0x7300007c, Some(6)), // s124 ECT_CHARA_SE_PLAY
+    (0x73000080, Some(1)), // s128 ECT_CHARA_CLOTH_RESET
     (0x73000083, Some(4)), // s131
     (0x73000084, Some(2)), // s132
-    (0x73000089, Some(3)), // s137
+    (0x73000089, Some(3)), // s137 ECT_CHARA_CLOTH_SET_WARMUP_TIME
     (0x73000093, Some(2)), // s147
-    (0x73000094, Some(7)), // s148
-    (0x73000095, Some(2)), // s149
-    (0x7300009a, Some(2)), // s154
-    (0x7300009b, Some(2)), // s155
+    (0x73000094, Some(7)), // s148 ECT_CHARA_WEAPON_ACTION
+    (0x73000095, Some(2)), // s149 ECT_CHARA_SET_WEAPON_MOTION_SPEED
+    (0x7300009a, Some(2)), // s154 ECT_CHARA_VISIBLE_WEAPON_OPTION
+    (0x7300009b, Some(2)), // s155 ECT_CHARA_VISIBLE_WEAPON
     (0x730000a2, Some(5)), // s162
     (0x730000a4, None), // s164
     (0x730000a8, Some(5)), // s168
@@ -1305,9 +1307,9 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x730000b1, Some(5)), // s177
     (0x730000b6, Some(2)), // s182
     (0x730000ba, Some(1)), // s186
-    (0x730000bb, Some(2)), // s187
+    (0x730000bb, Some(2)), // s187 ECT_CHARA_CAMERA_QUAKE_ID_STOP
     (0x730000bc, Some(1)), // s188
-    (0x730000be, Some(2)), // s190
+    (0x730000be, Some(2)), // s190 ECT_CHARA_SET_FLAG
     (0x730000c0, Some(1)), // s192
     (0x730000c1, Some(3)), // s193
     (0x730000c2, Some(2)), // s194
@@ -1315,47 +1317,47 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x730000c4, Some(3)), // s196
     (0x730000c5, Some(1)), // s197
     (0x730000c7, Some(2)), // s199
-    (0x730000e2, Some(1)), // s226
+    (0x730000e2, Some(1)), // s226 ECT_CHARA_SYNCHRO_INDEX_WAIT
     (0x730000ec, Some(13)), // s236
     (0x730000ed, Some(2)), // s237
     (0x730000f5, None), // s245
     (0x730000f8, Some(8)), // s248
     (0x730000fc, Some(18)), // s252
-    (0x74000001, Some(1)), // t1
-    (0x74000002, Some(1)), // t2
-    (0x74000003, Some(6)), // t3
-    (0x74000004, None), // t4
-    (0x74000005, Some(0)), // t5
-    (0x74000006, Some(1)), // t6
-    (0x74000007, Some(6)), // t7
-    (0x74000008, None), // t8
-    (0x74000009, Some(0)), // t9
-    (0x7400000a, Some(1)), // t10
-    (0x7400000b, Some(0)), // t11
-    (0x7400000c, Some(12)), // t12
-    (0x7400000d, Some(1)), // t13
+    (0x74000001, Some(1)), // t1 ECT_CAMERA_C_TYPE_SET
+    (0x74000002, Some(1)), // t2 ECT_CAMERA_TIME_WAIT
+    (0x74000003, Some(6)), // t3 ECT_CAMERA_EYE_POS_SET
+    (0x74000004, None), // t4 ECT_CAMERA_EYE_MOVE_SET
+    (0x74000005, Some(0)), // t5 ECT_CAMERA_EYE_MOVE_WAIT
+    (0x74000006, Some(1)), // t6 ECT_CAMERA_EYE_MOVE_PRE_WAIT
+    (0x74000007, Some(6)), // t7 ECT_CAMERA_AT_POS_SET
+    (0x74000008, None), // t8 ECT_CAMERA_AT_MOVE_SET
+    (0x74000009, Some(0)), // t9 ECT_CAMERA_AT_MOVE_WAIT
+    (0x7400000a, Some(1)), // t10 ECT_CAMERA_AT_MOVE_PRE_WAIT
+    (0x7400000b, Some(0)), // t11 ECT_CAMERA_MOVE_KILL
+    (0x7400000c, Some(12)), // t12 ECT_CAMERA_EYEAT_POS_SET
+    (0x7400000d, Some(1)), // t13 ECT_CAMERA_SPRING_EFFECT_SET
     (0x7400000e, Some(8)), // t14
-    (0x7400000f, Some(0)), // t15
+    (0x7400000f, Some(0)), // t15 ECT_CAMERA_ROT_ALL_MOVE_WAIT
     (0x74000010, Some(10)), // t16
     (0x74000011, Some(9)), // t17
-    (0x74000012, Some(4)), // t18
-    (0x74000014, Some(3)), // t20
-    (0x74000015, Some(0)), // t21
-    (0x7400001a, Some(1)), // t26
-    (0x7400001b, Some(0)), // t27
-    (0x7400001c, Some(3)), // t28
-    (0x7400001d, Some(0)), // t29
-    (0x7400001e, Some(0)), // t30
-    (0x7400001f, Some(1)), // t31
+    (0x74000012, Some(4)), // t18 ECT_CAMERA_ROT_MOVE_SET
+    (0x74000014, Some(3)), // t20 ECT_CAMERA_LENGTH_MOVE_SET
+    (0x74000015, Some(0)), // t21 ECT_CAMERA_LENGTH_MOVE_WAIT
+    (0x7400001a, Some(1)), // t26 ECT_CAMERA_FOV_SET
+    (0x7400001b, Some(0)), // t27 ECT_CAMERA_FOV_RESET
+    (0x7400001c, Some(3)), // t28 ECT_CAMERA_FOV_MOVE
+    (0x7400001d, Some(0)), // t29 ECT_CAMERA_FOV_WAIT
+    (0x7400001e, Some(0)), // t30 ECT_CAMERA_FOV_STOP
+    (0x7400001f, Some(1)), // t31 ECT_CAMERA_CHANGE_FOLLOW
     (0x74000020, Some(1)), // t32
     (0x74000021, Some(0)), // t33
-    (0x74000022, Some(2)), // t34
-    (0x74000024, Some(7)), // t36
-    (0x74000028, Some(5)), // t40
-    (0x74000029, Some(4)), // t41
-    (0x7400002f, Some(0)), // t47
-    (0x74000039, Some(3)), // t57
-    (0x7400003a, Some(9)), // t58
+    (0x74000022, Some(2)), // t34 ECT_CAMERA_QUAKE_SET
+    (0x74000024, Some(7)), // t36 ECT_CAMERA_QUAKE_PARAM_SET
+    (0x74000028, Some(5)), // t40 ECT_CAMERA_QUAKE_HANDSHAKE_SET
+    (0x74000029, Some(4)), // t41 ECT_CAMERA_QUAKE_WIDTH_SET
+    (0x7400002f, Some(0)), // t47 ECT_CAMERA_QUAKE_STOP
+    (0x74000039, Some(3)), // t57 ECT_CAMERA_BATTLE_RESET
+    (0x7400003a, Some(9)), // t58 ECT_CAMERA_ROT_ALL_MOVE_DIRECTION_SET
     (0x7400003b, Some(0)), // t59
     (0x74100002, Some(0)), // t2/0x10
     (0x74100007, Some(3)), // t7/0x10
@@ -1366,9 +1368,9 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x74100012, Some(5)), // t18/0x10
     (0x74100014, Some(5)), // t20/0x10
     (0x74100016, Some(2)), // t22/0x10
-    (0x74100017, Some(2)), // t23/0x10
-    (0x74100018, Some(1)), // t24/0x10
-    (0x74100019, Some(11)), // t25/0x10
+    (0x74100017, Some(2)), // t23/0x10 ECT_FIELDMAP_CAMERA_SET_FOLLOW_CHARA
+    (0x74100018, Some(1)), // t24/0x10 ECT_FIELDMAP_CAMERA_DATA_EFFECT_SET
+    (0x74100019, Some(11)), // t25/0x10 ECT_FIELDMAP_CAMERA_ALL_ABSOLUTE
     (0x7410001a, Some(12)), // t26/0x10
     (0x7410001b, Some(1)), // t27/0x10
     (0x7420000c, Some(0)), // t12/0x20
@@ -1376,8 +1378,8 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x74200011, Some(1)), // t17/0x20
     (0x74200012, Some(1)), // t18/0x20
     (0x74200013, Some(0)), // t19/0x20
-    (0x74300001, Some(0)), // t1/0x30
-    (0x74300002, Some(2)), // t2/0x30
+    (0x74300001, Some(0)), // t1/0x30 ECT_VARIINDEX_INDEX_START
+    (0x74300002, Some(2)), // t2/0x30 ECT_VARIINDEX_INDEX_SETTING
     (0x75000001, Some(0)), // u1
     (0x75000002, None), // u2
     (0x75000003, Some(0)), // u3
@@ -1394,17 +1396,17 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x75000016, None), // u22
     (0x75000018, Some(0)), // u24
     (0x75000019, Some(4)), // u25
-    (0x7500001c, Some(1)), // u28
+    (0x7500001c, Some(1)), // u28 ECT_EVENT_VOICE_PLAY
     (0x75000023, Some(4)), // u35
     (0x75000024, Some(1)), // u36
     (0x75000025, Some(1)), // u37
-    (0x75000028, None), // u40
-    (0x7500002c, None), // u44
-    (0x7500002d, Some(0)), // u45
-    (0x7500002e, Some(0)), // u46
-    (0x7500002f, None), // u47
-    (0x75000031, Some(3)), // u49
-    (0x75000032, Some(1)), // u50
+    (0x75000028, None), // u40 ECT_EVENT_SET_POST_EFFECT_WITH_ID
+    (0x7500002c, None), // u44 ECT_EVENT_SET_POST_EFFECT
+    (0x7500002d, Some(0)), // u45 ECT_EVENT_WAIT_POST_EFFECT
+    (0x7500002e, Some(0)), // u46 ECT_EVENT_DEL_POST_EFFECT_ALL
+    (0x7500002f, None), // u47 ECT_EVENT_POST_EFFECT_SET_TARGET
+    (0x75000031, Some(3)), // u49 ECT_EVENT_CONTRAST_SET_MIX
+    (0x75000032, Some(1)), // u50 ECT_EVENT_CONTRAST_WAIT
     (0x75000034, None), // u52
     (0x75000035, Some(1)), // u53
     (0x75000036, Some(1)), // u54
@@ -1444,19 +1446,19 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x75000093, Some(1)), // u147
     (0x75000098, Some(0)), // u152
     (0x750000a7, Some(1)), // u167
-    (0x75100001, Some(5)), // u1/0x10
-    (0x75100002, Some(1)), // u2/0x10
-    (0x75100003, Some(4)), // u3/0x10
-    (0x75100004, Some(1)), // u4/0x10
-    (0x75100005, Some(2)), // u5/0x10
-    (0x75100006, Some(3)), // u6/0x10
-    (0x7510000a, Some(0)), // u10/0x10
-    (0x7510000b, Some(0)), // u11/0x10
-    (0x7510000c, Some(1)), // u12/0x10
-    (0x7510000d, Some(2)), // u13/0x10
-    (0x75200001, Some(3)), // u1/0x20
-    (0x75200003, Some(1)), // u3/0x20
-    (0x75200004, Some(3)), // u4/0x20
+    (0x75100001, Some(5)), // u1/0x10 ECT_SOUND_SE_PLAY
+    (0x75100002, Some(1)), // u2/0x10 ECT_SOUND_SE_STOP
+    (0x75100003, Some(4)), // u3/0x10 ECT_SOUND_BG_PLAY
+    (0x75100004, Some(1)), // u4/0x10 ECT_SOUND_BG_STOP
+    (0x75100005, Some(2)), // u5/0x10 ECT_SOUND_BG_FADEOUT
+    (0x75100006, Some(3)), // u6/0x10 ECT_SOUND_BG_FADE
+    (0x7510000a, Some(0)), // u10/0x10 ECT_SOUND_ENV_SE_PLAY
+    (0x7510000b, Some(0)), // u11/0x10 ECT_SOUND_ENV_SE_STOP
+    (0x7510000c, Some(1)), // u12/0x10 ECT_SOUND_ENV_SE_FADEOUT
+    (0x7510000d, Some(2)), // u13/0x10 ECT_SOUND_ENV_SE_FADE
+    (0x75200001, Some(3)), // u1/0x20 ECT_CONTRAST_SET
+    (0x75200003, Some(1)), // u3/0x20 ECT_CONTRAST_WAIT
+    (0x75200004, Some(3)), // u4/0x20 ECT_CONTRAST_SET_MIX
     (0x75300001, Some(1)), // u1/0x30
     (0x75300002, Some(2)), // u2/0x30
     (0x75300004, Some(1)), // u4/0x30
@@ -1464,6 +1466,6 @@ pub static RYZA: &[(u32, Option<u8>)] = &[
     (0x75400006, Some(0)), // u6/0x40
     (0x75400007, Some(0)), // u7/0x40
     (0x75400009, Some(1)), // u9/0x40
-    (0x77000001, Some(1)), // w1
-    (0x77000004, Some(1)), // w4
+    (0x77000001, Some(1)), // w1 ECT_MACRO_INDEX_CHANGE
+    (0x77000004, Some(1)), // w4 ECT_CALL_SHADOW_ACTION
 ];
