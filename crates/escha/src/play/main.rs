@@ -1236,7 +1236,7 @@ struct BattleHud {
     field_nodes: Vec<barrel_escha::data::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
-    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32)>,
+    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1249,7 +1249,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     // Every picture it may show: each member's portrait, the bars.
     let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
     let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
-    let mut every = battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face);
+    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face, f)).collect();
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
     every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
@@ -1369,6 +1369,10 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
         target: 0,
     }))
 }
+
+/// The battle's Fast Forward (0 off, 1 ×1.5, 2 ×2: `battlehud::FAST_FORWARD_SPEEDS`), kept from
+/// battle to battle as the game's global is.
+static FAST_FORWARD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// Seconds before the battle's first step, and between steps.
 const BATTLE_FIRST_STEP: f32 = 1.0;
@@ -3983,6 +3987,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 }
                 P::RightStick if free_play => Some(KeyCode::KeyR),
                 P::West if player.is_some() => Some(KeyCode::KeyT),
+                // L3 in battle: "Fast Forward" (F on the keyboard).
+                P::LeftStick if battle_play.is_some() => Some(KeyCode::KeyF),
                 P::East if player.is_some() => Some(KeyCode::Enter),
                 _ => None,
             };
@@ -4035,6 +4041,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 }
                 KeyCode::Escape => quit = true,
                 KeyCode::KeyR => orbit = (0.0, 0.0, 1.0),
+                KeyCode::KeyF if battle_play.is_some() => {
+                    let n = (FAST_FORWARD.load(std::sync::atomic::Ordering::Relaxed) + 1) % 3;
+                    FAST_FORWARD.store(n, std::sync::atomic::Ordering::Relaxed);
+                    eprintln!("frame {frame}: {}", battlehud::FAST_FORWARD_LABELS[usize::from(n)]);
+                }
                 KeyCode::KeyJ => jump_now = true,
                 KeyCode::KeyK => strike_now = true,
                 KeyCode::F5 => save_now = true,
@@ -4695,7 +4706,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if frame > 0 {
             town_time += dt;
             if let Some(play) = battle_play.as_mut() {
-                play.step(&mut town_bodies, dt);
+                let speed = battlehud::FAST_FORWARD_SPEEDS[usize::from(FAST_FORWARD.load(std::sync::atomic::Ordering::Relaxed)).min(2)];
+                play.step(&mut town_bodies, dt * speed);
                 // Offscreen: `BARREL_BATTLE_KEYS` (as `BARREL_MENU_KEYS`), a key a frame while a
                 // member's turn waits.
                 if presenter.is_none() && play.waiting()
@@ -5511,6 +5523,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The battle HUD with the party's HP and MP, rebuilt when they change.
     if let (Some(h), Some(play)) = (battle_layer.as_mut(), battle_play.as_ref()) {
         let members = (play.members(), play.order());
+        let fast = usize::from(FAST_FORWARD.load(std::sync::atomic::Ordering::Relaxed));
         // A fighter's place on the 1920 × 1080 layout screen (scaled to the height, centred).
         let screen = |k: usize| -> Option<[i32; 2]> {
             let b = town_bodies.get(play.body_of(k)?)?;
@@ -5528,13 +5541,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height))
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
                 let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1);
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast);
                         if let Some(c) = &commands {
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.
@@ -5558,7 +5571,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, commands, shown_result, wipe, width, height));
+                h.shown = Some((members, commands, shown_result, wipe, width, height, fast));
             }
     }
     // Offscreen, the frames written to files (with --save-every, only some): only those are

@@ -413,7 +413,7 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Area map | Menu / View | "Requests" / "Message Log" | not yet |
 | Area map | X | the panel: Gatherable Items ↔ Monsters (the sector's out enemies' groups, each monster once: `field_ai::sector_monsters`) | yes |
 | Battle | D-pad left/right, A, B | the command row, confirm, back | yes |
-| Battle | L3 | "Fast Forward" on/off | not yet |
+| Battle | L3 | "Fast Forward": Off → ×1.5 → ×2 → Off (`0x141077da0`, speeds 1, 1.5, 2 at `0x140d772c0`), kept between battles | yes (F on the keyboard) |
 | Battle | View | "Field Information" | not yet |
 | Events | A or B | the next line | yes |
 | Events | X | "Fast Forward" on/off (the legend's; the escha-event-buttons recording) | Barrel's auto lines in its place |

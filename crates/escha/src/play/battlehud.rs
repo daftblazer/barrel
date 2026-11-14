@@ -58,7 +58,14 @@ fn share((now, max): (i32, i32)) -> f32 {
 
 /// The elements to draw from layout 886's placed nodes (`texts` gives a node's text).
 /// `order`: the turn order, the one acting first, each a portrait cut (`None`: no portrait).
-pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>]) -> Vec<Element> {
+/// The battle's Fast Forward: the game's global `0x141077da0` (0 off, 1, 2), stepped by L3 as
+/// `(n + 1) % 3` (`0x14019ee90`), the battle's speed from the table at `0x140d772c0` and the
+/// label's English text from `0x1401cffa0`'s choice (the layout's own "Fast Forward(×1.5)" is a
+/// placeholder).
+pub const FAST_FORWARD_SPEEDS: [f32; 3] = [1.0, 1.5, 2.0];
+pub const FAST_FORWARD_LABELS: [&str; 3] = ["Fast Forward Off", "Fast Forward(x1.5)", "Fast Forward(x2)"];
+
+pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize) -> Vec<Element> {
     let mut out = Vec::new();
     // The turn order's slot a node is in (counted as their first nodes come), and that slot's
     // corner (the Action slot's scaling centre).
@@ -119,7 +126,8 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
         }
         if n.part == 0x164 {
             if let Some(t) = texts(p).filter(|t| !t.text.is_empty() && !t.filled_in()) {
-                out.push(Element::Label(t));
+                let text = if t.text.starts_with("Fast Forward") { FAST_FORWARD_LABELS[fast_forward.min(2)].to_string() } else { t.text.clone() };
+                out.push(Element::Label(Text { text, ..t }));
             }
             continue;
         }
