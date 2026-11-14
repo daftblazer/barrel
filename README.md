@@ -33,17 +33,32 @@ Sophie 2's and the Ryza games' archives, but for two Japanese test-event message
 Escha plays from its own title screen through the opening into free play (fields, world and
 area maps, gathering, battles, the cauldron, shops, menus, saves), on the desktop and on an
 aarch64 handheld; `docs/escha/remaining.md` lists what is left for the whole game. The systems
-below are checked against the original (its executable's code and recorded runs).
+below are checked against the original (its executable's code and recorded runs). Ryza DX
+is next (`docs/ryza/`).
+
+The code is split by game; nothing shared names a game's rules:
+
+| Crate | What it holds |
+|---|---|
+| `crates/formats` | The games' file formats: containers, PAK archives, textures, models, motions, terrain, events and messages, XML tables, voice packs, Vorbis |
+| `crates/render` | The Vulkan renderer (`renderer::Renderer`, drawing the `Frame` a game hands it), the text and 2D layer, the window, the pad, the graphics settings |
+| `crates/engine` | What every game's play shares: the event player and its stage, cameras, the Squirrel VM, walking against a field's collision, posing skeletons, the clock, wind |
+| `crates/audio` | The mixer and SDL3 output over Barrel's own Vorbis decoder |
+| `crates/escha` | Escha & Logy DX: its rules, its own data (`data`: its executable's tables, its saves, its own XML tables) and the `barrel-escha` program (`src/play`: its screens and run) |
+| `crates/cli` | The `barrel` tool over all of them |
+
+Open problems are kept per game (`docs/escha/open.md`, `docs/ryza/open.md`) and for the shared
+engine (`docs/open.md`).
 
 | Part | Where | State |
 |---|---|---|
 | Formats | `crates/formats` | Containers, PAK archives (all four keys), tables, events and messages, textures, models, animations, terrain (its layer blending in part), sound and voices, saves (read). Every Escha file of these kinds reads. |
-| Events | `game::event`, `game::stage` | The event bytecode played on a clock: lines, cameras, characters walking, gestures and faces, lights, fades, narration cards, variables and choices. Movies are not played (`docs/engine.md`, "Movies"). |
-| Story | `game::event_start` | Which event starts when: event ends, walks between maps, days passing. Both openings chain as the game plays them. |
-| Battle | `game::battle`, `fight`, `skirmish`, `monster_ai` | Damage, turn order, skills, items, monster rules, falling and guts, rewards and levels. No battle screen; not yet checked against a full recorded battle. |
-| Synthesis | `game::synthesis` | Recipes, effects by element values, traits, quality. Property points are not in. |
-| Field | `game::field_ai`, `encounter`, `gather` | The field enemies' Squirrel scripts in Barrel's own VM, encounters, gathering lists and spots. No player movement or collision. |
-| Calendar | `game::days`, `calendar`, `quest`, `shop`, `rank` | Days passing, requests, shops' restock, the month report and the adventurer rank. |
+| Events | `engine::event`, `engine::stage` | The event bytecode played on a clock: lines, cameras, characters walking, gestures and faces, lights, fades, narration cards, variables and choices. Movies are not played (`docs/engine.md`, "Movies"). |
+| Story | `escha::event_start` | Which event starts when: event ends, walks between maps, days passing. Both openings chain as the game plays them. |
+| Battle | `escha::battle`, `fight`, `skirmish`, `monster_ai` | Damage, turn order, skills, items, monster rules, falling and guts, rewards and levels, played on a battle screen (not yet the game's layout); not yet checked against a full recorded battle. |
+| Synthesis | `escha::synthesis` | Recipes, effects by element values, traits, quality. Property points are not in. |
+| Field | `escha::field_ai`, `encounter`, `gather` | The field enemies' Squirrel scripts in Barrel's own VM, encounters, gathering lists and spots, the player walking and jumping (`escha::player`, `engine::walk`). |
+| Calendar | `escha::days`, `calendar`, `quest`, `shop`, `rank` | Days passing, requests, shops' restock, the month report and the adventurer rank. |
 | Renderer | `crates/render` | Vulkan: fields with terrain, sky and cloud shadows, characters with motions and faces, events played in a window or to files, upscalers (FSR 1 and 3, GSR 1 and 2), TAA, shadows. |
 | Sound | `crates/audio` | Barrel's own Vorbis decoder, a mixer and SDL3 output: music and voices in events. |
 
@@ -75,8 +90,8 @@ target/release/barrel g1m-scan "<install>/Data"       # every model
 target/release/barrel g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
-`crates/render` is the Vulkan renderer. Its tool, `barrel-escha`, draws a model, a field or an
-event: to PNG files offscreen, or live in a window (`--window FRAMES`). With an event it plays
+`barrel-escha` is Escha & Logy DX's program (a Kintsugi launch starts it at the title, below);
+as a tool it draws a model, a field or an event: to PNG files offscreen, or live in a window (`--window FRAMES`). With an event it plays
 it on (`--at`, `--line`, `--frames`, `--fps`) and with `--chain` goes on to the events the story
 starts after it (`docs/renderer.md`).
 
