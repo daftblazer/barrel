@@ -1132,6 +1132,17 @@ gimmicks, near/middle/far/landmark objects, shadows), `lod`, `light_map` (marked
 and a look point 110 units above her feet, Rasenboden's gate frames as in the game, the
 player a little larger.
 
+### Ryza model collision (`<model>_c*.g1co` in `<field>_obj`)
+
+Beside each model's `<model>_hi.g1m` (entry names without the placement's `obj-`), its collision
+in the model's space, in four kinds by suffix: `_cbvh[N]` is a triangle mesh in Escha's field
+collision form (`OC1G`, one `HVB_` chunk, `barrel_formats::g1co`; Rasenboden: all 37 read, on
+cliffs, rocks, trees, the floors and stairs), `_cplh[N]` an `HLP_` chunk (likely convex hulls),
+`_cbox[N]` boxes and `_ccap[N]` capsules (not read); two stumps carry `_Group<N>.g1co` meshes.
+`barrel_ryza::solids` places each mesh as its placement puts the model
+(`field::placement_transform`): in Rasenboden 956 placed meshes, 282,000 triangles, giving the
+walk its walls (upright triangles) and floors (the rest) beside the `_le.koc` quads.
+
 ### Ryza field environment (`<field>_env.elixir.gz`)
 
 Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin` (97,920 bytes

@@ -139,7 +139,9 @@ impl Player {
         let full = if self.moving == Gait::Run { RUN_SPEED } else { WALK_SPEED };
         let delta = [self.turn.sin() * full * speed * dt, self.turn.cos() * full * speed * dt];
         let to = match walls {
-            Some(w) => w.step([self.at.x, self.at.z], delta, self.at.y, HEIGHT, RADIUS),
+            // A wall whose top is within a step of her feet (a floor's edge, a kerb) she steps
+            // over: the walls see her from a step up.
+            Some(w) => w.step([self.at.x, self.at.z], delta, self.at.y + STEP_UP, HEIGHT - STEP_UP, RADIUS),
             None => [self.at.x + delta[0], self.at.z + delta[1]],
         };
         match ground {
@@ -215,6 +217,15 @@ mod tests {
         let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
         run(&mut p, [0.0, 1.0], 2.0, Some(&walls));
         assert!((p.at.z - (200.0 - RADIUS)).abs() < 1.0, "{:?}", p.at);
+    }
+
+    #[test]
+    fn she_steps_over_a_low_wall() {
+        let kerb = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: STEP_UP * 0.5 };
+        let walls = Walls::from_walls(vec![kerb], 1000.0);
+        let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
+        run(&mut p, [0.0, 1.0], 2.0, Some(&walls));
+        assert!(p.at.z > 300.0, "{:?}", p.at);
     }
 
     #[test]

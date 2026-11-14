@@ -210,7 +210,7 @@ fn main() -> Result<()> {
         let joints = barrel_engine::skin::pose(&skeleton, anim, *time);
         // Her feet on the ground: the field's heightmap under her (the given height when there
         // is none, or she is off it).
-        let ground = barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase()))
+        let mut ground = barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase()))
             .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
             .and_then(|b| barrel_formats::khm::parse(b).ok())
             .map(barrel_engine::walk::Ground::of_heightmap);
@@ -220,11 +220,30 @@ fn main() -> Result<()> {
             .ok()
             .and_then(|b| barrel_ryza::koc::parse(&b).ok())
             .map(|q| barrel_engine::walk::Walls::from_walls(barrel_ryza::koc::walls(&q), 2000.0));
+        // And the placed models' collision meshes (`barrel_ryza::solids`): more walls, and floors
+        // on models, added after she is stood on the terrain (so she does not start on a
+        // tree's top).
+        let placements = barrel_engine::field::named(&main, &format!("{}.opl2", files.area)).map(barrel_formats::opl2::parse).transpose()?;
+        let solids = placements.map(|p| barrel_ryza::solids::placed_meshes(&p, &objects)).unwrap_or_default();
         let at = &match ground.as_ref().and_then(|g| g.height(at.x, at.z, f32::MAX / 2.0, 0.0)) {
             Some(y) => Vec3::new(at.x, y, at.z),
             None => *at,
         };
         eprintln!("Ryza stands at {at:?}");
+        let slope = barrel_engine::walk::DEFAULT_SLOPE;
+        if let Some(g) = ground.as_mut() {
+            for c in &solids {
+                g.add_floors(c, slope);
+            }
+        }
+        let walls = solids.iter().fold(walls, |w, c| {
+            let more = barrel_engine::walk::Walls::new(c, slope);
+            Some(match w {
+                Some(w) => w.join(more),
+                None => more,
+            })
+        });
+        eprintln!("model collision: {} meshes, {} triangles", solids.len(), solids.iter().map(|c| c.triangles.len()).sum::<usize>());
         let first = scene.draws.len();
         let instance = scene.instance(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(turn.to_radians()), *at));
         scene.add_posed(geometry, Mat4::IDENTITY, rp.textures.len(), Some(&joints), instance)?;

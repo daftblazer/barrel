@@ -9,3 +9,4 @@ pub mod koc;
 pub mod light;
 pub mod motion;
 pub mod player;
+pub mod solids;

@@ -57,6 +57,12 @@ impl Walls {
         Walls { leaves }
     }
 
+    /// These walls and `other`'s.
+    pub fn join(mut self, other: Walls) -> Walls {
+        self.leaves.extend(other.leaves);
+        self
+    }
+
     /// The walls near (within `reach` of) the point (x, z).
     fn near(&self, p: [f32; 2], reach: f32) -> impl Iterator<Item = &Wall> {
         self.leaves
@@ -122,6 +128,11 @@ impl Ground {
     /// keep theirs in other files, `docs/ryza/open.md`).
     pub fn of_heightmap(heightmap: barrel_formats::khm::Heightmap) -> Ground {
         Ground { heightmap: Some(heightmap), floors: Vec::new() }
+    }
+
+    /// More floors: a collision mesh's triangles no steeper than `max_slope` (degrees).
+    pub fn add_floors(&mut self, c: &Collision, max_slope: f32) {
+        self.floors.extend(c.triangles.iter().map(|t| t.map(|i| c.vertices[i as usize])).filter(|v| wall(*v, max_slope).is_none()));
     }
 
     /// The heightmap's height at (x, z), bilinear between its vertices; none outside it.

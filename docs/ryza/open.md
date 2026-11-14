@@ -79,7 +79,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   gate toward the house, she stops at the quad across its front, z 28966, her radius short of
   it). Some quads there cross each other in an X behind that one, so not every quad may be a
   plain wall (volumes outlined by quads?). Its sloped and flat
-  quads, `_coll.bin`'s boxes and floors on models (bridges, stairs) are not.
+  Its sloped and flat quads and `_coll.bin`'s boxes are not used.
+  The placed models' collision meshes (`_cbvh`, docs/formats.md) are: walls and floors on
+  models, and she steps over a wall whose top is within a step (60) of her feet. Not read: the
+  models' hulls, boxes and capsules (`_cplh`, `_cbox`, `_ccap`: trees' trunks and the smaller
+  props have only these, so she walks through them). The floors are searched one by one for
+  each height (Rasenboden's 282,000 triangles): fine on the PC, maybe not on a handheld.
 - **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
   not read from the game: the speeds (walk 150, run 480 units a second), the lean that starts a
   run (0.6), how fast she turns, her size against the walls (radius 30, step 60), and the
@@ -111,9 +116,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   objects (26 `_mid`, 14 `_low` in Rasenboden's objects, mostly flowers, carts and the woods; the
   cliffs have only `_hi`), and the PC game runs with `use_lod` off. Whether the RP6 needs more
   than the culling we have is for its own timings.
-- **Floors on models.** The objects container holds collision meshes per model
-  (`<model>_cbvh.g1co`, `_cplh.g1co`, `_cbox001.g1co`): likely the bridges' and stairs' floors
-  the walk lacks (`Ryza in the field`), not read.
+- **Floors on models**: read, see "Ryza in the field".
 - **The files.** A Rasenboden run reads `PACK00_02.PAK`, `PACK00_03.PAK` and `PACK02.PAK`
   (about 16 GB of the install's 28 GB).
 

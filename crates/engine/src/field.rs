@@ -25,6 +25,13 @@ pub struct Placement {
     pub version: Option<u32>,
 }
 
+/// Where a placement puts its model: scale, then rotate about x, y and z in that order, then
+/// move.
+pub fn placement_transform(i: &opl2::Instance) -> Mat4 {
+    let rotation = Quat::from_euler(EulerRot::ZYX, i.rotation[2], i.rotation[1], i.rotation[0]);
+    Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position))
+}
+
 /// A container's entry by name (dummies passed over).
 pub fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
     container.entries.iter().find(|e| e.name == name && !e.is_dummy()).map(|e| container.data(e))
@@ -88,9 +95,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         let model = G1m::parse(bytes)?;
         let Some(geometry) = model.geometry.as_ref() else { continue };
         for i in &t.instances {
-            // Scale, then rotate about x, y and z in that order, then move.
-            let rotation = Quat::from_euler(EulerRot::ZYX, i.rotation[2], i.rotation[1], i.rotation[0]);
-            let transform = Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position));
+            let transform = placement_transform(i);
             let before = scene.draws.len();
             let how = place(t, i);
             // An object the game moves (a tree's spring) gets its own instance; the rest are
