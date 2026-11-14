@@ -495,8 +495,17 @@ the 100 that passed, so the order Barrel follows (the wait given, then time move
 The join (`0x14018cf20 (timeline, character, from)`) takes the first free entry whose wait is
 at least `from` (scanning from the front; else the last free one) and sets its wait to 500
 (1000 when the character's +0x20 value is negative); the 0, 100, … 500 the fighters had at the
-first command come from something else at the battle's start (its caller and the strike's
-first turn not read yet; `fight::Battle::new` starts everyone at 500).
+first command come from the battle's setup, not the join (which only summons use:
+`0x1401c1238`, `0x1401c12ab`, action kind 0x25). The setup (the loops around `0x14018c0c0` and
+`0x14018c2b0`) makes one entry (0x90 bytes, `0x14018b610`) per character of the battle's
+character list, in the list's order, with waits 0, 50, 100, … and +0x10 the character's
+virtual +0x20 (negative for one that does not act: such entries are the free slots), then
+adds entries with character -1 and the waits going on in 50s until there are 16. In the
+recorded battle the list gave the six fighters every other entry (Wilbell, Katla, a monster,
+Escha, two monsters; characters 2, 1, 5, 0, 6, 7) with five non-acting characters between
+(presumably the two reserve members and others not read), so the fighters started 100 apart.
+How the list is ordered (its first loop skips characters by their virtual +0x10) is not read
+yet; `fight::Battle::new` starts everyone at 500 in party-then-monster order instead.
 `0x14018cf20 (timeline, character)` puts a joining character in a free slot with wait 500
 (1000 when its +0x10 value is negative). After a character acts, `0x14018d180 (timeline,
 character, wait)` gives it the action's wait (the action's virtual +0x30):
