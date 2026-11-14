@@ -1201,8 +1201,11 @@ One per field (100 files; Shift-JIS XML). `free_camera/base_setting` is the play
 and `at_diff_y` (0.1, not placed). `camera_func/look_up` (`max_at_diff_add`,
 `min/max_length_by_pitch`, `look_up_start_pitch`, `eye_down_end_pitch`) changes the look point
 and distance as the camera pitches up, not read. Then `landmark_camera`s (indexed 1, 2, ... in
-file order, chosen by gimmicks), `disp_range` (draw distances for characters, effects,
-gimmicks, near/middle/far/landmark objects, shadows), `lod`, `light_map` (marked unused),
+file order, chosen by gimmicks), `disp_range` (draw distances in metres for characters, effects,
+gimmicks, near/middle/far/landmark objects, shadows: Rasenboden's PC objects 70, 200, 400 and
+3000, its Switch twin `disp_rangeNX` 100, 150, 200 and 3000 with console variants
+`*_console`; read by `camera::DrawRanges`), `lod` (`use_lod`, `hi_mid`, `mid_low`: off on the PC,
+on for the Switch's `lod_NX` at 60 and 80), `light_map` (marked unused),
 `RLR` (screen-space reflection steps) and `ambient_effect` (effects per time and weather).
 `barrel_ryza::camera` reads the free camera. With it (vertical field of view taken as 45°)
 and a look point 110 units above her feet, Rasenboden's gate frames as in the game, the

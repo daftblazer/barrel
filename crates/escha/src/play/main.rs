@@ -1937,6 +1937,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
         own_instance: node_sway(&t.name) || node_sway(&i.tags),
         casts: t.name.contains("xDS_") || i.tags.contains("xDS_"),
         version: object_version(&i.tags),
+        ..Default::default()
     };
     barrel_engine::field::load(&area, &main, &objects, scene, base, &place)
 }

@@ -21,6 +21,31 @@ pub struct FreeCamera {
     pub length_range: (f32, f32),
 }
 
+/// How far the field's objects are drawn (`disp_range`, in metres; units are centimetres):
+/// near, middle, far and landmark objects by their placement's class
+/// (`opl2::Instance::word` bits 0 and 1). The PC's `disp_range`, or the Switch's
+/// `disp_rangeNX` (shorter, for its handheld hardware).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawRanges(pub [f32; 4]);
+
+impl DrawRanges {
+    /// The ranges in units from the field's camera settings: `disp_range`, or with `switch`
+    /// `disp_rangeNX`.
+    pub fn parse(bytes: &[u8], switch: bool) -> Result<DrawRanges, String> {
+        let root = table::parse(bytes).map_err(|e| format!("cameraparam: {e}"))?;
+        let name = if switch { "disp_rangeNX" } else { "disp_range" };
+        let e = find(&root, &[name]).ok_or(format!("cameraparam: no {name}"))?;
+        let f = |k: &str| e.attr(k).and_then(|v| v.trim().parse::<f32>().ok()).map(|m| m * 100.0).ok_or(format!("cameraparam: no {name} {k}"));
+        Ok(DrawRanges([f("obj_near")?, f("obj_middle")?, f("obj_far")?, f("obj_landmark")?]))
+    }
+
+    /// Whether a box (`lo`, `hi`) is close enough to `eye` for its class to be drawn.
+    pub fn shows(&self, class: u8, eye: glam::Vec3, lo: glam::Vec3, hi: glam::Vec3) -> bool {
+        let range = self.0[(class & 3) as usize];
+        eye.clamp(lo, hi).distance_squared(eye) <= range * range
+    }
+}
+
 impl FreeCamera {
     /// Rasenboden's, for a field without a file.
     pub const DEFAULT: FreeCamera = FreeCamera { at_diff_y: 0.1, fov: 45.0, yaw: 180.0, pitch: 8.0, pitch_range: (-30.0, 45.0), length: 400.0, length_range: (200.0, 550.0) };
@@ -85,6 +110,17 @@ fn find<'a>(e: &'a Element, path: &[&str]) -> Option<&'a Element> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn draw_ranges() {
+        let xml = br#"<root><disp_range chara="100.0" obj_near="70.0" obj_middle="200.0" obj_far="400.0" obj_landmark="3000.0"/><disp_rangeNX obj_near="100.0" obj_middle="150.0" obj_far="200.0" obj_landmark="3000.0"/></root>"#;
+        let pc = super::DrawRanges::parse(xml, false).unwrap();
+        assert_eq!(pc.0, [7000.0, 20000.0, 40000.0, 300000.0]);
+        assert_eq!(super::DrawRanges::parse(xml, true).unwrap().0[2], 20000.0);
+        let (lo, hi) = (glam::Vec3::new(10000.0, 0.0, 0.0), glam::Vec3::new(10100.0, 50.0, 100.0));
+        assert!(!pc.shows(0, glam::Vec3::ZERO, lo, hi));
+        assert!(pc.shows(1, glam::Vec3::ZERO, lo, hi));
+    }
+
     use super::*;
 
     #[test]

@@ -4,7 +4,7 @@
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
-//!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG]
+//!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG] [--draw-ranges pc|nx|off]
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
@@ -54,6 +54,9 @@ struct Args {
     no_shadows: bool,
     /// The camera's vertical field of view, degrees (`--fov`).
     fov: Option<f32>,
+    /// The field's draw distances: the PC game's (`pc`, the default), the Switch's (`nx`) or none
+    /// (`off`) (`--draw-ranges`).
+    draw_ranges: String,
     window: bool,
     /// Graphics: a preset by name (`RenderSettings::preset`), and fullscreen.
     preset: Option<RenderSettings>,
@@ -85,7 +88,7 @@ fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2] };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2] };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -105,6 +108,7 @@ fn args() -> Result<Args> {
             "--hide" => a.hide.push(value()?),
             "--no-shadows" => a.no_shadows = true,
             "--fov" => a.fov = Some(value()?.parse()?),
+            "--draw-ranges" => a.draw_ranges = value()?,
             "--window" => a.window = true,
             "--fullscreen" => a.fullscreen = true,
             "--preset" => {
@@ -179,7 +183,9 @@ fn main() -> Result<()> {
     scene.field = Some(0);
     // Ryza's placements carry no tags (Escha marks its casters `xDS_`): every placed model
     // casts the sun's shadow; nothing sways yet (`docs/ryza/open.md`).
-    let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, ..Default::default() };
+    // Each keeps its placement's draw class (near, middle, far, landmark), for the field's draw
+    // distances.
+    let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, ..Default::default() };
     let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
@@ -466,7 +472,35 @@ fn main() -> Result<()> {
     let shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
 
     let hidden = vec![false; instances.len()];
-    let shown = |d: &Draw| !a.hide.iter().any(|h| d.name.contains(h.as_str()));
+    // The field's draw distances (`camera::DrawRanges`): a field object farther from the eye
+    // than its class's range is left out. Field objects stay where they were placed, so each
+    // draw's box is found once (render space, as the eye).
+    let ranges = match a.draw_ranges.as_str() {
+        "off" => None,
+        which => {
+            let bytes = install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))?;
+            Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?)
+        }
+    };
+    let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {
+        None => Default::default(),
+        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky).filter_map(|d| {
+            let b = d.bounds?;
+            let m = instances.get(d.instance as usize)?.model;
+            let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
+            let (lo, hi) = corners.fold((Vec3::MAX, Vec3::MIN), |(l, h), c| (l.min(c), h.max(c)));
+            Some(((d.first_index, d.instance), (lo, hi)))
+        }).collect(),
+    };
+    eprintln!("draw ranges: {ranges:?}");
+    let eye_now = std::cell::Cell::new(Vec3::ZERO);
+    let shown = |d: &Draw| {
+        !a.hide.iter().any(|h| d.name.contains(h.as_str()))
+            && match (ranges, boxes.get(&(d.first_index, d.instance))) {
+                (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
+                _ => true,
+            }
+    };
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     let material = |_: &Draw| (if environment.is_some() { 0 } else { UNLIT }, 0);
     let layers: Vec<&text::Layer> = Vec::new();
@@ -574,6 +608,7 @@ fn main() -> Result<()> {
             _ => dist,
         };
         let view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size);
+        eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if frame_no == 0
             && let Some(k) = view.exposure
         {

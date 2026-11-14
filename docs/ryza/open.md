@@ -164,10 +164,13 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   triangles, every placed object at full detail. On the PC (RX 9070 XT, 1920x1080, offscreen,
   60 frames, median) the frame is 5.97 ms at the desktop preset and 5.89 ms at the handheld one
   (75 % scale): the scene pass barely changes with the resolution, so it is bound by vertices
-  and draws. The field's draw distances (`disp_range`: near / middle / far / landmark objects,
-  characters, shadows) and LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) are in
-  `saves\fieldmap\cameraparam\<field>.xml` and not applied yet: the first thing to try on the
-  RP6. What the units of `disp_range` are (70, 200, 400, 3000) is not known. The placements'
+  and draws. The field's draw distances are applied (`barrel-ryza --draw-ranges pc|nx|off`, the
+  PC's by default: a field object farther from the eye than its class's `disp_range`, taken as
+  metres, is left out): at the gate they leave out 45 (PC) or 63 (Switch) pixels of 1920x1080
+  and take the frame from 5.97 to 5.89 or 5.88 ms, since the landmarks (3000 m) carry the cost.
+  Whether the units are metres is a guess (the near class at 70 would be 70 units otherwise,
+  a few steps). Choosing the Switch's ranges belongs with the handheld preset (a graphics
+  setting, not yet). LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) is not applied. The placements'
   classes (docs/formats.md, "Placement lists") put the cost in the landmark class: leaving each
   class out in turn (1080p, 37 frames), near saves 0.36 ms, middle 0.39, far 0.51, landmark 3.9
   of 5.9 (646 cliffs and mountains, 1.26 of the 1.85 million triangles). Landmarks are drawn to

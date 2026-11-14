@@ -144,6 +144,9 @@ pub struct Draw {
     /// A field object's bounds, for leaving it out when it is wholly outside the view
     /// (`docs/renderer.md`, "View culling"); None (always drawn) for characters and the sky.
     pub bounds: Option<Bounds>,
+    /// A field object's draw class (Ryza's placement lists: near, middle, far, landmark as 0 to
+    /// 3, each with its field's draw distance); 0 elsewhere.
+    pub class: u8,
 }
 
 /// A draw's box in its model's space (its vertices on the scene's starting joints) and how far
@@ -643,7 +646,7 @@ impl Scene {
                 })
             };
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
         }
         Ok(())
     }

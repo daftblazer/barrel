@@ -23,6 +23,8 @@ pub struct Placement {
     pub casts: bool,
     /// It shows only in this version of the field (`Draw::version`).
     pub version: Option<u32>,
+    /// Its draw class (`Draw::class`).
+    pub class: u8,
 }
 
 /// Where a placement puts its model: scale, then rotate about x, y and z in that order, then
@@ -112,6 +114,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
                 // may be in either).
                 d.name = if i.tags.is_empty() { t.name.clone() } else { format!("{} {}", t.name, i.tags) };
                 d.version = how.version;
+                d.class = how.class;
             }
             placed += 1;
         }
