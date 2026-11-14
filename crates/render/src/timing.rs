@@ -78,3 +78,65 @@ impl Timer {
         unsafe { gpu.device.destroy_query_pool(self.pool, None) };
     }
 }
+
+/// The CPU's time per stage of the frame loop (`--timings` too): named marks through the
+/// frame, each stage the time since the mark before; a frame counts when it reaches `end`.
+#[derive(Default)]
+pub struct CpuTimer {
+    marks: Vec<(&'static str, std::time::Instant)>,
+    /// Each stage's times in milliseconds, in the order first seen.
+    stages: Vec<(&'static str, Vec<f64>)>,
+    frames: usize,
+}
+
+impl CpuTimer {
+    pub fn begin(&mut self) {
+        self.marks.clear();
+        self.marks.push(("", std::time::Instant::now()));
+    }
+
+    /// The stage `name` ends here.
+    pub fn mark(&mut self, name: &'static str) {
+        if !self.marks.is_empty() {
+            self.marks.push((name, std::time::Instant::now()));
+        }
+    }
+
+    /// The frame's last stage ends here.
+    pub fn end(&mut self, name: &'static str) {
+        self.mark(name);
+        if self.marks.len() < 2 {
+            return;
+        }
+        self.frames += 1;
+        for w in self.marks.windows(2) {
+            let ms = (w[1].1 - w[0].1).as_secs_f64() * 1e3;
+            match self.stages.iter_mut().find(|(n, _)| *n == w[1].0) {
+                Some((_, v)) => v.push(ms),
+                None => self.stages.push((w[1].0, vec![ms])),
+            }
+        }
+        self.marks.clear();
+    }
+
+    /// Each stage's median and mean over the frames after the first three (a stage that only
+    /// some frames reach: over those).
+    pub fn report(&self) {
+        if self.frames <= 3 {
+            return;
+        }
+        let mut total = 0.0;
+        for (name, v) in &self.stages {
+            let v: Vec<f64> = v.iter().skip(3).copied().collect();
+            if v.is_empty() {
+                continue;
+            }
+            let mut s = v.clone();
+            s.sort_by(f64::total_cmp);
+            let mean = v.iter().sum::<f64>() / v.len() as f64;
+            total += mean * v.len() as f64 / (self.frames - 3) as f64;
+            eprintln!("cpu: {name:<22} {:7.3} ms median, {mean:7.3} mean", s[s.len() / 2]);
+        }
+        eprintln!("cpu: {:<22} {total:7.3} ms mean per frame ({} frames)", "total", self.frames - 3);
+    }
+}

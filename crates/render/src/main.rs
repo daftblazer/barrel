@@ -4178,6 +4178,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
     let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
     let mut timer = if timings { timing::Timer::new(&gpu)? } else { None };
+    let mut cpu = timings.then(timing::CpuTimer::default);
     let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
 
     // Pipeline.
@@ -5090,6 +5091,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     for frame in 0..frames - frame_base {
     ran = frame + 1;
+    if let Some(c) = cpu.as_mut() {
+        c.begin();
+    }
     // Chained: the event over (every step applied), the next one takes the window.
     if chain.is_some() && frame > 0 && player.as_ref().is_some_and(|p| p.0.finished()) {
         ran = frame;
@@ -5867,6 +5871,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if door.is_some() || world_exit {
         break;
     }
+    if let Some(c) = cpu.as_mut() {
+        c.mark("input + simulation");
+    }
     // Town people: each posed in its wait motion on the viewer's clock.
     if !town_bodies.is_empty() {
         let dt = if presenter.is_some() { if paused { 0.0 } else { frame_dt } } else { (1.0 / fps) as f32 };
@@ -6309,6 +6316,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             scene.write_weights(&gpu, &morph_weights)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
+    if let Some(c) = cpu.as_mut() {
+        c.mark("people + events + poses");
+    }
     // A resized window, or a swapchain gone stale: remake it and the framebuffers.
     if let (Some(p), Some(pp)) = (presenter.as_mut(), pump.as_mut())
         && (pp.take_resized() || stale) {
@@ -6335,6 +6345,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         _ => 0,
     };
     let mvp = view_proj(eye, target, up, dist, fov, width, height, orbit);
+    if let Some(c) = cpu.as_mut() {
+        c.mark("acquire");
+    }
     // A camera cut (or a new field): the last frame's view says nothing about this one, so TAA
     // starts its history afresh and the motion vectors take this frame's view for the last.
     let shot = taa::Shot { eye, target, fov };
@@ -6633,6 +6646,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let scene_area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: scene_width, height: scene_height } };
     let frozen_ready = targets.frozen_ready;
     targets.frozen_ready = true;
+    if let Some(c) = cpu.as_mut() {
+        c.mark("camera, lights, sway");
+    }
     // Set 1 for the field drawn (its light texture at binding 6).
     let instance_set = scene.instance_set(current_field as usize);
     // The field HUD with the session's date and field time, rebuilt when they change.
@@ -6675,6 +6691,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 h.shown = Some((members, commands, shown_result, wipe, width, height));
             }
     }
+    // Offscreen, the frames written to files (with --save-every, only some): only those are
+    // read back (8 MB a frame at 1080p).
+    let shot_number = frame_base + frame;
+    let saved_shot = frames == 1 || (shot_number + 1).is_multiple_of(save_every) || shot_number + 1 == frames;
     let record = |cb: vk::CommandBuffer| unsafe {
         if let Some(t) = &timer {
             t.begin(d, cb);
@@ -6909,13 +6929,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if let Some(t) = &timer {
             t.mark(d, cb, 4);
         }
-        if let Some((color, _)) = offscreen {
+        if let Some((color, _)) = offscreen.filter(|_| saved_shot) {
             let region = vk::BufferImageCopy::default()
                 .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
                 .image_extent(extent);
             d.cmd_copy_image_to_buffer(cb, color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
         }
     };
+    if let Some(c) = cpu.as_mut() {
+        c.mark("HUD layers");
+    }
     if let (Some(p), Some((ready, done))) = (&presenter, &sync) {
         // Wait for the image, draw, signal, present; the fence keeps one frame in flight.
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0] };
@@ -6923,6 +6946,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
             record(cb);
             d.end_command_buffer(cb)?;
+            if let Some(c) = cpu.as_mut() {
+                c.mark("record");
+            }
             let fence = d.create_fence(&vk::FenceCreateInfo::default(), None)?;
             let (waits, stages, cbs, signals) = ([*ready], [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT], [cb], [*done]);
             d.queue_submit(
@@ -6931,7 +6957,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 fence,
             )?;
             stale |= p.present(&gpu, image as u32, *done)?;
+            if let Some(c) = cpu.as_mut() {
+                c.mark("submit + present");
+            }
             d.wait_for_fences(&[fence], true, u64::MAX)?;
+            if let Some(c) = cpu.as_mut() {
+                c.end("wait for the GPU");
+            }
             d.destroy_fence(fence, None);
             d.free_command_buffers(pool, &cbs);
         }
@@ -6941,8 +6973,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         continue;
     }
     gpu.submit(pool, record)?;
+    if let Some(c) = cpu.as_mut() {
+        c.end("record + GPU (offscreen)");
+    }
     if let Some(t) = timer.as_mut() {
         t.collect(&gpu)?;
+    }
+    if !saved_shot {
+        continue;
     }
     let mut pixels = vec![0u8; bytes as usize];
     unsafe {
@@ -6951,10 +6989,6 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         d.unmap_memory(rmem);
     }
     // One frame: OUT.png; several: OUT_000.png, OUT_001.png, ... (with --save-every, only some).
-    let shot_number = frame_base + frame;
-    if frames > 1 && !(shot_number + 1).is_multiple_of(save_every) && shot_number + 1 != frames {
-        continue;
-    }
     let path = if frames > 1 {
         let p = Path::new(&out_path);
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("frame");
@@ -7294,6 +7328,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if let Some(t) = timer.take() {
             t.report();
             t.destroy(&gpu);
+        }
+        if let Some(c) = cpu.take() {
+            c.report();
         }
         d.destroy_render_pass(render_pass, None);
         if let Some(v) = color_view {

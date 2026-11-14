@@ -260,6 +260,20 @@ native AA: the cleanest edges, at about 0.8 ms at 1080p). Upscalers are for weak
 `handheld` (FSR 1 from 0.75) and `handheld-gsr2` (GSR 2 from two thirds), to be chosen
 between by timing them on the RP6.
 
+`--timings` also times the CPU's stages of the frame loop (`timing::CpuTimer`: input and
+simulation, people and events and poses, acquire, camera and lights, HUD layers, then record,
+submit and present, and the wait for the GPU; offscreen the last three are one). On the RP6
+(Turnip, Adreno 740) at 1080p with the `handheld` preset, 300 frames, in ms:
+
+| scene | shadow | scene | glow + FSR 1 | post | GPU total | CPU before recording |
+|---|---|---|---|---|---|---|
+| Sector One, the user's 8/20 save | 0.74 | 5.91 | 1.17 | 0.21 | 8.04 | 0.33 |
+| the opening at 20 s (town) | 0.50 | 5.42 | 1.17 | 0.18 | 7.28 | 0.43 |
+
+The CPU's own work before recording is small; a frame is the recording plus the GPU's time, one
+after the other while the loop waits for each frame. Offscreen runs read a frame back only when
+they write it to a file (the whole image every frame cost about 7 ms there).
+
 **FSR 2, 3 and 4: plan** (researched 2026-11-12).
 
 - *FSR 2 and FSR 3.1's upscaler* are one algorithm line, open under MIT: FSR 2.2's own
