@@ -513,7 +513,7 @@ fn main() -> Result<()> {
             (Some(_), Some((r, g))) => {
                 let (y, p) = (yaw.to_radians(), pitch.to_radians());
                 let way = Vec3::new(-y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
-                let clear = barrel_ryza::camera::clear_distance(g, r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0), way, dist);
+                let clear = barrel_ryza::camera::clear_distance(g, r.walls.as_ref(), r.player.at + Vec3::new(0.0, FOLLOW_HEIGHT, 0.0), way, dist);
                 let d = match view_dist {
                     Some(v) if clear > v => v + (clear - v) * (frame_dt * 4.0).min(1.0),
                     _ => clear,

@@ -51,10 +51,16 @@ impl FreeCamera {
 /// How far the camera may stand from `target` along `way` (game space, a unit vector from the
 /// target toward the eye), up to `dist`: the line is followed in steps, and the first point
 /// with ground (`ground`: terrain and floors) from 30 below it to 400 above it stops it a step
-/// short (no less than `MIN_CLEAR`). Not the game's (its camera collision is not read,
-/// `docs/ryza/open.md`): ground only, no walls, and a tree's top far above is not ground here.
-pub fn clear_distance(ground: &barrel_engine::walk::Ground, target: glam::Vec3, way: glam::Vec3, dist: f32) -> f32 {
+/// short (no less than `MIN_CLEAR`); so does the first wall (`walls`) the line passes through.
+/// Not the game's (its camera collision is not read, `docs/ryza/open.md`); a tree's top far
+/// above is not ground here.
+pub fn clear_distance(ground: &barrel_engine::walk::Ground, walls: Option<&barrel_engine::walk::Walls>, target: glam::Vec3, way: glam::Vec3, dist: f32) -> f32 {
     const STEP: f32 = 25.0;
+    let end = target + way * dist;
+    let dist = match walls.and_then(|w| w.first_hit(target.to_array(), end.to_array())) {
+        Some(t) => (t * dist - STEP).max(MIN_CLEAR),
+        None => dist,
+    };
     let mut t = STEP;
     while t <= dist {
         let p = target + way * t;
@@ -91,9 +97,9 @@ mod tests {
         };
         let g = barrel_engine::walk::Ground::new(None, &c, 75.0);
         let back = glam::Vec3::new(0.0, 0.0, -1.0);
-        assert_eq!(clear_distance(&g, glam::Vec3::ZERO, back, 400.0), 175.0);
+        assert_eq!(clear_distance(&g, None, glam::Vec3::ZERO, back, 400.0), 175.0);
         // Looking the other way, nothing in the way.
-        assert_eq!(clear_distance(&g, glam::Vec3::ZERO, -back, 400.0), 400.0);
+        assert_eq!(clear_distance(&g, None, glam::Vec3::ZERO, -back, 400.0), 400.0);
     }
 
     #[test]

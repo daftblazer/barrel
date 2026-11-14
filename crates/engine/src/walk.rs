@@ -63,6 +63,38 @@ impl Walls {
         self
     }
 
+    /// How far along the line from `from` to `to` (0 to 1) it first passes through a wall: where
+    /// it crosses the wall's segment on the ground at a height the wall spans. None if it does
+    /// not.
+    pub fn first_hit(&self, from: [f32; 3], to: [f32; 3]) -> Option<f32> {
+        let (lo, hi) = ([from[0].min(to[0]), from[2].min(to[2])], [from[0].max(to[0]), from[2].max(to[2])]);
+        let d = [to[0] - from[0], to[2] - from[2]];
+        let mut best: Option<f32> = None;
+        for (llo, lhi, walls) in &self.leaves {
+            if hi[0] < llo[0] || lo[0] > lhi[0] || hi[1] < llo[1] || lo[1] > lhi[1] {
+                continue;
+            }
+            for w in walls {
+                let e = [w.b[0] - w.a[0], w.b[1] - w.a[1]];
+                let den = d[0] * e[1] - d[1] * e[0];
+                if den.abs() < 1e-9 {
+                    continue;
+                }
+                let q = [w.a[0] - from[0], w.a[1] - from[2]];
+                let t = (q[0] * e[1] - q[1] * e[0]) / den;
+                let u = (q[0] * d[1] - q[1] * d[0]) / den;
+                if !(0.0..=1.0).contains(&t) || !(0.0..=1.0).contains(&u) {
+                    continue;
+                }
+                let y = from[1] + (to[1] - from[1]) * t;
+                if y >= w.low && y <= w.high && best.is_none_or(|b| t < b) {
+                    best = Some(t);
+                }
+            }
+        }
+        best
+    }
+
     /// The walls near (within `reach` of) the point (x, z).
     fn near(&self, p: [f32; 2], reach: f32) -> impl Iterator<Item = &Wall> {
         self.leaves
@@ -258,6 +290,15 @@ fn closest(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_line_through_a_wall_hits_it() {
+        let w = super::Walls::from_walls(vec![super::Wall { a: [-100.0, 50.0], b: [100.0, 50.0], low: 0.0, high: 200.0 }], 1000.0);
+        assert_eq!(w.first_hit([0.0, 100.0, 0.0], [0.0, 100.0, 100.0]), Some(0.5));
+        // Over its top, or beside it: no.
+        assert_eq!(w.first_hit([0.0, 300.0, 0.0], [0.0, 300.0, 100.0]), None);
+        assert_eq!(w.first_hit([200.0, 100.0, 0.0], [200.0, 100.0, 100.0]), None);
+    }
+
     use super::*;
     use barrel_formats::g1co::Node;
 
