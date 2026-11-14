@@ -1104,6 +1104,19 @@ travel, so the speed she moves at is the game's. Motion 131 lowers the hips to 7
 30, 40 and the rest are not identified yet. The tracks name bone ids, mapped to joints through
 the skeleton's index map ("Skeletons" above).
 
+### Ryza field walls (`<field>_le.koc`)
+
+A loose file beside the field's containers (36 fields in Ryza DX; Ryza 2 DX has 47, Ryza 3 DX
+85). Header: `_COK0100`, u32 file size, u32 quad count; then each quad's four corners as
+(x, y, z, 1) floats in game space. Nearly all are upright: (a, top), (a, bottom), (b, bottom),
+(b, top), the line a to b on the ground spanning bottom to top (Rasenboden: 99 quads, 96
+upright, 300 to 14,000 units long, the field's edges, cliffs and banks). Two there are sloped
+and one flat (at y 5843), use not known. `barrel_ryza::koc` reads them and gives the upright
+ones to the shared walker as walls. Beside it: `_coll.bin` in the main container (Rasenboden:
+4 records of a position, a rotation and a size, likely boxes), `.g1pf` and `.elixir.g1pf`
+(`FP1G`, over a 128,000-unit square: path-finding, not read) and `.trmd` (`TRMD`, 1024 × 1024
+cells of 5 bytes: likely the ground's material, not read).
+
 ### Ryza field environment (`<field>_env.elixir.gz`)
 
 Each Ryza DX field has a second container beside its objects': `<FIELD>_env.bin` (97,920 bytes

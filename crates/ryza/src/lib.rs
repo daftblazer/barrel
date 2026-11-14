@@ -4,5 +4,6 @@
 
 pub mod environment;
 pub mod install;
+pub mod koc;
 pub mod light;
 pub mod motion;

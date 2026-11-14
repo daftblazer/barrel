@@ -41,6 +41,22 @@ impl Walls {
         Walls { leaves }
     }
 
+    /// Walls given as they are (the Ryza games' `_le.koc` quads), in square leaves of
+    /// `leaf` units to find them by.
+    pub fn from_walls(walls: Vec<Wall>, leaf: f32) -> Walls {
+        let mut cells: std::collections::BTreeMap<(i32, i32), Vec<Wall>> = Default::default();
+        for w in walls {
+            let (lo, hi) = ([w.a[0].min(w.b[0]), w.a[1].min(w.b[1])], [w.a[0].max(w.b[0]), w.a[1].max(w.b[1])]);
+            for cx in (lo[0] / leaf).floor() as i32..=(hi[0] / leaf).floor() as i32 {
+                for cz in (lo[1] / leaf).floor() as i32..=(hi[1] / leaf).floor() as i32 {
+                    cells.entry((cx, cz)).or_default().push(w);
+                }
+            }
+        }
+        let leaves = cells.into_iter().map(|((cx, cz), w)| ([cx as f32 * leaf, cz as f32 * leaf], [(cx + 1) as f32 * leaf, (cz + 1) as f32 * leaf], w)).collect();
+        Walls { leaves }
+    }
+
     /// The walls near (within `reach` of) the point (x, z).
     fn near(&self, p: [f32; 2], reach: f32) -> impl Iterator<Item = &Wall> {
         self.leaves
