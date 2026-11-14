@@ -1701,7 +1701,10 @@ ending's 29 to 40 `telop14` to `telop25` (the second atlas, whose lines echo the
 and 333 to 385 down, centred, as the opening recording shows it to the pixel. The `uvwh`
 rectangles are in the `neo_` atlases' pixels (`res_<lang>\ui\neo\neo_a21_telopNN.g1t`, 2400
 × 2048 BC7), the plain atlases (1200 × 1024) half that (`telop::place`, `telop::quad`;
-`barrel-ryza ... --telop N` draws one over a frame, from the `neo_` atlas above 1080 lines). (`str_telop.xml` holds the field
+`barrel-ryza ... --telop N` draws one over a frame, from the `neo_` atlas above 1080 lines).
+`barrel_ryza::event` reads an event from the archives (`event_jp\<chapter>\`), schedules it
+and plays it on the shared stage's clock; `barrel-ryza ... --event mm00_010 --at T` draws the
+telop the stage shows T seconds in at its opacity (2.5 s: the first half-faded in). (`str_telop.xml` holds the field
 notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie

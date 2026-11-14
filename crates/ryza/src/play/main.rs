@@ -89,6 +89,8 @@ struct Args {
     lean: [f32; 2],
     /// `--telop N`: a telop (`u65`'s number) shown over the frame, as an event shows it.
     telop: Option<u32>,
+    /// `--event NAME --at T`: the event's stage T seconds in (its telop shown as it would be).
+    event: Option<(String, f32)>,
 }
 
 /// Ryza as posed and walked: her skeleton, her motions by number, her instance, the field's
@@ -108,9 +110,9 @@ struct Rig {
 
 fn args() -> Result<Args> {
     let mut it = std::env::args().skip(1);
-    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
+    let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -140,6 +142,8 @@ fn args() -> Result<Args> {
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
             "--telop" => a.telop = Some(value()?.parse()?),
+            "--event" => a.event = Some((value()?, 0.0)),
+            "--at" => a.event.as_mut().ok_or("--at after --event")?.1 = value()?.parse()?,
             "--lean" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y] = v[..] else { return Err("--lean X,Y".into()) };
@@ -176,8 +180,8 @@ fn args() -> Result<Args> {
     Ok(a)
 }
 
-/// A layer showing telop `n` (`u65`'s number) at full opacity on a `screen`-sized frame.
-fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, n: u32, screen: (u32, u32)) -> Result<text::Layer> {
+/// A layer showing telop `n` (`u65`'s number) at opacity `alpha` on a `screen`-sized frame.
+fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, n: u32, alpha: f32, screen: (u32, u32)) -> Result<text::Layer> {
     use barrel_ryza::telop;
     let node = match telop::Node::of(n) {
         Some(telop::Node::Caption(k)) => format!("telop{k:02}"),
@@ -197,7 +201,7 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     let (rect, uv) = telop::quad(strip, at, screen, (t.width, t.height), if hd { 1.0 } else { 0.5 });
     eprintln!("telop {n}: {node}, strip {image} of {path} at {rect:?}");
     let mut layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[t])?;
-    layer.set(gpu, &[text::Quad { rect, uv, color: [1.0; 4], texture: 0 }])?;
+    layer.set(gpu, &[text::Quad { rect, uv, color: [1.0, 1.0, 1.0, alpha], texture: 0 }])?;
     Ok(layer)
 }
 
@@ -789,8 +793,19 @@ fn main() -> Result<()> {
     };
     // A telop over the frame (`--telop`): its strip from the layout, drawn from the hd atlas
     // (`neo_`) on screens taller than 1080 lines, else the plain one (English).
-    let telop_layer = match a.telop {
-        Some(n) => Some(telop_layer(&install, &gpu, &renderer, n, (width, height))?),
+    // `--event`: the telop the event shows at that moment, at its opacity.
+    let telop = match &a.event {
+        Some((name, at)) => {
+            let path = barrel_ryza::event::path(name).ok_or(format!("--event {name}: not an event name"))?;
+            let event = barrel_formats::ebd::Ebd::parse(&install.read(&path)?).map_err(|e| format!("{path}: {e}"))?;
+            let shown = barrel_ryza::event::telop(&barrel_ryza::event::stage_at(barrel_ryza::event::schedule(&event)?, *at));
+            eprintln!("event {name} at {at} s: telop {shown:?}");
+            shown
+        }
+        None => a.telop.map(|n| (n, 1.0)),
+    };
+    let telop_layer = match telop {
+        Some((n, alpha)) => Some(telop_layer(&install, &gpu, &renderer, n, alpha, (width, height))?),
         None => None,
     };
     let layers: Vec<&text::Layer> = telop_layer.iter().collect();
