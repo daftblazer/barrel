@@ -2886,7 +2886,6 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         _ => None,
     };
     let (mut width, mut height) = presenter.as_ref().map_or((size, size_h), |p| (p.extent.width, p.extent.height));
-    let color_format = presenter.as_ref().map_or(COLOR_FORMAT, |p| p.format);
     if let Some(p) = &presenter {
         eprintln!("window: {width}x{height}, {:?}, {} swapchain images", p.format, p.images.len());
     }
@@ -2900,122 +2899,6 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     let frames = window_frames.unwrap_or(frames);
     let d = &gpu.device;
-    let pool = unsafe {
-        d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
-    };
-
-    let anisotropy = (settings.anisotropy as f32).min(gpu.max_anisotropy).max(1.0);
-    let sampler = unsafe {
-        d.create_sampler(
-            &vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::REPEAT)
-                .address_mode_v(vk::SamplerAddressMode::REPEAT)
-                .max_lod(16.0)
-                .anisotropy_enable(anisotropy > 1.0)
-                .max_anisotropy(anisotropy),
-            None,
-        )?
-    };
-
-    // Descriptors: one combined image sampler per texture.
-    let binding = [vk::DescriptorSetLayoutBinding::default()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
-    let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)? };
-    let storage = |b: u32| {
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(b)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
-    };
-    // And the field's character lighting (binding 4, for the fragment shader).
-    // The lighting block, one slot per frame in flight.
-    let look_ring = ring::Ring::new(&gpu, LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER)?;
-    let inst_binding = [
-        storage(0),
-        storage(1),
-        storage(2),
-        storage(3),
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(4)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-        // The sun's shadow map (binding 5).
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(5)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        // The field's light texture, the drifting cloud shadows (binding 6).
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(6)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-    ];
-    let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-    // Each field's ground textures: a set of 2 blend maps + 6 layers.
-    let terrain_bindings = [
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(TERRAIN_MAPS as u32)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(1)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(TERRAIN_LAYERS as u32)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-    ];
-    let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
-    let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
-    let shared = scene_gpu::Shared {
-        set_layout,
-        sampler,
-        instance_layout,
-        look: std::array::from_fn(|slot| look_ring.info(slot)),
-        shadow_sampler: shadow_target.sampler,
-        shadow_view: shadow_target.view,
-        terrain_layout,
-    };
-
-    // Offscreen target.
-    let extent = vk::Extent3D { width, height, depth: 1 };
-    let target_info = |format, usage| {
-        vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .format(format)
-            .extent(extent)
-            .mip_levels(1)
-            .array_layers(1)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .usage(usage)
-    };
-    // The offscreen colour image (none with a window: the swapchain's images are the targets).
-    let offscreen = if presenter.is_none() {
-        Some(gpu.image(&target_info(COLOR_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC))?)
-    } else {
-        None
-    };
-    let view_of = |image, format, aspect| unsafe {
-        d.create_image_view(
-            &vk::ImageViewCreateInfo::default()
-                .image(image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(format)
-                .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(aspect).level_count(1).layer_count(1)),
-            None,
-        )
-    };
-    let color_view = offscreen.map(|(color, _)| view_of(color, COLOR_FORMAT, vk::ImageAspectFlags::COLOR)).transpose()?;
-
     // Barrel's graphics config (the Options screen's graphics page writes it) when no setting
     // was given on the command line: in a window, or offscreen when `BARREL_CONFIG` names one.
     // Its window lines are read whatever the command line says.
@@ -3037,332 +2920,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     // TAA brings the motion vectors and the jitter, and drops MSAA.
     let settings = settings.resolved();
-    // The scene's samples: the most the device allows for colour and depth, up to `--msaa`.
-    let samples = {
-        let limits = unsafe { gpu.instance.get_physical_device_properties(gpu.physical) }.limits;
-        let allowed = limits.framebuffer_color_sample_counts & limits.framebuffer_depth_sample_counts;
-        [8u32, 4, 2, 1]
-            .into_iter()
-            .map(|n| (n, vk::SampleCountFlags::from_raw(n)))
-            .find(|&(n, f)| n <= if settings.motion { 1 } else { settings.msaa.max(1) } && allowed.contains(f))
-            .map_or(vk::SampleCountFlags::TYPE_1, |(_, f)| f)
-    };
-    let multisampled = samples != vk::SampleCountFlags::TYPE_1;
-    // The scene pass: its colour ends ready to be sampled by the post pass. Multisampled, it
-    // draws into a transient multisampled colour and depth and resolves into the scene image
-    // at the end of the pass (in tile memory on the handhelds).
-    let single_attachments = [
-        vk::AttachmentDescription::default()
-            .format(SCENE_FORMAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
-        vk::AttachmentDescription::default()
-            .format(DEPTH_FORMAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            // Kept for GSR 2 to read, else never stored.
-            .store_op(if settings.keeps_depth() { vk::AttachmentStoreOp::STORE } else { vk::AttachmentStoreOp::DONT_CARE })
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(if settings.keeps_depth() { vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL } else { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL }),
-    ];
-    let multi_attachments = [
-        vk::AttachmentDescription::default()
-            .format(SCENE_FORMAT)
-            .samples(samples)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
-        single_attachments[1].samples(samples),
-        vk::AttachmentDescription::default()
-            .format(SCENE_FORMAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
-    ];
-    // With motion vectors (single-sampled only): a second colour target after depth.
-    let motion_attachments = [
-        single_attachments[0],
-        single_attachments[1],
-        vk::AttachmentDescription::default()
-            .format(MOTION_FORMAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
-    ];
-    let attachments: &[vk::AttachmentDescription] = if multisampled {
-        &multi_attachments
-    } else if settings.motion {
-        &motion_attachments
-    } else {
-        &single_attachments
-    };
-    let color_refs = [
-        vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
-        vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
-    ];
-    let color_ref = &color_refs[..if settings.motion && !multisampled { 2 } else { 1 }];
-    let resolve_ref = [vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
-    let depth_ref = vk::AttachmentReference { attachment: 1, layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-    let mut subpass_desc = vk::SubpassDescription::default()
-        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(color_ref)
-        .depth_stencil_attachment(&depth_ref);
-    if multisampled {
-        subpass_desc = subpass_desc.resolve_attachments(&resolve_ref);
-    }
-    let subpass = [subpass_desc];
-    // The post pass reads what the scene pass wrote.
-    let scene_done = [vk::SubpassDependency::default()
-        .src_subpass(0)
-        .dst_subpass(vk::SUBPASS_EXTERNAL)
-        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-        .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-        .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
-        .dst_access_mask(vk::AccessFlags::SHADER_READ)];
-    let render_pass = unsafe {
-        d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(attachments).subpasses(&subpass).dependencies(&scene_done), None)?
-    };
-    // The post pass: into the window's image or the offscreen one, no depth.
-    let post_attachment = [vk::AttachmentDescription::default()
-        .format(color_format)
-        .samples(vk::SampleCountFlags::TYPE_1)
-        .load_op(vk::AttachmentLoadOp::DONT_CARE)
-        .store_op(vk::AttachmentStoreOp::STORE)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .final_layout(if presenter.is_some() { vk::ImageLayout::PRESENT_SRC_KHR } else { vk::ImageLayout::TRANSFER_SRC_OPTIMAL })];
-    let post_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
-    let post_subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&post_ref)];
-    // In: the image's move to COLOR_ATTACHMENT waits at the colour output stage, the one the
-    // swapchain image's acquire semaphore holds. Out: offscreen, the move to TRANSFER_SRC is
-    // done before the readback copies (in a window, the present waits on its own semaphore).
-    let post_dependencies = [
-        vk::SubpassDependency::default()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE),
-        vk::SubpassDependency::default()
-            .src_subpass(0)
-            .dst_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_stage_mask(if presenter.is_some() { vk::PipelineStageFlags::BOTTOM_OF_PIPE } else { vk::PipelineStageFlags::TRANSFER })
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(if presenter.is_some() { vk::AccessFlags::empty() } else { vk::AccessFlags::TRANSFER_READ }),
-    ];
-    let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
-    // The post pass's one texture: the scene.
-    let post_binding = [0, 1, 2].map(|b| {
-        vk::DescriptorSetLayoutBinding::default()
-            .binding(b)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-    });
-    let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
-    // Two sets: GSR 2 swaps its output each frame, and the post pass reads the one just written.
-    let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 6 }];
-    let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&post_sizes), None)? };
-    let post_layouts = [post_set_layout, post_set_layout];
-    let post_sets: [vk::DescriptorSet; 2] = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))? }
-        .try_into()
-        .unwrap();
-    let post_sampler = unsafe {
-        d.create_sampler(
-            &vk::SamplerCreateInfo::default()
-                .mag_filter(vk::Filter::LINEAR)
-                .min_filter(vk::Filter::LINEAR)
-                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
-            None,
-        )?
-    };
-    // The depth image and one framebuffer per target image (the offscreen image, or each
-    // swapchain image), remade at the new size when the window changes.
-    let colour_views = |presenter: &Option<present::Presenter>| -> Vec<vk::ImageView> {
-        match (presenter, color_view) {
-            (Some(p), _) => p.views.clone(),
-            (None, Some(v)) => vec![v],
-            (None, None) => Vec::new(),
-        }
-    };
-    let glow_pipelines = glow::Pipelines::new(&gpu)?;
-    let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
-    let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode)?) } else { None };
-    let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu)?) } else { None };
-    let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
-    let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
-    let mut timer = if timings { timing::Timer::new(&gpu)? } else { None };
+    let mut renderer = renderer::Renderer::new(&gpu, settings, presenter.as_ref(), width, height, timings, show_motion)?;
     let mut cpu = timings.then(timing::CpuTimer::default);
-    let mut targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
-
-    // Pipeline.
-    let module = |code: &[u8]| -> Result<vk::ShaderModule> {
-        let words: Vec<u32> = code.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
-        Ok(unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None)? })
-    };
-    let (vs, fs) = (module(VERT)?, module(FRAG)?);
-    let stages = [
-        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main"),
-        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main"),
-    ];
-    let vbind = [vk::VertexInputBindingDescription { binding: 0, stride: size_of::<Vertex>() as u32, input_rate: vk::VertexInputRate::VERTEX }];
-    let vattr = [
-        vk::VertexInputAttributeDescription { location: 0, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 0 },
-        vk::VertexInputAttributeDescription { location: 1, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 12 },
-        vk::VertexInputAttributeDescription { location: 2, binding: 0, format: vk::Format::R32G32_SFLOAT, offset: 24 },
-        vk::VertexInputAttributeDescription { location: 3, binding: 0, format: vk::Format::R16G16B16A16_UINT, offset: 32 },
-        vk::VertexInputAttributeDescription { location: 4, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 40 },
-        vk::VertexInputAttributeDescription { location: 5, binding: 0, format: vk::Format::R32G32_UINT, offset: 44 },
-        vk::VertexInputAttributeDescription { location: 6, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 52 },
-        vk::VertexInputAttributeDescription { location: 7, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 56 },
-    ];
-    let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
-    let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
-    // Viewport and scissor are set per frame (the window can change size).
-    let vstate = vk::PipelineViewportStateCreateInfo::default().viewport_count(1).scissor_count(1);
-    let dynamic = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
-    let dynamic_state = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic);
-    let raster = vk::PipelineRasterizationStateCreateInfo::default()
-        .polygon_mode(vk::PolygonMode::FILL)
-        // Back faces are culled, as the game does: rooms are one-sided boxes the event camera
-        // often looks into from outside, through walls and a ceiling that face away from it.
-        // The models' front faces wind clockwise once x is mirrored into render space, and
-        // counter-clockwise again once the projection mirrors it back on screen.
-        .cull_mode(vk::CullModeFlags::BACK)
-        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-        .line_width(1.0);
-    let msaa = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
-    let scene_msaa = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(samples);
-    let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
-        .depth_test_enable(true)
-        .depth_write_enable(true)
-        .depth_compare_op(vk::CompareOp::LESS);
-    // The motion target, when there is one, takes the vectors unblended.
-    let motion_blend = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G);
-    let colour_targets = color_ref.len();
-    if colour_targets > 1 && unsafe { gpu.instance.get_physical_device_features(gpu.physical) }.independent_blend == 0 {
-        return Err("motion vectors need the device's independent blending".into());
-    }
-    let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
-    let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..colour_targets]);
-    let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
-    // Set 0 the colour, 1 the instances (and the look), 2 the mask.
-    let set_layouts = [set_layout, instance_layout, set_layout];
-    let pipeline_layout = unsafe {
-        d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
-    };
-    let pipeline_info = vk::GraphicsPipelineCreateInfo::default()
-        .stages(&stages)
-        .vertex_input_state(&vinput)
-        .input_assembly_state(&assembly)
-        .viewport_state(&vstate)
-        .rasterization_state(&raster)
-        .multisample_state(&scene_msaa)
-        .depth_stencil_state(&depth_state)
-        .color_blend_state(&blend)
-        .dynamic_state(&dynamic_state)
-        .layout(pipeline_layout)
-        .render_pass(render_pass);
-    let pipeline = unsafe {
-        d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
-    };
-
-    // The distant view: drawn after the field's opaque geometry with a viewport whose depth range
-    // is 1 to 1 (its clipping unchanged, every fragment on the far plane), where the depth is
-    // still the cleared 1.0: only the pixels nothing covers are shaded. No depth write, so its
-    // layers all pass and blend in their order.
-    let no_depth = vk::PipelineDepthStencilStateCreateInfo::default()
-        .depth_test_enable(true)
-        .depth_write_enable(false)
-        .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
-    // Alpha-blended: its clouds are soft-edged layers over the dome.
-    let sky_blend_att = [vk::PipelineColorBlendAttachmentState::default()
-        .blend_enable(true)
-        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .alpha_blend_op(vk::BlendOp::ADD)
-        .color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
-    let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att[..colour_targets]);
-    let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
-    let sky_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_info], None).map_err(|(_, e)| e)?[0] };
-
-    // The characters' outline pass: the same shaders in outline mode, front faces culled (an
-    // inverted hull: only the pushed-out back faces show, as a rim).
-    let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
-    let outline_info = pipeline_info.rasterization_state(&outline_raster);
-    let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
-
-    // The sun's shadow map pass: the same vertex shader from the sun, depth only (the alpha
-    // test kept), both faces, a little depth bias against acne.
-    let shadow_fs = module(SHADOW_FRAG)?;
-    let shadow_stages = [
-        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main"),
-        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(shadow_fs).name(c"main"),
-    ];
-    let shadow_raster = raster.cull_mode(vk::CullModeFlags::NONE).depth_bias_enable(true).depth_bias_constant_factor(1.5).depth_bias_slope_factor(2.0);
-    let shadow_blend = vk::PipelineColorBlendStateCreateInfo::default();
-    let shadow_info = pipeline_info
-        .stages(&shadow_stages)
-        .rasterization_state(&shadow_raster)
-        .color_blend_state(&shadow_blend)
-        .multisample_state(&msaa)
-        .render_pass(shadow_target.pass);
-    let shadow_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[shadow_info], None).map_err(|(_, e)| e)?[0] };
-
-    // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
-    let (post_vs, post_fs) = (module(POST_VERT)?, module(POST_FRAG)?);
-    let post_stages = [
-        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
-        vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
-    ];
-    let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 32 }];
-    let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
-    let no_input = vk::PipelineVertexInputStateCreateInfo::default();
-    let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
-    let post_raster = raster.cull_mode(vk::CullModeFlags::NONE);
-    // The post pass has the one colour target.
-    let post_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..1]);
-    let post_info = vk::GraphicsPipelineCreateInfo::default()
-        .stages(&post_stages)
-        .vertex_input_state(&no_input)
-        .input_assembly_state(&assembly)
-        .viewport_state(&vstate)
-        .rasterization_state(&post_raster)
-        .multisample_state(&msaa)
-        .depth_stencil_state(&post_depth)
-        .color_blend_state(&post_blend)
-        .dynamic_state(&dynamic_state)
-        .layout(post_layout)
-        .render_pass(post_pass);
-    let post_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[post_info], None).map_err(|(_, e)| e)?[0] };
-
-    // Terrain: one pipeline with the terrain fragment shader, over each field's ground set
-    // (2 blend maps + 6 layers, `SceneGpu`).
-    let terrain_gpu = {
-        let tpl_layouts = [terrain_layout, instance_layout];
-        let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
-        let tfs = module(TERRAIN_FRAG)?;
-        let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
-        // The heightmap is wound the other way from the models and seen from above only: no
-        // culling.
-        let traster = raster.cull_mode(vk::CullModeFlags::NONE);
-        let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster);
-        let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
-        TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
-    };
-
 
     // --chain: the events the story starts after this one, played on in turn under the same
     // renderer (`event_start::Chain`; `docs/renderer.md`, "Chained events").
@@ -3371,7 +2930,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // it then stands is written to OUT.
     if let Some(r) = &title_root {
         let keys = title::keys(&std::env::var("BARREL_TITLE_KEYS").unwrap_or_default());
-        let target = title::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+        let target = title::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
         let window = presenter.as_ref().zip(pump.as_mut());
         let out = presenter.is_none().then(|| PathBuf::from(&out_path));
         let saves = saves_dir.clone().or_else(barrel_escha::saves::default_dir);
@@ -3379,14 +2938,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         // The scripted keys (`BARREL_TITLE_KEYS`) press on the first showing only.
         let mut keys = keys;
         let picked = loop {
-            let picked = title::run(&gpu, pool, &target, window.as_mut().map(|(pr, p)| (*pr, &mut **p)), offscreen.as_ref().map(|(c, _)| *c), r, title_load, &std::mem::take(&mut keys), out.as_deref(), saves.as_deref())?;
+            let picked = title::run(&gpu, renderer.pool, &target, window.as_mut().map(|(pr, p)| (*pr, &mut **p)), renderer.offscreen.as_ref().map(|(c, _)| *c), r, title_load, &std::mem::take(&mut keys), out.as_deref(), saves.as_deref())?;
             // Options: the graphics page, then the title again. A change is saved to the config,
             // and Barrel starts again in place (the same process, a fresh start at the title):
-            // the renderer's targets and pipelines are built for the settings at its start, and
+            // the renderer's renderer.targets and pipelines are built for the settings at its start, and
             // no scene is up yet to carry over.
             let (Some(title::Start::Options), Some((pr, p))) = (&picked, window.as_mut()) else { break picked };
             let now = options::Graphics { render: settings, display: current_display(p) };
-            let kept = options::run(&gpu, pool, &target, Some((*pr, &mut **p)), None, r, now, default_graphics(), &[], None)?;
+            let kept = options::run(&gpu, renderer.pool, &target, Some((*pr, &mut **p)), None, r, now, default_graphics(), &[], None)?;
             eprintln!("title: options: {kept:?}");
             if let Some(new) = kept.filter(|k| *k != now) {
                 let path = write_config(&new)?;
@@ -3486,7 +3045,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // draws the one before; with `--timings` one at a time (the timestamps are read each frame).
     // Offscreen the same, but for the frames written to files (waited for, then read back).
     let mut sync = Some(ring::Frames::new(&gpu)?);
-    let overlap = timer.is_none();
+    let overlap = renderer.timer.is_none();
     town_seen = None;
     // In the story's free play a field area (map 12 on) has its enemies out
     // (`--creatures`'s field AI), a town none.
@@ -3574,9 +3133,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
 
     // Textures, uploaded as their BC blocks with all mip levels, then the outline and white.
     let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
-    let (textures, outline_tex, white) = upload_textures(&gpu, pool, &all_textures, root.as_deref())?;
+    let (textures, outline_tex, white) = upload_textures(&gpu, renderer.pool, &all_textures, root.as_deref())?;
     // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
-    // draw's instance number (set 1, bound once for every pipeline).
+    // draw's instance number (set 1, bound once for every renderer.pipeline).
     for i in &mut instances {
         i.prev_palette = i.palette + palette.len() as u32;
         i.prev_model = i.model;
@@ -3590,14 +3149,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             morph_weights.iter().filter(|&&w| w != 0.0).count()
         );
     }
-    let grounds = upload_grounds(&gpu, pool, &terrains)?;
+    let grounds = upload_grounds(&gpu, renderer.pool, &terrains)?;
     // Each field's light texture (none: white).
     let pattern_textures = patterns
         .iter()
         .map(|p| -> Result<_> {
             let Some(bytes) = p else { return Ok(None) };
             let g = G1t::parse(bytes)?;
-            g.textures.first().map(|t| upload_texture(&gpu, pool, t)).transpose()
+            g.textures.first().map(|t| upload_texture(&gpu, renderer.pool, t)).transpose()
         })
         .collect::<Result<Vec<_>>>()?;
     let scene_data = scene_gpu::SceneData {
@@ -3612,8 +3171,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         patterns: pattern_textures,
         white,
     };
-    let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &shared)?;
-    let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
+    let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &renderer.shared)?;
     let sets = scene.sets.clone();
 
     // Camera: look at the model's bounds from its front, turned by --yaw. Models face +z.
@@ -3726,7 +3284,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut gestures_play: Vec<[Option<barrel_escha::gesture::Form>; 2]> = Vec::new();
     // The motions' divisions (s5, s11), from Saves/chara.
     // The camera quakes (t14), and the generator their shake draws from: the game's own kind,
-    // seeded here (the game's shared generator state is not followed: docs/events.md).
+    // seeded here (the game's renderer.shared generator state is not followed: docs/events.md).
     let quakes: Vec<barrel_formats::quake::Quake> = event_spec
         .as_ref()
         .and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf))
@@ -3960,7 +3518,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         .collect();
                     telop_pieces.insert(*card, list);
                 }
-                text_layer = Some((text::Layer::new(&gpu, pool, post_pass, &images)?, text::Font { glyphs, size }, None));
+                text_layer = Some((text::Layer::new(&gpu, renderer.pool, renderer.post_pass, &images)?, text::Font { glyphs, size }, None));
             }
             _ => eprintln!("no text: the English executable's glyph table, the Font_EN atlas or WinXls_EN/a15_common.g1t is missing"),
         }
@@ -4007,7 +3565,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 images.push(t);
             }
             let size = images[0].width as f32;
-            let layer = text::Layer::new(&gpu, pool, post_pass, &images).ok()?;
+            let layer = text::Layer::new(&gpu, renderer.pool, renderer.post_pass, &images).ok()?;
             Some((layer, text::Font { glyphs, size }, sheets, nodes))
         })();
         match made {
@@ -4016,7 +3574,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
     }
     // A carried notice (a lost battle's line) in the message window until confirmed (Enter;
-    // offscreen `NOTICE_SECONDS`): its layer (the font, the window) and the time it went up.
+    // renderer.offscreen `NOTICE_SECONDS`): its layer (the font, the window) and the time it went up.
     let mut notice: Option<(text::Layer, f32)> = None;
     if let (Some((speaker, line)), Some(root), true) = (carry.notice.take(), hud_root.as_ref(), session.is_some() && player.is_none()) {
         let made = (|| -> Option<text::Layer> {
@@ -4029,7 +3587,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let common = barrel_formats::g1t::G1t::parse(&common_bytes).ok()?;
             let images = [atlas.textures.first()?, common.textures.get(4)?];
             let font = text::Font { glyphs, size: images[0].width as f32 };
-            let mut layer = text::Layer::new(&gpu, pool, post_pass, &images).ok()?;
+            let mut layer = text::Layer::new(&gpu, renderer.pool, renderer.post_pass, &images).ok()?;
             layer.set(&gpu, &font.dialogue(Some(&speaker), &line, width as f32, height as f32)).ok()?;
             Some(layer)
         })();
@@ -4053,7 +3611,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut battle_layer = match battle_play.as_ref() {
         Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
             let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
-            match root.map(|r| battle_hud(&gpu, pool, post_pass, &r)) {
+            match root.map(|r| battle_hud(&gpu, renderer.pool, renderer.post_pass, &r)) {
                 Some(Ok(h)) => Some(h),
                 Some(Err(e)) => {
                     eprintln!("no battle HUD: {e}");
@@ -4152,7 +3710,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     // The slot this frame's data goes into is free once the frame two back has been drawn.
     if let Some(f) = sync.as_mut() {
-        f.wait_slot(&gpu, pool)?;
+        f.wait_slot(&gpu, renderer.pool)?;
         if let Some(c) = cpu.as_mut() {
             c.mark("wait for the frame two back");
         }
@@ -4175,49 +3733,49 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut open_menu = false;
-    // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` offscreen).
+    // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` renderer.offscreen).
     let mut open_mix = presenter.is_none() && std::env::var("BARREL_MIX_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
-    // The Equip page offscreen at a frame (`BARREL_EQUIP_AT`, `BARREL_EQUIP_KEYS`); the run goes on.
+    // The Equip page renderer.offscreen at a frame (`BARREL_EQUIP_AT`, `BARREL_EQUIP_KEYS`); the run goes on.
     if presenter.is_none() && std::env::var("BARREL_EQUIP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
-        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_EQUIP_KEYS").unwrap_or_default());
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
             let color = *color;
-            equip_visit(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
+            equip_visit(&gpu, renderer.pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
         }
-    // The Options screen's graphics page offscreen (`BARREL_OPTIONS_AT`, `BARREL_OPTIONS_KEYS`),
+    // The Options screen's graphics page renderer.offscreen (`BARREL_OPTIONS_AT`, `BARREL_OPTIONS_KEYS`),
     // drawn to OUT-options.png; the run goes on.
     if presenter.is_none() && std::env::var("BARREL_OPTIONS_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
-        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_OPTIONS_KEYS").unwrap_or_default());
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
             let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-options.png";
             let now = options::Graphics { render: settings, display: display_settings };
             let first = options::Graphics { render: settings::RenderSettings::DESKTOP, display: settings::Display::DEFAULT };
-            let kept = options::run(&gpu, pool, &target, None, Some(*color), &root, now, first, &keys, Some(Path::new(&shot)))?;
+            let kept = options::run(&gpu, renderer.pool, &target, None, Some(*color), &root, now, first, &keys, Some(Path::new(&shot)))?;
             eprintln!("frame {frame}: options: {kept:?}");
-            // Kept: into the config `BARREL_CONFIG` names (offscreen runs never write the user's).
+            // Kept: into the config `BARREL_CONFIG` names (renderer.offscreen runs never write the user's).
             if let Some(new) = kept.filter(|_| std::env::var_os("BARREL_CONFIG").is_some()) {
                 eprintln!("frame {frame}: graphics saved to {}", write_config(&new)?.display());
             }
         }
-    // A town shop (B in free play in town; `BARREL_SHOP_AT` offscreen, `BARREL_SHOP_KEYS`).
+    // A town shop (B in free play in town; `BARREL_SHOP_AT` renderer.offscreen, `BARREL_SHOP_KEYS`).
     let mut open_shop = false;
     if presenter.is_none() && std::env::var("BARREL_SHOP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
-        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_SHOP_KEYS").unwrap_or_default());
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
             let color = *color;
-            shop_visit(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
+            shop_visit(&gpu, renderer.pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
         }
     let pose_jumps = std::env::var("BARREL_POSE_JUMPS").ok().and_then(|v| v.parse::<f32>().ok());
     // Offscreen: the cauldron at a frame (`BARREL_MIX_AT`) with the buttons in `BARREL_MIX_KEYS`.
     if open_mix && presenter.is_none()
-        && let (Some(root), Some((color, _))) = (hud_root.clone(), offscreen.as_ref()) {
+        && let (Some(root), Some((color, _))) = (hud_root.clone(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MIX_KEYS").unwrap_or_default());
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
             let color = *color;
-            cauldron(&gpu, pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
+            cauldron(&gpu, renderer.pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
         }
     // In a window `BARREL_MENU_AT` opens the menu at that frame, `BARREL_MENU_KEYS` and
     // `BARREL_OPTIONS_KEYS` pressed in it first (a scripted check of the screens in a window).
@@ -4233,10 +3791,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // Offscreen: the main menu drawn at a frame (`BARREL_MENU_AT`) after the buttons in
     // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
     if presenter.is_none() && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
-        && let (Some(root), Some((color, _))) = (hud_root.as_ref(), offscreen.as_ref()) {
+        && let (Some(root), Some((color, _))) = (hud_root.as_ref(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, Some(Path::new(&out_path)))?;
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+            let picked = menu::run(&gpu, renderer.pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
                 restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
@@ -4341,18 +3899,18 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         if open_mix && let (Some(root), Some(pr)) = (hud_root.clone(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            cauldron(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+            cauldron(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
         }
         if open_shop && let (Some(root), Some(pr)) = (hud_root.clone(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            shop_visit(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+            shop_visit(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
         }
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
-            let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), None)?;
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+            let picked = menu::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {
@@ -4370,13 +3928,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 // Option → Options: the graphics page (not applied live yet: the run reports it).
                 Some(menu::Outcome::Option(menu::OptionRow::Options)) => {
                     unsafe { gpu.device.device_wait_idle()? };
-                    let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
+                    let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
                     let now = options::Graphics { render: settings, display: current_display(p) };
-                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, now, default_graphics(), &script("BARREL_OPTIONS_KEYS"), None)?;
+                    let kept = options::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, now, default_graphics(), &script("BARREL_OPTIONS_KEYS"), None)?;
                     eprintln!("frame {frame}: options: {kept:?}");
                     // Kept and changed: into the config. The window takes its new size or
                     // fullscreen at once; new render settings start the scene again where she
-                    // stands (the renderer's targets and pipelines are built at a scene's start).
+                    // stands (the renderer's renderer.targets and pipelines are built at a scene's start).
                     if let Some(new) = kept.filter(|k| *k != now) {
                         let path = write_config(&new)?;
                         eprintln!("frame {frame}: graphics saved to {}", path.display());
@@ -4396,8 +3954,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 }
                 Some(menu::Outcome::Command(menu::Command::AdventureEquip | menu::Command::BattleEquip)) => {
                     unsafe { gpu.device.device_wait_idle()? };
-                    let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-                    equip_visit(&gpu, pool, &target, Some((pr, &mut *p)), None, &root.clone(), session.as_mut(), &[], None, frame)?;
+                    let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+                    equip_visit(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, &root.clone(), session.as_mut(), &[], None, frame)?;
                 }
                 Some(_) => {}
             }
@@ -4587,10 +4145,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     // The player walking: a step against the field's walls and onto its ground, turned the way
     // she goes, the camera carried along. In a window W A S D steer her (relative to the
-    // camera) at the game's speed (`game::walk::player_move`); offscreen `--walk` does.
+    // camera) at the game's speed (`game::walk::player_move`); renderer.offscreen `--walk` does.
     if area_mode && area_map.is_none()
         && let Some(w) = walker.as_ref() {
-            match AreaMap::new(Path::new(&args[1]), w.pos, world_mode, &gpu, pool, post_pass) {
+            match AreaMap::new(Path::new(&args[1]), w.pos, world_mode, &gpu, renderer.pool, renderer.post_pass) {
                 Ok(mut a) => {
                     eprintln!("area map: {} ({})", a.places[a.at].name, a.places[a.at].tag);
                     // Where she stands is visited; the sectors closed or not known yet are hidden.
@@ -4988,7 +4546,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         eprintln!("battle lost: a day passes; \"Oww... that was bad. Let's be more careful next time.\"");
                     }
                 // Then back to the field it came from: a lost battle at once, a won one once its
-                // Result is closed (confirm; offscreen after `RESULT_SECONDS`).
+                // Result is closed (confirm; renderer.offscreen after `RESULT_SECONDS`).
                 let closed = play.result.as_ref().is_some_and(|(_, at)| play.result_closed || (presenter.is_none() && play.time - at >= RESULT_SECONDS));
                 // A won battle's drops on their own screen once the Result is closed
                 // (offscreen: `BARREL_DROPS_KEYS`, drawn to OUT-drops.png).
@@ -4999,13 +4557,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         let held = |item: i32| save.lines().filter(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<i32>().ok()) == Some(item) && l.starts_with("item ")).count() as i32;
                         let possessed: Vec<i32> = drops.iter().map(|&(item, _)| held(item)).collect();
                         unsafe { gpu.device.device_wait_idle()? };
-                        let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
-                        match (presenter.as_ref(), pump.as_mut(), offscreen.as_ref()) {
-                            (Some(pr), Some(p), _) => drops::run(&gpu, pool, &target, Some((pr, &mut *p)), None, &root, &drops, &possessed, &[], None)?,
+                        let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+                        match (presenter.as_ref(), pump.as_mut(), renderer.offscreen.as_ref()) {
+                            (Some(pr), Some(p), _) => drops::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, &root, &drops, &possessed, &[], None)?,
                             (None, _, Some((color, _))) => {
                                 let keys = title::keys(&std::env::var("BARREL_DROPS_KEYS").unwrap_or_default());
                                 let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-drops.png";
-                                drops::run(&gpu, pool, &target, None, Some(*color), &root, &drops, &possessed, &keys, Some(Path::new(&shot)))?;
+                                drops::run(&gpu, renderer.pool, &target, None, Some(*color), &root, &drops, &possessed, &keys, Some(Path::new(&shot)))?;
                             }
                             _ => {}
                         }
@@ -5393,13 +4951,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 continue; // minimised
             }
             p.rebuild(&gpu, size.width, size.height)?;
-            targets.destroy(&gpu);
             (width, height) = (p.extent.width, p.extent.height);
-            targets = Targets::new(&gpu, render_pass, post_pass, &colour_views(&presenter), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion)?;
+            renderer.rebuild_targets(&gpu, Some(&*p), width, height)?;
             stale = false;
             eprintln!("frame {frame}: window now {width}x{height}");
         }
-    // The image to draw into: the window's next, or the offscreen one.
+    // The image to draw into: the window's next, or the renderer.offscreen one.
     let image = match (&presenter, &sync) {
         (Some(p), Some(f)) => match p.acquire(f.acquired(&gpu))? {
             Some(i) => i as usize,
@@ -5421,7 +4978,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if last_shot.is_some() {
             eprintln!("frame {frame}: camera cut");
             prev_mvp = None;
-            targets.history_fresh.set(true);
+            renderer.targets.history_fresh.set(true);
         }
         shot_field = current_field;
     }
@@ -5436,10 +4993,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // size), the plain one otherwise.
     let draw_vp = if settings.jitter {
         // FSR 3.1 expects its own cycle length (8 × the upscale ratio squared).
-        let (sw, _) = targets.scene_size;
+        let (sw, _) = renderer.targets.scene_size;
         let (jx, jy) = if settings.fsr3 { settings::jitter_cycle(jitter_index, fsr3::jitter_phase_count(sw as i32, width as i32) as u32) } else { settings::jitter(jitter_index) };
         frame_jitter = (jx, jy);
-        let (sw, sh) = targets.scene_size;
+        let (sw, sh) = renderer.targets.scene_size;
         let mut j = Mat4::IDENTITY;
         j.w_axis.x = 2.0 * jx / sw as f32;
         j.w_axis.y = 2.0 * jy / sh as f32;
@@ -5698,7 +5255,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
-            look[31] = [1.0 / shadow_target.size as f32, 1.0, 0.0, 0.0];
+            look[31] = [1.0 / renderer.shadow_target.size as f32, 1.0, 0.0, 0.0];
         }
         for (k, (pos, color, ambient, att, range)) in points.iter().enumerate() {
             // The range in field units too (squared); the attenuation counts in field units.
@@ -5707,14 +5264,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             look[14 + k] = [att[0], att[1], att[2], 0.0];
             look[18 + k] = *ambient;
         }
-        look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
+        renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(look.as_ptr() as *const u8, LOOK_SIZE as usize) });
     }
     prev_mvp = Some(mvp);
-    let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
-    let (scene_width, scene_height) = targets.scene_size;
-    let scene_area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: scene_width, height: scene_height } };
-    let frozen_ready = targets.frozen_ready;
-    targets.frozen_ready = true;
     if let Some(c) = cpu.as_mut() {
         c.mark("camera, lights, sway");
     }
@@ -5765,266 +5317,61 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let shot_number = frame_base + frame;
     let saved_shot = frames == 1 || (shot_number + 1).is_multiple_of(save_every) || shot_number + 1 == frames;
     // The draws recorded this frame (scene, shadow), reported with `--timings`.
-    let drawn = std::cell::Cell::new([0u32; 2]);
-    let record = |cb: vk::CommandBuffer| unsafe {
-        // The frame before may still be drawing (frames in flight): its passes finish, their
-        // writes made visible, before this frame's begin on the same targets.
-        d.cmd_pipeline_barrier(
-            cb,
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            vk::PipelineStageFlags::ALL_COMMANDS,
-            vk::DependencyFlags::empty(),
-            &[vk::MemoryBarrier::default().src_access_mask(vk::AccessFlags::MEMORY_WRITE).dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)],
-            &[],
-            &[],
-        );
-        if let Some(t) = &timer {
-            t.begin(d, cb);
-        }
-        // The frozen frame: copied from the last frame's scene when a cross-fade starts; given
-        // its layout once otherwise.
-        if freeze_now {
-            barrier(d, cb, targets.scene, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
-            barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-            let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
-            let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width: scene_width, height: scene_height, depth: 1 });
-            d.cmd_copy_image(cb, targets.scene, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, targets.frozen, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
-            barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        } else if !frozen_ready {
-            barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-        }
-        // The sun's shadow map: every caster but the distant view, from the sun.
-        {
-            let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
-            let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow_target.size, height: shadow_target.size } };
-            d.cmd_begin_render_pass(
-                cb,
-                &vk::RenderPassBeginInfo::default().render_pass(shadow_target.pass).framebuffer(shadow_target.framebuffer).render_area(full).clear_values(&clear),
-                vk::SubpassContents::INLINE,
-            );
-            d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: shadow_target.size as f32, height: shadow_target.size as f32, min_depth: 0.0, max_depth: 1.0 }]);
-            d.cmd_set_scissor(cb, 0, &[full]);
-            d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
-            d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
-            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, shadow_pipeline);
-            let mut push = [0f32; 32];
-            // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
-            push[31] = f32::from_bits(FULL_LIGHT);
-            push[..16].copy_from_slice(&shadow_vp.to_cols_array());
-            push[16] = alpha_cutoff;
-            let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-            d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            let shadow_planes = view_planes(&shadow_vp);
-            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes))).filter(|d| d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
-                // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
-            // 32: their texture on their vertex colour, as the distant view's clouds.
-            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
-                let mut per_draw = [0u8; 8];
-                per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
-                per_draw[4..].copy_from_slice(&flags.to_le_bytes());
-                d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
-                d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
-                drawn.set([drawn.get()[0], drawn.get()[1] + 1]);
-            }
-            d.cmd_end_render_pass(cb);
-        }
-        if let Some(t) = &timer {
-            t.mark(d, cb, 1);
-        }
-        let clear = [
-            vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
-            vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
-            // The motion target's (no movement), when there is one.
-            vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
-        ];
-        d.cmd_begin_render_pass(
-            cb,
-            &vk::RenderPassBeginInfo::default()
-                .render_pass(render_pass)
-                .framebuffer(targets.scene_framebuffer)
-                .render_area(scene_area)
-                .clear_values(&clear),
-            vk::SubpassContents::INLINE,
-        );
-        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
-        d.cmd_set_scissor(cb, 0, &[scene_area]);
-        d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
-        d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
-        let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-        // view_proj, params, the terrain's scales; the instance number goes in per draw.
-        let mut push = [0f32; 32];
-            // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
-            push[31] = f32::from_bits(FULL_LIGHT);
-        push[..16].copy_from_slice(&draw_vp.to_cols_array());
-        push[16] = alpha_cutoff;
-        push[18] = width as f32 / height.max(1) as f32;
-        push[19] = HDR_RANGE_INV;
-        // The terrain's push constants: the shared ones with its field size and layer scales.
-        let mut terrain_push = push;
-        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
-        let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
-        d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
-        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        // The terrain and the field's models first, then the current field's distant view where
-        // they leave the far plane bare (as if drawn first and covered, without shading the
-        // covered part).
-        for (pass_sky, pipe) in [(false, pipeline), (true, sky_pipeline)] {
-        if !pass_sky {
-            {
-                let tg = &terrain_gpu;
-                for g in scene.grounds.iter().filter(|g| g.field == current_field) {
-                    terrain_push[17] = g.cell;
-                    terrain_push[20] = g.extent[0];
-                    terrain_push[21] = g.extent[1];
-                    // Flags (word 29): 64, the terrain (model.vert: no point lights).
-                    terrain_push[29] = f32::from_bits(64);
-                    d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
-                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
-                    // A patch at a time, its bake list in the push constants' floats 22 to 27
-                    // (their bits: the count, then two entries a word).
-                    for patch in g.patches.iter().filter(|p| p.index_count > 0) {
-                        terrain_push[22..28].copy_from_slice(&scene_gpu::bake_words(&patch.bake).map(f32::from_bits));
-                        d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(terrain_push.as_ptr() as *const u8, PUSH_SIZE as usize));
-                        d.cmd_draw_indexed(cb, patch.index_count, 1, patch.first_index, 0, 0);
-                    }
-                }
-            }
-            d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-        }
-        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
-        // The distant view's fragments on the far plane (see `sky_pipeline`).
-        let depth_range = if pass_sky { (1.0, 1.0) } else { (0.0, 1.0) };
-        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: depth_range.0, max_depth: depth_range.1 }]);
-        let sway_groups: Vec<String> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map(|l| l.v_shakers.iter().take(8).map(|v| v.keyword.clone()).collect()).unwrap_or_default();
-        for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name))) {
-            // The instance, and whether it is shaded as a character (not part of a field) and
-            // as an eye.
-            // The distant view's solid pieces (all but the dome and the clouds) are lit and
-            // alpha-tested like the field's models (docs/renderer.md, "Distant view").
-            let solid = draw.sky && !draw.name.contains("Sphere_sky") && !draw.name.contains("xEF_");
-            let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5
-                // Its grass sway group (bits 8-11, number + 1), by the mesh name's keyword.
-                | sway_groups.iter().position(|k| !k.is_empty() && draw.name.contains(k.as_str())).map_or(0, |k| (k as u32 + 1).min(15)) << 8;
-            let mut per_draw = [0u8; 16];
-            per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
-            per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
-            let tint = if draw.tint != 0 { draw.tint } else { area_map.as_ref().map_or(0, |a| a.tint(&draw.name)) };
-            per_draw[8..12].copy_from_slice(&tint.to_le_bytes());
-            per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
-            d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
-            d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
-            drawn.set([drawn.get()[0] + 1, drawn.get()[1]]);
-        }
-        }
-        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
-        // The outlines: the outlined materials again, pushed out, with the outline texture.
-        if let Some(outline_tex) = outline_tex {
-            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex]], &[]);
-            for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none() && !d.eye) {
-                let Some(colour) = draw.outline else { continue };
-                let mut per_draw = [0u8; 12];
-                per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
-                per_draw[4..8].copy_from_slice(&(1u32 | 4).to_le_bytes());
-                per_draw[8..].copy_from_slice(&colour.to_le_bytes());
-                d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
-                d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
-            }
-        }
-        d.cmd_end_render_pass(cb);
-        if let Some(t) = &timer {
-            t.mark(d, cb, 2);
-        }
-        // The glow from the scene's bright parts (the field's <hdr>; none: no glow).
-        // The field's glow rate; the bright pass's threshold is the glow program's own default
-        // (`GLOW_THRESHOLD`): the game reads `<hdr threshold>` but never passes it on.
-        let (threshold, rate) = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.hdr).map_or((1.0, 0.0), |(_, rate)| (GLOW_THRESHOLD, rate));
-        if let Some(g) = &targets.glow {
-            g.record(d, &glow_pipelines, cb, threshold);
-        }
-        if let (Some(t), Some(p)) = (&targets.taa, &taa_pipelines) {
-            let fresh = targets.history_fresh.replace(false);
-            t.record(d, p, cb, fresh, fresh);
-        }
-        if let (Some(f), Some(p)) = (targets.fsr3.borrow_mut().as_mut(), &fsr3_pipelines) {
-            let fresh = targets.history_fresh.replace(false);
-            let zoom = orbit.2;
-            let frame = fsr3::Frame {
-                render: targets.scene_size,
-                upscale: (width, height),
-                jitter: frame_jitter,
-                fov,
-                near: dist * 0.01 * zoom,
-                far: (dist * 20.0 * zoom).max(80_000.0),
-                dt: frame_dt,
-                reset: fresh,
-            };
-            if let Err(e) = f.record(&gpu, p, cb, &frame) {
-                eprintln!("FSR 3: {e}");
-            }
-        }
-        if let (Some(g), Some(p)) = (&targets.gsr2, &gsr2_pipelines) {
-            let fresh = targets.history_fresh.replace(false);
-            let frame = gsr2::Frame { jitter: frame_jitter, fov, reset: fresh, same_camera };
-            g.record(d, p, cb, frame, fresh);
-        }
-        if let (Some(u), Some(p)) = (&targets.upscale, &upscale_pipelines) {
-            u.record(d, p, cb);
-        }
-        if let Some(t) = &timer {
-            t.mark(d, cb, 3);
-        }
-        // The post pass: the scene back to its range with the glow, then the text over it.
-        d.cmd_begin_render_pass(
-            cb,
-            &vk::RenderPassBeginInfo::default().render_pass(post_pass).framebuffer(targets.framebuffers[image]).render_area(area),
-            vk::SubpassContents::INLINE,
-        );
-        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
-        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[targets.post_set()], &[]);
-        let mut post_push = [0u8; 32];
-        post_push[..4].copy_from_slice(&rate.to_le_bytes());
-        post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
-        post_push[8..12].copy_from_slice(&(if show_motion { 1.0f32 } else { 0.0 }).to_le_bytes());
-        for (k, v) in overlay.iter().enumerate() {
-            post_push[16 + 4 * k..20 + 4 * k].copy_from_slice(&v.to_le_bytes());
-        }
-        d.cmd_push_constants(cb, post_layout, vk::ShaderStageFlags::FRAGMENT, 0, &post_push);
-        d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
-        d.cmd_set_scissor(cb, 0, &[area]);
-        d.cmd_draw(cb, 3, 1, 0, 0);
-        if let Some((layer, ..)) = &text_layer {
-            layer.record(d, cb, width, height);
-        }
-        if let Some((layer, ..)) = &field_hud {
-            layer.record(d, cb, width, height);
-        }
-        if let Some(h) = &battle_layer {
-            h.layer.record(d, cb, width, height);
-        }
-        if let Some((layer, _)) = &notice {
-            layer.record(d, cb, width, height);
-        }
-        if let Some(a) = &area_map {
-            a.layer.record(d, cb, width, height);
-        }
-        d.cmd_end_render_pass(cb);
-        if let Some(t) = &timer {
-            t.mark(d, cb, 4);
-        }
-        if let Some((color, _)) = offscreen.filter(|_| saved_shot) {
-            let region = vk::BufferImageCopy::default()
-                .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
-                .image_extent(extent);
-            d.cmd_copy_image_to_buffer(cb, color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
-        }
+    let drawn;
+    let layers: Vec<&text::Layer> = [
+        text_layer.as_ref().map(|(l, ..)| l),
+        field_hud.as_ref().map(|(l, ..)| l),
+        battle_layer.as_ref().map(|h| &h.layer),
+        notice.as_ref().map(|(l, _)| l),
+        area_map.as_ref().map(|a| &a.layer),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let sway_groups: Vec<String> = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).map(|l| l.v_shakers.iter().take(8).map(|v| v.keyword.clone()).collect()).unwrap_or_default();
+    let shown = |d: &Draw| d.version.is_none_or(|v| versions_shown.contains(&v)) && (event_objects || !d.name.contains("xEV_")) && !hide_by_name(&d.name) && !area_map.as_ref().is_some_and(|a| a.hides(&d.name));
+    let material = |draw: &Draw| {
+        // The distant view's solid pieces (all but the dome and the clouds) are lit and
+        // alpha-tested like the field's models (docs/renderer.md, "Distant view"); xEF_ field
+        // models (window light) are not lit; the grass sway group (bits 8-11, number + 1) by
+        // the mesh name's keyword.
+        let solid = draw.sky && !draw.name.contains("Sphere_sky") && !draw.name.contains("xEF_");
+        let bits = u32::from(solid) << 4 | u32::from(!draw.sky && draw.name.contains("xEF_")) << 5
+            | sway_groups.iter().position(|k| !k.is_empty() && draw.name.contains(k.as_str())).map_or(0, |k| (k as u32 + 1).min(15)) << 8;
+        let tint = if draw.tint != 0 { draw.tint } else { area_map.as_ref().map_or(0, |a| a.tint(&draw.name)) };
+        (bits, tint)
+    };
+    // The glow's rate is the field's (<hdr>; none: no glow); the bright pass's threshold is the
+    // glow program's own default (`GLOW_THRESHOLD`): the game reads `<hdr threshold>` but never
+    // passes it on.
+    let glow = field_looks.get(current_field as usize).and_then(|l| l.as_ref()).and_then(|l| l.hdr).map_or((1.0, 0.0), |(_, rate)| (GLOW_THRESHOLD, rate));
+    let zoom = orbit.2;
+    let frame_desc = renderer::Frame {
+        image,
+        width,
+        height,
+        scene: &scene,
+        instance_set,
+        draws: &draws,
+        instances: &instances,
+        sets: &sets,
+        white,
+        outline_tex,
+        current_field,
+        hidden: &hidden,
+        shown: &shown,
+        material: &material,
+        draw_vp,
+        view_planes: view_planes_now,
+        shadow_vp,
+        alpha_cutoff,
+        glow,
+        camera: renderer::Camera { jitter: frame_jitter, fov, near: dist * 0.01 * zoom, far: (dist * 20.0 * zoom).max(80_000.0), dt: frame_dt, same: same_camera },
+        freeze_now,
+        frozen_weight,
+        overlay,
+        layers: &layers,
+        readback: saved_shot.then_some(readback),
     };
     if let Some(c) = cpu.as_mut() {
         c.mark("HUD layers");
@@ -6032,17 +5379,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if let (Some(p), Some(f)) = (&presenter, sync.as_mut()) {
         // Draw into the acquired image, signal, present; the next frame is prepared while the
         // GPU draws this one (its slot's fence is waited for two frames on).
-        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0] };
+        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe {
             d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
-            record(cb);
+            drawn = renderer.record(&gpu, cb, &frame_desc);
             d.end_command_buffer(cb)?;
         }
         if let Some(c) = cpu.as_mut() {
             c.mark("record");
         }
         if timings && frame % 100 == 10 {
-            let [scene_draws, shadow_draws] = drawn.get();
+            let [scene_draws, shadow_draws] = drawn;
             eprintln!("frame {frame}: {scene_draws} draws in the scene, {shadow_draws} in the shadow map");
         }
         let drawn = f.submit(&gpu, cb, image, p.images.len())?;
@@ -6059,7 +5406,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if let Some(c) = cpu.as_mut() {
             c.end("");
         }
-        if let Some(t) = timer.as_mut() {
+        if let Some(t) = renderer.timer.as_mut() {
             t.collect(&gpu)?;
         }
         gpu.frame.set(gpu.frame.get() + 1);
@@ -6067,17 +5414,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     {
         let f = sync.as_mut().ok_or("no frame sync")?;
-        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0] };
+        let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe {
             d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
-            record(cb);
+            drawn = renderer.record(&gpu, cb, &frame_desc);
             d.end_command_buffer(cb)?;
         }
         if let Some(c) = cpu.as_mut() {
             c.mark("record");
         }
         if timings && frame % 100 == 10 {
-            let [scene_draws, shadow_draws] = drawn.get();
+            let [scene_draws, shadow_draws] = drawn;
             eprintln!("frame {frame}: {scene_draws} draws in the scene, {shadow_draws} in the shadow map");
         }
         f.submit_offscreen(&gpu, cb)?;
@@ -6092,7 +5439,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
         gpu.frame.set(gpu.frame.get() + 1);
     }
-    if let Some(t) = timer.as_mut() {
+    if let Some(t) = renderer.timer.as_mut() {
         t.collect(&gpu)?;
     }
     if !saved_shot {
@@ -6134,7 +5481,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         d.destroy_buffer(readback, None);
         d.free_memory(rmem, None);
         if let Some(f) = sync.take() {
-            f.destroy(&gpu, pool)?;
+            f.destroy(&gpu, renderer.pool)?;
         }
     }
     scene.destroy(&gpu);
@@ -6404,65 +5751,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
 
     // Tear down in reverse order.
-    unsafe {
-        d.device_wait_idle()?;
-        d.destroy_pipeline(terrain_gpu.pipeline, None);
-        d.destroy_pipeline_layout(terrain_gpu.pipeline_layout, None);
-        d.destroy_shader_module(terrain_gpu.shader, None);
-        d.destroy_descriptor_set_layout(terrain_layout, None);
-        d.destroy_pipeline(post_pipeline, None);
-        d.destroy_pipeline_layout(post_layout, None);
-        d.destroy_shader_module(post_vs, None);
-        d.destroy_shader_module(post_fs, None);
-        d.destroy_descriptor_pool(post_pool, None);
-        d.destroy_descriptor_set_layout(post_set_layout, None);
-        d.destroy_sampler(post_sampler, None);
-        d.destroy_render_pass(post_pass, None);
-        d.destroy_pipeline(outline_pipeline, None);
-        d.destroy_pipeline(shadow_pipeline, None);
-        d.destroy_shader_module(shadow_fs, None);
-        d.destroy_pipeline(sky_pipeline, None);
-        d.destroy_pipeline(pipeline, None);
-        d.destroy_pipeline_layout(pipeline_layout, None);
-        d.destroy_shader_module(vs, None);
-        d.destroy_shader_module(fs, None);
-        targets.destroy(&gpu);
-        glow_pipelines.destroy(&gpu);
-        if let Some(p) = upscale_pipelines {
-            p.destroy(&gpu);
-        }
-        if let Some(p) = taa_pipelines {
-            p.destroy(&gpu);
-        }
-        if let Some(p) = gsr2_pipelines {
-            p.destroy(&gpu);
-        }
-        if let Some(p) = fsr3_pipelines {
-            p.destroy(&gpu);
-        }
-        if let Some(t) = timer.take() {
-            t.report();
-            t.destroy(&gpu);
-        }
-        if let Some(c) = cpu.take() {
-            c.report();
-        }
-        d.destroy_render_pass(render_pass, None);
-        if let Some(v) = color_view {
-            d.destroy_image_view(v, None);
-        }
-        if let Some((color, cmem)) = offscreen {
-            d.destroy_image(color, None);
-            d.free_memory(cmem, None);
-        }
-        d.destroy_descriptor_set_layout(set_layout, None);
-        d.destroy_sampler(sampler, None);
+    renderer.destroy(&gpu)?;
+    if let Some(c) = cpu.take() {
+        c.report();
     }
-    look_ring.destroy(&gpu);
-    shadow_target.destroy(&gpu);
     unsafe {
-        d.destroy_descriptor_set_layout(instance_layout, None);
-        d.destroy_command_pool(pool, None);
         if let Some(p) = presenter {
             p.destroy(&gpu);
         }

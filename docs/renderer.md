@@ -1,7 +1,21 @@
 # Renderer
 
-`crates/render` draws the games' data with Vulkan 1.1 through `ash`. For now it is a single
-tool, `barrel-escha`, that renders one model offscreen and writes the frame as PNG.
+`crates/render` draws the games' data with Vulkan 1.1 through `ash`. It is a library that
+knows no game: `renderer::Renderer` is built for one set of graphics settings (the scene and
+post passes, the pipelines, the shadow map, glow, the anti-aliasing and upscaler targets) and
+draws into a window's images or an offscreen one; a game hands it each frame as a
+`renderer::Frame` (the scene's geometry and draws, the cameras, the glow, the fade and the 2D
+layers) with two answers of its own: which draws it shows this frame (`shown`), and each
+draw's material bits and tint (`material`: Escha's come from mesh names, its field's sway
+groups and the area map). Escha & Logy DX's program, `barrel-escha` (`crates/escha/src/play`),
+is the one that drives it so far; most of what follows was worked out on it.
+
+The renderer is built once the graphics settings are final: the command line's, else the
+config's (`BARREL_CONFIG` or `~/.config/barrel/graphics.conf`). Before 2026-11-13 the texture
+sampler and the shadow map were made before the config was read, so the Options page's
+Texture Filtering and Shadows were saved but drawn with the desktop defaults (16× and 2048);
+they now take (checked offscreen: `shadows low` from the config gives the same frame as
+`--shadows handheld`, `anisotropy 1` a different one from the default).
 
 `barrel-escha --field FIELD_DIR out.png` draws a field's objects: every instance in the
 field's placement list, with its model from the `_Obj` container and the field's shared
