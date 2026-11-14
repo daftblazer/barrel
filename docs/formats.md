@@ -308,7 +308,14 @@ music, 0.7 to 1.0 for the rest) and the Japanese title at +0x30 (track 1 "タイ
 these numbers: `ECT_SOUND_BG_PLAY` `{track, volume %, 0, 0}` (805 uses, 116 tracks),
 `ECT_SOUND_BG_STOP` and `ECT_SOUND_BG_FADEOUT` `{hundredths of a second, 0}` (1,220 uses,
 mostly 1 or 1.5 s); `EVENT_MM08_AS4_130` stops the music, plays 105 ("日常2") and then the
-item jingle (6). The title screen's music is track 1 (`sy_title01_piano`, played once: its KOVS +0x10 is 1;
+item jingle (6). The boot's logo splashes are stills (the still table at `0x1408f3d00`, 32-byte records): 4
+`Ipu/logo_gust.g1t` (1920 × 1080, the Gust brush logo on light grey) and 5 `Ipu/logo_kt.g1t`
+(the Koei Tecmo Games logo, 1920 × 1080 in the top-left of a 2048 × 2048 texture), each with
+`_EN` / `_SC` / `_TC` copies. `Ipu/logo_havok.g1t` and `logo_dolby.g1t` are on the disc but no
+still names them. Track 8 is the Gust jingle (`_gust_ondo.kvs`, volume 0.5), but the PC install
+has no such file. The splashes' order and timing are not read from the code yet (no reference
+to stills 4 and 5 found by immediate search); a boot recording gives them.
+The title screen's music is track 1 (`sy_title01_piano`, played once: its KOVS +0x10 is 1;
 168 is the same piece as `_2ch`, 2 the orchestral title, 216 `sy_op_loop` the title's loop).
 `barrel_formats::bgm::tracks` reads the list and `barrel play-event` prints the
 music steps with their files and titles.
