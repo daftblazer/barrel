@@ -20,15 +20,15 @@ achievements are the player's own, and the DX version has not been played there)
   32518.2,6179.6,30331.5 --turn -0.0222`): sunlit sand 221, 203, 157 against 222, 203, 146,
   stone 221, 223, 220 against 224, 227, 216, shaded path 35, 65, 58 against 23, 65, 53, rock
   39, 64, 76 against 36, 67, 83, fence 75, 71, 68 against 71, 70, 62. Stand-ins left:
-  (1) **the stage's ambient**: the diffuse light map times a fitted colour (`STAGE_AMBIENT`
-  0.8, 2.0, 6.5). The default override's `indirectStage_` scale and colour (2.5 × (1.642,
-  1.978, 4.0)) draw the shade far too bright and warm, with or without the saturation passes;
-  the field's own block is not placed in `_env.bin` (the set repeats `1, 0.1, 0.2602, 1, 1, 1,
-  1, 1, 1, 0, 1, 0, 3` at 0x4c8 and 0x550, around `fog_`: a scale of 1 and a colour (0.26, 1,
-  1) there fit worse than the fitted colour). The game's shade also carries light that does not
-  scale with the surface's colour (dark trunks come out 37, 48, 57 where ours are 25, 28, 30):
-  the light volume (`sLPVBuffer` × `fDiffuseScale`, 4.2227 in the blocks read), the specular
-  light map and the SSAO are not drawn. (2) **the exposure**: the default override's range top
+  (1) **what the shade lacks**: the stage's ambient is the diffuse light map at the set's
+  `indirectStage_` scale and colour (`StageLight`: 7 × (0.1, 0.2602, 1) at Rasenboden's noon,
+  1 × (1.9, 2.3, 4) in the attic's morning), but the game's shade also carries light that
+  does not scale with the surface's colour (dark trunks come out 37, 48, 57 where ours are
+  23, 27, 30): the light volume (`sLPVBuffer` × `fDiffuseScale`, 4.2227 in the blocks read),
+  the specular light map and the SSAO are not drawn. The word at +0x34 of the stage's block
+  (3 at noon, 5 in the morning; the characters' is their sun scale) is not the stage's sun
+  scale: the lighting blocks hold the sun unscaled, and 54 blocks of another kind hold it
+  times 3 (not placed). (2) **the exposure**: the default override's range top
   (1.2) at every time of day; the game adapts (`fMiddleGray`, `fLightAdaptedScale`,
   `fDarkAdaptedScale`: not read), and night comes out far too bright (the moon is (1, 4, 5)).
   (3) **the bloom**: the set's threshold on the stored scene and its weight; the game's bright

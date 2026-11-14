@@ -753,8 +753,15 @@ not drawn.
 its colour and the set's ambient at 0.2 for one kind of draw (the characters'), which are the
 words at +0x34 and +0x30 of a block at 0x5d0 of the noon set, right after `skyFog_`:
 `indirectChara_` (`KeyLight0Scale` 0.8, `AmbientLightScale` 0.2, by the reader's member
-offsets; its first words 1.5 and 6 would be the diffuse and specular map scales). The stage's
-block is not placed the same way (docs/ryza/open.md).
+offsets; its first words 1.5 and 6 are the diffuse and specular map scales, then the diffuse
+map's colour (0.8, 1, 1) and the specular's). The stage's block, `indirectStage_`, is laid out
+the same at 0x54c, between `fog_` and `skyFog_`: Rasenboden's noon holds a diffuse map scale
+of 7 and colour (0.1, 0.2602, 1) with `AmbientLightScale` 0 (+0x30), so the stage's shade is
+the light map tinted deep blue and the set's ambient colour is left out; a colour fitted to
+the game's still before the block was found came out (0.8, 2.0, 6.5) against its (0.7, 1.82,
+7). The attic's sets hold 1 × (1.9, 2.3, 4) in the morning and 1 × (2.0, 2.2, 2.7) in the
+evening. Before it, at 0x528, ten words: a colour, then a third directional light (35, 48.8,
+70 at 30°, 30° at noon: not placed).
 
 ## Ryza DX: the sky
 

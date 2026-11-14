@@ -192,6 +192,34 @@ impl Fog {
     }
 }
 
+/// How the stage takes the set's light (`indirectStage_`, between `fog_` and `skyFog_` in the
+/// file, laid out as `indirectChara_`): the diffuse light map's scale and colour, and the scale
+/// on the set's ambient colour. Rasenboden's noon: 7, (0.1, 0.2602, 1) and 0, so its shade is
+/// lit by the light map tinted deep blue (a colour fitted to the game's still without these
+/// came out 0.8, 2, 6.5); the default override's are 2.5, (1.642, 1.978, 4) and 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StageLight {
+    pub diffuse_map: f32,
+    pub diffuse_map_color: [f32; 3],
+    pub ambient: f32,
+}
+
+const INDIRECT_STAGE: usize = 0x54c;
+
+impl StageLight {
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<StageLight, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |o: usize| f32::from_le_bytes(set[INDIRECT_STAGE + o..INDIRECT_STAGE + o + 4].try_into().unwrap());
+        Ok(StageLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], ambient: f(0x30) })
+    }
+
+    /// The stage's ambient as the nine coefficients the renderer takes: the light map's times
+    /// its scale and colour, the set's ambient colour at its scale added evenly.
+    pub fn harmonics(&self, light: &Light, harmonics: &[[f32; 3]; 9]) -> [[f32; 3]; 9] {
+        std::array::from_fn(|i| std::array::from_fn(|ch| harmonics[i][ch] * self.diffuse_map * self.diffuse_map_color[ch] + if i == 0 { light.ambient[ch] * self.ambient / 0.282_095 } else { 0.0 }))
+    }
+}
+
 /// How the characters take the set's light (`indirectChara_`, right after `skyFog_` in the
 /// file; the members by the executable's reader, docs/shading.md): the diffuse light map's
 /// scale and colour, and the scales on the set's ambient colour and on the sun. Rasenboden's
@@ -274,6 +302,24 @@ mod tests {
         assert_eq!(l.lumi_threshold, 0.8);
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
+    }
+
+    #[test]
+    fn stage_light_of_a_set() {
+        let mut env = vec![0u8; SET_SIZE * SETS];
+        let at = SET_SIZE + 0x54c;
+        for (k, v) in [(0, 7.0f32), (8, 0.1), (12, 0.2602), (16, 1.0), (0x30, 0.25)] {
+            env[at + k..at + k + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let st = StageLight::read(&env, Time::Noon, Weather::Sunny).unwrap();
+        assert_eq!(st, StageLight { diffuse_map: 7.0, diffuse_map_color: [0.1, 0.2602, 1.0], ambient: 0.25 });
+        let mut light = Light::read(&env, Time::Noon, Weather::Sunny).unwrap();
+        light.ambient = [3.0, 3.0, 4.0];
+        let mut h = [[0.0; 3]; 9];
+        h[0] = [1.0; 3];
+        h[1] = [2.0; 3];
+        let out = st.harmonics(&light, &h);
+        assert!((out[0][2] - (7.0 + 1.0 / 0.282_095)).abs() < 1e-4 && (out[1][0] - 1.4).abs() < 1e-5);
     }
 
     #[test]

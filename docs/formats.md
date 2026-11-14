@@ -1284,8 +1284,9 @@ file byte for byte (their `_env.bin` differ), and the env containers come in a f
 only. The diffuse map's faces are in the game's axes, y up: +y is the sky's blue (0.19, 0.26,
 0.42), -y a warm ground bounce (0.47, 0.36, 0.28), the sides about 0.3. `barrel-ryza` turns it
 into nine spherical-harmonic coefficients (`barrel_ryza::environment`) for the renderer's
-ambient term (model.vert's `sh`). Its values (about 0.3) want a scale, presumably from
-`_env.bin`.
+ambient term (model.vert's `sh`), scaled and tinted by the set's `indirectStage_` block (0x54c:
+scale, specular scale, colour, ..., `AmbientLightScale` at +0x30; `StageLight`), the characters'
+by `indirectChara_` (0x5d0, `CharaLight`).
 
 **`_env.bin`** is 12 sets of 0x1fe0 bytes (97,920 in every field read), one per weather and
 time of day: set = weather × 4 + time, times morning, noon, evening, night (0–3), weathers
