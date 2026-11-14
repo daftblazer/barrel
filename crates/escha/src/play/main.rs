@@ -689,7 +689,9 @@ fn add_body<F>(
     face: impl FnOnce(&mut Scene, &Elixir, &str, &str) -> Result<Option<F>>,
 ) -> Result<Option<(Body, Option<F>)>> {
     let Some(model) = row.attr("Model") else { return Ok(None) };
-    let path = root.join("Data/x64/Character").join(format!("{model}.elixir.gz"));
+    // Rows with Directory "Obj" (the map cursors) keep their models in `Data/x64/Obj`.
+    let folder = if row.attr("Directory") == Some("Obj") { "Data/x64/Obj" } else { "Data/x64/Character" };
+    let path = root.join(folder).join(format!("{model}.elixir.gz"));
     let Ok(bytes) = std::fs::read(&path) else { return Ok(None) };
     let container = Elixir::parse(&bytes)?;
     let stem = model.rsplit('/').next().unwrap_or(model);
@@ -985,6 +987,9 @@ struct Walker {
     root: std::path::PathBuf,
     /// The play camera's follow (`play_camera::Follow`).
     follow: barrel_engine::play_camera::Follow,
+    /// On the world map, the cursor's own model (`E3D_WMAP_CUR00`'s instance) and where she
+    /// stays meanwhile: the walker is the cursor there, she waits on her start mark.
+    cursor: Option<(u32, [f32; 3])>,
     /// Logy leads instead of Escha (`BARREL_LEAD=logy`): his swing, its sound and reach, his
     /// jump voices.
     logy: bool,
@@ -1036,7 +1041,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
     let strike_anim = motions.get("LAD").cloned();
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = barrel_escha::data::gimmick::inside(&gimmicks, pos);
-    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_escha::player::Gait::Wait, run_on: false, field, gimmicks, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_engine::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience, follow: Default::default() };
+    let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_escha::player::Gait::Wait, run_on: false, field, gimmicks, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_engine::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience, follow: Default::default(), cursor: None };
     Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false }, walker))
 }
 
@@ -1098,6 +1103,8 @@ const AREA_MAP_SCALE: f32 = 1.75;
 /// And on the world map, whose camera stands farther off (the recording at 1:12: about as tall
 /// on screen as on the area map).
 const WORLD_MAP_SCALE: f32 = 3.7;
+/// How far (units) the world map's walker goes from her start before the cursor takes over.
+const CURSOR_LEAVES: f32 = 60.0;
 
 /// The world map point field area `map` stands for (`SP_A0P0` ...) and where it is (x, z), none
 /// for the town's maps and fields on no point.
@@ -2354,12 +2361,27 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--player: the field is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
         let (packs, pos, body, mut w) = player(&root, field_dir, at, logy, &mut scene, base)?;
+        let packs_len = packs.len();
         pack_bytes.extend(packs);
         w.body = town_bodies.len();
         town_bodies.push(body);
         w.velocity = player_walk.unwrap_or_default();
         w.facing = player_facing.unwrap_or(w.facing);
         w.waypoints = trip.iter().copied().skip(1).collect();
+        // The world map's cursor (CHARA 705, `E3D_WMAP_CUR00`; the map's setup creates it,
+        // `0x140383c42`).
+        if field_dir.file_name().is_some_and(|n| n == "A15_WMAP") {
+            let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+            let row = table("CharaBase.xml").and_then(|t| t.children.into_iter().find(|r| r.attr("Model").is_some_and(|m| m.ends_with("E3D_WMAP_CUR00"))));
+            let base = base + pack_bytes.iter().skip(pack_bytes.len() - packs_len).map(|b| G1t::parse(b).map_or(0, |t| t.textures.len())).sum::<usize>();
+            match row.map(|row| add_body(&root, &mut scene, base, &row, 21_001, pos, 0.0, "BASE_MOTION1", None, None, |_, _, _, _| Ok(None::<()>))) {
+                Some(Ok(Some((body, _)))) => {
+                    pack_bytes.extend(body.packs);
+                    w.cursor = Some((body.instance, pos));
+                }
+                other => eprintln!("the world map's cursor did not load: {:?}", other.map(|r| r.map(|b| b.is_some()))),
+            }
+        }
         walker = Some(w);
         focus = Some(Vec3::from(pos) * Vec3::new(-1.0, 1.0, 1.0) + Vec3::new(0.0, 80.0, 0.0));
     }
@@ -4436,7 +4458,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             (true, false) => AREA_MAP_SCALE,
             _ => 1.0,
         };
-        instances[w.instance as usize].model = render_space(Mat4::from_scale_rotation_translation(Vec3::splat(size), turn, Vec3::from(w.pos) + Vec3::Y * lift));
+        // On the world map, away from her start, the cursor moves and she waits there.
+        let away = w.cursor.filter(|&(_, home)| world_mode && (w.pos[0] - home[0]).hypot(w.pos[2] - home[2]) > CURSOR_LEAVES);
+        let at = away.map_or(w.pos, |(_, home)| home);
+        instances[w.instance as usize].model = render_space(Mat4::from_scale_rotation_translation(Vec3::splat(size), turn, Vec3::from(at) + Vec3::Y * lift));
+        if let Some((cursor, _)) = w.cursor {
+            instances[cursor as usize].model = match away {
+                Some(_) => render_space(Mat4::from_scale_rotation_translation(Vec3::ONE, turn, Vec3::from(w.pos) + Vec3::Y * lift)),
+                None => Mat4::from_scale(Vec3::ZERO),
+            };
+        }
         if player.is_none()
             && let Some((out, mixer, ..)) = sound.as_mut() {
                 out.pump(mixer, 0.0);

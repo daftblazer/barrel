@@ -952,8 +952,11 @@ mirrored, not yet seen); the game likely places them in world units. Checked
 against the recording's Southern Ruins scroll (the same lines, the same places to within a
 few pixels; the game's list rows are a little closer than 642's 50). The marks of regions and the town show as their place is known: the `_on` model (red) once
 visited, the `_off` one (olive green in `A15_WMAP.g1t` 0; the Old Highway at 1:25, seen not
-visited) before, as the sectors' marks do. Not yet the game's: the
-world map's own cursor (a compass mark while the cursor moves; Barrel walks her), the routes the
+visited) before, as the sectors' marks do. The world map's cursor: once the walker leaves her start (60 units), `E3D_WMAP_CUR00` (its
+CharaBase row's Directory "Obj": `Data/x64/Obj`) stands at the walker's place at scale 1 and
+she waits on her start mark (colseit-arrival 1:16 to 1:25: the crystal leaves her on the
+Southern Ruins and goes up R1; its size matches). Not yet the game's: the cursor's
+ring and its looping motion, the route's dots turning blue behind it, her waiting pose, the routes the
 story has not opened yet (R3 west of Colseit is unknown on the user's save),
 the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
 to World Map?" question is `question.rs`.
