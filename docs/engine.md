@@ -404,7 +404,7 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Field | Menu (Start) | "Requests" | not yet |
 | Field | View (Back) | "Message Log" | not yet |
 | Field | LB | "Assignment" (the main menu's page alone; B goes back to play) | yes |
-| Field | RB | "Leave Map" | not yet |
+| Field | RB | "Leave Map": onto the area map at the field's point (the town: the world map), as its exit | yes |
 | Field | LT, RT | nothing (held 1.5 s and 3 s: the camera stays; escha-triggers recording) | nothing |
 | Area map | B | "Return" | yes |
 | Area map | LB / RB | "Assignment" / "System" | not yet |

@@ -3914,6 +3914,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 P::East if free_play => Some(KeyCode::KeyJ),
                 P::South if free_play => Some(KeyCode::KeyG),
                 P::LeftStick if free_play => Some(KeyCode::KeyT),
+                // RB: "Leave Map", as walking out of the field's exit (onto its area map; the
+                // town's onto the world map).
+                P::RightShoulder if free_play && field_hud.is_some() && !area_mode => {
+                    eprintln!("frame {frame}: leave map");
+                    world_exit = true;
+                    None
+                }
                 // LB: "Assignment", the main menu's page on its own.
                 P::LeftShoulder if free_play && field_hud.is_some() => {
                     open_menu = true;
@@ -3927,7 +3934,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             };
             if let Some(k) = key {
                 keys.push(k);
-            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !(b == P::LeftShoulder && open_menu) {
+            } else if !matches!(b, P::South | P::East | P::Up | P::Down | P::Left | P::Right) && !(b == P::LeftShoulder && open_menu) && !(b == P::RightShoulder && world_exit) {
                 eprintln!("frame {frame}: pad {b:?} does nothing here yet");
             }
         }
