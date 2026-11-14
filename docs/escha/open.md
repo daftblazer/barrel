@@ -212,7 +212,10 @@ likely settle them where static reading failed.
 
 - Battle turn bar spacing (stage 17; READ: the gaps are the timeline's free slots, 16 entries
   in all, docs/tables.md "Turn order"; to do: Barrel's Timeline keeps the free slots, and how
-  the battle start sets the waits 0, 50, … 750 (a strike-opened battle; a plain one not read)): the game places each portrait by the time until that
+  the battle start sets the waits 0, 50, … 750 (a strike-opened battle; a plain one not read).
+  This is battle logic, not only the bar: the game's fighters start 100 apart where
+  `fight::Battle::new` starts all at 500, so later turn orders can differ. Read the join's
+  callers (`0x14018cf20`, its `from` argument) and the start of a plain battle live): the game places each portrait by the time until that
   turn (ruins-entrance-battle-stats at 322 s: about two slots, 128 px, apart), Barrel packs
   the order into neighbouring slots. Needs the timeline's wait values mapped to the bar (read
   how the bar's code places a face: its slot or a pixel offset).

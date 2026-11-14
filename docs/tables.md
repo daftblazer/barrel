@@ -489,7 +489,14 @@ monster, Escha, two monsters) and free slots at the 50s and from 550 on. After W
 (next wait 464) time moved on 100: every wait dropped by 100, the free slot that came to the
 front (at 50, now under 0) went back to 1000, and Wilbell's entry stood at 464 between the free
 slots at 450 and 500. The battle HUD's turn bar shows the entries in this order one slot each
-(`docs/formats.md`, battle HUD), so the free slots are the bar's empty slots.
+(`docs/formats.md`, battle HUD), so the free slots are the bar's empty slots. Wilbell's 464 is her Attack's wait after the
+advance: speed 30 (the save's, `barrel encounter`) makes it trunc(94 × 600 / 100) = 564, less
+the 100 that passed, so the order Barrel follows (the wait given, then time moved on) holds.
+The join (`0x14018cf20 (timeline, character, from)`) takes the first free entry whose wait is
+at least `from` (scanning from the front; else the last free one) and sets its wait to 500
+(1000 when the character's +0x20 value is negative); the 0, 100, … 500 the fighters had at the
+first command come from something else at the battle's start (its caller and the strike's
+first turn not read yet; `fight::Battle::new` starts everyone at 500).
 `0x14018cf20 (timeline, character)` puts a joining character in a free slot with wait 500
 (1000 when its +0x10 value is negative). After a character acts, `0x14018d180 (timeline,
 character, wait)` gives it the action's wait (the action's virtual +0x30):
