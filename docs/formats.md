@@ -1051,7 +1051,15 @@ read by the object's own methods: `0x140617180` sets its flags (+0x9c) from the 
 ### Placement lists (`*.opl2`)
 
 Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 effects.
-`barrel opl2-scan DIR` reads them all.
+`barrel opl2-scan DIR` reads them all (`barrel opl2-scan PAK...` those in archives).
+
+**Ryza DX and Ryza 2 DX** keep the same instance records but a longer type header, and no
+effects list: the file ends after the objects. A type is `u32 name length`, the name without
+a 0, a word (0, 13, 26, ... in `s01_i_attic`: 13 apart from type to type), 48 bytes of 0xff,
+288 of 0, then the instance count. Their 32 bytes after an instance's tags hold 16 zero bytes,
+8 of 0xff and a word (0x2b, 0x6b, 0x1402b in the attic; not read). All read: Ryza DX 96 lists
+(6,741 types, 53,698 objects), Ryza 2 DX 105 (8,037 types, 78,588 objects). **Ryza 3 DX's**
+differ again (116 of 117 fail at the first instance count): not read yet.
 
 Two lists of the same shape follow each other, the objects and then the effects:
 

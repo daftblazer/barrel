@@ -38,7 +38,8 @@ usage:
   barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers
   barrel ebm FILE.ebm          print an event's messages
   barrel ebm-scan DIR          read every message file under DIR
-  barrel opl2-scan DIR         read every field placement list in the containers
+  barrel opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
+                               in PAK archives: Sophie 2, the Ryza games)
   barrel opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
   barrel ktf-scan DIR          read every field terrain in the containers
   barrel g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
@@ -142,6 +143,7 @@ fn main() -> ExitCode {
         ["voice-map", install] => voice_map(Path::new(install)),
         ["ebm-scan", dir] => ebm_scan(Path::new(dir)),
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
+        ["opl2-scan", paks @ ..] => opl2_scan_paks(paks),
         ["opl2", file] => opl2_list(file),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
         ["g1a", file] => g1a(file, None),
@@ -3377,6 +3379,35 @@ fn opl2_scan(dir: &Path) -> Result<()> {
         }
     }
     println!("{lists} placement lists: {objects} objects, {effects} effects; {} failed", failed.len());
+    for f in failed.iter().take(20) {
+        println!("failed: {f}");
+    }
+    if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
+}
+
+/// `opl2-scan` over PAK archives: each field container's placement list, read in memory.
+fn opl2_scan_paks(paks: &[&str]) -> Result<()> {
+    let (mut lists, mut objects, mut effects, mut types) = (0usize, 0usize, 0usize, 0usize);
+    let mut failed = Vec::new();
+    for file in paks {
+        let (mut f, pak) = open_pak(Path::new(file))?;
+        for entry in pak.entries.iter().filter(|e| e.name.ends_with(".elixir.gz") && e.name.contains("\\field\\") && !e.name.ends_with("_obj.elixir.gz") && !e.name.ends_with("_env.elixir.gz")) {
+            let data = pak_read(&mut f, &pak, entry).map_err(|e| format!("{file}: {e}"))?;
+            let Ok(c) = Elixir::parse(&data) else { continue };
+            for e in c.entries.iter().filter(|e| e.name.ends_with(".opl2")) {
+                match barrel_formats::opl2::parse(c.data(e)) {
+                    Ok(p) => {
+                        lists += 1;
+                        types += p.objects.len();
+                        objects += p.objects.iter().map(|t| t.instances.len()).sum::<usize>();
+                        effects += p.effects.iter().map(|t| t.instances.len()).sum::<usize>();
+                    }
+                    Err(err) => failed.push(format!("{}: {err}", entry.name)),
+                }
+            }
+        }
+    }
+    println!("{lists} placement lists: {types} object types, {objects} objects, {effects} effects; {} failed", failed.len());
     for f in failed.iter().take(20) {
         println!("failed: {f}");
     }

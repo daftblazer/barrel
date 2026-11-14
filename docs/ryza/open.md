@@ -9,10 +9,8 @@ achievements are the player's own, and the DX version has not been played there)
 
 ## Fields
 
-- **Object placements (`.opl2`)**: Ryza's field containers hold the same kinds of files as
-  Escha's (terrain `.ktf`, shaders `.g1s`, textures, `.opl2`, heightmap `.khm`, plus
-  `_light.bin`, `_coll.bin`, `_grass.bin` / `_grass.g1t`), but the `.opl2` reader stops at its
-  instance count (`s01_i_attic`). Its layout is to be read against Escha's (`docs/formats.md`).
+- **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
+  first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").
 - **The environment container** (`<field>_env.elixir.gz`: `<field>_env.bin`, `_ad.g1t`,
   `_as.g1t`, likely diffuse and specular light probes) is new; nothing reads it yet.
 - **Other field files** not in Escha: `.trmd`, `.g1pf`, `.koc` next to the containers.
