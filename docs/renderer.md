@@ -300,10 +300,13 @@ to `WAIT` when its motion ends, the event's line on the console. Not yet the gam
 timing, one motion for every action, no one running to their target, no effects, numbers or
 sounds, no results. The battle HUD (`battlehud`, layout 886) is drawn over it: each member's
 plate with their portrait and their HP and MP bars cut to what is left, following the events.
-A member's turn waits for a command: the list (the attack, then the skills it may use with their
-MP costs, those it cannot pay for grey) and who acts on whom, right of centre; up and down
-choose, left and right change the target among the standing monsters, Enter gives it
-(offscreen `BARREL_BATTLE_KEYS`, a key a frame while a turn waits). The battle is then fought
+A member's turn waits for a command, chosen as the game's battle has it: the command row
+(layout 887: Attack, Skill, Move, Wait, Change, Run; left and right), Enter on Attack goes to
+the target (left and right among the standing monsters, its name right of centre), on Skill to
+the list of skills it may use (up and down, their MP costs, those it cannot pay for grey; Enter
+then to the target); Enter on the target gives it, Back goes a step back (offscreen
+`BARREL_BATTLE_KEYS`, a key a frame while a turn waits: `confirm,confirm` attacks the first
+monster). Move, Wait, Change and Run are not given yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same
 generator and commands always give the same battle, so what was played stays) up to the next
 member turn. Not yet the game's: the list (the game's command layout is not identified), no

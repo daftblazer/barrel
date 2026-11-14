@@ -1213,7 +1213,7 @@ struct BattleHud {
     field_nodes: Vec<barrel_escha::data::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
-    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<(Vec<(String, bool)>, usize, String)>, Option<result::Values>, Option<(u32, u32)>, u32, u32)>,
+    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1339,6 +1339,8 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
         drops_shown: false,
         turn,
         chosen: 0,
+        row: 0,
+        choosing: Choosing::Row,
         target: 0,
     }))
 }
@@ -1368,6 +1370,9 @@ struct BattlePlay {
     /// the standing monsters.
     chosen: usize,
     target: usize,
+    /// Where on the command row, and what the turn is choosing.
+    row: usize,
+    choosing: Choosing,
     next: usize,
     time: f32,
     until: f32,
@@ -1382,6 +1387,23 @@ struct BattlePlay {
     /// A won battle's drops screen has been shown.
     drops_shown: bool,
 }
+
+/// What a member's turn is choosing, as the game's battle goes: a command on the row (Left and
+/// Right), a skill from the list (Up and Down), then the target (Left and Right) for the attack
+/// or the skill picked; Back goes a step back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Choosing {
+    Row,
+    Skill,
+    Target { skill: Option<usize> },
+}
+
+/// The command row a member's turn shows (the battle-stats recording: Katla's Attack, Skill,
+/// Move, Wait, Change and Run). Move, Wait, Change and Run are not given yet.
+const COMMAND_ROW: [i32; 6] = {
+    use battlehud::command::*;
+    [ATTACK, SKILL, MOVE, WAIT, CHANGE, RUN]
+};
 
 /// A battle's tables, sides, generator and the commands given so far.
 struct BattleFight {
@@ -1421,13 +1443,17 @@ impl BattlePlay {
 
     /// The command list: the attack, then the member's skills (with their MP costs; those it
     /// cannot pay for marked), and the chosen target's name.
-    fn commands(&self) -> Option<(Vec<(String, bool)>, usize, String)> {
+    fn commands(&self) -> Option<battlehud::Commands> {
         let turn = self.turn.as_ref().filter(|_| self.waiting())?;
-        let mut list = vec![("Attack".to_string(), true)];
-        list.extend(turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)));
         let target = turn.foes.get(self.target).and_then(|&k| self.outcome.names.get(k)).cloned().unwrap_or_default();
         let who = self.outcome.names.get(turn.who).cloned().unwrap_or_default();
-        Some((list, self.chosen, format!("{who} → {target}")))
+        let list: Vec<(String, bool)> = turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)).collect();
+        Some(battlehud::Commands {
+            row: COMMAND_ROW.to_vec(),
+            at: self.row,
+            skills: (self.choosing == Choosing::Skill).then(|| (list, self.chosen)),
+            title: if matches!(self.choosing, Choosing::Target { .. }) { format!("{who} → {target}") } else { String::new() },
+        })
     }
 
     /// A button on a member's turn: up and down choose the command, left and right the target,
@@ -1438,17 +1464,32 @@ impl BattlePlay {
             return;
         }
         let Some(turn) = self.turn.clone().filter(|_| self.waiting()) else { return };
-        let count = turn.skills.len() + 1;
+        let skills = turn.skills.len().max(1);
         let foes = turn.foes.len().max(1);
-        match b {
-            title::Button::Up => self.chosen = (self.chosen + count - 1) % count,
-            title::Button::Down => self.chosen = (self.chosen + 1) % count,
-            title::Button::Left => self.target = (self.target + foes - 1) % foes,
-            title::Button::Right => self.target = (self.target + 1) % foes,
-            title::Button::Confirm => {
+        let row = COMMAND_ROW.len();
+        use title::Button::*;
+        match (self.choosing, b) {
+            (Choosing::Row, Left) => self.row = (self.row + row - 1) % row,
+            (Choosing::Row, Right) => self.row = (self.row + 1) % row,
+            (Choosing::Row, Confirm) => match COMMAND_ROW[self.row] {
+                battlehud::command::ATTACK => self.choosing = Choosing::Target { skill: None },
+                battlehud::command::SKILL if !turn.skills.is_empty() => self.choosing = Choosing::Skill,
+                c => eprintln!("battle: command {c} is not given yet"),
+            },
+            (Choosing::Skill, Up) => self.chosen = (self.chosen + skills - 1) % skills,
+            (Choosing::Skill, Down) => self.chosen = (self.chosen + 1) % skills,
+            (Choosing::Skill, Confirm) if turn.skills.get(self.chosen).is_some_and(|s| s.2) => self.choosing = Choosing::Target { skill: Some(self.chosen) },
+            (Choosing::Skill, Back) => self.choosing = Choosing::Row,
+            (Choosing::Target { .. }, Left) => self.target = (self.target + foes - 1) % foes,
+            (Choosing::Target { .. }, Right) => self.target = (self.target + 1) % foes,
+            (Choosing::Target { skill }, Back) => self.choosing = if skill.is_some() { Choosing::Skill } else { Choosing::Row },
+            (Choosing::Target { skill }, Confirm) => {
                 use barrel_escha::auto_battle::Command;
                 let target = turn.foes.get(self.target).copied().unwrap_or(0);
-                let command = if self.chosen == 0 { Command::Attack { target } } else { Command::Skill { skill: self.chosen - 1, target } };
+                let command = match skill {
+                    None => Command::Attack { target },
+                    Some(skill) => Command::Skill { skill, target },
+                };
                 self.fight.commands.push(command);
                 let f = &self.fight;
                 match barrel_escha::auto_battle::fight_commanded(&f.tables, &f.party, &f.monsters, f.rng, &f.commands) {
@@ -1461,10 +1502,10 @@ impl BattlePlay {
                         self.turn = None;
                     }
                 }
-                (self.chosen, self.target) = (0, 0);
+                (self.chosen, self.target, self.row, self.choosing) = (0, 0, 0, Choosing::Row);
                 self.until = self.time;
             }
-            title::Button::Back => {}
+            _ => {}
         }
     }
 
@@ -5384,13 +5425,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
                         let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1);
-                        if let Some((list, chosen, title)) = &commands {
-                            // The game's row: the attack chosen, else the skills (whose list
-                            // stays Barrel's own for now).
-                            use battlehud::command::*;
-                            e.extend(battlehud::command_row(&[ATTACK, SKILL, MOVE, WAIT, CHANGE, RUN], usize::from(*chosen > 0)));
-                            if *chosen > 0 {
-                                e.extend(battlehud::command_list(list, *chosen, title));
+                        if let Some(c) = &commands {
+                            // The game's row; the skills' list and the target's name still
+                            // Barrel's own text.
+                            e.extend(battlehud::command_row(&c.row, c.at));
+                            match &c.skills {
+                                Some((list, chosen)) => e.extend(battlehud::command_list(list, *chosen, &c.title)),
+                                None if !c.title.is_empty() => e.extend(battlehud::command_list(&[], 0, &c.title)),
+                                None => {}
                             }
                         }
                         e

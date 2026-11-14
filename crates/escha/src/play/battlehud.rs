@@ -187,6 +187,16 @@ pub fn command_row(commands: &[i32], chosen: usize) -> Vec<Element> {
     out
 }
 
+/// What a member's turn shows: the command row (icon cuts) and the place on it, the skills'
+/// list with its choice once Skill is picked, and a title (who acts, on whom while choosing).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Commands {
+    pub row: Vec<i32>,
+    pub at: usize,
+    pub skills: Option<(Vec<(String, bool)>, usize)>,
+    pub title: String,
+}
+
 /// Where the command list stands and its lines' spacing (the skills' list, until the game's
 /// skill window is in).
 const LIST_AT: [i32; 2] = [1500, 360];
