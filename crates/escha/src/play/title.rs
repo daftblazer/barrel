@@ -199,6 +199,17 @@ pub use crate::screen::Target;
 /// `sy_title01_piano_2ch.kvs`, matches as well (0.91): which of the two the PC plays is open.
 const TITLE_MUSIC: u32 = 1;
 
+/// The title's fade in: a white veil over it, from opaque to clear in a straight line over
+/// [`WHITE_FADE`] seconds (the escha-boot recording at 16.25 s, after the logos and the pre-title
+/// movie: the veil's opacity, fitted frame by frame, falls by 0.055 a 60 Hz frame).
+const WHITE_FADE: f32 = 0.3;
+static WHITE: [u8; 64] = [255; 64];
+
+/// The veil's opacity (0 to 255) at `t` seconds.
+fn white_at(t: f32) -> u8 {
+    ((1.0 - t / WHITE_FADE).clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
 pub fn run(
     gpu: &Gpu,
     pool: vk::CommandPool,
@@ -269,8 +280,12 @@ pub fn run(
         sheets.keys.push((name, index));
         images.push(t);
     }
+    // A white picture for the title's fade in.
+    let white = barrel_formats::g1t::Texture { width: 4, height: 4, format: barrel_formats::g1t::Format::Rgba8, format_code: 0, layers: 1, volume: false, levels: vec![&WHITE] };
+    let white_slot = images.len();
+    images.push(&white);
     let (w, h) = (target.width as f32, target.height as f32);
-    let quads = |f: &Front| match f {
+    let front_quads = |f: &Front| match f {
         Front::Title(t) => {
             // The background over the 1920 × 1080 screen, scaled to the height and centred.
             let k = h / 1080.0;
@@ -283,6 +298,13 @@ pub fn run(
         Front::Load(list) => hud::quads(&pe, Some(&font), &sheets, &list.elements(&load_nodes, texts), w, h),
     };
     // On the Load Game list (the in-play menu's Load), else the title.
+    let quads = |(f, white): &(Front, u8)| {
+        let mut q = front_quads(f);
+        if *white > 0 {
+            q.push(text::Quad { turn: false, rect: [0.0, 0.0, w, h], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, f32::from(*white) / 255.0], texture: white_slot });
+        }
+        q
+    };
     let mut front = if load_list { Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
     // In a window, the title's music from its start, looping as the track does, under the
     // title, the hero choice and the Load list (not the in-play menu's Load).
@@ -297,7 +319,16 @@ pub fn run(
             Some((out, mixer, playing))
         })
         .flatten();
-    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out, |_| {
+    // The title fades in from white (in a window; offscreen at `BARREL_TITLE_FADE_AT` seconds in).
+    let fade_at = std::env::var("BARREL_TITLE_FADE_AT").ok().and_then(|v| v.parse::<f32>().ok());
+    let fading = !load_list && (window.is_some() || fade_at.is_some());
+    let start = std::time::Instant::now();
+    let shift = fade_at.unwrap_or(0.0);
+    let mut state = (front, if fading { white_at(shift) } else { 0 });
+    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, _), b| f.press(b, saves), keys, out, |(_, white)| {
+        if *white > 0 {
+            *white = white_at(shift + start.elapsed().as_secs_f32());
+        }
         if let Some((out, mixer, _)) = music.as_mut() {
             out.pump(mixer);
         }
@@ -325,6 +356,9 @@ mod tests {
 
     #[test]
     fn lit_entry_and_cursor() {
+        assert_eq!(white_at(0.0), 255);
+        assert_eq!(white_at(0.15), 128);
+        assert_eq!(white_at(0.31), 0);
         let e = Title::Menu(1).elements();
         assert!(e.contains(&Element::Sprite { part: 0x15e, cut: 1, at: [630, 616] }));
         assert!(e.contains(&Element::Sprite { part: 0x15d, cut: 0, at: [630, 538] }));
