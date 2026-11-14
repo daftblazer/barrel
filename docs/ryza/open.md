@@ -86,9 +86,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   camera's look point (110 above her feet). The camera's field of view, distance and pitch are
   the field's (`barrel_ryza::camera`); `at_diff_y` and the look-up adjustment are not placed,
   and whether the field of view is vertical is not known. At the gate she comes out a little
-  larger and higher in the frame than in the game's still. Only the loops play: no start or
-  stop motions (10, 12, 20, 22) and no blending between motions, so she snaps from one to the
-  next.
+  larger and higher in the frame than in the game's still. Setting off plays the gait's
+  start motion (10, 20) then its loop, letting go its stop motion (12, 22) then the stand;
+  walk and run change loop to loop, each change mixing the last motion out over 0.2 s. How
+  the game moves her during the start and stop (here eased in and out) and its mixing time
+  are not read.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read.
 
