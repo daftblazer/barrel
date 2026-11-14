@@ -8,7 +8,7 @@ sleep 3
 pkill -KILL -s "$sid" 2>/dev/null
 # Wine's device helpers (winedevice.exe) leave the session, so also end every process whose
 # environment names this run's prefix.
-prefix=$here/work/oracle-prefix
+prefix=$(cat "$here/work/oracle/prefix" 2>/dev/null || echo "$here/work/oracle-prefix")
 for d in /proc/[0-9]*; do
     grep -qz "^STEAM_COMPAT_DATA_PATH=$prefix\$" "$d/environ" 2>/dev/null && kill -KILL "${d#/proc/}" 2>/dev/null
 done

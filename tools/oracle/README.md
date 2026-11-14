@@ -49,6 +49,16 @@ check asking Steam to start it instead. Getting around that would mean replacing
 the game's `steam_api64.dll`, which this project does not do. So oracle runs go through Steam:
 keep them short and stop them right after (`stop.sh`), as they count as the player's playtime.
 
+## Atelier Ryza DX
+
+`ORACLE_EXE=Atelier_Ryza_DX.exe ORACLE_APPID=3365030 tools/oracle/run.sh ...` (prefix
+`work/oracle-prefix-3365030`). Without Steam (`ORACLE_NO_STEAM=1`) it exits within seconds, as
+Escha does. It does not take the virtual pad; keyboard and mouse through `xkey` work: any key
+past the title, W/A/S/D to move (`down:w` ... `up:w`), the left mouse button (`click:1`)
+confirms and advances text, Space asks to skip an event (W/S pick Yes/No), F auto-plays, R
+fast-forwards. A new game starts on the opening monologue, then the attic event, then free
+play in the Rasen District.
+
 ## Recording
 
 `ORACLE_HZ=60 tools/oracle/run.sh ...` runs the game at 60 Hz (30 by default). With
