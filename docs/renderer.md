@@ -930,10 +930,12 @@ R1, four days (90 to 94), the Southern Ruins' area map; `down,back` there: the R
 Entrance, then the world map at the Southern Ruins. On the maps she runs the dots without the
 field's walls (a mark's collision held her short of it), and no faster than reaches the
 next waypoint in a frame (at 5 fps a 100-unit step overshot the 30-unit reach both ways).
-Its camera is fitted the same way as the area map's (`colseit-arrival-60hz.mkv` at 1:12, the
-cursor on the Southern Ruins: Colseit's mark and the route dots, 16 pixels RMS): 35 degrees
-from 12000 units at a point on the ground 400 units north of her, a 15-degree view (`WORLD_CAMERA_FOV`)
-(`WORLD_CAMERA_*`); she is drawn 3.7 times her size there (`WORLD_MAP_SCALE`), as tall on
+Its camera is fitted the same way as the area map's (`colseit-arrival-60hz.mkv` at 1:25, the
+cursor on Colseit: its mark, R0's dots east to the Twilight Forest's mark, R1 south, R2 north
+to the Old Highway's mark with one dot under its label; 5.6 pixels RMS over 13 points at 720p,
+and the 1:12 view on the Southern Ruins lines up with it): 35 degrees from 8016 units at a
+point on the ground 357 units north of her, a 21-degree view (`WORLD_CAMERA_*`; the earlier
+by-eye 15 degrees from 12000: 16 pixels); she is drawn 3.7 times her size there (`WORLD_MAP_SCALE`), as tall on
 screen as on the area map. Its panels (`area_panel::world_elements`, `travel`; the recording
 `colseit-arrival-60hz.mkv` at 1:15 and 1:25): the place's name at the top right (637); for a
 region the scroll with its description and the "Map" tab over its sectors (the item panel 641's rows and

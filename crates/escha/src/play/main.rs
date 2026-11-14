@@ -1050,13 +1050,15 @@ const AREA_CAMERA_PITCH: f32 = 35.0;
 const AREA_CAMERA_DISTANCE: f32 = 7600.0;
 const AREA_CAMERA_FOV: f32 = 10.7;
 const AREA_CAMERA_AHEAD: f32 = 178.0;
-/// The world map's camera, fitted the same way to `colseit-arrival-60hz.mkv` at 1:12 (the
-/// cursor on the Southern Ruins: Colseit's mark, the route dots north and east, 16 pixels RMS;
-/// with a 15-degree view, not refitted since).
+/// The world map's camera, fitted the same way to `colseit-arrival-60hz.mkv` at 1:25 (the
+/// cursor on Colseit: its mark, the dots of R0 east to the Twilight Forest's mark, R1 south and
+/// R2 north to the Old Highway's mark, one of them under its label): 5.6 pixels RMS over 13
+/// points at 720p, best at a 21-degree view (15 degrees: 9; the earlier 15 degrees, 12000 and
+/// 400 ahead, fitted by eye on the 1:12 frame: 16).
 const WORLD_CAMERA_PITCH: f32 = 35.0;
-const WORLD_CAMERA_FOV: f32 = 15.0;
-const WORLD_CAMERA_DISTANCE: f32 = 12000.0;
-const WORLD_CAMERA_AHEAD: f32 = 400.0;
+const WORLD_CAMERA_FOV: f32 = 21.0;
+const WORLD_CAMERA_DISTANCE: f32 = 8016.0;
+const WORLD_CAMERA_AHEAD: f32 = 357.0;
 
 /// How much larger the player is drawn on the maps (the recording at 0:45, at the fitted
 /// camera: 170 pixels from her head to her feet against Barrel's 97 at life size).
