@@ -1115,7 +1115,13 @@ and one flat (at y 5843), use not known. `barrel_ryza::koc` reads them and gives
 ones to the shared walker as walls. Beside it: `_coll.bin` in the main container (Rasenboden:
 4 records of a position, a rotation and a size, likely boxes), `.g1pf` and `.elixir.g1pf`
 (`FP1G`, over a 128,000-unit square: path-finding, not read) and `.trmd` (`TRMD`, 1024 × 1024
-cells of 5 bytes: likely the ground's material, not read).
+cells of 5 bytes: likely the ground's material, not read). `_coll.bin` is a u32 count of boxes
+(position, rotation in radians, three sizes, then two words: 2 and 15 in all of Rasenboden's;
+44 bytes each), then a u32 count of cylinders (position, rotation, radius, height, the same two
+words; 40 bytes). Rasenboden's four boxes are tall and thin (38 × 715 × 37 by its first, near
+the path below Ryza's house) and its cylinder wide (704 by 547): invisible blockers, read by
+`barrel_ryza::solids::field_shapes` (taken as half-sizes about the position, the cylinder's
+height upward: not checked).
 
 ### Ryza field cameras (`saves\fieldmap\cameraparam\<field>.xml`)
 

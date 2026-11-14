@@ -224,7 +224,11 @@ fn main() -> Result<()> {
         // on models, added after she is stood on the terrain (so she does not start on a
         // tree's top).
         let placements = barrel_engine::field::named(&main, &format!("{}.opl2", files.area)).map(barrel_formats::opl2::parse).transpose()?;
-        let solids = placements.map(|p| barrel_ryza::solids::placed_meshes(&p, &objects)).unwrap_or_default();
+        let mut solids = placements.map(|p| barrel_ryza::solids::placed_meshes(&p, &objects)).unwrap_or_default();
+        // And the field's own shapes (`<FIELD>_coll.bin`).
+        if let Some(b) = main.entries.iter().find(|e| !e.is_dummy() && e.name.to_ascii_lowercase().ends_with("_coll.bin")).map(|e| main.data(e)) {
+            solids.extend(barrel_ryza::solids::field_shapes(b)?);
+        }
         let at = &match ground.as_ref().and_then(|g| g.height(at.x, at.z, f32::MAX / 2.0, 0.0)) {
             Some(y) => Vec3::new(at.x, y, at.z),
             None => *at,

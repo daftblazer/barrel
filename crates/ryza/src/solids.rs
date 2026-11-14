@@ -58,6 +58,39 @@ pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Col
     out
 }
 
+/// A field's own collision shapes, `<FIELD>_coll.bin` in its main container: a u32 count of
+/// boxes, each a position, a rotation (radians, turned as placements are), three sizes and two
+/// words (2 and 15 in all of Rasenboden's: not read), 44 bytes; then a u32 count of cylinders,
+/// each a position, a rotation, a radius and a height and the same two words, 40 bytes. Taken
+/// as half-sizes about the position, a cylinder's height upward from it (`docs/ryza/open.md`:
+/// not checked against the game).
+pub fn field_shapes(b: &[u8]) -> Result<Vec<Collision>, String> {
+    let f = |o: usize| b.get(o..o + 4).map(|v| f32::from_le_bytes(v.try_into().unwrap())).ok_or("coll.bin: truncated");
+    let n = |o: usize| b.get(o..o + 4).map(|v| u32::from_le_bytes(v.try_into().unwrap()) as usize).ok_or("coll.bin: truncated");
+    let turn = |o: usize| -> Result<glam::Mat4, String> {
+        let i = opl2::Instance { position: [f(o)?, f(o + 4)?, f(o + 8)?], rotation: [f(o + 12)?, f(o + 16)?, f(o + 20)?], scale: [1.0; 3], tags: String::new(), word: 0 };
+        Ok(barrel_engine::field::placement_transform(&i))
+    };
+    let mut out = Vec::new();
+    let boxes = n(0)?;
+    let mut o = 4;
+    for _ in 0..boxes {
+        let (m, half) = (turn(o)?, Vec3::new(f(o + 24)?, f(o + 28)?, f(o + 32)?));
+        let ring = [Vec3::new(half.x, 0.0, half.z), Vec3::new(half.x, 0.0, -half.z), Vec3::new(-half.x, 0.0, -half.z), Vec3::new(-half.x, 0.0, half.z)];
+        out.push(placed(&prism(Vec3::ZERO, Vec3::new(0.0, half.y, 0.0), &ring), |v| m.transform_point3(Vec3::from(v)).to_array()));
+        o += 44;
+    }
+    let cylinders = n(o)?;
+    o += 4;
+    for _ in 0..cylinders {
+        let (m, radius, height) = (turn(o)?, f(o + 24)?, f(o + 28)?);
+        let ring: Vec<Vec3> = (0..8).map(|k| (k as f32 * std::f32::consts::FRAC_PI_4).sin_cos()).map(|(s, c)| Vec3::new(c * radius, 0.0, s * radius)).collect();
+        out.push(placed(&prism(Vec3::new(0.0, height * 0.5, 0.0), Vec3::new(0.0, height * 0.5, 0.0), &ring), |v| m.transform_point3(Vec3::from(v)).to_array()));
+        o += 40;
+    }
+    Ok(out)
+}
+
 /// A box or capsule file (`OC1G`, 16 bytes, a kind byte, then floats) as a triangle mesh:
 /// kind 0 a box (centre, three axes, half-sizes, each four floats), kind 3 a capsule (centre,
 /// axis, then its length and radius; taken as the distance between its ends' centres, the
@@ -209,6 +242,26 @@ mod tests {
             d.extend(v.to_le_bytes());
         }
         d
+    }
+
+    #[test]
+    fn field_shapes_are_boxes_then_cylinders() {
+        let mut b = 1u32.to_le_bytes().to_vec();
+        for v in [100.0f32, 0.0, 200.0, 0.0, 0.0, 0.0, 10.0, 50.0, 20.0] {
+            b.extend(v.to_le_bytes());
+        }
+        b.extend(2u32.to_le_bytes());
+        b.extend(15u32.to_le_bytes());
+        b.extend(1u32.to_le_bytes());
+        for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 30.0, 40.0] {
+            b.extend(v.to_le_bytes());
+        }
+        b.extend(2u32.to_le_bytes());
+        b.extend(15u32.to_le_bytes());
+        let s = super::field_shapes(&b).unwrap();
+        assert_eq!(s.len(), 2);
+        assert_eq!((s[0].nodes[0].min, s[0].nodes[0].max), ([90.0, -50.0, 180.0], [110.0, 50.0, 220.0]));
+        assert!((s[1].nodes[0].max[1] - 40.0).abs() < 1e-3 && (s[1].nodes[0].max[0] - 30.0).abs() < 1e-3);
     }
 
     #[test]

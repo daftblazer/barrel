@@ -79,7 +79,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   gate toward the house, she stops at the quad across its front, z 28966, her radius short of
   it). Some quads there cross each other in an X behind that one, so not every quad may be a
   plain wall (volumes outlined by quads?). Its sloped and flat
-  Its sloped and flat quads and `_coll.bin`'s boxes are not used.
+  Its sloped and flat quads are not used; `_coll.bin`'s boxes and cylinder are
+  (half-sizes or full ones, and where a cylinder starts, not checked).
   The placed models' collision meshes (`_cbvh`, docs/formats.md) are: walls and floors on
   models, and she steps over a wall whose top is within a step (60) of her feet. The boxes and capsules are
   used too (boxes as boxes, capsules as eight-sided prisms): kept as they are when they lie mostly
