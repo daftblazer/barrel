@@ -2,9 +2,13 @@
 //! `<model>_hi.g1m`, its collision as `<model>_cbvh*.g1co` (a triangle mesh in the same `HVB_`
 //! form as Escha's field collision, `barrel_formats::g1co`), `_cplh*` (`HLP_`, likely convex
 //! hulls), `_cbox*` (boxes) and `_ccap*` (capsules), in the model's own space. Here the meshes,
-//! each placed as its placement puts the model, give the walk its walls and the floors on
-//! models (stairs, raised floors, rocks); the hulls, boxes and capsules are not read
-//! (`docs/ryza/open.md`). Docs: docs/formats.md, "Ryza model collision".
+//! and the boxes and capsules made into meshes (a capsule as an eight-sided prism), each placed
+//! as its placement puts the model, give the walk its walls and the floors on models (stairs,
+//! raised floors, rocks, crates); tree trunks are capsules. The hulls are not read
+//! (`docs/ryza/open.md`). Some boxes are in a z-up space where the model is y-up (the light
+//! poles), which nothing in the file says: a box or capsule is kept as it is if it lies mostly
+//! inside its model's bounds, turned from z-up to y-up if that lies more inside, and left out
+//! if neither does (a stand-in, `docs/ryza/open.md`). Docs: docs/formats.md, "Ryza model collision".
 
 use barrel_formats::elixir::Elixir;
 use barrel_formats::g1co::{self, Collision};
@@ -15,13 +19,26 @@ use glam::Vec3;
 pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Collision> {
     // The meshes by model name (the entries' names drop the placement's `obj-`).
     let mut meshes: std::collections::HashMap<String, Vec<Collision>> = Default::default();
+    // The models' bounds (`obj-<model>_hi.g1m`'s geometry: min, then max), to fit shapes in.
+    let mut model_bounds: std::collections::HashMap<String, [f32; 6]> = Default::default();
+    for e in objects.entries.iter().filter(|e| !e.is_dummy()) {
+        let Some(model) = e.name.strip_suffix("_hi.g1m") else { continue };
+        if let Some(b) = barrel_formats::g1m::G1m::parse(objects.data(e)).ok().and_then(|m| m.geometry.map(|g| g.bounds)) {
+            model_bounds.insert(model.strip_prefix("obj-").unwrap_or(model).to_ascii_lowercase(), b);
+        }
+    }
     for e in objects.entries.iter().filter(|e| !e.is_dummy()) {
         let Some(stem) = e.name.strip_suffix(".g1co") else { continue };
         let Some((model, kind)) = stem.rsplit_once('_') else { continue };
-        if !kind.starts_with("cbvh") {
-            continue;
-        }
-        if let Ok(c) = g1co::parse(objects.data(e)) {
+        let data = objects.data(e);
+        let mesh = if kind.starts_with("cbvh") {
+            g1co::parse(data).ok()
+        } else if kind.starts_with("cbox") || kind.starts_with("ccap") {
+            shape(data).and_then(|c| fitted(c, model_bounds.get(&model.to_ascii_lowercase())?))
+        } else {
+            None
+        };
+        if let Some(c) = mesh {
             meshes.entry(model.to_ascii_lowercase()).or_default().push(c);
         }
     }
@@ -37,6 +54,86 @@ pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Col
         }
     }
     out
+}
+
+/// A box or capsule file (`OC1G`, 16 bytes, a kind byte, then floats) as a triangle mesh:
+/// kind 0 a box (centre, three axes, half-sizes, each four floats), kind 3 a capsule (centre,
+/// axis, then its length and radius; taken as the distance between its ends' centres, the
+/// prism reaching a radius past each end). None for anything else.
+fn shape(d: &[u8]) -> Option<Collision> {
+    if d.get(..4) != Some(b"OC1G") {
+        return None;
+    }
+    let f = |k: usize| d.get(17 + 4 * k..21 + 4 * k).map(|b| f32::from_le_bytes(b.try_into().unwrap()));
+    let v = |k: usize| Some(Vec3::new(f(k)?, f(k + 1)?, f(k + 2)?));
+    match *d.get(16)? {
+        0 if d.len() >= 17 + 80 => {
+            let (c, axes, half) = (v(0)?, [v(4)?, v(8)?, v(12)?], v(16)?);
+            Some(prism(c, axes[1] * half.y, &[axes[0] * half.x + axes[2] * half.z, axes[0] * half.x - axes[2] * half.z, -axes[0] * half.x - axes[2] * half.z, -axes[0] * half.x + axes[2] * half.z]))
+        }
+        3 if d.len() >= 17 + 40 => {
+            let (c, axis, length, radius) = (v(0)?, v(4)?.normalize_or_zero(), f(8)?, f(9)?);
+            // Two directions square to the axis, and eight points around it.
+            let side = if axis.y.abs() < 0.9 { axis.cross(Vec3::Y).normalize() } else { axis.cross(Vec3::X).normalize() };
+            let other = axis.cross(side);
+            let ring: Vec<Vec3> = (0..8).map(|k| (k as f32 * std::f32::consts::FRAC_PI_4).sin_cos()).map(|(s, co)| (side * co + other * s) * radius).collect();
+            Some(prism(c, axis * (length * 0.5 + radius), &ring))
+        }
+        _ => None,
+    }
+}
+
+/// How much of a mesh's box lies inside `bounds` (min, then max), 0 to 1.
+fn inside(c: &Collision, bounds: &[f32; 6]) -> f32 {
+    let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for v in &c.vertices {
+        for a in 0..3 {
+            lo[a] = lo[a].min(v[a]);
+            hi[a] = hi[a].max(v[a]);
+        }
+    }
+    (0..3)
+        .map(|a| {
+            let span = (hi[a] - lo[a]).max(1e-3);
+            ((hi[a].min(bounds[a + 3]) - lo[a].max(bounds[a])).max(0.0) / span).min(1.0)
+        })
+        .product()
+}
+
+/// A shape as it fits its model (`bounds`): as it is, or turned from z-up to y-up, whichever
+/// lies more inside the model, if that is at least a fifth; none otherwise.
+fn fitted(c: Collision, bounds: &[f32; 6]) -> Option<Collision> {
+    let turned = placed(&c, |v| [v[0], v[2], -v[1]]);
+    let (a, b) = (inside(&c, bounds), inside(&turned, bounds));
+    let (best, fit) = if b > a { (turned, b) } else { (c, a) };
+    (fit >= 0.2).then_some(best)
+}
+
+/// A prism about `c`: the polygon `ring` (offsets from its middle, in order around) at `c - up`
+/// and at `c + up`, closed at both ends; one leaf node over it all.
+fn prism(c: Vec3, up: Vec3, ring: &[Vec3]) -> Collision {
+    let n = ring.len();
+    let mut vertices: Vec<[f32; 3]> = ring.iter().map(|&o| (c - up + o).to_array()).collect();
+    vertices.extend(ring.iter().map(|&o| (c + up + o).to_array()));
+    let mut triangles = Vec::new();
+    for k in 0..n {
+        let (a, b) = (k as u16, ((k + 1) % n) as u16);
+        triangles.push([a, b, b + n as u16]);
+        triangles.push([a, b + n as u16, a + n as u16]);
+    }
+    for k in 1..n - 1 {
+        triangles.push([0, k as u16 + 1, k as u16]);
+        triangles.push([n as u16, (n + k) as u16, (n + k + 1) as u16]);
+    }
+    let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+    for v in &vertices {
+        for a in 0..3 {
+            lo[a] = lo[a].min(v[a]);
+            hi[a] = hi[a].max(v[a]);
+        }
+    }
+    let node = g1co::Node { max: hi, min: lo, kind: 0, link: 65535, count: triangles.len() as u32, first: 0 };
+    Collision { nodes: vec![node], triangles, vertices }
 }
 
 /// A mesh moved by `f`: its vertices and its nodes' bounds (each node's box made again from
@@ -63,6 +160,43 @@ fn placed(c: &Collision, f: impl Fn([f32; 3]) -> [f32; 3]) -> Collision {
 
 #[cfg(test)]
 mod tests {
+    fn file(kind: u8, floats: &[f32]) -> Vec<u8> {
+        let mut d = b"OC1G2\0\0\0\0\0\x01\0\0\0\0\0".to_vec();
+        d.push(kind);
+        for v in floats {
+            d.extend(v.to_le_bytes());
+        }
+        d
+    }
+
+    #[test]
+    fn a_box_is_its_six_sides() {
+        let d = file(0, &[0.0, 20.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 30.0, 20.0, 10.0, 0.0]);
+        let c = super::shape(&d).unwrap();
+        assert_eq!(c.triangles.len(), 12);
+        let (lo, hi) = (c.nodes[0].min, c.nodes[0].max);
+        assert_eq!((lo, hi), ([-30.0, 0.0, -10.0], [30.0, 40.0, 10.0]));
+    }
+
+    #[test]
+    fn a_z_up_box_is_turned_to_fit_its_model() {
+        // A pole along z in the file, along y in the model.
+        let d = file(0, &[0.0, 0.0, 500.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 50.0, 500.0, 0.0]);
+        let c = super::fitted(super::shape(&d).unwrap(), &[-60.0, 0.0, -60.0, 60.0, 1000.0, 60.0]).unwrap();
+        assert_eq!((c.nodes[0].min[1], c.nodes[0].max[1]), (0.0, 1000.0));
+        // One that fits neither way is left out.
+        assert!(super::fitted(super::shape(&d).unwrap(), &[-60.0, 0.0, -60.0, 60.0, 30.0, 60.0]).is_none());
+    }
+
+    #[test]
+    fn an_upright_capsule_is_a_post() {
+        let d = file(3, &[0.0, 100.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 200.0, 50.0]);
+        let c = super::shape(&d).unwrap();
+        let (lo, hi) = (c.nodes[0].min, c.nodes[0].max);
+        assert!((lo[1] + 50.0).abs() < 1e-3 && (hi[1] - 250.0).abs() < 1e-3, "{lo:?} {hi:?}");
+        assert!((hi[0] - 50.0).abs() < 1e-3);
+    }
+
     #[test]
     fn a_moved_mesh_keeps_its_nodes_around_it() {
         let c = barrel_formats::g1co::Collision {

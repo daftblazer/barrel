@@ -1138,7 +1138,14 @@ Beside each model's `<model>_hi.g1m` (entry names without the placement's `obj-`
 in the model's space, in four kinds by suffix: `_cbvh[N]` is a triangle mesh in Escha's field
 collision form (`OC1G`, one `HVB_` chunk, `barrel_formats::g1co`; Rasenboden: all 37 read, on
 cliffs, rocks, trees, the floors and stairs), `_cplh[N]` an `HLP_` chunk (likely convex hulls),
-`_cbox[N]` boxes and `_ccap[N]` capsules (not read); two stumps carry `_Group<N>.g1co` meshes.
+`_cbox[N]` boxes and `_ccap[N]` capsules; two stumps carry `_Group<N>.g1co` meshes. A box or
+capsule file is `OC1G` (16 bytes, the version and size as the others), a kind byte (0 a box, 3 a
+capsule), then floats with no chunk: a box's centre, its three axes and its half-sizes, each four
+floats (the axes identity in all of Rasenboden's 47); a capsule's centre and axis (four floats
+each, the axis (0, 1, 0) in all 26), its length and its radius (tree trunks: radius 46 to 284).
+Most are in the model's y-up space and taller than the mesh (the signpost's box is 416 high over
+a 140-unit post); a few lie along z instead (the light pole, the clothes pole), which nothing in
+the file marks, and the bags' boxes fit their mesh in neither way.
 `barrel_ryza::solids` places each mesh as its placement puts the model
 (`field::placement_transform`): in Rasenboden 956 placed meshes, 282,000 triangles, giving the
 walk its walls (upright triangles) and floors (the rest) beside the `_le.koc` quads.

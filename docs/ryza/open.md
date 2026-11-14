@@ -81,9 +81,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   plain wall (volumes outlined by quads?). Its sloped and flat
   Its sloped and flat quads and `_coll.bin`'s boxes are not used.
   The placed models' collision meshes (`_cbvh`, docs/formats.md) are: walls and floors on
-  models, and she steps over a wall whose top is within a step (60) of her feet. Not read: the
-  models' hulls, boxes and capsules (`_cplh`, `_cbox`, `_ccap`: trees' trunks and the smaller
-  props have only these, so she walks through them). Heights look only at the floors in
+  models, and she steps over a wall whose top is within a step (60) of her feet. The boxes and capsules are
+  used too (boxes as boxes, capsules as eight-sided prisms): kept as they are when they lie mostly
+  inside their model's bounds, turned from z-up to y-up when that fits better (the light poles),
+  left out when neither fits (the bags): a stand-in until where the game places them is known
+  (a z-up flag, or the model's own data). Not read: the hulls (`_cplh`, `HLP_`). The camera has
+  no collision: behind her it can sit inside a bank or a cliff. Heights look only at the floors in
   their 256-unit cell (`walk::Ground`): 0.6 µs a height in Rasenboden on the PC, from 1.8 ms
   searching all 282,000 triangles.
 - **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
