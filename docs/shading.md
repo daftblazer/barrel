@@ -602,7 +602,14 @@ light-propagation volume `sLPVBuffer`, and the field's cube maps `sAmbDif` (`_ad
   `atColor` as in the G-buffer program.
 
 So the cube map's light is scaled, not multiplied by an ambient colour, and an ambient colour is
-added. Which environment values become `vAmbParam`, `vAmbDifScl` and `ambLit` is not placed:
+added. The executable names the constants in tables of `{name pointer, type word}` (the ambient
+group `vAmbParam`, `vAmbOccRat`, `vAmbSpcWgt`, `nAmbSpcNum`, `vAmbDifScl`, `vAmbSpcScl` from
+0x1413f9c40; `vDiffSrc`, `vMatSrc`, `bSpec`, `ambLit`, `fog`, `cFog`, `litDir`, `litPos`,
+`litCol`, `litAmb` around 0x1417b23b0), set through those tables by index, so no code refers
+to the names. The environment's `indirectStage_` block (structure +0xda0) reads, by its
+reader's member offsets, `{IDLScalerOfAmbientDiffuseMap @0?, ISLScalerOfAmbientSpecularMap @4,
+the two ColorRGB @8 and @0x14?, IDLFade @0x20, ISLFade @0x24, IDLScalerOfLPV @0x28,
+AmbientLightScale @0x30, KeyLight0Scale @0x34, ...}`. Which environment values become `vAmbParam`, `vAmbDifScl` and `ambLit` is not placed:
 the default XML's `indirectStage_IDLScalerOfAmbientDiffuseMap` (2.5) and its `ColorRGB` (1.64,
 1.98, 4.0) fit `vAmbParam.x` and `vAmbDifScl`, and the file's 0x484 values (2 to 4 in the
 attic) fit that RGB rather than an ambient colour.
