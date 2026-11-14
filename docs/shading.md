@@ -642,11 +642,20 @@ clustered lights (`tCllLightIndices/Positions/Attributes`). What it does, from t
   says so; the output is specular plus diffuse.
 
 The ramp texture (`Data/x64/shader/texture/chara_rmp.g1t`, 256 × 256 BC7) is white but for a
-few thin rows going from a dark tint to white (a reddish one at the top, browns and greys
-below): one row per kind of material. Which rows Ryza's materials pick, their rim rows and
-the constants' values (`cRimTbl`, `rampCoord*`, `fOccAlbScl`, set at run time) come from her
-G-buffer programs and the game's code, neither found (her shaders' `@hash` names,
-`docs/formats.md`, "Ryza's character files").
+few thin rows going from a dark tint to white: one row per kind of material. Row 0 is a light
+red (242, 172, 164), row 1 a dark brown (90, 46, 32), row 3 a pale pink (247, 199, 193) that turns
+white within a quarter of the row, row 4 a long warm brown, row 9 a dark blue-grey; most rows
+are white.
+
+Ryza's materials name their row: her submeshes' parameter sets (G1MG 0x10003) carry
+`rampIndex` (an integer in a type-1 word: 3 on submeshes 0 to 4, drawn with `@CB0965E5`,
+likely her skin; 1 on the rest), `rampRimColorAdj` (1, 1, 1), `rampRimThres` (1), `rmIndex` (0:
+likely her rim row), the wetness (`wtWet`, `wtBldPrms`, `wtDtFade`, `wtDtMkFade`: all 0) and on
+her hair (`@C86A7C58`, `@E905E6C7`) `alr2HAdj` (-0.11) and `alr2HDir` (0, 1, 0, 6: an
+anisotropic highlight along the hair, "Alr2h" in the `PBB-Alr2h…` program names); her eyes
+(`@E24D26E6`) have texture transforms and a parallax (`vPlx` 0, -0.05), her face's outline-like
+part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constants' values
+(`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found.
 
 ## Ryza DX: the sky
 

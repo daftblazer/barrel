@@ -164,7 +164,9 @@ pub struct Submesh {
 }
 
 /// A named shader parameter (G1MG section 0x10003): `values` as floats (type 1) or the raw
-/// words read as floats otherwise.
+/// words read as floats otherwise (Ryza's `rampIndex`, `rmIndex`: one integer, `integer`).
+/// The values never run past the parameter's record (an integer parameter's count is not its
+/// number of words).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShaderParam {
     pub name: String,
@@ -172,7 +174,20 @@ pub struct ShaderParam {
     pub values: Vec<f32>,
 }
 
+impl ShaderParam {
+    /// The first value's raw word, for a parameter that holds an integer (Ryza's `rampIndex`
+    /// and `rmIndex` are type 1 like the floats, their words small integers).
+    pub fn integer(&self) -> Option<u32> {
+        self.values.first().map(|v| v.to_bits())
+    }
+}
+
 impl Geometry<'_> {
+    /// A submesh's parameter record by name.
+    pub fn param_record(&self, s: &Submesh, name: &str) -> Option<&ShaderParam> {
+        self.shader_params.get(s.shader_params)?.iter().find(|p| p.name == name)
+    }
+
     /// A submesh's parameter by name.
     pub fn param(&self, s: &Submesh, name: &str) -> Option<&[f32]> {
         self.shader_params.get(s.shader_params)?.iter().find(|p| p.name == name).map(|p| p.values.as_slice())
@@ -451,7 +466,8 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
                         }
                         let name_bytes = sec.get(p + 16..p + 16 + name_len).ok_or(Error::Corrupt("g1mg shader parameter past the end"))?;
                         let name = String::from_utf8_lossy(name_bytes.split(|&b| b == 0).next().unwrap_or_default()).into_owned();
-                        let values = (0..count.min(64)).map(|k| f32_at(sec, p + 16 + name_len + 4 * k)).collect::<Result<_, _>>()?;
+                        let room = (size - 16 - name_len) / 4;
+                        let values = (0..count.min(64).min(room)).map(|k| f32_at(sec, p + 16 + name_len + 4 * k)).collect::<Result<_, _>>()?;
                         set.push(ShaderParam { name, kind, values });
                         p += size;
                     }
