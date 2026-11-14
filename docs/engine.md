@@ -495,7 +495,9 @@ H.265, AV1 and VP9 only). The ways open:
 3. The movies converted once, at install time, to a codec the engine decodes anyway (AV1 or
    H.264 through Vulkan Video, Opus or Vorbis audio, which `barrel-audio` already plays).
 
-Not chosen yet (the user's call). Until then the events go on past `u46` without the movie.
+Chosen (2026-11-14): option 1, native decoders in Rust, decoding on the CPU into a texture.
+FFmpeg may serve as a test oracle on the PC (a reference decode to compare frames against) but
+is never linked or shipped. Until the decoders land the events go on past `u46` without the movie.
 
 ## Deliberate differences
 

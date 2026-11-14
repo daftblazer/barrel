@@ -40,7 +40,7 @@ through in Barrel.
   save is unknown), the `[1, N]` place conditions read live.
 - Endings (`u145` in a jump table, skipped), `u79` in `MM08_AS4_*`.
 - `TOWN_03`'s event scenes render from inside the ground (parked).
-- Movies: not played; waiting on a decision.
+- Movies: not played; native Rust decoders chosen (2026-11-14).
 
 ## Battle
 

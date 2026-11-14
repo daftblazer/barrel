@@ -45,6 +45,12 @@ likely settle them where static reading failed.
     moved to the middle; the desk picture, the tags' lit cut, the question line and centred
     texts (kind 22) as the game has them. Left: the Yes tag's tilt, Logy's confirm figure place
     (no screenshot of it).
+- (2026-11-14) Battles don't really work yet: Barrel's battle is an auto-battle with a stand-in
+  playback and a text command list (stage 17 in the plan).
+- (2026-11-14) The maps don't quite look the same yet (stage 15).
+- (2026-11-14) No title screen music.
+- (2026-11-14) No intro movie on startup (movies: native decoders, chosen 2026-11-14).
+- (2026-11-14) No company logo splash screens before the title.
 
 ## Saves
 
@@ -174,4 +180,5 @@ likely settle them where static reading failed.
 
 ## Waiting on the user
 
-- **Movies**: whether and how to play them is the user's call; not implemented.
+- **Movies**: to be played by native Rust decoders (ASF, VC-1, WMA Pro; the user's choice,
+  2026-11-14); not implemented yet.
