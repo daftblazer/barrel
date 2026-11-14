@@ -336,7 +336,9 @@ the same view: Sector One's row of dots at z 31300 and the column toward Ruins E
 within 1.1). The earlier fit by eye (43 degrees, 5400, 15 degrees) was 28 pixels off on the
 column, the far side spread too much. She is drawn 1.75 times
 her size there (`AREA_MAP_SCALE`, as the recording has her), and the neighbours' labels (layout 638, "Ruins Entrance", "Sector Two") stand on
-the route beside her, a step out each way, not on the neighbour's mark. Not yet the game's:
+the route beside her, a step out each way, not on the neighbour's mark. The marks of sectors closed or not known
+yet are not drawn, like the dots of routes not known (the recording at 0:45 shows none for
+A2p2 and A2p4 south of Sector One). Not yet the game's:
 her shadow there (the recording shows none), the labels' plates (the neighbours' names now stand on their routes' third dot,
 48 pixels up, while she stands still: `area_panel::label`), the routes not yet open (the
 recording at Sector One shows no way down to Sector Three: Barrel draws and takes every
