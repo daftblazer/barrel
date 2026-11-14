@@ -1199,7 +1199,13 @@ kinds 7 (785 cells: the large yellow fields), 6 (483, strung along the paths), 5
 and 0. `_grass.g1t` holds three 2048 × 1024 textures: an atlas of 8 plant cards (4 × 2,
 512 × 512 each: weeds, flowering plants, a grass tuft, wheat, BC3 with alpha), one filled with
 red (BC3; a placeholder or a mask) and the cards' normal maps (BC1). Which card a kind draws
-is not in its record. Not drawn yet (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes
+is not in its record: the game builds the plants' quads on the CPU (`ObjectGrassPBS.g1s`'s
+vertex programs take position, normal, colour, UV, tangent and a billboard size, with
+`g_fWidthScale`, `g_fHeightScale`, `g_fFarClipBegin`/`End`, `g_fFarScaleBegin`/`End` and a
+sway phase `g_fPhase`, `g_fOscPhase`), so the choice is in the executable. The grass quality
+and range presets (`saves/graphicssetting/grassqualitypreset.xml`, `grassrangepreset.xml`):
+density 1 and fading from 8000 to 15000 units at Middle, the highest. `barrel_ryza::grass`
+reads the file. Not drawn yet (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes
 (position, rotation in radians, three sizes, then two words: 2 and 15 in all of Rasenboden's;
 44 bytes each), then a u32 count of cylinders (position, rotation, radius, height, the same two
 words; 40 bytes). Rasenboden's four boxes are tall and thin (38 × 715 × 37 by its first, near
