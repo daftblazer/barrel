@@ -1657,3 +1657,24 @@ Ayesha's 111 entries), so the `s` numbers line up too. The `q` switch does not: 
 `q4` to `q7`, `q9` to `q11`, `q16`, `q17`, `q20` to `q22`, `q32`, `q35`, `q38`, `q40`, where Escha
 passes by `q3` to `q5`, `q7` to `q9`, `q13`, `q14`, `q17` to `q19`, `q29`, `q32`, `q35`, `q37`,
 `q39`: as between Escha and Shallie, the `q` group is the one that was renumbered.
+
+## Atelier Ryza DX's events
+
+Ryza's scripts (docs/formats.md, "Ryza DX: events") decode with their own measured table
+(`OperandTable::ryza`) and play through the same carry-over as Sophie 2's:
+`BARREL_GAME=ryza barrel play-event event/event_jp/<chapter>/event_<name>.ebd [LANG]` on files
+unpacked from the archives (`barrel pak-extract`); the messages are found under
+`event/event_<lang>/` beside it. Names come from `ebd_names::RYZA` (156 words: Ryza's own
+switch for the macros, Sophie 2's names for the rest). A name only the other game has, on a
+word Escha leaves unnamed with the same operand count, now carries over as that word (Ryza
+names `w1` `ECT_MACRO_INDEX_CHANGE`; Escha never registered a name for it). Commands that no
+executable names but that do what an Escha command does are mapped by word
+(`ebd_names::RYZA_SAME_AS_ESCHA`): `u17` `{first, last}` is Escha's `u18`, show messages.
+
+The opening (`event_mm00_010`) then starts its actions, sets field 5 and the camera, places
+and turns its characters, adds their effects, plays the voice and music cues, and shows its
+lines from 6 on (33 in all, timed: the talk in Ryza's room to the room tutorial at 110.8 s).
+The narration's first six lines are not shown: `u65` / `u66` (15, 16 with `0 100 100`,
+`100 0 50`; around the voice) are the likely carriers. 303 commands stay unmapped; the
+commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie
+2), `t25` (Ryza only), `u17`'s neighbours `u66`, `q5` (`_ADDITION_EX`, 13 against 14), `t18`.

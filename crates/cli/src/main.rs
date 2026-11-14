@@ -3577,6 +3577,13 @@ fn g1a_scan(dir: &Path) -> Result<()> {
 
 /// The message file for an event: Event[_LANG]/event/<dir>/EVENT_MESSAGE_<name>.ebm.
 fn message_file(event: &Path, lang: Option<&str>) -> Option<PathBuf> {
+    // Ryza DX's, unpacked from its archives: `event/event_jp/<chapter>/event_<name>.ebd`, the
+    // messages in `event/event_<lang>/<chapter>/event_message_<name>.ebm` (Japanese by default).
+    if let Some(name) = event.file_name()?.to_str()?.strip_prefix("event_").and_then(|n| n.strip_suffix(".ebd")) {
+        let dir = event.parent()?;
+        let lang_dir = dir.parent()?.with_file_name(format!("event_{}", lang.unwrap_or("jp").to_ascii_lowercase()));
+        return Some(lang_dir.join(dir.file_name()?).join(format!("event_message_{name}.ebm")));
+    }
     let name = event.file_name()?.to_str()?.strip_prefix("EVENT_")?.strip_suffix(".ebd")?;
     let dir = event.parent()?;
     let chapter = dir.file_name()?;
@@ -3825,14 +3832,22 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
         .and_then(|exe| read(&exe).ok())
         .and_then(|data| barrel_formats::pe::Pe::parse(&data).ok().and_then(|pe| barrel_escha::data::bgm::tracks(&pe, barrel_escha::data::bgm::TRACKS_EN)))
         .unwrap_or_default();
-    // BARREL_GAME=sophie2: an Atelier Sophie 2 event, carried over to Escha's commands by name.
+    // BARREL_GAME=sophie2: an Atelier Sophie 2 event, carried over to Escha's commands by name;
+    // BARREL_GAME=ryza: an Atelier Ryza DX one, the same way.
     let sophie2 = std::env::var("BARREL_GAME").is_ok_and(|g| g == "sophie2");
-    let table = if sophie2 { OperandTable::sophie2() } else { OperandTable::escha() };
+    let ryza = std::env::var("BARREL_GAME").is_ok_and(|g| g == "ryza");
+    let table = if sophie2 { OperandTable::sophie2() } else if ryza { OperandTable::ryza() } else { OperandTable::escha() };
     // A Shallie event (its install beside it): read with Shallie's table, its commands put into
     // Escha's words where they mean the same (`ebd::shallie_to_escha`).
     let shallie = file.ancestors().any(|p| p.join("Atelier_Shallie.exe").is_file());
     let (event, table) = if shallie { event.translate(&OperandTable::shallie(), barrel_formats::ebd::shallie_to_escha)? } else { (event, table) };
-    let player = if sophie2 { Player::translated(&event, &messages, &table, barrel_formats::ebd_names::SOPHIE2)? } else { Player::new(&event, &messages, &table)? };
+    let player = if sophie2 {
+        Player::translated(&event, &messages, &table, barrel_formats::ebd_names::SOPHIE2, &[])?
+    } else if ryza {
+        Player::translated(&event, &messages, &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA)?
+    } else {
+        Player::new(&event, &messages, &table)?
+    };
     let steps: Vec<(Option<f32>, Step)> = if timed {
         // BARREL_READ: hold each line its unattended reading time, as the viewer does.
         let player = if std::env::var("BARREL_READ").is_ok() { player.reading_time(barrel_engine::event::reading_time) } else { player };

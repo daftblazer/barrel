@@ -502,19 +502,25 @@ impl<'a> Player<'a> {
     /// A player for another game's event (decoded with that game's `table`), its commands
     /// carried over to Escha's words by name (`game_names`, the game's word → `ECT_*` name) where
     /// both games give the name the same operand count; the others stay as they are, which
-    /// the player does not know and passes over.
-    pub fn translated(event: &'a Ebd, messages: &'a [Message], table: &OperandTable, game_names: &[(u32, &str)]) -> Result<Self, Error> {
+    /// the player does not know and passes over. `same` names commands by what they do where
+    /// neither game's executable names them (the game's word, Escha's): taken before the names.
+    pub fn translated(event: &'a Ebd, messages: &'a [Message], table: &OperandTable, game_names: &[(u32, &str)], same: &[(u32, u32)]) -> Result<Self, Error> {
         let escha = OperandTable::escha();
         let by_name: HashMap<&str, u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, n)| (n, w)).collect();
         let theirs: HashMap<u32, &str> = game_names.iter().copied().collect();
         let mut p = Self::new(event, messages, table)?;
         let escha_named: std::collections::HashSet<u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, _)| w).collect();
         for c in p.actions.iter_mut().flatten() {
+            if let Some(&(_, w)) = same.iter().find(|&&(g, w)| g == c.word && escha.get(w) == table.get(c.word)) {
+                c.word = w;
+                continue;
+            }
             match theirs.get(&c.word).and_then(|n| by_name.get(n)) {
                 Some(&w) if escha.get(w) == table.get(c.word) => c.word = w,
-                // Named in neither game (`w1`, the step marks, and the like) with the same
-                // operand count in both: taken as the same command.
-                None if !theirs.contains_key(&c.word) && !escha_named.contains(&c.word) && escha.get(c.word).is_some() && escha.get(c.word) == table.get(c.word) => {}
+                // Unnamed in Escha (`w1`, the step marks, and the like; the other game may name it,
+                // as Ryza's `ECT_MACRO_INDEX_CHANGE`, by a name Escha's executable never
+                // registered) with the same operand count in both: taken as the same command.
+                None if !escha_named.contains(&c.word) && escha.get(c.word).is_some() && escha.get(c.word) == table.get(c.word) => {}
                 // No name, a name Escha lacks, or other operands: kept off Escha's words (the
                 // same word can mean something else there), with a flag bit no Escha word has.
                 _ => c.word |= UNMAPPED,
@@ -989,7 +995,7 @@ mod tests {
         let names = [(0x7000_0009u32, "ECT_MACRO_TIME_WAIT")];
         let table = OperandTable::new(&[(0x7000_0009, Some(1)), (0x7400_0007, Some(0))]);
         let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words: vec![0x7000_0009, 150, 0x7400_0007, END] }], resources: vec![] };
-        let p = Player::translated(&event, &[], &table, &names).unwrap();
+        let p = Player::translated(&event, &[], &table, &names, &[]).unwrap();
         assert_eq!(p.actions[0][0].word, TIME_WAIT);
         // 0x7400_0007 is a camera command in Escha: the stranger's word is kept off it.
         assert_eq!(p.actions[0][1].word, 0x7400_0007 | UNMAPPED);
