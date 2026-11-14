@@ -129,6 +129,8 @@ pub enum Start {
     NewGame { logy: bool },
     /// A saved game from this file.
     Load(std::path::PathBuf),
+    /// The Options screen (the title shows again after it).
+    Options,
     Exit,
 }
 
@@ -139,6 +141,7 @@ impl Front {
                 Entry::NewGame => *self = Front::Hero(crate::hero::Hero::new()),
                 Entry::LoadGame => *self = Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_game::saves::list).unwrap_or_default())),
                 Entry::ExitGame => return Some(Start::Exit),
+                Entry::Options => return Some(Start::Options),
                 other => eprintln!("title: {other:?} is not there yet"),
             },
             Front::Load(l) => match l.press(b)? {

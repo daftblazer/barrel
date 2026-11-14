@@ -3533,6 +3533,15 @@ fn without_settings_flags(args: &[String]) -> Vec<String> {
 }
 
 /// The window as it is now: its size, or fullscreen.
+/// The settings the Options page's "default" puts back: the launcher's default preset and
+/// fullscreen (`BARREL_DEFAULT_PRESET`, `BARREL_DEFAULT_FULLSCREEN`: a handheld's), else the
+/// desktop preset in a window.
+fn default_graphics() -> options::Graphics {
+    let render = std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| settings::RenderSettings::preset(&n)).unwrap_or(settings::RenderSettings::DESKTOP);
+    let fullscreen = std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1");
+    options::Graphics { render, display: settings::Display { fullscreen, ..settings::Display::DEFAULT } }
+}
+
 fn current_display(p: &window::Pump) -> settings::Display {
     let w = p.window();
     let size = w.inner_size();
@@ -4378,7 +4387,28 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let window = presenter.as_ref().zip(pump.as_mut());
         let out = presenter.is_none().then(|| PathBuf::from(&out_path));
         let saves = saves_dir.clone().or_else(barrel_game::saves::default_dir);
-        let picked = title::run(&gpu, pool, &target, window, offscreen.as_ref().map(|(c, _)| *c), r, title_load, &keys, out.as_deref(), saves.as_deref())?;
+        let mut window = window;
+        // The scripted keys (`BARREL_TITLE_KEYS`) press on the first showing only.
+        let mut keys = keys;
+        let picked = loop {
+            let picked = title::run(&gpu, pool, &target, window.as_mut().map(|(pr, p)| (*pr, &mut **p)), offscreen.as_ref().map(|(c, _)| *c), r, title_load, &std::mem::take(&mut keys), out.as_deref(), saves.as_deref())?;
+            // Options: the graphics page, then the title again. A change is saved to the config,
+            // and Barrel starts again in place (the same process, a fresh start at the title):
+            // the renderer's targets and pipelines are built for the settings at its start, and
+            // no scene is up yet to carry over.
+            let (Some(title::Start::Options), Some((pr, p))) = (&picked, window.as_mut()) else { break picked };
+            let now = options::Graphics { render: settings, display: current_display(p) };
+            let kept = options::run(&gpu, pool, &target, Some((*pr, &mut **p)), None, r, now, default_graphics(), &[], None)?;
+            eprintln!("title: options: {kept:?}");
+            if let Some(new) = kept.filter(|k| *k != now) {
+                let path = write_config(&new)?;
+                eprintln!("title: graphics saved to {}, starting again", path.display());
+                unsafe { d.device_wait_idle()? };
+                use std::os::unix::process::CommandExt;
+                let exe = std::env::current_exe()?;
+                return Err(std::process::Command::new(exe).args(std::env::args_os().skip(1)).exec().into());
+            }
+        };
         eprintln!("title: {picked:?}");
         match picked {
             Some(title::Start::NewGame { logy }) => {
@@ -5347,8 +5377,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     unsafe { gpu.device.device_wait_idle()? };
                     let target = screen::Target { pass: post_pass, framebuffers: &targets.framebuffers, width, height };
                     let now = options::Graphics { render: settings, display: current_display(p) };
-                    let first = options::Graphics { render: settings::RenderSettings::DESKTOP, display: settings::Display::DEFAULT };
-                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, now, first, &script("BARREL_OPTIONS_KEYS"), None)?;
+                    let kept = options::run(&gpu, pool, &target, Some((pr, &mut *p)), None, root, now, default_graphics(), &script("BARREL_OPTIONS_KEYS"), None)?;
                     eprintln!("frame {frame}: options: {kept:?}");
                     // Kept and changed: into the config. The window takes its new size or
                     // fullscreen at once; new render settings start the scene again where she
@@ -5651,9 +5680,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             };
             let e = turned_eye(eye, target, orbit);
             let f = Vec3::new(target.x - e.x, 0.0, target.z - e.z).normalize_or_zero();
-            // Right of the view in render space is (-f.z, 0, f.x); game x is render's mirrored.
+            // Right on screen: the projection mirrors clip-space x (`view_proj`), so it is the
+            // right-handed view's left, (f.z, 0, -f.x); game x is render's mirrored.
             // The speed a second is the move over one second.
-            let v = (f * ahead + Vec3::new(-f.z, 0.0, f.x) * right).normalize_or_zero();
+            let v = (f * ahead + Vec3::new(f.z, 0.0, -f.x) * right).normalize_or_zero();
             w.velocity = barrel_game::walk::player_move([-v.x * lean, v.z * lean], 1.0, false, w.run_on);
         }
         let moving = w.velocity != [0.0, 0.0];
