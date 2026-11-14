@@ -1955,6 +1955,15 @@ the turn order along the top (layout 864: fifteen face frames and "Action"), the
 plates (layout 878: three of layout 870 at x 424, 798 and 1168, y 796; the reserve row, three
 of layout 868, at y 966), the battle cries' speech bubbles over each (layout 882, kind 22
 "…!!" texts), the action banner (885), the Support gauge with "Fast Forward(×1.5)" (884) and
+The turn bar places things one entry a step, 63 pixels apart, not by wait: `0x1401900c0
+(timeline, wait)` (the actor's next turn while a command is chosen) counts the timeline entries
+whose wait is under the first entry's plus `wait` and puts its marker at x 1012 − 63 × count, y
+25 (with none before it, at the Action slot's 1032, 12), through `0x1401cdef0` / `0x1401cdf20`
+(the icon's place as floats plus the constants at `0x14071c348` and `0x14080a538`). The
+recording at 322 s shows the portraits one empty slot apart, so the game's timeline then held
+entries between them that show no portrait (free or scheduled entries, `docs/tables.md` "Turn
+order"); Barrel's timeline holds the fighters only, so its portraits sit side by side. To read
+live: the entries (battle +0xa28) at that point of a battle.
 layout 877 (glints over the party plates' bars, at y 916 to 952: not the target panel, as
 once thought). The target plate is layout 920 on its own: the frame (part 0x102 cut 3, 336 × 96),
 the red HP bar (cut 6, 246 × 20 at [40, 48]), the name (kind 22 at [160, 6]), the state icon
