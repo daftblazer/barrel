@@ -1725,7 +1725,14 @@ across over 12 s; at 9 s its frame matches the recording's (the narration's seco
 the sand). From 10.9 s the event switches to the free camera (`t3`, `t4`, `t6`, `t7`: eye and
 target at points, moving over 10 s), already Escha's: at 13 s the cove's rocks and the sky
 through the arch stand as in the recording, Ryza (character 0, placed by `s2`) not drawn yet,
-and the free camera's field of view (`t24`, `ECT_CAMERA_FOV_SET` 24°) not applied. (`str_telop.xml` holds the field
+and the free camera's field of view (`t24`, `ECT_CAMERA_FOV_SET` 24°) not applied.
+Ryza's `s2/0x30` (`ECT_CHARA_POS_SET`, 13,217 uses) has a relative form: kind 8 in the second
+operand (10,352 uses) makes it `{character, 8, of, 1, x, y, z}`, the offset turned by `of`'s
+facing (z along it) and added to its position (`Step::PlaceNear`); Escha's events never use
+it. `barrel-ryza --event` puts Ryza (character 0) at the stage's position and facing: at 13 s
+she stands at the beach point (46373, 4089, 22678) facing the camera, as in the recording,
+though upright where the recording has her crouched (her event motion, `s8` frames 130 to
+181, is not played in stills yet). (`str_telop.xml` holds the field
 notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie

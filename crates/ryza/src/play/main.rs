@@ -342,6 +342,15 @@ fn main() -> Result<()> {
             eprintln!("event camera: eye {eye:?}, target {target:?}, fov {:?}", snap.fov);
         }
     }
+    // Ryza (character 0) where the event has put her, unless --ryza places her: the stage's
+    // facing (radians about y, 0 toward +z, game space) as her turn.
+    if let (Some(stage), None) = (&event_stage, &a.ryza) {
+        if let Some(&(p, facing)) = stage.snapshot().characters.get(&0) {
+            let turn = facing.to_degrees();
+            a.ryza = Some((Vec3::from(p), turn, "00000".into(), 0.0));
+            eprintln!("event: Ryza at {p:?}, turn {turn:.1}°");
+        }
+    }
     if a.field == "-" {
         let map = event_stage.as_ref().and_then(|s| s.field).ok_or("FIELD -: needs an --event that sets a field")?;
         let exe = std::fs::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;

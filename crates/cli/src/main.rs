@@ -3882,6 +3882,10 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("{action:3} {who} at ({}, {}, {})", position[0], position[1], position[2]);
             }
+            Step::PlaceNear { action, character, of, offset } => {
+                let who = |n: u32| names.get(n as usize).map_or("?", String::as_str).to_string();
+                println!("{action:3} {} at ({}, {}, {}) from {}", who(character), offset[0], offset[1], offset[2], who(of));
+            }
             Step::FieldChange { action, map } => {
                 let name = fields.get(map as usize).map_or("?", String::as_str);
                 println!("{action:3} --- field {map} ({name})");

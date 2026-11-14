@@ -347,6 +347,10 @@ pub enum Step<'a> {
     CharacterWait { action: usize, character: u32, seconds: f32 },
     /// A character is put at a point in field units (`s4`).
     Place { action: usize, character: u32, position: [f32; 3] },
+    /// A character is put at an offset from another (`s4` with kind 8, `{character, 8, of, 1,
+    /// x, y, z}`; Ryza's events use it, Escha's never do): the offset turned by `of`'s facing
+    /// (z along it), added to `of`'s position.
+    PlaceNear { action: usize, character: u32, of: u32, offset: [f32; 3] },
     /// A character plays a looping motion (`s10`; a `MOTION_*` number), blending over `blend`
     /// seconds.
     /// `s10` loops the whole clip (`0x1402036d0` with -1, -1 clears the play range); `s5`
@@ -633,6 +637,9 @@ impl<'a> Player<'a> {
             (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: self.slot(*character) }),
             (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
                 out.push(Step::CharacterWait { action, character: self.slot(*character), seconds: f(*hundredths) / 100.0 })
+            }
+            (CHARA_POS_SET, [character, 8, of, _, x, y, z, ..]) => {
+                out.push(Step::PlaceNear { action, character: self.slot(*character), of: self.slot(*of), offset: [f(*x), f(*y), f(*z)] })
             }
             (CHARA_POS_SET, [character, _, _, _, x, y, z, ..]) => {
                 out.push(Step::Place { action, character: self.slot(*character), position: [f(*x), f(*y), f(*z)] })
@@ -1250,6 +1257,7 @@ mod tests {
                 Step::StartAction { action } => format!("start {action}"),
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
+                Step::PlaceNear { character, of, offset, .. } => format!("place {character} at {offset:?} from {of}"),
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
                 Step::EventFlagAdd { flag, amount } => format!("flag {flag} += {amount}"),

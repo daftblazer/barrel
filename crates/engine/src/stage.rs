@@ -359,6 +359,14 @@ impl Stage {
                 b.position = *position;
                 b.mover = None;
             }
+            Step::PlaceNear { character, of, offset, .. } => match self.characters.get(of).map(|b| (b.position, b.facing)) {
+                Some((p, f)) => {
+                    let (s, c) = f.sin_cos();
+                    let at = [p[0] + offset[0] * c + offset[2] * s, p[1] + offset[1], p[2] - offset[0] * s + offset[2] * c];
+                    self.apply(&Step::Place { action: 0, character: *character, position: at });
+                }
+                None => self.unresolved += 1,
+            },
             Step::Motion { character, motion, looping, blend, division, .. } => match self.characters.get_mut(character) {
                 Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0), division: *division }),
                 None => self.unresolved += 1,
@@ -745,6 +753,17 @@ mod tests {
         let mut straight = Stage::default().play(&steps, |_, _| {});
         straight.run_until(t30 as f32 / 60.0);
         assert_eq!(straight.snapshot().characters[&1].0, s30.characters[&1].0);
+    }
+
+    #[test]
+    fn places_near_another() {
+        let mut stage = Stage::default();
+        stage.apply(&Step::Place { action: 0, character: 1, position: [100.0, 5.0, 200.0] });
+        stage.characters.get_mut(&1).unwrap().facing = std::f32::consts::FRAC_PI_2;
+        // Facing +x: the offset's z runs along +x, its x along -z.
+        stage.apply(&Step::PlaceNear { action: 0, character: 2, of: 1, offset: [10.0, 1.0, 80.0] });
+        let p = stage.snapshot().characters[&2].0;
+        assert!((p[0] - 180.0).abs() < 1e-3 && (p[1] - 6.0).abs() < 1e-3 && (p[2] - 190.0).abs() < 1e-3, "{p:?}");
     }
 
     #[test]
