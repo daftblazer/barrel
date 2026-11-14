@@ -43,7 +43,7 @@ achievements are the player's own, and the DX version has not been played there)
   the stage's ambient light map blue and `indirectStage_AmbientLightScale` 0 leaves the set's
   ambient colour out; the field has one light map for all times (`_ad`) and the override no
   per-set values (`env.bin` holds none of them; its words 0x2c4 on are SSAO's, then a per-set
-  saturation scale as at 0x44, now used per channel), so `barrel-ryza` keeps the set's
+  saturation scale as at 0x44; not applied, see docs/formats.md), so `barrel-ryza` keeps the set's
   colour and tints it by the tint's hue (over its luma) to the power 0.4, fitted over six
   shaded regions of the gate's noon still (RGB error 77; the full hue 118, none 95): tree
   shade 62, 58, 49 against the still's 45, 64, 70, rocks 75, 82, 104 against 53, 77, 103.

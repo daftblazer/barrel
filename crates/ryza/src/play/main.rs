@@ -759,8 +759,11 @@ fn main() -> Result<()> {
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored, half its range as Escha's) and `fBloomWeight` as the rate.
             glow: environment.as_ref().map_or((1.0, 0.0), |(_, l, _)| (l.lumi_threshold, l.bloom_weight)),
-            // The set's own saturation per channel (`Light::saturation`).
-            saturation: environment.as_ref().map_or([0.0; 3], |(_, l, _)| l.saturation),
+            // No saturation: the set's triple at 0x44 (`Light::saturation`, placed by its values
+            // only) laid on as saturation worsens the gate's noon against the still (ten
+            // regions' RGB error 145 without, 151 with, 187 before the tone curve), and as a
+            // colour scale it does no better (144 at the divisor refitted).
+            saturation: [0.0; 3],
             // A tone curve with the set's `fLumiMax` as its white point (fitted with the
             // exposure, `EXPOSURE_DIVISOR`: without it the sunlit grass clipped to 241, 254, 22
             // against the still's 182, 216, 69). How the game's tone chain uses `fLumiMax` is

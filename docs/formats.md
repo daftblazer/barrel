@@ -1291,7 +1291,8 @@ executable's offsets (Rasenboden's sunny sets morning / noon / evening / night):
 `fMiddleGray` 0.18, 0x20 `vExposureRange` (0.7 / 0.9 / 0.9 / 0.9 to 2.4: not the default
 override's 0.9 to 1.2), 0x28 `fLightAdaptedScale` 0.5, 0x2c `fDarkAdaptedScale` (0.5,
 evening 0.3), the FXAA four 0x30 (0.5, 0.5, 8, 2), 0x40 `fGamma` (2.2, noon 1.8), 0x44
-`vSaturationScale` per channel ((1.2, 1.2, 1.0) / (1.27, 1.3, 1.2) / (1.2, 1.1, 1.0) /
+`vSaturationScale` per channel (placed by its values only: laid on as saturation it worsens
+the noon still's match, as a colour scale it does no better; not applied) ((1.2, 1.2, 1.0) / (1.27, 1.3, 1.2) / (1.2, 1.1, 1.0) /
 (1.2, 1.2, 1.2)), 0x50 `vColorScale` (1, 1, 1; placed by the override's values), 0x5c
 `fBloomWeight` (0.4, evening 0.6); `barrel_ryza::environment::Light` reads them. The same
 three saturation words recur at 0x2f4. Comparing the four sets word by word, the others that
