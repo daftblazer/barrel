@@ -2937,6 +2937,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             trip: trip_path.clone(),
             logy: hero == 1,
         })?;
+    // The maps' screen filter (`PostEffect/texture/overlay.g1t`), for a field whose look asks
+    // for one (`A15_WMAP`'s tex_filter_world / tex_filter_area).
+    if field_looks.iter().flatten().any(|l| l.filter_world.is_some() || l.filter_area.is_some()) {
+        if let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()) {
+            let bytes = std::fs::read(root.join("Data/x64/PostEffect/texture/overlay.g1t"))?;
+            let pack = G1t::parse(&bytes)?;
+            if let Some(t) = pack.textures.first() {
+                renderer.set_filter(&gpu, t)?;
+            }
+        }
+    }
     let event_at = start_at;
     let packs: Vec<G1t> = pack_bytes.iter().map(|b| G1t::parse(b)).collect::<std::result::Result<_, _>>()?;
     let all_textures: Vec<&barrel_formats::g1t::Texture> = packs.iter().flat_map(|p| p.textures.iter()).collect();
@@ -5217,6 +5228,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         saturation: [0.0; 3],
         tone_white: 0.0,
         tone_gamma: 0.0,
+        filter: area_map.as_ref().zip(field_looks.get(current_field as usize).and_then(|l| l.as_ref())).and_then(|(a, l)| if a.world { l.filter_world } else { l.filter_area }).unwrap_or(0.0),
         camera: renderer::Camera { jitter: frame_jitter, fov, near: dist * 0.01 * zoom, far: (dist * 20.0 * zoom).max(80_000.0), dt: frame_dt, same: same_camera },
         freeze_now,
         frozen_weight,

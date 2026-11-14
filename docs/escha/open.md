@@ -48,9 +48,10 @@ likely settle them where static reading failed.
 - (2026-11-14) Battles don't really work yet: Barrel's battle is an auto-battle with a stand-in
   playback and a text command list (stage 17 in the plan).
 - (2026-11-14) The maps don't quite look the same yet (stage 15). Done: the vignette (649) and
-  diamond border (650). Still different against colseit-arrival 0:45: the game's vignette is a
-  warm red-orange glow and the map a more saturated orange (Barrel's vignette alpha-blended is
-  a faint brown: the blend or a colour on 649 is not read); the field HUD (date panel, gauge)
+  diamond border (650), and the screen texture filter (the red-orange rim, docs/shading.md).
+  Still different against colseit-arrival 0:45: the middle of the map is paler than the game's
+  (about 0.84, 0.75, 0.53 of Barrel's: perhaps `A15_WMAP.xml`'s light, ambient (0.35, 0.2, 0.1)
+  and sun (0.8, 0.7, 0.55), not reaching the map's terrain as the game applies it); the field HUD (date panel, gauge)
   and the button lists (Return / Assignment / System, Requests / Message Log) are not drawn on
   the maps; the scroll and label plates are flat stand-ins; event points are red dots and the
   cursor a blue ring under Escha in the game.

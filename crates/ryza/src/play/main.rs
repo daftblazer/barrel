@@ -1021,6 +1021,7 @@ fn main() -> Result<()> {
             // set's `fGamma` (docs/shading.md, "Ryza DX: the tone curve").
             tone_white: environment.as_ref().map_or(0.0, |(_, _, l, _, _, _)| l.lumi_max),
             tone_gamma: environment.as_ref().map_or(0.0, |(_, _, l, _, _, _)| l.gamma),
+            filter: 0.0,
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
             frozen_weight: 0.0,

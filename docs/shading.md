@@ -862,3 +862,17 @@ The lighting pass's blocks (`litDir`, `litCol`, `ambLit`, `vEye`, then `emScl` a
 the sun's direction (−0.354, −0.707, −0.612), `litCol` (4.781, 5.0, 3.5) with `ambLit`
 (3, 3, 4) in one kind and (3.825, 4, 2.8) with (0.6, 0.6, 0.8) in another, and `emScl` 0 at
 10 AM (the windows do not glow by day, as `EMISSION_BY_TIME` has it).
+
+## Escha's maps: the screen texture filter
+
+The world and area maps finish with `PostEffectTexFilter` (`Data/x64/PostEffect/pe_pack`,
+entry 14): `s = scene × HdrRange`, `f` = `PostEffect/texture/overlay.g1t` (512 × 256 BC3:
+black, its alpha a soft frame up to 83/255 at the edges, 0 inside), then
+`s + (overlay(s, f.rgb) − s) × f.a × overlayModifier`, times `HdrRangeInv`, with the usual
+overlay blend (`2sf` below 0.5, `1 − 2(1 − s)(1 − f)` above). With black, the overlay is 0 below
+0.5 and `2s − 1` above, so the edges darken and spread apart in colour: the maps' red-orange
+rim. `overlayModifier` is `A15_WMAP.xml`'s `<tex_filter_world>` (2) on the world map and
+`<tex_filter_area>` (3) on an area map. Barrel lays it over in `post.frag` (binding 3,
+`Frame::filter`; 0 for every other scene, Ryza included). On top of it the maps draw layouts
+649 (a dark red vignette) and 650 (the diamond border). The middle of the map is still paler
+than the game's (about 0.84, 0.75, 0.53 of Barrel's there), which the filter does not touch.

@@ -5,11 +5,14 @@
 layout(set = 0, binding = 0) uniform sampler2D scene;
 layout(set = 0, binding = 1) uniform sampler2D glow;
 layout(set = 0, binding = 2) uniform sampler2D frozen;
+// The screen filter (Escha's PostEffectTexFilter): its colour overlay-blended over the frame,
+// by its alpha times screen.x (overlayModifier; 0: none).
+layout(set = 0, binding = 3) uniform sampler2D screen_filter;
 // The fade's colour (u22), laid over by its alpha. saturation: a scale per channel about the
 // BT.601 luma (0: none), and in w a tone curve's white point (0: none): extended Reinhard,
 // c (1 + c / w²) / (1 + c), or with a gamma in pad.y the Ryza games' filmic curve over the
 // white point's, then that gamma.
-layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; } pc;
+layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; vec4 screen; } pc;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
 // The Ryza games' tone curve (the inverse of what `effect2dpreinvtonemapandgamma.g1s` undoes,
@@ -28,6 +31,11 @@ void main() {
     vec3 live = texture(scene, uv).rgb * 2.0 + texture(glow, uv).rgb * pc.rate;
     vec3 before = texture(frozen, uv).rgb * 2.0;
     vec3 c = mix(live, before, pc.frozen_weight);
+    if (pc.screen.x > 0.0) {
+        vec4 f = texture(screen_filter, uv);
+        vec3 over = mix(2.0 * c * f.rgb, 1.0 - 2.0 * (1.0 - c) * (1.0 - f.rgb), step(0.5, c));
+        c += (over - c) * f.a * pc.screen.x;
+    }
     if (pc.pad.y > 0.0) {
         c = pow(filmic(c) / filmic(vec3(pc.saturation.w)), vec3(1.0 / pc.pad.y));
     } else if (pc.saturation.w > 0.0) {

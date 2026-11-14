@@ -31,6 +31,8 @@ pub struct Renderer {
     pub post_pool: vk::DescriptorPool,
     pub post_sets: [vk::DescriptorSet; 2],
     pub post_sampler: vk::Sampler,
+    /// The screen filter's texture (post binding 3; a clear 1 × 1 until a game sets one).
+    pub filter: (vk::Image, vk::DeviceMemory, vk::ImageView),
     pub glow_pipelines: glow::Pipelines,
     pub upscale_pipelines: Option<upscale::Pipelines>,
     pub taa_pipelines: Option<taa::Pipelines>,
@@ -128,6 +130,10 @@ pub struct Frame<'a> {
     /// The game's filmic curve instead, with `tone_white` as its white point, and this gamma
     /// after it (0: the Reinhard curve, if any).
     pub tone_gamma: f32,
+    /// The screen filter's strength (Escha's `overlayModifier`, `PostEffectTexFilter`: the
+    /// texture set by [`Renderer::set_filter`] overlay-blended over the frame by its alpha
+    /// times this; 0: none).
+    pub filter: f32,
     pub camera: Camera,
     /// Copy this frame's scene into the frozen image (a cross-fade starts), and how much of
     /// the frozen image the post pass mixes in.
@@ -400,7 +406,7 @@ impl Renderer {
         ];
         let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
         // The post pass's one texture: the scene.
-        let post_binding = [0, 1, 2].map(|b| {
+        let post_binding = [0, 1, 2, 3].map(|b| {
             vk::DescriptorSetLayoutBinding::default()
                 .binding(b)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -409,7 +415,7 @@ impl Renderer {
         });
         let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
         // Two sets: GSR 2 swaps its output each frame, and the post pass reads the one just written.
-        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 6 }];
+        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 }];
         let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&post_sizes), None)? };
         let post_layouts = [post_set_layout, post_set_layout];
         let post_sets: [vk::DescriptorSet; 2] = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))? }
@@ -425,6 +431,9 @@ impl Renderer {
                 None,
             )?
         };
+        let clear = [0u8; 4];
+        let filter = upload_texture(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&clear[..]] }, false)?;
+        write_filter(&gpu, &post_sets, post_sampler, filter.2);
         let glow_pipelines = glow::Pipelines::new(&gpu)?;
         let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
         let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode, settings.scene_format())?) } else { None };
@@ -569,7 +578,7 @@ impl Renderer {
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
         ];
-        let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 48 }];
+        let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 64 }];
         let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
         let no_input = vk::PipelineVertexInputStateCreateInfo::default();
         let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
@@ -606,7 +615,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion, far_shadow: Default::default() })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion, far_shadow: Default::default() })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -617,7 +626,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -894,7 +903,8 @@ impl Renderer {
             );
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[targets.post_set()], &[]);
-            let mut post_push = [0u8; 48];
+            let mut post_push = [0u8; 64];
+            post_push[48..52].copy_from_slice(&filter_strength.to_le_bytes());
             post_push[..4].copy_from_slice(&rate.to_le_bytes());
             post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
             post_push[8..12].copy_from_slice(&(if show_motion { 1.0f32 } else { 0.0 }).to_le_bytes());
@@ -951,6 +961,9 @@ impl Renderer {
             d.destroy_descriptor_pool(self.post_pool, None);
             d.destroy_descriptor_set_layout(self.post_set_layout, None);
             d.destroy_sampler(self.post_sampler, None);
+            d.destroy_image_view(self.filter.2, None);
+            d.destroy_image(self.filter.0, None);
+            d.free_memory(self.filter.1, None);
             d.destroy_render_pass(self.post_pass, None);
             d.destroy_pipeline(self.outline_pipeline, None);
             d.destroy_pipeline(self.shadow_pipeline, None);
@@ -997,6 +1010,30 @@ impl Renderer {
         unsafe {
             d.destroy_descriptor_set_layout(self.instance_layout, None);
             d.destroy_command_pool(self.pool, None);
+        }
+        Ok(())
+    }
+}
+
+/// Points the post pass's binding 3 (the screen filter) at `view`, in both sets.
+fn write_filter(gpu: &Gpu, sets: &[vk::DescriptorSet; 2], sampler: vk::Sampler, view: vk::ImageView) {
+    let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+    let writes = sets.map(|s| vk::WriteDescriptorSet::default().dst_set(s).dst_binding(3).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info));
+    unsafe { gpu.device.update_descriptor_sets(&writes, &[]) };
+}
+
+impl Renderer {
+    /// The screen filter's texture (Escha's `PostEffect/texture/overlay.g1t`), replacing the
+    /// one before; [`Frame::filter`] says how strongly it is laid over.
+    pub fn set_filter(&mut self, gpu: &Gpu, texture: &barrel_formats::g1t::Texture) -> Result<()> {
+        let new = upload_texture(gpu, self.pool, texture, false)?;
+        unsafe { gpu.device.device_wait_idle()? };
+        write_filter(gpu, &self.post_sets, self.post_sampler, new.2);
+        let old = std::mem::replace(&mut self.filter, new);
+        unsafe {
+            gpu.device.destroy_image_view(old.2, None);
+            gpu.device.destroy_image(old.0, None);
+            gpu.device.free_memory(old.1, None);
         }
         Ok(())
     }

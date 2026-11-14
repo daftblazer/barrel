@@ -75,6 +75,11 @@ pub struct FieldLook {
     /// `<hdr threshold glow_add_rate>` as written (the game applies only the rate: docs/shading.md,
     /// "After the scene").
     pub hdr: Option<(f32, f32)>,
+    /// `<tex_filter_world overlay_modifier>` and `<tex_filter_area overlay_modifier>` (only
+    /// `A15_WMAP` has them: 2 and 3): the screen filter's strength on the world map and on an
+    /// area map (`PostEffectTexFilter`, docs/shading.md).
+    pub filter_world: Option<f32>,
+    pub filter_area: Option<f32>,
     /// The cloud shadows' texture (`<AREA>_pat.g1t`) over the field: `<pattern_map>`.
     pub pattern: Option<Pattern>,
     /// `<sphere offset>`: where the distant view sits from the camera (metres), when it
@@ -320,6 +325,8 @@ pub fn read(root: &Element) -> FieldLook {
                     }
                 }
             }
+            "tex_filter_world" => look.filter_world = number(e, "overlay_modifier"),
+            "tex_filter_area" => look.filter_area = number(e, "overlay_modifier"),
             "hdr" => look.hdr = Some((number(e, "threshold").unwrap_or(1.0), number(e, "glow_add_rate").unwrap_or(0.0))),
             "sphere" if e.attr("tracking_camera") != Some("false") => look.sphere_offset = numbers(e, "offset"),
             "camera" => {
