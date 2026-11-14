@@ -481,6 +481,15 @@ for lists under 32 entries it is an insertion sort, so entries with equal waits 
 order, which a reimplementation must keep too.
 
 Entries whose +0x10 (the character's virtual +0x20 value) is negative are free slots.
+Read live (the escha-battle-timeline recording, a battle opened by a field strike, the timeline
+at `GameModeBattle` +0xa28, vtable `0x140804a60`): the list holds **16 entries** all battle,
+the fighters and free slots (character -1). At the first command the waits were 0, 50, 100, …
+750 down the list, the six fighters on every other one (0, 100, … 500: Wilbell, Katla, a
+monster, Escha, two monsters) and free slots at the 50s and from 550 on. After Wilbell's Attack
+(next wait 464) time moved on 100: every wait dropped by 100, the free slot that came to the
+front (at 50, now under 0) went back to 1000, and Wilbell's entry stood at 464 between the free
+slots at 450 and 500. The battle HUD's turn bar shows the entries in this order one slot each
+(`docs/formats.md`, battle HUD), so the free slots are the bar's empty slots.
 `0x14018cf20 (timeline, character)` puts a joining character in a free slot with wait 500
 (1000 when its +0x10 value is negative). After a character acts, `0x14018d180 (timeline,
 character, wait)` gives it the action's wait (the action's virtual +0x30):
