@@ -54,9 +54,15 @@ achievements are the player's own, and the DX version has not been played there)
   diffuse 0.8 and ambient 0 (`barrel g1m-materials`): their shaders (`PBB-N`, `PBB-EmN`, ...)
   take the ambient from the environment, not `cAmb`. `barrel-ryza` gives every draw the full
   material until those shaders are read.
-- **Emissive and odd materials.** `PBB-EmN` submeshes (the attic wall's windows) have an
-  emission mask (texture kind 19) and flicker parameters (`emFrq`, `emRange`, `emStart`), not
-  drawn. Not drawn yet from the G-buffer model
+- **Emissive and odd materials.** `PBB-EmN` submeshes (the attic wall's windows; at
+  Rasenboden three houses' windows, a bridge pillar and the light poles) have an emission map
+  (texture kind 19) and flicker parameters (`emFrq` 1, `emRange` (0, 1) or (1, 1), `emStart`
+  0 in Ryza's house). The lighting pass adds `sEmi × |emScl|`: to the light (times the colour)
+  when `emScl` ≥ 0, to the finished colour when negative; `emScl` is not among the material's
+  parameters (set at run time). `barrel-ryza` draws the map as light (`model.frag` flag
+  32768, the map bound as the draw's set 3) at a stand-in strength by time of day
+  (`EMISSION_BY_TIME`: none by day, 2 at evening, 3 at night): the house's window glows at
+  night. The flicker is not done. Not drawn yet from the G-buffer model
   (docs/shading.md, "Ryza DX: the deferred G-buffer"; normal maps are drawn now, their
   green's sign unchecked): the specular map (metal flag, specular amount, roughness), and the lighting pass (`pbb-*_cll.g1s`). Attic view inside: `--look-at 3905,2250,3914 --distance 300 --pitch 10`.
 - **Terrain against the models.** Rasenboden's terrain (grass, dirt paths, cobbled road; its

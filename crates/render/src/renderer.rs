@@ -483,7 +483,8 @@ impl Renderer {
         let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..colour_targets]);
         let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
         // Set 0 the colour, 1 the instances (and the look), 2 the mask.
-        let set_layouts = [set_layout, instance_layout, set_layout];
+        // Sets 0, 2 and 3: a draw's texture, mask and emission map.
+        let set_layouts = [set_layout, instance_layout, set_layout, set_layout];
         let pipeline_layout = unsafe {
             d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
         };
@@ -819,7 +820,7 @@ impl Renderer {
                 per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)]], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)]], &[]);
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 drawn[0] += 1;
             }
@@ -829,7 +830,7 @@ impl Renderer {
             if let Some(outline_tex) = outline_tex {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex]], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex], sets[white]], &[]);
                 for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none() && !d.eye) {
                     let Some(colour) = draw.outline else { continue };
                     let mut per_draw = [0u8; 12];

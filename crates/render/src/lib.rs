@@ -54,7 +54,9 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// lit so).
 /// Then where billboards shrink away ({begin, end} from the eye, `model.vert`'s flag 16384: a
 /// field's plants).
-pub const LOOK_SLOTS: usize = 94;
+/// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
+pub const LOOK_SLOTS: usize = 95;
+pub const EMISSION_SLOT: usize = 94;
 pub const DOME_LIGHT_SLOT: usize = 92;
 pub const FADE_SLOT: usize = 93;
 /// The far shadow layer's first look slot.
@@ -130,6 +132,9 @@ pub struct Draw {
     /// The material's normal map (its kind-3 texture), if it has one. Drawn only where a game
     /// puts it in the mask slot (`model.frag`'s flag 8192, Ryza's field models).
     pub normal_map: Option<usize>,
+    /// The material's emission map (its kind-19 texture), if it has one: bound as the draw's
+    /// set 3 (white otherwise), drawn only where a game asks (`model.frag`'s flag 32768).
+    pub emission: Option<usize>,
     /// Shaded as an eye (`CharaEYE`: `docs/shading.md`, "Eyes").
     pub eye: bool,
     /// Part of a field's distant view (unlit: its texture on its vertex colour).
@@ -543,6 +548,7 @@ impl Scene {
             d.overlay = d.overlay.map(|o| o + base);
             d.mask = d.mask.map(|m| m + base);
             d.normal_map = d.normal_map.map(|m| m + base);
+            d.emission = d.emission.map(|m| m + base);
         }
         Ok(instance)
     }
@@ -666,8 +672,9 @@ impl Scene {
                 })
             };
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
+            let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, light: light_word(geometry), tint: 0, bounds: None, class: 0 });
         }
         Ok(())
     }

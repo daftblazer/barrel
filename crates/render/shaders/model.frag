@@ -5,6 +5,8 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 // The character's mask (its red channel says how much of the shading applies; white when the
 // material has none).
 layout(set = 2, binding = 0) uniform sampler2D mask;
+// A field model's emission map (flag 32768; white otherwise).
+layout(set = 3, binding = 0) uniform sampler2D emissive;
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
     // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
     uint light; } pc;
@@ -57,6 +59,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // none), fade start, fade end}.
     mat4 shadow_far;
     vec4 shadow_far_info;
+    // Slots 92 and 93: the vertex program's; 94: the emission maps' strength (flag 32768).
+    vec4 frag_pad[2];
+    vec4 emission;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -191,6 +196,11 @@ void main() {
             n = nm;
         }
         vec3 lit = field_now + sun_now * sun_shadow(world) * cloud_light(world);
+        // Flag 32768: the emission map as light of its own (PBB-EmN's `sEmi × emScl`, added to
+        // the light before the colour multiplies it).
+        if ((pc.flags & 32768u) != 0u) {
+            lit += texture(emissive, uv).rgb * look.emission.x;
+        }
         // A Ryza character (flag 128): the rim (its word in the tint's place: sharpness / 64
         // and strength / 4 as unorm8), where the eye looks into the sun, `pow(1 - N·V,
         // sharpness) × strength` of the sun's colour, up to the full sun; then the toon ramp (the mask slot holds

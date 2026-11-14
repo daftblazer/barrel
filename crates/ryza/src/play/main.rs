@@ -44,6 +44,12 @@ const NORMAL_MAPPED: u32 = 8192;
 /// `model.vert`'s flag for billboards shrinking away over the look's `FADE_SLOT` range (the
 /// plants, as `ObjectGrassPBS` does).
 const FADED: u32 = 16384;
+/// `model.frag`'s flag for a field model lit by its emission map (`PBB-EmN`).
+const EMISSIVE: u32 = 32768;
+/// The emission maps' strength by time of day (morning, noon, evening, night), in the light's
+/// units: a stand-in, the game's `emScl` is set at run time (not read): its windows and lamps
+/// unlit by day, lit at evening and night.
+const EMISSION_BY_TIME: [f32; 4] = [0.0, 0.0, 2.0, 3.0];
 /// The plants' fade range from the eye, the game's highest grass preset (`Middle` in
 /// `grassrangepreset.xml`: FarClipBegin 8000, FarClipEnd 15000).
 const PLANT_FADE: [f32; 2] = [8000.0, 15000.0];
@@ -261,6 +267,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             instance,
             mask: normals,
             normal_map: normals,
+            emission: None,
             eye: false,
             sky: false,
             outline: None,
@@ -708,7 +715,7 @@ fn main() -> Result<()> {
                 // Normal-mapped by the cards' own normal maps, as `ObjectGrassPBS` does.
                 FADED | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 }
             } else if d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
-                NORMAL_MAPPED
+                NORMAL_MAPPED | if d.emission.is_some() { EMISSIVE } else { 0 }
             } else {
                 0
             }
@@ -832,6 +839,7 @@ fn main() -> Result<()> {
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         view.look[50] = [PLANT_SWAY[0], PLANT_SWAY[1], PLANT_SWAY[2], started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED];
         view.look[51] = [0.0, 0.0, PLANT_SWAY_SPREAD[0], PLANT_SWAY_SPREAD[1]];
+        view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
         if frame_no == 0
             && let Some(k) = view.exposure
         {

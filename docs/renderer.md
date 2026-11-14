@@ -1018,3 +1018,10 @@ on by itself once its reading time is up and its voice has finished. Space still
 whole event. Offscreen renders keep the timed
 schedule. Not yet the game's: the reading time a line is held before it waits (the game shows
 the whole line at once and waits; its text speed and auto mode are not read).
+
+## A draw's textures
+
+A model draw binds three single-texture sets: 0 its colour, 2 its mask (or, for Ryza's field
+models, the normal map; for her, the toon ramp) and 3 its emission map (`Draw::emission`, the
+material's kind-19 texture), white where a draw has none. The fragment program reads set 3
+only under flag 32768, so a game that never sets it (Escha) draws as before.
