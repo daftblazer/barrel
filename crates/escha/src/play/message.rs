@@ -31,6 +31,18 @@ pub const COLOURS: [(&str, [u8; 3]); 11] = [
 /// The first button icon's character: `<IMnn>` is the font's glyph for U+0410 + nn (codes
 /// `0xd090` on, which would be Cyrillic А to а; the game uses them for its 33 icons).
 pub const ICONS: u32 = 0x410;
+/// The icon drawn for `<IMnn>` with the confirm button on A (the Western layout the English
+/// release shows, and Barrel's): the font's glyphs 0 and 1 are B, 2 and 3 A, and the text
+/// names them by role (00/01 confirm, 02/03 cancel, the Japanese layout), so the two pairs
+/// swap: the maps' "<IM02> Return" shows B, as the recording does.
+pub fn western(n: u32) -> u32 {
+    match n {
+        0..=1 => n + 2,
+        2..=3 => n - 2,
+        _ => n,
+    }
+}
+
 /// Colour changes ride in the laid-out text as these private-use characters (U+E000 + the
 /// colour's place in [`COLOURS`]; U+E0FF goes back to the line's own colour). They have no
 /// glyph, so they take no room.
@@ -193,7 +205,7 @@ pub fn plain_lines(text: &str) -> Vec<String> {
                 };
                 let tag = &rest[i + 1..i + j];
                 if let Some(n) = tag.strip_prefix("IM").and_then(|n| n.parse::<u32>().ok()) {
-                    out.extend(char::from_u32(ICONS + n));
+                    out.extend(char::from_u32(ICONS + western(n)));
                 } else if let Some(name) = tag.strip_prefix("CL") {
                     let mark = COLOURS.iter().position(|(c, _)| *c == name).map_or(COLOUR_RESET, |k| COLOUR_MARK + k as u32);
                     out.extend(char::from_u32(mark));

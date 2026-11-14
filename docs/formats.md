@@ -394,7 +394,11 @@ after the name, the boundary falling there; `font::FONTS_MULTI`). Every table ha
 Latin; only the Simplified one has 这, the Traditional one 這.
 
 The font also holds the 33 button icons that `<IMnn>` puts in a line: codes `0xd090` to
-`0xd0b0` (which would read as Cyrillic А to а), 50×50 at the atlas's top. The colours that
+`0xd0b0` (which would read as Cyrillic А to а), 50×50 at the atlas's top. The glyphs run B, B, A, A, X,
+X, Y, Y, then the pad, LB, LT, RB, RT and so on; the texts name the first four by role, the
+Japanese way (`Menu_Line_Help.xml`: "<IM02>Return <IM00>Confirm"), and with the confirm button on
+A (the English release, and Barrel) 00/01 draw the A glyphs and 02/03 the B ones
+(`message::western`): the maps' Return row shows B, as recorded. The colours that
 `<CLxx>` names are a table at `0x1407b49b0` in the English executable, 16-byte records
 `{u64 name, u8 r, g, b, 0}`: `NR` ffffff, `BK` 000000, `RE` c80000, `GR` 00aa00, `BL` 5050f0,
 `R1` ff5050, `G1` 0af000, `P1` 882244, `YL` ffff00, `EG` 1eff1e, `BR` 3a1a08; the tag names
