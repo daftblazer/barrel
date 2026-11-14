@@ -359,6 +359,27 @@ menu (no launcher). So everything built now follows these rules:
   `include_bytes!`); a shader pack needs them loaded from files with these as the fallback, and
   the scene's buffers kept available to post-processing.
 
+## Controller (being read)
+
+The game reads a pad through XInput (`XINPUT1_3` ordinals 2 and 3, `XInputGetState` and
+`XInputSetState`, called from `0x1405d1160`) and DirectInput 8 for other pads
+(`DirectInput8Create`, `0x1405cc880`). Barrel reads pads through SDL3's gamepad layer
+(`crates/render/src/pad.rs`), whose buttons are by place (south is A on an Xbox pad).
+
+The engine's pad object (vtable `0x140978700`) keeps a byte per raw button at +0x190 + slot,
+filled from XInput's button bits by the table at `0x140978720` (14 records `{i32 slot, u16
+mask}`): slot 0 X, 1 Y, 2 A, 3 B (the PlayStation order: square, triangle, cross, circle), 4 LB,
+5 RB, 6 and 7 the triggers (each past 30 of 255), 8 and 9 the stick clicks, 10 Back, 11 Start,
+21 to 24 the D-pad up, right, down, left. The sticks are at +0x160 to +0x16c (each axis's top
+byte, y negated). The DirectInput path (`0x1405d1280`) fills the same slots from its button
+bits.
+
+Above that the game asks for its own numbered buttons, not slots: `0x1404d3960 (button 0 to 6,
+...)` answers the menus' questions (used by the menu cursor `EXPadController`, vtable
+`0x140795168`), passing on to `0x1404d3d70` with internal numbers from 14 up; the field's
+jump is game button 1 and its run toggle game button 6. Which slot each game button reads, in
+each part of the game, is being read (`docs/escha/loop.md`, stage 17b).
+
 ## Walking (not yet the game's)
 
 A character walks against its field's collision mesh (`<AREA>_col.g1co`, `docs/formats.md`,
