@@ -304,5 +304,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   the distance from the eye to its box's centre at the game's High LOD preset (10000, 30000;
   docs/formats.md, "the graphics presets"). In a far view of the village it saves about
   0.08 ms of 7.2 on the PC with 12 pixels changed; the landmarks (cliffs, windmills) have no
-  lower levels. The Middle and Low presets (8000 / 25000, 6000 / 20000), for the handhelds,
-  wait for a quality setting that picks the game's general preset.
+  lower levels. The graphics' `foliage` picks the game's general preset
+  (`barrel_ryza::presets::Graphics`: full High, reduced Middle, least Low), and the plants and
+  these distances come from the tables it names (Middle 8000 / 25000 on the handheld preset).
+  The draw ranges and shadow distance of the same tables are not taken yet.

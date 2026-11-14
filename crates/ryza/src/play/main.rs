@@ -219,10 +219,6 @@ fn exposure(c: &[[f32; 3]; 9], light: &Light) -> f32 {
 const PLANT_CARDS: [u32; 19] = [1, 0, 2, 3, 0, 0, 5, 4, 2, 6, 7, 1, 3, 0, 5, 5, 6, 4, 5];
 /// The most plants a field draws (Rasenboden: about 36,000 at the kinds' densities).
 const PLANT_LIMIT: usize = 200_000;
-/// Where an object's full model gives way to its middle level of detail, and that to its low
-/// one, from the eye: the game's High LOD preset (`loddistpreset.xml`: `Lod_hi_dist` 10000,
-/// `Lod_mid_dist` 30000; docs/formats.md, "the graphics presets").
-const LOD_DIST: [f32; 2] = [10000.0, 30000.0];
 /// Plants are grouped into draws of this many grid cells a side, so the view culls them.
 const PLANT_BLOCK: usize = 8;
 /// The plants' normal in the card's frame (turned by the billboard axes): up, so a plant takes
@@ -316,20 +312,23 @@ fn main() -> Result<()> {
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
     let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
     let grass_pack = barrel_engine::field::named(&main, &format!("{}_grass.g1t", files.area)).and_then(|b| G1t::parse(b).ok());
-    // The game's grass preset for the graphics' foliage (`barrel_ryza::grass::Preset`).
-    let plant_preset = {
-        let kind = match graphics.foliage {
-            settings::Foliage::Full => "Middle",
-            settings::Foliage::Reduced => "Low",
-            settings::Foliage::Least => "VeryLow",
+    // The game's general graphics preset for the graphics' foliage (full: High, reduced:
+    // Middle, least: Low), its plants and levels of detail (`barrel_ryza::presets::Graphics`).
+    let presets = {
+        let general = match graphics.foliage {
+            settings::Foliage::Full => "High",
+            settings::Foliage::Reduced => "Middle",
+            settings::Foliage::Least => "Low",
         };
-        let read = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}"));
-        match (read("grassqualitypreset.xml"), read("grassrangepreset.xml")) {
-            (Ok(q), Ok(r)) => barrel_ryza::grass::Preset::read(&q, &r, kind).unwrap_or(barrel_ryza::grass::Preset::MIDDLE),
-            _ => barrel_ryza::grass::Preset::MIDDLE,
-        }
+        let read = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}")).ok();
+        barrel_ryza::presets::Graphics::read(general, &read).unwrap_or_else(|e| {
+            eprintln!("graphics presets: {e}; the High one as shipped");
+            barrel_ryza::presets::Graphics::HIGH
+        })
     };
-    eprintln!("plants: {:?} {plant_preset:?}", graphics.foliage);
+    let plant_preset = presets.grass;
+    let lod_dist = presets.lod;
+    eprintln!("presets: {:?} {presets:?}", graphics.foliage);
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the
     // field's. Lit as the field's models are until her own shaders are read
@@ -719,7 +718,7 @@ fn main() -> Result<()> {
                 _ => true,
             }
             // An object's level of detail by its distance from the eye (the game's LOD
-            // distances, `LOD_DIST`): its full model nearer than the first, its middle one to
+            // distances, `presets.lod`): its full model nearer than the first, its middle one to
             // the second, its low one past it; without a box (draw ranges off), the full one.
             && (d.lod == 0
                 || boxes.get(&(d.first_index, d.instance)).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
@@ -727,10 +726,10 @@ fn main() -> Result<()> {
                     let level = d.lod & 3;
                     let start = match level {
                         LOD_HI => 0.0,
-                        LOD_MID => LOD_DIST[0],
-                        _ => LOD_DIST[1],
+                        LOD_MID => lod_dist[0],
+                        _ => lod_dist[1],
                     };
-                    let end = if d.lod & LOD_LAST != 0 { f32::INFINITY } else if level == LOD_HI { LOD_DIST[0] } else { LOD_DIST[1] };
+                    let end = if d.lod & LOD_LAST != 0 { f32::INFINITY } else if level == LOD_HI { lod_dist[0] } else { lod_dist[1] };
                     far >= start && far < end
                 }))
     };

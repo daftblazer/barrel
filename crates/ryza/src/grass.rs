@@ -121,7 +121,7 @@ impl Grass {
 }
 
 /// A grass preset of the game's (`saves/graphicssetting/grassqualitypreset.xml` and
-/// `grassrangepreset.xml`, `Field="Default"`): how many of the plants are drawn, and the
+/// `grassrangepreset.xml`, read by `presets::Graphics`): how many of the plants are drawn, and the
 /// distances from the eye over which they shrink away.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Preset {
@@ -132,27 +132,6 @@ pub struct Preset {
 impl Preset {
     /// The game's highest (`Middle`): every plant, shrinking from 8000 to 15000 units.
     pub const MIDDLE: Preset = Preset { density: 1.0, far: [8000.0, 15000.0] };
-
-    /// The preset of `kind` ("Middle", "Low", "VeryLow") from the two tables.
-    pub fn read(quality: &[u8], range: &[u8], kind: &str) -> Result<Preset, String> {
-        let entry = |bytes: &[u8], tag: &str| -> Result<barrel_formats::table::Element, String> {
-            let root = barrel_formats::table::parse(bytes).map_err(|e| format!("{tag}: {e}"))?;
-            let mut all = vec![&root];
-            let mut found = None;
-            while let Some(e) = all.pop() {
-                if e.name == tag && e.attr("Type") == Some(kind) && e.attr("Field").is_none_or(|f| f == "Default") {
-                    found = Some(e.clone());
-                    break;
-                }
-                all.extend(e.children.iter());
-            }
-            found.ok_or_else(|| format!("{tag}: no {kind}"))
-        };
-        let q = entry(quality, "GrassQualityPreset")?;
-        let r = entry(range, "GrassRangePreset")?;
-        let f = |e: &barrel_formats::table::Element, k: &str| e.attr(k).and_then(|v| v.trim().parse::<f32>().ok()).ok_or_else(|| format!("{}: no {k}", e.name));
-        Ok(Preset { density: f(&q, "Density")?, far: [f(&r, "FarClipBegin")?, f(&r, "FarClipEnd")?] })
-    }
 }
 
 #[cfg(test)]
@@ -211,15 +190,6 @@ mod tests {
         let all = g.plants(usize::MAX, 1.0, |_, _| Some(0.0)).len() as f32;
         let some = g.plants(usize::MAX, 0.5, |_, _| Some(0.0)).len() as f32;
         assert!((some / all - 0.5).abs() < 0.01, "{some} of {all}");
-    }
-
-    #[test]
-    fn reads_the_presets() {
-        let q = br#"<Root><GrassQualityPreset Field="Default" Type="Middle" Density="1"/><GrassQualityPreset Field="Default" Type="Low" Density="0.75"/></Root>"#;
-        let r = br#"<Root><GrassRangePreset Field="Default" Type="Middle" FarClipBegin="8000" FarClipEnd="15000"/><GrassRangePreset Field="Default" Type="Low" FarClipBegin="3000" FarClipEnd="3100"/></Root>"#;
-        assert_eq!(Preset::read(q, r, "Middle").unwrap(), Preset::MIDDLE);
-        assert_eq!(Preset::read(q, r, "Low").unwrap(), Preset { density: 0.75, far: [3000.0, 3100.0] });
-        assert!(Preset::read(q, r, "VeryLow").is_err());
     }
 
     #[test]

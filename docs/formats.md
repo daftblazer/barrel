@@ -1955,6 +1955,8 @@ The DX release's graphics options are tables of presets, one element per `Type`,
   `lod_NX` on and 60 / 80) is the Switch version's.
 - `shadowdistpreset.xml`: `Distance` 1, 0.7, 0.5 (a scale of the shadow cascades' reach).
 - `grassqualitypreset.xml` / `grassrangepreset.xml`: see `_grass.bin` above.
+- Read by `barrel_ryza::presets::Graphics::read`: the general preset's `GrassQualityType`,
+  `GrassRangeType` and `LODDistType`, then those tables' `Field="Default"` rows.
 - Also `aapreset`, `bloompreset`, `dofpreset`, `effectpreset`, `lightshaftpreset`,
   `pointlightpreset`, `rlrpreset`, `shadowpreset`, `ssaopreset`, `texturefilterpreset`,
   `texturepreset`, `waterqualitypreset` (not read yet).
