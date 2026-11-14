@@ -132,12 +132,22 @@ void main() {
         // light texture and shadows are not done yet, nor fog. Its atColor (a run-time tint,
         // packed as unorm8 in the outline colour's word; 0: none) multiplies the colour.
         uint tint = floatBitsToUint(pc.outline_colour);
-        vec3 at_color = tint != 0u ? unpackUnorm4x8(tint).rgb : vec3(1.0);
+        vec3 at_color = tint != 0u && (pc.flags & 128u) == 0u ? unpackUnorm4x8(tint).rgb : vec3(1.0);
         vec3 lit = field_light + sun_part * sun_shadow(world) * cloud_light(world);
-        // A Ryza character (flag 128): the toon ramp (the mask slot holds `chara_rmp`) on the
-        // light, its u the sun's half-Lambert term and its row (bits 16-23) the material's
-        // `rampIndex` (DSChara-Cll's ramp, docs/shading.md; its scale and bias not read).
+        // A Ryza character (flag 128): the rim (its word in the tint's place: sharpness / 64
+        // and strength / 4 as unorm8), where the eye looks into the sun, `pow(1 - N·V,
+        // sharpness) × strength` of the sun's colour, up to the full sun; then the toon ramp (the mask slot holds
+        // `chara_rmp`) on the light, its u the sun's half-Lambert term and its row (bits 16-23)
+        // the material's `rampIndex` (DSChara-Cll's, docs/shading.md).
         if ((pc.flags & 128u) != 0u) {
+            vec2 rp = unpackUnorm4x8(tint).xy * vec2(64.0, 4.0);
+            vec3 to_eye = normalize(look.eye.xyz - world);
+            float backlit = clamp(dot(normalize(look.sun_dir.xyz), to_eye), 0.0, 1.0);
+            float rim = pow(1.0 - clamp(dot(n, to_eye), 0.0, 1.0), max(rp.x, 1.0)) * rp.y * backlit;
+            // As in the game, the rim and the sun's N·L are saturated together: the rim adds
+            // only what N·L leaves of the sun.
+            float nl = max(dot(n, -normalize(look.sun_dir.xyz)), 0.0);
+            lit += look.sun_color.rgb * min(rim, 1.0 - nl);
             float h = dot(n, -normalize(look.sun_dir.xyz)) * 0.5 + 0.5;
             float row = float((pc.flags >> 16) & 255u);
             lit *= textureLod(mask, vec2(clamp(h, 0.0, 1.0), (row + 0.5) / 256.0), 0.0).rgb;

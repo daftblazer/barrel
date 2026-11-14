@@ -659,6 +659,23 @@ part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constant
 over the field-model light on her draws (`model.frag` flag 128, the row in bits 16 to 23, the
 ramp in the mask slot): u is the sun's half-Lambert term as is.
 
+The pass's constants come from the environment overrides (`saves\fieldmap\override_env\
+env_<name>.xml`, one `<root>` of `group_name` attributes; `env_default.xml` and a few fields'
+own): the `ir_` group is the character lighting ("illustration render"). The defaults:
+`ir_firstLightRampCoordinateScaler` 1 and `ir_parallelSubLightsRampCoordinateScaler` 0 (the
+signed power on the sun's half-Lambert, so u is that term as is, the second light not
+ramped), the ramp coefficient adjusters 1, `ir_rampCoordRangeMin/Max` 0 and 1, `ir_IRDFade`
+and `ir_IRAFade` 1, the rim (`ir_rimScaler` 15, `ir_rimSharpness` 10, `ir_rimColorScaler` 0.1;
+the hair's the same with colour 0: no rim on hair; `ir_rimElevation/Azimuth` 0), the hair's
+highlight (`ir_hairHighlight*`: reflection ratio 0.4, scaler 0.3) and a mask
+(`ir_maskScale` 20, rotation 45). Next to it the `albedoRetouch_` group (toon, rim and specular
+light directions, a shadow colour limit 0.5), `outline_`, `indirectChara_` and the field's
+lights, fog, HDR and shadow cascades (`shadowMap_ShadowCascadeStart` 1200, 6000, 13000; erased
+from 20000 to 30000). `barrel_ryza::environment::Rim` reads the rim: on her draws whose
+material has an `rmIndex`, `pow(1 - N·V, 10) × 1.5` of the sun's colour where the eye faces
+into the sun, saturated with the sun's `N·L` as the pass does (`model.frag`, the rim word in
+the tint's place).
+
 ## Ryza DX: the sky
 
 `skyplane.g1s` draws the sky as a full-screen plane at the far plane. Vertex program 0: the

@@ -214,8 +214,16 @@ fn main() -> Result<()> {
         None => None,
     };
     let ramp_pack = ramp_bytes.as_deref().map(G1t::parse).transpose()?;
-    // Her draws' ramp rows by (first index, instance): each submesh's `rampIndex`.
-    let mut ramp_rows: std::collections::HashMap<(u32, u32), u32> = Default::default();
+    // Her draws' ramp rows by (first index, instance): each submesh's `rampIndex`, and whether
+    // it has a rim (`rmIndex`).
+    let mut ramp_rows: std::collections::HashMap<(u32, u32), (u32, bool)> = Default::default();
+    // The characters' rim (`environment::Rim`, the default environment override's).
+    let rim = match ryza_files {
+        Some(_) => install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::Rim::parse(&b).map_err(|e| eprintln!("{e}")).ok()),
+        None => None,
+    };
+    eprintln!("character rim: {rim:?}");
+    let rim_word = |sharpness: f32, strength: f32| u32::from_le_bytes([(sharpness / 64.0 * 255.0).round().clamp(0.0, 255.0) as u8, (strength / 4.0 * 255.0).round().clamp(0.0, 255.0) as u8, 0, 0]);
     let mut rig: Option<Rig> = None;
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
         let model = Elixir::parse(model)?;
@@ -292,7 +300,7 @@ fn main() -> Result<()> {
         // Her submeshes' ramp rows (`rampIndex`), one draw each in order for those with UVs and
         // normals (the others draw nothing, `Scene::add_posed`); the ramp texture follows her
         // own.
-        let rows: Vec<u32> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).map(|s| geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255)).collect();
+        let rows: Vec<(u32, bool)> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).map(|s| (geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255), geometry.param_record(s, "rmIndex").is_some())).collect();
         if scene.draws.len() - first == rows.len() {
             for (d, &row) in scene.draws[first..].iter().zip(&rows) {
                 ramp_rows.insert((d.first_index, d.instance), row);
@@ -531,7 +539,10 @@ fn main() -> Result<()> {
     let material = |d: &Draw| {
         let base = if environment.is_some() { 0 } else { UNLIT };
         match ramp_rows.get(&(d.first_index, d.instance)) {
-            Some(&row) if ramp_pack.is_some() && environment.is_some() => (base | 128 | row << 16, 0),
+            Some(&(row, has_rim)) if ramp_pack.is_some() && environment.is_some() => {
+                let r = rim.map_or(0, |r| if has_rim { rim_word(r.sharpness, r.strength) } else { rim_word(r.hair_sharpness, r.hair_strength) });
+                (base | 128 | row << 16, r)
+            }
             _ => (base, 0),
         }
     };

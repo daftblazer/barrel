@@ -154,8 +154,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   as they are.
 - **Her shading.** Drawn as a field model (the environment's light) with the characters' toon
   ramp on it (`model.frag` flag 128: `chara_rmp`'s row by her materials' `rampIndex`, u the
-  sun's half-Lambert term; the ramp's scale, bias and range and the rim table are not read, so
-  the dark tint shows only on her shadow side's edge). Her own G-buffer programs are not read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
+  sun's half-Lambert term as the default environment override's `ir_` settings give it, and
+  the rim from them; docs/shading.md). Which override a field uses (most have none:
+  `env_default`), the second light, the point lights' ramp, the hair highlight and the
+  specular are not done. Her own G-buffer programs are not read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no
   pack, table string or executable bytes match). The deferred character lighting pass
   (`DSChara-Cll`: a ramp, a rim table; read in docs/shading.md): her materials' ramp rows
