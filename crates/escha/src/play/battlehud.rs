@@ -8,7 +8,8 @@
 //! The turn order bar (864, placed at (320, 8)): 15 hanging slots, the next to act in the
 //! rightmost, and the Action slot (its node of kind 4 at 120%) with the one acting now; a slot
 //! in use shows layout 860's frame (0xf4 cut 7) and the fighter's portrait (0xe6, cut = the
-//! party member's number; the monsters' cuts are not mapped yet: their slots show the frame).
+//! party member's number, 0 Escha to 10 Nio; a monster's 11 + its monster number: Stray Dog's
+//! wolf at 15, Fairydrake at 21, Ore Rat at 47, Fake Ruin's blue blocks at 55 as the recording).
 //!
 //! Not yet the game's: the plates in the layout's order (the first the lead's: the centre one),
 //! a plate's bars cut to the member's share of HP and MP; the reserve row, the
@@ -36,6 +37,8 @@ const SLOT: u32 = 860;
 const SLOTS: usize = 15;
 const SLOT_FIRST: (i32, i32) = (0xf4, 7);
 const FACE: i32 = 0xe6;
+/// The first monster's portrait cut (the party's 11 before it).
+pub const MONSTER_FACES: usize = 11;
 /// The Action slot's scale (its node's word 5) about its corner, (1032, 12) in the bar.
 const ACTION_PERCENT: i32 = 120;
 const NUMBER_KIND: i32 = 28;

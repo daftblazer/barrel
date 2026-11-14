@@ -1466,10 +1466,15 @@ impl BattlePlay {
         }
     }
 
-    /// The turn order bar's portraits, the one acting first: a party member's portrait cut, or
-    /// `None` for a monster (whose portrait is not mapped yet).
+    /// The turn order bar's portraits, the one acting first: a party member's portrait cut (its
+    /// number), a monster's [`battlehud::MONSTER_FACES`] on from its monster number.
     fn order(&self) -> Vec<Option<usize>> {
-        self.turn.as_ref().map_or(Vec::new(), |t| t.order.iter().map(|&k| self.charas.get(k).copied()).collect())
+        let party = self.charas.len();
+        let face = |k: usize| match self.charas.get(k) {
+            Some(&c) => Some(c),
+            None => self.outcome.monsters.get(k - party).map(|&m| battlehud::MONSTER_FACES + m),
+        };
+        self.turn.as_ref().map_or(Vec::new(), |t| t.order.iter().map(|&k| face(k)).collect())
     }
 
     /// The party as the HUD shows it.
