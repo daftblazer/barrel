@@ -405,7 +405,7 @@ escha-pad-buttons recording, 2026-11-14) and the button legends the game draws:
 | Field | View (Back) | "Message Log" | not yet |
 | Field | LB | "Assignment" | not yet |
 | Field | RB | "Leave Map" | not yet |
-| Field | LT, RT | move the camera (zoom or turn: not settled) | Barrel: hold for the camera's distance |
+| Field | LT, RT | nothing (held 1.5 s and 3 s: the camera stays; escha-triggers recording) | nothing |
 | Area map | B | "Return" | yes |
 | Area map | LB / RB | "Assignment" / "System" | not yet |
 | Area map | Menu / View | "Requests" / "Message Log" | not yet |

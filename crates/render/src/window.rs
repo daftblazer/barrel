@@ -170,17 +170,10 @@ impl Pump {
         (std::mem::take(&mut self.state.pressed), std::mem::take(&mut self.state.pad_pressed))
     }
 
-    /// Whether `key` is held down now (on the keyboard, or by the pad: the triggers hold - and
-    /// = for the camera's distance; not checked against the game).
+    /// Whether `key` is held down now, on the keyboard (the pad holds no keys: the game's field
+    /// gives the triggers and shoulders nothing to hold).
     pub fn held(&self, key: winit::keyboard::KeyCode) -> bool {
-        use crate::pad::Pad as P;
-        use winit::keyboard::KeyCode as K;
-        let pad = self.pad.as_ref().is_some_and(|g| match key {
-            K::Minus => g.held(P::LeftTrigger),
-            K::Equal => g.held(P::RightTrigger),
-            _ => false,
-        });
-        pad || self.state.held.contains(&key)
+        self.state.held.contains(&key)
     }
 
     /// The pad's sticks as read, (x right, y up) each: the left one walks, the right one turns
