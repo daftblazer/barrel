@@ -5129,8 +5129,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             look[36] = [h * sun[0] * part(m[0], 0), h * sun[1] * part(m[1], 1), h * sun[2] * part(m[2], 2), 1.0 + g * g];
         }
         // The sun's shadow map: from the first directional light, over the camera's target.
-        // On unless BARREL_NO_SHADOWS is set (for comparing).
-        if !parallels.is_empty() && std::env::var("BARREL_NO_SHADOWS").is_err() {
+        // On unless BARREL_NO_SHADOWS is set (for comparing), and off on the maps: the
+        // recordings show no shadow under her there (the ruins' dark undersides are their own).
+        if !parallels.is_empty() && !area_mode && std::env::var("BARREL_NO_SHADOWS").is_err() {
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }

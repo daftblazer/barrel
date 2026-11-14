@@ -341,7 +341,12 @@ yet are not drawn, like the dots of routes not known (the recording at 0:45 show
 A2p2 and A2p4 south of Sector One). Each sector has two marks placed on it, `point_sm_on` (red) and
 `point_sm_off` (yellow); the recording has Ruins Entrance (visited) red, so a visited sector
 shows the first and one only seen the second (Barrel's rule, matching the save's 15 / 10
-knowledge values; a seen sector's mark not yet checked on screen). Not yet the game's:
+knowledge values; a seen sector's mark not yet checked on screen). The maps draw no sun shadow (the recordings show
+none under her; the ruins' dark undersides are in their own textures). The cursor under her
+(a blue ring, dark in the middle) is a model of its own, not a placement: CharaBase rows
+`E3D_WMAP_CUR00` / `E3D_WMAP_CUR01` (`Data/x64/Obj`, Directory "Obj", each with a 3.37 s
+looping `BASE_MOTION1`); CUR00 has 3 joints (one 15 down) and a 4 × 512 purple-to-teal
+gradient besides the crystal-and-claws sheet CUR01 also uses. Not drawn yet. Not yet the game's:
 her shadow there (the recording shows none), the labels' plates (the neighbours' names now stand on their routes' third dot,
 48 pixels up, while she stands still: `area_panel::label`), the routes not yet open (the
 recording at Sector One shows no way down to Sector Three: Barrel draws and takes every
