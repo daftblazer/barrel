@@ -22,7 +22,26 @@ pub struct Target<'a> {
 /// `press` returns an outcome or the window closes (`None`). Offscreen: presses `keys`, draws
 /// once, writes the picture to `out` and returns the outcome the keys gave, if any.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn run<S: Clone + PartialEq, O>(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    target: &Target,
+    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    offscreen: Option<vk::Image>,
+    images: &[&barrel_formats::g1t::Texture],
+    state: &mut S,
+    quads: impl Fn(&S) -> Vec<text::Quad>,
+    press: impl FnMut(&mut S, Button) -> Option<O>,
+    keys: &[Button],
+    out: Option<&Path>,
+) -> Result<Option<O>> {
+    run_with(gpu, pool, target, window, offscreen, images, state, quads, press, keys, out, || {})
+}
+
+/// [`run`], with `tick` called once a frame in a window (the title's music).
+#[allow(clippy::too_many_arguments)]
+pub fn run_with<S: Clone + PartialEq, O>(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
@@ -34,6 +53,7 @@ pub fn run<S: Clone + PartialEq, O>(
     mut press: impl FnMut(&mut S, Button) -> Option<O>,
     keys: &[Button],
     out: Option<&Path>,
+    mut tick: impl FnMut(),
 ) -> Result<Option<O>> {
     let d = &gpu.device;
     let mut layer = text::Layer::new(gpu, pool, target.pass, images)?;
@@ -70,6 +90,7 @@ pub fn run<S: Clone + PartialEq, O>(
                 if !pump.pump() {
                     break None;
                 }
+                tick();
                 let mut chosen = None;
                 for key in pump.take_pressed() {
                     if let Some(b) = button(key)

@@ -193,6 +193,12 @@ pub use crate::screen::Target;
 /// was closed, or, offscreen, `keys` did not end them). In a window it runs until a new game is
 /// chosen or Exit Game is picked; offscreen it takes `keys`, draws the screen once and writes it
 /// to `out`.
+/// The title screen's music: track 1, `sy_title01_piano.kvs` ("タイトル画面 ピアノ 8ch"), the
+/// piece the recordings play at the title (0.92 correlation against 0.07 to 0.13 for the
+/// orchestral `sy_title01_oke` and the loop `sy_op_loop`). Track 168, the same piece as
+/// `sy_title01_piano_2ch.kvs`, matches as well (0.91): which of the two the PC plays is open.
+const TITLE_MUSIC: u32 = 1;
+
 pub fn run(
     gpu: &Gpu,
     pool: vk::CommandPool,
@@ -278,7 +284,24 @@ pub fn run(
     };
     // On the Load Game list (the in-play menu's Load), else the title.
     let mut front = if load_list { Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
-    crate::screen::run(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out)
+    // In a window, the title's music from its start, looping as the track does, under the
+    // title, the hero choice and the Load list (not the in-play menu's Load).
+    let mut music = (window.is_some() && !load_list)
+        .then(|| {
+            let out = barrel_audio::Output::open(0.1).map_err(|e| eprintln!("title: no sound: {e}")).ok()?;
+            let tracks = barrel_escha::data::bgm::tracks(&pe, barrel_escha::data::bgm::TRACKS_EN).unwrap_or_default();
+            let m = barrel_audio::Library::new(root, "Voice_EN", tracks).music(TITLE_MUSIC)?;
+            let mut mixer = barrel_audio::Mixer::game();
+            let playing = mixer.play_stream(m.stream, m.volume, m.loop_from);
+            eprintln!("title music: track {TITLE_MUSIC}, volume {}, loop from {:?}", m.volume, m.loop_from);
+            Some((out, mixer, playing))
+        })
+        .flatten();
+    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut front, quads, |f, b| f.press(b, saves), keys, out, || {
+        if let Some((out, mixer, _)) = music.as_mut() {
+            out.pump(mixer);
+        }
+    })
 }
 
 #[cfg(test)]

@@ -50,7 +50,15 @@ likely settle them where static reading failed.
 - (2026-11-14) The lead is drawn 3.2 times on the maps by `0x140388820`, Barrel's fitted 1.75 (area)
   and 3.7 (world) say otherwise; which model and base scale the map uses.
 - (2026-11-14) The maps (stage 15): the scroll and label plates and event points are the game's art now; left: the cursor's float height (within its bob range in the recordings).
-- (2026-11-14) No title screen music.
+- (2026-11-14) Title music: Barrel plays track 1 (`sy_title01_piano`, the piece the recordings
+  have at the title) once, as its KOVS header says (+0x10 = 1, 58 s). Open: whether the PC plays
+  track 1 or 168 (the same piece as `_2ch`: both correlate 0.91 to 0.92), and what follows when
+  it ends (track 216 `sy_op_loop`, "タイトル画面ループ用", the title screen's loop, is the
+  likely one); a recording of the boot and of the title left idle past a minute answers both
+  (a live read of the current BGM number too).
+- (2026-11-14) The boot recording is still to make: the first try (2026-11-14) captured another
+  gamescope's stream (record.sh then took the first stream named gamescope; it now takes its own
+  run's) and was deleted. Make it when no other game runs under gamescope.
 - (2026-11-14) No intro movie on startup (movies: native decoders, chosen 2026-11-14).
 - (2026-11-14) No company logo splash screens before the title.
 
