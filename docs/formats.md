@@ -1185,7 +1185,14 @@ and one flat (at y 5843), use not known. `barrel_ryza::koc` reads them and gives
 ones to the shared walker as walls. Beside it: `_coll.bin` in the main container (Rasenboden:
 4 records of a position, a rotation and a size, likely boxes), `.g1pf` and `.elixir.g1pf`
 (`FP1G`, over a 128,000-unit square: path-finding, not read) and `.trmd` (`TRMD`, 1024 × 1024
-cells of 5 bytes: likely the ground's material, not read).
+cells of 5 bytes: likely the ground's material, not read). In Rasenboden's `.trmd` (header
+`TRMD`, u32 1024, 1024, 0) only each cell's first byte varies (the other four are 0xff): three
+values, 4 (579,687 cells), 36 (434,751) and 13 (34,138). Drawn as an image, 13 is one long
+band (river-like), 36 thin branching lines (path-like) and a large region, 4 the rest. Where
+the grid lies over the field is not settled: from the origin or centred, in either axis
+order and either mirroring, the gate's dirt path and the grass tufts beside it fall in the
+same class, so the cell size is likely not 125 units either. Likely the footstep and
+gathering material (`SE_FLD_057_FOOT_GRASS01`...); not the terrain's holes.
 
 **`_grass.bin` and `_grass.g1t`** (Ryza DX, in the main container): the field's plants.
 `_grass.bin` (Rasenboden: 263,116 bytes) begins with the area's size (f32 128000, 128000), a
