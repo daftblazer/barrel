@@ -111,12 +111,25 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   walk and run change loop to loop, each change mixing the last motion out over 0.2 s. How
   the game moves her during the start and stop (here eased in and out) and its mixing time
   are not read.
-- **The garden stairs' hull** (`a21-s07-stair-01`, `_cplh`, 20 triangles) has a landing at
-  y 6290 from z 30284 to 30330, about 105 units above the stairs model's top and the ground
-  where she stands at the gate (6182), then slopes down to 5901 by z 30971. At
-  `--ryza 32537,0,30300` she starts inside its end, between faces 33 units apart: a walk
-  cannot get out (a run's longer steps can). Whether the hull's centre or placement is off
-  (it is kept y-up by the fitting) or the model's floors should lift her is not checked.
+- **The garden stairs' collision** (`a21-s07-stair-01`, placed at 32507, 6006, 30997 nearly
+  unturned): its `_cbvh` mesh (20 triangles; `_cbvh1` and `_cbvh2` are a thin side piece) spans
+  local z -707 to 391 and y -279 to 295, its model z -499 to 546 and y -252 to 181 (one joint at
+  the origin, no offset; the mesh's header has no transform). Down the stairs' middle (x 32537)
+  the heights are:
+
+  | z | 30300 | 30400 | 30500 | 30600 | 30800 | 31000 | 31200 |
+  |---|---|---|---|---|---|---|---|
+  | terrain (`.khm`) | 6182 | 6176 | 6170 | 6136 | 6069 | 6001 | 6001 |
+  | with the mesh's floors | 6287 | 6268 | 6235 | 6201 | 6134 | 6067 | 6001 |
+
+  The terrain and the model agree (the top at 6182 to 6186); the mesh's slope is as steep but
+  twice as long, its top 105 higher, with a landing at z 30284 to 30330. Starting there
+  (`--ryza 32537,0,30300`) she is inside the mesh's end, between faces 33 units apart: a walk
+  cannot get out (a run's longer steps can). Not a mirror or a turn of the model (no flip of
+  y or z fits), so either the mesh is read wrong or it is not the walking surface (the game
+  may use `_cbvh` meshes for something else on stairs). `a21-s09-stair-02`'s mesh is off from
+  its model too (y ±485 against ±380, z -278 to 97 against ±258); `a21-s09-stair-03`'s hull
+  fits. A view of the collision drawn over the field would show which.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
   are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
   "Ryza's character files"); where they live is not found (no
