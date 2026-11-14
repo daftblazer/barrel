@@ -708,6 +708,54 @@ material has an `rmIndex`, `pow(1 - N·V, 10) × 1.5` of the sun's colour where 
 into the sun, saturated with the sun's `N·L` as the pass does (`model.frag`, the rim word in
 the tint's place).
 
+## Ryza DX: the tone curve, saturation and fog passes
+
+**The tone curve.** `effect2dpreinvtonemapandgamma.g1s` (pixel program 1, constants `fGamma`
+and `fInvToneMapParam`) takes a finished pixel back to the scene's light for 2D effects: it
+raises the colour to `fGamma`, multiplies by `fInvToneMapParam`, adds 0.0333 and solves a
+quadratic with the coefficients 0.22, 0.30, 0.03, 0.06 and 0.002. That is the inverse of
+Hable's filmic curve, `f(x) = (x (A x + C B) + D E) / (x (A x + B) + D F) - E / F` with A 0.22
+(shoulder), B 0.30 (linear), C 0.10, D 0.20 (toe), E 0.01, F 0.30, divided by its value at a
+white point (`fInvToneMapParam`), followed by a gamma of `1 / fGamma`. So the game lights in
+linear light and finishes with `pow(f(x) / f(W), 1 / fGamma)`; the set's `trueHDR_fLumiMax`
+(4.3 at Rasenboden's noon) taken as W and its `fGamma` (1.8 at noon, 2.2 otherwise) match the
+game's still: at an exposure of 1.2 (the default override's `vExposureRange` top) the sunlit
+sand comes out 221, 203, 157 against 222, 203, 146 and the sunlit stone 221, 223, 220 against
+224, 227, 216, with the colour textures sampled as sRGB (as stored values the sand's blue
+comes out twice too high). `barrel-ryza` does this (`post.frag`'s `filmic`, `Frame::tone_gamma`;
+`upload_texture`'s `linear`).
+
+**`SaturationScaleEx`** (`saturationscaleex.g1s`, constant `fScale`; the per-set values of
+`env_override.xml`): `c = y + s (c - y)` about the BT.601 luma `y` (0.29891, 0.58661,
+0.11448), where for a scale above 1 `s = 1 + (1 - L)(fScale - 1)` with `L = (min + max) / 2`
+(dark pixels take the whole scale, white ones none), and below 1 `s = fScale`. Not applied:
+at 1.6 (noon, if Rasenboden is `LGT01_DEFAULT_01`) the gate's noon comes out further from the
+still than without.
+
+**Height fog and scene fog** (`heightfog.g1s`, pixel program 1, on the scene's depth and
+colour; the lighting passes carry the same constants). The point's world position comes from
+the depth. Each of two layers: `h = y + Σ amp_i (sin(2π (x × xs_i + xo_i)) + cos(2π (z × zs_i +
+zo_i)))` over four waves (`hFogFlucPrms`, five floats each in a 16-byte slot: `effectHeight`,
+`xScaler`, the x offset (`xVelocity` × time), `zScaler`, the z offset), `t = saturate(h ×
+hFogParam.x + hFogParam.y)`, `f = saturate((1 - e^(-t²)) × cHFog.a) × saturate(distance ×
+hFogParam.z + hFogParam.w)`, and the colour goes `f` of the way to `cHFog.rgb`. Measured at
+the gate (noon): `hFogParam[0]` = (-1/1500, 4.2227, 1/8000, 0), a layer from height 6334 down
+to 4834 fading in over 8000 units; `hFogParam[1]` = (-0.004, -0.8, 0, 1), the default
+override's -200 to -450; both `cHFog` zero there (no height fog at noon), so `x = 1 / (end -
+start)`, `y = -start / (end - start)`. Then the scene fog, as Escha's: extinction `min(exp2(L
+× Scat[0]), 1)` with `L = distance × fog.x + fog.y`, the colour mixed toward the in-scattered
+light `(1 + cos²θ) Scat[2] + Scat[3] (cosθ Scat[2].w + Scat[3].w)^-1.5 + Scat[1]`.
+`barrel-ryza` draws the scene fog from the set's `fog_` (Rasenboden's noon: from 5000 to
+700,000 units, so only the far hills take it), built as the sky's `Scat` is; the height fog is
+not drawn.
+
+**The characters' light scales.** The lighting blocks read at the gate hold the sun at 0.8 of
+its colour and the set's ambient at 0.2 for one kind of draw (the characters'), which are the
+words at +0x34 and +0x30 of a block at 0x5d0 of the noon set, right after `skyFog_`:
+`indirectChara_` (`KeyLight0Scale` 0.8, `AmbientLightScale` 0.2, by the reader's member
+offsets; its first words 1.5 and 6 would be the diffuse and specular map scales). The stage's
+block is not placed the same way (docs/ryza/open.md).
+
 ## Ryza DX: the sky
 
 `skyplane.g1s` draws the sky as a full-screen plane at the far plane. Vertex program 0: the

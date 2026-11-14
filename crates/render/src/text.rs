@@ -93,7 +93,7 @@ pub struct Layer {
 impl Layer {
     pub fn new(gpu: &Gpu, pool: vk::CommandPool, render_pass: vk::RenderPass, images: &[&barrel_formats::g1t::Texture]) -> Result<Layer> {
         let d = &gpu.device;
-        let textures = images.iter().map(|t| upload_texture(gpu, pool, t)).collect::<Result<Vec<_>>>()?;
+        let textures = images.iter().map(|t| upload_texture(gpu, pool, t, false)).collect::<Result<Vec<_>>>()?;
         let n = textures.len() as u32;
         unsafe {
             let sampler = d.create_sampler(

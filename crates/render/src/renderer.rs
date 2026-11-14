@@ -125,6 +125,9 @@ pub struct Frame<'a> {
     pub saturation: [f32; 3],
     /// The finished frame's tone curve white point (extended Reinhard; 0: none).
     pub tone_white: f32,
+    /// The game's filmic curve instead, with `tone_white` as its white point, and this gamma
+    /// after it (0: the Reinhard curve, if any).
+    pub tone_gamma: f32,
     pub camera: Camera,
     /// Copy this frame's scene into the frozen image (a cross-fade starts), and how much of
     /// the frozen image the post pass mixes in.
@@ -614,7 +617,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -899,6 +902,7 @@ impl Renderer {
                 post_push[32 + 4 * k..36 + 4 * k].copy_from_slice(&v.to_le_bytes());
             }
             post_push[44..48].copy_from_slice(&tone_white.to_le_bytes());
+            post_push[12..16].copy_from_slice(&tone_gamma.to_le_bytes());
             for (k, v) in overlay.iter().enumerate() {
                 post_push[16 + 4 * k..20 + 4 * k].copy_from_slice(&v.to_le_bytes());
             }

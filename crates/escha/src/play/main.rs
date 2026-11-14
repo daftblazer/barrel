@@ -2979,7 +2979,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
 
     // Textures, uploaded as their BC blocks with all mip levels, then the outline and white.
     let root = event_spec.as_ref().and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf));
-    let (textures, outline_tex, white) = upload_textures(&gpu, renderer.pool, &all_textures, root.as_deref())?;
+    let (textures, outline_tex, white) = upload_textures(&gpu, renderer.pool, &all_textures, root.as_deref(), &[])?;
     // Instances: one model matrix each, in a storage buffer the vertex shader indexes by the
     // draw's instance number (set 1, bound once for every renderer.pipeline).
     for i in &mut instances {
@@ -2995,14 +2995,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             morph_weights.iter().filter(|&&w| w != 0.0).count()
         );
     }
-    let grounds = upload_grounds(&gpu, renderer.pool, &terrains)?;
+    let grounds = upload_grounds(&gpu, renderer.pool, &terrains, false)?;
     // Each field's light texture (none: white).
     let pattern_textures = patterns
         .iter()
         .map(|p| -> Result<_> {
             let Some(bytes) = p else { return Ok(None) };
             let g = G1t::parse(bytes)?;
-            g.textures.first().map(|t| upload_texture(&gpu, renderer.pool, t)).transpose()
+            g.textures.first().map(|t| upload_texture(&gpu, renderer.pool, t, false)).transpose()
         })
         .collect::<Result<Vec<_>>>()?;
     let scene_data = scene_gpu::SceneData {
@@ -5214,6 +5214,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         glow,
         saturation: [0.0; 3],
         tone_white: 0.0,
+        tone_gamma: 0.0,
         camera: renderer::Camera { jitter: frame_jitter, fov, near: dist * 0.01 * zoom, far: (dist * 20.0 * zoom).max(80_000.0), dt: frame_dt, same: same_camera },
         freeze_now,
         frozen_weight,

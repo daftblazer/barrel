@@ -1016,11 +1016,17 @@ pub fn render_space(transform: Mat4) -> Mat4 {
     s * transform * s
 }
 
-/// Upload a texture as it is stored (BC blocks and all mip levels) for sampling.
-pub fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Texture) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
+/// Upload a texture as it is stored (BC blocks and all mip levels) for sampling. `linear`: a
+/// colour texture sampled in linear light (its sRGB format; a game that lights in linear light,
+/// the Ryza games); otherwise its values as they are.
+pub fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Texture, linear: bool) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
     let d = &gpu.device;
     {
         let format = match t.format {
+            Format::Bc1 if linear => vk::Format::BC1_RGBA_SRGB_BLOCK,
+            Format::Bc3 if linear => vk::Format::BC3_SRGB_BLOCK,
+            Format::Bc7 if linear => vk::Format::BC7_SRGB_BLOCK,
+            Format::Rgba8 if linear => vk::Format::R8G8B8A8_SRGB,
             Format::Bc1 => vk::Format::BC1_RGBA_UNORM_BLOCK,
             Format::Bc3 => vk::Format::BC3_UNORM_BLOCK,
             Format::Bc7 => vk::Format::BC7_UNORM_BLOCK,
@@ -1109,21 +1115,23 @@ pub fn composite_overlays(draws: &mut [Draw], all_textures: &[&barrel_formats::g
 
 /// Uploads a scene's textures (BC blocks with all mip levels), then the characters' outline
 /// texture (`Data/x64/Shader/texture/outline.g1t` under ROOT, if found) and a white one for
-/// masks a material does not have: the textures, the outline's slot and white's.
+/// masks a material does not have: the textures, the outline's slot and white's. `linear`
+/// says which are colour textures to sample in linear light (`upload_texture`; none when empty).
 pub fn upload_textures(
     gpu: &Gpu,
     pool: vk::CommandPool,
     all_textures: &[&barrel_formats::g1t::Texture],
     root: Option<&Path>,
+    linear: &[bool],
 ) -> Result<(Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>, Option<usize>, usize)> {
     let mut textures = Vec::new();
-    for t in all_textures {
-        textures.push(upload_texture(gpu, pool, t)?);
+    for (k, t) in all_textures.iter().enumerate() {
+        textures.push(upload_texture(gpu, pool, t, linear.get(k).copied().unwrap_or(false))?);
     }
     // The characters' outline texture (`Data/x64/Shader/texture/outline.g1t`), if found.
     let outline_tex = {
         let bytes = root.and_then(|r: &Path| std::fs::read(r.join("Data/x64/Shader/texture/outline.g1t")).ok());
-        match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(gpu, pool, &t))) {
+        match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(gpu, pool, &t, false))) {
             Some(t) => {
                 textures.push(t?);
                 Some(textures.len() - 1)
@@ -1138,13 +1146,15 @@ pub fn upload_textures(
         gpu,
         pool,
         &barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&white_px[..]] },
+        false,
     )?);
     Ok((textures, outline_tex, white))
 }
 
 /// Uploads each field's ground textures: its 2 blend maps (a black second one where the field
-/// has one) and 6 layers (the last repeated where it has fewer).
-pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDraw)]) -> Result<Vec<scene_gpu::GroundData>> {
+/// has one) and 6 layers (the last repeated where it has fewer; `linear`: sampled in linear
+/// light, `upload_texture`).
+pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDraw)], linear: bool) -> Result<Vec<scene_gpu::GroundData>> {
     let mut grounds = Vec::new();
     for (field, t) in terrains {
         let bundle = barrel_formats::ktf::parse(&t.ktf)?;
@@ -1153,7 +1163,7 @@ pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, Terrai
         let black = [0u8, 0, 0, 255];
         let black_tex = barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&black[..]] };
         for i in 0..TERRAIN_MAPS {
-            tex.push(upload_texture(gpu, pool, bundle.blend.textures.get(i).unwrap_or(&black_tex))?);
+            tex.push(upload_texture(gpu, pool, bundle.blend.textures.get(i).unwrap_or(&black_tex), false)?);
         }
         // Each layer's colour tile, by the layer records (the Ryza games put a normal map after
         // each; not drawn yet), the last again for the slots past them.
@@ -1163,7 +1173,7 @@ pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, Terrai
         let colours: Vec<usize> = bundle.layer_list().iter().map(|l| usize::from(l.colour)).collect();
         let colours = if colours.is_empty() || colours.iter().any(|&c| c >= count) { (0..count.max(1)).collect() } else { colours };
         for i in 0..TERRAIN_LAYERS {
-            tex.push(upload_texture(gpu, pool, &bundle.layers.textures[colours[i.min(colours.len() - 1)]])?);
+            tex.push(upload_texture(gpu, pool, &bundle.layers.textures[colours[i.min(colours.len() - 1)]], linear)?);
         }
         grounds.push(scene_gpu::GroundData { field: *field, textures: tex, patches: t.patches.clone(), cell: t.cell, extent: t.extent });
     }

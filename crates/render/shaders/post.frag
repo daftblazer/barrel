@@ -6,11 +6,18 @@ layout(set = 0, binding = 0) uniform sampler2D scene;
 layout(set = 0, binding = 1) uniform sampler2D glow;
 layout(set = 0, binding = 2) uniform sampler2D frozen;
 // The fade's colour (u22), laid over by its alpha. saturation: a scale per channel about the
-// BT.601 luma (0: none; Ryza's `trueHDR_vSaturationScale`), and in w a tone curve's white
-// point (extended Reinhard, c (1 + c / w²) / (1 + c); 0: none).
+// BT.601 luma (0: none), and in w a tone curve's white point (0: none): extended Reinhard,
+// c (1 + c / w²) / (1 + c), or with a gamma in pad.y the Ryza games' filmic curve over the
+// white point's, then that gamma.
 layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; } pc;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
+// The Ryza games' tone curve (the inverse of what `effect2dpreinvtonemapandgamma.g1s` undoes,
+// docs/shading.md): Hable's filmic curve, shoulder 0.22, linear 0.30 at angle 0.10, toe 0.20
+// with numerator 0.01 and denominator 0.30.
+vec3 filmic(vec3 x) {
+    return (x * (0.22 * x + 0.03) + 0.002) / (x * (0.22 * x + 0.3) + 0.06) - 0.0333;
+}
 void main() {
     // pad.x 1: the motion vectors shown instead (`--show-motion`: binding 0 holds them),
     // their size times 40 in red and green.
@@ -21,7 +28,9 @@ void main() {
     vec3 live = texture(scene, uv).rgb * 2.0 + texture(glow, uv).rgb * pc.rate;
     vec3 before = texture(frozen, uv).rgb * 2.0;
     vec3 c = mix(live, before, pc.frozen_weight);
-    if (pc.saturation.w > 0.0) {
+    if (pc.pad.y > 0.0) {
+        c = pow(filmic(c) / filmic(vec3(pc.saturation.w)), vec3(1.0 / pc.pad.y));
+    } else if (pc.saturation.w > 0.0) {
         float w2 = pc.saturation.w * pc.saturation.w;
         c = c * (1.0 + c / w2) / (1.0 + c);
     }
