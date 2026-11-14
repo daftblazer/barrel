@@ -220,12 +220,20 @@ pub fn sky_sets(pe: &crate::pe::Pe, table: u64) -> Vec<(String, String)> {
 }
 
 fn numbers<const N: usize>(e: &Element, name: &str) -> Option<[f32; N]> {
-    let v: Vec<f32> = e.attr(name)?.split(',').map(|s| s.trim().parse().ok()).collect::<Option<_>>()?;
+    let v: Vec<f32> = e.attr(name)?.split(',').map(leading_number).collect::<Option<_>>()?;
     let mut out = [0.0; N];
     for (o, x) in out.iter_mut().zip(&v) {
         *o = *x;
     }
     (v.len() >= N.min(3)).then_some(out)
+}
+
+/// A number as the game's reader takes it (C `atof`): the longest number at the start, after
+/// blanks; the rest ignored. `A15_WMAP.xml`'s sun reads `color="0.8, 0.7, 0.5` + line break +
+/// `5, 1.0"`: its blue is 0.5 (the maps' light, docs/shading.md), not a failed parse.
+fn leading_number(s: &str) -> Option<f32> {
+    let s = s.trim_start();
+    (1..=s.len()).rev().filter(|&k| s.is_char_boundary(k)).find_map(|k| s[..k].parse().ok())
 }
 
 fn number(e: &Element, name: &str) -> Option<f32> {
@@ -388,5 +396,15 @@ mod tests {
         assert_eq!(look.fog.unwrap().end, 50.0);
         assert_eq!(look.hdr, Some((0.7, 1.0)));
         assert_eq!(look.pattern, Some(Pattern { speed: [-0.005, 0.01], size: [200.0, 50.0] }));
+    }
+}
+
+#[cfg(test)]
+mod leading_number_tests {
+    #[test]
+    fn reads_up_to_what_is_not_a_number() {
+        assert_eq!(super::leading_number(" 0.5\n5"), Some(0.5));
+        assert_eq!(super::leading_number(" 1.0"), Some(1.0));
+        assert_eq!(super::leading_number("x"), None);
     }
 }

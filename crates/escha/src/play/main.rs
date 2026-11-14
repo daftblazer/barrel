@@ -583,7 +583,7 @@ impl AreaMap {
 /// 77) (126, 99, 142); not a plain multiply, the blue rises on dark texels). Applied to the
 /// texel, before Barrel's (brighter) map light: green 0.9 rather than the fitted 1.03, so the
 /// lit result matches (1:25: dot (131, 217, 251), mark middle (108, 92, 155)).
-const CHOSEN_TINT: ([f32; 3], [f32; 3]) = ([0.69, 0.9, 0.91], [0.0, 0.0, 0.28]);
+const CHOSEN_TINT: ([f32; 3], [f32; 3]) = ([0.75, 1.07, 0.91], [0.0, 0.0, 0.38]);
 const SEEN_ROUTE: u32 = u32::from_le_bytes([170, 255, 170, 255]);
 
 /// The area map's Back question (the executable's string at `0x140949850`).

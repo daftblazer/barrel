@@ -874,5 +874,12 @@ overlay blend (`2sf` below 0.5, `1 − 2(1 − s)(1 − f)` above). With black, 
 rim. `overlayModifier` is `A15_WMAP.xml`'s `<tex_filter_world>` (2) on the world map and
 `<tex_filter_area>` (3) on an area map. Barrel lays it over in `post.frag` (binding 3,
 `Frame::filter`; 0 for every other scene, Ryza included). On top of it the maps draw layouts
-649 (a dark red vignette) and 650 (the diamond border). The middle of the map is still paler
-than the game's (about 0.84, 0.75, 0.53 of Barrel's there), which the filter does not touch.
+649 (a dark red vignette) and 650 (the diamond border). The map's own colour is its sun: `A15_WMAP.xml`'s
+PARALLEL light reads `color="0.8, 0.7, 0.5` + line break + `5, 1.0"`, which the game's reader
+(C `atof` per comma-separated part: the number at the start, the rest ignored) takes as
+(0.8, 0.7, 0.5). Barrel's reader failed on it and fell back to white, leaving the maps paler
+by about that colour (0.84, 0.75, 0.53); it now reads numbers the same way
+(`field_look::leading_number`), and the area map's clouds and ground match the recording
+within 3 levels. Other field files with such slips, read the game's way now: AREA_02_01
+`pivot_position` (`140md` → 140), AREA_10_01, AREA_10_05 and EX_AREA_01–03
+`center_position2_` (`0m` → 0), AREA_12_01 `boundary_max` (`0z.0` → 0).

@@ -83,7 +83,7 @@ layout(location = 1) out vec2 motion;
 layout(location = 11) flat in vec4 tint_mul;
 layout(location = 12) flat in vec4 tint_add;
 
-// The instance's colour transform on a texel, in display (sRGB) terms; none unless it is on.
+// The instance's colour transform on its lit colour, in display (sRGB) terms; none unless on.
 vec3 tinted(vec3 c) {
     if (tint_add.w < 0.5) return c;
     vec3 s = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
@@ -162,7 +162,6 @@ vec3 environment_light(vec3 n) {
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec4 c = texture(tex, uv);
-    c.rgb = tinted(c.rgb);
     if ((pc.flags & 8u) != 0u) {
         // The distant view, blended by its alpha (clouds over the dome); its solid pieces
         // (flag 16: ground, stones, trees, cliffs) alpha-tested like the field's models.
@@ -170,7 +169,7 @@ void main() {
             if (c.a < pc.params.x) discard;
             c.a = 1.0;
         }
-        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep) * pc.params.w, c.a);
+        color = vec4(tinted(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep)) * pc.params.w, c.a);
         return;
     }
     if (c.a < pc.params.x) discard;
@@ -230,7 +229,7 @@ void main() {
             float row = float((pc.flags >> 16) & 255u);
             lit *= textureLod(mask, vec2(clamp(h, 0.0, 1.0), (row + 0.5) / 256.0), 0.0).rgb;
         }
-        color = vec4(mix(fog_add, lit * c.rgb * at_color, fog_keep) * pc.params.w, 1.0);
+        color = vec4(tinted(mix(fog_add, lit * c.rgb * at_color, fog_keep)) * pc.params.w, 1.0);
         return;
     }
     vec3 col;
@@ -276,5 +275,5 @@ void main() {
     col = clamp(col + w * (over - col), 0.0, 1.0);
     // (6. fog is not done yet; 7. atColor is 1 for characters and the HDR range 1.)
     // The scene is drawn at the HDR range's inverse (params.w), doubled back after.
-    color = vec4(mix(fog_add, col, fog_keep) * pc.params.w, 1.0);
+    color = vec4(tinted(mix(fog_add, col, fog_keep)) * pc.params.w, 1.0);
 }

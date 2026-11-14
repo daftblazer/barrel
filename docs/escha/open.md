@@ -49,13 +49,7 @@ likely settle them where static reading failed.
   playback and a text command list (stage 17 in the plan).
 - (2026-11-14) The lead is drawn 3.2 times on the maps by `0x140388820`, Barrel's fitted 1.75 (area)
   and 3.7 (world) say otherwise; which model and base scale the map uses.
-- (2026-11-14) The maps don't quite look the same yet (stage 15). Done: the vignette (649) and
-  diamond border (650), and the screen texture filter (the red-orange rim, docs/shading.md).
-  Still different against colseit-arrival 0:45: the middle of the map is paler than the game's
-  (about 0.84, 0.75, 0.53 of Barrel's: perhaps `A15_WMAP.xml`'s light, ambient (0.35, 0.2, 0.1)
-  and sun (0.8, 0.7, 0.55), not reaching the map's terrain as the game applies it); the centre's colour is not the fog (forcing it in turns the map bluer) and the
-  map's terrain shader pack is the same as a town's; the scroll and label plates are flat stand-ins; event points are red dots and the
-  cursor a blue ring under Escha in the game.
+- (2026-11-14) The maps (stage 15): the scroll and label plates and event points are the game's art now; left: the cursor's float height (within its bob range in the recordings).
 - (2026-11-14) No title screen music.
 - (2026-11-14) No intro movie on startup (movies: native decoders, chosen 2026-11-14).
 - (2026-11-14) No company logo splash screens before the title.

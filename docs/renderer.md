@@ -359,8 +359,10 @@ character: 705 shows CUR00 at scale 1, the lead character is drawn at 3.2 times 
 mark tinted: the maps tint the way chosen (`AreaMap::chosen`: the start's mark, the cursor's
 place's mark and the dots of the route between them; colseit-arrival 1:17, the dots past the
 cursor's place white) by a per-channel transform on the display colour, `c * mul + add`
-(`CHOSEN_TINT`: red 0.69, green 0.9, blue 0.91 + 0.28; fitted on a white dot, the town mark's
-rim and its red middle, which is why no plain multiply fitted). The renderer's instances carry
+(`CHOSEN_TINT`, on the lit colour before the maps' overlays: red 0.75, green 1.07, blue
+0.91 + 0.38; first fitted on the recording's screen colours of a white dot, the town mark's rim
+and its red middle, which is why no plain multiply fitted, then corrected for the overlays
+laid after it: the mark and dot within 4 levels at 1:25). The renderer's instances carry
 it (`Instance::tint_mul` / `tint_add`, off by default: Escha's and Ryza's frames unchanged), so
 the maps' marks and dots take their own instances. Not yet the game's:
 her shadow there (the recording shows none), the labels' plates (the neighbours' names now stand on their routes' third dot,
