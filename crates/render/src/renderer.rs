@@ -108,8 +108,8 @@ pub struct Frame<'a> {
     /// Whether the game shows a draw this frame (besides `hidden` and the field).
     pub shown: &'a dyn Fn(&Draw) -> bool,
     /// The game's material bits for a draw (`model.frag`'s flags past the renderer's own:
-    /// 16 a solid piece of the distant view, 32 unlit, bits 8 to 11 the sway group) and its
-    /// tint.
+    /// 16 a solid piece of the distant view, 32 unlit, bits 8 to 11 the sway group, 128 a Ryza
+    /// character's toon ramp with its row in bits 16 to 23) and its tint.
     pub material: &'a dyn Fn(&Draw) -> (u32, u32),
     pub draw_vp: Mat4,
     pub view_planes: [glam::Vec4; 6],

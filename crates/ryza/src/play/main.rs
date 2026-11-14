@@ -208,6 +208,14 @@ fn main() -> Result<()> {
         None => None,
     };
     let ryza_pack = ryza_files.as_ref().map(|(_, t, _)| G1t::parse(t)).transpose()?;
+    // The characters' toon ramp (`DSChara-Cll`'s `sRamp`, docs/shading.md).
+    let ramp_bytes = match ryza_files {
+        Some(_) => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
+        None => None,
+    };
+    let ramp_pack = ramp_bytes.as_deref().map(G1t::parse).transpose()?;
+    // Her draws' ramp rows by (first index, instance): each submesh's `rampIndex`.
+    let mut ramp_rows: std::collections::HashMap<(u32, u32), u32> = Default::default();
     let mut rig: Option<Rig> = None;
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
         let model = Elixir::parse(model)?;
@@ -281,7 +289,21 @@ fn main() -> Result<()> {
         eprintln!("Ryza: {chara:?}");
         let instance = scene.instance(Mat4::from_scale_rotation_translation(Vec3::from(chara.size), glam::Quat::from_rotation_y(turn.to_radians()), *at));
         scene.add_posed(geometry, Mat4::IDENTITY, rp.textures.len(), Some(&joints), instance)?;
+        // Her submeshes' ramp rows (`rampIndex`), one draw each in order for those with UVs and
+        // normals (the others draw nothing, `Scene::add_posed`); the ramp texture follows her
+        // own.
+        let rows: Vec<u32> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).map(|s| geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255)).collect();
+        if scene.draws.len() - first == rows.len() {
+            for (d, &row) in scene.draws[first..].iter().zip(&rows) {
+                ramp_rows.insert((d.first_index, d.instance), row);
+            }
+        } else {
+            eprintln!("Ryza: {} draws for {} submeshes: no toon ramp", scene.draws.len() - first, rows.len());
+        }
         for d in &mut scene.draws[first..] {
+            if ramp_rows.contains_key(&(d.first_index, d.instance)) {
+                d.mask = Some(rp.textures.len());
+            }
             d.texture += textures.len();
             d.mask = d.mask.map(|m| m + textures.len());
             d.overlay = d.overlay.map(|o| o + textures.len());
@@ -301,6 +323,9 @@ fn main() -> Result<()> {
         eprintln!("Ryza: walk {:.0}, run {:.0} units a second", player.walk_speed, player.run_speed);
         rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut });
         textures.extend(rp.textures.iter());
+        if let Some(r) = &ramp_pack {
+            textures.extend(r.textures.first());
+        }
     }
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
     // drawn as the distant view (unlit, after the sky plane, alpha-blended). Where the game
@@ -502,7 +527,14 @@ fn main() -> Result<()> {
             }
     };
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
-    let material = |_: &Draw| (if environment.is_some() { 0 } else { UNLIT }, 0);
+    // Her draws take the toon ramp (flag 128, the row in bits 16-23).
+    let material = |d: &Draw| {
+        let base = if environment.is_some() { 0 } else { UNLIT };
+        match ramp_rows.get(&(d.first_index, d.instance)) {
+            Some(&row) if ramp_pack.is_some() && environment.is_some() => (base | 128 | row << 16, 0),
+            _ => (base, 0),
+        }
+    };
     let layers: Vec<&text::Layer> = Vec::new();
     let bytes = u64::from(width) * u64::from(height) * 4;
     let readback = match pump {

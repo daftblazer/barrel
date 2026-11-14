@@ -655,7 +655,9 @@ her hair (`@C86A7C58`, `@E905E6C7`) `alr2HAdj` (-0.11) and `alr2HDir` (0, 1, 0, 
 anisotropic highlight along the hair, "Alr2h" in the `PBB-Alr2h…` program names); her eyes
 (`@E24D26E6`) have texture transforms and a parallax (`vPlx` 0, -0.05), her face's outline-like
 part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constants' values
-(`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found.
+(`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found. `barrel-ryza` lays the ramp
+over the field-model light on her draws (`model.frag` flag 128, the row in bits 16 to 23, the
+ramp in the mask slot): u is the sun's half-Lambert term as is.
 
 ## Ryza DX: the sky
 

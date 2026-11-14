@@ -133,7 +133,16 @@ void main() {
         // packed as unorm8 in the outline colour's word; 0: none) multiplies the colour.
         uint tint = floatBitsToUint(pc.outline_colour);
         vec3 at_color = tint != 0u ? unpackUnorm4x8(tint).rgb : vec3(1.0);
-        color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb * at_color, fog_keep) * pc.params.w, 1.0);
+        vec3 lit = field_light + sun_part * sun_shadow(world) * cloud_light(world);
+        // A Ryza character (flag 128): the toon ramp (the mask slot holds `chara_rmp`) on the
+        // light, its u the sun's half-Lambert term and its row (bits 16-23) the material's
+        // `rampIndex` (DSChara-Cll's ramp, docs/shading.md; its scale and bias not read).
+        if ((pc.flags & 128u) != 0u) {
+            float h = dot(n, -normalize(look.sun_dir.xyz)) * 0.5 + 0.5;
+            float row = float((pc.flags >> 16) & 255u);
+            lit *= textureLod(mask, vec2(clamp(h, 0.0, 1.0), (row + 0.5) / 256.0), 0.0).rgb;
+        }
+        color = vec4(mix(fog_add, lit * c.rgb * at_color, fog_keep) * pc.params.w, 1.0);
         return;
     }
     vec3 col;
