@@ -20,6 +20,15 @@ use barrel_escha::data::layout::{Placed, Text};
 use crate::hud::Element;
 
 const REGION: u32 = 637;
+/// The maps' header (layout 652, at the screen's top-left): the feather (part 0x92 cut 2),
+/// layout 651 (the dark band, cut 11, and the gold line, cut 3) and the region's name (637,
+/// drawn by its own code at [`REGION_AT`]).
+const HEADER: u32 = 652;
+
+/// The header's sprites, in the layout's order (the name over them).
+fn header(pe: &barrel_formats::pe::Pe) -> Vec<Element> {
+    barrel_escha::data::layout::placed(pe, HEADER).iter().filter(|p| p.node.part < 0x164).map(Element::stored).collect()
+}
 const TAB: u32 = 640;
 const PANEL: u32 = 641;
 const REGION_AT: [i32; 2] = [1434, 61];
@@ -67,6 +76,7 @@ pub fn elements(
 ) -> Vec<Element> {
     let texts = |p: &Placed| barrel_escha::data::layout::text(pe, p);
     let mut out = Vec::new();
+    out.extend(header(pe));
     for p in barrel_escha::data::layout::placed(pe, REGION) {
         if let Some(t) = texts(&p) {
             out.push(Element::Label(Text { at: moved(&p, REGION_AT), text: region.to_string(), ..t }));
@@ -126,6 +136,7 @@ pub fn elements(
 pub fn world_elements(pe: &barrel_formats::pe::Pe, name: &str, description: &str, sectors: &[String], width_of: impl Fn(&str, f32) -> f32) -> Vec<Element> {
     let texts = |p: &Placed| barrel_escha::data::layout::text(pe, p);
     let mut out = Vec::new();
+    out.extend(header(pe));
     for p in barrel_escha::data::layout::placed(pe, REGION) {
         if let Some(t) = texts(&p) {
             out.push(Element::Label(Text { at: moved(&p, REGION_AT), text: name.to_string(), ..t }));

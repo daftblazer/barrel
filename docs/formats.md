@@ -1681,7 +1681,9 @@ that place them are tables in the executable (English addresses; `crates/formats
   ~25 nearer the
   screen's middle. On the scroll, 641's rules (part 0xbe cut 5) sit 7 below their nodes and
   the texts are in the layouts' ink (58, 26, 8) drawn opaque (the recording's darkest text
-  pixels (57, 27, 6), though the stored alpha byte is 0xe1):
+  pixels (57, 27, 6), though the stored alpha byte is 0xe1). The maps' header is layout 652 at the
+  screen's top-left: the feather (part 0x92 cut 2) at (1392, -2), layout 651 at (1260, 114)
+  (the dark band, cut 11, and the gold line, cut 3) and the region's name (637) at (1440, 66):
   +0x18 i32 its size in hundredths (27.00 for the HUD's "Left"; unit not read), +0x1c its colour
   as bytes R, G, B, A, i.e. 0xAABBGGRR (0: the widget's own; the HUD's "Left" (184, 146, 69),
   tan, as recorded; the panels' ink (58, 26, 8), the `BR` text colour), +0x20 a pointer to its UTF-8 string (+0x14 is 0 or a
