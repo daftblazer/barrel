@@ -112,7 +112,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   the game moves her during the start and stop (here eased in and out) and its mixing time
   are not read.
 - **Her shading.** Drawn as a field model (the environment's light) until her own shaders
-  are read.
+  are read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
+  "Ryza's character files"); the deferred character lighting pass is
+  `\data\x64\shader\dschara-cll.g1s`. Her face's expressions, eyes and blinks
+  (`face\`) and her hair's swing (`.swg`) are not read.
 
 ## On handhelds
 

@@ -1090,6 +1090,21 @@ bytes a light:
 
 There is no colour, so these are not the whole light: see "Ryza field environment".
 
+### Ryza's character files
+
+`\data\x64\character\pc00a\`: `pc00a_model.elixir.gz` (the skeleton `PC00A_MODEL.g1m`, the
+mesh `PC00A_MODEL_default.g1m`, `PC00A_MODELOid.bin` (likely the bones' names) and
+`PC00A_MODEL.swg` (likely the hair and cloth swing), not read), `pc00a_model.g1t` (her textures),
+the motions (`pc00a_<NNNNN>`, "Ryza's motions") and `face\` with 30 small containers: the
+expressions (`pc00a_face_expression_<name>`: default, smile, anger, sadness, surprise, wink, ...),
+the eyes' directions (`pc00a_face_eye_<dir>`), blinks (`closeeye_up/down`) and
+`pc00a_face_pronunciation`, not read. Her mesh groups name their shaders by a 32-bit hash
+(`@CB0965E5`, `@4196223C`, ... in `barrel g1m-materials`; submeshes 0 to 7 and 20, 21 also
+carry the numbers 20000 to 20006); the hashes match none of the 212 shader packs' names
+(`\data\x64\shader\*.g1s`, CRC32 or FNV-1/1a or djb2 or sdbm, any case). The parts tables
+(`charapartsdefaultvisible.xml`, `charapartschange.xml`, `charapartsmodel.xml`) have no rows for
+`PC00A`: all her parts show.
+
 ### Ryza's motions
 
 A character's motion set is named in `saves\chara\charamotionset.xml` (`MotionsetTag`,
