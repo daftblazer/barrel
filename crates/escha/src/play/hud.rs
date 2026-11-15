@@ -222,6 +222,8 @@ pub enum Element {
     /// A region `src` (texture pixels: left, top, right, bottom) of a pack's picture, drawn
     /// into `rect` (the 1920 × 1080 screen): the pieces the game stretches (windows, panels).
     Slice { pack: String, index: u32, src: [f32; 4], rect: [i32; 4] },
+    /// A [`Element::Slice`] in an ink (a node's colour: a rule's cut-short last piece).
+    InkedSlice { pack: String, index: u32, src: [f32; 4], rect: [i32; 4], rgb: [u8; 3] },
 }
 
 /// A piece stretched into `rect` keeping its `edge` texture pixels at each side as they are
@@ -255,7 +257,7 @@ impl Element {
         match *self {
             Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Tinted { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } | Element::Raised { part, cut, at } => Some((part, cut, at)),
             Element::Popped { part, cut, centre, .. } => Some((part, cut, centre)),
-            Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
+            Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } | Element::InkedSlice { .. } => None,
         }
     }
 }
@@ -617,14 +619,15 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     texture: sheets.first + slot,
                 });
             }
-            Element::Slice { pack, index, src, rect: [l, t, r, b] } => {
+            Element::Slice { pack, index, src, rect: [l, t, r, b] } | Element::InkedSlice { pack, index, src, rect: [l, t, r, b], .. } => {
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
                 let [w, h] = sheets.sizes[slot];
                 let x = |v: i32| dx + v as f32 * k;
+                let [cr, cg, cb] = if let Element::InkedSlice { rgb, .. } = e { rgb.map(|c| f32::from(c) / 255.0) } else { [1.0; 3] };
                 out.push(Quad { turn: false,
                     rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k],
                     uv: [src[0] / w, src[1] / h, src[2] / w, src[3] / h],
-                    color: [1.0; 4],
+                    color: [cr, cg, cb, 1.0],
                     texture: sheets.first + slot,
                 });
             }

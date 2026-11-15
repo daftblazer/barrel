@@ -129,7 +129,7 @@ pub struct Words {
 }
 
 /// A rule: its left end, the middle repeated (the last repeat cut short) and its right end, in
-/// the node's ink. The cut-short piece is drawn plain (a slice cannot carry an ink yet).
+/// the node's ink. The cut-short piece is an inked slice.
 fn rule(pe: &Pe, p: &Placed) -> Vec<Element> {
     let width = layout::word(pe, p, 5).unwrap_or(0);
     let rgb = crate::kit::ink(pe, p);
@@ -142,7 +142,11 @@ fn rule(pe: &Pe, p: &Placed) -> Vec<Element> {
         if x + middle <= width - right {
             out.push(sprite(1, x));
         } else {
-            out.extend(crate::kit::horizontal_bar(pe, p.node.part, p.at, width).into_iter().filter(|e| matches!(e, Element::Slice { rect, .. } if rect[0] == p.at[0] + x)));
+            let cut_short = crate::kit::horizontal_bar(pe, p.node.part, p.at, width).into_iter().find_map(|e| match e {
+                Element::Slice { pack, index, src, rect } if rect[0] == p.at[0] + x => Some(Element::InkedSlice { pack, index, src, rect, rgb }),
+                _ => None,
+            });
+            out.extend(cut_short);
         }
         x += middle;
     }
