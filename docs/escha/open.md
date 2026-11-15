@@ -368,3 +368,13 @@ likely settle them where static reading failed.
   the default command no longer acting). Find the state (a hook on the command handler, or a
   frame dump), then script the presses that finish the battle and capture its result and drops
   screens (Barrel: play/result.rs, play/drops.rs).
+- **Picker row pulse: its own clock, from the picker's opening (settled; to implement).**
+  escha-recomp `scenarios/picker-open.sh` (every frame, A at 2400 opens the Status picker): the
+  chosen row's frame (a15_menu part 1 at (32, 132)) shows an opening cut at 2405-2409, then from
+  2410 steps every 10 frames through the sheet cuts at v 0.070, 0.141, 0.070, 0.0, 0.0, … — the
+  flipbook's 5 cuts of 10 ticks (0 → 1 → 2 → 1 → 0 over three pictures), counted from the
+  picker's opening, not on the global clock (G = frame + 204) the glows use. Replace
+  `picker::Kind::pulse_lag` (fitted) with a page clock started when the page opens (the menu
+  keeps when each page opened); the checks then need the page's age at the captured frame
+  (2560 − 2400 = 160 ticks) besides BARREL_CLOCK_AT. The Battle Equip. page's bar pulse is
+  probably the same kind of page clock.
