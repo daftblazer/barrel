@@ -63,6 +63,69 @@ impl<'a> Bits<'a> {
     }
 }
 
+/// A variable-length code: table lookups of up to [`Vlc::LEVEL`] bits a step, each symbol the
+/// index of its (code, length) pair.
+pub struct Vlc {
+    /// (symbol or subtable start, length): a positive length is a symbol's, a negative one sends
+    /// the lookup to the subtable at that start reading that many more bits; 0 is no code.
+    table: Vec<(u32, i8)>,
+    bits: u32,
+}
+
+impl Vlc {
+    pub const LEVEL: u32 = 9;
+
+    /// From (code, length) pairs; the codes must be prefix-free (lengths 1 to 32).
+    pub fn new(codes: &[(u32, u8)]) -> Self {
+        let list: Vec<(u32, u32, u32)> = codes.iter().enumerate().filter(|(_, c)| c.1 > 0).map(|(k, &(c, n))| (c, n as u32, k as u32)).collect();
+        let bits = list.iter().map(|c| c.1).max().unwrap_or(1).min(Self::LEVEL);
+        let mut table = Vec::new();
+        Self::build(&mut table, &list, bits);
+        Vlc { table, bits }
+    }
+
+    fn build(table: &mut Vec<(u32, i8)>, codes: &[(u32, u32, u32)], bits: u32) -> usize {
+        let base = table.len();
+        table.resize(base + (1 << bits), (0, 0));
+        let mut longer: std::collections::BTreeMap<u32, Vec<(u32, u32, u32)>> = Default::default();
+        for &(code, len, sym) in codes {
+            if len <= bits {
+                let first = (code << (bits - len)) as usize;
+                for e in &mut table[base + first..base + first + (1 << (bits - len))] {
+                    *e = (sym, len as i8);
+                }
+            } else {
+                let rest = len - bits;
+                longer.entry(code >> rest).or_default().push((code & ((1u64 << rest) - 1) as u32, rest, sym));
+            }
+        }
+        for (prefix, sub) in longer {
+            let sub_bits = sub.iter().map(|c| c.1).max().unwrap().min(Self::LEVEL);
+            let at = Self::build(table, &sub, sub_bits);
+            table[base + prefix as usize] = (at as u32, -(sub_bits as i8));
+        }
+        base
+    }
+
+    /// The next symbol, or `None` for bits no code starts with.
+    pub fn read(&self, b: &mut Bits) -> Option<usize> {
+        let (mut base, mut bits) = (0usize, self.bits);
+        loop {
+            let (v, len) = self.table[base + b.peek(bits) as usize];
+            if len > 0 {
+                b.skip(len as u32);
+                return Some(v as usize);
+            }
+            if len == 0 {
+                return None;
+            }
+            b.skip(bits);
+            base = v as usize;
+            bits = (-len) as u32;
+        }
+    }
+}
+
 /// Takes out the emulation-prevention bytes: a 3 after two zeros, when the byte after it is 0 to
 /// 3 (SMPTE 421M annex E).
 pub fn unescape(data: &[u8]) -> Vec<u8> {
@@ -115,6 +178,17 @@ mod tests {
         assert!(!b.over());
         b.read(8);
         assert!(b.over());
+    }
+
+    #[test]
+    fn vlc_reads_short_and_long_codes() {
+        // 1, 01, 001, then 13- and 14-bit codes past the first level.
+        let v = Vlc::new(&[(1, 1), (1, 2), (1, 3), (1, 13), (1, 14), (0, 14)]);
+        let data = [0b1010_0100, 0b0000_0000, 0b0010_0000, 0b0000_0000, 0b1000_0000, 0];
+        let mut b = Bits::new(&data);
+        let got: Vec<_> = (0..5).map(|_| v.read(&mut b).unwrap()).collect();
+        assert_eq!(got, vec![0, 1, 2, 3, 4]);
+        assert_eq!(b.position(), 1 + 2 + 3 + 13 + 14);
     }
 
     #[test]

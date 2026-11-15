@@ -5,6 +5,7 @@
 //! without a start code of its own (fields `0x0C`, slices `0x0B` or a new entry point inside it
 //! come with theirs).
 
+use crate::bitplane::{Bitplane, Tables as BitplaneTables};
 use crate::bits::{Bits, unescape, units};
 
 #[derive(Debug)]
@@ -25,6 +26,8 @@ type Result<T> = std::result::Result<T, Error>;
 pub struct Sequence {
     pub level: u8,
     pub chroma_format: u8,
+    /// Pictures carry `POSTPROC`.
+    pub postproc: bool,
     pub max_width: u32,
     pub max_height: u32,
     /// Pictures carry repeat counts (`RPTFRM`, progressive) or field flags (`TFF`/`RFF`).
@@ -93,7 +96,7 @@ impl Sequence {
         let chroma_format = b.read(2) as u8;
         b.read(3); // FRMRTQ_POSTPROC
         b.read(5); // BITRTQ_POSTPROC
-        b.read(1); // POSTPROCFLAG
+        let postproc = b.bit();
         let max_width = b.read(12) * 2 + 2;
         let max_height = b.read(12) * 2 + 2;
         let pulldown = b.bit();
@@ -131,13 +134,13 @@ impl Sequence {
         if b.over() {
             return Err(Error("sequence header runs out".into()));
         }
-        Ok(Sequence { level, chroma_format, max_width, max_height, pulldown, interlace, frame_counter, frame_interpolation, psf, display, frame_rate, hrd_buckets })
+        Ok(Sequence { level, chroma_format, postproc, max_width, max_height, pulldown, interlace, frame_counter, frame_interpolation, psf, display, frame_rate, hrd_buckets })
     }
 
     /// The start of a picture header: its type, frame counter and repeat count.
     pub fn picture_start(&self, frame: &[u8]) -> Result<PictureStart> {
         let data = unescape(&frame[..frame.len().min(16)]);
-        let mut b = Bits::new(&data);
+        let mut b = Bits::new(&data[..]);
         if self.interlace && b.bit() {
             return Err(Error("interlaced pictures (FCM) are not supported".into()));
         }
@@ -167,6 +170,95 @@ impl Sequence {
             }
         }
         Ok(PictureStart { kind, frame_counter, repeat })
+    }
+}
+
+/// Table 36: PQUANT for PQINDEX 0 to 31 with the implicit quantizer (non-uniform from 9).
+const PQUANT_IMPLICIT: [u8; 32] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 29, 31];
+
+/// An I or BI picture's header (Table 18), progressive.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IntraHeader {
+    pub kind: PictureType,
+    pub repeat: u8,
+    pub round_control: bool,
+    pub pqindex: u8,
+    pub pquant: u8,
+    pub half_qp: bool,
+    pub uniform: bool,
+    pub ac_pred: Bitplane,
+    /// `CONDOVER`: 0 no overlap smoothing, 1 all macroblocks, 2 by `over_flags`; `None` when the
+    /// picture does not carry it (overlap off or PQUANT above 8: smoothing by PQUANT alone).
+    pub cond_over: Option<u8>,
+    pub over_flags: Option<Bitplane>,
+    /// The coding sets for the colour-difference (`TRANSACFRM`) and luma (`TRANSACFRM2`) blocks.
+    pub ac_set_chroma: u8,
+    pub ac_set_luma: u8,
+    /// `TRANSDCTAB`: the high-motion DC tables.
+    pub dc_high: bool,
+    /// Where the macroblock layer starts, in bits into the unescaped frame.
+    pub mb_start: usize,
+}
+
+impl Sequence {
+    /// Macroblock columns and rows for a coded size.
+    pub fn macroblocks(&self, entry: &EntryPoint) -> (usize, usize) {
+        let (w, h) = entry.coded_size.unwrap_or((self.max_width, self.max_height));
+        (w.div_ceil(16) as usize, h.div_ceil(16) as usize)
+    }
+
+    /// Reads an I or BI picture's header from the unescaped frame.
+    pub fn intra_header(&self, entry: &EntryPoint, data: &[u8], planes: &BitplaneTables) -> Result<IntraHeader> {
+        let start = self.picture_start(data)?;
+        if !matches!(start.kind, PictureType::I | PictureType::BI) {
+            return Err(Error(format!("{:?} picture, not intra", start.kind)));
+        }
+        if entry.panscan || entry.quantizer != 0 || entry.dquant != 0 {
+            return Err(Error("pan-scan, an explicit quantizer or DQUANT: not supported yet".into()));
+        }
+        let mut b = Bits::new(data);
+        b.skip(self.interlace as u32 + if start.kind == PictureType::I { 3 } else { 4 });
+        if self.frame_counter {
+            b.read(8);
+        }
+        if self.pulldown {
+            b.read(2);
+        }
+        let round_control = b.bit();
+        if self.interlace {
+            b.read(1);
+        }
+        if self.frame_interpolation {
+            b.read(1);
+        }
+        let pqindex = b.read(5) as u8;
+        if pqindex == 0 {
+            return Err(Error("PQINDEX 0".into()));
+        }
+        let half_qp = pqindex <= 8 && b.bit();
+        let pquant = PQUANT_IMPLICIT[pqindex as usize];
+        let uniform = pqindex <= 8;
+        if self.postproc {
+            b.read(2);
+        }
+        let (cols, rows) = self.macroblocks(entry);
+        let ac_pred = planes.read(&mut b, cols, rows).ok_or_else(|| Error("ACPRED bitplane".into()))?;
+        let (mut cond_over, mut over_flags) = (None, None);
+        if entry.overlap && pquant <= 8 {
+            let c = if !b.bit() { 0 } else if !b.bit() { 1 } else { 2 };
+            if c == 2 {
+                over_flags = Some(planes.read(&mut b, cols, rows).ok_or_else(|| Error("OVERFLAGS bitplane".into()))?);
+            }
+            cond_over = Some(c);
+        }
+        let set = |b: &mut Bits| if !b.bit() { 0 } else if !b.bit() { 1 } else { 2 };
+        let ac_set_chroma = set(&mut b);
+        let ac_set_luma = set(&mut b);
+        let dc_high = b.bit();
+        if b.over() {
+            return Err(Error("picture header runs out".into()));
+        }
+        Ok(IntraHeader { kind: start.kind, repeat: start.repeat, round_control, pqindex, pquant, half_qp, uniform, ac_pred, cond_over, over_flags, ac_set_chroma, ac_set_luma, dc_high, mb_start: b.position() })
     }
 }
 
@@ -258,6 +350,21 @@ mod movie_tests {
             shown += 1 + p.repeat as u32;
         }
         eprintln!("{counts:?}\nunits {codes:?}\nshown {shown}");
+        let planes = crate::bitplane::Tables::default();
+        let mut seen = std::collections::BTreeMap::new();
+        for o in asf.objects().unwrap().iter().filter(|o| o.stream == video.number) {
+            let data = unescape(&o.data);
+            if !matches!(s.picture_start(&o.data).unwrap().kind, PictureType::I | PictureType::BI) {
+                continue;
+            }
+            let h = s.intra_header(&e, &data, &planes).unwrap();
+            let plane = |p: &Bitplane| match p { Bitplane::Raw => "raw".to_string(), Bitplane::Bits(v) => format!("{}set", v.iter().filter(|&&x| x != 0).count()) };
+            *seen.entry((h.pqindex, h.cond_over, h.ac_set_luma, h.ac_set_chroma, h.dc_high)).or_insert(0) += 1;
+            if seen.len() < 4 {
+                eprintln!("{:?} pq {} acpred {} over {:?} {:?} mb at {}", h.kind, h.pquant, plane(&h.ac_pred), h.cond_over, h.over_flags.as_ref().map(plane), h.mb_start);
+            }
+        }
+        eprintln!("(pqindex, condover, set luma, set chroma, dc high): {seen:?}");
         assert!(s.pulldown && !s.interlace);
     }
 }

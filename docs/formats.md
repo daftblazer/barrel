@@ -2155,3 +2155,9 @@ it goes (indices without gaps, prefix-free codes, Kraft sums: 1 for all but the 
 tables, 0.998; each AC set's run/level rows covering its codes but the escape; scans
 permutations, read column by column since the standard stacks their two-digit numbers). The
 small tables of sections 7 and 8 (IMODE, Norm-2/6, escape sizes, PQINDEX) are not generated.
+
+Intra pictures (`Sequence::intra_header`, Table 18; bitplanes `barrel_movie::bitplane`, 8.7, its
+Norm-6 tile table 81 entered by hand since the PDF's text garbles it, checked prefix-free): in
+`avantitle` all 85 (79 I, 6 BI) read with `PQINDEX` 1 to 5 (uniform quantizer, `HALFQP` read),
+`CONDOVER` "none" (PQINDEX 1 to 3) or "by `OVERFLAGS`" (4, 5), both coding sets and both DC tables
+in use; no `DQUANT`, pan-scan or explicit quantizer (refused for now).
