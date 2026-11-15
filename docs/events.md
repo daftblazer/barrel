@@ -674,6 +674,21 @@ in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far
   to the actor's body point + (0, 100, −300) and the target to its body point, both
   `4 30 100`. The presets' values (`CameraCPreset`, vtable `0x14080c170`) are not read; the
   recording holds a slow close-up of the member during command choice, which preset 2 would be.
+- `CameraCPreset` (vtable `0x14080c170`): `EventExecCamera` hands each word first to the
+  camera's slot 24 (`0x1401e3a30` here): `ECT_CAMERA_PRESET_SET n` runs `0x1401e3890(n)`,
+  `ECT_CAMERA_PRESET_ANG_SET a b c` (degrees, × π/180) sets the angles (+0xa8), `0x74000017
+  {x, hundredths}` sets +0x1c and +0x20. `0x1401e3890` (a jump table on n − 2 at `0x1401e3a08`)
+  sets, for preset 2: angles (pitch, yaw) = (−6°, 90°) (+0xa8), their turn per second (0°,
+  10°) (+0xd8), mode 4 (+0x1c), (−35, 20, −75) (+0xe8), focus (+0xb8) 0; preset 3 angles
+  (−15°, −49°), (50, 10, 400); presets 4 and 5 (−30°, 180°), (0, 0, 300), mode 1; 22 and 23
+  likewise; 6 to 21 keep what was set. With the battle's flag at +0x38's +0xfc, any preset but
+  2 becomes 12. Each tick (`0x1401e3490`, dt in seconds) the angles grow by their turn — preset
+  2's slow orbit, 10° a second — and the eye is the focus plus the angles' rotation of (0, 0,
+  −1) times a distance; the target is the focus. `0x1401e3ed0` sets the focus and distance by
+  framing characters, by per-preset flags (`0x140d777f0`; preset 2's is 1: bit 0 frames the
+  camera's own character, `0x1401e2e80`; bit 1 the battle's characters by `0x1401b2b30`), the
+  distance from the field of view (+0x140, +0x144 of the view). The framing itself and +0xe8's
+  use (an offset, by its values) are not read.
 - `0x14019cf30(actor, target)` (through `0x14019cea0`, from the command code at `0x1401d55e5`):
   the same character twice gives a cross-fade (25) and a crane from the actor's point 13 +
   (0, 800, −800) looking at it; two gives the actor turned to the target
