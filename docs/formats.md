@@ -2296,4 +2296,6 @@ ahead, and `frame_at(clock)` hands out the newest picture due, dropping late one
 video stream's media objects in coding order, one frame apart (a B picture's stamp is the one
 after its later anchor's), so the n-th picture shown takes the n-th stamp. On the PC 3 s of
 `avantitle` play in real time with no picture dropped; the bit-exact check against ffmpeg runs
-through the same `VideoStream`.
+through the same `VideoStream`. On the Retroid Pocket 6 (aarch64, Snapdragon 8 Gen 2) the same
+test plays the first 40 s in real time, 1,199 pictures shown, none dropped, the sound decoded
+in 0.3 to 0.5 s.
