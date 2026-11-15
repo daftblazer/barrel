@@ -1327,6 +1327,12 @@ pub fn support_attack_cost(member: Option<usize>) -> i32 {
     }
 }
 
+/// What a Support Guard takes from the gauge: one seen live (2026-11-15) most likely took 50
+/// (75 to 25); not read from the code.
+pub fn support_guard_cost() -> i32 {
+    50
+}
+
 /// The gauge after adding `gain`, clamped.
 pub fn support_add(gauge: i32, gain: i32) -> i32 {
     (gauge + gain.clamp(0, SUPPORT_MAX)).clamp(0, SUPPORT_MAX)

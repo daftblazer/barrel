@@ -275,3 +275,8 @@ likely settle them where static reading failed.
   (layout 882) over the plate; the game also frames the plate in a grey box then (not found),
   and the text is a little browner than the game's. X (the reserve, the bubbles' second row)
   and Support Guard are not in, nor supports by the stand-in.
+
+- Support Guard: its cost (50, from one live reading) and whether it covers area attacks, its
+  +0x2b8's clearing (`0x1401b4a3f`) and the guard's own gauge gain are not read; not offered in
+  play yet (the prompt comes as the monster's action starts, before its hit: playback must hold
+  a monster's hit for the window).

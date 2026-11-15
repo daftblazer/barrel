@@ -159,6 +159,9 @@ pub struct Battle {
     pub act_steps: Vec<i32>,
     /// The Support gauge (`battle::support_gain`): 0 to 900.
     pub support: i32,
+    /// A Support Guard waiting for the next monster action on a party member: the guard and
+    /// the share of the hit it takes off (`ASSIST_GUARD`'s amount, set on its +0x2b8).
+    pub guard: Option<(usize, i32)>,
 }
 
 impl Battle {
@@ -170,7 +173,7 @@ impl Battle {
         let mut order: Vec<u32> = (0..fighters.len() as u32).collect();
         order.sort_by_key(|&k| std::cmp::Reverse(fighters[k as usize].stats[stat::SPEED]));
         let timeline = Timeline::setup(&order);
-        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new(), support: 0 }
+        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new(), support: 0, guard: None }
     }
 
     /// The act table's damage-rate steps ([`Battle::act_steps`]).
@@ -362,6 +365,16 @@ impl Battle {
         }
         // As the action starts (`0x1401bac40`): a critical roll for each target (chance 5 plus
         // the actor's value, its virtual +0x100, and passive 0x1b's: not read, taken as 0).
+        // A Support Guard steps in for a party member a monster's single-target action aims at
+        // (`0x1401c0af0`: the guard's +0x2b8 takes its share off, `0x141077dfc` names it).
+        let guarding = match self.guard {
+            Some((g, share)) if self.fighters[who].side == 1 && skill.spread <= 0 && target != g && self.fighters[target].side == 0 && !self.fighters[g].down() => {
+                self.guard = None;
+                Some((g, share))
+            }
+            _ => None,
+        };
+        let target = guarding.map_or(target, |(g, _)| g);
         let targets = self.area(who, target, skill.spread);
         let mut critical = false;
         for _ in &targets {
@@ -448,7 +461,7 @@ impl Battle {
                         resist.copy_from_slice(&foe[stat::RESIST..stat::RESIST + 4]);
                         battle::reduce(d, e.element, &Defender { resist, ..Defender::default() })
                     };
-                    let amount = battle::hit_amount(amount, 0);
+                    let amount = battle::hit_amount(amount, guarding.filter(|&(g, _)| g == target).map_or(0, |(_, share)| share));
                     // The first hit of an action draws for its sound (`0x1401af770`).
                     if hits == 0 {
                         rng.next_31();
@@ -575,6 +588,17 @@ impl Battle {
         events
     }
 
+    /// `who` stands guard for the next monster action on another party member (Support Guard,
+    /// `ASSIST_GUARD`): the gauge pays `cost` as it is chosen; false when it may not.
+    pub fn support_guard(&mut self, who: usize, share: i32, cost: i32) -> bool {
+        if !self.may_support(who, cost) {
+            return false;
+        }
+        self.support = (self.support - cost).clamp(0, battle::SUPPORT_MAX);
+        self.guard = Some((who, share));
+        true
+    }
+
     fn end_action(&mut self, who: usize, wait: i32, rng: &mut Rng) {
         if self.winner().is_none() {
             let wait = battle::action_wait(wait, self.fighters[who].stats[stat::SPEED], None, None, &mut self.pending);
@@ -658,6 +682,25 @@ mod tests {
         // 100 paid, then its own hit's 25 (37 on a critical).
         assert!(b.support == 25 || b.support == 37, "{}", b.support);
         assert_eq!(b.timeline.entries.iter().find(|e| e.0 == 1).unwrap().1, wait_before);
+    }
+
+    #[test]
+    fn a_support_guard_takes_the_hit_for_a_third_less() {
+        let fighters = vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 0, 999), Fighter::new(&block(500), 1, 999_999)];
+        let claw = Skill { name: "Claw".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: 30, max: 30, min2: 0, max2: 0 }], description: String::new() };
+        let hit = |guard: bool| {
+            let mut b = Battle::new(fighters.clone()).with_act_steps(vec![5; 8]);
+            if guard {
+                assert!(b.support_guard(1, 33, 50));
+                assert_eq!(b.support, 50);
+            }
+            let e = b.act(2, &claw, None, 0, &mut Rng::seeded(9));
+            e.iter().find_map(|e| match *e { Event::Acted { target, damage, .. } => Some((target, damage)), _ => None }).unwrap()
+        };
+        let (t, plain) = hit(false);
+        let (g, guarded) = hit(true);
+        assert_eq!((t, g), (0, 1));
+        assert_eq!(guarded, (100 - 33) * plain / 100);
     }
 
     #[test]

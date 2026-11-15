@@ -340,11 +340,17 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
             continue;
         }
         if !s.is_member(who) {
+            // A Support Guard given for this monster action (by the events before it).
+            while let Some(&Command::Guard { by, .. }) = given.next_if(|c| matches!(c, Command::Guard { at, .. } if *at == events.len())) {
+                s.guard(by);
+            }
             events.extend(s.auto(who, rng));
+            // A guard stands for that one action only.
+            s.battle.guard = None;
             continue;
         }
         // Supports with no action before them stand for nothing.
-        while given.next_if(|c| matches!(c, Command::Support { .. })).is_some() {}
+        while given.next_if(|c| matches!(c, Command::Support { .. } | Command::Guard { .. })).is_some() {}
         match given.next() {
             Some(&c) => {
                 let from = events.len();

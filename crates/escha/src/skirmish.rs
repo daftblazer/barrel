@@ -29,6 +29,9 @@ pub struct Member<'a> {
     /// Its Support Attack (its skill list's command 8) and what it takes from the Support
     /// gauge (`battle::support_attack_cost`).
     pub support: Option<(&'a Skill, i32)>,
+    /// Its Support Guard's share of a hit taken off (`ASSIST_GUARD`'s amount on its command-9
+    /// skill) and gauge cost (`battle::support_guard_cost`).
+    pub guard: Option<(i32, i32)>,
 }
 
 /// A carried item.
@@ -66,6 +69,9 @@ impl Held {
 /// The skill list's command that is the Support Attack (`docs/tables.md`, "Each party member's
 /// skills").
 pub const SUPPORT_ATTACK_COMMAND: u8 = 8;
+/// The command that is the Support Guard, and its act (`ACT_ASSIST_GUARD`).
+pub const SUPPORT_GUARD_COMMAND: u8 = 9;
+const ASSIST_GUARD: u32 = 86;
 
 impl<'a> Member<'a> {
     /// A member from its skill list at `level`: command 0 is the attack, commands 1 to 3 the
@@ -80,7 +86,13 @@ impl<'a> Member<'a> {
             .filter_map(|e| Some((skill(e)?, battle::party_mp_cost(e.mp, 0, 0, 0))))
             .collect();
         let support = list.iter().find(|e| e.command == SUPPORT_ATTACK_COMMAND).and_then(skill).map(|s| (s, battle::support_attack_cost(None)));
-        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0, support })
+        let guard = list
+            .iter()
+            .find(|e| e.command == SUPPORT_GUARD_COMMAND)
+            .and_then(skill)
+            .and_then(|s| s.effects.iter().find(|e| e.act == ASSIST_GUARD))
+            .map(|e| (e.max, battle::support_guard_cost()));
+        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0, support, guard })
     }
 
     /// The costliest affordable heal aimed at its own side (one that revives, when `revive`).
@@ -146,6 +158,9 @@ pub enum Command {
     /// Not a turn's command: member `by` supports the member action given just before it with
     /// a Support Attack on that action's target ([`Skirmish::support`]).
     Support { by: usize },
+    /// Not a turn's command: member `by` stands guard (Support Guard) for the monster action
+    /// that starts when the battle has `at` events ([`Skirmish::guard`]).
+    Guard { by: usize, at: usize },
 }
 
 /// Member `who` uses `held` on `target` (`BtlCharaActionItem`): the item's action at its power,
@@ -320,7 +335,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             // none of it left: the normal attack
             Command::Item { target, .. } => events.extend(self.battle.act(who, member.attack, None, valid(target), rng)),
             // a support is no turn's command (`run_commanded` gives it after an action)
-            Command::Support { .. } => {}
+            Command::Support { .. } | Command::Guard { .. } => {}
         }
         let mut all = events;
         let from = 0;
@@ -336,6 +351,13 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         let mut all = self.battle.support_act(who, skill, cost, target, rng);
         react(&mut self.battle, self.foes, self.party.len(), &mut self.reactions, &mut self.felled, 0, &mut all, rng);
         all
+    }
+
+    /// Member `who` stands guard for the next monster action on another member: nothing when
+    /// it has no Support Guard, is down, or the gauge is short of its cost.
+    pub fn guard(&mut self, who: usize) -> bool {
+        let Some((share, cost)) = self.party.get(who).and_then(|m| m.guard) else { return false };
+        self.battle.support_guard(who, share, cost)
     }
 
     /// The members who may support now (standing, their cost in the gauge), but not `actor`.
@@ -488,6 +510,26 @@ mod tests {
         assert!(e.iter().any(|e| matches!(e, Event::Acted { who: 1, skill, .. } if skill == "Support Attack")), "{e:?}");
         assert!(s.supporters(0).is_empty(), "gauge {}", s.battle.support);
         assert!(s.support(1, 2, &mut rng).is_empty());
+    }
+
+    #[test]
+    fn a_member_with_a_support_guard_stands_guard_for_its_cost() {
+        let mut guard_skill = skill("Support Guard", 600, 33, 33);
+        guard_skill.effects[0].act = ASSIST_GUARD;
+        let table = [skill("Attack", 600, 1, 1), guard_skill];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }, PartySkill { skill: 1, order: -1, command: SUPPORT_GUARD_COMMAND, level: None, mp: 0 }];
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let party: Vec<Member> = (0..2).map(|_| Member::new(block.clone(), 0, &list, &table).unwrap()).collect();
+        assert_eq!(party[1].guard, Some((33, 50)));
+        let claw = skill("Claw", 600, 1, 1);
+        let foes = [Foe { block: StatBlock { hp: 5000, speed: 1, ..block }, normal: &claw, skills: None, death_immune: false, chara: -1 }];
+        let acts = vec![crate::data::battle_data::ActInfo { flags: [false; 12], limit: 9999, last: 5 }; 8];
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let mut s = Skirmish::new(&party, &foes, &[], ItemRules { acts: &acts, ..ItemRules::default() }, &mut rng);
+        // 100 to start: two guards' worth, not three.
+        assert!(s.guard(1) && s.guard(1));
+        assert!(!s.guard(1));
+        assert_eq!(s.battle.support, 0);
     }
 
     #[test]

@@ -1399,7 +1399,14 @@ for Escha and Katla, not within 4.5 s for Logy). A Support Guard was offered wit
 75; one most likely taken there cost 50. The support's banner reads "Support Attack" and its
 damage rate 105% (the attack's own 5). Barrel: `fight::Battle::support_act` (the gauge pays, the support
 skill acts out of turn), `skirmish::Skirmish::support` / `supporters`, the member's command-8
-skill (`skirmish::SUPPORT_ATTACK_COMMAND`) at `battle::support_attack_cost`.
+skill (`skirmish::SUPPORT_ATTACK_COMMAND`) at `battle::support_attack_cost`. **Support Guard** (act 86
+`ASSIST_GUARD`, handler `0x1401bff77`) queues an event (vtable `0x140809050`) whose apply
+(`0x1401c0af0`) sets the guard's +0x2b8 to the amount (33) and `0x141077dfc` to its id: the
+guard takes the monster's hit in its target's place, the damage event (`0x1401c1970`,
+`battle::hit_amount`) taking that share off. `fight::Battle::support_guard`, the guard
+redirecting a monster's single-target action in `Battle::act`; `skirmish::Skirmish::guard`;
+`auto_battle::Command::Guard { by, at }` given before the monster action that starts at event
+`at`.
 
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first
