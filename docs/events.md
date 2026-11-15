@@ -663,6 +663,23 @@ of the damage, and each event's shares add to 100 (one 100 for a single strike;
 `Skill_MONSTER_WARDOG_00_0` has two); on any character (10004 and up for thrown things).
 Marker 2 (24 uses) is not read. Read from the data, not from the handler.
 
+**The battle's own camera lists.** Besides the skill events and `macro_battle.nut`, the exe
+builds short command lists on the stack and runs them with `0x140296bc0` (27 call sites, most
+in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far:
+
+- `0x14019d120(chara, flag)`, called six times from the command menu's code (`0x1401d4381` to
+  `0x1401d5cf3`): with the flag, a cross-fade (`ECT_EVENT_SET_POST_EFFECT -1 0 50 3`), camera
+  type 4 (`CameraCPreset`), `ECT_CAMERA_PRESET_SET 2` and `ECT_CAMERA_PRESET_ANG_SET` the
+  character's angle (its object's +0x244, radians, times 57.2958); without it, the eye eases
+  to the actor's body point + (0, 100, −300) and the target to its body point, both
+  `4 30 100`. The presets' values (`CameraCPreset`, vtable `0x14080c170`) are not read; the
+  recording holds a slow close-up of the member during command choice, which preset 2 would be.
+- `0x14019cf30(actor, target)` (through `0x14019cea0`, from the command code at `0x1401d55e5`):
+  the same character twice gives a cross-fade (25) and a crane from the actor's point 13 +
+  (0, 800, −800) looking at it; two gives the actor turned to the target
+  (`ECT_CHARA_ROT_SET_TARGET`) and the eye easing to the actor's body + (−75, 25, −150), the
+  target to the target's body (`4 100 100`).
+
 **The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
 `t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):
 

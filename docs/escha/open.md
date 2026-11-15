@@ -172,7 +172,9 @@ likely settle them where static reading failed.
   high form (seen in the recording); when the game takes the low form, the cross-fade into it,
   and point 13 (`MODEL_OFFSET_DEFENCE`) are not read. The command choice's camera (the
   recording holds a slow close-up of the member, `macro_battle.nut` has no function for it that
-  is read yet) and the camera while monsters choose are still Barrel's overview.
+  is read yet) and the camera while monsters choose are still Barrel's overview. The command
+  camera is `0x14019d120`'s `CameraCPreset` preset 2 (docs/events.md, "The battle's own camera
+  lists"): the preset table is not read.
 
 ## Synthesis
 
