@@ -54,7 +54,11 @@ fn textures(root: &Path, out: &Path) -> Result<()> {
         for (i, t) in g.textures.iter().enumerate() {
             let Some(top) = t.levels.first() else { continue };
             let n = t.format.level_size(t.width, t.height).min(top.len());
-            lines.push_str(&format!("{:016x}\t{name}#{i}\t{}\t{}\t{:?}\n", hash(&top[..n]), t.width, t.height, t.format));
+            // whether every texel is opaque (a quad under it draws nothing)
+            let opaque = matches!(t.format, barrel_formats::g1t::Format::Bc1 | barrel_formats::g1t::Format::Bc3 | barrel_formats::g1t::Format::Bc7 | barrel_formats::g1t::Format::Rgba8)
+                && t.layers == 1
+                && t.to_rgba8().chunks_exact(4).all(|p| p[3] == 255);
+            lines.push_str(&format!("{:016x}\t{name}#{i}\t{}\t{}\t{:?}\t{}\n", hash(&top[..n]), t.width, t.height, t.format, if opaque { "opaque" } else { "alpha" }));
         }
     };
     for f in &files {
@@ -88,9 +92,10 @@ fn textures(root: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The index: texture names by hash, and the font's glyphs.
+/// The index: texture names by hash (opaque ones also in `OPAQUE`), and the font's glyphs.
 fn index(path: Option<&str>) -> Result<(HashMap<String, String>, Option<Glyphs>)> {
     let mut m = HashMap::new();
+    let mut opaque = std::collections::HashSet::new();
     let mut glyphs: Option<Glyphs> = None;
     if let Some(p) = path {
         for l in std::fs::read_to_string(p)?.lines() {
@@ -102,14 +107,30 @@ fn index(path: Option<&str>) -> Result<(HashMap<String, String>, Option<Glyphs>)
                         g.at.insert((x.parse()?, y.parse()?), c);
                     }
                 }
-                [h, n, ..] => {
+                [h, n, rest @ ..] => {
                     m.entry(format!("tex{h}")).or_insert_with(|| n.to_string());
+                    if rest.last() == Some(&"opaque") {
+                        opaque.insert(format!("tex{h}"));
+                    }
                 }
                 _ => {}
             }
         }
     }
+    let _ = OPAQUE.set(opaque);
     Ok((m, glyphs))
+}
+
+static OPAQUE: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+
+/// Drops rectangles that a later opaque one covers whole (an opaque texture at full alpha):
+/// they draw nothing visible.
+fn hidden(qs: Vec<Q>) -> (Vec<Q>, usize) {
+    let Some(op) = OPAQUE.get() else { return (qs, 0) };
+    let covers = |o: &Q, q: &Q| op.contains(&o.tex) && o.color[3] >= 1.0 && o.rect[0] <= q.rect[0] + 0.5 && o.rect[1] <= q.rect[1] + 0.5 && o.rect[2] >= q.rect[2] - 0.5 && o.rect[3] >= q.rect[3] - 0.5;
+    let keep: Vec<bool> = (0..qs.len()).map(|i| !qs[i + 1..].iter().any(|o| covers(o, &qs[i]))).collect();
+    let n = keep.iter().filter(|k| !**k).count();
+    (qs.into_iter().zip(keep).filter(|(_, k)| *k).map(|(q, _)| q).collect(), n)
 }
 
 struct Trace {
@@ -318,6 +339,20 @@ fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
             continue;
         }
         let ps_cb = e["ps_cb"].get("0").and_then(Value::as_str).and_then(|h| t.blob(h).ok()).map(|b| floats(&b)).unwrap_or_default();
+        // The 2D pixel shaders' constants scale the colour: HdrRangeInv the colour, fAlphaRate
+        // the alpha (a fade). Folded in, so the colour is what reaches the screen.
+        let ps = t.blob(&s("ps")).unwrap_or_default();
+        let (mut rgb_k, mut a_k) = (1.0f32, 1.0f32);
+        if let Ok(p) = dxbc::program(&ps) {
+            for v in p.buffers.iter().filter(|b| b.name == "$Globals").flat_map(|b| &b.variables) {
+                let val = ps_cb.get(v.offset as usize / 4).copied().unwrap_or(1.0);
+                match v.name.as_str() {
+                    "HdrRangeInv" => rgb_k = val,
+                    "fAlphaRate" => a_k = val,
+                    _ => {}
+                }
+            }
+        }
         for q in pts.chunks_exact(4) {
             // the corner nearest the top left and the one opposite it
             let tl = q.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
@@ -327,13 +362,17 @@ fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
                 tex: tex0.clone(),
                 rect: [tl.0, tl.1, br.0, br.1],
                 uv: [uv(tl, 0), uv(tl, 1), uv(br, 0), uv(br, 1)],
-                color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0)),
+                color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0) * if i == 3 { a_k } else { rgb_k }),
                 text: None,
                 how: format!("{} {:?}", s("ps"), ps_cb),
             });
         }
     }
-    Ok((out, other))
+    // fully transparent rectangles draw nothing (the 2D blend is alpha blending)
+    let before = out.len();
+    out.retain(|q| q.color[3] > 0.0);
+    let dropped = before - out.len();
+    Ok((out, other + dropped))
 }
 
 /// The font: its texture's name, atlas size and each glyph's character by its place in the
@@ -406,6 +445,7 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
     let (names, glyphs) = index(idx)?;
     let tex = |n: &str| names.get(n).cloned().unwrap_or_else(|| n.to_string());
     let (g, other) = game_quads(&t, gframe)?;
+    let (g, under) = hidden(g);
     let g = text_runs(g, glyphs.as_ref());
     let b = text_runs(barrel_quads(barrel, bframe)?, glyphs.as_ref());
     let same = |x: &Q, y: &Q| x.tex == y.tex && close(&x.rect, &y.rect, 8.0) && (x.text.is_none() || x.text == y.text || close(&x.rect, &y.rect, 2.0));
@@ -455,7 +495,7 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
             j += 1;
         }
     }
-    println!("{} game quads, {} Barrel quads, {bad} mismatches ({other} game draws not compared: 3D or render-target reads)", n, m);
+    println!("{} game quads, {} Barrel quads, {bad} mismatches ({other} game draws not compared: 3D, render-target reads or transparent; {under} hidden under opaque ones)", n, m);
     Ok(bad)
 }
 
