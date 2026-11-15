@@ -354,9 +354,9 @@ likely settle them where static reading failed.
   holds 45: the shown value is not the saved one (a decay on load, a rounding, or another
   source). Read the live value.
 
-- **Wilbell's attack runs 10 % over Barrel's range.** Battle-hits logs (two runs, 28 hits): every
-  miss of Barrel's rate-0 range but one is Wilbell's plain attack (skill row 235) landing 26–27
-  where Barrel gives 22..25; all fit a 10 % step. Her fighter's +0x2f0 (critical) is clear on
-  those hits and +0x2e8 (flank) is 0 or 1 without matching, so it is not a critical: look for a
-  passive or trait of hers raising plain attacks (her word 47 = 25: crit chance). Logy's one
-  miss (frame 5614, 13 vs 10..12) is a real critical: +0x2f0 and the +0x287 byte set.
+- **Skill power is not wired into the play path.** `Tables::party_power` (stat 15: the gear's
+  `EQI_ADD_SKILLPOWER` / `ACT_EQUIP_ADD_POWER` plus passives) and `Fighter::with_power` exist and
+  `fight::Battle::act` scales damage by it (effect percent 2), which explains Wilbell's plain
+  attacks landing 10 % over (her gear gives 10; battle_hits is 14/14). `skirmish::Member` still
+  has no power field, so `Fighter::new(&m.block ...)` there leaves it 0: give `Member` the value
+  and call `.with_power`. Heals (act flag 7 too) are not scaled yet.

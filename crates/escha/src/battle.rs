@@ -15,6 +15,9 @@ pub mod stat {
     pub const SPEED: usize = 7;
     /// Resistances to elements 0 to 3 are this and the next three.
     pub const RESIST: usize = 8;
+    /// Skill power, a percentage added to the damage skills' (the equipment's stat 12, three
+    /// places on; effect percent 2 is 100 plus it, `docs/tables.md`, "Rolling the amounts").
+    pub const POWER: usize = 15;
     /// The support gauge bonus (the equipment's stat 13, three places on as max HP is).
     pub const SUPPORT: usize = 16;
     /// Drain: the percentage of a skill's damage that heals its user.

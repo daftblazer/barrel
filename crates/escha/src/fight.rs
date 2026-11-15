@@ -93,6 +93,13 @@ impl Fighter {
         Fighter { side, base: s, stats: s, states: Vec::new(), actions: 0, uses: [0; 9], cap, position: [0.0; 3], size: 0.0, draw: 0, remembered: -1, last_skill: 0, guts_used: false, death_immune: false, slot: -1 }
     }
 
+    /// With `power` as its skill power (stat 15, [`stat::POWER`]).
+    pub fn with_power(mut self, power: i32) -> Fighter {
+        self.base[stat::POWER] = power;
+        self.stats[stat::POWER] = power;
+        self
+    }
+
     /// With `mp` as its MP and maximum MP (the monsters' blocks have none).
     pub fn with_mp(mut self, mp: i32) -> Fighter {
         for s in [&mut self.base, &mut self.stats] {
@@ -456,6 +463,8 @@ impl Battle {
                         battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
                     } else {
                         // Elemental damage skips defence and meets the target's resistance.
+                        // Effect percent 2 (act flag 7): 100 plus the user's skill power.
+                        let scale = scale * (100 + user[stat::POWER]) as f32 / 100.0;
                         let d = battle::skill_damage(amount, power.unwrap_or(user[stat::ATTACK]), user[stat::LEVEL], foe[stat::DEFENSE], e.element.is_none(), scale);
                         let mut resist = [0; 4];
                         resist.copy_from_slice(&foe[stat::RESIST..stat::RESIST + 4]);

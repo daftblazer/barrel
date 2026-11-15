@@ -1276,7 +1276,7 @@ values at +0x114. For a monster, `0x1401b70e0` fills the base values from its st
 | 13 to 34 | 0 for monsters | |
 
 Others are known from where battle reads them: 14 (a percentage the user gains on a target
-with bad status 7), 15 (added to effect percent 2), 20 (drain percent). The low-HP test
+with bad status 7), 15 (skill power: the equipment's stat 12, `EQI_ADD_SKILLPOWER`; added to effect percent 2, so a damage skill deals (100 + it) % more: Wilbell's gear gives 10, which is why her plain attacks hit 10 % over the base range, battle_hits frames 3232 and 5351), 20 (drain percent). The low-HP test
 (`0x1401ae380` k = 4) is HP × 100 / maximum HP at most 25. `barrel_game::battle::stat` names
 the indices.
 
@@ -1407,6 +1407,8 @@ guard takes the monster's hit in its target's place, the damage event (`0x1401c1
 redirecting a monster's single-target action in `Battle::act`; `skirmish::Skirmish::guard`;
 `auto_battle::Command::Guard { by, at }` given before the monster action that starts at event
 `at`.
+
+Checked against `battle_hits` (14 hits): the one critical (Logy, frame 5614, +0x2f0 set) fits rate 10; every other hit fits rate 0 once skill power (stat 15) is applied. The flank flag +0x2e8 at the hook is not the applied step (it is set on hits that fit rate 0), so the log cannot confirm a flank step.
 
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first

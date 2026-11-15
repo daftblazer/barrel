@@ -149,10 +149,13 @@ fn fighter_stats(tables: &Tables, monsters: &[bd::Monster], who: &J) -> Vec<i32>
     s[stat::DEFENSE] = block.defense;
     s[stat::SPEED] = block.speed;
     s[stat::RESIST..stat::RESIST + 4].copy_from_slice(&block.resist);
+    if who.get("kind").text() == "party" {
+        s[stat::POWER] = tables.party_power(id, level);
+    }
     s
 }
 
-const COMPARED: [usize; 9] = [stat::LEVEL, stat::MAX_HP, stat::ATTACK, stat::DEFENSE, stat::SPEED, 8, 9, 10, 11];
+const COMPARED: [usize; 10] = [stat::LEVEL, stat::MAX_HP, stat::ATTACK, stat::DEFENSE, stat::SPEED, 8, 9, 10, 11, stat::POWER];
 
 #[test]
 fn barrel_deals_the_damage_the_game_dealt() {
@@ -191,7 +194,8 @@ fn barrel_deals_the_damage_the_game_dealt() {
     // The damage range of a hit: every roll of the skill's first damage effect at `rate`.
     let range = |skill: &bd::Skill, user: &[i32], foe: &[i32], rate: i32| -> (i32, i32) {
         let e = skill.effects.iter().find(|e| matches!(e.act, 0 | 6)).expect("a damage effect");
-        let scale = (100 + rate) as f32 / 100.0;
+        // The rate's scale, then the user's skill power (effect percent 2), as `Battle::act`.
+        let scale = (100 + rate) as f32 / 100.0 * (100 + user[stat::POWER]) as f32 / 100.0;
         let at = |amount: i32| {
             let d = skill_damage(amount, user[stat::ATTACK], user[stat::LEVEL], foe[stat::DEFENSE], e.element.is_none(), scale);
             let resist = [foe[8], foe[9], foe[10], foe[11]];
@@ -200,7 +204,7 @@ fn barrel_deals_the_damage_the_game_dealt() {
         (at(e.min), at(e.max))
     };
 
-    let (mut stat_diffs, mut inside, mut inside_game_stats, mut inside_any_rate) = (0, 0, 0, 0);
+    let (mut stat_diffs, mut inside, mut inside_game_stats, mut inside_any_rate, mut implied_inside) = (0, 0, 0, 0, 0);
     for h in &hits {
         let (user, target) = (h.get("user"), h.get("target"));
         let action = h.get("action").nums();
@@ -225,6 +229,13 @@ fn barrel_deals_the_damage_the_game_dealt() {
         // The rates the steps can add up to: none, critical (10), flank (25), both (35); a
         // monster's action has none.
         let rates: &[i32] = if party { &[0, 10, 25, 35] } else { &[0] };
+        // The rate the log's flags imply: a critical (the user's +0x2f0, word 188) is 10. The
+        // flank flag (+0x2e8) is not read: by the time of the hook the game has cleared or
+        // re-set it, and a flank step (25) would show as a 25 % excess no hit here has.
+        let implied = 10 * i32::from(party && user.get("words").nums()[0x2f0 / 4] != 0);
+        let (ilo, ihi) = range(skill, &bu, &bt, implied);
+        let implied_ok = (ilo..=ihi).contains(&damage);
+        implied_inside += usize::from(implied_ok);
         let fits: Vec<i32> = rates.iter().copied().filter(|&r| { let (a, b) = range(skill, &bu, &bt, r); (a..=b).contains(&damage) }).collect();
         let any = !fits.is_empty();
         let ok = (lo..=hi).contains(&damage);
@@ -232,21 +243,21 @@ fn barrel_deals_the_damage_the_game_dealt() {
         inside_game_stats += usize::from((glo..=ghi).contains(&damage));
         inside_any_rate += usize::from(any);
         eprintln!(
-            "frame {:5} {} {} ({}) -> {} {}: game {damage:3}, Barrel {lo}..={hi} (game stats {glo}..={ghi}){}{}{}",
+            "frame {:5} {} {} ({}) -> {} {}: game {damage:3}, Barrel {lo}..={hi} (game stats {glo}..={ghi}), implied rate {implied}: {ilo}..={ihi}{}{}{}",
             h.get("frame").num(),
             user.get("kind").text(),
             user.get("id").num(),
             skill.name,
             target.get("kind").text(),
             target.get("id").num(),
-            if ok { "" } else { "  OUTSIDE" },
-            if !ok && any { format!(" (inside at rate {fits:?})") } else { String::new() },
+            if implied_ok { "" } else { "  OUTSIDE" },
+            if !implied_ok && any { format!(" (inside at rate {fits:?})") } else { String::new() },
             if diffs.is_empty() { String::new() } else { format!("  [{}]", diffs.join("; ")) },
         );
     }
-    eprintln!("battle_hits: {inside}/14 inside Barrel's range at rate 0, {inside_any_rate}/14 allowing rate steps, {inside_game_stats}/14 with the game's own stats; {stat_diffs} stat differences");
+    eprintln!("battle_hits: {implied_inside}/14 inside Barrel's range at the rate the flags imply, {inside}/14 at rate 0, {inside_any_rate}/14 allowing rate steps, {inside_game_stats}/14 with the game's own stats; {stat_diffs} stat differences");
     assert_eq!(stat_diffs, 0, "Barrel's stats differ from the game's");
-    assert_eq!(inside_any_rate, 14, "some hits are outside Barrel's range");
+    assert_eq!(implied_inside, 14, "some hits are outside Barrel's range at the rate their flags imply");
 }
 
 /// The party the play binary builds from a game save (`Session::open`, then `Tables::outfit`

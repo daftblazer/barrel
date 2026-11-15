@@ -111,6 +111,21 @@ impl Tables {
         Ok((block, mp))
     }
 
+    /// Member `c`'s skill power at `level`, its battle stat 15 (the equipment's stat 12, `ACT_EQUIP_ADD_POWER`
+    /// and `EQI_ADD_SKILLPOWER`, plus the learnt passives'): the percentage its damage skills
+    /// are raised by (`fight::Battle::act`; Wilbell's gear gives 10). A member with no saved
+    /// units has none (the starting kit is not summed for it).
+    pub fn party_power(&self, c: usize, level: i32) -> i32 {
+        let names: Vec<&str> = self.act_names.iter().map(String::as_str).collect();
+        let rules = crate::equipment::Tables { items: &self.items, effects: &self.effects, traits: &self.traits, acts: &names };
+        let gear: i32 = self.units.get(c).and_then(Option::as_ref).map_or(0, |units| units.iter().map(|u| crate::equipment::item_stat(&rules, u, 12, 0, &mut |lo, _| lo)).sum());
+        let mut extra = [0; crate::equipment::STATS];
+        if let Some(list) = self.lists.get(c) {
+            crate::equipment::passives(&rules, list, &self.skills, level, &mut extra, &mut |lo, _| lo);
+        }
+        gear + extra[12]
+    }
+
     /// The skill scene monster `monster`'s action named `skill` plays: the event its stat block
     /// gives that skill (`battle_data::StatBlock::skills`, e.g. the Ore Rat's Ram
     /// `skill/Skill_MONSTER_ROCKRAT_00_0.ebd`), from the first block that has it. The executable
