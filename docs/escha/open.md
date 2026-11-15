@@ -166,11 +166,7 @@ likely settle them where static reading failed.
 
 - **Victory scene.** A won battle plays `SKILL_COMMON_SYSTEM_WIN_<BaseTag>_01` (poser 10002)
   on the member who acted last, before the Result screen. Which member and when `_02` plays are
-  not read. It ends after its first part (about 1 s for Escha): its action 0 waits with `p3
-  10002` (`ECT_MACRO_CHARA_WAIT`) for action 2's motion before starting actions 4 and 5, but the
-  scheduler (`event::Player::schedule`, shared with the story events and Ryza) counts a
-  character busy only while another action still has commands for it, not while its last
-  motion wait runs, so 4 and 5 start at once and their camera moves override 3's.
+  not read.
 
 ## Synthesis
 

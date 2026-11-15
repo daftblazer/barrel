@@ -469,6 +469,10 @@ pub struct Player<'a> {
     replay: bool,
     /// `s4` with anchor kinds 1, 5 and 6 read as anchored positions ([`Step::PlaceAt`]).
     anchored_places: bool,
+    /// A `p3` also waits for an action whose last command was the character's and whose wait
+    /// has not ended (Escha's reading; off for the events carried over from other games, whose
+    /// schedules stay as they were).
+    finishing_waits: bool,
 }
 
 /// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
@@ -506,7 +510,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -520,6 +524,7 @@ impl<'a> Player<'a> {
         let by_name: HashMap<&str, u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, n)| (n, w)).collect();
         let theirs: HashMap<u32, &str> = game_names.iter().copied().collect();
         let mut p = Self::new(event, messages, table)?;
+        p.finishing_waits = false;
         let escha_named: std::collections::HashSet<u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, _)| w).collect();
         for c in p.actions.iter_mut().flatten() {
             // A `same` entry carries over when Escha's command takes no more operands than the
@@ -852,13 +857,17 @@ impl<'a> Player<'a> {
             let c = self.actions[action][pc];
             // p3: wait while another running action still has commands for that character (its
             // command runner busy, `docs/events.md`, "Waiting for a character"): retry once the
-            // earliest of them has moved on.
+            // earliest of them has moved on. An action whose last command for it was a wait (a
+            // motion's end, `s6`) still runs until that wait ends, so it counts until then.
             if let (CHARA_WAIT, [character, ..]) = (c.word, c.operands) {
+                let for_it = |r: &ebd::Command| r.word >> 24 == 0x73 && r.operands.first() == Some(character);
                 let busy = (0..threads.len())
                     .filter(|&k| k != t)
                     .filter(|&k| {
-                        let (_, a, from) = threads[k];
-                        self.actions[a].get(from..).is_some_and(|rest| rest.iter().any(|r| r.word >> 24 == 0x73 && r.operands.first() == Some(character)))
+                        let (at, a, from) = threads[k];
+                        let queued = self.actions[a].get(from..).is_some_and(|rest| rest.iter().any(for_it));
+                        let finishing = self.finishing_waits && from >= self.actions[a].len() && at > now && self.actions[a].last().is_some_and(for_it);
+                        queued || finishing
                     })
                     .map(|k| threads[k].0)
                     .fold(None, |m: Option<f32>, v| Some(m.map_or(v, |m| m.min(v))));

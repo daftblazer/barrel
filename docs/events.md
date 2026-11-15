@@ -422,7 +422,14 @@ timer and queued commands) would fit, but is not read yet. The oracle agrees: in
 30`), then `p3 0`, then the first line, and the game shows the line with Escha already at
 Marion's side; in 212 Logy's first line comes once he has stopped. The scheduler holds a `p3 c`
 while any other running action still has character commands (`0x73…`) for `c` to run, so the
-line waits for the walk (131: 14.0 → 17.5 s; 212: 8.0 → 11.5 s; 111 and 222 unchanged).
+line waits for the walk (131: 14.0 → 17.5 s; 212: 8.0 → 11.5 s; 111 and 222 unchanged). An
+action whose last command for `c` was a wait still running (`s6` for a motion's end, an `s3`
+timer) counts too, until that wait ends: `SKILL_COMMON_SYSTEM_WIN_PC20_01` has action 0 start
+actions 2 (the pose, ending `s6 10002`) and 3 (a camera move), then `p3 10002`, then 4 and 5,
+and only so do 4 and 5 come after the pose (the scene 2.5 s, not 1 s). This moved 40 of
+Escha's 1,627 event and skill schedules (`play-event --timed`; in the opening only the
+unchained 011 and 012); events carried over from other games (`Player::translated`, Ryza and
+Sophie 2) keep the earlier rule, their schedules unchanged.
 
 Events also add invisible markers as characters: `Chara.xml` rows 590 to 603 are
 `ID_DUMMY_POS_000` to `_013`; rows 591 to 602 (`_001` to `_012`) are added (`q3`) and set up
