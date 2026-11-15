@@ -1030,10 +1030,16 @@ upscaler; raising it to 100% drops GSR 2 and its anti-aliasing.
 
 The page (`options.rs`) is the second of the Options screen's two (the game's own comes first; Down off its "Confirm" or Up off its first row turns to this one, and back the same way). It opens from the menu's Option command (turning the page), the Option → Options row, and the title's Options (offscreen: `BARREL_OPTIONS_AT`
 with `BARREL_OPTIONS_KEYS`, drawn to OUT-options.png): the Options screen's desk and its
-"Option" title bar (layout 511), the six rows in the sound page's pieces (layout 408: the name
-on its bar 0x3c, the value in a 0x3d box between "< >", the rules 0x28, the cursor 0x32), then
-"Default" and "Confirm". Left / right step a row to its next open choice; a row with no other
-open choice shows its value grey without arrows; the help bar at the foot names the closed
+"Option" title bar (layout 511). The page is the game page's sibling (`Page::elements` over
+`Layouts`' shared pieces, `optionpage.rs`): the same paper panel, rules, plate, quill glow, header
+and footer bars (footer "Select / Change / Return" from the game's words; header "Graphics:" and
+the chosen row's help line, so the header names the page). The eight rows sit in the game's row
+slots, the names in the game's ink, values at the game's choice columns: a two-choice row (Display,
+Sharpening, Shadows) shows both words as "Read" / "All" are, the chosen one dark with the plate under
+it; a longer row shows its value dark; a row with no other open choice shows its value in the game's
+grey ink (the unavailable choice's). The game shows no "<" ">" arrows, so none are drawn; the footer's "Change" says it. Then "Default" and "Confirm" on the game's button plates.
+Left / right step a row to its next open choice; a row with no other
+open choice shows its value grey without arrows; the header bar names the closed
 choices with their reason. Checked offscreen: Native AA greys the upscaler and sharpening;
 150% greys every upscaler ("Upscalers need a render scale under 100%."). Confirm keeps the choice in Barrel's own config (`~/.config/barrel/graphics.conf`, or
 `$XDG_CONFIG_HOME`, or the file `BARREL_CONFIG` names; `key value` lines:

@@ -30,7 +30,7 @@ use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
 use crate::hud::Element;
-use crate::kit::{raised, shifted, tiled};
+use crate::kit::{raised, tiled};
 use crate::title::Button;
 
 /// `SysInfo.xml`'s "Select an item to adjust." (the header line).
@@ -60,7 +60,7 @@ const GLOW_FROM_PLATE: [i32; 2] = [-90, -90];
 /// as the capture) and at the minimum (the track's start, not seen).
 const KNOB_MAX: i32 = 399;
 const KNOB_MIN: i32 = 22;
-const VOLUMES: usize = 7;
+pub const VOLUMES: usize = 7;
 /// The entries the cursor goes over: the volumes, the two choices, "Default" and "Confirm".
 pub const ENTRIES: usize = VOLUMES + 4;
 const FAST_FORWARD: usize = VOLUMES;
@@ -204,6 +204,58 @@ impl Layouts {
         Layouts { screen: get(SCREEN), header: get(HEADER), footer: get(FOOTER), cursor: crate::kit::cursor_glow(pe) }
     }
 
+    /// The page's own nodes (layout 408 nested in the screen, without the outfit choice).
+    pub(crate) fn page(&self) -> Vec<&Placed> {
+        self.screen.iter().filter(|p| !p.path.contains(&OUTFIT) && p.path.contains(&PAGE)).collect()
+    }
+
+    /// The desk under the screen.
+    pub(crate) fn desk(&self) -> Vec<Element> {
+        let nodes = self.screen.iter().filter(|p| !p.path.contains(&OUTFIT));
+        nodes.filter(|p| p.path.len() == 1 && p.node.part == 0).map(|p| Element::Sprite { part: 0, cut: DESK_CUT, at: p.at }).collect()
+    }
+
+    /// The paper panel and the first `rules` of the page's rules.
+    pub(crate) fn panel(&self, pe: &Pe, rules: usize) -> Vec<Element> {
+        let mut out = Vec::new();
+        let mut left = rules;
+        for p in self.page() {
+            let n = p.node;
+            if n.part == PANEL && n.kind == STRETCHED {
+                out.extend(tiled(pe, PANEL, p.at, [layout::word(pe, p, 5).unwrap_or(0), layout::word(pe, p, 6).unwrap_or(0)]));
+            } else if n.part == RULE && n.kind == RULE_KIND && left > 0 {
+                left -= 1;
+                out.extend(rule(pe, p));
+            }
+        }
+        out
+    }
+
+    /// The screen's title bar (its heading and icon).
+    pub(crate) fn title(&self) -> Vec<Element> {
+        let nodes = self.screen.iter().filter(|p| !p.path.contains(&OUTFIT));
+        nodes.filter(|p| p.path.len() == 1 && matches!(p.node.part, 0x30 | 0x2e | 0x2c)).map(Element::stored).collect()
+    }
+
+    /// The footer line and the header line, with their words.
+    pub(crate) fn lines(&self, pe: &Pe, words: &Words) -> Vec<Element> {
+        let line = |nodes: &[Placed], text: &str| -> Vec<Element> {
+            nodes.iter().flat_map(|p| match layout::text(pe, p) {
+                Some(t) => vec![raised(t, text)],
+                None => vec![Element::stored(p)],
+            }).collect()
+        };
+        let mut out = line(&self.footer, &words.footer);
+        out.extend(line(&self.header, &words.header));
+        out
+    }
+
+    /// The cursor's glow at the chosen plate.
+    pub(crate) fn glow(&self, plate: [i32; 2], tick: u32) -> Element {
+        let at = [plate[0] + GLOW_FROM_PLATE[0], plate[1] + GLOW_FROM_PLATE[1]];
+        Element::Sprite { part: crate::kit::CURSOR, cut: self.cursor.map_or(0, |f| f.cut(tick)), at }
+    }
+
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
         self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)).collect()
@@ -249,28 +301,17 @@ fn knob_x(volume: i32) -> i32 {
 
 /// All the page's elements; `tick` the clock's 60 Hz ticks (the glow).
 pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &OptionPage, tick: u32) -> Vec<Element> {
-    let mut out = Vec::new();
-    let nodes: Vec<&Placed> = l.screen.iter().filter(|p| !p.path.contains(&OUTFIT)).collect();
-    for p in nodes.iter().filter(|p| p.path.len() == 1 && p.node.part == 0) {
-        out.push(Element::Sprite { part: 0, cut: DESK_CUT, at: p.at });
-    }
-    let page = || nodes.iter().filter(|p| p.path.contains(&PAGE));
+    let mut out = l.desk();
+        let page = || l.page().into_iter();
     // The chosen entry's plate: the row's bar, the choice's box or the button.
-    let plates: Vec<&Placed> = page().filter(|p| matches!(p.node.part, PLATE | BUTTON)).copied().collect();
+    let plates: Vec<&Placed> = page().filter(|p| matches!(p.node.part, PLATE | BUTTON)).collect();
     let plate = match view.chosen {
         k if k < VOLUMES => plates.get(k),
         FAST_FORWARD => plates.get(VOLUMES + usize::from(view.fast_forward_all)),
         LANGUAGE => plates.get(VOLUMES + 2 + usize::from(!view.english)),
         k => plates.get(VOLUMES + 4 + k - DEFAULT),
     };
-    for p in page() {
-        let n = p.node;
-        if n.part == PANEL && n.kind == STRETCHED {
-            out.extend(tiled(pe, PANEL, p.at, [layout::word(pe, p, 5).unwrap_or(0), layout::word(pe, p, 6).unwrap_or(0)]));
-        } else if n.part == RULE && n.kind == RULE_KIND {
-            out.extend(rule(pe, p));
-        }
-    }
+    out.extend(l.panel(pe, usize::MAX));
     if let Some(p) = plate {
         out.push(Element::Sprite { part: p.node.part, cut: p.node.cut, at: p.at });
     }
@@ -296,20 +337,9 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &OptionPage, tick: u3
             out.push(Element::Sprite { part: p.node.part, cut: p.node.cut, at });
         }
     }
-    // The screen's title bar.
-    out.extend(nodes.iter().filter(|p| p.path.len() == 1 && matches!(p.node.part, 0x30 | 0x2e | 0x2c)).map(|p| Element::stored(p)));
-    let line = |nodes: &[Placed], text: &str| -> Vec<Element> {
-        nodes.iter().flat_map(|p| match layout::text(pe, p) {
-            Some(t) => vec![raised(t, text)],
-            None => vec![Element::stored(p)],
-        }).collect()
-    };
-    out.extend(line(&l.footer, &words.footer));
-    out.extend(line(&l.header, &words.header));
-    out.extend(plate.map(|p| {
-        let at = shifted(p, GLOW_FROM_PLATE).at;
-        Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }
-    }));
+    out.extend(l.title());
+    out.extend(l.lines(pe, words));
+    out.extend(plate.map(|p| l.glow(p.at, tick)));
     out
 }
 

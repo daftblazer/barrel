@@ -18,25 +18,25 @@
 
 use std::path::Path;
 
-use barrel_escha::data::layout::Text;
+use barrel_escha::data::layout::{self, Placed, Text};
+use barrel_formats::pe::Pe;
 
 use crate::graphics_options::{self as g, Row};
 use crate::hud::{self, Element};
 use crate::screen;
 use crate::settings::{Display, RenderSettings, WINDOW_SIZES};
-use crate::optionpage::{self, Leave, OptionPage};
+use crate::kit::raised;
+use crate::optionpage::{self, Layouts, Leave, OptionPage, Words};
 use crate::title::Button;
 use crate::{Result, text};
 
 const SCREEN: u32 = 511;
-const PAGE_AT: [i32; 2] = [584, 150];
-const ROW_STEP: i32 = 74;
-const FIRST_ROW: i32 = 70;
-const VALUE_BOX: [i32; 2] = [300, -0];
-const VALUE_CENTRE: i32 = 492;
-const DARK: [u8; 4] = [0xff, 0x1a, 0x28, 0x5a];
-const GREY: [u8; 4] = [0xff, 0x78, 0x78, 0x81];
-const HELP_AT: [i32; 2] = [150, 1012];
+/// The game's row bar and button plates and its text part (layout 408).
+const PLATE: i32 = 0x3c;
+const BUTTON: i32 = 0x3d;
+const TEXT: i32 = 0x164;
+/// The page's name in the header bar.
+const PAGE_NAME: &str = "Graphics";
 
 /// What the page sets: the render settings and the window.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -136,6 +136,26 @@ fn stepped(row: Row, now: &Graphics, step: i32) -> Option<Graphics> {
     (1..=n).map(|k| (at + step * k).rem_euclid(n)).find_map(|k| all[k as usize].1.ok().filter(|t| value(row, t) != shown))
 }
 
+/// What a row sets, for the header bar when nothing on it is closed.
+fn description(row: Row) -> &'static str {
+    match row {
+        Row::Mode => "Play in a window or borderless fullscreen.",
+        Row::WindowSize => "The window's size.",
+        Row::Scale => "The scene is drawn at this share of the screen's size, then scaled to it.",
+        Row::AntiAliasing => "Smooths jagged edges.",
+        Row::Upscaling => "How a scene drawn below full size is scaled up.",
+        Row::Sharpening => "Sharpens the picture.",
+        Row::Shadows => "The shadow maps' detail.",
+        Row::Filtering => "Keeps textures sharp at a slant.",
+    }
+}
+
+/// Whether the row has a choice open other than its value.
+fn row_open(row: Row, now: &Graphics) -> bool {
+    let shown = value(row, now);
+    choices(row, now).iter().any(|(l, r)| r.is_ok() && *l != shown)
+}
+
 /// Why the cursor's row has choices closed (the help bar's line).
 pub fn help(row: Row, now: &Graphics) -> String {
     let mut closed: Vec<(String, &str)> = Vec::new();
@@ -146,7 +166,7 @@ pub fn help(row: Row, now: &Graphics) -> String {
         }
     }
     if closed.is_empty() {
-        return "Left / Right: change".into();
+        return description(row).into();
     }
     // A whole row closed for one reason: the reason alone.
     if closed.len() == 1 && choices(row, now).iter().all(|(_, r)| r.is_err()) {
@@ -177,34 +197,64 @@ impl Page {
         None
     }
 
-    /// The page's elements past the screen's own (desk, title bar).
-    pub fn elements(&self) -> Vec<Element> {
-        let at = |x: i32, y: i32| [PAGE_AT[0] + x, PAGE_AT[1] + y];
-        let label = |text: String, at: [i32; 2], colour: [u8; 4], kind: i32| Element::Label(Text { at, size: 33.0, colour, text, kind });
-        let mut out = Vec::new();
+    /// The page's elements: the game's own Options frame (desk, panel, rules, plate, quill
+    /// glow, title, footer and header bars) with this page's rows in the game's row slots.
+    pub fn elements(&self, pe: &Pe, l: &Layouts, words: &Words, tick: u32) -> Vec<Element> {
+        let rows = g::ROWS.len();
+        let nodes = l.page();
+        let of = |part: i32| nodes.iter().copied().filter(move |p| p.node.part == part);
+        let bars: Vec<&Placed> = of(PLATE).take(optionpage::VOLUMES).collect();
+        let boxes: Vec<&Placed> = of(PLATE).skip(optionpage::VOLUMES).collect();
+        let buttons: Vec<&Placed> = of(BUTTON).collect();
+        let texts: Vec<Text> = of(TEXT).filter_map(|p| layout::text(pe, p)).collect();
+        let is_grey = |t: &&Text| t.colour[1] == 0x81;
+        let (Some(dark), Some(grey)) = (texts.iter().find(|t| !is_grey(t) && t.kind == 21), texts.iter().find(is_grey)) else { return Vec::new() };
+        // The game's two choice columns (its "Read" / "All" texts).
+        let columns: Vec<i32> = texts.iter().filter(is_grey).map(|t| t.at[0]).take(2).collect();
+        let say = |t: &Text, text: &str, at: [i32; 2]| raised(Text { at, ..t.clone() }, text);
+        // The game's rows are 74 apart; its volume bars are seven, this page has eight rows.
+        let row_y = |k: usize| bars[0].at[1] + k as i32 * (bars[1].at[1] - bars[0].at[1]);
+
+        let mut out = l.desk();
+        out.extend(l.panel(pe, rows));
+        let current = |row: Row| value(row, &self.settings);
+        let open = |row: Row| row_open(row, &self.settings);
+        let two_way = |row: Row| open(row) && choices(row, &self.settings).len() == 2;
+        // The chosen entry's plate: the row's bar (a two-way row's box under its chosen word)
+        // or the button.
+        let plate = if self.cursor < rows {
+            let row = g::ROWS[self.cursor];
+            let second = choices(row, &self.settings).get(1).is_some_and(|(label, _)| *label == current(row));
+            match boxes.get(usize::from(second)) {
+                Some(b) if two_way(row) => [b.at[0], row_y(self.cursor)],
+                _ => [bars[0].at[0], row_y(self.cursor)],
+            }
+        } else {
+            buttons[self.cursor - rows].at
+        };
+        let plate_part = if self.cursor < rows { PLATE } else { BUTTON };
+        out.push(Element::Sprite { part: plate_part, cut: 0, at: plate });
         for (k, &row) in g::ROWS.iter().enumerate() {
-            let y = FIRST_ROW + ROW_STEP * k as i32;
-            out.push(Element::Sprite { part: 0x3c, cut: 0, at: at(24, y) });
-            out.push(label(name(row).into(), at(50, y), DARK, 21));
-            out.push(Element::Sprite { part: 0x3d, cut: 0, at: at(VALUE_BOX[0], y) });
-            let open = choices(row, &self.settings).iter().any(|(l, r)| r.is_ok() && *l != value(row, &self.settings));
-            let shown = value(row, &self.settings);
-            let shown = if open { format!("<  {shown}  >") } else { shown };
-            out.push(label(shown, at(VALUE_CENTRE, y), if open { DARK } else { GREY }, 22));
-            out.push(Element::Sprite { part: 0x28, cut: 0, at: at(0, y + 40) });
+            out.push(say(dark, name(row), [dark.at[0], row_y(k)]));
+            if two_way(row) {
+                for (i, (label, _)) in choices(row, &self.settings).iter().enumerate() {
+                    out.push(say(if *label == current(row) { dark } else { grey }, label, [columns[i], row_y(k)]));
+                }
+            } else {
+                out.push(say(if open(row) { dark } else { grey }, &current(row), [columns[0], row_y(k)]));
+            }
         }
-        let buttons = FIRST_ROW + ROW_STEP * g::ROWS.len() as i32 + 30;
-        for (k, text) in ["Default", "Confirm"].into_iter().enumerate() {
-            let y = buttons + 54 * k as i32;
-            out.push(Element::Sprite { part: 0x3d, cut: 0, at: at(224, y) });
-            out.push(label(text.into(), at(398 + 18, y), DARK, 22));
-        }
-        let cursor_y = if self.cursor < g::ROWS.len() { FIRST_ROW + ROW_STEP * self.cursor as i32 - 10 } else { buttons + 54 * (self.cursor - g::ROWS.len()) as i32 - 10 };
-        let cursor_x = if self.cursor < g::ROWS.len() { -72 } else { 152 };
-        out.push(Element::Sprite { part: 0x32, cut: 0, at: at(cursor_x, cursor_y) });
-        let help_line = if self.cursor < g::ROWS.len() { help(g::ROWS[self.cursor], &self.settings) } else if self.cursor == g::ROWS.len() { "Put the graphics back to the defaults".into() } else { "Keep these settings".into() };
-        out.push(label(help_line, HELP_AT, [0, 0, 0, 0], 21));
-        out.push(Element::Label(Text { at: [1300, 62], size: 39.0, colour: [0, 0, 0, 0], text: "Graphics".into(), kind: 21 }));
+        // The buttons' words, where the game's are.
+        out.extend(texts.iter().filter(|t| t.kind == 22).map(|t| raised(t.clone(), &t.text)));
+        out.extend(l.title());
+        let help_line = match self.cursor {
+            k if k < rows => help(g::ROWS[k], &self.settings),
+            k if k == rows => "Put the graphics back to the defaults.".into(),
+            _ => "Keep these settings.".into(),
+        };
+        out.extend(l.lines(pe, &Words { header: format!("{PAGE_NAME}: {help_line}"), footer: words.footer.clone() }));
+        // The quill stays at the row's bar, whichever box carries the plate.
+        out.push(l.glow([bars[0].at[0].min(plate[0]), plate[1]], tick));
         out
     }
 }
@@ -271,12 +321,6 @@ pub fn run(
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("options: an empty font atlas")?.width as f32 };
-    // The screen's own: the desk and the title bar (its heading and icon).
-    let frame: Vec<Element> = barrel_escha::data::layout::placed(&pe, SCREEN)
-        .iter()
-        .filter(|p| matches!(p.node.part, 0x0 | 0x30 | 0x2e | 0x2c))
-        .map(Element::stored)
-        .collect();
     // The game's page: its layouts and its two lines of words.
     let table = |rel: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
     let (sys_info, line_help) = (table("Saves_EN/systemMessage/SysInfo.xml")?, table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
@@ -291,9 +335,7 @@ pub fn run(
         if s.on_game {
             optionpage::elements(&pe, &layouts, &words, &s.game, s.tick)
         } else {
-            let mut e = frame.clone();
-            e.extend(s.graphics.elements());
-            e
+            s.graphics.elements(&pe, &layouts, &words, s.tick)
         }
     };
     // Every picture either page turns through, for loading once.
@@ -303,7 +345,10 @@ pub fn run(
             every.extend(optionpage::elements(&pe, &layouts, &words, &OptionPage { chosen, fast_forward_all: flags & 1 == 0, english: flags & 2 == 0, ..screen.game }, 0));
         }
     }
-    every.extend(all(&Screen { on_game: false, ..screen.clone() }));
+    for cursor in 0..g::ROWS.len() + 2 {
+        let graphics = Page { cursor, ..screen.graphics.clone() };
+        every.extend(all(&Screen { on_game: false, graphics, ..screen.clone() }));
+    }
     let keys_needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
