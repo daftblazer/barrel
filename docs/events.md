@@ -623,6 +623,15 @@ given time (`0x1402f3530` updates it). With u the part of the time gone, the dis
 is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a stop (u·(2 − u)), −100
 (295) starts slowly (u²), 0 (207) is even.
 
+**Which skill event an action plays** (`0x140194450`): `skill/Skill_%s_%d.ebd` (`Event/skill`,
+607 files). A party member's is its tag (`0x14032cda0`: `PARTY_ESCHA` ... `PARTY_NIO`) and the
+battle command of the skill-list entry it acts with (the entry's +8, `0x14032d0b0`): 0 the
+attack, 1 to 3 the skills, 4 the AC special, 8 Support Attack, 9 Support Guard (each member's are
+all there; the passives 5 and 6 have none, and 7, 10 and 13 have no file: those actions, and the
+files numbered 11 to 26, come another way, not read). A monster's is its tag (`0x1401118c0`,
+e.g. `MONSTER_WARDOG_00`) and a number its caller gives (not read); a third path takes a whole
+name (format `0x140803730`). `battle::party_skill_event`.
+
 **The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
 `t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):
 

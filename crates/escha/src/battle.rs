@@ -1353,3 +1353,44 @@ mod support_tests {
         assert_eq!(support_add(890, 25), SUPPORT_MAX);
     }
 }
+
+/// The battle skill event a party member's action plays (`0x140194450`: `skill/Skill_%s_%d.ebd`
+/// with the member's tag, `0x14032cda0`, and the command its skill-list entry sits on, the
+/// entry's +8 by `0x14032d0b0`): `Skill_PARTY_ESCHA_0` the attack, `_8` the Support Attack, `_9`
+/// the Support Guard. Members by their party number (0 Escha ... 10 Nio).
+pub fn party_skill_event(member: usize, command: u8) -> Option<String> {
+    const TAGS: [&str; 11] = ["ESCHA", "LOGY", "AWIN", "THREIA", "REYFER", "LUCILLE", "LINCA", "WILBELL", "MICIE", "KATLA", "NIO"];
+    Some(format!("skill/Skill_PARTY_{}_{command}.ebd", TAGS.get(member)?))
+}
+
+#[cfg(test)]
+mod skill_event_tests {
+    #[test]
+    fn party_events_by_command() {
+        assert_eq!(super::party_skill_event(0, 0).as_deref(), Some("skill/Skill_PARTY_ESCHA_0.ebd"));
+        assert_eq!(super::party_skill_event(1, 8).as_deref(), Some("skill/Skill_PARTY_LOGY_8.ebd"));
+        assert_eq!(super::party_skill_event(11, 0), None);
+    }
+
+    /// The commands a member acts with (the attack, the skills, the AC special, Support Attack
+    /// and Guard) have their events in the game's `Event/skill`; the passives (5, 6) have none,
+    /// nor 7, 10 and 13 (their actions name events another way).
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn every_listed_command_has_its_event() {
+        let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
+        let lists = crate::data::battle_data::party_skills(&pe, crate::data::battle_data::PARTY_SKILLS_EN).unwrap();
+        let mut missing = Vec::new();
+        for (m, list) in lists.iter().enumerate() {
+            for e in list.iter().filter(|e| matches!(e.command, 0..=4 | 8 | 9)) {
+                let name = super::party_skill_event(m, e.command).unwrap();
+                if !root.join("Event").join(&name).exists() {
+                    missing.push((m, e.command, name));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "{missing:?}");
+    }
+}
