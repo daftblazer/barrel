@@ -4,7 +4,7 @@
 use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_formats::pe::Pe;
 
-use crate::hud::{Element, TEXT_RISE};
+use crate::play::hud::{Element, TEXT_RISE};
 
 /// The cursor's glow (a sprite part of 96 pixels, eight cuts).
 pub const CURSOR: i32 = 0x9f;

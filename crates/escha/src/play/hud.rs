@@ -31,7 +31,7 @@
 
 use barrel_escha::data::layout::{self, Placed};
 
-use crate::text::{self, Quad};
+use crate::play::text::{self, Quad};
 
 /// The HUD's top layout and the parts of it that are drawn.
 pub const FIELD_HUD: u32 = 625;
@@ -437,7 +437,7 @@ fn wrap_entry(text: &str) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for word in text.split(' ') {
         match lines.last_mut() {
-            Some(l) if l.chars().count() + 1 + word.chars().count() <= crate::message::LINE_CHARS => {
+            Some(l) if l.chars().count() + 1 + word.chars().count() <= crate::play::message::LINE_CHARS => {
                 l.push(' ');
                 l.push_str(word);
             }
@@ -661,17 +661,17 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let Some(font) = font else { continue };
                 let [a, r, g, b] = t.colour;
                 let colour = if a == 0 { [1.0; 4] } else { [r, g, b, a].map(|c| f32::from(c) / 255.0) };
-                let scale = t.size * k / crate::message::LAYOUT_TEXT_UNIT;
+                let scale = t.size * k / crate::play::message::LAYOUT_TEXT_UNIT;
                 // Kind 23 texts end at their node (the numbers at x 1800 in the save list's
                 // details), kind 22 are centred on it ("Select your character." at x 954, the
                 // HUD's days left), the others start there.
-                let width = crate::message::width_of(font, &t.text) * scale;
+                let width = crate::play::message::width_of(font, &t.text) * scale;
                 let x = dx + t.at[0] as f32 * k - match t.kind {
                     23 => width,
                     22 => width / 2.0,
                     _ => 0.0,
                 };
-                crate::message::line(font, &t.text, x, t.at[1] as f32 * k, scale, colour, &mut out);
+                crate::play::message::line(font, &t.text, x, t.at[1] as f32 * k, scale, colour, &mut out);
             }
         }
     }

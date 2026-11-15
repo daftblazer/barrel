@@ -5,16 +5,16 @@
 //! black at 6.08 s, full at 6.62, fading out from 8.62, black at 9.10 as Gust starts fading in
 //! (no gap), Gust full 9.63 to 11.62, black at 12.10. Before them the game shows its Loading
 //! plate while it reads its data (Barrel needs none); after them come the pre-title movie
-//! (`opening.wmv`, in `Movie` as no `Movie_EN` copy exists; `crate::movie`) and the title.
+//! (`opening.wmv`, in `Movie` as no `Movie_EN` copy exists; `crate::play::movie`) and the title.
 
 use std::path::Path;
 use std::time::Instant;
 
 use ash::vk;
 
-use crate::screen::Target;
-use crate::title::Button;
-use crate::{text, Gpu, Result};
+use crate::play::screen::Target;
+use crate::play::title::Button;
+use crate::play::{text, Gpu, Result};
 
 /// The stills shown, in order: 5 `logo_kt`, 4 `logo_gust`.
 const LOGOS: [u32; 2] = [5, 4];
@@ -48,7 +48,7 @@ pub fn run(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<vk::Image>,
     root: &Path,
     shown_at: f32,
@@ -89,19 +89,19 @@ pub fn run(
     let movie = intro_movie(root);
     if offscreen.is_some() && movie_at >= 0.0 {
         if let Some(file) = &movie {
-            crate::movie::play(gpu, pool, target, None, offscreen, file, f64::from(movie_at), out)?;
+            crate::play::movie::play(gpu, pool, target, None, offscreen, file, f64::from(movie_at), out)?;
         }
         return Ok(());
     }
     let mut state = at(shown_at);
     let start = Instant::now();
     let mut window = window;
-    crate::screen::run_with(gpu, pool, target, window.as_mut().map(|(p, w)| (*p, &mut **w)), offscreen, &images, &mut state, quads, |_, _: Button| Some(()), &[], out, |s| {
+    crate::play::screen::run_with(gpu, pool, target, window.as_mut().map(|(p, w)| (*p, &mut **w)), offscreen, &images, &mut state, quads, |_, _: Button| Some(()), &[], out, |s| {
         *s = at(start.elapsed().as_secs_f32());
         s.is_none().then_some(())
     })?;
     if let (Some(file), Some((p, w))) = (&movie, window) {
-        crate::movie::play(gpu, pool, target, Some((p, w)), None, file, 0.0, None)?;
+        crate::play::movie::play(gpu, pool, target, Some((p, w)), None, file, 0.0, None)?;
     }
     Ok(())
 }

@@ -15,11 +15,11 @@ use std::path::Path;
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::basket::{Basket, Item};
-use crate::hud::{self, Element};
-use crate::screen;
-use crate::title::Button;
-use crate::{Result, text};
+use crate::play::basket::{Basket, Item};
+use crate::play::hud::{self, Element};
+use crate::play::screen;
+use crate::play::title::Button;
+use crate::play::{Result, text};
 
 const POSSESSED: u32 = 706;
 /// Where the box sits on the 1920 × 1080 screen (the recording: x 801, y 97 of 1280 × 720).
@@ -70,10 +70,10 @@ pub fn elements(grid: &[Placed], boxed: &[Placed], texts: impl Fn(&Placed) -> Op
 /// Runs the screen over the desk until it is closed.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
     target: &screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
     drops: &[(i32, f32)],
@@ -88,9 +88,9 @@ pub fn run(
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("drops: an empty font atlas")?.width as f32 };
     let item_rows = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/itemData.xml"))?)?;
-    let items = crate::basket::items(drops, &item_rows.children);
-    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
-    let grid = barrel_escha::data::layout::placed(&pe, crate::basket::GRID);
+    let items = crate::play::basket::items(drops, &item_rows.children);
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::play::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let grid = barrel_escha::data::layout::placed(&pe, crate::play::basket::GRID);
     let boxed = barrel_escha::data::layout::placed(&pe, POSSESSED);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let all = |b: &Basket| {

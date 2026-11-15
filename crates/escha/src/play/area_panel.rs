@@ -17,7 +17,7 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::Element;
+use crate::play::hud::Element;
 
 const REGION: u32 = 637;
 /// The maps' header (layout 652, at the screen's top-left): the feather (part 0x92 cut 2),
@@ -71,7 +71,7 @@ const BUTTON_ICONS: i32 = 0x41;
 const NAME_AT: [i32; 2] = [1674, 164];
 /// The place's name on the scroll, the maps' dark red (79, 37, 37) as the capture draws it.
 const NAME_INK: [u8; 4] = [0xff, 0x4f, 0x25, 0x25];
-use crate::hud::TEXT_RISE;
+use crate::play::hud::TEXT_RISE;
 /// The scroll's ink: the layouts' text colour (58, 26, 8), drawn opaque (the recording's
 /// darkest text pixels are (57, 27, 6); the layouts' alpha byte 0xe1 would lighten it).
 const INK: [u8; 4] = [0xff, 0x3a, 0x1a, 0x08];
@@ -156,7 +156,7 @@ pub fn elements(
                 }
             }
             // The pad button's icon (the button's plate 646 is a plain sprite).
-            (BUTTON_ICONS, _) => out.push(sprite(crate::message::western_sprite(p.node.cut.max(0) as u32) as i32)),
+            (BUTTON_ICONS, _) => out.push(sprite(crate::play::message::western_sprite(p.node.cut.max(0) as u32) as i32)),
             _ => out.push(sprite(p.node.cut.max(0))),
         }
     }

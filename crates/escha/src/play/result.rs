@@ -13,7 +13,7 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::Element;
+use crate::play::hud::Element;
 
 pub const LAYOUT: u32 = 904;
 const LIST: u32 = 898;

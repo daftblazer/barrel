@@ -15,9 +15,9 @@
 use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
-use crate::formation::Member;
-use crate::hud::Element;
-use crate::kit::{number, raised};
+use crate::play::formation::Member;
+use crate::play::hud::Element;
+use crate::play::kit::{number, raised};
 
 const SCREEN: u32 = 400;
 pub const RIGHT_PAGE: u32 = 431;
@@ -49,8 +49,8 @@ pub struct Layouts {
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        let pick = crate::picker::Layouts::load(pe);
-        Layouts { desk: get(crate::picker::DESK), figure: get(crate::picker::FIGURE), screen: get(SCREEN), tab: pick.tab, header: pick.header, footer: pick.footer }
+        let pick = crate::play::picker::Layouts::load(pe);
+        Layouts { desk: get(crate::play::picker::DESK), figure: get(crate::play::picker::FIGURE), screen: get(SCREEN), tab: pick.tab, header: pick.header, footer: pick.footer }
     }
 }
 
@@ -63,7 +63,7 @@ pub fn right_page(pe: &Pe, nodes: &[&Placed], m: &Member, lead: bool) -> Vec<Ele
     if lead {
         numbers.pop();
     }
-    crate::overview::face(pe, nodes, &texts, &m.values.name, None, &numbers)
+    crate::play::overview::face(pe, nodes, &texts, &m.values.name, None, &numbers)
 }
 
 /// The left page: its panel, slot icons and title, the effect rows' lines, the title tab and
@@ -84,7 +84,7 @@ fn left_page(pe: &Pe, l: &Layouts) -> Vec<Element> {
             Some(&EFFECT_GROUP) if n.part == 0xb && n.cut == LINE => out.push(Element::stored(p)),
             // The pager: the page and the page count, a slash between, in the slash's ink.
             Some(&PAGER) if n.part == 0x4f && n.kind != 0 => out.extend(pages.next().into_iter().flat_map(|&v| number(pe, p, v))),
-            Some(&PAGER) if n.part == 0x4f => out.push(Element::Tinted { part: n.part, cut: n.cut, at: p.at, rgb: crate::kit::ink(pe, p) }),
+            Some(&PAGER) if n.part == 0x4f => out.push(Element::Tinted { part: n.part, cut: n.cut, at: p.at, rgb: crate::play::kit::ink(pe, p) }),
             Some(&PAGER) => out.push(Element::stored(p)),
             _ => {}
         }
@@ -93,8 +93,8 @@ fn left_page(pe: &Pe, l: &Layouts) -> Vec<Element> {
 }
 
 /// All the page's elements for member `chosen` of `members` (`lead` the lead's character number).
-pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, members: &[Member], chosen: usize, lead: usize) -> Vec<Element> {
-    let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::picker::DESK_CUT, at: p.at }).collect();
+pub fn elements(pe: &Pe, l: &Layouts, words: &crate::play::picker::Words, members: &[Member], chosen: usize, lead: usize) -> Vec<Element> {
+    let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::play::picker::DESK_CUT, at: p.at }).collect();
     out.extend(l.figure.iter().map(Element::stored));
     let Some(m) = members.get(chosen) else { return out };
     for p in l.screen.iter().filter(|p| p.path.len() == 2 && p.path[1] == 399) {
@@ -103,6 +103,6 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, members: &[M
     let page: Vec<&Placed> = l.screen.iter().filter(|p| p.path.get(2) == Some(&RIGHT_PAGE) && p.path.get(3) != Some(&BOOKMARK)).collect();
     out.extend(right_page(pe, &page, m, m.face.character as usize == lead));
     out.extend(left_page(pe, l));
-    out.extend(crate::picker::chrome(pe, (&l.footer, &words.footer), (&l.header, &words.header), &l.tab, crate::picker::Kind::Status.tab_cut()));
+    out.extend(crate::play::picker::chrome(pe, (&l.footer, &words.footer), (&l.header, &words.header), &l.tab, crate::play::picker::Kind::Status.tab_cut()));
     out
 }

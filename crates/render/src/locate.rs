@@ -1,4 +1,5 @@
-//! The "Locate game files" screen, shown when no game install was found (`barrel_files::find`).
+//! The "Locate game files" screen, shown when no game install was found (`barrel_files::find`),
+//! and the picker that asks which game to start when several were found.
 //! The game's own art cannot be loaded before its files are known, so the screen is drawn with
 //! Barrel's own 2D: flat rectangles and a small font atlas of its own (`locate_font`, Noto Sans,
 //! made by `tools/gen-locate-font.py`), through the same text layer as the game's screens.
@@ -95,10 +96,12 @@ fn layout(browser: &Browser, width: f32, height: f32) -> Vec<Quad> {
     let mut y = height * 0.07;
     p.text(margin, y, 54.0 * s, TEXT, "Locate game files");
     y += 78.0 * s;
-    let intro = format!("Barrel did not find {} in Steam's libraries.", browser.title.name());
+    let names: Vec<&str> = browser.titles.iter().map(|t| t.name()).collect();
+    let markers: Vec<&str> = browser.titles.iter().map(|t| t.marker()).collect();
+    let intro = if names.len() == 1 { format!("Barrel did not find {} in Steam's libraries.", names[0]) } else { "Barrel did not find an Atelier game it plays in Steam's libraries.".to_string() };
     p.text(margin, y, 26.0 * s, DIM, &Painter::fit(&intro, 26.0 * s, content, false));
     y += 36.0 * s;
-    let ask = format!("Open the folder that holds {} and press Enter on it.", browser.title.marker());
+    let ask = format!("Open the folder that holds {} and press Enter on it.", markers.join(" or "));
     p.text(margin, y, 26.0 * s, DIM, &Painter::fit(&ask, 26.0 * s, content, false));
     y += 64.0 * s;
     // The folder being listed.
@@ -118,7 +121,7 @@ fn layout(browser: &Browser, width: f32, height: f32) -> Vec<Quad> {
         }
         let text_y = top + 5.0 * s;
         match row {
-            Row::Up => p.text(panel[0] + 24.0 * s, text_y, 28.0 * s, DIM, "\u{2191}  Up one folder"),
+            Row::Up => p.text(panel[0] + 24.0 * s, text_y, 28.0 * s, DIM, "..   Up one folder"),
             Row::Folder { name, game } => {
                 let tag = "Game folder";
                 let tag_w = if *game { Painter::width(tag, 24.0 * s) + 24.0 * s } else { 0.0 };
@@ -160,11 +163,89 @@ fn input(key: KeyCode) -> Option<Input> {
     })
 }
 
-/// Runs the screen for `title` until a folder that holds the game is chosen: the folder, and the
+/// Runs the folder screen until a folder that holds one of `titles` is chosen: the folder, and the
 /// window to carry on with. `None` when the window is closed or Escape pressed. `display` is
 /// the window as the config has it; `pump` a window already open (there is one event loop to a
 /// process).
-pub fn run(title: Title, pump: Option<Pump>, display: crate::settings::Display) -> Result<Option<(std::path::PathBuf, Pump)>> {
+pub fn run(titles: &[Title], pump: Option<Pump>, display: crate::settings::Display) -> Result<Option<(std::path::PathBuf, Pump)>> {
+    let start = std::env::current_dir().ok().filter(|d| d.parent().is_some()).unwrap_or_else(barrel_files::browse::home);
+    show(pump, display, Browser::for_games(titles.to_vec(), start), |b, w, h| layout(b, w, h), |browser, keys| {
+        for key in keys {
+            if key == KeyCode::Escape {
+                return Some(None);
+            }
+            if let Some(b) = input(key)
+                && let Some(dir) = browser.press(b)
+            {
+                return Some(Some(dir));
+            }
+        }
+        None
+    })
+}
+
+/// What the picker shows: the games found and the one the cursor is on.
+#[derive(Clone, PartialEq)]
+struct Pick {
+    games: Vec<(Title, std::path::PathBuf)>,
+    selected: usize,
+}
+
+/// The picker: which of the `games` found to start. `None` when the window is closed or Escape
+/// pressed. Remembers nothing.
+pub fn pick(games: &[(Title, std::path::PathBuf)], pump: Option<Pump>, display: crate::settings::Display) -> Result<Option<(usize, Pump)>> {
+    show(pump, display, Pick { games: games.to_vec(), selected: 0 }, pick_layout, |p, keys| {
+        let last = p.games.len() - 1;
+        for key in keys {
+            match key {
+                KeyCode::Escape => return Some(None),
+                KeyCode::ArrowUp => p.selected = p.selected.checked_sub(1).unwrap_or(last),
+                KeyCode::ArrowDown => p.selected = if p.selected >= last { 0 } else { p.selected + 1 },
+                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::ArrowRight => return Some(Some(p.selected)),
+                _ => {}
+            }
+        }
+        None
+    })
+}
+
+/// The picker's quads in a window `width` x `height`: one row per game, in the folder screen's style.
+fn pick_layout(pick: &Pick, width: f32, height: f32) -> Vec<Quad> {
+    let s = (height / 1080.0).max(0.55);
+    let mut p = Painter { quads: Vec::new() };
+    p.rect([0.0, 0.0, width, height], BACKGROUND);
+    let margin = (width * 0.08).max(24.0 * s);
+    let content = width - 2.0 * margin;
+    let mut y = height * 0.07;
+    p.text(margin, y, 54.0 * s, TEXT, "Choose a game");
+    y += 78.0 * s;
+    p.text(margin, y, 26.0 * s, DIM, &Painter::fit("Barrel found more than one game. Pick the one to play.", 26.0 * s, content, false));
+    y += 80.0 * s;
+    let row_h = 96.0 * s;
+    let panel = [margin, y, margin + content, y + 16.0 * s + row_h * pick.games.len() as f32];
+    p.rect(panel, PANEL);
+    for (i, (title, dir)) in pick.games.iter().enumerate() {
+        let top = panel[1] + 8.0 * s + i as f32 * row_h;
+        if i == pick.selected {
+            p.rect([panel[0] + 8.0 * s, top, panel[2] - 8.0 * s, top + row_h - 8.0 * s], SELECTED);
+        }
+        p.text(panel[0] + 24.0 * s, top + 8.0 * s, 34.0 * s, TEXT, &Painter::fit(title.name(), 34.0 * s, content - 48.0 * s, false));
+        p.text(panel[0] + 24.0 * s, top + 52.0 * s, 24.0 * s, DIM, &Painter::fit(&dir.to_string_lossy(), 24.0 * s, content - 48.0 * s, true));
+    }
+    p.text(margin, height - 70.0 * s + 4.0 * s, 24.0 * s, DIM, &Painter::fit("Up / Down  move      Enter or A  start      Esc  quit", 24.0 * s, content, false));
+    p.quads
+}
+
+/// Draws a screen of Barrel's own in a window until `step` ends it: `state` is what the screen
+/// shows (laid out again whenever it or the window changes), `step` takes the keys pressed since
+/// the last frame and gives `Some(answer)` to finish (`Some(None)` when the user left).
+fn show<S: Clone + PartialEq, T>(
+    pump: Option<Pump>,
+    display: crate::settings::Display,
+    mut state: S,
+    layout: impl Fn(&S, f32, f32) -> Vec<Quad>,
+    mut step: impl FnMut(&mut S, Vec<KeyCode>) -> Option<Option<T>>,
+) -> Result<Option<(T, Pump)>> {
     let mut pump = match pump {
         Some(p) => p,
         None => Pump::open(display)?,
@@ -210,26 +291,12 @@ pub fn run(title: Title, pump: Option<Pump>, display: crate::settings::Display) 
     let mut layer = Layer::new(&gpu, pool, pass, &[&font_texture, &ui_texture])?;
     let (ready, done) = unsafe { (d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?) };
 
-    let mut browser = Browser::new(title, std::env::current_dir().ok().filter(|d| d.parent().is_some()).unwrap_or_else(barrel_files::browse::home));
-    let mut shown: Option<(Browser, (u32, u32))> = None;
+    let mut shown: Option<(S, (u32, u32))> = None;
     let chosen = loop {
         if !pump.pump() {
             break None;
         }
-        let mut found = None;
-        for key in pump.take_pressed() {
-            if key == KeyCode::Escape {
-                found = Some(None);
-                break;
-            }
-            if let Some(b) = input(key)
-                && let Some(dir) = browser.press(b)
-            {
-                found = Some(Some(dir));
-                break;
-            }
-        }
-        if let Some(f) = found {
+        if let Some(f) = step(&mut state, pump.take_pressed()) {
             break f;
         }
         if pump.take_resized() {
@@ -244,9 +311,9 @@ pub fn run(title: Title, pump: Option<Pump>, display: crate::settings::Display) 
             }
         }
         let extent = (presenter.extent.width, presenter.extent.height);
-        if shown.as_ref().map(|(b, e)| (b, *e)) != Some((&browser, extent)) {
-            layer.set(&gpu, &layout(&browser, extent.0 as f32, extent.1 as f32))?;
-            shown = Some((browser.clone(), extent));
+        if shown.as_ref().map(|(b, e)| (b, *e)) != Some((&state, extent)) {
+            layer.set(&gpu, &layout(&state, extent.0 as f32, extent.1 as f32))?;
+            shown = Some((state.clone(), extent));
         }
         let Some(image) = presenter.acquire(ready)? else {
             let s = pump.window().inner_size();
@@ -298,7 +365,7 @@ pub fn run(title: Title, pump: Option<Pump>, display: crate::settings::Display) 
         d.destroy_command_pool(pool, None);
     }
     presenter.destroy(&gpu);
-    Ok(chosen.map(|dir| (dir, pump)))
+    Ok(chosen.map(|answer| (answer, pump)))
 }
 
 /// The game found and the window it may have opened to ask.
@@ -309,10 +376,7 @@ pub struct Resolved {
 
 /// Removes `flag VALUE` from `args` and gives the value.
 pub fn take_option(args: &mut Vec<String>, flag: &str) -> Option<String> {
-    let at = args.iter().position(|a| a == flag)?;
-    let value = args.get(at + 1).cloned();
-    args.drain(at..(at + 2).min(args.len()));
-    value
+    barrel_files::detect::take_option(args, flag)
 }
 
 /// Steam's launch option `barrel-game %command%` gives the game's own program (`...\\Atelier_X.exe`)
@@ -327,18 +391,34 @@ pub fn take_game_program(args: &mut Vec<String>) -> Option<std::path::PathBuf> {
 
 /// The window as the graphics config has it (else the launcher's default, else 1280x720).
 pub fn config_display() -> crate::settings::Display {
-    let text = crate::settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok());
+    let text = barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok());
     text.as_deref().map_or_else(
         || crate::settings::Display { fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1"), ..crate::settings::Display::DEFAULT },
         crate::settings::Display::from_config,
     )
 }
 
-/// Finds `title`'s install and sets up the layered files (`barrel_files::install`) over it and
-/// the enabled mods. In order: `given` (`--game`, which must hold the game); `from_args`, the
-/// install the command line's own paths are in; `BARREL_GAME_DIR`; the folder saved in the
-/// config; Steam's libraries; else the "Locate game files" screen, whose answer is saved.
-/// `None` when that screen was closed.
+/// Names `title` as the game of this process (its config and data folders) and sets up the
+/// layered files (`barrel_files::install`) over `root` and the game's enabled mods.
+pub fn start(title: Title, root: std::path::PathBuf, pump: Option<Pump>) -> Resolved {
+    barrel_files::config::use_game(title);
+    eprintln!("game: {}", root.display());
+    barrel_files::install(barrel_files::mods::game_fs(&root));
+    Resolved { root, pump }
+}
+
+/// Saves the folder the user located for `title`.
+pub fn remember(title: Title, dir: &std::path::Path) {
+    match barrel_files::config::save_game(title.key(), dir) {
+        Ok(file) => eprintln!("game folder saved to {}", file.display()),
+        Err(e) => eprintln!("game folder not saved: {e}"),
+    }
+}
+
+/// Finds `title`'s install and starts it ([`start`]). In order: `given` (`--game`, which must
+/// hold the game); `from_args`, the install the command line's own paths are in;
+/// `BARREL_GAME_DIR`; the folder saved in the config; Steam's libraries; else the "Locate game
+/// files" screen, whose answer is saved. `None` when that screen was closed.
 pub fn resolve(title: Title, given: Option<std::path::PathBuf>, from_args: Option<std::path::PathBuf>) -> Result<Option<Resolved>> {
     let mut pump = None;
     let root = if let Some(g) = given {
@@ -348,12 +428,9 @@ pub fn resolve(title: Title, given: Option<std::path::PathBuf>, from_args: Optio
     } else {
         match barrel_files::find::find(title, None)? {
             Some(found) => Some(found.path().to_path_buf()),
-            None => match run(title, None, config_display())? {
+            None => match run(&[title], None, config_display())? {
                 Some((dir, p)) => {
-                    match barrel_files::config::save_game(title.key(), &dir) {
-                        Ok(file) => eprintln!("game folder saved to {}", file.display()),
-                        Err(e) => eprintln!("game folder not saved: {e}"),
-                    }
+                    remember(title, &dir);
                     pump = Some(p);
                     Some(dir)
                 }
@@ -361,10 +438,59 @@ pub fn resolve(title: Title, given: Option<std::path::PathBuf>, from_args: Optio
             },
         }
     };
-    let Some(root) = root else { return Ok(None) };
-    eprintln!("game: {}", root.display());
-    barrel_files::install(barrel_files::mods::game_fs(&root));
-    Ok(Some(Resolved { root, pump }))
+    Ok(root.map(|root| start(title, root, pump)))
+}
+
+/// The screen's quads as a picture, the way the GPU draws them: rectangles filled with their
+/// colour, glyphs as the atlas's coverage in alpha (bilinear), blended over what is below.
+/// RGBA, `width` x `height`. For the draw check (`BARREL_LOCATE_SHOT`), which needs no GPU.
+fn rasterize(quads: &[Quad], width: u32, height: u32) -> Vec<u8> {
+    let mut img = vec![[0.0f32; 3]; (width * height) as usize];
+    let coverage = |u: f32, v: f32| -> f32 {
+        let (x, y) = (u * font::WIDTH as f32 - 0.5, v * font::HEIGHT as f32 - 0.5);
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let at = |px: f32, py: f32| -> f32 {
+            let (px, py) = (px.clamp(0.0, font::WIDTH as f32 - 1.0) as usize, py.clamp(0.0, font::HEIGHT as f32 - 1.0) as usize);
+            f32::from(ALPHA[py * font::WIDTH as usize + px]) / 255.0
+        };
+        (at(x0, y0) * (1.0 - fx) + at(x0 + 1.0, y0) * fx) * (1.0 - fy) + (at(x0, y0 + 1.0) * (1.0 - fx) + at(x0 + 1.0, y0 + 1.0) * fx) * fy
+    };
+    for q in quads {
+        let [l, t, r, b] = q.rect;
+        for y in (t.floor().max(0.0) as u32)..(b.ceil().min(height as f32) as u32) {
+            for x in (l.floor().max(0.0) as u32)..(r.ceil().min(width as f32) as u32) {
+                let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+                if cx < l || cx > r || cy < t || cy > b {
+                    continue;
+                }
+                let mut alpha = q.color[3];
+                if q.uv[0] >= 0.0 && q.texture == FONT {
+                    let u = q.uv[0] + (q.uv[2] - q.uv[0]) * (cx - l) / (r - l);
+                    let v = q.uv[1] + (q.uv[3] - q.uv[1]) * (cy - t) / (b - t);
+                    alpha *= coverage(u, v);
+                }
+                let px = &mut img[(y * width + x) as usize];
+                for c in 0..3 {
+                    px[c] += (q.color[c] - px[c]) * alpha;
+                }
+            }
+        }
+    }
+    img.iter().flat_map(|p| [(p[0] * 255.0 + 0.5) as u8, (p[1] * 255.0 + 0.5) as u8, (p[2] * 255.0 + 0.5) as u8, 255]).collect()
+}
+
+/// The draw check: writes the folder screen to `out` and the picker to `out` with `-pick` added
+/// to its name, 1920x1080, from the folders of `start` and two sample games.
+pub fn shot(out: &std::path::Path, start: std::path::PathBuf) -> std::io::Result<()> {
+    let (w, h) = (1920, 1080);
+    let browser = Browser::for_games(Title::ALL.to_vec(), start);
+    let games: Vec<_> = Title::ALL.iter().map(|t| (*t, std::path::Path::new("/home/player/.local/share/Steam/steamapps/common").join(t.folder()))).collect();
+    let pick = Pick { games, selected: 1 };
+    let name = out.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let pick_out = out.with_file_name(format!("{name}-pick.png"));
+    std::fs::write(out, barrel_formats::png::encode_rgba(w, h, &rasterize(&layout(&browser, w as f32, h as f32), w, h)))?;
+    std::fs::write(pick_out, barrel_formats::png::encode_rgba(w, h, &rasterize(&pick_layout(&pick, w as f32, h as f32), w, h)))
 }
 
 #[cfg(test)]

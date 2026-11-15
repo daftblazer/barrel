@@ -1,0 +1,12 @@
+[package]
+name = "barrel"
+description = "Barrel: Atelier Escha & Logy DX and Atelier Ryza DX on one native engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+barrel-files = { path = "../files" }
+barrel-render = { path = "../render" }
+barrel-escha = { path = "../escha" }
+barrel-ryza = { path = "../ryza" }

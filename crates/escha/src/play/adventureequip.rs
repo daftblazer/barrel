@@ -13,9 +13,9 @@
 use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
-use crate::basket::Item;
-use crate::hud::Element;
-use crate::kit::{number, raised, shifted, tiled};
+use crate::play::basket::Item;
+use crate::play::hud::Element;
+use crate::play::kit::{number, raised, shifted, tiled};
 
 const GRID: u32 = 456;
 const NAME_TAB: u32 = 457;
@@ -79,7 +79,7 @@ pub struct Layouts {
     places: Vec<[i32; 2]>,
     name: Vec<Placed>,
     figure: Vec<Placed>,
-    card: crate::basketpage::Layouts,
+    card: crate::play::basketpage::Layouts,
     cursor: Option<layout::Flip>,
     tab: Vec<Placed>,
     header: Vec<Placed>,
@@ -89,7 +89,7 @@ pub struct Layouts {
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        let pick = crate::picker::Layouts::load(pe);
+        let pick = crate::play::picker::Layouts::load(pe);
         let grid = get(GRID);
         // Each cell layout sits at its nodes' place less the node's own; rows tell by their y.
         let mut places: Vec<[i32; 2]> = Vec::new();
@@ -101,14 +101,14 @@ impl Layouts {
         }
         places.sort_by_key(|o| (o[1], o[0]));
         Layouts {
-            desk: get(crate::picker::DESK),
+            desk: get(crate::play::picker::DESK),
             grid,
             cells: (0..5).map(|k| get(FIRST_CELL_LAYOUT + k)).collect(),
             places,
             name: get(NAME_TAB),
-            figure: get(crate::picker::FIGURE),
-            card: crate::basketpage::Layouts::load(pe),
-            cursor: crate::kit::cursor_glow(pe),
+            figure: get(crate::play::picker::FIGURE),
+            card: crate::play::basketpage::Layouts::load(pe),
+            cursor: crate::play::kit::cursor_glow(pe),
             tab: pick.tab,
             header: pick.header,
             footer: pick.footer,
@@ -117,7 +117,7 @@ impl Layouts {
 
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)).collect()
+        self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)).collect()
     }
 }
 
@@ -153,10 +153,10 @@ fn cells_of(gear: &[Gear]) -> Vec<usize> {
 /// All the page's elements for `w` with gear `chosen` lit, `tick` the global clock's 60 Hz ticks
 /// (the cursor's glow) and `age` the ticks since the page opened (the lit frame's pulse, the
 /// Battle Equip. bar's).
-pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, chosen: usize, tick: u32, age: u32) -> Vec<Element> {
+pub fn elements(pe: &Pe, l: &Layouts, words: &crate::play::picker::Words, w: &Worn, chosen: usize, tick: u32, age: u32) -> Vec<Element> {
     let cells = cells_of(&w.gear);
     let rows_used: Vec<usize> = cells.iter().map(|c| c / COLUMNS).collect();
-    let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::picker::DESK_CUT, at: p.at }).collect();
+    let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::play::picker::DESK_CUT, at: p.at }).collect();
     // The grid's backdrop and the empty cells of the rows no gear sits in.
     for p in l.grid.iter().filter(|p| p.path.len() == 1) {
         let p = shifted(p, GRID_SHIFT);
@@ -197,17 +197,17 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, ch
     }
     let mut cursor = None;
     if let Some(p) = lit {
-        out.push(Element::Tinted { part: p.node.part, cut: p.node.cut, at: p.at, rgb: crate::battleequip::pulse(age) });
+        out.push(Element::Tinted { part: p.node.part, cut: p.node.cut, at: p.at, rgb: crate::play::battleequip::pulse(age) });
         cursor = Some([p.at[0] + CURSOR_FROM_FRAME[0], p.at[1] + CURSOR_FROM_FRAME[1]]);
     }
     out.extend(l.figure.iter().map(Element::stored));
-    out.extend(crate::picker::chrome(pe, (&l.footer, &words.footer), (&[], ""), &[], 0));
+    out.extend(crate::play::picker::chrome(pe, (&l.footer, &words.footer), (&[], ""), &[], 0));
     if let Some(g) = w.gear.get(chosen) {
         out.extend(tiled(pe, CARD_PANEL, PANEL.0, PANEL.1));
-        out.extend(crate::basketpage::card_with_cost(pe, &l.card, &g.item, CARD_AT, ITEM_INFO_PAGES, Some((g.span as i32, g.uses))));
+        out.extend(crate::play::basketpage::card_with_cost(pe, &l.card, &g.item, CARD_AT, ITEM_INFO_PAGES, Some((g.span as i32, g.uses))));
     }
-    out.extend(crate::picker::chrome(pe, (&[], ""), (&l.header, &words.header), &l.tab, crate::picker::Kind::AdventureEquip.tab_cut()));
-    out.extend(cursor.map(|at| Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
+    out.extend(crate::play::picker::chrome(pe, (&[], ""), (&l.header, &words.header), &l.tab, crate::play::picker::Kind::AdventureEquip.tab_cut()));
+    out.extend(cursor.map(|at| Element::Sprite { part: crate::play::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
     out
 }
 

@@ -19,10 +19,10 @@ use std::path::Path;
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::{self, Element};
-use crate::screen;
-use crate::title::Button;
-use crate::{Result, text};
+use crate::play::hud::{self, Element};
+use crate::play::screen;
+use crate::play::title::Button;
+use crate::play::{Result, text};
 
 const TITLE_AT: [i32; 2] = [180, 120];
 const LIST_AT: [i32; 2] = [180, 220];
@@ -41,8 +41,8 @@ pub struct Member {
     pub worn: [String; 4],
     pub fitting: [Vec<(usize, String)>; 4],
     /// The Status page's values as worn, and with each fitting item put on instead.
-    pub status: Option<crate::status::Values>,
-    pub previews: [Vec<Option<crate::status::Values>>; 4],
+    pub status: Option<crate::play::status::Values>,
+    pub previews: [Vec<Option<crate::play::status::Values>>; 4],
 }
 
 pub const LAYOUT: u32 = 404;
@@ -58,7 +58,7 @@ const DIGIT_ADVANCE: i32 = 20;
 const ITEMS_AT: [i32; 2] = [120, 520];
 
 /// The nine values the preview column shows, in its order.
-fn shown(v: &crate::status::Values) -> [i32; 9] {
+fn shown(v: &crate::play::status::Values) -> [i32; 9] {
     let [r0, r1, r2, r3] = v.resist;
     [v.hp.1, v.mp.1, v.attack, v.defense, v.speed, r0, r1, r2, r3]
 }
@@ -72,7 +72,7 @@ pub fn view(e: &Equip, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>
     let Some(x) = m.get(member) else { return Vec::new() };
     let mut out = Vec::new();
     if let Some(v) = &x.status {
-        out.extend(crate::status::elements(nodes, &texts, v));
+        out.extend(crate::play::status::elements(nodes, &texts, v));
     }
     // The slot panel: its rows in order are the four slots.
     let mut row = 0usize;
@@ -205,10 +205,10 @@ impl Equip {
 /// Runs the page over the desk; the change chosen, if any.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
     target: &screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
     members: &[Member],
@@ -221,7 +221,7 @@ pub fn run(
     let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("equip: an empty font atlas")?.width as f32 };
-    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::play::menu::BACKGROUND).iter().map(Element::stored).collect();
     let nodes = barrel_escha::data::layout::placed(&pe, LAYOUT);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let mut every = desk.clone();

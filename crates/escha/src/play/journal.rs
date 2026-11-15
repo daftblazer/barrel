@@ -18,9 +18,9 @@
 use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
-use crate::hud::Element;
-use crate::kit::raised;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::kit::raised;
+use crate::play::title::Button;
 
 /// `SysInfo.xml`'s "Check game progression." (the header line).
 pub const HEADER_ROW: usize = 14;
@@ -90,13 +90,13 @@ pub struct Layouts {
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(DESK), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), page: get(PAGE), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { desk: get(DESK), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), page: get(PAGE), cursor: crate::play::kit::cursor_glow(pe) }
     }
 
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        let mut out = crate::kit::flip_elements(&self.page);
-        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
+        let mut out = crate::play::kit::flip_elements(&self.page);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)));
         out
     }
 }
@@ -156,7 +156,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &Journal, new: bool, 
             e => e,
         });
     }
-    out.extend(cursor.map(|at| Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
+    out.extend(cursor.map(|at| Element::Sprite { part: crate::play::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
     out
 }
 

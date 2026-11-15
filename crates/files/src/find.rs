@@ -18,6 +18,14 @@ pub enum Title {
 }
 
 impl Title {
+    /// Every game, in the order the picker lists them.
+    pub const ALL: [Title; 2] = [Title::Escha, Title::Ryza];
+
+    /// The game whose install `dir` is.
+    pub fn of_install(dir: &Path) -> Option<Title> {
+        Title::ALL.into_iter().find(|t| is_install(*t, dir))
+    }
+
     /// The key of the game in `games.toml`.
     pub fn key(self) -> &'static str {
         match self {

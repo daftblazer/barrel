@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::find::{is_install, Title};
+use crate::find::Title;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Row {
@@ -28,7 +28,8 @@ pub enum Input {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Browser {
-    pub title: Title,
+    /// The games whose folder the list looks for.
+    pub titles: Vec<Title>,
     pub dir: PathBuf,
     pub rows: Vec<Row>,
     pub selected: usize,
@@ -42,7 +43,12 @@ const PAGE: usize = 8;
 impl Browser {
     /// The list of `start`, or of the user's home when that cannot be read.
     pub fn new(title: Title, start: PathBuf) -> Browser {
-        let mut b = Browser { title, dir: start, rows: Vec::new(), selected: 0, message: String::new() };
+        Browser::for_games(vec![title], start)
+    }
+
+    /// The list of `start`, marking the folders of any of `titles`.
+    pub fn for_games(titles: Vec<Title>, start: PathBuf) -> Browser {
+        let mut b = Browser { titles, dir: start, rows: Vec::new(), selected: 0, message: String::new() };
         if b.fill().is_err() {
             b.dir = home();
             if b.fill().is_err() {
@@ -60,7 +66,7 @@ impl Browser {
             .filter_map(|e| e.file_name().into_string().ok())
             .filter(|n| !n.starts_with('.'))
             .map(|n| {
-                let game = is_install(self.title, &self.dir.join(&n));
+                let game = Title::of_install(&self.dir.join(&n)).is_some_and(|t| self.titles.contains(&t));
                 (n, game)
             })
             .collect();

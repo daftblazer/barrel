@@ -1,6 +1,6 @@
 //! Barrel's save slots: a folder of `slotNN.save` files in Barrel's own text format
 //! (`session::Session::save`), numbered from 1 as the game numbers its "Game Data" slots. The
-//! folder is Barrel's own (by default `$XDG_DATA_HOME/barrel/saves`), never the game's.
+//! folder is Barrel's own (by default `$XDG_DATA_HOME/barrel/escha/saves`), never the game's.
 
 use std::path::{Path, PathBuf};
 
@@ -17,10 +17,10 @@ pub struct Slot {
     pub written: Option<u64>,
 }
 
-/// The default saves folder.
+/// The default saves folder (`barrel_files::config::saves_dir`: `<data>/barrel/escha/saves`, or
+/// the older `<data>/barrel/saves` where that is where the saves are).
 pub fn default_dir() -> Option<PathBuf> {
-    let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
-    Some(data.join("barrel/saves"))
+    barrel_files::config::saves_dir()
 }
 
 /// Slot `n`'s file in `dir`.

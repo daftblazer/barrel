@@ -12,7 +12,7 @@
 //! recording's dark brown, not 701's node colour), the question's layout ids (701 is read off
 //! the recording's window place; the class's own reads are not traced).
 
-use crate::hud::{Element, nine};
+use crate::play::hud::{Element, nine};
 
 const COMMON: &str = "a15_common.g1t";
 const WINDOW: u32 = 701;

@@ -21,7 +21,7 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::{Element, TEXT_RISE};
+use crate::play::hud::{Element, TEXT_RISE};
 
 pub const LAYOUT: u32 = 886;
 /// The Support gauge (layout 884), its bar (part 0xf7) and its level's digit (0xe1, layout 883).
@@ -759,7 +759,7 @@ pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>
         } else if p.node.part == BUTTONS {
             // The button in the Western layout (`message::western_sprite`: the centre's cut 6
             // shows Y, as the recording).
-            out.push(Element::Sprite { part: BUTTONS, cut: crate::message::western_sprite(p.node.cut.max(0) as u32) as i32, at: p.at });
+            out.push(Element::Sprite { part: BUTTONS, cut: crate::play::message::western_sprite(p.node.cut.max(0) as u32) as i32, at: p.at });
         } else if (p.node.part, p.node.cut) == BUBBLE_RULE {
             // Not shown under the offer in the recording (a highlight for another state).
         } else if p.node.part >= 0 && p.node.part < 0x164 {

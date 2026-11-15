@@ -21,8 +21,8 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::Element;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::title::Button;
 
 pub const BACKGROUND: u32 = 383;
 pub const FIGURE: u32 = 361;
@@ -117,14 +117,14 @@ pub struct Menu {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
     Status,
-    Basket(crate::basket::Basket),
-    Assignment(crate::assignment::Assignment),
-    Journal(crate::journal::Journal),
-    Option(crate::optionpage::OptionPage),
-    Picker(crate::picker::Kind, crate::picker::Picker),
+    Basket(crate::play::basket::Basket),
+    Assignment(crate::play::assignment::Assignment),
+    Journal(crate::play::journal::Journal),
+    Option(crate::play::optionpage::OptionPage),
+    Picker(crate::play::picker::Kind, crate::play::picker::Picker),
     /// The page a picker's confirm opens for its chosen member (Status, Battle Equip.).
-    Member(crate::picker::Kind, crate::picker::Picker),
-    Formation(crate::formation::Formation),
+    Member(crate::play::picker::Kind, crate::play::picker::Picker),
+    Formation(crate::play::formation::Formation),
 }
 
 /// Where a shortcut opens the menu: on a page, or on the Option list alone (the area map's RB,
@@ -142,10 +142,10 @@ pub enum Outcome {
     Close,
     Option(OptionRow),
     /// The Options screen's game page confirmed: its settings are to be kept.
-    Sound(crate::optionpage::OptionPage),
+    Sound(crate::play::optionpage::OptionPage),
     /// The Options screen turned to its graphics page (the second), carrying the game page's
     /// settings so far.
-    Graphics(crate::optionpage::OptionPage),
+    Graphics(crate::play::optionpage::OptionPage),
     /// A command whose page Barrel does not have yet.
     Command(Command),
 }
@@ -208,7 +208,7 @@ impl Menu {
 
     fn press_page(&mut self, b: Button, count: usize) -> Option<Outcome> {
         // A picker's confirm opens the member's page (Status, Battle Equip.); Back returns to it.
-        use crate::picker::Kind;
+        use crate::play::picker::Kind;
         match self.page {
             Some(Page::Picker(k @ (Kind::Status | Kind::BattleEquip | Kind::AdventureEquip), p)) if b == Button::Confirm => {
                 self.page = Some(Page::Member(k, p));
@@ -227,9 +227,9 @@ impl Menu {
             Some(Page::Journal(j)) => j.press(b),
             Some(Page::Option(o)) => match o.press(b) {
                 None => false,
-                Some(crate::optionpage::Leave::Close(true)) => return Some(Outcome::Sound(*o)),
-                Some(crate::optionpage::Leave::Close(false)) => true,
-                Some(crate::optionpage::Leave::Graphics { .. }) => return Some(Outcome::Graphics(*o)),
+                Some(crate::play::optionpage::Leave::Close(true)) => return Some(Outcome::Sound(*o)),
+                Some(crate::play::optionpage::Leave::Close(false)) => true,
+                Some(crate::play::optionpage::Leave::Graphics { .. }) => return Some(Outcome::Graphics(*o)),
             },
             Some(Page::Picker(_, p)) => p.press(b),
             Some(Page::Member(..)) => false,
@@ -265,16 +265,16 @@ impl Menu {
             Button::Left | Button::Right => {}
             Button::Back => return Some(Outcome::Close),
             Button::Confirm => match self.commands()[self.chosen] {
-                Command::Option => self.page = Some(Page::Option(crate::optionpage::OptionPage::load())),
-                Command::Status => self.page = Some(Page::Picker(crate::picker::Kind::Status, crate::picker::Picker { chosen: 0, count: self.party })),
-                Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
-                Command::Assignment => self.page = Some(Page::Assignment(crate::assignment::Assignment::default())),
-                Command::Journal => self.page = Some(Page::Journal(crate::journal::Journal::default())),
+                Command::Option => self.page = Some(Page::Option(crate::play::optionpage::OptionPage::load())),
+                Command::Status => self.page = Some(Page::Picker(crate::play::picker::Kind::Status, crate::play::picker::Picker { chosen: 0, count: self.party })),
+                Command::Basket => self.page = Some(Page::Basket(crate::play::basket::Basket::default())),
+                Command::Assignment => self.page = Some(Page::Assignment(crate::play::assignment::Assignment::default())),
+                Command::Journal => self.page = Some(Page::Journal(crate::play::journal::Journal::default())),
                 c @ (Command::AdventureEquip | Command::BattleEquip) => {
-                    let kind = if c == Command::BattleEquip { crate::picker::Kind::BattleEquip } else { crate::picker::Kind::AdventureEquip };
-                    self.page = Some(Page::Picker(kind, crate::picker::Picker { chosen: 0, count: kind.count(self.party) }));
+                    let kind = if c == Command::BattleEquip { crate::play::picker::Kind::BattleEquip } else { crate::play::picker::Kind::AdventureEquip };
+                    self.page = Some(Page::Picker(kind, crate::play::picker::Picker { chosen: 0, count: kind.count(self.party) }));
                 }
-                Command::Formation => self.page = Some(Page::Formation(crate::formation::Formation { chosen: 0, count: self.party })),
+                Command::Formation => self.page = Some(Page::Formation(crate::play::formation::Formation { chosen: 0, count: self.party })),
                 c => return Some(Outcome::Command(c)),
             },
         }
@@ -363,143 +363,143 @@ impl Default for Menu {
 /// window was closed). Offscreen it takes `keys`, draws once and writes the picture to `out`.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
-    target: &crate::screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    target: &crate::play::screen::Target,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
-    source: Option<&crate::overview::Source>,
+    source: Option<&crate::play::overview::Source>,
     hud: &[Element],
-    stock: &crate::basket::Stock,
-    card: &[Option<crate::assignment::Task>],
+    stock: &crate::play::basket::Stock,
+    card: &[Option<crate::play::assignment::Task>],
     keys: &[Button],
     start: Option<Start>,
     out: Option<&std::path::Path>,
-) -> crate::Result<Option<Outcome>> {
-    use crate::{hud, screen, text};
+) -> crate::play::Result<Option<Outcome>> {
+    use crate::play::{hud, screen, text};
     let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let logy = source.is_some_and(|s| s.lead == 1);
     let lead = source.and_then(|s| s.party.get(s.lead));
     let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     // The Status page: its nodes over the desk, and the lead's values.
-    let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
+    let status_nodes: Vec<Placed> = [BACKGROUND, crate::play::status::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     let item_rows = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/itemData.xml"))?)?;
-    let values = crate::status::Values::lead(&pe, logy, lead, &item_rows.children).ok_or("menu: no party tables")?;
+    let values = crate::play::status::Values::lead(&pe, logy, lead, &item_rows.children).ok_or("menu: no party tables")?;
     // The Basket page: the items the player carries, with what the game's tables say of each.
-    let table = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
+    let table = |rel: &str| -> crate::play::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
     let (status, potentials) = (table("Saves/item/item_status.xml")?, table("Saves_EN/item/item_potential.xml")?);
-    let items = crate::basket::held(stock, &crate::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children });
-    let page_layouts = crate::basketpage::Layouts::load(&pe);
+    let items = crate::play::basket::held(stock, &crate::play::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children });
+    let page_layouts = crate::play::basketpage::Layouts::load(&pe);
     let empty = (stock.limit - stock.items.len() as i32).max(0);
     let status_elements = |texts: &dyn Fn(&Placed) -> Option<Text>| {
-        let mut e: Vec<crate::hud::Element> = status_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
-        e.extend(crate::status::elements(&status_nodes, texts, &values));
+        let mut e: Vec<crate::play::hud::Element> = status_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::play::hud::Element::stored).collect();
+        e.extend(crate::play::status::elements(&status_nodes, texts, &values));
         e
     };
     // The party overview: the page the list shows when nothing is open over it.
     let ranks = barrel_escha::rank::ranks(&table("Saves/rank/RankData.xml")?);
     // The Assignment page: the period's card, the rank box's numbers and its two lines.
-    let assignment_layouts = crate::assignment::Layouts::load(&pe);
+    let assignment_layouts = crate::play::assignment::Layouts::load(&pe);
     let (sys_info, line_help) = (table("Saves_EN/systemMessage/SysInfo.xml")?, table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
-    let assignment_words = crate::assignment::Words {
-        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::assignment::HEADER_ROW).cloned().unwrap_or_default(),
-        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::assignment::FOOTER_ROW).cloned().unwrap_or_default(),
+    let assignment_words = crate::play::assignment::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::play::assignment::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::play::assignment::FOOTER_ROW).cloned().unwrap_or_default(),
     };
-    let rank_panel = source.map_or(crate::requests::Panel { icon: 0, to_next: 0 }, |s| crate::requests::Panel::of(&ranks, s.rank.0, s.rank.1));
-    let assignment_elements = |a: &crate::assignment::Assignment, tick: u32| a.elements(&pe, &assignment_layouts, &assignment_words, card, rank_panel, tick);
-    let overview = source.and_then(|s| crate::overview::Overview::of(&pe, s, &item_rows.children, &ranks));
-    let words = crate::overview::Words::read(&table("Saves_EN/systemMessage/SysInfo.xml")?, &table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
-    let screen_layouts = crate::overview::Layouts::load(&pe);
+    let rank_panel = source.map_or(crate::play::requests::Panel { icon: 0, to_next: 0 }, |s| crate::play::requests::Panel::of(&ranks, s.rank.0, s.rank.1));
+    let assignment_elements = |a: &crate::play::assignment::Assignment, tick: u32| a.elements(&pe, &assignment_layouts, &assignment_words, card, rank_panel, tick);
+    let overview = source.and_then(|s| crate::play::overview::Overview::of(&pe, s, &item_rows.children, &ranks));
+    let words = crate::play::overview::Words::read(&table("Saves_EN/systemMessage/SysInfo.xml")?, &table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
+    let screen_layouts = crate::play::overview::Layouts::load(&pe);
     let cursor = screen_layouts.cursor;
-    let page_words = crate::basketpage::Words { header: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/SysInfo.xml")?, "Text").get(crate::basketpage::HEADER_ROW).cloned().unwrap_or_default(), footer: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/Menu_Line_Help.xml")?, "LineHelp").get(crate::basketpage::FOOTER_ROW).cloned().unwrap_or_default() };
-    let basket_elements = |b: &crate::basket::Basket, tick: u32| crate::basketpage::elements(&pe, &page_layouts, &page_words, b, &items, empty, tick);
+    let page_words = crate::play::basketpage::Words { header: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/SysInfo.xml")?, "Text").get(crate::play::basketpage::HEADER_ROW).cloned().unwrap_or_default(), footer: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/Menu_Line_Help.xml")?, "LineHelp").get(crate::play::basketpage::FOOTER_ROW).cloned().unwrap_or_default() };
+    let basket_elements = |b: &crate::play::basket::Basket, tick: u32| crate::play::basketpage::elements(&pe, &page_layouts, &page_words, b, &items, empty, tick);
     // The Journal page: its tabs, with the badges when the save has library marks clear.
-    let journal_layouts = crate::journal::Layouts::load(&pe);
-    let journal_words = crate::journal::Words {
-        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::journal::HEADER_ROW).cloned().unwrap_or_default(),
-        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::journal::FOOTER_ROW).cloned().unwrap_or_default(),
+    let journal_layouts = crate::play::journal::Layouts::load(&pe);
+    let journal_words = crate::play::journal::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::play::journal::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::play::journal::FOOTER_ROW).cloned().unwrap_or_default(),
     };
     let library_new = source.is_some_and(|s| s.library_new);
-    let journal_elements = |j: &crate::journal::Journal, tick: u32| crate::journal::elements(&pe, &journal_layouts, &journal_words, j, library_new, tick);
+    let journal_elements = |j: &crate::play::journal::Journal, tick: u32| crate::play::journal::elements(&pe, &journal_layouts, &journal_words, j, library_new, tick);
     // The Option command's page: the Options screen, drawn over the overview.
-    let option_layouts = crate::optionpage::Layouts::load(&pe);
-    let option_words = crate::optionpage::Words {
-        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::optionpage::HEADER_ROW).cloned().unwrap_or_default(),
-        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::optionpage::FOOTER_ROW).cloned().unwrap_or_default(),
+    let option_layouts = crate::play::optionpage::Layouts::load(&pe);
+    let option_words = crate::play::optionpage::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::play::optionpage::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::play::optionpage::FOOTER_ROW).cloned().unwrap_or_default(),
     };
-    let option_elements = |o: &crate::optionpage::OptionPage, tick: u32| crate::optionpage::elements(&pe, &option_layouts, &option_words, o, tick);
+    let option_elements = |o: &crate::play::optionpage::OptionPage, tick: u32| crate::play::optionpage::elements(&pe, &option_layouts, &option_words, o, tick);
     // The character picker and the Formation page: the party in the squad's order (the lead and
     // the other alchemist when the save has none), each with its face and values.
     let sys_lines = barrel_escha::data::sys_text::lines(&sys_info, "Text");
     let help_lines = barrel_escha::data::sys_text::lines(&line_help, "LineHelp");
-    let words_at = |header: usize, footer: usize| crate::picker::Words { header: sys_lines.get(header).cloned().unwrap_or_default(), footer: help_lines.get(footer).cloned().unwrap_or_default() };
-    let (picker_words, formation_words) = (words_at(crate::picker::HEADER_ROW, crate::picker::FOOTER_ROW), words_at(crate::formation::HEADER_ROW, crate::formation::FOOTER_ROW));
+    let words_at = |header: usize, footer: usize| crate::play::picker::Words { header: sys_lines.get(header).cloned().unwrap_or_default(), footer: help_lines.get(footer).cloned().unwrap_or_default() };
+    let (picker_words, formation_words) = (words_at(crate::play::picker::HEADER_ROW, crate::play::picker::FOOTER_ROW), words_at(crate::play::formation::HEADER_ROW, crate::play::formation::FOOTER_ROW));
     let lead_character = source.map_or(0, |s| s.lead);
-    let party: Vec<crate::formation::Member> = source.map_or_else(Vec::new, |s| {
+    let party: Vec<crate::play::formation::Member> = source.map_or_else(Vec::new, |s| {
         let order: Vec<usize> = if s.squad.is_empty() { (0..2).collect() } else { s.squad.to_vec() };
-        order.into_iter().filter_map(|c| Some(crate::formation::Member { face: crate::overview::Face::of(&pe, s, &item_rows.children, c)?, values: crate::status::Values::of(&pe, c, s.party.get(c), &item_rows.children)? })).collect()
+        order.into_iter().filter_map(|c| Some(crate::play::formation::Member { face: crate::play::overview::Face::of(&pe, s, &item_rows.children, c)?, values: crate::play::status::Values::of(&pe, c, s.party.get(c), &item_rows.children)? })).collect()
     });
-    let picker_layouts = crate::picker::Layouts::load(&pe);
-    let formation_layouts = crate::formation::Layouts::load(&pe);
-    let picker_elements = |k: crate::picker::Kind, v: &crate::picker::Picker, tick: u32, age: u32| {
-        let faces: Vec<crate::overview::Face> = party.iter().map(|m| &m.face).filter(|f| k.lists(&[f.character as usize]).len() == 1).cloned().collect();
-        crate::picker::elements(&pe, &picker_layouts, &picker_words, k, v, &faces, lead_character, tick, age)
+    let picker_layouts = crate::play::picker::Layouts::load(&pe);
+    let formation_layouts = crate::play::formation::Layouts::load(&pe);
+    let picker_elements = |k: crate::play::picker::Kind, v: &crate::play::picker::Picker, tick: u32, age: u32| {
+        let faces: Vec<crate::play::overview::Face> = party.iter().map(|m| &m.face).filter(|f| k.lists(&[f.character as usize]).len() == 1).cloned().collect();
+        crate::play::picker::elements(&pe, &picker_layouts, &picker_words, k, v, &faces, lead_character, tick, age)
     };
-    let status_layouts = crate::statuspage::Layouts::load(&pe);
-    let status_words = words_at(crate::statuspage::HEADER_ROW, crate::statuspage::FOOTER_ROW);
+    let status_layouts = crate::play::statuspage::Layouts::load(&pe);
+    let status_words = words_at(crate::play::statuspage::HEADER_ROW, crate::play::statuspage::FOOTER_ROW);
     // Battle Equip.: what the chosen member wears, each slot's item with its card's lines.
-    let equip_layouts = crate::battleequip::Layouts::load(&pe);
-    let equip_words = words_at(crate::battleequip::HEADER_ROW, crate::battleequip::FOOTER_ROW);
-    let catalog = crate::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children };
-    let worn_items = |c: usize| -> [Option<crate::basket::Item>; 4] {
+    let equip_layouts = crate::play::battleequip::Layouts::load(&pe);
+    let equip_words = words_at(crate::play::battleequip::HEADER_ROW, crate::play::battleequip::FOOTER_ROW);
+    let catalog = crate::play::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children };
+    let worn_items = |c: usize| -> [Option<crate::play::basket::Item>; 4] {
         let held = |w: &barrel_escha::session::WornItem| {
             let got = barrel_escha::gather::Got { item: w.item, quality: w.quality, traits: w.traits.clone() };
-            crate::basket::held(&crate::basket::Stock { items: vec![got], limit: 0, container: Vec::new() }, &catalog).pop()
+            crate::play::basket::held(&crate::play::basket::Stock { items: vec![got], limit: 0, container: Vec::new() }, &catalog).pop()
         };
         let member = source.and_then(|s| s.party.get(c));
         std::array::from_fn(|k| member.and_then(|m| m.worn[k].as_ref()).and_then(held))
     };
     // Adventure Equip.: the member's field gear (the battle items they carry).
     let effect_rows = table("Saves_EN/item/item_effect.xml")?;
-    let adventure_layouts = crate::adventureequip::Layouts::load(&pe);
-    let adventure_words = words_at(crate::adventureequip::HEADER_ROW, crate::adventureequip::FOOTER_ROW);
-    let adventure_worn = |c: usize, name: &str| -> crate::adventureequip::Worn {
+    let adventure_layouts = crate::play::adventureequip::Layouts::load(&pe);
+    let adventure_words = words_at(crate::play::adventureequip::HEADER_ROW, crate::play::adventureequip::FOOTER_ROW);
+    let adventure_worn = |c: usize, name: &str| -> crate::play::adventureequip::Worn {
         let gear = source.and_then(|s| s.party.get(c)).map_or_else(Vec::new, |m| {
             m.battle_items.iter().filter_map(|b| {
                 let got = barrel_escha::gather::Got { item: b.item, quality: b.quality, traits: b.traits.clone() };
-                let mut item = crate::basket::held(&crate::basket::Stock { items: vec![got], limit: 0, container: Vec::new() }, &catalog).pop()?;
+                let mut item = crate::play::basket::held(&crate::play::basket::Stock { items: vec![got], limit: 0, container: Vec::new() }, &catalog).pop()?;
                 // The item's effect lines: the names of the item effect rows it carries.
                 item.effects = b.effects.iter().filter_map(|&e| Some(effect_rows.children.get(usize::try_from(e).ok()?)?.attr("ItemEffectName")?.to_string())).collect();
                 let row = item_rows.children.get(usize::try_from(b.item).ok()?)?;
-                Some(crate::adventureequip::Gear { span: row.attr("EquipCost").and_then(|v| v.parse().ok()).unwrap_or(1), uses: b.uses, item })
+                Some(crate::play::adventureequip::Gear { span: row.attr("EquipCost").and_then(|v| v.parse().ok()).unwrap_or(1), uses: b.uses, item })
             }).collect()
         });
-        crate::adventureequip::Worn { name: name.into(), gear }
+        crate::play::adventureequip::Worn { name: name.into(), gear }
     };
-    let member_elements = |k: crate::picker::Kind, chosen: usize, tick: u32, age: u32| match k {
-        crate::picker::Kind::Status => crate::statuspage::elements(&pe, &status_layouts, &status_words, &party, chosen, lead_character),
-        crate::picker::Kind::AdventureEquip => match party.get(chosen) {
-            Some(m) => crate::adventureequip::elements(&pe, &adventure_layouts, &adventure_words, &adventure_worn(m.face.character as usize, &m.face.name), 0, tick, age),
+    let member_elements = |k: crate::play::picker::Kind, chosen: usize, tick: u32, age: u32| match k {
+        crate::play::picker::Kind::Status => crate::play::statuspage::elements(&pe, &status_layouts, &status_words, &party, chosen, lead_character),
+        crate::play::picker::Kind::AdventureEquip => match party.get(chosen) {
+            Some(m) => crate::play::adventureequip::elements(&pe, &adventure_layouts, &adventure_words, &adventure_worn(m.face.character as usize, &m.face.name), 0, tick, age),
             None => Vec::new(),
         },
-        crate::picker::Kind::BattleEquip => match party.get(chosen) {
+        crate::play::picker::Kind::BattleEquip => match party.get(chosen) {
             Some(m) => {
-                let w = crate::battleequip::Worn { member: crate::formation::Member { face: m.face.clone(), values: m.values.clone() }, slots: worn_items(m.face.character as usize) };
-                crate::battleequip::elements(&pe, &equip_layouts, &equip_words, &w, 0, lead_character, tick, age)
+                let w = crate::play::battleequip::Worn { member: crate::play::formation::Member { face: m.face.clone(), values: m.values.clone() }, slots: worn_items(m.face.character as usize) };
+                crate::play::battleequip::elements(&pe, &equip_layouts, &equip_words, &w, 0, lead_character, tick, age)
             }
             None => Vec::new(),
         },
         _ => Vec::new(),
     };
-    let formation_elements = |f: &crate::formation::Formation, tick: u32| crate::formation::elements(&pe, &formation_layouts, &formation_words, f, &party, lead_character, tick);
+    let formation_elements = |f: &crate::play::formation::Formation, tick: u32| crate::play::formation::elements(&pe, &formation_layouts, &formation_words, f, &party, lead_character, tick);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
-    let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
-        let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
+    let overview_elements = |m: &Menu, v: &crate::play::overview::Overview| {
+        let mut e = crate::play::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
         e.extend(hud.iter().cloned());
         // The cursor's glow over the chosen button, drawn last.
-        e.extend(crate::overview::cursor(&screen_layouts, m));
+        e.extend(crate::play::overview::cursor(&screen_layouts, m));
         e
     };
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("menu: no glyph table")?;
@@ -519,7 +519,7 @@ pub fn run(
     }
     every.extend(status_elements(&texts));
     // Every cut the flipbooks turn through: the buttons' frames and badges, the pages' glows.
-    every.extend(crate::kit::flip_elements(&nodes));
+    every.extend(crate::play::kit::flip_elements(&nodes));
     every.extend(page_layouts.flips());
     every.extend(assignment_layouts.flips());
     every.extend(journal_layouts.flips());
@@ -529,44 +529,44 @@ pub fn run(
     every.extend(equip_layouts.flips());
     every.extend(adventure_layouts.flips());
     for chosen in 0..party.len().max(1) {
-        for k in [crate::picker::Kind::AdventureEquip, crate::picker::Kind::BattleEquip, crate::picker::Kind::Status] {
-            every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0, 0));
+        for k in [crate::play::picker::Kind::AdventureEquip, crate::play::picker::Kind::BattleEquip, crate::play::picker::Kind::Status] {
+            every.extend(picker_elements(k, &crate::play::picker::Picker { chosen, count: party.len() }, 0, 0));
         }
-        every.extend(formation_elements(&crate::formation::Formation { chosen, count: party.len() }, 0));
-        every.extend(member_elements(crate::picker::Kind::Status, chosen, 0, 0));
-        every.extend(member_elements(crate::picker::Kind::BattleEquip, chosen, 0, 0));
-        every.extend(member_elements(crate::picker::Kind::AdventureEquip, chosen, 0, 0));
+        every.extend(formation_elements(&crate::play::formation::Formation { chosen, count: party.len() }, 0));
+        every.extend(member_elements(crate::play::picker::Kind::Status, chosen, 0, 0));
+        every.extend(member_elements(crate::play::picker::Kind::BattleEquip, chosen, 0, 0));
+        every.extend(member_elements(crate::play::picker::Kind::AdventureEquip, chosen, 0, 0));
     }
-    every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
-    if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
+    every.extend(cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)));
+    if let Some(v) = overview.as_ref().map(|v| crate::play::overview::Overview { new_journal: true, ..v.clone() }) {
         for chosen in 0..COMMANDS.len() {
             every.extend(overview_elements(&Menu { chosen, first: chosen.saturating_sub(VISIBLE - 1), ..Menu::new() }, &v));
         }
     }
     // Every item's card.
     for chosen in 0..items.len().max(1) {
-        for first in [0, chosen / crate::basket::COLUMNS] {
-            every.extend(basket_elements(&crate::basket::Basket { chosen, first }, 0));
+        for first in [0, chosen / crate::play::basket::COLUMNS] {
+            every.extend(basket_elements(&crate::play::basket::Basket { chosen, first }, 0));
         }
     }
     for chosen in 0..25 {
-        every.extend(assignment_elements(&crate::assignment::Assignment { chosen }, 0));
+        every.extend(assignment_elements(&crate::play::assignment::Assignment { chosen }, 0));
     }
-    for chosen in 0..crate::journal::ROWS {
-        every.extend(journal_elements(&crate::journal::Journal { chosen }, 0));
+    for chosen in 0..crate::play::journal::ROWS {
+        every.extend(journal_elements(&crate::play::journal::Journal { chosen }, 0));
     }
     for chosen in 0..11 {
         for flags in 0..4 {
-            every.extend(option_elements(&crate::optionpage::OptionPage { chosen, fast_forward_all: flags & 1 == 0, english: flags & 2 == 0, ..Default::default() }, 0));
+            every.extend(option_elements(&crate::play::optionpage::OptionPage { chosen, fast_forward_all: flags & 1 == 0, english: flags & 2 == 0, ..Default::default() }, 0));
         }
     }
     // Every task icon, plain and lit.
-    every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
+    every.extend((5..=15).map(|cut| crate::play::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
     // Every digit the numbers may show.
-    every.extend((0..13).map(|cut| crate::hud::Element::Sprite { part: 0x4e, cut, at: [0, 0] }));
+    every.extend((0..13).map(|cut| crate::play::hud::Element::Sprite { part: 0x4e, cut, at: [0, 0] }));
     let keys_needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys_needed)?;
-    let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::Result<Vec<_>>>()?;
+    let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::play::Result<Vec<_>>>()?;
     let mut images = vec![&atlas.textures[0]];
     let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
     for (name, index) in keys_needed {
@@ -585,7 +585,7 @@ pub fn run(
             // The game draws the menu's overview first and the Options screen over it.
             Some(Page::Option(o)) => {
                 let mut e = match overview.as_ref() {
-                    Some(v) => crate::overview::body(&pe, &screen_layouts, &Menu { page: None, ..*m }, v, &texts),
+                    Some(v) => crate::play::overview::body(&pe, &screen_layouts, &Menu { page: None, ..*m }, v, &texts),
                     None => m.elements(&nodes, texts),
                 };
                 e.extend(option_elements(&o, m.tick));
@@ -637,7 +637,7 @@ mod tests {
         let mut m = Menu::at(Start::System);
         assert_eq!((COMMANDS[m.chosen], m.option), (Command::Option, Some(0)));
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
-        let mut m = Menu::at(Start::Page(Page::Assignment(crate::assignment::Assignment::default())));
+        let mut m = Menu::at(Start::Page(Page::Assignment(crate::play::assignment::Assignment::default())));
         assert_eq!(COMMANDS[m.chosen], Command::Assignment);
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
         let mut m = Menu::new();
@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(m.page, None);
         m.press(Button::Down, 0);
         assert_eq!(m.press(Button::Confirm, 0), None);
-        assert!(matches!(m.page, Some(Page::Picker(crate::picker::Kind::AdventureEquip, _))));
+        assert!(matches!(m.page, Some(Page::Picker(crate::play::picker::Kind::AdventureEquip, _))));
         assert_eq!(m.press(Button::Back, 0), None);
         assert_eq!(m.page, None);
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));

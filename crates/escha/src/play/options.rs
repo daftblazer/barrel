@@ -21,14 +21,14 @@ use std::path::Path;
 use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_formats::pe::Pe;
 
-use crate::graphics_options::{self as g, Row};
-use crate::hud::{self, Element};
-use crate::screen;
-use crate::settings::{Display, RenderSettings, WINDOW_SIZES};
-use crate::kit::raised;
-use crate::optionpage::{self, Layouts, Leave, OptionPage, Words};
-use crate::title::Button;
-use crate::{Result, text};
+use crate::play::graphics_options::{self as g, Row};
+use crate::play::hud::{self, Element};
+use crate::play::screen;
+use crate::play::settings::{Display, RenderSettings, WINDOW_SIZES};
+use crate::play::kit::raised;
+use crate::play::optionpage::{self, Layouts, Leave, OptionPage, Words};
+use crate::play::title::Button;
+use crate::play::{Result, text};
 
 const SCREEN: u32 = 511;
 /// The game's row bar and button plates and its text part (layout 408).
@@ -303,10 +303,10 @@ impl Screen {
 /// the settings chosen, if kept.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
     target: &screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
     now: Settings,

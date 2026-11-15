@@ -33,9 +33,9 @@ use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_escha::data::subject::SavedSubject;
 use barrel_formats::pe::Pe;
 
-use crate::hud::Element;
-use crate::kit::{number, raised};
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::kit::{number, raised};
+use crate::play::title::Button;
 
 pub const LAYOUT: u32 = 430;
 const BACKGROUND: u32 = 383;
@@ -132,7 +132,7 @@ impl Task {
 
 /// The period's card for day `today`: 25 squares, row by row (`seen` says whether an event has
 /// been seen, `subjects` the save's records by `SubjectData` row).
-pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool, subjects: &[SavedSubject]) -> crate::Result<Vec<Option<Task>>> {
+pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool, subjects: &[SavedSubject]) -> crate::play::Result<Vec<Option<Task>>> {
     let mut squares: Vec<Option<Task>> = vec![None; SIDE * SIDE];
     let Some(k) = barrel_escha::calendar::period(today) else { return Ok(squares) };
     let tag = format!("CARD_{k:02}");
@@ -237,14 +237,14 @@ const RANK_BOX: u32 = 527;
 impl Layouts {
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        let mut out = crate::kit::flip_elements(&self.screen);
-        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
+        let mut out = crate::play::kit::flip_elements(&self.screen);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(CURSOR, f)));
         out
     }
 
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), rank: get(RANK_BOX), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), rank: get(RANK_BOX), cursor: crate::play::kit::cursor_glow(pe) }
     }
 }
 
@@ -271,7 +271,7 @@ impl Assignment {
 
     /// All the page's elements over the period's `card`; `rank` the rank box's icon and the
     /// points to the next rank; `tick` the clock's 60 Hz ticks (the glows' and frames' flipbooks).
-    pub fn elements(&self, pe: &Pe, l: &Layouts, words: &Words, card: &[Option<Task>], rank: crate::requests::Panel, tick: u32) -> Vec<Element> {
+    pub fn elements(&self, pe: &Pe, l: &Layouts, words: &Words, card: &[Option<Task>], rank: crate::play::requests::Panel, tick: u32) -> Vec<Element> {
         let line = |nodes: &[Placed], text: &str| -> Vec<Element> {
             nodes.iter().flat_map(|p| match layout::text(pe, p) {
                 Some(t) => vec![raised(t, text)],
@@ -321,7 +321,7 @@ impl Assignment {
                 let plain_text = layout::text(pe, p).is_some_and(|t| t.colour[0] == 0);
                 match (pass, n.part) {
                     // First both tabs, greyed: the plate and the plain text.
-                    (1, TEXT) if plain_text => out.extend(layout::text(pe, p).map(|t| Element::Label(Text { at: [t.at[0], t.at[1] - crate::hud::TEXT_RISE], colour: [0xff, GREY[0], GREY[1], GREY[2]], ..t }))),
+                    (1, TEXT) if plain_text => out.extend(layout::text(pe, p).map(|t| Element::Label(Text { at: [t.at[0], t.at[1] - crate::play::hud::TEXT_RISE], colour: [0xff, GREY[0], GREY[1], GREY[2]], ..t }))),
                     (1, TEXT) => {}
                     (1, _) => out.push(Element::Tinted { part: n.part, cut: n.cut, at: p.at, rgb: GREY }),
                     // Then the open tab, Tasks, with both its texts.
@@ -442,7 +442,7 @@ impl Assignment {
             return match (n.part, n.cut) {
                 (0x63, _) => vec![Element::stored(p)],
                 (0x4f, _) if n.kind == 29 => number(pe, p, 1),
-                (0x4f, 12) => vec![Element::Tinted { part: 0x4f, cut: 12, at: p.at, rgb: crate::kit::ink(pe, p) }],
+                (0x4f, 12) => vec![Element::Tinted { part: 0x4f, cut: 12, at: p.at, rgb: crate::play::kit::ink(pe, p) }],
                 _ => Vec::new(),
             };
         }

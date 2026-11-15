@@ -1,7 +1,9 @@
 //! `barrel-escha`: draw one model offscreen with Vulkan and write the frame as PNG.
 //!
+//! ```text
 //!     barrel-escha MODEL.elixir.gz#N TEXTURES.elixir.gz#N OUT.png [--size N] [--yaw DEG]
 //!     barrel-escha --field FIELD_DIR OUT.png [--size N] [--yaw DEG]
+//! ```
 //!
 //! The second form draws every object a field's placement list puts down, each with its
 //! model from the field's `_Obj` container and the field's shared textures.
@@ -3403,16 +3405,27 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, battles, battle_play, town_bodies, start_at, start_field, patterns, walker })
 }
 
+pub fn main() -> Result<()> {
+    run(std::env::args().skip(1).collect(), None)
+}
+
+/// Plays Escha with `args`, the command line after the program's name. `chosen` is the install
+/// the `barrel` program found and set up (`locate::start`); without it this finds the game
+/// itself: `--game DIR`, the one the command line's paths are in (Kintsugi's `--title FOLDER`),
+/// `BARREL_GAME_DIR`, the config's, Steam's, else the "Locate game files" screen
+/// (`barrel_render::locate::resolve`). Every game file is read through the layers over it.
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
-fn main() -> Result<()> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    // The game's install: `--game DIR`, the one the command line's paths are in (Kintsugi's
-    // `--title FOLDER`), `BARREL_GAME_DIR`, the config's, Steam's, else the "Locate game files"
-    // screen (`barrel_render::locate::resolve`). Every game file is read through the layers over it.
-    let given = locate::take_option(&mut args, "--game").map(PathBuf::from);
-    // Steam's launch option `barrel-escha %command%` hands over the game's own program.
-    let launched = locate::take_game_program(&mut args);
-    let Some(game) = locate::resolve(barrel_files::find::Title::Escha, given, install_in_args(&args).or(launched))? else { return Ok(()) };
+pub fn run(mut args: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
+    let game = match chosen {
+        Some(game) => game,
+        None => {
+            let given = locate::take_option(&mut args, "--game").map(PathBuf::from);
+            // Steam's launch option `barrel-escha %command%` hands over the game's own program.
+            let launched = locate::take_game_program(&mut args);
+            let Some(game) = locate::resolve(barrel_files::find::Title::Escha, given, install_in_args(&args).or(launched))? else { return Ok(()) };
+            game
+        }
+    };
     let mut pump = game.pump;
     // No scene on the command line: the game itself, from its title screen, in a window.
     if args.first().is_none_or(|a| a != "--field" && a.starts_with("--")) {
@@ -3878,7 +3891,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
 
     // Barrel's graphics config, when there is one (`settings::RenderSettings::config_path`).
-    let config_text = settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok());
+    let config_text = barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok());
     // With no config yet, a launcher's defaults (Kintsugi's `run` on a handheld):
     // `BARREL_DEFAULT_FULLSCREEN=1` and `BARREL_DEFAULT_PRESET=NAME` (see `--preset`).
     let display_settings = config_text.as_deref().map_or_else(
@@ -3929,7 +3942,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if !has_settings_flags(&original_args)
         && (window_frames.is_some() || std::env::var_os("BARREL_CONFIG").is_some())
     {
-        match settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok()) {
+        match barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok()) {
             Some(text) => {
                 settings = settings::RenderSettings::from_config(&text);
                 eprintln!("graphics from the config: {settings:?}");

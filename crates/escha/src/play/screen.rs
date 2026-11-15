@@ -6,8 +6,8 @@ use std::path::Path;
 
 use ash::vk;
 
-use crate::title::{button, Button};
-use crate::{text, Gpu, Result};
+use crate::play::title::{button, Button};
+use crate::play::{text, Gpu, Result};
 
 /// Where a screen draws: the post pass and its framebuffers (the window's images, or the one
 /// offscreen image), and the screen's size.
@@ -27,7 +27,7 @@ pub fn run<S: Clone + PartialEq, O>(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<vk::Image>,
     images: &[&barrel_formats::g1t::Texture],
     state: &mut S,
@@ -74,7 +74,7 @@ pub fn run_with<S: Clone + PartialEq, O>(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<vk::Image>,
     images: &[&barrel_formats::g1t::Texture],
     state: &mut S,
@@ -96,7 +96,7 @@ pub fn run_clocked<S: Clone + PartialEq, O>(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<vk::Image>,
     images: &[&barrel_formats::g1t::Texture],
     state: &mut S,
@@ -114,7 +114,7 @@ fn run_inner<S: Clone + PartialEq, O>(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<vk::Image>,
     images: &[&barrel_formats::g1t::Texture],
     state: &mut S,
@@ -265,10 +265,10 @@ fn run_inner<S: Clone + PartialEq, O>(
 }
 
 /// The (pack, picture) keys of the sprites among `elements`, each once.
-pub fn sheet_keys(pe: &barrel_formats::pe::Pe, elements: impl IntoIterator<Item = crate::hud::Element>) -> Vec<(String, u32)> {
+pub fn sheet_keys(pe: &barrel_formats::pe::Pe, elements: impl IntoIterator<Item = crate::play::hud::Element>) -> Vec<(String, u32)> {
     let mut keys: Vec<(String, u32)> = Vec::new();
     for e in elements {
-        if let crate::hud::Element::Picture { pack, index, .. } | crate::hud::Element::Slice { pack, index, .. } | crate::hud::Element::InkedSlice { pack, index, .. } = &e {
+        if let crate::play::hud::Element::Picture { pack, index, .. } | crate::play::hud::Element::Slice { pack, index, .. } | crate::play::hud::Element::InkedSlice { pack, index, .. } = &e {
             let key = (pack.clone(), *index);
             if !keys.contains(&key) {
                 keys.push(key);

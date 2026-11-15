@@ -1,10 +1,12 @@
 //! `barrel-ryza`: Atelier Ryza DX on Barrel. For now it draws one field offscreen:
 //!
+//! ```text
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
 //!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG] [--draw-ranges pc|nx|off]
+//! ```
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
@@ -300,15 +302,26 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
     eprintln!("plants: {} in {} draws", plants.len(), blocks.len());
 }
 
-fn main() -> Result<()> {
-    let mut raw: Vec<String> = std::env::args().skip(1).collect();
-    // The game's install: `--game DIR`, the command line's INSTALL, `BARREL_GAME_DIR`, the config's,
-    // Steam's, else the "Locate game files" screen; every game file is read through the layers
-    // over it (`barrel_files`).
-    let given = locate::take_option(&mut raw, "--game").map(std::path::PathBuf::from);
-    let launched = locate::take_game_program(&mut raw);
-    let named = raw.first().filter(|a| !a.starts_with("--")).map(std::path::PathBuf::from).or(launched);
-    let Some(game) = locate::resolve(barrel_files::find::Title::Ryza, given, named)? else { return Ok(()) };
+pub fn main() -> Result<()> {
+    run(std::env::args().skip(1).collect(), None)
+}
+
+/// Plays Ryza with `raw`, the command line after the program's name. `chosen` is the install the
+/// `barrel` program found and set up (`locate::start`); without it this finds the game itself:
+/// `--game DIR`, the command line's INSTALL, `BARREL_GAME_DIR`, the config's, Steam's, else the
+/// "Locate game files" screen; every game file is read through the layers over it
+/// (`barrel_files`).
+pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
+    let game = match chosen {
+        Some(game) => game,
+        None => {
+            let given = locate::take_option(&mut raw, "--game").map(std::path::PathBuf::from);
+            let launched = locate::take_game_program(&mut raw);
+            let named = raw.first().filter(|a| !a.starts_with("--")).map(std::path::PathBuf::from).or(launched);
+            let Some(game) = locate::resolve(barrel_files::find::Title::Ryza, given, named)? else { return Ok(()) };
+            game
+        }
+    };
     let mut kept_pump = game.pump;
     // No scene on the command line: Ryza walking Rasenboden from her garden gate, in a window.
     if raw.first().is_none_or(|a| a.starts_with("--")) {
@@ -319,7 +332,7 @@ fn main() -> Result<()> {
     // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
     // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
-    let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
+    let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
     let graphics = a
         .preset
         .or(config.as_deref().map(RenderSettings::from_config))

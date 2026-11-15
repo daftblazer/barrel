@@ -52,7 +52,7 @@ The magic numbers are KTGL's own, byte-reversed (`_M1G` is G1M_).
 ## Textures (`*.g1t`)
 
 Read by `barrel_formats::g1t`. Escha's 1,830 texture packs, loose and inside containers,
-hold 8,778 textures, and all of them read. `barrel g1t FILE OUTDIR` writes a pack as PNG
+hold 8,778 textures, and all of them read. `barrel-tool g1t FILE OUTDIR` writes a pack as PNG
 files (`FILE.elixir.gz#N` names entry N of a container); `barrel g1t-scan DIR` reads every
 pack. The decoded textures were checked by eye (an item's texture and a battle UI sheet).
 

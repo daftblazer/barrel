@@ -195,14 +195,10 @@ impl RenderSettings {
         s.resolved()
     }
 
-    /// Where the config lives: `BARREL_CONFIG`, else `$XDG_CONFIG_HOME/barrel/graphics.conf`
-    /// (`~/.config/barrel/graphics.conf`).
+    /// Where the config lives: `BARREL_CONFIG`, else `graphics.conf` in the game's config folder
+    /// (`~/.config/barrel/<game>/graphics.conf`, see `barrel_files::config`).
     pub fn config_path() -> Option<std::path::PathBuf> {
-        if let Some(p) = std::env::var_os("BARREL_CONFIG") {
-            return Some(p.into());
-        }
-        let base = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config")))?;
-        Some(base.join("barrel/graphics.conf"))
+        barrel_files::config::graphics_path()
     }
 }
 

@@ -27,8 +27,8 @@ use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_escha::session::Member;
 use barrel_formats::pe::Pe;
 
-use crate::hud::{Element, TEXT_RISE};
-use crate::menu::{Command, Menu, COMMANDS};
+use crate::play::hud::{Element, TEXT_RISE};
+use crate::play::menu::{Command, Menu, COMMANDS};
 
 pub const LAYOUT: u32 = 385;
 const HEADER: u32 = 371;
@@ -75,7 +75,7 @@ pub struct Face {
 impl Face {
     /// Character `c` (a party member number) from `source` and the game's tables.
     pub fn of(pe: &Pe, source: &Source, items: &[barrel_formats::table::Element], c: usize) -> Option<Face> {
-        let v = crate::status::Values::of(pe, c, source.party.get(c), items)?;
+        let v = crate::play::status::Values::of(pe, c, source.party.get(c), items)?;
         Some(Face { name: v.name, character: c as i32, level: v.level, hp: v.hp, mp: v.mp, next: v.next, friend: source.friendship.get(c).map_or(0, |&f| f as i32) })
     }
 }
@@ -148,7 +148,7 @@ pub struct Layouts {
 
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
-        Layouts { screen: layout::placed(pe, LAYOUT), header: layout::placed(pe, HEADER), footer: layout::placed(pe, FOOTER), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { screen: layout::placed(pe, LAYOUT), header: layout::placed(pe, HEADER), footer: layout::placed(pe, FOOTER), cursor: crate::play::kit::cursor_glow(pe) }
     }
 }
 
@@ -162,8 +162,8 @@ pub fn cursor(l: &Layouts, menu: &Menu) -> Option<Element> {
     if menu.option.is_some() {
         return None;
     }
-    let plate = l.screen.iter().filter(|p| p.path.get(1) == Some(&BUTTON) && p.node.part == crate::menu::PLATE).nth(menu.chosen.checked_sub(menu.first)?)?;
-    Some(Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(menu.tick)), at: [plate.at[0] + CURSOR_FROM_PLATE[0], plate.at[1] + CURSOR_FROM_PLATE[1]] })
+    let plate = l.screen.iter().filter(|p| p.path.get(1) == Some(&BUTTON) && p.node.part == crate::play::menu::PLATE).nth(menu.chosen.checked_sub(menu.first)?)?;
+    Some(Element::Sprite { part: crate::play::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(menu.tick)), at: [plate.at[0] + CURSOR_FROM_PLATE[0], plate.at[1] + CURSOR_FROM_PLATE[1]] })
 }
 
 /// The header (the chosen command's help) and footer lines.
@@ -285,7 +285,7 @@ pub fn body(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, texts: &impl Fn(&Pl
     let mut ranked = false;
     for p in page.iter().filter(|p| p.path.get(2) == Some(&BOOK_HOLDER)) {
         match p.path.get(3) {
-            Some(&BOOK) if p.node.kind == BAR_KIND => out.extend(crate::kit::horizontal_bar(pe, p.node.part, p.at, layout::word(pe, p, 5).unwrap_or(0))),
+            Some(&BOOK) if p.node.kind == BAR_KIND => out.extend(crate::play::kit::horizontal_bar(pe, p.node.part, p.at, layout::word(pe, p, 5).unwrap_or(0))),
             Some(&BOOK) => out.push(Element::stored(p)),
             Some(&RANK) => match (p.node.part, p.node.kind) {
                 // The first icon's place shows the rank's; the other places stay empty.

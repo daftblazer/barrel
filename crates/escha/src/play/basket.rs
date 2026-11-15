@@ -10,8 +10,8 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::Element;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::title::Button;
 
 pub const GRID: u32 = 456;
 const TAB: u32 = 457;

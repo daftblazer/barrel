@@ -13,10 +13,10 @@ use barrel_escha::data::layout::Text;
 use barrel_escha::cauldron::Book;
 use barrel_escha::gather::Got;
 
-use crate::hud::{self, Element};
-use crate::screen;
-use crate::title::Button;
-use crate::{Result, text};
+use crate::play::hud::{self, Element};
+use crate::play::screen;
+use crate::play::title::Button;
+use crate::play::{Result, text};
 
 const TITLE_AT: [i32; 2] = [180, 120];
 const LIST_AT: [i32; 2] = [180, 200];
@@ -129,10 +129,10 @@ impl Mix {
 /// Runs the screen over the desk; the recipe and picks to make, if one was made.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
     target: &screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
     book: &Book,
@@ -146,7 +146,7 @@ pub fn run(
     let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("synthesis: an empty font atlas")?.width as f32 };
-    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::play::menu::BACKGROUND).iter().map(Element::stored).collect();
     let keys_needed = screen::sheet_keys(&pe, desk.clone());
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;

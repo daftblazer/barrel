@@ -15,8 +15,8 @@ use std::path::Path;
 
 use ash::vk;
 
-use crate::hud::{self, Element};
-use crate::{text, Gpu, Result};
+use crate::play::hud::{self, Element};
+use crate::play::{text, Gpu, Result};
 
 /// Still picture of the title's background.
 pub const BACKGROUND: u32 = 9;
@@ -121,8 +121,8 @@ fn all_elements() -> Vec<Element> {
 #[derive(Clone, Debug, PartialEq)]
 enum Front {
     Title(Title),
-    Hero(crate::hero::Hero),
-    Load(crate::loadlist::LoadList),
+    Hero(crate::play::hero::Hero),
+    Load(crate::play::loadlist::LoadList),
 }
 
 /// How the screens before play ended.
@@ -141,19 +141,19 @@ impl Front {
     fn press(&mut self, b: Button, saves: Option<&Path>) -> Option<Start> {
         match self {
             Front::Title(t) => match t.press(b)? {
-                Entry::NewGame => *self = Front::Hero(crate::hero::Hero::new()),
-                Entry::LoadGame => *self = Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())),
+                Entry::NewGame => *self = Front::Hero(crate::play::hero::Hero::new()),
+                Entry::LoadGame => *self = Front::Load(crate::play::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())),
                 Entry::ExitGame => return Some(Start::Exit),
                 Entry::Options => return Some(Start::Options),
                 other => eprintln!("title: {other:?} is not there yet"),
             },
             Front::Load(l) => match l.press(b)? {
-                crate::loadlist::Outcome::Load(path) => return Some(Start::Load(path)),
-                crate::loadlist::Outcome::Back => *self = Front::Title(Title::Menu(1)),
+                crate::play::loadlist::Outcome::Load(path) => return Some(Start::Load(path)),
+                crate::play::loadlist::Outcome::Back => *self = Front::Title(Title::Menu(1)),
             },
             Front::Hero(h) => match h.press(b)? {
-                crate::hero::Outcome::Chosen(logy) => return Some(Start::NewGame { logy }),
-                crate::hero::Outcome::Back => *self = Front::Title(Title::Menu(0)),
+                crate::play::hero::Outcome::Chosen(logy) => return Some(Start::NewGame { logy }),
+                crate::play::hero::Outcome::Back => *self = Front::Title(Title::Menu(0)),
             },
         }
         None
@@ -190,7 +190,7 @@ pub fn button(key: winit::keyboard::KeyCode) -> Option<Button> {
     }
 }
 
-pub use crate::screen::Target;
+pub use crate::play::screen::Target;
 
 /// Shows the title screen and the hero choice, and returns how they ended (`None`: the window
 /// was closed, or, offscreen, `keys` did not end them). In a window it runs until a new game is
@@ -229,7 +229,7 @@ pub const TITLE_START: f32 = 478.67;
 
 /// The prompt's opacity (0 to 255) at `t` seconds into the title.
 fn prompt_at(t: f32) -> u8 {
-    let frames = (t.max(0.0) * crate::screen::TICKS_PER_SECOND as f32) % PROMPT_PERIOD;
+    let frames = (t.max(0.0) * crate::play::screen::TICKS_PER_SECOND as f32) % PROMPT_PERIOD;
     let from_peak = frames.min(PROMPT_PERIOD - frames);
     ((1.0 - (1.0 - PROMPT_LOW) / PROMPT_SWING * from_peak).clamp(PROMPT_LOW, 1.0) * 255.0).round() as u8
 }
@@ -243,7 +243,7 @@ pub fn run(
     gpu: &Gpu,
     pool: vk::CommandPool,
     target: &Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<vk::Image>,
     root: &Path,
     load_list: bool,
@@ -251,18 +251,18 @@ pub fn run(
     out: Option<&Path>,
     saves: Option<&Path>,
 ) -> Result<Option<Start>> {
-    use crate::hero::Hero;
+    use crate::play::hero::Hero;
     let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let still = barrel_escha::data::layout::still(&pe, BACKGROUND).ok_or("title: no background picture")?;
     let x64 = root.join("Data/x64");
     let still_bytes = barrel_files::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| barrel_files::read(x64.join(&still.folder).join(&still.file)))?;
     let still_g1t = barrel_formats::g1t::G1t::parse(&still_bytes)?;
-    let hero_nodes = barrel_escha::data::layout::placed(&pe, crate::hero::LAYOUT);
+    let hero_nodes = barrel_escha::data::layout::placed(&pe, crate::play::hero::LAYOUT);
     // The hero choice's confirming line, from the system messages.
     let sys_mess = barrel_files::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| barrel_escha::data::sys_text::sys_mess(&t)).unwrap_or_default();
-    let question = sys_mess.get(crate::hero::QUESTION_ROW).map_or_else(|| "Do you want to use this character?".to_string(), |m| m.text.clone());
-    let load_nodes = barrel_escha::data::layout::placed(&pe, crate::loadlist::LAYOUT);
+    let question = sys_mess.get(crate::play::hero::QUESTION_ROW).map_or_else(|| "Do you want to use this character?".to_string(), |m| m.text.clone());
+    let load_nodes = barrel_escha::data::layout::placed(&pe, crate::play::loadlist::LAYOUT);
     let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("title: no glyph table")?;
     let atlas_bytes = barrel_files::read(x64.join("Font_EN/MainFont_x64_0.g1t"))?;
@@ -339,7 +339,7 @@ pub fn run(
         }
         q
     };
-    let mut front = if load_list { Front::Load(crate::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
+    let mut front = if load_list { Front::Load(crate::play::loadlist::LoadList::new(saves.map(barrel_escha::saves::list).unwrap_or_default())) } else { Front::Title(Title::new()) };
     // In a window, the title's music from its start, looping as the track does, under the
     // title, the hero choice and the Load list (not the in-play menu's Load).
     let mut music = (window.is_some() && !load_list)
@@ -347,7 +347,7 @@ pub fn run(
             let out = barrel_audio::Output::open(0.1).map_err(|e| eprintln!("title: no sound: {e}")).ok()?;
             let tracks = barrel_escha::data::bgm::tracks(&pe, barrel_escha::data::bgm::TRACKS_EN).unwrap_or_default();
             let m = barrel_audio::Library::new(root, "Voice_EN", tracks).music(TITLE_MUSIC)?;
-            let mut mixer = crate::optionpage::mixer();
+            let mut mixer = crate::play::optionpage::mixer();
             let playing = mixer.play_stream(m.stream, m.volume, m.loop_from);
             eprintln!("title music: track {TITLE_MUSIC}, volume {}, loop from {:?}", m.volume, m.loop_from);
             Some((out, mixer, playing))
@@ -359,8 +359,8 @@ pub fn run(
     let shift = fade_at.unwrap_or(0.0);
     let mut state = (front, if fading { white_at(shift) } else { 0 }, prompt_at(shift));
     // The veil and the prompt's pulse follow the screen's clock (60 ticks a second).
-    crate::screen::run_clocked(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, ..), b| f.press(b, saves), keys, out, |(_, white, pulse), tick| {
-        let t = shift + tick as f32 / crate::screen::TICKS_PER_SECOND as f32;
+    crate::play::screen::run_clocked(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, ..), b| f.press(b, saves), keys, out, |(_, white, pulse), tick| {
+        let t = shift + tick as f32 / crate::play::screen::TICKS_PER_SECOND as f32;
         if *white > 0 {
             *white = white_at(t);
         }

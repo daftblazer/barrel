@@ -7,8 +7,8 @@ use std::sync::Arc;
 use ash::vk;
 use barrel_render::movie::MovieLayer;
 
-use crate::screen::Target;
-use crate::{Gpu, Result};
+use crate::play::screen::Target;
+use crate::play::{Gpu, Result};
 
 /// The picture's place on the target: scaled to fit and centred (black bars elsewhere).
 fn fit(target: &Target, width: usize, height: usize) -> [f32; 4] {
@@ -20,7 +20,7 @@ fn fit(target: &Target, width: usize, height: usize) -> [f32; 4] {
 
 /// Plays `file`. In a window: in real time, sound and all, until the end or a button. Offscreen:
 /// the picture at `shown_at` seconds, written to `out`.
-pub fn play(gpu: &Gpu, pool: vk::CommandPool, target: &Target, window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>, offscreen: Option<vk::Image>, file: &Path, shown_at: f64, out: Option<&Path>) -> Result<()> {
+pub fn play(gpu: &Gpu, pool: vk::CommandPool, target: &Target, window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>, offscreen: Option<vk::Image>, file: &Path, shown_at: f64, out: Option<&Path>) -> Result<()> {
     let t0 = std::time::Instant::now();
     let mut movie = barrel_movie::player::Movie::open(barrel_files::read(file)?)?;
     eprintln!("movie: {} {}x{}, {:.1} s, opened in {:.2} s", file.display(), movie.width, movie.height, movie.duration, t0.elapsed().as_secs_f64());
@@ -58,7 +58,7 @@ pub fn play(gpu: &Gpu, pool: vk::CommandPool, target: &Target, window: Option<(&
                 if !pump.pump() {
                     break;
                 }
-                if pump.take_pressed().into_iter().any(|k| crate::title::button(k).is_some()) {
+                if pump.take_pressed().into_iter().any(|k| crate::play::title::button(k).is_some()) {
                     eprintln!("movie: skipped at {:.2} s", start.elapsed().as_secs_f64());
                     break;
                 }

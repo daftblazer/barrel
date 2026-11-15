@@ -69,25 +69,25 @@ Not started: Shallie, Ayesha, Sophie 2 and the Ryza games beyond their data. `do
 ```sh
 cargo build --release
 cargo test --release
-target/release/barrel game "<steam>/steamapps/common/Atelier Escha and Logy DX"
-target/release/barrel scan  "<install>/Data"           # every container and what it holds
-target/release/barrel ls     FILE.elixir.gz
-target/release/barrel unpack FILE.elixir.gz OUTDIR
-target/release/barrel ebd-scan "<install>/Event"       # every event and its commands
-target/release/barrel ebd-decode "<install>/Event"     # split every event into commands
-target/release/barrel ebd    FILE.ebd
-target/release/barrel play-event "<install>/Event/event/MM08_AS4/EVENT_MM08_AS4_130.ebd" EN
-target/release/barrel pak-ls "<Sophie 2>/Data/PACK00_01.PAK"   # list an archive (Sophie 2, Ryza 1-3)
-target/release/barrel recipes "<install>/Atelier_Escha_and_Logy_EN.exe"   # the synthesis recipes
-target/release/barrel synth "<install>" 195 44 29 41          # Craft from Buried Bomb, Bubbling Water, Dragon Core
-target/release/barrel ebm-scan "<install>"            # every dialogue line, all languages
-target/release/barrel ebm    FILE.ebm
-target/release/barrel xml-scan "<install>"            # every XML table and its rows
-target/release/barrel xml    FILE.xml
-target/release/barrel g1t-scan "<install>/Data"       # every texture
-target/release/barrel g1t    FILE.g1t OUTDIR           # a texture pack as PNG files
-target/release/barrel g1m-scan "<install>/Data"       # every model
-target/release/barrel g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
+target/release/barrel-tool game "<steam>/steamapps/common/Atelier Escha and Logy DX"
+target/release/barrel-tool scan  "<install>/Data"           # every container and what it holds
+target/release/barrel-tool ls     FILE.elixir.gz
+target/release/barrel-tool unpack FILE.elixir.gz OUTDIR
+target/release/barrel-tool ebd-scan "<install>/Event"       # every event and its commands
+target/release/barrel-tool ebd-decode "<install>/Event"     # split every event into commands
+target/release/barrel-tool ebd    FILE.ebd
+target/release/barrel-tool play-event "<install>/Event/event/MM08_AS4/EVENT_MM08_AS4_130.ebd" EN
+target/release/barrel-tool pak-ls "<Sophie 2>/Data/PACK00_01.PAK"   # list an archive (Sophie 2, Ryza 1-3)
+target/release/barrel-tool recipes "<install>/Atelier_Escha_and_Logy_EN.exe"   # the synthesis recipes
+target/release/barrel-tool synth "<install>" 195 44 29 41          # Craft from Buried Bomb, Bubbling Water, Dragon Core
+target/release/barrel-tool ebm-scan "<install>"            # every dialogue line, all languages
+target/release/barrel-tool ebm    FILE.ebm
+target/release/barrel-tool xml-scan "<install>"            # every XML table and its rows
+target/release/barrel-tool xml    FILE.xml
+target/release/barrel-tool g1t-scan "<install>/Data"       # every texture
+target/release/barrel-tool g1t    FILE.g1t OUTDIR           # a texture pack as PNG files
+target/release/barrel-tool g1m-scan "<install>/Data"       # every model
+target/release/barrel-tool g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
 `barrel-escha` is Escha & Logy DX's program (a Kintsugi launch starts it at the title, below);

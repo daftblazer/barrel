@@ -5,10 +5,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "barrel-escha"
-path = "src/play/main.rs"
-
 [dependencies]
 barrel-files = { path = "../files" }
 barrel-formats = { path = "../formats" }

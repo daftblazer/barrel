@@ -31,9 +31,9 @@ use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_escha::session::Taken;
 use barrel_formats::pe::Pe;
 
-use crate::hud::{Element, TEXT_RISE};
-use crate::kit::{horizontal_bar, number, tiled};
-use crate::title::Button;
+use crate::play::hud::{Element, TEXT_RISE};
+use crate::play::kit::{horizontal_bar, number, tiled};
+use crate::play::title::Button;
 
 pub const LAYOUT: u32 = 678;
 const BACKGROUND: u32 = 383;
@@ -222,7 +222,7 @@ pub struct Layouts {
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), cursor: crate::play::kit::cursor_glow(pe) }
     }
 }
 
@@ -434,19 +434,19 @@ const DESK_CUT: i32 = 1;
 /// points) until Back closes it (or, offscreen, draws once after `keys` and writes `out`).
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
-    target: &crate::screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    target: &crate::play::screen::Target,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
     taken: &[Option<Taken>],
     rank: (i32, i32),
     keys: &[Button],
     out: Option<&std::path::Path>,
-) -> crate::Result<Option<()>> {
-    use crate::{hud, screen, text};
-    let read = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
+) -> crate::play::Result<Option<()>> {
+    use crate::play::{hud, screen, text};
+    let read = |rel: &str| -> crate::play::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
     let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = Pe::parse(&exe)?;
     let items = read("Saves_EN/item/itemData.xml")?;
@@ -454,7 +454,7 @@ pub fn run(
     let list = entries(taken, &Names { monsters: &monsters, items: &items.children });
     let ranks = barrel_escha::rank::ranks(&read("Saves/rank/RankData.xml")?);
     let panel = Panel::of(&ranks, rank.0, rank.1);
-    let line = |file: &str, attribute: &str, row: usize| -> crate::Result<String> {
+    let line = |file: &str, attribute: &str, row: usize| -> crate::play::Result<String> {
         Ok(barrel_escha::data::sys_text::lines(&read(&format!("Saves_EN/systemMessage/{file}"))?, attribute).get(row).cloned().unwrap_or_default())
     };
     let words = Words { header: line("SysInfo.xml", "Text", HELP_ROW)?, footer: line("Menu_Line_Help.xml", "LineHelp", FOOTER_ROW)? };
@@ -466,11 +466,11 @@ pub fn run(
     // Every picture any row's page shows.
     let mut every: Vec<Element> = (0..list.len().max(1)).flat_map(|chosen| elements(&pe, &layouts, &words, panel, &list, Requests { chosen, tick: 0 })).collect();
     // And every cut the flipbooks turn through.
-    every.extend(layouts.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
-    every.extend(crate::kit::flip_elements(&layouts.screen));
+    every.extend(layouts.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(CURSOR, f)));
+    every.extend(crate::play::kit::flip_elements(&layouts.screen));
     let needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &needed)?;
-    let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::Result<Vec<_>>>()?;
+    let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::play::Result<Vec<_>>>()?;
     let mut images = vec![&atlas.textures[0]];
     let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
     for (name, index) in needed {

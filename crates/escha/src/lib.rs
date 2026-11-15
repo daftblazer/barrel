@@ -39,3 +39,8 @@ pub mod sq_consts;
 pub mod subject;
 pub mod synthesis;
 pub mod travel;
+
+// The game's play (its program: `barrel-escha`, and `barrel`, which picks the game).
+// The play code names its own crate by its package name.
+extern crate self as barrel_escha;
+pub mod play;

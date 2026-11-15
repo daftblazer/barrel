@@ -19,7 +19,7 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::Element;
+use crate::play::hud::Element;
 
 pub const LAYOUT: u32 = 400;
 const BOOK: u32 = 399;

@@ -16,8 +16,8 @@
 use barrel_escha::data::layout::{Placed, Text};
 use barrel_escha::saves::Slot;
 
-use crate::hud::Element;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::title::Button;
 
 pub const LAYOUT: u32 = 1035;
 const SLOT: u32 = 1040;
@@ -150,7 +150,7 @@ impl LoadList {
                 }
                 _ => {}
             }
-            out.push(if n.kind == crate::hud::MIRRORED { Element::Mirrored { part, cut, at, axis: n.mirror } } else { Element::Sprite { part, cut, at } });
+            out.push(if n.kind == crate::play::hud::MIRRORED { Element::Mirrored { part, cut, at, axis: n.mirror } } else { Element::Sprite { part, cut, at } });
         }
         out
     }

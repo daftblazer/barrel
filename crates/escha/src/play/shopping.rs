@@ -31,10 +31,10 @@ use std::path::Path;
 use barrel_escha::data::layout::{Placed, Text};
 use barrel_escha::shop::Ware;
 
-use crate::hud::{self, Element};
-use crate::screen;
-use crate::title::Button;
-use crate::{Result, text};
+use crate::play::hud::{self, Element};
+use crate::play::screen;
+use crate::play::title::Button;
+use crate::play::{Result, text};
 
 const TITLE_AT: [i32; 2] = [180, 120];
 const LIST_AT: [i32; 2] = [180, 220];
@@ -77,7 +77,7 @@ pub struct Lists {
     pub rows: Vec<Row>,
     pub sell: Vec<Line>,
     /// The basket's items as the grid shows them, and each one's worth.
-    pub items: Vec<crate::basket::Item>,
+    pub items: Vec<crate::play::basket::Item>,
     pub worth: Vec<i32>,
 }
 
@@ -125,7 +125,7 @@ pub fn sell_elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, 
         out.push(Element::Sprite { part: CELL_FRAME, cut: 0, at: *at });
         let k = first + slot;
         let Some(it) = l.items.get(k) else { continue };
-        out.push(Element::Picture { pack: crate::basket::PICTURES.into(), index: it.picture, size: [PICTURE_SIZE; 2], at: [at[0] + PICTURE_AT[0], at[1] + PICTURE_AT[1]], dim: k != chosen });
+        out.push(Element::Picture { pack: crate::play::basket::PICTURES.into(), index: it.picture, size: [PICTURE_SIZE; 2], at: [at[0] + PICTURE_AT[0], at[1] + PICTURE_AT[1]], dim: k != chosen });
         out.extend(digits(it.quality, QUALITY_DIGITS, at[0] + QUALITY_END[0], at[1] + QUALITY_END[1]));
     }
     out
@@ -277,7 +277,7 @@ impl Shop {
 
 /// The lines of a shop's lists: its wares on sale (name, price, whether the money covers it,
 /// how many the basket holds: `held(ware)`) and the basket's items (name, quality, worth).
-pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)], held: impl Fn(&Ware) -> i32, items: Vec<crate::basket::Item>) -> Lists {
+pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i32)], held: impl Fn(&Ware) -> i32, items: Vec<crate::play::basket::Item>) -> Lists {
     let buy = wares.iter().map(|w| {
         let price = barrel_escha::shop::list_price(w);
         Line { text: format!("{}   {} cole", w.item_name, price), can: price <= money }
@@ -291,10 +291,10 @@ pub fn lists(shop: &str, wares: &[&Ware], money: i32, basket: &[(String, f32, i3
 /// Runs the screen over the desk; the deal made, if any.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    gpu: &crate::Gpu,
+    gpu: &crate::play::Gpu,
     pool: ash::vk::CommandPool,
     target: &screen::Target,
-    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    window: Option<(&crate::play::present::Presenter, &mut crate::play::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
     l: &Lists,
@@ -307,7 +307,7 @@ pub fn run(
     let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("shop: an empty font atlas")?.width as f32 };
-    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();
+    let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::play::menu::BACKGROUND).iter().map(Element::stored).collect();
     let nodes = barrel_escha::data::layout::placed(&pe, LAYOUT);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let mut every = desk.clone();

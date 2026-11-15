@@ -23,8 +23,8 @@
 
 use barrel_escha::data::layout::Placed;
 
-use crate::hud::Element;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::title::Button;
 
 pub const LAYOUT: u32 = 1023;
 const ESCHA_CARD: u32 = 1024;

@@ -19,11 +19,11 @@
 use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
-use crate::hud::Element;
-use crate::kit::{raised, tiled};
-use crate::overview::Face;
-use crate::status::Values;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::kit::{raised, tiled};
+use crate::play::overview::Face;
+use crate::play::status::Values;
+use crate::play::title::Button;
 
 const SCREEN: u32 = 440;
 const PANEL: u32 = 432;
@@ -94,15 +94,15 @@ impl Layouts {
         let get = |id| layout::placed(pe, id);
         // Layout 432 is nested in the screen: placed at PANEL_AT without a place of its own.
         let own = layout::nodes(pe, PANEL).map_or([0, 0], |(at, _)| at);
-        let panel = get(PANEL).iter().map(|p| crate::kit::shifted(p, [PANEL_AT[0] - own[0], PANEL_AT[1] - own[1]])).collect();
-        let pick = crate::picker::Layouts::load(pe);
-        Layouts { screen: get(SCREEN), panel, desk: get(crate::picker::DESK), cursor: crate::kit::cursor_glow(pe), header: pick.header, footer: pick.footer, tab: pick.tab }
+        let panel = get(PANEL).iter().map(|p| crate::play::kit::shifted(p, [PANEL_AT[0] - own[0], PANEL_AT[1] - own[1]])).collect();
+        let pick = crate::play::picker::Layouts::load(pe);
+        Layouts { screen: get(SCREEN), panel, desk: get(crate::play::picker::DESK), cursor: crate::play::kit::cursor_glow(pe), header: pick.header, footer: pick.footer, tab: pick.tab }
     }
 
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        let mut out = crate::kit::flip_elements(&self.screen);
-        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
+        let mut out = crate::play::kit::flip_elements(&self.screen);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)));
         out
     }
 }
@@ -120,7 +120,7 @@ fn panel(pe: &Pe, l: &Layouts, m: &Member, lead: bool) -> Vec<Element> {
         out.extend(tiled(pe, PANEL_PART, f.at, PANEL_SIZE));
     }
     let rest: Vec<&Placed> = rest.iter().collect();
-    out.extend(crate::overview::face(pe, &rest, &texts, &m.values.name, None, &numbers));
+    out.extend(crate::play::overview::face(pe, &rest, &texts, &m.values.name, None, &numbers));
     out
 }
 
@@ -142,7 +142,7 @@ fn slot(pe: &Pe, nodes: &[&Placed], m: &Member, chosen: bool, tick: u32) -> (Vec
     let (frame, body): (Vec<&Placed>, Vec<&Placed>) = nodes.iter().partition(|p| p.path.len() == 2);
     let f = &m.face;
     let texts = |p: &Placed| layout::text(pe, p);
-    let mut out = crate::overview::face(pe, &body, &texts, &f.name, Some(f.character), &[f.level, f.hp.0, f.hp.1, f.mp.0, f.mp.1]);
+    let mut out = crate::play::overview::face(pe, &body, &texts, &f.name, Some(f.character), &[f.level, f.hp.0, f.hp.1, f.mp.0, f.mp.1]);
     let mut at = None;
     if let (true, Some(p)) = (chosen, frame.iter().find(|p| p.node.flip().is_some())) {
         out.push(Element::Sprite { part: FRAME, cut: p.node.flip().map_or(0, |f| f.cut(tick)), at: p.at });
@@ -153,7 +153,7 @@ fn slot(pe: &Pe, nodes: &[&Placed], m: &Member, chosen: bool, tick: u32) -> (Vec
 
 /// All the page's elements: `members` in the formation's order (Front column first), `lead` the
 /// lead's character number, `tick` the clock's 60 Hz ticks.
-pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, view: &Formation, members: &[Member], lead: usize, tick: u32) -> Vec<Element> {
+pub fn elements(pe: &Pe, l: &Layouts, words: &crate::play::picker::Words, view: &Formation, members: &[Member], lead: usize, tick: u32) -> Vec<Element> {
     let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: 1, at: p.at }).collect();
     let groups = slot_groups(&l.screen);
     let (mut slots_done, mut cursor) = (false, None);
@@ -183,8 +183,8 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, view: &Forma
     if let Some(m) = members.get(view.chosen) {
         out.extend(panel(pe, l, m, m.face.character as usize == lead));
     }
-    out.extend(crate::picker::chrome(pe, (&l.footer, &words.footer), (&l.header, &words.header), &l.tab, TAB_CUT));
-    out.extend(cursor.map(|at| Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at: [at[0] + CURSOR_FROM_SLOT[0], at[1] + CURSOR_FROM_SLOT[1]] }));
+    out.extend(crate::play::picker::chrome(pe, (&l.footer, &words.footer), (&l.header, &words.header), &l.tab, TAB_CUT));
+    out.extend(cursor.map(|at| Element::Sprite { part: crate::play::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at: [at[0] + CURSOR_FROM_SLOT[0], at[1] + CURSOR_FROM_SLOT[1]] }));
     out
 }
 

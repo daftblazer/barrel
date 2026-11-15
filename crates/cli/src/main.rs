@@ -1,4 +1,4 @@
-//! `barrel`: inspect and unpack Atelier game data.
+//! `barrel-tool`: inspect and unpack Atelier game data.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -11,96 +11,96 @@ use barrel_formats::magic;
 
 const USAGE: &str = "\
 usage:
-  barrel game DIR              which game an install directory holds
-  barrel ls FILE.elixir.gz     list a container's entries
-  barrel unpack FILE.elixir.gz OUTDIR
-  barrel scan DIR              read every container under DIR and count what they hold
-  barrel pak-extract PAK PART OUTDIR  write the entries whose names contain PART under OUTDIR
-  barrel ebd FILE.ebd          print an event's actions as words
-  barrel ebd-scan DIR          read every event under DIR and count its commands
-  barrel pssg FILE             print a PSSG file's node tree
-  barrel pssg-obj FILE OUT.obj  write a PSSG file's meshes as OBJ
-  barrel pssg-textures FILE OUTDIR  write a PSSG file's textures as PNG
-  barrel walk FIELD_DIR X Y Z DX DZ STEPS  walk a character against a field's walls
-  barrel g1co-scan DIR         read and check every field's collision
-  barrel pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
-  barrel ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
-  barrel xml FILE.xml          print a table's rows
-  barrel xml-scan DIR          read every XML table under DIR and list what it holds
-  barrel g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
-  barrel g1t-scan DIR          read every texture, loose and in containers
-  barrel g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
-  barrel g1m-bones FILE#N      a model's chunks, joints and submesh bone palettes
-  barrel g1m-materials FILE#N  a model's materials: each texture's index, kind and subtype, and which submeshes use it
-  barrel g1h FILE#N            list a morph file's sets and targets
-  barrel g1h-scan DIR          read every morph file in the containers under DIR
-  barrel g1m-scan DIR          read every model in the containers under DIR
-  barrel oid-scan DIR          read every *Oid.bin bone-name list in the containers
-  barrel ebm FILE.ebm          print an event's messages
-  barrel ebm-scan DIR          read every message file under DIR
-  barrel opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
+  barrel-tool game DIR              which game an install directory holds
+  barrel-tool ls FILE.elixir.gz     list a container's entries
+  barrel-tool unpack FILE.elixir.gz OUTDIR
+  barrel-tool scan DIR              read every container under DIR and count what they hold
+  barrel-tool pak-extract PAK PART OUTDIR  write the entries whose names contain PART under OUTDIR
+  barrel-tool ebd FILE.ebd          print an event's actions as words
+  barrel-tool ebd-scan DIR          read every event under DIR and count its commands
+  barrel-tool pssg FILE             print a PSSG file's node tree
+  barrel-tool pssg-obj FILE OUT.obj  write a PSSG file's meshes as OBJ
+  barrel-tool pssg-textures FILE OUTDIR  write a PSSG file's textures as PNG
+  barrel-tool walk FIELD_DIR X Y Z DX DZ STEPS  walk a character against a field's walls
+  barrel-tool g1co-scan DIR         read and check every field's collision
+  barrel-tool pssg-scan DIR         read every PSSG file under DIR (Ayesha DX) and count its node kinds
+  barrel-tool ebd-decode DIR        decode every event under DIR into commands (the installed game's table)
+  barrel-tool xml FILE.xml          print a table's rows
+  barrel-tool xml-scan DIR          read every XML table under DIR and list what it holds
+  barrel-tool g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
+  barrel-tool g1t-scan DIR          read every texture, loose and in containers
+  barrel-tool g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
+  barrel-tool g1m-bones FILE#N      a model's chunks, joints and submesh bone palettes
+  barrel-tool g1m-materials FILE#N  a model's materials: each texture's index, kind and subtype, and which submeshes use it
+  barrel-tool g1h FILE#N            list a morph file's sets and targets
+  barrel-tool g1h-scan DIR          read every morph file in the containers under DIR
+  barrel-tool g1m-scan DIR          read every model in the containers under DIR
+  barrel-tool oid-scan DIR          read every *Oid.bin bone-name list in the containers
+  barrel-tool ebm FILE.ebm          print an event's messages
+  barrel-tool ebm-scan DIR          read every message file under DIR
+  barrel-tool opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
                                in PAK archives: Sophie 2, the Ryza games)
-  barrel ryza-field INSTALL [FIELD]  a Ryza DX field loaded from the archives into a scene (no
+  barrel-tool ryza-field INSTALL [FIELD]  a Ryza DX field loaded from the archives into a scene (no
                                FIELD: every field, one line each)
-  barrel opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
-  barrel ktf-scan DIR          read every field terrain in the containers
-  barrel swg FILE#N OID#N      a character's swing settings, bones named from its Oid list
-  barrel g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
-  barrel g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
-  barrel g1a-scan DIR          read every animation in the containers
-  barrel pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
-  barrel pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
-  barrel pak-scan FILE.PAK...  read every texture, model, animation, morph, event and message in archives
-  barrel xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
-  barrel pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
-  barrel faces EXE             list each character's facial animation names (by CharaBase row)
-  barrel nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
-  barrel nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
-  barrel new-game ROOT [escha|logy]  a new game run headless: each scene in turn (events by name with the field they leave, then free play)
-  barrel event-check ROOT EVENT  an event's start conditions: its 14 words and each group's conditions and triggers
-  barrel event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N|trip:FROM>TO ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
-  barrel event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
-  barrel subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
-  barrel costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
-  barrel field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
-  barrel gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
-  barrel gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
-  barrel town-talk EXE ID       one town person's lines (their placement's talk id)
-  barrel town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
-  barrel world-points EXE       the world map's points and the field maps they open
-  barrel world-routes EXE       the world map's routes and the marks at their ends
-  barrel world-places EXE       the world map's places: tags, route links, names, descriptions
-  barrel travel EXE FROM TO     a trip on the world map between two marks (T0, A0, A0p0 ...): routes, days, fields
-  barrel gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
-  barrel import-save INSTALL GAMEDATA.pcsave   the game's save as a Barrel save (stdout), for its Load Game
-  barrel routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
-  barrel enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
-  barrel board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
+  barrel-tool opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
+  barrel-tool ktf-scan DIR          read every field terrain in the containers
+  barrel-tool swg FILE#N OID#N      a character's swing settings, bones named from its Oid list
+  barrel-tool g1a FILE#N [BONE]     list an animation's tracks (bone, kind, values over time); with BONE, its pose every 0.1 s
+  barrel-tool g1a-moves FILE#N [OID#N]  which bones an animation turns, and how far (names from a bone list)
+  barrel-tool g1a-scan DIR          read every animation in the containers
+  barrel-tool pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
+  barrel-tool pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
+  barrel-tool pak-scan FILE.PAK...  read every texture, model, animation, morph, event and message in archives
+  barrel-tool xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
+  barrel-tool pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
+  barrel-tool faces EXE             list each character's facial animation names (by CharaBase row)
+  barrel-tool nut-parse ROOT        parse every Script/*.nut with Barrel's Squirrel front end
+  barrel-tool nut-run ROOT FILE.nut FRAMES  run a creature script on a creature 600 units from the player, printing its changes
+  barrel-tool new-game ROOT [escha|logy]  a new game run headless: each scene in turn (events by name with the field they leave, then free play)
+  barrel-tool event-check ROOT EVENT  an event's start conditions: its 14 words and each group's conditions and triggers
+  barrel-tool event-chain ROOT START [K.M>K.M|sleep:N|mix:N|travel:N|trip:FROM>TO ...]  follow the story from an event in a new game: each event's end starts the next; then the steps
+  barrel-tool event-starts ROOT GAMEDATA|new GROUP [VALUES...]  the events a save (or a new game) would start when a trigger group fires
+  barrel-tool subjects ROOT [GAMEDATA]  the assignments: card, square, what they count; with a save, its state of each
+  barrel-tool costumes ROOT [SYSDATA]  the outfits: each body's model; with a settings save, who wears what
+  barrel-tool field-sim ROOT AREA FRAMES  an area's field enemies under their scripts while a player walks past
+  barrel-tool gather INSTALL [LIST] what gathering gives: each list's items, weights, qualities and traits
+  barrel-tool gather-sim INSTALL POINT [SAVE]  one gather at a point (BARREL_TABLE_LEVEL, BARREL_PICKS, BARREL_SEED)
+  barrel-tool town-talk EXE ID       one town person's lines (their placement's talk id)
+  barrel-tool town-people EXE [MAP [GAMEDATA]]  who the field load places on each map, and the events it waits for (with a save: which pass)
+  barrel-tool world-points EXE       the world map's points and the field maps they open
+  barrel-tool world-routes EXE       the world map's routes and the marks at their ends
+  barrel-tool world-places EXE       the world map's places: tags, route links, names, descriptions
+  barrel-tool travel EXE FROM TO     a trip on the world map between two marks (T0, A0, A0p0 ...): routes, days, fields
+  barrel-tool gimmicks EXE [MAP]    each map's gimmicks (towns 0-11, field areas from 12): kind, place, size, event window
+  barrel-tool import-save INSTALL GAMEDATA.pcsave   the game's save as a Barrel save (stdout), for its Load Game
+  barrel-tool routes EXE [SAVE]     the world map's routes and the days each trip takes (now, from a save)
+  barrel-tool enum EXE NAME         number the names of the enum that NAME belongs to (e.g. EVENT_MM01_OP1_111)
+  barrel-tool board INSTALL DAY [--events] [--offset=N]  the request board drawn on a game day (--events: every
       request's start event seen; --offset: the save's board seed offset, global 0x1410989f0, default 0)
-  barrel days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
-  barrel save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
-  barrel vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
-  barrel voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
-  barrel stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
-  barrel font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
-  barrel layout-png ROOT OUT.png ID...   draws interface layouts over each other
-  barrel sprite-png ROOT OUT.png PART    draws every cut of an interface sprite, one under another
-  barrel layouts EXE            every interface layout: its nodes and their texture pieces
-  barrel telops EXE             the narration cards (u55): each one's layout and texture pieces
-  barrel g1s FILE.g1s [N]       a shader pack's programs: stage, inputs, outputs, constants, textures (N: program N's code)
-  barrel se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
-  barrel quests INSTALL         the requests: target, points, prizes, the days they are offered
-  barrel shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
-  barrel battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
-  barrel item-effects EXE      each item effect's battle effects (Saves/item/item_effect.xml next to EXE)
-  barrel party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
-  barrel party-skills EXE      each party member's skill list: command, level learnt, MP cost
-  barrel duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
-  barrel recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
-  barrel synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
-  barrel play-event FILE.ebd --chain [LANG]  the event, then each one the story starts after it
-  barrel play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)
-  barrel play-event FILE.ebd --stage [--fps HZ]  run an event on a clock and print where its characters and camera are
+  barrel-tool days INSTALL N [--events]  a new game's first N days (shops emptied at the start): board redraws, month closes, restocks
+  barrel-tool save GAMEDATA.pcsave   a save's plain header (the body is encrypted, not read yet)
+  barrel-tool vorbis-scan SeriesNNNN.fpl|DIR  read every clip's (or every .kvs in DIR) Vorbis headers (identification and setup) in a voice bank
+  barrel-tool voice-wav SeriesNNNN.fpl CLIP OUT.wav [OUT.ogg]  decode one clip natively to 16-bit WAV (and its Ogg)
+  barrel-tool stream-check FILE.kvs   checks packet-at-a-time decoding (and seeking to the loop) against a whole decode
+  barrel-tool font-text EXE FONT.g1t OUT.png TEXT   lays out TEXT in the game's font (glyph table from EXE)
+  barrel-tool layout-png ROOT OUT.png ID...   draws interface layouts over each other
+  barrel-tool sprite-png ROOT OUT.png PART    draws every cut of an interface sprite, one under another
+  barrel-tool layouts EXE            every interface layout: its nodes and their texture pieces
+  barrel-tool telops EXE             the narration cards (u55): each one's layout and texture pieces
+  barrel-tool g1s FILE.g1s [N]       a shader pack's programs: stage, inputs, outputs, constants, textures (N: program N's code)
+  barrel-tool se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
+  barrel-tool quests INSTALL         the requests: target, points, prizes, the days they are offered
+  barrel-tool shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
+  barrel-tool battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
+  barrel-tool item-effects EXE      each item effect's battle effects (Saves/item/item_effect.xml next to EXE)
+  barrel-tool party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
+  barrel-tool party-skills EXE      each party member's skill list: command, level learnt, MP cost
+  barrel-tool duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
+  barrel-tool recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
+  barrel-tool synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
+  barrel-tool play-event FILE.ebd --chain [LANG]  the event, then each one the story starts after it
+  barrel-tool play-event FILE.ebd [LANG] [--timed]  run an event and print what happens (LANG: EN, SC, TC; default JP)
+  barrel-tool play-event FILE.ebd --stage [--fps HZ]  run an event on a clock and print where its characters and camera are
       (--fps: drive it as a renderer at HZ would, and print the end state)";
 
 unsafe extern "C" {

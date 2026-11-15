@@ -25,9 +25,9 @@
 use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_formats::pe::Pe;
 
-use crate::basket::{Basket, Item, COLUMNS};
-use crate::hud::Element;
-use crate::kit::{number, raised, shifted, tiled, vertical_bar, ink};
+use crate::play::basket::{Basket, Item, COLUMNS};
+use crate::play::hud::Element;
+use crate::play::kit::{number, raised, shifted, tiled, vertical_bar, ink};
 
 /// The header's line in `SysInfo.xml` ("Please select an item.").
 pub const HEADER_ROW: usize = 36;
@@ -110,14 +110,14 @@ pub struct Layouts {
 impl Layouts {
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        let mut out = crate::kit::flip_elements(&self.grid);
-        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
+        let mut out = crate::play::kit::flip_elements(&self.grid);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(CURSOR, f)));
         out
     }
 
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(DESK), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), grid: get(GRID), card: get(CARD), possessed: get(POSSESSED), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { desk: get(DESK), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), grid: get(GRID), card: get(CARD), possessed: get(POSSESSED), cursor: crate::play::kit::cursor_glow(pe) }
     }
 }
 

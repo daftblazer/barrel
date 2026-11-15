@@ -17,10 +17,10 @@
 use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
-use crate::hud::Element;
-use crate::kit::{raised, shifted};
-use crate::overview::Face;
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::kit::{raised, shifted};
+use crate::play::overview::Face;
+use crate::play::title::Button;
 
 pub const DESK: u32 = 383;
 pub const FIGURE: u32 = 361;
@@ -62,8 +62,8 @@ impl Kind {
     }
 
     /// The command the picker belongs to.
-    pub fn command(self) -> crate::menu::Command {
-        use crate::menu::Command;
+    pub fn command(self) -> crate::play::menu::Command {
+        use crate::play::menu::Command;
         match self {
             Kind::AdventureEquip => Command::AdventureEquip,
             Kind::BattleEquip => Command::BattleEquip,
@@ -133,13 +133,13 @@ impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let slots = layout::nodes(pe, SLOTS).map_or_else(Vec::new, |(_, nodes)| nodes.iter().filter(|n| n.part == ROW_PART).map(|n| n.at).collect());
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(DESK), figure: get(FIGURE), row: get(ROW), slots, header: get(HEADER), footer: get(FOOTER), tab: get(TAB), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { desk: get(DESK), figure: get(FIGURE), row: get(ROW), slots, header: get(HEADER), footer: get(FOOTER), tab: get(TAB), cursor: crate::play::kit::cursor_glow(pe) }
     }
 
     /// Every cut the picker's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        let mut out = crate::kit::flip_elements(&self.row);
-        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
+        let mut out = crate::play::kit::flip_elements(&self.row);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)));
         out
     }
 }
@@ -172,7 +172,7 @@ fn row(pe: &Pe, l: &Layouts, slot: [i32; 2], face: &Face, lead: bool, chosen: bo
     let own: Vec<&Placed> = nodes.iter().filter(|p| p.node.part != FRAME).collect();
     let numbers = [face.level, face.hp.0, face.hp.1, face.mp.0, face.mp.1, face.next, face.friend];
     let numbers = if lead { &numbers[..FRIEND_NUMBER] } else { &numbers[..] };
-    let mut out = crate::overview::face(pe, &own, &texts, &face.name, Some(face.character), numbers);
+    let mut out = crate::play::overview::face(pe, &own, &texts, &face.name, Some(face.character), numbers);
     if chosen && let Some(p) = nodes.iter().find(|p| p.node.part == FRAME) {
         out.push(Element::Sprite { part: FRAME, cut: p.node.flip().map_or(0, |f| f.cut(age)), at: p.at });
     }
@@ -196,7 +196,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, kind: Kind, view: &Picker, 
         }
     }
     out.extend(chrome(pe, (&l.footer, &words.footer), (&l.header, &words.header), &l.tab, kind.tab_cut()));
-    out.extend(cursor.map(|at| Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
+    out.extend(cursor.map(|at| Element::Sprite { part: crate::play::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
     out
 }
 

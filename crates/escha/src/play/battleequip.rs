@@ -18,10 +18,10 @@
 use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_formats::pe::Pe;
 
-use crate::basket::Item;
-use crate::formation::Member;
-use crate::hud::Element;
-use crate::kit::{horizontal_bar, raised, tiled, vertical_bar};
+use crate::play::basket::Item;
+use crate::play::formation::Member;
+use crate::play::hud::Element;
+use crate::play::kit::{horizontal_bar, raised, tiled, vertical_bar};
 
 const SCREEN: u32 = 404;
 const SLOT_PANEL: u32 = 403;
@@ -80,7 +80,7 @@ pub fn pulse(age: u32) -> [u8; 3] {
 pub struct Layouts {
     desk: Vec<Placed>,
     screen: Vec<Placed>,
-    card: crate::basketpage::Layouts,
+    card: crate::play::basketpage::Layouts,
     cursor: Option<layout::Flip>,
     pub tab: Vec<Placed>,
     pub header: Vec<Placed>,
@@ -90,13 +90,13 @@ pub struct Layouts {
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        let pick = crate::picker::Layouts::load(pe);
-        Layouts { desk: get(crate::picker::DESK), screen: get(SCREEN), card: crate::basketpage::Layouts::load(pe), cursor: crate::kit::cursor_glow(pe), tab: pick.tab, header: pick.header, footer: pick.footer }
+        let pick = crate::play::picker::Layouts::load(pe);
+        Layouts { desk: get(crate::play::picker::DESK), screen: get(SCREEN), card: crate::play::basketpage::Layouts::load(pe), cursor: crate::play::kit::cursor_glow(pe), tab: pick.tab, header: pick.header, footer: pick.footer }
     }
 
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)).collect()
+        self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)).collect()
     }
 }
 
@@ -117,7 +117,7 @@ fn slots(pe: &Pe, l: &Layouts, w: &Worn, chosen: usize, age: u32, cursor: &mut O
         if p.path.get(2) == Some(&PANELS) && n.kind == STRETCHED {
             out.extend(tiled(pe, n.part, p.at, [word(5), word(6)]));
         } else if n.kind == BAR {
-            let rgb = crate::kit::ink(pe, p);
+            let rgb = crate::play::kit::ink(pe, p);
             out.extend(horizontal_bar(pe, n.part, p.at, word(5)).into_iter().map(|e| match e {
                 Element::Slice { pack, index, src, rect } => Element::InkedSlice { pack, index, src, rect, rgb },
                 e => e,
@@ -165,22 +165,22 @@ fn list(pe: &Pe, l: &Layouts) -> Vec<Element> {
 /// All the page's elements for the chosen member `w`, slot `chosen` lit, `lead` the lead's
 /// character number, `tick` the global clock's 60 Hz ticks (the cursor's glow), `age` the ticks since
 /// the page opened (the bar's pulse).
-pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, chosen: usize, lead: usize, tick: u32, age: u32) -> Vec<Element> {
-    let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::picker::DESK_CUT, at: p.at }).collect();
+pub fn elements(pe: &Pe, l: &Layouts, words: &crate::play::picker::Words, w: &Worn, chosen: usize, lead: usize, tick: u32, age: u32) -> Vec<Element> {
+    let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::play::picker::DESK_CUT, at: p.at }).collect();
     let mut cursor = None;
     for p in l.screen.iter().filter(|p| p.path.get(1) == Some(&NOTEBOOK) && p.path.len() == 2) {
         out.push(Element::stored(p));
     }
-    let page: Vec<&Placed> = l.screen.iter().filter(|p| p.path.get(2) == Some(&crate::statuspage::RIGHT_PAGE)).collect();
-    out.extend(crate::statuspage::right_page(pe, &page, &w.member, w.member.face.character as usize == lead));
+    let page: Vec<&Placed> = l.screen.iter().filter(|p| p.path.get(2) == Some(&crate::play::statuspage::RIGHT_PAGE)).collect();
+    out.extend(crate::play::statuspage::right_page(pe, &page, &w.member, w.member.face.character as usize == lead));
     out.extend(slots(pe, l, w, chosen, age, &mut cursor));
-    out.extend(crate::picker::chrome(pe, (&l.footer, &words.footer), (&[], ""), &[], 0));
+    out.extend(crate::play::picker::chrome(pe, (&l.footer, &words.footer), (&[], ""), &[], 0));
     out.extend(list(pe, l));
     if let Some(item) = w.slots.get(chosen).and_then(Option::as_ref) {
-        out.extend(crate::basketpage::card_at(pe, &l.card, item, CARD_AT, ITEM_INFO_PAGES));
+        out.extend(crate::play::basketpage::card_at(pe, &l.card, item, CARD_AT, ITEM_INFO_PAGES));
     }
-    out.extend(crate::picker::chrome(pe, (&[], ""), (&l.header, &words.header), &l.tab, crate::picker::Kind::BattleEquip.tab_cut()));
-    out.extend(cursor.map(|at| Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
+    out.extend(crate::play::picker::chrome(pe, (&[], ""), (&l.header, &words.header), &l.tab, crate::play::picker::Kind::BattleEquip.tab_cut()));
+    out.extend(cursor.map(|at| Element::Sprite { part: crate::play::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
     out
 }
 

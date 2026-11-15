@@ -29,9 +29,9 @@
 use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
-use crate::hud::Element;
-use crate::kit::{raised, tiled};
-use crate::title::Button;
+use crate::play::hud::Element;
+use crate::play::kit::{raised, tiled};
+use crate::play::title::Button;
 
 /// `SysInfo.xml`'s "Select an item to adjust." (the header line).
 pub const HEADER_ROW: usize = 111;
@@ -159,7 +159,7 @@ impl OptionPage {
 
     /// Where the settings are kept: `options.conf` beside the graphics config.
     fn path() -> Option<std::path::PathBuf> {
-        Some(crate::settings::RenderSettings::config_path()?.with_file_name("options.conf"))
+        Some(crate::play::settings::RenderSettings::config_path()?.with_file_name("options.conf"))
     }
 
     /// The settings kept, or the defaults.
@@ -167,7 +167,7 @@ impl OptionPage {
         Self::path().and_then(|p| std::fs::read_to_string(p).ok()).map_or_else(OptionPage::default, |t| Self::from_config(&t))
     }
 
-    pub fn save(&self) -> crate::Result<()> {
+    pub fn save(&self) -> crate::play::Result<()> {
         let path = Self::path().ok_or("no place for the config (no HOME)")?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -201,7 +201,7 @@ pub struct Layouts {
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { screen: get(SCREEN), header: get(HEADER), footer: get(FOOTER), cursor: crate::kit::cursor_glow(pe) }
+        Layouts { screen: get(SCREEN), header: get(HEADER), footer: get(FOOTER), cursor: crate::play::kit::cursor_glow(pe) }
     }
 
     /// The page's own nodes (layout 408 nested in the screen, without the outfit choice).
@@ -253,12 +253,12 @@ impl Layouts {
     /// The cursor's glow at the chosen plate.
     pub(crate) fn glow(&self, plate: [i32; 2], tick: u32) -> Element {
         let at = [plate[0] + GLOW_FROM_PLATE[0], plate[1] + GLOW_FROM_PLATE[1]];
-        Element::Sprite { part: crate::kit::CURSOR, cut: self.cursor.map_or(0, |f| f.cut(tick)), at }
+        Element::Sprite { part: crate::play::kit::CURSOR, cut: self.cursor.map_or(0, |f| f.cut(tick)), at }
     }
 
     /// Every cut the page's flipbooks turn through.
     pub fn flips(&self) -> Vec<Element> {
-        self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)).collect()
+        self.cursor.into_iter().flat_map(|f| crate::play::kit::cuts_of(crate::play::kit::CURSOR, f)).collect()
     }
 }
 
@@ -272,7 +272,7 @@ pub struct Words {
 /// the node's ink. The cut-short piece is an inked slice.
 fn rule(pe: &Pe, p: &Placed) -> Vec<Element> {
     let width = layout::word(pe, p, 5).unwrap_or(0);
-    let rgb = crate::kit::ink(pe, p);
+    let rgb = crate::play::kit::ink(pe, p);
     let wide = |cut| layout::sprite(pe, p.node.part, cut, [0, 0]).map_or(0, |s| i32::from(s.src[2] - s.src[0]));
     let (left, middle, right) = (wide(0), wide(1), wide(2));
     let sprite = |cut, x| Element::Tinted { part: p.node.part, cut, at: [p.at[0] + x, p.at[1]], rgb };
@@ -282,7 +282,7 @@ fn rule(pe: &Pe, p: &Placed) -> Vec<Element> {
         if x + middle <= width - right {
             out.push(sprite(1, x));
         } else {
-            let cut_short = crate::kit::horizontal_bar(pe, p.node.part, p.at, width).into_iter().find_map(|e| match e {
+            let cut_short = crate::play::kit::horizontal_bar(pe, p.node.part, p.at, width).into_iter().find_map(|e| match e {
                 Element::Slice { pack, index, src, rect } if rect[0] == p.at[0] + x => Some(Element::InkedSlice { pack, index, src, rect, rgb }),
                 _ => None,
             });
