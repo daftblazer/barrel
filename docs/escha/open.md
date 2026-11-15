@@ -244,8 +244,8 @@ likely settle them where static reading failed.
   likely the chain count) are used.
 
 - The action banner (layout 885): the code that places and sizes it (Barrel uses the
-  recording's place and size: half size, centred at x 640, top 122, name + 206 wide, name size
-  22), when it comes up and goes within an action, and whether Run, Move, Wait or items show
+  recording's place and size: full size, centred at x 960, top 180, name + 306 wide, name size
+  33), when it comes up and goes within an action, and whether Run, Move, Wait or items show
   it (Barrel: skills, attacks and items only).
 
 - `--walk` does not move the player in a window (offscreen only).

@@ -333,10 +333,11 @@ mod tests {
 /// row of white brush digits with a dark edge, 36 × 60 cuts: 0 to 9, then 10 `+`, 11 `-`, 12
 /// `/`, 13 `%`, 14 "MP"), the sign first, the glyphs 36 apart and centred on the fighter's
 /// place (as a kind 29 node centres its number). Measured on the ruins-entrance-battle-result
-/// recording (149.8 s, "-27" on a Neck Hunt): drawn at full size (the "2"'s white 26 × 34, 32
-/// tall there; "-27" 91 wide), it fades in over 0.1 s while shrinking from about 160% to its
-/// size by 0.2 s, and stays until the camera moves on, some 0.85 s; the game's drawing code is
-/// not found yet (`docs/escha/open.md`).
+/// recording (149.8 s, "-27" on a Neck Hunt): the "2"'s white is 26 × 34 in the texture, 32
+/// tall at 720p, so 48 at 1080p; "-27" 136 wide), drawn at about 140%; it fades in over 0.1 s
+/// while shrinking from about 1.6 times that to it by 0.2 s, and stays until the camera moves
+/// on, some 0.85 s; the game's drawing code is not found yet (`docs/escha/open.md`; the
+/// recording is 1280 × 720).
 pub const NUMBER_DIGITS: i32 = 0xe0;
 const NUMBER_PLUS: i32 = 10;
 const NUMBER_MINUS: i32 = 11;
@@ -346,7 +347,8 @@ pub const NUMBER_SECONDS: f32 = 1.0;
 const NUMBER_FADE_IN: f32 = 0.1;
 const NUMBER_POP: f32 = 0.2;
 const NUMBER_FADE_OUT: f32 = 0.15;
-const NUMBER_POP_PERCENT: f32 = 160.0;
+const NUMBER_PERCENT: f32 = 140.0;
+const NUMBER_POP_PERCENT: f32 = 1.6 * NUMBER_PERCENT;
 
 /// `value` (negative: damage, "-27"; positive: a heal, "+12") centred on `centre` (the 1920 ×
 /// 1080 screen), `age` seconds after it came up; nothing once [`NUMBER_SECONDS`] have passed.
@@ -357,7 +359,7 @@ pub fn number(value: i32, centre: [i32; 2], age: f32) -> Vec<Element> {
     let mut cuts = vec![if value < 0 { NUMBER_MINUS } else { NUMBER_PLUS }];
     cuts.extend(value.unsigned_abs().to_string().bytes().map(|b| i32::from(b - b'0')));
     let pop = (1.0 - age / NUMBER_POP).max(0.0);
-    let scale = (100.0 + (NUMBER_POP_PERCENT - 100.0) * pop * pop) / 100.0;
+    let scale = (NUMBER_PERCENT + (NUMBER_POP_PERCENT - NUMBER_PERCENT) * pop * pop) / 100.0;
     let alpha = (age / NUMBER_FADE_IN).min(1.0) * ((NUMBER_SECONDS - age) / NUMBER_FADE_OUT).min(1.0);
     let advance = NUMBER_ADVANCE * scale;
     let left = centre[0] as f32 - advance * (cuts.len() as f32 - 1.0) / 2.0;
@@ -384,10 +386,10 @@ mod number_tests {
             Element::Popped { cut, centre, percent, alpha, .. } => (cut, centre, percent, alpha),
             _ => unreachable!(),
         }).collect();
-        assert_eq!(cuts, vec![(11, [464, 400], 100, 255), (2, [500, 400], 100, 255), (7, [536, 400], 100, 255)]);
+        assert_eq!(cuts, vec![(11, [450, 400], 140, 255), (2, [500, 400], 140, 255), (7, [550, 400], 140, 255)]);
         // Popping in: larger and faint at first.
         let Element::Popped { percent, alpha, .. } = number(12, [0, 0], 0.02)[0] else { unreachable!() };
-        assert!(percent > 140 && alpha < 60, "{percent} {alpha}");
+        assert!(percent > 200 && alpha < 60, "{percent} {alpha}");
         assert!(number(-5, [0, 0], NUMBER_SECONDS).is_empty());
     }
 }
@@ -395,20 +397,20 @@ mod number_tests {
 /// The action banner (layout 885, nested in 886 at (690, 180)): the plate part 0xf8 (node kind
 /// 19, 450 wide as stored: cut 0 the left end 144 wide, cut 1 a 48-wide middle, cut 2 the right
 /// end 212 wide, 72 high) with the action's name (size 33, its node at (116, 14)). The game
-/// places and sizes it in code (not read); measured on the ruins-entrance-battle-result
-/// recording (104, 112 and 133 s: "Attack", "Neck Hunt", "Charge"): drawn at half size, centred
-/// at x 640 with its top at y 122, 36 high, as wide as the name plus 206 (268, 310, 276), the
-/// middle stretched; the name centred on it. It shows while the action plays.
+/// sizes and centres it in code (not read); measured on the ruins-entrance-battle-result
+/// recording (1280 × 720, scaled to 1080p; 104, 112 and 133 s: "Attack", "Neck Hunt",
+/// "Charge"): at full size, its top at the node's 180, centred on the screen (x 960), as wide
+/// as the name plus 306 (405, 467, 415), the middle stretched; the name centred on it at its
+/// node's height. It shows while the action plays.
 pub const BANNER: u32 = 885;
 const BANNER_PART: i32 = 0xf8;
-const BANNER_CENTRE: i32 = 640;
-const BANNER_TOP: i32 = 122;
-const BANNER_SCALE: f32 = 0.5;
-const BANNER_PAD: f32 = 206.0;
-/// The name's size and its drop from the top: measured ("Attack" 62 wide, "Neck Hunt" 103,
-/// "Charge" 68, its middle at y 137), not the node's 33 halved (16.5 draws "Attack" 46 wide).
-pub const BANNER_TEXT_SIZE: f32 = 22.0;
-const BANNER_TEXT_DROP: i32 = 4;
+const BANNER_CENTRE: i32 = 960;
+const BANNER_TOP: i32 = 180;
+const BANNER_SCALE: f32 = 1.0;
+const BANNER_PAD: f32 = 306.0;
+/// The name's size (the node's) and its drop from the plate's top.
+pub const BANNER_TEXT_SIZE: f32 = 33.0;
+const BANNER_TEXT_DROP: i32 = 14;
 /// How long the banner stays up for an action (seconds; Barrel plays an action a step).
 pub const BANNER_SECONDS: f32 = 1.4;
 

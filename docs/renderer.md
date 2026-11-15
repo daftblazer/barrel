@@ -321,12 +321,12 @@ kind, word 2, picks the boss theme, else the lead's theme, Escha's `bt_girl01` o
 the Result screen starts the victory music in its place (`battle::victory_music`, as
 `0x1401d819b`: `sy_btwin_girl01` for Escha, `sy_btwin_boy01` for Logy).
 Each action's name stands in the action banner under the turn bar while it plays
-(`battlehud::banner`: layout 885's plate, part 0xf8, at half size, centred at x 640, top 122,
-the name's width plus 206 wide; measured on the ruins-entrance-battle-result recording, the
-game places it in code). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
+(`battlehud::banner`: layout 885's plate, part 0xf8, at full size, centred on the screen, its
+top at y 180, the name's width plus 306 wide; measured on the ruins-entrance-battle-result
+recording, which is 1280 × 720, scaled to 1080p; the game sizes and centres it in code). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
 number (`battlehud::number`: part 0xe0's white brush digits, sign first, 36 apart and centred,
-fading in over 0.1 s from 160% to full size by 0.2 s, gone after 1 s; measured on the
-ruins-entrance-battle-result recording at 149.8 s), 100 units above the fighter's place.
+at about 140%, fading in over 0.1 s from 1.6 times that by 0.2 s, gone after 1 s; measured on
+the ruins-entrance-battle-result recording at 149.8 s, a 1280 × 720 recording), 100 units above the fighter's place.
 Not yet the game's: the list (the game's command layout is not identified), no
 mark on the target in the scene, no items, guarding or fleeing, the pad not mapped.
 
