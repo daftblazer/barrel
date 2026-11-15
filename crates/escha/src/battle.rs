@@ -1260,6 +1260,12 @@ pub fn music(group_kind: i32, sound_quest: bool, logy_leads: bool) -> Option<u32
     }
 }
 
+/// The victory music the Result screen starts (`0x1401d819b`, on the lead from `0x14035ebb0`):
+/// track 19 (`sy_btwin_boy01`) when Logy leads, else 18 (`sy_btwin_girl01`).
+pub fn victory_music(logy_leads: bool) -> u32 {
+    if logy_leads { 19 } else { 18 }
+}
+
 #[cfg(test)]
 mod music_tests {
     #[test]
@@ -1268,6 +1274,7 @@ mod music_tests {
         assert_eq!(super::music(0, false, false), Some(15));
         assert_eq!(super::music(0, false, true), Some(14));
         assert_eq!(super::music(0, true, true), Some(25));
+        assert_eq!((super::victory_music(false), super::victory_music(true)), (18, 19));
         assert_eq!(super::music(2, false, false), None);
     }
 

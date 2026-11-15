@@ -317,7 +317,9 @@ again from its start with the commands so far (`auto_battle::fight_commanded`: t
 generator and commands always give the same battle, so what was played stays) up to the next
 member turn. In a window the battle plays its music from the start (`battle::music`: the encounter group's
 kind, word 2, picks the boss theme, else the lead's theme, Escha's `bt_girl01` or Logy's
-`bt_boy01`, or the vocal song once the field's save has flag 149), in place of the field's.
+`bt_boy01`, or the vocal song once the field's save has flag 149), in place of the field's;
+the Result screen starts the victory music in its place (`battle::victory_music`, as
+`0x1401d819b`: `sy_btwin_girl01` for Escha, `sy_btwin_boy01` for Logy).
 Each action's name stands in the action banner under the turn bar while it plays
 (`battlehud::banner`: layout 885's plate, part 0xf8, at half size, centred at x 640, top 122,
 the name's width plus 206 wide; measured on the ruins-entrance-battle-result recording, the

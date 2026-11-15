@@ -247,3 +247,7 @@ likely settle them where static reading failed.
   recording's place and size: half size, centred at x 640, top 122, name + 206 wide, name size
   22), when it comes up and goes within an action, and whether Run, Move, Wait or items show
   it (Barrel: skills, attacks and items only).
+
+- The victory music has not been heard end to end in Barrel: an offscreen run cannot fight a
+  field battle to its Result within the 600-frame cap, and `--walk` does not move the player in
+  a window. A longer frame cap for tests, or a scripted walk in a window, would let it be checked.

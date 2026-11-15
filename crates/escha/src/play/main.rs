@@ -1377,6 +1377,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         numbers: Vec::new(),
         banner: None,
         music,
+        victory_played: false,
         wiped: None,
         drops_shown: false,
         turn,
@@ -1436,6 +1437,8 @@ struct BattlePlay {
     banner: Option<(String, f32)>,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
+    /// The victory music has started (with the Result screen).
+    victory_played: bool,
     /// A lost battle's wipe: when it began and the day it turns to.
     wiped: Option<(f32, u32)>,
     /// A won battle's drops screen has been shown.
@@ -4862,6 +4865,18 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         }).collect();
                         play.result = Some((result::Values { rows, exp, money }, play.time));
                     }
+                // The Result screen's victory music, in place of the battle's (`battle::victory_music`).
+                if play.result.is_some() && !play.victory_played {
+                    play.victory_played = true;
+                    let track = barrel_escha::battle::victory_music(play.charas.first() == Some(&1));
+                    eprintln!("victory music {track}");
+                    if let Some((_, mixer, library, music)) = sound.as_mut() {
+                        if let Some(old) = music.take() {
+                            mixer.stop(old);
+                        }
+                        *music = library.music(track).map(|m| mixer.play_stream(m.stream, m.volume, m.loop_from));
+                    }
+                }
                 // Over and lost: a day passes in the field's save, and the lead's line from the
                 // game's wipe (not yet shown on screen: the console).
                 // Run away: no spoils and no defeat, straight back to the field.
