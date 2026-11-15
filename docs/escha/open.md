@@ -258,3 +258,8 @@ likely settle them where static reading failed.
   head (the ruins-entrance-battle-result recording at 102.8 s). It is not in a15_battle.g1t, so
   likely an effect model; not found or drawn yet. The game's camera also moves behind the actor
   facing the target while choosing; Barrel's stays put.
+
+- The Support gauge's gain: the action kind 1 (× 4), the loop's hit flag, the globals
+  `0x141077e78` / `0x141077e7c` that stop it and the carry +0x1458 are not modelled; the start's
+  300 case (setup +0x38 = 1) neither; the support attacks and guards that spend it
+  (`0x140192879`) are not in yet.

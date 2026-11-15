@@ -1243,7 +1243,7 @@ struct BattleHud {
     field_nodes: Vec<barrel_escha::data::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
-    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>, Option<String>, Option<(i32, i32)>)>,
+    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>, Option<String>, Option<(i32, i32)>, i32)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1256,7 +1256,8 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     // Every picture it may show: each member's portrait, the bars.
     let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
     let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
-    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face, f, Some(1), Some(3))).collect();
+    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face, f, Some(1), Some(3), 150)).collect();
+    every.extend((0..10).map(|cut| hud::Element::Sprite { part: 0xe1, cut, at: [0, 0] }));
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
     every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
@@ -1386,6 +1387,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         banner: None,
         rate: None,
         action_total: 0,
+        support: barrel_escha::battle::SUPPORT_START,
         music,
         victory_played: false,
         wiped: None,
@@ -1449,6 +1451,8 @@ struct BattlePlay {
     rate: Option<(i32, i32, f32)>,
     /// The damage the action now playing has dealt so far.
     action_total: i32,
+    /// The Support gauge as the actions played so far left it.
+    support: i32,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1752,8 +1756,9 @@ impl BattlePlay {
             self.action_total += damage;
         }
         // The action's rate (the event after its hits) shows with them, taking no step itself.
-        if let Some(Event::Rate { rate, .. }) = self.outcome.events.get(self.next) {
+        if let Some(Event::Rate { rate, support, .. }) = self.outcome.events.get(self.next) {
             self.rate = Some((*rate, self.action_total, self.time));
+            self.support = *support;
             if let Some(line) = self.outcome.lines().get(self.next) {
                 eprintln!("battle: {line}");
             }
@@ -5742,13 +5747,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone(), rate))
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone(), rate, play.support))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
                 let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().map(|c| c.next));
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().map(|c| c.next), play.support);
                         if let Some(c) = &commands {
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.
@@ -5784,7 +5789,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers, banner, rate));
+                h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers, banner, rate, play.support));
             }
     }
     // Offscreen, the frames written to files (with --save-every, only some): only those are

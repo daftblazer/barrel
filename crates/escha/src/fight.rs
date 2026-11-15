@@ -142,7 +142,7 @@ pub enum Event {
     Moved { who: usize, sector: i32 },
     /// A party action's damage rate as it ends (global `0x141077e70`, the battle screen's
     /// "Damage Rate: (100 + rate) %"): its steps before the hits and each effect's after.
-    Rate { who: usize, rate: i32 },
+    Rate { who: usize, rate: i32, support: i32 },
 }
 
 pub struct Battle {
@@ -157,6 +157,8 @@ pub struct Battle {
     /// Each act's damage-rate step, added once an action's effects are applied (the act
     /// table's last word, `battle_data::ActInfo::last`: 5 for acts 0 and 2); none when empty.
     pub act_steps: Vec<i32>,
+    /// The Support gauge (`battle::support_gain`): 0 to 900.
+    pub support: i32,
 }
 
 impl Battle {
@@ -168,12 +170,14 @@ impl Battle {
         let mut order: Vec<u32> = (0..fighters.len() as u32).collect();
         order.sort_by_key(|&k| std::cmp::Reverse(fighters[k as usize].stats[stat::SPEED]));
         let timeline = Timeline::setup(&order);
-        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new() }
+        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new(), support: 0 }
     }
 
     /// The act table's damage-rate steps ([`Battle::act_steps`]).
     pub fn with_act_steps(mut self, steps: Vec<i32>) -> Battle {
         self.act_steps = steps;
+        // The gauge's start goes with the battle's own setup (`0x14019f813`).
+        self.support = battle::SUPPORT_START;
         self
     }
 
@@ -392,7 +396,9 @@ impl Battle {
         let mut felled = Vec::new();
         let mut events = Vec::new();
         let mut hits = 0;
+        let count = targets.len();
         for target in targets {
+        let was_down = self.fighters[target].down();
         let (mut damage, mut healed, mut heals) = (0, 0, false);
         for &(e, amount, second) in &rolled {
             match e.act {
@@ -457,6 +463,12 @@ impl Battle {
                 }
             }
         }
+        // The Support gauge, per target of a party action (`0x1401c080f`): the actor's stat 16,
+        // its critical, +50 for a target the action felled.
+        if self.fighters[who].side == 0 && self.fighters[target].side == 1 {
+            let felled_now = !was_down && self.fighters[target].down();
+            self.support = battle::support_add(self.support, battle::support_gain(self.fighters[who].stats[stat::SUPPORT], count, critical, false, felled_now));
+        }
         if heals {
             events.push(Event::Healed { who, skill: skill.name.clone(), target, amount: healed, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
         } else {
@@ -468,7 +480,7 @@ impl Battle {
         // Only in a battle that has the act table (the screen's figure: tests and duels do not).
         if self.fighters[who].side == 0 && !self.act_steps.is_empty() {
             let steps: i32 = rolled.iter().map(|(e, ..)| usize::try_from(e.act).ok().and_then(|a| self.act_steps.get(a)).copied().unwrap_or(0)).sum();
-            events.push(Event::Rate { who, rate: rate + steps });
+            events.push(Event::Rate { who, rate: rate + steps, support: self.support });
         }
         events.append(&mut felled);
         self.end_action(who, skill.wait, rng);

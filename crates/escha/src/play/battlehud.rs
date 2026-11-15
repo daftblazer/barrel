@@ -15,13 +15,19 @@
 //! a plate's bars cut to the member's share of HP and MP; the reserve row, the
 //! state icons (layouts 873, 875), the plates' numbers (kind 28), the action banner (drawn on
 //! its own, `banner`) and the
-//! target panel left out; the Support gauge as stored (0).
+//! target panel left out. The Support gauge (`battle::SUPPORT_MAX`) shows its level (gauge /
+//! 100) in layout 883's digit (part 0xe1) and the rest as the bar's fill (part 0xf7 cut 1, cut
+//! from the left).
 
 use barrel_escha::data::layout::{Placed, Text};
 
 use crate::hud::Element;
 
 pub const LAYOUT: u32 = 886;
+/// The Support gauge (layout 884), its bar (part 0xf7) and its level's digit (0xe1, layout 883).
+const SUPPORT: u32 = 884;
+const SUPPORT_BAR: i32 = 0xf7;
+const SUPPORT_DIGITS: i32 = 0xe1;
 const PLATE: u32 = 870;
 const PORTRAIT: i32 = 0xf2;
 const PLATE_PARTS: i32 = 0xee;
@@ -87,7 +93,7 @@ pub const FAST_FORWARD_LABELS: [&str; 3] = ["Fast Forward Off", "Fast Forward(x1
 
 /// `marked`: the place in `order` of the target's next turn, while one is being picked.
 /// `next`: the next-turn mark's entry count while a member chooses.
-pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>) -> Vec<Element> {
+pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>, support: i32) -> Vec<Element> {
     let mut out = Vec::new();
     // The turn order's slot a node is in (counted as their first nodes come), and that slot's
     // corner (the Action slot's scaling centre).
@@ -155,6 +161,21 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 Element::Sprite { part, cut, at: p.at }
             });
             continue;
+        }
+        if p.path.contains(&SUPPORT) {
+            let level = support.clamp(0, barrel_escha::battle::SUPPORT_MAX) / barrel_escha::battle::SUPPORT_LEVEL;
+            match (n.part, n.cut) {
+                (SUPPORT_BAR, 1) => {
+                    let fill = if level * barrel_escha::battle::SUPPORT_LEVEL >= barrel_escha::battle::SUPPORT_MAX { 1.0 } else { (support % barrel_escha::battle::SUPPORT_LEVEL) as f32 / barrel_escha::battle::SUPPORT_LEVEL as f32 };
+                    out.push(Element::Cropped { part: SUPPORT_BAR, cut: 1, at: p.at, fill });
+                    continue;
+                }
+                (SUPPORT_DIGITS, _) => {
+                    out.push(Element::Sprite { part: SUPPORT_DIGITS, cut: level, at: p.at });
+                    continue;
+                }
+                _ => {}
+            }
         }
         let on_plate = p.path.contains(&PLATE);
         if starts(&p) {

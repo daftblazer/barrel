@@ -15,6 +15,8 @@ pub mod stat {
     pub const SPEED: usize = 7;
     /// Resistances to elements 0 to 3 are this and the next three.
     pub const RESIST: usize = 8;
+    /// The support gauge bonus (the equipment's stat 13, three places on as max HP is).
+    pub const SUPPORT: usize = 16;
     /// Drain: the percentage of a skill's damage that heals its user.
     pub const DRAIN: usize = 20;
     pub const COUNT: usize = 35;
@@ -1287,5 +1289,50 @@ mod music_tests {
         assert_eq!(crate::battle::leveled_effects(195, 1, &[0, 40, -1], &levels), [1, 40, -1]);
         assert_eq!(crate::battle::leveled_effects(195, 2, &[40, 0, -1], &levels), [40, 2, -1]);
         assert_eq!(crate::battle::leveled_effects(196, 2, &[0], &levels), [0]);
+    }
+}
+
+/// The Support gauge (the battle's +0x1454): 0 to 900, a level per 100 (the HUD's digit, layout
+/// 883) and the rest the bar's fill. A battle starts it at 100 (300 when the setup's +0x38 is 1,
+/// the lead marked, `0x14019f806`); every change clamps it (`0x1401a0d50` and its kin).
+pub const SUPPORT_MAX: i32 = 900;
+pub const SUPPORT_START: i32 = 100;
+pub const SUPPORT_LEVEL: i32 = 100;
+
+/// What a party action adds to the Support gauge for one of its `targets` targets
+/// (`0x1401a0c60`, from the end of the effects, `0x1401c080f`; only for a party actor, and not
+/// while `0x141077e78` is set or `0x141077e7c` is 2 or more): `bonus` is the actor's battle stat
+/// 16 (the equipment's support gauge stat), `critical` its state byte 7 (+0x287, which a
+/// critical sets) scaling the share by 1.5, `four` the action's kind 1 by 4, and `felled` the
+/// target's +0x2dc (+50). In floats: `trunc((bonus - trunc(-100 m / n) - 100 + 100) × 25 / 100)`.
+pub fn support_gain(bonus: i32, targets: usize, critical: bool, four: bool, felled: bool) -> i32 {
+    let mut m = if critical { 1.5f32 } else { 1.0 };
+    if four {
+        m *= 4.0;
+    }
+    let k = (1.0 / targets.max(1) as f32 * m * -100.0) as i32;
+    let rest = bonus - k - 100;
+    let gain = ((rest as f32 + 100.0) * 25.0 / 100.0) as i32;
+    if felled { gain + 50 } else { gain }
+}
+
+/// The gauge after adding `gain`, clamped.
+pub fn support_add(gauge: i32, gain: i32) -> i32 {
+    (gauge + gain.clamp(0, SUPPORT_MAX)).clamp(0, SUPPORT_MAX)
+}
+
+#[cfg(test)]
+mod support_tests {
+    use super::*;
+
+    #[test]
+    fn support_gains() {
+        // A plain single-target hit: 25, a quarter level; two targets 12 each; a critical 37.
+        assert_eq!(support_gain(0, 1, false, false, false), 25);
+        assert_eq!(support_gain(0, 2, false, false, false), 12);
+        assert_eq!(support_gain(0, 1, true, false, false), 37);
+        assert_eq!(support_gain(0, 1, false, false, true), 75);
+        assert_eq!(support_gain(20, 1, false, false, false), 30);
+        assert_eq!(support_add(890, 25), SUPPORT_MAX);
     }
 }

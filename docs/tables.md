@@ -1362,13 +1362,25 @@ state's method `0x1401d7a70`), 30 right after Wilbell's and after Escha's attack
 
 The actor's virtual +0x100 value in the critical chance (vtable slot +0x100: monsters'
 `0x1401b7810` in the vtable at `0x1408083d0`, the party's `0x1401b8560` in `0x140808540`):
-the fighter's +0x2a0, then, when its second argument is 0, + the battle stat at +0xbc (stat 13
-of the 35 at +0x88; the stat equipment's ACT_PASSIVE_CHANGE_SUPPORTGAUGE and ACT_ADD_SUPGAUGE
-feed, `0x1402a17a3`) if `0x14015fac0` accepts the kind its virtual +0x88 gives, + passive 0x63's
-value (`0x14015f6a0`). The party's version first adds passive 0x6e's value (`0x14032f850` on the
-member's +0x3b0) when its HP is at most 25% of its maximum (stats 1 and 3: `HP × 100 / max ≤ 25`).
-Act 218 (`ACT_ADD_SUPGAUGE`) falls to the effect switch's default in `0x1401bde10`: the Support
-gauge itself is not read yet.
+the fighter's +0x2a0, then, when its second argument is 0, + battle stat 13 (+0xbc, the
+equipment's stat 10, critical: battle stats are the equipment's three places on, max HP at 3)
+if `0x14015fac0` accepts the kind its virtual +0x88 gives, + passive 0x63's value
+(`0x14015f6a0`). The party's version first adds passive 0x6e's value (`0x14032f850` on the
+member's +0x3b0) when its HP is at most 25% of its maximum (`0x1401ae380`(4): `HP × 100 / max ≤ 25`).
+
+**The Support gauge** is the battle's +0x1454, 0 to 900 (0x384), clamped on every change and
+shown on the HUD as its level (gauge / 100) and the rest as the bar (`0x1401d0430`). The
+battle setup adds 100 (300 when its +0x38 is 1, the lead marked by +0x289, `0x14019f806`).
+After a party action's effects, for each target (`0x1401c080f` → `0x1401a0c60`; not while
+`0x141077e78` is set or `0x141077e7c` is 2 or more, nor without the loop's hit flag): with n the
+target count and m = 1 (× 1.5 for the actor's state byte 7, +0x287, which a critical sets; × 4
+for the action's kind 1), it adds `trunc((stat16 − trunc(−100 m / n) − 100 + 100) × 25 / 100)`
+(stat 16: the equipment's support gauge stat 13; floats 1.0, 1.5, 4.0, −100, 100 and 25 at
+`0x14071a9a4`, `0x140760a18`, `0x14071a9a8`, `0x1407d3db8`, `0x14071a9b0`, `0x140804ba8`),
++50 when the target's +0x2dc is set (set as it goes down), plus the carry at +0x1458 (then
+cleared); a single-target hit gives 25. `ACT_SUPPORT_INCRESAS` (212) adds its amount
+(`0x1401a0d50`), `ACT_SUPPORT_DECRESAS` (179) takes it (`0x1401a0df0`); `0x1401a0c00` adds 100
+or 300; `0x140192879` takes (support attacks, not read). `battle::support_gain` is the gain.
 
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first
