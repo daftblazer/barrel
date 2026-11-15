@@ -195,7 +195,8 @@ step time.
 the story after it (`--chain`), then free play (`--free-play`), where the story goes on as a
 `session::Session`. With `--save FILE`, F5 (or `BARREL_SAVE_AT=FRAME`, counted in the free-play
 scene) saves it in Barrel's text format; `--load FILE` (with `--field` naming any field of the
-install) starts in free play from such a save. From the end of `EVENT_MM01_OP1_310` a save at
+install) starts in free play from such a save, or from the game's own `GAMEDATA<NN>.pcsave`
+(told apart by its bytes: Barrel's text starts `barrel-save`; see `docs/formats.md`, "Starting from a game save"). From the end of `EVENT_MM01_OP1_310` a save at
 free-play frame 60 holds Escha at (10000, 10950) in field 3 with events 15, 518, 520 and 521
 seen on day 90, and loading it puts her back there. A door walked through in the story's free play asks the session first
 (`Session::walked`, the story's `MAP_FROM_TO_*` triggers): an event that starts plays, and

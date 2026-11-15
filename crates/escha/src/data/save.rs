@@ -474,7 +474,9 @@ pub fn item_units(d: &[u8]) -> Vec<ItemUnit> {
 /// 25); the same block with equipment applied at +0x114 (max HP from +0x118); the skills in
 /// command order from +0x230 (ten 12-byte entries: skill row, 0, 1), the Move skill
 /// (+0x2a8), the level again (+0x2ac) and the friendship float (+0x2b0, the calendar's daily
-/// gain; the record is the runtime one, whose +0x2a4 it is, with 12 bytes in front).
+/// gain; the record is the runtime one, whose +0x2a4 it is, with 12 bytes in front). The
+/// equipment is four item units (weapon, armour, two accessories) at +0x19c, after a 144 (their
+/// size in bytes); a unit with no item has `itemData` row -1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Member {
     pub character: i32,
@@ -492,7 +494,12 @@ pub struct Member {
     /// The skill rows of commands 0 to 9.
     pub skills: [i32; 10],
     pub friendship: f32,
+    /// The `itemData` rows worn: weapon, armour, two accessories (-1 none).
+    pub equipment: [i32; 4],
 }
+
+/// Where a `Party` record's four equipped item units start.
+const EQUIPMENT: usize = 0x19c;
 
 pub fn member(d: &[u8]) -> Option<Member> {
     let w = |k: usize| d.get(4 * k..4 * k + 4).map(|b| i32::from_le_bytes(b.try_into().unwrap()));
@@ -511,6 +518,7 @@ pub fn member(d: &[u8]) -> Option<Member> {
         equipped: [w(0x46)?, w(0x47)?, w(0x48)?, w(0x49)?, w(0x4a)?],
         skills: std::array::from_fn(|k| w(0x8c + 3 * k).unwrap_or(-1)),
         friendship: f,
+        equipment: std::array::from_fn(|k| d.get(EQUIPMENT + k * ITEM_UNIT + 2..EQUIPMENT + k * ITEM_UNIT + 4).map_or(-1, |b| i32::from(i16::from_le_bytes([b[0], b[1]])))),
     })
 }
 
@@ -652,6 +660,10 @@ pub struct Summary {
     pub place_knowledge: Vec<i32>,
     /// `worldmap/chara`: two i32 (29 and 0 in one save: the place the party is at, presumably).
     pub world_position: Option<(i32, i32)>,
+    /// `worldmap/pointerStatus`: per place, see [`place_states`].
+    pub place_states: Vec<(i32, bool, i32)>,
+    /// `fieldmap/m_userDataFieldMapData`: see [`field_effect`].
+    pub field_effect: Option<(i32, i32, [i32; 3])>,
     /// `work/work_data_status`: per `WorkData.xml` row (103), -1 not open, 1 open and new, 0
     /// open, 2 done.
     pub work_status: Vec<i32>,
@@ -769,6 +781,8 @@ pub fn summary(records: &[Record]) -> Summary {
             .map(|d| d.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
             .unwrap_or_default(),
         world_position: bytes(top("worldmap").and_then(|r| r.child("chara"))).and_then(|d| Some((i32_at(&d, 0)?, i32_at(&d, 4)?))),
+        place_states: bytes(top("worldmap").and_then(|r| r.child("pointerStatus"))).map(|d| place_states(&d)).unwrap_or_default(),
+        field_effect: bytes(top("fieldmap").and_then(|r| r.child("m_userDataFieldMapData"))).and_then(|d| field_effect(&d)),
         mix_skills_learnt: bytes(top("bonus").and_then(|r| r.child("skill"))).map(|d| d.iter().map(|&b| b != 0).collect()).unwrap_or_default(),
         mix_bonus: bytes(top("bonus").and_then(|r| r.child("mixvalue")))
             .map(|d| d.chunks_exact(2).map(|c| i32::from(u16::from_le_bytes([c[0], c[1]]))).collect())

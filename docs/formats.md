@@ -530,6 +530,34 @@ squad, its first three (each at its level's growth row with the saved equipped m
 defense and speed, starting at its HP and MP now) and those items (quality, effects, traits and
 uses as saved, target and wait from the battle item table).
 
+**Equipment** is in the `Party` record too: four item units (36 bytes, the same layout as the
+item lists) at +0x19c, after a word 144 (their size), weapon, armour and two accessories; an
+empty slot has `itemData` row -1 (its serial is not 0xffff). Escha's first two in one save are
+rows 364 and 417 (`save::Member::equipment`). The worn items keep their quality and traits
+there; the session does not.
+
+**Starting from a game save** (`Session::from_game_save`; `Session::open` takes either
+format by its bytes; `--load FILE`). Checked against a text save made earlier from the same
+game save (the user's, 8/20), the two agree in everything the text holds:
+- the lead is `global` +0x38 (0 Escha); today is `date`'s first word; money, the members'
+  level and experience, the equipment above;
+- the basket is `item/m_unitKago` in order (item, quality, trait rows that are not -1);
+- the field and the spot are not saved as such: `worldmap/chara`'s first word is the world map
+  point the party is at (29, `SP_A2P1`), which opens field 26, and the player stands at that
+  field's arrival place (53.32, 102.8 m: the text's 5332, 10280). The game saves on the area map;
+- `known` is the library's items at level 2 or more (`knowledge/item`; held items are added);
+  `visited` the places at 15 in `worldmap/knowledgePointer` (10 is only seen);
+- `field-effect` is `fieldmap/m_userDataFieldMapData` (gauge, mode, three values), `taken`
+  the slots of `quest/player`, `seen` the events' seen flag and day, `flag` the non-zero event
+  flags;
+- the places' obstacles and gimmicks come from `worldmap/pointerStatus` and the place table
+  (`[1, N]`: N minus the durability left is the wear; `[0, N]`: open when the flag byte is
+  clear); none are worn or opened in this save.
+
+Not in the text key: the alchemists' battle items (`carry`), which the game save holds
+(Escha's, Logy's) and the session now carries; the key was made before `carry` lines existed.
+The field time carried (`tenths`) is not in a game save: it is zero on the area map.
+
 The events (`event/m_eventListSaveData`, `save::EventRecord`): 1,165 records of 36 bytes, one
 per `EVENT_*` name in the executable's enum order (`EVENT_AA01_010`, `EVENT_MM01_OP1_011`, ...),
 the array at `0x1410a42d0` saved whole: seen (+0, 94 in one save), the day it was seen (+4,

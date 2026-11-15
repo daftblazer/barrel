@@ -73,7 +73,20 @@ pub struct BattleItem {
     pub traits: Vec<usize>,
 }
 
+/// The library's level of a place visited (`worldmap/knowledgePointer`: 15 all, 10 only seen).
+const KNOWLEDGE_ALL: i32 = 15;
+
+/// An item unit's trait rows, those it has.
+fn held_traits(u: &crate::data::save::ItemUnit) -> Vec<usize> {
+    u.traits.iter().filter_map(|&t| usize::try_from(t).ok()).collect()
+}
+
 impl BattleItem {
+    /// From the game's item unit: the uses left are its first count.
+    fn from_unit(u: &crate::data::save::ItemUnit) -> BattleItem {
+        BattleItem { item: i32::from(u.item), quality: u.quality, uses: i32::from(u.counts[0]), effects: u.effects.to_vec(), traits: held_traits(u) }
+    }
+
     /// Its `carry` line for member `c`: `carry C ITEM QUALITY USES EFFECTS|- [TRAITS]`.
     fn line(&self, c: usize) -> String {
         let list = |v: Vec<String>| if v.is_empty() { "-".to_string() } else { v.join(",") };
@@ -715,6 +728,101 @@ impl Session {
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
         Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state, taken }, at))
     }
+
+    /// A session from either save format, by its bytes: Barrel's text (it starts `barrel-save`)
+    /// or the game's `GAMEDATA<NN>.pcsave` ([`Session::from_game_save`]).
+    pub fn open(chain: Chain, bytes: &[u8], landmarks: &crate::data::world::Landmarks) -> Result<(Session, [f32; 2]), BadSave> {
+        if bytes.starts_with(b"barrel-save") {
+            return Session::load(chain, std::str::from_utf8(bytes).map_err(|_| BadSave("not text".into()))?);
+        }
+        Session::from_game_save(chain, bytes, landmarks)
+    }
+
+    /// A session from the game's own save (`GAMEDATA<NN>.pcsave`), over the story's `chain` (a
+    /// fresh one): in free play where the save was made. The save holds that as a world map
+    /// point, not a field and a spot, so the player stands where the field's arrival place is
+    /// (the game saves on the area map, and the next field entered starts there). What Barrel's
+    /// text format holds is read; the rest of the save is ignored.
+    pub fn from_game_save(mut chain: Chain, bytes: &[u8], landmarks: &crate::data::world::Landmarks) -> Result<(Session, [f32; 2]), BadSave> {
+        use crate::data::save;
+        let bad = |e: barrel_formats::Error| BadSave(format!("game save: {e}"));
+        let state = save::decode(save::parse(bytes).map_err(bad)?.body).map_err(bad)?;
+        let sum = save::summary(&save::state_records(&state).map_err(bad)?);
+        let missing = |what: &str| BadSave(format!("game save: no {what}"));
+        let point = sum.world_position.ok_or_else(|| missing("world position"))?.0;
+        let (field, at) = landmarks.field_at(point).ok_or_else(|| BadSave(format!("game save: world map point {point} opens no field")))?;
+        let story = chain.story_mut();
+        story.today = i32::try_from(sum.day.ok_or_else(|| missing("date"))?).map_err(|_| missing("date"))?;
+        story.seen = vec![None; story.seen.len()];
+        for (slot, e) in story.seen.iter_mut().zip(&sum.events) {
+            *slot = e.seen.then_some(e.day);
+        }
+        story.flags = vec![0; story.flags.len()];
+        for (slot, &v) in story.flags.iter_mut().zip(&sum.event_flags) {
+            *slot = v;
+        }
+        story.field_map = Some(field as i32);
+        // The party in character order; the alchemists carry their battle items.
+        let mut by_character: Vec<_> = sum.party.iter().collect();
+        by_character.sort_by_key(|m| m.character);
+        if by_character.iter().enumerate().any(|(k, m)| usize::try_from(m.character) != Ok(k)) {
+            return Err(BadSave("game save: party records are not characters 0 to n".into()));
+        }
+        let party = by_character
+            .iter()
+            .map(|m| Member {
+                level: m.level,
+                experience: m.exp,
+                equipment: m.equipment,
+                battle_items: sum.battle_items.get(m.character as usize).into_iter().flatten().map(BattleItem::from_unit).collect(),
+            })
+            .collect();
+        let basket: Vec<crate::gather::Got> = sum.basket.iter().map(|u| crate::gather::Got { item: i32::from(u.item), quality: u.quality, traits: held_traits(u) }).collect();
+        // The library's items seen or better (2 and up), as the text's `known` holds them.
+        let mut known: std::collections::BTreeSet<i32> = sum.knowledge.item.iter().enumerate().filter(|&(_, &l)| l >= 2).map(|(k, _)| k as i32).collect();
+        known.extend(basket.iter().map(|g| g.item));
+        let visited = sum.place_knowledge.iter().enumerate().filter(|&(_, &l)| l == KNOWLEDGE_ALL).map(|(k, _)| k).collect();
+        // The places' states: a place behind a gimmick is open once its flag is clear, one
+        // behind an obstacle has its durability worn down.
+        let (mut opened, mut worn) = (std::collections::BTreeSet::new(), std::collections::BTreeMap::new());
+        for (k, (place, state)) in landmarks.places.iter().zip(&sum.place_states).enumerate() {
+            match place.extra[0] {
+                0 if !state.1 => {
+                    opened.insert(k);
+                }
+                1 if place.extra[1] - state.0 > 0 => {
+                    worn.insert(k, place.extra[1] - state.0);
+                }
+                _ => {}
+            }
+        }
+        let (field_gauge, field_state) = sum.field_effect.map_or((0, Default::default()), |(gauge, mode, values)| (gauge, crate::gather::FieldState { mode, values }));
+        let mut taken = [None; TAKEN_SLOTS];
+        for (slot, t) in taken.iter_mut().zip(&sum.taken) {
+            *slot = t.map(|t| Taken { kind: t.kind, target: t.target, wanted: t.wanted, progress: t.progress, posted: t.posted, until: t.until });
+        }
+        Ok((
+            Session {
+                chain,
+                calendar: None,
+                carried: 0,
+                basket,
+                scene: Scene::Field(field),
+                field: Some(field),
+                logy: sum.hero == Some(1),
+                money: sum.money.ok_or_else(|| missing("money"))?.clamp(0, MAX_MONEY),
+                party,
+                known,
+                opened,
+                worn,
+                visited,
+                field_gauge,
+                field_state,
+                taken,
+            },
+            at,
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -911,5 +1019,45 @@ mod tests {
         assert_eq!((paid, s.money, s.basket.len()), (48, 78, 0));
         let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
         assert_eq!(back.money, 78);
+    }
+
+    /// The game's own save of one moment of play against Barrel's text save of the same moment
+    /// (made from it earlier, by another route). Skipped without the files:
+    /// `BARREL_GAME_SAVE` (a `GAMEDATA<NN>.pcsave`), `BARREL_TEXT_SAVE` (the text) and
+    /// `BARREL_EXE` (the game's executable).
+    #[test]
+    fn a_game_save_loads_as_the_text_save_of_it() {
+        let root = "../escha-recomp/work";
+        let var = |name: &str, default: String| std::env::var(name).unwrap_or(default);
+        let game = var("BARREL_GAME_SAVE", format!("{root}/drive_c/users/player/Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/GAMEDATA00.pcsave"));
+        let text = var("BARREL_TEXT_SAVE", format!("{root}/saves/barrel-user.save"));
+        let exe = var("BARREL_EXE", format!("{root}/game/Atelier_Escha_and_Logy_EN.exe"));
+        let (Ok(game), Ok(text), Ok(exe)) = (std::fs::read(&game), std::fs::read_to_string(&text), std::fs::read(&exe)) else {
+            eprintln!("skipped: the game save, the text save or the executable is not there");
+            return;
+        };
+        let landmarks = crate::data::world::Landmarks::from_exe(&barrel_formats::pe::Pe::parse(&exe).unwrap()).unwrap();
+        let (want, want_at) = Session::load(Chain::new(Vec::new(), Vec::new(), Vec::new()), &text).unwrap();
+        let (got, got_at) = Session::open(Chain::new(Vec::new(), Vec::new(), Vec::new()), &game, &landmarks).unwrap();
+        assert_eq!((got.logy, got.field(), got_at), (want.logy, want.field(), want_at), "lead, field, position");
+        assert_eq!(got.today(), want.today(), "today");
+        assert_eq!(got.field_tenths(), want.field_tenths());
+        assert_eq!(got.money, want.money, "money");
+        assert_eq!(got.party.len(), want.party.len(), "party size");
+        for (c, (g, w)) in got.party.iter().zip(&want.party).enumerate() {
+            assert_eq!((g.level, g.experience, g.equipment), (w.level, w.experience, w.equipment), "member {c}");
+        }
+        assert_eq!(got.basket, want.basket, "basket");
+        assert_eq!(got.known, want.known, "known items");
+        assert_eq!(got.visited, want.visited, "visited places");
+        assert_eq!(got.opened, want.opened, "opened places");
+        assert_eq!(got.worn, want.worn, "worn obstacles");
+        assert_eq!((got.field_gauge, got.field_state), (want.field_gauge, want.field_state), "field effect");
+        assert_eq!(got.taken, want.taken, "taken requests");
+        assert_eq!(got.chain.story().seen, want.chain.story().seen, "events seen");
+        assert_eq!(got.chain.story().flags, want.chain.story().flags, "event flags");
+        // The text save predates its `carry` lines: the game's save holds the alchemists' battle items.
+        assert!(want.party.iter().all(|m| m.battle_items.is_empty()));
+        assert!(!got.party[0].battle_items.is_empty());
     }
 }

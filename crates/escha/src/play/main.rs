@@ -3443,7 +3443,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // `--title-load`: the title opens on its Load Game list (the menu's Option → Load).
     let mut title_load = false;
     // --save FILE: where F5 (or `BARREL_SAVE_AT=FRAME`) saves in free play; --load FILE: start
-    // in free play from such a save.
+    // in free play from such a save, or from the game's own GAMEDATA file.
     let mut save_file = None::<PathBuf>;
     let mut new_game = None::<PathBuf>;
     let mut travel_to = None::<String>;
@@ -3802,14 +3802,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if load_file.is_some() || carried_save.is_some() {
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--load: give --field with a field of the game install")?.to_path_buf();
         let file = load_file.clone().unwrap_or_else(|| PathBuf::from("(carried)"));
-        let text = match carried_save {
-            Some(t) => t,
-            None => std::fs::read_to_string(&file)?,
+        let bytes = match carried_save {
+            Some(t) => t.into_bytes(),
+            None => std::fs::read(&file)?,
         };
-        let (s, at) = barrel_escha::session::Session::load(story_chain(&root)?, &text)?;
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        // Barrel's own save or the game's `GAMEDATA<NN>.pcsave`, told apart by its bytes.
+        let landmarks = barrel_escha::data::world::Landmarks::from_exe(&barrel_formats::pe::Pe::parse(&exe)?).ok_or("--load: the executable has no places table")?;
+        let (s, at) = barrel_escha::session::Session::open(story_chain(&root)?, &bytes, &landmarks)?;
         let s = s.with_calendar(barrel_escha::days::Data::load(&root)?, barrel_engine::rng::Rng::seeded(1));
         let barrel_escha::session::Scene::Field(map) = *s.scene() else { return Err("--load: the save is not in free play".into()) };
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         let s = s.with_party(&party_defaults(&exe));
         let names = barrel_escha::data::maps::field_maps(&barrel_formats::pe::Pe::parse(&exe)?);
         let name = names.get(map as usize).ok_or("--load: no such field map")?;

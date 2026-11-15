@@ -143,6 +143,29 @@ pub fn arrival(pe: &Pe, map: u32) -> Option<Arrival> {
     arrivals(pe, ARRIVALS_EN)?.into_iter().find(|a| a.map == map)
 }
 
+/// The tables a game save's places and positions are read through: the places, the world map
+/// points' fields and the arrival places, from the executable.
+#[derive(Clone, Debug)]
+pub struct Landmarks {
+    pub places: Vec<Place>,
+    points: Vec<(u32, u32, i32)>,
+    arrivals: Vec<Arrival>,
+}
+
+impl Landmarks {
+    pub fn from_exe(pe: &Pe) -> Option<Landmarks> {
+        Some(Landmarks { places: places(pe, PLACES_EN)?, points: point_maps(pe)?, arrivals: arrivals(pe, ARRIVALS_EN)? })
+    }
+
+    /// The field map world map point `point` opens and where the player arrives in it, in field
+    /// units (the arrival's metres times 100: x, z). The first field of a point with several.
+    pub fn field_at(&self, point: i32) -> Option<(u32, [f32; 2])> {
+        let &(_, map, _) = self.points.iter().find(|&&(p, _, _)| i64::from(p) == i64::from(point))?;
+        let a = self.arrivals.iter().find(|a| a.map == map)?;
+        Some((map, [a.position[0] * 100.0, a.position[2] * 100.0]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Area;
