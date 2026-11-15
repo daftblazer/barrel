@@ -335,3 +335,9 @@ likely settle them where static reading failed.
   motion starts, and moves the guard in front of its target (not animated here).
 
 - (2026-11-15) Movies: the colour matrix is BT.709 by the Media Foundation rule for HD video without a colour description (the recording of the original has no movie: Proton failed it). Check against a run of the game where the movie plays. Whether the startup movie can be skipped, and with which buttons, is also unread (Barrel: any).
+
+- **The Change command.** The battle-stats recording showed Change on Katla's turn; the
+  battle-walk capture (the user's save, group 25, two members in reserve) shows the third squad
+  member's row without it. Barrel now leaves Change out everywhere. What makes the game offer it
+  (story progress, whose turn, the reserve) is unread: hook the command row's builder in a
+  battle where it shows.
