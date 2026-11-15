@@ -394,7 +394,8 @@ mod tests {
     fn lit_entry_and_cursor() {
         assert_eq!(prompt_at(0.0), 255);
         assert_eq!(prompt_at(1.2), 51);
-        assert_eq!(prompt_at(2.4), 255);
+        assert_eq!(prompt_at(2.4), 251);
+        assert_eq!(prompt_at(PROMPT_PERIOD / 60.0), 255);
         assert_eq!(white_at(0.0), 255);
         assert_eq!(white_at(0.15), 128);
         assert_eq!(white_at(0.31), 0);
