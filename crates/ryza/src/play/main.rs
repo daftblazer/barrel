@@ -306,7 +306,8 @@ fn main() -> Result<()> {
     // Steam's, else the "Locate game files" screen; every game file is read through the layers
     // over it (`barrel_files`).
     let given = locate::take_option(&mut raw, "--game").map(std::path::PathBuf::from);
-    let named = raw.first().filter(|a| !a.starts_with("--")).map(std::path::PathBuf::from);
+    let launched = locate::take_game_program(&mut raw);
+    let named = raw.first().filter(|a| !a.starts_with("--")).map(std::path::PathBuf::from).or(launched);
     let Some(game) = locate::resolve(barrel_files::find::Title::Ryza, given, named)? else { return Ok(()) };
     let mut kept_pump = game.pump;
     // No scene on the command line: Ryza walking Rasenboden from her garden gate, in a window.

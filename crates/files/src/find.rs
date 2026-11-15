@@ -160,7 +160,7 @@ impl Found {
 /// not hold the game; `Ok(None)` when nothing was found, and the user must be asked.
 pub fn find(title: Title, given: Option<PathBuf>) -> Result<Option<Found>, String> {
     if let Some(dir) = given.or_else(|| std::env::var_os("BARREL_GAME_DIR").map(PathBuf::from)) {
-        return if is_install(title, &dir) { Ok(Some(Found::Given(dir))) } else { Err(format!("{}: not a {} folder (no {})", dir.display(), title.name(), title.marker())) };
+        return if is_install(title, &dir) { Ok(Some(Found::Given(dir))) } else { Err(format!("{}: not a folder with {} (no {})", dir.display(), title.name(), title.marker())) };
     }
     if let Some(dir) = crate::config::saved_game(title.key()).filter(|d| is_install(title, d)) {
         return Ok(Some(Found::Saved(dir)));

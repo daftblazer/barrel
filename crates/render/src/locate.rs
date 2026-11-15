@@ -315,6 +315,16 @@ pub fn take_option(args: &mut Vec<String>, flag: &str) -> Option<String> {
     value
 }
 
+/// Steam's launch option `barrel-game %command%` gives the game's own program (`...\\Atelier_X.exe`)
+/// as the first argument: removes it and gives its folder, the install.
+pub fn take_game_program(args: &mut Vec<String>) -> Option<std::path::PathBuf> {
+    let first = args.first().filter(|a| a.to_ascii_lowercase().ends_with(".exe"))?;
+    // A Windows path on any host: both slashes end a folder name.
+    let folder = first.rsplit_once(['/', '\\']).map(|(dir, _)| std::path::PathBuf::from(dir)).filter(|d| !d.as_os_str().is_empty());
+    args.remove(0);
+    folder
+}
+
 /// The window as the graphics config has it (else the launcher's default, else 1280x720).
 pub fn config_display() -> crate::settings::Display {
     let text = crate::settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok());
@@ -360,6 +370,16 @@ pub fn resolve(title: Title, given: Option<std::path::PathBuf>, from_args: Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_launch_programs_folder_is_the_install() {
+        let mut a: Vec<String> = ["/g/Atelier Escha and Logy DX/Atelier_Escha_and_Logy.exe", "-x"].map(String::from).to_vec();
+        assert_eq!(take_game_program(&mut a), Some("/g/Atelier Escha and Logy DX".into()));
+        assert_eq!(a, ["-x"]);
+        let mut b: Vec<String> = ["--field".to_string()].to_vec();
+        assert_eq!(take_game_program(&mut b), None);
+        assert_eq!(b.len(), 1);
+    }
 
     #[test]
     fn an_option_is_taken_out_with_its_value() {

@@ -3410,7 +3410,9 @@ fn main() -> Result<()> {
     // `--title FOLDER`), `BARREL_GAME_DIR`, the config's, Steam's, else the "Locate game files"
     // screen (`barrel_render::locate::resolve`). Every game file is read through the layers over it.
     let given = locate::take_option(&mut args, "--game").map(PathBuf::from);
-    let Some(game) = locate::resolve(barrel_files::find::Title::Escha, given, install_in_args(&args))? else { return Ok(()) };
+    // Steam's launch option `barrel-escha %command%` hands over the game's own program.
+    let launched = locate::take_game_program(&mut args);
+    let Some(game) = locate::resolve(barrel_files::find::Title::Escha, given, install_in_args(&args).or(launched))? else { return Ok(()) };
     let mut pump = game.pump;
     // No scene on the command line: the game itself, from its title screen, in a window.
     if args.first().is_none_or(|a| a != "--field" && a.starts_with("--")) {
