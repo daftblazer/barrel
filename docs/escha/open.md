@@ -277,6 +277,7 @@ likely settle them where static reading failed.
   and Support Guard are not in, nor supports by the stand-in.
 
 - Support Guard: its cost (50, from one live reading) and whether it covers area attacks, its
-  +0x2b8's clearing (`0x1401b4a3f`) and the guard's own gauge gain are not read; not offered in
-  play yet (the prompt comes as the monster's action starts, before its hit: playback must hold
-  a monster's hit for the window).
+  +0x2b8's clearing (`0x1401b4a3f`) and the guard's own gauge gain are not read. In play a
+  monster's action on a member is held 1 s (Barrel's length, not measured) with "Support Guard"
+  bubbles over the others' plates when the gauge holds 50; the game holds it as the monster's
+  motion starts, and moves the guard in front of its target (not animated here).

@@ -497,9 +497,12 @@ pub const SUPPORT_BUBBLES: u32 = 882;
 const BUBBLE_LAYOUTS: [u32; 3] = [879, 881, 880];
 const BUBBLE_ROW_LIMIT: i32 = 900;
 pub const SUPPORT_LABEL: &str = "Support Attack";
+/// The offer while a monster's action on a member starts (the escha-support-attack recording,
+/// Spitball on Katla).
+pub const GUARD_LABEL: &str = "Support Guard";
 
 /// The bubbles over the plates in `plates` (0 left, 1 centre, 2 right).
-pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, plates: &[usize]) -> Vec<Element> {
+pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, plates: &[usize], label: &str) -> Vec<Element> {
     let mut out = Vec::new();
     for p in nodes {
         let Some(k) = p.path.get(1).and_then(|l| BUBBLE_LAYOUTS.iter().position(|b| b == l)) else { continue };
@@ -508,7 +511,7 @@ pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>
         }
         if p.node.part == 0x164 {
             if let Some(t) = texts(p) {
-                out.push(Element::Label(Text { text: SUPPORT_LABEL.to_string(), ..t }));
+                out.push(Element::Label(Text { text: label.to_string(), ..t }));
             }
         } else if p.node.part == BUTTONS {
             // The button in the Western layout (`message::western_sprite`: the centre's cut 6

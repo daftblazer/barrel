@@ -330,7 +330,9 @@ with the action's damage in the red 0xe4; the rate comes from `fight::Event::Rat
 party action ends: its steps before the hits plus each effect's act step, the act table's last
 word). While a party hit plays, LB, Y and RB (1, 2, 3; `BARREL_BATTLE_SUPPORTS` offscreen, members
 in order) give that plate's member's Support Attack (`auto_battle::Command::Support` after the
-action, the battle fought again; refused when the gauge is short or the target down). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
+action, the battle fought again; refused when the gauge is short or the target down). A monster's action on a member is held for a second first,
+"Support Guard" bubbles over the plates of those who could guard, the same buttons standing guard
+(`Command::Guard { by, at }`, `BARREL_BATTLE_GUARDS` offscreen). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
 number (`battlehud::number`: part 0xe0's white brush digits, sign first, 36 apart and centred,
 at about 140%, fading in over 0.1 s from 1.6 times that by 0.2 s, gone after 1 s; measured on
 the ruins-entrance-battle-result recording at 149.8 s, a 1280 × 720 recording), 100 units above the fighter's place.

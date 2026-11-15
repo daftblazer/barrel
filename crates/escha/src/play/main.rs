@@ -1265,7 +1265,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
     let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
     let bubble_nodes = barrel_escha::data::layout::placed(&pe, battlehud::SUPPORT_BUBBLES);
-    every.extend(battlehud::support_bubbles(&bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &[0, 1, 2]));
+    every.extend(battlehud::support_bubbles(&bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &[0, 1, 2], battlehud::SUPPORT_LABEL));
     every.extend(battlehud::target_plate(&plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), &battlehud::Plate { name: String::new(), hp: (1, 1), at: [0, 0] }));
     // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
     // The damage rate panel, the battle numbers' digits and the action banner (their sheets).
@@ -1307,6 +1307,10 @@ const RESULT_SECONDS: f32 = 3.0;
 /// date panel alone on the white, in seconds (about 2 and 2 in the recording).
 /// The Support Attack skill's name (a support's own hit opens no window of its own).
 const SUPPORT_SKILL_NAME: &str = "Support Attack";
+
+/// How long a monster's action on a member is held for Support Guards (seconds; Barrel's own:
+/// the game holds it while the monster's motion starts, not measured).
+const GUARD_SECONDS: f32 = 1.0;
 
 /// The most frames an offscreen run writes (its length is this times `--save-every`).
 const MAX_WRITTEN_FRAMES: u32 = 600;
@@ -1396,6 +1400,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         action_total: 0,
         support: barrel_escha::battle::SUPPORT_START,
         acting: None,
+        guard_hold: None,
         music,
         victory_played: false,
         wiped: None,
@@ -1464,6 +1469,9 @@ struct BattlePlay {
     /// The party action now playing (its member, when it came up, who has supported it): the
     /// window for Support Attacks.
     acting: Option<(usize, f32, Vec<usize>)>,
+    /// A monster's action on a member held back for Support Guards: its event's index, when
+    /// the hold began, whether a guard was given.
+    guard_hold: Option<(usize, f32, bool)>,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1645,9 +1653,49 @@ impl BattlePlay {
         self.acting.as_ref().filter(|a| self.time - a.1 < battlehud::BANNER_SECONDS).map(|a| a.0)
     }
 
+    /// The held monster action's event index, while a guard may be given for it.
+    fn guard_window(&self) -> Option<usize> {
+        self.guard_hold.filter(|h| !h.2 && self.time - h.1 < GUARD_SECONDS && self.next == h.0).map(|h| h.0)
+    }
+
+    /// Member `by` stands guard for the held monster action (`Command::Guard`, the battle
+    /// fought again; refused when nothing changes: the gauge short, the action not one a guard
+    /// takes).
+    fn guard(&mut self, by: usize) -> bool {
+        let Some(at) = self.guard_window() else { return false };
+        if by >= self.charas.len() || self.now.get(by).is_none_or(|v| v[0] <= 0) {
+            return false;
+        }
+        self.fight.commands.push(barrel_escha::auto_battle::Command::Guard { by, at });
+        let f = &self.fight;
+        match barrel_escha::auto_battle::fight_commanded(&f.tables, &f.party, &f.monsters, f.rng, &f.commands) {
+            Ok((outcome, turn)) if outcome.events.get(at) != self.outcome.events.get(at) => {
+                eprintln!("battle: guard by {by}");
+                self.outcome = outcome;
+                self.turn = turn;
+                if let Some(h) = self.guard_hold.as_mut() {
+                    h.2 = true;
+                }
+                true
+            }
+            _ => {
+                self.fight.commands.pop();
+                false
+            }
+        }
+    }
+
     /// The plates whose member could support the party hit now playing (standing, its cost in
     /// the gauge as the actions played so far left it), for the bubbles.
     fn support_plates(&self) -> Vec<usize> {
+        // While a monster's action is held: members other than its target who could guard.
+        if let Some(at) = self.guard_window() {
+            let target = match self.outcome.events.get(at) {
+                Some(barrel_escha::fight::Event::Acted { target, .. }) => *target,
+                _ => return Vec::new(),
+            };
+            return (0..self.charas.len()).filter(|&k| k != target && self.now.get(k).is_some_and(|v| v[0] > 0) && self.support >= barrel_escha::battle::support_guard_cost()).collect();
+        }
         let Some(actor) = self.support_window() else { return Vec::new() };
         (0..self.charas.len())
             .filter(|&k| k != actor && self.acting.as_ref().is_none_or(|a| !a.2.contains(&k)))
@@ -1769,6 +1817,20 @@ impl BattlePlay {
         // Nothing to play: a member's turn waits (the step's time kept for its command), or the
         // battle is played out.
         if (self.next >= self.outcome.events.len() && self.turn.is_some()) || self.next > self.outcome.events.len() {
+            return;
+        }
+        // A monster's action on a member: held back a moment first, its banner up, for Support
+        // Guards (the game offers them as the action starts, before its hit).
+        if let Some(barrel_escha::fight::Event::Acted { who, target, skill, .. }) = self.outcome.events.get(self.next)
+            && *who >= self.charas.len()
+            && *target < self.charas.len()
+            && self.guard_hold.is_none_or(|h| h.0 != self.next)
+            && self.support >= barrel_escha::battle::support_guard_cost()
+            && (0..self.charas.len()).any(|k| k != *target && self.now.get(k).is_some_and(|v| v[0] > 0))
+        {
+            self.guard_hold = Some((self.next, self.time, false));
+            self.banner = Some((skill.clone(), self.time));
+            self.until = self.time + GUARD_SECONDS;
             return;
         }
         self.until = self.time + BATTLE_STEP;
@@ -3938,6 +4000,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
     }
     let mut battle_keys: std::collections::VecDeque<title::Button> = title::keys(&std::env::var("BARREL_BATTLE_KEYS").unwrap_or_default()).into();
+    let mut battle_guards: std::collections::VecDeque<usize> = std::env::var("BARREL_BATTLE_GUARDS").unwrap_or_default().split(',').filter_map(|k| k.trim().parse().ok()).collect();
     let mut battle_supports: std::collections::VecDeque<usize> = std::env::var("BARREL_BATTLE_SUPPORTS").unwrap_or_default().split(',').filter_map(|k| k.trim().parse().ok()).collect();
     let mut battle_layer = match battle_play.as_ref() {
         Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
@@ -4233,7 +4296,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 _ => None,
             };
             if let (Some(by), Some(play)) = (plate, battle_play.as_mut()) {
-                play.support(by);
+                if play.guard_window().is_some() {
+                    play.guard(by);
+                } else {
+                    play.support(by);
+                }
                 continue;
             }
             // A member's turn: the arrows choose the command and target, Enter gives it.
@@ -4956,6 +5023,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 if presenter.is_none() && play.waiting()
                     && let Some(b) = battle_keys.pop_front() {
                         play.press(b);
+                    }
+                // Offscreen: `BARREL_BATTLE_GUARDS`, members to stand guard as the next
+                // monster actions on another member are held.
+                if presenter.is_none() && play.guard_window().is_some() && play.support_plates().contains(battle_guards.front().unwrap_or(&usize::MAX))
+                    && let Some(by) = battle_guards.pop_front() {
+                        play.guard(by);
                     }
                 // Offscreen: `BARREL_BATTLE_SUPPORTS`, members to support with as the next party
                 // hits play (one each).
@@ -5863,7 +5936,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     if let Some((r, total)) = rate {
                         elements.extend(battlehud::rate_panel(&h.rate_nodes, r, total));
                     }
-                    elements.extend(battlehud::support_bubbles(&h.bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &bubbles));
+                    elements.extend(battlehud::support_bubbles(&h.bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &bubbles, if play.guard_window().is_some() { battlehud::GUARD_LABEL } else { battlehud::SUPPORT_LABEL }));
                     if let Some(name) = &banner {
                         let width = message::width_of(&h.font, name) * battlehud::BANNER_TEXT_SIZE / message::LINE * 1.47;
                         elements.extend(battlehud::banner(&pe, name, width));
