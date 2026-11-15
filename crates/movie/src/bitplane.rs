@@ -187,3 +187,4 @@ mod tests {
         assert_eq!(b.position(), 1 + 3 + 1 + 3);
     }
 }
+

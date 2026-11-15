@@ -288,6 +288,9 @@ pub struct InterHeader {
     pub mb_transform: bool,
     pub ac_set: u8,
     pub dc_high: bool,
+    /// B pictures: BFRACTION as (numerator, denominator) and the DIRECTMB bitplane.
+    pub fraction: Option<(u8, u8)>,
+    pub direct: Option<Bitplane>,
     pub mb_start: usize,
 }
 
@@ -296,6 +299,7 @@ pub struct InterTables {
     mvmode: [crate::vc1_small::Coded<crate::vc1_small::MvMode>; 2],
     mvmode2: [crate::vc1_small::Coded<crate::vc1_small::MvMode>; 2],
     mvrange: crate::vc1_small::Coded<u8>,
+    bfraction: crate::vc1_small::Coded<(u8, u8)>,
 }
 
 impl Default for InterTables {
@@ -305,6 +309,7 @@ impl Default for InterTables {
             mvmode: [Coded::new(MVMODE_LOW, |r| *r), Coded::new(MVMODE_HIGH, |r| *r)],
             mvmode2: [Coded::new(MVMODE2_LOW, |r| *r), Coded::new(MVMODE2_HIGH, |r| *r)],
             mvrange: Coded::new(MVRANGE, |r| *r),
+            bfraction: Coded::new(BFRACTION, |r| *r),
         }
     }
 }
@@ -314,14 +319,16 @@ impl Sequence {
     pub fn inter_header(&self, entry: &EntryPoint, data: &[u8], planes: &BitplaneTables, tables: &InterTables) -> Result<InterHeader> {
         use crate::vc1_small::MvMode;
         let start = self.picture_start(data)?;
-        if start.kind != PictureType::P {
-            return Err(Error(format!("{:?} picture, not P", start.kind)));
+        let is_b = start.kind == PictureType::B;
+        if start.kind != PictureType::P && !is_b {
+            return Err(Error(format!("{:?} picture, not P or B", start.kind)));
         }
         if entry.panscan || entry.quantizer != 0 || entry.dquant != 0 {
             return Err(Error("pan-scan, an explicit quantizer or DQUANT: not supported yet".into()));
         }
         let mut b = Bits::new(data);
-        b.skip(self.interlace as u32 + 1);
+        // PTYPE: 0b (P) or 10b (B).
+        b.skip(self.interlace as u32 + 1 + is_b as u32);
         if self.frame_counter {
             b.read(8);
         }
@@ -335,6 +342,7 @@ impl Sequence {
         if self.frame_interpolation {
             b.read(1);
         }
+        let fraction = if is_b { Some(tables.bfraction.read(&mut b).ok_or_else(|| Error("BFRACTION (reserved code?)".into()))?) } else { None };
         let pqindex = b.read(5) as u8;
         if pqindex == 0 {
             return Err(Error("PQINDEX 0".into()));
@@ -346,13 +354,21 @@ impl Sequence {
         }
         let mv_range = if entry.extended_mv { tables.mvrange.read(&mut b).ok_or_else(|| Error("MVRANGE".into()))? } else { 0 };
         let rate = (pquant <= 12) as usize;
-        let mut mv_mode = tables.mvmode[rate].read(&mut b).ok_or_else(|| Error("MVMODE".into()))?;
-        let mut intensity = None;
-        if mv_mode == MvMode::IntensityCompensation {
-            mv_mode = tables.mvmode2[rate].read(&mut b).ok_or_else(|| Error("MVMODE2".into()))?;
-            intensity = Some((b.read(6) as u8, b.read(6) as u8));
-        }
         let (cols, rows) = self.macroblocks(entry);
+        let (mut mv_mode, mut intensity, mut direct) = (MvMode::One, None, None);
+        if is_b {
+            // Table 48: one bit.
+            if !b.bit() {
+                mv_mode = MvMode::OneHalfBilinear;
+            }
+            direct = Some(planes.read(&mut b, cols, rows).ok_or_else(|| Error("DIRECTMB bitplane".into()))?);
+        } else {
+            mv_mode = tables.mvmode[rate].read(&mut b).ok_or_else(|| Error("MVMODE".into()))?;
+            if mv_mode == MvMode::IntensityCompensation {
+                mv_mode = tables.mvmode2[rate].read(&mut b).ok_or_else(|| Error("MVMODE2".into()))?;
+                intensity = Some((b.read(6) as u8, b.read(6) as u8));
+            }
+        }
         let mv_type = if mv_mode == MvMode::Mixed { Some(planes.read(&mut b, cols, rows).ok_or_else(|| Error("MVTYPEMB bitplane".into()))?) } else { None };
         let skipped = planes.read(&mut b, cols, rows).ok_or_else(|| Error("SKIPMB bitplane".into()))?;
         let mv_table = b.read(2) as u8;
@@ -370,7 +386,7 @@ impl Sequence {
         if b.over() {
             return Err(Error("picture header runs out".into()));
         }
-        Ok(InterHeader { repeat: start.repeat, round_control, pqindex, pquant, half_qp, uniform: pqindex <= 8, mv_range, mv_mode, intensity, mv_type, skipped, mv_table, cbp_table, frame_transform, mb_transform, ac_set, dc_high, mb_start: b.position() })
+        Ok(InterHeader { repeat: start.repeat, round_control, pqindex, pquant, half_qp, uniform: pqindex <= 8, mv_range, mv_mode, intensity, mv_type, skipped, mv_table, cbp_table, frame_transform, mb_transform, ac_set, dc_high, fraction, direct, mb_start: b.position() })
     }
 }
 
@@ -490,6 +506,25 @@ mod movie_tests {
         }
         for (k, n) in &p_seen {
             eprintln!("P {n}: {k}");
+        }
+        let mut b_seen = std::collections::BTreeMap::new();
+        for o in asf.objects().unwrap().iter().filter(|o| o.stream == video.number) {
+            if s.picture_start(&o.data).unwrap().kind != PictureType::B {
+                continue;
+            }
+            let data = unescape(&o.data);
+            let h = match s.inter_header(&e, &data, &planes, &inter) {
+                Ok(h) => h,
+                Err(err) => {
+                    eprintln!("B failed after {} good: {} ({} bytes: {:02x?})", b_seen.values().sum::<i32>(), err.0, data.len(), &data[..data.len().min(12)]);
+                    break;
+                }
+            };
+            let plane = |p: &Bitplane| match p { Bitplane::Raw => "raw", _ => "plane" };
+            *b_seen.entry(format!("{:?} frac {:?} range {} mvtab {} cbptab {} tt {:?}/{} direct {} skip {}", h.mv_mode, h.fraction.unwrap(), h.mv_range, h.mv_table, h.cbp_table, h.frame_transform, h.mb_transform, plane(h.direct.as_ref().unwrap()), plane(&h.skipped))).or_insert(0) += 1;
+        }
+        for (k, n) in &b_seen {
+            eprintln!("B {n}: {k}");
         }
         assert!(s.pulldown && !s.interlace);
     }

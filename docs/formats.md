@@ -2230,3 +2230,9 @@ ones, then the vertical ones likewise. A colour-difference block compares its ow
 the luma vector it is derived from: that reading broke anchor 313). With it all 1,447 anchors
 are bit-exact with ffmpeg's filtered output. P overlap smoothing never came up in `avantitle`
 (no difference anywhere), so it is not written yet.
+
+B picture header (`Sequence::inter_header`, Table 22): PTYPE `10b` (two bits, P's is one),
+BFRACTION (Table 40, the standard's `111001b1` is a typo for `1110011b`, 5/6) before PQINDEX,
+MVMODE one bit (Table 48: 1 one-MV quarter-pel bicubic, 0 half-pel bilinear), then the DIRECTMB
+and SKIPMB bitplanes and the rest as in P. All 1,430 B headers of `avantitle` parse; every one
+has BFRACTION ½ (one B between anchors).

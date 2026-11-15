@@ -87,6 +87,15 @@ pub const MVMODE2_HIGH: &[(&str, MvMode)] = &[("1", MvMode::One), ("01", MvMode:
 /// Table 37: MVRANGE 0 to 3.
 pub const MVRANGE: &[(&str, u8)] = &[("0", 0), ("10", 1), ("110", 2), ("111", 3)];
 
+/// Table 40: BFRACTION, as (numerator, denominator); 1111110b and 1111111b are reserved in
+/// the advanced profile.
+pub const BFRACTION: &[(&str, (u8, u8))] = &[
+    ("000", (1, 2)), ("001", (1, 3)), ("010", (2, 3)), ("011", (1, 4)), ("100", (3, 4)), ("101", (1, 5)), ("110", (2, 5)),
+    ("1110000", (3, 5)), ("1110001", (4, 5)), ("1110010", (1, 6)), ("1110011", (5, 6)), ("1110100", (1, 7)), ("1110101", (2, 7)),
+    ("1110110", (3, 7)), ("1110111", (4, 7)), ("1111000", (5, 7)), ("1111001", (6, 7)), ("1111010", (1, 8)), ("1111011", (3, 8)),
+    ("1111100", (5, 8)), ("1111101", (7, 8)),
+];
+
 /// A table of bit-string codes as a [`Vlc`] and its values by symbol.
 pub struct Coded<T: Copy> {
     pub vlc: Vlc,
@@ -142,6 +151,7 @@ mod tests {
         for (name, t) in [("MVMODE low", MVMODE_LOW), ("MVMODE high", MVMODE_HIGH), ("MVMODE2 low", MVMODE2_LOW), ("MVMODE2 high", MVMODE2_HIGH)] {
             check(name, &t.iter().map(|r| r.0).collect::<Vec<_>>());
         }
+        check("BFRACTION", &BFRACTION.iter().map(|r| r.0).collect::<Vec<_>>());
         check("SUBBLKPAT2", &SUBBLKPAT2.iter().map(|r| r.0).collect::<Vec<_>>());
         check("MVRANGE", &MVRANGE.iter().map(|r| r.0).collect::<Vec<_>>());
     }
