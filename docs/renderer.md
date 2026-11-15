@@ -1114,8 +1114,8 @@ only under flag 32768, so a game that never sets it (Escha) draws as before.
 plants a game draws, named for the game's own grass presets (Ryza: Middle, Low, VeryLow, with
 their density and draw range). The desktop presets take full, the handheld ones reduced.
 
-**Skill scenes in battle** (on; `BARREL_SKILL_SCENES=0` leaves them out). A member's Attack (command 0) and Support
-Attack (8) play `Skill_PARTY_<member>_<command>` through `barrel_escha::skill_scene::play`.
+**Skill scenes in battle** (on; `BARREL_SKILL_SCENES=0` leaves them out). A member's action plays (its command by
+`auto_battle::Tables::command_of`: 0 the attack, 1 to 4 the skills, 8 and 9 the supports) `Skill_PARTY_<member>_<command>` through `barrel_escha::skill_scene::play`.
 The actor's motion lengths come from its clips and `CharaDiv` divisions, and the target is
 anchored by the way from the actor to it. The step lasts as long as the scene. Each frame the
 actor's body takes the scene's place, facing and motion (its clip, in the `CharaDiv` division the scene names) and the camera takes the scene's eye and
@@ -1123,5 +1123,5 @@ target; both go back when the scene ends.
 
 A test battle run with `--load SAVE` also draws the save's field (its town people and props)
 around the battle stage. A field encounter starts its battle without it, carrying the save
-instead. Offscreen battle renders are made without `--load`, or the field shows through: in
+instead. Offscreen battle renders are made without `--load` (`BARREL_BATTLE_SAVE=FILE` gives the party from a save instead), or the field shows through: in
 BF_POINT19 it put the scene camera inside AREA_01_01's trees.

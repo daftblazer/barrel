@@ -52,6 +52,19 @@ pub struct Tables {
 }
 
 impl Tables {
+    /// The battle command member `member`'s action named `skill` sits on (its skill-list entry's
+    /// +8: 0 the attack, 1 to 3 the skills, 4 the AC special, 8 Support Attack, 9 Support
+    /// Guard), which names its skill scene (`battle::party_skill_event`); `None` for a name
+    /// not on those commands of its list (an item, a passive).
+    pub fn command_of(&self, member: usize, skill: &str) -> Option<u8> {
+        self.lists
+            .get(member)?
+            .iter()
+            .filter(|e| matches!(e.command, 0..=4 | 8 | 9))
+            .find(|e| self.skills.get(e.skill as usize).is_some_and(|s| s.name == skill))
+            .map(|e| e.command)
+    }
+
     /// What a battle the party won gives (`battle::rewards`, no bonuses): experience and money;
     /// nothing for a battle lost or called off.
     pub fn spoils(&self, o: &Outcome) -> (i32, i32) {
@@ -464,5 +477,30 @@ mod tests {
             }
         }
         panic!("no turn for member 0");
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    /// Each member's normal attack sits on command 0, its Support Attack on 8 and its numbered
+    /// skills on 1 to 4, and every such name finds its scene.
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn actions_find_their_commands() {
+        let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
+        let effects = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/item_effect.xml")).unwrap()).unwrap();
+        let t = super::Tables::load(&pe, &effects, None, None).unwrap();
+        for m in 0..11 {
+            assert_eq!(t.command_of(m, "Attack"), Some(0), "member {m}");
+            assert_eq!(t.command_of(m, "Support Attack"), Some(8), "member {m}");
+            for e in t.lists[m].iter().filter(|e| matches!(e.command, 1..=4)) {
+                let name = &t.skills[e.skill as usize].name;
+                let c = t.command_of(m, name).unwrap();
+                let file = crate::battle::party_skill_event(m, c).unwrap();
+                assert!(root.join("Event").join(&file).exists(), "{m} {name}: {file}");
+            }
+        }
     }
 }

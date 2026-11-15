@@ -1652,7 +1652,7 @@ impl BattlePlay {
         use barrel_escha::skill_scene::{Cast, ACTOR};
         let member = *self.charas.get(who)?;
         let name = barrel_escha::battle::party_skill_event(member, command)?;
-        let bytes = std::fs::read(self.scenes.root.join("Event").join(name)).ok()?;
+        let bytes = std::fs::read(self.scenes.root.join("Event").join(&name)).ok()?;
         let event = barrel_formats::ebd::Ebd::parse(&bytes).ok()?;
         let t = self.fighters.get(target)?.as_ref()?;
         let (t_place, t_chara) = (t.place, t.chara);
@@ -1692,8 +1692,11 @@ impl BattlePlay {
         let toward = (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]);
         let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
         let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
-        let barrel_escha::skill_scene::Scene { frames, hits, motions } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
+        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
         let hits = hits.into_iter().map(|(t, share)| (self.time + t, share)).collect();
+        if unresolved > 0 {
+            eprintln!("battle: skill scene {name}: {unresolved} steps name what it lacks");
+        }
         if std::env::var("BARREL_SCENE_LOG").is_ok() {
             let first = frames.iter().find(|f| f.characters.get(&ACTOR).is_some_and(|c| c.0 != actor.position));
             eprintln!("scene: actor {:?} facing {:.2}, target {:?} anchored facing {:.2}; placed {:?}, eye {:?} at {:?}; ends {:?}", actor.position, actor.facing, foe.position, foe.facing, first.map(|f| f.characters[&ACTOR]), first.and_then(|f| f.eye), first.and_then(|f| f.target), frames.last().map(|f| f.characters[&ACTOR]));
@@ -2050,20 +2053,15 @@ impl BattlePlay {
         {
             self.acting = Some((*who, self.time, Vec::new()));
         }
-        // A member's attack or Support Attack plays its skill scene, the step lasting as long
-        // (its hits already shown as it starts: the scene's strike is not timed to them yet).
-        // Its other skills keep the plain step until their commands are known here.
+        // A member's action plays its skill scene (by the command its skill sits on), the step
+        // lasting as long; its hits land at the scene's.
         // `BARREL_SKILL_SCENES=0` leaves them out.
         if let Event::Acted { who, target, skill, .. } = &event
             && *who < self.charas.len()
             && self.scenes.on
             && self.scene.as_ref().is_none_or(|s| s.start != self.time)
         {
-            let command = match skill.as_str() {
-                "Attack" => Some(0),
-                SUPPORT_SKILL_NAME => Some(barrel_escha::skirmish::SUPPORT_ATTACK_COMMAND),
-                _ => None,
-            };
+            let command = self.charas.get(*who).and_then(|&m| self.fight.tables.command_of(m, skill));
             if let Some(scene) = command.and_then(|c| self.party_scene(*who, *target, c)) {
                 self.until = self.until.max(self.time + scene.seconds());
                 eprintln!("battle: skill scene {:.2} s", scene.seconds());
@@ -3639,7 +3637,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             field,
             look_from: look_from.clone(),
             battle_group,
-            battle_party: carry.back.as_ref().and_then(|b| b.1.save.clone()),
+            // `BARREL_BATTLE_SAVE=FILE`: an offscreen battle's party from a save (as `--load`
+            // gives it, without the save's field drawn round the stage).
+            battle_party: carry.back.as_ref().and_then(|b| b.1.save.clone()).or_else(|| std::env::var("BARREL_BATTLE_SAVE").ok().and_then(|f| std::fs::read_to_string(f).ok())),
             args: args.clone(),
             event_spec: event_spec.clone(),
             skeleton_spec: skeleton_spec.clone(),

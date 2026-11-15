@@ -146,7 +146,11 @@ likely settle them where static reading failed.
 - **Skill scenes' frame.** Which rotation a battle character's +0x880 object has (taken as
   the party's facing towards the monsters for any target); how a monster's skill event names
   its actor and target and which way its offsets turn; what characters 10002+ beyond the
-  stand-ins are. In play a member's Attack and Support Attack play their scenes, the damage
+  stand-ins are. In play every member action on commands 0 to 4, 8 and 9 plays its scene
+  (`auto_battle::Tables::command_of`); a skill's (High Strike, `Skill_PARTY_LOGY_1`, 6.5 s:
+  close-ups on Logy, a leap, the strike) has no recording to compare against yet, and its
+  battle-screen commands are not done (`r14` a screen tint `{r, g, b, a, …}`, `r20`, `r4`
+  `ECT_BATTLE_ADD_EFFECT_ID`). Attack and Support Attack: the damage
   number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the actor plays the
   scene's motions (motion and `CharaDiv` division, switched as the scene sets them, blended over
   Barrel's 0.15 s rather than the command's blend); `s9` (motion speed: 120, 125, 150 % in

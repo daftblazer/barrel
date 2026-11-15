@@ -39,6 +39,8 @@ pub struct Scene {
     /// The actor's motion at each frame (its `MOTION_*` number and division), as the scene's
     /// `s5`/`s10`/`s13` set it.
     pub motions: Vec<Option<barrel_engine::stage::Playing>>,
+    /// How many of its steps named something the scene does not have (`Stage::unresolved`).
+    pub unresolved: usize,
 }
 
 /// `s1` (`ECT_CHARA_SET_MARKER`, `{character, marker, 0, 4, share}`): marker 0 is a hit landing,
@@ -90,7 +92,7 @@ pub fn play(
         out.push(play.stage.snapshot());
         motions.push(motion(&play));
     }
-    Ok(Scene { frames: out, hits, motions })
+    Ok(Scene { frames: out, hits, motions, unresolved: play.stage.unresolved })
 }
 
 #[cfg(test)]
