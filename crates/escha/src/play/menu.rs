@@ -11,8 +11,8 @@
 //! a frame (part 0x1f) and a text filled in at run time.
 //!
 //! Read from the layouts: the pictures and their places, the ten names. Not yet the game's: the
-//! chosen button drawn as the yellow plate with the white name and icon and the frame (still,
-//! not pulsing), the others green with gold; all ten commands in the list, eight shown at a time,
+//! chosen button drawn as the yellow plate with the white name and icon and the frame (its cuts
+//! turn with the clock), the others green with gold; all ten commands in the list, eight shown at a time,
 //! scrolling with the chosen one; the Option rows' wording (Save, Load, Change BGM, Options,
 //! Return to Title: the five lines `SysInfo.xml` describes, worded as the executable's strings
 //! at 0x140794000) and their plates (the chosen white, cut 2, with the frame; the others cut 3);

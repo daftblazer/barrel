@@ -344,11 +344,11 @@ pub fn run(
     // The title fades in from white (in a window; offscreen at `BARREL_TITLE_FADE_AT` seconds in).
     let fade_at = std::env::var("BARREL_TITLE_FADE_AT").ok().and_then(|v| v.parse::<f32>().ok());
     let fading = !load_list && (window.is_some() || fade_at.is_some());
-    let start = std::time::Instant::now();
     let shift = fade_at.unwrap_or(0.0);
     let mut state = (front, if fading { white_at(shift) } else { 0 }, prompt_at(shift));
-    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, ..), b| f.press(b, saves), keys, out, |(_, white, pulse)| {
-        let t = shift + start.elapsed().as_secs_f32();
+    // The veil and the prompt's pulse follow the screen's clock (60 ticks a second).
+    crate::screen::run_clocked(gpu, pool, target, window, offscreen, &images, &mut state, quads, |(f, ..), b| f.press(b, saves), keys, out, |(_, white, pulse), tick| {
+        let t = shift + tick as f32 / crate::screen::TICKS_PER_SECOND as f32;
         if *white > 0 {
             *white = white_at(t);
         }

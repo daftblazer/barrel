@@ -22,8 +22,8 @@
 //! The text of a task can start with a Shift-JIS symbol the game's font does not have: the game
 //! shows two boxes ([`plain`]).
 //!
-//! Not yet the game's: the glow's and the cursor's cuts (they cycle by time), the pulse of a
-//! chosen square's plate, the stars of the reward's row, the Bonus tab and the past cards list
+//! The glow, the cursor frame, the mark and the cursor's glow flip through their cuts with the
+//! screen's clock ([`layout::Flip`]). Not yet the game's: the pulse of a chosen square's plate, the stars of the reward's row, the Bonus tab and the past cards list
 //! (layout 429), the lines overlay (424) and the stamps' variants; tasks never seen in a save
 //! count as open at nothing; the "new" mark's meaning (state 5) is a guess from one square.
 
