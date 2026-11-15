@@ -573,6 +573,14 @@ escape flag `0x141077e30` is set to 1 and the party leaves (`0x1401b2b30` on the
 (`0x1401c62a0`) and the actor's +0x2f4 is set to 1. Not yet known: the player's command value
 (the subtrahend), and where `tries` is reset.
 
+Read live (the escha-battle-run recording: a battle with four monsters of speeds 19, 19, 15,
+15): at Run's confirm step the escape action already exists (vtable `0x140808a78`, actor at +0x8,
+the battle at +0x10) with **+0x38 = 19**, the monsters' top speed (or the first monster's, which was
+also 19). So for the player, chance = speed - the enemies' top speed + 60 (Katla, speed 18:
+59%). Escha (speed 13, 54%) failed: tries went 0 → 1, her +0x2f4 was set to 1 and cleared again
+when her action ended. The per-character command record at +0x208 does not hold the player's
+command (it stayed all zero).
+
 ### Falling and guts (executable)
 
 After each effect on a target (`0x1401c0676` and on) the game sets the MP power back to 100,
