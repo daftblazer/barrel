@@ -60,6 +60,51 @@ pub fn intra_plane(px: &mut [u8], width: usize, height: usize, pquant: i32) {
     }
 }
 
+/// A P picture's 4 × 4 cell as the loop filter sees it (8.6.2).
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Cell {
+    pub intra: bool,
+    /// The block's vector (a colour-difference block: its own, not the luma one it comes from).
+    pub mv: [i32; 2],
+    /// Its transform sub-block has coefficients.
+    pub coded: bool,
+    /// Its block's transform has an edge across the middle (8 × 4, 4 × 4) / down the middle
+    /// (4 × 8, 4 × 4).
+    pub split_h: bool,
+    pub split_v: bool,
+}
+
+/// A P picture's filter on one plane (8.6.2): an edge between blocks unless both sides are
+/// inter with the same vector and no coefficients; an edge inside a block's transform when
+/// either side has coefficients. The 8-line horizontal edges first, then the 4-line ones, then
+/// the vertical edges likewise. `cells` is the plane's grid, `width / 4` cells a row.
+pub fn p_plane(px: &mut [u8], width: usize, height: usize, pquant: i32, cells: &[Cell]) {
+    let cw = width / 4;
+    let between = |a: Cell, b: Cell| a.intra || b.intra || a.mv != b.mv || a.coded || b.coded;
+    for (start, inner) in [(8, false), (4, true)] {
+        for y in (start..height).step_by(8) {
+            let cy = y / 4;
+            for cx in 0..cw {
+                let (a, b) = (cells[(cy - 1) * cw + cx], cells[cy * cw + cx]);
+                if if inner { a.split_h && (a.coded || b.coded) } else { between(a, b) } {
+                    segment(px, (y - 4) * width + cx * 4, 1, width, pquant);
+                }
+            }
+        }
+    }
+    for (start, inner) in [(8, false), (4, true)] {
+        for x in (start..width).step_by(8) {
+            let cx = x / 4;
+            for cy in 0..height / 4 {
+                let (a, b) = (cells[cy * cw + cx - 1], cells[cy * cw + cx]);
+                if if inner { a.split_v && (a.coded || b.coded) } else { between(a, b) } {
+                    segment(px, cy * 4 * width + x - 4, width, 1, pquant);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,7 @@
 use crate::bitplane::Bitplane;
 use crate::bits::{Bits, Vlc};
 use crate::vc1::{Error, InterHeader};
+use crate::vc1_loop::Cell;
 use crate::vc1_intra::{dc_step, inverse_8x8, read_coefficients, read_dc_diff, IntraTables, Picture};
 use crate::vc1_mc::{bicubic, bilinear, inverse, Plane};
 use crate::vc1_mv::{chroma, four_mv_luma_for_chroma, hybrid_needed, hybrid_pick, preliminary, read_mvdata, smod, Candidate, RANGES};
@@ -68,7 +69,7 @@ pub fn intensity_luts(lumscale: u8, lumshift: u8) -> ([u8; 256], [u8; 256]) {
 
 /// Decodes a P picture from `reference` into `out`. `fast_uvmc` is the entry point's FASTUVMC.
 #[allow(clippy::too_many_arguments)]
-pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols: usize, rows: usize, coded: (usize, usize), fast_uvmc: bool, reference: &Picture, out: &mut Picture) -> Result<(), Error> {
+pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols: usize, rows: usize, coded: (usize, usize), fast_uvmc: bool, reference: &Picture, out: &mut Picture) -> Result<[Vec<Cell>; 3], Error> {
     // Intensity compensation (8.3.8): the reference remapped through LUTs first.
     let remapped;
     let reference = match h.intensity {
@@ -112,6 +113,8 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
     let ref_u = Plane { px: &reference.u, stride: cw, width: coded.0.div_ceil(2) as i32, height: coded.1.div_ceil(2) as i32 };
     let ref_v = Plane { px: &reference.v, stride: cw, width: coded.0.div_ceil(2) as i32, height: coded.1.div_ceil(2) as i32 };
     let frame = [(cols * 16) as i32, (rows * 16) as i32];
+    // The loop filter's cells: luma 4 a macroblock across, colour difference 2.
+    let mut cells = [vec![Cell::default(); 16 * cols * rows], vec![Cell::default(); 4 * cols * rows], vec![Cell::default(); 4 * cols * rows]];
     for my in 0..rows {
         for mx in 0..cols {
             let four = match (&h.mv_type, h.mv_mode) {
@@ -208,14 +211,15 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
             }
             let chroma_intra_count = luma_intra.iter().filter(|&&v| v).count();
             let chroma_intra = if four { chroma_intra_count >= 3 } else { luma_intra[0] };
-            let chroma_mv = if four {
+            let chroma_luma = if four {
                 let blocks: [([i32; 2], bool); 4] = std::array::from_fn(|i| (mvs[i], luma_intra[i]));
-                four_mv_luma_for_chroma(&blocks).map(|l| chroma(l, fast_uvmc))
+                four_mv_luma_for_chroma(&blocks)
             } else if chroma_intra {
                 None
             } else {
-                Some(chroma(mvs[0], fast_uvmc))
+                Some(mvs[0])
             };
+            let chroma_mv = chroma_luma.map(|l| chroma(l, fast_uvmc));
             if four && !skipped {
                 any_coded_inter |= !chroma_intra && (cbp[4] || cbp[5]);
                 let any_intra = luma_intra.iter().any(|&v| v) || chroma_intra;
@@ -249,6 +253,13 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
                 let intra = if is_luma { luma_intra[k] } else { chroma_intra };
                 let coded = if is_luma { if four { luma_coded[k] } else { cbp[k] } } else { cbp[k] };
                 let (gx, gy) = if is_luma { (bx + (k & 1), by + (k >> 1)) } else { (mx, my) };
+                // This block's 2 × 2 cells for the loop filter.
+                let (cell_grid, cell_w, cx0, cy0) = if is_luma { (0, 4 * cols, 2 * gx, 2 * gy) } else { (k - 3, 2 * cols, 2 * mx, 2 * my) };
+                let mut mark = |c: Cell, nz: [bool; 4]| {
+                    for (i, &z) in nz.iter().enumerate() {
+                        cells[cell_grid][(cy0 + (i >> 1)) * cell_w + cx0 + (i & 1)] = Cell { coded: z, ..c };
+                    }
+                };
                 let (dst, stride, px, py) = match k {
                     0..=3 => (&mut out.y, pw, gx * 8, gy * 8),
                     4 => (&mut out.u, cw, mx * 8, my * 8),
@@ -322,6 +333,7 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
                             dst[(py + y) * stride + px + x] = (r[y * 8 + x] + 128).clamp(0, 255) as u8;
                         }
                     }
+                    mark(Cell { intra: true, ..Default::default() }, [true; 4]);
                     continue;
                 }
                 // An inter block: the prediction, then the residual if coded.
@@ -339,6 +351,9 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
                     let mv = chroma_mv.unwrap_or([0, 0]);
                     bilinear(if k == 4 { &ref_u } else { &ref_v }, px as i32, py as i32, mv, 8, 8, rnd, &mut pred);
                 }
+                let block_mv = if is_luma { mvs[k] } else { chroma_mv.unwrap_or([0, 0]) };
+                let mut cell = Cell { mv: block_mv, ..Default::default() };
+                let mut nz = [false; 4];
                 let mut err = [0i32; 64];
                 if coded {
                     let (tt, halves) = if let Some(f) = h.frame_transform {
@@ -383,12 +398,23 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
                         Ok(())
                     };
                     match tt {
-                        Transform::T8x8 => sub(&mut b, 8, 8, &t::INTER_8X8_SCAN, 0, 0, &mut mode3)?,
+                        Transform::T8x8 => {
+                            sub(&mut b, 8, 8, &t::INTER_8X8_SCAN, 0, 0, &mut mode3)?;
+                            nz = [true; 4];
+                        }
                         Transform::T8x4 | Transform::T4x8 => {
                             let hv = match halves.filter(|&v| v != 0) {
                                 Some(v) => v,
                                 None => pt.subblk2.read(&mut b).ok_or_else(|| Error(format!("SUBBLKPAT at {mx},{my} block {k}")))?,
                             };
+                            let (first, second) = (hv & 2 != 0, hv & 1 != 0);
+                            if tt == Transform::T8x4 {
+                                cell.split_h = true;
+                                nz = [first, first, second, second];
+                            } else {
+                                cell.split_v = true;
+                                nz = [first, second, first, second];
+                            }
                             for j in 0..2 {
                                 if hv & (2 >> j) != 0 {
                                     if tt == Transform::T8x4 {
@@ -401,6 +427,8 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
                         }
                         Transform::T4x4 => {
                             let pat = pt.subblk4[rate].read(&mut b).ok_or_else(|| Error(format!("SUBBLKPAT at {mx},{my} block {k}")))?;
+                            (cell.split_h, cell.split_v) = (true, true);
+                            nz = std::array::from_fn(|j| pat & (8 >> j) != 0);
                             for j in 0..4 {
                                 if pat & (8 >> j) != 0 {
                                     sub(&mut b, 4, 4, &t::INTER_4X4_SCAN, 4 * (j & 1), 4 * (j >> 1), &mut mode3)?;
@@ -409,6 +437,7 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
                         }
                     }
                 }
+                mark(cell, nz);
                 for y in 0..8 {
                     for x in 0..8 {
                         dst[(py + y) * stride + px + x] = (pred[y * 8 + x] as i32 + err[y * 8 + x]).clamp(0, 255) as u8;
@@ -434,7 +463,7 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
     if b.over() {
         return Err(Error("macroblocks run out".into()));
     }
-    Ok(())
+    Ok(cells)
 }
 
 #[cfg(test)]
@@ -452,9 +481,10 @@ mod movie_tests {
         let (Ok(path), Ok(refs)) = (std::env::var("BARREL_MOVIE"), std::env::var("BARREL_REF")) else { return };
         let count: usize = std::env::var("BARREL_ANCHORS").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
         // `BARREL_REF=ffmpeg`: ffmpeg's frames streamed through a pipe (test oracle, PC only).
+        let filter = std::env::var("BARREL_LOOP").is_ok();
         let mut stream = (refs == "ffmpeg").then(|| {
             std::process::Command::new("ffmpeg")
-                .args(["-loglevel", "error", "-skip_frame", "noref", "-skip_loop_filter", "all", "-i", &path, "-map", "0:v", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
+                .args(["-loglevel", "error", "-skip_frame", "noref", "-skip_loop_filter", if filter { "none" } else { "all" }, "-i", &path, "-map", "0:v", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
                 .stdout(std::process::Stdio::piped())
                 .spawn()
                 .unwrap()
@@ -485,14 +515,31 @@ mod movie_tests {
                     let hh = s.intra_header(&e, &data, &planes).unwrap();
                     let mut p = Picture::new(cols, rows);
                     crate::vc1_intra::decode(&it, &hh, &data, cols, rows, &mut p).unwrap();
+                    if filter {
+                        let q = hh.pquant as i32;
+                        let (w, hgt) = (p.width, p.height);
+                        crate::vc1_loop::intra_plane(&mut p.y, w, hgt, q);
+                        crate::vc1_loop::intra_plane(&mut p.u, w / 2, hgt / 2, q);
+                        crate::vc1_loop::intra_plane(&mut p.v, w / 2, hgt / 2, q);
+                    }
                     p
                 }
                 PictureType::P => {
                     let hh = s.inter_header(&e, &data, &planes, &inter).unwrap();
                     let mut p = Picture::new(cols, rows);
-                    if let Err(err) = decode(&it, &pt, &hh, &data, cols, rows, (1920, 1080), e.fast_uvmc, anchor.as_ref().unwrap(), &mut p) {
-                        eprintln!("anchor {n}: P failed: {}", err.0);
-                        break;
+                    match decode(&it, &pt, &hh, &data, cols, rows, (1920, 1080), e.fast_uvmc, anchor.as_ref().unwrap(), &mut p) {
+                        Err(err) => {
+                            eprintln!("anchor {n}: P failed: {}", err.0);
+                            break;
+                        }
+                        Ok(cells) if filter => {
+                            let q = hh.pquant as i32;
+                            let (w, hgt) = (p.width, p.height);
+                            crate::vc1_loop::p_plane(&mut p.y, w, hgt, q, &cells[0]);
+                            crate::vc1_loop::p_plane(&mut p.u, w / 2, hgt / 2, q, &cells[1]);
+                            crate::vc1_loop::p_plane(&mut p.v, w / 2, hgt / 2, q, &cells[2]);
+                        }
+                        Ok(_) => {}
                     }
                     p
                 }

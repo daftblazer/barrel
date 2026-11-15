@@ -2220,4 +2220,13 @@ command line repeats frames to fill the skipped B pictures' slots, which once lo
 decoder bug), P pictures in 5 to 12 ms on one PC core. Intensity compensation (8.3.8, Figure
 67: LUMSCALE / LUMSHIFT lookup tables applied to a copy of the reference) is in; with it all
 1,447 anchors of `avantitle` are bit-exact (about 40 s for the whole run against ffmpeg's
-stream). Not done yet: the P loop filter (8.6.2) and P overlap smoothing (PQUANT ≥ 9).
+stream).
+
+P loop filter (`vc1_loop::p_plane`, 8.6.2): kept per 4 × 4 cell (intra, vector, coefficients
+in its transform sub-block, the transform's middle edges). An edge between blocks is filtered
+unless both sides are inter, same vector, no coefficients; an 8 × 4 / 4 × 8 / 4 × 4 middle edge
+when either side has coefficients. Order frame-wide: the 8-line horizontal edges, the 4-line
+ones, then the vertical ones likewise. A colour-difference block compares its own vector (not
+the luma vector it is derived from: that reading broke anchor 313). With it all 1,447 anchors
+are bit-exact with ffmpeg's filtered output. P overlap smoothing never came up in `avantitle`
+(no difference anywhere), so it is not written yet.
