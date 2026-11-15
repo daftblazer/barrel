@@ -26,7 +26,7 @@ impl Picture {
 }
 
 /// One AC coding set: its code, run / level rows, deltas.
-struct AcSet {
+pub(crate) struct AcSet {
     vlc: Vlc,
     run_level: Vec<(u8, u8)>,
     last_from: usize,
@@ -43,12 +43,12 @@ impl AcSet {
 
 /// The tables an intra picture reads with, built once.
 pub struct IntraTables {
-    cbpcy: Vlc,
+    pub(crate) cbpcy: Vlc,
     /// Low-motion luma, chroma; high-motion luma, chroma.
-    dc: [Vlc; 4],
+    pub(crate) dc: [Vlc; 4],
     /// Intra sets: high rate, high motion, mid rate, low motion; then the inter sets so.
-    intra: [AcSet; 4],
-    inter: [AcSet; 4],
+    pub(crate) intra: [AcSet; 4],
+    pub(crate) inter: [AcSet; 4],
     escape_mode: Vlc,
     level_size_conservative: Vlc,
     level_size_efficient: Vlc,
@@ -136,11 +136,94 @@ struct Neighbour {
     coded: bool,
 }
 
-fn dc_step(mquant: i32) -> i32 {
+pub(crate) fn dc_step(mquant: i32) -> i32 {
     match mquant {
         1 | 2 => 2 * mquant,
         3 | 4 => 8,
         _ => mquant / 2 + 6,
+    }
+}
+
+/// A DC differential (Figure 37) for MQUANT `mquant`.
+pub(crate) fn read_dc_diff(b: &mut Bits, vlc: &Vlc, mquant: i32) -> Option<i32> {
+    let mut diff = vlc.read(b)? as i32;
+    if diff != 0 {
+        if diff == 119 {
+            diff = b.read(match mquant { 1 => 10, 2 => 9, _ => 8 }) as i32;
+        } else if mquant == 1 {
+            diff = diff * 4 + b.read(2) as i32 - 3;
+        } else if mquant == 2 {
+            diff = diff * 2 + b.read(1) as i32 - 1;
+        }
+        if b.bit() {
+            diff = -diff;
+        }
+    }
+    Some(diff)
+}
+
+/// Run / level / last triplets (Figures 41 and 42) from position `start` of `scan` until the
+/// last, each level stored at `q[scan[position]]`. `mode3` keeps escape mode 3's sizes for the
+/// picture once read.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_coefficients(b: &mut Bits, tables: &IntraTables, set: &AcSet, mquant: i32, mode3: &mut Option<(u32, u32)>, scan: &[u8], start: usize, q: &mut [i32]) -> Result<(), Error> {
+    let escape = set.run_level.len();
+    let mut pos = start;
+    loop {
+        let index = set.vlc.read(b).ok_or_else(|| Error("AC code".into()))?;
+        let (run, level, last);
+        if index != escape {
+            let (r, l) = set.run_level[index];
+            last = index >= set.last_from;
+            run = r as usize;
+            level = if b.bit() { -(l as i32) } else { l as i32 };
+        } else {
+            let m = tables.escape_mode.read(b).ok_or_else(|| Error("escape mode".into()))?;
+            if m < 2 {
+                let i2 = set.vlc.read(b).ok_or_else(|| Error("escaped AC".into()))?;
+                if i2 == escape {
+                    return Err(Error("escape inside an escape".into()));
+                }
+                let (mut r, mut l) = set.run_level[i2];
+                last = i2 >= set.last_from;
+                let li = last as usize;
+                if m == 0 {
+                    l += set.delta_level[li].get(r as usize).copied().ok_or_else(|| Error("escape mode 1 run past its table".into()))?;
+                } else {
+                    r += set.delta_run[li].get(l as usize - 1).copied().ok_or_else(|| Error("escape mode 2 level past its table".into()))? + 1;
+                }
+                run = r as usize;
+                level = if b.bit() { -(l as i32) } else { l as i32 };
+            } else {
+                last = b.bit();
+                let (lsize, rsize) = match *mode3 {
+                    Some(s) => s,
+                    None => {
+                        let l = if mquant <= 7 {
+                            tables.level_size_conservative.read(b).ok_or_else(|| Error("ESCLVLSZ".into()))? as u32 + 1
+                        } else {
+                            tables.level_size_efficient.read(b).ok_or_else(|| Error("ESCLVLSZ".into()))? as u32 + 2
+                        };
+                        let r = 3 + b.read(2);
+                        *mode3 = Some((l, r));
+                        (l, r)
+                    }
+                };
+                run = b.read(rsize) as usize;
+                let negative = b.bit();
+                let l = b.read(lsize) as i32;
+                level = if negative { -l } else { l };
+            }
+        }
+        pos += run;
+        if pos >= scan.len() {
+            return Err(Error("run past the block".into()));
+        }
+        q[scan[pos] as usize] = level;
+        pos += 1;
+        if last {
+            return Ok(());
+        }
     }
 }
 
@@ -204,19 +287,7 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
                 };
                 let (dc_vlc, set) = if k < 4 { (dc_tables.0, luma_set) } else { (dc_tables.1, chroma_set) };
                 // DC differential (Figure 37).
-                let mut diff = dc_vlc.read(&mut b).ok_or_else(|| Error(format!("DC at macroblock {mx},{my} block {k}")))? as i32;
-                if diff != 0 {
-                    if diff == 119 {
-                        diff = b.read(match mquant { 1 => 10, 2 => 9, _ => 8 }) as i32;
-                    } else if mquant == 1 {
-                        diff = diff * 4 + b.read(2) as i32 - 3;
-                    } else if mquant == 2 {
-                        diff = diff * 2 + b.read(1) as i32 - 1;
-                    }
-                    if b.bit() {
-                        diff = -diff;
-                    }
-                }
+                let diff = read_dc_diff(&mut b, dc_vlc, mquant).ok_or_else(|| Error(format!("DC at macroblock {mx},{my} block {k}")))?;
                 // DC prediction (Figure 40): A above, B above-left, C left.
                 let at = |x: usize, y: usize| grid[y * gw + x];
                 let a = (gy > 0).then(|| at(gx, gy - 1));
@@ -235,64 +306,7 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
                 let scan: &[u8; 64] = if !ac_pred { &t::INTRA_NORMAL_SCAN } else if top { &t::INTRA_HORIZONTAL_SCAN } else { &t::INTRA_VERTICAL_SCAN };
                 let mut q = [0i32; 64];
                 if cbp[k] {
-                    let escape = set.run_level.len();
-                    let mut pos = 1usize;
-                    loop {
-                        let index = set.vlc.read(&mut b).ok_or_else(|| Error(format!("AC at macroblock {mx},{my} block {k}")))?;
-                        let (run, level, last);
-                        if index != escape {
-                            let (r, l) = set.run_level[index];
-                            last = index >= set.last_from;
-                            run = r as usize;
-                            level = if b.bit() { -(l as i32) } else { l as i32 };
-                        } else {
-                            let m = tables.escape_mode.read(&mut b).ok_or_else(|| Error("escape mode".into()))?;
-                            if m < 2 {
-                                let i2 = set.vlc.read(&mut b).ok_or_else(|| Error("escaped AC".into()))?;
-                                if i2 == escape {
-                                    return Err(Error("escape inside an escape".into()));
-                                }
-                                let (mut r, mut l) = set.run_level[i2];
-                                last = i2 >= set.last_from;
-                                let li = last as usize;
-                                if m == 0 {
-                                    l += set.delta_level[li].get(r as usize).copied().ok_or_else(|| Error("escape mode 1 run past its table".into()))?;
-                                } else {
-                                    r += set.delta_run[li].get(l as usize - 1).copied().ok_or_else(|| Error("escape mode 2 level past its table".into()))? + 1;
-                                }
-                                run = r as usize;
-                                level = if b.bit() { -(l as i32) } else { l as i32 };
-                            } else {
-                                last = b.bit();
-                                let (lsize, rsize) = match mode3 {
-                                    Some(s) => s,
-                                    None => {
-                                        let l = if mquant <= 7 {
-                                            tables.level_size_conservative.read(&mut b).ok_or_else(|| Error("ESCLVLSZ".into()))? as u32 + 1
-                                        } else {
-                                            tables.level_size_efficient.read(&mut b).ok_or_else(|| Error("ESCLVLSZ".into()))? as u32 + 2
-                                        };
-                                        let r = 3 + b.read(2);
-                                        mode3 = Some((l, r));
-                                        (l, r)
-                                    }
-                                };
-                                run = b.read(rsize) as usize;
-                                let negative = b.bit();
-                                let l = b.read(lsize) as i32;
-                                level = if negative { -l } else { l };
-                            }
-                        }
-                        pos += run;
-                        if pos >= 64 {
-                            return Err(Error(format!("AC run past the block at macroblock {mx},{my} block {k}")));
-                        }
-                        q[scan[pos] as usize] = level;
-                        pos += 1;
-                        if last {
-                            break;
-                        }
-                    }
+                    read_coefficients(&mut b, tables, set, mquant, &mut mode3, scan, 1, &mut q).map_err(|e| Error(format!("{} at macroblock {mx},{my} block {k}", e.0)))?;
                 }
                 // AC prediction (Figure 48) from the block in the DC's direction.
                 if ac_pred {

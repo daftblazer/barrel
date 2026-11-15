@@ -2208,3 +2208,14 @@ reference repeated past its edges. In P pictures intra blocks use the inter 8 ×
 and TRANSACFRM picks the intra set for Y, the inter set for colour difference; inter blocks all use
 the inter set, their DC run-level coded with the rest. Unit-tested; not yet checked on frames
 (open: whether the edge pad is at 1080 or the macroblock-aligned 1088).
+
+P macroblocks (`barrel_movie::vc1_inter`, Table 29 / 32, 8.3.5 and 8.3.6): 1-MV, 4-MV and skipped
+macroblocks with their vectors predicted per Figures 51 to 53, intra macroblocks and blocks
+among them (DC / AC prediction from intra neighbours only, the inter 8 × 8 scan), TTMB / TTBLK /
+SUBBLKPAT / TTFRM transform signalling, bicubic / bilinear motion compensation from the
+previous anchor, the reference repeated past the coded 1920 × 1080 edge. `avantitle`'s first
+208 anchor pictures (I, P and skipped, loop filter off on both sides) are bit-exact with ffmpeg
+(`-skip_frame noref -skip_loop_filter all -fps_mode passthrough`; without passthrough ffmpeg's
+command line repeats frames to fill the skipped B pictures' slots, which once looked like a
+decoder bug), P pictures in 5 to 12 ms on one PC core. The 209th uses intensity compensation
+(8.3.8), not done yet; nor are the P loop filter (8.6.2) and P overlap smoothing (PQUANT ≥ 9).
