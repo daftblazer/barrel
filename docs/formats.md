@@ -2236,3 +2236,19 @@ BFRACTION (Table 40, the standard's `111001b1` is a typo for `1110011b`, 5/6) be
 MVMODE one bit (Table 48: 1 one-MV quarter-pel bicubic, 0 half-pel bilinear), then the DIRECTMB
 and SKIPMB bitplanes and the rest as in P. All 1,430 B headers of `avantitle` parse; every one
 has BFRACTION ½ (one B between anchors).
+
+B macroblocks (`vc1_inter::decode_b`, Table 30, 8.4.5): DIRECTMB / SKIPMB bits, BMV1, then
+BMVTYPE (Table 57: `0` backward when BFRACTION ≥ ½ else forward, `10` the other, `11`
+interpolated, whose BMV1 is the backward vector and BMV2, read only when BMV1's more-flag is
+set, the forward one). Direct vectors scale the next anchor's co-located vector (1-MV vector,
+4-MV median / median3 / mean, zero for intra or after an I / skipped anchor) by Figure 70's
+ScaleFactor and are pulled back to −60 … 64·MBs − 4 quarter-pels; they are worked out for
+every macroblock, so a forward-only macroblock still leaves the direct backward vector in the
+backward prediction context (and vice versa). Forward and backward vectors predict from their
+own contexts with the 1-MV P rules minus hybrid prediction; an intra macroblock leaves zero in
+both (the same medians as "intra"). Direct and interpolated blocks average the two predictions
+`(f + b + 1) >> 1`; when the next anchor used intensity compensation, the forward reference is
+the remapped one. B and BI pictures are filtered like I pictures and are not references.
+Checked end to end: all 2,883 pictures of `avantitle` in display order (anchors held back one
+picture, B / BI shown at once) are bit-exact with ffmpeg, loop filter on, at 15 to 25 ms a
+1080p picture on one PC core (`movie_tests::movie_against_ffmpeg`).
