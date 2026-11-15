@@ -8,14 +8,35 @@ Needs: a Vulkan driver (any current graphics driver has one).
 
 Run it
 ------
-Double-click barrel.exe.
+Unpack the zip anywhere (keep SDL3.dll beside barrel.exe). All the ways to start it:
 
-It finds the game in your Steam libraries (or the folder it saved before). If you own both
-games it asks which one to play; if it finds none it shows a folder list to find the game's
-folder (the one holding Atelier_Escha_and_Logy_EN.exe or Atelier_Ryza_DX.exe) and remembers it.
+  Double-click barrel.exe   (or from a command prompt in its folder: barrel.exe)
+      Finds the game by itself: the folder it saved before, else your Steam libraries
+      (C:\Program Files (x86)\Steam and every library it lists).
+      - one game found:   it starts at the title screen
+      - both games found: a "Choose a game" list (Up/Down, Enter or A)
+      - none found:       a "Locate game files" folder list: open the folder holding
+                          Atelier_Escha_and_Logy_EN.exe or Atelier_Ryza_DX.exe and press Enter
+                          on it; Barrel remembers it (in games.toml, below)
 
-From a command prompt:
-  barrel.exe --game "D:\Games\Atelier Ryza DX"     starts that game directly
+  barrel.exe --game "D:\Games\Atelier Escha and Logy DX"
+      Starts the game in that folder directly, skipping the search and the list. Use this for
+      a copy outside Steam or to pick one game when you own both. If the folder does not hold
+      the game, Barrel says so and stops. (A shortcut works too: add --game "..." after the
+      program in the shortcut's Target.)
+
+  set BARREL_GAME_DIR=D:\Games\Atelier Ryza DX
+  barrel.exe
+      The same as --game, from the environment.
+
+  barrel.exe --preset handheld
+      Starts with the handheld graphics preset for this run only (also: desktop,
+      desktop-high). Settings you keep belong in the game's Options screen.
+
+To make Barrel search again (another folder, a moved game), delete the game's line from
+%APPDATA%\barrel\games.toml.
+
+Display (window or fullscreen) is in Options > Graphics.
 
 From Steam
 ----------

@@ -117,10 +117,21 @@ The name comes from the series' running "Barrel!" joke.
 
 ## Playing
 
-`barrel` (`barrel.exe`) finds the game in Steam's libraries and starts it; with both games it
-asks which, with none it asks where the game is. On Linux and Windows alike it runs directly, or
-as Steam launch options `"/path/to/barrel" %command%` (Linux: with any Proton selected). Release
-packages: `tools/package.sh release` (`docs/mods.md` has the details, settings and saves per game).
+One program, `barrel` (`barrel.exe` on Windows), plays every supported game from your copy of
+its files. The ways to start it:
+
+| Command | What it does |
+|---|---|
+| `./barrel` | Finds the game itself (the folder saved before, else Steam's libraries). One game: starts it. Both: a "Choose a game" list. None: a "Locate game files" folder list, remembered afterwards. |
+| `./barrel --game "/path/to/Atelier Escha and Logy DX"` | Starts the game in that folder directly (a copy outside Steam, an SD card, or one of two installed games). |
+| `BARREL_GAME_DIR="/path/to/the/game" ./barrel` | The same, from the environment. |
+| `./barrel --preset handheld` | This run with a graphics preset (`desktop`, `desktop-high`, `handheld`); kept settings live in the game's Options screen. |
+| Steam launch options `"/path/to/barrel" %command%` | Steam starts Barrel in the game's place (on Linux with any Proton selected for the game). |
+| Kintsugi (below) | A Steam compatibility tool that starts Barrel; no launch options. |
+
+The saved folders are in `games.toml` (`~/.config/barrel/`, on Windows `%APPDATA%\barrel\`):
+delete a game's line to make Barrel search again. Release packages: `tools/package.sh release`;
+each holds a README.txt with the same list. Settings, saves and mods per game: `docs/mods.md`.
 
 ## Playing through Steam (Kintsugi)
 

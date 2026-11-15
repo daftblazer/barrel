@@ -8,14 +8,36 @@ x86_64: package "sdl3"; the aarch64 package carries its own in lib/).
 
 Run it
 ------
+Unpack it anywhere and start `barrel` from that folder. All the ways to start it:
+
   ./barrel
+      Finds the game by itself: the folder it saved before, else your Steam libraries
+      (~/.local/share/Steam, ~/.steam, Flatpak Steam and every library they list).
+      - one game found:   it starts at the title screen
+      - both games found: a "Choose a game" list (Up/Down, Enter or A)
+      - none found:       a "Locate game files" folder list: open the folder holding
+                          Atelier_Escha_and_Logy_EN.exe or Atelier_Ryza_DX.exe and press Enter
+                          on it; Barrel remembers it (in games.toml, below)
 
-It finds the game in your Steam libraries (or the folder it saved before). If you own both
-games it asks which one to play; if it finds none it shows a folder list to find the game's
-folder (the one holding Atelier_Escha_and_Logy_EN.exe or Atelier_Ryza_DX.exe) and remembers it.
+  ./barrel --game "/path/to/Atelier Escha and Logy DX"
+      Starts the game in that folder directly, skipping the search and the list. Use this for
+      a copy outside Steam, an SD card, or to pick one game when you own both. If the folder
+      does not hold the game, Barrel says so and stops.
 
-  ./barrel --game "/path/to/Atelier Ryza DX"     starts that game directly
-  BARREL_GAME_DIR=/path/to/the/game ./barrel     the same, from the environment
+  BARREL_GAME_DIR="/path/to/Atelier Ryza DX" ./barrel
+      The same as --game, from the environment (handy in a start script).
+
+  ./barrel --preset handheld
+      Starts with the handheld graphics preset for this run only (also: desktop,
+      desktop-high). Settings you keep belong in the game's Options screen.
+
+  ./barrel --game "/path/to/the/game" --preset handheld
+      Options can be combined.
+
+To make Barrel search again (another folder, a moved game), delete the game's line from
+~/.config/barrel/games.toml.
+
+The window follows your desktop; Display (window or fullscreen) is in Options > Graphics.
 
 From Steam
 ----------
