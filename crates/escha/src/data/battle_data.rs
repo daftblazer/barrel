@@ -683,7 +683,8 @@ const ENCOUNTER_GROUP_COUNT: usize = 226;
 #[derive(Clone, Debug, PartialEq)]
 pub struct EncounterGroup {
     pub id: i32,
-    /// Word 2: 0, 3 or 4, which the battle setup keeps at +0x3c (meaning not read yet).
+    /// Word 2: 0, 3 or 4, which the battle setup keeps at +0x3c: it picks the music
+    /// (`battle::music`) and 4 bars running away (docs/tables.md).
     pub kind: i32,
     /// How many monsters, at least and at most (the battle rolls between them).
     pub count: (i32, i32),

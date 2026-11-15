@@ -1313,7 +1313,7 @@ const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
 ///
 /// `members` are the session's party (its save's `member` lines): each fights at its level in
 /// its equipment; without them, at level 1 in the new game's kit.
-fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::session::Member], scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
+fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members: &[barrel_escha::session::Member], scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
     let mut tables = battle_tables(root)?;
     for (c, m) in members.iter().enumerate() {
         tables.equip(c, &m.equipment);
@@ -1360,6 +1360,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
             bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
     }
+    let music = barrel_escha::auto_battle::group_kind(&tables, group).and_then(|k| barrel_escha::battle::music(k, sound_quest, logy));
     Ok((packs, bodies, BattlePlay {
         fighters,
         now: outcome.start.clone(),
@@ -1375,6 +1376,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
         items_noted: false,
         numbers: Vec::new(),
         banner: None,
+        music,
         wiped: None,
         drops_shown: false,
         turn,
@@ -1432,6 +1434,8 @@ struct BattlePlay {
     numbers: Vec<(usize, i32, f32)>,
     /// The action playing (its name in the banner, layout 885) and when it began.
     banner: Option<(String, f32)>,
+    /// The battle's music track (`battle::music`), played in a window.
+    music: Option<u32>,
     /// A lost battle's wipe: when it began and the day it turns to.
     wiped: Option<(f32, u32)>,
     /// A won battle's drops screen has been shown.
@@ -2559,7 +2563,9 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--battle: the stage is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
         let members = battle_party.as_deref().map(barrel_escha::session::Session::party_in).unwrap_or_default();
-        let (packs, bodies, play) = battle_people(&root, group, logy, &members, &mut scene, base, town_bodies.len())?;
+        // The vocal song's flag (`EVENT_FLAG_SOUND_QUEST_FLAG`) in the field's save.
+        let sound_quest = battle_party.as_deref().is_some_and(|t| t.lines().any(|l| l.split_whitespace().collect::<Vec<_>>() == ["flag", "149", "1"]));
+        let (packs, bodies, play) = battle_people(&root, group, logy, sound_quest, &members, &mut scene, base, town_bodies.len())?;
         pack_bytes.extend(packs);
         town_bodies.extend(bodies);
         battle_play = Some(play);
@@ -3468,6 +3474,25 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         ambience = Some(mixer.play_stream(stream, volume, from));
                     }
                 eprintln!("field music {:?}, ambience {:?}", w.music, w.ambience);
+            }
+        }
+    // A battle in a window: its music (`battle::music`, the group's kind and the lead) from the
+    // start, in place of the field's.
+    if let Some(play) = battle_play.as_ref()
+        && presenter.is_some()
+        && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()) {
+            if sound.is_none() {
+                match barrel_audio::Output::open(0.1) {
+                    Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
+                    Err(e) => eprintln!("no sound: {e}"),
+                }
+            }
+            if let Some((_, mixer, library, music)) = sound.as_mut() {
+                if let Some(old) = music.take() {
+                    mixer.stop(old);
+                }
+                *music = play.music.and_then(|t| library.music(t)).map(|m| mixer.play_stream(m.stream, m.volume, m.loop_from));
+                eprintln!("battle music {:?}, playing: {}", play.music, music.is_some());
             }
         }
     let mut motion_names: Vec<String> = Vec::new();

@@ -315,7 +315,10 @@ the next sector round (`fight::Battle::move_turn`). Wait and Run are given (Run:
 goes back to the field with no spoils and no lost day); Change is not yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same
 generator and commands always give the same battle, so what was played stays) up to the next
-member turn. Each action's name stands in the action banner under the turn bar while it plays
+member turn. In a window the battle plays its music from the start (`battle::music`: the encounter group's
+kind, word 2, picks the boss theme, else the lead's theme, Escha's `bt_girl01` or Logy's
+`bt_boy01`, or the vocal song once the field's save has flag 149), in place of the field's.
+Each action's name stands in the action banner under the turn bar while it plays
 (`battlehud::banner`: layout 885's plate, part 0xf8, at half size, centred at x 640, top 122,
 the name's width plus 206 wide; measured on the ruins-entrance-battle-result recording, the
 game places it in code). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's

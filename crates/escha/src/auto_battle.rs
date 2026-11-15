@@ -205,6 +205,11 @@ impl Outcome {
     }
 }
 
+/// Encounter group `group`'s kind (its word 2: `battle::music`), if there is such a group.
+pub fn group_kind(t: &Tables, group: i32) -> Option<i32> {
+    t.groups.iter().find(|g| g.id == group).map(|g| g.kind)
+}
+
 /// Encounter group `group`'s monsters (by its id) drawn as the game draws them, each with its
 /// size (`Chara.xml` radius).
 pub fn draw(t: &Tables, group: i32, rng: &mut Rng) -> Result<Vec<(usize, f32)>, String> {
