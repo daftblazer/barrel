@@ -341,3 +341,10 @@ likely settle them where static reading failed.
   member's row without it. Barrel now leaves Change out everywhere. What makes the game offer it
   (story progress, whose turn, the reserve) is unread: hook the command row's builder in a
   battle where it shows.
+
+- **Field entry lines.** Entering a field the game shows a random line from a per-character table
+  (in the executable, near file offset 8,756,000); Barrel shows the window only when
+  `BARREL_ENTRY_LINE` gives the line. Read the table and the choice (hook the window's setup).
+- **Field gauge 44 vs 45.** The area map and field HUD draw the gauge at 44 % where the save
+  holds 45: the shown value is not the saved one (a decay on load, a rounding, or another
+  source). Read the live value.
