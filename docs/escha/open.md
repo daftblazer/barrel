@@ -187,8 +187,12 @@ likely settle them where static reading failed.
   64- or 32-bit pointer to them, not in `Saves`/`Data`/scripts): the names reach
   `0x140194450`'s `skill/%s.ebd` form (`0x140803730`, used at `0x1401944b5`) some other way,
   from a caller not found. `CharaBase` gives each member `ITEMUSE00` to `07` motions
-  (Escha's `B_ITEM_01` to `_08`). Next: the item command's execute (its vtable, as Move's
-  `0x1401bbeb0`) and what it passes to the skill loader.
+  (Escha's `B_ITEM_01` to `_08`). The item action (`BtlCharaActionItem`, vtable `0x140808b18`;
+  slot 5 `0x1401ba9e0` its execute) sets the item camera (`0x14019aa70(angle, flag)`: camera
+  type 4, `ECT_CAMERA_PRESET_SET 4`, `ECT_CAMERA_PRESET_ANG_SET (0 or −30) 180`), then checks
+  the item's effects (`0x14029e320(item, effect)`: 0x18, 0x62 ...) for its strength; no scene
+  name is built there, so the scene is started further on (`GmStateBtlExecCommand`?), not
+  found yet.
 
 ## Synthesis
 
