@@ -223,3 +223,7 @@ likely settle them where static reading failed.
   turn (ruins-entrance-battle-stats at 322 s: about two slots, 128 px, apart), Barrel packs
   the order into neighbouring slots. Needs the timeline's wait values mapped to the bar (read
   how the bar's code places a face: its slot or a pixel offset).
+
+- Move command: who sets the mover's new place (+0x394) before `BtlCharaActionMove` runs, how
+  the player chooses it (which sector, the +0x3c direction) and whether a member already there
+  swaps. Barrel moves to the next sector round and moves nobody else.

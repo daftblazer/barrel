@@ -2556,6 +2556,8 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
                 let mp = if *who < party.len() { format!(", {mp_left} MP left") } else { String::new() };
                 println!("{} uses {skill} on {}: heals {amount} ({hp_left} HP{mp})", names[*who], names[*target]);
             }
+            Event::Ran { who, chance, escaped } => println!("{} runs ({chance}%): {}", names[*who], if *escaped { "got away" } else { "could not escape" }),
+            Event::Moved { who, sector } => println!("{} moves to sector {sector}", names[*who]),
         }
     }
     match winner {
@@ -4557,6 +4559,8 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
             Event::Poisoned { who, damage, hp_left } => println!("{} takes {damage} poison damage ({hp_left} HP left)", names[*who]),
             Event::Acted { who, skill, target, damage, hp_left, .. } => println!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left)", names[*who], names[*target]),
             Event::Healed { who, skill, target, amount, hp_left, .. } => println!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", names[*who], names[*target]),
+            Event::Ran { who, chance, escaped } => println!("{} runs ({chance}%): {}", names[*who], if *escaped { "got away" } else { "could not escape" }),
+            Event::Moved { who, sector } => println!("{} moves to sector {sector}", names[*who]),
         }
     }
     println!("{}", match winner { Some(0) => "the party wins".to_string(), Some(_) => "the monsters win".to_string(), None => format!("no winner after {} events", events.len()) });

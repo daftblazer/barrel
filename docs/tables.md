@@ -550,7 +550,17 @@ waits from virtual +0x30 and so through the same formula: **Wait 320** (+0x38 se
 execute, `0x14019be80`, only plays a pose when the character's test `0x1401ae380(…, 2)` holds:
 no other effect), **Move 300**, **Run 250** (a constant method, `0x1401ba6a0`), Change the value
 its caller gives. `battle::WAIT_COMMAND` / `MOVE_COMMAND` / `RUN_COMMAND`; Barrel gives Wait
-(`fight::Battle::wait_turn`).
+(`fight::Battle::wait_turn`), Run and Move (`move_turn`).
+
+Move's execute (`0x1401bbeb0`, vtable slot 5; slot 6 `0x1401bbf00` returns +0x38) only shows
+the move: `0x14019c310 (actor, +0x3c)` takes the actor's place (+0x394) through
+`0x1401b0d40` (six slot angles: 1.05, 3.14, 5.24 … radians) and the battle's centre
+(+0x3d8), and calls the battle script's `setCommandMove(x, y, z, facing, left, centre)`
+(`macro_battle.nut`: a cross-fade, the member set at the spot, a run motion there, the camera
+following; `left` is the action's +0x3c, which way round; `centre` is actor +0x74 == 0, the
+sideways pull 1100 instead of 400). Then motion 0xa (`0x1401a33c0`) and the HUD's notice
+(`0x1401c9f60`, an empty method). So the new place is set before the action runs, by whoever
+built it.
 
 The factory (`0x1401b9f70 (ctx, kind, value, …)`, through `0x1401b9e10`) picks the action by
 kind from a table at `0x1401ba2a8`: 5 Move (`0x140808bf8`, +0x38 = 300), 6 Wait (`0x140808c48`,

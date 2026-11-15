@@ -138,6 +138,8 @@ pub enum Event {
     Felled { who: usize, skill: String, target: usize },
     /// A fighter tried to run (the Run command); `escaped` ends the battle.
     Ran { who: usize, chance: i32, escaped: bool },
+    /// A party member moved to another sector (the Move command).
+    Moved { who: usize, sector: i32 },
 }
 
 pub struct Battle {
@@ -167,6 +169,22 @@ impl Battle {
     /// [`battle::WAIT_COMMAND`] taken as an action's (its execute only plays a pose).
     pub fn wait_turn(&mut self, who: usize, rng: &mut Rng) {
         self.end_action(who, battle::WAIT_COMMAND, rng);
+    }
+
+    /// `who` moves to `sector` (the Move command, `BtlCharaActionMove`, execute `0x1401bbeb0`):
+    /// its place (+0x394) is the new sector's before the action runs, and the execute only
+    /// shows the run there: `0x14019c310` hands the battle script's `setCommandMove` the place's
+    /// spot and facing (the slot angles of `0x1401b0d40`), the action's +0x3c (which way round)
+    /// and whether the member is the centre one (+0x74 = 0), and the script runs it there; the
+    /// HUD's notice (`0x1401c9f60`) does nothing. Then the Move wait ([`battle::MOVE_COMMAND`]).
+    /// Who stood on the sector before is not moved (`docs/escha/open.md`).
+    pub fn move_turn(&mut self, who: usize, sector: i32, rng: &mut Rng) -> Event {
+        let sector = sector.rem_euclid(3);
+        let f = &mut self.fighters[who];
+        f.slot = sector + 3;
+        f.position = battle::party_spot(who as i32, sector);
+        self.end_action(who, battle::MOVE_COMMAND, rng);
+        Event::Moved { who, sector }
     }
 
     /// `who` tries to run (the Run command, `BtlCharaActionEscape`, execute `0x1401ba560`): a
@@ -551,6 +569,18 @@ mod tests {
         let entry = b.timeline.entries.iter().find(|e| e.0 as usize == who).unwrap();
         assert_eq!(entry.1, battle::action_wait(battle::WAIT_COMMAND, 20, None, None, &mut -1));
         assert!(b.fighters.iter().all(|f| f.stats[stat::HP] == 100));
+    }
+
+    #[test]
+    fn move_takes_300_and_stands_at_the_new_sector() {
+        let mut b = Battle::new(vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 1, 999)]);
+        let who = b.next();
+        let mut rng = Rng::seeded(1);
+        assert_eq!(b.move_turn(who, 4, &mut rng), Event::Moved { who, sector: 1 });
+        assert_eq!(b.fighters[who].slot, 4);
+        assert_eq!(b.fighters[who].position, battle::party_spot(who as i32, 1));
+        let entry = b.timeline.entries.iter().find(|e| e.0 as usize == who).unwrap();
+        assert_eq!(entry.1, battle::action_wait(battle::MOVE_COMMAND, 20, None, None, &mut -1));
     }
 
     #[test]

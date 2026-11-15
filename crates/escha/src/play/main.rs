@@ -1522,6 +1522,8 @@ impl BattlePlay {
                 battlehud::command::SKILL if !turn.skills.is_empty() => self.choosing = Choosing::Skill,
                 battlehud::command::WAIT => self.give(barrel_escha::auto_battle::Command::Wait),
                 battlehud::command::RUN => self.give(barrel_escha::auto_battle::Command::Run),
+                // the next sector round (the game's choice of where, and which way, is not read)
+                battlehud::command::MOVE => self.give(barrel_escha::auto_battle::Command::Move { sector: turn.sector + 1 }),
                 c => eprintln!("battle: command {c} is not given yet"),
             },
             (Choosing::Skill, Up) => self.chosen = (self.chosen + skills - 1) % skills,
@@ -1652,15 +1654,15 @@ impl BattlePlay {
             }
             Event::Felled { target, .. } => self.set(target, 0, 0),
             Event::Poisoned { who, hp_left, .. } => self.set(who, 0, hp_left),
-            // the run's motion is not played yet
-            Event::Ran { .. } => {}
+            // the run's and the move's motions are not played yet
+            Event::Ran { .. } | Event::Moved { .. } => {}
         }
         let (who, target, fell) = match event {
             Event::Acted { who, target, hp_left, .. } => (Some(who), Some(target), hp_left <= 0),
             Event::Healed { who, target, .. } => (Some(who), Some(target).filter(|&t| t != who), false),
             Event::Felled { who, target, .. } => (Some(who), Some(target), true),
             Event::Poisoned { who, hp_left, .. } => (None, Some(who), hp_left <= 0),
-            Event::Ran { .. } => (None, None, false),
+            Event::Ran { .. } | Event::Moved { .. } => (None, None, false),
         };
         if let Some(w) = who {
             self.play(bodies, w, "ATTACK00");

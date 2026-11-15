@@ -140,6 +140,7 @@ impl Outcome {
             .map(|e| match e {
                 Event::Felled { who, skill, target } => format!("{} uses {skill} on {}: felled", name(who), name(target)),
                 Event::Ran { who, chance, escaped } => format!("{} runs ({chance}%): {}", name(who), if *escaped { "got away" } else { "could not escape" }),
+                Event::Moved { who, sector } => format!("{} moves to sector {sector}", name(who)),
                 Event::Poisoned { who, damage, hp_left } => format!("{} takes {damage} poison damage ({hp_left} HP left)", name(who)),
                 Event::Acted { who, skill, target, damage, hp_left, .. } => format!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left)", name(who), name(target)),
                 Event::Healed { who, skill, target, amount, hp_left, .. } => format!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", name(who), name(target)),
@@ -255,6 +256,8 @@ pub struct Turn {
     /// The turn bar's next-turn mark for each command: the attack, the skills, Wait
     /// (`Skirmish::next_places`).
     pub next_places: Vec<usize>,
+    /// The member's sector round the battle (0 to 2; its place +0x394 less 3).
+    pub sector: i32,
 }
 
 /// Monsters already drawn against `party` with the player's `commands`, one per member turn in
@@ -283,7 +286,7 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
             Some(&c) => events.extend(s.command(who, c, rng)),
             None => {
                 let skills = s.skills(who).into_iter().map(|(k, cost, can)| (k.name.clone(), cost, can)).collect();
-                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who) }));
+                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who), sector: s.battle.fighters[who].slot - 3 }));
             }
         }
     }
