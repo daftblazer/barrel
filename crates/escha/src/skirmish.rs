@@ -143,6 +143,9 @@ pub enum Command {
     Move { sector: i32 },
     /// The Item command: carried item `item` (its index in the member's items) on `target`.
     Item { item: usize, target: usize },
+    /// Not a turn's command: member `by` supports the member action given just before it with
+    /// a Support Attack on that action's target ([`Skirmish::support`]).
+    Support { by: usize },
 }
 
 /// Member `who` uses `held` on `target` (`BtlCharaActionItem`): the item's action at its power,
@@ -316,6 +319,8 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             }
             // none of it left: the normal attack
             Command::Item { target, .. } => events.extend(self.battle.act(who, member.attack, None, valid(target), rng)),
+            // a support is no turn's command (`run_commanded` gives it after an action)
+            Command::Support { .. } => {}
         }
         let mut all = events;
         let from = 0;

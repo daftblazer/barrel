@@ -1301,6 +1301,9 @@ const RESULT_SECONDS: f32 = 3.0;
 
 /// A lost battle's wipe (`ruins-entrance-lost-battle-60hz.mkv`): the fade to white, then the
 /// date panel alone on the white, in seconds (about 2 and 2 in the recording).
+/// The Support Attack skill's name (a support's own hit opens no window of its own).
+const SUPPORT_SKILL_NAME: &str = "Support Attack";
+
 /// The most frames an offscreen run writes (its length is this times `--save-every`).
 const MAX_WRITTEN_FRAMES: u32 = 600;
 
@@ -1388,6 +1391,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         rate: None,
         action_total: 0,
         support: barrel_escha::battle::SUPPORT_START,
+        acting: None,
         music,
         victory_played: false,
         wiped: None,
@@ -1453,6 +1457,9 @@ struct BattlePlay {
     action_total: i32,
     /// The Support gauge as the actions played so far left it.
     support: i32,
+    /// The party action now playing (its member, when it came up, who has supported it): the
+    /// window for Support Attacks.
+    acting: Option<(usize, f32, Vec<usize>)>,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1628,6 +1635,39 @@ impl BattlePlay {
         }
     }
 
+    /// Who acts in the party action now playing, while supports may still be given for it (as
+    /// long as its banner shows).
+    fn support_window(&self) -> Option<usize> {
+        self.acting.as_ref().filter(|a| self.time - a.1 < battlehud::BANNER_SECONDS).map(|a| a.0)
+    }
+
+    /// Member `by` supports the party action now playing (the battle is fought again with
+    /// `Command::Support` after it; the events already played stay as they were).
+    fn support(&mut self, by: usize) -> bool {
+        let Some(actor) = self.support_window() else { return false };
+        if by == actor || by >= self.charas.len() || self.acting.as_ref().is_some_and(|a| a.2.contains(&by)) {
+            return false;
+        }
+        self.fight.commands.push(barrel_escha::auto_battle::Command::Support { by });
+        let f = &self.fight;
+        match barrel_escha::auto_battle::fight_commanded(&f.tables, &f.party, &f.monsters, f.rng, &f.commands) {
+            Ok((outcome, turn)) if outcome.events.len() > self.outcome.events.len() => {
+                eprintln!("battle: support by {by}");
+                self.outcome = outcome;
+                self.turn = turn;
+                if let Some(a) = self.acting.as_mut() {
+                    a.2.push(by);
+                }
+                true
+            }
+            // Not allowed (the gauge short, the supporter or the target down): taken back.
+            _ => {
+                self.fight.commands.pop();
+                false
+            }
+        }
+    }
+
     /// Gives the waiting member `command` and plays the battle on to the next member's turn.
     fn give(&mut self, command: barrel_escha::auto_battle::Command) {
         {
@@ -1754,6 +1794,15 @@ impl BattlePlay {
         }
         if let Event::Acted { damage, .. } = &event {
             self.action_total += damage;
+        }
+        // A member's own action (not a support of it) opens the window; an area action's
+        // further hits (the same step) keep it.
+        if let Event::Acted { who, skill, .. } = &event
+            && *who < self.charas.len()
+            && skill != SUPPORT_SKILL_NAME
+            && self.acting.as_ref().is_none_or(|a| (a.0, a.1) != (*who, self.time))
+        {
+            self.acting = Some((*who, self.time, Vec::new()));
         }
         // The action's rate (the event after its hits) shows with them, taking no step itself.
         if let Some(Event::Rate { rate, support, .. }) = self.outcome.events.get(self.next) {
@@ -3875,6 +3924,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         }
     }
     let mut battle_keys: std::collections::VecDeque<title::Button> = title::keys(&std::env::var("BARREL_BATTLE_KEYS").unwrap_or_default()).into();
+    let mut battle_supports: std::collections::VecDeque<usize> = std::env::var("BARREL_BATTLE_SUPPORTS").unwrap_or_default().split(',').filter_map(|k| k.trim().parse().ok()).collect();
     let mut battle_layer = match battle_play.as_ref() {
         Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
             let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
@@ -4145,6 +4195,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 }
                 P::RightStick if free_play => Some(KeyCode::KeyR),
                 P::West if player.is_some() => Some(KeyCode::KeyT),
+                // During a party hit: LB, Y and RB the left, centre and right plates' member's
+                // Support Attack (1, 2 and 3 on the keyboard).
+                P::LeftShoulder if battle_play.is_some() => Some(KeyCode::Digit1),
+                P::North if battle_play.is_some() => Some(KeyCode::Digit2),
+                P::RightShoulder if battle_play.is_some() => Some(KeyCode::Digit3),
                 // L3 in battle: "Fast Forward" (F on the keyboard).
                 P::LeftStick if battle_play.is_some() => Some(KeyCode::KeyF),
                 P::East if player.is_some() => Some(KeyCode::Enter),
@@ -4157,6 +4212,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             }
         }
         for key in keys {
+            let plate = match key {
+                KeyCode::Digit1 => Some(0),
+                KeyCode::Digit2 => Some(1),
+                KeyCode::Digit3 => Some(2),
+                _ => None,
+            };
+            if let (Some(by), Some(play)) = (plate, battle_play.as_mut()) {
+                play.support(by);
+                continue;
+            }
             // A member's turn: the arrows choose the command and target, Enter gives it.
             if battle_waits {
                 let b = match key {
@@ -4877,6 +4942,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 if presenter.is_none() && play.waiting()
                     && let Some(b) = battle_keys.pop_front() {
                         play.press(b);
+                    }
+                // Offscreen: `BARREL_BATTLE_SUPPORTS`, members to support with as the next party
+                // hits play (one each).
+                if presenter.is_none() && play.support_window().is_some_and(|a| battle_supports.front().is_some_and(|&b| b != a))
+                    && let Some(by) = battle_supports.pop_front() {
+                        play.support(by);
                     }
                 // Over, however it ended: the battle items' uses left go into the field's save.
                 if play.over() && !play.items_noted

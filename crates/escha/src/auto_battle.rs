@@ -332,7 +332,7 @@ pub fn fight_commanded(t: &Tables, party: &[(usize, i32)], drawn: &[usize], mut 
 fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fighter], sizes: &[f32], rules: crate::skirmish::ItemRules, rng: &mut Rng, commands: &[Command]) -> (Vec<Event>, Option<u8>, Option<Turn>, Vec<Vec<u32>>) {
     let mut s = crate::skirmish::Skirmish::new(members, foes, sizes, rules, rng);
     let mut events = Vec::new();
-    let mut given = commands.iter();
+    let mut given = commands.iter().peekable();
     while events.len() < MAX_EVENTS && s.winner().is_none() && !s.battle.escaped {
         let (who, start) = s.begin_turn();
         events.extend(start);
@@ -343,8 +343,23 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
             events.extend(s.auto(who, rng));
             continue;
         }
+        // Supports with no action before them stand for nothing.
+        while given.next_if(|c| matches!(c, Command::Support { .. })).is_some() {}
         match given.next() {
-            Some(&c) => events.extend(s.command(who, c, rng)),
+            Some(&c) => {
+                let from = events.len();
+                events.extend(s.command(who, c, rng));
+                // The supports given while this action played, on its target.
+                let target = events[from..].iter().find_map(|e| match *e {
+                    Event::Acted { who: w, target, .. } if w == who => Some(target),
+                    _ => None,
+                });
+                while let Some(&Command::Support { by }) = given.next_if(|c| matches!(c, Command::Support { .. })) {
+                    if let Some(t) = target {
+                        events.extend(s.support(by, t, rng));
+                    }
+                }
+            }
             None => {
                 let skills = s.skills(who).into_iter().map(|(k, cost, can)| (k.name.clone(), cost, can)).collect();
                 return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who), sector: s.battle.fighters[who].slot - 3, items: s.items(who) }), s.items_left());

@@ -435,7 +435,9 @@ impl Battle {
                         self.fighters[target].restat();
                     }
                 }
-                0 | 8 => {
+                // Damage (`DAMAGE_HP`, and `ASSIST_ATTACK`, 6, a Support Attack's, through the
+                // same handler `0x1401bdf6d`) and time-scaled damage (8).
+                0 | 6 | 8 => {
                     let (user, foe) = (&self.fighters[who].stats, &self.fighters[target].stats);
                     let amount = if e.act == 8 {
                         battle::turn_damage(amount, second, self.fighters[who].actions, 1.0)
@@ -647,7 +649,7 @@ mod tests {
         let fighters = vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 0, 999), Fighter::new(&block(500), 1, 999_999)];
         let mut b = Battle::new(fighters).with_act_steps(vec![5; 8]);
         let mut rng = Rng::seeded(5);
-        let attack = Skill { name: "Support Attack".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: 45, max: 50, min2: 0, max2: 0 }], description: String::new() };
+        let attack = Skill { name: "Support Attack".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 6, element: None, min: 45, max: 50, min2: 0, max2: 0 }], description: String::new() };
         let wait_before = b.timeline.entries.iter().find(|e| e.0 == 1).unwrap().1;
         assert!(!b.may_support(1, 150), "100 in the gauge");
         assert!(b.support_act(1, &attack, 150, 2, &mut rng).is_empty());

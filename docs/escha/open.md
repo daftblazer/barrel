@@ -270,5 +270,7 @@ likely settle them where static reading failed.
 
 - Support Attacks in Barrel's battle: the supporter's own turn is left where it was (not
   checked against the game: the recording's turn bar after a support would tell); members
-  other than Escha, Logy and Katla take 100; not yet offered in play (the prompts during a
-  party hit, Y / LB / RB / X by the plates) nor used by the stand-in.
+  other than Escha, Logy and Katla take 100. In play LB / Y / RB (1 / 2 / 3) give the left,
+  centre and right plate's member's support while a party hit's banner shows; the game's
+  "Support Attack" bubbles over the plates (layout 882?) are not drawn yet, X (the reserve) and
+  Support Guard are not in, nor supports by the stand-in.
