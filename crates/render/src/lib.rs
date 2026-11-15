@@ -26,6 +26,7 @@ pub mod shadow;
 pub mod taa;
 pub mod timing;
 pub mod text;
+pub mod trace;
 pub mod upscale;
 pub mod window;
 pub mod pad;

@@ -90,12 +90,16 @@ pub struct Layer {
     current: usize,
     written: Option<u64>,
     count: u32,
+    /// The draw trace (`crate::trace`): this layer's id, its textures' names, and the quads set
+    /// last with the frame they were set in, until a record writes them.
+    trace: Option<(u64, Vec<String>, std::cell::RefCell<Option<(u64, Vec<Quad>)>>)>,
 }
 
 impl Layer {
     pub fn new(gpu: &Gpu, pool: vk::CommandPool, render_pass: vk::RenderPass, images: &[&barrel_formats::g1t::Texture]) -> Result<Layer> {
         let d = &gpu.device;
         let textures = images.iter().map(|t| upload_texture(gpu, pool, t, false)).collect::<Result<Vec<_>>>()?;
+        let trace = crate::trace::enabled().then(|| (crate::trace::layer_id(), images.iter().map(|t| crate::trace::texture_name(t)).collect(), Default::default()));
         let n = textures.len() as u32;
         unsafe {
             let sampler = d.create_sampler(
@@ -172,12 +176,15 @@ impl Layer {
                 .layout(layout)
                 .render_pass(render_pass);
             let pipeline = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0];
-            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0 })
+            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0, trace })
         }
     }
 
     /// Sets what the next frames draw (the buffer grows as needed).
     pub fn set(&mut self, gpu: &Gpu, quads: &[Quad]) -> Result<()> {
+        if let Some((_, _, pending)) = &self.trace {
+            *pending.borrow_mut() = Some((gpu.frame.get(), quads.to_vec()));
+        }
         let mut verts = Vec::with_capacity(quads.len() * 6);
         self.runs.clear();
         for q in quads {
@@ -231,6 +238,11 @@ impl Layer {
     /// # Safety
     /// `cb` is recording inside a render pass compatible with the one the layer was made for.
     pub unsafe fn record(&self, d: &ash::Device, cb: vk::CommandBuffer, width: u32, height: u32) {
+        if let Some((id, names, pending)) = &self.trace {
+            if let Some((frame, quads)) = pending.borrow_mut().take() {
+                crate::trace::quads(frame, *id, width, height, names, &quads);
+            }
+        }
         let Some((buf, ..)) = self.buffers[self.current].filter(|_| self.count > 0) else { return };
         unsafe {
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
@@ -245,6 +257,9 @@ impl Layer {
     }
 
     pub fn destroy(self, gpu: &Gpu) {
+        if let Some((id, ..)) = &self.trace {
+            crate::trace::gone(gpu.frame.get(), *id);
+        }
         let d = &gpu.device;
         unsafe {
             for (b, m, ..) in self.buffers.into_iter().flatten() {
