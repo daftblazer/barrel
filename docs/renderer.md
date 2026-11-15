@@ -323,7 +323,12 @@ the Result screen starts the victory music in its place (`battle::victory_music`
 Each action's name stands in the action banner under the turn bar while it plays
 (`battlehud::banner`: layout 885's plate, part 0xf8, at full size, centred on the screen, its
 top at y 180, the name's width plus 306 wide; measured on the ruins-entrance-battle-result
-recording, which is 1280 × 720, scaled to 1080p; the game sizes and centres it in code). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
+recording, which is 1280 × 720, scaled to 1080p; the game sizes and centres it in code). A party action
+also shows the damage rate panel for as long (`battlehud::rate_panel`, layout 926 at (1364, 150):
+"Damage Rate:" with 100 + the action's rate in the purple digits 0xe3 and "%", "Total Damage:"
+with the action's damage in the red 0xe4; the rate comes from `fight::Event::Rate`, sent as a
+party action ends: its steps before the hits plus each effect's act step, the act table's last
+word). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
 number (`battlehud::number`: part 0xe0's white brush digits, sign first, 36 apart and centred,
 at about 140%, fading in over 0.1 s from 1.6 times that by 0.2 s, gone after 1 s; measured on
 the ruins-entrance-battle-result recording at 149.8 s, a 1280 × 720 recording), 100 units above the fighter's place.

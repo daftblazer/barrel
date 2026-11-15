@@ -1235,13 +1235,15 @@ struct BattleHud {
     nodes: Vec<barrel_escha::data::layout::Placed>,
     /// The target plate's nodes (layout 920).
     plate_nodes: Vec<barrel_escha::data::layout::Placed>,
+    /// The damage rate panel's nodes (`battlehud::RATE_PANEL`).
+    rate_nodes: Vec<barrel_escha::data::layout::Placed>,
     /// The Result screen's nodes (layout 904), shown instead once a won battle is over.
     result_nodes: Vec<barrel_escha::data::layout::Placed>,
     /// The field HUD's nodes (layout 625), for its date panel over a lost battle's white.
     field_nodes: Vec<barrel_escha::data::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
-    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>, Option<String>)>,
+    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>, Option<String>, Option<(i32, i32)>)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1261,7 +1263,10 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
     every.extend(battlehud::target_plate(&plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), &battlehud::Plate { name: String::new(), hp: (1, 1), at: [0, 0] }));
     // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
-    // The battle numbers' digits and the action banner (their sheets).
+    // The damage rate panel, the battle numbers' digits and the action banner (their sheets).
+    let rate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::RATE_PANEL);
+    every.extend(battlehud::rate_panel(&rate_nodes, 0, 0));
+    every.extend((0..14).flat_map(|cut| [0xe3, 0xe4].map(|part| hud::Element::Sprite { part, cut, at: [0, 0] })));
     every.extend(battlehud::number(-1, [0, 0], 0.5));
     every.extend(battlehud::banner(&pe, "", 0.0));
     let result_nodes = barrel_escha::data::layout::placed(&pe, result::LAYOUT);
@@ -1287,7 +1292,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     }
     let size = images[0].width as f32;
     let layer = text::Layer::new(gpu, pool, pass, &images)?;
-    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, result_nodes, field_nodes, exe, shown: None })
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, rate_nodes, result_nodes, field_nodes, exe, shown: None })
 }
 
 /// How long an offscreen run shows a won battle's Result screen before going back.
@@ -1379,6 +1384,8 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         items_noted: false,
         numbers: Vec::new(),
         banner: None,
+        rate: None,
+        action_total: 0,
         music,
         victory_played: false,
         wiped: None,
@@ -1438,6 +1445,10 @@ struct BattlePlay {
     numbers: Vec<(usize, i32, f32)>,
     /// The action playing (its name in the banner, layout 885) and when it began.
     banner: Option<(String, f32)>,
+    /// The last party action's damage rate panel: rate, total damage, when it came up.
+    rate: Option<(i32, i32, f32)>,
+    /// The damage the action now playing has dealt so far.
+    action_total: i32,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1721,12 +1732,29 @@ impl BattlePlay {
             }
             Event::Felled { target, .. } => self.set(target, 0, 0),
             Event::Poisoned { who, hp_left, .. } => self.set(who, 0, hp_left),
-            // the run's and the move's motions are not played yet
-            Event::Ran { .. } | Event::Moved { .. } => {}
+            // the run's and the move's motions are not played yet; the rate is the HUD's
+            Event::Ran { .. } | Event::Moved { .. } | Event::Rate { .. } => {}
         }
         match &event {
-            Event::Acted { skill, .. } | Event::Healed { skill, .. } | Event::Felled { skill, .. } => self.banner = Some((skill.clone(), self.time)),
+            Event::Acted { skill, .. } | Event::Healed { skill, .. } | Event::Felled { skill, .. } => {
+                // A new action (a later step; an area action's hits share one): its total starts again.
+                if self.banner.as_ref().is_none_or(|(_, at)| *at != self.time) {
+                    self.action_total = 0;
+                }
+                self.banner = Some((skill.clone(), self.time));
+            }
             _ => {}
+        }
+        if let Event::Acted { damage, .. } = &event {
+            self.action_total += damage;
+        }
+        // The action's rate (the event after its hits) shows with them, taking no step itself.
+        if let Some(Event::Rate { rate, .. }) = self.outcome.events.get(self.next) {
+            self.rate = Some((*rate, self.action_total, self.time));
+            if let Some(line) = self.outcome.lines().get(self.next) {
+                eprintln!("battle: {line}");
+            }
+            self.next += 1;
         }
         match event {
             Event::Acted { target, damage, .. } if damage > 0 => self.numbers.push((target, -damage, self.time)),
@@ -1739,7 +1767,7 @@ impl BattlePlay {
             Event::Healed { who, target, .. } => (Some(who), Some(target).filter(|&t| t != who), false),
             Event::Felled { who, target, .. } => (Some(who), Some(target), true),
             Event::Poisoned { who, hp_left, .. } => (None, Some(who), hp_left <= 0),
-            Event::Ran { .. } | Event::Moved { .. } => (None, None, false),
+            Event::Ran { .. } | Event::Moved { .. } | Event::Rate { .. } => (None, None, false),
         };
         if let Some(w) = who {
             self.play(bodies, w, "ATTACK00");
@@ -5707,10 +5735,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             .flatten()
             .collect();
         let banner = play.banner.as_ref().filter(|(_, at)| play.time - at < battlehud::BANNER_SECONDS).map(|(name, _)| name.clone());
+        let rate = play.rate.filter(|&(_, _, at)| play.time - at < battlehud::BANNER_SECONDS).map(|(r, t, _)| (r, t));
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone()))
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone(), rate))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
                 let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
@@ -5735,6 +5764,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 };
                 if shown_result.is_none() {
                     elements.extend(numbers.iter().cloned());
+                    if let Some((r, total)) = rate {
+                        elements.extend(battlehud::rate_panel(&h.rate_nodes, r, total));
+                    }
                     if let Some(name) = &banner {
                         let width = message::width_of(&h.font, name) * battlehud::BANNER_TEXT_SIZE / message::LINE * 1.47;
                         elements.extend(battlehud::banner(&pe, name, width));
@@ -5747,7 +5779,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers, banner));
+                h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers, banner, rate));
             }
     }
     // Offscreen, the frames written to files (with --save-every, only some): only those are

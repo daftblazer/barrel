@@ -2558,6 +2558,7 @@ fn battle(exe: &Path, monster: &str, party: &[&str]) -> Result<()> {
             }
             Event::Ran { who, chance, escaped } => println!("{} runs ({chance}%): {}", names[*who], if *escaped { "got away" } else { "could not escape" }),
             Event::Moved { who, sector } => println!("{} moves to sector {sector}", names[*who]),
+            Event::Rate { rate, .. } => println!("damage rate {}%", 100 + rate),
         }
     }
     match winner {
@@ -4561,6 +4562,7 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
             Event::Healed { who, skill, target, amount, hp_left, .. } => println!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", names[*who], names[*target]),
             Event::Ran { who, chance, escaped } => println!("{} runs ({chance}%): {}", names[*who], if *escaped { "got away" } else { "could not escape" }),
             Event::Moved { who, sector } => println!("{} moves to sector {sector}", names[*who]),
+            Event::Rate { rate, .. } => println!("damage rate {}%", 100 + rate),
         }
     }
     println!("{}", match winner { Some(0) => "the party wins".to_string(), Some(_) => "the monsters win".to_string(), None => format!("no winner after {} events", events.len()) });

@@ -431,3 +431,37 @@ pub fn banner(pe: &barrel_formats::pe::Pe, name: &str, width: f32) -> Vec<Elemen
         Element::Label(Text { at: [BANNER_CENTRE, BANNER_TOP + BANNER_TEXT_DROP], size: BANNER_TEXT_SIZE, colour: [0; 4], text: name.to_string(), kind: 22 }),
     ]
 }
+
+/// The damage rate panel (layout 926 at (1364, 150)): "Damage Rate:" (921, part 0xff cut 1)
+/// and "Total Damage:" (922, cut 2) left of their numbers, the rate as 100 + it in the purple
+/// digits (923, part 0xe3, kind 28: ending at its node) with "%" (925, 0xe3 cut 13), the total in
+/// the red ones (924, 0xe4). Each digit advances its glyph's width (42, 40). Measured on the
+/// ruins-entrance-battle-result recording (104 s, "130%", "9"): the whole panel tilted, rising
+/// some 7° to the right, and its numbers further right than their nodes; drawn level here
+/// at the layout's places (`docs/escha/open.md`).
+pub const RATE_PANEL: u32 = 926;
+const RATE_DIGITS: (i32, i32) = (0xe3, 42);
+const TOTAL_DIGITS: (i32, i32) = (0xe4, 40);
+const RATE_PERCENT_CUT: i32 = 13;
+
+/// The panel for an action's damage `rate` (shown as 100 + it, percent) and `total` damage.
+pub fn rate_panel(nodes: &[Placed], rate: i32, total: i32) -> Vec<Element> {
+    let mut out = Vec::new();
+    let digits = |value: i32, (part, advance): (i32, i32), end: [i32; 2], out: &mut Vec<Element>| {
+        let text = value.max(0).to_string();
+        let left = end[0] - advance * text.len() as i32;
+        for (k, b) in text.bytes().enumerate() {
+            out.push(Element::Sprite { part, cut: i32::from(b - b'0'), at: [left + advance * k as i32, end[1]] });
+        }
+    };
+    for p in nodes {
+        match (p.node.part, p.node.cut, p.node.kind) {
+            (0xff, 1 | 2, _) => out.push(Element::Sprite { part: 0xff, cut: p.node.cut, at: p.at }),
+            (part, _, 28) if part == RATE_DIGITS.0 => digits(100 + rate, RATE_DIGITS, p.at, &mut out),
+            (part, _, 28) if part == TOTAL_DIGITS.0 => digits(total, TOTAL_DIGITS, p.at, &mut out),
+            (part, RATE_PERCENT_CUT, _) if part == RATE_DIGITS.0 => out.push(Element::Sprite { part, cut: RATE_PERCENT_CUT, at: p.at }),
+            _ => {}
+        }
+    }
+    out
+}

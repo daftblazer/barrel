@@ -140,6 +140,9 @@ pub enum Event {
     Ran { who: usize, chance: i32, escaped: bool },
     /// A party member moved to another sector (the Move command).
     Moved { who: usize, sector: i32 },
+    /// A party action's damage rate as it ends (global `0x141077e70`, the battle screen's
+    /// "Damage Rate: (100 + rate) %"): its steps before the hits and each effect's after.
+    Rate { who: usize, rate: i32 },
 }
 
 pub struct Battle {
@@ -151,6 +154,9 @@ pub struct Battle {
     tries: i32,
     /// A run succeeded (`0x141077e30`): the battle is over without a winner.
     pub escaped: bool,
+    /// Each act's damage-rate step, added once an action's effects are applied (the act
+    /// table's last word, `battle_data::ActInfo::last`: 5 for acts 0 and 2); none when empty.
+    pub act_steps: Vec<i32>,
 }
 
 impl Battle {
@@ -162,7 +168,13 @@ impl Battle {
         let mut order: Vec<u32> = (0..fighters.len() as u32).collect();
         order.sort_by_key(|&k| std::cmp::Reverse(fighters[k as usize].stats[stat::SPEED]));
         let timeline = Timeline::setup(&order);
-        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false }
+        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new() }
+    }
+
+    /// The act table's damage-rate steps ([`Battle::act_steps`]).
+    pub fn with_act_steps(mut self, steps: Vec<i32>) -> Battle {
+        self.act_steps = steps;
+        self
     }
 
     /// `who` waits (the Wait command, `BtlCharaActionWait`): nothing happens but its next wait,
@@ -452,6 +464,12 @@ impl Battle {
             events.push(Event::Acted { who, skill: skill.name.clone(), target, damage, hp_left: self.fighters[target].hp(), mp_left: self.fighters[who].mp() });
         }
         }
+        // The rate as the action ends (`0x14002aa70` after the effects): a step per effect.
+        // Only in a battle that has the act table (the screen's figure: tests and duels do not).
+        if self.fighters[who].side == 0 && !self.act_steps.is_empty() {
+            let steps: i32 = rolled.iter().map(|(e, ..)| usize::try_from(e.act).ok().and_then(|a| self.act_steps.get(a)).copied().unwrap_or(0)).sum();
+            events.push(Event::Rate { who, rate: rate + steps });
+        }
         events.append(&mut felled);
         self.end_action(who, skill.wait, rng);
         events
@@ -569,6 +587,21 @@ mod tests {
         let entry = b.timeline.entries.iter().find(|e| e.0 as usize == who).unwrap();
         assert_eq!(entry.1, battle::action_wait(battle::WAIT_COMMAND, 20, None, None, &mut -1));
         assert!(b.fighters.iter().all(|f| f.stats[stat::HP] == 100));
+    }
+
+    #[test]
+    fn a_party_hit_reports_its_rate_with_the_act_steps() {
+        // The recorded flank attack: 25 before the hit, the attack's own 5 after, 130 %.
+        let mut fighters = vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 1, 999)];
+        fighters[0].slot = 3;
+        fighters[1].slot = 1;
+        let mut b = Battle::new(fighters).with_act_steps(vec![5; 8]);
+        let mut rng = Rng::seeded(3);
+        let attack = Skill { name: "Attack".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: 10, max: 10, min2: 0, max2: 0 }], description: String::new() };
+        let e = b.act(0, &attack, None, 1, &mut rng);
+        let Some(Event::Rate { who: 0, rate }) = e.iter().find(|e| matches!(e, Event::Rate { .. })).cloned() else { panic!("{e:?}") };
+        // Slot 3 does not face sector 1 (slot 4 does): a flank, 25; a critical adds 10.
+        assert!(rate == 30 || rate == 40, "{rate}");
     }
 
     #[test]

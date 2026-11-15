@@ -190,6 +190,7 @@ impl Outcome {
                 Event::Felled { who, skill, target } => format!("{} uses {skill} on {}: felled", name(who), name(target)),
                 Event::Ran { who, chance, escaped } => format!("{} runs ({chance}%): {}", name(who), if *escaped { "got away" } else { "could not escape" }),
                 Event::Moved { who, sector } => format!("{} moves to sector {sector}", name(who)),
+                Event::Rate { rate, .. } => format!("damage rate {}%", 100 + rate),
                 Event::Poisoned { who, damage, hp_left } => format!("{} takes {damage} poison damage ({hp_left} HP left)", name(who)),
                 Event::Acted { who, skill, target, damage, hp_left, .. } => format!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left)", name(who), name(target)),
                 Event::Healed { who, skill, target, amount, hp_left, .. } => format!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", name(who), name(target)),

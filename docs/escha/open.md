@@ -249,3 +249,7 @@ likely settle them where static reading failed.
   it (Barrel: skills, attacks and items only).
 
 - `--walk` does not move the player in a window (offscreen only).
+
+- The damage rate panel is drawn level at its layout's places; the game tilts it about 7°
+  (rising to the right), its labels lower and further left, the numbers higher (the
+  ruins-entrance recording at 104 s). Its drawing code, and how long it stays, are not read.
