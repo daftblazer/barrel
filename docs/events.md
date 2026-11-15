@@ -713,6 +713,26 @@ in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far
   (`ECT_CHARA_ROT_SET_TARGET`) and the eye easing to the actor's body + (−75, 25, −150), the
   target to the target's body (`4 100 100`).
 
+**Battle-screen commands.** The battle's own words (`0x72…`) go through one switch
+(`0x1401a0e90`: word − `0x72000001` into the table at `0x1401a232c`). Two the skill events use
+often:
+
+- `r14` (`0x7200000e`, 300 uses) `{r, g, b, a, hundredths, mode}` fades a colour of the battle's
+  +0xf40 object (+0x28, from its current +0x80) to (r, g, b, a) / 128 over hundredths / 100 s
+  (`0x1401aaf00`; `mode`, 0 or 3, picks a keyed curve, `0x1404e1770`). The events dim it
+  (`89 89 89 128`, `64 64 64 128`, Escha's skill `32 32 80 128`, a dark blue) and seldom
+  bring it back (`128 128 128 128`), so the battle restores it after the scene. What the
+  colour multiplies (the stage, by the scenes' look, or the battle's light) is not read.
+- `r20` (`0x72000014`, 693 uses) `{kind, on}`: the fighters chosen by `kind`
+  (`0x1401b2b30(battle, out, kind)`) get 1, 1, 1 or 0 at their model's +0x250. The chooser
+  (jump table `0x1401b2e90`) sets four tests, the actor (battle +0x60), the targets (the list
+  at +0xab8), a third fighter (+0x70) and a side (the fighter's slot 2), and whether they name
+  the fighters taken or the ones left out: kind 4 the actor, 5 the targets, 0 both, 8
+  everyone, 1 all but the actor, 2 all but the targets, 3 all but both, 9 the third, 12 all but
+  the third, 6 and 7 a side (party, monsters; by the slot-2 value 0 and 1), 19 to 22 further
+  sides; fighters failing `0x1401ae3c0` are left out. Skills open with `r20 5 0` or `4 0` and
+  end with `r20 8 1`.
+
 **The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
 `t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):
 
@@ -956,7 +976,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `72000011` | `r17` |  | Event | 76 | 2 (76) |
 | `72000012` | `r18` |  | Event | 90 | 7 (90) |
 | `72000013` | `r19` |  | Event, GameModeBattle | 6 | 1 (6) |
-| `72000014` | `r20` |  | the battle event switch (`0x1401a0e90`, case `0x1401a17db`): `r20 {unit, on}` finds the battle units matching `unit` (`0x1401b2b30`) and sets a float triple on them to 1, 1, 1 when `on`, else 0 (`0x1401b32b0`): shown or hidden presumably | 693 | 2 (693) |
+| `72000014` | `r20` |  | the battle event switch (`0x1401a0e90`, jump table at `0x1401a232c`, case `0x1401a17db`): `r20 {kind, on}` sets the fighters `0x1401b2b30` selects by `kind` (below) to 1, 1, 1 (`on`) or 0 at their model's +0x250 (`0x1401b32b0`); not hiding (High Strike sets its targets to 0, then strikes them): what +0x250 scales is not read | 693 | 2 (693) |
 | `72000016` | `r22` |  | Event | 30 | 6 (30) |
 | `72000018` | `r24` |  | Event | 12 | 4 (12) |
 | `7200001b` | `r27` |  | GameModeBattle (`0x1401a0e90`) | 3 | 1 (3) |
