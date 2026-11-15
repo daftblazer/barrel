@@ -486,3 +486,41 @@ pub fn rate_panel(nodes: &[Placed], rate: i32, total: i32) -> Vec<Element> {
     }
     out
 }
+
+/// The support bubbles (layout 882): over each party plate, while a party hit plays, the
+/// button that calls that member's Support Attack and its name: layout 879 over the left plate
+/// (at (448, 750): LB, part 0x41 cut 8), 881 over the centre one ((828, 750): Y, cut 6), 880
+/// over the right one ((1208, 750): RB, cut 12), each the tab 0xfb, the button, a rule (0x45 cut
+/// 26) and the text (size 30); the second row (y 928) is the reserve's. The game's label is
+/// "Support Attack" (the escha-support-attack recording).
+pub const SUPPORT_BUBBLES: u32 = 882;
+const BUBBLE_LAYOUTS: [u32; 3] = [879, 881, 880];
+const BUBBLE_ROW_LIMIT: i32 = 900;
+pub const SUPPORT_LABEL: &str = "Support Attack";
+
+/// The bubbles over the plates in `plates` (0 left, 1 centre, 2 right).
+pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, plates: &[usize]) -> Vec<Element> {
+    let mut out = Vec::new();
+    for p in nodes {
+        let Some(k) = p.path.get(1).and_then(|l| BUBBLE_LAYOUTS.iter().position(|b| b == l)) else { continue };
+        if !plates.contains(&k) || p.at[1] >= BUBBLE_ROW_LIMIT {
+            continue;
+        }
+        if p.node.part == 0x164 {
+            if let Some(t) = texts(p) {
+                out.push(Element::Label(Text { text: SUPPORT_LABEL.to_string(), ..t }));
+            }
+        } else if p.node.part == BUTTONS {
+            // The button in the Western layout (`message::western_sprite`: the centre's cut 6
+            // shows Y, as the recording).
+            out.push(Element::Sprite { part: BUTTONS, cut: crate::message::western_sprite(p.node.cut.max(0) as u32) as i32, at: p.at });
+        } else if (p.node.part, p.node.cut) == BUBBLE_RULE {
+            // Not shown under the offer in the recording (a highlight for another state).
+        } else if p.node.part >= 0 && p.node.part < 0x164 {
+            out.push(Element::stored(p));
+        }
+    }
+    out
+}
+const BUBBLE_RULE: (i32, i32) = (0x45, 26);
+const BUTTONS: i32 = 0x41;
