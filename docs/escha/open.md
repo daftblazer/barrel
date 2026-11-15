@@ -179,6 +179,17 @@ likely settle them where static reading failed.
   camera is done (`0x14019d120`, preset 2 framing by `CamH`/`CamR`); it uses Barrel's 45°
   fov, the game's view +0x140 not read, and cuts where the game cross-fades (50).
 
+- **Item use scenes.** A battle item plays no scene yet. The exe holds the names of both
+  halves: the member's use (`SKILL_COMMON_SYSTEM_ITEMUSE_PC20_THROW_01`, `_HOIST_01` to `_04`,
+  `_EAT_01`/`_02`, `_COMMAND_01`, `_W_ITEM_01`/`_02` ..., around `0x7cbfa0`) and the item's
+  effect (`SKILL_COMMON_ITEM_AT_*`, `_HL_*`, `_SP_*`, `_EFF_*`, `0x7ca800` to `0x7cb618`,
+  `_CARD` variants), but no code or data points at those strings (no RIP-relative use, no
+  64- or 32-bit pointer to them, not in `Saves`/`Data`/scripts): the names reach
+  `0x140194450`'s `skill/%s.ebd` form (`0x140803730`, used at `0x1401944b5`) some other way,
+  from a caller not found. `CharaBase` gives each member `ITEMUSE00` to `07` motions
+  (Escha's `B_ITEM_01` to `_08`). Next: the item command's execute (its vtable, as Move's
+  `0x1401bbeb0`) and what it passes to the skill loader.
+
 ## Synthesis
 
 - **Property point spending** (+0x3f8): only UI reads it; a trait's `point` is likely its PP
