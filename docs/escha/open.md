@@ -153,9 +153,9 @@ likely settle them where static reading failed.
   `ECT_BATTLE_ADD_EFFECT_ID`). Attack and Support Attack: the damage
   number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the actor plays the
   scene's motions (motion and `CharaDiv` division, switched as the scene sets them, blended over
-  Barrel's 0.15 s rather than the command's blend); `s9` (motion speed: 120, 125, 150 % in
-  Escha's attack) is not applied, so the motions run at 100 % while the waits use their
-  lengths; the target's HP plate drops a share at each hit (from what it showed before, so an
+  Barrel's 0.15 s rather than the command's blend); `s9` sets the motion's speed (the body's
+  clock and the scene's waits; a new motion is back at 100 %, read from the data, not the
+  handler); the target's HP plate drops a share at each hit (from what it showed before, so an
   overkill does not bump it up first). The `s1` handler is not read (marker 0 = a hit is from the data).
 
 - **Battle start camera.** Barrel opens every battle with `SKILL_COMMON_SYSTEM_START_CAM_01`

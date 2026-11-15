@@ -661,7 +661,17 @@ party's places are, so `play` takes the battle's origin in the field. Its hits a
 4, share}`, 998 uses in the skill events): marker 0 (974) is a hit landing, `share` its percent
 of the damage, and each event's shares add to 100 (one 100 for a single strike;
 `Skill_MONSTER_WARDOG_00_0` has two); on any character (10004 and up for thrown things).
-Marker 2 (24 uses) is not read. Read from the data, not from the handler.
+Marker 2 (24 uses) is not read. Read from the data, not from the handler. `s9`
+(`ECT_CHARA_MOTION_SET_SPEED`, `{character, percent}`, 1,433 uses in the skill events, most
+often 150 and 200) is `EventExecChara`'s case `0x1401f0083` (its jump table on word −
+`0x73000003` at `0x1401f2540`): percent / 100 (0.1 when not above 0) to the motion player's
+`0x1404eeb70`, its +0x18 and each running layer's +0x14. 1,296 of the 1,429 come right after the
+`s5`/`s8`/`s10`/`s13` they speed up, and 545 times a sped-up motion is followed by a new `s5`
+with no `s9` between, so Barrel takes a new motion back to its own speed and a division of
+the same one (`s8`) keeping it (`event::Step::MotionSpeed`, `stage::Playing::elapsed`); a motion
+wait takes the rest of the motion at its speed. It changed 453 skill events' and 34 story
+events' timing (none in the opening); the carried-over games' events leave `s9` unread
+(`Player::translated`), so Ryza's 1,683 schedules stay as they were.
 
 **The battle's own camera lists.** Besides the skill events and `macro_battle.nut`, the exe
 builds short command lists on the stack and runs them with `0x140296bc0` (27 call sites, most

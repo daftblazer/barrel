@@ -127,6 +127,30 @@ pub struct Playing {
     /// The division of the motion it plays (`s5`, `s11`; `barrel_formats::chara_div`), or the
     /// whole clip.
     pub division: Option<u32>,
+    /// How fast it plays (`s9`, 1 the clip's own speed), since `rate_from` (stage seconds),
+    /// when `played` seconds of it had played.
+    pub speed: f32,
+    pub rate_from: f32,
+    pub played: f32,
+}
+
+impl Playing {
+    /// A motion starting at `since` at its own speed.
+    pub fn new(motion: u32, since: f32, looping: bool, blend: f32, division: Option<u32>) -> Playing {
+        Playing { motion, since, looping, blend, division, speed: 1.0, rate_from: since, played: 0.0 }
+    }
+
+    /// Seconds of the motion played by `now` (its speed counted).
+    pub fn elapsed(&self, now: f32) -> f32 {
+        self.played + (now - self.rate_from).max(0.0) * self.speed
+    }
+
+    /// Plays on at `speed` from `now`.
+    pub fn set_speed(&mut self, speed: f32, now: f32) {
+        self.played = self.elapsed(now);
+        self.rate_from = now;
+        self.speed = speed;
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -379,7 +403,7 @@ impl Stage {
                 None => self.unresolved += 1,
             },
             Step::Motion { character, motion, looping, blend, division, .. } => match self.characters.get_mut(character) {
-                Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0), division: *division }),
+                Some(b) => b.motion = Some(Playing::new(*motion, self.time, *looping, blend.max(0.0), *division)),
                 None => self.unresolved += 1,
             },
             // A line: its speaker talks (and takes the line's expression, if it sets one); the
@@ -487,10 +511,17 @@ impl Stage {
             Step::Light { change, .. } => self.lights.apply(*change),
             Step::Telop { card, .. } => self.telop = Some(*card),
             Step::Still { picture, seconds, .. } => self.still = Some((*picture, self.still.map(|s| s.0), self.time, *seconds)),
+            Step::MotionSpeed { character, speed, .. } => {
+                let now = self.time;
+                if let Some(p) = self.characters.get_mut(character).and_then(|b| b.motion.as_mut()) {
+                    p.set_speed(*speed, now);
+                }
+            }
             Step::MotionDivision { character, division, .. } => {
                 let now = self.time;
                 if let Some(p) = self.characters.get_mut(character).and_then(|b| b.motion.as_mut()) {
-                    *p = Playing { since: now, blend: 0.0, division: Some(*division), ..*p };
+                    // A division of the same motion keeps its speed.
+                    *p = Playing { since: now, blend: 0.0, division: Some(*division), rate_from: now, played: 0.0, ..*p };
                 }
             }
             Step::HeadGesture { character, segment, rate, weight, .. } => {

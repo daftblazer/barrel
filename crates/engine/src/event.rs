@@ -104,6 +104,11 @@ pub const CHARA_MOTION_DIVISION: u32 = 0x7300_000d;
 /// `s6` (`ECT_CHARA_MOTION_WAIT`): `{character}`: the action waits for the character's motion
 /// (or division) to play out, when it does not loop.
 pub const CHARA_MOTION_WAIT: u32 = 0x7300_0006;
+/// `s9` (`ECT_CHARA_MOTION_SET_SPEED`): `{character, percent}`: the character's motion plays at
+/// that speed (the handler, `0x1401f0083`: percent / 100, 0.1 when not above 0). A new motion
+/// (`s5`) plays at its own speed again (read from the data: 1,296 of the skill events' 1,429
+/// come right after the motion they speed up), a division of it (`s8`) keeps it.
+pub const CHARA_MOTION_SPEED: u32 = 0x7300_0009;
 
 /// How long a character's motion (a division of it, when given) plays and whether it loops:
 /// what [`Player::schedule`] needs for `s6`. The player knows no clips; whoever does supplies it.
@@ -364,6 +369,8 @@ pub enum Step<'a> {
     Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, division: Option<u32> },
     /// The motion a character plays moves to another division (`s13`).
     MotionDivision { action: usize, character: u32, division: u32 },
+    /// The character's motion plays at `speed` (1 its own) from now (`s9`).
+    MotionSpeed { action: usize, character: u32, speed: f32 },
     /// The event moves to a field map (`q12`, `ECT_FIELDMAP_CHANGE_NOT_BGM`, `{map}`; `q2`,
     /// `ECT_FIELDMAP_CHANGE`, likewise): `map` is a `FIELDMAP_*` number ([`field_maps`]).
     FieldChange { action: usize, map: u32 },
@@ -473,6 +480,9 @@ pub struct Player<'a> {
     /// has not ended (Escha's reading; off for the events carried over from other games, whose
     /// schedules stay as they were).
     finishing_waits: bool,
+    /// `s9` read as [`Step::MotionSpeed`] (Escha's; off for the carried-over events, whose
+    /// motions keep playing as they did).
+    motion_speeds: bool,
 }
 
 /// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
@@ -510,7 +520,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -525,6 +535,7 @@ impl<'a> Player<'a> {
         let theirs: HashMap<u32, &str> = game_names.iter().copied().collect();
         let mut p = Self::new(event, messages, table)?;
         p.finishing_waits = false;
+        p.motion_speeds = false;
         let escha_named: std::collections::HashSet<u32> = barrel_formats::ebd_names::ESCHA.iter().map(|&(w, _)| w).collect();
         for c in p.actions.iter_mut().flatten() {
             // A `same` entry carries over when Escha's command takes no more operands than the
@@ -678,6 +689,10 @@ impl<'a> Player<'a> {
                 out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: false, division: Some(*division) });
             }
             (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: self.slot(*character), division: *division }),
+            (CHARA_MOTION_SPEED, [character, percent, ..]) if self.motion_speeds => {
+                let speed = if *percent > 0 { *percent as f32 / 100.0 } else { 0.1 };
+                out.push(Step::MotionSpeed { action, character: self.slot(*character), speed });
+            }
             (CHARA_MOTION_AUTO_LOOP, [character, motion, division, rest @ ..]) => {
                 let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
                 out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division) });
@@ -841,7 +856,8 @@ impl<'a> Player<'a> {
         let mut out = Vec::new();
         let mut steps = Vec::new();
         // Each character's motion: (motion, division, started at, whether the command loops it).
-        let mut motions: HashMap<u32, (u32, Option<u32>, f32, bool)> = HashMap::new();
+        // Each character's motion: number, division, and as a `Playing` its start and speed.
+        let mut motions: HashMap<u32, (u32, Option<u32>, bool, crate::stage::Playing)> = HashMap::new();
         // When the latest screen effect (u13) ends: u14 waits for it.
         let mut effect_end = 0.0f32;
         // A stage the steps are applied to, for where moves start and so how long they take;
@@ -897,11 +913,18 @@ impl<'a> Player<'a> {
                 };
                 match &s {
                     Step::Motion { character, motion, division, looping, .. } => {
-                        motions.insert(*character, (*motion, *division, threads[t].0, *looping));
+                        motions.insert(*character, (*motion, *division, *looping, crate::stage::Playing::new(*motion, threads[t].0, *looping, 0.0, *division)));
                     }
                     Step::MotionDivision { character, division, .. } => {
                         if let Some(m) = motions.get_mut(character) {
-                            (m.1, m.2) = (Some(*division), threads[t].0);
+                            let now = threads[t].0;
+                            m.1 = Some(*division);
+                            (m.3.since, m.3.rate_from, m.3.played) = (now, now, 0.0);
+                        }
+                    }
+                    Step::MotionSpeed { character, speed, .. } => {
+                        if let Some(m) = motions.get_mut(character) {
+                            m.3.set_speed(*speed, threads[t].0);
                         }
                     }
                     Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
@@ -928,11 +951,12 @@ impl<'a> Player<'a> {
                     }
                     Step::Command { word: EVENT_WAIT_POST_EFFECT, .. } => threads[t].0 = threads[t].0.max(effect_end),
                     Step::Command { word: CHARA_MOTION_WAIT, operands: [character, ..], .. } => {
-                        let end = motions.get(character).and_then(|&(motion, division, since, looping)| {
+                        let end = motions.get(character).and_then(|&(motion, division, looping, playing)| {
                             let (length, loops) = self.motion_length.as_ref()?(*character, motion, division)?;
                             // A division says whether it loops; a whole clip loops as its command said.
                             let loops = if division.is_some() { loops } else { looping };
-                            (!loops).then_some(since + length)
+                            // The rest of it at its speed.
+                            (!loops).then_some(playing.rate_from + (length - playing.played).max(0.0) / playing.speed)
                         });
                         if let Some(end) = end {
                             threads[t].0 = threads[t].0.max(end);
@@ -1229,6 +1253,36 @@ mod tests {
         assert_eq!(wait.time, 0.5);
     }
 
+    /// `s9 0 200` right after the motion: its 1 s plays in 0.5 s, so the wait on it ends then;
+    /// the next motion plays at its own speed again.
+    #[test]
+    fn a_sped_up_motion_is_waited_for_at_its_speed() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        let event = Ebd {
+            actions: vec![act(vec![
+                CHARA_MOTION_AUTO_LOOP, 0, 76, 0, 0, 0,
+                CHARA_MOTION_SPEED, 0, 200,
+                CHARA_MOTION_WAIT, 0,
+                TIME_WAIT, 10,
+                CHARA_MOTION_AUTO_LOOP, 0, 76, 0, 0, 0,
+                CHARA_MOTION_WAIT, 0,
+                TIME_WAIT, 10,
+                END,
+            ])],
+            resources: vec![],
+        };
+        let table = OperandTable::new(&[
+            (CHARA_MOTION_AUTO_LOOP, Some(5)),
+            (CHARA_MOTION_SPEED, Some(2)),
+            (CHARA_MOTION_WAIT, Some(1)),
+            (TIME_WAIT, Some(1)),
+        ]);
+        let steps = Player::new(&event, &[], &table).unwrap().motion_length(Box::new(|_, _, _| Some((1.0, false)))).schedule();
+        let waits: Vec<f32> = steps.iter().filter(|t| matches!(t.step, Step::Wait { .. })).map(|t| t.time).collect();
+        assert_eq!(waits.len(), 2, "{steps:?}");
+        assert!((waits[0] - 0.5).abs() < 1e-4 && (waits[1] - 1.6).abs() < 1e-4, "{waits:?}");
+    }
+
     #[test]
     fn actions_run_at_once_on_a_clock() {
         let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
@@ -1301,6 +1355,7 @@ mod tests {
                 Step::Place { character, position, .. } => format!("{character} at {position:?}"),
                 Step::Motion { character, motion, blend, .. } => format!("{character} motion {motion} blend {blend}"),
                 Step::MotionDivision { character, division, .. } => format!("{character} motion division {division}"),
+                Step::MotionSpeed { character, speed, .. } => format!("{character} motion speed {speed}"),
                 Step::Camera { part, .. } => format!("camera {part:?}"),
                 Step::FieldCamera { change, .. } => format!("field camera {change:?}"),
                 Step::Remove { character, .. } => format!("{character} removed"),

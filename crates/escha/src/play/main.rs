@@ -927,6 +927,8 @@ struct TownBody {
     hidden: bool,
     /// The part of `anim` it plays (`CharaDiv`), when a skill scene picked one.
     division: Option<barrel_formats::chara_div::Division>,
+    /// How fast its own clock runs (a skill scene's `s9`; 1 otherwise).
+    speed: f32,
 }
 
 impl TownBody {
@@ -937,6 +939,7 @@ impl TownBody {
         let old = std::mem::replace(&mut self.anim, next);
         self.from = Some((old, self.clock.unwrap_or(0.0), 0.0));
         self.clock = Some(0.0);
+        self.speed = 1.0;
     }
 }
 
@@ -975,7 +978,7 @@ fn town_people(root: &Path, field_dir: &Path, seen: Option<Vec<bool>>, scene: &m
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, _, anim, _)) = body.rig {
-            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new(), hidden: false, division: None });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new(), hidden: false, division: None, speed: 1.0 });
         }
         placed.push(p.chara);
         first = first.or(Some(pos));
@@ -1094,7 +1097,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
     eprintln!("player as {:?} at {pos:?}", row.attr("BaseTag"));
     let inside = barrel_escha::data::gimmick::inside(&gimmicks, pos);
     let walker = Walker { instance: body.instance, body: 0, wait: anim.clone(), walk, run, pos, velocity: [0.0; 2], facing: 0.0, gait: barrel_escha::player::Gait::Wait, run_on: false, field, gimmicks, inside, maps, waypoints: Default::default(), jump_anim, jump: None, strike_anim, striking: false, jump_voice: Default::default(), rng: barrel_engine::rng::Rng::from_state([0x1357_9bdf, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]), root: root.to_path_buf(), logy, music, landing, ambience, follow: Default::default(), cursor: None };
-    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false, division: None }, walker))
+    Ok((body.packs, pos, TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false, division: None, speed: 1.0 }, walker))
 }
 
 /// A world map trip's way (`game::travel::WorldMap::path`), from the executable beside the
@@ -1379,7 +1382,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         packs.extend(body.packs);
         if let Some((skeleton, motions, anim, _)) = body.rig {
             fighters[k] = Some(BattleFighter { body: first_body + bodies.len(), place: pos, facing: angle.to_radians(), chara, motions, back_at: None, down: false, party: k < party.len() });
-            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false, division: None });
+            bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false, division: None, speed: 1.0 });
         }
     }
     let scenes = {
@@ -1871,9 +1874,17 @@ impl BattlePlay {
         let Some(sc) = self.scene.as_mut() else { return };
         let k = ((self.time - sc.start) / barrel_engine::stage::FRAME).max(0.0) as usize;
         let Some(&Some(now)) = sc.motions.get(k) else { return };
-        if sc.shown.is_some_and(|s| (s.motion, s.division, s.since) == (now.motion, now.division, now.since)) {
-            return;
-        }
+        if let Some(s) = sc.shown
+            && (s.motion, s.division, s.since) == (now.motion, now.division, now.since) {
+                // The same motion: only its speed may have changed.
+                if s.speed != now.speed {
+                    sc.shown = Some(now);
+                    if let Some(b) = self.fighters.get(sc.actor).and_then(Option::as_ref).and_then(|f| bodies.get_mut(f.body)) {
+                        b.speed = now.speed;
+                    }
+                }
+                return;
+            }
         sc.shown = Some(now);
         let actor = sc.actor;
         let Some(f) = self.fighters.get_mut(actor).and_then(Option::as_mut) else { return };
@@ -1884,6 +1895,7 @@ impl BattlePlay {
         if let Some(b) = bodies.get_mut(f.body) {
             b.switch(anim);
             b.division = division;
+            b.speed = now.speed;
         }
     }
 
@@ -2123,7 +2135,7 @@ impl BattlePlay {
         self.numbers.retain(|&(_, _, at)| now - at < battlehud::NUMBER_SECONDS);
         for f in self.fighters.iter_mut().flatten() {
             let Some(b) = bodies.get_mut(f.body) else { continue };
-            b.clock = Some(b.clock.unwrap_or(0.0) + dt);
+            b.clock = Some(b.clock.unwrap_or(0.0) + dt * b.speed);
             if let Some((_, clock, blend)) = &mut b.from {
                 *clock += dt;
                 *blend += dt;
@@ -2633,7 +2645,7 @@ fn event_characters(
         for (&n, b) in &stage.characters {
             if let Some(m) = b.motion
                 && let Some(name) = names.get(m.motion as usize) {
-                    stage_motions.insert(n, (name.clone(), at - m.since, m.looping));
+                    stage_motions.insert(n, (name.clone(), m.elapsed(at), m.looping));
                 }
         }
         // The camera in use at that time: the field camera unless a manual one was set after
@@ -3168,7 +3180,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
                     w.cursor = Some((body.instance, pos, w.facing));
                     // Its motion loops on the town clock (3.37 s).
                     if let Some((skeleton, _, anim, _)) = body.rig {
-                        town_bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new(), hidden: false, division: None });
+                        town_bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: None, from: None, held: None, last_locals: Vec::new(), hidden: false, division: None, speed: 1.0 });
                     }
                 }
                 other => eprintln!("the world map's cursor did not load: {:?}", other.map(|r| r.map(|b| b.is_some()))),
@@ -5816,7 +5828,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             None => Some((clip, false)),
                         }
                     });
-                    Some(barrel_engine::stage::Playing { motion, since: since + began, looping: true, blend: 0.2, division })
+                    Some(barrel_engine::stage::Playing::new(motion, since + began, true, 0.2, division))
                 });
                 let staged = match (staged, gestured) {
                     (Some(m), Some(g)) if g.since > m.since => Some(g),
@@ -5851,7 +5863,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             a.looping = m.looping;
                             a.playing = now_playing;
                         }
-                        t = shown_time - m.since;
+                        t = m.elapsed(shown_time);
                         // Its division, if the command names one the tables have.
                         a.division = m.division.and_then(|k| {
                             *divisions.get(&(a.motions.head.clone(), column.clone()))?.get(k as usize)?

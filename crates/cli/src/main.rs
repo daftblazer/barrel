@@ -3949,6 +3949,9 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
                 let who = character.map_or("", |c| names.get(c as usize).map_or("?", String::as_str));
                 println!("{action:3} {who} voice {clip} (bank Series{:04}, clip {})", clip / 1000 * 1000, clip % 1000);
             }
+            Step::MotionSpeed { action, character, speed } => {
+                println!("{action:3} {} plays its motion at {:.0}%", names.get(character as usize).map_or("?", String::as_str), speed * 100.0)
+            }
             Step::MotionDivision { action, character, division } => {
                 println!("{action:3} {} moves to division {division} of its motion", names.get(character as usize).map_or("?", String::as_str))
             }
