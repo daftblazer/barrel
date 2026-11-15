@@ -172,14 +172,22 @@ pub struct Battle {
 }
 
 impl Battle {
-    /// The timeline set up as the game's battle start (`Timeline::setup`): the fighters fastest
-    /// first (by speed, the given order on ties: the recorded battle's order, Wilbell 30, Katla
-    /// 18, Mini-Slag 15, Escha 13, two Fake Ruins 8; how the game orders its character list is
-    /// not read, `docs/tables.md` "Turn order"), 100 apart with free entries between.
+    /// The timeline set up as the game's battle start (`Timeline::setup`) but without its
+    /// random part: the fighters fastest first (by speed, the given order on ties), 100 apart
+    /// with free entries between. [`Battle::rolled`] orders them as the game does.
     pub fn new(fighters: Vec<Fighter>) -> Battle {
         let mut order: Vec<u32> = (0..fighters.len() as u32).collect();
         order.sort_by_key(|&k| std::cmp::Reverse(fighters[k as usize].stats[stat::SPEED]));
         let timeline = Timeline::setup(&order);
+        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new(), support: 0, guard: None }
+    }
+
+    /// A battle started as the game starts one (`0x14018c0c0`): every fighter rolls 0 to 50
+    /// (`rng`, in `fighters`' order, the party first as the game's list has it) and adds its
+    /// speed, and [`battle::opening_order`] makes the turn order of those.
+    pub fn rolled(fighters: Vec<Fighter>, rng: &mut Rng) -> Battle {
+        let rolled: Vec<(i32, u8)> = fighters.iter().map(|f| (rng.range(0, battle::INITIATIVE_ROLL) + f.stats[stat::SPEED], f.side)).collect();
+        let timeline = Timeline::setup(&battle::opening_order(&rolled));
         Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new(), support: 0, guard: None }
     }
 

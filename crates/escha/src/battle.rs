@@ -673,6 +673,38 @@ pub const WAIT_COMMAND: i32 = 320;
 pub const MOVE_COMMAND: i32 = 300;
 pub const RUN_COMMAND: i32 = 250;
 
+/// The order the battle's start (`0x14018c0c0`) gives its characters: `rolled` is each one's
+/// initiative (a random 0 to 50 plus its speed, [`INITIATIVE_ROLL`]) and side (0 the party,
+/// 1 the monsters), in the battle list's order. The characters are sorted by initiative, highest
+/// first and stably, then dealt out one at a time from the front of that list: a monster counts
+/// against a quota of `max(1, monsters / (party + 1))`, and the one that goes over it is
+/// replaced by the first party member after it (the first of the list when none is left),
+/// which resets the count. So the monsters come at most a quota at a time between party
+/// members while any are left.
+pub fn opening_order(rolled: &[(i32, u8)]) -> Vec<u32> {
+    let party = rolled.iter().filter(|r| r.1 == 0).count();
+    let quota = ((rolled.len() - party) / (party + 1)).max(1);
+    let mut rest: Vec<u32> = (0..rolled.len() as u32).collect();
+    rest.sort_by_key(|&k| std::cmp::Reverse(rolled[k as usize].0));
+    let (mut order, mut seen) = (Vec::with_capacity(rest.len()), 0);
+    while !rest.is_empty() {
+        let mut at = 0;
+        seen += usize::from(rolled[rest[0] as usize].1 == 1);
+        if seen > quota {
+            if rolled[rest[0] as usize].1 != 0 {
+                at = rest.iter().skip(1).position(|&k| rolled[k as usize].1 == 0).map_or(0, |p| p + 1);
+            }
+            seen = 0;
+        }
+        order.push(rest.remove(at));
+    }
+    order
+}
+
+/// The random part of a character's initiative at the battle's start: 0 to 50, drawn once per
+/// acting character in the battle list's order.
+pub const INITIATIVE_ROLL: i32 = 50;
+
 impl Timeline {
     /// The battle's start (`0x14018c0c0`): one entry per character of the battle's list, 50
     /// apart from 0, and free entries on to 16. `fighters` is that list's acting characters in

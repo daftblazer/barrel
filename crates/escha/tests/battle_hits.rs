@@ -310,3 +310,57 @@ fn the_play_path_party_has_the_games_stats() {
     assert!(checked > 0);
     assert!(diffs.is_empty(), "{diffs:#?}");
 }
+
+/// The battle's opening turn order (`0x14018c0c0`): the game's turn bar at the first command of
+/// this save's battle (encounter group 25 with three monsters, battle-walk's frame 3000) read,
+/// nearest first, Wilbell, Katla, Fake Ruin, Escha, Fake Ruin, Mini-Slag. Fastest-first (speeds
+/// 30, 19, 19, 18, 15, 13) would put both Fake Ruins second and third; the game adds a 0 to 50
+/// roll to each speed and deals the monsters out between the party members, so the order is
+/// one the rule can produce, for some draws. The speeds are the hit log's words.
+#[test]
+fn the_opening_order_is_one_the_games_rule_produces() {
+    use barrel_engine::rng::Rng;
+    use barrel_escha::data::battle_data::StatBlock;
+    use barrel_escha::fight::{Battle, Fighter};
+    let Some((_, scenario, _)) = locate() else {
+        eprintln!("battle_hits: no game install, save or hit log; skipped");
+        return;
+    };
+    let log = std::fs::read(scenario.join("hits.jsonl")).unwrap();
+    let mut speeds = std::collections::HashMap::new();
+    for h in log.split(|&b| b == b'\n').filter(|l| !l.is_empty()).map(|l| parse(l, &mut 0)) {
+        for who in [h.get("user"), h.get("target")] {
+            speeds.insert((who.get("kind").text().to_string(), who.get("id").num()), game_stats(&who.get("words").nums())[stat::SPEED]);
+        }
+    }
+    let speed = |kind: &str, id: i64| speeds[&(kind.to_string(), id)];
+    // The battle list's order: the party by character (Escha 0, Katla 9, Wilbell 7 here in the
+    // list's own order of ids 0, 1, 2), then the monsters: Fake Ruin (19) twice and Mini-Slag
+    // (13); which monster stands where in the list is not known, so every placement is tried.
+    let party = [("party", 0, "Escha"), ("party", 9, "Katla"), ("party", 7, "Wilbell")];
+    let monsters = [("monster", 19, "Fake Ruin"), ("monster", 19, "Fake Ruin"), ("monster", 13, "Mini-Slag")];
+    let want = ["Wilbell", "Katla", "Fake Ruin", "Escha", "Fake Ruin", "Mini-Slag"];
+    for placement in [[0, 1, 2], [0, 2, 1], [2, 0, 1]] {
+        let mut list: Vec<(&str, i64, &str)> = party.to_vec();
+        list.extend(placement.iter().map(|&k| monsters[k]));
+        let fighters = |_: ()| -> Vec<Fighter> {
+            list.iter()
+                .map(|&(kind, id, _)| {
+                    let block = StatBlock { level: 1, hp: 100, attack: 1, defense: 1, speed: speed(kind, id), resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+                    Fighter::new(&block, u8::from(kind == "monster"), 999)
+                })
+                .collect()
+        };
+        let mut found = None;
+        for seed in 1..200_000u32 {
+            let b = Battle::rolled(fighters(()), &mut Rng::seeded(seed));
+            let names: Vec<&str> = b.timeline.slots().iter().flatten().map(|&c| list[c as usize].2).collect();
+            if names == want {
+                found = Some(seed);
+                break;
+            }
+        }
+        let seed = found.unwrap_or_else(|| panic!("no draw gives the game's order with the monsters placed {placement:?}"));
+        eprintln!("opening order: monsters placed {placement:?}, Rng::seeded({seed}) gives the game's turn bar");
+    }
+}

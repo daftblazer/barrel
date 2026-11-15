@@ -504,12 +504,29 @@ adds entries with character -1 and the waits going on in 50s until there are 16.
 recorded battle the list gave the six fighters every other entry (Wilbell, Katla, a monster,
 Escha, two monsters; characters 2, 1, 5, 0, 6, 7) with five non-acting characters between
 (presumably the two reserve members and others not read), so the fighters started 100 apart.
-How the list is ordered (its first loop skips characters by their virtual +0x10) is not read
-yet; the recorded order is the fighters by speed, fastest first (30, 18, 15, 13, 8, 8), which
-`fight::Battle::new` follows (`battle::Timeline::setup`: the fighters 100 apart, free entries
-between and on to 16, `battle::FREE`; the test `the_setup_and_a_turn_match_the_live_timeline`
-replays the two reads). Which non-acting characters stand between the fighters, and whether a
-battle not opened by a strike starts the same, are not read.
+**Who gets which entry** (`0x14018c0c0`, read from the code; the free entries are the ones between,
+one after each fighter while any are left, the rest at the end). Each character of the battle's
+list (in the list's order; party first, ids 0, 1, 2, then the monsters) whose virtual +0x10
+(its side) is not 2 or 4 and whose `0x1401ae380(c, 6)` (byte +0x286) holds rolls
+`0x1404ca660 (0, 50)` (one draw each, in that order) and adds its speed (stat 7); when
+`0x1401ae380(c, 9)` (byte +0x289; unread, maybe an ambush) holds, the initiative is 1000
+instead (the roll is still drawn). Side 0 is the party, 1 the monsters. The characters are
+sorted by initiative, highest first (a stable list merge sort), and dealt out one at a time
+from the front of what is left: a monster at the front counts one against a quota of
+`max(1, monsters / (party + 1))` (integer division, over the counted characters); when the count
+goes over, and the front is a monster, the first party member after it is taken instead (when
+none is left, the front), and the count resets. Else the front is taken. The first entry's wait
+is 1, then 51, 101 … (the live read's 0, 50 … is after the first time step).
+In the battle-walk battle (three monsters, speeds 30, 19, 19, 18, 15, 13) the quota is 1 and the
+game's turn bar read Wilbell, Katla, Fake Ruin, Escha, Fake Ruin, Mini-Slag: a roll gives the
+Fake Ruins no more than 50 over the others, so the sort alone can put Katla second (18 + 33 >
+19 + 13), and the dealing breaks a run of monsters. `fight::Battle::rolled` does this
+(`battle::opening_order`; `Battle::new` keeps the roll-free fastest-first order for callers
+without a generator); the test `the_opening_order_is_one_the_games_rule_produces` finds
+draws that give the game's bar (e.g. `Rng::seeded(1)` with the Fake Ruins listed before or
+after Mini-Slag). Which draw the game made is not recoverable from the bar; a hook on the
+roll's return (`0x14018bf0d`, `eax` after the call) would show them. Not settled:
+the list's order of monsters, which characters have +0x286/+0x289 false.
 `0x14018cf20 (timeline, character)` puts a joining character in a free slot with wait 500
 (1000 when its +0x10 value is negative). After a character acts, `0x14018d180 (timeline,
 character, wait)` gives it the action's wait (the action's virtual +0x30):
