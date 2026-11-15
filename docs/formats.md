@@ -1730,7 +1730,9 @@ that place them are tables in the executable (English addresses; `crates/formats
   (cut 12); only six slots show on the user's save (rank 3), the rule not read. Below them, the
   field effect's gauge is layout 614 (node 0x266 in 625 at (32, 246), drawn 4 right of it):
   the box (part 0x69 cut 2), the fill (cut 6, 48 × 108, red at the top to green at the foot)
-  shown from its foot up to the gauge over 200 (45 shows its bottom 22.5%), the tube over it
+  shown from its foot up to the gauge over 200 in steps of 2 (an odd value shows the even one
+  under it: 45 shows its bottom 22%; the recomp with the gauge patched to 10, 44, 45, 46, 100,
+  150, 200), the tube over it
   (cut 17, notched at 100), the percentage (small digits 0xe5, kind 28, ending at its node, 18
   a digit) with its sign (0xe5 cut 13); from 200 "MAX" (0xf0) in their place (`0x1402823fa`).
   The gauge is `fieldmap/m_userDataFieldMapData`'s second word (`0x1410783ac`, kept within 0 and

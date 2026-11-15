@@ -350,10 +350,6 @@ likely settle them where static reading failed.
   condition word, -1 or a flag-like 0x1fe, 0x1ff...; the record framing is not settled), with
   townspeople's lines mixed in; code at `0x140261027` loads it (others use its end,
   `0x1408e7798`, at `0x1402614f0`, `0x140264210`...).
-- **Field gauge 44 vs 45.** The area map and field HUD draw the gauge at 44 % where the save
-  holds 45: the shown value is not the saved one (a decay on load, a rounding, or another
-  source). Read the live value.
-
 - **Skill power on heals.** `fight::Battle::act` scales damage effects by the user's skill power
   (stat 15, effect percent 2; Wilbell's gear gives 10), in play too (`skirmish::Member::power`).
   Heals (act flag 7) take the same percent per the docs but are not scaled yet: check against a

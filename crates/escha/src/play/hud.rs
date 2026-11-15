@@ -316,7 +316,9 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             match (n.part, n.cut) {
                 (GAUGE_PARTS, GAUGE_PLATE) if g.notice().is_none() => {}
                 (GAUGE_PARTS, GAUGE_CHOICE) | (GLOW, _) => {}
-                (GAUGE_PARTS, GAUGE_FILL) => tail.push(Element::Rising { part: n.part, cut: n.cut, at, fill: g.percent.clamp(0, GAUGE_FULL) as f32 / GAUGE_FULL as f32 }),
+                // The fill climbs in steps of 2 (an odd percentage shows the even one under it:
+                // the recomp with the save's gauge set to 10, 44, 45, 46, 100, 150 and 200).
+                (GAUGE_PARTS, GAUGE_FILL) => tail.push(Element::Rising { part: n.part, cut: n.cut, at, fill: (g.percent.clamp(0, GAUGE_FULL) / 2 * 2) as f32 / GAUGE_FULL as f32 }),
                 (NOTICE, _) => {
                     if let Some(cut) = g.notice() {
                         tail.push(Element::Sprite { part: n.part, cut, at });
@@ -766,7 +768,7 @@ mod tests {
             s(0x69, 2, [32, 246]),
             s(0xe5, 4, [60, 262]),
             s(0xe5, 5, [78, 262]),
-            Element::Rising { part: 0x69, cut: 6, at: [62, 310], fill: 0.225 },
+            Element::Rising { part: 0x69, cut: 6, at: [62, 310], fill: 0.22 }, // 45 shows 44: steps of 2
             s(0x6e, 1, [134, 258]),
             s(0x69, 17, [50, 298]),
             s(0xe5, 13, [96, 266]),
