@@ -3406,7 +3406,17 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
 #[allow(deprecated)] // glam 0.33 renamed the camera helpers; the old ones are kept
 fn main() -> Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let mut pump = None;
+    // The game's install: `--game DIR`, the one the command line's paths are in (Kintsugi's
+    // `--title FOLDER`), `BARREL_GAME_DIR`, the config's, Steam's, else the "Locate game files"
+    // screen (`barrel_render::locate::resolve`). Every game file is read through the layers over it.
+    let given = locate::take_option(&mut args, "--game").map(PathBuf::from);
+    let Some(game) = locate::resolve(barrel_files::find::Title::Escha, given, install_in_args(&args))? else { return Ok(()) };
+    let mut pump = game.pump;
+    // No scene on the command line: the game itself, from its title screen, in a window.
+    if args.first().is_none_or(|a| a != "--field" && a.starts_with("--")) {
+        let start = ["--field", "auto", "/dev/null", "--title", &game.root.to_string_lossy(), "--window", "0"].map(String::from);
+        args.splice(0..0, start);
+    }
     // A run ends, or starts again from the title (the menu's Return to Title and Load), with the
     // window kept: everything else is built anew.
     let mut carry = Carry::default();
@@ -3419,6 +3429,18 @@ fn main() -> Result<()> {
             }
         }
     }
+}
+
+/// The install the command line's own paths lie in: `--title FOLDER` or `--new-game FOLDER`, else
+/// the one holding `--field DIR` or `--event FILE` (the folder with a `Saves` folder above them).
+fn install_in_args(args: &[String]) -> Option<PathBuf> {
+    let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1));
+    if let Some(r) = value("--title").or_else(|| value("--new-game")) {
+        return Some(PathBuf::from(r));
+    }
+    let field = (args.first().is_some_and(|a| a == "--field")).then(|| args.get(1)).flatten().filter(|f| *f != "auto");
+    let inside = field.or_else(|| value("--event"))?;
+    Path::new(inside).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf)
 }
 
 /// The programs (`*.exe`) in the install's folder, read in name order: the tables the game keeps

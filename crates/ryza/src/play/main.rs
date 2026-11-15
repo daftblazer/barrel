@@ -108,8 +108,8 @@ struct Rig {
     shut: Option<barrel_ryza::face::Face>,
 }
 
-fn args() -> Result<Args> {
-    let mut it = std::env::args().skip(1);
+fn args(args: Vec<String>) -> Result<Args> {
+    let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
     let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None };
@@ -301,7 +301,20 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
 }
 
 fn main() -> Result<()> {
-    let mut a = args()?;
+    let mut raw: Vec<String> = std::env::args().skip(1).collect();
+    // The game's install: `--game DIR`, the command line's INSTALL, `BARREL_GAME_DIR`, the config's,
+    // Steam's, else the "Locate game files" screen; every game file is read through the layers
+    // over it (`barrel_files`).
+    let given = locate::take_option(&mut raw, "--game").map(std::path::PathBuf::from);
+    let named = raw.first().filter(|a| !a.starts_with("--")).map(std::path::PathBuf::from);
+    let Some(game) = locate::resolve(barrel_files::find::Title::Ryza, given, named)? else { return Ok(()) };
+    let mut kept_pump = game.pump;
+    // No scene on the command line: Ryza walking Rasenboden from her garden gate, in a window.
+    if raw.first().is_none_or(|a| a.starts_with("--")) {
+        let start = [&*game.root.to_string_lossy(), "s06_t_rasen", "-", "--ryza", "32537,0,30300", "--time", "noon", "--window"].map(String::from);
+        raw.splice(0..0, start);
+    }
+    let mut a = args(raw)?;
     // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
     // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
@@ -669,7 +682,14 @@ fn main() -> Result<()> {
     if a.window {
         eprintln!("graphics: {graphics:?}, {display:?}");
     }
-    let mut pump = a.window.then(|| window::Pump::open(display)).transpose()?;
+    // The window the locate screen opened is the one to play in (a process has one event loop).
+    let mut pump = match kept_pump.take() {
+        Some(mut p) if a.window => {
+            p.reopen(display)?;
+            Some(p)
+        }
+        _ => a.window.then(|| window::Pump::open(display)).transpose()?,
+    };
     let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
     let gpu = Gpu::new(display)?;
     let mut presenter = match (&pump, display) {

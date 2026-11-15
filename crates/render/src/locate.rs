@@ -301,9 +301,73 @@ pub fn run(title: Title, pump: Option<Pump>, display: crate::settings::Display) 
     Ok(chosen.map(|dir| (dir, pump)))
 }
 
+/// The game found and the window it may have opened to ask.
+pub struct Resolved {
+    pub root: std::path::PathBuf,
+    pub pump: Option<Pump>,
+}
+
+/// Removes `flag VALUE` from `args` and gives the value.
+pub fn take_option(args: &mut Vec<String>, flag: &str) -> Option<String> {
+    let at = args.iter().position(|a| a == flag)?;
+    let value = args.get(at + 1).cloned();
+    args.drain(at..(at + 2).min(args.len()));
+    value
+}
+
+/// The window as the graphics config has it (else the launcher's default, else 1280x720).
+pub fn config_display() -> crate::settings::Display {
+    let text = crate::settings::RenderSettings::config_path().and_then(|p| std::fs::read_to_string(p).ok());
+    text.as_deref().map_or_else(
+        || crate::settings::Display { fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1"), ..crate::settings::Display::DEFAULT },
+        crate::settings::Display::from_config,
+    )
+}
+
+/// Finds `title`'s install and sets up the layered files (`barrel_files::install`) over it and
+/// the enabled mods. In order: `given` (`--game`, which must hold the game); `from_args`, the
+/// install the command line's own paths are in; `BARREL_GAME_DIR`; the folder saved in the
+/// config; Steam's libraries; else the "Locate game files" screen, whose answer is saved.
+/// `None` when that screen was closed.
+pub fn resolve(title: Title, given: Option<std::path::PathBuf>, from_args: Option<std::path::PathBuf>) -> Result<Option<Resolved>> {
+    let mut pump = None;
+    let root = if let Some(g) = given {
+        barrel_files::find::find(title, Some(g))?.map(|f| f.path().to_path_buf())
+    } else if let Some(r) = from_args {
+        Some(r)
+    } else {
+        match barrel_files::find::find(title, None)? {
+            Some(found) => Some(found.path().to_path_buf()),
+            None => match run(title, None, config_display())? {
+                Some((dir, p)) => {
+                    match barrel_files::config::save_game(title.key(), &dir) {
+                        Ok(file) => eprintln!("game folder saved to {}", file.display()),
+                        Err(e) => eprintln!("game folder not saved: {e}"),
+                    }
+                    pump = Some(p);
+                    Some(dir)
+                }
+                None => None,
+            },
+        }
+    };
+    let Some(root) = root else { return Ok(None) };
+    eprintln!("game: {}", root.display());
+    barrel_files::install(barrel_files::mods::game_fs(&root));
+    Ok(Some(Resolved { root, pump }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_option_is_taken_out_with_its_value() {
+        let mut a: Vec<String> = ["x", "--game", "/g", "--window", "0"].map(String::from).to_vec();
+        assert_eq!(take_option(&mut a, "--game").as_deref(), Some("/g"));
+        assert_eq!(a, ["x", "--window", "0"]);
+        assert_eq!(take_option(&mut a, "--game"), None);
+    }
 
     #[test]
     fn every_ascii_character_has_a_glyph() {

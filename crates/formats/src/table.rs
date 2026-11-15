@@ -244,6 +244,13 @@ pub fn parse(bytes: &[u8]) -> Result<Element, Error> {
     parse_str(&decode_text(bytes))
 }
 
+/// The table file at `path` of the game's files (through the layers: a mod's copy replaces the
+/// game's), parsed.
+pub fn read(path: &std::path::Path) -> Result<Element, String> {
+    let bytes = barrel_files::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
