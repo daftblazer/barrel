@@ -257,10 +257,11 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         self.battle.timeline.entries.iter().map(|&(c, _)| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down())).collect()
     }
 
-    /// Member `who`'s items: (name, how many are left), in its carried order.
-    pub fn items(&self, who: usize) -> Vec<(String, u32)> {
+    /// Member `who`'s items: (name, how many are left, whether it is thrown at the other side),
+    /// in its carried order.
+    pub fn items(&self, who: usize) -> Vec<(String, u32, bool)> {
         let Some(m) = self.party.get(who) else { return Vec::new() };
-        m.items.iter().zip(&self.left[who]).map(|(h, &n)| (h.action.name.clone(), n)).collect()
+        m.items.iter().zip(&self.left[who]).map(|(h, &n)| (h.action.name.clone(), n, h.action.target == 2)).collect()
     }
 
     /// The monsters still standing.
@@ -467,10 +468,10 @@ mod tests {
         let mut rng = Rng::from_state([1, 2, 3, 4]);
         let party = [m];
         let mut s = Skirmish::new(&party, std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng);
-        assert_eq!(s.items(0), vec![("Bomb".to_string(), 1)]);
+        assert_eq!(s.items(0), vec![("Bomb".to_string(), 1, true)]);
         let e = s.command(0, Command::Item { item: 0, target: 9 }, &mut rng);
         assert!(e.iter().any(|e| matches!(e, Event::Acted { skill, target: 1, .. } if skill == "Bomb")), "{e:?}");
-        assert_eq!(s.items(0), vec![("Bomb".to_string(), 0)]);
+        assert_eq!(s.items(0), vec![("Bomb".to_string(), 0, true)]);
         let e = s.command(0, Command::Item { item: 0, target: 1 }, &mut rng);
         assert!(e.iter().any(|e| matches!(e, Event::Acted { skill, .. } if skill == "Attack")), "{e:?}");
     }

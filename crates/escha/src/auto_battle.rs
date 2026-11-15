@@ -4,7 +4,7 @@
 //! enemy in the field and the played battle screen.
 //!
 //! Not yet the game's: the party members' stats their base stats at their level plus a new
-//! game's starting kit (not the save's own equipment), HP and MP full, no battle items; everything [`crate::skirmish`] leaves out.
+//! game's starting kit (not the save's own equipment), HP and MP full, the battle items a session carries ([`Tables::carry`]); everything [`crate::skirmish`] leaves out.
 
 use crate::data::battle_data::{self as bd, ActInfo, EncounterGroup, ItemEffect, LevelStats, Monster, PartySkill, Skill};
 use barrel_formats::pe::Pe;
@@ -40,6 +40,14 @@ pub struct Tables {
     items: Vec<crate::equipment::ItemRow>,
     /// The experience table (`battle_data::exp_table`).
     pub exp: Vec<(i32, i32)>,
+    /// The battle item table (`battle_data::item_battles`: target, area, wait).
+    item_battles: Vec<bd::ItemBattle>,
+    /// `itemData.xml`'s item names.
+    item_names: Vec<String>,
+    /// `item_potential.xml`'s traits ([`Tables::with_traits`]); none: carried items roll no bonus.
+    traits: Vec<bd::Trait>,
+    /// The battle items each member carries ([`Tables::carry`]).
+    held: Vec<Vec<crate::skirmish::Held>>,
 }
 
 impl Tables {
@@ -64,6 +72,33 @@ impl Tables {
             self.kit.resize(member + 1, [0; 9]);
         }
         self.kit[member] = kit_stats(&self.items, items);
+    }
+
+    /// Reads `item_potential.xml` (`potential_xml`), for carried items' traits.
+    pub fn with_traits(mut self, potential_xml: &barrel_formats::table::Element) -> Tables {
+        let tags: Vec<&str> = self.effects.iter().map(|r| r.tag.as_str()).collect();
+        self.traits = bd::traits(potential_xml, &tags);
+        self
+    }
+
+    /// Member `member` carries `items` (a session's battle items): each as its battle action
+    /// (`battle::item_action`, target, area and wait from the battle item table), power from its
+    /// quality (`battle::item_power`), its uses left and its traits. An item with no battle
+    /// record is left out.
+    pub fn carry(&mut self, member: usize, items: &[crate::session::BattleItem]) {
+        if self.held.len() <= member {
+            self.held.resize(member + 1, Vec::new());
+        }
+        self.held[member] = items
+            .iter()
+            .filter_map(|u| {
+                let row = self.item_battles.iter().find(|b| b.item == u.item)?;
+                let name = self.item_names.get(u.item as usize).cloned().unwrap_or_default();
+                let action = crate::battle::item_action(&name, row.target, row.area, row.wait, &u.effects, &self.effects);
+                let traits = u.traits.iter().filter_map(|&t| self.traits.get(t).cloned()).collect();
+                Some(crate::skirmish::Held { action, power: crate::battle::item_power(u.quality), count: u.uses.max(0) as u32, traits })
+            })
+            .collect();
     }
 
     /// From the English executable, `item_effect.xml`'s table (`effects_xml`) and `Chara.xml`'s
@@ -92,6 +127,10 @@ impl Tables {
             kit,
             items: rows,
             exp: bd::exp_table(pe, bd::EXP_TABLE_EN).unwrap_or_default(),
+            item_battles: bd::item_battles(pe, bd::ITEM_BATTLE_EN, bd::ITEM_BATTLE_END_EN),
+            item_names: items.map(|i| i.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect()).unwrap_or_default(),
+            traits: Vec::new(),
+            held: Vec::new(),
         })
     }
 }
@@ -195,6 +234,7 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
         let mut member = crate::skirmish::Member::new(block.clone(), mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);
+        member.items = t.held.get(c).cloned().unwrap_or_default();
         start.push([block.hp, block.hp, mp, mp]);
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
@@ -258,8 +298,8 @@ pub struct Turn {
     pub next_places: Vec<usize>,
     /// The member's sector round the battle (0 to 2; its place +0x394 less 3).
     pub sector: i32,
-    /// Its items: (name, how many are left).
-    pub items: Vec<(String, u32)>,
+    /// Its items: (name, how many are left, thrown at the monsters).
+    pub items: Vec<(String, u32, bool)>,
 }
 
 /// Monsters already drawn against `party` with the player's `commands`, one per member turn in
@@ -344,5 +384,42 @@ mod tests {
         let m = &kit.monsters[rat];
         assert_eq!(kit.spoils(&won), (m.exp, m.money));
         eprintln!("an Ore Rat gives {} experience and {} money", m.exp, m.money);
+    }
+
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn a_carried_item_is_thrown_by_command() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        let root = std::path::Path::new(&root);
+        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = Pe::parse(&exe).unwrap();
+        let read = |p: &str| barrel_formats::table::parse(&std::fs::read(root.join(p)).unwrap()).unwrap();
+        let (effects, chara, items) = (read("Saves_EN/item/item_effect.xml"), read("Saves/chara/Chara.xml"), read("Saves_EN/item/itemData.xml"));
+        let mut t = Tables::load(&pe, &effects, Some(&chara), Some(&items)).unwrap().with_traits(&read("Saves_EN/item/item_potential.xml"));
+        // The first battle item thrown at the other side, with a damage effect row.
+        let damage = t.effects.iter().position(|e| e.effects.iter().any(|x| x.act == 0)).unwrap() as i16;
+        let row = t.item_battles.iter().find(|b| b.target == 2).unwrap();
+        let name = t.item_names[row.item as usize].clone();
+        t.carry(0, &[crate::session::BattleItem { item: row.item, quality: 50.0, uses: 2, effects: vec![damage], traits: Vec::new() }]);
+        let rat = t.monsters.iter().position(|m| m.name == "Ore Rat").unwrap();
+        let rng = Rng::from_state([1, 0x2468_ace0, 0x0f1e_2d3c, 0x4b5a_6978]);
+        let mut commands = Vec::new();
+        let mut thrown = false;
+        for _ in 0..8 {
+            let (o, turn) = fight_commanded(&t, &[(0, 1), (1, 1)], &[rat], rng.clone(), &commands).unwrap();
+            if thrown {
+                assert!(o.events.iter().any(|e| matches!(e, Event::Acted { who: 0, skill, .. } if *skill == name)), "{:?}", o.lines());
+                return;
+            }
+            let Some(turn) = turn else { panic!("the battle ended first: {:?}", o.lines()) };
+            if turn.who == 0 {
+                assert_eq!(turn.items, vec![(name.clone(), 2, true)]);
+                commands.push(Command::Item { item: 0, target: turn.foes[0] });
+                thrown = true;
+            } else {
+                commands.push(Command::Wait);
+            }
+        }
+        panic!("no turn for member 0");
     }
 }

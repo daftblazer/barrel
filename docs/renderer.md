@@ -301,13 +301,16 @@ timing, one motion for every action, no one running to their target, no effects,
 sounds, no results. The battle HUD (`battlehud`, layout 886) is drawn over it: each member's
 plate with their portrait and their HP and MP bars cut to what is left, following the events.
 A member's turn waits for a command, chosen as the game's battle has it: the command row
-(layout 887: Attack, Skill, Move, Wait, Change, Run; left and right), Enter on Attack goes to
+(layout 887: Attack, Item, Skill, Move, Wait, Change, Run; left and right), Enter on Attack goes to
 the target (left and right among the standing monsters, its name right of centre), on Skill to
 the list of skills it may use (up and down, their MP costs, those it cannot pay for grey; Enter
 then to the target); Enter on the target gives it, Back goes a step back (offscreen
 `BARREL_BATTLE_KEYS`, a key a frame while a turn waits: `confirm,confirm` attacks the first
-monster). Wait and Run are given (Run: `fight::Battle::run_turn`; escaped, the battle ends and
-goes back to the field with no spoils and no lost day); Move and Change are not yet. The battle is then fought
+monster). Item opens the list of the battle items the member carries (the session's `carry`
+lines, `auto_battle::Tables::carry`; name and uses left, spent ones grey), Enter on one thrown at
+the monsters goes to the target, on one for the party uses it on the member itself. Move goes to
+the next sector round (`fight::Battle::move_turn`). Wait and Run are given (Run: `fight::Battle::run_turn`; escaped, the battle ends and
+goes back to the field with no spoils and no lost day); Change is not yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same
 generator and commands always give the same battle, so what was played stays) up to the next
 member turn. Not yet the game's: the list (the game's command layout is not identified), no

@@ -1218,7 +1218,12 @@ fn battle_tables(root: &Path) -> Result<barrel_escha::auto_battle::Tables> {
     let effects = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/item_effect.xml"))?)?;
     let chara = std::fs::read(root.join("Saves/chara/Chara.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let items = std::fs::read(root.join("Saves_EN/item/itemData.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
-    Ok(barrel_escha::auto_battle::Tables::load(&pe, &effects, chara.as_ref(), items.as_ref())?)
+    let tables = barrel_escha::auto_battle::Tables::load(&pe, &effects, chara.as_ref(), items.as_ref())?;
+    let potential = std::fs::read(root.join("Saves_EN/item/item_potential.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    Ok(match potential {
+        Some(p) => tables.with_traits(&p),
+        None => tables,
+    })
 }
 
 /// The battle HUD's layer (`battlehud`, layout 886) and what redrawing it needs: the font, the
@@ -1306,6 +1311,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
     let mut tables = battle_tables(root)?;
     for (c, m) in members.iter().enumerate() {
         tables.equip(c, &m.equipment);
+        tables.carry(c, &m.battle_items);
     }
     let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
     let mut rng = barrel_engine::rng::Rng::seeded(1);
@@ -1425,13 +1431,18 @@ enum Choosing {
     Row,
     Skill,
     Target { skill: Option<usize> },
+    /// The item list (the Item command).
+    Item,
+    /// A monster for item `0` (one thrown at the other side).
+    ItemTarget(usize),
 }
 
-/// The command row a member's turn shows (the battle-stats recording: Katla's Attack, Skill,
-/// Move, Wait, Change and Run). Move and Change are not given yet.
-const COMMAND_ROW: [i32; 6] = {
+/// The command row an alchemist's turn shows (the battle-stats recording: Katla's Attack,
+/// Skill, Move, Wait, Change and Run; the alchemists' Item taken to go in its command order,
+/// after Attack, `docs/escha/open.md`). Change is not given yet.
+const COMMAND_ROW: [i32; 7] = {
     use battlehud::command::*;
-    [ATTACK, SKILL, MOVE, WAIT, CHANGE, RUN]
+    [ATTACK, ITEM, SKILL, MOVE, WAIT, CHANGE, RUN]
 };
 
 /// A battle's tables, sides, generator and the commands given so far.
@@ -1476,15 +1487,18 @@ impl BattlePlay {
     fn commands(&self, screen: impl Fn(usize) -> Option<[i32; 2]>) -> Option<battlehud::Commands> {
         let turn = self.turn.as_ref().filter(|_| self.waiting())?;
         let target = turn.foes.get(self.target).copied();
-        let plate = target.filter(|_| matches!(self.choosing, Choosing::Target { .. })).and_then(|k| {
+        let plate = target.filter(|_| matches!(self.choosing, Choosing::Target { .. } | Choosing::ItemTarget(_))).and_then(|k| {
             let v = self.now.get(k)?;
             Some(battlehud::Plate { name: self.outcome.names.get(k).cloned().unwrap_or_default(), hp: (v[0], v[1]), at: screen(k)? })
         });
-        let list: Vec<(String, bool)> = turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)).collect();
+        let list: Vec<(String, bool)> = match self.choosing {
+            Choosing::Item => turn.items.iter().map(|(name, left, _)| (format!("{name}  ×{left}"), *left > 0)).collect(),
+            _ => turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)).collect(),
+        };
         Some(battlehud::Commands {
             row: COMMAND_ROW.to_vec(),
             at: self.row,
-            skills: (self.choosing == Choosing::Skill).then(|| (list, self.chosen)),
+            skills: matches!(self.choosing, Choosing::Skill | Choosing::Item).then(|| (list, self.chosen)),
             title: String::new(),
             marked: target.filter(|_| plate.is_some()).and_then(|k| turn.slots.iter().skip(1).position(|&o| o == Some(k))).map(|p| p + 1),
             // The mark follows the command under the cursor: the skill's in the skill list.
@@ -1511,6 +1525,7 @@ impl BattlePlay {
         }
         let Some(turn) = self.turn.clone().filter(|_| self.waiting()) else { return };
         let skills = turn.skills.len().max(1);
+        let items = turn.items.len().max(1);
         let foes = turn.foes.len().max(1);
         let row = COMMAND_ROW.len();
         use title::Button::*;
@@ -1520,6 +1535,7 @@ impl BattlePlay {
             (Choosing::Row, Confirm) => match COMMAND_ROW[self.row] {
                 battlehud::command::ATTACK => self.choosing = Choosing::Target { skill: None },
                 battlehud::command::SKILL if !turn.skills.is_empty() => self.choosing = Choosing::Skill,
+                battlehud::command::ITEM if !turn.items.is_empty() => (self.choosing, self.chosen) = (Choosing::Item, 0),
                 battlehud::command::WAIT => self.give(barrel_escha::auto_battle::Command::Wait),
                 battlehud::command::RUN => self.give(barrel_escha::auto_battle::Command::Run),
                 // the next sector round (the game's choice of where, and which way, is not read)
@@ -1530,6 +1546,23 @@ impl BattlePlay {
             (Choosing::Skill, Down) => self.chosen = (self.chosen + 1) % skills,
             (Choosing::Skill, Confirm) if turn.skills.get(self.chosen).is_some_and(|s| s.2) => self.choosing = Choosing::Target { skill: Some(self.chosen) },
             (Choosing::Skill, Back) => self.choosing = Choosing::Row,
+            (Choosing::Item, Up) => self.chosen = (self.chosen + items - 1) % items,
+            (Choosing::Item, Down) => self.chosen = (self.chosen + 1) % items,
+            (Choosing::Item, Back) => self.choosing = Choosing::Row,
+            (Choosing::Item, Confirm) => match turn.items.get(self.chosen) {
+                Some((_, left, true)) if *left > 0 => self.choosing = Choosing::ItemTarget(self.chosen),
+                // on the party: the member itself (the battle takes the first of its side when
+                // the item cannot be aimed there; choosing a member is not given yet)
+                Some((_, left, false)) if *left > 0 => self.give(barrel_escha::auto_battle::Command::Item { item: self.chosen, target: turn.who }),
+                _ => {}
+            },
+            (Choosing::ItemTarget(_), Left) => self.target = (self.target + foes - 1) % foes,
+            (Choosing::ItemTarget(_), Right) => self.target = (self.target + 1) % foes,
+            (Choosing::ItemTarget(item), Back) => (self.choosing, self.chosen) = (Choosing::Item, item),
+            (Choosing::ItemTarget(item), Confirm) => {
+                let target = turn.foes.get(self.target).copied().unwrap_or(0);
+                self.give(barrel_escha::auto_battle::Command::Item { item, target });
+            }
             (Choosing::Target { .. }, Left) => self.target = (self.target + foes - 1) % foes,
             (Choosing::Target { .. }, Right) => self.target = (self.target + 1) % foes,
             (Choosing::Target { skill }, Back) => self.choosing = if skill.is_some() { Choosing::Skill } else { Choosing::Row },
@@ -4248,6 +4281,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         let members = session.as_ref().map(|s| s.party.clone()).unwrap_or_default();
                         for (c, m) in members.iter().enumerate() {
                             tables.equip(c, &m.equipment);
+        tables.carry(c, &m.battle_items);
                         }
                         let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
                         let party = [(usize::from(logy), level(usize::from(logy))), (usize::from(!logy), level(usize::from(!logy)))];

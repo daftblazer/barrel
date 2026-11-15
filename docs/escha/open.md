@@ -227,3 +227,8 @@ likely settle them where static reading failed.
 - Move command: who sets the mover's new place (+0x394) before `BtlCharaActionMove` runs, how
   the player chooses it (which sector, the +0x3c direction) and whether a member already there
   swaps. Barrel moves to the next sector round and moves nobody else.
+
+- Battle items: where Item sits in an alchemist's command row (Barrel puts it after Attack, by
+  command number; check a recording of Escha's or Logy's turn), choosing a party member for a
+  heal item (Barrel uses it on the user), and the uses spent in a battle are not written back
+  to the session's `carry` lines yet. A new game's starting battle items are not read.

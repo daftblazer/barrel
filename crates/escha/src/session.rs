@@ -16,6 +16,7 @@
 //! tenths 5
 //! money 100
 //! member 0 1 0 364,417,-1,-1
+//! carry 0 270 55 2 12,-1 3
 //! item 55 60 12,40
 //! seen 8 90
 //! flag 36 1
@@ -51,12 +52,47 @@ impl Taken {
 pub const TAKEN_SLOTS: usize = 10;
 
 /// One party member's lasting state (its record at `0x1410bcb60` + 0x2b0 × member).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     pub level: i32,
     pub experience: i32,
     /// The items equipped, by item number, -1 for none: weapon, armour, two accessories.
     pub equipment: [i32; 4],
+    /// The battle items it carries (the alchemists' `explore_equip` lists), in order.
+    pub battle_items: Vec<BattleItem>,
+}
+
+/// A carried battle item: the item, its quality, the uses left, its effect rows
+/// (`item_effect.xml`) and trait rows (`item_potential.xml`), as the game's item unit holds them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BattleItem {
+    pub item: i32,
+    pub quality: f32,
+    pub uses: i32,
+    pub effects: Vec<i16>,
+    pub traits: Vec<usize>,
+}
+
+impl BattleItem {
+    /// Its `carry` line for member `c`: `carry C ITEM QUALITY USES EFFECTS|- [TRAITS]`.
+    fn line(&self, c: usize) -> String {
+        let list = |v: Vec<String>| if v.is_empty() { "-".to_string() } else { v.join(",") };
+        let effects = list(self.effects.iter().map(i16::to_string).collect());
+        let traits: Vec<String> = self.traits.iter().map(usize::to_string).collect();
+        format!("carry {c} {} {} {} {effects}{}\n", self.item, self.quality, self.uses, if traits.is_empty() { String::new() } else { format!(" {}", traits.join(",")) })
+    }
+
+    /// From a `carry` line's words after the member: `None` when it does not read.
+    fn parse(w: &[&str]) -> Option<BattleItem> {
+        let list = |v: &str| -> Option<Vec<String>> { if v == "-" { Some(Vec::new()) } else { Some(v.split(',').map(str::to_string).collect()) } };
+        Some(BattleItem {
+            item: w.first()?.parse().ok()?,
+            quality: w.get(1)?.parse().ok()?,
+            uses: w.get(2)?.parse().ok()?,
+            effects: list(w.get(3)?)?.iter().map(|v| v.parse().ok()).collect::<Option<_>>()?,
+            traits: w.get(4).map_or(Some(Vec::new()), |t| t.split(',').map(|v| v.parse().ok()).collect())?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -148,7 +184,7 @@ impl Session {
     /// already holds keep their own.
     pub fn with_party(mut self, defaults: &[crate::data::battle_data::PartyDefault]) -> Session {
         for d in defaults.iter().skip(self.party.len()) {
-            self.party.push(Member { level: 1, experience: 0, equipment: d.equipment });
+            self.party.push(Member { level: 1, experience: 0, equipment: d.equipment, battle_items: Vec::new() });
         }
         self
     }
@@ -443,16 +479,27 @@ impl Session {
     /// The party members of saved text (its `member` lines, in order), for a run that has the
     /// text but no session: the battle a field encounter opens.
     pub fn party_in(text: &str) -> Vec<Member> {
-        text.lines()
+        let mut party = text
+            .lines()
             .filter_map(|l| {
                 let w: Vec<&str> = l.split_whitespace().collect();
                 if w.first() != Some(&"member") || w.len() != 5 {
                     return None;
                 }
                 let kit: Vec<i32> = w[4].split(',').filter_map(|v| v.parse().ok()).collect();
-                Some(Member { level: w[2].parse().ok()?, experience: w[3].parse().ok()?, equipment: kit.try_into().ok()? })
+                Some(Member { level: w[2].parse().ok()?, experience: w[3].parse().ok()?, equipment: kit.try_into().ok()?, battle_items: Vec::new() })
             })
-            .collect()
+            .collect::<Vec<_>>();
+        for l in text.lines() {
+            let w: Vec<&str> = l.split_whitespace().collect();
+            if w.first() != Some(&"carry") {
+                continue;
+            }
+            if let (Some(m), Some(item)) = (w.get(1).and_then(|c| c.parse::<usize>().ok()).and_then(|c| party.get_mut(c)), BattleItem::parse(&w[2.min(w.len())..])) {
+                m.battle_items.push(item);
+            }
+        }
+        party
     }
 
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
@@ -514,6 +561,11 @@ impl Session {
         for (c, m) in self.party.iter().enumerate() {
             let kit: Vec<String> = m.equipment.iter().map(i32::to_string).collect();
             out += &format!("member {c} {} {} {}\n", m.level, m.experience, kit.join(","));
+        }
+        for (c, m) in self.party.iter().enumerate() {
+            for b in &m.battle_items {
+                out += &b.line(c);
+            }
         }
         for g in &self.basket {
             let traits: Vec<String> = g.traits.iter().map(usize::to_string).collect();
@@ -589,7 +641,11 @@ impl Session {
                     }
                     let kit: Vec<i32> = w.get(4).ok_or_else(|| bad(line))?.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect::<Result<_, _>>()?;
                     let equipment: [i32; 4] = kit.try_into().map_err(|_| bad(line))?;
-                    party.push(Member { level: num(2)? as i32, experience: num(3)? as i32, equipment });
+                    party.push(Member { level: num(2)? as i32, experience: num(3)? as i32, equipment, battle_items: Vec::new() });
+                }
+                "carry" => {
+                    let item = BattleItem::parse(&w[2.min(w.len())..]).ok_or_else(|| bad(line))?;
+                    party.get_mut(num(1)? as usize).ok_or_else(|| bad(line))?.battle_items.push(item);
                 }
                 "item" => basket.push(crate::gather::Got {
                     item: num(1)? as i32,
@@ -764,7 +820,7 @@ mod tests {
         // Item 0 a material, 1 Escha's staff, 2 Logy's sword, 3 an accessory for all.
         let items = [ItemRow { equip: false, stats: [0; 9], slots: &[], wearers: 0 }, row(&[0], 1), row(&[0], 2), row(&[2, 3], 0x7ff)];
         let mut s = Session::in_field(chain(), 3, false);
-        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1] }];
+        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], battle_items: Vec::new() }];
         s.basket = [0, 1, 3].iter().map(|&item| crate::gather::Got { item, quality: 60.0, traits: Vec::new() }).collect();
         assert!(s.equip(0, 0, 0, &items).is_err(), "a material is no weapon");
         assert!(s.equip(1, 0, 1, &items).is_err(), "Escha's staff is not Logy's");
@@ -775,8 +831,10 @@ mod tests {
         s.equip(0, 0, 1, &items).unwrap();
         assert_eq!(s.party[0].equipment[0], 1);
         assert_eq!(s.basket.iter().map(|g| g.item).collect::<Vec<_>>(), vec![0]);
-        let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
+        let text = s.save([0.0, 0.0]).unwrap();
+        let (back, _) = Session::load(chain(), &text).unwrap();
         assert_eq!(back.party, s.party);
+        assert_eq!(Session::party_in(&text), s.party);
     }
 
     #[test]
