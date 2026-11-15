@@ -925,6 +925,11 @@ Enter (offscreen `NOTICE_SECONDS`, 3). Checked: a level-1 party with nothing equ
 loses (frame 129), and a save right after reads `today 95` from 94. Not yet the game's (its wipe,
 `docs/events.md`): the slow fall, the panel's date turning over (the new day shows at once), and the area map
 it lands on (Barrel has none: the touch point instead, the line over the field).
+A won round trip, checked 2026-11-15: the copied save in `AREA_01_01` (`--load`, `--walk -300,0`,
+`BARREL_BATTLE_KEYS` confirms) touches the first Ore Rat at frame 68, opens its battle on
+`BF_POINT19` (group 10), fights it command by command (Logy and Escha attack, the rats throw and
+ram), plays the victory scene and music and the result, and at frame 1860 goes back to the field
+where she stood, the beaten rat gone.
 In a town map (0 to 11) B opens a shop (`shopping.rs`; offscreen `BARREL_SHOP_AT` and
 `BARREL_SHOP_KEYS`): the shop with the most wares on sale (`Saves_EN/shop/ShopData.xml` against
 the events seen; right after the opening the Homunculus Shop, ten wares from 90 to 15,000
