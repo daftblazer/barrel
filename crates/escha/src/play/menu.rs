@@ -107,6 +107,8 @@ pub struct Menu {
     pub container: bool,
     /// The clock's 60 Hz ticks since the menu opened (the glows' and badges' flipbooks).
     pub tick: u32,
+    /// How many members the party has (the character pickers' and the formation's lists).
+    pub party: usize,
 }
 
 /// A command's page.
@@ -117,6 +119,8 @@ pub enum Page {
     Assignment(crate::assignment::Assignment),
     Journal(crate::journal::Journal),
     Option(crate::optionpage::OptionPage),
+    Picker(crate::picker::Kind, crate::picker::Picker),
+    Formation(crate::formation::Formation),
 }
 
 /// Where a shortcut opens the menu: on a page, or on the Option list alone (the area map's RB,
@@ -139,7 +143,7 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true, tick: 0 }
+        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true, tick: 0, party: 0 }
     }
 
     /// The menu opened straight on `page`, as the field's shortcuts do; backing out of the page
@@ -151,6 +155,8 @@ impl Menu {
             Start::Page(Page::Assignment(_)) => c == Command::Assignment,
             Start::Page(Page::Journal(_)) => c == Command::Journal,
             Start::Page(Page::Option(_)) => c == Command::Option,
+            Start::Page(Page::Picker(k, _)) => c == k.command(),
+            Start::Page(Page::Formation(_)) => c == Command::Formation,
             Start::System => c == Command::Option,
         });
         let chosen = chosen.unwrap_or(0);
@@ -158,7 +164,7 @@ impl Menu {
             Start::Page(p) => (Some(p), None),
             Start::System => (None, Some(0)),
         };
-        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true, tick: 0 }
+        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true, tick: 0, party: 0 }
     }
 
     /// The menu without its Container command (the chosen one stays the same command).
@@ -178,12 +184,19 @@ impl Menu {
 
     /// A button press, with `count` items in the basket (for its page).
     pub fn press(&mut self, b: Button, count: usize) -> Option<Outcome> {
+        // The Status picker's confirm opens the Status page (of the lead for now).
+        if matches!(self.page, Some(Page::Picker(crate::picker::Kind::Status, _))) && b == Button::Confirm {
+            self.page = Some(Page::Status);
+            return None;
+        }
         let close = match self.page.as_mut() {
             Some(Page::Status) => b == Button::Back,
             Some(Page::Basket(basket)) => basket.press(b, count),
             Some(Page::Assignment(a)) => a.press(b),
             Some(Page::Journal(j)) => j.press(b),
             Some(Page::Option(o)) => o.press(b),
+            Some(Page::Picker(_, p)) => p.press(b),
+            Some(Page::Formation(f)) => f.press(b),
             None => return self.press_list(b),
         };
         if close {
@@ -216,10 +229,15 @@ impl Menu {
             Button::Back => return Some(Outcome::Close),
             Button::Confirm => match self.commands()[self.chosen] {
                 Command::Option => self.page = Some(Page::Option(crate::optionpage::OptionPage::default())),
-                Command::Status => self.page = Some(Page::Status),
+                Command::Status => self.page = Some(Page::Picker(crate::picker::Kind::Status, crate::picker::Picker { chosen: 0, count: self.party })),
                 Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
                 Command::Assignment => self.page = Some(Page::Assignment(crate::assignment::Assignment::default())),
                 Command::Journal => self.page = Some(Page::Journal(crate::journal::Journal::default())),
+                c @ (Command::AdventureEquip | Command::BattleEquip) => {
+                    let kind = if c == Command::BattleEquip { crate::picker::Kind::BattleEquip } else { crate::picker::Kind::AdventureEquip };
+                    self.page = Some(Page::Picker(kind, crate::picker::Picker { chosen: 0, count: kind.count(self.party) }));
+                }
+                Command::Formation => self.page = Some(Page::Formation(crate::formation::Formation { chosen: 0, count: self.party })),
                 c => return Some(Outcome::Command(c)),
             },
         }
@@ -375,6 +393,24 @@ pub fn run(
         footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::optionpage::FOOTER_ROW).cloned().unwrap_or_default(),
     };
     let option_elements = |o: &crate::optionpage::OptionPage, tick: u32| crate::optionpage::elements(&pe, &option_layouts, &option_words, o, tick);
+    // The character picker and the Formation page: the party in the squad's order (the lead and
+    // the other alchemist when the save has none), each with its face and values.
+    let sys_lines = barrel_escha::data::sys_text::lines(&sys_info, "Text");
+    let help_lines = barrel_escha::data::sys_text::lines(&line_help, "LineHelp");
+    let words_at = |header: usize, footer: usize| crate::picker::Words { header: sys_lines.get(header).cloned().unwrap_or_default(), footer: help_lines.get(footer).cloned().unwrap_or_default() };
+    let (picker_words, formation_words) = (words_at(crate::picker::HEADER_ROW, crate::picker::FOOTER_ROW), words_at(crate::formation::HEADER_ROW, crate::formation::FOOTER_ROW));
+    let lead_character = source.map_or(0, |s| s.lead);
+    let party: Vec<crate::formation::Member> = source.map_or_else(Vec::new, |s| {
+        let order: Vec<usize> = if s.squad.is_empty() { (0..2).collect() } else { s.squad.to_vec() };
+        order.into_iter().filter_map(|c| Some(crate::formation::Member { face: crate::overview::Face::of(&pe, s, &item_rows.children, c)?, values: crate::status::Values::of(&pe, c, s.party.get(c), &item_rows.children)? })).collect()
+    });
+    let picker_layouts = crate::picker::Layouts::load(&pe);
+    let formation_layouts = crate::formation::Layouts::load(&pe);
+    let picker_elements = |k: crate::picker::Kind, v: &crate::picker::Picker, tick: u32| {
+        let faces: Vec<crate::overview::Face> = party.iter().map(|m| &m.face).filter(|f| k.lists(&[f.character as usize]).len() == 1).cloned().collect();
+        crate::picker::elements(&pe, &picker_layouts, &picker_words, k, v, &faces, lead_character, tick)
+    };
+    let formation_elements = |f: &crate::formation::Formation, tick: u32| crate::formation::elements(&pe, &formation_layouts, &formation_words, f, &party, lead_character, tick);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
         let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
@@ -405,6 +441,14 @@ pub fn run(
     every.extend(assignment_layouts.flips());
     every.extend(journal_layouts.flips());
     every.extend(option_layouts.flips());
+    every.extend(picker_layouts.flips());
+    every.extend(formation_layouts.flips());
+    for chosen in 0..party.len().max(1) {
+        for k in [crate::picker::Kind::AdventureEquip, crate::picker::Kind::BattleEquip, crate::picker::Kind::Status] {
+            every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0));
+        }
+        every.extend(formation_elements(&crate::formation::Formation { chosen, count: party.len() }, 0));
+    }
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
         for chosen in 0..COMMANDS.len() {
@@ -459,12 +503,15 @@ pub fn run(
                 e.extend(option_elements(&o, m.tick));
                 e
             }
+            Some(Page::Picker(k, p)) => picker_elements(k, &p, m.tick),
+            Some(Page::Formation(f)) => formation_elements(&f, m.tick),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
         };
         hud::quads(&pe, Some(&font), &sheets, &e, w, h)
     };
     let mut menu = start.map_or_else(Menu::new, Menu::at);
+    menu.party = party.len();
     if !source.is_none_or(|s| s.container) {
         menu = menu.without_container();
     }
@@ -529,7 +576,10 @@ mod tests {
         assert_eq!(m.press(Button::Back, 0), None);
         assert_eq!(m.page, None);
         m.press(Button::Down, 0);
-        assert_eq!(m.press(Button::Confirm, 0), Some(Outcome::Command(Command::AdventureEquip)));
+        assert_eq!(m.press(Button::Confirm, 0), None);
+        assert!(matches!(m.page, Some(Page::Picker(crate::picker::Kind::AdventureEquip, _))));
+        assert_eq!(m.press(Button::Back, 0), None);
+        assert_eq!(m.page, None);
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
     }
 

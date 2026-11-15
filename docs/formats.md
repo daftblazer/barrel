@@ -1840,6 +1840,32 @@ page layout 431: the name (a kind 22 text, size 45), the labels "LV", "Next", "H
 cut 12 the slash), and the bookmark with the figure (layout 393, kind 7). Its other branches:
 398 the equipment effects list, 388 the skill list, 387 a skill's details.
 
+The character picker (Adventure Equip., Battle Equip. and Status open the same one) is the desk
+383, the lead's figure 361, one layout 362 a member and the footer, header and tab lines. A row
+is layout 359 (the plate part 0x5 cut 12 at [204, -4], layout 358 at [12, -8]: the tab part 0x5
+cut 11 and the face part 0x4, cut = character; the name, "LV", "HP", "MP", "Next", "Friend" and
+their numbers, kind 28 ending at the node: LV, HP now and most, MP now and most, Next, Friend)
+and the chosen row's frame, part 0x2 kind 36 at [-46, -20] (five cuts of 10 ticks, the pulse
+0, 1, 2, 1, 0). The rows go to layout 365's six places (from [78, 152], 136 down and about 45
+right a row); a list of n members starts at place (5 - n) / 2 (the two-member Adventure Equip.
+list, only Escha and Logy, starts at the second). The cursor's glow (part 0x9f) is at [-15, -83]
+from the row. The footer is `Menu_Line_Help.xml` row 8, the header `SysInfo.xml` row 37 ("Please
+select a character."), the command's tab layout 531 with part 0x2e and 0x2c at the command's
+cut (Adventure 2, Battle 3, Formation 4, Status 5). The lead's row has no "Friend".
+
+The Formation page: the desk, layout 440's three plates (part 0x14 cut 2 at [90, 144 / 280 / 416],
+1032 wide: the Front and Back columns), the member slots (layout 439: a layout 434 with the face
+part 0x4, "LV", "HP", "MP" and five numbers, and the chosen one's frame, part 0x15 kind 36, five
+cuts of 10 ticks), Front at [116, 154 / 290 / 426] and Back at [674, ...], the Reserve at y 616
+and later (only drawn with a member in it, with its heading, layout 382), the mark (part 0x14
+cut 4 at [126, 160]), the tabs "Front" and "Back" (442, 443), the chosen member's panel, layout
+432 at [1228, 148] (a stretched part 0x61 at 456 x 820 and the Status notebook's right page,
+431, with the bookmark 393), then the footer, header ("Select character to change.", row 42) and
+tab lines. Layout 441 places the slots 8 pixels right of where the game does (it draws 440's).
+The Status numbers' RES values are the save's in-use stats 5 to 8 (Escha: 10, 10, 10, 0), not
+the equipment's alone; a kind 4 node (the RES icons, part 0x67) is drawn at the percent of its
+word 5 (80).
+
 The item grid is layout 456 (placed at [100, 252]; the Container screen, layout 458, shows it
 twice, at x 44 and 480, under the tab layout 457 with "Name" between the LB / RB marks): 25 cells
 in five rows of five, 98 to 104 pixels apart. The plain cell is layout 451: the lit frame (part

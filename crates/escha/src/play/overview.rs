@@ -48,6 +48,7 @@ const TEXT: i32 = 0x164;
 /// The member's face on a plate (part 0x4 of `a15_menu.g1t`: cut = the character's number).
 const FACE: i32 = 4;
 const NUMBER_KIND: i32 = 28;
+const PICTURE_KIND: i32 = 4;
 const BAR_KIND: i32 = 19;
 /// The digit sheet's slash (cut 12 of the number parts).
 const SLASH: i32 = 12;
@@ -70,6 +71,14 @@ pub struct Face {
     pub mp: (i32, i32),
     pub next: i32,
     pub friend: i32,
+}
+
+impl Face {
+    /// Character `c` (a party member number) from `source` and the game's tables.
+    pub fn of(pe: &Pe, source: &Source, items: &[barrel_formats::table::Element], c: usize) -> Option<Face> {
+        let v = crate::status::Values::of(pe, c, source.party.get(c), items)?;
+        Some(Face { name: v.name, character: c as i32, level: v.level, hp: v.hp, mp: v.mp, next: v.next, friend: source.friendship.get(c).map_or(0, |&f| f as i32) })
+    }
 }
 
 /// What the page shows.
@@ -113,10 +122,7 @@ impl Overview {
     pub fn of(pe: &Pe, source: &Source, items: &[barrel_formats::table::Element], ranks: &[barrel_escha::rank::Rank]) -> Option<Overview> {
         use barrel_escha::data::battle_data as bd;
         let exp = bd::exp_table(pe, bd::EXP_TABLE_EN)?;
-        let face = |c: usize| -> Option<Face> {
-            let v = crate::status::Values::of(pe, c, source.party.get(c), items)?;
-            Some(Face { name: v.name, character: c as i32, level: v.level, hp: v.hp, mp: v.mp, next: v.next, friend: source.friendship.get(c).map_or(0, |&f| f as i32) })
-        };
+        let face = |c: usize| Face::of(pe, source, items, c);
         let squad: Vec<usize> = if source.squad.is_empty() { (0..2).collect() } else { source.squad.to_vec() };
         let (level, alchemy_exp) = source.alchemy;
         let (rank, points) = source.rank;
@@ -226,7 +232,7 @@ fn groups(nodes: &[Placed], group: u32) -> Vec<Vec<&Placed>> {
 /// One plate's or the page's elements: the sprites as stored, the texts raised (the first
 /// filled-in text the name), the numbers from `numbers` in the nodes' order, a slash drawn in the
 /// ink of the number before it.
-fn face(pe: &Pe, nodes: &[&Placed], texts: &impl Fn(&Placed) -> Option<Text>, name: &str, portrait: Option<i32>, numbers: &[i32]) -> Vec<Element> {
+pub fn face(pe: &Pe, nodes: &[&Placed], texts: &impl Fn(&Placed) -> Option<Text>, name: &str, portrait: Option<i32>, numbers: &[i32]) -> Vec<Element> {
     let mut out = Vec::new();
     let mut k = 0;
     let mut named = false;
@@ -246,6 +252,10 @@ fn face(pe: &Pe, nodes: &[&Placed], texts: &impl Fn(&Placed) -> Option<Text>, na
             out.extend(number(pe, p, value));
         } else if let (FACE, Some(cut)) = (n.part, portrait) {
             out.push(Element::Sprite { part: FACE, cut, at: p.at });
+        } else if n.kind == PICTURE_KIND {
+            // A picture node draws at the percent of its word 5 about its corner (the Status
+            // panel's element icons: 80%).
+            out.push(Element::Scaled { part: n.part, cut: n.cut, at: p.at, percent: layout::word(pe, p, 5).filter(|&v| v > 0).unwrap_or(100), about: p.at });
         } else if n.cut == SLASH && matches!(n.part, 0x4e | 0x50) {
             out.push(Element::Tinted { part: n.part, cut: SLASH, at: p.at, rgb: [58, 26, 8] });
         } else {

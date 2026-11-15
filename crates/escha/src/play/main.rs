@@ -35,6 +35,8 @@ mod status;
 mod requests;
 mod basket;
 mod basketpage;
+mod picker;
+mod formation;
 mod kit;
 mod assignment;
 mod journal;
@@ -3626,7 +3628,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // HUD's date panel on top, as the game shows it).
     let mut menu_mode = false;
     // The buttons `--menu PAGE` presses first (comma list as `BARREL_MENU_KEYS`).
-    let mut menu_page_keys = "";
+    let mut menu_page_keys = String::new();
     // The area map's top level, the world map (the town and the regions).
     let mut world_mode = false;
     let mut load_file = None::<PathBuf>;
@@ -3800,14 +3802,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // (Down to the command, A; off a town the list starts at the Basket).
             "--menu" => {
                 menu_mode = true;
-                if let Some(page) = it.clone().next().filter(|n| matches!(n.as_str(), "basket" | "assignment" | "journal" | "option")) {
+                // In the list's order off a town (it starts at the Basket; 6 is Request).
+                const PAGES: [&str; 9] = ["basket", "picker-adventure", "picker-battle", "formation", "picker-status", "assignment", "request", "journal", "option"];
+                if let Some(page) = it.clone().next().filter(|n| PAGES.contains(&n.as_str())) {
                     it.next();
-                    menu_page_keys = match page.as_str() {
-                        "basket" => "confirm",
-                        "journal" => "down,down,down,down,down,down,down,confirm",
-                        "option" => "down,down,down,down,down,down,down,down,confirm",
-                        _ => "down,down,down,down,down,confirm",
-                    };
+                    // Down to the command (the list starts at the Basket), then confirm.
+                    let downs = PAGES.iter().position(|p| p == page).unwrap_or(0);
+                    menu_page_keys = format!("{}confirm", "down,".repeat(downs));
                 }
             }
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's

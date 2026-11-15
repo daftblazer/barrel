@@ -74,12 +74,15 @@ pub struct Member {
     /// Its HP, its most HP, its MP and its most MP (with equipment) now, when the save holds
     /// them: a battle starts from them.
     pub now: Option<[i32; 4]>,
+    /// Its five resistances (the in-use stats 5 to 9, equipment and passives counted), when the
+    /// save holds them.
+    pub resist: Option<[i32; 5]>,
 }
 
 impl Member {
     /// A member with no battle items, no worn units and no saved vitals.
     pub fn fresh(level: i32, experience: i32, equipment: [i32; 4]) -> Member {
-        Member { level, experience, equipment, worn: Default::default(), battle_items: Vec::new(), now: None }
+        Member { level, experience, equipment, worn: Default::default(), battle_items: Vec::new(), now: None, resist: None }
     }
 
     /// The equipped items for a battle's stats: the worn units when every equipped slot has
@@ -965,6 +968,7 @@ impl Session {
                 equipment: m.equipment,
                 worn: m.units.each_ref().map(|u| u.as_ref().map(WornItem::from_unit)),
                 now: Some([m.hp, m.equipped[0], m.mp, m.equipped[1]]),
+                resist: Some(std::array::from_fn(|k| m.in_use[5 + k])),
                 battle_items: sum.battle_items.get(m.character as usize).into_iter().flatten().map(BattleItem::from_unit).collect(),
             })
             .collect();
@@ -1169,7 +1173,7 @@ mod tests {
         // Item 0 a material, 1 Escha's staff, 2 Logy's sword, 3 an accessory for all.
         let items = [ItemRow { equip: false, stats: [0; 9], slots: &[], wearers: 0 }, row(&[0], 1), row(&[0], 2), row(&[2, 3], 0x7ff)];
         let mut s = Session::in_field(chain(), 3, false);
-        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], worn: Default::default(), now: None, battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], worn: Default::default(), battle_items: Vec::new(), now: None }];
+        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], worn: Default::default(), now: None, resist: None, battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], worn: Default::default(), battle_items: Vec::new(), now: None, resist: None }];
         s.basket = [0, 1, 3].iter().map(|&item| crate::gather::Got { item, quality: 60.0, traits: Vec::new() }).collect();
         assert!(s.equip(0, 0, 0, &items).is_err(), "a material is no weapon");
         assert!(s.equip(1, 0, 1, &items).is_err(), "Escha's staff is not Logy's");

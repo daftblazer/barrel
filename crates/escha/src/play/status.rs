@@ -81,13 +81,13 @@ impl Values {
             attack: s.attack + add[2],
             defense: s.defense + add[3],
             speed: s.speed + add[4],
-            resist: [add[5], add[6], add[7], add[8]],
+            resist: member.and_then(|m| m.resist).map_or([add[5], add[6], add[7], add[8]], |r| [r[0], r[1], r[2], r[3]]),
             friend: 0,
         })
     }
 
     /// The numbers in the order the page's number nodes come.
-    fn numbers(&self) -> [i32; 14] {
+    pub fn numbers(&self) -> [i32; 14] {
         let [r0, r1, r2, r3] = self.resist;
         [self.level, self.next, self.hp.0, self.hp.1, self.mp.0, self.mp.1, self.attack, self.defense, self.speed, r0, r1, r2, r3, self.friend]
     }
