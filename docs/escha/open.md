@@ -146,19 +146,9 @@ likely settle them where static reading failed.
 - **Skill scenes' frame.** Which rotation a battle character's +0x880 object has (taken as
   the party's facing towards the monsters for any target); how a monster's skill event names
   its actor and target and which way its offsets turn; what characters 10002+ beyond the
-  stand-ins are. In play (`BARREL_SKILL_SCENES=1`) a member's Attack and Support Attack play
-  their scenes (actor moved, scene camera, step as long as the scene; hits still shown at its
-  start, the actor's clips not switched by the scene). Off by default: at Barrel's stage centre
-  (a guess) and sector places, Logy's attack scene draws as a blurred close-up of foliage and
-  Escha's faces rocks. Checked (2026-11-15): BF_POINT19's ground (collision) spans 0..6400 on
-  x and z and its placed scenery (opl2) rings (3200, 3200) at 1,470 and out, so that centre
-  fits; the members' places are `party_spot` as the game's (iteration 498); the scene's eye
-  (e.g. (3234, 200, 2169)) is inside that ring, and the drawn camera is the scene's
-  (`BARREL_SCENE_LOG`). Its terrain is a flat 8-vertex ground, so what fills the view is an
-  object model reaching past its placement point (cliffs, trees: not measured), unless the
-  draw is wrong. `BARREL_HIDE` matches mesh names, not placement names, so it could not tell.
-  Next: an oracle Attack in BF_POINT19 (an AREA_01_01 encounter), recorded, to see the game's
-  camera there (and whether it fades scenery near the eye).
+  stand-ins are. In play a member's Attack and Support Attack play their scenes; the hits
+  still show at the scene's start (not at its strike) and the actor's clips are not switched by
+  the scene's motion commands yet.
 
 ## Synthesis
 

@@ -1396,7 +1396,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
             .and_then(|b| barrel_formats::table::parse(&b).ok())
             .map(|t| barrel_engine::curve::Curve::table(&t))
             .unwrap_or_default();
-        SceneData { on: std::env::var_os("BARREL_SKILL_SCENES").is_some(), root: root.to_path_buf(), curves, motion_names, divisions, measures: barrel_engine::stage::Measures::table(&charas) }
+        SceneData { on: std::env::var("BARREL_SKILL_SCENES").map_or(true, |v| v != "0"), root: root.to_path_buf(), curves, motion_names, divisions, measures: barrel_engine::stage::Measures::table(&charas) }
     };
     let music = barrel_escha::auto_battle::group_kind(&tables, group).and_then(|k| barrel_escha::battle::music(k, sound_quest, logy));
     Ok((packs, bodies, BattlePlay {
@@ -1531,7 +1531,7 @@ const COMMAND_ROW: [i32; 7] = {
 
 /// The game data the battle's skill scenes need.
 struct SceneData {
-    /// Whether actions play their scenes (`BARREL_SKILL_SCENES`).
+    /// Whether actions play their scenes (not with `BARREL_SKILL_SCENES=0`).
     on: bool,
     root: PathBuf,
     curves: std::collections::BTreeMap<u32, barrel_engine::curve::Curve>,
@@ -1998,8 +1998,7 @@ impl BattlePlay {
         // A member's attack or Support Attack plays its skill scene, the step lasting as long
         // (its hits already shown as it starts: the scene's strike is not timed to them yet).
         // Its other skills keep the plain step until their commands are known here.
-        // Only with BARREL_SKILL_SCENES for now: at Barrel's guessed stage centre and sector
-        // places the scenes' camera ends up inside the stage's scenery (`docs/escha/open.md`).
+        // `BARREL_SKILL_SCENES=0` leaves them out.
         if let Event::Acted { who, target, skill, .. } = &event
             && *who < self.charas.len()
             && self.scenes.on
