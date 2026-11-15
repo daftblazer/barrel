@@ -12,7 +12,8 @@
 //! layout's order) light as the day's field time is spent, from the top clockwise (checked in the
 //! running game, 2026-11-13: none on arrival, one after a battle, five after a gathering); its
 //! key-shaped hand (layout 610, part 0x8d cut 1, 120 × 24), pointing at the time spent (up for
-//! none, across for half), is left out (the HUD draws no turned sprites yet). Layout 609 lists
+//! none, across for half), is drawn turned up for none spent only (`Element::Raised`); other
+//! times keep it unturned (no free rotation yet). Layout 609 lists
 //! the segments clockwise from the top (cuts 2 to 6, then 11 down to 7). Not yet the game's: the button list (620)
 //! moved up 121 pixels, as the screenshot has it (the layout puts the list at y 792, past the
 //! screen's foot); the days left are small digits (part 0xe5)
@@ -34,7 +35,7 @@ use crate::text::{self, Quad};
 
 /// The HUD's top layout and the parts of it that are drawn.
 pub const FIELD_HUD: u32 = 625;
-const SHOWN: [u32; 4] = [605, 609, 614, 620];
+const SHOWN: [u32; 5] = [605, 609, 614, 619, 620];
 /// The field effect's gauge (layout 614, at (32, 246) in 625) and its pieces: the notice's
 /// plate (0x69 cut 4) and text (0x6e), the box (cut 2), the fill (cut 6, red at the top to
 /// green at the foot, shown from the foot up to the percentage over 200), the tube over it
@@ -75,7 +76,31 @@ const DIGIT_ADVANCE: i32 = 36;
 /// Half a digit glyph (36 wide): numbers are centred on their node.
 const DIGIT_CENTRE: i32 = 18;
 const BUTTON_LIST: u32 = 620;
-const BUTTON_LIST_SHIFT: i32 = -121;
+/// The button list's sprites and texts, moved up from layout 625's places (which put the list
+/// past the screen's foot): the field-enter capture has the plates 113 up and the texts 120 up.
+const BUTTON_LIST_SHIFT: i32 = -113;
+const BUTTON_TEXT_SHIFT: i32 = -120;
+/// The run button's label as the game words it (executable strings next to each other): it names
+/// what the button does, so "Run On" while running is off.
+pub const RUN_ON: &str = "<IM28> Run On";
+pub const RUN_OFF: &str = "<IM28> Run Off";
+/// The time dial (609) rests 9 right and 5 up of its node (the field-enter capture, dial and
+/// hand alike).
+const DIAL_LAYOUT: u32 = 609;
+const DIAL_SHIFT: [i32; 2] = [9, -5];
+/// The dial's hand (part 0x8d cut 1, 120 × 24) turns about the left end of its sprite's middle;
+/// the captured hand at none spent stands 5 right and 10 down of where that puts it.
+const HAND_CUT: i32 = 1;
+const HAND_PIVOT: [i32; 2] = [5, 12 + 10];
+/// The entry message window (layout 619, nested in 625 at (990, 944)): the parchment panel, a
+/// face (part 4, cut = the speaker's number: 0 Escha, 1 Logy) and the line's text node (part
+/// 0x164). The game draws it 1 pixel lower than its node and before the rest of the HUD, its
+/// lines 37.8 apart (size 27 x 1.4).
+const ENTRY: u32 = 619;
+const ENTRY_SHIFT: [i32; 2] = [0, 1];
+const ENTRY_LINE_PITCH: f32 = 37.8;
+const ENTRY_TEXT_LEAD: i32 = -5;
+const FACE: i32 = 4;
 /// The assignment panel (605) rests 20 right and 8 down of its node in 625 (-20, -40): at its
 /// own place (0, -32), as the colseit-arrival recording's area map has it (patch search on the
 /// date's digits). Reused layouts sit at their nodes (776 four times in 788), so this is not
@@ -84,7 +109,7 @@ const PANEL: u32 = 605;
 const PANEL_SHIFT: [i32; 2] = [20, 8];
 
 /// What the HUD shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Values {
     pub left: u32,
     pub month: u32,
@@ -95,6 +120,17 @@ pub struct Values {
     pub cards: [Card; 10],
     /// The field effect's gauge (layout 614), when shown.
     pub gauge: Option<Gauge>,
+    /// Whether the run toggle is on (the button list's "Run On" / "Run Off").
+    pub run_on: bool,
+    /// The line in the entry message window, when shown.
+    pub entry: Option<Entry>,
+}
+
+/// A line the field's entry message window shows: who says it (the face's cut) and its text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Entry {
+    pub face: i32,
+    pub text: String,
 }
 
 /// The field effect's gauge under the request cards: its percentage (0 to 200, the field
@@ -137,7 +173,7 @@ impl Values {
         use barrel_escha::calendar::{period, period_days, Date};
         let left = period(today).map_or(0, |k| period_days(k).1 - today);
         let date = Date::of(today);
-        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32, cards: [Card::Empty; 10], gauge: None }
+        Values { left, month: date.month, day: date.day, year: date.year, tenths_spent: tenths.clamp(0, 10) as u32, cards: [Card::Empty; 10], gauge: None, run_on: false, entry: None }
     }
 }
 
@@ -166,6 +202,9 @@ pub enum Element {
     /// A sprite turned a quarter clockwise about its node `at` (a layout node of kind 7: the
     /// area map labels' ornaments), so it lies left of and below the node.
     Turned { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite turned a quarter anticlockwise about `at`, the point its left end's middle
+    /// stands on, so it rises above and right of it (the dial's hand pointing up).
+    Raised { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite spanned to `width` (a layout node of kind 17, sized by the game's code: the turn
     /// bar's next-turn line, an L corner): the sprite at the left end, mirrored at the right
     /// end, its last column stretched between.
@@ -214,7 +253,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Tinted { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Tinted { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } | Element::Raised { part, cut, at } => Some((part, cut, at)),
             Element::Popped { part, cut, centre, .. } => Some((part, cut, centre)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
@@ -223,13 +262,32 @@ impl Element {
 
 /// The HUD's elements for `v`, from layout 625's placed nodes (`texts` gives a node's text).
 pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, v: Values) -> Vec<Element> {
+    // The game draws the entry window first and the field effect's gauge after the buttons.
+    let mut head = Vec::new();
     let mut out = Vec::new();
+    let mut tail = Vec::new();
     let mut numbers = 0;
     let mut segment = 0;
     let mut card = 0usize;
     for p in nodes {
         let Some(&branch) = p.path.get(1) else { continue };
         if !SHOWN.contains(&branch) || p.path.iter().any(|l| LEFT_OUT.contains(l)) {
+            continue;
+        }
+        if branch == ENTRY {
+            let Some(entry) = &v.entry else { continue };
+            let at = [p.at[0] + ENTRY_SHIFT[0], p.at[1] + ENTRY_SHIFT[1]];
+            match p.node.part {
+                0x164 => {
+                    let Some(t) = texts(p) else { continue };
+                    for (i, line) in wrap_entry(&entry.text).into_iter().enumerate() {
+                        let y = p.at[1] + ENTRY_TEXT_LEAD + (i as f32 * ENTRY_LINE_PITCH).round() as i32;
+                        head.push(Element::Label(layout::Text { at: [p.at[0], y], text: line, colour: [0; 4], ..t.clone() }));
+                    }
+                }
+                FACE => head.push(Element::Sprite { part: FACE, cut: entry.face, at }),
+                _ => head.push(Element::Sprite { part: p.node.part, cut: p.node.cut.max(0), at }),
+            }
             continue;
         }
         let shift = if p.path.contains(&BUTTON_LIST) {
@@ -240,6 +298,8 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             PANEL_SHIFT
         } else if branch == GAUGE {
             GAUGE_SHIFT
+        } else if branch == DIAL_LAYOUT {
+            DIAL_SHIFT
         } else {
             [0, 0]
         };
@@ -256,24 +316,24 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             match (n.part, n.cut) {
                 (GAUGE_PARTS, GAUGE_PLATE) if g.notice().is_none() => {}
                 (GAUGE_PARTS, GAUGE_CHOICE) | (GLOW, _) => {}
-                (GAUGE_PARTS, GAUGE_FILL) => out.push(Element::Rising { part: n.part, cut: n.cut, at, fill: g.percent.clamp(0, GAUGE_FULL) as f32 / GAUGE_FULL as f32 }),
+                (GAUGE_PARTS, GAUGE_FILL) => tail.push(Element::Rising { part: n.part, cut: n.cut, at, fill: g.percent.clamp(0, GAUGE_FULL) as f32 / GAUGE_FULL as f32 }),
                 (NOTICE, _) => {
                     if let Some(cut) = g.notice() {
-                        out.push(Element::Sprite { part: n.part, cut, at });
+                        tail.push(Element::Sprite { part: n.part, cut, at });
                     }
                 }
                 (SMALL_DIGITS, _) if full => {}
-                (SMALL_DIGITS, PERCENT) => out.push(Element::Sprite { part: n.part, cut: n.cut, at }),
+                (SMALL_DIGITS, PERCENT) => tail.push(Element::Sprite { part: n.part, cut: n.cut, at }),
                 (SMALL_DIGITS, _) => {
                     // The percentage ends at its node.
                     let digits: Vec<i32> = g.percent.max(0).to_string().bytes().map(|b| i32::from(b - b'0')).collect();
                     let start = at[0] - SMALL_ADVANCE * digits.len() as i32;
                     for (k, d) in digits.into_iter().enumerate() {
-                        out.push(Element::Sprite { part: SMALL_DIGITS, cut: d, at: [start + SMALL_ADVANCE * k as i32, at[1]] });
+                        tail.push(Element::Sprite { part: SMALL_DIGITS, cut: d, at: [start + SMALL_ADVANCE * k as i32, at[1]] });
                     }
                 }
                 (MAX, _) if !full => {}
-                _ => out.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at }),
+                _ => tail.push(Element::Sprite { part: n.part, cut: n.cut.max(0), at }),
             }
             continue;
         }
@@ -303,6 +363,14 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             continue;
         }
         match n.part {
+            0x164 if p.path.contains(&BUTTON_LIST) => match texts(p) {
+                Some(t) if !t.text.is_empty() => {
+                    // Texts sit lower in the list than its plates' shift puts them.
+                    let text = if t.text.contains("Running") { (if v.run_on { RUN_OFF } else { RUN_ON }).to_string() } else { t.text.clone() };
+                    out.push(Element::Label(layout::Text { at: [at[0], at[1] + BUTTON_TEXT_SHIFT - BUTTON_LIST_SHIFT], text, ..t }));
+                }
+                _ => {}
+            },
             0x164 => match texts(p) {
                 // "Left" starts at its node (the area map's capture: 4 left and 1 lower than the
                 // node puts Barrel's glyphs), though kind 22 texts elsewhere are centred.
@@ -328,6 +396,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
                 }
             }
             YEAR if n.cut >= 3 => out.push(Element::Sprite { part: YEAR, cut: (v.year as i32 + 2).clamp(3, 7), at: p.at }),
+            DIAL if n.cut == HAND_CUT && v.tenths_spent == 0 => out.push(Element::Raised { part: n.part, cut: n.cut, at: [p.at[0] + HAND_PIVOT[0], p.at[1] + HAND_PIVOT[1]] }),
             DIAL if (2..=11).contains(&n.cut) => {
                 if segment < v.tenths_spent {
                     out.push(Element::Sprite { part: n.part, cut: n.cut, at: p.at });
@@ -340,7 +409,25 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
             }),
         }
     }
-    out
+    head.extend(out);
+    head.extend(tail);
+    head
+}
+
+/// The entry line's lines as the game breaks them (at most `message::LINE_CHARS` characters,
+/// at spaces).
+fn wrap_entry(text: &str) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split(' ') {
+        match lines.last_mut() {
+            Some(l) if l.chars().count() + 1 + word.chars().count() <= crate::message::LINE_CHARS => {
+                l.push(' ');
+                l.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
 }
 
 /// The assignment panel alone (605: "Left" and the days, the date, the year disc), as the
@@ -491,6 +578,15 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [x, y] = piece.at.map(|v| v as f32);
                 out.push(Quad { turn: true, rect: [dx + (x - (b - t)) * k, y * k, dx + x * k, (y + r - l) * k], uv: [l / w, b / h, r / w, t / h], color: [1.0; 4], texture: sheets.first + slot });
             }
+            &Element::Raised { part, cut, at } => {
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let [x, y] = piece.at.map(|v| v as f32);
+                // The picture's top-right at the top-left, its bottom-left at the bottom-right.
+                out.push(Quad { turn: true, rect: [dx + (x - (b - t) / 2.0) * k, (y - (r - l)) * k, dx + (x + (b - t) / 2.0) * k, y * k], uv: [r / w, t / h, l / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+            }
             &Element::Cropped { part, cut, at, fill } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
@@ -583,10 +679,10 @@ mod tests {
     #[test]
     fn values_follow_the_calendar() {
         // April 1st of year 1: 119 days to the first period's last.
-        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0, cards: [Card::Empty; 10], gauge: None });
+        assert_eq!(Values::on(90, 0), Values { left: 119, month: 4, day: 1, year: 1, tenths_spent: 0, cards: [Card::Empty; 10], gauge: None, run_on: false, entry: None });
         // August 20th of year 1, as the game's screenshot: "Left 100", "8 /20", year 1.
         let aug20 = barrel_escha::calendar::Date { year: 1, month: 8, day: 20 }.number();
-        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3, cards: [Card::Empty; 10], gauge: None });
+        assert_eq!(Values::on(aug20, 3), Values { left: 100, month: 8, day: 20, year: 1, tenths_spent: 3, cards: [Card::Empty; 10], gauge: None, run_on: false, entry: None });
     }
 
     #[test]
@@ -601,7 +697,7 @@ mod tests {
             node(&[625, 609], DIAL, 3, 0, [2, 0]),
             node(&[625, 617], 0x10, 0, 0, [0, 0]),
         ];
-        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1, cards: [Card::Empty; 10], gauge: None };
+        let v = Values { left: 98, month: 12, day: 120, year: 2, tenths_spent: 1, cards: [Card::Empty; 10], gauge: None, run_on: false, entry: None };
         let got = elements(&nodes, |_| None, v);
         let sprite = |part, cut, at| Element::Sprite { part, cut, at };
         assert_eq!(got, vec![
@@ -612,9 +708,24 @@ mod tests {
             sprite(DIGITS, 0, [252, 128]),
             sprite(YEAR, 4, [306, 124]),
             sprite(0x8b, 6, [20, 8]),
-            sprite(DIAL, 0, [0, 0]),
-            sprite(DIAL, 2, [1, 0]),
+            sprite(DIAL, 0, [9, -5]),
+            sprite(DIAL, 2, [10, -5]),
         ]);
+    }
+
+    #[test]
+    fn entry_window_run_label_and_hand() {
+        let text = |t: &str| layout::Text { at: [0, 0], size: 27.0, colour: [0; 4], text: t.to_string(), kind: 21 };
+        let nodes = vec![node(&[625, 619], FACE, 0, 0, [42, 8]), node(&[625, 619], 0x164, 0, 21, [204, 24]), node(&[625, 609], DIAL, 1, 0, [0, 0]), node(&[625, 620], 0x164, 0, 21, [60, 0])];
+        let mut v = Values::on(90, 0);
+        v.entry = Some(Entry { face: 1, text: "This place is worth investigating. We might find something interesting.".into() });
+        let got = elements(&nodes, |p| Some(text(if p.path[1] == 620 { "<IM29> Running OFF" } else { "x" })), v.clone());
+        assert_eq!(got[0], Element::Sprite { part: FACE, cut: 1, at: [42, 9] });
+        let lines: Vec<&str> = got.iter().filter_map(|e| if let Element::Label(t) = e { Some(t.text.as_str()) } else { None }).collect();
+        assert_eq!(lines, ["This place is worth investigating. We might find", "something interesting.", RUN_ON]);
+        assert!(got.iter().any(|e| matches!(e, Element::Raised { .. })));
+        v.run_on = true;
+        assert!(elements(&nodes, |_| Some(text("<IM29> Running OFF")), v).iter().any(|e| matches!(e, Element::Label(t) if t.text == RUN_OFF)));
     }
 
     #[test]
@@ -645,10 +756,10 @@ mod tests {
             g(0xf0, 0, 36, [38, 256]),
         ];
         let mut v = Values::on(90, 0);
-        assert!(elements(&nodes, |_| None, v).is_empty(), "no gauge, nothing drawn");
+        assert!(elements(&nodes, |_| None, v.clone()).is_empty(), "no gauge, nothing drawn");
         // The user's save: 45, mode 4 ("Rare Material Changed").
         v.gauge = Some(Gauge { percent: 45, mode: 4 });
-        let got = elements(&nodes, |_| None, v);
+        let got = elements(&nodes, |_| None, v.clone());
         let s = |part, cut, at: [i32; 2]| Element::Sprite { part, cut, at: [at[0] + 4, at[1]] };
         assert_eq!(got, vec![
             s(0x69, 4, [120, 252]),
