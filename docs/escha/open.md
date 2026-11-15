@@ -342,14 +342,15 @@ likely settle them where static reading failed.
   (story progress, whose turn, the reserve) is unread: hook the command row's builder in a
   battle where it shows.
 
-- **Field entry lines.** Entering a field the game shows a random line from a per-character table
-  (in the executable, near file offset 8,756,000); Barrel shows the window only when
-  `BARREL_ENTRY_LINE` gives the line. Read the table and the choice (hook the window's setup).
-  Lead: the lines sit in a 480-record table of field talk at `0x1408e2ca0`..`0x1408e77a0`
-  (0x28 bytes: two words, 0, the text pointer, a line id from 0x175 up, an index and a
-  condition word, -1 or a flag-like 0x1fe, 0x1ff...; the record framing is not settled), with
-  townspeople's lines mixed in; code at `0x140261027` loads it (others use its end,
-  `0x1408e7798`, at `0x1402614f0`, `0x140264210`...).
+- **Field entry lines (partly open).** Read and chosen as the game does (`data::field_talk`,
+  `entry_line`): 84 groups (0x24 bytes at `0x1408e20c0`: kind, map) and 480 lines (0x28 bytes at
+  `0x1408e2c90`: group, face, needed event, barred event, text id, text); the game picks among the
+  squad's lines that pass their events and were not said yet (the map's own, kind 9, else the
+  general ones, kind 0, outside towns) with its generator. Open: the generator's state is the
+  clock's (not saved), so the pick is random; `BARREL_ENTRY_DRAW=n` takes candidate n (5 for the
+  Southern Ruins check). Not modelled: the "window busy" test (`0x140269370`) and
+  `0x1402177c0` before the pick, the said-lines history across a session (starts empty), and
+  the entry's repeat on later entries.
 - **Skill power on heals.** `fight::Battle::act` scales damage effects by the user's skill power
   (stat 15, effect percent 2; Wilbell's gear gives 10), in play too (`skirmish::Member::power`).
   Heals (act flag 7) take the same percent per the docs but are not scaled yet: check against a

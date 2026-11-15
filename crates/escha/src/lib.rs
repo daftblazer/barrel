@@ -14,6 +14,7 @@ pub mod days;
 pub mod delivery;
 pub mod duel;
 pub mod encounter;
+pub mod entry_line;
 pub mod equipment;
 pub mod event_start;
 pub mod explore;

@@ -641,6 +641,29 @@ fn hud_values(s: &barrel_escha::session::Session, area: Option<bool>) -> hud::Va
     v
 }
 
+/// The line the game says on entering the session's field (`entry_line::pick` over the
+/// executable's field talk, squad and seen events from the session); none outside a field or
+/// without a talk table.
+fn entry_from_talk(exe: Option<&[u8]>, session: Option<&barrel_escha::session::Session>) -> Option<hud::Entry> {
+    use barrel_escha::entry_line::{pick, Draw, Situation};
+    let (s, pe) = (session?, barrel_formats::pe::Pe::parse(exe?).ok()?);
+    let talk = barrel_escha::data::field_talk::read(&pe)?;
+    let map = s.field()?;
+    // A save that does not say who is in the squad: the lead and the other alchemist.
+    let squad: Vec<i32> = if s.squad.is_empty() { vec![0, 1] } else { s.squad.iter().map(|&c| c as i32).collect() };
+    let situation = Situation { map: map as i32, town: (map as usize) < barrel_escha::data::gimmick::TOWN_MAPS, squad: &squad, seen: &s.seen(), said: &[] };
+    let mut rng;
+    let draw = match std::env::var("BARREL_ENTRY_DRAW").ok().and_then(|v| v.parse().ok()) {
+        Some(i) => Draw::Index(i),
+        None => {
+            let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u32);
+            rng = barrel_engine::rng::Rng::seeded(clock);
+            Draw::Rng(&mut rng)
+        }
+    };
+    pick(&talk, &situation, draw).map(|l| hud::Entry { face: l.face, text: l.text.clone() })
+}
+
 /// What the main menu shows of the session; its Container command only in a town, off the maps.
 fn menu_source(session: Option<&barrel_escha::session::Session>, area: Option<bool>) -> Option<overview::Source<'_>> {
     session.map(|s| overview::Source { container: area.is_none() && overview::Source::of(s).container, ..overview::Source::of(s) })
@@ -4510,10 +4533,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         _ => None,
     };
     let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32, Option<(bool, bool)>)>)> = None;
-    // The field's entry message window (the game says a random line when a field is entered,
-    // its table not read yet): `BARREL_ENTRY_LINE` names the line to show in the field,
-    // `BARREL_ENTRY_FACE` the speaker's face (0 Escha, 1 Logy; default 0).
-    let entry_line = std::env::var("BARREL_ENTRY_LINE").ok().map(|text| hud::Entry { face: std::env::var("BARREL_ENTRY_FACE").ok().and_then(|f| f.parse().ok()).unwrap_or(0), text });
+    // The field's entry message window: the line a squad member says on entering a field, chosen
+    // from the executable's field talk (`entry_line::pick`). `BARREL_ENTRY_LINE` names the line
+    // to show instead (`BARREL_ENTRY_FACE` the speaker's face, 0 Escha, 1 Logy; default 0), and
+    // `BARREL_ENTRY_DRAW` takes the candidate at that position in place of the random draw
+    // (the game's generator is seeded by the clock, so its pick differs from run to run).
+    let entry_line = std::env::var("BARREL_ENTRY_LINE")
+        .ok()
+        .map(|text| hud::Entry { face: std::env::var("BARREL_ENTRY_FACE").ok().and_then(|f| f.parse().ok()).unwrap_or(0), text })
+        .or_else(|| entry_from_talk(hud_exe.as_deref(), session.as_ref()));
     // The field's HUD (layout 625); on the maps its date panel and the maps' button lists (636).
     // Not in a battle: the game shows only the battle's own HUD there (the battle recordings).
     if session.is_some() && player.is_none() && battle_play.is_none() && std::env::var("BARREL_NO_HUD").is_err() {

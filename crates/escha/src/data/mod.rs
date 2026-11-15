@@ -8,6 +8,7 @@ pub mod costume;
 pub mod event_check;
 pub mod event_check_codes;
 pub mod event_process;
+pub mod field_talk;
 pub mod font;
 pub mod gather;
 pub mod gimmick;
