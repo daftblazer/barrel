@@ -333,3 +333,5 @@ likely settle them where static reading failed.
   monster's action on a member is held 1 s (Barrel's length, not measured) with "Support Guard"
   bubbles over the others' plates when the gauge holds 50; the game holds it as the monster's
   motion starts, and moves the guard in front of its target (not animated here).
+
+- (2026-11-15) Movies: the colour matrix is BT.709 by the Media Foundation rule for HD video without a colour description (the recording of the original has no movie: Proton failed it). Check against a run of the game where the movie plays. Whether the startup movie can be skipped, and with which buttons, is also unread (Barrel: any).

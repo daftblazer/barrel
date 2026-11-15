@@ -14,6 +14,7 @@ barrel-formats = { path = "../formats" }
 barrel-engine = { path = "../engine" }
 barrel-audio = { path = "../audio" }
 barrel-render = { path = "../render" }
+barrel-movie = { path = "../movie" }
 encoding_rs = "0.8"
 ash = "0.38"
 glam = "0.33"

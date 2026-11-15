@@ -26,6 +26,7 @@ mod hero;
 mod loadlist;
 mod title;
 mod splash;
+mod movie;
 mod screen;
 mod menu;
 mod message;

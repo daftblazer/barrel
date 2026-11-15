@@ -16,6 +16,7 @@ pub mod fsr;
 pub mod glow;
 pub mod fsr3;
 pub mod gsr2;
+pub mod movie;
 pub mod present;
 pub mod renderer;
 pub mod ring;

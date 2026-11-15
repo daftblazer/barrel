@@ -5,7 +5,7 @@
 //! black at 6.08 s, full at 6.62, fading out from 8.62, black at 9.10 as Gust starts fading in
 //! (no gap), Gust full 9.63 to 11.62, black at 12.10. Before them the game shows its Loading
 //! plate while it reads its data (Barrel needs none); after them come the pre-title movie
-//! (`Movie_EN/avantitle.wmv`, not played yet: `docs/escha/open.md`) and the title.
+//! (`Movie_EN/avantitle.wmv`, `crate::movie`) and the title.
 
 use std::path::Path;
 use std::time::Instant;
@@ -40,8 +40,9 @@ pub fn at(t: f32) -> Option<(usize, u8)> {
     Some((logo, (level.clamp(0.0, 1.0) * 255.0).round() as u8))
 }
 
-/// Shows the splashes: in a window until they end (a button skips the rest; whether the game
-/// allows that is open: the recording pressed nothing), offscreen the frame at `shown_at` seconds, written to `out`.
+/// Shows the splashes and the pre-title movie: in a window until they end (a button skips the
+/// rest; whether the game allows that is open: the recording pressed nothing), offscreen the
+/// frame at `shown_at` seconds (into the movie past the logos), written to `out`.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     gpu: &Gpu,
@@ -83,26 +84,35 @@ pub fn run(
             texture: logo,
         }]
     };
+    let movie_at = shown_at - EACH * LOGOS.len() as f32 - MOVIE_GAP;
+    let movie = intro_movie(root);
+    if offscreen.is_some() && movie_at >= 0.0 {
+        if let Some(file) = &movie {
+            crate::movie::play(gpu, pool, target, None, offscreen, file, f64::from(movie_at), out)?;
+        }
+        return Ok(());
+    }
     let mut state = at(shown_at);
     let start = Instant::now();
-    crate::screen::run_with(gpu, pool, target, window, offscreen, &images, &mut state, quads, |_, _: Button| Some(()), &[], out, |s| {
+    let mut window = window;
+    crate::screen::run_with(gpu, pool, target, window.as_mut().map(|(p, w)| (*p, &mut **w)), offscreen, &images, &mut state, quads, |_, _: Button| Some(()), &[], out, |s| {
         *s = at(start.elapsed().as_secs_f32());
         s.is_none().then_some(())
     })?;
-    intro_movie(root);
+    if let (Some(file), Some((p, w))) = (&movie, window) {
+        crate::movie::play(gpu, pool, target, Some((p, w)), None, file, 0.0, None)?;
+    }
     Ok(())
 }
 
-/// The movie slot between the logos and the title: the game plays `Movie_EN/avantitle.wmv`
-/// (96 s, skippable as the game allows) there. Stand-in until the VC-1 and WMA Pro decoders
-/// land (stage 18): it is named in the log and skipped.
-fn intro_movie(root: &Path) {
+/// The movie the slot between the logos and the title plays: `Movie_EN/avantitle.wmv` (96 s).
+fn intro_movie(root: &Path) -> Option<std::path::PathBuf> {
     let x64 = root.join("Data/x64");
     let file = [x64.join("Movie_EN").join(INTRO_MOVIE), x64.join("Movie").join(INTRO_MOVIE)].into_iter().find(|p| p.exists());
-    match file {
-        Some(p) => eprintln!("splash: intro movie {} not played yet (no VC-1 decoder)", p.display()),
-        None => eprintln!("splash: no intro movie {INTRO_MOVIE}"),
+    if file.is_none() {
+        eprintln!("splash: no intro movie {INTRO_MOVIE}");
     }
+    file
 }
 
 #[cfg(test)]
