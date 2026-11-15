@@ -22,7 +22,7 @@
 //! page lists "all items" only), the pages of "Item Info" beyond the first, the effect lines'
 //! values, and equipment's "Equip. Cost".
 
-use barrel_escha::data::layout::{self, Placed};
+use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_formats::pe::Pe;
 
 use crate::basket::{Basket, Item, COLUMNS};
@@ -50,6 +50,9 @@ const OTHER_SECTIONS: u32 = 744;
 const PAGER: u32 = 751;
 const HIDDEN_IN_CARD: [u32; 1] = [OTHER_SECTIONS];
 const BADGES: u32 = 719;
+/// The "Equip. Cost" plate and the seal with its number (inside the badges).
+const COST_PLATE: u32 = 732;
+const COST_SEAL: u32 = 722;
 const NAME: u32 = 733;
 const LEVEL: u32 = 727;
 const EFFECT: u32 = 731;
@@ -86,6 +89,8 @@ const STAT_CAP: f32 = 50.0;
 const PICTURE_PERCENT: i32 = 70;
 /// A line's step in the "Item Info" groups.
 const LINE_STEP: i32 = 36;
+/// The effect lines' ink (stored a, r, g, b), from the capture's "Fire Damage L".
+const EFFECT_INK: [u8; 4] = [0xff, 103, 7, 0];
 /// The groups' lines: properties, effects and traits.
 const GROUPS: [usize; 3] = [2, 4, 3];
 
@@ -213,6 +218,13 @@ fn card(pe: &Pe, l: &Layouts, item: &Item) -> Vec<Element> {
 /// The card without its panel, its layout placed at `origin`, "Item Info" in `pages` pages (the
 /// page turning button shows when there are two or more).
 pub fn card_at(pe: &Pe, l: &Layouts, item: &Item, origin: [i32; 2], pages: i32) -> Vec<Element> {
+    card_with_cost(pe, l, item, origin, pages, None)
+}
+
+/// [`card_at`] for gear, `gear` its (equip cost, uses left): the card also shows the "Equip.
+/// Cost" plate (its second piece, part 0xbf, one cut a cost point), the label, and a seal with
+/// the uses left.
+pub fn card_with_cost(pe: &Pe, l: &Layouts, item: &Item, origin: [i32; 2], pages: i32, gear: Option<(i32, i32)>) -> Vec<Element> {
     let mut out = Vec::new();
     let mut numbers = 0;
     let (mut line, mut bars) = (0, 0);
@@ -238,11 +250,14 @@ pub fn card_at(pe: &Pe, l: &Layouts, item: &Item, origin: [i32; 2], pages: i32) 
                 } else if inside(SECTIONS) {
                     line += 1;
                     line_of(item, line - 1)
-                } else if t.filled_in() || t.text == "Equip. Cost" {
+                } else if t.filled_in() || (t.text == "Equip. Cost" && gear.is_none()) {
                     None
                 } else {
                     Some(t.text.clone())
                 };
+                // The effect lines (the second group) are written in red.
+                let effect_line = inside(SECTIONS) && (GROUPS[0]..GROUPS[0] + GROUPS[1]).contains(&(line - 1));
+                let t = if effect_line { Text { colour: EFFECT_INK, ..t } } else { t };
                 out.extend(text.map(|s| raised(t, &s)));
             }
             (0xbe, 2) if inside(SECTIONS) => {
@@ -274,6 +289,10 @@ pub fn card_at(pe: &Pe, l: &Layouts, item: &Item, origin: [i32; 2], pages: i32) 
                     out.push(Element::Scaled { part: 0xc1, cut, at, percent: PICTURE_PERCENT, about: at });
                 }
             }
+            (0xbe, 17) if inside(COST_PLATE) && gear.is_some() => out.push(Element::stored(&placed)),
+            (0xbf, _) if inside(COST_PLATE) => out.extend(gear.map(|(cost, _)| Element::Sprite { part: 0xbf, cut: (cost - 1).max(0), at })),
+            (0xbc, 13) if inside(COST_SEAL) && gear.is_some() => out.push(Element::stored(&placed)),
+            (0x4f, _) if inside(COST_SEAL) => out.extend(gear.into_iter().flat_map(|(_, uses)| number(pe, &placed, uses))),
             (0xbc, 0) if inside(BADGES) => out.push(Element::stored(&placed)),
             (0xd6, _) if inside(BADGES) => out.push(Element::Scaled { part: 0xd6, cut: item.picture as i32, at, percent: PICTURE_PERCENT, about: at }),
             (0xbc, 1) if inside(NAME) || p.path.len() == 2 => out.push(Element::stored(&placed)),

@@ -38,6 +38,7 @@ mod basketpage;
 mod picker;
 mod statuspage;
 mod battleequip;
+mod adventureequip;
 mod formation;
 mod kit;
 mod assignment;
@@ -3807,7 +3808,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 // In the list's order off a town (it starts at the Basket; 6 is Request).
                 const PAGES: [&str; 9] = ["basket", "picker-adventure", "picker-battle", "formation", "picker-status", "assignment", "request", "journal", "option"];
                 // The pages a picker opens for its first member: the picker's keys and one more confirm.
-                const MEMBER_PAGES: [(&str, &str); 2] = [("status-page", "picker-status"), ("equip-battle", "picker-battle")];
+                const MEMBER_PAGES: [(&str, &str); 3] = [("status-page", "picker-status"), ("equip-battle", "picker-battle"), ("equip-adventure", "picker-adventure")];
                 let member_page = it.clone().next().and_then(|n| MEMBER_PAGES.iter().find(|(m, _)| m == n));
                 if let Some((_, picker)) = member_page {
                     it.next();

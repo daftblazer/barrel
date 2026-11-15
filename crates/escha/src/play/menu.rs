@@ -194,7 +194,7 @@ impl Menu {
         // A picker's confirm opens the member's page (Status, Battle Equip.); Back returns to it.
         use crate::picker::Kind;
         match self.page {
-            Some(Page::Picker(k @ (Kind::Status | Kind::BattleEquip), p)) if b == Button::Confirm => {
+            Some(Page::Picker(k @ (Kind::Status | Kind::BattleEquip | Kind::AdventureEquip), p)) if b == Button::Confirm => {
                 self.page = Some(Page::Member(k, p));
                 return None;
             }
@@ -445,8 +445,29 @@ pub fn run(
         let member = source.and_then(|s| s.party.get(c));
         std::array::from_fn(|k| member.and_then(|m| m.worn[k].as_ref()).and_then(held))
     };
+    // Adventure Equip.: the member's field gear (the battle items they carry).
+    let effect_rows = table("Saves_EN/item/item_effect.xml")?;
+    let adventure_layouts = crate::adventureequip::Layouts::load(&pe);
+    let adventure_words = words_at(crate::adventureequip::HEADER_ROW, crate::adventureequip::FOOTER_ROW);
+    let adventure_worn = |c: usize, name: &str| -> crate::adventureequip::Worn {
+        let gear = source.and_then(|s| s.party.get(c)).map_or_else(Vec::new, |m| {
+            m.battle_items.iter().filter_map(|b| {
+                let got = barrel_escha::gather::Got { item: b.item, quality: b.quality, traits: b.traits.clone() };
+                let mut item = crate::basket::held(&crate::basket::Stock { items: vec![got], limit: 0, container: Vec::new() }, &catalog).pop()?;
+                // The item's effect lines: the names of the item effect rows it carries.
+                item.effects = b.effects.iter().filter_map(|&e| Some(effect_rows.children.get(usize::try_from(e).ok()?)?.attr("ItemEffectName")?.to_string())).collect();
+                let row = item_rows.children.get(usize::try_from(b.item).ok()?)?;
+                Some(crate::adventureequip::Gear { span: row.attr("EquipCost").and_then(|v| v.parse().ok()).unwrap_or(1), uses: b.uses, item })
+            }).collect()
+        });
+        crate::adventureequip::Worn { name: name.into(), gear }
+    };
     let member_elements = |k: crate::picker::Kind, chosen: usize, tick: u32| match k {
         crate::picker::Kind::Status => crate::statuspage::elements(&pe, &status_layouts, &status_words, &party, chosen, lead_character),
+        crate::picker::Kind::AdventureEquip => match party.get(chosen) {
+            Some(m) => crate::adventureequip::elements(&pe, &adventure_layouts, &adventure_words, &adventure_worn(m.face.character as usize, &m.face.name), 0, tick),
+            None => Vec::new(),
+        },
         crate::picker::Kind::BattleEquip => match party.get(chosen) {
             Some(m) => {
                 let w = crate::battleequip::Worn { member: crate::formation::Member { face: m.face.clone(), values: m.values.clone() }, slots: worn_items(m.face.character as usize) };
@@ -490,6 +511,7 @@ pub fn run(
     every.extend(picker_layouts.flips());
     every.extend(formation_layouts.flips());
     every.extend(equip_layouts.flips());
+    every.extend(adventure_layouts.flips());
     for chosen in 0..party.len().max(1) {
         for k in [crate::picker::Kind::AdventureEquip, crate::picker::Kind::BattleEquip, crate::picker::Kind::Status] {
             every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0));
@@ -497,6 +519,7 @@ pub fn run(
         every.extend(formation_elements(&crate::formation::Formation { chosen, count: party.len() }, 0));
         every.extend(member_elements(crate::picker::Kind::Status, chosen, 0));
         every.extend(member_elements(crate::picker::Kind::BattleEquip, chosen, 0));
+        every.extend(member_elements(crate::picker::Kind::AdventureEquip, chosen, 0));
     }
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {

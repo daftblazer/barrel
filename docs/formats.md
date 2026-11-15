@@ -1892,6 +1892,26 @@ The pages a picker's confirm opens (`statuspage.rs`, `battleequip.rs`):
   about 62 ticks of the glow clock to the power 0.75 (a tan of (224, 179, 93)), only roughly:
   the nine captured frames fit to a few per cent, the game's own phase jitters.
 
+- Adventure Equip. (the alchemist's field gear, the `explore_equip` battle items; layout 456 and
+  friends as layout 458 (the Container screen) places them): desk, the grid 456 at [44, 252]
+  (its backdrop, and the empty cells 0x17 cut 2 only of the rows no gear sits in), each piece of
+  gear in the cell layout 450 + its `EquipCost` (451 to 455: strip part 0x18, picture 0xd7, uses
+  part 0x54; a piece's strip is 100 x cost - 4 wide, its middle cut stretched, not tiled) at the
+  grid's next free cell: a row of five takes pieces along it, one that does not fit starts the
+  next row (Escha: Bomb (cost 3, 2 uses), Bomb (3, 0 uses) on the second row, Healing Salve (1, 3
+  uses) after it). The picture is part 0xd7's cut `ImageNo`, drawn at 60 % (the small icon of its
+  category, not the card's picture). Then the name tab 457 at [110, 164] (the member's name for
+  "Name"), the lit piece's frame (0x17 cut 5 to 9 by cost) tinted by a white-to-tan pulse 14 above
+  the cell, the figure 361, the footer (row 29, "Select, Details, Character, Move, Return,
+  Confirm"), the panel at [636, 136] (440 x 820), the card 752 at [620, 146] (the Basket page's
+  card and panel 20 right and 16 up) with "Item Info" one page (the pager reads 1/1, no turning
+  button), the header (row 45), the tab (cut 2) and the cursor glow 74 left and 76 up of the
+  frame. The card for gear adds layout 732 (part 0xbe cut 17 plate with part 0xbf, a15_mix #2:
+  one cut a cost point), the "Equip. Cost" label and, inside the badges 719, the seal 722 (part
+  0xbc cut 13 with a part 0x4f number: the uses left). The effect lines (the second group of
+  "Item Info") are written in red (103, 7, 0): "Fire Damage L" and "Const. Damage L" for a Bomb,
+  the names (`ItemEffectName`) of the unit's `item_effect` rows.
+
 The item grid is layout 456 (placed at [100, 252]; the Container screen, layout 458, shows it
 twice, at x 44 and 480, under the tab layout 457 with "Name" between the LB / RB marks): 25 cells
 in five rows of five, 98 to 104 pixels apart. The plain cell is layout 451: the lit frame (part

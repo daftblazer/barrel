@@ -63,7 +63,13 @@ const PULSE_SHAPE: f32 = 0.75;
 
 /// The chosen slot bar's colour at clock tick `tick`: white to tan.
 fn pulse(tick: u32) -> [u8; 3] {
-    let phase = (tick as f32 - PULSE_WHITE_AT) / PULSE_PERIOD * std::f32::consts::TAU;
+    pulse_with(tick, PULSE_PERIOD, PULSE_WHITE_AT)
+}
+
+/// The same pulse with another period and white tick: a page's pulse starts when it opens, so
+/// each page's phase is its own (the Adventure Equip. page's frame is fitted apart).
+pub fn pulse_with(tick: u32, period: f32, white_at: f32) -> [u8; 3] {
+    let phase = (tick as f32 - white_at) / period * std::f32::consts::TAU;
     let u = ((1.0 - phase.cos()) / 2.0).powf(PULSE_SHAPE);
     TAN.map(|t| ((1.0 - (1.0 - t) * u) * 255.0).round() as u8)
 }
