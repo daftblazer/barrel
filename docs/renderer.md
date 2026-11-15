@@ -866,7 +866,7 @@ or Z to pick, Escape, Backspace or X back). New Game opens the hero choice (`her
 1023: the two profile cards, left and right switch, confirm asks Yes / No with Yes at the left)
 and its Yes starts the new game with that lead, as `--new-game ROOT [--hero logy]`; Load Game opens the save list (`loadlist.rs`, layout 1035) over Barrel's own save
 slots (`barrel_game::saves`: `slotNN.save` in `--saves DIR`, by default
-`$XDG_DATA_HOME/barrel/saves`), and a saved slot loads as `--load FILE`; Options opens the
+`$XDG_DATA_HOME/barrel/escha/saves`), and a saved slot loads as `--load FILE`; Options opens the
 Options screen (the graphics page, as from the main menu) and comes back to the title: a change
 is saved to the config and Barrel starts again in place (the process re-executes itself, at the
 title), since the renderer is built for the settings at its start; Exit Game ends; Dressing Room

@@ -1,6 +1,6 @@
 #!/bin/bash
 # tools/deploy.sh [user@host]: build Barrel and install it as the Kintsugi engine for app 1152310
-# (Escha & Logy DX), or with BARREL_GAME=ryza for app 3365030 (Ryza DX): on this machine, or over SSH on an aarch64 device (cross-built: see
+# (Escha & Logy DX), or with BARREL_GAME=ryza for app 3365030 (Ryza DX), as the engine folder of the one `barrel` program: on this machine, or over SSH on an aarch64 device (cross-built: see
 # tools/package.sh for BARREL_AARCH64_SYSROOT / BARREL_AARCH64_DEPS). Uses Kintsugi's
 # tools/install-engine.sh ($KINTSUGI, else ../../tools/kintsugi). For a password login set
 # SSH_ASKPASS (with SSH_ASKPASS_REQUIRE=force).

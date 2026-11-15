@@ -90,7 +90,7 @@ target/release/barrel-tool g1m-scan "<install>/Data"       # every model
 target/release/barrel-tool g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
-`barrel-escha` is Escha & Logy DX's program (a Kintsugi launch starts it at the title, below);
+`barrel` is the one program that plays the games (it works out which one: `docs/mods.md`, "Running"). `barrel-escha` is Escha & Logy DX's own program, the developer tool (a Kintsugi launch starts `barrel`, below);
 as a tool it draws a model, a field or an event: to PNG files offscreen, or live in a window (`--window FRAMES`). With an event it plays
 it on (`--at`, `--line`, `--frames`, `--fps`) and with `--chain` goes on to the events the story
 starts after it (`docs/renderer.md`).
@@ -115,9 +115,16 @@ Extracted data goes in `work/`, which git ignores. No game data belongs in the r
 
 The name comes from the series' running "Barrel!" joke.
 
+## Playing
+
+`barrel` (`barrel.exe`) finds the game in Steam's libraries and starts it; with both games it
+asks which, with none it asks where the game is. On Linux and Windows alike it runs directly, or
+as Steam launch options `"/path/to/barrel" %command%` (Linux: with any Proton selected). Release
+packages: `tools/package.sh release` (`docs/mods.md` has the details, settings and saves per game).
+
 ## Playing through Steam (Kintsugi)
 
-Barrel runs as a [Kintsugi](https://github.com/daftblazer/kintsugi) engine: in the game's
+Barrel also runs as a [Kintsugi](https://github.com/daftblazer/kintsugi) engine: in the game's
 Properties > Compatibility, force the Kintsugi tool, and Steam starts Barrel at the title screen
 on the game's own files instead of the Windows game. Escha & Logy DX (app 1152310) is wired up;
 Ryza DX (app 3365030) starts Ryza walking Rasenboden from her garden gate (no title or story
@@ -136,10 +143,10 @@ loader, libwayland-client) in `BARREL_AARCH64_SYSROOT` and a prefix with arm64 S
 fullscreen with the handheld preset (`BARREL_DEFAULT_PRESET`, `BARREL_DEFAULT_FULLSCREEN`, used
 only while there is no `~/.config/barrel/graphics.conf`); after that the in-game Options page
 decides. The engine's log is `~/.local/state/barrel/barrel.log`, saves are in
-`~/.local/share/barrel/saves`.
+`~/.local/share/barrel/escha/saves` (older installs: `~/.local/share/barrel/saves`, found as before).
 
 A save from the original game carries over with `barrel import-save INSTALL GAMEDATA00.pcsave >
-~/.local/share/barrel/saves/slot01.save` (the lead, date, money, party and equipment, basket,
+~/.local/share/barrel/escha/saves/slot01.save` (the lead, date, money, party and equipment, basket,
 known items, map progress, field effect, events seen and flags; Barrel starts it in the field of
 the place the party is at, at its arrival spot, where the game opens that place's area map).
 
