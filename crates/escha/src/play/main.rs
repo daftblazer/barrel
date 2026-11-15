@@ -1316,8 +1316,11 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     // Every picture it may show: each member's portrait, the bars.
     let members: Vec<battlehud::Member> = (0..3).map(|k| battlehud::Member { chara: k, hp: (1, 1), mp: (1, 1) }).collect();
     let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
-    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_face, f, Some(1), Some(3), 150)).collect();
+    let every_reserve: Vec<battlehud::Member> = (0..5).map(|chara| battlehud::Member { chara, hp: (1, 1), mp: (1, 1) }).collect();
+    let every_digits = (0..10).map(|cut| hud::Element::Sprite { part: 0xdf, cut, at: [0, 0] });
+    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_reserve, &every_face, f, Some(1), Some(3), 150)).collect();
     every.extend((0..10).map(|cut| hud::Element::Sprite { part: 0xe1, cut, at: [0, 0] }));
+    every.extend(every_digits);
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
     every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
@@ -1391,11 +1394,14 @@ const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
 ///
 /// `members` are the session's party (its save's `member` lines): each fights at its level in
 /// its equipment; without them, at level 1 in the new game's kit.
-fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members: &[barrel_escha::session::Member], scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
+fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members: &[barrel_escha::session::Member], squad: &[usize], scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
     let mut tables = battle_tables(root)?;
     for (c, m) in members.iter().enumerate() {
         tables.equip(c, &m.equipment);
         tables.carry(c, &m.battle_items);
+        if let Some([hp, _, mp, _]) = m.now {
+            tables.current(c, hp, mp);
+        }
     }
     let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
     let mut rng = barrel_engine::rng::Rng::seeded(1);
@@ -1403,7 +1409,10 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
     let sizes: Vec<f32> = drawn.iter().map(|d| d.1).collect();
     // The battle scatters the monsters first: a copy of its generator gives the same spots.
     let spots = barrel_escha::battle::scatter(&sizes, &mut rng.clone());
-    let party = [(usize::from(logy), level(usize::from(logy))), (usize::from(!logy), level(usize::from(!logy)))];
+    // The save's squad fights (at most three, in the order of the plates); without one, the lead
+    // and the other alchemist.
+    let fighters_of: Vec<usize> = if squad.is_empty() { vec![usize::from(logy), usize::from(!logy)] } else { squad.iter().copied().take(3).collect() };
+    let party: Vec<(usize, i32)> = fighters_of.iter().map(|&c| (c, level(c))).collect();
     let monsters: Vec<usize> = drawn.iter().map(|d| d.0).collect();
     // Fought a member's command at a time (`fight_commanded`): up to the first member turn.
     let (outcome, turn) = barrel_escha::auto_battle::fight_commanded(&tables, &party, &monsters, rng, &[])?;
@@ -1415,7 +1424,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
     let facing = |from: [f32; 3], to: [f32; 3]| (to[0] - from[0]).atan2(to[2] - from[2]).to_degrees();
     let mut people: Vec<(usize, [f32; 3], [f32; 3])> = Vec::new();
     let lead = party_spot_of(0);
-    for (k, c) in [usize::from(logy), usize::from(!logy)].into_iter().enumerate() {
+    for (k, &c) in fighters_of.iter().enumerate() {
         let p = party_spot_of(k);
         people.push((c, p, [0.0; 3]));
     }
@@ -1465,6 +1474,14 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         later_hp: Vec::new(),
         now: outcome.start.clone(),
         charas: party.iter().map(|p| p.0).collect(),
+        reserve: squad
+            .iter()
+            .skip(party.len())
+            .filter_map(|&chara| {
+                let [hp, max_hp, mp, max_mp] = members.get(chara)?.now?;
+                Some(battlehud::Member { chara, hp: (hp, max_hp), mp: (mp, max_mp) })
+            })
+            .collect(),
         outcome,
         next: 0,
         time: 0.0,
@@ -1520,6 +1537,8 @@ struct BattlePlay {
     now: Vec<[i32; 4]>,
     /// The party's character numbers (the first fighters).
     charas: Vec<usize>,
+    /// The squad's members who wait in reserve, as their panels show them.
+    reserve: Vec<battlehud::Member>,
     /// What fights the battle again with each new command.
     fight: BattleFight,
     /// The member turn waiting for a command (once the events before it have played).
@@ -2966,6 +2985,8 @@ struct SceneSpec {
     battle_group: Option<i32>,
     /// The saved session a field encounter's battle came from (its `member` lines give the party).
     battle_party: Option<String>,
+    /// A loaded session's party and squad, for a battle `--battle` opens without a carried save.
+    battle_roster: Option<(Vec<barrel_escha::session::Member>, Vec<usize>)>,
     /// `--look-from FIELD`: the look table (`Saves/field/FIELD.xml`) for a field without its
     /// own, as a battle stage (`BF_POINT*`) takes the field area's.
     look_from: Option<String>,
@@ -3019,6 +3040,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         look_from,
         battle_group,
         battle_party,
+        battle_roster,
         args,
         event_spec,
         skeleton_spec,
@@ -3233,11 +3255,15 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let field_dir = Path::new(&args[1]);
         let root = field_dir.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("--battle: the stage is not inside a game install")?.to_path_buf();
         let base = pack_bytes.iter().map(|b| G1t::parse(b).map(|t| t.textures.len())).sum::<std::result::Result<usize, _>>()?;
-        let members = battle_party.as_deref().map(barrel_escha::session::Session::party_in).unwrap_or_default();
+        let (members, squad) = match (battle_party.as_deref(), battle_roster) {
+            (Some(text), _) => (barrel_escha::session::Session::party_in(text), Vec::new()),
+            (None, Some(roster)) => roster,
+            (None, None) => Default::default(),
+        };
         // The vocal song's flag (`EVENT_FLAG_SOUND_QUEST_FLAG`) in the field's save.
         let sound_quest = battle_party.as_deref().is_some_and(|t| t.lines().any(|l| l.split_whitespace().collect::<Vec<_>>() == ["flag", "149", "1"]));
         let stage_instances = scene.instances.len();
-        let (packs, bodies, mut play) = battle_people(&root, group, logy, sound_quest, &members, &mut scene, base, town_bodies.len())?;
+        let (packs, bodies, mut play) = battle_people(&root, group, logy, sound_quest, &members, &squad, &mut scene, base, town_bodies.len())?;
         play.stage_instances = stage_instances;
         pack_bytes.extend(packs);
         town_bodies.extend(bodies);
@@ -3939,6 +3965,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // `BARREL_BATTLE_SAVE=FILE`: an offscreen battle's party from a save (as `--load`
             // gives it, without the save's field drawn round the stage).
             battle_party: carry.back.as_ref().and_then(|b| b.1.save.clone()).or_else(|| std::env::var("BARREL_BATTLE_SAVE").ok().and_then(|f| std::fs::read_to_string(f).ok())),
+            battle_roster: session.as_ref().map(|s| (s.party.clone(), s.squad.clone())),
             args: args.clone(),
             event_spec: event_spec.clone(),
             skeleton_spec: skeleton_spec.clone(),
@@ -6512,7 +6539,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support);
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &play.reserve, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support);
                         if let Some(c) = &commands {
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.

@@ -49,6 +49,8 @@ pub struct Tables {
     /// The battle items each member carries ([`Tables::carry`]), and for each the index of
     /// the session item it was made from.
     held: Vec<Vec<(usize, crate::skirmish::Held)>>,
+    /// Each member's HP and MP at the battle's start when below their maxima ([`Tables::current`]).
+    now: Vec<Option<(i32, i32)>>,
 }
 
 impl Tables {
@@ -101,6 +103,14 @@ impl Tables {
             self.kit.resize(member + 1, [0; 9]);
         }
         self.kit[member] = kit_stats(&self.items, items);
+    }
+
+    /// Member `member` starts its battles with `hp` and `mp` (a save's current values).
+    pub fn current(&mut self, member: usize, hp: i32, mp: i32) {
+        if self.now.len() <= member {
+            self.now.resize(member + 1, None);
+        }
+        self.now[member] = Some((hp, mp));
     }
 
     /// Reads `item_potential.xml` (`potential_xml`), for carried items' traits.
@@ -167,6 +177,7 @@ impl Tables {
             item_names: items.map(|i| i.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect()).unwrap_or_default(),
             traits: Vec::new(),
             held: Vec::new(),
+            now: Vec::new(),
         })
     }
 }
@@ -282,7 +293,9 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
             *cost = crate::battle::support_attack_cost(Some(c));
         }
         member.items = t.held.get(c).map(|h| h.iter().map(|(_, h)| h.clone()).collect()).unwrap_or_default();
-        start.push([block.hp, block.hp, mp, mp]);
+        member.now = t.now.get(c).copied().flatten();
+        let (hp_now, mp_now) = member.now.map_or((block.hp, mp), |(hp, mp_now)| (hp.clamp(0, block.hp), mp_now.clamp(0, mp)));
+        start.push([hp_now, block.hp, mp_now, mp]);
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
     }

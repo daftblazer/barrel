@@ -33,6 +33,20 @@ const SUPPORT_DIGIT_HALF: i32 = 36;
 const PLATE: u32 = 870;
 const PORTRAIT: i32 = 0xf2;
 const PLATE_PARTS: i32 = 0xee;
+const PLATE_FRAME: i32 = 1;
+/// The reserve row (layout 868): a panel for each member of the squad beyond the plates', in the
+/// plates' order: its frame (part 0xee cut 8, the one that starts it), the two bars, the portrait's
+/// ring (cut 0) and the face (part 0x42, the member's number as its cut).
+const RESERVE: u32 = 868;
+const RESERVE_FIRST_CUT: i32 = 8;
+const RESERVE_FIRST: (i32, i32) = (PLATE_PARTS, RESERVE_FIRST_CUT);
+const RESERVE_RING: i32 = 0;
+const RESERVE_FACE: i32 = 0x42;
+const PLATE_RING: i32 = 4;
+/// The plate's HP and MP digits (part 0xdf, cuts 0 to 9, 28 wide), the MP row from y 856.
+const PLATE_DIGITS: i32 = 0xdf;
+const PLATE_DIGIT_ADVANCE: i32 = 28;
+const PLATE_DIGITS_MP_FROM: i32 = 840;
 const HP_BAR: i32 = 11;
 const MP_BAR: i32 = 10;
 /// The plate's first node (its frame), which starts each plate in the placed order.
@@ -41,7 +55,7 @@ const PLATE_FIRST: (i32, i32) = (PLATE_PARTS, 5);
 const COMMAND_ROW: u32 = 887;
 /// Left out: the template command row, the turn order, the reserve row, the state icons, the target panel, the battle
 /// cries' speech bubbles (layout 882: one over each plate, "…!!") and the action banner (885).
-const LEFT_OUT: [u32; 7] = [868, 873, 875, 877, 882, BANNER, COMMAND_ROW];
+const LEFT_OUT: [u32; 6] = [873, 875, 877, 882, BANNER, COMMAND_ROW];
 /// The turn order bar and its slots (layout 860, the 16th the Action slot).
 const TURN_BAR: u32 = 864;
 const SLOT: u32 = 860;
@@ -86,8 +100,10 @@ pub struct Member {
     pub mp: (i32, i32),
 }
 
+/// A bar's fill: the share in whole percent, rounded down (the capture: 24 of 35 HP fills 68
+/// of the bar's 100, 43 of 47 MP 91).
 fn share((now, max): (i32, i32)) -> f32 {
-    if max > 0 { now.clamp(0, max) as f32 / max as f32 } else { 0.0 }
+    if max > 0 { (now.clamp(0, max) * 100 / max) as f32 / 100.0 } else { 0.0 }
 }
 
 /// Where the game draws a group of nodes against the place the layout gives (fitted to the
@@ -119,7 +135,7 @@ pub const FAST_FORWARD_LABELS: [&str; 3] = ["Fast Forward Off", "Fast Forward(x1
 
 /// `marked`: the place in `order` of the target's next turn, while one is being picked.
 /// `next`: the next-turn mark's entry count while a member chooses.
-pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>, support: i32) -> Vec<Element> {
+pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], reserve: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>, support: i32) -> Vec<Element> {
     let mut out = Vec::new();
     // The turn order's slot a node is in (counted as their first nodes come), and that slot's
     // corner (the Action slot's scaling centre).
@@ -128,6 +144,8 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
     // Which plate a node is on (counted as their first nodes come).
     let starts = |p: &&Placed| p.path.last() == Some(&PLATE) && (p.node.part, p.node.cut) == PLATE_FIRST;
     let mut plate: Option<usize> = None;
+    // Which reserve panel a node is on, likewise.
+    let mut reserved: Option<usize> = None;
     for placed in nodes {
         if placed.path.iter().any(|l| LEFT_OUT.contains(l)) {
             continue;
@@ -208,6 +226,20 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 _ => {}
             }
         }
+        if p.path.contains(&RESERVE) {
+            if (n.part, n.cut) == RESERVE_FIRST {
+                reserved = Some(reserved.map_or(0, |k| k + 1));
+            }
+            let Some(m) = reserved.and_then(|k| reserve.get(k)) else { continue };
+            match (n.part, n.cut) {
+                (PLATE_PARTS, RESERVE_FIRST_CUT | RESERVE_RING) => out.push(Element::stored(p)),
+                (PLATE_PARTS, HP_BAR) => out.push(Element::Cropped { part: PLATE_PARTS, cut: HP_BAR, at: p.at, fill: share(m.hp) }),
+                (PLATE_PARTS, MP_BAR) => out.push(Element::Cropped { part: PLATE_PARTS, cut: MP_BAR, at: p.at, fill: share(m.mp) }),
+                (RESERVE_FACE, _) => out.push(Element::Sprite { part: RESERVE_FACE, cut: m.chara as i32, at: p.at }),
+                _ => {}
+            }
+            continue;
+        }
         let on_plate = p.path.contains(&PLATE);
         if starts(&p) {
             plate = Some(plate.map_or(0, |k| k + 1));
@@ -218,8 +250,21 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 (PORTRAIT, _) => out.push(Element::Sprite { part: PORTRAIT, cut: m.chara as i32, at: p.at }),
                 (PLATE_PARTS, HP_BAR) => out.push(Element::Cropped { part: PLATE_PARTS, cut: HP_BAR, at: p.at, fill: share(m.hp) }),
                 (PLATE_PARTS, MP_BAR) => out.push(Element::Cropped { part: PLATE_PARTS, cut: MP_BAR, at: p.at, fill: share(m.mp) }),
-                _ if n.kind == NUMBER_KIND => {}
-                _ => out.push(Element::stored(p)),
+                // The HP and MP numbers (the layout's two digit nodes, HP first), the
+                // digits right-aligned on the node.
+                (PLATE_DIGITS, _) => {
+                    let value = if p.at[1] < PLATE_DIGITS_MP_FROM { m.hp.0 } else { m.mp.0 };
+                    let digits = value.max(0).to_string();
+                    let start = p.at[0] - PLATE_DIGIT_ADVANCE * digits.len() as i32;
+                    for (k, d) in digits.bytes().enumerate() {
+                        out.push(Element::Sprite { part: PLATE_DIGITS, cut: i32::from(d - b'0'), at: [start + PLATE_DIGIT_ADVANCE * k as i32, p.at[1]] });
+                    }
+                }
+                // The frame and the portrait's ring; the rest of the plate (the action
+                // percentage's badge and digits, the flipbooks that mark a member's state) is
+                // not drawn when a member's turn begins.
+                (PLATE_PARTS, PLATE_FRAME | PLATE_RING) => out.push(Element::stored(p)),
+                _ => {}
             }
             continue;
         }
@@ -381,6 +426,7 @@ mod tests {
     #[test]
     fn shares_are_clamped() {
         assert_eq!(share((5, 10)), 0.5);
+        assert_eq!(share((24, 35)), 0.68);
         assert_eq!(share((-3, 10)), 0.0);
         assert_eq!(share((3, 0)), 0.0);
     }

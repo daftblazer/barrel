@@ -65,6 +65,9 @@ pub struct Member {
     pub equipment: [i32; 4],
     /// The battle items it carries (the alchemists' `explore_equip` lists), in order.
     pub battle_items: Vec<BattleItem>,
+    /// Its HP, its most HP, its MP and its most MP (with equipment) now, when the save holds
+    /// them: a battle starts from them.
+    pub now: Option<[i32; 4]>,
 }
 
 /// A carried battle item: the item, its quality, the uses left, its effect rows
@@ -138,6 +141,9 @@ pub struct Session {
     pub money: i32,
     /// The 11 party members by member number, once given their defaults ([`Session::with_party`]).
     pub party: Vec<Member>,
+    /// The members who fight, in the order of the battle's plates (the lead first); empty when
+    /// the save does not say (the lead and the other alchemist fight).
+    pub squad: Vec<usize>,
     /// The items the player has come to know (held at some time: gathered, found, bought), as
     /// the area map's gatherable list shows them (the others are "????").
     known: std::collections::BTreeSet<i32>,
@@ -160,12 +166,12 @@ pub struct Session {
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -205,7 +211,7 @@ impl Session {
     /// already holds keep their own.
     pub fn with_party(mut self, defaults: &[crate::data::battle_data::PartyDefault]) -> Session {
         for d in defaults.iter().skip(self.party.len()) {
-            self.party.push(Member { level: 1, experience: 0, equipment: d.equipment, battle_items: Vec::new() });
+            self.party.push(Member { level: 1, experience: 0, equipment: d.equipment, battle_items: Vec::new(), now: None });
         }
         self
     }
@@ -508,7 +514,7 @@ impl Session {
                     return None;
                 }
                 let kit: Vec<i32> = w[4].split(',').filter_map(|v| v.parse().ok()).collect();
-                Some(Member { level: w[2].parse().ok()?, experience: w[3].parse().ok()?, equipment: kit.try_into().ok()?, battle_items: Vec::new() })
+                Some(Member { level: w[2].parse().ok()?, experience: w[3].parse().ok()?, equipment: kit.try_into().ok()?, battle_items: Vec::new(), now: None })
             })
             .collect::<Vec<_>>();
         for l in text.lines() {
@@ -526,7 +532,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -547,7 +553,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -699,7 +705,7 @@ impl Session {
                     }
                     let kit: Vec<i32> = w.get(4).ok_or_else(|| bad(line))?.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect::<Result<_, _>>()?;
                     let equipment: [i32; 4] = kit.try_into().map_err(|_| bad(line))?;
-                    party.push(Member { level: num(2)? as i32, experience: num(3)? as i32, equipment, battle_items: Vec::new() });
+                    party.push(Member { level: num(2)? as i32, experience: num(3)? as i32, equipment, battle_items: Vec::new(), now: None });
                 }
                 "carry" => {
                     let item = BattleItem::parse(&w[2.min(w.len())..]).ok_or_else(|| bad(line))?;
@@ -751,7 +757,7 @@ impl Session {
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state, taken, rank }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, squad: Vec::new(), known, opened, worn, visited, field_gauge, field_state, taken, rank }, at))
     }
 
     /// A session from either save format, by its bytes: Barrel's text (it starts `barrel-save`)
@@ -799,6 +805,7 @@ impl Session {
                 level: m.level,
                 experience: m.exp,
                 equipment: m.equipment,
+                now: Some([m.hp, m.equipped[0], m.mp, m.equipped[1]]),
                 battle_items: sum.battle_items.get(m.character as usize).into_iter().flatten().map(BattleItem::from_unit).collect(),
             })
             .collect();
@@ -847,6 +854,7 @@ impl Session {
                 logy: sum.hero == Some(1),
                 money: sum.money.ok_or_else(|| missing("money"))?.clamp(0, MAX_MONEY),
                 party,
+                squad: sum.squad.iter().filter_map(|&c| usize::try_from(c).ok()).collect(),
                 known,
                 opened,
                 worn,
@@ -998,7 +1006,7 @@ mod tests {
         // Item 0 a material, 1 Escha's staff, 2 Logy's sword, 3 an accessory for all.
         let items = [ItemRow { equip: false, stats: [0; 9], slots: &[], wearers: 0 }, row(&[0], 1), row(&[0], 2), row(&[2, 3], 0x7ff)];
         let mut s = Session::in_field(chain(), 3, false);
-        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], battle_items: Vec::new() }];
+        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], now: None, battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], battle_items: Vec::new(), now: None }];
         s.basket = [0, 1, 3].iter().map(|&item| crate::gather::Got { item, quality: 60.0, traits: Vec::new() }).collect();
         assert!(s.equip(0, 0, 0, &items).is_err(), "a material is no weapon");
         assert!(s.equip(1, 0, 1, &items).is_err(), "Escha's staff is not Logy's");
