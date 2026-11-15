@@ -1,0 +1,8 @@
+[package]
+name = "barrel-files"
+description = "Barrel's layered game files, mods, and the search for the game's install"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
