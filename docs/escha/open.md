@@ -155,7 +155,8 @@ likely settle them where static reading failed.
   scene's motions (motion and `CharaDiv` division, switched as the scene sets them, blended over
   Barrel's 0.15 s rather than the command's blend); `s9` (motion speed: 120, 125, 150 % in
   Escha's attack) is not applied, so the motions run at 100 % while the waits use their
-  lengths; the HP plates still drop at the scene's start. The `s1` handler is not read (marker 0 = a hit is from the data).
+  lengths; the target's HP plate drops a share at each hit (from what it showed before, so an
+  overkill does not bump it up first). The `s1` handler is not read (marker 0 = a hit is from the data).
 
 ## Synthesis
 

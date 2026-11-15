@@ -1406,6 +1406,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         scenes,
         scene: None,
         later: Vec::new(),
+        later_hp: Vec::new(),
         now: outcome.start.clone(),
         charas: party.iter().map(|p| p.0).collect(),
         outcome,
@@ -1502,6 +1503,8 @@ struct BattlePlay {
     scene: Option<ActionScene>,
     /// Motions held for a scene's hit: when, the fighter, the column.
     later: Vec<(f32, usize, &'static str)>,
+    /// HP plates held for a scene's hits: when, the fighter, its HP then.
+    later_hp: Vec<(f32, usize, i32)>,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1979,6 +1982,11 @@ impl BattlePlay {
                 }
             }
         }
+        let hp_due: Vec<(usize, i32)> = self.later_hp.iter().filter(|l| l.0 <= now).map(|l| (l.1, l.2)).collect();
+        self.later_hp.retain(|l| l.0 > now);
+        for (k, hp) in hp_due {
+            self.set(k, 0, hp);
+        }
         let due: Vec<(usize, &'static str)> = self.later.iter().filter(|l| l.0 <= now).map(|l| (l.1, l.2)).collect();
         self.later.retain(|l| l.0 > now);
         for (k, column) in due {
@@ -2021,8 +2029,11 @@ impl BattlePlay {
         }
         self.next += 1;
         use barrel_escha::fight::Event;
+        // The target's HP plate before this event (what a scene's hits take it down from).
+        let mut hp_was = 0;
         match event {
             Event::Acted { who, target, hp_left, mp_left, .. } | Event::Healed { who, target, hp_left, mp_left, .. } => {
+                hp_was = self.now.get(target).map_or(hp_left, |v| v[0]);
                 self.set(target, 0, hp_left);
                 self.set(who, 2, mp_left);
             }
@@ -2079,8 +2090,11 @@ impl BattlePlay {
         }
         match event {
             // In a scene, split over its hits as they land (the last takes what rounding left).
-            Event::Acted { target, damage, .. } if damage > 0 => match self.scene_hits() {
+            // Its HP plate likewise drops a part at each hit, from what it had before.
+            Event::Acted { target, damage, hp_left, .. } if damage > 0 => match self.scene_hits() {
                 Some(hits) => {
+                    let before = hp_was;
+                    self.set(target, 0, before);
                     let mut left = damage;
                     for (k, &(at, share)) in hits.iter().enumerate() {
                         let part = if k + 1 == hits.len() { left } else { (damage * share / 100).min(left) };
@@ -2088,6 +2102,8 @@ impl BattlePlay {
                         if part > 0 {
                             self.numbers.push((target, -part, at));
                         }
+                        let hp = if k + 1 == hits.len() { hp_left } else { (before - (damage - left)).max(hp_left) };
+                        self.later_hp.push((at, target, hp));
                     }
                 }
                 None => self.numbers.push((target, -damage, self.time)),

@@ -6,7 +6,7 @@
 //! The result is the scene sampled each frame: where the actor and the target stand and face,
 //! and the camera, for the battle playback to show in place of its own camera and placement.
 
-use barrel_engine::stage::{Measures, Playback, Snapshot, Stage, FRAME};
+use barrel_engine::stage::{Measures, Playback, Snapshot, Stage};
 use barrel_formats::ebd::{Ebd, OperandTable};
 use std::collections::BTreeMap;
 
@@ -48,7 +48,7 @@ pub struct Scene {
 /// a single strike, `Skill_MONSTER_WARDOG_00_0` two); marker 2 (24 uses) is not read.
 const SET_MARKER: u32 = 0x7300_0001;
 
-/// The scene a frame ([`FRAME`]) apart, from its start to its last step, at most `limit`
+/// The scene a frame ([`barrel_engine::stage::FRAME`]) apart, from its start to its last step, at most `limit`
 /// seconds. `motion_length` gives a motion's length (character, motion, division), for the
 /// event's waits on a motion's end; without it those waits take no time.
 pub fn play(
@@ -98,6 +98,7 @@ pub fn play(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use barrel_engine::stage::FRAME;
 
     /// Escha's attack (`Skill_PARTY_ESCHA_0`) on a monster at the stage centre (given the
     /// party's facing, as [`Cast`] says): she
