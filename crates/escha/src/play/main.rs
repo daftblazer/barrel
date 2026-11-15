@@ -1368,6 +1368,10 @@ struct BattleHud {
     shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>, Option<String>, Option<(i32, i32)>, i32, Vec<usize>)>,
     /// The command row's flipbook cut that list was built with (`battlehud::flip_step`).
     flip: usize,
+    /// When the command row opened (the battle's clock), its chosen place then, and whether the
+    /// cursor has moved since; and the card turn's frame that list was built with.
+    row: Option<(f32, usize, bool)>,
+    turn: Option<u32>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1388,7 +1392,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
     for (chosen, step) in (0..2).flat_map(|c| (0..battlehud::FLIPBOOK_CUTS).map(move |s| (c, s))) {
-        let (places, marks) = battlehud::command_row(&all_commands, chosen, step);
+        let (places, marks) = battlehud::command_row(&pe, &all_commands, chosen, step, None);
         every.extend(places.into_iter().chain(marks));
     }
     let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
@@ -1425,7 +1429,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     }
     let size = images[0].width as f32;
     let layer = text::Layer::new(gpu, pool, pass, &images)?;
-    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, bubble_nodes, rate_nodes, result_nodes, field_nodes, exe, shown: None, flip: 0 })
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, bubble_nodes, rate_nodes, result_nodes, field_nodes, exe, shown: None, flip: 0, row: None, turn: None })
 }
 
 /// How long an offscreen run shows a won battle's Result screen before going back.
@@ -6640,11 +6644,19 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let bubbles = play.support_plates();
         // The command row's flipbooks (diamond, arrows) turn with the battle's clock.
         let flip = battlehud::flip_step(play.time);
+        // The row's card turn: from the row's opening, held edge-on until the cursor moves.
+        let chosen = commands.as_ref().filter(|c| !c.row.is_empty()).map(|c| c.at);
+        h.row = match (chosen, h.row) {
+            (Some(at), None) => Some((play.time, at, false)),
+            (Some(at), Some((t, first, moved))) => Some((t, first, moved || at != first)),
+            (None, _) => None,
+        };
+        let turn = h.row.filter(|r| !r.2).map(|(t, ..)| (((play.time - t) * battlehud::TURN_RATE) as u32).min(battlehud::TURN_FRAMES));
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
         if (h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone(), rate, play.support, bubbles.clone()))
-            || (h.flip != flip && commands.as_ref().is_some_and(|c| !c.row.is_empty())))
+            || ((h.flip != flip || h.turn != turn) && commands.as_ref().is_some_and(|c| !c.row.is_empty())))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
                 let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
@@ -6652,7 +6664,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     None => {
                         // The game's row, drawn among the HUD's parts; the skills' list and the
                         // target's name still Barrel's own text.
-                        let row = commands.as_ref().filter(|c| !c.row.is_empty()).map(|c| battlehud::command_row(&c.row, c.at, flip)).unwrap_or_default();
+                        let row = commands.as_ref().filter(|c| !c.row.is_empty()).map(|c| battlehud::command_row(&pe, &c.row, c.at, flip, turn)).unwrap_or_default();
                         let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &play.reserve, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support, row);
                         if let Some(c) = &commands {
                             if let Some(plate) = &c.plate {
@@ -6687,6 +6699,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
                 h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers, banner, rate, play.support, bubbles));
                 h.flip = flip;
+                h.turn = turn;
             }
     }
     // Offscreen, the frames written to files (with --save-every, only some): only those are

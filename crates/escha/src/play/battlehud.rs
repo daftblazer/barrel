@@ -413,14 +413,56 @@ pub fn flip_step(time: f32) -> usize {
     (time * FLIPBOOK_RATE) as usize % FLIPBOOK_CUTS
 }
 
+/// The first stage of a card turn: the chosen place's dark frame and diamond turn edge-on, 0 to
+/// 3 px wide and about 1.4 times as tall, their v flipped, and the game holds them so while
+/// the row waits (battle-open capture, escha-recomp `scenarios/battle-open`: the row's quads
+/// appear at frame 3267, the pieces settle by 3278 and stay until the A press at 3300).
+///
+/// Each key is the pieces' rectangles (frame, diamond: left, top, right, bottom on the
+/// 1920 x 1080 screen) at that many frames after the row opened, read off the capture's every
+/// second frame (3268, 3270 ... 3278 are 1, 3, ... 11); the first key is the line back from
+/// the next two to the rest place. The game's own curve is not read (the layout's node words
+/// carry no such spec), so it is fitted between the keys.
+const TURN_KEYS: [(u32, [i32; 4], [i32; 4]); 7] = [
+    (0, [706, 587, 796, 692], [691, 568, 811, 711]),
+    (1, [710, 587, 792, 692], [696, 567, 814, 712]),
+    (3, [719, 581, 783, 698], [708, 560, 801, 721]),
+    (5, [725, 578, 777, 701], [717, 556, 793, 726]),
+    (7, [735, 575, 767, 705], [730, 552, 778, 732]),
+    (9, [745, 574, 756, 707], [744, 550, 763, 736]),
+    (11, [752, 574, 749, 707], [753, 550, 753, 737]),
+];
+/// The turn's frames at the game's 60 a second, and the frame it holds from.
+pub const TURN_RATE: f32 = 60.0;
+pub const TURN_FRAMES: u32 = TURN_KEYS[TURN_KEYS.len() - 1].0;
+/// The row node's x the keys' rectangles belong to (the capture's four commands, first place).
+const TURN_NODE_X: i32 = 653;
+
+/// The frame's and the diamond's rectangles `frames` after the row opened (held after the last
+/// key) for the place whose node is at `node_x`.
+fn turn_rects(frames: u32, node_x: i32) -> ([i32; 4], [i32; 4]) {
+    let shift = node_x - TURN_NODE_X;
+    let at = |r: [i32; 4]| [r[0] + shift, r[1], r[2] + shift, r[3]];
+    let k = TURN_KEYS.iter().position(|key| key.0 >= frames).unwrap_or(TURN_KEYS.len() - 1);
+    if k == 0 || TURN_KEYS[k].0 <= frames {
+        let (_, f, d) = TURN_KEYS[k];
+        return (at(f), at(d));
+    }
+    let (a, b) = (&TURN_KEYS[k - 1], &TURN_KEYS[k]);
+    let t = (frames - a.0) as f32 / (b.0 - a.0) as f32;
+    let mix = |x: [i32; 4], y: [i32; 4]| [0, 1, 2, 3].map(|i| (x[i] as f32 + (y[i] - x[i]) as f32 * t).round() as i32);
+    (at(mix(a.1, b.1)), at(mix(a.2, b.2)))
+}
+
 /// The command row: `commands` (icon cuts) in their places, the chosen one on the diamond
 /// (layout 857) with the arrows either side and its label on a plate below (858), the others
 /// in their dark frames (855).
 ///
 /// The diamond and the arrows are nodes of kind 36, a flipbook of word 5 cuts from the node's
 /// (4: the diamond cuts 2 to 5, the arrows 6 to 9 and 10 to 13); `step` is the clock's step
-/// ([`flip_step`]), taken modulo the cuts.
-pub fn command_row(commands: &[i32], chosen: usize, step: usize) -> (Vec<Element>, Vec<Element>) {
+/// ([`flip_step`]), taken modulo the cuts. `turn` is the frames since the row opened while the
+/// chosen place is still in the card turn's first stage ([`TURN_KEYS`]), else `None`.
+pub fn command_row(pe: &barrel_formats::pe::Pe, commands: &[i32], chosen: usize, step: usize, turn: Option<u32>) -> (Vec<Element>, Vec<Element>) {
     let step = (step % FLIPBOOK_CUTS) as i32;
     let n = commands.len().clamp(1, MAX_COMMANDS);
     // The places in order, drawn before the field information; the chosen one's arrows and
@@ -431,7 +473,24 @@ pub fn command_row(commands: &[i32], chosen: usize, step: usize) -> (Vec<Element
         let c = commands[k];
         let node = [(ROW_CENTRE_X - ROW_CENTRE[0] as f32 + ROW_PITCH * (k as f32 - (n - 1) as f32 / 2.0)).round() as i32, ROW_Y];
         let at = |x: i32, y: i32| [node[0] + x, node[1] + y];
-        if k == chosen {
+        let edge_on = turn.filter(|_| k == chosen).and_then(|frames| {
+            let flipped = |cut: i32, rect: [i32; 4]| {
+                let p = barrel_escha::data::layout::sprite(pe, ROW_PARTS, cut, [0, 0])?;
+                let [l, t, r, b] = p.src.map(f32::from);
+                Some(Element::Slice { pack: p.texture, index: p.index, src: [l, b, r, t], rect })
+            };
+            let (frame, diamond) = turn_rects(frames, node[0]);
+            Some((flipped(0, frame)?, flipped(2 + step, diamond)?))
+        });
+        if let Some((frame, diamond)) = edge_on {
+            places.push(frame);
+            places.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
+            marks.push(diamond);
+            marks.push(Element::Sprite { part: ROW_PARTS, cut: 6 + step, at: at(-12, 20) });
+            marks.push(Element::Sprite { part: ROW_PARTS, cut: 10 + step, at: at(154, 20) });
+            marks.push(Element::Sprite { part: LABEL, cut: 9, at: at(4, 100) });
+            marks.push(Element::Sprite { part: LABEL, cut: c, at: at(48, 112) });
+        } else if k == chosen {
             places.push(Element::Sprite { part: ROW_PARTS, cut: 2 + step, at: at(96 - 66, 50 - 72) });
             places.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
             marks.push(Element::Sprite { part: ROW_PARTS, cut: 6 + step, at: at(-12, 20) });
