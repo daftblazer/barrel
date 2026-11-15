@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 pub const ACTOR: u32 = 10000;
 /// The events' number for the fighter acted on.
 pub const TARGET: u32 = 10001;
+/// The victory scenes' poser (`SKILL_COMMON_SYSTEM_WIN_PC20_01` ...).
+pub const WINNER: u32 = 10002;
 
 /// A fighter as the scene starts: where it stands, its facing (radians about the vertical axis,
 /// 0 towards +z) and its character's measures (`Chara.xml`; the points the events aim at).
@@ -55,10 +57,16 @@ const SET_MARKER: u32 = 0x7300_0001;
 /// The scene a frame ([`barrel_engine::stage::FRAME`]) apart, from its start to its last step, at most `limit`
 /// seconds. `motion_length` gives a motion's length (character, motion, division), for the
 /// event's waits on a motion's end; without it those waits take no time.
-pub fn play(
+pub fn play(event: &Ebd, actor: Cast, target: Cast, curves: &BTreeMap<u32, barrel_engine::curve::Curve>, motion_length: Option<barrel_engine::event::MotionLength<'_>>, limit: f32, origin: [f32; 3]) -> Result<Scene, String> {
+    play_cast(event, &[(ACTOR, actor), (TARGET, target)], ACTOR, curves, motion_length, limit, origin)
+}
+
+/// [`play`] with any cast (`(number, cast)`: the victory scenes name their poser 10002), the
+/// motions followed being `mover`'s.
+pub fn play_cast(
     event: &Ebd,
-    actor: Cast,
-    target: Cast,
+    cast: &[(u32, Cast)],
+    mover: u32,
     curves: &BTreeMap<u32, barrel_engine::curve::Curve>,
     motion_length: Option<barrel_engine::event::MotionLength<'_>>,
     limit: f32,
@@ -81,7 +89,7 @@ pub fn play(
         .collect();
     let mut measures = BTreeMap::new();
     let mut stage = Stage { curves: curves.clone(), ..Stage::default() };
-    for (who, c) in [(ACTOR, actor), (TARGET, target)] {
+    for &(who, c) in cast {
         stage.apply(&barrel_engine::event::Step::Place { action: 0, character: who, position: local(c.position) });
         if let Some(b) = stage.characters.get_mut(&who) {
             b.facing = c.facing;
@@ -92,7 +100,7 @@ pub fn play(
     }
     stage.measures = measures;
     let mut play = Playback::new(stage, steps);
-    let motion = |p: &Playback| p.stage.characters.get(&ACTOR).and_then(|b| b.motion);
+    let motion = |p: &Playback| p.stage.characters.get(&mover).and_then(|b| b.motion);
     let snapshot = |p: &Playback| {
         let mut s = p.stage.snapshot();
         for c in s.characters.values_mut() {
