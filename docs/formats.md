@@ -2172,5 +2172,10 @@ are the standard matrix's), +128 and clamping. Checked against ffmpeg with its l
 a frame on one PC core unoptimized. With PQINDEX ≤ 2 the loop filter changes nothing; from 3 on
 it does. The I-picture loop filter (`vc1_loop::intra_plane`, 8.6.1 and 8.6.4: every inner 8 × 8
 edge, horizontal edges first, 4-pixel segments led by their third pair, C's truncating division)
-makes key frames 3, 30, 50 and 70 bit-exact with ffmpeg's full decode. PQINDEX 4 / 5 frames also
-need overlap smoothing (CONDOVER by `OVERFLAGS`).
+makes key frames 3, 30, 50 and 70 bit-exact with ffmpeg's full decode. Overlap smoothing (8.5:
+on the signed 10-bit reconstruction before +128 and clamping, vertical edges then horizontal, the
+4-tap core with rounding (4, 3) / (3, 4) by odd / even row or column; every edge at PQUANT ≥ 9 or
+CONDOVER 10b, with 11b inner luma edges of flagged macroblocks and edges between two flagged ones)
+then runs before the loop filter. All 79 of `avantitle`'s key frames (10 of them smoothed by
+`OVERFLAGS`, PQINDEX 4 and 5) are bit-exact with ffmpeg, 11 to 30 ms each (median 22) on one PC
+core, unoptimized.

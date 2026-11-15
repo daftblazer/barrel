@@ -170,6 +170,11 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
     let mut cb = vec![Neighbour::default(); cols * rows];
     let mut cr = vec![Neighbour::default(); cols * rows];
     let mut mode3: Option<(u32, u32)> = None;
+    // The 10-bit reconstruction, kept signed for overlap smoothing (8.5), and each macroblock's
+    // overlap flag.
+    let (w, cw) = (out.width, out.width / 2);
+    let mut res = [vec![0i16; w * out.height], vec![0i16; cw * out.height / 2], vec![0i16; cw * out.height / 2]];
+    let mut over = vec![false; cols * rows];
     for my in 0..rows {
         for mx in 0..cols {
             // CBPCY and its prediction from the neighbouring luma blocks' coded status.
@@ -186,9 +191,11 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
                 Bitplane::Raw => b.bit(),
                 p => p.get(mx, my, cols).unwrap(),
             };
-            if header.cond_over == Some(2) && matches!(header.over_flags, Some(Bitplane::Raw)) {
-                b.bit(); // OVERFLAGMB: kept for overlap smoothing, not done yet.
-            }
+            over[my * cols + mx] = match (header.cond_over, &header.over_flags) {
+                (Some(2), Some(Bitplane::Raw)) => b.bit(),
+                (Some(2), Some(p)) => p.get(mx, my, cols).unwrap(),
+                _ => false,
+            };
             for k in 0..6 {
                 let (grid, gw, gx, gy) = match k {
                     0..=3 => (&mut luma, lw, 2 * mx + (k & 1), 2 * my + (k >> 1)),
@@ -318,13 +325,13 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
                 }
                 let r = inverse_8x8(&d);
                 let (plane, stride, px, py) = match k {
-                    0..=3 => (&mut out.y, out.width, mx * 16 + (k & 1) * 8, my * 16 + (k >> 1) * 8),
-                    4 => (&mut out.u, out.width / 2, mx * 8, my * 8),
-                    _ => (&mut out.v, out.width / 2, mx * 8, my * 8),
+                    0..=3 => (&mut res[0], w, mx * 16 + (k & 1) * 8, my * 16 + (k >> 1) * 8),
+                    4 => (&mut res[1], cw, mx * 8, my * 8),
+                    _ => (&mut res[2], cw, mx * 8, my * 8),
                 };
                 for y in 0..8 {
                     for x in 0..8 {
-                        plane[(py + y) * stride + px + x] = (r[y * 8 + x] + 128).clamp(0, 255) as u8;
+                        plane[(py + y) * stride + px + x] = r[y * 8 + x] as i16;
                     }
                 }
             }
@@ -333,7 +340,62 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
     if b.over() {
         return Err(Error("macroblocks run out".into()));
     }
+    // Overlap smoothing (8.5.2): every edge when PQUANT ≥ 9 or CONDOVER is 10b; with 11b, edges
+    // inside a flagged macroblock's luma and edges between two flagged macroblocks.
+    let all = header.pquant >= 9 || header.cond_over == Some(1);
+    if all || header.cond_over == Some(2) {
+        let flag = |mx: usize, my: usize| all || over[my * cols + mx];
+        // Luma: an edge at x (or y) belongs to macroblock x / 16, an inner one when x % 16 == 8.
+        overlap(&mut res[0], w, out.height, |x0, y0, x1, y1| flag(x0 / 16, y0 / 16) && flag(x1 / 16, y1 / 16));
+        for plane in res[1..].iter_mut() {
+            overlap(plane, cw, out.height / 2, |x0, y0, x1, y1| flag(x0 / 8, y0 / 8) && flag(x1 / 8, y1 / 8));
+        }
+    }
+    for (plane, dst) in res.iter().zip([&mut out.y, &mut out.u, &mut out.v]) {
+        for (d, &v) in dst.iter_mut().zip(plane) {
+            *d = (v as i32 + 128).clamp(0, 255) as u8;
+        }
+    }
     Ok(())
+}
+
+/// Overlap smoothing of one plane: the vertical edges, then the horizontal ones, each pixel
+/// pair straddling an 8 × 8 edge between `(x0, y0)` and `(x1, y1)` filtered when `smooth` says
+/// so. The core filter: y0 = (7·x0 + x3 + r0) / 8, y1 = (−x0 + 7·x1 + x2 + x3 + r1) / 8,
+/// y2 = (x0 + x1 + 7·x2 − x3 + r0) / 8, y3 = (x0 + 7·x3 + r1) / 8, with (r0, r1) = (4, 3) on
+/// odd rows / columns of the block counted from 1, (3, 4) on even ones.
+fn overlap(px: &mut [i16], width: usize, height: usize, smooth: impl Fn(usize, usize, usize, usize) -> bool) {
+    let core = |x: [i32; 4], odd: bool| -> [i16; 4] {
+        let (r0, r1) = if odd { (4, 3) } else { (3, 4) };
+        [
+            ((7 * x[0] + x[3] + r0) >> 3) as i16,
+            ((-x[0] + 7 * x[1] + x[2] + x[3] + r1) >> 3) as i16,
+            ((x[0] + x[1] + 7 * x[2] - x[3] + r0) >> 3) as i16,
+            ((x[0] + 7 * x[3] + r1) >> 3) as i16,
+        ]
+    };
+    for x in (8..width).step_by(8) {
+        for y in 0..height {
+            if !smooth(x - 1, y, x, y) {
+                continue;
+            }
+            let i = y * width + x;
+            let v = core([px[i - 2] as i32, px[i - 1] as i32, px[i] as i32, px[i + 1] as i32], y % 2 == 0);
+            px[i - 2..i + 2].copy_from_slice(&v);
+        }
+    }
+    for y in (8..height).step_by(8) {
+        for x in 0..width {
+            if !smooth(x, y - 1, x, y) {
+                continue;
+            }
+            let i = y * width + x;
+            let v = core([px[i - 2 * width] as i32, px[i - width] as i32, px[i] as i32, px[i + width] as i32], x % 2 == 0);
+            for (k, val) in v.into_iter().enumerate() {
+                px[i + k * width - 2 * width] = val;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
