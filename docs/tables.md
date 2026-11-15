@@ -2581,8 +2581,8 @@ Decoded from the 14 hits (words are 32-bit, counted from the object's start):
 | Offset (word) | Fighter object |
 |---|---|
 | +0x74 (29) | -1 for a monster, the member's slot for a party member (0 to 2 here) |
-| +0x80 (32) | 1 while on the battle; +0x84 (33) 1 for the fighter whose turn it is |
-| +0x88 (34) | the 35 battle stats of "Battle stats", as they stand: level, HP, MP, max HP, max MP, attack, defence, speed (words 34 to 41), the four element resistances (42 to 45: fire, water, wind, earth), 46 the ailment resistance, 47 critical chance (5), 48 critical bonus (25), 51 passive-skill stat |
+| +0x80 (32) | 1 (+0x84 (33): 1 for the acting fighter in these hits, not confirmed) |
+| +0x88 (34) | the 35 battle stats of "Battle stats", as they stand: level, HP, MP, max HP, max MP, attack, defence, speed (words 34 to 41), the four element resistances (42 to 45: fire, water, wind, earth), 46 the ailment resistance, 47 critical chance (5), 48 critical bonus (25) |
 | +0x114 (69) | the same stats with no states (the same layout; HP and MP as at battle start) |
 
 Resistances here are the in-use block's stats 5 to 8 (`equipment::STATS`) shifted by 3, and for
