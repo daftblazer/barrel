@@ -611,9 +611,11 @@ mod tests {
         let mut rng = Rng::seeded(3);
         let attack = Skill { name: "Attack".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: 10, max: 10, min2: 0, max2: 0 }], description: String::new() };
         let e = b.act(0, &attack, None, 1, &mut rng);
-        let Some(Event::Rate { who: 0, rate }) = e.iter().find(|e| matches!(e, Event::Rate { .. })).cloned() else { panic!("{e:?}") };
+        let Some(Event::Rate { who: 0, rate, support }) = e.iter().find(|e| matches!(e, Event::Rate { .. })).cloned() else { panic!("{e:?}") };
         // Slot 3 does not face sector 1 (slot 4 does): a flank, 25; a critical adds 10.
         assert!(rate == 30 || rate == 40, "{rate}");
+        // The gauge from its start: 25 for a single target, 37 on a critical.
+        assert!(support == 125 || support == 137, "{support}");
     }
 
     #[test]
