@@ -126,6 +126,11 @@ pub struct Outcome {
 }
 
 impl Outcome {
+    /// The party ran from the battle (no winner, no defeat).
+    pub fn escaped(&self) -> bool {
+        self.events.iter().any(|e| matches!(e, Event::Ran { escaped: true, .. }))
+    }
+
     /// What happened, a line per event and one for the end.
     pub fn lines(&self) -> Vec<String> {
         let name = |k: &usize| self.names.get(*k).map_or("?", String::as_str);
@@ -134,6 +139,7 @@ impl Outcome {
             .iter()
             .map(|e| match e {
                 Event::Felled { who, skill, target } => format!("{} uses {skill} on {}: felled", name(who), name(target)),
+                Event::Ran { who, chance, escaped } => format!("{} runs ({chance}%): {}", name(who), if *escaped { "got away" } else { "could not escape" }),
                 Event::Poisoned { who, damage, hp_left } => format!("{} takes {damage} poison damage ({hp_left} HP left)", name(who)),
                 Event::Acted { who, skill, target, damage, hp_left, .. } => format!("{} uses {skill} on {}: {damage} damage ({hp_left} HP left)", name(who), name(target)),
                 Event::Healed { who, skill, target, amount, hp_left, .. } => format!("{} uses {skill} on {}: heals {amount} ({hp_left} HP)", name(who), name(target)),
@@ -142,6 +148,7 @@ impl Outcome {
         out.push(match self.winner {
             Some(0) => "the party wins".into(),
             Some(_) => "the monsters win".into(),
+            None if self.escaped() => "the party ran away".to_string(),
             None => format!("no winner after {} events", self.events.len()),
         });
         out
@@ -262,7 +269,7 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
     let mut s = crate::skirmish::Skirmish::new(members, foes, sizes, rules, rng);
     let mut events = Vec::new();
     let mut given = commands.iter();
-    while events.len() < MAX_EVENTS && s.winner().is_none() {
+    while events.len() < MAX_EVENTS && s.winner().is_none() && !s.battle.escaped {
         let (who, start) = s.begin_turn();
         events.extend(start);
         if !s.can_act(who) {

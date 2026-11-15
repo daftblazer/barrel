@@ -306,7 +306,8 @@ the target (left and right among the standing monsters, its name right of centre
 the list of skills it may use (up and down, their MP costs, those it cannot pay for grey; Enter
 then to the target); Enter on the target gives it, Back goes a step back (offscreen
 `BARREL_BATTLE_KEYS`, a key a frame while a turn waits: `confirm,confirm` attacks the first
-monster). Move, Wait, Change and Run are not given yet. The battle is then fought
+monster). Wait and Run are given (Run: `fight::Battle::run_turn`; escaped, the battle ends and
+goes back to the field with no spoils and no lost day); Move and Change are not yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same
 generator and commands always give the same battle, so what was played stays) up to the next
 member turn. Not yet the game's: the list (the game's command layout is not identified), no

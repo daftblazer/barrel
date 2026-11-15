@@ -136,6 +136,8 @@ pub enum Event {
     Healed { who: usize, skill: String, target: usize, amount: i32, hp_left: i32, mp_left: i32 },
     /// An instant-death effect felled the target.
     Felled { who: usize, skill: String, target: usize },
+    /// A fighter tried to run (the Run command); `escaped` ends the battle.
+    Ran { who: usize, chance: i32, escaped: bool },
 }
 
 pub struct Battle {
@@ -143,6 +145,10 @@ pub struct Battle {
     pub timeline: Timeline,
     /// The pending wait change of `0x1401b9b70` (global 0x141077e54).
     pending: i32,
+    /// The battle's tries to run so far (global `0x141077dcc`).
+    tries: i32,
+    /// A run succeeded (`0x141077e30`): the battle is over without a winner.
+    pub escaped: bool,
 }
 
 impl Battle {
@@ -154,13 +160,36 @@ impl Battle {
         let mut order: Vec<u32> = (0..fighters.len() as u32).collect();
         order.sort_by_key(|&k| std::cmp::Reverse(fighters[k as usize].stats[stat::SPEED]));
         let timeline = Timeline::setup(&order);
-        Battle { fighters, timeline, pending: -1 }
+        Battle { fighters, timeline, pending: -1, tries: 0, escaped: false }
     }
 
     /// `who` waits (the Wait command, `BtlCharaActionWait`): nothing happens but its next wait,
     /// [`battle::WAIT_COMMAND`] taken as an action's (its execute only plays a pose).
     pub fn wait_turn(&mut self, who: usize, rng: &mut Rng) {
         self.end_action(who, battle::WAIT_COMMAND, rng);
+    }
+
+    /// `who` tries to run (the Run command, `BtlCharaActionEscape`, execute `0x1401ba560`): a
+    /// chance roll on its speed less the action's value plus 60, and 30 more for each try after
+    /// the third. The action's value, read live, is the fastest standing enemy's speed (19 with
+    /// enemies of 19, 19, 15 and 15: the first enemy's would fit as well, `docs/escha/open.md`).
+    /// The actor's trait 0x82 bonus is not added: Barrel's fighters do not carry traits yet.
+    /// Escaped, the battle ends; else the try takes Run's wait ([`battle::RUN_COMMAND`]).
+    pub fn run_turn(&mut self, who: usize, rng: &mut Rng) -> Event {
+        let side = self.fighters[who].side;
+        let top = self.fighters.iter().filter(|f| f.side != side && !f.down()).map(|f| f.stats[stat::SPEED]).max().unwrap_or(0);
+        let mut chance = self.fighters[who].stats[stat::SPEED] - top + 60;
+        if self.tries > 3 {
+            chance += 30 * (self.tries - 3);
+        }
+        let escaped = rng.chance(chance);
+        self.tries += 1;
+        if escaped {
+            self.escaped = true;
+        } else {
+            self.end_action(who, battle::RUN_COMMAND, rng);
+        }
+        Event::Ran { who, chance, escaped }
     }
 
     /// The pending wait change (`action_wait`'s `pending`), as the next action would find it.
@@ -489,6 +518,28 @@ mod tests {
 
     fn block(hp: i32) -> StatBlock {
         StatBlock { level: 10, hp, attack: 30, defense: 0, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() }
+    }
+
+    #[test]
+    fn run_rolls_speed_less_the_fastest_enemy_plus_60() {
+        let mut blocks = [block(100), block(100), block(100)];
+        blocks[0].speed = 18;
+        blocks[1].speed = 19;
+        blocks[2].speed = 15;
+        let mut b = Battle::new(vec![Fighter::new(&blocks[0], 0, 999), Fighter::new(&blocks[1], 1, 999), Fighter::new(&blocks[2], 1, 999)]);
+        let mut rng = Rng::seeded(7);
+        // Katla's live case: speed 18 against a top enemy speed of 19 → 59
+        match b.run_turn(0, &mut rng) {
+            Event::Ran { chance, .. } => assert_eq!(chance, 59),
+            e => panic!("{e:?}"),
+        }
+        // after three tries each one adds 30
+        b.escaped = false;
+        b.tries = 5;
+        match b.run_turn(0, &mut rng) {
+            Event::Ran { chance, .. } => assert_eq!(chance, 59 + 60),
+            e => panic!("{e:?}"),
+        }
     }
 
     #[test]

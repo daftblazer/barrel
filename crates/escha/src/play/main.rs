@@ -1428,7 +1428,7 @@ enum Choosing {
 }
 
 /// The command row a member's turn shows (the battle-stats recording: Katla's Attack, Skill,
-/// Move, Wait, Change and Run). Move, Change and Run are not given yet.
+/// Move, Wait, Change and Run). Move and Change are not given yet.
 const COMMAND_ROW: [i32; 6] = {
     use battlehud::command::*;
     [ATTACK, SKILL, MOVE, WAIT, CHANGE, RUN]
@@ -1521,6 +1521,7 @@ impl BattlePlay {
                 battlehud::command::ATTACK => self.choosing = Choosing::Target { skill: None },
                 battlehud::command::SKILL if !turn.skills.is_empty() => self.choosing = Choosing::Skill,
                 battlehud::command::WAIT => self.give(barrel_escha::auto_battle::Command::Wait),
+                battlehud::command::RUN => self.give(barrel_escha::auto_battle::Command::Run),
                 c => eprintln!("battle: command {c} is not given yet"),
             },
             (Choosing::Skill, Up) => self.chosen = (self.chosen + skills - 1) % skills,
@@ -1651,12 +1652,15 @@ impl BattlePlay {
             }
             Event::Felled { target, .. } => self.set(target, 0, 0),
             Event::Poisoned { who, hp_left, .. } => self.set(who, 0, hp_left),
+            // the run's motion is not played yet
+            Event::Ran { .. } => {}
         }
         let (who, target, fell) = match event {
             Event::Acted { who, target, hp_left, .. } => (Some(who), Some(target), hp_left <= 0),
             Event::Healed { who, target, .. } => (Some(who), Some(target).filter(|&t| t != who), false),
             Event::Felled { who, target, .. } => (Some(who), Some(target), true),
             Event::Poisoned { who, hp_left, .. } => (None, Some(who), hp_left <= 0),
+            Event::Ran { .. } => (None, None, false),
         };
         if let Some(w) = who {
             self.play(bodies, w, "ATTACK00");
@@ -4751,7 +4755,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 // Over and lost: a day passes in the field's save, and the lead's line from the
                 // game's wipe (not yet shown on screen: the console).
-                if play.over() && !won && !play.lost_noted
+                // Run away: no spoils and no defeat, straight back to the field.
+                if play.over() && !won && !play.lost_noted && !play.outcome.escaped()
                     && let Some(save) = carry.back.as_mut().and_then(|b| b.1.save.as_mut()) {
                         *save = barrel_escha::session::Session::lost_in_save(save);
                         play.lost_noted = true;

@@ -88,6 +88,7 @@ pub fn duel(a: &Fighter, b: &Fighter, rng: &mut Rng, max_hits: usize) -> Vec<Hit
         Event::Healed { who, skill, amount, hp_left, .. } => Hit { attacker: *who, skill: skill.clone(), damage: -*amount, hp_left: *hp_left },
         // Felled outright: shown as damage of 0 with no HP left.
         Event::Felled { who, skill, .. } => Hit { attacker: *who, skill: skill.clone(), damage: 0, hp_left: 0 },
+        Event::Ran { .. } => unreachable!("a duel has no Run command"),
     };
     while hits.len() < max_hits {
         let who = battle.next();

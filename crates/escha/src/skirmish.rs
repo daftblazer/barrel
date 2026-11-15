@@ -122,6 +122,8 @@ pub enum Command {
     Skill { skill: usize, target: usize },
     /// The Wait command: no action, its wait only.
     Wait,
+    /// The Run command: a try to leave the battle.
+    Run,
 }
 
 /// A skirmish fought a turn at a time: whoever's turn comes ([`Skirmish::begin_turn`]) acts
@@ -258,6 +260,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             }
             Command::Skill { target, .. } | Command::Attack { target } => events.extend(self.battle.act(who, member.attack, None, valid(target), rng)),
             Command::Wait => self.battle.wait_turn(who, rng),
+            Command::Run => events.push(self.battle.run_turn(who, rng)),
         }
         let mut all = events;
         let from = 0;

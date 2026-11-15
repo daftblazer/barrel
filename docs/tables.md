@@ -579,7 +579,8 @@ the battle at +0x10) with **+0x38 = 19**, the monsters' top speed (or the first 
 also 19). So for the player, chance = speed - the enemies' top speed + 60 (Katla, speed 18:
 59%). Escha (speed 13, 54%) failed: tries went 0 → 1, her +0x2f4 was set to 1 and cleared again
 when her action ended. The per-character command record at +0x208 does not hold the player's
-command (it stayed all zero).
+command (it stayed all zero). `fight::Battle::run_turn` does the above (without the trait 0x82
+bonus: Barrel's fighters carry no traits yet); `Command::Run` from the battle's Run row.
 
 ### Falling and guts (executable)
 
