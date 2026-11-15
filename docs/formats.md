@@ -2186,3 +2186,12 @@ standard prints them and checked prefix-free; MV differential tables 246–249 g
 1,229 of `avantitle`'s P headers read: mostly mixed 1-MV / 4-MV (`MVTYPEMB`), every other mode
 too (1-MV quarter-pel, half-pel bicubic, half-pel bilinear), intensity compensation in 4, MVRANGE 0
 or 1, all four MV and CBP tables, transforms both per frame (TTFRM) and per macroblock.
+
+P motion vectors (`barrel_movie::vc1_mv`, 8.3.5.2 to 8.3.5.4): MVDATA's joint code (Figure 50:
+index + 1, 37 and up "more present", 35 the fixed-length escape of k_x / k_y bits by MVRANGE,
+36 intra), the preliminary predictor from candidates A (above), B, C (left) by Figures 51 to 53
+(out-of-frame candidates drop out, intra ones count as zero), the pull-back that keeps a pixel of
+the referenced block inside the frame, HYBRIDPRED (needed when the predictor strays more than 32
+quarter-pels from A or C), `smod` wrapping, and the colour-difference vectors (1-MV halving with
+rounding table {0, 0, 0, 1}; 4-MV from the median of the inter blocks' vectors, intra when 3 or 4
+are intra; FASTUVMC rounding toward zero). Unit-tested; not yet checked on movie frames.
