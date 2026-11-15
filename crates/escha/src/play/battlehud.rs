@@ -13,7 +13,8 @@
 //!
 //! Not yet the game's: the plates in the layout's order (the first the lead's: the centre one),
 //! a plate's bars cut to the member's share of HP and MP; the reserve row, the
-//! state icons (layouts 873, 875), the plates' numbers (kind 28), the action banner and the
+//! state icons (layouts 873, 875), the plates' numbers (kind 28), the action banner (drawn on
+//! its own, `banner`) and the
 //! target panel left out; the Support gauge as stored (0).
 
 use barrel_escha::data::layout::{Placed, Text};
@@ -30,7 +31,7 @@ const MP_BAR: i32 = 10;
 const PLATE_FIRST: (i32, i32) = (PLATE_PARTS, 5);
 /// Left out: the turn order, the reserve row, the state icons, the target panel, the battle
 /// cries' speech bubbles (layout 882: one over each plate, "…!!") and the action banner (885).
-const LEFT_OUT: [u32; 6] = [868, 873, 875, 877, 882, 885];
+const LEFT_OUT: [u32; 6] = [868, 873, 875, 877, 882, BANNER];
 /// The turn order bar and its slots (layout 860, the 16th the Action slot).
 const TURN_BAR: u32 = 864;
 const SLOT: u32 = 860;
@@ -389,4 +390,42 @@ mod number_tests {
         assert!(percent > 140 && alpha < 60, "{percent} {alpha}");
         assert!(number(-5, [0, 0], NUMBER_SECONDS).is_empty());
     }
+}
+
+/// The action banner (layout 885, nested in 886 at (690, 180)): the plate part 0xf8 (node kind
+/// 19, 450 wide as stored: cut 0 the left end 144 wide, cut 1 a 48-wide middle, cut 2 the right
+/// end 212 wide, 72 high) with the action's name (size 33, its node at (116, 14)). The game
+/// places and sizes it in code (not read); measured on the ruins-entrance-battle-result
+/// recording (104, 112 and 133 s: "Attack", "Neck Hunt", "Charge"): drawn at half size, centred
+/// at x 640 with its top at y 122, 36 high, as wide as the name plus 206 (268, 310, 276), the
+/// middle stretched; the name centred on it. It shows while the action plays.
+pub const BANNER: u32 = 885;
+const BANNER_PART: i32 = 0xf8;
+const BANNER_CENTRE: i32 = 640;
+const BANNER_TOP: i32 = 122;
+const BANNER_SCALE: f32 = 0.5;
+const BANNER_PAD: f32 = 206.0;
+/// The name's size and its drop from the top: measured ("Attack" 62 wide, "Neck Hunt" 103,
+/// "Charge" 68, its middle at y 137), not the node's 33 halved (16.5 draws "Attack" 46 wide).
+pub const BANNER_TEXT_SIZE: f32 = 22.0;
+const BANNER_TEXT_DROP: i32 = 4;
+/// How long the banner stays up for an action (seconds; Barrel plays an action a step).
+pub const BANNER_SECONDS: f32 = 1.4;
+
+/// The banner for action `name`; `width` is the name's width at [`BANNER_TEXT_SIZE`] on the
+/// 1920 × 1080 screen.
+pub fn banner(pe: &barrel_formats::pe::Pe, name: &str, width: f32) -> Vec<Element> {
+    let total = (width + BANNER_PAD).round() as i32;
+    let left = BANNER_CENTRE - total / 2;
+    let piece = |cut: i32| barrel_escha::data::layout::sprite(pe, BANNER_PART, cut, [0, 0]);
+    let (Some(l), Some(m), Some(r)) = (piece(0), piece(1), piece(2)) else { return Vec::new() };
+    let size = |p: &barrel_escha::data::layout::Piece| ((f32::from(p.src[2] - p.src[0]) * BANNER_SCALE).round() as i32, (f32::from(p.src[3] - p.src[1]) * BANNER_SCALE).round() as i32);
+    let ((lw, h), (rw, _)) = (size(&l), size(&r));
+    let slice = |p: &barrel_escha::data::layout::Piece, x0: i32, x1: i32| Element::Slice { pack: p.texture.clone(), index: p.index, src: p.src.map(f32::from), rect: [x0, BANNER_TOP, x1, BANNER_TOP + h] };
+    vec![
+        slice(&l, left, left + lw),
+        slice(&m, left + lw, left + total - rw),
+        slice(&r, left + total - rw, left + total),
+        Element::Label(Text { at: [BANNER_CENTRE, BANNER_TOP + BANNER_TEXT_DROP], size: BANNER_TEXT_SIZE, colour: [0; 4], text: name.to_string(), kind: 22 }),
+    ]
 }

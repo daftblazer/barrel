@@ -242,3 +242,8 @@ likely settle them where static reading failed.
   the heal and MP colours (part 0xe2's pink row, the purple rows of picture 1) and when the
   big grey italic row (0xe1, layout 883) and layout 927 (a number on a panel with a word,
   likely the chain count) are used.
+
+- The action banner (layout 885): the code that places and sizes it (Barrel uses the
+  recording's place and size: half size, centred at x 640, top 122, name + 206 wide, name size
+  22), when it comes up and goes within an action, and whether Run, Move, Wait or items show
+  it (Barrel: skills, attacks and items only).

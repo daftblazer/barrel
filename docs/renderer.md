@@ -315,7 +315,10 @@ the next sector round (`fight::Battle::move_turn`). Wait and Run are given (Run:
 goes back to the field with no spoils and no lost day); Change is not yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same
 generator and commands always give the same battle, so what was played stays) up to the next
-member turn. A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
+member turn. Each action's name stands in the action banner under the turn bar while it plays
+(`battlehud::banner`: layout 885's plate, part 0xf8, at half size, centred at x 640, top 122,
+the name's width plus 206 wide; measured on the ruins-entrance-battle-result recording, the
+game places it in code). A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
 number (`battlehud::number`: part 0xe0's white brush digits, sign first, 36 apart and centred,
 fading in over 0.1 s from 160% to full size by 0.2 s, gone after 1 s; measured on the
 ruins-entrance-battle-result recording at 149.8 s), 100 units above the fighter's place.
