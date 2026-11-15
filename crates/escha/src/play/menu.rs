@@ -115,6 +115,7 @@ pub enum Page {
     Status,
     Basket(crate::basket::Basket),
     Assignment(crate::assignment::Assignment),
+    Journal(crate::journal::Journal),
 }
 
 /// Where a shortcut opens the menu: on a page, or on the Option list alone (the area map's RB,
@@ -147,6 +148,7 @@ impl Menu {
             Start::Page(Page::Status) => c == Command::Status,
             Start::Page(Page::Basket(_)) => c == Command::Basket,
             Start::Page(Page::Assignment(_)) => c == Command::Assignment,
+            Start::Page(Page::Journal(_)) => c == Command::Journal,
             Start::System => c == Command::Option,
         });
         let chosen = chosen.unwrap_or(0);
@@ -178,6 +180,7 @@ impl Menu {
             Some(Page::Status) => b == Button::Back,
             Some(Page::Basket(basket)) => basket.press(b, count),
             Some(Page::Assignment(a)) => a.press(b),
+            Some(Page::Journal(j)) => j.press(b),
             None => return self.press_list(b),
         };
         if close {
@@ -213,6 +216,7 @@ impl Menu {
                 Command::Status => self.page = Some(Page::Status),
                 Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
                 Command::Assignment => self.page = Some(Page::Assignment(crate::assignment::Assignment::default())),
+                Command::Journal => self.page = Some(Page::Journal(crate::journal::Journal::default())),
                 c => return Some(Outcome::Command(c)),
             },
         }
@@ -353,6 +357,14 @@ pub fn run(
     let cursor = screen_layouts.cursor;
     let page_words = crate::basketpage::Words { header: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/SysInfo.xml")?, "Text").get(crate::basketpage::HEADER_ROW).cloned().unwrap_or_default(), footer: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/Menu_Line_Help.xml")?, "LineHelp").get(crate::basketpage::FOOTER_ROW).cloned().unwrap_or_default() };
     let basket_elements = |b: &crate::basket::Basket, tick: u32| crate::basketpage::elements(&pe, &page_layouts, &page_words, b, &items, empty, tick);
+    // The Journal page: its tabs, with the badges when the save has library marks clear.
+    let journal_layouts = crate::journal::Layouts::load(&pe);
+    let journal_words = crate::journal::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::journal::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::journal::FOOTER_ROW).cloned().unwrap_or_default(),
+    };
+    let library_new = source.is_some_and(|s| s.library_new);
+    let journal_elements = |j: &crate::journal::Journal, tick: u32| crate::journal::elements(&pe, &journal_layouts, &journal_words, j, library_new, tick);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
         let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
@@ -381,6 +393,7 @@ pub fn run(
     every.extend(crate::kit::flip_elements(&nodes));
     every.extend(page_layouts.flips());
     every.extend(assignment_layouts.flips());
+    every.extend(journal_layouts.flips());
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
         for chosen in 0..COMMANDS.len() {
@@ -395,6 +408,9 @@ pub fn run(
     }
     for chosen in 0..25 {
         every.extend(assignment_elements(&crate::assignment::Assignment { chosen }, 0));
+    }
+    for chosen in 0..crate::journal::ROWS {
+        every.extend(journal_elements(&crate::journal::Journal { chosen }, 0));
     }
     // Every task icon, plain and lit.
     every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
@@ -417,6 +433,7 @@ pub fn run(
             Some(Page::Status) => status_elements(&texts),
             Some(Page::Basket(b)) => basket_elements(&b, m.tick),
             Some(Page::Assignment(a)) => assignment_elements(&a, m.tick),
+            Some(Page::Journal(j)) => journal_elements(&j, m.tick),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
         };

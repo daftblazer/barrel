@@ -37,6 +37,7 @@ mod basket;
 mod basketpage;
 mod kit;
 mod assignment;
+mod journal;
 mod battlehud;
 mod result;
 mod shopping;
@@ -3794,14 +3795,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // of the point's region, Enter enters the field of the point she stands on.
             "--area-map" => area_mode = true,
             "--requests" => requests_mode = true,
-            // --menu [basket|assignment]: the page too, opened as the game does (Down to the
-            // command, A; off a town the list starts at the Basket).
+            // --menu [basket|assignment|journal|option]: the page too, opened as the game does
+            // (Down to the command, A; off a town the list starts at the Basket).
             "--menu" => {
                 menu_mode = true;
-                if let Some(page) = it.clone().next().filter(|n| matches!(n.as_str(), "basket" | "assignment")) {
+                if let Some(page) = it.clone().next().filter(|n| matches!(n.as_str(), "basket" | "assignment" | "journal" | "option")) {
                     it.next();
                     menu_page_keys = match page.as_str() {
                         "basket" => "confirm",
+                        "journal" => "down,down,down,down,down,down,down,confirm",
+                        "option" => "down,down,down,down,down,down,down,down,confirm",
                         _ => "down,down,down,down,down,confirm",
                     };
                 }
