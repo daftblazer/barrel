@@ -49,12 +49,42 @@ struct LumaBlock {
     intra: Option<IntraState>,
 }
 
+/// Figure 67: the luma and colour-difference lookup tables of intensity compensation from
+/// LUMSCALE and LUMSHIFT.
+pub fn intensity_luts(lumscale: u8, lumshift: u8) -> ([u8; 256], [u8; 256]) {
+    let (scale, shift) = (lumscale as i32, lumshift as i32);
+    let (i_scale, i_shift) = if scale == 0 {
+        (-64, 255 * 64 - shift * 2 * 64 + if shift > 31 { 128 * 64 } else { 0 })
+    } else {
+        (scale + 32, if shift > 31 { shift * 64 - 64 * 64 } else { shift * 64 })
+    };
+    let (mut y, mut uv) = ([0u8; 256], [0u8; 256]);
+    for i in 0..256i32 {
+        y[i as usize] = ((i_scale * i + i_shift + 32) >> 6).clamp(0, 255) as u8;
+        uv[i as usize] = ((i_scale * (i - 128) + 128 * 64 + 32) >> 6).clamp(0, 255) as u8;
+    }
+    (y, uv)
+}
+
 /// Decodes a P picture from `reference` into `out`. `fast_uvmc` is the entry point's FASTUVMC.
 #[allow(clippy::too_many_arguments)]
 pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols: usize, rows: usize, coded: (usize, usize), fast_uvmc: bool, reference: &Picture, out: &mut Picture) -> Result<(), Error> {
-    if h.intensity.is_some() {
-        return Err(Error("intensity compensation: not supported yet".into()));
-    }
+    // Intensity compensation (8.3.8): the reference remapped through LUTs first.
+    let remapped;
+    let reference = match h.intensity {
+        Some((scale, shift)) => {
+            let (luty, lutuv) = intensity_luts(scale, shift);
+            remapped = Picture {
+                width: reference.width,
+                height: reference.height,
+                y: reference.y.iter().map(|&p| luty[p as usize]).collect(),
+                u: reference.u.iter().map(|&p| lutuv[p as usize]).collect(),
+                v: reference.v.iter().map(|&p| lutuv[p as usize]).collect(),
+            };
+            &remapped
+        }
+        None => reference,
+    };
     let mut b = Bits::new(data);
     b.skip(h.mb_start as u32);
     let mquant = h.pquant as i32;

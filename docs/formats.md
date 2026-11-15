@@ -2217,5 +2217,7 @@ previous anchor, the reference repeated past the coded 1920 × 1080 edge. `avant
 208 anchor pictures (I, P and skipped, loop filter off on both sides) are bit-exact with ffmpeg
 (`-skip_frame noref -skip_loop_filter all -fps_mode passthrough`; without passthrough ffmpeg's
 command line repeats frames to fill the skipped B pictures' slots, which once looked like a
-decoder bug), P pictures in 5 to 12 ms on one PC core. The 209th uses intensity compensation
-(8.3.8), not done yet; nor are the P loop filter (8.6.2) and P overlap smoothing (PQUANT ≥ 9).
+decoder bug), P pictures in 5 to 12 ms on one PC core. Intensity compensation (8.3.8, Figure
+67: LUMSCALE / LUMSHIFT lookup tables applied to a copy of the reference) is in; with it all
+1,447 anchors of `avantitle` are bit-exact (about 40 s for the whole run against ffmpeg's
+stream). Not done yet: the P loop filter (8.6.2) and P overlap smoothing (PQUANT ≥ 9).
