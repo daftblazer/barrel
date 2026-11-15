@@ -339,15 +339,16 @@ fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
             continue;
         }
         let ps_cb = e["ps_cb"].get("0").and_then(Value::as_str).and_then(|h| t.blob(h).ok()).map(|b| floats(&b)).unwrap_or_default();
-        // The 2D pixel shaders' constants scale the colour: HdrRangeInv the colour, fAlphaRate
-        // the alpha (a fade). Folded in, so the colour is what reaches the screen.
+        // The 2D pixel shaders' constants: fAlphaRate scales the alpha (a fade) and is folded
+        // in; HdrRangeInv scales the colour into the HDR target's range and the final pass
+        // scales it back, so it is not.
         let ps = t.blob(&s("ps")).unwrap_or_default();
         let (mut rgb_k, mut a_k) = (1.0f32, 1.0f32);
         if let Ok(p) = dxbc::program(&ps) {
             for v in p.buffers.iter().filter(|b| b.name == "$Globals").flat_map(|b| &b.variables) {
                 let val = ps_cb.get(v.offset as usize / 4).copied().unwrap_or(1.0);
                 match v.name.as_str() {
-                    "HdrRangeInv" => rgb_k = val,
+                    "HdrRangeInv" => rgb_k = 1.0f32.min(val / val),
                     "fAlphaRate" => a_k = val,
                     _ => {}
                 }
@@ -397,11 +398,17 @@ fn text_runs(qs: Vec<Q>, g: Option<&Glyphs>) -> Vec<Q> {
         let c = g.at.get(&key).copied().unwrap_or('?');
         if let Some(last) = out.last_mut().filter(|l| l.text.is_some() && close(&l.color, &q.color, 0.002)) {
             let h = (last.rect[3] - last.rect[1]).max(1.0);
+            // a space's glyph is a small blank lower on the line: it joins the run it follows
+            if c == ' ' && (q.rect[0] - last.rect[2]).abs() < h {
+                last.text.as_mut().unwrap().push(' ');
+                last.rect[2] = last.rect[2].max(q.rect[2]);
+                continue;
+            }
             let overlap = q.rect[1] < last.rect[3] && q.rect[3] > last.rect[1];
             let gap = q.rect[0] - last.rect[2];
             if overlap && gap > -h * 0.5 && gap < h * 2.0 {
                 let t = last.text.as_mut().unwrap();
-                if gap > h / 3.0 {
+                if gap > h / 3.0 && !t.ends_with(' ') {
                     t.push(' ');
                 }
                 t.push(c);

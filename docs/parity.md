@@ -26,8 +26,18 @@ A diff of the two says where Barrel differs, without pixels and without judging 
    The exit status is 0 when nothing differs. Draws that read a render target (the copy to
    the back buffer, post effects) and 3D draws are counted, not compared.
 
-`barrel-parity screen <capture dir> <frame> [index.tsv]` lists a captured frame's draws.
+`tools/parity.sh <capture dir> <game frame> <barrel-escha arguments...>` does steps 3 and 4 for
+one offscreen Barrel frame (exit status 0 when nothing differs).
+
+`barrel-parity quads <capture dir> <frame> [index.tsv]` lists a captured frame's 2D rectangles
+and text as the diff sees them. `barrel-parity screen <capture dir> <frame> [index.tsv]` lists a captured frame's draws.
 `barrel-parity shader <capture dir> <name>` disassembles a captured shader.
+
+The game's 2D pixel shaders scale alpha by `fAlphaRate` (folded into the compared colour) and
+colour by `HdrRangeInv` (not folded: the final pass undoes it). Fully transparent rectangles
+and rectangles covered by a later opaque one (the index marks fully opaque textures) are
+dropped. Font glyphs become text runs, read through the game's glyph table (the index's
+`glyph` lines), so text compares as strings with their box.
 
 The game's pixel shaders take constants the vertex colour does not show (`ps_cb`, printed with
 each game-side difference). Reading what they do is part of matching a screen.
