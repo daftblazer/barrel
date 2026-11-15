@@ -628,8 +628,13 @@ is u · (1 + ease/100 · (1 − u)): ease 100 (1,487 of the `t4`s) slows to a st
 battle command of the skill-list entry it acts with (the entry's +8, `0x14032d0b0`): 0 the
 attack, 1 to 3 the skills, 4 the AC special, 8 Support Attack, 9 Support Guard (each member's are
 all there; the passives 5 and 6 have none, and 7, 10 and 13 have no file: those actions, and the
-files numbered 11 to 26, come another way, not read). A monster's is its tag (`0x1401118c0`,
-e.g. `MONSTER_WARDOG_00`) and a number its caller gives (not read); a third path takes a whole
+files numbered 11 to 26, come another way, not read). A monster's comes first from a table of whole names (`0x140111dc0` on the
+table at `0x140d34810`, 0x30 bytes a monster: by monster, stat block and the action's place in
+the block's skill list) — the same names each stat block's skills carry
+(`battle_data::StatBlock::skills`, e.g. the Ore Rat's Ram `Skill_MONSTER_ROCKRAT_00_0`, Throw
+Stone `_1`; `auto_battle::Tables::monster_event`); only without one is it its tag
+(`0x1401118c0`) and that number in the same format. Common monsters share their family's events
+(`ROCKRAT`, `WARDOG`, ...). a third path takes a whole
 name (format `0x140803730`). `battle::party_skill_event`.
 
 The skill events place their actors from one another: `s4` with anchor kind 5 (1,241 uses)

@@ -146,7 +146,7 @@ likely settle them where static reading failed.
 - **Skill scenes' frame.** Which rotation a battle character's +0x880 object has (taken as
   the party's facing towards the monsters for any target); how a monster's skill event names
   its actor and target and which way its offsets turn; what characters 10002+ beyond the
-  stand-ins are. In play every member action on commands 0 to 4, 8 and 9 plays its scene
+  stand-ins are. In play every member action on commands 0 to 4, 8 and 9 plays its scene, and every monster action whose stat block names an event (`Tables::monster_event`, the first block with the skill: the block the fighter is at is not used)
   (`auto_battle::Tables::command_of`); a skill's (High Strike, `Skill_PARTY_LOGY_1`, 6.5 s:
   close-ups on Logy, a leap, the strike) has no recording to compare against yet, and its
   battle-screen commands are not done (`r14` a screen tint `{r, g, b, a, …}`, `r20`, `r4`

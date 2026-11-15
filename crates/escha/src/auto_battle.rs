@@ -52,6 +52,21 @@ pub struct Tables {
 }
 
 impl Tables {
+    /// The skill scene monster `monster`'s action named `skill` plays: the event its stat block
+    /// gives that skill (`battle_data::StatBlock::skills`, e.g. the Ore Rat's Ram
+    /// `skill/Skill_MONSTER_ROCKRAT_00_0.ebd`), from the first block that has it. The executable
+    /// takes the same names from the table at `0x140d34810` (`0x140111dc0`: monster, block, the
+    /// action's place in the block's list).
+    pub fn monster_event(&self, monster: usize, skill: &str) -> Option<&str> {
+        self.monsters
+            .get(monster)?
+            .blocks
+            .iter()
+            .flat_map(|b| b.skills.iter())
+            .find(|(k, e)| !e.is_empty() && self.skills.get(*k as usize).is_some_and(|s| s.name == skill))
+            .map(|(_, e)| e.as_str())
+    }
+
     /// The battle command member `member`'s action named `skill` sits on (its skill-list entry's
     /// +8: 0 the attack, 1 to 3 the skills, 4 the AC special, 8 Support Attack, 9 Support
     /// Guard), which names its skill scene (`battle::party_skill_event`); `None` for a name
@@ -494,6 +509,12 @@ mod command_tests {
         let t = super::Tables::load(&pe, &effects, None, None).unwrap();
         for m in 0..11 {
             assert_eq!(t.command_of(m, "Attack"), Some(0), "member {m}");
+            let _ = m;
+        }
+        // The Ore Rat (monster 36): Ram and Throw Stone.
+        assert_eq!(t.monster_event(36, "Ram"), Some("skill/Skill_MONSTER_ROCKRAT_00_0.ebd"));
+        assert_eq!(t.monster_event(36, "Throw Stone"), Some("skill/Skill_MONSTER_ROCKRAT_00_1.ebd"));
+        for m in 0..11 {
             assert_eq!(t.command_of(m, "Support Attack"), Some(8), "member {m}");
             for e in t.lists[m].iter().filter(|e| matches!(e.command, 1..=4)) {
                 let name = &t.skills[e.skill as usize].name;

@@ -1652,10 +1652,19 @@ impl BattlePlay {
     /// (`battle::party_skill_event`), its motions' lengths from the member's clips; `None`
     /// when either has no body or the event is missing.
     fn party_scene(&mut self, who: usize, target: usize, command: u8) -> Option<ActionScene> {
-        use barrel_escha::skill_scene::{Cast, ACTOR};
         let member = *self.charas.get(who)?;
         let name = barrel_escha::battle::party_skill_event(member, command)?;
-        let bytes = std::fs::read(self.scenes.root.join("Event").join(&name)).ok()?;
+        self.scene_of(who, target, &name)
+    }
+
+    /// The skill scene `name` (under `Event`) of fighter `who`'s action on `target`, its
+    /// motions' lengths from the actor's clips; `None` when either has no body or the event is
+    /// missing. The target's offsets turn by the way from the party's side to the monsters'
+    /// (`skill_scene::Cast`): from the actor to it when a member acts, from it to the actor
+    /// when a monster does.
+    fn scene_of(&mut self, who: usize, target: usize, name: &str) -> Option<ActionScene> {
+        use barrel_escha::skill_scene::{Cast, ACTOR};
+        let bytes = std::fs::read(self.scenes.root.join("Event").join(name)).ok()?;
         let event = barrel_formats::ebd::Ebd::parse(&bytes).ok()?;
         let t = self.fighters.get(target)?.as_ref()?;
         let (t_place, t_chara) = (t.place, t.chara);
@@ -1692,7 +1701,7 @@ impl BattlePlay {
         let measures = |c: usize| self.scenes.measures.get(&(c as u32)).copied();
         let actor = Cast { position: a.place, facing: a.facing, measures: measures(a.chara) };
         // The target's offsets turn by the way from the actor to it (`skill_scene::Cast`).
-        let toward = (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]);
+        let toward = if a.party { (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]) } else { (a.place[0] - t_place[0]).atan2(a.place[2] - t_place[2]) };
         let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
         let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
         let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
@@ -2067,13 +2076,19 @@ impl BattlePlay {
         // A member's action plays its skill scene (by the command its skill sits on), the step
         // lasting as long; its hits land at the scene's.
         // `BARREL_SKILL_SCENES=0` leaves them out.
+        // A monster's, by the event its stat block gives the skill (`Tables::monster_event`).
         if let Event::Acted { who, target, skill, .. } = &event
-            && *who < self.charas.len()
             && self.scenes.on
             && self.scene.as_ref().is_none_or(|s| s.start != self.time)
         {
-            let command = self.charas.get(*who).and_then(|&m| self.fight.tables.command_of(m, skill));
-            if let Some(scene) = command.and_then(|c| self.party_scene(*who, *target, c)) {
+            let scene = if *who < self.charas.len() {
+                let command = self.charas.get(*who).and_then(|&m| self.fight.tables.command_of(m, skill));
+                command.and_then(|c| self.party_scene(*who, *target, c))
+            } else {
+                let name = self.fight.monsters.get(*who - self.charas.len()).and_then(|&m| self.fight.tables.monster_event(m, skill)).map(str::to_string);
+                name.and_then(|n| self.scene_of(*who, *target, &n))
+            };
+            if let Some(scene) = scene {
                 self.until = self.until.max(self.time + scene.seconds());
                 eprintln!("battle: skill scene {:.2} s", scene.seconds());
                 self.scene = Some(scene);
