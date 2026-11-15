@@ -717,7 +717,7 @@ in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far
 (`0x1401a0e90`: word − `0x72000001` into the table at `0x1401a232c`). Two the skill events use
 often:
 
-- `r14` (`0x7200000e`, 300 uses) `{r, g, b, a, hundredths, mode}` fades a colour of the battle's
+- `r14` (`0x7200000e`, 681 uses) `{r, g, b, a, hundredths, mode}` fades a colour of the battle's
   +0xf40 object (+0x28, from its current +0x80) to (r, g, b, a) / 128 over hundredths / 100 s
   (`0x1401aaf00`; `mode`, 0 or 3, picks a keyed curve, `0x1404e1770`). The events dim it
   (`89 89 89 128`, `64 64 64 128`, Escha's skill `32 32 80 128`, a dark blue) and seldom
@@ -970,7 +970,7 @@ The `s` commands' handler is mostly `EventExecChara`: its runner (`0x1401efea0`)
 | `72000004` | `r4` | ECT_BATTLE_ADD_EFFECT_ID | GameModeBattle (`0x1401a0e90`) | 1117 | 2 (1117) |
 | `72000008` | `r8` |  | the battle event switch (`0x1401a0e90`, case `0x1401a10ce`): `r8 {unit}` finds battle unit `unit` (`0x1401b27a0`; 10000 to 10002 are special) and acts on it (`0x1401b13d0`, not read further) | 1095 | 1 (1095) |
 | `7200000d` | `r13` |  | GameModeBattle (`0x1401a0e90`) | 340 | 4 (340) |
-| `7200000e` | `r14` |  | the battle event switch (`0x1401a0e90`, case `0x1401a13e1`): up to five operands read, a float default from `0x14071a9a4`; not read further | 681 | 6 (681) |
+| `7200000e` | `r14` |  | the battle event switch (`0x1401a0e90`, case `0x1401a13e1`): a colour fade, see "Battle-screen commands" | 681 | 6 (681) |
 | `7200000f` | `r15` |  | Event, GameModeBattle | 191 | 0 (191) |
 | `72000010` | `r16` |  | Event | 60 | 14 (60) |
 | `72000011` | `r17` |  | Event | 76 | 2 (76) |
