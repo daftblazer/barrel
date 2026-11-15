@@ -2253,6 +2253,16 @@ Checked end to end: all 2,883 pictures of `avantitle` in display order (anchors 
 picture, B / BI shown at once) are bit-exact with ffmpeg, loop filter on, at 15 to 25 ms a
 1080p picture on one PC core (`movie_tests::movie_against_ffmpeg`).
 
+### Overlap smoothing in P pictures
+
+With the entry point's OVERLAP flag and PQUANT ≥ 9, a P picture's intra blocks are smoothed as an
+I picture's are (8.5), but only across edges between two intra blocks (8 × 8 luma blocks, so
+inside a 4MV macroblock too; chroma by the macroblock's chroma intra flag), on their unclamped
+reconstruction, before the loop filter. B pictures never smooth (8.4.5.15). The first three
+movies never needed it (their P pictures stay at PQUANT ≤ 8); `opening.wmv` has 102 such
+pictures and went wrong from the first of them until it was added. It is also the only movie
+with the non-uniform quantizer (157 P pictures), which already matched.
+
 ### WMA 9 Pro audio
 
 `crates/wma` (`barrel-wma`) decodes the movies' WMA Pro audio. The format has no public
