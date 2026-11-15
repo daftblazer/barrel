@@ -11,6 +11,8 @@ Barrel frame.
 | load-field (area map) | 3000 | `--load barrel-user.save --area-map`, frame 0 | 1 | the field gauge reads 45 (the save) where the game draws 44; rest at parity |
 | battle-walk (first turn's command row) | 3000 | `--field AREA_03_02 --load GAMEDATA00 --battle 25 --frames 120`, frame 119 | 8 (196 at frame 0) | the game's frame is its first turn with the row open; Barrel opens it at 1 s (frame 63), so frame 119 is the same moment (`tools/parity.sh` diffs the last frame of `--frames N`). Left: the extra fourth monster in the bar (Barrel draws A, A, B, B where the game had three, its draw is random) with the order that follows (3 differences, the bar's faces), the chosen command's flipbook pieces caught mid-animation in the game (2 game-only, 1 Barrel-only, no clock) |
 | area-requests | 2220 | `--field TOWN_04 --load GAMEDATA00 --area-map --requests`, frame 0 | 2 (1 phase) | the cursor glow (part 0x9f) shows its cut by time (the game cycles 8 cuts a second: 4, 7, 1, 4 at frames 2200 to 2260; Barrel draws cut 0) and the chosen row's plate pulses (white at 2220); the rest at parity: three monster requests, rank panel, page |
+| field-enter (field HUD) | 3100 | `--field AREA_03_02 --load GAMEDATA00 --frames 120`, PARITY_SKIP=Data/x64/Effect/ | 39 | packet E |
+| area-menu (main menu, first page) | 2220 | (no offscreen menu option yet) | 246 | packet F |
 
 ## Battle HUD facts found by the battle-walk capture
 

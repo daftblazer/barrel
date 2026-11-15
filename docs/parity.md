@@ -29,6 +29,9 @@ A diff of the two says where Barrel differs, without pixels and without judging 
 `tools/parity.sh <capture dir> <game frame> <barrel-escha arguments...>` does steps 3 and 4 for
 one offscreen Barrel frame (exit status 0 when nothing differs).
 
+`PARITY_SKIP=prefix,...` leaves textures whose game file name starts with a prefix out of the
+diff on both sides, for what a check does not cover yet (`Data/x64/Effect/`: particles).
+
 `barrel-parity quads <capture dir> <frame> [index.tsv]` lists a captured frame's 2D rectangles
 and text as the diff sees them. `barrel-parity screen <capture dir> <frame> [index.tsv]` lists a captured frame's draws.
 `barrel-parity shader <capture dir> <name>` disassembles a captured shader.

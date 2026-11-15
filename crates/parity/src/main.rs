@@ -453,8 +453,13 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
     let tex = |n: &str| names.get(n).cloned().unwrap_or_else(|| n.to_string());
     let (g, other) = game_quads(&t, gframe)?;
     let (g, under) = hidden(g);
+    // PARITY_SKIP: texture name prefixes (comma-separated) left out of the comparison on both
+    // sides, for what a check does not cover yet (e.g. `Data/x64/Effect/` particles)
+    let skip: Vec<String> = std::env::var("PARITY_SKIP").map(|v| v.split(',').filter(|p| !p.is_empty()).map(String::from).collect()).unwrap_or_default();
+    let skipped = |q: &Q| skip.iter().any(|p| names.get(&q.tex).is_some_and(|n| n.starts_with(p.as_str())));
+    let g: Vec<Q> = g.into_iter().filter(|q| !skipped(q)).collect();
     let g = text_runs(g, glyphs.as_ref());
-    let b = text_runs(barrel_quads(barrel, bframe)?, glyphs.as_ref());
+    let b = text_runs(barrel_quads(barrel, bframe)?.into_iter().filter(|q| !skipped(q)).collect(), glyphs.as_ref());
     let same = |x: &Q, y: &Q| x.tex == y.tex && close(&x.rect, &y.rect, 8.0) && (x.text.is_none() || x.text == y.text || close(&x.rect, &y.rect, 2.0));
     let (n, m) = (g.len(), b.len());
     let mut l = vec![vec![0usize; m + 1]; n + 1];
