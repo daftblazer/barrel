@@ -177,6 +177,12 @@ pub fn sprite(pe: &Pe, part: i32, cut: i32, at: [i32; 2]) -> Option<Piece> {
     Some(Piece { texture, index, src: [w(0)?, w(1)?, w(2)?, w(3)?], at })
 }
 
+/// Word `index` (4 bytes from the node's start) of a placed node, for the fields [`Node`] does
+/// not name (a stretched piece's height, in word 6).
+pub fn word(pe: &Pe, p: &Placed, index: u64) -> Option<i32> {
+    i32_at(pe, p.va + 4 * index)
+}
+
 /// The text of a placed node of part 0x164.
 pub fn text(pe: &Pe, p: &Placed) -> Option<Text> {
     (p.node.part == 0x164).then_some(())?;

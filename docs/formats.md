@@ -1852,6 +1852,31 @@ a glow (part 0xd, kind 36), stamps (layouts 949 "OK" and 704) and counters (part
 0xaf, kind 28). The tasks' `Type`s: `SUBJECT_CATEGORY_BTL` (118), `ADV` (169), `MIX` (110),
 `OTHER` (60, the centre square's main assignment, several rows sharing it).
 
+**The Requests screen** (Start on the area map and in a field; `area-requests` capture) is layout
+678 over the desk (383, part 0x0 cut 1 here), the header (371, the text "Please select an entry to
+view.", `SysInfo.xml` row 50), the footer (372, a `Menu_Line_Help.xml` "Select, Return" line) and the
+tab (531, parts 0x2e and 0x2c at cut 7, the menu's Request). 678 nests the rank panel (527:
+part 0x31 cut = the rank number less 1 on its first icon place, the points still needed for the
+next rank, `RankData` row `rank` less this points, as a kind 28 number, and "pt"), the detail page
+(676, with the frame 677) and the list (674, with one row, layout 673, repeated every 58 pixels).
+Nodes of stretched kinds hold their size in their words: **kind 15** (a piece cut in nine, tiled)
+word 5 the width and word 6 the height; **kind 19** (a bar of three cuts: left end, middle, right
+end) word 5 the width; **kind 4** (a picture, the monster's `a15_dict_mons<NNN>.g1t`) words 5 and 6
+the scale in percent; **kind 28** (a number: digit sprites 20 pixels wide, drawn right-aligned
+with the last digit just left of the node) word 5 the largest value and word 7 the colour (stored
+r, g, b, a: the ink `3a1a08`; the Status page's numbers are tinted the same way). The nine
+cuts tile in this order: the top row, the left column, the right column, the bottom row, then the
+middle row by row; a middle tile repeats at its size and the last is cut short. The list rows'
+texts are "`<monster or item> Subjugation`" (also "Synthesis", "Gathering"), the count's mark `#`
+(a counter glyph) with the wanted count as a number on the node; the page's first text is the
+kind word over the name (`Subjugation<CR>Fake Ruin`, the second line 36 pixels down), then
+"Reward:", "Results" with the points and "pts", the two prizes with their counts and, for a
+monster, "Slain" (the layout's "Quality:") with the kills and the wanted count (no slash). The
+chosen row has the plate (part 0xab) and a request done the glow 704 ("Report!"); the cursor
+(layout 691, part 0x9f cycling its eight cuts in a second; the plate's colour pulses too) is at the
+row's bar less (90, 56). The data is the save's `quest/player` slots (`Session::taken`: kind, target,
+wanted, done and the points and prizes already rolled), where a monster request has kind 2.
+
 The narration cards (`u55`, `docs/events.md`) are layouts 960 to 1010: the opening's are
 1536 × 72 strips of the telop sheets, one per line, at x 180 around y 462.
 

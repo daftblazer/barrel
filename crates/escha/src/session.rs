@@ -29,9 +29,12 @@ pub const NEW_GAME_MONEY: i32 = 100;
 /// The most money held (`0x14036a8e0`).
 pub const MAX_MONEY: i32 = 999_999;
 
-/// A request taken from the board (`quest/player`'s slots, `save::BoardSlot`): its kind (0
-/// synthesis, 1 monster, 2 gathering), target, how many are wanted and done so far, and the
-/// days it was posted and is due.
+/// A request taken from the board (`quest/player`'s slots, `save::BoardSlot`): its kind (the
+/// Requests screen's order, `requests::Kind`: 0 synthesis, 1 gathering, 2 subjugation; the board's
+/// own slots count 0 synthesis, 1 monster, 2 gathering), target (an item row, or a monster
+/// number), how many are wanted and done so far, and the
+/// days it was posted and is due, the rank points it pays and its two prizes (item row, count;
+/// row -1 for none), as the slot holds them rolled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Taken {
     pub kind: i32,
@@ -40,6 +43,8 @@ pub struct Taken {
     pub progress: i32,
     pub posted: i32,
     pub until: i32,
+    pub points: i32,
+    pub prizes: [(i32, i32); 2],
 }
 
 impl Taken {
@@ -148,17 +153,19 @@ pub struct Session {
     pub field_state: crate::gather::FieldState,
     /// The requests taken, by slot.
     pub taken: [Option<Taken>; TAKEN_SLOTS],
+    /// The adventurer rank (a `RankData` row) and the rank points held.
+    pub rank: (i32, i32),
 }
 
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -519,7 +526,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] };
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -540,7 +547,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS] };
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -634,8 +641,11 @@ impl Session {
         }
         for (k, t) in self.taken.iter().enumerate() {
             if let Some(t) = t {
-                out += &format!("taken {k} {} {} {} {} {} {}\n", t.kind, t.target, t.progress, t.wanted, t.posted, t.until);
+                out += &format!("taken {k} {} {} {} {} {} {} {} {} {} {} {}\n", t.kind, t.target, t.progress, t.wanted, t.posted, t.until, t.points, t.prizes[0].0, t.prizes[0].1, t.prizes[1].0, t.prizes[1].1);
             }
+        }
+        if self.rank != (0, 0) {
+            out += &format!("rank {} {}\n", self.rank.0, self.rank.1);
         }
         for (k, d) in &self.worn {
             out += &format!("worn {k} {d}\n");
@@ -666,6 +676,7 @@ impl Session {
         let mut visited = std::collections::BTreeSet::new();
         let (mut field_gauge, mut field_state) = (0, crate::gather::FieldState::default());
         let mut taken = [None; TAKEN_SLOTS];
+        let mut rank = (0, 0);
         let story = chain.story_mut();
         story.seen.iter_mut().for_each(|s| *s = None);
         story.flags.iter_mut().for_each(|f| *f = 0);
@@ -707,7 +718,21 @@ impl Session {
                 "taken" => {
                     let k = num(1)? as usize;
                     let slot = taken.get_mut(k).ok_or_else(|| bad(line))?;
-                    *slot = Some(Taken { kind: num(2)? as i32, target: num(3)? as i32, progress: num(4)? as i32, wanted: num(5)? as i32, posted: num(6)? as i32, until: num(7)? as i32 });
+                    // The rewards came later: a line without them pays nothing.
+                    let more = |k: usize, none: i32| num(k).map_or(none, |v| v as i32);
+                    *slot = Some(Taken {
+                        kind: num(2)? as i32,
+                        target: num(3)? as i32,
+                        progress: num(4)? as i32,
+                        wanted: num(5)? as i32,
+                        posted: num(6)? as i32,
+                        until: num(7)? as i32,
+                        points: more(8, 0),
+                        prizes: [(more(9, -1), more(10, 0)), (more(11, -1), more(12, 0))],
+                    });
+                }
+                "rank" => {
+                    rank = (num(1)? as i32, num(2)? as i32);
                 }
                 "visited" => {
                     visited.insert(num(1)? as usize);
@@ -726,7 +751,7 @@ impl Session {
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state, taken }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state, taken, rank }, at))
     }
 
     /// A session from either save format, by its bytes: Barrel's text (it starts `barrel-save`)
@@ -799,7 +824,17 @@ impl Session {
         let (field_gauge, field_state) = sum.field_effect.map_or((0, Default::default()), |(gauge, mode, values)| (gauge, crate::gather::FieldState { mode, values }));
         let mut taken = [None; TAKEN_SLOTS];
         for (slot, t) in taken.iter_mut().zip(&sum.taken) {
-            *slot = t.map(|t| Taken { kind: t.kind, target: t.target, wanted: t.wanted, progress: t.progress, posted: t.posted, until: t.until });
+            // The points are paid truncated and each prize counted 1 or more (`BoardSlot`).
+            *slot = t.map(|t| Taken {
+                kind: t.kind,
+                target: t.target,
+                wanted: t.wanted,
+                progress: t.progress,
+                posted: t.posted,
+                until: t.until,
+                points: t.value as i32,
+                prizes: t.prizes.map(|(item, count)| (item, if item < 0 { 0 } else { (count as i32).max(1) })),
+            });
         }
         Ok((
             Session {
@@ -819,6 +854,7 @@ impl Session {
                 field_gauge,
                 field_state,
                 taken,
+                rank: sum.rank.unwrap_or((0, 0)),
             },
             at,
         ))
@@ -836,8 +872,8 @@ mod tests {
     #[test]
     fn taken_requests_survive_a_save() {
         let mut s = Session::in_field(chain(), 12, false);
-        s.taken[0] = Some(Taken { kind: 2, target: 44, wanted: 2, progress: 2, posted: 220, until: 329 });
-        s.taken[3] = Some(Taken { kind: 0, target: 4, wanted: 1, progress: 0, posted: 221, until: 329 });
+        s.taken[0] = Some(Taken { kind: 2, target: 44, wanted: 2, progress: 2, posted: 220, until: 329, points: 6, prizes: [(12, 2), (-1, 0)] });
+        s.taken[3] = Some(Taken { kind: 0, target: 4, wanted: 1, progress: 0, posted: 221, until: 329, points: 0, prizes: [(-1, 0); 2] });
         let (back, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
         assert_eq!(back.taken, s.taken);
         assert!(back.taken[0].unwrap().done() && !back.taken[3].unwrap().done());
@@ -1053,7 +1089,10 @@ mod tests {
         assert_eq!(got.opened, want.opened, "opened places");
         assert_eq!(got.worn, want.worn, "worn obstacles");
         assert_eq!((got.field_gauge, got.field_state), (want.field_gauge, want.field_state), "field effect");
-        assert_eq!(got.taken, want.taken, "taken requests");
+        // The text save predates the rewards (points, prizes) and the rank of a taken request.
+        let bare = |s: &Session| s.taken.map(|t| t.map(|t| (t.kind, t.target, t.wanted, t.progress, t.posted, t.until)));
+        assert_eq!(bare(&got), bare(&want), "taken requests");
+        assert_eq!(got.rank, (3, 1565), "rank and points");
         assert_eq!(got.chain.story().seen, want.chain.story().seen, "events seen");
         assert_eq!(got.chain.story().flags, want.chain.story().flags, "event flags");
         // The text save predates its `carry` lines: the game's save holds the alchemists' battle items.

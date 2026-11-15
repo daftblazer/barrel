@@ -31,6 +31,7 @@ mod screen;
 mod menu;
 mod message;
 mod status;
+mod requests;
 mod basket;
 mod assignment;
 mod battlehud;
@@ -3499,6 +3500,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut new_game = None::<PathBuf>;
     let mut travel_to = None::<String>;
     let mut area_mode = false;
+    // --requests: draw the Requests screen (offscreen, over the session's taken requests).
+    let mut requests_mode = false;
     // The area map's top level, the world map (the town and the regions).
     let mut world_mode = false;
     let mut load_file = None::<PathBuf>;
@@ -3667,6 +3670,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // (offscreen `BARREL_AREA_KEYS`: up, down, left, right, confirm) go along the routes
             // of the point's region, Enter enters the field of the point she stands on.
             "--area-map" => area_mode = true,
+            "--requests" => requests_mode = true,
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
             "--pad-test" => {
@@ -4601,6 +4605,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut jump_now = std::env::var("BARREL_JUMP_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut strike_now = std::env::var("BARREL_STRIKE_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64);
     let mut open_menu = false;
+    let mut open_requests = false;
     // The page the menu opens on (the field's LB: Assignment).
     let mut menu_page: Option<menu::Start> = None;
     // The Atelier's cauldron (C in free play there; `BARREL_MIX_AT` renderer.offscreen).
@@ -4669,6 +4674,16 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
                 restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
             }
+            stop = true;
+            break;
+        }
+    // Offscreen: the Requests screen drawn (`--requests`, with `--load`) after the buttons in
+    // `BARREL_REQUESTS_KEYS`, written to the output picture; the run ends.
+    if presenter.is_none() && requests_mode && frame == 0
+        && let (Some(root), Some((color, _)), Some(s)) = (hud_root.as_ref(), renderer.offscreen.as_ref(), session.as_ref()) {
+            let keys = title::keys(&std::env::var("BARREL_REQUESTS_KEYS").unwrap_or_default());
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+            requests::run(&gpu, renderer.pool, &target, None, Some(*color), root, &s.taken, s.rank, &keys, Some(Path::new(&out_path)))?;
             stop = true;
             break;
         }
@@ -4742,6 +4757,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         P::RightShoulder => Some(menu::Start::System),
                         _ => None,
                     };
+                    None
+                }
+                // Start: the Requests screen, on the area map and in a field.
+                P::Start if on_area_map || (free_play && field_hud.is_some()) => {
+                    open_requests = true;
                     None
                 }
                 P::RightStick if free_play => Some(KeyCode::KeyR),
@@ -4862,6 +4882,17 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
             shop_visit(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, &root, session.as_mut(), &[], None, frame)?;
+        }
+        if open_requests && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
+            unsafe { gpu.device.device_wait_idle()? };
+            let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
+            let (taken, rank) = session.as_ref().map_or(([None; barrel_escha::session::TAKEN_SLOTS], (0, 0)), |s| (s.taken, s.rank));
+            if requests::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, &taken, rank, &[], None)?.is_none() {
+                eprintln!("window closed in the requests after {frame} frames");
+                stop = true;
+                break;
+            }
+            last_frame = std::time::Instant::now();
         }
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };

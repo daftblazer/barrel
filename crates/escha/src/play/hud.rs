@@ -149,6 +149,9 @@ pub enum Element {
     Sprite { part: i32, cut: i32, at: [i32; 2] },
     /// A sprite at half strength (a choice not taken).
     Dim { part: i32, cut: i32, at: [i32; 2] },
+    /// A sprite drawn in `rgb` (a number widget, node kind 28, takes its colour from the layout's
+    /// ink: the Requests screen's counts are the dark brown of its texts).
+    Tinted { part: i32, cut: i32, at: [i32; 2], rgb: [u8; 3] },
     /// A sprite at `alpha` of 255 (the title's pulsing prompt).
     Faded { part: i32, cut: i32, at: [i32; 2], alpha: u8 },
     /// A sprite mirrored (node kind 2): `axis` 0 left to right, 1 top to bottom, 2 both.
@@ -210,7 +213,7 @@ impl Element {
     /// The sprite's part, cut and place, if it is one.
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
-            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
+            Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Tinted { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
             Element::Popped { part, cut, centre, .. } => Some((part, cut, centre)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
@@ -413,6 +416,15 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
     let mut out = Vec::new();
     for e in elements {
         match e {
+            &Element::Tinted { part, cut, at, rgb } => {
+                let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let [x, y] = piece.at.map(|v| v as f32);
+                let [cr, cg, cb] = rgb.map(|c| f32::from(c) / 255.0);
+                out.push(Quad { turn: false, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [cr, cg, cb, 1.0], texture: sheets.first + slot });
+            }
             &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at, .. } | &Element::Scaled { part, cut, at, .. } | &Element::Faded { part, cut, at, .. } => {
                 let scale = if let Element::Scaled { percent, .. } = *e { percent as f32 / 100.0 } else { 1.0 };
                 let alpha = match *e {
