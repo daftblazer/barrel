@@ -30,7 +30,7 @@ build_linux() {
     case "$1" in
     x86_64)
         tools/capped.sh cargo build --offline --release -p barrel >&2
-        echo target/release/barrel ;;
+        echo "${CARGO_TARGET_DIR:-target}/release/barrel" ;;
     aarch64)
         : "${BARREL_AARCH64_SYSROOT:?set BARREL_AARCH64_SYSROOT (arm64 root filesystem)}"
         : "${BARREL_AARCH64_DEPS:?set BARREL_AARCH64_DEPS (prefix with arm64 SDL3)}"
@@ -38,7 +38,7 @@ build_linux() {
         export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=
         export PKG_CONFIG_LIBDIR="$BARREL_AARCH64_DEPS/lib/pkgconfig:$BARREL_AARCH64_SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$BARREL_AARCH64_SYSROOT/usr/share/pkgconfig"
         tools/capped.sh cargo build --offline --release --target aarch64-unknown-linux-gnu -p barrel >&2
-        echo target/aarch64-unknown-linux-gnu/release/barrel ;;
+        echo "${CARGO_TARGET_DIR:-target}/aarch64-unknown-linux-gnu/release/barrel" ;;
     *) echo "unknown architecture $1" >&2; exit 1 ;;
     esac
 }
@@ -91,6 +91,11 @@ RUN
 fi
 
 # ---- release packages ----
+# Released programs carry no build machine's paths: the crate sources' paths (kept for panic
+# messages) are rewritten to neutral ones. A separate target folder keeps the everyday build's
+# cache (other flags would rebuild it).
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME/.cargo/registry/src=/cargo --remap-path-prefix=$HOME/.cargo/git/checkouts=/cargo-git --remap-path-prefix=$PWD=/barrel --remap-path-prefix=$HOME=/home"
+export CARGO_TARGET_DIR="$PWD/target/dist"
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 DEST=$(realpath -m "${2:-target/release-packages}")
 mkdir -p "$DEST"
@@ -129,7 +134,7 @@ else
     tools/capped.sh cargo build --offline --release --target "$WIN" -p barrel
     DIR="$STAGE/barrel-$VERSION-windows-x86_64"
     mkdir -p "$DIR"
-    x86_64-w64-mingw32-strip -o "$DIR/barrel.exe" "target/$WIN/release/barrel.exe"
+    x86_64-w64-mingw32-strip -o "$DIR/barrel.exe" "${CARGO_TARGET_DIR:-target}/$WIN/release/barrel.exe"
     cp "$BARREL_WINDOWS_SDL3/bin/SDL3.dll" "$DIR/"
     readme windows "$DIR"
     cp LICENSE "$DIR/"
