@@ -233,3 +233,5 @@ likely settle them where static reading failed.
   heal item (Barrel uses it on the user), and when spent items fill up again (Barrel keeps them
   at 0 uses; the game refills them at the atelier, not read). A new game's starting battle
   items are not read.
+
+- Equipping battle items from the basket (the atelier's preparation, capacity 5 at the start): the basket's items carry no uses or effects yet (`gather::Got`), which a `carry` line needs.
