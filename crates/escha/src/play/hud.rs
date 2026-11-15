@@ -156,9 +156,10 @@ pub enum Element {
     Faded { part: i32, cut: i32, at: [i32; 2], alpha: u8 },
     /// A sprite mirrored (node kind 2): `axis` 0 left to right, 1 top to bottom, 2 both.
     Mirrored { part: i32, cut: i32, at: [i32; 2], axis: i32 },
-    /// A sprite scaled to `percent` about its node `at` (a layout node of kind 4, its word 5:
-    /// the title's logo at 80).
-    Scaled { part: i32, cut: i32, at: [i32; 2], percent: i32 },
+    /// A sprite scaled to `percent` about the point `about` (a layout node of kind 4, its word 5:
+    /// the title's logo at 80 about its own node; the turn bar's Action slot at 120 about the
+    /// slot's corner, its pieces' places scaled with it).
+    Scaled { part: i32, cut: i32, at: [i32; 2], percent: i32, about: [i32; 2] },
     /// A sprite centred on `centre`, scaled to `percent` about it and at `alpha` of 255 (a
     /// battle number popping in).
     Popped { part: i32, cut: i32, centre: [i32; 2], percent: i32, alpha: u8 },
@@ -436,7 +437,11 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
                 let [w, h] = sheets.sizes[slot];
                 let [l, t, r, b] = piece.src.map(f32::from);
-                let [x, y] = piece.at.map(|v| v as f32);
+                let [mut x, mut y] = piece.at.map(|v| v as f32);
+                if let Element::Scaled { about, .. } = *e {
+                    x = about[0] as f32 + (x - about[0] as f32) * scale;
+                    y = about[1] as f32 + (y - about[1] as f32) * scale;
+                }
                 out.push(Quad { turn: false,
                     rect: [dx + x * k, y * k, dx + (x + (r - l) * scale) * k, (y + (b - t) * scale) * k],
                     uv: match *e {

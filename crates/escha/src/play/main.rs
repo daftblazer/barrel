@@ -1318,12 +1318,15 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     let every_face: Vec<Option<usize>> = (0..=15).map(Some).collect();
     let every_reserve: Vec<battlehud::Member> = (0..5).map(|chara| battlehud::Member { chara, hp: (1, 1), mp: (1, 1) }).collect();
     let every_digits = (0..10).map(|cut| hud::Element::Sprite { part: 0xdf, cut, at: [0, 0] });
-    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_reserve, &every_face, f, Some(1), Some(3), 150)).collect();
+    let mut every: Vec<hud::Element> = (0..3).flat_map(|f| battlehud::elements(&nodes, |p| barrel_escha::data::layout::text(&pe, p), &members, &every_reserve, &every_face, f, Some(1), Some(3), 150, Default::default())).collect();
     every.extend((0..10).map(|cut| hud::Element::Sprite { part: 0xe1, cut, at: [0, 0] }));
     every.extend(every_digits);
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
-    every.extend((0..2).flat_map(|chosen| battlehud::command_row(&all_commands, chosen)));
+    every.extend((0..2).flat_map(|chosen| {
+        let (places, marks) = battlehud::command_row(&all_commands, chosen);
+        places.into_iter().chain(marks)
+    }));
     let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
     let bubble_nodes = barrel_escha::data::layout::placed(&pe, battlehud::SUPPORT_BUBBLES);
     every.extend(battlehud::support_bubbles(&bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &[0, 1, 2], battlehud::SUPPORT_LABEL));
@@ -6539,13 +6542,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &play.reserve, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support);
+                        // The game's row, drawn among the HUD's parts; the skills' list and the
+                        // target's name still Barrel's own text.
+                        let row = commands.as_ref().filter(|c| !c.row.is_empty()).map(|c| battlehud::command_row(&c.row, c.at)).unwrap_or_default();
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &play.reserve, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support, row);
                         if let Some(c) = &commands {
-                            // The game's row; the skills' list and the target's name still
-                            // Barrel's own text.
-                            if !c.row.is_empty() {
-                                e.extend(battlehud::command_row(&c.row, c.at));
-                            }
                             if let Some(plate) = &c.plate {
                                 e.extend(battlehud::target_plate(&h.plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), plate));
                             }

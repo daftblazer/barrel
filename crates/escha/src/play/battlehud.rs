@@ -107,14 +107,18 @@ fn share((now, max): (i32, i32)) -> f32 {
 }
 
 /// Where the game draws a group of nodes against the place the layout gives (fitted to the
-/// capture of a battle at 1920 × 1080: the turn bar a pixel right and down, the Fast Forward
+/// capture of a battle at 1920 × 1080: the turn bar a pixel right and down (its slots right only), the Fast Forward
 /// label and the Support gauge a pixel up; the rest, the plates and the field information,
 /// stand where the layout puts them).
 const BAR_NUDGE: [i32; 2] = [1, 1];
+/// The bar's slots a pixel right only.
+const SLOT_NUDGE: [i32; 2] = [1, 0];
 const SUPPORT_NUDGE: [i32; 2] = [0, -1];
 
 fn nudged(p: &Placed) -> [i32; 2] {
-    let d = if p.path.contains(&TURN_BAR) {
+    let d = if p.path.contains(&SLOT) {
+        SLOT_NUDGE
+    } else if p.path.contains(&TURN_BAR) {
         BAR_NUDGE
     } else if p.path.contains(&SUPPORT) {
         SUPPORT_NUDGE
@@ -135,8 +139,10 @@ pub const FAST_FORWARD_LABELS: [&str; 3] = ["Fast Forward Off", "Fast Forward(x1
 
 /// `marked`: the place in `order` of the target's next turn, while one is being picked.
 /// `next`: the next-turn mark's entry count while a member chooses.
-pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], reserve: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>, support: i32) -> Vec<Element> {
-    let mut out = Vec::new();
+pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, members: &[Member], reserve: &[Member], order: &[Option<usize>], fast_forward: usize, marked: Option<usize>, next: Option<usize>, support: i32, row: (Vec<Element>, Vec<Element>)) -> Vec<Element> {
+    let mut out = Ranked::default();
+    // How many of the bar's frames came already.
+    let mut frames = 0;
     // The turn order's slot a node is in (counted as their first nodes come), and that slot's
     // corner (the Action slot's scaling centre).
     let mut slot: Option<usize> = None;
@@ -144,6 +150,8 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
     // Which plate a node is on (counted as their first nodes come).
     let starts = |p: &&Placed| p.path.last() == Some(&PLATE) && (p.node.part, p.node.cut) == PLATE_FIRST;
     let mut plate: Option<usize> = None;
+    // Whether the Support gauge's level digit is drawn already.
+    let mut digit_drawn = false;
     // Which reserve panel a node is on, likewise.
     let mut reserved: Option<usize> = None;
     for placed in nodes {
@@ -153,6 +161,10 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
         let moved = Placed { at: nudged(placed), ..placed.clone() };
         let p = &moved;
         let n = p.node;
+        out.rank = rank(p, slot, frames);
+        if p.path.last() == Some(&TURN_BAR) {
+            frames += 1;
+        }
         if p.path.contains(&TURN_BAR) {
             // The order's place slot k shows: the Action slot the one acting, slot k of the 15
             // the (15 - k)th after it.
@@ -204,8 +216,8 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 _ => continue,
             };
             out.push(if k >= SLOTS {
-                let at = [0, 1].map(|i| slot_at[i] + (p.at[i] - slot_at[i]) * ACTION_PERCENT / 100);
-                Element::Scaled { part, cut, at, percent: ACTION_PERCENT }
+                // The Action slot's corner is a pixel lower than the others' (the capture).
+                Element::Scaled { part, cut, at: [p.at[0], p.at[1] + 1], percent: ACTION_PERCENT, about: [slot_at[0], slot_at[1] + 1] }
             } else {
                 Element::Sprite { part, cut, at: p.at }
             });
@@ -219,8 +231,11 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                     out.push(Element::Rising { part: SUPPORT_BAR, cut: 1, at: p.at, fill });
                     continue;
                 }
+                // (The layout holds the digit twice, at one place; the game draws it once.)
                 (SUPPORT_DIGITS, _) => {
-                    out.push(Element::Sprite { part: SUPPORT_DIGITS, cut: level, at: [p.at[0] - SUPPORT_DIGIT_HALF, p.at[1]] });
+                    if !std::mem::replace(&mut digit_drawn, true) {
+                        out.push(Element::Sprite { part: SUPPORT_DIGITS, cut: level, at: [p.at[0] - SUPPORT_DIGIT_HALF, p.at[1]] });
+                    }
                     continue;
                 }
                 _ => {}
@@ -280,8 +295,68 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
         }
         out.push(Element::stored(p));
     }
-    out
+    out.items.extend(row.0.into_iter().map(|e| (ROW_BEFORE, e)));
+    out.items.extend(row.1.into_iter().map(|e| (ROW_AFTER, e)));
+    out.items.sort_by_key(|&(rank, _)| rank);
+    out.items.into_iter().map(|(_, e)| e).collect()
 }
+
+/// The elements as they are made, each with its place in the game's drawing order.
+#[derive(Default)]
+struct Ranked {
+    items: Vec<(u32, Element)>,
+    rank: u32,
+}
+
+impl Ranked {
+    fn push(&mut self, e: Element) {
+        self.items.push((self.rank, e));
+    }
+}
+
+/// The order the game draws the HUD's parts in (the capture's draws; the layout's own order
+/// differs): the bar's ends; each of its frames with the slot hanging from it; the Action slot;
+/// the plates with the reserve row; the Support gauge and Fast Forward; the Action slot's
+/// overlay; the command row's places; the field information; the chosen command's decorations.
+const BAR_FRAMES: u32 = 1000;
+const ACTION_SLOT: u32 = 2000;
+const NEXT_MARK_RANK: u32 = 2100;
+const PLATES: u32 = 3000;
+const SUPPORT_RANK: u32 = 4000;
+const OVERLAY: u32 = 4500;
+const ROW_BEFORE: u32 = 5000;
+const FIELD_INFO: u32 = 6000;
+const ROW_AFTER: u32 = 7000;
+/// The Action slot's overlay (layout 863, nested in the bar).
+const OVERLAY_LAYOUT: u32 = 863;
+const BAR_ENDS_RANK: u32 = 900;
+
+/// `p`'s place in the drawing order: `slot` the slot counted so far, `frames` the bar's frames.
+fn rank(p: &Placed, slot: Option<usize>, frames: u32) -> u32 {
+    let first_of_slot = p.path.last() == Some(&SLOT) && (p.node.part, p.node.cut) == SLOT_FIRST;
+    if p.path.contains(&SLOT) {
+        let k = if first_of_slot { slot.map_or(0, |k| k + 1) } else { slot.unwrap_or(0) };
+        if k >= SLOTS { ACTION_SLOT } else { BAR_FRAMES + 10 * k as u32 + 5 }
+    } else if p.path.last() == Some(&NEXT_MARK) {
+        NEXT_MARK_RANK
+    } else if p.path.contains(&OVERLAY_LAYOUT) {
+        OVERLAY
+    } else if p.path.last() == Some(&BAR_ENDS) {
+        BAR_ENDS_RANK
+    } else if p.path.last() == Some(&TURN_BAR) {
+        BAR_FRAMES + 10 * frames
+    } else if p.path.contains(&SUPPORT) {
+        SUPPORT_RANK
+    } else if p.path.get(1) == Some(&FIELD_INFO_LAYOUT) {
+        FIELD_INFO
+    } else {
+        PLATES
+    }
+}
+
+/// The field information panel (layout 911).
+const FIELD_INFO_LAYOUT: u32 = 911;
+
 
 /// The command row (layout 887: nine places of layout 859 at y 584, 104 to 106 apart; a
 /// member's commands take the first ones, centred on the screen: the battle-stats recording at
@@ -319,29 +394,29 @@ const LABEL: i32 = 0xec;
 /// The diamond and the arrows are nodes of kind 36, a flipbook of word 5 cuts from the node's
 /// (4: the diamond cuts 2 to 5, the arrows 6 to 9 and 10 to 13); drawn at their first frame
 /// until the HUD has a clock.
-pub fn command_row(commands: &[i32], chosen: usize) -> Vec<Element> {
+pub fn command_row(commands: &[i32], chosen: usize) -> (Vec<Element>, Vec<Element>) {
     let n = commands.len().clamp(1, MAX_COMMANDS);
-    let mut out = Vec::new();
-    // The chosen one last: its arrows lie over its neighbours (the recording's right arrow over
-    // the Skill icon).
-    let order = (0..n).filter(|&k| k != chosen).chain((chosen < n).then_some(chosen));
-    for k in order {
+    // The places in order, drawn before the field information; the chosen one's arrows and
+    // label after it (the arrows lie over the neighbours, the recording's right arrow over the
+    // Skill icon).
+    let (mut places, mut marks) = (Vec::new(), Vec::new());
+    for k in 0..n {
         let c = commands[k];
         let node = [(ROW_CENTRE_X - ROW_CENTRE[0] as f32 + ROW_PITCH * (k as f32 - (n - 1) as f32 / 2.0)).round() as i32, ROW_Y];
         let at = |x: i32, y: i32| [node[0] + x, node[1] + y];
         if k == chosen {
-            out.push(Element::Sprite { part: ROW_PARTS, cut: 2, at: at(96 - 66, 50 - 72) });
-            out.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
-            out.push(Element::Sprite { part: ROW_PARTS, cut: 6, at: at(-12, 20) });
-            out.push(Element::Sprite { part: ROW_PARTS, cut: 10, at: at(154, 20) });
-            out.push(Element::Sprite { part: LABEL, cut: 9, at: at(4, 100) });
-            out.push(Element::Sprite { part: LABEL, cut: c, at: at(48, 112) });
+            places.push(Element::Sprite { part: ROW_PARTS, cut: 2, at: at(96 - 66, 50 - 72) });
+            places.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
+            marks.push(Element::Sprite { part: ROW_PARTS, cut: 6, at: at(-12, 20) });
+            marks.push(Element::Sprite { part: ROW_PARTS, cut: 10, at: at(154, 20) });
+            marks.push(Element::Sprite { part: LABEL, cut: 9, at: at(4, 100) });
+            marks.push(Element::Sprite { part: LABEL, cut: c, at: at(48, 112) });
         } else {
-            out.push(Element::Sprite { part: ROW_PARTS, cut: 0, at: at(96 - 48, 54 - 48) });
-            out.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
+            places.push(Element::Sprite { part: ROW_PARTS, cut: 0, at: at(96 - 48, 54 - 48) });
+            places.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
         }
     }
-    out
+    (places, marks)
 }
 
 /// What a member's turn shows: the command row (icon cuts) and the place on it, the skills'
@@ -609,3 +684,26 @@ pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>
 }
 const BUBBLE_RULE: (i32, i32) = (0x45, 26);
 const BUTTONS: i32 = 0x41;
+
+#[cfg(test)]
+mod scratch {
+    #[test]
+    fn dump_cuts() {
+        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
+        if let Ok(f) = std::env::var("BARREL_SAVE") {
+            use barrel_escha::data::save;
+            let bytes = std::fs::read(f).unwrap();
+            let state = save::decode(save::parse(&bytes).unwrap().body).unwrap();
+            let sum = save::summary(&save::state_records(&state).unwrap());
+            eprintln!("CUT squad {:?} slots {:?} hero {:?}", sum.squad, sum.squad_slots, sum.hero);
+            for m in &sum.party { eprintln!("CUT member {} lv {} hp {}/{} mp {}/{} eq {:?}", m.character, m.level, m.hp, m.max_hp, m.mp, m.max_mp, m.equipped); }
+        }
+        let exe = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
+        for part in [0xe6] {
+            for cut in 0..70 {
+                if let Some(p) = barrel_escha::data::layout::sprite(&pe, part, cut, [0, 0]) { eprintln!("CUT {part:x} {cut} {} {} {:?}", p.texture, p.index, p.src); }
+            }
+        }
+    }
+}

@@ -85,7 +85,7 @@ impl Title {
 
     /// The sprites to draw over the background, on the 1920 × 1080 screen.
     pub fn elements(&self) -> Vec<Element> {
-        let mut out = vec![Element::Scaled { part: LOGO, cut: 0, at: LOGO_AT, percent: LOGO_PERCENT }];
+        let mut out = vec![Element::Scaled { part: LOGO, cut: 0, at: LOGO_AT, percent: LOGO_PERCENT, about: LOGO_AT }];
         match *self {
             Title::PressAny => out.push(Element::Sprite { part: LOGO, cut: PROMPT_CUT, at: [570, 660] }),
             Title::Menu(chosen) => {
