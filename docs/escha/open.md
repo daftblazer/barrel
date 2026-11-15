@@ -356,3 +356,10 @@ likely settle them where static reading failed.
   Heals (act flag 7) take the same percent per the docs but are not scaled yet: check against a
   logged heal.
 
+- **Battle command row: the edge-on stage before it opens.** The game draws the chosen place's
+  dark frame and diamond (a15_battle cuts 0, 4 and 2) edge-on, 0 to 3 px wide and 1.4 times as
+  tall, with flipped uv, and holds that unchanged for about 22 frames just before the command
+  row's quads appear (escha-recomp `scenarios/battle-open.sh`: 3278 to 3298, then the row at
+  3300 in that run; also at frame 3000 of battle-walk). Barrel opens the row without it: a card
+  turn whose first stage is held. Read the frames before and after to get the turn's curve
+  (3 of battle-walk's 7).
