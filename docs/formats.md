@@ -2195,3 +2195,16 @@ the referenced block inside the frame, HYBRIDPRED (needed when the predictor str
 quarter-pels from A or C), `smod` wrapping, and the colour-difference vectors (1-MV halving with
 rounding table {0, 0, 0, 1}; 4-MV from the median of the inter blocks' vectors, intra when 3 or 4
 are intra; FASTUVMC rounding toward zero). Unit-tested; not yet checked on movie frames.
+
+Inter blocks and motion compensation (`barrel_movie::vc1_mc`, 8.3.6): the 8 × 4 / 4 × 8 / 4 × 4
+inverse transforms (Figure 159 with T4 = [17 17 17 17; 22 10 −10 −22; 17 −17 −17 17;
+10 −22 22 −10], signs restored as for T8; "8 × 4" is 8 wide, 4 tall: the top and bottom halves),
+bicubic luma taps ½ [−1 9 9 −1], ¼ [−4 53 18 −3], ¾ [−3 18 53 −4] (one-dimensional rounding
+(S + 8 − r) >> 4 or (S + 32 − r) >> 6 with r = RND horizontally, 1 − RND vertically; two-
+dimensional vertical first, shifted by (s(h) + s(v)) / 2 with s = {0, 5, 1, 5} by quarter mode
+and rounded by 2^(shift−1) − 1 + RND, then horizontal (S + 64 − RND) >> 7), bilinear
+((4−fx)(4−fy)a + … + 8 − RND) >> 4 for colour difference and the half-pel bilinear mode, the
+reference repeated past its edges. In P pictures intra blocks use the inter 8 × 8 scan (8.3.6.1.5)
+and TRANSACFRM picks the intra set for Y, the inter set for colour difference; inter blocks all use
+the inter set, their DC run-level coded with the rest. Unit-tested; not yet checked on frames
+(open: whether the edge pad is at 1080 or the macroblock-aligned 1088).
