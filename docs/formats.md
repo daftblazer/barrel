@@ -2125,3 +2125,17 @@ comments): the opening's `s40` `ECT_CHARA_MOTION_SET_LOOP`, `s2` `ECT_CHARA_POS_
 `ECT_CHARA_ROT_MOVE_SET_TARGET`, `t18` `ECT_CAMERA_ROT_MOVE_SET`, `q10`
 `ECT_FIELDMAP_CHARA_COLLISION_FLAG`, `q5` `ECT_FIELDMAP_CHARA_ADDITION_EX`, `u44`
 `ECT_EVENT_SET_POST_EFFECT`; unnamed in both: `u17`, `u66`, `u65`, `t25` (Ryza only).
+
+## Movies (`Data/x64/Movie*/*.wmv`)
+
+Escha's movies (`avantitle`, `opening`, `opening_escha`, `opening_logy`, `sequence_01`/`_02`,
+`ending`; `Movie_EN` holds the English ones, `Movie` the rest) are ASF files with two streams:
+WMA 9 Pro sound (tag 0x162, 48 kHz stereo, 192 kb/s) and VC-1 Advanced video (`WVC1`, 1920 × 1080,
+about 12 Mb/s; its sequence and entry-point headers in the stream properties' codec data).
+`asf::Asf` reads the header (file properties: fixed packet size, preroll; stream properties,
+also those inside the header extension's extended stream properties) and puts each stream's
+media objects back together from the packets' payloads (single or multiple, replicated data
+with object size and time, compressed payloads). `avantitle.wmv` (96.24 s) gives 282 audio objects
+of 8,192 bytes and 2,883 video objects, as ffmpeg reads it: about 29.97 frames a second, though
+the stream is tagged 59.94 (VC-1's own picture headers will say whether frames repeat or are
+fields).
