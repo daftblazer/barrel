@@ -315,7 +315,11 @@ the next sector round (`fight::Battle::move_turn`). Wait and Run are given (Run:
 goes back to the field with no spoils and no lost day); Change is not yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same
 generator and commands always give the same battle, so what was played stays) up to the next
-member turn. Not yet the game's: the list (the game's command layout is not identified), no
+member turn. A hit's damage (and a heal's amount, a poison tick's) comes up over the fighter as the game's
+number (`battlehud::number`: part 0xe0's white brush digits, sign first, 36 apart and centred,
+fading in over 0.1 s from 160% to full size by 0.2 s, gone after 1 s; measured on the
+ruins-entrance-battle-result recording at 149.8 s), 100 units above the fighter's place.
+Not yet the game's: the list (the game's command layout is not identified), no
 mark on the target in the scene, no items, guarding or fleeing, the pad not mapped.
 
 **The question.** Back on an area map asks "Return to World Map?" as the game does

@@ -327,3 +327,66 @@ mod tests {
         assert_eq!(share((3, 0)), 0.0);
     }
 }
+
+/// The battle's numbers over a fighter hit or healed: part 0xe0 (`a15_battle.g1t` picture 1, a
+/// row of white brush digits with a dark edge, 36 × 60 cuts: 0 to 9, then 10 `+`, 11 `-`, 12
+/// `/`, 13 `%`, 14 "MP"), the sign first, the glyphs 36 apart and centred on the fighter's
+/// place (as a kind 29 node centres its number). Measured on the ruins-entrance-battle-result
+/// recording (149.8 s, "-27" on a Neck Hunt): drawn at full size (the "2"'s white 26 × 34, 32
+/// tall there; "-27" 91 wide), it fades in over 0.1 s while shrinking from about 160% to its
+/// size by 0.2 s, and stays until the camera moves on, some 0.85 s; the game's drawing code is
+/// not found yet (`docs/escha/open.md`).
+pub const NUMBER_DIGITS: i32 = 0xe0;
+const NUMBER_PLUS: i32 = 10;
+const NUMBER_MINUS: i32 = 11;
+const NUMBER_ADVANCE: f32 = 36.0;
+/// How long a number shows, and its fade in, pop and fade out (seconds).
+pub const NUMBER_SECONDS: f32 = 1.0;
+const NUMBER_FADE_IN: f32 = 0.1;
+const NUMBER_POP: f32 = 0.2;
+const NUMBER_FADE_OUT: f32 = 0.15;
+const NUMBER_POP_PERCENT: f32 = 160.0;
+
+/// `value` (negative: damage, "-27"; positive: a heal, "+12") centred on `centre` (the 1920 ×
+/// 1080 screen), `age` seconds after it came up; nothing once [`NUMBER_SECONDS`] have passed.
+pub fn number(value: i32, centre: [i32; 2], age: f32) -> Vec<Element> {
+    if !(0.0..NUMBER_SECONDS).contains(&age) {
+        return Vec::new();
+    }
+    let mut cuts = vec![if value < 0 { NUMBER_MINUS } else { NUMBER_PLUS }];
+    cuts.extend(value.unsigned_abs().to_string().bytes().map(|b| i32::from(b - b'0')));
+    let pop = (1.0 - age / NUMBER_POP).max(0.0);
+    let scale = (100.0 + (NUMBER_POP_PERCENT - 100.0) * pop * pop) / 100.0;
+    let alpha = (age / NUMBER_FADE_IN).min(1.0) * ((NUMBER_SECONDS - age) / NUMBER_FADE_OUT).min(1.0);
+    let advance = NUMBER_ADVANCE * scale;
+    let left = centre[0] as f32 - advance * (cuts.len() as f32 - 1.0) / 2.0;
+    cuts.iter()
+        .enumerate()
+        .map(|(k, &cut)| Element::Popped {
+            part: NUMBER_DIGITS,
+            cut,
+            centre: [(left + advance * k as f32).round() as i32, centre[1]],
+            percent: (scale * 100.0).round() as i32,
+            alpha: (alpha * 255.0).round() as u8,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod number_tests {
+    use super::*;
+
+    #[test]
+    fn a_hit_shows_its_sign_and_digits_centred_then_goes() {
+        let e = number(-27, [500, 400], 0.5);
+        let cuts: Vec<(i32, [i32; 2], i32, u8)> = e.iter().map(|e| match *e {
+            Element::Popped { cut, centre, percent, alpha, .. } => (cut, centre, percent, alpha),
+            _ => unreachable!(),
+        }).collect();
+        assert_eq!(cuts, vec![(11, [464, 400], 100, 255), (2, [500, 400], 100, 255), (7, [536, 400], 100, 255)]);
+        // Popping in: larger and faint at first.
+        let Element::Popped { percent, alpha, .. } = number(12, [0, 0], 0.02)[0] else { unreachable!() };
+        assert!(percent > 140 && alpha < 60, "{percent} {alpha}");
+        assert!(number(-5, [0, 0], NUMBER_SECONDS).is_empty());
+    }
+}

@@ -1241,7 +1241,7 @@ struct BattleHud {
     field_nodes: Vec<barrel_escha::data::layout::Placed>,
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
-    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize)>,
+    shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>)>,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1261,6 +1261,8 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
     every.extend(battlehud::target_plate(&plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), &battlehud::Plate { name: String::new(), hp: (1, 1), at: [0, 0] }));
     // And the Result screen's: its pieces, each member's portrait, both sizes of digits.
+    // The battle numbers' digits (their sheet).
+    every.extend(battlehud::number(-1, [0, 0], 0.5));
     let result_nodes = barrel_escha::data::layout::placed(&pe, result::LAYOUT);
     let sample = result::Values { rows: (0..6).map(|chara| result::Row { chara, level: 1, next: 1, level_up: true }).collect(), exp: 1, money: 1 };
     every.extend(result::elements(&result_nodes, |p| barrel_escha::data::layout::text(&pe, p), &sample));
@@ -1292,6 +1294,9 @@ const RESULT_SECONDS: f32 = 3.0;
 
 /// A lost battle's wipe (`ruins-entrance-lost-battle-60hz.mkv`): the fade to white, then the
 /// date panel alone on the white, in seconds (about 2 and 2 in the recording).
+/// How far above a fighter's feet its battle numbers stand (world units; the game's anchor
+/// not read: a stand-in near a monster's middle, as the recording shows them).
+const NUMBER_RAISE: f32 = 100.0;
 const WIPE_FADE: f32 = 2.0;
 const WIPE_SECONDS: f32 = 4.0;
 
@@ -1350,7 +1355,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, motions, anim, _)) = body.rig {
-            fighters[k] = Some(BattleFighter { body: first_body + bodies.len(), motions, back_at: None, down: false, party: k < party.len() });
+            fighters[k] = Some(BattleFighter { body: first_body + bodies.len(), place: pos, motions, back_at: None, down: false, party: k < party.len() });
             bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
     }
@@ -1367,6 +1372,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
         result_closed: false,
         lost_noted: false,
         items_noted: false,
+        numbers: Vec::new(),
         wiped: None,
         drops_shown: false,
         turn,
@@ -1420,6 +1426,8 @@ struct BattlePlay {
     lost_noted: bool,
     /// The battle items' spent uses are in the field's save.
     items_noted: bool,
+    /// The numbers up over fighters (`battlehud::number`): fighter, value, when it came up.
+    numbers: Vec<(usize, i32, f32)>,
     /// A lost battle's wipe: when it began and the day it turns to.
     wiped: Option<(f32, u32)>,
     /// A won battle's drops screen has been shown.
@@ -1460,6 +1468,8 @@ struct BattleFight {
 struct BattleFighter {
     /// Its body among the town bodies.
     body: usize,
+    /// Where it stands (field units).
+    place: [f32; 3],
     motions: Motions,
     /// When its one-off motion ends (back to its wait).
     back_at: Option<f32>,
@@ -1512,6 +1522,11 @@ impl BattlePlay {
             }).or(turn.next_places.first()).copied().unwrap_or(0),
             plate,
         })
+    }
+
+    /// Fighter `k`'s place on the stage, if it has a body.
+    fn place_of(&self, k: usize) -> Option<[f32; 3]> {
+        self.fighters.get(k)?.as_ref().map(|f| f.place)
     }
 
     /// Fighter `k`'s body, if it has one.
@@ -1641,6 +1656,8 @@ impl BattlePlay {
     /// One frame: the bodies' clocks, motions back to their wait, and the next event when due.
     fn step(&mut self, bodies: &mut [TownBody], dt: f32) {
         self.time += dt;
+        let now = self.time;
+        self.numbers.retain(|&(_, _, at)| now - at < battlehud::NUMBER_SECONDS);
         for f in self.fighters.iter_mut().flatten() {
             let Some(b) = bodies.get_mut(f.body) else { continue };
             b.clock = Some(b.clock.unwrap_or(0.0) + dt);
@@ -1692,6 +1709,12 @@ impl BattlePlay {
             Event::Poisoned { who, hp_left, .. } => self.set(who, 0, hp_left),
             // the run's and the move's motions are not played yet
             Event::Ran { .. } | Event::Moved { .. } => {}
+        }
+        match event {
+            Event::Acted { target, damage, .. } if damage > 0 => self.numbers.push((target, -damage, self.time)),
+            Event::Healed { target, amount, .. } if amount > 0 => self.numbers.push((target, amount, self.time)),
+            Event::Poisoned { who, damage, .. } if damage > 0 => self.numbers.push((who, -damage, self.time)),
+            _ => {}
         }
         let (who, target, fell) = match event {
             Event::Acted { who, target, hp_left, .. } => (Some(who), Some(target), hp_left <= 0),
@@ -5613,10 +5636,28 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             Some([((x - dx) / k) as i32, (y / k) as i32])
         };
         let commands = play.commands(screen);
+        // The numbers up, each over its fighter (raised from its feet: the game's anchor not read).
+        let numbers: Vec<hud::Element> = play
+            .numbers
+            .iter()
+            .filter_map(|&(k, value, at)| {
+                // Its place as the scene draws it (x mirrored).
+                let p = play.place_of(k)?;
+                let clip = mvp * glam::Vec4::new(-p[0], p[1] + NUMBER_RAISE, p[2], 1.0);
+                if clip.w <= 0.0 {
+                    return None;
+                }
+                let kk = height as f32 / 1080.0;
+                let dx = (width as f32 - 1920.0 * kk) / 2.0;
+                let (x, y) = ((clip.x / clip.w + 1.0) * 0.5 * width as f32, (clip.y / clip.w + 1.0) * 0.5 * height as f32);
+                Some(battlehud::number(value, [((x - dx) / kk) as i32, (y / kk) as i32], play.time - at))
+            })
+            .flatten()
+            .collect();
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast))
+        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone()))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
                 let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
@@ -5639,6 +5680,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         e
                     }
                 };
+                if shown_result.is_none() {
+                    elements.extend(numbers.iter().cloned());
+                }
                 if let Some((day, step)) = wipe {
                     elements.push(hud::Element::Fill { rect: [-4000, 0, 6000, 1080], colour: [1.0, 1.0, 1.0, step as f32 / 20.0] });
                     if step == 20 {
@@ -5646,7 +5690,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
-                h.shown = Some((members, commands, shown_result, wipe, width, height, fast));
+                h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers));
             }
     }
     // Offscreen, the frames written to files (with --save-every, only some): only those are

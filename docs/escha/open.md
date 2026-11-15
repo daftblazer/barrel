@@ -235,3 +235,10 @@ likely settle them where static reading failed.
   items are not read.
 
 - Equipping battle items from the basket (the atelier's preparation, capacity 5 at the start): the basket's items carry no uses or effects yet (`gather::Got`), which a `carry` line needs.
+
+- Battle numbers: the code that draws them is not found (the parts' ids are not loaded as
+  constants where the battle draws); so not read: their anchor on the fighter (Barrel: 100
+  units over its place), how long they stay (the recording's camera cuts away after ~0.85 s),
+  the heal and MP colours (part 0xe2's pink row, the purple rows of picture 1) and when the
+  big grey italic row (0xe1, layout 883) and layout 927 (a number on a panel with a word,
+  likely the chain count) are used.

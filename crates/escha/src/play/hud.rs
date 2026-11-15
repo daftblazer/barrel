@@ -156,6 +156,9 @@ pub enum Element {
     /// A sprite scaled to `percent` about its node `at` (a layout node of kind 4, its word 5:
     /// the title's logo at 80).
     Scaled { part: i32, cut: i32, at: [i32; 2], percent: i32 },
+    /// A sprite centred on `centre`, scaled to `percent` about it and at `alpha` of 255 (a
+    /// battle number popping in).
+    Popped { part: i32, cut: i32, centre: [i32; 2], percent: i32, alpha: u8 },
     /// A sprite turned a quarter clockwise about its node `at` (a layout node of kind 7: the
     /// area map labels' ornaments), so it lies left of and below the node.
     Turned { part: i32, cut: i32, at: [i32; 2] },
@@ -208,6 +211,7 @@ impl Element {
     pub fn sprite(&self) -> Option<(i32, i32, [i32; 2])> {
         match *self {
             Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } => Some((part, cut, at)),
+            Element::Popped { part, cut, centre, .. } => Some((part, cut, centre)),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } => None,
         }
     }
@@ -424,6 +428,21 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                         _ => [l / w, t / h, r / w, b / h],
                     },
                     color: [1.0, 1.0, 1.0, alpha],
+                    texture: sheets.first + slot,
+                });
+            }
+            &Element::Popped { part, cut, centre, percent, alpha } => {
+                let Some(piece) = layout::sprite(pe, part, cut, centre) else { continue };
+                let Some(slot) = sheets.keys.iter().position(|(n, i)| *n == piece.texture && *i == piece.index) else { continue };
+                let [w, h] = sheets.sizes[slot];
+                let [l, t, r, b] = piece.src.map(f32::from);
+                let scale = percent as f32 / 100.0;
+                let (hw, hh) = ((r - l) * scale / 2.0, (b - t) * scale / 2.0);
+                let [x, y] = centre.map(|v| v as f32);
+                out.push(Quad { turn: false,
+                    rect: [dx + (x - hw) * k, (y - hh) * k, dx + (x + hw) * k, (y + hh) * k],
+                    uv: [l / w, t / h, r / w, b / h],
+                    color: [1.0, 1.0, 1.0, f32::from(alpha) / 255.0],
                     texture: sheets.first + slot,
                 });
             }
