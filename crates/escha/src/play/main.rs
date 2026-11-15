@@ -1402,8 +1402,8 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
     for (c, m) in members.iter().enumerate() {
         tables.equip(c, &m.equipment);
         tables.carry(c, &m.battle_items);
-        if let Some([hp, _, mp, _]) = m.now {
-            tables.current(c, hp, mp);
+        if let Some(vitals) = m.now {
+            tables.current(c, vitals);
         }
     }
     let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
@@ -1621,13 +1621,16 @@ enum Choosing {
     ItemTarget(usize),
 }
 
-/// The command row an alchemist's turn shows (the battle-stats recording: Katla's Attack,
-/// Skill, Move, Wait, Change and Run; the alchemists' Item taken to go in its command order,
-/// after Attack, `docs/escha/open.md`). Change is not given yet.
-const COMMAND_ROW: [i32; 7] = {
+/// The command row of party member `chara`'s turn: Attack, Skill, Move, Wait and Run, and the
+/// alchemists' Item after Attack (the capture of a squad's first turn: the third member's five
+/// commands; the alchemists' Item taken to go in its command order, `docs/escha/open.md`).
+/// Change (the recording of Katla's turn had it) is not given yet and the capture's turn does
+/// not show it with two members in reserve, so it is left out.
+fn command_row_of(chara: usize) -> Vec<i32> {
     use battlehud::command::*;
-    [ATTACK, ITEM, SKILL, MOVE, WAIT, CHANGE, RUN]
-};
+    let alchemist = chara < 2;
+    [Some(ATTACK), alchemist.then_some(ITEM), Some(SKILL), Some(MOVE), Some(WAIT), Some(RUN)].into_iter().flatten().collect()
+}
 
 /// The game data the battle's skill scenes need.
 struct SceneData {
@@ -1719,6 +1722,11 @@ impl BattlePlay {
         self.turn.is_some() && self.next >= self.outcome.events.len() && self.time >= self.until
     }
 
+    /// The command row of the member whose turn it is.
+    fn row_of_turn(&self) -> Vec<i32> {
+        self.turn.as_ref().and_then(|t| self.charas.get(t.who)).map_or_else(Vec::new, |&c| command_row_of(c))
+    }
+
     /// The command list: the attack, then the member's skills (with their MP costs; those it
     /// cannot pay for marked), and the chosen target's name.
     /// `screen`: a fighter's place on the 1920 × 1080 screen (for the target plate).
@@ -1736,8 +1744,9 @@ impl BattlePlay {
         // While a target is chosen the game puts the row away (the ruins-entrance-battle-result
         // recording at 102.8 s: the plate, the turn bar's line and mark, no row).
         let targeting = matches!(self.choosing, Choosing::Target { .. } | Choosing::ItemTarget(_));
+        let row = self.row_of_turn();
         Some(battlehud::Commands {
-            row: if targeting { Vec::new() } else { COMMAND_ROW.to_vec() },
+            row: if targeting { Vec::new() } else { row.clone() },
             at: self.row,
             skills: matches!(self.choosing, Choosing::Skill | Choosing::Item).then(|| (list, self.chosen)),
             title: String::new(),
@@ -1746,7 +1755,7 @@ impl BattlePlay {
             // (Not while the cursor is on another command of the row: the capture of a turn's
             // first frames draws none.)
             next: match self.choosing {
-                Choosing::Row if COMMAND_ROW[self.row] != battlehud::command::WAIT => None,
+                Choosing::Row if row.get(self.row) != Some(&battlehud::command::WAIT) => None,
                 Choosing::Row => Some(turn.skills.len() + 1),
                 Choosing::Skill => Some(1 + self.chosen),
                 _ => Some(0),
@@ -2044,12 +2053,13 @@ impl BattlePlay {
         let skills = turn.skills.len().max(1);
         let items = turn.items.len().max(1);
         let foes = turn.foes.len().max(1);
-        let row = COMMAND_ROW.len();
+        let row_commands = self.row_of_turn();
+        let row = row_commands.len().max(1);
         use title::Button::*;
         match (self.choosing, b) {
             (Choosing::Row, Left) => self.row = (self.row + row - 1) % row,
             (Choosing::Row, Right) => self.row = (self.row + 1) % row,
-            (Choosing::Row, Confirm) => match COMMAND_ROW[self.row] {
+            (Choosing::Row, Confirm) => match row_commands.get(self.row).copied().unwrap_or(-1) {
                 battlehud::command::ATTACK => self.choosing = Choosing::Target { skill: None },
                 battlehud::command::SKILL if !turn.skills.is_empty() => self.choosing = Choosing::Skill,
                 battlehud::command::ITEM if !turn.items.is_empty() => (self.choosing, self.chosen) = (Choosing::Item, 0),

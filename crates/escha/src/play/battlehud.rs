@@ -53,9 +53,9 @@ const MP_BAR: i32 = 10;
 const PLATE_FIRST: (i32, i32) = (PLATE_PARTS, 5);
 /// The command row's layout (887): its places are the template `command_row` fills in.
 const COMMAND_ROW: u32 = 887;
-/// Left out: the template command row, the turn order, the reserve row, the state icons, the target panel, the battle
+/// Left out: the template command row, the state icons (873, 875), the flipbook marker of layout 876 (not drawn at a turn's start), the target panel, the battle
 /// cries' speech bubbles (layout 882: one over each plate, "…!!") and the action banner (885).
-const LEFT_OUT: [u32; 6] = [873, 875, 877, 882, BANNER, COMMAND_ROW];
+const LEFT_OUT: [u32; 7] = [873, 875, 876, 877, 882, BANNER, COMMAND_ROW];
 /// The turn order bar and its slots (layout 860, the 16th the Action slot).
 const TURN_BAR: u32 = 864;
 const SLOT: u32 = 860;
@@ -284,13 +284,25 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
             continue;
         }
         if n.part == 0x164 {
-            if let Some(t) = texts(p).filter(|t| !t.text.is_empty() && !t.filled_in()) {
-                let text = if t.text.starts_with("Fast Forward") { FAST_FORWARD_LABELS[fast_forward.min(2)].to_string() } else { t.text.clone() };
+            // The field information's label is empty in the layout: the game fills it in.
+            let field_info = p.path.get(1) == Some(&FIELD_INFO_LAYOUT);
+            if let Some(t) = texts(p).filter(|t| field_info || (!t.text.is_empty() && !t.filled_in())) {
+                let text = if t.text.starts_with("Fast Forward") {
+                    FAST_FORWARD_LABELS[fast_forward.min(2)].to_string()
+                } else if field_info {
+                    FIELD_INFO_LABEL.to_string()
+                } else {
+                    t.text.clone()
+                };
                 out.push(Element::Label(Text { text, at: [t.at[0], t.at[1] - TEXT_RISE], ..t }));
             }
             continue;
         }
         if n.kind == NUMBER_KIND {
+            continue;
+        }
+        if p.path.get(1) == Some(&FIELD_INFO_LAYOUT) && (n.part, n.cut) == (FIELD_INFO_BUTTON.0, FIELD_INFO_BUTTON.1) {
+            out.push(Element::Sprite { part: n.part, cut: FIELD_INFO_BUTTON.2, at: p.at });
             continue;
         }
         out.push(Element::stored(p));
@@ -354,8 +366,11 @@ fn rank(p: &Placed, slot: Option<usize>, frames: u32) -> u32 {
     }
 }
 
-/// The field information panel (layout 911).
+/// The field information panel (layout 911), its label and its button, as the game shows
+/// them: the layout's cut 6 is a stand-in, the panel's button is part 0x41's cut 20 (49 wide).
 const FIELD_INFO_LAYOUT: u32 = 911;
+const FIELD_INFO_LABEL: &str = "Field Information";
+const FIELD_INFO_BUTTON: (i32, i32, i32) = (BUTTONS, 6, 20);
 
 
 /// The command row (layout 887: nine places of layout 859 at y 584, 104 to 106 apart; a
@@ -684,26 +699,3 @@ pub fn support_bubbles(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>
 }
 const BUBBLE_RULE: (i32, i32) = (0x45, 26);
 const BUTTONS: i32 = 0x41;
-
-#[cfg(test)]
-mod scratch {
-    #[test]
-    fn dump_cuts() {
-        let Ok(root) = std::env::var("BARREL_ROOT") else { return };
-        if let Ok(f) = std::env::var("BARREL_SAVE") {
-            use barrel_escha::data::save;
-            let bytes = std::fs::read(f).unwrap();
-            let state = save::decode(save::parse(&bytes).unwrap().body).unwrap();
-            let sum = save::summary(&save::state_records(&state).unwrap());
-            eprintln!("CUT squad {:?} slots {:?} hero {:?}", sum.squad, sum.squad_slots, sum.hero);
-            for m in &sum.party { eprintln!("CUT member {} lv {} hp {}/{} mp {}/{} eq {:?}", m.character, m.level, m.hp, m.max_hp, m.mp, m.max_mp, m.equipped); }
-        }
-        let exe = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
-        let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
-        for part in [0xe6] {
-            for cut in 0..70 {
-                if let Some(p) = barrel_escha::data::layout::sprite(&pe, part, cut, [0, 0]) { eprintln!("CUT {part:x} {cut} {} {} {:?}", p.texture, p.index, p.src); }
-            }
-        }
-    }
-}

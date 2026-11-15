@@ -50,7 +50,7 @@ pub struct Tables {
     /// the session item it was made from.
     held: Vec<Vec<(usize, crate::skirmish::Held)>>,
     /// Each member's HP and MP at the battle's start when below their maxima ([`Tables::current`]).
-    now: Vec<Option<(i32, i32)>>,
+    now: Vec<Option<[i32; 4]>>,
 }
 
 impl Tables {
@@ -105,12 +105,13 @@ impl Tables {
         self.kit[member] = kit_stats(&self.items, items);
     }
 
-    /// Member `member` starts its battles with `hp` and `mp` (a save's current values).
-    pub fn current(&mut self, member: usize, hp: i32, mp: i32) {
+    /// Member `member` starts its battles with `[hp, most hp, mp, most mp]` (a save's values,
+    /// the maxima with equipment: they stand for what the kit adds that Barrel does not yet).
+    pub fn current(&mut self, member: usize, vitals: [i32; 4]) {
         if self.now.len() <= member {
             self.now.resize(member + 1, None);
         }
-        self.now[member] = Some((hp, mp));
+        self.now[member] = Some(vitals);
     }
 
     /// Reads `item_potential.xml` (`potential_xml`), for carried items' traits.
@@ -285,7 +286,11 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
         for (r, k) in block.resist.iter_mut().zip(&kit[5..]) {
             *r += k;
         }
-        let mp = stats.mp + kit[1];
+        let vitals = t.now.get(c).copied().flatten();
+        if let Some([_, max_hp, _, _]) = vitals {
+            block.hp = max_hp;
+        }
+        let mp = vitals.map_or(stats.mp + kit[1], |v| v[3]);
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
         let mut member = crate::skirmish::Member::new(block.clone(), mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);
@@ -293,7 +298,7 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
             *cost = crate::battle::support_attack_cost(Some(c));
         }
         member.items = t.held.get(c).map(|h| h.iter().map(|(_, h)| h.clone()).collect()).unwrap_or_default();
-        member.now = t.now.get(c).copied().flatten();
+        member.now = vitals.map(|v| (v[0], v[2]));
         let (hp_now, mp_now) = member.now.map_or((block.hp, mp), |(hp, mp_now)| (hp.clamp(0, block.hp), mp_now.clamp(0, mp)));
         start.push([hp_now, block.hp, mp_now, mp]);
         members.push(member);
