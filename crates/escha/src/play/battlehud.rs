@@ -21,13 +21,15 @@
 
 use barrel_escha::data::layout::{Placed, Text};
 
-use crate::hud::Element;
+use crate::hud::{Element, TEXT_RISE};
 
 pub const LAYOUT: u32 = 886;
 /// The Support gauge (layout 884), its bar (part 0xf7) and its level's digit (0xe1, layout 883).
 const SUPPORT: u32 = 884;
 const SUPPORT_BAR: i32 = 0xf7;
 const SUPPORT_DIGITS: i32 = 0xe1;
+/// Half the digit's width: its node is its centre.
+const SUPPORT_DIGIT_HALF: i32 = 36;
 const PLATE: u32 = 870;
 const PORTRAIT: i32 = 0xf2;
 const PLATE_PARTS: i32 = 0xee;
@@ -35,12 +37,18 @@ const HP_BAR: i32 = 11;
 const MP_BAR: i32 = 10;
 /// The plate's first node (its frame), which starts each plate in the placed order.
 const PLATE_FIRST: (i32, i32) = (PLATE_PARTS, 5);
-/// Left out: the turn order, the reserve row, the state icons, the target panel, the battle
+/// The command row's layout (887): its places are the template `command_row` fills in.
+const COMMAND_ROW: u32 = 887;
+/// Left out: the template command row, the turn order, the reserve row, the state icons, the target panel, the battle
 /// cries' speech bubbles (layout 882: one over each plate, "…!!") and the action banner (885).
-const LEFT_OUT: [u32; 6] = [868, 873, 875, 877, 882, BANNER];
+const LEFT_OUT: [u32; 7] = [868, 873, 875, 877, 882, BANNER, COMMAND_ROW];
 /// The turn order bar and its slots (layout 860, the 16th the Action slot).
 const TURN_BAR: u32 = 864;
 const SLOT: u32 = 860;
+/// The bar's end pieces (layout 862). Its first two, the dark frame behind the bar and its right
+/// end, are never drawn in the captures (the frames of the party's turns and of a command row).
+const BAR_ENDS: u32 = 862;
+const BAR_ENDS_UNDRAWN: [(i32, i32); 2] = [(0xf4, 0), (0xf4, 1)];
 const SLOTS: usize = 15;
 const SLOT_FIRST: (i32, i32) = (0xf4, 7);
 /// A slot's target marks, shown on the target's next turn while a member picks it (the
@@ -82,6 +90,24 @@ fn share((now, max): (i32, i32)) -> f32 {
     if max > 0 { now.clamp(0, max) as f32 / max as f32 } else { 0.0 }
 }
 
+/// Where the game draws a group of nodes against the place the layout gives (fitted to the
+/// capture of a battle at 1920 × 1080: the turn bar a pixel right and down, the Fast Forward
+/// label and the Support gauge a pixel up; the rest, the plates and the field information,
+/// stand where the layout puts them).
+const BAR_NUDGE: [i32; 2] = [1, 1];
+const SUPPORT_NUDGE: [i32; 2] = [0, -1];
+
+fn nudged(p: &Placed) -> [i32; 2] {
+    let d = if p.path.contains(&TURN_BAR) {
+        BAR_NUDGE
+    } else if p.path.contains(&SUPPORT) {
+        SUPPORT_NUDGE
+    } else {
+        [0, 0]
+    };
+    [p.at[0] + d[0], p.at[1] + d[1]]
+}
+
 /// The elements to draw from layout 886's placed nodes (`texts` gives a node's text).
 /// `order`: the turn order, the one acting first, each a portrait cut (`None`: no portrait).
 /// The battle's Fast Forward: the game's global `0x141077da0` (0 off, 1, 2), stepped by L3 as
@@ -102,11 +128,13 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
     // Which plate a node is on (counted as their first nodes come).
     let starts = |p: &&Placed| p.path.last() == Some(&PLATE) && (p.node.part, p.node.cut) == PLATE_FIRST;
     let mut plate: Option<usize> = None;
-    for p in nodes {
-        let n = p.node;
-        if p.path.iter().any(|l| LEFT_OUT.contains(l)) {
+    for placed in nodes {
+        if placed.path.iter().any(|l| LEFT_OUT.contains(l)) {
             continue;
         }
+        let moved = Placed { at: nudged(placed), ..placed.clone() };
+        let p = &moved;
+        let n = p.node;
         if p.path.contains(&TURN_BAR) {
             // The order's place slot k shows: the Action slot the one acting, slot k of the 15
             // the (15 - k)th after it.
@@ -125,6 +153,9 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
                 continue;
             }
             if p.path.last() != Some(&SLOT) {
+                if p.path.last() == Some(&BAR_ENDS) && BAR_ENDS_UNDRAWN.contains(&(n.part, n.cut)) {
+                    continue;
+                }
                 if !p.path.contains(&SLOT) {
                     out.push(Element::stored(p));
                 } else if p.path.last() == Some(&SLOT_FRAME) && slot.is_some_and(|k| marked == Some(place(k))) {
@@ -167,11 +198,11 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
             match (n.part, n.cut) {
                 (SUPPORT_BAR, 1) => {
                     let fill = if level * barrel_escha::battle::SUPPORT_LEVEL >= barrel_escha::battle::SUPPORT_MAX { 1.0 } else { (support % barrel_escha::battle::SUPPORT_LEVEL) as f32 / barrel_escha::battle::SUPPORT_LEVEL as f32 };
-                    out.push(Element::Cropped { part: SUPPORT_BAR, cut: 1, at: p.at, fill });
+                    out.push(Element::Rising { part: SUPPORT_BAR, cut: 1, at: p.at, fill });
                     continue;
                 }
                 (SUPPORT_DIGITS, _) => {
-                    out.push(Element::Sprite { part: SUPPORT_DIGITS, cut: level, at: p.at });
+                    out.push(Element::Sprite { part: SUPPORT_DIGITS, cut: level, at: [p.at[0] - SUPPORT_DIGIT_HALF, p.at[1]] });
                     continue;
                 }
                 _ => {}
@@ -195,7 +226,7 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, membe
         if n.part == 0x164 {
             if let Some(t) = texts(p).filter(|t| !t.text.is_empty() && !t.filled_in()) {
                 let text = if t.text.starts_with("Fast Forward") { FAST_FORWARD_LABELS[fast_forward.min(2)].to_string() } else { t.text.clone() };
-                out.push(Element::Label(Text { text, ..t }));
+                out.push(Element::Label(Text { text, at: [t.at[0], t.at[1] - TEXT_RISE], ..t }));
             }
             continue;
         }
@@ -222,8 +253,14 @@ pub mod command {
     pub const CHANGE: i32 = 7;
     pub const RUN: i32 = 8;
 }
-const ROW_X: [i32; 9] = [420, 524, 630, 736, 840, 944, 1050, 1156, 1260];
-const ROW_Y: i32 = 584;
+/// The row's places, 105 apart (the layout's nine, 104 to 106 apart, are that rounded), the
+/// row centred on x 961 and its icons at y 585 (the capture of a turn's command row at
+/// 1920 × 1080: five places, the first icon at x 703, the second at 808, y 593).
+/// The most commands a row holds (layout 887's places).
+const MAX_COMMANDS: usize = 9;
+const ROW_PITCH: f32 = 105.0;
+const ROW_CENTRE_X: f32 = 961.0;
+const ROW_Y: i32 = 585;
 /// A place's centre from its node (layout 859's icon, 856, at (98, 56)).
 const ROW_CENTRE: [i32; 2] = [98, 56];
 const ICON: i32 = 0xe7;
@@ -238,15 +275,14 @@ const LABEL: i32 = 0xec;
 /// (4: the diamond cuts 2 to 5, the arrows 6 to 9 and 10 to 13); drawn at their first frame
 /// until the HUD has a clock.
 pub fn command_row(commands: &[i32], chosen: usize) -> Vec<Element> {
-    let n = commands.len().clamp(1, ROW_X.len());
-    let shift = 960 - ((ROW_X[0] + ROW_X[n - 1]) / 2 + ROW_CENTRE[0]);
+    let n = commands.len().clamp(1, MAX_COMMANDS);
     let mut out = Vec::new();
     // The chosen one last: its arrows lie over its neighbours (the recording's right arrow over
     // the Skill icon).
     let order = (0..n).filter(|&k| k != chosen).chain((chosen < n).then_some(chosen));
     for k in order {
         let c = commands[k];
-        let node = [ROW_X[k] + shift, ROW_Y];
+        let node = [(ROW_CENTRE_X - ROW_CENTRE[0] as f32 + ROW_PITCH * (k as f32 - (n - 1) as f32 / 2.0)).round() as i32, ROW_Y];
         let at = |x: i32, y: i32| [node[0] + x, node[1] + y];
         if k == chosen {
             out.push(Element::Sprite { part: ROW_PARTS, cut: 2, at: at(96 - 66, 50 - 72) });
@@ -274,8 +310,8 @@ pub struct Commands {
     /// The target's plate while choosing it, and the place in the turn order of its next turn.
     pub plate: Option<Plate>,
     pub marked: Option<usize>,
-    /// The next-turn mark's entry count (`Turn::next_place`).
-    pub next: usize,
+    /// The next-turn mark's entry count (`Turn::next_place`), while one is shown.
+    pub next: Option<usize>,
 }
 
 /// The target plate (layout 920: the frame, part 0x102 cut 3, the red HP bar, cut 6, and the

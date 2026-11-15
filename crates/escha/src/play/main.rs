@@ -1721,11 +1721,15 @@ impl BattlePlay {
             title: String::new(),
             marked: target.filter(|_| plate.is_some()).and_then(|k| turn.slots.iter().skip(1).position(|&o| o == Some(k))).map(|p| p + 1),
             // The mark follows the command under the cursor: the skill's in the skill list.
-            next: turn.next_places.get(match self.choosing {
-                Choosing::Skill => 1 + self.chosen,
-                Choosing::Row if COMMAND_ROW[self.row] == battlehud::command::WAIT => turn.skills.len() + 1,
-                _ => 0,
-            }).or(turn.next_places.first()).copied().unwrap_or(0),
+            // (Not while the cursor is on another command of the row: the capture of a turn's
+            // first frames draws none.)
+            next: match self.choosing {
+                Choosing::Row if COMMAND_ROW[self.row] != battlehud::command::WAIT => None,
+                Choosing::Row => Some(turn.skills.len() + 1),
+                Choosing::Skill => Some(1 + self.chosen),
+                _ => Some(0),
+            }
+            .map(|k| turn.next_places.get(k).or(turn.next_places.first()).copied().unwrap_or(0)),
             plate,
         })
     }
@@ -6508,7 +6512,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     // The Result screen, in place of the battle's HUD.
                     Some(v) => result::elements(&h.result_nodes, |p| barrel_escha::data::layout::text(&pe, p), v),
                     None => {
-                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().map(|c| c.next), play.support);
+                        let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support);
                         if let Some(c) = &commands {
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.
