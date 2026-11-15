@@ -415,7 +415,8 @@ west at 2 m/s from 15 m east of the first enemy; each body follows its creature'
 facing and switches to the motion its script plays. When one touches the player everything
 stops there and the encounter group is printed (`AREA_01_01`: the first Ore Rat at frame 512,
 group 10, as `barrel field-sim` finds). `--save-every N` writes only every Nth frame and the
-last. The camera follows the player with the field's play-camera setting
+last; an offscreen run writes at most 600 frames, so it may run 600 × N frames (a field battle
+fought to its Result and back: `--frames 3000 --save-every 20`). The camera follows the player with the field's play-camera setting
 (`Saves/field/<FIELD>.xml`, `<camera><area><point>`: `length` metres away, `radian` its yaw
 and `lookRad` its pitch in degrees (+0x20 and +0x80, which the eye builder `0x1401e68f0` turns
 about y and x), `fov`, `diffPosition` metres added to the player's place;

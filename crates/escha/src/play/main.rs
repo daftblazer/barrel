@@ -1295,6 +1295,9 @@ const RESULT_SECONDS: f32 = 3.0;
 
 /// A lost battle's wipe (`ruins-entrance-lost-battle-60hz.mkv`): the fade to white, then the
 /// date panel alone on the white, in seconds (about 2 and 2 in the recording).
+/// The most frames an offscreen run writes (its length is this times `--save-every`).
+const MAX_WRITTEN_FRAMES: u32 = 600;
+
 /// How far above a fighter's feet its battle numbers stand (world units; the game's anchor
 /// not read: a stand-in near a monster's middle, as the recording shows them).
 const NUMBER_RAISE: f32 = 100.0;
@@ -2927,7 +2930,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             "--line" => event_line = Some(it.next().ok_or("--line N")?.parse()?),
             "--at" => event_at = Some(it.next().ok_or("--at SECONDS")?.parse()?),
             "--audio" => audio_out = Some(PathBuf::from(it.next().ok_or("--audio OUT.wav")?)),
-            "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.clamp(1, 600),
+            "--frames" => frames = it.next().ok_or("--frames N")?.parse::<u32>()?.max(1),
             // --window 0: until the player quits (a game launch, Kintsugi's `run`).
             "--window" => window_frames = Some(match it.next().ok_or("--window FRAMES")?.parse::<u32>()? {
                 0 => u32::MAX,
@@ -3078,7 +3081,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         free_play = true;
         eprintln!("new game: {first}");
     }
-    let frames = window_frames.unwrap_or(frames);
+    // Offscreen, at most 600 frames written: `--save-every N` lets a run go N times as long.
+    let frames = window_frames.unwrap_or(frames.min(MAX_WRITTEN_FRAMES * save_every));
     let d = &gpu.device;
     // Barrel's graphics config (the Options screen's graphics page writes it) when no setting
     // was given on the command line: in a window, or offscreen when `BARREL_CONFIG` names one.
