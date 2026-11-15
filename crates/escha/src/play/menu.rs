@@ -35,9 +35,12 @@ const OPTION_FRAME: i32 = 0x1f;
 const LABEL: i32 = 0x2f;
 const ICON: i32 = 0x2b;
 const NEW: i32 = 0x4a;
+/// How large a button's icon is drawn (the game's capture: 54 of the sheet's 60 pixels).
+const ICON_PERCENT: i32 = 90;
 /// Cuts of a name or icon in white rather than gold.
 const WHITE: i32 = 10;
-const VISIBLE: usize = 8;
+/// The buttons the list shows at a time (layout 385's nine slots).
+const VISIBLE: usize = 9;
 
 /// The commands, in the order of their names' cuts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,6 +99,9 @@ pub struct Menu {
     /// Opened straight on its page (the field's LB opens Assignment): closing the page closes
     /// the menu.
     pub direct: bool,
+    /// The Container command in the list (the game leaves it out away from the workshop: its
+    /// list on the area map starts at the Basket).
+    pub container: bool,
 }
 
 /// A command's page.
@@ -126,7 +132,7 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None, page: None, direct: false }
+        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true }
     }
 
     /// The menu opened straight on `page`, as the field's shortcuts do; backing out of the page
@@ -143,7 +149,22 @@ impl Menu {
             Start::Page(p) => (Some(p), None),
             Start::System => (None, Some(0)),
         };
-        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true }
+        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true }
+    }
+
+    /// The menu without its Container command (the chosen one stays the same command).
+    pub fn without_container(mut self) -> Menu {
+        if self.container {
+            self.container = false;
+            self.chosen = self.chosen.saturating_sub(1);
+            self.first = self.first.saturating_sub(1);
+        }
+        self
+    }
+
+    /// The commands the list holds.
+    pub fn commands(&self) -> &'static [Command] {
+        if self.container { &COMMANDS } else { &COMMANDS[1..] }
     }
 
     /// A button press, with `count` items in the basket (for its page).
@@ -176,13 +197,13 @@ impl Menu {
             }
             return None;
         }
-        let n = COMMANDS.len();
+        let n = self.commands().len();
         match b {
             Button::Up => self.chosen = (self.chosen + n - 1) % n,
             Button::Down => self.chosen = (self.chosen + 1) % n,
             Button::Left | Button::Right => {}
             Button::Back => return Some(Outcome::Close),
-            Button::Confirm => match COMMANDS[self.chosen] {
+            Button::Confirm => match self.commands()[self.chosen] {
                 Command::Option => self.option = Some(0),
                 Command::Status => self.page = Some(Page::Status),
                 Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
@@ -201,6 +222,11 @@ impl Menu {
     /// The elements to draw from the placed nodes of the background, the figure and the list
     /// (in that order; `texts` gives a node's text).
     pub fn elements(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>) -> Vec<Element> {
+        self.elements_with(nodes, texts, None)
+    }
+
+    /// [`Menu::elements`] with the "NEW" badge on the button of `new`.
+    pub fn elements_with(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, new: Option<Command>) -> Vec<Element> {
         let mut out = Vec::new();
         // Each button's or row's place, in the order they come, gives its slot.
         let (mut buttons, mut rows): (Vec<[i32; 2]>, Vec<[i32; 2]>) = (Vec::new(), Vec::new());
@@ -218,19 +244,24 @@ impl Menu {
                 Some(&COMMAND) => {
                     let r = slot(&mut buttons);
                     let k = self.first + r;
-                    if k >= COMMANDS.len() {
-                        continue;
-                    }
+                    let Some(&command) = self.commands().get(k) else { continue };
+                    let which = COMMANDS.iter().position(|&c| c == command).unwrap_or(0) as i32;
                     let lit = k == self.chosen && self.option.is_none();
                     let white = if lit { WHITE } else { 0 };
                     let cut = match n.part {
                         PLATE => i32::from(lit),
-                        LABEL | ICON => k as i32 + white,
+                        LABEL | ICON => which + white,
                         COMMAND_FRAME if lit => 0,
-                        _ => continue, // the frame off, "NEW"
+                        NEW if new == Some(command) => 0,
+                        _ => continue, // the frame off, "NEW" unless due
                     };
-                    // Under the open Option list the buttons are drawn at half strength.
-                    out.push(if self.option.is_some() { Element::Dim { part: n.part, cut, at: p.at } } else { Element::Sprite { part: n.part, cut, at: p.at } });
+                    // Under the open Option list the buttons are drawn at half strength; the icon's
+                    // node is a kind 4 picture drawn at 90% about its corner.
+                    out.push(match n.part {
+                        _ if self.option.is_some() => Element::Dim { part: n.part, cut, at: p.at },
+                        ICON => Element::Scaled { part: n.part, cut, at: p.at, percent: ICON_PERCENT, about: p.at },
+                        _ => Element::Sprite { part: n.part, cut, at: p.at },
+                    });
                 }
                 Some(&OPTION_ROW) => {
                     let r = slot(&mut rows);
@@ -271,8 +302,8 @@ pub fn run(
     window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &std::path::Path,
-    logy: bool,
-    lead: Option<&barrel_escha::session::Member>,
+    source: Option<&crate::overview::Source>,
+    hud: &[Element],
     basket: &[(i32, f32)],
     card: &[Option<crate::assignment::Task>],
     keys: &[Button],
@@ -282,6 +313,8 @@ pub fn run(
     use crate::{hud, screen, text};
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let logy = source.is_some_and(|s| s.lead == 1);
+    let lead = source.and_then(|s| s.party.get(s.lead));
     let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     // The Status page: its nodes over the desk, and the lead's values.
     let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
@@ -307,7 +340,18 @@ pub fn run(
         e.extend(crate::status::elements(&status_nodes, texts, &values));
         e
     };
+    // The party overview: the page the list shows when nothing is open over it.
+    let table = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
+    let ranks = barrel_escha::rank::ranks(&table("Saves/rank/RankData.xml")?);
+    let overview = source.and_then(|s| crate::overview::Overview::of(&pe, s, &item_rows.children, &ranks));
+    let words = crate::overview::Words::read(&table("Saves_EN/systemMessage/SysInfo.xml")?, &table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
+    let screen_layouts = crate::overview::Layouts::load(&pe);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
+    let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
+        let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
+        e.extend(hud.iter().cloned());
+        e
+    };
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("menu: no glyph table")?;
     let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
@@ -316,14 +360,19 @@ pub fn run(
     let mut every = Vec::new();
     for chosen in 0..COMMANDS.len() {
         let first = chosen.saturating_sub(VISIBLE - 1);
-        every.extend(Menu { chosen, first, option: None, page: None, direct: false }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: 0, option: None, page: None, direct: false }.elements(&nodes, texts));
-        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, option: None, page: None, direct: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first, ..Menu::new() }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: 0, ..Menu::new() }.elements(&nodes, texts));
+        every.extend(Menu { chosen, first: COMMANDS.len() - VISIBLE, ..Menu::new() }.elements(&nodes, texts));
     }
     for row in 0..OPTION_ROWS.len() {
-        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), page: None, direct: false }.elements(&nodes, texts));
+        every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), ..Menu::new() }.elements(&nodes, texts));
     }
     every.extend(status_elements(&texts));
+    if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
+        for chosen in 0..COMMANDS.len() {
+            every.extend(overview_elements(&Menu { chosen, first: chosen.saturating_sub(VISIBLE - 1), ..Menu::new() }, &v));
+        }
+    }
     // Every cell lit and not, with every item.
     for chosen in 0..items.len().max(1) {
         every.extend(basket_elements(&crate::basket::Basket { chosen, first: chosen / 5 / 5 * 5 }, &texts));
@@ -351,11 +400,15 @@ pub fn run(
             Some(Page::Status) => status_elements(&texts),
             Some(Page::Basket(b)) => basket_elements(&b, &texts),
             Some(Page::Assignment(a)) => assignment_elements(&a, &texts),
+            None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
         };
         hud::quads(&pe, Some(&font), &sheets, &e, w, h)
     };
     let mut menu = start.map_or_else(Menu::new, Menu::at);
+    if !source.is_none_or(|s| s.container) {
+        menu = menu.without_container();
+    }
     // Barrel acts on Close and on the Option rows it has; the rest only report.
     let count = items.len();
     let press = |m: &mut Menu, b: Button| match m.press(b, count)? {
@@ -395,7 +448,7 @@ mod tests {
     fn moves_scrolls_and_opens_options() {
         let mut m = Menu::new();
         assert_eq!(m.press(Button::Up, 0), None);
-        assert_eq!((m.chosen, m.first), (9, 2));
+        assert_eq!((m.chosen, m.first), (9, 1));
         assert_eq!(m.press(Button::Confirm, 0), None);
         assert_eq!(m.option, Some(0));
         m.press(Button::Up, 0);
@@ -413,6 +466,15 @@ mod tests {
         m.press(Button::Down, 0);
         assert_eq!(m.press(Button::Confirm, 0), Some(Outcome::Command(Command::AdventureEquip)));
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
+    }
+
+    #[test]
+    fn the_list_may_leave_out_the_container() {
+        let mut m = Menu::new().without_container();
+        assert_eq!((m.commands().len(), m.commands()[m.chosen]), (9, Command::Basket));
+        assert_eq!(m.press(Button::Up, 0), None);
+        assert_eq!(m.commands()[m.chosen], Command::Option);
+        assert_eq!(Menu::at(Start::System).without_container().commands()[m.chosen], Command::Option);
     }
 
     #[test]

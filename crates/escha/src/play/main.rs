@@ -29,6 +29,7 @@ mod splash;
 mod movie;
 mod screen;
 mod menu;
+mod overview;
 mod message;
 mod status;
 mod requests;
@@ -624,6 +625,39 @@ const RETURN_TO_WORLD_MAP: &str = "Return to World Map?";
 
 /// The field HUD's layer (the font atlas, then the pictures of layout 625 and, on the maps,
 /// the date panel's), the font, the pictures' slots and the layouts' nodes.
+/// The field HUD's values for the session: the date, the requests' cards and the field effect's
+/// gauge. `area` says whether the maps are up (and whether it is the world map).
+/// The gauge is at 0 without a notice on the world map (the colseit-arrival recording, after
+/// leaving the Southern Ruins at 45); in a field area and on its area map the session's; none
+/// in town (not checked against the game).
+fn hud_values(s: &barrel_escha::session::Session, area: Option<bool>) -> hud::Values {
+    let mut v = hud::Values::on(s.today().max(0) as u32, s.field_tenths());
+    v.cards = hud::cards(&s.taken);
+    v.gauge = match area {
+        Some(true) => Some(hud::Gauge { percent: 0, mode: -1 }),
+        Some(false) => Some(hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
+        None => s.field().filter(|&m| m as usize >= barrel_escha::data::gimmick::TOWN_MAPS).map(|_| hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
+    };
+    v
+}
+
+/// What the main menu shows of the session; its Container command only in a town, off the maps.
+fn menu_source(session: Option<&barrel_escha::session::Session>, area: Option<bool>) -> Option<overview::Source<'_>> {
+    session.map(|s| overview::Source { container: area.is_none() && overview::Source::of(s).container, ..overview::Source::of(s) })
+}
+
+/// The field HUD drawn over the main menu (the game draws it last, over the opened menu): on the
+/// maps its date panel, else the whole HUD; nothing without a session or the HUD's layout.
+fn menu_hud(exe: Option<&[u8]>, nodes: Option<&[barrel_escha::data::layout::Placed]>, session: Option<&barrel_escha::session::Session>, area: Option<bool>) -> Vec<hud::Element> {
+    let (Some(exe), Some(nodes), Some(s)) = (exe, nodes, session) else { return Vec::new() };
+    let Ok(pe) = barrel_formats::pe::Pe::parse(exe) else { return Vec::new() };
+    let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
+    let mut v = hud_values(s, area);
+    // Over the menu the game draws the panel without the field effect's gauge (the capture).
+    v.gauge = None;
+    if area.is_some() { hud::date_panel(nodes, texts, v) } else { hud::elements(nodes, texts, v) }
+}
+
 type FieldHud = (text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>);
 
 fn field_hud_layer(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, exe: &[u8], root: &Path, area_mode: bool) -> Option<FieldHud> {
@@ -3545,6 +3579,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut area_mode = false;
     // --requests: draw the Requests screen (offscreen, over the session's taken requests).
     let mut requests_mode = false;
+    // --menu: draw the main menu's first page (offscreen, over the session; with `--area-map` the
+    // HUD's date panel on top, as the game shows it).
+    let mut menu_mode = false;
     // The area map's top level, the world map (the town and the regions).
     let mut world_mode = false;
     let mut load_file = None::<PathBuf>;
@@ -3714,6 +3751,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // of the point's region, Enter enters the field of the point she stands on.
             "--area-map" => area_mode = true,
             "--requests" => requests_mode = true,
+            "--menu" => menu_mode = true,
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
             "--pad-test" => {
@@ -4700,6 +4738,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let color = *color;
             cauldron(&gpu, renderer.pool, &target, None, Some(color), &root, session.as_mut(), &keys, Some(Path::new(&out_path)), frame)?;
         }
+    // The maps are up under the menu: the area map, or the world map (offscreen the first frame
+    // has none made yet: `--area-map` stands for it).
+    let menu_area = area_map.as_ref().map(|a| a.world).or_else(|| (presenter.is_none() && area_mode).then_some(false));
     // In a window `BARREL_MENU_AT` opens the menu at that frame, `BARREL_MENU_KEYS` and
     // `BARREL_OPTIONS_KEYS` pressed in it first (a scripted check of the screens in a window).
     // Once a run: a scene started again (as the page's confirm does) does not run it again.
@@ -4713,11 +4754,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let script = |name: &str| if scripted { title::keys(&std::env::var(name).unwrap_or_default()) } else { Vec::new() };
     // Offscreen: the main menu drawn at a frame (`BARREL_MENU_AT`) after the buttons in
     // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
-    if presenter.is_none() && std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64)
+    if presenter.is_none() && (menu_mode && frame == 0 || std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64))
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), renderer.offscreen.as_ref()) {
             let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
             let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, renderer.pool, &target, None, Some(*color), root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, None, Some(Path::new(&out_path)))?;
+            let picked = menu::run(&gpu, renderer.pool, &target, None, Some(*color), root, menu_source(session.as_ref(), menu_area).as_ref(), &menu_hud(hud_exe.as_deref(), field_hud.as_ref().map(|h| &h.3[..]), session.as_ref(), menu_area), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, None, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");
             if let Some(menu::Outcome::Option(o @ (menu::OptionRow::ReturnToTitle | menu::OptionRow::Load))) = picked {
                 restart = Some(title_args(&original_args, root, o == menu::OptionRow::Load));
@@ -4945,7 +4986,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         if open_menu && let (Some(root), Some(pr)) = (hud_root.as_ref(), presenter.as_ref()) {
             unsafe { gpu.device.device_wait_idle()? };
             let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
-            let picked = menu::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, session.as_ref().is_some_and(|s| s.logy), session.as_ref().and_then(|s| s.party.get(usize::from(s.logy))), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), menu_page.take(), None)?;
+            let picked = menu::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, menu_source(session.as_ref(), menu_area).as_ref(), &menu_hud(hud_exe.as_deref(), field_hud.as_ref().map(|h| &h.3[..]), session.as_ref(), menu_area), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &script("BARREL_MENU_KEYS"), menu_page.take(), None)?;
             eprintln!("frame {frame}: menu: {picked:?}");
             match picked {
                 None => {
@@ -6484,20 +6525,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let instance_set = scene.instance_set(&gpu, current_field as usize);
     // The field HUD with the session's date and field time, rebuilt when they change.
     if let (Some((layer, font, sheets, nodes, last)), Some(s), Some(exe)) = (field_hud.as_mut(), session.as_ref(), hud_exe.as_ref()) {
-        let mut v = hud::Values::on(s.today().max(0) as u32, s.field_tenths());
-        v.cards = hud::cards(&s.taken);
+        let mut v = hud_values(s, area_map.as_ref().map(|a| a.world));
         v.run_on = walker.as_ref().is_some_and(|w| w.run_on);
         if area_map.is_none() {
             v.entry = entry_line.clone();
         }
-        // The field effect's gauge: on the world map at 0 without a notice (the colseit-arrival
-        // recording, after leaving the Southern Ruins at 45); in a field area and on its area
-        // map, the session's; none in town (not checked against the game).
-        v.gauge = match area_map.as_ref() {
-            Some(a) if a.world => Some(hud::Gauge { percent: 0, mode: -1 }),
-            Some(_) => Some(hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
-            None => s.field().filter(|&m| m as usize >= barrel_escha::data::gimmick::TOWN_MAPS).map(|_| hud::Gauge { percent: s.field_gauge, mode: s.field_state.mode }),
-        };
         let map = area_map.as_ref().map(|a| (a.world, a.on_town()));
         let key = (v.clone(), width, height, map);
         if last.as_ref() != Some(&key)

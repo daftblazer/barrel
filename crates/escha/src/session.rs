@@ -161,17 +161,24 @@ pub struct Session {
     pub taken: [Option<Taken>; TAKEN_SLOTS],
     /// The adventurer rank (a `RankData` row) and the rank points held.
     pub rank: (i32, i32),
+    /// Each party member's friendship value by character (the `Party` record's float, from a
+    /// game save only: the menu shows it truncated), and the alchemy level and experience
+    /// (`mix_lv`).
+    pub friendship: Vec<f32>,
+    pub alchemy: (i32, i32),
+    /// The library has entries not looked at yet (the Journal's "NEW" badge in the menu).
+    pub library_new: bool,
 }
 
 impl Session {
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) }
+        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -532,7 +539,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
+        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -553,7 +560,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0) };
+        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -757,7 +764,7 @@ impl Session {
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, squad: Vec::new(), known, opened, worn, visited, field_gauge, field_state, taken, rank }, at))
+        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, squad: Vec::new(), known, opened, worn, visited, field_gauge, field_state, taken, rank, friendship: Vec::new(), alchemy: (0, 0), library_new: false }, at))
     }
 
     /// A session from either save format, by its bytes: Barrel's text (it starts `barrel-save`)
@@ -863,6 +870,9 @@ impl Session {
                 field_state,
                 taken,
                 rank: sum.rank.unwrap_or((0, 0)),
+                friendship: by_character.iter().map(|m| m.friendship).collect(),
+                alchemy: sum.alchemy.unwrap_or((0, 0)),
+                library_new: sum.library_new,
             },
             at,
         ))

@@ -50,11 +50,17 @@ impl Values {
     /// base stats at that level plus what its equipment gives (`items`, `itemData.xml`'s rows;
     /// each item as freshly made, quality 50).
     pub fn lead(pe: &barrel_formats::pe::Pe, logy: bool, member: Option<&barrel_escha::session::Member>, items: &[barrel_formats::table::Element]) -> Option<Values> {
+        Values::of(pe, usize::from(logy), member, items)
+    }
+
+    /// Character `character` (a party member number) the same way; the HP and MP now and most
+    /// are the save's when it has them, else the tables' (full).
+    pub fn of(pe: &barrel_formats::pe::Pe, character: usize, member: Option<&barrel_escha::session::Member>, items: &[barrel_formats::table::Element]) -> Option<Values> {
         use barrel_escha::data::battle_data as bd;
         let growth = bd::party_growth(pe, bd::PARTY_GROWTH_EN)?;
         let exp = bd::exp_table(pe, bd::EXP_TABLE_EN)?;
         let (level, experience) = member.map_or((1, 0), |m| (m.level.max(1), m.experience));
-        let s = *growth.get(usize::from(logy))?.get((level - 1) as usize)?;
+        let s = *growth.get(character)?.get((level - 1) as usize)?;
         let rows: Vec<barrel_escha::equipment::ItemRow> = items.iter().map(barrel_escha::equipment::ItemRow::from_row).collect();
         let t = barrel_escha::equipment::Tables { items: &rows, effects: &[], traits: &[], acts: &[] };
         let mut add = [0; 9];
@@ -65,12 +71,13 @@ impl Values {
             }
         }
         let (hp, mp) = (s.hp + add[0], s.mp + add[1]);
+        let now = member.and_then(|m| m.now);
         Some(Values {
-            name: if logy { "Logy" } else { "Escha" }.into(),
+            name: barrel_escha::auto_battle::MEMBER_NAMES.get(character)?.to_string(),
             level,
             next: barrel_escha::growth::to_next(&exp, level, experience, 0)?,
-            hp: (hp, hp),
-            mp: (mp, mp),
+            hp: now.map_or((hp, hp), |n| (n[0], n[1])),
+            mp: now.map_or((mp, mp), |n| (n[2], n[3])),
             attack: s.attack + add[2],
             defense: s.defense + add[3],
             speed: s.speed + add[4],

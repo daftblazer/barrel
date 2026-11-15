@@ -2362,3 +2362,36 @@ after its later anchor's), so the n-th picture shown takes the n-th stamp. On th
 through the same `VideoStream`. On the Retroid Pocket 6 (aarch64, Snapdragon 8 Gen 2) the same
 test plays the first 40 s in real time, 1,199 pictures shown, none dropped, the sound decoded
 in 0.3 to 0.5 s.
+
+### The main menu's party overview (layout 385)
+
+The menu's first page, as Y opens it on the area map (`area-menu` capture; `play/overview.rs`),
+is layout 385 on the desk 383 (`a15_menu.g1t` picture 0, **cut 1**: the capture's desk; the
+layout names cut 0). The game draws it in this order: the desk, the command buttons (layout 373 at
+nine slots, (44, 272) stepping 12 right and 81 down), the book (386, drawn through 368 and 367),
+the rank icon and the points to the next rank, the money, 368's portrait, name plate and values,
+the party plates (360), the footer (372), the header (371), and last the field HUD's date panel
+(without the gauge).
+
+- The list **leaves out Container** off a town: it starts at the Basket (chosen at first), and
+  its help line is `SysInfo.xml` row 3 ("Check items in the Item Basket."); the footer is
+  `Menu_Line_Help.xml` row 0. A button's icon (node kind 4) is drawn at 90% (54 of 60 pixels)
+  about its corner. The "NEW" badge (part 0x4a) is on **Journal** while a `library` mark is clear
+  (`save::Summary::library_new`); it is a flipbook by time.
+- The book is layout 386: two kind 19 halves (part 0x7 at 0 and 0x8 at 708, `bar`: cut 0 the
+  288-wide end, cut 1 a 144-wide middle repeated with its last repeat cut short, cut 2 the
+  144-wide other end, width in word 5 = 708) and the left page (0x6, at -36). The whole is at
+  (474, 102).
+- A number node (kind 28) ends at its node: the last digit's left edge is the node's x less
+  one digit's advance (20 for parts 0x4e and 0x50, 24 for 0x4d, 30 for 0x5c), drawn in the node's
+  ink (word 7: dark brown (58, 26, 8), gold (195, 172, 100) for the money's 0x4d). The slash
+  (cut 12) sits at its node. Texts are raised by `TEXT_RISE` and drawn opaque.
+- The lead's page (368): LV, Next (experience to the next level, the exp table), HP and MP now /
+  most with equipment (the save's `Party` record: now, max with equipment), then the alchemy level
+  (0x5c digits) and the alchemy experience still needed (`growth::alchemy_to_next` over the same
+  table's second column); the rank panel (528, shown as in the Requests screen) and the money.
+  The name plate (369) is drawn tilted (about 13 degrees, 88%) and its text with it.
+- A plate (360) is a member besides the lead from `m_squad`, in its order: the face (part 0x4 cut
+  = the character number), name, LV, HP and MP as now / most, Next and **Friend** (the `Party`
+  record's friendship float, +0x2b0, truncated; `Session::friendship`). The reserve row (382, 380)
+  shows nothing without a waiting member.

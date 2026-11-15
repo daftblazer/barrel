@@ -658,6 +658,9 @@ pub struct Summary {
     /// places): 0 nothing, 10 new, 15 all (the game's "Knowledge: ..." levels).
     pub route_knowledge: Vec<i32>,
     pub place_knowledge: Vec<i32>,
+    /// `library`'s marks: some entry of the item, effect, trait, synthesis skill, book or monster
+    /// lists is new (its bit clear, within the list's length; docs/formats.md, "Library marks").
+    pub library_new: bool,
     /// `worldmap/chara`: two i32 (29 and 0 in one save: the place the party is at, presumably).
     pub world_position: Option<(i32, i32)>,
     /// `worldmap/pointerStatus`: per place, see [`place_states`].
@@ -699,6 +702,9 @@ pub struct Knowledge {
     pub eff: Vec<i32>,
 }
 
+/// The lists of the library's marks (`library`'s bitsets) and how many entries each has.
+const LIBRARY_MARKS: [(&str, usize); 6] = [("new_item", 488), ("new_eff", 698), ("new_potential", 400), ("new_property", 90), ("new_book", 73), ("new_monster", 153)];
+
 pub fn summary(records: &[Record]) -> Summary {
     let top = |n: &str| records.iter().find(|r| r.name == n);
     let bytes = |r: Option<&Record<'_>>| -> Option<Vec<u8>> {
@@ -711,7 +717,12 @@ pub fn summary(records: &[Record]) -> Summary {
     let item = top("item");
     let list = |n: &str| bytes(item.and_then(|r| r.child(n))).map(|d| item_units(&d)).unwrap_or_default();
     let mix = top("mix_lv");
+    let library_new = LIBRARY_MARKS.iter().any(|&(name, entries)| {
+        let marks = bytes(top("library").and_then(|r| r.child(name))).unwrap_or_default();
+        (0..entries).any(|k| marks.get(k / 8).is_some_and(|b| b >> (k % 8) & 1 == 0))
+    });
     Summary {
+        library_new,
         money: bytes(top("money")).and_then(|d| i32_at(&d, 0)),
         alchemy: (|| Some((i32_at(&bytes(mix?.child("m_lv"))?, 0)?, i32_at(&bytes(mix?.child("m_exp"))?, 0)?)))(),
         day: bytes(top("date")).and_then(|d| i32_at(&d, 0)).map(|v| v as u32),
