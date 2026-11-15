@@ -173,9 +173,8 @@ likely settle them where static reading failed.
   and point 13 (`MODEL_OFFSET_DEFENCE`) are not read. The command choice's camera (the
   recording holds a slow close-up of the member, `macro_battle.nut` has no function for it that
   is read yet) and the camera while monsters choose are still Barrel's overview. The command
-  camera is `0x14019d120`'s `CameraCPreset` preset 2 (docs/events.md, "The battle's own camera
-  lists"): preset 2 is read (angles, 10°/s orbit); its framing (`0x1401e3ed0`,
-  `0x1401e2e80`: focus and distance from the character's bounds and the field of view) is not.
+  camera is done (`0x14019d120`, preset 2 framing by `CamH`/`CamR`); it uses Barrel's 45°
+  fov, the game's view +0x140 not read, and cuts where the game cross-fades (50).
 
 ## Synthesis
 

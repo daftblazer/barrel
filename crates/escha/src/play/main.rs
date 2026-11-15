@@ -1398,7 +1398,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
             .and_then(|b| barrel_formats::table::parse(&b).ok())
             .map(|t| barrel_engine::curve::Curve::table(&t))
             .unwrap_or_default();
-        SceneData { on: std::env::var("BARREL_SKILL_SCENES").map_or(true, |v| v != "0"), root: root.to_path_buf(), curves, motion_names, divisions, measures: barrel_engine::stage::Measures::table(&charas), tags: charas.children.iter().map(|c| c.attr("BaseTag").unwrap_or("").to_string()).collect() }
+        SceneData { on: std::env::var("BARREL_SKILL_SCENES").map_or(true, |v| v != "0"), root: root.to_path_buf(), curves, motion_names, divisions, measures: barrel_engine::stage::Measures::table(&charas), tags: charas.children.iter().map(|c| c.attr("BaseTag").unwrap_or("").to_string()).collect(), framing: charas.children.iter().map(|c| { let f = |k: &str| c.attr(k).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0); (f("CamH"), f("CamR")) }).collect() }
     };
     let music = barrel_escha::auto_battle::group_kind(&tables, group).and_then(|k| barrel_escha::battle::music(k, sound_quest, logy));
     let mut play = BattlePlay {
@@ -1425,6 +1425,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         support: barrel_escha::battle::SUPPORT_START,
         acting: None,
         guard_hold: None,
+        menu_since: None,
         music,
         victory_played: false,
         wiped: None,
@@ -1498,6 +1499,8 @@ struct BattlePlay {
     /// A monster's action on a member held back for Support Guards: its event's index, when
     /// the hold began, whether a guard was given.
     guard_hold: Option<(usize, f32, bool)>,
+    /// Since when (battle seconds) the command camera has framed whom ([`Self::command_camera`]).
+    menu_since: Option<(usize, f32)>,
     /// What the actions' skill scenes are played with.
     scenes: SceneData,
     /// The skill scene playing (`barrel_escha::skill_scene`): it places the actor and moves the
@@ -1552,6 +1555,9 @@ struct SceneData {
     measures: std::collections::BTreeMap<u32, barrel_engine::stage::Measures>,
     /// `Chara.xml`'s `BaseTag` by row (`PC20` Escha ...: the victory scenes' names).
     tags: Vec<String>,
+    /// `Chara.xml`'s `CamH` and `CamR` by row (its record's +0x68 and +0x6c): the height and
+    /// radius the preset cameras frame a character by.
+    framing: Vec<(f32, f32)>,
 }
 
 /// A skill scene playing: when it began, its frames, the actor and the target.
@@ -1740,6 +1746,47 @@ impl BattlePlay {
         let (x, y, z) = (0.0, 800.0, -600.0);
         let eye = [f.place[0] + x * c + z * s, f.place[1] + y, f.place[2] - x * s + z * c];
         Some((eye, BATTLE_CENTRE))
+    }
+
+    /// The camera while a member chooses a command (`0x14019d120`: `CameraCPreset` preset 2,
+    /// `docs/events.md`, "The battle's own camera lists"): the preset's angles replaced by
+    /// `ECT_CAMERA_PRESET_ANG_SET 0 a 0`, pitch 0 and yaw the member's facing (its slot's
+    /// angle, `0x1401b0d40`), so it starts in front of the member, the yaw then turning 10° a
+    /// second (the preset's); the eye placed so that the member's
+    /// foot and its foot + `CamH`, each widened by `CamR`, fit the view (`0x1401e2f50`,
+    /// `0x1401e4c90`), then moved by (−35, 20, −75) along the camera's own axes. `tan_x` and
+    /// `tan_y` are the view's half-angle tangents. The game cross-fades into it (50); Barrel cuts.
+    fn command_camera(&mut self, tan_x: f32, tan_y: f32) -> Option<([f32; 3], [f32; 3])> {
+        let on = matches!(self.choosing, Choosing::Row | Choosing::Skill | Choosing::Item) && self.waiting() && self.scenes.on && self.scene.is_none();
+        let who = self.turn.as_ref().map(|t| t.who).filter(|_| on);
+        let Some(who) = who else {
+            self.menu_since = None;
+            return None;
+        };
+        if self.menu_since.is_none_or(|m| m.0 != who) {
+            self.menu_since = Some((who, self.time));
+        }
+        let since = self.menu_since?.1;
+        let f = self.fighters.get(who)?.as_ref()?;
+        let &(height, radius) = self.scenes.framing.get(f.chara)?;
+        let (pitch, yaw) = (0.0, f.facing + 10f32.to_radians() * (self.time - since));
+        let rotation = glam::Quat::from_rotation_y(yaw) * glam::Quat::from_rotation_x(pitch);
+        let (right, up, back) = (rotation * Vec3::X, rotation * Vec3::Y, rotation * Vec3::Z);
+        let view = |p: Vec3| Vec3::new(p.dot(right), p.dot(up), p.dot(back));
+        let foot = view(Vec3::from(f.place));
+        let head = view(Vec3::from(f.place) + Vec3::new(0.0, height, 0.0));
+        // The sides from the nearer point, the top from the head and the bottom from the foot.
+        let near = if head.z > foot.z { head } else { foot };
+        let right_side = near.x + radius + near.z * tan_x;
+        let left_side = radius - near.x + near.z * tan_x;
+        let top = head.y + (head.z + radius) * tan_y;
+        let bottom = -foot.y + (foot.z + radius) * tan_y;
+        let x = (right_side - left_side) / 2.0 - 35.0;
+        let y = (top - bottom) / 2.0 + 20.0;
+        let z = ((right_side + left_side) / (2.0 * tan_x)).max((top + bottom) / (2.0 * tan_y)) - 75.0;
+        let eye = right * x + up * y + back * z;
+        let target = eye - back * 100.0;
+        Some((eye.into(), target.into()))
     }
 
     /// The battle's opening camera (`SKILL_COMMON_SYSTEM_START_CAM_01`: in on the battle's
@@ -5374,6 +5421,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 // space, x mirrored); put back as the battle had them once it ends.
                 play.scene_motion(&mut town_bodies);
                 let shown = play.scene.as_ref().and_then(|sc| Some((sc.actor, sc.poser, sc.at(play.time)?.clone())));
+                // The battle view's half-angle tangents (its 45° fov; the game's, its view's
+                // +0x140, is not read).
+                let tan_y = (45f32.to_radians() / 2.0).tan();
+                let menu_camera = play.command_camera(tan_y * width as f32 / height.max(1) as f32, tan_y);
                 match shown {
                     Some((actor, poser, snap)) => {
                         let mirror = Vec3::new(-1.0, 1.0, 1.0);
@@ -5385,6 +5436,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             battle_view.get_or_insert((eye, target));
                             (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
                         }
+                    }
+                    None if let Some((e, t)) = menu_camera => {
+                        // Choosing a command: the game's slow orbit about the member.
+                        let mirror = Vec3::new(-1.0, 1.0, 1.0);
+                        battle_view.get_or_insert((eye, target));
+                        (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
                     }
                     None if play.target_camera().is_some() => {
                         // Choosing a target: the game's crane shot over the acting member.

@@ -669,8 +669,10 @@ in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far
 
 - `0x14019d120(chara, flag)`, called six times from the command menu's code (`0x1401d4381` to
   `0x1401d5cf3`): with the flag, a cross-fade (`ECT_EVENT_SET_POST_EFFECT -1 0 50 3`), camera
-  type 4 (`CameraCPreset`), `ECT_CAMERA_PRESET_SET 2` and `ECT_CAMERA_PRESET_ANG_SET` the
-  character's angle (its object's +0x244, radians, times 57.2958); without it, the eye eases
+  type 4 (`CameraCPreset`), `ECT_CAMERA_PRESET_SET 2` and `ECT_CAMERA_PRESET_ANG_SET 0 a 0`,
+  a the character's angle in degrees (its object's +0x244, which the call has just set to its
+  slot's angle, `0x1401b0d40`: the way it faces), so pitch 0 and the yaw its facing, in place
+  of preset 2's own angles; without it, the eye eases
   to the actor's body point + (0, 100, −300) and the target to its body point, both
   `4 30 100`. The presets' values (`CameraCPreset`, vtable `0x14080c170`) are not read; the
   recording holds a slow close-up of the member during command choice, which preset 2 would be.
@@ -687,8 +689,14 @@ in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far
   −1) times a distance; the target is the focus. `0x1401e3ed0` sets the focus and distance by
   framing characters, by per-preset flags (`0x140d777f0`; preset 2's is 1: bit 0 frames the
   camera's own character, `0x1401e2e80`; bit 1 the battle's characters by `0x1401b2b30`), the
-  distance from the field of view (+0x140, +0x144 of the view). The framing itself and +0xe8's
-  use (an offset, by its values) are not read.
+  distance from the field of view (+0x140, +0x144 of the view). The fit (`0x1401e2f50` per
+  character, `CamH` and `CamR` its `Chara` record's +0x68 and +0x6c): in the camera's axes,
+  the foot and the foot + (0, `CamH`, 0); the sides from the nearer of the two, x ± `CamR` +
+  z·tan, the top from the head, y + (z + `CamR`)·tan_v, the bottom from the foot,
+  −y + (z + `CamR`)·tan_v, each kept at its largest. `0x1401e4c90` then centres on them and
+  backs off to the larger of the horizontal and vertical fits ((left + right) / 2·tan), and
+  adds +0xe8 (preset 2's (−35, 20, −75)) along the camera's own axes: the member stands right
+  of centre, 75 nearer.
 - `0x14019cf30(actor, target)` (through `0x14019cea0`, from the command code at `0x1401d55e5`):
   the same character twice gives a cross-fade (25) and a crane from the actor's point 13 +
   (0, 800, −800) looking at it; two gives the actor turned to the target
