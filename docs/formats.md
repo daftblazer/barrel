@@ -2269,3 +2269,18 @@ per-channel "takes the next subframe" bits), an optional post-processing matrix,
 subframe layouts (1,759 frames one 2,048 block for both channels), trims 2,048 at the start and
 827 at the end: 2,255 × 2,048 − 827 = 4,617,413 samples, ffmpeg's count (the first frame is
 never output).
+
+WMA Pro subframes (`barrel_wma::Decoder`, FFmpeg's `decode_subframe`): per block, the channels
+with the fewest decoded samples; fill bits, a reserved bit, the channel groups (stereo: one
+pair, transform off, or the ±1 matrix per band, the bands left out scaled by 181/128), each
+channel's "coefficients sent" bit, vector-count, quantizer step (90 for 16 bits, plus a 6-bit
+signed step, escapes at −32 / 31) and per-channel modifiers, scale factors (the first block of
+a frame DPCM coded from 45 / step, later ones run-level differences to the previous factors
+resampled to this block size), then coefficients: vectors of 4 / 2 / 1 values with signs until
+`len / 256` zeros in a row, the rest run / level with escapes. Each band is scaled by
+10^((quant − (max sf − sf) × step) / 20); the inverse MDCT's middle half (`−Σ x cos(π/N (m + N
++ ½)(k + ½))`, scaled 2 / N / 32768, FFmpeg's sign: the other one came out exactly negated)
+lands in the channel's frame buffer, then the sine window overlaps it with the previous block.
+The Huffman tables are generated from FFmpeg's `wmaprodata.h` (`crates/wma/gen_tables.py`,
+codes assigned as `ff_vlc_init_from_lengths` assigns them). Against ffmpeg's float output for
+`avantitle`'s first 206 frames: largest difference 2.4e-7, 138 dB signal to error.

@@ -6,9 +6,13 @@
 //! The rest of Barrel is MIT and only calls this crate; it does not link FFmpeg.
 
 pub mod bits;
+pub mod decoder;
 pub mod frames;
 pub mod params;
+mod tables;
+pub mod vlc;
 
+pub use decoder::Decoder;
 pub use frames::{FrameHeader, Packets};
 pub use params::Params;
 
