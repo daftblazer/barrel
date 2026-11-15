@@ -54,10 +54,18 @@ pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], 
     let (sx, sy) = (1920.0 / width as f32, 1080.0 / height as f32);
     let mut line = format!("{{\"frame\":{frame},\"layer\":{layer},\"quads\":[");
     for (i, q) in quads.iter().enumerate() {
-        let [l, t, r, b] = q.rect;
+        let c = q.corners().map(|[x, y]| [x * sx, y * sy]);
+        // A turned quad's rect is the box round its corners, and its corners are listed.
+        let [l, t, r, b] = if q.spin.is_some() {
+            let f = |i: usize, g: fn(f32, f32) -> f32| c.iter().map(|p| p[i]).reduce(g).unwrap_or(0.0);
+            [f(0, f32::min) / sx, f(1, f32::min) / sy, f(0, f32::max) / sx, f(1, f32::max) / sy]
+        } else {
+            q.rect
+        };
+        let corners = if q.spin.is_some() { format!(",\"corners\":{c:?}") } else { String::new() };
         let tex = if q.uv[0] < 0.0 { "fill" } else { names.get(q.texture).map_or("?", String::as_str) };
         line.push_str(&format!(
-            "{}{{\"tex\":\"{tex}\",\"rect\":[{},{},{},{}],\"uv\":{:?},\"color\":{:?},\"turn\":{}}}",
+            "{}{{\"tex\":\"{tex}\",\"rect\":[{},{},{},{}],\"uv\":{:?},\"color\":{:?},\"turn\":{}{corners}}}",
             if i > 0 { "," } else { "" },
             l * sx, t * sy, r * sx, b * sy, q.uv, q.color, q.turn
         ));

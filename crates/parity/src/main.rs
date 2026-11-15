@@ -304,8 +304,52 @@ struct Q {
     uv: [f32; 4],
     color: [f32; 4],
     text: Option<String>,
+    /// For a rotated rectangle: its four corners, the picture's top-left, top-right,
+    /// bottom-right and bottom-left as its `uv` places them. The game's keep their `rect` too (the
+    /// corner nearest the top left and the one opposite it), for a Barrel quad drawn upright; a
+    /// turned Barrel quad gets its `rect` the same way (from its corners).
+    corners: Option<[[f32; 2]; 4]>,
     /// the game's pixel shader and its constants (what the colour does not say: fades)
     how: String,
+}
+
+/// A strip's four vertices as the four corners of a rectangle turned by some angle, in the
+/// picture's top-left, top-right, bottom-right, bottom-left order (by their texture coordinates);
+/// `None` for an axis-aligned rectangle.
+fn rotated(q: &[(f32, f32, Vec<f32>, Vec<f32>)]) -> Option<[[f32; 2]; 4]> {
+    let apart = |a: f32, b: f32| (a - b).abs() > 0.01;
+    let (mut xs, mut ys) = (Vec::<f32>::new(), Vec::<f32>::new());
+    for p in q {
+        if xs.iter().all(|&x| apart(x, p.0)) {
+            xs.push(p.0);
+        }
+        if ys.iter().all(|&y| apart(y, p.1)) {
+            ys.push(p.1);
+        }
+    }
+    if xs.len() <= 2 && ys.len() <= 2 {
+        return None;
+    }
+    let uv = |p: &(f32, f32, Vec<f32>, Vec<f32>)| (p.2.first().copied().unwrap_or(0.0), p.2.get(1).copied().unwrap_or(0.0));
+    let tl = q.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)))?;
+    let br = q.iter().max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)))?;
+    let (u0, v0, u1, v1) = (uv(tl).0, uv(tl).1, uv(br).0, uv(br).1);
+    let at = |u: f32, v: f32| q.iter().min_by(|a, b| ((uv(a).0 - u).abs() + (uv(a).1 - v).abs()).total_cmp(&((uv(b).0 - u).abs() + (uv(b).1 - v).abs()))).map(|p| [p.0, p.1]);
+    Some([at(u0, v0)?, at(u1, v0)?, at(u1, v1)?, at(u0, v1)?])
+}
+
+/// The bounding box (left, top, right, bottom) of four corners.
+fn bounds(c: &[[f32; 2]; 4]) -> [f32; 4] {
+    let f = |i: usize, g: fn(f32, f32) -> f32| c.iter().map(|p| p[i]).reduce(g).unwrap_or(0.0);
+    [f(0, f32::min), f(1, f32::min), f(0, f32::max), f(1, f32::max)]
+}
+
+/// Whether both rectangles are rotated with every corner within `tol` pixels.
+fn corners_close(a: Option<[[f32; 2]; 4]>, b: Option<[[f32; 2]; 4]>, tol: f32) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a.iter().zip(&b).all(|(p, q)| (p[0] - q[0]).abs() <= tol && (p[1] - q[1]).abs() <= tol),
+        _ => false,
+    }
 }
 
 fn arr<const N: usize>(v: &Value) -> [f32; N] {
@@ -385,6 +429,7 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
             }
         }
         for q in pts.chunks_exact(4) {
+            let corners = rotated(q);
             // the corner nearest the top left and the one opposite it
             let tl = q.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
             let br = q.iter().max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
@@ -395,6 +440,7 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
                 uv: [uv(tl, 0), uv(tl, 1), uv(br, 0), uv(br, 1)],
                 color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0) * if i == 3 { a_k } else { rgb_k }),
                 text: None,
+                corners,
                 how: format!("{} {:?}", s("ps"), ps_cb),
             });
         }
@@ -446,14 +492,29 @@ fn text_runs(qs: Vec<Q>, g: Option<&Glyphs>) -> Vec<Q> {
                 continue;
             }
         }
-        out.push(Q { tex: "text".into(), uv: [0.0; 4], text: Some(c.to_string()), ..q });
+        out.push(Q { tex: "text".into(), uv: [0.0; 4], text: Some(c.to_string()), corners: None, ..q });
     }
     out
 }
 
 fn barrel_layer(v: &Value) -> Option<Vec<Q>> {
     let qs = v["quads"].as_array()?;
-    Some(qs.iter().map(|q| Q { tex: q["tex"].as_str().unwrap_or("").into(), rect: arr(&q["rect"]), uv: arr(&q["uv"]), color: arr(&q["color"]), text: None, how: String::new() }).collect())
+    Some(
+        qs.iter()
+            .map(|q| {
+                let corners: Option<[[f32; 2]; 4]> = q.get("corners").map(|c| std::array::from_fn(|i| arr(&c[i])));
+                // A turned quad's rect is as the game's (the corner nearest the top left and the
+                // one opposite it), so turned glyphs join into text runs the same way.
+                let rect = corners.map_or_else(|| arr(&q["rect"]), |c| {
+                    let sum = |p: &&[f32; 2]| p[0] + p[1];
+                    let tl = c.iter().min_by(|a, b| sum(a).total_cmp(&sum(b))).unwrap();
+                    let br = c.iter().max_by(|a, b| sum(a).total_cmp(&sum(b))).unwrap();
+                    [tl[0], tl[1], br[0], br[1]]
+                });
+                Q { tex: q["tex"].as_str().unwrap_or("").into(), rect, uv: arr(&q["uv"]), color: arr(&q["color"]), text: None, corners, how: String::new() }
+            })
+            .collect(),
+    )
 }
 
 /// Barrel's quads on screen at each of `frames` (ascending): each layer's last list set by
@@ -538,7 +599,15 @@ impl Setup {
 /// each pair and each quad only one side draws to `line`, and returns the mismatches.
 fn compare(s: &Setup, g: &[Q], b: &[Q], mut line: impl FnMut(&str)) -> usize {
     let tex = |n: &str| s.tex(n);
-    let same = |x: &Q, y: &Q| x.tex == y.tex && close(&x.rect, &y.rect, 8.0) && (x.text.is_none() || x.text == y.text || close(&x.rect, &y.rect, 2.0));
+    // two rotated rectangles are placed by the box round their corners
+    let rects = |x: &Q, y: &Q| match (x.corners, y.corners) {
+        (Some(a), Some(b)) => (bounds(&a), bounds(&b)),
+        _ => (x.rect, y.rect),
+    };
+    let same = |x: &Q, y: &Q| {
+        let (a, b) = rects(x, y);
+        x.tex == y.tex && close(&a, &b, 8.0) && (x.text.is_none() || x.text == y.text || close(&a, &b, 2.0))
+    };
     let (n, m) = (g.len(), b.len());
     let mut l = vec![vec![0usize; m + 1]; n + 1];
     for i in (0..n).rev() {
@@ -555,7 +624,12 @@ fn compare(s: &Setup, g: &[Q], b: &[Q], mut line: impl FnMut(&str)) -> usize {
         if i < n && j < m && same(&g[i], &b[j]) {
             let (x, y) = (&g[i], &b[j]);
             let mut d = Vec::new();
-            if !close(&x.rect, &y.rect, 0.5) {
+            if x.corners.is_some() && y.corners.is_some() {
+                // rotated rectangles are compared by their four corners
+                if !corners_close(x.corners, y.corners, 0.5) {
+                    d.push(format!("corners {:?} vs {:?}", x.corners, y.corners));
+                }
+            } else if !close(&x.rect, &y.rect, 0.5) {
                 d.push(format!("rect {:?} vs {:?}", x.rect, y.rect));
             }
             if x.text != y.text {
@@ -685,9 +759,10 @@ fn main() -> Result<()> {
             let (qs, other) = game_quads(&Trace { dir: a[1].clone().into() }, a[2].parse()?)?;
             for q in text_runs(qs, glyphs.as_ref()) {
                 let r = q.rect.map(|v| v.round() as i32);
+                let turned = q.corners.map(|c| format!(" corners {:?}", c.map(|p| p.map(|v| (v * 100.0).round() / 100.0)))).unwrap_or_default();
                 match &q.text {
                     Some(t) => println!("text {t:?} {r:?} color {:?}", q.color),
-                    None => println!("{} {r:?} uv {:?} color {:?}", names.get(&q.tex).unwrap_or(&q.tex), q.uv, q.color),
+                    None => println!("{} {r:?} uv {:?} color {:?}{turned}", names.get(&q.tex).unwrap_or(&q.tex), q.uv, q.color),
                 }
             }
             println!("({other} draws not 2D)");

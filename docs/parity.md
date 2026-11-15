@@ -23,6 +23,9 @@ A diff of the two says where Barrel differs, without pixels and without judging 
    - colour beyond 1.5/255;
    - what only one side draws.
 
+   A rotated rectangle (Barrel's `Quad::spin`, traced with its `corners`) is compared by its four
+   corners within 0.5 px when both sides draw it rotated; otherwise as above.
+
    The exit status is 0 when nothing differs. Draws that read a render target (the copy to
    the back buffer, post effects) and 3D draws are counted, not compared.
 

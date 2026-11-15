@@ -199,6 +199,9 @@ pub enum Element {
     /// A sprite centred on `centre`, scaled to `percent` about it and at `alpha` of 255 (a
     /// battle number popping in).
     Popped { part: i32, cut: i32, centre: [i32; 2], percent: i32, alpha: u8 },
+    /// `inner` turned `degrees` clockwise about `about` (the layout's nodes of kind 7: a nested
+    /// layout drawn tilted, the main menu's name plate and its text, the bookmark).
+    Tilted { inner: Box<Element>, degrees: i32, about: [i32; 2] },
     /// A sprite turned a quarter clockwise about its node `at` (a layout node of kind 7: the
     /// area map labels' ornaments), so it lies left of and below the node.
     Turned { part: i32, cut: i32, at: [i32; 2] },
@@ -249,7 +252,16 @@ impl Element {
     /// A placed node's sprite as the layout stores it (mirrored for kind 2).
     pub fn stored(p: &Placed) -> Element {
         let (part, cut, at) = (p.node.part, p.node.cut.max(0), p.at);
-        if p.node.kind == MIRRORED { Element::Mirrored { part, cut, at, axis: p.node.mirror } } else { Element::Sprite { part, cut, at } }
+        let e = if p.node.kind == MIRRORED { Element::Mirrored { part, cut, at, axis: p.node.mirror } } else { Element::Sprite { part, cut, at } };
+        e.tilted(p)
+    }
+
+    /// The element turned as the placed node `p`'s tilt says (as it is without one).
+    pub fn tilted(self, p: &Placed) -> Element {
+        match p.tilt {
+            Some(t) => Element::Tilted { inner: Box::new(self), degrees: t.degrees, about: t.pivot(p.at) },
+            None => self,
+        }
     }
 
     /// The sprite's part, cut and place, if it is one.
@@ -257,6 +269,7 @@ impl Element {
         match *self {
             Element::Sprite { part, cut, at } | Element::Dim { part, cut, at } | Element::Mirrored { part, cut, at, .. } | Element::Scaled { part, cut, at, .. } | Element::Faded { part, cut, at, .. } | Element::Tinted { part, cut, at, .. } | Element::Cropped { part, cut, at, .. } | Element::Spanned { part, cut, at, .. } | Element::Rising { part, cut, at, .. } | Element::Turned { part, cut, at } | Element::Raised { part, cut, at } => Some((part, cut, at)),
             Element::Popped { part, cut, centre, .. } => Some((part, cut, centre)),
+            Element::Tilted { ref inner, .. } => inner.sprite(),
             Element::Label(_) | Element::Picture { .. } | Element::Fill { .. } | Element::Slice { .. } | Element::InkedSlice { .. } => None,
         }
     }
@@ -515,7 +528,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let [x, y] = piece.at.map(|v| v as f32);
                 let [cr, cg, cb] = rgb.map(|c| f32::from(c) / 255.0);
-                out.push(Quad { turn: false, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [cr, cg, cb, 1.0], texture: sheets.first + slot });
+                out.push(Quad { turn: false, spin: None, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [cr, cg, cb, 1.0], texture: sheets.first + slot });
             }
             &Element::Sprite { part, cut, at } | &Element::Dim { part, cut, at } | &Element::Mirrored { part, cut, at, .. } | &Element::Scaled { part, cut, at, .. } | &Element::Faded { part, cut, at, .. } => {
                 let scale = if let Element::Scaled { percent, .. } = *e { percent as f32 / 100.0 } else { 1.0 };
@@ -533,7 +546,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                     x = about[0] as f32 + (x - about[0] as f32) * scale;
                     y = about[1] as f32 + (y - about[1] as f32) * scale;
                 }
-                out.push(Quad { turn: false,
+                out.push(Quad { turn: false, spin: None,
                     rect: [dx + x * k, y * k, dx + (x + (r - l) * scale) * k, (y + (b - t) * scale) * k],
                     uv: match *e {
                         Element::Mirrored { axis: 1, .. } => [l / w, b / h, r / w, t / h],
@@ -553,7 +566,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let scale = percent as f32 / 100.0;
                 let (hw, hh) = ((r - l) * scale / 2.0, (b - t) * scale / 2.0);
                 let [x, y] = centre.map(|v| v as f32);
-                out.push(Quad { turn: false,
+                out.push(Quad { turn: false, spin: None,
                     rect: [dx + (x - hw) * k, (y - hh) * k, dx + (x + hw) * k, (y + hh) * k],
                     uv: [l / w, t / h, r / w, b / h],
                     color: [1.0, 1.0, 1.0, f32::from(alpha) / 255.0],
@@ -569,10 +582,19 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let half = r - l;
                 let width = (width as f32).max(half * 2.0);
                 let (top, bottom) = (y * k, (y + b - t) * k);
-                let mut quad = |x0: f32, x1: f32, u0: f32, u1: f32| out.push(Quad { turn: false, rect: [dx + x0 * k, top, dx + x1 * k, bottom], uv: [u0 / w, t / h, u1 / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                let mut quad = |x0: f32, x1: f32, u0: f32, u1: f32| out.push(Quad { turn: false, spin: None, rect: [dx + x0 * k, top, dx + x1 * k, bottom], uv: [u0 / w, t / h, u1 / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
                 quad(x, x + half, l, l + half);
                 quad(x + half, x + width - half, r - 1.0, r - 0.5);
                 quad(x + width - half, x + width, r, l);
+            }
+            Element::Tilted { inner, degrees, about } => {
+                // The inner element's quads turned about the pivot.
+                let from = out.len();
+                out.extend(quads(pe, font, sheets, std::slice::from_ref(inner), width, height));
+                let pivot = [dx + about[0] as f32 * k, about[1] as f32 * k];
+                for q in &mut out[from..] {
+                    q.spin = Some(text::Spin { pivot, angle: (*degrees as f32).to_radians() });
+                }
             }
             &Element::Turned { part, cut, at } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
@@ -580,7 +602,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [w, h] = sheets.sizes[slot];
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let [x, y] = piece.at.map(|v| v as f32);
-                out.push(Quad { turn: true, rect: [dx + (x - (b - t)) * k, y * k, dx + x * k, (y + r - l) * k], uv: [l / w, b / h, r / w, t / h], color: [1.0; 4], texture: sheets.first + slot });
+                out.push(Quad { turn: true, spin: None, rect: [dx + (x - (b - t)) * k, y * k, dx + x * k, (y + r - l) * k], uv: [l / w, b / h, r / w, t / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             &Element::Raised { part, cut, at } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
@@ -589,7 +611,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let [x, y] = piece.at.map(|v| v as f32);
                 // The picture's top-right at the top-left, its bottom-left at the bottom-right.
-                out.push(Quad { turn: true, rect: [dx + (x - (b - t) / 2.0) * k, (y - (r - l)) * k, dx + (x + (b - t) / 2.0) * k, y * k], uv: [r / w, t / h, l / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                out.push(Quad { turn: true, spin: None, rect: [dx + (x - (b - t) / 2.0) * k, (y - (r - l)) * k, dx + (x + (b - t) / 2.0) * k, y * k], uv: [r / w, t / h, l / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             &Element::Cropped { part, cut, at, fill } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
@@ -598,7 +620,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let r = l + (r - l) * fill.clamp(0.0, 1.0);
                 let [x, y] = piece.at.map(|v| v as f32);
-                out.push(Quad { turn: false, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                out.push(Quad { turn: false, spin: None, rect: [dx + x * k, y * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             &Element::Rising { part, cut, at, fill } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
@@ -607,12 +629,12 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let top = b - (b - t) * fill.clamp(0.0, 1.0);
                 let [x, y] = piece.at.map(|v| v as f32);
-                out.push(Quad { turn: false, rect: [dx + x * k, (y + top - t) * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, top / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                out.push(Quad { turn: false, spin: None, rect: [dx + x * k, (y + top - t) * k, dx + (x + r - l) * k, (y + b - t) * k], uv: [l / w, top / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             Element::Picture { pack, index, size, at, dim } => {
                 let Some(slot) = sheets.keys.iter().position(|(n, i)| n == pack && i == index) else { continue };
                 let [x, y] = at.map(|v| v as f32);
-                out.push(Quad { turn: false,
+                out.push(Quad { turn: false, spin: None,
                     rect: [dx + x * k, y * k, dx + (x + size[0]) * k, (y + size[1]) * k],
                     uv: [0.0, 0.0, 1.0, 1.0],
                     color: [1.0, 1.0, 1.0, if *dim { 0.5 } else { 1.0 }],
@@ -624,7 +646,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [w, h] = sheets.sizes[slot];
                 let x = |v: i32| dx + v as f32 * k;
                 let [cr, cg, cb] = if let Element::InkedSlice { rgb, .. } = e { rgb.map(|c| f32::from(c) / 255.0) } else { [1.0; 3] };
-                out.push(Quad { turn: false,
+                out.push(Quad { turn: false, spin: None,
                     rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k],
                     uv: [src[0] / w, src[1] / h, src[2] / w, src[3] / h],
                     color: [cr, cg, cb, 1.0],
@@ -633,7 +655,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
             }
             Element::Fill { rect: [l, t, r, b], colour } => {
                 let x = |v: i32| dx + v as f32 * k;
-                out.push(Quad { turn: false, rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k], uv: [-1.0, 0.0, 0.0, 0.0], color: *colour, texture: 0 });
+                out.push(Quad { turn: false, spin: None, rect: [x(*l), *t as f32 * k, x(*r), *b as f32 * k], uv: [-1.0, 0.0, 0.0, 0.0], color: *colour, texture: 0 });
             }
             Element::Label(t) => {
                 let Some(font) = font else { continue };
@@ -678,7 +700,7 @@ mod tests {
     use barrel_escha::data::layout::Node;
 
     fn node(path: &[u32], part: i32, cut: i32, kind: i32, at: [i32; 2]) -> Placed {
-        Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind, mirror: 0, pace: 0 }, at, va: 0 }
+        Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind, mirror: 0, pace: 0 }, at, va: 0, tilt: None }
     }
 
     #[test]

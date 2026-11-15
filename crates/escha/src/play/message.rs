@@ -151,7 +151,7 @@ pub fn run(font: &Font, s: &str, x: f32, y: f32, scale: f32, base: [f32; 4], out
             let (gx, gy, gw, gh) = (f32::from(g.x), f32::from(g.y), f32::from(g.width), f32::from(g.height));
             let left = pen + g.x_offset as f32 * scale;
             let top = y + g.y_offset as f32 * scale;
-            out.push(Quad { turn: false,
+            out.push(Quad { turn: false, spin: None,
                 rect: [left, top, left + gw * scale, top + gh * scale],
                 uv: [gx / font.size, gy / font.size, (gx + gw) / font.size, (gy + gh) / font.size],
                 color: tint,
@@ -190,10 +190,10 @@ pub fn dialogue(font: &Font, speaker: Option<&str>, text: &str, width: f32, heig
     // Text at the size the game's sample line has (in screen pixels per atlas pixel).
     let text_scale = SAMPLE_WIDTH / font.width(SAMPLE).max(1.0) * k;
     let lines: Vec<String> = plain_lines(text).iter().flat_map(|l| wrap(font, l, TEXT_WIDTH * k / text_scale)).collect();
-    let mut out = vec![Quad { turn: false, rect: place(AT_PANEL), uv: uv(PANEL), color: white, texture: UI }];
+    let mut out = vec![Quad { turn: false, spin: None, rect: place(AT_PANEL), uv: uv(PANEL), color: white, texture: UI }];
     if let Some(name) = speaker.filter(|n| !n.is_empty()) {
-        out.push(Quad { turn: false, rect: place(AT_CORD), uv: uv(CORD), color: white, texture: UI });
-        out.push(Quad { turn: false, rect: place(AT_TAG), uv: uv(TAG), color: white, texture: UI });
+        out.push(Quad { turn: false, spin: None, rect: place(AT_CORD), uv: uv(CORD), color: white, texture: UI });
+        out.push(Quad { turn: false, spin: None, rect: place(AT_TAG), uv: uv(TAG), color: white, texture: UI });
         let name_scale = text_scale * 0.95;
         let (cx, cy) = (dx + AT_NAME[0] * k, AT_NAME[1] * k);
         let w = font.width(name) * name_scale;

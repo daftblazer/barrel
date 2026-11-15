@@ -21,8 +21,7 @@
 //! the library has unseen entries, the Basket's help line (row 3). Guesses: the help line of
 //! each other command (the rows follow the commands' order in `SysInfo.xml`), the Container in
 //! towns, Logy's portrait (the lead's page shows Escha's). Left out: the reserve row (no member
-//! waits in the capture), the small coin icon of layout 367 (not drawn), the name plate's tilt
-//! and the pulsing glow and badge (they move with time).
+//! waits in the capture), the small coin icon of layout 367 (not drawn), the pulsing glow and badge (they move with time).
 
 use barrel_escha::data::layout::{self, Placed, Text};
 use barrel_escha::session::Member;
@@ -307,7 +306,7 @@ pub fn body(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, texts: &impl Fn(&Pl
     out.extend(face(pe, &own, &texts, &lead.name, None, &[lead.level, lead.hp.0, lead.hp.1, lead.mp.0, lead.mp.1, lead.next, v.alchemy.0, v.alchemy.1]));
     for p in page.iter().filter(|p| p.path.get(2) == Some(&NAME_PLATE)) {
         match texts(p) {
-            Some(t) => out.push(raised(t, Some(&lead.name))),
+            Some(t) => out.push(raised(t, Some(&lead.name)).tilted(p)),
             None => out.push(Element::stored(p)),
         }
     }

@@ -604,7 +604,7 @@ mod tests {
 
     #[test]
     fn chosen_button_is_lit() {
-        let node = |path: &[u32], part, at: [i32; 2], local: [i32; 2]| Placed { path: path.to_vec(), node: Node { part, cut: 0, at: local, kind: 0, mirror: 0, pace: 0 }, at, va: 0 };
+        let node = |path: &[u32], part, at: [i32; 2], local: [i32; 2]| Placed { path: path.to_vec(), node: Node { part, cut: 0, at: local, kind: 0, mirror: 0, pace: 0 }, at, va: 0, tilt: None };
         let nodes = vec![
             node(&[LIST, COMMAND], PLATE, [36, 184], [0, 0]),
             node(&[LIST, COMMAND], LABEL, [124, 194], [88, 10]),

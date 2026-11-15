@@ -33,13 +33,38 @@ pub struct Font {
 /// fills the rectangle with `color` alone. `texture` is [`FONT`] or [`UI`]. `turn` turns the
 /// picture a quarter clockwise into `rect` (its top edge down the rectangle's right side); its
 /// `uv` then names the picture's corners as they land on the rectangle's top-left and bottom-right.
+/// `spin` then turns the placed rectangle freely about a point (a node drawn tilted).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quad {
     pub turn: bool,
+    pub spin: Option<Spin>,
     pub rect: [f32; 4],
     pub uv: [f32; 4],
     pub color: [f32; 4],
     pub texture: usize,
+}
+
+/// A free turn of a quad's rectangle about `pivot` (pixels, in the layer's own screen), `angle`
+/// radians clockwise on the screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Spin {
+    pub pivot: [f32; 2],
+    pub angle: f32,
+}
+
+impl Quad {
+    /// The rectangle's corners (top-left, top-right, bottom-right, bottom-left), turned by
+    /// `spin` about its pivot; exactly the rectangle's own without one.
+    pub fn corners(&self) -> [[f32; 2]; 4] {
+        let [l, t, r, b] = self.rect;
+        let c = [[l, t], [r, t], [r, b], [l, b]];
+        let Some(Spin { pivot: [px, py], angle }) = self.spin else { return c };
+        let (s, k) = angle.sin_cos();
+        c.map(|[x, y]| {
+            let (dx, dy) = (x - px, y - py);
+            [px + dx * k - dy * s, py + dx * s + dy * k]
+        })
+    }
 }
 
 /// The layer's textures: the font atlas and the message window pieces.
@@ -194,16 +219,16 @@ impl Layer {
                 Some((t, _, count)) if *t == texture => *count += 6,
                 _ => self.runs.push((texture, verts.len() as u32, 6)),
             }
-            let [l, t, r, b] = q.rect;
+            let [tl, tr, br, bl] = q.corners();
             let [u0, v0, u1, v1] = q.uv;
-            let v = |x, y, u, w| Vertex { pos: [x, y], uv: [u, w], color: q.color };
+            let v = |[x, y]: [f32; 2], u, w| Vertex { pos: [x, y], uv: [u, w], color: q.color };
             let (u1, v1) = if u0 < 0.0 { (u0, v0) } else { (u1, v1) };
             if q.turn {
                 // Clockwise: the picture's bottom-left at the top-left, its top-left at the
                 // top-right, its top-right at the bottom-right.
-                verts.extend([v(l, t, u0, v0), v(r, t, u0, v1), v(r, b, u1, v1), v(l, t, u0, v0), v(r, b, u1, v1), v(l, b, u1, v0)]);
+                verts.extend([v(tl, u0, v0), v(tr, u0, v1), v(br, u1, v1), v(tl, u0, v0), v(br, u1, v1), v(bl, u1, v0)]);
             } else {
-                verts.extend([v(l, t, u0, v0), v(r, t, u1, v0), v(r, b, u1, v1), v(l, t, u0, v0), v(r, b, u1, v1), v(l, b, u0, v1)]);
+                verts.extend([v(tl, u0, v0), v(tr, u1, v0), v(br, u1, v1), v(tl, u0, v0), v(br, u1, v1), v(bl, u0, v1)]);
             }
         }
         self.count = verts.len() as u32;
@@ -282,5 +307,27 @@ impl Layer {
                 d.free_memory(mem, None);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quad(spin: Option<Spin>) -> Quad {
+        Quad { turn: false, spin, rect: [10.0, 20.0, 110.0, 70.0], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 0 }
+    }
+
+    #[test]
+    fn an_unturned_quad_keeps_its_rectangle_exactly() {
+        assert_eq!(quad(None).corners(), [[10.0, 20.0], [110.0, 20.0], [110.0, 70.0], [10.0, 70.0]]);
+    }
+
+    #[test]
+    fn a_turn_is_clockwise_about_its_pivot() {
+        // A quarter about the top-left: the top edge runs down the screen.
+        let c = quad(Some(Spin { pivot: [10.0, 20.0], angle: std::f32::consts::FRAC_PI_2 })).corners();
+        let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-3 && (a[1] - b[1]).abs() < 1e-3;
+        assert!(near(c[0], [10.0, 20.0]) && near(c[1], [10.0, 120.0]) && near(c[2], [-40.0, 120.0]));
     }
 }

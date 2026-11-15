@@ -307,7 +307,7 @@ pub fn run(
             // The background over the 1920 × 1080 screen, scaled to the height and centred.
             let k = h / 1080.0;
             let dx = (w - 1920.0 * k) / 2.0;
-            let mut q = vec![text::Quad { turn: false, rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 1 }];
+            let mut q = vec![text::Quad { turn: false, spin: None, rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: 1 }];
             // The prompt pulsing.
             let e = t.elements().into_iter().map(|e| match e {
                 Element::Sprite { part: LOGO, cut: PROMPT_CUT, at } => Element::Faded { part: LOGO, cut: PROMPT_CUT, at, alpha: pulse },
@@ -323,7 +323,7 @@ pub fn run(
     let quads = |(f, white, pulse): &(Front, u8, u8)| {
         let mut q = front_quads(f, *pulse);
         if *white > 0 {
-            q.push(text::Quad { turn: false, rect: [0.0, 0.0, w, h], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, f32::from(*white) / 255.0], texture: white_slot });
+            q.push(text::Quad { turn: false, spin: None, rect: [0.0, 0.0, w, h], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, f32::from(*white) / 255.0], texture: white_slot });
         }
         q
     };

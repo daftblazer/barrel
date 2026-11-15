@@ -78,6 +78,7 @@ pub fn run(
         let v = f32::from(level) / 255.0;
         vec![text::Quad {
             turn: false,
+            spin: None,
             rect: [dx, 0.0, dx + still.size[0] * k, still.size[1] * k],
             uv: [0.0, 0.0, still.size[0] / t.width as f32, still.size[1] / t.height as f32],
             color: [v, v, v, 1.0],

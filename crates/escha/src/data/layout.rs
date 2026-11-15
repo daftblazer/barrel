@@ -113,6 +113,28 @@ impl Node {
     }
 }
 
+/// The node kind of a nested layout (or sprite) drawn turned: its word 5 is the angle in
+/// degrees, positive anticlockwise on the screen (layout 368's name plate holds -9 and is drawn
+/// tilted 9 degrees clockwise, its top-left corner staying on the node; 431's bookmark holds 4),
+/// its word 6 (5 in both) is not read.
+pub const TURNED: i32 = 7;
+
+/// A turn the layouts apply to a nested layout and everything in it: `degrees` clockwise on the
+/// screen (the stored angle's negative) about the nested node's place, which is `back` from
+/// the placed node's own (so it follows when a screen moves the node).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tilt {
+    pub degrees: i32,
+    pub back: [i32; 2],
+}
+
+impl Tilt {
+    /// The pivot for a node placed at `at`.
+    pub fn pivot(&self, at: [i32; 2]) -> [i32; 2] {
+        [at[0] - self.back[0], at[1] - self.back[1]]
+    }
+}
+
 /// The node kind of a flipbook.
 pub const FLIPBOOK: i32 = 36;
 
@@ -164,6 +186,8 @@ pub struct Placed {
     pub node: Node,
     pub at: [i32; 2],
     pub va: u64,
+    /// The turn of the outermost node of kind [`TURNED`] this one is nested in.
+    pub tilt: Option<Tilt>,
 }
 
 /// Every sprite and text node of layout `id`, the layouts it nests opened in place (a node part
@@ -171,11 +195,11 @@ pub struct Placed {
 /// counts and one screenshot of the game, the drawing code is not read), in drawing order.
 pub fn placed(pe: &Pe, id: u32) -> Vec<Placed> {
     let mut out = Vec::new();
-    add_placed(pe, &mut vec![id], [0, 0], &mut out);
+    add_placed(pe, &mut vec![id], [0, 0], None, &mut out);
     out
 }
 
-fn add_placed(pe: &Pe, path: &mut Vec<u32>, origin: [i32; 2], out: &mut Vec<Placed>) {
+fn add_placed(pe: &Pe, path: &mut Vec<u32>, origin: [i32; 2], tilt: Option<(i32, [i32; 2])>, out: &mut Vec<Placed>) {
     let id = *path.last().unwrap();
     let Some(k) = id.checked_sub(FIRST_LAYOUT) else { return };
     let rec = LAYOUTS_EN + 16 * k as u64;
@@ -189,10 +213,11 @@ fn add_placed(pe: &Pe, path: &mut Vec<u32>, origin: [i32; 2], out: &mut Vec<Plac
         let nested = node.part > 0x164 && path.len() < 8 && !path.contains(&(node.part as u32));
         if nested {
             path.push(node.part as u32);
-            add_placed(pe, path, at, out);
+            let tilt = tilt.or((node.kind == TURNED).then_some((-node.mirror, at)));
+            add_placed(pe, path, at, tilt, out);
             path.pop();
         } else if node.part <= 0x164 {
-            out.push(Placed { path: path.clone(), node, at, va: first + 0x28 * i as u64 });
+            out.push(Placed { path: path.clone(), node, at, va: first + 0x28 * i as u64, tilt: tilt.map(|(degrees, pivot)| Tilt { degrees, back: [at[0] - pivot[0], at[1] - pivot[1]] }) });
         }
     }
 }
