@@ -9,3 +9,4 @@ Barrel frame.
 |---|---|---|---|---|
 | boot-title | 1400 | `--title`, frame 0 | 0 (+1 phase) | the one difference is the "press" pulse's phase (Barrel at 0 s, the game 15 s in); its curve already matches (2.4 s, low 0.2). Animated items need time alignment |
 | load-field (area map) | 3000 | `--load barrel-user.save --area-map`, frame 0 | 1 | the field gauge reads 45 (the save) where the game draws 44; rest at parity |
+| battle-walk (battle start) | 3000 | `--field AREA_03_02 --load GAMEDATA00 --battle 25`, frame 0 | 196 | packet C |
