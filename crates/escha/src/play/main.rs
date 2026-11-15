@@ -1474,6 +1474,11 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
     // `BARREL_BATTLE_COUNT` fixes how many monsters the group draws (a check against a captured
     // battle); which monsters fill them follows the group as in the game.
     let count = std::env::var("BARREL_BATTLE_COUNT").ok().and_then(|v| v.parse().ok());
+    // `BARREL_BATTLE_ROLLS` (comma-separated, party then monsters) fixes the opening initiative
+    // rolls the same way, for the turn bar of a captured battle.
+    if let Ok(v) = std::env::var("BARREL_BATTLE_ROLLS") {
+        barrel_escha::fight::fix_rolls(v.split(',').filter_map(|r| r.trim().parse().ok()).collect());
+    }
     let drawn = barrel_escha::auto_battle::draw_counted(&tables, group, count, &mut rng)?;
     let sizes: Vec<f32> = drawn.iter().map(|d| d.1).collect();
     // The battle scatters the monsters first: a copy of its generator gives the same spots.

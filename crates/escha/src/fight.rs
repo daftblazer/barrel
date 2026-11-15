@@ -171,6 +171,16 @@ pub struct Battle {
     pub guard: Option<(usize, i32)>,
 }
 
+/// Initiative rolls that replace the drawn ones (in fighter order), for checking a battle
+/// against a captured one: the capture's turn bar shows the order, not the draws
+/// ([`fix_rolls`]; `BARREL_BATTLE_ROLLS` in the play binary).
+static FIXED_ROLLS: std::sync::OnceLock<Vec<i32>> = std::sync::OnceLock::new();
+
+/// Fixes every later battle's initiative rolls (see [`FIXED_ROLLS`]); only the first call counts.
+pub fn fix_rolls(rolls: Vec<i32>) {
+    let _ = FIXED_ROLLS.set(rolls);
+}
+
 impl Battle {
     /// The timeline set up as the game's battle start (`Timeline::setup`) but without its
     /// random part: the fighters fastest first (by speed, the given order on ties), 100 apart
@@ -186,7 +196,16 @@ impl Battle {
     /// (`rng`, in `fighters`' order, the party first as the game's list has it) and adds its
     /// speed, and [`battle::opening_order`] makes the turn order of those.
     pub fn rolled(fighters: Vec<Fighter>, rng: &mut Rng) -> Battle {
-        let rolled: Vec<(i32, u8)> = fighters.iter().map(|f| (rng.range(0, battle::INITIATIVE_ROLL) + f.stats[stat::SPEED], f.side)).collect();
+        let fixed = FIXED_ROLLS.get();
+        let rolled: Vec<(i32, u8)> = fighters
+            .iter()
+            .enumerate()
+            .map(|(k, f)| {
+                // The draw is made even when fixed, so the generator ends where it would have.
+                let roll = rng.range(0, battle::INITIATIVE_ROLL);
+                (fixed.and_then(|r| r.get(k).copied()).unwrap_or(roll) + f.stats[stat::SPEED], f.side)
+            })
+            .collect();
         let timeline = Timeline::setup(&battle::opening_order(&rolled));
         Battle { fighters, timeline, pending: -1, tries: 0, escaped: false, act_steps: Vec::new(), support: 0, guard: None }
     }

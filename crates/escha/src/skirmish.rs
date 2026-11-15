@@ -231,7 +231,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             party,
             foes,
             rules,
-            battle: Battle::new(fighters).with_act_steps(rules.acts.iter().map(|a| a.last).collect()),
+            battle: Battle::rolled(fighters, rng).with_act_steps(rules.acts.iter().map(|a| a.last).collect()),
             left: party.iter().map(|m| m.items.iter().map(|h| h.count).collect()).collect(),
             reactions: foes.iter().map(|f| f.block.reactions.clone()).collect(),
             felled: -1,
