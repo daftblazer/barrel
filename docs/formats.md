@@ -2170,5 +2170,7 @@ are the standard matrix's), +128 and clamping. Checked against ffmpeg with its l
 (`-skip_loop_filter all`, `-skip_frame nokey`): `avantitle`'s key frames 0 to 3, 10, 30, 50 and 70
 (PQINDEX 1 to 3, all three coding sets, both DC tables) are bit-exact in Y, U and V, 13 to 23 ms
 a frame on one PC core unoptimized. With PQINDEX ≤ 2 the loop filter changes nothing; from 3 on
-it does (61–65 dB against ffmpeg's filtered frame), and PQINDEX 4 / 5 frames also need overlap
-smoothing (CONDOVER by `OVERFLAGS`).
+it does. The I-picture loop filter (`vc1_loop::intra_plane`, 8.6.1 and 8.6.4: every inner 8 × 8
+edge, horizontal edges first, 4-pixel segments led by their third pair, C's truncating division)
+makes key frames 3, 30, 50 and 70 bit-exact with ffmpeg's full decode. PQINDEX 4 / 5 frames also
+need overlap smoothing (CONDOVER by `OVERFLAGS`).

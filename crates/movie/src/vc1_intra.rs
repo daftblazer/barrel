@@ -374,6 +374,12 @@ mod movie_tests {
         let mut p = Picture::new(cols, rows);
         let t0 = std::time::Instant::now();
         decode(&IntraTables::default(), &h, &data, cols, rows, &mut p).unwrap();
+        if e.loop_filter && std::env::var("BARREL_NO_LOOP").is_err() {
+            let (w, hh) = (p.width, p.height);
+            crate::vc1_loop::intra_plane(&mut p.y, w, hh, h.pquant as i32);
+            crate::vc1_loop::intra_plane(&mut p.u, w / 2, hh / 2, h.pquant as i32);
+            crate::vc1_loop::intra_plane(&mut p.v, w / 2, hh / 2, h.pquant as i32);
+        }
         eprintln!("decoded in {:?} (pqindex {}, condover {:?}, sets {} {}, dc high {})", t0.elapsed(), h.pqindex, h.cond_over, h.ac_set_luma, h.ac_set_chroma, h.dc_high);
         let mut f = Vec::new();
         for y in 0..1080 {
