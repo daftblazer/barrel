@@ -39,6 +39,18 @@ pub fn run<S: Clone + PartialEq, O>(
     run_with(gpu, pool, target, window, offscreen, images, state, quads, press, keys, out, |_| None)
 }
 
+/// How many frames an offscreen clocked screen ([`run_clocked`]) plays (`--frames N`).
+static OFFSCREEN_FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+/// Sets the frames an offscreen clocked screen plays; the last is written to the picture and each
+/// one whose drawing changed reaches the draw trace, at the renderer's frame count.
+pub fn set_offscreen_frames(n: u32) {
+    OFFSCREEN_FRAMES.store(n.max(1), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The 60 Hz tick the game's clocks count (every animation's rates are in these ticks).
+pub const TICKS_PER_SECOND: f64 = 60.0;
+
 /// [`run`], with `tick` called once a frame in a window (the title's music, the splashes'
 /// clock): it may move the state, or end the screen with an outcome.
 #[allow(clippy::too_many_arguments)]
@@ -51,10 +63,51 @@ pub fn run_with<S: Clone + PartialEq, O>(
     images: &[&barrel_formats::g1t::Texture],
     state: &mut S,
     quads: impl Fn(&S) -> Vec<text::Quad>,
-    mut press: impl FnMut(&mut S, Button) -> Option<O>,
+    press: impl FnMut(&mut S, Button) -> Option<O>,
     keys: &[Button],
     out: Option<&Path>,
     mut tick: impl FnMut(&mut S) -> Option<O>,
+) -> Result<Option<O>> {
+    run_inner(gpu, pool, target, window, offscreen, images, state, quads, press, keys, out, |s, _| tick(s), false)
+}
+
+/// [`run_with`] for a screen with a clock: `tick` gets the 60 Hz tick count since the screen
+/// opened (in a window the elapsed time in ticks, offscreen the frame number, the run's
+/// `--frames`: each frame the picture changes in reaches the draw trace) and may move the state.
+/// The picture is drawn again whenever `quads` gives something new.
+#[allow(clippy::too_many_arguments)]
+pub fn run_clocked<S: Clone + PartialEq, O>(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    target: &Target,
+    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    offscreen: Option<vk::Image>,
+    images: &[&barrel_formats::g1t::Texture],
+    state: &mut S,
+    quads: impl Fn(&S) -> Vec<text::Quad>,
+    press: impl FnMut(&mut S, Button) -> Option<O>,
+    keys: &[Button],
+    out: Option<&Path>,
+    tick: impl FnMut(&mut S, u32) -> Option<O>,
+) -> Result<Option<O>> {
+    run_inner(gpu, pool, target, window, offscreen, images, state, quads, press, keys, out, tick, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_inner<S: Clone + PartialEq, O>(
+    gpu: &Gpu,
+    pool: vk::CommandPool,
+    target: &Target,
+    window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
+    offscreen: Option<vk::Image>,
+    images: &[&barrel_formats::g1t::Texture],
+    state: &mut S,
+    quads: impl Fn(&S) -> Vec<text::Quad>,
+    mut press: impl FnMut(&mut S, Button) -> Option<O>,
+    keys: &[Button],
+    out: Option<&Path>,
+    mut tick: impl FnMut(&mut S, u32) -> Option<O>,
+    clocked: bool,
 ) -> Result<Option<O>> {
     let d = &gpu.device;
     let mut layer = text::Layer::new(gpu, pool, target.pass, images)?;
@@ -65,7 +118,12 @@ pub fn run_with<S: Clone + PartialEq, O>(
             picked = press(state, b);
         }
     }
-    layer.set(gpu, &quads(state))?;
+    // An offscreen clock sets the picture at each of its frames, the first included.
+    let frames = if clocked && window.is_none() { OFFSCREEN_FRAMES.load(std::sync::atomic::Ordering::Relaxed) } else { 1 };
+    let clock_offscreen = clocked && window.is_none();
+    if !clock_offscreen {
+        layer.set(gpu, &quads(state))?;
+    }
     let draw = |cb: vk::CommandBuffer, layer: &text::Layer, image: usize| unsafe {
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: target.width, height: target.height } };
         d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(target.pass).framebuffer(target.framebuffers[image]).render_area(area), vk::SubpassContents::INLINE);
@@ -86,12 +144,14 @@ pub fn run_with<S: Clone + PartialEq, O>(
         (Some((presenter, pump)), _) => {
             let (ready, done) = unsafe { (d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?) };
             let mut shown: Option<S> = None;
+            let mut shown_quads: Option<Vec<text::Quad>> = None;
+            let started = std::time::Instant::now();
             // Keys given beforehand may already have picked (a scripted windowed run).
             let picked = if picked.is_some() { picked } else { loop {
                 if !pump.pump() {
                     break None;
                 }
-                let mut chosen = tick(state);
+                let mut chosen = tick(state, (started.elapsed().as_secs_f64() * TICKS_PER_SECOND) as u32);
                 for key in pump.take_pressed() {
                     if let Some(b) = button(key)
                         && chosen.is_none() {
@@ -101,7 +161,13 @@ pub fn run_with<S: Clone + PartialEq, O>(
                 if chosen.is_some() {
                     break chosen;
                 }
-                if shown.as_ref() != Some(&*state) {
+                if clocked {
+                    let q = quads(state);
+                    if shown_quads.as_ref() != Some(&q) {
+                        layer.set(gpu, &q)?;
+                        shown_quads = Some(q);
+                    }
+                } else if shown.as_ref() != Some(&*state) {
                     layer.set(gpu, &quads(state))?;
                     shown = Some(state.clone());
                 }
@@ -128,6 +194,29 @@ pub fn run_with<S: Clone + PartialEq, O>(
             picked
         }
         (None, Some(color)) => {
+            // The clock's frames before the last: the picture set (and traced) where it changes.
+            if clock_offscreen {
+                let mut shown: Option<Vec<text::Quad>> = None;
+                for f in 0..frames - 1 {
+                    if picked.is_none() {
+                        picked = tick(state, f);
+                    }
+                    let q = quads(state);
+                    if shown.as_ref() != Some(&q) {
+                        layer.set(gpu, &q)?;
+                        gpu.submit(pool, |cb| unsafe { draw(cb, &layer, 0) })?;
+                        shown = Some(q);
+                    }
+                    gpu.frame.set(gpu.frame.get() + 1);
+                }
+                if picked.is_none() {
+                    picked = tick(state, frames - 1);
+                }
+                let q = quads(state);
+                if shown.as_ref() != Some(&q) {
+                    layer.set(gpu, &q)?;
+                }
+            }
             let bytes = u64::from(target.width) * u64::from(target.height) * 4;
             let (readback, rmem) = gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?;
             gpu.submit(pool, |cb| unsafe {

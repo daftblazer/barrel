@@ -6,7 +6,21 @@ use barrel_formats::pe::Pe;
 
 use crate::hud::{Element, TEXT_RISE};
 
+/// The layout of the cursor's glow (part 0x9f): one flipbook node of eight cuts, eight ticks each.
+const CURSOR_LAYOUT: u32 = 691;
+
+/// The cursor glow's flipbook, read from its layout (the one the pages, the lists and the menu
+/// share: all their glows turn together).
+pub fn cursor_glow(pe: &Pe) -> Option<layout::Flip> {
+    layout::placed(pe, CURSOR_LAYOUT).iter().find_map(|p| p.node.flip())
+}
+
 const NUMBER_ENDS: i32 = 28;
+
+/// Every cut of `part`'s flipbook, for loading the pictures a screen may show.
+pub fn cuts_of(part: i32, flip: layout::Flip) -> impl Iterator<Item = Element> {
+    (0..flip.cuts).map(move |k| Element::Sprite { part, cut: flip.first + k, at: [0, 0] })
+}
 
 pub fn shifted(p: &Placed, by: [i32; 2]) -> Placed {
     Placed { at: [p.at[0] + by[0], p.at[1] + by[1]], ..p.clone() }
@@ -30,7 +44,9 @@ pub fn ink(pe: &Pe, p: &Placed) -> [u8; 3] {
 pub fn number(pe: &Pe, p: &Placed, value: i32) -> Vec<Element> {
     let part = p.node.part;
     let advance = layout::sprite(pe, part, 0, [0, 0]).map_or(20, |s| i32::from(s.src[2] - s.src[0]));
-    let digits = value.max(0).to_string();
+    // The node's word 5 is the largest value it shows.
+    let most = layout::word(pe, p, 5).filter(|&m| m > 0).unwrap_or(i32::MAX);
+    let digits = value.clamp(0, most).to_string();
     let n = digits.len() as i32;
     let first = if p.node.kind == NUMBER_ENDS { p.at[0] - advance * n } else { p.at[0] - advance * n / 2 };
     // A node with no ink (word 7 clear) shows its digits as the sheet has them.
@@ -108,3 +124,23 @@ pub fn vertical_bar(pe: &Pe, part: i32, at: [i32; 2], length: i32) -> Vec<Elemen
     out
 }
 
+/// A bar of three cuts (`part`'s cuts 0 to 2: left end, middle, right end) over `width` from `at`:
+/// the middle repeated, its last repeat cut short.
+pub fn horizontal_bar(pe: &Pe, part: i32, at: [i32; 2], width: i32) -> Vec<Element> {
+    let Some(cuts) = (0..3).map(|c| layout::sprite(pe, part, c, [0, 0])).collect::<Option<Vec<_>>>() else { return Vec::new() };
+    let wide = |c: usize| i32::from(cuts[c].src[2] - cuts[c].src[0]);
+    let slice = |c: usize, x: i32, w: i32| {
+        let p = &cuts[c];
+        let [l, t, _, b] = p.src.map(f32::from);
+        Element::Slice { pack: p.texture.clone(), index: p.index, src: [l, t, l + w as f32, b], rect: [at[0] + x, at[1], at[0] + x + w, at[1] + (b - t) as i32] }
+    };
+    let mut out = vec![slice(0, 0, wide(0))];
+    let mut x = wide(0);
+    while x < width - wide(2) {
+        let w = wide(1).min(width - wide(2) - x);
+        out.push(slice(1, x, w));
+        x += wide(1);
+    }
+    out.push(slice(2, width - wide(2), wide(2)));
+    out
+}

@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn numbers_end_at_their_nodes() {
-        let node = |part, kind, at| Placed { path: vec![LAYOUT, BOOK], node: Node { part, cut: 0, at, kind, mirror: 0 }, at, va: 0 };
+        let node = |part, kind, at| Placed { path: vec![LAYOUT, BOOK], node: Node { part, cut: 0, at, kind, mirror: 0, pace: 0 }, at, va: 0 };
         let mut slash = node(DIGITS, 0, [950, 140]);
         slash.node.cut = SLASH;
         let nodes = vec![node(DIGITS, NUMBER_KIND, [944, 94]), node(DIGITS, NUMBER_KIND, [944, 140]), slash];

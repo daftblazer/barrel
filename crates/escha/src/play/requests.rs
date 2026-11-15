@@ -23,9 +23,8 @@
 //! on the chosen row ([`CURSOR_FROM_BAR`]), the second name line's step ([`NAME_STEP`]) and the
 //! words of the unseen kinds. Not yet the game's: the item kinds' pages (a synthesis or gathering
 //! request is shown with its item's picture, name, count and prizes, but not its effects,
-//! "Quality" or "Held" lines; their row icons are guessed); the cursor (a glow cycling its eight cuts
-//! in a second) and the chosen row's plate (its colour pulses) move in the game: here the layout's
-//! first cut and white, a phase difference the parity diff shows as the one cursor mismatch;
+//! "Quality" or "Held" lines; their row icons are guessed); the chosen row's plate (its colour
+//! pulses between white and a tan in the game, not read yet: white here);
 //! no scrolling (the list holds ten at most).
 
 use barrel_escha::data::layout::{self, Placed, Text};
@@ -33,6 +32,7 @@ use barrel_escha::session::Taken;
 use barrel_formats::pe::Pe;
 
 use crate::hud::{Element, TEXT_RISE};
+use crate::kit::{horizontal_bar, number, tiled};
 use crate::title::Button;
 
 pub const LAYOUT: u32 = 678;
@@ -63,8 +63,7 @@ const NUMBER_KIND: i32 = 28;
 const STRETCHED: i32 = 15;
 const BAR: i32 = 19;
 const PICTURE: i32 = 4;
-/// A digit sprite's width, and the rows' pitch down the list.
-const DIGIT_ADVANCE: i32 = 20;
+/// The rows' pitch down the list.
 const ROW_PITCH: i32 = 58;
 /// The list's rows the layout has.
 pub const ROWS: usize = 10;
@@ -189,10 +188,11 @@ impl Panel {
     }
 }
 
-/// The screen's state: the chosen row.
+/// The screen's state: the chosen row, and the clock's ticks since it opened (60 a second).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Requests {
     pub chosen: usize,
+    pub tick: u32,
 }
 
 impl Requests {
@@ -215,12 +215,14 @@ pub struct Layouts {
     footer: Vec<Placed>,
     tab: Vec<Placed>,
     screen: Vec<Placed>,
+    /// The cursor's glow (layout 691): its flipbook.
+    cursor: Option<layout::Flip>,
 }
 
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT) }
+        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), cursor: crate::kit::cursor_glow(pe) }
     }
 }
 
@@ -236,92 +238,12 @@ fn raised(t: Text, text: impl Into<String>) -> Element {
     Element::Label(Text { at: [t.at[0], t.at[1] - TEXT_RISE], text: text.into(), ..t })
 }
 
-/// The ink of a number node (its word 7, stored r, g, b, a).
-fn ink(pe: &Pe, p: &Placed) -> [u8; 3] {
-    let [r, g, b, _] = layout::word(pe, p, 7).unwrap_or(0).to_le_bytes();
-    [r, g, b]
-}
-
-/// A number (`value` held to the node's largest) right-aligned on its node: the last digit just
-/// left of it, in the node's ink.
-fn number(pe: &Pe, p: &Placed, value: i32) -> Vec<Element> {
-    let most = layout::word(pe, p, 5).filter(|&m| m > 0).unwrap_or(i32::MAX);
-    let digits = value.clamp(0, most).to_string();
-    let (part, rgb) = (p.node.part, ink(pe, p));
-    let last = digits.len() as i32 - 1;
-    digits
-        .bytes()
-        .enumerate()
-        .map(|(i, d)| Element::Tinted { part, cut: i32::from(d - b'0'), at: [p.at[0] - DIGIT_ADVANCE * (last - i as i32 + 1), p.at[1]], rgb })
-        .collect()
-}
-
-/// A piece cut in nine (`part`'s cuts 0 to 8 in rows) tiled over `size` from `at`, in the game's
-/// order: the top row, the left column, the right column, the bottom row, then the middle row by
-/// row. The edge and middle tiles repeat at their size, the last one cut short.
-fn tiled(pe: &Pe, part: i32, at: [i32; 2], size: [i32; 2]) -> Vec<Element> {
-    let cut = |c| layout::sprite(pe, part, c, [0, 0]);
-    let Some(cuts) = (0..9).map(cut).collect::<Option<Vec<_>>>() else { return Vec::new() };
-    let wide = |c: usize| i32::from(cuts[c].src[2] - cuts[c].src[0]);
-    let high = |c: usize| i32::from(cuts[c].src[3] - cuts[c].src[1]);
-    // The pieces along one axis: (cut column or row, start, length) from `edge` to the far edge.
-    let along = |first: i32, mid: i32, last: i32, total: i32| {
-        let mut out = vec![(0, 0, first)];
-        let mut x = first;
-        while x < total - last {
-            out.push((1, x, mid.min(total - last - x)));
-            x += mid;
-        }
-        out.push((2, total - last, last));
-        out
-    };
-    let xs = along(wide(0), wide(1), wide(2), size[0]);
-    let ys = along(high(0), high(3), high(6), size[1]);
-    let slice = |c: usize, x: (usize, i32, i32), y: (usize, i32, i32)| {
-        let p = &cuts[c];
-        let [l, t, ..] = p.src.map(f32::from);
-        Element::Slice { pack: p.texture.clone(), index: p.index, src: [l, t, l + x.2 as f32, t + y.2 as f32], rect: [at[0] + x.1, at[1] + y.1, at[0] + x.1 + x.2, at[1] + y.1 + y.2] }
-    };
-    let (top, bottom) = (ys[0], *ys.last().unwrap());
-    let (left, right) = (xs[0], *xs.last().unwrap());
-    let mut out: Vec<Element> = xs.iter().map(|&x| slice(x.0, x, top)).collect();
-    let middle = &ys[1..ys.len() - 1];
-    out.extend(middle.iter().map(|&y| slice(3, left, y)));
-    out.extend(middle.iter().map(|&y| slice(5, right, y)));
-    out.extend(xs.iter().map(|&x| slice(6 + x.0, x, bottom)));
-    for &y in middle {
-        out.extend(xs[1..xs.len() - 1].iter().map(|&x| slice(4, x, y)));
-    }
-    out
-}
-
-/// A bar of three cuts (`part`'s cuts 0 to 2: left end, middle, right end) over `width` from `at`:
-/// the middle repeated, its last repeat cut short.
-fn bar(pe: &Pe, part: i32, at: [i32; 2], width: i32) -> Vec<Element> {
-    let Some(cuts) = (0..3).map(|c| layout::sprite(pe, part, c, [0, 0])).collect::<Option<Vec<_>>>() else { return Vec::new() };
-    let wide = |c: usize| i32::from(cuts[c].src[2] - cuts[c].src[0]);
-    let slice = |c: usize, x: i32, w: i32| {
-        let p = &cuts[c];
-        let [l, t, _, b] = p.src.map(f32::from);
-        Element::Slice { pack: p.texture.clone(), index: p.index, src: [l, t, l + w as f32, b], rect: [at[0] + x, at[1], at[0] + x + w, at[1] + (b - t) as i32] }
-    };
-    let mut out = vec![slice(0, 0, wide(0))];
-    let mut x = wide(0);
-    while x < width - wide(2) {
-        let w = wide(1).min(width - wide(2) - x);
-        out.push(slice(1, x, w));
-        x += wide(1);
-    }
-    out.push(slice(2, width - wide(2), wide(2)));
-    out
-}
-
 /// A layout node's elements as stored (stretched kinds tiled to their size).
 fn stored(pe: &Pe, p: &Placed) -> Vec<Element> {
     let word = |i| layout::word(pe, p, i).unwrap_or(0);
     match p.node.kind {
         STRETCHED => tiled(pe, p.node.part, p.at, [word(5), word(6)]),
-        BAR => bar(pe, p.node.part, p.at, word(5)),
+        BAR => horizontal_bar(pe, p.node.part, p.at, word(5)),
         _ => vec![Element::stored(p)],
     }
 }
@@ -352,7 +274,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, panel: Panel, list: &[Entry
     // The list: its frame, then a bar for each request, then each row from the first row's
     // nodes (layout 673, its glow 704 nested), the cursor after the chosen one.
     let bar_at = nodes_of(LIST).find(|p| p.node.kind == BAR).map_or([0, 0], |p| p.at);
-    let mut bars = 0;
+    let (mut bars, mut cursor) = (0, None);
     for p in nodes_of(LIST).filter(|p| p.path.get(2) != Some(&ROW)) {
         if p.node.kind == BAR {
             bars += 1;
@@ -382,13 +304,19 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, panel: Panel, list: &[Entry
                     out.push(raised(Text { at, ..t }, text));
                 }
                 ROW_DIGITS => out.extend(number(pe, &node, e.wanted)),
-                _ => out.push(Element::stored(&node)),
+                // The "Report!" glow flips through its cuts (layout 704's node).
+                _ => out.push(match p.node.flip() {
+                    Some(f) => Element::Sprite { part: p.node.part, cut: f.cut(view.tick), at },
+                    None => Element::stored(&node),
+                }),
             }
         }
         if chosen {
-            out.push(Element::Sprite { part: CURSOR, cut: 0, at: [bar_at[0] + CURSOR_FROM_BAR[0], bar_at[1] + down + CURSOR_FROM_BAR[1]] });
+            cursor = Some([bar_at[0] + CURSOR_FROM_BAR[0], bar_at[1] + down + CURSOR_FROM_BAR[1]]);
         }
     }
+    // The cursor's glow is drawn last, over the rows.
+    out.extend(cursor.map(|at| Element::Sprite { part: CURSOR, cut: l.cursor.map_or(0, |f| f.cut(view.tick)), at }));
     out
 }
 
@@ -536,7 +464,10 @@ pub fn run(
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("requests: an empty font atlas")?.width as f32 };
     // Every picture any row's page shows.
-    let every: Vec<Element> = (0..list.len().max(1)).flat_map(|chosen| elements(&pe, &layouts, &words, panel, &list, Requests { chosen })).collect();
+    let mut every: Vec<Element> = (0..list.len().max(1)).flat_map(|chosen| elements(&pe, &layouts, &words, panel, &list, Requests { chosen, tick: 0 })).collect();
+    // And every cut the flipbooks turn through.
+    every.extend(layouts.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
+    every.extend(layouts.screen.iter().filter(|p| p.path.contains(&GLOW)).filter_map(|p| p.node.flip().map(|f| (p.node.part, f))).flat_map(|(part, f)| crate::kit::cuts_of(part, f)));
     let needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::Result<Vec<_>>>()?;
@@ -553,7 +484,10 @@ pub fn run(
     let count = list.len();
     let mut state = Requests::default();
     let press = |r: &mut Requests, b: Button| r.press(b, count).then_some(());
-    screen::run(gpu, pool, target, window, offscreen, &images, &mut state, quads, press, keys, out)
+    screen::run_clocked(gpu, pool, target, window, offscreen, &images, &mut state, quads, press, keys, out, |r, tick| {
+        r.tick = tick;
+        None
+    })
 }
 
 #[cfg(test)]

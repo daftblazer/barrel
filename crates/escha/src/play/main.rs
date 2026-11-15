@@ -3884,6 +3884,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     // Offscreen, at most 600 frames written: `--save-every N` lets a run go N times as long.
     let frames = window_frames.unwrap_or(frames.min(MAX_WRITTEN_FRAMES * save_every));
+    // The 2D screens with a clock (the menu, Requests, the title) play as many frames offscreen.
+    screen::set_offscreen_frames(frames);
     let d = &gpu.device;
     // Barrel's graphics config (the Options screen's graphics page writes it) when no setting
     // was given on the command line: in a window, or offscreen when `BARREL_CONFIG` names one.

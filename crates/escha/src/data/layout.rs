@@ -83,7 +83,38 @@ pub struct Node {
     /// For a mirrored node (kind 2), its word 5: 0 left to right, 1 top to bottom, 2 both
     /// (layout 649's quarter vignette is drawn four ways with 0, 1 and 2).
     pub mirror: i32,
+    /// Word 6: for a flipbook (kind 36, [`Node::flip`]) the 60 Hz ticks each cut stays.
+    pub pace: i32,
 }
+
+/// A flipbook node (kind 36): `cuts` pictures of the node's sprite from its cut on, each held for
+/// `frames` ticks of the 60 Hz clock, in a loop. Its words 5 and 6: the area map's cursor glow
+/// has 8 and 8 (8 cuts of 8 ticks), the command frames 5 and 10 (cuts 0 to 4 of 10 ticks: the
+/// sheet lists the pulse there and back). The captures' glows, frames and badges all fit one clock
+/// shared by the game's screens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Flip {
+    pub first: i32,
+    pub cuts: i32,
+    pub frames: i32,
+}
+
+impl Flip {
+    /// The cut shown at `tick` ticks.
+    pub fn cut(&self, tick: u32) -> i32 {
+        self.first + (tick / self.frames.max(1) as u32 % self.cuts.max(1) as u32) as i32
+    }
+}
+
+impl Node {
+    /// The node as a flipbook, if it is one.
+    pub fn flip(&self) -> Option<Flip> {
+        (self.kind == FLIPBOOK && self.mirror > 0 && self.pace > 0).then_some(Flip { first: self.cut, cuts: self.mirror, frames: self.pace })
+    }
+}
+
+/// The node kind of a flipbook.
+pub const FLIPBOOK: i32 = 36;
 
 /// Layout `id`'s place on the 1920 × 1080 screen and its nodes, or `None` past the table.
 pub fn nodes(pe: &Pe, id: u32) -> Option<([i32; 2], Vec<Node>)> {
@@ -98,7 +129,7 @@ pub fn nodes(pe: &Pe, id: u32) -> Option<([i32; 2], Vec<Node>)> {
             break;
         }
         let f = |i: u64| i32_at(pe, node + 4 * i).unwrap_or(0);
-        out.push(Node { part, cut: f(1), at: [f(2), f(3)], kind: f(4), mirror: f(5) });
+        out.push(Node { part, cut: f(1), at: [f(2), f(3)], kind: f(4), mirror: f(5), pace: f(6) });
         node += 0x28;
     }
     Some(([x, y], out))
@@ -173,8 +204,15 @@ pub fn sprite(pe: &Pe, part: i32, cut: i32, at: [i32; 2]) -> Option<Piece> {
     let c = cuts + 20 * u64::try_from(cut).ok()?;
     let (texture, index) = texture(pe, i32_at(pe, c)?)?;
     let o = pe.offset(c + 4)?;
-    let w = |i: usize| pe.data.get(o + 2 * i..o + 2 * i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
-    Some(Piece { texture, index, src: [w(0)?, w(1)?, w(2)?, w(3)?], at })
+    let w = |i: usize| pe.data.get(o + 2 * i..o + 2 * i + 2).map(|b| i16::from_le_bytes([b[0], b[1]]));
+    let (mut top, mut bottom) = (w(1)?, w(3)?);
+    // A window starting above the sheet (the "Report!" glow's last cut starts at -4) is drawn
+    // from the sheet's top at its full height, as the captures show.
+    if top < 0 {
+        bottom -= top;
+        top = 0;
+    }
+    Some(Piece { texture, index, src: [w(0)? as u16, top as u16, w(2)? as u16, bottom as u16], at })
 }
 
 /// Word `index` (4 bytes from the node's start) of a placed node, for the fields [`Node`] does

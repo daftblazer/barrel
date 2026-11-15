@@ -675,7 +675,7 @@ mod tests {
     use barrel_escha::data::layout::Node;
 
     fn node(path: &[u32], part: i32, cut: i32, kind: i32, at: [i32; 2]) -> Placed {
-        Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind, mirror: 0 }, at, va: 0 }
+        Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind, mirror: 0, pace: 0 }, at, va: 0 }
     }
 
     #[test]

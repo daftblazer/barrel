@@ -193,27 +193,6 @@ fn stand_in(t: &Text) -> bool {
     t.filled_in() || t.text == NAME_FILLER
 }
 
-/// A bar of three cuts (`part`'s cuts 0 to 2: left end, middle, right end) over `width` from
-/// `at`: the middle repeated, its last repeat cut short.
-fn bar(pe: &Pe, part: i32, at: [i32; 2], width: i32) -> Vec<Element> {
-    let Some(cuts) = (0..3).map(|c| layout::sprite(pe, part, c, [0, 0])).collect::<Option<Vec<_>>>() else { return Vec::new() };
-    let wide = |c: usize| i32::from(cuts[c].src[2] - cuts[c].src[0]);
-    let slice = |c: usize, x: i32, w: i32| {
-        let p = &cuts[c];
-        let [l, t, _, b] = p.src.map(f32::from);
-        Element::Slice { pack: p.texture.clone(), index: p.index, src: [l, t, l + w as f32, b], rect: [at[0] + x, at[1], at[0] + x + w, at[1] + (b - t) as i32] }
-    };
-    let mut out = vec![slice(0, 0, wide(0))];
-    let mut x = wide(0);
-    while x < width - wide(2) {
-        let w = wide(1).min(width - wide(2) - x);
-        out.push(slice(1, x, w));
-        x += wide(1);
-    }
-    out.push(slice(2, width - wide(2), wide(2)));
-    out
-}
-
 /// The nodes of `group` (a nested layout) of the screen, grouped by the place the nesting put
 /// them at, each group in node order (the plates: one group each).
 fn groups(nodes: &[Placed], group: u32) -> Vec<Vec<&Placed>> {
@@ -273,7 +252,7 @@ pub fn elements(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, words: &Words, 
     let mut ranked = false;
     for p in page.iter().filter(|p| p.path.get(2) == Some(&BOOK_HOLDER)) {
         match p.path.get(3) {
-            Some(&BOOK) if p.node.kind == BAR_KIND => out.extend(bar(pe, p.node.part, p.at, layout::word(pe, p, 5).unwrap_or(0))),
+            Some(&BOOK) if p.node.kind == BAR_KIND => out.extend(crate::kit::horizontal_bar(pe, p.node.part, p.at, layout::word(pe, p, 5).unwrap_or(0))),
             Some(&BOOK) => out.push(Element::stored(p)),
             Some(&RANK) => match (p.node.part, p.node.kind) {
                 // The first icon's place shows the rank's; the other places stay empty.

@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn cards_and_tags() {
-        let node = |path: &[u32], part, cut| Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind: 0, mirror: 0 }, at: [0, 0], va: 0 };
+        let node = |path: &[u32], part, cut| Placed { path: path.to_vec(), node: Node { part, cut, at: [0, 0], kind: 0, mirror: 0, pace: 0 }, at: [0, 0], va: 0 };
         let nodes = vec![
             node(&[LAYOUT, ESCHA_FIGURE], 0x138, 0),
             node(&[LAYOUT, LOGY_FIGURE], 0x139, 0),
