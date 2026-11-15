@@ -147,9 +147,11 @@ likely settle them where static reading failed.
   the party's facing towards the monsters for any target); how a monster's skill event names
   its actor and target and which way its offsets turn; what characters 10002+ beyond the
   stand-ins are. In play a member's Attack and Support Attack play their scenes, the damage
-  number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the HP plates still
-  drop at the scene's start, and the actor's clips are not switched by the scene's motion
-  commands yet. The `s1` handler is not read (marker 0 = a hit is from the data).
+  number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the actor plays the
+  scene's motions (motion and `CharaDiv` division, switched as the scene sets them, blended over
+  Barrel's 0.15 s rather than the command's blend); `s9` (motion speed: 120, 125, 150 % in
+  Escha's attack) is not applied, so the motions run at 100 % while the waits use their
+  lengths; the HP plates still drop at the scene's start. The `s1` handler is not read (marker 0 = a hit is from the data).
 
 ## Synthesis
 

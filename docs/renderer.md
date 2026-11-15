@@ -1118,7 +1118,7 @@ their density and draw range). The desktop presets take full, the handheld ones 
 Attack (8) play `Skill_PARTY_<member>_<command>` through `barrel_escha::skill_scene::play`.
 The actor's motion lengths come from its clips and `CharaDiv` divisions, and the target is
 anchored by the way from the actor to it. The step lasts as long as the scene. Each frame the
-actor's body takes the scene's place and facing and the camera takes the scene's eye and
+actor's body takes the scene's place, facing and motion (its clip, in the `CharaDiv` division the scene names) and the camera takes the scene's eye and
 target; both go back when the scene ends.
 
 A test battle run with `--load SAVE` also draws the save's field (its town people and props)

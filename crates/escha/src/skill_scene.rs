@@ -36,6 +36,9 @@ pub struct Cast {
 pub struct Scene {
     pub frames: Vec<Snapshot>,
     pub hits: Vec<(f32, i32)>,
+    /// The actor's motion at each frame (its `MOTION_*` number and division), as the scene's
+    /// `s5`/`s10`/`s13` set it.
+    pub motions: Vec<Option<barrel_engine::stage::Playing>>,
 }
 
 /// `s1` (`ECT_CHARA_SET_MARKER`, `{character, marker, 0, 4, share}`): marker 0 is a hit landing,
@@ -80,12 +83,14 @@ pub fn play(
     }
     stage.measures = measures;
     let mut play = Playback::new(stage, steps);
-    let mut out = vec![play.stage.snapshot()];
+    let motion = |p: &Playback| p.stage.characters.get(&ACTOR).and_then(|b| b.motion);
+    let (mut out, mut motions) = (vec![play.stage.snapshot()], vec![motion(&play)]);
     while (!play.finished() || play.stage.characters.values().any(|b| b.moving())) && play.stage.time < limit {
         play.tick();
         out.push(play.stage.snapshot());
+        motions.push(motion(&play));
     }
-    Ok(Scene { frames: out, hits })
+    Ok(Scene { frames: out, hits, motions })
 }
 
 #[cfg(test)]
@@ -105,6 +110,9 @@ mod tests {
         let it = Cast { position: [0.0, 0.0, 0.0], facing: 0.0, measures: None };
         // Every motion 0.6 s long (her attack's clips are not read here).
         let scene = play(&event, her, it, &BTreeMap::new(), Some(Box::new(|_, _, _| Some((0.6, false)))), 20.0).unwrap();
+        // Her attack motion (14, ATTACK00) in its divisions 0 to 6.
+        let divisions: Vec<Option<u32>> = scene.motions.iter().flatten().filter(|p| p.motion == 14).map(|p| p.division).collect();
+        assert!(divisions.contains(&Some(0)) && divisions.contains(&Some(6)), "{:?}", divisions.last());
         let frames = scene.frames;
         // One hit, the whole damage, once she has run in.
         assert_eq!(scene.hits.len(), 1);
