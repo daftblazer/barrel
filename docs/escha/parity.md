@@ -35,3 +35,27 @@ Barrel frame.
   flipbooks, the next-turn mark while the cursor is on Attack.
 - Row: 105 pixels between places (the layout's nine are that rounded), centred at x 961, icons at
   y 585; the third squad member (not an alchemist) has Attack, Skill, Move, Wait and Run only.
+
+## Time alignment (`barrel-parity align`)
+
+`PARITY_ALIGN=a-b/step tools/parity.sh <capture> <frame> <barrel-escha args> --frames N` diffs every
+captured game frame of the range against each of Barrel's frames 0..N-1 and reports the best
+Barrel frame per game frame and the one offset (game frame - Barrel frame) with the fewest
+total mismatches (docs/parity.md). Full arguments of a run (the rows above abbreviate them):
+`--field <game>/Data/x64/Field/TOWN_04 out.png --size 1920x1080 --load GAMEDATA00.pcsave ...`
+(`--field auto out.png --size 1920x1080 --title <game>` for the title).
+
+Result of the first run of each time-varying row: **none of them can be aligned yet, because
+Barrel has no clock on these screens**, not because the offset is unknown.
+
+| Row | Game frames | Barrel frames | Aligned result |
+|---|---|---|---|
+| boot-title | 1400-1480/20 | 0-239 | Barrel's title renders one frame offscreen and takes its time from the wall clock (`BARREL_TITLE_FADE_AT` seconds, `title.rs`), so its trace has a single frame and no offset can be searched (1 mismatch at every game frame, the pulse). Aligned by hand: the game's prompt alpha (0.455 at 1400, 0.231 at 1420, 0.376 at 1440, 0.6 at 1460, 0.82 at 1480) is Barrel's triangle wave (2.4 s, low 0.2) with the title starting at game frame about 1351. `BARREL_TITLE_FADE_AT=(frame-1351)/60` gives 0 mismatches at 1400 and 1 at 1460 (alpha 0.612 vs 0.600, about one frame of drift: the game's 60 frames are slightly longer than Barrel's) |
+| area-requests | 2200-2260/20 | 0 (only) | 3, 2, 3, 3 mismatches per game frame against Barrel's single frame; the area map renders one frame offscreen and `--frames` does not loop it, so there is nothing to align. The game's glow cut changes at 8 cuts a second (4, 7, 1, 4 at 2200 to 2260); Barrel draws cut 0 only |
+| area-menu | 2200-2260/20 | 0 (only) | 5, 6, 6, 7 per game frame, same cause: one static frame; Barrel has no cycling for the chosen button's glow or the Journal badge strip |
+| battle-walk | 3000 | 0-239 | best Barrel frame 239 (the last), 8 mismatches, the scoreboard's count (20 at frame 0): the HUD's quad list is set at frame 0 and 63 and never changes after, so Barrel's chosen-command flipbook (a15_battle cuts #3 and #5) shows one cut where the game has caught another; later game frames (3200, 3400) are other battle states, not comparable |
+
+So `align` is ready; what the animation rows need is Barrel-side time: a per-frame clock on the
+area map, menu and battle HUD (offscreen `--frames N` looping the screen, and the cycling parts
+following it at the game's rate: 8 cuts a second for the glow), after which the offset is
+searchable. Until then the "phase" differences stay counted in the rows above.

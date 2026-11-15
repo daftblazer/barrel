@@ -29,6 +29,15 @@ A diff of the two says where Barrel differs, without pixels and without judging 
 `tools/parity.sh <capture dir> <game frame> <barrel-escha arguments...>` does steps 3 and 4 for
 one offscreen Barrel frame (exit status 0 when nothing differs).
 
+Animation phase: `barrel-parity align <trace dir> <a-b/step> <barrel trace> <a-b> [index.tsv]`
+diffs every captured game frame of the first range against each Barrel frame of the second,
+prints the best Barrel frame per game frame and the single offset (game frame - Barrel frame)
+that minimises the total mismatches, and its count on the last line. It tells layout parity from
+animation phase: a cycling sprite that matches at some frame but not at the same one is phase.
+`PARITY_ALIGN=a-b/step tools/parity.sh <capture> <frame> <barrel args> --frames N` runs Barrel
+once for N frames and aligns frames 0..N-1 (frames with nothing on screen are left out; a Barrel
+that draws the same quads in all of them is reported). `diff` is unchanged.
+
 `PARITY_SKIP=prefix,...` leaves textures whose game file name starts with a prefix out of the
 diff on both sides, for what a check does not cover yet (`Data/x64/Effect/`: particles).
 

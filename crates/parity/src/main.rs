@@ -7,6 +7,10 @@
 //!   barrel-parity quads <trace dir> <frame> [index]    its 2D rectangles and text, as diffed
 //!   barrel-parity diff <trace dir> <frame> <barrel trace> <frame> [index]
 //!                                                      the game's 2D quads against Barrel's
+//!   barrel-parity align <trace dir> <a-b/step> <barrel trace> <a-b> [index]
+//!                                                      the same over ranges of frames: the best
+//!                                                      Barrel frame per game frame and the one
+//!                                                      offset that fits them all
 //!
 //! Screen positions are in a 1920 × 1080 frame whatever size the game drew at, so captures at
 //! any resolution compare.
@@ -163,6 +167,27 @@ impl Trace {
     }
 }
 
+impl Trace {
+    /// The events of several frames in one pass over the capture.
+    fn frames(&self, wanted: &[u64]) -> Result<HashMap<u64, Vec<Value>>> {
+        let text = std::fs::read_to_string(self.dir.join("draws.jsonl"))?;
+        let mut out: HashMap<u64, Vec<Value>> = HashMap::new();
+        let mut on: Option<u64> = None;
+        for l in text.lines() {
+            let v: Value = serde_json::from_str(l)?;
+            if let Some(f) = v.get("frame").and_then(Value::as_u64) {
+                on = wanted.contains(&f).then_some(f);
+                if let Some(f) = on {
+                    out.entry(f).or_default();
+                }
+            } else if let Some(f) = on {
+                out.get_mut(&f).unwrap().push(v);
+            }
+        }
+        Ok(out)
+    }
+}
+
 fn floats(b: &[u8]) -> Vec<f32> {
     b.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect()
 }
@@ -293,9 +318,14 @@ fn arr<const N: usize>(v: &Value) -> [f32; N] {
 /// Draws that read a render target (the copy to the back buffer, post effects) and 3D draws
 /// are counted, not compared.
 fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
+    game_quads_of(t, t.frame(frame)?)
+}
+
+/// `game_quads` of a frame's events already read.
+fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
     let mut out = Vec::new();
     let mut other = 0;
-    for e in t.frame(frame)? {
+    for e in events {
         if e.get("draw").is_none() {
             continue;
         }
@@ -421,45 +451,93 @@ fn text_runs(qs: Vec<Q>, g: Option<&Glyphs>) -> Vec<Q> {
     out
 }
 
-/// Barrel's quads on screen at `frame`: each layer's last list set by then.
-fn barrel_quads(path: &Path, frame: u64) -> Result<Vec<Q>> {
+fn barrel_layer(v: &Value) -> Option<Vec<Q>> {
+    let qs = v["quads"].as_array()?;
+    Some(qs.iter().map(|q| Q { tex: q["tex"].as_str().unwrap_or("").into(), rect: arr(&q["rect"]), uv: arr(&q["uv"]), color: arr(&q["color"]), text: None, how: String::new() }).collect())
+}
+
+/// Barrel's quads on screen at each of `frames` (ascending): each layer's last list set by
+/// then. A layer that goes at a frame is still shown on it.
+fn barrel_frames(path: &Path, frames: &[u64]) -> Result<Vec<Vec<Q>>> {
+    let events: Vec<Value> = std::fs::read_to_string(path)?.lines().map(serde_json::from_str).collect::<std::result::Result<_, _>>()?;
+    let at = |v: &Value| v["frame"].as_u64().unwrap_or(0);
     let mut layers: std::collections::BTreeMap<u64, Vec<Q>> = Default::default();
-    for l in std::fs::read_to_string(path)?.lines() {
-        let v: Value = serde_json::from_str(l)?;
-        if v["frame"].as_u64().unwrap_or(0) > frame {
-            break;
+    let mut gone: Vec<u64> = Vec::new();
+    let mut next = 0;
+    let mut out = Vec::new();
+    for &f in frames {
+        while next < events.len() && at(&events[next]) <= f {
+            let v = &events[next];
+            let id = v["layer"].as_u64().unwrap_or(0);
+            if v.get("gone").is_some() {
+                if at(v) < f {
+                    layers.remove(&id);
+                } else {
+                    gone.push(id);
+                }
+            } else if let Some(q) = barrel_layer(v) {
+                layers.insert(id, q);
+            }
+            next += 1;
         }
-        let id = v["layer"].as_u64().unwrap_or(0);
-        if v.get("gone").is_some() && v["frame"].as_u64().unwrap_or(0) < frame {
+        out.push(layers.values().flatten().cloned().collect());
+        // layers that went on this frame leave after it
+        for id in gone.drain(..) {
             layers.remove(&id);
-            continue;
-        }
-        if let Some(qs) = v["quads"].as_array() {
-            layers.insert(id, qs.iter().map(|q| Q { tex: q["tex"].as_str().unwrap_or("").into(), rect: arr(&q["rect"]), uv: arr(&q["uv"]), color: arr(&q["color"]), text: None, how: String::new() }).collect());
         }
     }
-    Ok(layers.into_values().flatten().collect())
+    Ok(out)
+}
+
+/// Barrel's quads on screen at `frame`.
+fn barrel_quads(path: &Path, frame: u64) -> Result<Vec<Q>> {
+    Ok(barrel_frames(path, &[frame])?.remove(0))
 }
 
 fn close(a: &[f32; 4], b: &[f32; 4], tol: f32) -> bool {
     a.iter().zip(b).all(|(x, y)| (x - y).abs() <= tol)
 }
 
-/// Matches the two lists in order (longest common subsequence on texture and place) and
-/// reports each pair's differences and what only one side draws. Returns the mismatches.
-fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>) -> Result<usize> {
-    let t = Trace { dir: trace.into() };
-    let (names, glyphs) = index(idx)?;
-    let tex = |n: &str| names.get(n).cloned().unwrap_or_else(|| n.to_string());
-    let (g, other) = game_quads(&t, gframe)?;
-    let (g, under) = hidden(g);
-    // PARITY_SKIP: texture name prefixes (comma-separated) left out of the comparison on both
-    // sides, for what a check does not cover yet (e.g. `Data/x64/Effect/` particles)
-    let skip: Vec<String> = std::env::var("PARITY_SKIP").map(|v| v.split(',').filter(|p| !p.is_empty()).map(String::from).collect()).unwrap_or_default();
-    let skipped = |q: &Q| skip.iter().any(|p| names.get(&q.tex).is_some_and(|n| n.starts_with(p.as_str())));
-    let g: Vec<Q> = g.into_iter().filter(|q| !skipped(q)).collect();
-    let g = text_runs(g, glyphs.as_ref());
-    let b = text_runs(barrel_quads(barrel, bframe)?.into_iter().filter(|q| !skipped(q)).collect(), glyphs.as_ref());
+/// The comparison's setup: texture names, the font and the `PARITY_SKIP` filter.
+struct Setup {
+    names: HashMap<String, String>,
+    glyphs: Option<Glyphs>,
+    /// PARITY_SKIP: texture name prefixes (comma-separated) left out of the comparison on both
+    /// sides, for what a check does not cover yet (e.g. `Data/x64/Effect/` particles)
+    skip: Vec<String>,
+}
+
+impl Setup {
+    fn new(idx: Option<&str>) -> Result<Setup> {
+        let (names, glyphs) = index(idx)?;
+        let skip = std::env::var("PARITY_SKIP").map(|v| v.split(',').filter(|p| !p.is_empty()).map(String::from).collect()).unwrap_or_default();
+        Ok(Setup { names, glyphs, skip })
+    }
+
+    fn tex(&self, n: &str) -> String {
+        self.names.get(n).cloned().unwrap_or_else(|| n.to_string())
+    }
+
+    fn skipped(&self, q: &Q) -> bool {
+        self.skip.iter().any(|p| self.names.get(&q.tex).is_some_and(|n| n.starts_with(p.as_str())))
+    }
+
+    /// The game's quads as compared (hidden ones and skipped textures dropped, text joined),
+    /// and how many were hidden.
+    fn game(&self, g: Vec<Q>) -> (Vec<Q>, usize) {
+        let (g, under) = hidden(g);
+        (text_runs(g.into_iter().filter(|q| !self.skipped(q)).collect(), self.glyphs.as_ref()), under)
+    }
+
+    fn barrel(&self, b: Vec<Q>) -> Vec<Q> {
+        text_runs(b.into_iter().filter(|q| !self.skipped(q)).collect(), self.glyphs.as_ref())
+    }
+}
+
+/// Matches the two lists in order (longest common subsequence on texture and place), hands
+/// each pair and each quad only one side draws to `line`, and returns the mismatches.
+fn compare(s: &Setup, g: &[Q], b: &[Q], mut line: impl FnMut(&str)) -> usize {
+    let tex = |n: &str| s.tex(n);
     let same = |x: &Q, y: &Q| x.tex == y.tex && close(&x.rect, &y.rect, 8.0) && (x.text.is_none() || x.text == y.text || close(&x.rect, &y.rect, 2.0));
     let (n, m) = (g.len(), b.len());
     let mut l = vec![vec![0usize; m + 1]; n + 1];
@@ -490,25 +568,103 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
                 d.push(format!("color {:?} vs {:?}", x.color, y.color));
             }
             if d.is_empty() {
-                println!("  same   {}", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")));
+                line(&format!("  same   {}", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}"))));
             } else {
                 bad += 1;
-                println!("  DIFF   {}: {}  [game {}]", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")), d.join("; "), x.how);
+                line(&format!("  DIFF   {}: {}  [game {}]", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")), d.join("; "), x.how));
             }
             i += 1;
             j += 1;
         } else if i < n && (j >= m || l[i + 1][j] >= l[i][j + 1]) {
             bad += 1;
-            println!("  GAME   {}  [{}]", show(&g[i]), g[i].how);
+            line(&format!("  GAME   {}  [{}]", show(&g[i]), g[i].how));
             i += 1;
         } else {
             bad += 1;
-            println!("  BARREL {}", show(&b[j]));
+            line(&format!("  BARREL {}", show(&b[j])));
             j += 1;
         }
     }
-    println!("{} game quads, {} Barrel quads, {bad} mismatches ({other} game draws not compared: 3D, render-target reads or transparent; {under} hidden under opaque ones)", n, m);
+    bad
+}
+
+fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>) -> Result<usize> {
+    let t = Trace { dir: trace.into() };
+    let s = Setup::new(idx)?;
+    let (g, other) = game_quads(&t, gframe)?;
+    let (g, under) = s.game(g);
+    let b = s.barrel(barrel_quads(barrel, bframe)?);
+    let bad = compare(&s, &g, &b, |l| println!("{l}"));
+    println!("{} game quads, {} Barrel quads, {bad} mismatches ({other} game draws not compared: 3D, render-target reads or transparent; {under} hidden under opaque ones)", g.len(), b.len());
     Ok(bad)
+}
+
+/// `a-b` or `a-b/step` (inclusive); a lone `a` is that frame.
+fn parse_range(s: &str) -> Result<(u64, u64, u64)> {
+    let (r, step) = s.split_once('/').unwrap_or((s, "1"));
+    let (a, b) = r.split_once('-').unwrap_or((r, r));
+    let step: u64 = step.parse()?;
+    if step == 0 {
+        return Err("range step is 0".into());
+    }
+    Ok((a.parse()?, b.parse()?, step))
+}
+
+/// The one offset (game frame minus Barrel frame) that minimises the summed mismatches.
+/// Each entry is a game frame with its mismatches against each Barrel frame as (frame, count).
+/// Only offsets that put every game frame on a compared Barrel frame count; ties go to the
+/// smaller |offset|, then the smaller offset. Returns (offset, total).
+fn best_offset(costs: &[(u64, Vec<(u64, usize)>)]) -> Option<(i64, usize)> {
+    let mut totals: HashMap<i64, (usize, usize)> = HashMap::new();
+    for (g, row) in costs {
+        for &(b, c) in row {
+            let e = totals.entry(*g as i64 - b as i64).or_default();
+            e.0 += c;
+            e.1 += 1;
+        }
+    }
+    totals.into_iter().filter(|(_, (_, n))| *n == costs.len()).map(|(o, (t, _))| (o, t)).min_by_key(|&(o, t)| (t, o.abs(), o))
+}
+
+/// For each captured game frame of `grange`, the mismatches against every Barrel frame of
+/// `brange`: the best Barrel frame per game frame, and the single offset that minimises the
+/// total. Returns that total.
+fn align(trace: &Path, grange: &str, barrel: &Path, brange: &str, idx: Option<&str>) -> Result<usize> {
+    let t = Trace { dir: trace.into() };
+    let s = Setup::new(idx)?;
+    let (ga, gb, gs) = parse_range(grange)?;
+    let (ba, bb, _) = parse_range(brange)?;
+    let wanted: Vec<u64> = (ga..=gb).step_by(gs as usize).collect();
+    let mut events = t.frames(&wanted)?;
+    // frames with nothing on screen are after Barrel's run ended (a screen that renders one
+    // frame offscreen)
+    let all: Vec<u64> = (ba..=bb).collect();
+    let (bframes, bq): (Vec<u64>, Vec<Vec<Q>>) = all.iter().copied().zip(barrel_frames(barrel, &all)?.into_iter().map(|q| s.barrel(q))).filter(|(_, q)| !q.is_empty()).unzip();
+    if bframes.is_empty() {
+        return Err("Barrel draws nothing in the range".into());
+    }
+    if bq.windows(2).all(|w| format!("{:?}", w[0]) == format!("{:?}", w[1])) {
+        println!("note: Barrel draws the same quads on its frames {} to {}: nothing animates to align", bframes[0], bframes[bframes.len() - 1]);
+    }
+    let mut costs = Vec::new();
+    for f in wanted {
+        let Some(ev) = events.remove(&f) else { continue };
+        let (g, _) = s.game(game_quads_of(&t, ev)?.0);
+        let row: Vec<(u64, usize)> = bframes.iter().zip(&bq).map(|(&bf, b)| (bf, compare(&s, &g, b, |_| {}))).collect();
+        let (bf, c) = row.iter().copied().min_by_key(|&(bf, c)| (c, (f as i64 - bf as i64).abs())).ok_or("no Barrel frames")?;
+        println!("game frame {f}: best Barrel frame {bf} ({c} mismatches, offset {}); at Barrel frame {}: {}", f as i64 - bf as i64, row[0].0, row[0].1);
+        costs.push((f, row));
+    }
+    if costs.is_empty() {
+        return Err("no game frames of the range in the capture".into());
+    }
+    let Some((off, total)) = best_offset(&costs) else {
+        let each: usize = costs.iter().map(|(_, row)| row.iter().map(|r| r.1).min().unwrap_or(0)).sum();
+        println!("aligned: no single offset puts every game frame on a Barrel frame; best per game frame: {each} mismatches over {} game frames", costs.len());
+        return Ok(each);
+    };
+    println!("aligned: offset {off} (game frame - Barrel frame), {total} mismatches over {} game frames", costs.len());
+    Ok(total)
 }
 
 fn main() -> Result<()> {
@@ -518,6 +674,10 @@ fn main() -> Result<()> {
         Some("shader") if a.len() == 3 => shader(Path::new(&a[1]), &a[2]),
         Some("diff") if a.len() >= 5 => {
             let bad = diff(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str))?;
+            std::process::exit(if bad == 0 { 0 } else { 1 })
+        }
+        Some("align") if a.len() >= 5 => {
+            let bad = align(Path::new(&a[1]), &a[2], Path::new(&a[3]), &a[4], a.get(5).map(String::as_str))?;
             std::process::exit(if bad == 0 { 0 } else { 1 })
         }
         Some("quads") if a.len() >= 3 => {
@@ -534,6 +694,43 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some("screen") if a.len() >= 3 => screen(Path::new(&a[1]), a[2].parse()?, a.get(3).map(String::as_str)),
-        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv]".into()),
+        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv]".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(g: u64, counts: &[usize]) -> (u64, Vec<(u64, usize)>) {
+        (g, counts.iter().enumerate().map(|(i, &c)| (i as u64, c)).collect())
+    }
+
+    #[test]
+    fn offset_minimises_the_total() {
+        // game frames 10 and 20 fit Barrel frames 3 and 13 (offset 7)
+        let costs = [row(10, &[5, 5, 5, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]), row(20, &[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 1, 5])];
+        assert_eq!(best_offset(&costs), Some((7, 1)));
+    }
+
+    #[test]
+    fn an_offset_must_reach_every_game_frame() {
+        // game frames 9 apart cannot both land in a Barrel range of 3 frames
+        let costs = [row(3, &[0, 0, 0]), row(12, &[0, 0, 0])];
+        assert_eq!(best_offset(&costs), None);
+    }
+
+    #[test]
+    fn ties_prefer_the_smaller_offset() {
+        let costs = [row(4, &[2, 2, 2, 2, 2])];
+        assert_eq!(best_offset(&costs), Some((0, 2)));
+    }
+
+    #[test]
+    fn ranges_parse() {
+        assert_eq!(parse_range("2200-2260/20").unwrap(), (2200, 2260, 20));
+        assert_eq!(parse_range("5-9").unwrap(), (5, 9, 1));
+        assert_eq!(parse_range("7").unwrap(), (7, 7, 1));
+        assert!(parse_range("1-2/0").is_err());
     }
 }
