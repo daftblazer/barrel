@@ -2288,3 +2288,12 @@ MDCT runs as a DCT-IV on a half-length complex FFT (`barrel_wma::mdct`; the half
 (−1)^m · DCT-IV of the reversed, alternately negated input). The whole of `avantitle`'s track,
 4,617,413 samples a channel like ffmpeg's, decodes in 0.32 s on one PC core (300 × real time)
 at 135 dB to ffmpeg (largest difference 4.8e-7).
+
+Playing a movie (`barrel_movie::player::Movie`): the sound is decoded whole on open (WMA Pro,
+0.36 s for `avantitle` with the pictures starting), the pictures on a thread through
+`stream::VideoStream` (display order, the loop filter as the entry point says) at most six
+ahead, and `frame_at(clock)` hands out the newest picture due, dropping late ones. ASF stamps a
+video stream's media objects in coding order, one frame apart (a B picture's stamp is the one
+after its later anchor's), so the n-th picture shown takes the n-th stamp. On the PC 3 s of
+`avantitle` play in real time with no picture dropped; the bit-exact check against ffmpeg runs
+through the same `VideoStream`.

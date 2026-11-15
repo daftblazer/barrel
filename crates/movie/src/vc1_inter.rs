@@ -695,170 +695,72 @@ pub fn decode_b(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], co
 
 #[cfg(test)]
 mod movie_tests {
-    use super::*;
-    use crate::vc1::PictureType;
     use barrel_formats::asf::{Asf, Kind};
 
-    fn filter_intra(p: &mut Picture, q: i32) {
-        let (w, hgt) = (p.width, p.height);
-        crate::vc1_loop::intra_plane(&mut p.y, w, hgt, q);
-        crate::vc1_loop::intra_plane(&mut p.u, w / 2, hgt / 2, q);
-        crate::vc1_loop::intra_plane(&mut p.v, w / 2, hgt / 2, q);
-    }
-
-    /// Decodes `BARREL_MOVIE` (avantitle) in display order and compares each of the first
-    /// `BARREL_FRAMES` pictures with ffmpeg's (a PC-only test oracle, streamed through a pipe;
-    /// `-fps_mode passthrough`). `BARREL_LOOP` runs the loop filter on both sides, else neither.
-    /// `BARREL_ANCHORS_ONLY` leaves B and BI pictures out on both sides.
+    /// Decodes `BARREL_MOVIE` (avantitle) through [`crate::stream::VideoStream`] in display
+    /// order and compares each of the first `BARREL_FRAMES` pictures with ffmpeg's (a PC-only
+    /// test oracle, streamed through a pipe; `-fps_mode passthrough`, loop filter as the stream
+    /// asks).
     #[test]
     #[ignore]
     fn movie_against_ffmpeg() {
+        use std::io::Read;
         let Ok(path) = std::env::var("BARREL_MOVIE") else { return };
         let count: usize = std::env::var("BARREL_FRAMES").ok().and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
-        let filter = std::env::var("BARREL_LOOP").is_ok();
-        let anchors_only = std::env::var("BARREL_ANCHORS_ONLY").is_ok();
-        let mut args = vec!["-loglevel", "error"];
-        if anchors_only {
-            args.extend(["-skip_frame", "noref"]);
-        }
-        args.extend(["-skip_loop_filter", if filter { "none" } else { "all" }, "-i", &path, "-map", "0:v", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]);
-        let mut child = std::process::Command::new("ffmpeg").args(&args).stdout(std::process::Stdio::piped()).spawn().unwrap();
+        let mut child = std::process::Command::new("ffmpeg")
+            .args(["-loglevel", "error", "-i", &path, "-map", "0:v", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
         let bytes = std::fs::read(&path).unwrap();
         let asf = Asf::parse(&bytes).unwrap();
         let video = asf.streams.iter().find(|s| matches!(s.kind, Kind::Video { .. })).unwrap();
-        let Kind::Video { extra, .. } = &video.kind else { unreachable!() };
-        let (s, e) = crate::vc1::headers(extra).unwrap();
-        let (cols, rows) = s.macroblocks(&e);
-        let (it, pt) = (IntraTables::default(), PTables::default());
-        let (planes, inter) = (crate::bitplane::Tables::default(), crate::vc1::InterTables::default());
-        let mut want = vec![0u8; 1920 * 1080 * 3 / 2];
-        let shown = std::cell::Cell::new(0usize);
-        let mut exact = 0usize;
+        let Kind::Video { extra, width, height, .. } = &video.kind else { unreachable!() };
+        let (w, h) = (*width as usize, *height as usize);
+        let mut stream = crate::stream::VideoStream::new(extra, w, h).unwrap();
+        let mut want = vec![0u8; w * h * 3 / 2];
+        let (mut shown, mut exact) = (0usize, 0usize);
         let mut by_kind = std::collections::BTreeMap::<String, (usize, usize)>::new();
-        let mut times = std::collections::BTreeMap::<String, f64>::new();
-        // The older and newer anchors, the newer one's direct-mode vectors and intensity
-        // compensation.
-        let mut older: Option<Picture> = None;
-        let mut newer: Option<(Picture, Vec<[i32; 2]>, Option<(u8, u8)>, String)> = None;
-        let mut compare = |pic: &Picture, kind: &str| -> bool {
-            use std::io::Read;
-            if shown.get() >= count || child.stdout.as_mut().unwrap().read_exact(&mut want).is_err() {
+        let t0 = std::time::Instant::now();
+        let mut check = |s: crate::stream::Shown| -> bool {
+            if shown >= count || child.stdout.as_mut().unwrap().read_exact(&mut want).is_err() {
                 return false;
             }
+            let p = &s.picture;
             let mut got = Vec::with_capacity(want.len());
-            for y in 0..1080 {
-                got.extend_from_slice(&pic.y[y * pic.width..y * pic.width + 1920]);
+            for y in 0..h {
+                got.extend_from_slice(&p.y[y * p.width..y * p.width + w]);
             }
-            for plane in [&pic.u, &pic.v] {
-                for y in 0..540 {
-                    got.extend_from_slice(&plane[y * pic.width / 2..y * pic.width / 2 + 960]);
+            for plane in [&p.u, &p.v] {
+                for y in 0..h / 2 {
+                    got.extend_from_slice(&plane[y * p.width / 2..y * p.width / 2 + w / 2]);
                 }
             }
             let diff = got.iter().zip(&want).filter(|(a, b)| a != b).count();
-            let entry = by_kind.entry(kind.to_string()).or_default();
-            entry.0 += 1;
+            let e = by_kind.entry(format!("{:?}", s.kind)).or_default();
+            e.0 += 1;
             if diff == 0 {
                 exact += 1;
-                entry.1 += 1;
-            } else if entry.0 - entry.1 <= 5 {
-                let first = got.iter().zip(&want).position(|(a, b)| a != b);
-                eprintln!("frame {} ({kind}): {diff} pixels differ, first at {first:?}", shown.get());
+                e.1 += 1;
+            } else if e.0 - e.1 <= 5 {
+                eprintln!("picture {shown} ({:?}): {diff} values differ", s.kind);
             }
-            shown.set(shown.get() + 1);
+            shown += 1;
             true
         };
-        'objects: for o in asf.objects().unwrap().iter().filter(|o| o.stream == video.number) {
-            let kind = s.picture_start(&o.data).unwrap().kind;
-            let name = format!("{kind:?}");
-            let data = crate::bits::unescape(&o.data);
-            let t0 = std::time::Instant::now();
-            match kind {
-                PictureType::I | PictureType::P | PictureType::Skipped => {
-                    let reference = newer.as_ref().map(|n| &n.0);
-                    let (pic, colocated, ic) = match kind {
-                        PictureType::I => {
-                            let hh = s.intra_header(&e, &data, &planes).unwrap();
-                            let mut p = Picture::new(cols, rows);
-                            crate::vc1_intra::decode(&it, &hh, &data, cols, rows, &mut p).unwrap();
-                            if filter {
-                                filter_intra(&mut p, hh.pquant as i32);
-                            }
-                            (p, vec![[0; 2]; cols * rows], None)
-                        }
-                        PictureType::P => {
-                            let hh = s.inter_header(&e, &data, &planes, &inter).unwrap();
-                            let mut p = Picture::new(cols, rows);
-                            let r = match decode(&it, &pt, &hh, &data, cols, rows, (1920, 1080), e.fast_uvmc, reference.unwrap(), &mut p) {
-                                Ok(r) => r,
-                                Err(err) => {
-                                    eprintln!("P after frame {} failed: {}", shown.get(), err.0);
-                                    break 'objects;
-                                }
-                            };
-                            if filter {
-                                let q = hh.pquant as i32;
-                                let (w, hgt) = (p.width, p.height);
-                                crate::vc1_loop::p_plane(&mut p.y, w, hgt, q, &r.cells[0]);
-                                crate::vc1_loop::p_plane(&mut p.u, w / 2, hgt / 2, q, &r.cells[1]);
-                                crate::vc1_loop::p_plane(&mut p.v, w / 2, hgt / 2, q, &r.cells[2]);
-                            }
-                            (p, r.colocated, hh.intensity)
-                        }
-                        _ => (reference.unwrap().clone(), vec![[0; 2]; cols * rows], None),
-                    };
-                    *times.entry(name.clone()).or_default() += t0.elapsed().as_secs_f64();
-                    if let Some((prev, _, _, prev_kind)) = newer.take() {
-                        if !compare(&prev, &prev_kind) {
-                            break 'objects;
-                        }
-                        older = Some(prev);
-                    }
-                    newer = Some((pic, colocated, ic, name));
+        'all: for o in asf.objects().unwrap().iter().filter(|o| o.stream == video.number) {
+            for s in stream.push(&o.data, o.time_ms).unwrap() {
+                if !check(s) {
+                    break 'all;
                 }
-                PictureType::B | PictureType::BI if !anchors_only => {
-                    let mut p = Picture::new(cols, rows);
-                    if kind == PictureType::BI {
-                        let hh = s.intra_header(&e, &data, &planes).unwrap();
-                        crate::vc1_intra::decode(&it, &hh, &data, cols, rows, &mut p).unwrap();
-                        if filter {
-                            filter_intra(&mut p, hh.pquant as i32);
-                        }
-                    } else {
-                        let hh = s.inter_header(&e, &data, &planes, &inter).unwrap();
-                        let (next, colocated, ic, _) = newer.as_ref().unwrap();
-                        let prev = older.as_ref().unwrap();
-                        let remap;
-                        let forward = match ic {
-                            Some((scale, shift)) => {
-                                remap = remapped(prev, *scale, *shift);
-                                &remap
-                            }
-                            None => prev,
-                        };
-                        if let Err(err) = decode_b(&it, &pt, &hh, &data, cols, rows, (1920, 1080), e.fast_uvmc, forward, next, colocated, &mut p) {
-                            eprintln!("B at frame {} failed: {}", shown.get(), err.0);
-                            break 'objects;
-                        }
-                        if filter {
-                            filter_intra(&mut p, hh.pquant as i32);
-                        }
-                    }
-                    *times.entry(name.clone()).or_default() += t0.elapsed().as_secs_f64();
-                    if !compare(&p, &name) {
-                        break 'objects;
-                    }
-                }
-                _ => {}
             }
         }
-        if let Some((prev, _, _, prev_kind)) = newer.take() {
-            compare(&prev, &prev_kind);
+        if let Some(s) = stream.finish() {
+            check(s);
         }
         let _ = child.kill();
         let _ = child.wait();
-        eprintln!("{exact} of {} pictures bit-exact; by kind (shown, exact): {by_kind:?}", shown.get());
-        for (k, (n, _)) in &by_kind {
-            eprintln!("{k}: {:.1} ms a picture", times.get(k).copied().unwrap_or(0.0) * 1000.0 / *n as f64);
-        }
+        eprintln!("{exact} of {shown} pictures bit-exact in {:.1} s; by kind (shown, exact): {by_kind:?}", t0.elapsed().as_secs_f64());
+        assert_eq!(exact, shown);
     }
 }
