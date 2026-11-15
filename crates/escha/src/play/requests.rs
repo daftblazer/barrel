@@ -467,7 +467,7 @@ pub fn run(
     let mut every: Vec<Element> = (0..list.len().max(1)).flat_map(|chosen| elements(&pe, &layouts, &words, panel, &list, Requests { chosen, tick: 0 })).collect();
     // And every cut the flipbooks turn through.
     every.extend(layouts.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
-    every.extend(layouts.screen.iter().filter(|p| p.path.contains(&GLOW)).filter_map(|p| p.node.flip().map(|f| (p.node.part, f))).flat_map(|(part, f)| crate::kit::cuts_of(part, f)));
+    every.extend(crate::kit::flip_elements(&layouts.screen));
     let needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<crate::Result<Vec<_>>>()?;

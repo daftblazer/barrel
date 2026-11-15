@@ -48,6 +48,14 @@ pub fn set_offscreen_frames(n: u32) {
     OFFSCREEN_FRAMES.store(n.max(1), std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The tick an offscreen clocked screen starts at (`BARREL_CLOCK_AT`, default 0): the game's
+/// flipbooks all run from one frame counter that was 204 ahead of the capture's frame number
+/// (`docs/escha/parity.md`, "Time alignment"), so a check against game frame F starts Barrel's
+/// clock at F + 204.
+fn clock_start() -> u32 {
+    std::env::var("BARREL_CLOCK_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
 /// The 60 Hz tick the game's clocks count (every animation's rates are in these ticks).
 pub const TICKS_PER_SECOND: f64 = 60.0;
 
@@ -197,9 +205,10 @@ fn run_inner<S: Clone + PartialEq, O>(
             // The clock's frames before the last: the picture set (and traced) where it changes.
             if clock_offscreen {
                 let mut shown: Option<Vec<text::Quad>> = None;
+                let start = clock_start();
                 for f in 0..frames - 1 {
                     if picked.is_none() {
-                        picked = tick(state, f);
+                        picked = tick(state, start + f);
                     }
                     let q = quads(state);
                     if shown.as_ref() != Some(&q) {
@@ -210,7 +219,7 @@ fn run_inner<S: Clone + PartialEq, O>(
                     gpu.frame.set(gpu.frame.get() + 1);
                 }
                 if picked.is_none() {
-                    picked = tick(state, frames - 1);
+                    picked = tick(state, start + frames - 1);
                 }
                 let q = quads(state);
                 if shown.as_ref() != Some(&q) {

@@ -226,6 +226,8 @@ pub struct Layouts {
     tab: Vec<Placed>,
     screen: Vec<Placed>,
     rank: Vec<Placed>,
+    /// The cursor glow's flipbook (layout 691).
+    cursor: Option<layout::Flip>,
 }
 
 /// Where the rank box (layout 527) sits, fitted to the capture.
@@ -233,9 +235,16 @@ const RANK_BOX_AT: [i32; 2] = [1426, 840];
 const RANK_BOX: u32 = 527;
 
 impl Layouts {
+    /// Every cut the page's flipbooks turn through.
+    pub fn flips(&self) -> Vec<Element> {
+        let mut out = crate::kit::flip_elements(&self.screen);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
+        out
+    }
+
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), rank: get(RANK_BOX) }
+        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), rank: get(RANK_BOX), cursor: crate::kit::cursor_glow(pe) }
     }
 }
 
@@ -261,8 +270,8 @@ impl Assignment {
     }
 
     /// All the page's elements over the period's `card`; `rank` the rank box's icon and the
-    /// points to the next rank.
-    pub fn elements(&self, pe: &Pe, l: &Layouts, words: &Words, card: &[Option<Task>], rank: crate::requests::Panel) -> Vec<Element> {
+    /// points to the next rank; `tick` the clock's 60 Hz ticks (the glows' and frames' flipbooks).
+    pub fn elements(&self, pe: &Pe, l: &Layouts, words: &Words, card: &[Option<Task>], rank: crate::requests::Panel, tick: u32) -> Vec<Element> {
         let line = |nodes: &[Placed], text: &str| -> Vec<Element> {
             nodes.iter().flat_map(|p| match layout::text(pe, p) {
                 Some(t) => vec![raised(t, text)],
@@ -300,7 +309,7 @@ impl Assignment {
             }
             // The squares are drawn where the first of them is: flush them (column by column).
             if !squares.is_empty() && p.path.get(2) != Some(&CARD) {
-                out.extend(self.squares(pe, &squares, card));
+                out.extend(self.squares(pe, &squares, card, tick));
                 squares.clear();
             }
             let tab = inside(TASKS_TAB) || inside(BONUS_TAB);
@@ -330,7 +339,7 @@ impl Assignment {
             }
         }
         if !squares.is_empty() {
-            out.extend(self.squares(pe, &squares, card));
+            out.extend(self.squares(pe, &squares, card, tick));
         }
         // The rank box.
         let (mut icon, mut numbers) = (true, 0);
@@ -354,38 +363,41 @@ impl Assignment {
                 _ => out.push(Element::stored(&moved)),
             }
         }
-        // The cursor's glow (it cycles its eight cuts by time: here the first), drawn last.
+        // The cursor's glow (its eight cuts turn with the clock), drawn last.
         let (col, row) = (self.chosen % SIDE, self.chosen / SIDE);
         let origin = l.screen.iter().filter(|p| p.path.last() == Some(&SQUARE) && p.node.part == PLATE).nth(col * SIDE + row);
-        out.extend(origin.map(|p| Element::Sprite { part: CURSOR, cut: 0, at: [p.at[0] + CURSOR_FROM_SQUARE[0], p.at[1] + CURSOR_FROM_SQUARE[1]] }));
+        out.extend(origin.map(|p| Element::Sprite { part: CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at: [p.at[0] + CURSOR_FROM_SQUARE[0], p.at[1] + CURSOR_FROM_SQUARE[1]] }));
         out
     }
 
     /// The squares, column by column (`squares` in the layout's order).
-    fn squares(&self, pe: &Pe, squares: &[Vec<&Placed>], card: &[Option<Task>]) -> Vec<Element> {
+    fn squares(&self, pe: &Pe, squares: &[Vec<&Placed>], card: &[Option<Task>], tick: u32) -> Vec<Element> {
         let mut out = Vec::new();
         for (g, nodes) in squares.iter().enumerate() {
             let (col, row) = (g / SIDE, g % SIDE);
             let k = row * SIDE + col;
-            out.extend(self.square(pe, nodes, card.get(k).and_then(Option::as_ref), k == self.chosen));
+            out.extend(self.square(pe, nodes, card.get(k).and_then(Option::as_ref), k == self.chosen, tick));
         }
         out
     }
 
     /// One square's elements from its layout's nodes (419): the plate, the cursor frame, the icon,
     /// the stamp, the percent, the mark, the glow, the big percent.
-    fn square(&self, pe: &Pe, nodes: &[&Placed], task: Option<&Task>, chosen: bool) -> Vec<Element> {
+    fn square(&self, pe: &Pe, nodes: &[&Placed], task: Option<&Task>, chosen: bool, tick: u32) -> Vec<Element> {
         let Some(task) = task else { return Vec::new() };
         let mut out = Vec::new();
         let at = |i: usize| nodes.get(i).map_or([0, 0], |p| p.at);
         let (plate, frame, icon, stamp, percent, sign, mark, glow, big, big_sign) = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        // A piece that flips through its cuts (the frame, the mark, the glow): the cut of its
+        // flipbook now, else the one given.
+        let flipped = |i: usize, part: i32, cut: i32| Element::Sprite { part, cut: nodes.get(i).and_then(|p| p.node.flip()).map_or(cut, |f| f.cut(tick)), at: at(i) };
         let main = task.category == Category::Other;
         if task.state == CLEARED {
             out.push(Element::Sprite { part: 0x10, cut: 0, at: at(stamp) });
             return out;
         }
         if chosen {
-            out.push(Element::Sprite { part: CURSOR_FRAME, cut: 11, at: at(frame) });
+            out.push(flipped(frame, CURSOR_FRAME, 11));
         }
         if task.state == ACHIEVED {
             out.push(Element::Sprite { part: PLATE, cut: 6, at: at(plate) });
@@ -398,7 +410,7 @@ impl Assignment {
         }
         let shown = !task.hidden;
         if task.state == ACHIEVED && shown {
-            out.push(Element::Sprite { part: GLOW, cut: 0, at: at(glow) });
+            out.push(flipped(glow, GLOW, 0));
             if let Some(p) = nodes.get(big) {
                 out.extend(number(pe, p, 100));
             }
@@ -409,7 +421,7 @@ impl Assignment {
             }
             out.push(Element::Sprite { part: 0x56, cut: 13, at: at(sign) });
             if task.state == NEW {
-                out.push(Element::Sprite { part: CURSOR_FRAME, cut: 15, at: at(mark) });
+                out.push(flipped(mark, CURSOR_FRAME, 15));
             }
         }
         out

@@ -137,12 +137,28 @@ pub struct Layouts {
     screen: Vec<Placed>,
     header: Vec<Placed>,
     footer: Vec<Placed>,
+    /// The cursor glow's flipbook (layout 691).
+    pub cursor: Option<layout::Flip>,
 }
 
 impl Layouts {
     pub fn load(pe: &Pe) -> Layouts {
-        Layouts { screen: layout::placed(pe, LAYOUT), header: layout::placed(pe, HEADER), footer: layout::placed(pe, FOOTER) }
+        Layouts { screen: layout::placed(pe, LAYOUT), header: layout::placed(pe, HEADER), footer: layout::placed(pe, FOOTER), cursor: crate::kit::cursor_glow(pe) }
     }
+}
+
+/// The cursor's glow from the chosen button's plate, as the capture has it (the glow of 96
+/// pixels at (74, 219) over the plate at (44, 272)).
+const CURSOR_FROM_PLATE: [i32; 2] = [30, -53];
+
+/// The cursor's glow over the chosen button (none while the Option list is open), its cut by the
+/// menu's clock.
+pub fn cursor(l: &Layouts, menu: &Menu) -> Option<Element> {
+    if menu.option.is_some() {
+        return None;
+    }
+    let plate = l.screen.iter().filter(|p| p.path.get(1) == Some(&BUTTON) && p.node.part == crate::menu::PLATE).nth(menu.chosen.checked_sub(menu.first)?)?;
+    Some(Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(menu.tick)), at: [plate.at[0] + CURSOR_FROM_PLATE[0], plate.at[1] + CURSOR_FROM_PLATE[1]] })
 }
 
 /// The header (the chosen command's help) and footer lines.

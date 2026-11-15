@@ -29,12 +29,15 @@ pub const FIGURE: u32 = 361;
 pub const LIST: u32 = 374;
 const COMMAND: u32 = 373;
 const OPTION_ROW: u32 = 378;
-const PLATE: i32 = 0x1d;
+pub const PLATE: i32 = 0x1d;
 const COMMAND_FRAME: i32 = 0x1e;
 const OPTION_FRAME: i32 = 0x1f;
 const LABEL: i32 = 0x2f;
 const ICON: i32 = 0x2b;
 const NEW: i32 = 0x4a;
+/// The "NEW" badge's flipbook has five steps (node word 5) over four pictures (cuts 0 to 3, the
+/// sheet's fifth is empty): the capture shows the last picture held for the fifth step.
+const NEW_LAST_CUT: i32 = 3;
 /// How large a button's icon is drawn (the game's capture: 54 of the sheet's 60 pixels).
 const ICON_PERCENT: i32 = 90;
 /// Cuts of a name or icon in white rather than gold.
@@ -102,6 +105,8 @@ pub struct Menu {
     /// The Container command in the list (the game leaves it out away from the workshop: its
     /// list on the area map starts at the Basket).
     pub container: bool,
+    /// The clock's 60 Hz ticks since the menu opened (the glows' and badges' flipbooks).
+    pub tick: u32,
 }
 
 /// A command's page.
@@ -132,7 +137,7 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true }
+        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true, tick: 0 }
     }
 
     /// The menu opened straight on `page`, as the field's shortcuts do; backing out of the page
@@ -149,7 +154,7 @@ impl Menu {
             Start::Page(p) => (Some(p), None),
             Start::System => (None, Some(0)),
         };
-        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true }
+        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true, tick: 0 }
     }
 
     /// The menu without its Container command (the chosen one stays the same command).
@@ -251,8 +256,8 @@ impl Menu {
                     let cut = match n.part {
                         PLATE => i32::from(lit),
                         LABEL | ICON => which + white,
-                        COMMAND_FRAME if lit => 0,
-                        NEW if new == Some(command) => 0,
+                        COMMAND_FRAME if lit => n.flip().map_or(0, |f| f.cut(self.tick)),
+                        NEW if new == Some(command) => n.flip().map_or(0, |f| f.cut(self.tick).min(NEW_LAST_CUT)),
                         _ => continue, // the frame off, "NEW" unless due
                     };
                     // Under the open Option list the buttons are drawn at half strength; the icon's
@@ -341,16 +346,19 @@ pub fn run(
         footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::assignment::FOOTER_ROW).cloned().unwrap_or_default(),
     };
     let rank_panel = source.map_or(crate::requests::Panel { icon: 0, to_next: 0 }, |s| crate::requests::Panel::of(&ranks, s.rank.0, s.rank.1));
-    let assignment_elements = |a: &crate::assignment::Assignment| a.elements(&pe, &assignment_layouts, &assignment_words, card, rank_panel);
+    let assignment_elements = |a: &crate::assignment::Assignment, tick: u32| a.elements(&pe, &assignment_layouts, &assignment_words, card, rank_panel, tick);
     let overview = source.and_then(|s| crate::overview::Overview::of(&pe, s, &item_rows.children, &ranks));
     let words = crate::overview::Words::read(&table("Saves_EN/systemMessage/SysInfo.xml")?, &table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
     let screen_layouts = crate::overview::Layouts::load(&pe);
+    let cursor = screen_layouts.cursor;
     let page_words = crate::basketpage::Words { header: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/SysInfo.xml")?, "Text").get(crate::basketpage::HEADER_ROW).cloned().unwrap_or_default(), footer: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/Menu_Line_Help.xml")?, "LineHelp").get(crate::basketpage::FOOTER_ROW).cloned().unwrap_or_default() };
-    let basket_elements = |b: &crate::basket::Basket| crate::basketpage::elements(&pe, &page_layouts, &page_words, b, &items, empty);
+    let basket_elements = |b: &crate::basket::Basket, tick: u32| crate::basketpage::elements(&pe, &page_layouts, &page_words, b, &items, empty, tick);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
         let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
         e.extend(hud.iter().cloned());
+        // The cursor's glow over the chosen button, drawn last.
+        e.extend(crate::overview::cursor(&screen_layouts, m));
         e
     };
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("menu: no glyph table")?;
@@ -369,6 +377,11 @@ pub fn run(
         every.extend(Menu { chosen: COMMANDS.len() - 1, first: COMMANDS.len() - VISIBLE, option: Some(row), ..Menu::new() }.elements(&nodes, texts));
     }
     every.extend(status_elements(&texts));
+    // Every cut the flipbooks turn through: the buttons' frames and badges, the pages' glows.
+    every.extend(crate::kit::flip_elements(&nodes));
+    every.extend(page_layouts.flips());
+    every.extend(assignment_layouts.flips());
+    every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
         for chosen in 0..COMMANDS.len() {
             every.extend(overview_elements(&Menu { chosen, first: chosen.saturating_sub(VISIBLE - 1), ..Menu::new() }, &v));
@@ -377,11 +390,11 @@ pub fn run(
     // Every item's card.
     for chosen in 0..items.len().max(1) {
         for first in [0, chosen / crate::basket::COLUMNS] {
-            every.extend(basket_elements(&crate::basket::Basket { chosen, first }));
+            every.extend(basket_elements(&crate::basket::Basket { chosen, first }, 0));
         }
     }
     for chosen in 0..25 {
-        every.extend(assignment_elements(&crate::assignment::Assignment { chosen }));
+        every.extend(assignment_elements(&crate::assignment::Assignment { chosen }, 0));
     }
     // Every task icon, plain and lit.
     every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
@@ -402,8 +415,8 @@ pub fn run(
     let quads = |m: &Menu| {
         let e = match m.page {
             Some(Page::Status) => status_elements(&texts),
-            Some(Page::Basket(b)) => basket_elements(&b),
-            Some(Page::Assignment(a)) => assignment_elements(&a),
+            Some(Page::Basket(b)) => basket_elements(&b, m.tick),
+            Some(Page::Assignment(a)) => assignment_elements(&a, m.tick),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
         };
@@ -426,7 +439,10 @@ pub fn run(
         }
         o => Some(o),
     };
-    screen::run(gpu, pool, target, window, offscreen, &images, &mut menu, quads, press, keys, out)
+    screen::run_clocked(gpu, pool, target, window, offscreen, &images, &mut menu, quads, press, keys, out, |m, tick| {
+        m.tick = tick;
+        None
+    })
 }
 
 #[cfg(test)]

@@ -98,12 +98,21 @@ pub struct Layouts {
     grid: Vec<Placed>,
     card: Vec<Placed>,
     possessed: Vec<Placed>,
+    /// The cursor glow's flipbook (layout 691).
+    cursor: Option<layout::Flip>,
 }
 
 impl Layouts {
+    /// Every cut the page's flipbooks turn through.
+    pub fn flips(&self) -> Vec<Element> {
+        let mut out = crate::kit::flip_elements(&self.grid);
+        out.extend(self.cursor.into_iter().flat_map(|f| crate::kit::cuts_of(CURSOR, f)));
+        out
+    }
+
     pub fn load(pe: &Pe) -> Layouts {
         let get = |id| layout::placed(pe, id);
-        Layouts { desk: get(DESK), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), grid: get(GRID), card: get(CARD), possessed: get(POSSESSED) }
+        Layouts { desk: get(DESK), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), grid: get(GRID), card: get(CARD), possessed: get(POSSESSED), cursor: crate::kit::cursor_glow(pe) }
     }
 }
 
@@ -114,7 +123,7 @@ pub struct Words {
 }
 
 /// The grid's elements: the scroll bar, the tabs, the free places, the frame and the cells.
-fn grid(pe: &Pe, l: &Layouts, view: &Basket, items: &[Item], empty: i32, cursor: &mut Option<[i32; 2]>) -> Vec<Element> {
+fn grid(pe: &Pe, l: &Layouts, view: &Basket, items: &[Item], empty: i32, cursor: &mut Option<[i32; 2]>, tick: u32) -> Vec<Element> {
     let mut out = Vec::new();
     let rows = items.len().div_ceil(COLUMNS).max(1) as i32;
     let (mut tab, mut counted) = (0, false);
@@ -172,7 +181,8 @@ fn grid(pe: &Pe, l: &Layouts, view: &Basket, items: &[Item], empty: i32, cursor:
         let Some(item) = items.get(k) else { continue };
         let Some(picture) = cell.iter().find(|p| p.node.part == 0xd7) else { continue };
         if k == view.chosen {
-            out.push(Element::Sprite { part: 0x44, cut: 1, at: cell[0].at });
+            // The lit frame flips through its cuts (node 0x44's flipbook).
+            out.push(Element::Sprite { part: 0x44, cut: cell[0].node.flip().map_or(1, |f| f.cut(tick)), at: cell[0].at });
             *cursor = Some([cell[0].at[0] + CURSOR_FROM_CELL[0], cell[0].at[1] + CURSOR_FROM_CELL[1]]);
         }
         out.push(Element::Scaled { part: 0xd7, cut: item.picture as i32, at: picture.at, percent: PICTURE_PERCENT, about: picture.at });
@@ -304,8 +314,8 @@ fn possessed(pe: &Pe, l: &Layouts, item: &Item) -> Vec<Element> {
 }
 
 /// All the page's elements: `view` the grid's cursor and scroll, `items` the basket's (the game's
-/// order), `empty` the free places.
-pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &Basket, items: &[Item], empty: i32) -> Vec<Element> {
+/// order), `empty` the free places, `tick` the clock's 60 Hz ticks.
+pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &Basket, items: &[Item], empty: i32, tick: u32) -> Vec<Element> {
     let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: DESK_CUT, at: p.at }).collect();
     let line = |nodes: &[Placed], text: &str| -> Vec<Element> {
         nodes.iter().flat_map(|p| match layout::text(pe, p) {
@@ -315,7 +325,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &Basket, items: &[Ite
     };
     out.extend(line(&l.footer, &words.footer));
     let mut cursor = None;
-    out.extend(grid(pe, l, view, items, empty, &mut cursor));
+    out.extend(grid(pe, l, view, items, empty, &mut cursor, tick));
     if let Some(item) = items.get(view.chosen) {
         out.extend(card(pe, l, item));
         out.extend(possessed(pe, l, item));
@@ -327,8 +337,8 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, view: &Basket, items: &[Ite
             e => e,
         });
     }
-    // The cursor's glow, drawn last (it cycles its eight cuts by time: here the first).
-    out.extend(cursor.map(|at| Element::Sprite { part: CURSOR, cut: 0, at }));
+    // The cursor's glow, drawn last (its eight cuts turn with the clock).
+    out.extend(cursor.map(|at| Element::Sprite { part: CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
     out
 }
 

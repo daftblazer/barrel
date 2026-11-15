@@ -6,6 +6,9 @@ use barrel_formats::pe::Pe;
 
 use crate::hud::{Element, TEXT_RISE};
 
+/// The cursor's glow (a sprite part of 96 pixels, eight cuts).
+pub const CURSOR: i32 = 0x9f;
+
 /// The layout of the cursor's glow (part 0x9f): one flipbook node of eight cuts, eight ticks each.
 const CURSOR_LAYOUT: u32 = 691;
 
@@ -20,6 +23,11 @@ const NUMBER_ENDS: i32 = 28;
 /// Every cut of `part`'s flipbook, for loading the pictures a screen may show.
 pub fn cuts_of(part: i32, flip: layout::Flip) -> impl Iterator<Item = Element> {
     (0..flip.cuts).map(move |k| Element::Sprite { part, cut: flip.first + k, at: [0, 0] })
+}
+
+/// Every cut of every flipbook among `nodes`, for loading the pictures a screen may show.
+pub fn flip_elements<'a>(nodes: impl IntoIterator<Item = &'a Placed>) -> Vec<Element> {
+    nodes.into_iter().filter_map(|p| p.node.flip().map(|f| (p.node.part, f))).flat_map(|(part, f)| cuts_of(part, f)).collect()
 }
 
 pub fn shifted(p: &Placed, by: [i32; 2]) -> Placed {
