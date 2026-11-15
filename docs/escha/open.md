@@ -172,7 +172,9 @@ likely settle them where static reading failed.
   not read.
 
 - **Battle camera between actions.** Choosing a target takes `setTargetCameraCraneShot`'s
-  high form (seen in the recording); when the game takes the low form, the cross-fade into it,
+  low form, turned by the member's slot angle (seen in the recording at 353.6 s; an earlier
+  reading from a blurred frame took the high one); when the game takes the high form, the
+  cross-fade into it,
   and point 13 (`MODEL_OFFSET_DEFENCE`) are not read. The command choice's camera (the
   recording holds a slow close-up of the member, `macro_battle.nut` has no function for it that
   is read yet) and the camera while monsters choose are still Barrel's overview. The command

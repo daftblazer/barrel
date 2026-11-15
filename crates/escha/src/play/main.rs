@@ -1748,19 +1748,22 @@ impl BattlePlay {
     }
 
     /// The camera while a member chooses a target (`macro_battle.nut`'s
-    /// `setTargetCameraCraneShot`, high form): the eye at the member's point 13
-    /// (`MODEL_OFFSET_DEFENCE`, not read: its place) and (0, 800, −600) turned by its facing,
-    /// looking at the battle's origin. The recording (`ruins-entrance-battle-stats-60hz`, 353 s)
-    /// shows the high form for a target choice; when the game takes the low one, (0, 200, −400),
-    /// is not read. The game cross-fades into it (`POST_EFFECT_CROSS_FADE`, 25), Barrel cuts.
+    /// `setTargetCameraCraneShot`, low form): the eye at the member's point 13
+    /// (`MODEL_OFFSET_DEFENCE`, not read: its place) and (0, 200, −400) turned by its slot's
+    /// angle (`battle::party_slot_angle`, not the way to the centre), looking at the battle's
+    /// origin. The recording (`ruins-entrance-battle-stats-60hz`, 353.6 s) shows the low form
+    /// for a target choice: the camera just above Wilbell's head, behind her, she to the right;
+    /// when the game takes the high one, (0, 800, −600), is not read. The game cross-fades into
+    /// it (`POST_EFFECT_CROSS_FADE`, 25), Barrel cuts.
     fn target_camera(&self) -> Option<([f32; 3], [f32; 3])> {
         if !matches!(self.choosing, Choosing::Target { .. } | Choosing::ItemTarget(_)) || !self.waiting() || !self.scenes.on {
             return None;
         }
         let who = self.turn.as_ref()?.who;
         let f = self.fighters.get(who)?.as_ref()?;
-        let (s, c) = f.facing.sin_cos();
-        let (x, y, z) = (0.0, 800.0, -600.0);
+        let turn = if f.party { barrel_escha::battle::party_slot_angle((who % 3) as i32) } else { f.facing };
+        let (s, c) = turn.sin_cos();
+        let (x, y, z) = (0.0, 200.0, -400.0);
         let eye = [f.place[0] + x * c + z * s, f.place[1] + y, f.place[2] - x * s + z * c];
         Some((eye, BATTLE_CENTRE))
     }

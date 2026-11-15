@@ -177,8 +177,16 @@ pub fn nudge(mut p: [f32; 3], size: f32, others: &[([f32; 3], f32)], outside: im
 /// the vertical by the angle of its slot, the member's sector + 3 wrapped to 0..5 (slot angles
 /// 60, 180, 300, 240, 0 and 120 degrees). In battle a member's sector is its index mod 3
 /// (`0x1401a3d00`), so the three in front stand 120 degrees apart round the centre.
+/// The six slot angles (degrees) the party's formation turns by (`0x1401b0d40`).
+const ANGLES: [f32; 6] = [60.0, 180.0, 300.0, 240.0, 0.0, 120.0];
+
+/// The angle (radians) of a member's slot in `sector` (its +0x394, the sector + 3): the way the
+/// formation there faces, which the battle's cameras turn their offsets by.
+pub fn party_slot_angle(sector: i32) -> f32 {
+    ANGLES[(sector + 3).rem_euclid(6) as usize].to_radians()
+}
+
 pub fn party_spot(index: i32, sector: i32) -> [f32; 3] {
-    const ANGLES: [f32; 6] = [60.0, 180.0, 300.0, 240.0, 0.0, 120.0];
     let base: [f32; 3] = match index {
         0 => [0.0, 0.0, -800.0],
         1 => [200.0, 0.0, -700.0],
