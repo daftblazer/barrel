@@ -26,6 +26,9 @@ use crate::event_start::{new_game_event, Chain};
 
 /// The money a new game starts with (`0x14036a8c0`).
 pub const NEW_GAME_MONEY: i32 = 100;
+/// The basket's size in a new game and in a save without one (`item/limitSize`'s first value in
+/// the saves seen).
+pub const DEFAULT_BASKET_LIMIT: i32 = 60;
 /// The most money held (`0x14036a8e0`).
 pub const MAX_MONEY: i32 = 999_999;
 
@@ -221,6 +224,11 @@ pub struct Session {
     carried: i32,
     /// What the player holds (gathered so far): the basket.
     pub basket: Vec<crate::gather::Got>,
+    /// How many items the basket holds at most (the save's `item/limitSize`).
+    pub basket_limit: i32,
+    /// The items (`itemData` rows) in the workshop's container, for the menu's counts: Barrel
+    /// keeps no container of its own, so a loaded save's list stays as it was.
+    pub container: Vec<i32>,
     scene: Scene,
     /// The field the player is in (the last an event changed to), if any yet.
     field: Option<u32>,
@@ -268,6 +276,8 @@ impl Session {
             calendar: None,
             carried: 0,
             basket: Vec::new(),
+            basket_limit: DEFAULT_BASKET_LIMIT,
+            container: Vec::new(),
             scene: Scene::Field(0),
             field: None,
             logy: false,
@@ -991,6 +1001,8 @@ impl Session {
         Ok((
             Session {
                 basket,
+                basket_limit: sum.limits.map_or(DEFAULT_BASKET_LIMIT, |l| l.0),
+                container: sum.container.iter().map(|u| i32::from(u.item)).collect(),
                 scene: Scene::Field(field),
                 field: Some(field),
                 logy: sum.hero == Some(1),

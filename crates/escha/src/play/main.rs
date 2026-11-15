@@ -34,6 +34,7 @@ mod message;
 mod status;
 mod requests;
 mod basket;
+mod basketpage;
 mod assignment;
 mod battlehud;
 mod result;
@@ -745,9 +746,12 @@ fn card_of(root: &Path, session: Option<&barrel_escha::session::Session>) -> Vec
     })
 }
 
-/// The basket's (item row, quality) pairs, for the menu's Basket page.
-fn basket_of(session: Option<&barrel_escha::session::Session>) -> Vec<(i32, f32)> {
-    session.map_or_else(Vec::new, |s| s.basket.iter().map(|g| (g.item, g.quality)).collect())
+/// What the player holds, for the menu's Basket page.
+fn basket_of(session: Option<&barrel_escha::session::Session>) -> basket::Stock {
+    session.map_or_else(
+        || basket::Stock { items: Vec::new(), limit: barrel_escha::session::DEFAULT_BASKET_LIMIT, container: Vec::new() },
+        |s| basket::Stock { items: s.basket.clone(), limit: s.basket_limit, container: s.container.clone() },
+    )
 }
 
 /// Place the characters an event adds, at their first position, in the scene. Returns the
@@ -3609,6 +3613,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // --menu: draw the main menu's first page (offscreen, over the session; with `--area-map` the
     // HUD's date panel on top, as the game shows it).
     let mut menu_mode = false;
+    // The buttons `--menu PAGE` presses first (comma list as `BARREL_MENU_KEYS`).
+    let mut menu_page_keys = "";
     // The area map's top level, the world map (the town and the regions).
     let mut world_mode = false;
     let mut load_file = None::<PathBuf>;
@@ -3778,7 +3784,18 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // of the point's region, Enter enters the field of the point she stands on.
             "--area-map" => area_mode = true,
             "--requests" => requests_mode = true,
-            "--menu" => menu_mode = true,
+            // --menu [basket|assignment]: the page too, opened as the game does (Down to the
+            // command, A; off a town the list starts at the Basket).
+            "--menu" => {
+                menu_mode = true;
+                if let Some(page) = it.clone().next().filter(|n| matches!(n.as_str(), "basket" | "assignment")) {
+                    it.next();
+                    menu_page_keys = match page.as_str() {
+                        "basket" => "confirm",
+                        _ => "down,down,down,down,down,confirm",
+                    };
+                }
+            }
             // --new-game ROOT: a new game over the install at ROOT: the opening the hero's
             // choice starts (`--hero`), the story after it, then free play.
             "--pad-test" => {
@@ -4788,7 +4805,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // `BARREL_MENU_KEYS` (as `BARREL_TITLE_KEYS`), written to the output picture; the run ends.
     if presenter.is_none() && (menu_mode && frame == 0 || std::env::var("BARREL_MENU_AT").ok().and_then(|v| v.parse::<u64>().ok()) == Some(frame as u64))
         && let (Some(root), Some((color, _))) = (hud_root.as_ref(), renderer.offscreen.as_ref()) {
-            let keys = title::keys(&std::env::var("BARREL_MENU_KEYS").unwrap_or_default());
+            let keys = title::keys(&format!("{menu_page_keys},{}", std::env::var("BARREL_MENU_KEYS").unwrap_or_default()));
             let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
             let picked = menu::run(&gpu, renderer.pool, &target, None, Some(*color), root, menu_source(session.as_ref(), menu_area).as_ref(), &menu_hud(hud_exe.as_deref(), field_hud.as_ref().map(|h| &h.3[..]), session.as_ref(), menu_area), &basket_of(session.as_ref()), &card_of(root, session.as_ref()), &keys, None, Some(Path::new(&out_path)))?;
             eprintln!("menu: {picked:?}");

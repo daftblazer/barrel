@@ -304,7 +304,7 @@ pub fn run(
     root: &std::path::Path,
     source: Option<&crate::overview::Source>,
     hud: &[Element],
-    basket: &[(i32, f32)],
+    stock: &crate::basket::Stock,
     card: &[Option<crate::assignment::Task>],
     keys: &[Button],
     start: Option<Start>,
@@ -320,14 +320,12 @@ pub fn run(
     let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let values = crate::status::Values::lead(&pe, logy, lead, &item_rows.children).ok_or("menu: no party tables")?;
-    // The Basket page: the grid over the desk, and the basket's items.
-    let items = crate::basket::items(basket, &item_rows.children);
-    let grid_nodes: Vec<Placed> = [BACKGROUND, crate::basket::GRID].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
-    let basket_elements = |b: &crate::basket::Basket, texts: &dyn Fn(&Placed) -> Option<Text>| {
-        let mut e: Vec<crate::hud::Element> = grid_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
-        e.extend(b.elements(&grid_nodes, texts, &items));
-        e
-    };
+    // The Basket page: the items the player carries, with what the game's tables say of each.
+    let table = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
+    let (status, potentials) = (table("Saves/item/item_status.xml")?, table("Saves_EN/item/item_potential.xml")?);
+    let items = crate::basket::held(stock, &crate::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children });
+    let page_layouts = crate::basketpage::Layouts::load(&pe);
+    let empty = (stock.limit - stock.items.len() as i32).max(0);
     // The Assignment page: the card over the desk.
     let card_nodes: Vec<Placed> = [BACKGROUND, crate::assignment::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     let assignment_elements = |a: &crate::assignment::Assignment, texts: &dyn Fn(&Placed) -> Option<Text>| {
@@ -341,11 +339,12 @@ pub fn run(
         e
     };
     // The party overview: the page the list shows when nothing is open over it.
-    let table = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
     let ranks = barrel_escha::rank::ranks(&table("Saves/rank/RankData.xml")?);
     let overview = source.and_then(|s| crate::overview::Overview::of(&pe, s, &item_rows.children, &ranks));
     let words = crate::overview::Words::read(&table("Saves_EN/systemMessage/SysInfo.xml")?, &table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
     let screen_layouts = crate::overview::Layouts::load(&pe);
+    let page_words = crate::basketpage::Words { header: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/SysInfo.xml")?, "Text").get(crate::basketpage::HEADER_ROW).cloned().unwrap_or_default(), footer: barrel_escha::data::sys_text::lines(&table("Saves_EN/systemMessage/Menu_Line_Help.xml")?, "LineHelp").get(crate::basketpage::FOOTER_ROW).cloned().unwrap_or_default() };
+    let basket_elements = |b: &crate::basket::Basket| crate::basketpage::elements(&pe, &page_layouts, &page_words, b, &items, empty);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
         let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
@@ -373,11 +372,12 @@ pub fn run(
             every.extend(overview_elements(&Menu { chosen, first: chosen.saturating_sub(VISIBLE - 1), ..Menu::new() }, &v));
         }
     }
-    // Every cell lit and not, with every item.
+    // Every item's card.
     for chosen in 0..items.len().max(1) {
-        every.extend(basket_elements(&crate::basket::Basket { chosen, first: chosen / 5 / 5 * 5 }, &texts));
+        for first in [0, chosen / crate::basket::COLUMNS] {
+            every.extend(basket_elements(&crate::basket::Basket { chosen, first }));
+        }
     }
-    every.extend((0..10).map(|cut| crate::hud::Element::Sprite { part: 0x54, cut, at: [0, 0] }));
     every.extend(assignment_elements(&crate::assignment::Assignment::default(), &texts));
     // Every task icon, plain and lit.
     every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
@@ -398,7 +398,7 @@ pub fn run(
     let quads = |m: &Menu| {
         let e = match m.page {
             Some(Page::Status) => status_elements(&texts),
-            Some(Page::Basket(b)) => basket_elements(&b, &texts),
+            Some(Page::Basket(b)) => basket_elements(&b),
             Some(Page::Assignment(a)) => assignment_elements(&a, &texts),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),

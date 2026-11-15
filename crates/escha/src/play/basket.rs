@@ -32,8 +32,10 @@ const LIT_FRAME: i32 = 5;
 const FRAME_AT: [i32; 2] = [-16, -14];
 const PICTURE_AT: [i32; 2] = [18, 16];
 const NUMBER_AT: [i32; 2] = [84, 52];
-const COLUMNS: usize = 5;
-const ROWS: usize = 5;
+pub const COLUMNS: usize = 5;
+/// The rows the Basket page shows (its grid's six; the older grid of the drops screen, five, is
+/// not scrolled by [`Basket::press`]).
+const ROWS: usize = 6;
 const DIGIT_ADVANCE: i32 = 18;
 /// The item picture pack.
 pub const PICTURES: &str = "a15_itempic.g1t";
@@ -41,12 +43,54 @@ const PICTURE_SIZE: f32 = 96.0;
 /// Where the chosen item's line goes (under the grid).
 const LINE_AT: [i32; 2] = [170, 860];
 
-/// One item in the basket: its name, picture and quality.
-#[derive(Clone, Debug, PartialEq)]
+/// One item in the basket: its name, picture and quality, and what the Basket page's card shows
+/// of it (empty when it was made from its name and quality alone).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Item {
     pub name: String,
     pub picture: u32,
     pub quality: i32,
+    /// `itemData`'s `level`: the card's Alchemy LV.
+    pub level: i32,
+    /// The element value (`value`) and which of fire, water, wind and earth the item has.
+    pub value: i32,
+    pub elements: [bool; 4],
+    /// Property lines (`item_status.xml`'s ESP tags by name), effect lines and trait lines.
+    pub properties: Vec<String>,
+    pub effects: Vec<String>,
+    pub traits: Vec<String>,
+    /// How many of the item the basket and the container hold.
+    pub in_basket: i32,
+    pub in_container: i32,
+}
+
+/// The game's item tables the card reads (the rows of each file).
+pub struct Catalog<'a> {
+    pub items: &'a [barrel_formats::table::Element],
+    pub status: &'a [barrel_formats::table::Element],
+    pub potentials: &'a [barrel_formats::table::Element],
+}
+
+/// A property's name from its tag in `item_status.xml` (`ITEM_MIX_POT_ZONE_EARTH_2` is
+/// `item_mat_pot.xml`'s "Earth Bonus x2"; the quality and level tags follow the same naming).
+pub fn property_name(tag: &str) -> Option<String> {
+    let tag = tag.strip_prefix("ITEM_MIX_POT_")?;
+    if let Some(zone) = tag.strip_prefix("ZONE_") {
+        let (element, n) = zone.rsplit_once('_')?;
+        let n = n.trim_start_matches('P');
+        return Some(match element {
+            "ALL" => format!("All Elements x{n}"),
+            "FIRE" => format!("Fire Bonus x{n}"),
+            "WATER" => format!("Water Bonus x{n}"),
+            "WIND" => format!("Wind Bonus x{n}"),
+            "EARTH" => format!("Earth Bonus x{n}"),
+            _ => return None,
+        });
+    }
+    if let Some(n) = tag.strip_prefix("QUALITY_P") {
+        return Some(format!("Effect Power+{}", 5 * n.parse::<i32>().ok()?));
+    }
+    tag.strip_prefix("LEVEL_").map(|n| format!("Appearance Lv+{n}"))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -141,6 +185,44 @@ pub fn items(basket: &[(i32, f32)], rows: &[barrel_formats::table::Element]) -> 
                 name: row.attr("ItemName").unwrap_or("?").to_string(),
                 picture: row.attr("ImageNo").and_then(|v| v.parse().ok()).unwrap_or(0),
                 quality: quality.round() as i32,
+                ..Item::default()
+            })
+        })
+        .collect()
+}
+
+/// What the player holds, for the Basket page.
+pub struct Stock {
+    pub items: Vec<barrel_escha::gather::Got>,
+    /// The basket's size.
+    pub limit: i32,
+    /// The container's items (`itemData` rows).
+    pub container: Vec<i32>,
+}
+
+/// The basket's items with what the card shows of each, from the game's tables.
+pub fn held(stock: &Stock, cat: &Catalog) -> Vec<Item> {
+    let attr = |row: &barrel_formats::table::Element, name: &str| row.attr(name).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+    stock
+        .items
+        .iter()
+        .filter_map(|g| {
+            let row = cat.items.get(usize::try_from(g.item).ok()?)?;
+            let status = cat.status.get(g.item as usize);
+            let properties = (0..2).filter_map(|k| status?.attr(&format!("ESP_0{k}")).and_then(property_name)).collect();
+            let traits = g.traits.iter().filter_map(|&t| Some(cat.potentials.get(t)?.attr("PotName")?.to_string())).collect();
+            Some(Item {
+                name: row.attr("ItemName").unwrap_or("?").to_string(),
+                picture: row.attr("ImageNo").and_then(|v| v.parse().ok()).unwrap_or(0),
+                quality: g.quality.round() as i32,
+                level: attr(row, "level"),
+                value: attr(row, "value"),
+                elements: ["fire", "water", "wind", "soil"].map(|e| attr(row, e) > 0),
+                properties,
+                effects: Vec::new(),
+                traits,
+                in_basket: stock.items.iter().filter(|o| o.item == g.item).count() as i32,
+                in_container: stock.container.iter().filter(|&&c| c == g.item).count() as i32,
             })
         })
         .collect()
@@ -159,7 +241,7 @@ mod tests {
         for _ in 0..4 {
             b.press(Button::Down, 30);
         }
-        assert_eq!((b.chosen, b.first), (26, 1));
+        assert_eq!((b.chosen, b.first), (26, 0));
         b.press(Button::Down, 30);
         assert_eq!(b.chosen, 26, "no row below");
         assert!(b.press(Button::Back, 30));
