@@ -257,6 +257,14 @@ fn face(pe: &Pe, nodes: &[&Placed], texts: &impl Fn(&Placed) -> Option<Text>, na
 
 /// All the elements of the page with `menu`'s command chosen.
 pub fn elements(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, words: &Words, texts: impl Fn(&Placed) -> Option<Text>) -> Vec<Element> {
+    let mut out = body(pe, l, menu, v, &texts);
+    out.extend(lines(l, menu, words, &texts));
+    out
+}
+
+/// The page without its footer and header: what the game has drawn when the Option command's
+/// screen opens over it.
+pub fn body(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, texts: &impl Fn(&Placed) -> Option<Text>) -> Vec<Element> {
     let nodes = &l.screen;
     let mut out: Vec<Element> = nodes.iter().filter(|p| p.path.len() == 1 && p.node.part == 0).map(|p| Element::Sprite { part: 0, cut: DESK_CUT, at: p.at }).collect();
     let buttons: Vec<Placed> = nodes.iter().filter(|p| p.path.get(1) == Some(&BUTTON)).cloned().collect();
@@ -296,6 +304,11 @@ pub fn elements(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, words: &Words, 
     for (slot, plate) in groups(nodes, PLATE).into_iter().zip(&v.plates) {
         out.extend(face(pe, &slot, &texts, &plate.name, Some(plate.character), &[plate.level, plate.hp.0, plate.hp.1, plate.mp.0, plate.mp.1, plate.next, plate.friend]));
     }
+    out
+}
+
+/// The footer and the header.
+fn lines(l: &Layouts, menu: &Menu, words: &Words, texts: &impl Fn(&Placed) -> Option<Text>) -> Vec<Element> {
     let line = |placed: &[Placed], text: &str| -> Vec<Element> {
         placed
             .iter()
@@ -305,7 +318,7 @@ pub fn elements(pe: &Pe, l: &Layouts, menu: &Menu, v: &Overview, words: &Words, 
             })
             .collect()
     };
-    out.extend(line(&l.footer, &words.footer));
+    let mut out = line(&l.footer, &words.footer);
     let chosen = menu.commands().get(menu.chosen).and_then(|c| COMMANDS.iter().position(|x| x == c));
     out.extend(line(&l.header, chosen.and_then(|k| words.help.get(k)).map_or("", String::as_str)));
     out

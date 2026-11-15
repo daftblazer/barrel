@@ -38,6 +38,7 @@ mod basketpage;
 mod kit;
 mod assignment;
 mod journal;
+mod optionpage;
 mod battlehud;
 mod result;
 mod shopping;

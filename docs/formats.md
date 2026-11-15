@@ -2408,6 +2408,34 @@ the party plates (360), the footer (372), the header (371), and last the field H
   record's friendship float, +0x2b0, truncated; `Session::friendship`). The reserve row (382, 380)
   shows nothing without a waiting member.
 
+### The main menu's Journal and Option pages (`menu-cmd-7`, `menu-cmd-8` captures)
+
+**Journal** (`play/journal.rs`; Down 7 from the Basket off a town). Order: desk 383 (cut 1), the
+book's panel (layout 485's nested 491: part 0x19 at (114, 116)), five tab layouts (486 to 490,
+nested in 491 at x -30, y 78 stepping 74 to 76: a plate (part 0x1a cut 3), for the chosen tab a
+second plate over it (cut 4) in a pulsing colour, the tab's name, a "NEW" badge (part 0x4a, a
+flipbook as the menu's)), then the header 371 (before the footer here, unlike the Basket's
+order), the footer 372, the title tab 531 (cuts 8) and the cursor's glow 90 up and 60 left of
+the plate. Header: `SysInfo.xml` row 14; footer: a `Menu_Line_Help.xml` row reading "Select,
+Return, Confirm" (several rows read alike). The badge is drawn on all five tabs in the one save
+(its library marks are clear in every list); which mark belongs to which tab is not told by one
+save. Layouts 492 to 499 (a text each) are the library's pages behind the tabs, not read.
+The plate's colour (white to tan (227, 187, 110), 0 to 1 over four frames 20 apart) is unresolved.
+
+**Option** (`play/optionpage.rs`; Down 8). The command opens the Options screen, layout 511,
+**without a list in between** (Save, Load and the title come from the "System" shortcut, the
+Option list alone): the game has drawn the menu's overview (desk, buttons, book, plates, without
+footer, header or date panel) that frame, then the screen. Order: desk (cut 1), layout 408's
+panel (part 0x32, kind 15, 930 by 872 at (512, 150): word 5 and 6 are its size), nine rules
+(part 0x28, kind 19, width in word 5, ink in word 7 = (162, 170, 140)), the plate of the chosen
+entry only (0x3c under a volume row, 0x3d under "Default" or "Confirm"; the layout's others are
+not drawn), the texts (a choice's two inks are two texts: the chosen one's dark, the other grey),
+seven sliders (layout 407: track, frame, knob; every volume at its maximum puts the knob at 399,
+the layout's 400 less one), then the screen's title bar (0x30, heading and icon cuts 14), footer
+(`Menu_Line_Help.xml` row 141), header (`SysInfo.xml` row 111) and the glow. The outfit choice
+(layout 512, nested in 511) is not drawn. The area map's Option command opened this screen in
+the capture with no Save/Load list.
+
 ### The main menu's Basket and Assignment pages (`menu-cmd-0`, `menu-cmd-5` captures)
 
 Both pages open as the game opens them from the area map (Y, Down to the command, A; the list

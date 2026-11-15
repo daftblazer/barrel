@@ -116,6 +116,7 @@ pub enum Page {
     Basket(crate::basket::Basket),
     Assignment(crate::assignment::Assignment),
     Journal(crate::journal::Journal),
+    Option(crate::optionpage::OptionPage),
 }
 
 /// Where a shortcut opens the menu: on a page, or on the Option list alone (the area map's RB,
@@ -149,6 +150,7 @@ impl Menu {
             Start::Page(Page::Basket(_)) => c == Command::Basket,
             Start::Page(Page::Assignment(_)) => c == Command::Assignment,
             Start::Page(Page::Journal(_)) => c == Command::Journal,
+            Start::Page(Page::Option(_)) => c == Command::Option,
             Start::System => c == Command::Option,
         });
         let chosen = chosen.unwrap_or(0);
@@ -181,6 +183,7 @@ impl Menu {
             Some(Page::Basket(basket)) => basket.press(b, count),
             Some(Page::Assignment(a)) => a.press(b),
             Some(Page::Journal(j)) => j.press(b),
+            Some(Page::Option(o)) => o.press(b),
             None => return self.press_list(b),
         };
         if close {
@@ -212,7 +215,7 @@ impl Menu {
             Button::Left | Button::Right => {}
             Button::Back => return Some(Outcome::Close),
             Button::Confirm => match self.commands()[self.chosen] {
-                Command::Option => self.option = Some(0),
+                Command::Option => self.page = Some(Page::Option(crate::optionpage::OptionPage::default())),
                 Command::Status => self.page = Some(Page::Status),
                 Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
                 Command::Assignment => self.page = Some(Page::Assignment(crate::assignment::Assignment::default())),
@@ -365,6 +368,13 @@ pub fn run(
     };
     let library_new = source.is_some_and(|s| s.library_new);
     let journal_elements = |j: &crate::journal::Journal, tick: u32| crate::journal::elements(&pe, &journal_layouts, &journal_words, j, library_new, tick);
+    // The Option command's page: the Options screen, drawn over the overview.
+    let option_layouts = crate::optionpage::Layouts::load(&pe);
+    let option_words = crate::optionpage::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::optionpage::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::optionpage::FOOTER_ROW).cloned().unwrap_or_default(),
+    };
+    let option_elements = |o: &crate::optionpage::OptionPage, tick: u32| crate::optionpage::elements(&pe, &option_layouts, &option_words, o, tick);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
         let mut e = crate::overview::elements(&pe, &screen_layouts, m, v, &words, texts);
@@ -394,6 +404,7 @@ pub fn run(
     every.extend(page_layouts.flips());
     every.extend(assignment_layouts.flips());
     every.extend(journal_layouts.flips());
+    every.extend(option_layouts.flips());
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
         for chosen in 0..COMMANDS.len() {
@@ -411,6 +422,11 @@ pub fn run(
     }
     for chosen in 0..crate::journal::ROWS {
         every.extend(journal_elements(&crate::journal::Journal { chosen }, 0));
+    }
+    for chosen in 0..11 {
+        for flags in 0..4 {
+            every.extend(option_elements(&crate::optionpage::OptionPage { chosen, fast_forward_all: flags & 1 == 0, english: flags & 2 == 0, ..Default::default() }, 0));
+        }
     }
     // Every task icon, plain and lit.
     every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
@@ -434,6 +450,15 @@ pub fn run(
             Some(Page::Basket(b)) => basket_elements(&b, m.tick),
             Some(Page::Assignment(a)) => assignment_elements(&a, m.tick),
             Some(Page::Journal(j)) => journal_elements(&j, m.tick),
+            // The game draws the menu's overview first and the Options screen over it.
+            Some(Page::Option(o)) => {
+                let mut e = match overview.as_ref() {
+                    Some(v) => crate::overview::body(&pe, &screen_layouts, &Menu { page: None, ..*m }, v, &texts),
+                    None => m.elements(&nodes, texts),
+                };
+                e.extend(option_elements(&o, m.tick));
+                e
+            }
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
         };
@@ -486,12 +511,15 @@ mod tests {
         let mut m = Menu::new();
         assert_eq!(m.press(Button::Up, 0), None);
         assert_eq!((m.chosen, m.first), (9, 1));
+        // The Option command opens the Options screen (the game's), the System list is the
+        // shortcut's own.
         assert_eq!(m.press(Button::Confirm, 0), None);
-        assert_eq!(m.option, Some(0));
-        m.press(Button::Up, 0);
-        assert_eq!(m.press(Button::Confirm, 0), Some(Outcome::Option(OptionRow::ReturnToTitle)));
-        m.press(Button::Back, 0);
-        assert_eq!(m.option, None);
+        assert!(matches!(m.page, Some(Page::Option(_))));
+        assert_eq!(m.press(Button::Back, 0), None);
+        assert_eq!(m.page, None);
+        let mut system = Menu::at(Start::System);
+        system.press(Button::Up, 0);
+        assert_eq!(system.press(Button::Confirm, 0), Some(Outcome::Option(OptionRow::ReturnToTitle)));
         m.press(Button::Down, 0);
         assert_eq!((m.chosen, m.first), (0, 0));
         m.press(Button::Down, 0);
