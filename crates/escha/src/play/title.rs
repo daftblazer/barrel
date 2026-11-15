@@ -208,18 +208,30 @@ const TITLE_MUSIC: u32 = 1;
 const WHITE_FADE: f32 = 0.3;
 static WHITE: [u8; 64] = [255; 64];
 
-/// "Press any button" pulses: its opacity falls in a straight line from 1 to [`PROMPT_LOW`]
-/// over half of [`PROMPT_PERIOD`] seconds and rises back the same way, from 1 as the title
-/// starts (the escha-boot recording from 16.25 s: the prompt's opacity fitted frame by frame
-/// against ours drawn at full and half strength, a triangle wave within 0.003).
-const PROMPT_PERIOD: f32 = 2.4;
+/// "Press any button" pulses: its opacity falls in a straight line from 1 to [`PROMPT_LOW`] in
+/// [`PROMPT_SWING`] frames, holds the low a moment, rises back the same way and holds the top
+/// (the escha-boot recording, every frame from the title's start at about frame 479 to 1499: the
+/// falls and rises are straight lines of 204 bytes in 72 frames, 2.833 a frame, and the peaks lie
+/// [`PROMPT_PERIOD`] frames apart on average, so the ends are clipped: a triangle wave a little
+/// taller than the swing, cut at 0.2 and 1; the game's own period wanders by a frame from cycle to
+/// cycle, a fixed one stays within one byte over frames 481 to 700 and 1300 to 1499, within three
+/// elsewhere).
+const PROMPT_PERIOD: f32 = 436.0 / 3.0;
+const PROMPT_SWING: f32 = 72.0;
 const PROMPT_LOW: f32 = 0.2;
 const PROMPT_CUT: i32 = 1;
+/// The recording frame the title's clock starts at (the first peak of the prompt's pulse; the Gust
+/// logo has faded out by 477 and the title's first frame is 479; fitted: 478.67 gives peaks at
+/// 624, 769.3, 914.7, 1060, 1205.3, 1350.7 and 1496 against the recording's 624, 769.5, 915, 1060,
+/// 1204.5, 1350.5, 1496). `BARREL_TITLE_FADE_AT` of a frame is `(frame - TITLE_START) / 60`.
+#[allow(dead_code)]
+pub const TITLE_START: f32 = 478.67;
 
 /// The prompt's opacity (0 to 255) at `t` seconds into the title.
 fn prompt_at(t: f32) -> u8 {
-    let x = (t.max(0.0) / PROMPT_PERIOD).fract();
-    ((PROMPT_LOW + (1.0 - PROMPT_LOW) * (1.0 - 2.0 * x).abs()) * 255.0).round() as u8
+    let frames = (t.max(0.0) * crate::screen::TICKS_PER_SECOND as f32) % PROMPT_PERIOD;
+    let from_peak = frames.min(PROMPT_PERIOD - frames);
+    ((1.0 - (1.0 - PROMPT_LOW) / PROMPT_SWING * from_peak).clamp(PROMPT_LOW, 1.0) * 255.0).round() as u8
 }
 
 /// The veil's opacity (0 to 255) at `t` seconds.
