@@ -335,7 +335,7 @@ pub fn run(
             let out = barrel_audio::Output::open(0.1).map_err(|e| eprintln!("title: no sound: {e}")).ok()?;
             let tracks = barrel_escha::data::bgm::tracks(&pe, barrel_escha::data::bgm::TRACKS_EN).unwrap_or_default();
             let m = barrel_audio::Library::new(root, "Voice_EN", tracks).music(TITLE_MUSIC)?;
-            let mut mixer = barrel_audio::Mixer::game();
+            let mut mixer = crate::optionpage::mixer();
             let playing = mixer.play_stream(m.stream, m.volume, m.loop_from);
             eprintln!("title music: track {TITLE_MUSIC}, volume {}, loop from {:?}", m.volume, m.loop_from);
             Some((out, mixer, playing))

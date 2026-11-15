@@ -1028,7 +1028,7 @@ them (a test walks every open choice three deep from each preset), so the page n
 what the renderer would undo. Dropping the scale under 100% under native AA makes FSR 3 the
 upscaler; raising it to 100% drops GSR 2 and its anti-aliasing.
 
-The page (`options.rs`) opens from the menu's Option → Options (offscreen: `BARREL_OPTIONS_AT`
+The page (`options.rs`) is the second of the Options screen's two (the game's own comes first; Down off its "Confirm" or Up off its first row turns to this one, and back the same way). It opens from the menu's Option command (turning the page), the Option → Options row, and the title's Options (offscreen: `BARREL_OPTIONS_AT`
 with `BARREL_OPTIONS_KEYS`, drawn to OUT-options.png): the Options screen's desk and its
 "Option" title bar (layout 511), the six rows in the sound page's pieces (layout 408: the name
 on its bar 0x3c, the value in a 0x3d box between "< >", the rules 0x28, the cursor 0x32), then

@@ -137,6 +137,11 @@ pub enum Outcome {
     /// Back to play.
     Close,
     Option(OptionRow),
+    /// The Options screen's game page confirmed: its settings are to be kept.
+    Sound(crate::optionpage::OptionPage),
+    /// The Options screen turned to its graphics page (the second), carrying the game page's
+    /// settings so far.
+    Graphics(crate::optionpage::OptionPage),
     /// A command whose page Barrel does not have yet.
     Command(Command),
 }
@@ -194,7 +199,12 @@ impl Menu {
             Some(Page::Basket(basket)) => basket.press(b, count),
             Some(Page::Assignment(a)) => a.press(b),
             Some(Page::Journal(j)) => j.press(b),
-            Some(Page::Option(o)) => o.press(b),
+            Some(Page::Option(o)) => match o.press(b) {
+                None => false,
+                Some(crate::optionpage::Leave::Close(true)) => return Some(Outcome::Sound(*o)),
+                Some(crate::optionpage::Leave::Close(false)) => true,
+                Some(crate::optionpage::Leave::Graphics { .. }) => return Some(Outcome::Graphics(*o)),
+            },
             Some(Page::Picker(_, p)) => p.press(b),
             Some(Page::Formation(f)) => f.press(b),
             None => return self.press_list(b),
@@ -228,7 +238,7 @@ impl Menu {
             Button::Left | Button::Right => {}
             Button::Back => return Some(Outcome::Close),
             Button::Confirm => match self.commands()[self.chosen] {
-                Command::Option => self.page = Some(Page::Option(crate::optionpage::OptionPage::default())),
+                Command::Option => self.page = Some(Page::Option(crate::optionpage::OptionPage::load())),
                 Command::Status => self.page = Some(Page::Picker(crate::picker::Kind::Status, crate::picker::Picker { chosen: 0, count: self.party })),
                 Command::Basket => self.page = Some(Page::Basket(crate::basket::Basket::default())),
                 Command::Assignment => self.page = Some(Page::Assignment(crate::assignment::Assignment::default())),

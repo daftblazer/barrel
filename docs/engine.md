@@ -568,6 +568,15 @@ mistake for a day). `u46` in the events does not play its movie yet.
 
 ## Deliberate differences
 
+- **The Options screen's second page.** The game's Options screen (layout 511) has one page
+  (volumes, Fast Forward Event, Voice Language, Default, Confirm); Barrel adds a second, the
+  graphics page (`play/options.rs`, `docs/renderer.md`, "Graphics settings"). Down off "Confirm"
+  or Up off the first row turns between them (the game's screens have no shoulder paging). The
+  game's page opens and draws as the game's does. Its values are kept in `options.conf` beside
+  the graphics config; BGM, SE and Voice set the mixer's music, effect and voice volumes
+  (ambience counts as an effect); the other volumes, Fast Forward Event and Voice Language are
+  kept but nothing reads them yet.
+
 - **Fixed tick.** The original updates by each frame's measured time
   (`docs/events.md`, "Frame time"), with exactly 1/60 s as its fixed fallback. At a steady
   60 fps the two agree; when the original's frames are uneven its moves come out slightly

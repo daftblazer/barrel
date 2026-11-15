@@ -6,6 +6,12 @@
 //! reason, in the help bar; a row with no other open choice shows its value grey. Confirm on
 //! "Confirm" keeps the settings, "Default" puts the preset back, back leaves them as they were.
 //!
+//! The Options screen has two pages: the game's own (`optionpage.rs`: volumes, Fast Forward
+//! Event, Voice Language) and this one. Down off "Confirm" or Up off the first row turns from one
+//! to the other (the way the Journal's tabs are a list the cursor walks; the game's screens have
+//! no shoulder-button paging). Either page's "Confirm" keeps both pages' settings, Back leaves
+//! both as they were.
+//!
 //! Not yet the game's (none of this is the game's: the PC release has no such page): the
 //! page's title "Graphics" (a plain label beside the screen's own heading), the help bar (a
 //! plain line at the screen's foot), the sound page itself.
@@ -18,6 +24,7 @@ use crate::graphics_options::{self as g, Row};
 use crate::hud::{self, Element};
 use crate::screen;
 use crate::settings::{Display, RenderSettings, WINDOW_SIZES};
+use crate::optionpage::{self, Leave, OptionPage};
 use crate::title::Button;
 use crate::{Result, text};
 
@@ -42,6 +49,15 @@ impl Graphics {
     pub fn to_config(&self) -> String {
         self.display.to_config() + &self.render.to_config()
     }
+}
+
+/// Where a button took the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Turn {
+    /// The screen is left, keeping the settings or not.
+    Done(bool),
+    /// To the game's page: its first entry, or its last (from going up).
+    Game { last: bool },
 }
 
 /// The page: the row the cursor is on (the rows, then "Default", "Confirm") and the settings
@@ -140,20 +156,22 @@ pub fn help(row: Row, now: &Graphics) -> String {
 }
 
 impl Page {
-    /// A button; `Some(true)` keeps the settings, `Some(false)` leaves them.
-    pub fn press(&mut self, b: Button) -> Option<bool> {
+    /// A button; `Some` ends the page.
+    pub fn press(&mut self, b: Button) -> Option<Turn> {
         let rows = g::ROWS.len();
         match b {
-            Button::Up => self.cursor = (self.cursor + rows + 1) % (rows + 2),
-            Button::Down => self.cursor = (self.cursor + 1) % (rows + 2),
+            Button::Up if self.cursor == 0 => return Some(Turn::Game { last: true }),
+            Button::Down if self.cursor == rows + 1 => return Some(Turn::Game { last: false }),
+            Button::Up => self.cursor -= 1,
+            Button::Down => self.cursor += 1,
             Button::Left | Button::Right if self.cursor < rows => {
                 if let Some(t) = stepped(g::ROWS[self.cursor], &self.settings, if b == Button::Right { 1 } else { -1 }) {
                     self.settings = t;
                 }
             }
             Button::Confirm if self.cursor == rows => self.settings = self.default,
-            Button::Confirm if self.cursor == rows + 1 => return Some(true),
-            Button::Back => return Some(false),
+            Button::Confirm if self.cursor == rows + 1 => return Some(Turn::Done(true)),
+            Button::Back => return Some(Turn::Done(false)),
             _ => {}
         }
         None
@@ -191,7 +209,48 @@ impl Page {
     }
 }
 
-/// Runs the page over the Options screen until it is left; the settings chosen, if kept.
+/// What the Options screen sets: both pages.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Settings {
+    pub graphics: Graphics,
+    pub game: OptionPage,
+}
+
+/// The screen's state: the page up, both pages' values and the clock (the game page's glow).
+#[derive(Clone, Debug, PartialEq)]
+struct Screen {
+    on_game: bool,
+    game: OptionPage,
+    graphics: Page,
+    tick: u32,
+}
+
+impl Screen {
+    /// A button; `Some(keep)` leaves the screen.
+    fn press(&mut self, b: Button) -> Option<bool> {
+        if self.on_game {
+            match self.game.press(b)? {
+                Leave::Close(keep) => return Some(keep),
+                Leave::Graphics { last } => {
+                    self.on_game = false;
+                    self.graphics.cursor = if last { g::ROWS.len() + 1 } else { 0 };
+                }
+            }
+        } else {
+            match self.graphics.press(b)? {
+                Turn::Done(keep) => return Some(keep),
+                Turn::Game { last } => {
+                    self.on_game = true;
+                    self.game = self.game.at(last);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Runs the Options screen (opened on the graphics page, or on the game's) until it is left;
+/// the settings chosen, if kept.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     gpu: &crate::Gpu,
@@ -200,11 +259,12 @@ pub fn run(
     window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>,
     offscreen: Option<ash::vk::Image>,
     root: &Path,
-    settings: Graphics,
+    now: Settings,
     default: Graphics,
+    on_game: bool,
     keys: &[Button],
     out: Option<&Path>,
-) -> Result<Option<Graphics>> {
+) -> Result<Option<Settings>> {
     let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("options: no glyph table")?;
@@ -217,14 +277,34 @@ pub fn run(
         .filter(|p| matches!(p.node.part, 0x0 | 0x30 | 0x2e | 0x2c))
         .map(Element::stored)
         .collect();
-    let resolved = |g: Graphics| Graphics { render: g.render.resolved(), ..g };
-    let mut page = Page { cursor: 0, settings: resolved(settings), default: resolved(default) };
-    let all = |p: &Page| {
-        let mut e = frame.clone();
-        e.extend(p.elements());
-        e
+    // The game's page: its layouts and its two lines of words.
+    let table = |rel: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
+    let (sys_info, line_help) = (table("Saves_EN/systemMessage/SysInfo.xml")?, table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
+    let layouts = optionpage::Layouts::load(&pe);
+    let words = optionpage::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(optionpage::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(optionpage::FOOTER_ROW).cloned().unwrap_or_default(),
     };
-    let keys_needed = screen::sheet_keys(&pe, all(&page));
+    let resolved = |g: Graphics| Graphics { render: g.render.resolved(), ..g };
+    let mut screen = Screen { on_game, game: now.game, graphics: Page { cursor: 0, settings: resolved(now.graphics), default: resolved(default) }, tick: 0 };
+    let all = |s: &Screen| {
+        if s.on_game {
+            optionpage::elements(&pe, &layouts, &words, &s.game, s.tick)
+        } else {
+            let mut e = frame.clone();
+            e.extend(s.graphics.elements());
+            e
+        }
+    };
+    // Every picture either page turns through, for loading once.
+    let mut every = layouts.flips();
+    for chosen in 0..optionpage::ENTRIES {
+        for flags in 0..4 {
+            every.extend(optionpage::elements(&pe, &layouts, &words, &OptionPage { chosen, fast_forward_all: flags & 1 == 0, english: flags & 2 == 0, ..screen.game }, 0));
+        }
+    }
+    every.extend(all(&Screen { on_game: false, ..screen.clone() }));
+    let keys_needed = screen::sheet_keys(&pe, every);
     let packs = screen::read_packs(root, &keys_needed)?;
     let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), barrel_formats::g1t::G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
     let mut images = vec![&atlas.textures[0]];
@@ -236,10 +316,13 @@ pub fn run(
         images.push(t);
     }
     let (w, h) = (target.width as f32, target.height as f32);
-    let quads = |p: &Page| hud::quads(&pe, Some(&font), &sheets, &all(p), w, h);
-    let kept = screen::run(gpu, pool, target, window, offscreen, &images, &mut page, quads, |p, b| p.press(b), keys, out)?;
+    let quads = |s: &Screen| hud::quads(&pe, Some(&font), &sheets, &all(s), w, h);
+    let kept = screen::run_clocked(gpu, pool, target, window, offscreen, &images, &mut screen, quads, |s, b| s.press(b), keys, out, |s, tick| {
+        s.tick = tick;
+        None
+    })?;
     Ok(match kept {
-        Some(true) => Some(page.settings),
+        Some(true) => Some(Settings { graphics: screen.graphics.settings, game: screen.game }),
         _ => None,
     })
 }
@@ -272,6 +355,8 @@ mod tests {
         p.cursor = g::ROWS.len();
         p.press(Button::Confirm);
         assert_eq!(p.settings, start);
-        assert_eq!(p.press(Button::Back), Some(false));
+        assert_eq!(p.press(Button::Back), Some(Turn::Done(false)));
+        p.cursor = 0;
+        assert_eq!(p.press(Button::Up), Some(Turn::Game { last: true }));
     }
 }

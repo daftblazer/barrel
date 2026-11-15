@@ -3950,9 +3950,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // no scene is up yet to carry over.
             let (Some(title::Start::Options), Some((pr, p))) = (&picked, window.as_mut()) else { break picked };
             let now = options::Graphics { render: settings, display: current_display(p) };
-            let kept = options::run(&gpu, renderer.pool, &target, Some((*pr, &mut **p)), None, r, now, default_graphics(), &[], None)?;
+            let kept = options::run(&gpu, renderer.pool, &target, Some((*pr, &mut **p)), None, r, options::Settings { graphics: now, game: optionpage::OptionPage::load() }, default_graphics(), false, &[], None)?;
             eprintln!("title: options: {kept:?}");
-            if let Some(new) = kept.filter(|k| *k != now) {
+            if let Some(k) = &kept {
+                k.game.save()?;
+            }
+            if let Some(new) = kept.map(|k| k.graphics).filter(|k| *k != now) {
                 let path = write_config(&new)?;
                 eprintln!("title: graphics saved to {}, starting again", path.display());
                 unsafe { d.device_wait_idle()? };
@@ -4282,7 +4285,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         && presenter.is_some() {
             if sound.is_none() {
                 match barrel_audio::Output::open(0.1) {
-                    Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
+                    Ok(out) => sound = Some((Sink::Device(out), optionpage::mixer(), barrel_audio::Library::new(&w.root, "Voice_EN", music_tracks(&w.root)), None)),
                     Err(e) => eprintln!("no sound: {e}"),
                 }
             }
@@ -4291,7 +4294,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 // And its ambience, a looping environment sound under the music.
                 if let Some((n, volume)) = w.ambience
                     && let Some(barrel_audio::Effect::Stream(stream, from)) = library.effect(n) {
-                        ambience = Some(mixer.play_stream(stream, volume, from));
+                        let p = mixer.play_stream(stream, volume, from);
+                        mixer.set_kind(p, barrel_audio::Kind::Effect);
+                        ambience = Some(p);
                     }
                 eprintln!("field music {:?}, ambience {:?}", w.music, w.ambience);
             }
@@ -4303,7 +4308,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()) {
             if sound.is_none() {
                 match barrel_audio::Output::open(0.1) {
-                    Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
+                    Ok(out) => sound = Some((Sink::Device(out), optionpage::mixer(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
                     Err(e) => eprintln!("no sound: {e}"),
                 }
             }
@@ -4474,13 +4479,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         player = Some((play, clock, snap.clone(), snap));
         if presenter.is_some() && sound.is_none() {
             match barrel_audio::Output::open(0.1) {
-                Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
+                Ok(out) => sound = Some((Sink::Device(out), optionpage::mixer(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None)),
                 Err(e) => eprintln!("no sound: {e}"),
             }
         } else if presenter.is_none() && sound.is_none()
             && let Some(path) = audio_out.clone() {
                 let start = player.as_ref().map_or(0.0, |p| p.1.time());
-                sound = Some((Sink::File { capture: barrel_audio::Capture::new(), start, path }, barrel_audio::Mixer::game(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None));
+                sound = Some((Sink::File { capture: barrel_audio::Capture::new(), start, path }, optionpage::mixer(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None));
             }
         // The event's lines in the game's English font.
         let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
@@ -4779,8 +4784,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let shot = Path::new(&out_path).with_extension("").to_string_lossy().into_owned() + "-options.png";
             let now = options::Graphics { render: settings, display: display_settings };
             let first = options::Graphics { render: settings::RenderSettings::DESKTOP, display: settings::Display::DEFAULT };
-            let kept = options::run(&gpu, renderer.pool, &target, None, Some(*color), &root, now, first, &keys, Some(Path::new(&shot)))?;
+            let game = optionpage::OptionPage::load();
+            let kept = options::run(&gpu, renderer.pool, &target, None, Some(*color), &root, options::Settings { graphics: now, game }, first, std::env::var_os("BARREL_OPTIONS_GAME").is_some(), &keys, Some(Path::new(&shot)))?;
             eprintln!("frame {frame}: options: {kept:?}");
+            let kept = kept.map(|k| k.graphics);
             // Kept: into the config `BARREL_CONFIG` names (renderer.offscreen runs never write the user's).
             if let Some(new) = kept.filter(|_| std::env::var_os("BARREL_CONFIG").is_some()) {
                 eprintln!("frame {frame}: graphics saved to {}", write_config(&new)?.display());
@@ -5068,12 +5075,28 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     break;
                 }
                 // Option → Options: the graphics page (not applied live yet: the run reports it).
-                Some(menu::Outcome::Option(menu::OptionRow::Options)) => {
+                // The game's page confirmed: its settings are kept and heard at once.
+                Some(menu::Outcome::Sound(page)) => {
+                    page.save()?;
+                    if let Some((_, mixer, _, _)) = sound.as_mut() {
+                        page.apply(mixer);
+                    }
+                }
+                // The game's page turned to the graphics page: the Options screen carries on.
+                Some(o @ (menu::Outcome::Option(menu::OptionRow::Options) | menu::Outcome::Graphics(_))) => {
                     unsafe { gpu.device.device_wait_idle()? };
                     let target = screen::Target { pass: renderer.post_pass, framebuffers: &renderer.targets.framebuffers, width, height };
                     let now = options::Graphics { render: settings, display: current_display(p) };
-                    let kept = options::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, now, default_graphics(), &script("BARREL_OPTIONS_KEYS"), None)?;
+                    let game = if let menu::Outcome::Graphics(page) = o { page } else { optionpage::OptionPage::load() };
+                    let kept = options::run(&gpu, renderer.pool, &target, Some((pr, &mut *p)), None, root, options::Settings { graphics: now, game }, default_graphics(), false, &script("BARREL_OPTIONS_KEYS"), None)?;
                     eprintln!("frame {frame}: options: {kept:?}");
+                    if let Some(k) = &kept {
+                        k.game.save()?;
+                        if let Some((_, mixer, _, _)) = sound.as_mut() {
+                            k.game.apply(mixer);
+                        }
+                    }
+                    let kept = kept.map(|k| k.graphics);
                     // Kept and changed: into the config. The window takes its new size or
                     // fullscreen at once; new render settings start the scene again where she
                     // stands (the renderer's renderer.targets and pipelines are built at a scene's start).
@@ -5455,7 +5478,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 eprintln!("frame {frame}: jump{}", voice.map_or(String::new(), |c| format!(", voice {c}")));
                 if sound.is_none() && presenter.is_some() {
                     match barrel_audio::Output::open(0.1) {
-                        Ok(out) => sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
+                        Ok(out) => sound = Some((Sink::Device(out), optionpage::mixer(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None)),
                         Err(e) => eprintln!("no sound: {e}"),
                     }
                 }
@@ -5464,7 +5487,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         mixer.play(e, 0.6, None);
                     }
                     if let Some(v) = voice.and_then(|c| library.voice(c)) {
-                        mixer.play(v, barrel_audio::VOICE_GAIN, None);
+                        let p = mixer.play(v, barrel_audio::VOICE_GAIN, None);
+                        mixer.set_kind(p, barrel_audio::Kind::Voice);
                     }
                 }
             }
@@ -5532,7 +5556,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 if before < swing_sound.0 && clock >= swing_sound.0 {
                     if sound.is_none() && presenter.is_some()
                         && let Ok(out) = barrel_audio::Output::open(0.1) {
-                            sound = Some((Sink::Device(out), barrel_audio::Mixer::game(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
+                            sound = Some((Sink::Device(out), optionpage::mixer(), barrel_audio::Library::new(&w.root, "Voice_EN", Vec::new()), None));
                         }
                     if let Some((_, mixer, library, _)) = sound.as_mut()
                         && let Some(barrel_audio::Effect::Clip(e)) = library.effect(swing_sound.1) {
@@ -5960,7 +5984,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                                 if let Some(e) = library.effect(effect) {
                                     let p = match e {
                                         barrel_audio::Effect::Clip(s) => mixer.play(s, volume, None),
-                                        barrel_audio::Effect::Stream(s, from) => mixer.play_stream(s, volume, from),
+                                        barrel_audio::Effect::Stream(s, from) => {
+                                            let p = mixer.play_stream(s, volume, from);
+                                            mixer.set_kind(p, barrel_audio::Kind::Effect);
+                                            p
+                                        }
                                     };
                                     mixer.set_pan(p, pan);
                                 }
@@ -5968,7 +5996,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                             barrel_engine::stage::Cue::Voice { clip } => {
                                 eprintln!("frame {frame}: voice {clip}");
                                 if let Some(v) = library.voice(clip) {
-                                    line_voice = Some(mixer.play(v, barrel_audio::VOICE_GAIN, None));
+                                    let p = mixer.play(v, barrel_audio::VOICE_GAIN, None);
+                                    mixer.set_kind(p, barrel_audio::Kind::Voice);
+                                    line_voice = Some(p);
                                 }
                             }
                         }

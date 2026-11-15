@@ -100,6 +100,15 @@ struct Voice {
     fading: Option<f32>,
     /// The left and right gains from its pan (1 each in the centre).
     sides: (f32, f32),
+    kind: Kind,
+}
+
+/// What a sound is, for the player's volume of it (the Options screen's BGM, SE and Voice).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Music,
+    Effect,
+    Voice,
 }
 
 /// What a [`Mixer::play`] returns, to stop or change the sound later.
@@ -113,6 +122,8 @@ pub struct Mixer {
     next: u64,
     /// The overall volume (0 to 1).
     pub master: f32,
+    /// The player's volume of each [`Kind`] of sound (0 to 1; music, effects, voices).
+    pub kinds: [f32; 3],
 }
 
 /// The game's overall level at its default options, measured against the reference recording
@@ -127,7 +138,7 @@ pub const VOICE_GAIN: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
 impl Mixer {
     pub fn new() -> Mixer {
-        Mixer { voices: Vec::new(), next: 0, master: 1.0 }
+        Mixer { voices: Vec::new(), next: 0, master: 1.0, kinds: [1.0; 3] }
     }
 
     /// A mixer at the game's default level ([`OPTION_VOLUME`]).
@@ -141,7 +152,7 @@ impl Mixer {
         self.next += 1;
         let loop_from = loop_from.filter(|&f| f < sound.frames());
         let rate = sound.rate;
-        self.voices.push(Voice { id: self.next, source: Source::Clip(sound), rate, at: 0.0, gain, loop_from, fading: None, sides: (1.0, 1.0) });
+        self.voices.push(Voice { id: self.next, source: Source::Clip(sound), rate, at: 0.0, gain, loop_from, fading: None, sides: (1.0, 1.0), kind: Kind::Effect });
         Playing(self.next)
     }
 
@@ -152,8 +163,16 @@ impl Mixer {
         let loop_from = loop_from.filter(|&f| f < stream.frames());
         let rate = stream.id().rate;
         let s = Streamed { stream, ahead: Default::default(), loop_from, ended: false };
-        self.voices.push(Voice { id: self.next, source: Source::Stream(Box::new(s)), rate, at: 0.0, gain, loop_from: None, fading: None, sides: (1.0, 1.0) });
+        self.voices.push(Voice { id: self.next, source: Source::Stream(Box::new(s)), rate, at: 0.0, gain, loop_from: None, fading: None, sides: (1.0, 1.0), kind: Kind::Music });
         Playing(self.next)
+    }
+
+    /// Files a sound under `kind` for the player's volumes (a clip starts as an effect, a stream
+    /// as music).
+    pub fn set_kind(&mut self, p: Playing, kind: Kind) {
+        if let Some(v) = self.voices.iter_mut().find(|v| v.id == p.0) {
+            v.kind = kind;
+        }
     }
 
     pub fn stop(&mut self, p: Playing) {
@@ -196,7 +215,8 @@ impl Mixer {
         let frames = out.len() / 2;
         for v in &mut self.voices {
             let step = f64::from(v.rate) / f64::from(RATE);
-            let level = Level { gain: &mut v.gain, fading: v.fading, sides: v.sides };
+            let player = self.kinds[v.kind as usize];
+            let level = Level { gain: &mut v.gain, fading: v.fading, sides: (v.sides.0 * player, v.sides.1 * player) };
             let out = &mut out[..2 * frames];
             match &mut v.source {
                 Source::Clip(sound) => mix_clip(sound, &mut v.at, v.loop_from, step, level, out),

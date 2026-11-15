@@ -11,8 +11,17 @@
 //! Forward Event" (Read / All) and "Voice Language" (English / Japanese) two choices each, the
 //! chosen one in dark ink and the other grey (the layout holds both inks as two texts).
 //!
-//! Not yet the game's: the values do not reach the sound or the event player (the page keeps
-//! them while it is open and Barrel's audio has no such volumes), the knob's place below 100 (the
+//! The values are Barrel's own settings (`options.conf` beside the graphics config, see
+//! [`OptionPage::load`]): BGM, SE and Voice reach the mixer's volumes of music, effects and
+//! voices ([`apply`]); Env. SE, Sys. SE, B. Voice, Movie, "Fast Forward Event" and "Voice
+//! Language" are kept and drawn but nothing in Barrel reads them yet (no per-kind split of the
+//! ambience, system and battle sounds, no movie volume, no read-event marks, and only the
+//! English voices are shipped here).
+//!
+//! The page is the first of the Options screen's two (`options.rs` has the second, Barrel's
+//! graphics): Down off "Confirm", or Up off the first row, turns to the other page.
+//!
+//! Not yet the game's: the knob's place below 100 (the
 //! capture has every volume at its maximum: the knob at 399, the layout's 400 less one), the
 //! plate of a two-way row (drawn under the chosen choice, a guess: the capture's cursor is on
 //! the first row) and the outfit choice the same layout 511 holds (hidden here).
@@ -53,13 +62,28 @@ const KNOB_MAX: i32 = 399;
 const KNOB_MIN: i32 = 22;
 const VOLUMES: usize = 7;
 /// The entries the cursor goes over: the volumes, the two choices, "Default" and "Confirm".
-const ENTRIES: usize = VOLUMES + 4;
+pub const ENTRIES: usize = VOLUMES + 4;
 const FAST_FORWARD: usize = VOLUMES;
 const LANGUAGE: usize = VOLUMES + 1;
 const DEFAULT: usize = VOLUMES + 2;
 const CONFIRM: usize = VOLUMES + 3;
 /// A volume's step with Left and Right, in percent.
 const STEP: i32 = 10;
+/// The volumes' names in the config, in the page's order.
+const VOLUME_KEYS: [&str; VOLUMES] = ["bgm", "se", "env_se", "sys_se", "voice", "battle_voice", "movie"];
+/// Which of the page's volumes the mixer's kinds take: music, effects, voices.
+const MUSIC: usize = 0;
+const EFFECT: usize = 1;
+const VOICE: usize = 4;
+
+/// Where a button takes the player off the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Leave {
+    /// The Options screen closes, keeping the settings ("Confirm") or not (Back).
+    Close(bool),
+    /// The other page: its first entry, or its last (`last`, from going up).
+    Graphics { last: bool },
+}
 
 /// The page's state: the entry the cursor is on and the values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,11 +103,13 @@ impl Default for OptionPage {
 }
 
 impl OptionPage {
-    /// A button; Back and "Confirm" return true (the page closes).
-    pub fn press(&mut self, b: Button) -> bool {
+    /// A button; `Some` leaves the page.
+    pub fn press(&mut self, b: Button) -> Option<Leave> {
         match b {
-            Button::Up => self.chosen = (self.chosen + ENTRIES - 1) % ENTRIES,
-            Button::Down => self.chosen = (self.chosen + 1) % ENTRIES,
+            Button::Up if self.chosen == 0 => return Some(Leave::Graphics { last: true }),
+            Button::Down if self.chosen == CONFIRM => return Some(Leave::Graphics { last: false }),
+            Button::Up => self.chosen -= 1,
+            Button::Down => self.chosen += 1,
             Button::Left | Button::Right => {
                 let sign = if b == Button::Right { 1 } else { -1 };
                 match self.chosen {
@@ -94,12 +120,74 @@ impl OptionPage {
                 }
             }
             Button::Confirm if self.chosen == DEFAULT => *self = OptionPage { chosen: self.chosen, ..OptionPage::default() },
-            Button::Confirm if self.chosen == CONFIRM => return true,
+            Button::Confirm if self.chosen == CONFIRM => return Some(Leave::Close(true)),
             Button::Confirm => {}
-            Button::Back => return true,
+            Button::Back => return Some(Leave::Close(false)),
         }
-        false
+        None
     }
+
+    /// The page on its last entry or its first (coming back from the other page).
+    pub fn at(self, last: bool) -> OptionPage {
+        OptionPage { chosen: if last { CONFIRM } else { 0 }, ..self }
+    }
+
+    /// The settings as the config file holds them (the cursor is not one).
+    pub fn to_config(&self) -> String {
+        let mut out: String = VOLUME_KEYS.iter().zip(self.volumes).map(|(k, v)| format!("{k} {v}\n")).collect();
+        out += &format!("fast_forward {}\nvoice_language {}\n", if self.fast_forward_all { "all" } else { "read" }, if self.english { "english" } else { "japanese" });
+        out
+    }
+
+    pub fn from_config(text: &str) -> OptionPage {
+        let mut o = OptionPage::default();
+        for line in text.lines() {
+            let Some((key, value)) = line.trim().split_once(' ') else { continue };
+            let value = value.trim();
+            match key {
+                "fast_forward" => o.fast_forward_all = value != "read",
+                "voice_language" => o.english = value != "japanese",
+                k => {
+                    if let Some(i) = VOLUME_KEYS.iter().position(|n| *n == k) {
+                        o.volumes[i] = value.parse::<i32>().map_or(o.volumes[i], |v| v.clamp(0, 100));
+                    }
+                }
+            }
+        }
+        o
+    }
+
+    /// Where the settings are kept: `options.conf` beside the graphics config.
+    fn path() -> Option<std::path::PathBuf> {
+        Some(crate::settings::RenderSettings::config_path()?.with_file_name("options.conf"))
+    }
+
+    /// The settings kept, or the defaults.
+    pub fn load() -> OptionPage {
+        Self::path().and_then(|p| std::fs::read_to_string(p).ok()).map_or_else(OptionPage::default, |t| Self::from_config(&t))
+    }
+
+    pub fn save(&self) -> crate::Result<()> {
+        let path = Self::path().ok_or("no place for the config (no HOME)")?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(path, self.to_config())?;
+        Ok(())
+    }
+
+    /// Sets the mixer's volumes of music, effects and voices to the page's BGM, SE and Voice.
+    pub fn apply(&self, mixer: &mut barrel_audio::Mixer) {
+        let level = |i: usize| self.volumes[i] as f32 / 100.0;
+        mixer.kinds = [level(MUSIC), level(EFFECT), level(VOICE)];
+    }
+}
+
+/// A mixer at the game's level with the saved volumes.
+pub fn mixer() -> barrel_audio::Mixer {
+    let mut m = barrel_audio::Mixer::game();
+    OptionPage::load().apply(&mut m);
+    m
 }
 
 /// The layouts the page is made of, placed once.
@@ -232,8 +320,9 @@ mod tests {
     #[test]
     fn walks_the_entries_and_changes_values() {
         let mut o = OptionPage::default();
-        assert!(!o.press(Button::Up));
-        assert_eq!(o.chosen, CONFIRM);
+        assert_eq!(o.press(Button::Up), Some(Leave::Graphics { last: true }));
+        o.chosen = CONFIRM;
+        assert_eq!(o.press(Button::Down), Some(Leave::Graphics { last: false }));
         o.chosen = 0;
         o.press(Button::Left);
         assert_eq!(o.volumes[0], 100 - STEP);
@@ -244,8 +333,15 @@ mod tests {
         o.press(Button::Confirm);
         assert_eq!(o, OptionPage { chosen: DEFAULT, ..OptionPage::default() });
         o.chosen = CONFIRM;
-        assert!(o.press(Button::Confirm));
-        assert!(o.press(Button::Back));
+        assert_eq!(o.press(Button::Confirm), Some(Leave::Close(true)));
+        assert_eq!(o.press(Button::Back), Some(Leave::Close(false)));
+    }
+
+    #[test]
+    fn the_config_round_trips() {
+        let o = OptionPage { chosen: 0, volumes: [10, 20, 30, 40, 50, 60, 70], fast_forward_all: false, english: false };
+        assert_eq!(OptionPage::from_config(&o.to_config()), o);
+        assert_eq!(OptionPage::from_config("bgm 300\nnonsense\n").volumes[0], 100);
     }
 
     #[test]
