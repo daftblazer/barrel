@@ -54,13 +54,13 @@ pub fn run(
     shown_at: f32,
     out: Option<&Path>,
 ) -> Result<()> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let x64 = root.join("Data/x64");
     let mut files = Vec::new();
     for n in LOGOS {
         let still = barrel_escha::data::layout::still(&pe, n).ok_or("splash: no logo still")?;
-        let bytes = std::fs::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| std::fs::read(x64.join(&still.folder).join(&still.file)))?;
+        let bytes = barrel_files::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| barrel_files::read(x64.join(&still.folder).join(&still.file)))?;
         files.push((still, bytes));
     }
     let packs = files.iter().map(|(still, bytes)| Ok((still, barrel_formats::g1t::G1t::parse(bytes)?))).collect::<Result<Vec<_>>>()?;
@@ -110,7 +110,7 @@ pub fn run(
 /// `Movie_EN` first as the game does (the escha-recomp boot's file trace), then `Movie`.
 fn intro_movie(root: &Path) -> Option<std::path::PathBuf> {
     let x64 = root.join("Data/x64");
-    let file = [x64.join("Movie_EN").join(INTRO_MOVIE), x64.join("Movie").join(INTRO_MOVIE)].into_iter().find(|p| p.exists());
+    let file = [x64.join("Movie_EN").join(INTRO_MOVIE), x64.join("Movie").join(INTRO_MOVIE)].into_iter().find(|p| barrel_files::exists(p));
     if file.is_none() {
         eprintln!("splash: no intro movie {INTRO_MOVIE}");
     }

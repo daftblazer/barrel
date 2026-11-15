@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn the_installs_strips() {
         let Some(p) = std::env::var_os("BARREL_RYZA_TELOPS") else { return };
-        let s = strips(&std::fs::read(p).unwrap()).unwrap();
+        let s = strips(&barrel_files::read(p).unwrap()).unwrap();
         assert_eq!(s.len(), 108);
         assert_eq!(s[0], Strip { texture: "ui/a21_telop01.g1t".into(), rect: [10.0, 10.0, 2380.0, 156.0] });
         assert_eq!(s[12].texture, "ui/a21_telop02.g1t");

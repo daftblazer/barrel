@@ -292,7 +292,7 @@ pub fn read_packs(root: &Path, keys: &[(String, u32)]) -> Result<Vec<(String, Ve
     let mut packs: Vec<(String, Vec<u8>)> = Vec::new();
     for (name, _) in keys {
         if !packs.iter().any(|(n, _)| n == name) {
-            let bytes = std::fs::read(x64.join("WinXls_EN").join(name)).or_else(|_| std::fs::read(x64.join("WinXls").join(name)))?;
+            let bytes = barrel_files::read(x64.join("WinXls_EN").join(name)).or_else(|_| barrel_files::read(x64.join("WinXls").join(name)))?;
             packs.push((name.clone(), bytes));
         }
     }

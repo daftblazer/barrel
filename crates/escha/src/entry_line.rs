@@ -156,7 +156,7 @@ mod tests {
     #[ignore = "needs the game's executable (BARREL_EXE)"]
     fn the_ruins_offer_the_known_line() {
         let Ok(path) = std::env::var("BARREL_EXE") else { return };
-        let exe = std::fs::read(path).unwrap();
+        let exe = barrel_files::read(path).unwrap();
         let talk = read(&barrel_formats::pe::Pe::parse(&exe).unwrap()).unwrap();
         let s = Situation { map: 26, town: false, squad: &[0, 1], seen: &[false; 1165], said: &[] };
         let (_, fresh) = candidates(&talk, KIND_GENERAL, &s);

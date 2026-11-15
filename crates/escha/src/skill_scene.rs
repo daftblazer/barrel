@@ -221,7 +221,7 @@ mod tests {
     #[ignore = "needs the game (BARREL_ROOT)"]
     fn the_start_camera_flies_in_on_the_battle_origin() {
         let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
-        let bytes = std::fs::read(root.join("Event/skill/SKILL_COMMON_SYSTEM_START_CAM_01.ebd")).unwrap();
+        let bytes = barrel_files::read(root.join("Event/skill/SKILL_COMMON_SYSTEM_START_CAM_01.ebd")).unwrap();
         let event = Ebd::parse(&bytes).unwrap();
         let nobody = Cast { position: [3200.0, 0.0, 3200.0], facing: 0.0, measures: None };
         let scene = play(&event, nobody, nobody, &BTreeMap::new(), None, 10.0, [3200.0, 0.0, 3200.0]).unwrap();
@@ -241,7 +241,7 @@ mod tests {
     #[ignore = "needs the game (BARREL_ROOT)"]
     fn eschas_attack_runs_in_and_back() {
         let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
-        let bytes = std::fs::read(root.join("Event/skill/Skill_PARTY_ESCHA_0.ebd")).unwrap();
+        let bytes = barrel_files::read(root.join("Event/skill/Skill_PARTY_ESCHA_0.ebd")).unwrap();
         let event = Ebd::parse(&bytes).unwrap();
         let her = Cast { position: [0.0, 0.0, -800.0], facing: 0.0, measures: None };
         let it = Cast { position: [0.0, 0.0, 0.0], facing: 0.0, measures: None };

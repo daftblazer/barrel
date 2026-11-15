@@ -90,7 +90,7 @@ impl Data {
     pub fn load(root: &std::path::Path) -> Result<Data, String> {
         let table = |rel: &str| -> Result<barrel_formats::table::Element, String> {
             let path = root.join(rel);
-            let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let bytes = barrel_files::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             barrel_formats::table::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))
         };
         let mut requests = Vec::new();
@@ -100,7 +100,7 @@ impl Data {
         let ranks = crate::rank::ranks(&table("Saves/rank/RankData.xml")?);
         let wares = shop::wares(&table("Saves/shop/ShopData.xml")?);
         let costs: Vec<i32> = table("Saves/item/itemData.xml")?.children.iter().map(|r| r.attr("cost").and_then(|v| v.parse().ok()).unwrap_or(0)).collect();
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).map_err(|e| format!("executable: {e}"))?;
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).map_err(|e| format!("executable: {e}"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("executable: {e}"))?;
         let at = pe.offset(0x1_40d1_9c70).ok_or("no recipe table")?;
         let recipe_costs = (0..RECIPES)

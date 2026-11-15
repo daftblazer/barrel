@@ -1430,7 +1430,7 @@ mod skill_event_tests {
     #[ignore = "needs the game (BARREL_ROOT)"]
     fn every_listed_command_has_its_event() {
         let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
         let lists = crate::data::battle_data::party_skills(&pe, crate::data::battle_data::PARTY_SKILLS_EN).unwrap();
         let mut missing = Vec::new();

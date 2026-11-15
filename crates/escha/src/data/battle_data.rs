@@ -956,7 +956,7 @@ mod item_level_tests {
     #[ignore]
     fn the_item_levels_read() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
-        let exe = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let exe = barrel_files::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let pe = Pe::parse(&exe).unwrap();
         let levels = item_levels(&pe, ITEM_LEVELS_EN).unwrap();
         assert_eq!(levels.len(), 49);
@@ -971,7 +971,7 @@ mod party_defaults_real {
     #[ignore = "needs the game's executable (BARREL_EXE)"]
     fn escha_starts_with_her_kit() {
         let Ok(path) = std::env::var("BARREL_EXE") else { return };
-        let exe = std::fs::read(path).unwrap();
+        let exe = barrel_files::read(path).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
         let all = super::party_defaults(&pe, super::PARTY_DEFAULTS_EN).unwrap();
         assert_eq!(all.len(), 11);

@@ -354,7 +354,7 @@ fn main() -> Result<()> {
     }
     if a.field == "-" {
         let map = event_stage.as_ref().and_then(|s| s.field).ok_or("FIELD -: needs an --event that sets a field")?;
-        let exe = std::fs::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
+        let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
         a.field = barrel_ryza::maps::field_maps(&pe).get(map as usize).cloned().ok_or(format!("field map {map}: not named"))?;
         eprintln!("field map {map}: {}", a.field);

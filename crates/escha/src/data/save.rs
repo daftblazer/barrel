@@ -910,8 +910,8 @@ mod tests {
     #[ignore]
     fn decodes_a_real_settings_file() {
         let (Ok(f), Ok(p)) = (std::env::var("BARREL_SYSDATA"), std::env::var("BARREL_SYSDATA_PLAIN")) else { return };
-        let out = decode(&std::fs::read(f).unwrap()).unwrap();
-        assert_eq!(out[..], std::fs::read(p).unwrap()[..out.len()]);
+        let out = decode(&barrel_files::read(f).unwrap()).unwrap();
+        assert_eq!(out[..], barrel_files::read(p).unwrap()[..out.len()]);
     }
 
     #[test]
@@ -1007,7 +1007,7 @@ mod tests {
     #[ignore]
     fn a_real_state_codes_back() {
         let Ok(f) = std::env::var("BARREL_SYSDATA") else { return };
-        let state = decode(&std::fs::read(f).unwrap()).unwrap();
+        let state = decode(&barrel_files::read(f).unwrap()).unwrap();
         assert_eq!(decode(&encode(&state, 0xdead_beef)).unwrap(), state);
     }
 }

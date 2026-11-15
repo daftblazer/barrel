@@ -252,20 +252,20 @@ pub fn run(
     saves: Option<&Path>,
 ) -> Result<Option<Start>> {
     use crate::hero::Hero;
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let still = barrel_escha::data::layout::still(&pe, BACKGROUND).ok_or("title: no background picture")?;
     let x64 = root.join("Data/x64");
-    let still_bytes = std::fs::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| std::fs::read(x64.join(&still.folder).join(&still.file)))?;
+    let still_bytes = barrel_files::read(x64.join(format!("{}_EN", still.folder)).join(&still.file)).or_else(|_| barrel_files::read(x64.join(&still.folder).join(&still.file)))?;
     let still_g1t = barrel_formats::g1t::G1t::parse(&still_bytes)?;
     let hero_nodes = barrel_escha::data::layout::placed(&pe, crate::hero::LAYOUT);
     // The hero choice's confirming line, from the system messages.
-    let sys_mess = std::fs::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| barrel_escha::data::sys_text::sys_mess(&t)).unwrap_or_default();
+    let sys_mess = barrel_files::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok()).map(|t| barrel_escha::data::sys_text::sys_mess(&t)).unwrap_or_default();
     let question = sys_mess.get(crate::hero::QUESTION_ROW).map_or_else(|| "Do you want to use this character?".to_string(), |m| m.text.clone());
     let load_nodes = barrel_escha::data::layout::placed(&pe, crate::loadlist::LAYOUT);
     let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("title: no glyph table")?;
-    let atlas_bytes = std::fs::read(x64.join("Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas_bytes = barrel_files::read(x64.join("Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("title: an empty font atlas")?.width as f32 };
     // The sprites' pictures (every state of both screens), each pack read once.
@@ -295,7 +295,7 @@ pub fn run(
     let mut packs: Vec<(String, Vec<u8>)> = Vec::new();
     for (name, _) in &keys_needed {
         if !packs.iter().any(|(n, _)| n == name) {
-            let bytes = std::fs::read(x64.join("WinXls_EN").join(name)).or_else(|_| std::fs::read(x64.join("WinXls").join(name)))?;
+            let bytes = barrel_files::read(x64.join("WinXls_EN").join(name)).or_else(|_| barrel_files::read(x64.join("WinXls").join(name)))?;
             packs.push((name.clone(), bytes));
         }
     }

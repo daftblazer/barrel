@@ -293,7 +293,7 @@ mod point_tests {
     #[ignore = "needs the game's executable (BARREL_EXE)"]
     fn arrivals_match_the_live_reads() {
         let Ok(path) = std::env::var("BARREL_EXE") else { return };
-        let exe = std::fs::read(path).unwrap();
+        let exe = barrel_files::read(path).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
         let all = super::arrivals(&pe, super::ARRIVALS_EN).unwrap();
         assert_eq!((all[0].map, all.last().unwrap().map), (0, 107));
@@ -306,7 +306,7 @@ mod point_tests {
     #[ignore = "needs the game's executable (BARREL_EXE)"]
     fn the_southern_ruins_places_link_up() {
         let Ok(path) = std::env::var("BARREL_EXE") else { return };
-        let exe = std::fs::read(path).unwrap();
+        let exe = barrel_files::read(path).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
         let all = super::places(&pe, super::PLACES_EN).unwrap();
         assert_eq!((all[0].name.as_str(), all[0].tag.as_str()), ("Colseit", "T0"));

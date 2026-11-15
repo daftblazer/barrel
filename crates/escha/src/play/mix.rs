@@ -140,10 +140,10 @@ pub fn run(
     keys: &[Button],
     out: Option<&Path>,
 ) -> Result<Option<(usize, Vec<usize>)>> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("synthesis: no glyph table")?;
-    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("synthesis: an empty font atlas")?.width as f32 };
     let desk: Vec<Element> = barrel_escha::data::layout::placed(&pe, crate::menu::BACKGROUND).iter().map(Element::stored).collect();

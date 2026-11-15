@@ -117,6 +117,28 @@ impl Pak {
     }
 }
 
+/// Fills `buf` from `offset` without moving the file's position (`pread`; on Windows a
+/// `seek_read` loop, which moves it: the archive's one reader is not shared across threads there).
+fn read_exact_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        file.read_exact_at(buf, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let mut done = 0;
+        while done < buf.len() {
+            match file.seek_read(&mut buf[done..], offset + done as u64)? {
+                0 => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+                n => done += n,
+            }
+        }
+        Ok(())
+    }
+}
+
 /// An archive file opened for reading: its table, and its entries read from it on demand
 /// (positional reads: no seeking, so a shared reference reads).
 pub struct Archive {
@@ -129,7 +151,7 @@ impl Archive {
     pub fn open(path: &std::path::Path) -> Result<Archive, String> {
         use std::io::Read;
         let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
-        let mut file = std::fs::File::open(path).map_err(|e| err(&e))?;
+        let mut file = barrel_files::open(path).map_err(|e| err(&e))?;
         let mut header = [0u8; 16];
         file.read_exact(&mut header).map_err(|e| err(&e))?;
         let size = Pak::table_size(&header).map_err(|e| err(&e))?;
@@ -142,9 +164,8 @@ impl Archive {
 
     /// An entry's data, unscrambled.
     pub fn read(&self, entry: &Entry) -> std::io::Result<Vec<u8>> {
-        use std::os::unix::fs::FileExt;
         let mut data = vec![0u8; entry.size as usize];
-        self.file.read_exact_at(&mut data, entry.offset)?;
+        read_exact_at(&self.file, &mut data, entry.offset)?;
         self.pak.unscramble(entry, 0, &mut data);
         Ok(data)
     }
@@ -159,11 +180,13 @@ pub struct Archives {
 }
 
 impl Archives {
-    /// Every `*.PAK` in `data` (an install's `Data` folder).
+    /// Every `*.PAK` in `data` (an install's `Data` folder), through the layered files.
     pub fn open_dir(data: &std::path::Path) -> Result<Archives, String> {
-        let mut paths: Vec<_> = std::fs::read_dir(data)
+        // The names in the layers' `Data` folders: a mod's archive of another name is one more.
+        let mut paths: Vec<_> = barrel_files::list(data)
             .map_err(|e| format!("{}: {e}", data.display()))?
-            .filter_map(|e| e.ok().map(|e| e.path()))
+            .into_iter()
+            .map(|n| data.join(n))
             .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("pak")))
             .collect();
         paths.sort();

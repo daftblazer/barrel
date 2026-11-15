@@ -768,7 +768,7 @@ mod tests {
     fn the_openings_chain() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
         let root = std::path::Path::new(&root);
-        let read = |p: &str| std::fs::read(root.join(p)).unwrap();
+        let read = |p: &str| barrel_files::read(root.join(p)).unwrap();
         let checks = crate::data::event_check::parse(&read("Event/eventCheck/EventCheckDataAll.ecd")).unwrap();
         let process = crate::data::event_process::parse(&read("Event/eventprocess/EventProcessDataAll.epd")).unwrap();
         let exe = read("Atelier_Escha_and_Logy_EN.exe");

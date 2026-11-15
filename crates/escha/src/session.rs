@@ -1252,7 +1252,7 @@ mod tests {
         let game = var("BARREL_GAME_SAVE", format!("{root}/drive_c/users/player/Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/GAMEDATA00.pcsave"));
         let text = var("BARREL_TEXT_SAVE", format!("{root}/saves/barrel-user.save"));
         let exe = var("BARREL_EXE", format!("{root}/game/Atelier_Escha_and_Logy_EN.exe"));
-        let (Ok(game), Ok(text), Ok(exe)) = (std::fs::read(&game), std::fs::read_to_string(&text), std::fs::read(&exe)) else {
+        let (Ok(game), Ok(text), Ok(exe)) = (barrel_files::read(&game), std::fs::read_to_string(&text), barrel_files::read(&exe)) else {
             eprintln!("skipped: the game save, the text save or the executable is not there");
             return;
         };

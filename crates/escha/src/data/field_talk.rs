@@ -114,7 +114,7 @@ mod tests {
     #[ignore = "needs the game's executable (BARREL_EXE)"]
     fn the_tables_read() {
         let Ok(path) = std::env::var("BARREL_EXE") else { return };
-        let exe = std::fs::read(path).unwrap();
+        let exe = barrel_files::read(path).unwrap();
         let talk = read(&Pe::parse(&exe).unwrap()).unwrap();
         assert_eq!((talk.groups.len(), talk.lines.len()), (84, 480));
         let l = &talk.lines[5];

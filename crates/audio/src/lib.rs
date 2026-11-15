@@ -367,8 +367,8 @@ impl Library {
         let bank = clip / 1000 * 1000;
         let path = self.sound.join(&self.voices).join(format!("Series{bank:04}.fpl"));
         let entry = self.banks.entry(bank).or_insert_with(|| {
-            let list = barrel_formats::voice::list(&std::fs::read(&path).ok()?).ok()?;
-            Some((list, std::fs::read(path.with_extension("fp")).ok()?))
+            let list = barrel_formats::voice::list(&barrel_files::read(&path).ok()?).ok()?;
+            Some((list, barrel_files::read(path.with_extension("fp")).ok()?))
         });
         let (list, fp) = entry.as_ref()?;
         let (off, size) = list.get((clip - bank) as usize).copied().flatten()?;
@@ -383,8 +383,8 @@ impl Library {
             0..=127 => {
                 let sound = &self.sound;
                 let bank = self.effects.get_or_insert_with(|| {
-                    let wb2 = std::fs::read(sound.join("SE/A15_bank_se.wb2")).ok()?;
-                    let sounds = barrel_formats::kwb::sounds(&std::fs::read(sound.join("SE/A15_bank_se.wh2")).ok()?, wb2.len()).ok()?;
+                    let wb2 = barrel_files::read(sound.join("SE/A15_bank_se.wb2")).ok()?;
+                    let sounds = barrel_formats::kwb::sounds(&barrel_files::read(sound.join("SE/A15_bank_se.wh2")).ok()?, wb2.len()).ok()?;
                     Some((sounds.into_iter().map(|b| b.first().copied()).collect(), wb2))
                 });
                 let (blocks, wb2) = bank.as_ref()?;
@@ -393,7 +393,7 @@ impl Library {
                 Some(Effect::Clip(Arc::new(Sound { rate: block.rate, channels })))
             }
             128..=151 => {
-                let kovs = std::fs::read(self.sound.join("SE/env").join(format!("{}.kvs", AMBIENCE[(n - 128) as usize]))).ok()?;
+                let kovs = barrel_files::read(self.sound.join("SE/env").join(format!("{}.kvs", AMBIENCE[(n - 128) as usize]))).ok()?;
                 let looping = barrel_formats::voice::looping(&kovs).ok()?;
                 let stream = barrel_formats::vorbis::Stream::open(&barrel_formats::voice::ogg(&kovs).ok()?).ok()?;
                 Some(Effect::Stream(stream, (!looping.once).then_some(u64::from(looping.start))))
@@ -404,7 +404,7 @@ impl Library {
 
     pub fn music(&self, track: u32) -> Option<Music> {
         let t = self.tracks.get(track as usize)?;
-        let kovs = std::fs::read(self.sound.join("BGM").join(&t.file)).ok()?;
+        let kovs = barrel_files::read(self.sound.join("BGM").join(&t.file)).ok()?;
         let looping = barrel_formats::voice::looping(&kovs).ok()?;
         let stream = barrel_formats::vorbis::Stream::open(&barrel_formats::voice::ogg(&kovs).ok()?).ok()?;
         Some(Music { stream, volume: t.volume, loop_from: (!looping.once).then_some(u64::from(looping.start)) })
@@ -459,7 +459,7 @@ mod tests {
     #[ignore]
     fn streams_like_clips() {
         let Ok(path) = std::env::var("BARREL_KVS") else { return };
-        let kovs = std::fs::read(path).unwrap();
+        let kovs = barrel_files::read(path).unwrap();
         let ogg = barrel_formats::voice::ogg(&kovs).unwrap();
         let start = u64::from(barrel_formats::voice::looping(&kovs).unwrap().start);
         let clip = Arc::new(Sound::from_ogg(&ogg).unwrap());

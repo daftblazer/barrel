@@ -58,9 +58,9 @@ mod mix;
 /// texture packs beside the model containers).
 fn entry_bytes(spec: &str) -> Result<Vec<u8>> {
     let Some((file, n)) = spec.rsplit_once('#') else {
-        return Ok(std::fs::read(spec)?);
+        return Ok(barrel_files::read(spec)?);
     };
-    let bytes = std::fs::read(file)?;
+    let bytes = barrel_files::read(file)?;
     let e = Elixir::parse(&bytes)?;
     let entry = e.entries.get(n.parse::<usize>()?).ok_or("no such entry")?;
     Ok(e.data(entry).to_vec())
@@ -76,7 +76,7 @@ const WINDOW_GRACE: f32 = 0.6;
 
 /// The music tracks compiled into the English executable (none if it cannot be read).
 fn music_tracks(root: &Path) -> Vec<barrel_escha::data::bgm::Track> {
-    std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+    barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
         .ok()
         .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().and_then(|pe| barrel_escha::data::bgm::tracks(&pe, barrel_escha::data::bgm::TRACKS_EN)))
         .unwrap_or_default()
@@ -103,7 +103,7 @@ fn cauldron(
         eprintln!("the cauldron is in the Atelier");
         return Ok(());
     }
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let book = barrel_escha::cauldron::Book::load(&exe, root)?;
     let Some((r, picks)) = mix::run(gpu, pool, target, window, offscreen, root, &book, &s.basket, keys, out)? else {
         eprintln!("frame {frame}: synthesis: nothing made");
@@ -138,12 +138,12 @@ fn shop_visit(
         eprintln!("the shops are in town");
         return Ok(());
     }
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let book = barrel_escha::cauldron::Book::load(&exe, root)?;
     let (tags, _) = pe.enum_names("ITEM_MIX_CRAFT").ok_or("no ITEM_* enum")?;
     let item_number = |tag: &str| tags.iter().position(|t| *t == tag).map(|n| n as i32);
-    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/shop/ShopData.xml"))?)?;
+    let table = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/shop/ShopData.xml"))?)?;
     let wares = barrel_escha::shop::wares(&table);
     let on_sale: Vec<&barrel_escha::shop::Ware> = wares.iter().filter(|w| barrel_escha::shop::on_sale(w, |e| s.event_seen(e)) && item_number(&w.item).is_some()).collect();
     let mut shops: Vec<&str> = on_sale.iter().map(|w| w.shop.as_str()).collect();
@@ -153,7 +153,7 @@ fn shop_visit(
         return Ok(());
     };
     let shown: Vec<&barrel_escha::shop::Ware> = on_sale.into_iter().filter(|w| w.shop == shop).collect();
-    let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let item_rows = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let cost = |item: i32| usize::try_from(item).ok().and_then(|i| item_rows.children.get(i)).and_then(|r| r.attr("cost")).and_then(|v| v.trim().parse().ok()).unwrap_or(0);
     let basket: Vec<(String, f32, i32)> = s.basket.iter().map(|g| (book.name(g.item).to_string(), g.quality, barrel_escha::synthesis::worth(cost(g.item), g.quality, &[]))).collect();
     let name = shown.first().map_or(shop.to_string(), |w| w.shop_name.clone());
@@ -194,9 +194,9 @@ fn equip_visit(
     frame: u32,
 ) -> Result<()> {
     let Some(s) = session else { return Ok(()) };
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let book = barrel_escha::cauldron::Book::load(&exe, root)?;
-    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let table = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let items: Vec<barrel_escha::equipment::ItemRow> = table.children.iter().map(barrel_escha::equipment::ItemRow::from_row).collect();
     let name = |item: i32| if item < 0 { "(none)".to_string() } else { book.name(item).to_string() };
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
@@ -317,11 +317,11 @@ fn mark_state(name: &str) -> Option<bool> {
 impl AreaMap {
     fn new(wmap: &Path, pos: [f32; 3], world: bool, gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass) -> Result<AreaMap> {
         let root = wmap.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("not inside a game install")?;
-        let pe_bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let pe_bytes = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&pe_bytes)?;
         let places = barrel_escha::data::world::places(&pe, barrel_escha::data::world::PLACES_EN).ok_or("no place table")?;
         let routes = barrel_escha::data::world::areas(&pe, barrel_escha::data::world::AREAS_EN).ok_or("no route table")?.into_iter().map(|a| a.id).collect();
-        let bytes = std::fs::read(wmap.join("A15_WMAP.elixir.gz"))?;
+        let bytes = barrel_files::read(wmap.join("A15_WMAP.elixir.gz"))?;
         let container = Elixir::parse(&bytes)?;
         let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the world map has no placements")?;
         let placements = barrel_formats::opl2::parse(container.data(entry))?;
@@ -341,7 +341,7 @@ impl AreaMap {
             })
             .ok_or("no place on the world map")?;
         let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("no glyph table")?;
-        let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+        let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
         let atlas = G1t::parse(&atlas_bytes)?;
         let image = atlas.textures.first().ok_or("an empty font atlas")?;
         let font = text::Font { glyphs, size: image.width as f32 };
@@ -370,7 +370,7 @@ impl AreaMap {
         drop(images);
         let trips = if world { barrel_escha::travel::WorldMap::load(&pe, &placements) } else { None };
         let gathering = barrel_escha::gather::Gathering::load(root).map_err(|e| eprintln!("area map: no gathering tables: {e}")).ok();
-        let item_names = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
+        let item_names = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/itemData.xml"))?)?.children.iter().map(|r| r.attr("ItemName").unwrap_or("?").to_string()).collect();
         use barrel_escha::data::battle_data as bd;
         let field_enemies = bd::field_enemies(&pe, bd::FIELD_ENEMIES_BUILDER_EN).unwrap_or_default();
         let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
@@ -695,7 +695,7 @@ type FieldHud = (text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::l
 fn field_hud_layer(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, exe: &[u8], root: &Path, area_mode: bool) -> Option<FieldHud> {
     let pe = barrel_formats::pe::Pe::parse(exe).ok()?;
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN)?;
-    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
+    let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
     let mut nodes = barrel_escha::data::layout::placed(&pe, hud::FIELD_HUD);
     if area_mode {
@@ -706,7 +706,7 @@ fn field_hud_layer(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, exe: 
     for (name, _) in &keys {
         if !packs.iter().any(|(n, _)| n == name) {
             let x64 = root.join("Data/x64");
-            match std::fs::read(x64.join("WinXls_EN").join(name)).or_else(|_| std::fs::read(x64.join("WinXls").join(name))) {
+            match barrel_files::read(x64.join("WinXls_EN").join(name)).or_else(|_| barrel_files::read(x64.join("WinXls").join(name))) {
                 Ok(bytes) => packs.push((name.clone(), bytes)),
                 Err(e) => eprintln!("HUD: {name}: {e}"),
             }
@@ -730,7 +730,7 @@ fn field_hud_layer(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, exe: 
 /// 241 for Logy: the one the game showed after a wipe; row 61, Escha's other, presumably
 /// after a wipe in the Atelier's own fights), as (name, text).
 fn wipe_line(root: &Path, logy: bool) -> Option<(String, String)> {
-    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok()?).ok()?;
+    let table = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/systemMessage/SysMess.xml")).ok()?).ok()?;
     let text = table.children.get(if logy { 241 } else { 240 })?.attr("Text")?.to_string();
     Some((if logy { "Logy" } else { "Escha" }.to_string(), text))
 }
@@ -860,7 +860,7 @@ fn add_body<F>(
     // Rows with Directory "Obj" (the map cursors) keep their models in `Data/x64/Obj`.
     let folder = if row.attr("Directory") == Some("Obj") { "Data/x64/Obj" } else { "Data/x64/Character" };
     let path = root.join(folder).join(format!("{model}.elixir.gz"));
-    let Ok(bytes) = std::fs::read(&path) else { return Ok(None) };
+    let Ok(bytes) = barrel_files::read(&path) else { return Ok(None) };
     let container = Elixir::parse(&bytes)?;
     let stem = model.rsplit('/').next().unwrap_or(model);
     let (Some(mesh), Some(tex)) = (named(&container, &format!("{stem}_default.g1m")), named(&container, &format!("{stem}.g1t"))) else {
@@ -913,7 +913,7 @@ fn add_body<F>(
     for (stem_a, node, adjust) in wear.map_or(&[][..], |w| &w.accessories[..]) {
         let (Some((skeleton, ..)), Some(j)) = (rig.as_ref(), joints.as_ref()) else { break };
         let joint = names.iter().position(|n| n == node);
-        let acc_bytes = std::fs::read(root.join("Data/x64/Accessory").join(format!("{stem_a}.elixir.gz"))).ok();
+        let acc_bytes = barrel_files::read(root.join("Data/x64/Accessory").join(format!("{stem_a}.elixir.gz"))).ok();
         let acc = acc_bytes.as_deref().and_then(|b| Elixir::parse(b).ok());
         let (Some(joint), Some(acc)) = (joint, acc) else { continue };
         let (Some(mesh), Some(atex)) = (named(&acc, &format!("{stem_a}_MODEL.g1m")), named(&acc, &format!("{stem_a}_MODEL.g1t"))) else { continue };
@@ -942,13 +942,13 @@ fn add_body<F>(
 /// `AccessoryAdjust` row: offset, then the rotation in degrees about x, y, z, then the scale).
 fn outfit(root: &Path, body: usize, head: usize, face: usize) -> Result<Option<(String, Wear)>> {
     use barrel_escha::data::costume as c;
-    let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join("Saves/costume").join(n))?)?) };
+    let table = |n: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join("Saves/costume").join(n))?)?) };
     let bodies = c::bodies(&table("CostumeBody.xml")?);
     let Some(b) = bodies.get(body) else { return Ok(None) };
     let adjusts = c::adjusts(&table("AccessoryAdjust.xml")?);
     let (changes, hides) = (c::changes(&table("AccessoryChange.xml")?), c::hides(&table("PartsInvisible.xml")?));
     // The body's tag: the `COSTUME_BODY_*` name of its row, in the executable's enum order.
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let body_tag = pe
         .enum_names("COSTUME_BODY_ESCHA_DEFAULT")
@@ -981,7 +981,7 @@ fn outfit(root: &Path, body: usize, head: usize, face: usize) -> Result<Option<(
 /// is row 11 (`battle_data::party_size`).
 fn saved_costumes(root: &Path, sys: &Path) -> Result<Vec<(u32, usize, usize, usize)>> {
     use barrel_escha::data::costume as c;
-    let state = barrel_escha::data::save::decode(&std::fs::read(sys)?)?;
+    let state = barrel_escha::data::save::decode(&barrel_files::read(sys)?)?;
     let records = barrel_escha::data::save::state_records(&state)?;
     fn find<'a>(rs: &'a [barrel_escha::data::save::Record<'a>], name: &str) -> Option<&'a [u8]> {
         use barrel_escha::data::save::Body;
@@ -992,8 +992,8 @@ fn saved_costumes(root: &Path, sys: &Path) -> Result<Vec<(u32, usize, usize, usi
         })
     }
     let choices = find(&records, "costumeData").map(c::choices).unwrap_or_default();
-    let charas = c::charas(&barrel_formats::table::parse(&std::fs::read(root.join("Saves/costume/CostumeChara.xml"))?)?);
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let charas = c::charas(&barrel_formats::table::parse(&barrel_files::read(root.join("Saves/costume/CostumeChara.xml"))?)?);
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let names: Vec<&str> = pe.enum_names("CHARA_ESCHA").map(|(n, first)| n[first..].iter().copied().take_while(|x| x.starts_with("CHARA_")).collect()).unwrap_or_default();
     let mut out = Vec::new();
@@ -1065,13 +1065,13 @@ impl TownBody {
 const MOTION_BLEND: f32 = 0.15;
 
 fn town_people(root: &Path, field_dir: &Path, seen: Option<Vec<bool>>, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, Option<[f32; 3]>, Vec<TownBody>)> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let dir_name = field_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let map = barrel_escha::data::maps::field_maps(&pe).iter().position(|n| n == dir_name).ok_or("--town-people: the field's map number is not known")? as i32;
     let is_seen = |e: &i32| seen.as_ref().and_then(|s| usize::try_from(*e).ok().and_then(|e| s.get(e))).copied().unwrap_or(false);
     let holds = |c: &i32| barrel_escha::data::npc::condition(&pe, *c).is_some_and(|(want, not)| want.iter().all(is_seen) && !not.iter().any(is_seen));
-    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let table = |name: &str| barrel_files::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     let mut placed: Vec<i32> = Vec::new();
     let (mut packs, mut tex_base, mut first, mut bodies) = (Vec::new(), base, None, Vec::new());
@@ -1180,7 +1180,7 @@ struct Walker {
 fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut Scene, base: usize) -> Result<(Vec<Vec<u8>>, [f32; 3], TownBody, Walker)> {
     let name = field_dir.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
     // The map's gimmicks from the executable's table (its doors lead to other maps).
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let maps = barrel_escha::data::maps::field_maps(&pe);
     let map = maps.iter().position(|n| n == name);
@@ -1195,7 +1195,7 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
     let ground = &field.ground;
     // Dropped from high above onto whatever is under her.
     let y = ground.height(at[0], at[1], 1.0e6, 0.0).ok_or("--player: no ground there")?;
-    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let table = |name: &str| barrel_files::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     // The lead: Escha (`Chara.xml` row 0), or Logy (row 1) with `BARREL_LEAD=logy`.
     let row = charas
@@ -1222,10 +1222,10 @@ fn player(root: &Path, field_dir: &Path, at: [f32; 2], logy: bool, scene: &mut S
 /// install and the world map field in `field`.
 fn world_trip(field: &Path, from: &str, to: &str) -> Result<Vec<[f32; 3]>> {
     let root = field.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the field is not inside a game install")?;
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let stem = field.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
-    let bytes = std::fs::read(field.join(format!("{stem}.elixir.gz")))?;
+    let bytes = barrel_files::read(field.join(format!("{stem}.elixir.gz")))?;
     let container = Elixir::parse(&bytes)?;
     let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the field has no placements")?;
     let placements = barrel_formats::opl2::parse(container.data(entry))?;
@@ -1237,7 +1237,7 @@ fn world_trip(field: &Path, from: &str, to: &str) -> Result<Vec<[f32; 3]>> {
 /// its tagged placement (`barrel_escha::data::world::point_position`).
 fn world_point(field: &Path, name: &str) -> Result<[f32; 3]> {
     let stem = field.file_name().and_then(|n| n.to_str()).ok_or("no field name")?;
-    let bytes = std::fs::read(field.join(format!("{stem}.elixir.gz")))?;
+    let bytes = barrel_files::read(field.join(format!("{stem}.elixir.gz")))?;
     let container = Elixir::parse(&bytes)?;
     let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the field has no placements")?;
     let placements = barrel_formats::opl2::parse(container.data(entry))?;
@@ -1289,7 +1289,7 @@ fn area_point(root: &Path, map: u32) -> Result<Option<(String, [f32; 2])>> {
     if (map as usize) < barrel_escha::data::gimmick::TOWN_MAPS {
         return Ok(None);
     }
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let names = barrel_escha::data::world::point_names(&pe).unwrap_or_default();
     let Some(point) = barrel_escha::data::world::point_maps(&pe).unwrap_or_default().into_iter().find(|(_, m, _)| *m == map).and_then(|(p, _, _)| names.get(p as usize).cloned()) else {
@@ -1304,10 +1304,10 @@ fn area_point(root: &Path, map: u32) -> Result<Option<(String, [f32; 2])>> {
 /// opens with the place to arrive at there (field units): the field's record in the arrival
 /// table (`world::arrivals`), else its own world-map exit (`WORLDMAP_CHANGE_EX`).
 fn world_exit_trip(root: &Path, from_map: u32, to: &str) -> Result<(barrel_escha::travel::WorldMap, String, u32, [f32; 2], Option<f32>)> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let wmap = root.join("Data/x64/Field/A15_WMAP");
-    let bytes = std::fs::read(wmap.join("A15_WMAP.elixir.gz"))?;
+    let bytes = barrel_files::read(wmap.join("A15_WMAP.elixir.gz"))?;
     let container = Elixir::parse(&bytes)?;
     let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the world map has no placements")?;
     let placements = barrel_formats::opl2::parse(container.data(entry))?;
@@ -1340,13 +1340,13 @@ fn party_defaults(exe: &[u8]) -> Vec<barrel_escha::data::battle_data::PartyDefau
 
 /// The battle tables for field encounters (`barrel_escha::auto_battle`).
 fn battle_tables(root: &Path) -> Result<barrel_escha::auto_battle::Tables> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
-    let effects = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/item_effect.xml"))?)?;
-    let chara = std::fs::read(root.join("Saves/chara/Chara.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
-    let items = std::fs::read(root.join("Saves_EN/item/itemData.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let effects = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/item_effect.xml"))?)?;
+    let chara = barrel_files::read(root.join("Saves/chara/Chara.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let items = barrel_files::read(root.join("Saves_EN/item/itemData.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let tables = barrel_escha::auto_battle::Tables::load(&pe, &effects, chara.as_ref(), items.as_ref())?;
-    let potential = std::fs::read(root.join("Saves_EN/item/item_potential.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let potential = barrel_files::read(root.join("Saves_EN/item/item_potential.xml")).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     Ok(match potential {
         Some(p) => tables.with_traits(&p),
         None => tables,
@@ -1382,10 +1382,10 @@ struct BattleHud {
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("battle HUD: no glyph table")?;
-    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = G1t::parse(&atlas_bytes)?;
     let nodes = barrel_escha::data::layout::placed(&pe, battlehud::LAYOUT);
     // Every picture it may show: each member's portrait, the bars.
@@ -1501,7 +1501,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
     let monsters: Vec<usize> = drawn.iter().map(|d| d.0).collect();
     // Fought a member's command at a time (`fight_commanded`): up to the first member turn.
     let (outcome, turn) = barrel_escha::auto_battle::fight_commanded(&tables, &party, &monsters, rng, &[])?;
-    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let table = |name: &str| barrel_files::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     let base_row = |chara: usize| charas.children.get(chara)?.attr("BaseTag").and_then(|tag| bases.children.iter().find(|b| b.attr("BaseTag") == Some(tag)));
     let at = |p: [f32; 3]| [BATTLE_CENTRE[0] + p[0], BATTLE_CENTRE[1] + p[1], BATTLE_CENTRE[2] + p[2]];
@@ -1539,11 +1539,11 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
                 barrel_formats::chara_div::read(&t, &mut divisions);
             }
         }
-        let motion_names = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+        let motion_names = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
             .ok()
             .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::gesture::motions(&pe)))
             .unwrap_or_default();
-        let curves = std::fs::read(root.join("Saves/curve/curve_data.xml"))
+        let curves = barrel_files::read(root.join("Saves/curve/curve_data.xml"))
             .ok()
             .and_then(|b| barrel_formats::table::parse(&b).ok())
             .map(|t| barrel_engine::curve::Curve::table(&t))
@@ -1870,7 +1870,7 @@ impl BattlePlay {
         }).filter(|&w| self.fighters.get(w).and_then(Option::as_ref).is_some_and(|f| !f.down)).or_else(|| (0..self.charas.len()).find(|&k| self.fighters.get(k).and_then(Option::as_ref).is_some_and(|f| !f.down))) else { return };
         let Some(f) = self.fighters.get(who).and_then(Option::as_ref) else { return };
         let Some(tag) = self.scenes.tags.get(f.chara).cloned() else { return };
-        let Ok(bytes) = std::fs::read(self.scenes.root.join(format!("Event/skill/SKILL_COMMON_SYSTEM_WIN_{tag}_01.ebd"))) else { return };
+        let Ok(bytes) = barrel_files::read(self.scenes.root.join(format!("Event/skill/SKILL_COMMON_SYSTEM_WIN_{tag}_01.ebd"))) else { return };
         let Ok(event) = barrel_formats::ebd::Ebd::parse(&bytes) else { return };
         let me = Cast { position: f.place, facing: f.facing, measures: self.scenes.measures.get(&(f.chara as u32)).copied() };
         let length = self.motion_lengths(who, &event, WINNER);
@@ -2005,7 +2005,7 @@ impl BattlePlay {
         if !self.scenes.on {
             return;
         }
-        let Ok(bytes) = std::fs::read(self.scenes.root.join("Event/skill/SKILL_COMMON_SYSTEM_START_CAM_01.ebd")) else { return };
+        let Ok(bytes) = barrel_files::read(self.scenes.root.join("Event/skill/SKILL_COMMON_SYSTEM_START_CAM_01.ebd")) else { return };
         let Ok(event) = barrel_formats::ebd::Ebd::parse(&bytes) else { return };
         let nobody = Cast { position: BATTLE_CENTRE, facing: 0.0, measures: None };
         let Ok(barrel_escha::skill_scene::Scene { frames, .. }) = barrel_escha::skill_scene::play(&event, nobody, nobody, &self.scenes.curves, None, 10.0, BATTLE_CENTRE) else { return };
@@ -2021,7 +2021,7 @@ impl BattlePlay {
     /// when a monster does.
     fn scene_of(&mut self, who: usize, target: usize, name: &str) -> Option<ActionScene> {
         use barrel_escha::skill_scene::{Cast, ACTOR};
-        let bytes = std::fs::read(self.scenes.root.join("Event").join(name)).ok()?;
+        let bytes = barrel_files::read(self.scenes.root.join("Event").join(name)).ok()?;
         let event = barrel_formats::ebd::Ebd::parse(&bytes).ok()?;
         let t = self.fighters.get(target)?.as_ref()?;
         let (t_place, t_chara) = (t.place, t.chara);
@@ -2543,14 +2543,14 @@ fn party_spot_of(k: usize) -> [f32; 3] {
 }
 
 fn field_creatures(root: &Path, area: i32, scene: &mut Scene, base: usize) -> Result<(barrel_escha::field_ai::Field, Vec<FieldBody>, Vec<Vec<u8>>, Vec<String>, [f64; 3])> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let script = |name: &str| -> std::result::Result<Vec<barrel_engine::squirrel::Stmt>, String> {
-        let bytes = std::fs::read(root.join("Script").join(format!("{name}.nut"))).map_err(|e| format!("{name}: {e}"))?;
+        let bytes = barrel_files::read(root.join("Script").join(format!("{name}.nut"))).map_err(|e| format!("{name}: {e}"))?;
         let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
         barrel_engine::squirrel::parse(&text).map_err(|e| format!("{name}: {e}"))
     };
-    let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+    let table = |name: &str| barrel_files::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
     let (charas, bases) = (table("Chara.xml").ok_or("no Chara.xml")?, table("CharaBase.xml").ok_or("no CharaBase.xml")?);
     let (field, enemies) = barrel_escha::field_ai::build(&pe, area, script, Some(&charas), Some(&bases))?;
     let groups = barrel_escha::data::battle_data::encounter_groups(&pe, barrel_escha::data::battle_data::ENCOUNTER_GROUPS_EN);
@@ -2650,7 +2650,7 @@ impl Motions {
     /// The head gestures' clip (`<FileHead>_M_HEAD.g1a` in the `Neck` container) and the joints
     /// it turns (more than half a degree anywhere in it): `s116` lays only those over the body.
     fn head_gestures(&self) -> Option<(barrel_formats::g1a::Animation, Vec<usize>)> {
-        let bytes = std::fs::read(self.char_dir.join(format!("{}.elixir.gz", self.neck.as_ref()?))).ok()?;
+        let bytes = barrel_files::read(self.char_dir.join(format!("{}.elixir.gz", self.neck.as_ref()?))).ok()?;
         let c = Elixir::parse(&bytes).ok()?;
         let anim = barrel_formats::g1a::parse(named(&c, &format!("{}_M_HEAD.g1a", self.head))?).ok()?;
         let frames = (anim.duration * 30.0).round() as usize;
@@ -2688,7 +2688,7 @@ impl Motions {
             let anim = self.columns.get(column).cloned().or(base).and_then(|value| {
                 let name = if value.is_empty() { format!("{}.g1a", self.head) } else { format!("{}_{value}.g1a", self.head) };
                 let from = |file: String| -> Option<Vec<u8>> {
-                    let bytes = std::fs::read(self.char_dir.join(file)).ok()?;
+                    let bytes = barrel_files::read(self.char_dir.join(file)).ok()?;
                     let c = Elixir::parse(&bytes).ok()?;
                     named(&c, &name).map(|b| b.to_vec())
                 };
@@ -2718,10 +2718,10 @@ fn event_characters(
     costumes: &[(u32, usize, usize, usize)],
 ) -> Result<(Vec<Vec<u8>>, Option<Vec3>, Option<EventCamera>, Vec<Placement>, Option<f32>, Option<u32>)> {
     use barrel_formats::ebd::{self, Ebd, OperandTable};
-    let event = Ebd::parse(&std::fs::read(event_path)?)?;
+    let event = Ebd::parse(&barrel_files::read(event_path)?)?;
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
     let table = |name: &str| -> Result<barrel_formats::table::Element> {
-        Ok(barrel_formats::table::parse(&std::fs::read(root.join("Saves/chara").join(name))?)?)
+        Ok(barrel_formats::table::parse(&barrel_files::read(root.join("Saves/chara").join(name))?)?)
     };
     let (charas, bases) = (table("Chara.xml")?, table("CharaBase.xml")?);
     // Faces at message line `line`: each speaker's latest expression up to it (the line's
@@ -2734,7 +2734,7 @@ fn event_characters(
     if let Some(n) = line {
         let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
-        let messages = barrel_formats::ebm::parse(&std::fs::read(&ebm)?)?;
+        let messages = barrel_formats::ebm::parse(&barrel_files::read(&ebm)?)?;
         for (i, m) in messages.iter().enumerate().take(n + 1) {
             if m.fields[3] >= 0 {
                 faces.insert(m.speaker, (m.fields[3], false));
@@ -2751,10 +2751,9 @@ fn event_characters(
         }
     }
     // The face and gesture tables (always: a played event changes faces as it goes).
-    for entry in std::fs::read_dir(root)?.flatten() {
-        let p = entry.path();
-        if p.extension().is_some_and(|x| x == "exe") {
-            let bytes = std::fs::read(&p)?;
+    for p in barrel_files::list(root)?.iter().map(|n| root.join(n)) {
+        if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe")) {
+            let bytes = barrel_files::read(&p)?;
             if let Ok(pe) = barrel_formats::pe::Pe::parse(&bytes) {
                 let t = barrel_escha::face::Tables::read(&pe);
                 if !t.brow.is_empty() {
@@ -2810,7 +2809,7 @@ fn event_characters(
         let stem = event_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = event_path.with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
         let english = event_path.strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
-        let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
+        let read_lines = |p: &Path| barrel_files::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
         english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default()
     } else {
         Vec::new()
@@ -2829,7 +2828,7 @@ fn event_characters(
     });
     if let Some(at) = at {
         use barrel_engine::stage::{Measures, Stage, FRAME};
-        let curves = std::fs::read(root.join("Saves/curve/curve_data.xml"))
+        let curves = barrel_files::read(root.join("Saves/curve/curve_data.xml"))
             .ok()
             .and_then(|b| barrel_formats::table::parse(&b).ok())
             .map(|t| barrel_engine::curve::Curve::table(&t))
@@ -2846,11 +2845,7 @@ fn event_characters(
         absent.extend(later.iter().map(|f| f.0));
         first.extend(later);
         // Each character's motion then, by its MOTION_* name (a CharaBase column), and how far in.
-        let names = std::fs::read_dir(root)?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
-            .filter_map(|p| std::fs::read(p).ok())
+        let names = executables(root)
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::gesture::motions(&pe)).filter(|m| !m.is_empty()))
             .unwrap_or_default();
         for (&n, b) in &stage.characters {
@@ -2909,7 +2904,7 @@ fn event_characters(
         let face = |scene: &mut Scene, container: &Elixir, model: &str, stem: &str| -> Result<Option<FaceRig>> {
             let (Some(tables), Some(head), Some(facial)) = (&face_tables, row.attr("FileHead"), row.attr("Facial")) else { return Ok(None) };
             let dir = model.rsplit_once('/').map_or("", |(d, _)| d);
-            let fbytes = std::fs::read(root.join("Data/x64/Character").join(dir).join(format!("{facial}.elixir.gz")));
+            let fbytes = barrel_files::read(root.join("Data/x64/Character").join(dir).join(format!("{facial}.elixir.gz")));
             let (Ok(fbytes), Some(g1h)) = (fbytes, named(container, &format!("{stem}_default.g1h"))) else { return Ok(None) };
             let facials = Elixir::parse(&fbytes)?;
             let mut anims = Vec::new();
@@ -2954,7 +2949,7 @@ fn event_characters(
 /// field"): each field map number and its directory.
 fn event_fields(event_path: &Path) -> Result<Vec<(u32, PathBuf)>> {
     let root = event_path.ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
-    let event = barrel_formats::ebd::Ebd::parse(&std::fs::read(event_path)?)?;
+    let event = barrel_formats::ebd::Ebd::parse(&barrel_files::read(event_path)?)?;
     let steps = barrel_engine::event::Player::new(&event, &[], &barrel_formats::ebd::OperandTable::escha())?.schedule();
     let mut maps: Vec<u32> = Vec::new();
     for t in &steps {
@@ -2966,11 +2961,7 @@ fn event_fields(event_path: &Path) -> Result<Vec<(u32, PathBuf)>> {
     if maps.is_empty() {
         return Err("the event changes to no field; give --field DIR".into());
     }
-    let names = std::fs::read_dir(root)?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "exe"))
-        .filter_map(|p| std::fs::read(p).ok())
+    let names = executables(root)
         .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::data::maps::field_maps(&pe)).filter(|m| !m.is_empty()))
         .unwrap_or_default();
     maps.into_iter()
@@ -3020,9 +3011,9 @@ fn face_weights(anim: &barrel_formats::g1a::Animation, targets: usize, time: f32
 /// ceiling; the ceiling drawn does not cast); `xAM_..._ver<N>` shows in version N only.
 fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, Option<Vec<u8>>)> {
     let area = dir.file_name().ok_or("field directory has no name")?.to_string_lossy().into_owned();
-    let main_bytes = std::fs::read(dir.join(format!("{area}.elixir.gz")))?;
+    let main_bytes = barrel_files::read(dir.join(format!("{area}.elixir.gz")))?;
     let main = Elixir::parse(&main_bytes)?;
-    let obj_bytes = std::fs::read(dir.join(format!("{area}_Obj.elixir.gz")))?;
+    let obj_bytes = barrel_files::read(dir.join(format!("{area}_Obj.elixir.gz")))?;
     let objects = Elixir::parse(&obj_bytes)?;
     let node_sway = |s: &str| s.match_indices("xN").any(|(k, _)| s[k + 2..].chars().next().is_some_and(|c| c.is_ascii_digit()) && s[k + 3..].starts_with('_'));
     let place = |t: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement {
@@ -3120,9 +3111,9 @@ struct Loaded {
 
 /// The story from a new game, over the install at ROOT (`event_start::Chain`).
 fn story_chain(root: &Path) -> Result<barrel_escha::event_start::Chain> {
-    let checks = barrel_escha::data::event_check::parse(&std::fs::read(root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
-    let process = barrel_escha::data::event_process::parse(&std::fs::read(root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let checks = barrel_escha::data::event_check::parse(&barrel_files::read(root.join("Event/eventCheck/EventCheckDataAll.ecd"))?).map_err(|e| e.to_string())?;
+    let process = barrel_escha::data::event_process::parse(&barrel_files::read(root.join("Event/eventprocess/EventProcessDataAll.epd"))?).map_err(|e| e.to_string())?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
     let (names, _) = pe.enum_names("EVENT_MM01_OP1_111").ok_or("no EVENT_* enum")?;
     Ok(barrel_escha::event_start::Chain::new(checks, process, names.iter().map(|n| n.to_string()).collect()))
@@ -3186,7 +3177,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             // Its look, from the table of the same name (Saves/field/<FIELD>.xml), else
             // `--look-from`'s.
             let root = dir.ancestors().find(|p| p.join("Saves").is_dir());
-            let look = |name: &std::ffi::OsStr| root.and_then(|r| std::fs::read(r.join("Saves/field").join(name).with_extension("xml")).ok());
+            let look = |name: &std::ffi::OsStr| root.and_then(|r| barrel_files::read(r.join("Saves/field").join(name).with_extension("xml")).ok());
             let table = dir
                 .file_name()
                 .and_then(look)
@@ -3202,14 +3193,14 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
             // Its distant view (C_SPHERE/<set>, by the executable's table), all in one instance.
             let root = dir.ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
             let set = root.as_ref().and_then(|r| {
-                let exe = std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok()?;
+                let exe = barrel_files::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok()?;
                 let pe = barrel_formats::pe::Pe::parse(&exe).ok()?;
                 let name = dir.file_name()?.to_str()?;
                 barrel_formats::field_look::sky_sets(&pe, barrel_formats::field_look::SKY_SETS_EN).into_iter().find(|(f, _)| f == name).map(|(_, s)| s)
             });
             let mut sky = None;
             if let (Some(root), Some(set)) = (&root, set.filter(|s| !s.starts_with("set-black"))) {
-                let bytes = std::fs::read(root.join("Data/x64/Field/C_SPHERE").join(&set))?;
+                let bytes = barrel_files::read(root.join("Data/x64/Field/C_SPHERE").join(&set))?;
                 let container = Elixir::parse(&bytes)?;
                 let instance = scene.instance(Mat4::IDENTITY);
                 // Drawn without depth, so back to front by kind: the dome, then the clouds
@@ -3330,7 +3321,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let seen = match (&town_seen, town_people_from.as_deref()) {
             (Some(s), _) => Some(s.clone()),
             (None, Some(p)) if p != "all" => {
-                let data = std::fs::read(p)?;
+                let data = barrel_files::read(p)?;
                 let body = barrel_escha::data::save::parse(&data).map_err(|e| format!("{p}: {e}"))?.body;
                 let state = barrel_escha::data::save::decode(body).map_err(|e| format!("{p}: {e}"))?;
                 let sum = barrel_escha::data::save::summary(&barrel_escha::data::save::state_records(&state).map_err(|e| e.to_string())?);
@@ -3391,7 +3382,7 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         // The world map's cursor (CHARA 705, `E3D_WMAP_CUR00`; the map's setup creates it,
         // `0x140383c42`).
         if field_dir.file_name().is_some_and(|n| n == "A15_WMAP") {
-            let table = |name: &str| std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+            let table = |name: &str| barrel_files::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
             let row = table("CharaBase.xml").and_then(|t| t.children.into_iter().find(|r| r.attr("Model").is_some_and(|m| m.ends_with("E3D_WMAP_CUR00"))));
             let base = base + pack_bytes.iter().skip(pack_bytes.len() - packs_len).map(|b| G1t::parse(b).map_or(0, |t| t.textures.len())).sum::<usize>();
             match row.map(|row| add_body(&root, &mut scene, base, &row, 21_001, pos, 0.0, "BASE_MOTION1", None, None, |_, _, _, _| Ok(None::<()>))) {
@@ -3428,6 +3419,12 @@ fn main() -> Result<()> {
             }
         }
     }
+}
+
+/// The programs (`*.exe`) in the install's folder, read in name order: the tables the game keeps
+/// in its executables are found in the first that has them.
+fn executables(root: &Path) -> impl Iterator<Item = Vec<u8>> + '_ {
+    barrel_files::list(root).unwrap_or_default().into_iter().filter(|n| n.to_ascii_lowercase().ends_with(".exe")).filter_map(move |n| barrel_files::read(root.join(n)).ok())
 }
 
 /// How a run of [`view`] ended.
@@ -4014,9 +4011,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let file = load_file.clone().unwrap_or_else(|| PathBuf::from("(carried)"));
         let bytes = match carried_save {
             Some(t) => t.into_bytes(),
-            None => std::fs::read(&file)?,
+            None => barrel_files::read(&file)?,
         };
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         // Barrel's own save or the game's `GAMEDATA<NN>.pcsave`, told apart by its bytes.
         let landmarks = barrel_escha::data::world::Landmarks::from_exe(&barrel_formats::pe::Pe::parse(&exe)?).ok_or("--load: the executable has no places table")?;
         let (s, at) = barrel_escha::session::Session::open(story_chain(&root)?, &bytes, &landmarks)?;
@@ -4071,7 +4068,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // (`--creatures`'s field AI), a town none.
     if session.is_some() && current_event.is_none()
         && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()) {
-            let maps = barrel_escha::data::maps::field_maps(&barrel_formats::pe::Pe::parse(&std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
+            let maps = barrel_escha::data::maps::field_maps(&barrel_formats::pe::Pe::parse(&barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
             let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n));
             creatures_area = here.filter(|&m| m >= barrel_escha::data::gimmick::TOWN_MAPS).map(|m| m as i32);
             // A town map has its people, placed by what the story has seen.
@@ -4116,7 +4113,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // for one (`A15_WMAP`'s tex_filter_world / tex_filter_area).
     if field_looks.iter().flatten().any(|l| l.filter_world.is_some() || l.filter_area.is_some()) {
         if let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()) {
-            let bytes = std::fs::read(root.join("Data/x64/PostEffect/texture/overlay.g1t"))?;
+            let bytes = barrel_files::read(root.join("Data/x64/PostEffect/texture/overlay.g1t"))?;
             let pack = G1t::parse(&bytes)?;
             if let Some(t) = pack.textures.first() {
                 renderer.set_filter(&gpu, t)?;
@@ -4343,7 +4340,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let quakes: Vec<barrel_formats::quake::Quake> = event_spec
         .as_ref()
         .and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf))
-        .and_then(|root| std::fs::read(root.join("Saves/cameraQuake/camera_quake_data.xml")).ok())
+        .and_then(|root| barrel_files::read(root.join("Saves/cameraQuake/camera_quake_data.xml")).ok())
         .and_then(|b| barrel_formats::table::parse(&b).ok())
         .map(|t| barrel_formats::quake::read(&t))
         .unwrap_or_default();
@@ -4351,21 +4348,21 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let mut divisions = barrel_formats::chara_div::Divisions::new();
     // The event is played (up to `--at` and on) even for one frame, so a still shows the state its
     // commands have set by then (objects shown, versions, the camera).
-    let event_file = event_spec.as_ref().map(std::fs::read).transpose()?;
+    let event_file = event_spec.as_ref().map(barrel_files::read).transpose()?;
     let event_data = event_file.as_ref().map(|b| barrel_formats::ebd::Ebd::parse(b)).transpose()?;
     if let (Some(event), Some(e)) = (&event_data, &event_spec) {
         use barrel_engine::stage::{Measures, Playback, Stage};
         let root = Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("event is not inside a game install")?;
-        let xml = |rel: &str| std::fs::read(root.join(rel)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
+        let xml = |rel: &str| barrel_files::read(root.join(rel)).ok().and_then(|b| barrel_formats::table::parse(&b).ok());
         let measures = xml("Saves/chara/Chara.xml").map(|t| Measures::table(&t)).unwrap_or_default();
         let curves = xml("Saves/curve/curve_data.xml").map(|t| barrel_engine::curve::Curve::table(&t)).unwrap_or_default();
         let stem = Path::new(e).file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let ebm = Path::new(e).with_file_name(format!("{}.ebm", stem.replacen("EVENT_", "EVENT_MESSAGE_", 1)));
         // The English lines (Event_EN mirrors Event), else the original's.
         let english = Path::new(e).strip_prefix(root.join("Event")).ok().map(|rel| root.join("Event_EN").join(rel).with_file_name(ebm.file_name().unwrap_or_default()));
-        let read_lines = |p: &Path| std::fs::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
+        let read_lines = |p: &Path| barrel_files::read(p).ok().and_then(|b| barrel_formats::ebm::parse(&b).ok()).filter(|m| !m.is_empty());
         messages = english.as_deref().and_then(read_lines).or_else(|| read_lines(&ebm)).unwrap_or_default();
-        window_names = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+        window_names = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
             .ok()
             .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::data::layout::speaker_names(&pe)))
             .unwrap_or_default();
@@ -4373,15 +4370,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             .or_else(|| xml("Saves/chara/Chara.xml"))
             .map(|t| t.children.iter().map(|c| c.attr("Name").unwrap_or("").to_string()).collect())
             .unwrap_or_default();
-        motion_names = std::fs::read_dir(root)?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
-            .filter_map(|p| std::fs::read(p).ok())
+        motion_names = executables(root)
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::gesture::motions(&pe)).filter(|m| !m.is_empty()))
             .unwrap_or_default();
         for name in ["CharaDiv.xml", "SubCharaDiv.xml"] {
-            if let Some(t) = std::fs::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok()) {
+            if let Some(t) = barrel_files::read(root.join("Saves/chara").join(name)).ok().and_then(|b| barrel_formats::table::parse(&b).ok()) {
                 barrel_formats::chara_div::read(&t, &mut divisions);
             }
         }
@@ -4453,7 +4446,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             .collect();
         // The lines' voices (English): the event's first clip from the executable's table
         // (`voice::first_clips`, by the event's EVENT_* number); line k plays that plus k.
-        let story_voice = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok().and_then(|b| {
+        let story_voice = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok().and_then(|b| {
             let pe = barrel_formats::pe::Pe::parse(&b).ok()?;
             let (names, _) = pe.enum_names("EVENT_MM01_OP1_111")?;
             let event = names.iter().position(|n| *n == stem)?;
@@ -4462,17 +4455,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             Some(clip)
         });
         let mut play = Playback::new(Stage { measures, curves, reading: Some(barrel_engine::event::reading_time), story_voice, ..Stage::default() }, steps);
-        face_tables_play = std::fs::read_dir(root)?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
-            .filter_map(|p| std::fs::read(p).ok())
+        face_tables_play = executables(root)
             .find_map(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::face::Tables::read(&pe)).filter(|t| !t.brow.is_empty()));
-        gestures_play = std::fs::read_dir(root)?
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "exe"))
-            .filter_map(|p| std::fs::read(p).ok())
+        gestures_play = executables(root)
             .find_map(|b| barrel_escha::gesture::read(&b))
             .unwrap_or_default();
         // Frames written to files are not real time: no stall cap (a window keeps it).
@@ -4498,10 +4483,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 sound = Some((Sink::File { capture: barrel_audio::Capture::new(), start, path }, optionpage::mixer(), barrel_audio::Library::new(root, "Voice_EN", music_tracks(root)), None));
             }
         // The event's lines in the game's English font.
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok();
         let glyphs = exe.as_ref().and_then(|b| barrel_formats::pe::Pe::parse(b).ok().and_then(|pe| barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN)));
-        let atlas = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok();
-        let common = std::fs::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok();
+        let atlas = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok();
+        let common = barrel_files::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok();
         let ui = common.as_ref().and_then(|c| barrel_formats::g1t::G1t::parse(c).ok());
         // The narration cards' pieces and their WinXls_EN textures (slots after the font and
         // the window).
@@ -4534,11 +4519,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             .iter()
             .map(|(_, st)| {
                 let x64 = root.join("Data/x64");
-                std::fs::read(x64.join(format!("{}_EN", st.folder)).join(&st.file)).or_else(|_| std::fs::read(x64.join(&st.folder).join(&st.file))).ok()
+                barrel_files::read(x64.join(format!("{}_EN", st.folder)).join(&st.file)).or_else(|_| barrel_files::read(x64.join(&st.folder).join(&st.file))).ok()
             })
             .collect();
         let still_g1t: Vec<Option<barrel_formats::g1t::G1t>> = still_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
-        let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|(n, _)| std::fs::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
+        let sheet_bytes: Vec<Option<Vec<u8>>> = sheet_names.iter().map(|(n, _)| barrel_files::read(root.join("Data/x64/WinXls_EN").join(n)).ok()).collect();
         let sheets: Vec<Option<barrel_formats::g1t::G1t>> = sheet_bytes.iter().map(|b| b.as_ref().and_then(|b| barrel_formats::g1t::G1t::parse(b).ok())).collect();
         match (glyphs, atlas.as_ref().and_then(|a| barrel_formats::g1t::G1t::parse(a).ok()), ui.as_ref().and_then(|u| u.textures.get(4))) {
             (Some(glyphs), Some(g), Some(window)) if !g.textures.is_empty() => {
@@ -4583,7 +4568,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The install, from the field drawn (free play has no event to find it by).
     let hud_root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
     let hud_exe = match &hud_root {
-        Some(r) if session.is_some() && player.is_none() => std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok(),
+        Some(r) if session.is_some() && player.is_none() => barrel_files::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok(),
         _ => None,
     };
     let mut field_hud: Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>, Option<(hud::Values, u32, u32, Option<(bool, bool)>)>)> = None;
@@ -4616,8 +4601,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             let exe = hud_exe.as_ref()?;
             let pe = barrel_formats::pe::Pe::parse(exe).ok()?;
             let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN)?;
-            let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
-            let common_bytes = std::fs::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok()?;
+            let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
+            let common_bytes = barrel_files::read(root.join("Data/x64/WinXls_EN/a15_common.g1t")).ok()?;
             let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
             let common = barrel_formats::g1t::G1t::parse(&common_bytes).ok()?;
             let images = [atlas.textures.first()?, common.textures.get(4)?];
@@ -4698,7 +4683,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     let fade_presets = event_spec
         .as_ref()
         .and_then(|e| Path::new(e).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf))
-        .and_then(|r| std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok())
+        .and_then(|r| barrel_files::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok())
         .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_formats::field_look::fade_presets(&pe, barrel_formats::field_look::FADE_PRESETS_EN)))
         .unwrap_or_default();
     // The start time of the last screen effect seen (a new one starts a cross-fade).
@@ -5184,12 +5169,12 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 let w = walker.as_ref()?;
                 let area = creatures_area?;
                 let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir())?;
-                let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok()?;
+                let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).ok()?;
                 let pe = barrel_formats::pe::Pe::parse(&exe).ok()?;
                 let areas = barrel_escha::data::gimmick::areas(&pe, barrel_escha::data::gimmick::MAPS_EN, barrel_escha::data::gimmick::MAP_COUNT)?;
                 let stage = areas.get(area as usize)?.words[5];
                 let stage_dir = root.join("Data/x64/Field").join(format!("BF_POINT{stage:02}"));
-                if stage < 0 || !stage_dir.is_dir() {
+                if stage < 0 || !barrel_files::is_dir(&stage_dir) {
                     return None;
                 }
                 let save = s.save([w.pos[0], w.pos[2]])?;
@@ -6954,11 +6939,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     if let Some(AreaPick::Travel { from, to }) = area_enter.clone() {
         area_enter = None;
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the world map is not inside a game install")?.to_path_buf();
-        let pe_bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let pe_bytes = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&pe_bytes)?;
         let maps = barrel_escha::data::maps::field_maps(&pe);
         let wmap = root.join("Data/x64/Field/A15_WMAP");
-        let bytes = std::fs::read(wmap.join("A15_WMAP.elixir.gz"))?;
+        let bytes = barrel_files::read(wmap.join("A15_WMAP.elixir.gz"))?;
         let container = Elixir::parse(&bytes)?;
         let entry = container.entries.iter().find(|e| e.name.ends_with(".opl2")).ok_or("the world map has no placements")?;
         let placements = barrel_formats::opl2::parse(container.data(entry))?;
@@ -7006,7 +6991,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             s.visit(a.at);
         }
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the world map is not inside a game install")?.to_path_buf();
-        let pe_bytes = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+        let pe_bytes = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&pe_bytes)?;
         let maps = barrel_escha::data::maps::field_maps(&pe);
         // Entering a sector is a walk into its field (an event may start there, as a door's).
@@ -7045,7 +7030,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         // field's point (the town's leads to the world map itself: not drawn yet).
         if travel_to.is_none()
             && let Some(root) = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf) {
-                let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+                let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
                 let maps = barrel_escha::data::maps::field_maps(&barrel_formats::pe::Pe::parse(&exe)?);
                 let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).map(|h| h as u32);
                 if let Some(h) = here
@@ -7081,7 +7066,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             break 'events;
         };
         let root = Path::new(&args[1]).ancestors().find(|p| p.join("Saves").is_dir()).ok_or("the field is not inside a game install")?.to_path_buf();
-        let maps = barrel_escha::data::maps::field_maps(&barrel_formats::pe::Pe::parse(&std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
+        let maps = barrel_escha::data::maps::field_maps(&barrel_formats::pe::Pe::parse(&barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?)?);
         let here = Path::new(&args[1]).file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).ok_or("this field is not in the map table")? as u32;
         let (map, from, field, arrive, facing) = world_exit_trip(&root, here, &to)?;
         let scene = match session.as_mut() {
@@ -7126,7 +7111,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // In a story's free play the walk may start an event (`Session::walked`): it plays,
             // and free play goes on after it where it leaves the hero.
             let root = next.ancestors().find(|p| p.join("Saves").is_dir()).map(Path::to_path_buf);
-            let maps = root.as_ref().and_then(|r| std::fs::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok()).and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::data::maps::field_maps(&pe))).unwrap_or_default();
+            let maps = root.as_ref().and_then(|r| barrel_files::read(r.join("Atelier_Escha_and_Logy_EN.exe")).ok()).and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::data::maps::field_maps(&pe))).unwrap_or_default();
             let number = |p: &Path| p.file_name().and_then(|n| n.to_str()).and_then(|n| maps.iter().position(|m| m == n)).map(|m| m as u32);
             if let (Some(s), Some(from), Some(to), Some(root)) = (session.as_mut(), number(Path::new(&args[1])), number(&next), root.clone())
                 && let barrel_escha::session::Scene::Event(e) = s.walked(from, to).clone() {
@@ -7153,7 +7138,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         _ => None,
     };
     match next {
-        Some(path) if path.is_file() => {
+        Some(path) if barrel_files::is_file(&path) => {
             eprintln!("{ended} ends: {}", path.display());
             current_event = Some(path.to_string_lossy().into_owned());
             first_event = false;
@@ -7163,7 +7148,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             // Free play: the last event's last field, the hero where the event left them.
             let path = Path::new(current_event.as_deref().unwrap_or_default()).to_path_buf();
             let fields = event_fields(&path)?;
-            let event = barrel_formats::ebd::Ebd::parse(&std::fs::read(&path)?)?;
+            let event = barrel_formats::ebd::Ebd::parse(&barrel_files::read(&path)?)?;
             let steps = barrel_engine::event::Player::new(&event, &[], &barrel_formats::ebd::OperandTable::escha())?.hero(hero).schedule();
             let last = barrel_engine::event::last_field(&steps).and_then(|m| fields.iter().find(|(n, _)| *n == m)).map(|(_, p)| p.clone());
             let at = player.as_ref().and_then(|(play, ..)| play.stage.snapshot().characters.get(&hero).map(|(p, _)| [p[0], p[2]]));
@@ -7179,7 +7164,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             if let (Some((c, root)), Some(map)) = (chain.take(), barrel_engine::event::last_field(&steps)) {
                 // With the calendar (the main generator not known: a fixed seed stands in).
                 let data = barrel_escha::days::Data::load(&root)?;
-                let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+                let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
                 session = Some(barrel_escha::session::Session::in_field(c, map, hero == 1).with_calendar(data, barrel_engine::rng::Rng::seeded(1)).with_party(&party_defaults(&exe)));
             }
             first_event = false;

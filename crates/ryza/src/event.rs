@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn the_openings_telops() {
         let Some(p) = std::env::var_os("BARREL_RYZA_OPENING") else { return };
-        let event = Ebd::parse(&std::fs::read(p).unwrap()).unwrap();
+        let event = Ebd::parse(&barrel_files::read(p).unwrap()).unwrap();
         let at = |t: f32| telop(&stage_at(schedule(&event).unwrap(), t));
         assert_eq!(at(1.9), None);
         let (n, a) = at(2.5).unwrap();

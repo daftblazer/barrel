@@ -537,9 +537,9 @@ mod tests {
     fn the_starting_kit_wins_against_an_ore_rat() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
         let root = std::path::Path::new(&root);
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let pe = Pe::parse(&exe).unwrap();
-        let read = |p: &str| barrel_formats::table::parse(&std::fs::read(root.join(p)).unwrap()).unwrap();
+        let read = |p: &str| barrel_formats::table::parse(&barrel_files::read(root.join(p)).unwrap()).unwrap();
         let (effects, chara, items) = (read("Saves_EN/item/item_effect.xml"), read("Saves/chara/Chara.xml"), read("Saves_EN/item/itemData.xml"));
         let kit = Tables::load(&pe, &effects, Some(&chara), Some(&items)).unwrap();
         let bare = Tables::load(&pe, &effects, Some(&chara), None).unwrap();
@@ -570,9 +570,9 @@ mod tests {
     fn a_carried_item_is_thrown_by_command() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
         let root = std::path::Path::new(&root);
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let pe = Pe::parse(&exe).unwrap();
-        let read = |p: &str| barrel_formats::table::parse(&std::fs::read(root.join(p)).unwrap()).unwrap();
+        let read = |p: &str| barrel_formats::table::parse(&barrel_files::read(root.join(p)).unwrap()).unwrap();
         let (effects, chara, items) = (read("Saves_EN/item/item_effect.xml"), read("Saves/chara/Chara.xml"), read("Saves_EN/item/itemData.xml"));
         let mut t = Tables::load(&pe, &effects, Some(&chara), Some(&items)).unwrap().with_traits(&read("Saves_EN/item/item_potential.xml"));
         // The first battle item thrown at the other side, with a damage effect row.
@@ -613,9 +613,9 @@ mod command_tests {
     #[ignore = "needs the game (BARREL_ROOT)"]
     fn actions_find_their_commands() {
         let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
-        let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
-        let effects = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/item_effect.xml")).unwrap()).unwrap();
+        let effects = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/item_effect.xml")).unwrap()).unwrap();
         let t = super::Tables::load(&pe, &effects, None, None).unwrap();
         for m in 0..11 {
             assert_eq!(t.command_of(m, "Attack"), Some(0), "member {m}");

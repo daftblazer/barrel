@@ -315,14 +315,14 @@ pub fn run(
     keys: &[Button],
     out: Option<&Path>,
 ) -> Result<Option<Settings>> {
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("options: no glyph table")?;
-    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("options: an empty font atlas")?.width as f32 };
     // The game's page: its layouts and its two lines of words.
-    let table = |rel: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
+    let table = |rel: &str| -> Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
     let (sys_info, line_help) = (table("Saves_EN/systemMessage/SysInfo.xml")?, table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
     let layouts = optionpage::Layouts::load(&pe);
     let words = optionpage::Words {

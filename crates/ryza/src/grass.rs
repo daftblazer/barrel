@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn rasenboden() {
         let Some(p) = std::env::var_os("BARREL_RYZA_GRASS") else { return };
-        let g = Grass::parse(&std::fs::read(p).unwrap()).unwrap();
+        let g = Grass::parse(&barrel_files::read(p).unwrap()).unwrap();
         assert_eq!((g.size, g.kinds.len(), g.distance), ([256, 256], 19, 30000));
         assert_eq!(g.cells.iter().filter(|&&c| c != NONE).count(), 1446);
         assert_eq!(g.cells.iter().filter(|&&c| c == 7).count(), 785);

@@ -47,7 +47,7 @@ impl Book {
         let pe = barrel_formats::pe::Pe::parse(exe).map_err(|e| e.to_string())?;
         let (names, first) = pe.enum_names("ITEM_CATEGORY_PLANT").ok_or("no item category enum")?;
         let categories = names[first..].iter().map(|n| n.to_string()).collect();
-        let bytes = std::fs::read(root.join("Saves_EN/item/itemData.xml")).map_err(|e| format!("itemData.xml: {e}"))?;
+        let bytes = barrel_files::read(root.join("Saves_EN/item/itemData.xml")).map_err(|e| format!("itemData.xml: {e}"))?;
         let items = barrel_formats::table::parse(&bytes).map_err(|e| e.to_string())?.children;
         Ok(Book { recipes, categories, items })
     }

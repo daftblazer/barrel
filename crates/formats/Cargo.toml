@@ -6,4 +6,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+barrel-files = { path = "../files" }
 encoding_rs = "0.8"

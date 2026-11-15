@@ -446,8 +446,8 @@ pub fn run(
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<()>> {
     use crate::{hud, screen, text};
-    let read = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let read = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = Pe::parse(&exe)?;
     let items = read("Saves_EN/item/itemData.xml")?;
     let monsters: Vec<String> = barrel_escha::data::battle_data::monsters(&pe, barrel_escha::data::battle_data::MONSTERS_EN).ok_or("requests: no monster table")?.into_iter().map(|m| m.name).collect();
@@ -460,7 +460,7 @@ pub fn run(
     let words = Words { header: line("SysInfo.xml", "Text", HELP_ROW)?, footer: line("Menu_Line_Help.xml", "LineHelp", FOOTER_ROW)? };
     let layouts = Layouts::load(&pe);
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("requests: no glyph table")?;
-    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("requests: an empty font atlas")?.width as f32 };
     // Every picture any row's page shows.

@@ -95,12 +95,12 @@ mod real_tests {
     #[ignore]
     fn the_four_languages() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
-        let data = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy.exe")).unwrap();
+        let data = barrel_files::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy.exe")).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&data).unwrap();
         let tables: Vec<_> = super::FONTS_MULTI.iter().map(|&(_, a)| super::glyphs(&pe, a).unwrap()).collect();
         assert!(tables.iter().all(|t| t.contains_key(&'A') && t.contains_key(&'の')));
         assert!(tables[2].contains_key(&'这') && !tables[3].contains_key(&'这') && tables[3].contains_key(&'這'));
-        let en = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let en = barrel_files::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let en = super::glyphs(&barrel_formats::pe::Pe::parse(&en).unwrap(), super::FONT_EN).unwrap();
         assert_eq!(en, tables[1]);
     }

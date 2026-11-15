@@ -136,7 +136,7 @@ pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool, subjects: &[Sa
     let mut squares: Vec<Option<Task>> = vec![None; SIDE * SIDE];
     let Some(k) = barrel_escha::calendar::period(today) else { return Ok(squares) };
     let tag = format!("CARD_{k:02}");
-    let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/subject/SubjectData.xml"))?)?;
+    let table = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/subject/SubjectData.xml"))?)?;
     for (index, row) in table.children.iter().enumerate().filter(|(_, r)| r.attr("CardTag") == Some(tag.as_str())) {
         let Some(slot) = row.attr("Pos").and_then(square_index) else { continue };
         let saved = subjects.get(index);

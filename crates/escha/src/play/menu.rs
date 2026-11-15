@@ -378,17 +378,17 @@ pub fn run(
     out: Option<&std::path::Path>,
 ) -> crate::Result<Option<Outcome>> {
     use crate::{hud, screen, text};
-    let exe = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
+    let exe = barrel_files::read(root.join("Atelier_Escha_and_Logy_EN.exe"))?;
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     let logy = source.is_some_and(|s| s.lead == 1);
     let lead = source.and_then(|s| s.party.get(s.lead));
     let nodes: Vec<Placed> = [BACKGROUND, FIGURE, LIST].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
     // The Status page: its nodes over the desk, and the lead's values.
     let status_nodes: Vec<Placed> = [BACKGROUND, crate::status::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
-    let item_rows = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/item/itemData.xml"))?)?;
+    let item_rows = barrel_formats::table::parse(&barrel_files::read(root.join("Saves_EN/item/itemData.xml"))?)?;
     let values = crate::status::Values::lead(&pe, logy, lead, &item_rows.children).ok_or("menu: no party tables")?;
     // The Basket page: the items the player carries, with what the game's tables say of each.
-    let table = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&std::fs::read(root.join(rel))?)?) };
+    let table = |rel: &str| -> crate::Result<barrel_formats::table::Element> { Ok(barrel_formats::table::parse(&barrel_files::read(root.join(rel))?)?) };
     let (status, potentials) = (table("Saves/item/item_status.xml")?, table("Saves_EN/item/item_potential.xml")?);
     let items = crate::basket::held(stock, &crate::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children });
     let page_layouts = crate::basketpage::Layouts::load(&pe);
@@ -503,7 +503,7 @@ pub fn run(
         e
     };
     let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN).ok_or("menu: no glyph table")?;
-    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
+    let atlas_bytes = barrel_files::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))?;
     let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes)?;
     let font = text::Font { glyphs, size: atlas.textures.first().ok_or("menu: an empty font atlas")?.width as f32 };
     // Every picture any state shows: each command lit and not, and the Option rows.

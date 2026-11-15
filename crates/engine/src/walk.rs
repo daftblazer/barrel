@@ -238,7 +238,7 @@ impl Field {
     /// Loads `<fields>/<name>/<name>.elixir.gz`'s collision and heightmap.
     pub fn load(fields: &std::path::Path, name: &str) -> Result<Field, String> {
         let path = fields.join(name).join(format!("{name}.elixir.gz"));
-        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let bytes = barrel_files::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let container = barrel_formats::elixir::Elixir::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         let entry = container.entries.iter().find(|e| e.name.ends_with("_col.g1co")).ok_or(format!("{name} has no collision"))?;
         let collision = barrel_formats::g1co::parse(container.data(entry)).map_err(|e| format!("{name}: {e}"))?;

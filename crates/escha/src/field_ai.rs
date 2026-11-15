@@ -171,7 +171,7 @@ mod sector_tests {
     fn sector_one_lists_the_recordings_monsters() {
         use crate::data::battle_data as bd;
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
-        let exe = std::fs::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
+        let exe = barrel_files::read(std::path::Path::new(&root).join("Atelier_Escha_and_Logy_EN.exe")).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&exe).unwrap();
         let groups = bd::encounter_groups(&pe, bd::ENCOUNTER_GROUPS_EN);
         let names = bd::monsters(&pe, bd::MONSTERS_EN).unwrap();

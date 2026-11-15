@@ -1,0 +1,339 @@
+//! The "Locate game files" screen, shown when no game install was found (`barrel_files::find`).
+//! The game's own art cannot be loaded before its files are known, so the screen is drawn with
+//! Barrel's own 2D: flat rectangles and a small font atlas of its own (`locate_font`, Noto Sans,
+//! made by `tools/gen-locate-font.py`), through the same text layer as the game's screens.
+//!
+//! A folder list ([`barrel_files::browse::Browser`]) is stepped with the arrows or the pad's
+//! D-pad, Enter or A opens a folder (and chooses one that holds the game), Backspace or B goes
+//! up a folder, Escape leaves.
+
+use ash::vk;
+use barrel_files::browse::{Browser, Input, Row};
+use barrel_files::find::Title;
+use barrel_formats::g1t::{Format, Texture};
+use winit::keyboard::KeyCode;
+
+use crate::locate_font as font;
+use crate::text::{Layer, Quad, FONT, UI};
+use crate::window::Pump;
+use crate::{Gpu, Result};
+
+const ALPHA: &[u8] = include_bytes!("locate_font.alpha");
+
+const BACKGROUND: [f32; 4] = [0.055, 0.063, 0.082, 1.0];
+const PANEL: [f32; 4] = [0.094, 0.106, 0.137, 1.0];
+const SELECTED: [f32; 4] = [0.18, 0.27, 0.46, 1.0];
+const TEXT: [f32; 4] = [0.93, 0.94, 0.96, 1.0];
+const DIM: [f32; 4] = [0.58, 0.62, 0.70, 1.0];
+const ACCENT: [f32; 4] = [0.40, 0.78, 0.55, 1.0];
+const WARN: [f32; 4] = [0.95, 0.62, 0.40, 1.0];
+
+/// The font atlas as an RGBA texture: white, with the coverage in alpha.
+fn atlas_pixels() -> Vec<u8> {
+    ALPHA.iter().flat_map(|&a| [255, 255, 255, a]).collect()
+}
+
+/// Draws text and rectangles into a list of quads.
+struct Painter {
+    quads: Vec<Quad>,
+}
+
+impl Painter {
+    fn rect(&mut self, rect: [f32; 4], color: [f32; 4]) {
+        self.quads.push(Quad { turn: false, spin: None, rect, uv: [-1.0, 0.0, -1.0, 0.0], color, texture: UI });
+    }
+
+    /// The width of `s` set at `size` pixels tall.
+    fn width(s: &str, size: f32) -> f32 {
+        let k = size / font::SIZE;
+        s.chars().map(|c| glyph(c).map_or(0.0, |g| g.7 as f32 * k)).sum()
+    }
+
+    /// `s` with its top-left at (`x`, `y`), the em `size` pixels.
+    fn text(&mut self, x: f32, y: f32, size: f32, color: [f32; 4], s: &str) {
+        let k = size / font::SIZE;
+        let mut pen = x;
+        for c in s.chars() {
+            let Some(&(_, gx, gy, w, h, xo, yo, adv)) = glyph(c) else { continue };
+            if w > 0 && h > 0 {
+                let left = pen + xo as f32 * k;
+                let top = y + yo as f32 * k;
+                let uv = [f32::from(gx) / font::WIDTH as f32, f32::from(gy) / font::HEIGHT as f32, f32::from(gx + w) / font::WIDTH as f32, f32::from(gy + h) / font::HEIGHT as f32];
+                self.quads.push(Quad { turn: false, spin: None, rect: [left, top, left + f32::from(w) * k, top + f32::from(h) * k], uv, color, texture: FONT });
+            }
+            pen += adv as f32 * k;
+        }
+    }
+
+    /// `s` cut to `max` pixels wide, with an ellipsis where it was; `from_start` keeps its end.
+    fn fit(s: &str, size: f32, max: f32, from_start: bool) -> String {
+        if Self::width(s, size) <= max {
+            return s.to_string();
+        }
+        let chars: Vec<char> = s.chars().collect();
+        for keep in (1..chars.len()).rev() {
+            let t: String = if from_start { std::iter::once('\u{2026}').chain(chars[chars.len() - keep..].iter().copied()).collect() } else { chars[..keep].iter().copied().chain(std::iter::once('\u{2026}')).collect() };
+            if Self::width(&t, size) <= max {
+                return t;
+            }
+        }
+        "\u{2026}".into()
+    }
+}
+
+fn glyph(c: char) -> Option<&'static (char, u16, u16, u16, u16, i32, i32, u32)> {
+    font::GLYPHS.iter().find(|g| g.0 == c).or_else(|| font::GLYPHS.iter().find(|g| g.0 == '?'))
+}
+
+/// The screen's quads for `browser` in a window `width` × `height`.
+fn layout(browser: &Browser, width: f32, height: f32) -> Vec<Quad> {
+    let s = (height / 1080.0).max(0.55);
+    let mut p = Painter { quads: Vec::new() };
+    p.rect([0.0, 0.0, width, height], BACKGROUND);
+    let margin = (width * 0.08).max(24.0 * s);
+    let content = width - 2.0 * margin;
+    let mut y = height * 0.07;
+    p.text(margin, y, 54.0 * s, TEXT, "Locate game files");
+    y += 78.0 * s;
+    let intro = format!("Barrel did not find {} in Steam's libraries.", browser.title.name());
+    p.text(margin, y, 26.0 * s, DIM, &Painter::fit(&intro, 26.0 * s, content, false));
+    y += 36.0 * s;
+    let ask = format!("Open the folder that holds {} and press Enter on it.", browser.title.marker());
+    p.text(margin, y, 26.0 * s, DIM, &Painter::fit(&ask, 26.0 * s, content, false));
+    y += 64.0 * s;
+    // The folder being listed.
+    p.text(margin, y, 28.0 * s, TEXT, &Painter::fit(&browser.dir.to_string_lossy(), 28.0 * s, content, true));
+    y += 50.0 * s;
+    // The list.
+    let footer = 70.0 * s;
+    let row_h = 46.0 * s;
+    let panel = [margin, y, margin + content, height - footer - 16.0 * s];
+    p.rect(panel, PANEL);
+    let visible = (((panel[3] - panel[1]) - 16.0 * s) / row_h).floor().max(1.0) as usize;
+    let first = browser.selected.saturating_sub(visible / 2).min(browser.rows.len().saturating_sub(visible));
+    for (i, row) in browser.rows.iter().enumerate().skip(first).take(visible) {
+        let top = panel[1] + 8.0 * s + (i - first) as f32 * row_h;
+        if i == browser.selected {
+            p.rect([panel[0] + 8.0 * s, top, panel[2] - 8.0 * s, top + row_h - 4.0 * s], SELECTED);
+        }
+        let text_y = top + 5.0 * s;
+        match row {
+            Row::Up => p.text(panel[0] + 24.0 * s, text_y, 28.0 * s, DIM, "\u{2191}  Up one folder"),
+            Row::Folder { name, game } => {
+                let tag = "Game folder";
+                let tag_w = if *game { Painter::width(tag, 24.0 * s) + 24.0 * s } else { 0.0 };
+                let name = Painter::fit(name, 28.0 * s, content - 64.0 * s - tag_w, false);
+                p.text(panel[0] + 24.0 * s, text_y, 28.0 * s, if *game { ACCENT } else { TEXT }, &name);
+                if *game {
+                    p.text(panel[2] - 24.0 * s - Painter::width(tag, 24.0 * s), text_y + 2.0 * s, 24.0 * s, ACCENT, tag);
+                }
+            }
+        }
+    }
+    // A scroll bar when the list is longer than the panel.
+    if browser.rows.len() > visible {
+        let track = [panel[2] - 6.0 * s, panel[1] + 8.0 * s, panel[2] - 2.0 * s, panel[3] - 8.0 * s];
+        let (h, n) = (track[3] - track[1], browser.rows.len() as f32);
+        p.rect(track, [1.0, 1.0, 1.0, 0.06]);
+        p.rect([track[0], track[1] + h * first as f32 / n, track[2], track[1] + h * (first + visible) as f32 / n], [1.0, 1.0, 1.0, 0.25]);
+    }
+    // The line below the list: a problem, else the keys.
+    let fy = height - footer + 4.0 * s;
+    if browser.message.is_empty() {
+        p.text(margin, fy, 24.0 * s, DIM, &Painter::fit("Up / Down  move      Enter or A  open      Backspace or B  up a folder      Esc  quit", 24.0 * s, content, false));
+    } else {
+        p.text(margin, fy, 24.0 * s, WARN, &Painter::fit(&browser.message, 24.0 * s, content, false));
+    }
+    p.quads
+}
+
+/// The button a key stands for.
+fn input(key: KeyCode) -> Option<Input> {
+    Some(match key {
+        KeyCode::ArrowUp => Input::Up,
+        KeyCode::ArrowDown => Input::Down,
+        KeyCode::PageUp => Input::PageUp,
+        KeyCode::PageDown => Input::PageDown,
+        KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::ArrowRight => Input::Confirm,
+        KeyCode::Backspace | KeyCode::ArrowLeft => Input::Back,
+        _ => return None,
+    })
+}
+
+/// Runs the screen for `title` until a folder that holds the game is chosen: the folder, and the
+/// window to carry on with. `None` when the window is closed or Escape pressed. `display` is
+/// the window as the config has it; `pump` a window already open (there is one event loop to a
+/// process).
+pub fn run(title: Title, pump: Option<Pump>, display: crate::settings::Display) -> Result<Option<(std::path::PathBuf, Pump)>> {
+    let mut pump = match pump {
+        Some(p) => p,
+        None => Pump::open(display)?,
+    };
+    let handle = raw_window_handle::HasDisplayHandle::display_handle(pump.window())?.as_raw();
+    let gpu = Gpu::new(Some(handle))?;
+    let window = raw_window_handle::HasWindowHandle::window_handle(pump.window())?.as_raw();
+    let size = pump.window().inner_size();
+    let mut presenter = crate::present::Presenter::new(&gpu, handle, window, size.width, size.height)?;
+    let d = &gpu.device;
+    let pool = unsafe { d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)? };
+    let attachment = [vk::AttachmentDescription::default()
+        .format(presenter.format)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .load_op(vk::AttachmentLoadOp::CLEAR)
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
+    let color_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
+    let subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&color_ref)];
+    // As the renderer's post pass: the acquire semaphore holds the colour output stage.
+    let dependency = [vk::SubpassDependency::default()
+        .src_subpass(vk::SUBPASS_EXTERNAL)
+        .dst_subpass(0)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
+    let pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachment).subpasses(&subpass).dependencies(&dependency), None)? };
+    let framebuffers = |p: &crate::present::Presenter| -> Result<Vec<vk::Framebuffer>> {
+        p.views
+            .iter()
+            .map(|&v| {
+                let views = [v];
+                unsafe { d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(&views).width(p.extent.width).height(p.extent.height).layers(1), None) }.map_err(Into::into)
+            })
+            .collect()
+    };
+    let mut buffers = framebuffers(&presenter)?;
+    let atlas = atlas_pixels();
+    let font_texture = Texture { width: font::WIDTH, height: font::HEIGHT, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&atlas[..]] };
+    let white = [255u8; 4];
+    let ui_texture = Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&white[..]] };
+    let mut layer = Layer::new(&gpu, pool, pass, &[&font_texture, &ui_texture])?;
+    let (ready, done) = unsafe { (d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?, d.create_semaphore(&vk::SemaphoreCreateInfo::default(), None)?) };
+
+    let mut browser = Browser::new(title, std::env::current_dir().ok().filter(|d| d.parent().is_some()).unwrap_or_else(barrel_files::browse::home));
+    let mut shown: Option<(Browser, (u32, u32))> = None;
+    let chosen = loop {
+        if !pump.pump() {
+            break None;
+        }
+        let mut found = None;
+        for key in pump.take_pressed() {
+            if key == KeyCode::Escape {
+                found = Some(None);
+                break;
+            }
+            if let Some(b) = input(key)
+                && let Some(dir) = browser.press(b)
+            {
+                found = Some(Some(dir));
+                break;
+            }
+        }
+        if let Some(f) = found {
+            break f;
+        }
+        if pump.take_resized() {
+            let s = pump.window().inner_size();
+            if s.width > 0 && s.height > 0 {
+                presenter.rebuild(&gpu, s.width, s.height)?;
+                unsafe { d.device_wait_idle()? };
+                for f in buffers.drain(..) {
+                    unsafe { d.destroy_framebuffer(f, None) };
+                }
+                buffers = framebuffers(&presenter)?;
+            }
+        }
+        let extent = (presenter.extent.width, presenter.extent.height);
+        if shown.as_ref().map(|(b, e)| (b, *e)) != Some((&browser, extent)) {
+            layer.set(&gpu, &layout(&browser, extent.0 as f32, extent.1 as f32))?;
+            shown = Some((browser.clone(), extent));
+        }
+        let Some(image) = presenter.acquire(ready)? else {
+            let s = pump.window().inner_size();
+            if s.width > 0 && s.height > 0 {
+                presenter.rebuild(&gpu, s.width, s.height)?;
+                unsafe { d.device_wait_idle()? };
+                for f in buffers.drain(..) {
+                    unsafe { d.destroy_framebuffer(f, None) };
+                }
+                buffers = framebuffers(&presenter)?;
+            }
+            continue;
+        };
+        unsafe {
+            let cb = d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(pool).command_buffer_count(1))?[0];
+            d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))?;
+            let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: presenter.extent };
+            let clear = [vk::ClearValue { color: vk::ClearColorValue { float32: BACKGROUND } }];
+            d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(pass).framebuffer(buffers[image as usize]).render_area(area).clear_values(&clear), vk::SubpassContents::INLINE);
+            d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: extent.0 as f32, height: extent.1 as f32, min_depth: 0.0, max_depth: 1.0 }]);
+            d.cmd_set_scissor(cb, 0, &[area]);
+            layer.record(d, cb, extent.0, extent.1);
+            d.cmd_end_render_pass(cb);
+            d.end_command_buffer(cb)?;
+            let fence = d.create_fence(&vk::FenceCreateInfo::default(), None)?;
+            let (waits, stages, cbs, signals) = ([ready], [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT], [cb], [done]);
+            d.queue_submit(gpu.queue, &[vk::SubmitInfo::default().wait_semaphores(&waits).wait_dst_stage_mask(&stages).command_buffers(&cbs).signal_semaphores(&signals)], fence)?;
+            let stale = presenter.present(&gpu, image, done)?;
+            d.wait_for_fences(&[fence], true, u64::MAX)?;
+            d.destroy_fence(fence, None);
+            d.free_command_buffers(pool, &cbs);
+            gpu.frame.set(gpu.frame.get() + 1);
+            if stale {
+                shown = None;
+            }
+        }
+    };
+    unsafe {
+        d.device_wait_idle()?;
+        d.destroy_semaphore(ready, None);
+        d.destroy_semaphore(done, None);
+        for f in buffers {
+            d.destroy_framebuffer(f, None);
+        }
+    }
+    layer.destroy(&gpu);
+    unsafe {
+        d.destroy_render_pass(pass, None);
+        d.destroy_command_pool(pool, None);
+    }
+    presenter.destroy(&gpu);
+    Ok(chosen.map(|dir| (dir, pump)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_ascii_character_has_a_glyph() {
+        assert!(font::GLYPHS.len() > 95);
+        for c in ' '..='~' {
+            assert!(font::GLYPHS.iter().any(|g| g.0 == c), "{c:?}");
+        }
+        assert_eq!(ALPHA.len(), (font::WIDTH * font::HEIGHT) as usize);
+        // Every glyph box lies inside the atlas.
+        assert!(font::GLYPHS.iter().all(|g| u32::from(g.1 + g.3) <= font::WIDTH && u32::from(g.2 + g.4) <= font::HEIGHT));
+    }
+
+    #[test]
+    fn long_texts_are_cut_to_fit_with_an_ellipsis() {
+        let s = "/a/very/long/folder/name/that/does/not/fit";
+        let t = Painter::fit(s, 28.0, 200.0, true);
+        assert!(t.starts_with('\u{2026}') && t.ends_with("fit") && Painter::width(&t, 28.0) <= 200.0);
+        let t = Painter::fit(s, 28.0, 200.0, false);
+        assert!(t.ends_with('\u{2026}') && Painter::width(&t, 28.0) <= 200.0);
+        assert_eq!(Painter::fit("short", 28.0, 200.0, false), "short");
+    }
+
+    #[test]
+    fn the_layout_shows_the_folders_and_fits_the_window() {
+        let dir = std::env::temp_dir();
+        let b = Browser::new(Title::Escha, dir);
+        for (w, h) in [(1920.0, 1080.0), (1280.0, 720.0), (800.0, 480.0)] {
+            let quads = layout(&b, w, h);
+            assert!(quads.len() > 20);
+            assert!(quads.iter().all(|q| q.rect[0] >= -1.0 && q.rect[2] <= w + 1.0 && q.rect[3] <= h + 1.0), "{w}x{h}");
+        }
+    }
+}

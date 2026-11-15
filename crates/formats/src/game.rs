@@ -50,6 +50,6 @@ impl Game {
     }
 
     pub fn detect(install: &Path) -> Option<Game> {
-        Game::ALL.into_iter().find(|g| install.join(g.executable()).is_file())
+        Game::ALL.into_iter().find(|g| barrel_files::is_file(install.join(g.executable())))
     }
 }

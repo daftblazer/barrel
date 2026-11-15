@@ -65,6 +65,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 name = "barrel-audio"
 version = "0.1.0"
 dependencies = [
+ "barrel-files",
  "barrel-formats",
  "sdl3-sys",
 ]
@@ -85,6 +86,7 @@ dependencies = [
 name = "barrel-engine"
 version = "0.1.0"
 dependencies = [
+ "barrel-files",
  "barrel-formats",
  "barrel-render",
  "glam",
@@ -97,6 +99,7 @@ dependencies = [
  "ash",
  "barrel-audio",
  "barrel-engine",
+ "barrel-files",
  "barrel-formats",
  "barrel-movie",
  "barrel-render",
@@ -114,6 +117,7 @@ version = "0.1.0"
 name = "barrel-formats"
 version = "0.1.0"
 dependencies = [
+ "barrel-files",
  "encoding_rs",
 ]
 
@@ -121,6 +125,7 @@ dependencies = [
 name = "barrel-movie"
 version = "0.1.0"
 dependencies = [
+ "barrel-files",
  "barrel-formats",
  "barrel-wma",
 ]
@@ -139,6 +144,7 @@ name = "barrel-render"
 version = "0.1.0"
 dependencies = [
  "ash",
+ "barrel-files",
  "barrel-formats",
  "glam",
  "libc",
@@ -153,6 +159,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "barrel-engine",
+ "barrel-files",
  "barrel-formats",
  "barrel-render",
  "glam",

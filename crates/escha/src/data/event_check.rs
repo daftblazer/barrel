@@ -113,7 +113,7 @@ mod tests {
     #[ignore]
     fn the_real_file_splits() {
         let Ok(root) = std::env::var("BARREL_ROOT") else { return };
-        let d = std::fs::read(std::path::Path::new(&root).join("Event/eventCheck/EventCheckDataAll.ecd")).unwrap();
+        let d = barrel_files::read(std::path::Path::new(&root).join("Event/eventCheck/EventCheckDataAll.ecd")).unwrap();
         let events = super::parse(&d).unwrap();
         assert_eq!(events.len(), 1165);
         let mut n = 4;

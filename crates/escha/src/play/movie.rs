@@ -22,7 +22,7 @@ fn fit(target: &Target, width: usize, height: usize) -> [f32; 4] {
 /// the picture at `shown_at` seconds, written to `out`.
 pub fn play(gpu: &Gpu, pool: vk::CommandPool, target: &Target, window: Option<(&crate::present::Presenter, &mut crate::window::Pump)>, offscreen: Option<vk::Image>, file: &Path, shown_at: f64, out: Option<&Path>) -> Result<()> {
     let t0 = std::time::Instant::now();
-    let mut movie = barrel_movie::player::Movie::open(std::fs::read(file)?)?;
+    let mut movie = barrel_movie::player::Movie::open(barrel_files::read(file)?)?;
     eprintln!("movie: {} {}x{}, {:.1} s, opened in {:.2} s", file.display(), movie.width, movie.height, movie.duration, t0.elapsed().as_secs_f64());
     let d = &gpu.device;
     let mut layer = MovieLayer::new(gpu, pool, target.pass, movie.width as u32, movie.height as u32)?;

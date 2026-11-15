@@ -17,7 +17,7 @@ mod tests {
     #[test]
     fn the_installs_field_maps() {
         let Some(p) = std::env::var_os("BARREL_RYZA_EXE") else { return };
-        let data = std::fs::read(p).unwrap();
+        let data = barrel_files::read(p).unwrap();
         let pe = barrel_formats::pe::Pe::parse(&data).unwrap();
         let maps = super::field_maps(&pe);
         assert_eq!(maps[0], "s01_i_attic");

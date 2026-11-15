@@ -14,6 +14,8 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub mod fsr;
 pub mod glow;
+pub mod locate;
+mod locate_font;
 pub mod fsr3;
 pub mod gsr2;
 pub mod movie;
@@ -1147,7 +1149,7 @@ pub fn upload_textures(
     }
     // The characters' outline texture (`Data/x64/Shader/texture/outline.g1t`), if found.
     let outline_tex = {
-        let bytes = root.and_then(|r: &Path| std::fs::read(r.join("Data/x64/Shader/texture/outline.g1t")).ok());
+        let bytes = root.and_then(|r: &Path| barrel_files::read(r.join("Data/x64/Shader/texture/outline.g1t")).ok());
         match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(gpu, pool, &t, false))) {
             Some(t) => {
                 textures.push(t?);

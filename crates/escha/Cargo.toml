@@ -10,6 +10,7 @@ name = "barrel-escha"
 path = "src/play/main.rs"
 
 [dependencies]
+barrel-files = { path = "../files" }
 barrel-formats = { path = "../formats" }
 barrel-engine = { path = "../engine" }
 barrel-audio = { path = "../audio" }

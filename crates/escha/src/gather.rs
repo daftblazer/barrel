@@ -169,7 +169,7 @@ pub struct Gathering {
 
 impl Gathering {
     pub fn load(root: &std::path::Path) -> Result<Gathering, String> {
-        let read = |rel: &str| std::fs::read(root.join(rel)).map_err(|e| format!("{rel}: {e}"));
+        let read = |rel: &str| barrel_files::read(root.join(rel)).map_err(|e| format!("{rel}: {e}"));
         let table = |rel: &str| -> Result<barrel_formats::table::Element, String> { barrel_formats::table::parse(&read(rel)?).map_err(|e| format!("{rel}: {e}")) };
         let exe = read("Atelier_Escha_and_Logy_EN.exe")?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| format!("executable: {e}"))?;
