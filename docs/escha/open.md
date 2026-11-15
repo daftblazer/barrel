@@ -362,3 +362,9 @@ likely settle them where static reading failed.
   frame, interpolated linearly; the game's own curve and what ends the hold (the capture's A
   press closes the row) are not read, and the cursor moving off the place drawing it normally
   is a guess).
+- **Battle result screen: no capture yet.** escha-recomp `scenarios/battle-end.sh` plays the walk
+  battle on with A every 40 frames to frame 10000, but the battle does not end: from about frame
+  8000 the HUD barely changes (a state where A does not advance — a target or item choice, or
+  the default command no longer acting). Find the state (a hook on the command handler, or a
+  frame dump), then script the presses that finish the battle and capture its result and drops
+  screens (Barrel: play/result.rs, play/drops.rs).
