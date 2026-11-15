@@ -731,7 +731,12 @@ often:
   everyone, 1 all but the actor, 2 all but the targets, 3 all but both, 9 the third, 12 all but
   the third, 6 and 7 a side (party, monsters; by the slot-2 value 0 and 1), 19 to 22 further
   sides; fighters failing `0x1401ae3c0` are left out. Skills open with `r20 5 0` or `4 0` and
-  end with `r20 8 1`.
+  end with `r20 8 1`. The model's +0x250 follows its place (+0x230) and rotation (+0x240): its
+  scale, so 0 hides. High Strike (`Skill_PARTY_LOGY_1`) hides its targets for Logy's close-ups
+  and leap (`r20 5 0` at 0 s), hides him while a stand-in (10005) is waited for (`4 0`, `4 1`)
+  and shows the targets again (`5 1`, 6.1 s) just before its hit. Barrel plays `r20` in skill
+  scenes for kinds 0 to 8 (`skill_scene::shown_kind`; the party taken as side 0, not read),
+  the action's one target as "the targets".
 
 **The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
 `t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):

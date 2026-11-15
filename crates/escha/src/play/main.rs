@@ -1429,6 +1429,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         acting: None,
         guard_hold: None,
         menu_since: None,
+        hidden: Vec::new(),
         music,
         victory_played: false,
         wiped: None,
@@ -1504,6 +1505,8 @@ struct BattlePlay {
     guard_hold: Option<(usize, f32, bool)>,
     /// Since when (battle seconds) the command camera has framed whom ([`Self::command_camera`]).
     menu_since: Option<(usize, f32)>,
+    /// The fighters a scene's `r20` hides now (by fighter index).
+    hidden: Vec<bool>,
     /// What the actions' skill scenes are played with.
     scenes: SceneData,
     /// The skill scene playing (`barrel_escha::skill_scene`): it places the actor and moves the
@@ -1575,6 +1578,9 @@ struct ActionScene {
     shown: Option<barrel_engine::stage::Playing>,
     /// The scene's number for the actor (10000, or 10002 in a victory scene).
     poser: u32,
+    /// The fighter acted on, if any, and the scene's `r20` steps at battle times.
+    target: Option<usize>,
+    shows: Vec<(f32, i32, bool)>,
 }
 
 impl ActionScene {
@@ -1695,7 +1701,7 @@ impl BattlePlay {
         else {
             return;
         };
-        let scene = ActionScene { start: self.time, frames, actor: who, hits: Vec::new(), motions, shown: None, poser: WINNER };
+        let scene = ActionScene { start: self.time, frames, actor: who, hits: Vec::new(), motions, shown: None, poser: WINNER, target: None, shows: Vec::new() };
         self.until = self.until.max(self.time + scene.seconds());
         eprintln!("battle: victory scene {tag} {:.2} s", scene.seconds());
         self.scene = Some(scene);
@@ -1792,6 +1798,21 @@ impl BattlePlay {
         Some((eye.into(), target.into()))
     }
 
+    /// Which fighters the running scene hides now (its `r20` steps so far; none outside one).
+    fn scene_hidden(&self) -> Vec<bool> {
+        let mut hidden = vec![false; self.fighters.len()];
+        let Some(sc) = &self.scene else { return hidden };
+        for &(_, kind, on) in sc.shows.iter().filter(|s| s.0 <= self.time) {
+            for (k, f) in self.fighters.iter().enumerate() {
+                let Some(f) = f else { continue };
+                if barrel_escha::skill_scene::shown_kind(kind, k == sc.actor, Some(k) == sc.target, f.party) == Some(true) {
+                    hidden[k] = !on;
+                }
+            }
+        }
+        hidden
+    }
+
     /// The battle's opening camera (`SKILL_COMMON_SYSTEM_START_CAM_01`: in on the battle's
     /// origin over a second), the first step held until it ends. `_02` (circling down from
     /// above) is the other; which the game picks is not read, so Barrel always takes `_01`.
@@ -1804,7 +1825,7 @@ impl BattlePlay {
         let Ok(event) = barrel_formats::ebd::Ebd::parse(&bytes) else { return };
         let nobody = Cast { position: BATTLE_CENTRE, facing: 0.0, measures: None };
         let Ok(barrel_escha::skill_scene::Scene { frames, .. }) = barrel_escha::skill_scene::play(&event, nobody, nobody, &self.scenes.curves, None, 10.0, BATTLE_CENTRE) else { return };
-        let scene = ActionScene { start: self.time, frames, actor: usize::MAX, hits: Vec::new(), motions: Vec::new(), shown: None, poser: barrel_escha::skill_scene::ACTOR };
+        let scene = ActionScene { start: self.time, frames, actor: usize::MAX, hits: Vec::new(), motions: Vec::new(), shown: None, poser: barrel_escha::skill_scene::ACTOR, target: None, shows: Vec::new() };
         self.until = self.until.max(self.time + scene.seconds());
         self.scene = Some(scene);
     }
@@ -1856,7 +1877,7 @@ impl BattlePlay {
         let toward = if a.party { (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]) } else { (a.place[0] - t_place[0]).atan2(a.place[2] - t_place[2]) };
         let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
         let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
-        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0, BATTLE_CENTRE).ok()?;
+        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved, shows } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0, BATTLE_CENTRE).ok()?;
         let hits = hits.into_iter().map(|(t, share)| (self.time + t, share)).collect();
         if unresolved > 0 {
             eprintln!("battle: skill scene {name}: {unresolved} steps name what it lacks");
@@ -1865,7 +1886,11 @@ impl BattlePlay {
             let first = frames.iter().find(|f| f.characters.get(&ACTOR).is_some_and(|c| c.0 != actor.position));
             eprintln!("scene: actor {:?} facing {:.2}, target {:?} anchored facing {:.2}; placed {:?}, eye {:?} at {:?}; ends {:?}", actor.position, actor.facing, foe.position, foe.facing, first.map(|f| f.characters[&ACTOR]), first.and_then(|f| f.eye), first.and_then(|f| f.target), frames.last().map(|f| f.characters[&ACTOR]));
         }
-        Some(ActionScene { start: self.time, frames, actor: who, hits, motions, shown: None, poser: barrel_escha::skill_scene::ACTOR })
+        if std::env::var("BARREL_SCENE_LOG").is_ok() && !shows.is_empty() {
+            eprintln!("scene: r20 (seconds, kind, shown) {shows:?}");
+        }
+        let shows = shows.into_iter().map(|(t, kind, on)| (self.time + t, kind, on)).collect();
+        Some(ActionScene { start: self.time, frames, actor: who, hits, motions, shown: None, poser: barrel_escha::skill_scene::ACTOR, target: Some(target), shows })
     }
 
     /// The scene's motion for its actor now: its body switched when the scene changes it (to
@@ -5478,6 +5503,21 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         }
                     }
                 }
+                // `r20`: the fighters the scene hides drawn at no size; put back where they
+                // stand once shown again (the scene's actor it places itself).
+                let hide = play.scene_hidden();
+                let acting = play.scene.as_ref().map(|sc| sc.actor);
+                for (k, &now) in hide.iter().enumerate() {
+                    let was = play.hidden.get(k).copied().unwrap_or(false);
+                    let Some(f) = play.fighters.get(k).and_then(Option::as_ref) else { continue };
+                    let Some(b) = town_bodies.get(f.body) else { continue };
+                    if now {
+                        instances[b.instance as usize].model = Mat4::from_scale(Vec3::ZERO);
+                    } else if was && Some(k) != acting {
+                        instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f.facing), Vec3::from(f.place)));
+                    }
+                }
+                play.hidden = hide;
                 // Offscreen: `BARREL_BATTLE_KEYS` (as `BARREL_MENU_KEYS`), a key a frame while a
                 // member's turn waits.
                 if presenter.is_none() && play.waiting()

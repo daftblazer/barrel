@@ -43,6 +43,33 @@ pub struct Scene {
     pub motions: Vec<Option<barrel_engine::stage::Playing>>,
     /// How many of its steps named something the scene does not have (`Stage::unresolved`).
     pub unresolved: usize,
+    /// Its `r20` steps: (seconds from its start, the fighters' kind, shown).
+    pub shows: Vec<(f32, i32, bool)>,
+}
+
+/// `r20` (`0x72000014`, `{kind, on}`): the battle shows (scale 1) or hides (scale 0, the
+/// model's +0x250) the fighters `kind` names (`docs/events.md`, "Battle-screen commands").
+const SHOW: u32 = 0x7200_0014;
+
+/// Which of a battle's fighters `r20`'s `kind` names (`0x1401b2b30`'s table): `is_actor`,
+/// `is_target` and `on_party_side` describe each fighter. `None` for a kind not read here (the
+/// third fighter, battle +0x70, and the kinds past 18).
+pub fn shown_kind(kind: i32, is_actor: bool, is_target: bool, on_party_side: bool) -> Option<bool> {
+    // (all but these, the actor, the targets, a side)
+    let (except, actor, target, side) = match kind {
+        0 => (false, true, true, None),
+        1 => (true, true, false, None),
+        2 => (true, false, true, None),
+        3 => (true, true, true, None),
+        4 => (false, true, false, None),
+        5 => (false, false, true, None),
+        6 => (false, false, false, Some(true)),
+        7 => (false, false, false, Some(false)),
+        8 => (true, false, false, None),
+        _ => return None,
+    };
+    let named = (actor && is_actor) || (target && is_target) || side == Some(on_party_side);
+    Some(named != except)
 }
 
 /// `s1` (`ECT_CHARA_SET_MARKER`, `{character, marker, 0, 4, share}`): marker 0 is a hit landing,
@@ -87,6 +114,13 @@ pub fn play_cast(
             _ => None,
         })
         .collect();
+    let shows = steps
+        .iter()
+        .filter_map(|t| match &t.step {
+            barrel_engine::event::Step::Command { word: SHOW, operands: [kind, on, ..], .. } => Some((t.time, *kind as i32, *on != 0)),
+            _ => None,
+        })
+        .collect();
     let mut measures = BTreeMap::new();
     let mut stage = Stage { curves: curves.clone(), ..Stage::default() };
     for &(who, c) in cast {
@@ -117,13 +151,25 @@ pub fn play_cast(
         out.push(snapshot(&play));
         motions.push(motion(&play));
     }
-    Ok(Scene { frames: out, hits, motions, unresolved: play.stage.unresolved })
+    Ok(Scene { frames: out, hits, motions, unresolved: play.stage.unresolved, shows })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use barrel_engine::stage::FRAME;
+
+    /// `r20`'s kinds: 5 the targets, 4 the actor, 8 everyone, 1 all but the actor.
+    #[test]
+    fn r20_kinds_name_their_fighters() {
+        assert_eq!(shown_kind(5, false, true, false), Some(true));
+        assert_eq!(shown_kind(5, true, false, true), Some(false));
+        assert_eq!(shown_kind(4, true, false, true), Some(true));
+        assert_eq!(shown_kind(8, false, false, false), Some(true));
+        assert_eq!(shown_kind(1, true, false, true), Some(false));
+        assert_eq!(shown_kind(1, false, true, false), Some(true));
+        assert_eq!(shown_kind(9, false, false, false), None);
+    }
 
     /// The battle's start camera (`SKILL_COMMON_SYSTEM_START_CAM_01`) looks at the battle's
     /// origin, wherever that stands in the field: from 1,200 to the side and 500 up, in to

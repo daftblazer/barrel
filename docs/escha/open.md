@@ -149,9 +149,10 @@ likely settle them where static reading failed.
   stand-ins are. In play every member action on commands 0 to 4, 8 and 9 plays its scene, and every monster action whose stat block names an event (`Tables::monster_event`, the first block with the skill: the block the fighter is at is not used)
   (`auto_battle::Tables::command_of`); a skill's (High Strike, `Skill_PARTY_LOGY_1`, 6.5 s:
   close-ups on Logy, a leap, the strike) has no recording to compare against yet, and its
-  battle-screen commands are not done (`r14` a colour fade and `r20` a per-fighter 0/1 at
-  model +0x250, read in docs/events.md "Battle-screen commands", but not what either colours;
-  `r4` `ECT_BATTLE_ADD_EFFECT_ID`). Attack and Support Attack: the damage
+  battle-screen commands: `r20` (show/hide) is played for kinds 0 to 8 (the third fighter,
+  battle +0x70, and which side is 0 not read; a skill with several targets has only the one
+  Barrel knows); `r14`'s colour fade is not played, what its colour multiplies being unread;
+  `r4` `ECT_BATTLE_ADD_EFFECT_ID` not done. Attack and Support Attack: the damage
   number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the actor plays the
   scene's motions (motion and `CharaDiv` division, switched as the scene sets them, blended over
   Barrel's 0.15 s rather than the command's blend); `s9` sets the motion's speed (the body's
