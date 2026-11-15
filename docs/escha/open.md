@@ -354,9 +354,8 @@ likely settle them where static reading failed.
   holds 45: the shown value is not the saved one (a decay on load, a rounding, or another
   source). Read the live value.
 
-- **Skill power is not wired into the play path.** `Tables::party_power` (stat 15: the gear's
-  `EQI_ADD_SKILLPOWER` / `ACT_EQUIP_ADD_POWER` plus passives) and `Fighter::with_power` exist and
-  `fight::Battle::act` scales damage by it (effect percent 2), which explains Wilbell's plain
-  attacks landing 10 % over (her gear gives 10; battle_hits is 14/14). `skirmish::Member` still
-  has no power field, so `Fighter::new(&m.block ...)` there leaves it 0: give `Member` the value
-  and call `.with_power`. Heals (act flag 7 too) are not scaled yet.
+- **Skill power on heals.** `fight::Battle::act` scales damage effects by the user's skill power
+  (stat 15, effect percent 2; Wilbell's gear gives 10), in play too (`skirmish::Member::power`).
+  Heals (act flag 7) take the same percent per the docs but are not scaled yet: check against a
+  logged heal.
+

@@ -380,6 +380,7 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
         let mut member = crate::skirmish::Member::new(block.clone(), mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);
+        member.power = t.party_power(c, level);
         if let Some((_, cost)) = member.support.as_mut() {
             *cost = crate::battle::support_attack_cost(Some(c));
         }

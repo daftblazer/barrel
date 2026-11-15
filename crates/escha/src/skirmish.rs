@@ -26,6 +26,9 @@ pub struct Member<'a> {
     pub now: Option<(i32, i32)>,
     /// Its size in battle (its `Chara.xml` radius: `battle_data::party_size`); 0 when unknown.
     pub size: f32,
+    /// Its skill power (battle stat 15: the gear's and passives' stat 12, `Tables::party_power`),
+    /// scaling its damage skills.
+    pub power: i32,
     /// Its Support Attack (its skill list's command 8) and what it takes from the Support
     /// gauge (`battle::support_attack_cost`).
     pub support: Option<(&'a Skill, i32)>,
@@ -92,7 +95,7 @@ impl<'a> Member<'a> {
             .and_then(skill)
             .and_then(|s| s.effects.iter().find(|e| e.act == ASSIST_GUARD))
             .map(|e| (e.max, battle::support_guard_cost()));
-        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0, support, guard })
+        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0, power: 0, support, guard })
     }
 
     /// The costliest affordable heal aimed at its own side (one that revives, when `revive`).
@@ -203,7 +206,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             .iter()
             .enumerate()
             .map(|(k, m)| {
-                let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp);
+                let mut f = Fighter::new(&m.block, 0, 999).with_mp(m.mp).with_power(m.power);
                 f.position = crate::battle::party_spot(k as i32, k as i32 % 3);
                 f.slot = k as i32 % 3 + 3;
                 f.size = m.size;
