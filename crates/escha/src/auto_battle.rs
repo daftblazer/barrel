@@ -174,6 +174,17 @@ impl Tables {
         self.units[member] = Some(units.to_vec());
     }
 
+    /// Member `c` as a session holds it: its equipment (the worn item units when the session has
+    /// them all, else fresh items by number) and its battle items. The save's vitals are
+    /// [`Tables::current`]'s, for the callers that start from them.
+    pub fn outfit(&mut self, c: usize, m: &crate::session::Member) {
+        self.equip(c, &m.equipment);
+        if let Some(units) = m.worn_units() {
+            self.equip_units(c, &units);
+        }
+        self.carry(c, &m.battle_items);
+    }
+
     /// Member `member` starts its battles with `[hp, most hp, mp, most mp]` (a save's values,
     /// the maxima with equipment: they stand for what the kit adds that Barrel does not yet).
     pub fn current(&mut self, member: usize, vitals: [i32; 4]) {

@@ -1434,8 +1434,7 @@ const BATTLE_CENTRE: [f32; 3] = [3200.0, 0.0, 3200.0];
 fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members: &[barrel_escha::session::Member], squad: &[usize], scene: &mut Scene, base: usize, first_body: usize) -> Result<(Vec<Vec<u8>>, Vec<TownBody>, BattlePlay)> {
     let mut tables = battle_tables(root)?;
     for (c, m) in members.iter().enumerate() {
-        tables.equip(c, &m.equipment);
-        tables.carry(c, &m.battle_items);
+        tables.outfit(c, m);
         if let Some(vitals) = m.now {
             tables.current(c, vitals);
         }
@@ -5122,8 +5121,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         // the new game's kit without a session).
                         let members = session.as_ref().map(|s| s.party.clone()).unwrap_or_default();
                         for (c, m) in members.iter().enumerate() {
-                            tables.equip(c, &m.equipment);
-        tables.carry(c, &m.battle_items);
+                            tables.outfit(c, m);
                         }
                         let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
                         let party = [(usize::from(logy), level(usize::from(logy))), (usize::from(!logy), level(usize::from(!logy)))];

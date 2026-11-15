@@ -63,11 +63,99 @@ pub struct Member {
     pub experience: i32,
     /// The items equipped, by item number, -1 for none: weapon, armour, two accessories.
     pub equipment: [i32; 4],
+    /// The equipped items as the save holds them (quality, effects, traits), by slot; `None`
+    /// where only the item number is known (a new game's kit, a text save before `wear` lines).
+    pub worn: [Option<WornItem>; 4],
     /// The battle items it carries (the alchemists' `explore_equip` lists), in order.
     pub battle_items: Vec<BattleItem>,
     /// Its HP, its most HP, its MP and its most MP (with equipment) now, when the save holds
     /// them: a battle starts from them.
     pub now: Option<[i32; 4]>,
+}
+
+impl Member {
+    /// A member with no battle items, no worn units and no saved vitals.
+    pub fn fresh(level: i32, experience: i32, equipment: [i32; 4]) -> Member {
+        Member { level, experience, equipment, worn: Default::default(), battle_items: Vec::new(), now: None }
+    }
+
+    /// The equipped items for a battle's stats: the worn units when every equipped slot has
+    /// one, else `None` (the item numbers alone make fresh items, `Tables::equip`).
+    pub fn worn_units(&self) -> Option<Vec<crate::data::save::ItemUnit>> {
+        let mut units = Vec::new();
+        for (&item, w) in self.equipment.iter().zip(&self.worn) {
+            match (item >= 0, w) {
+                (true, Some(w)) if w.item == item => units.push(w.unit()),
+                (true, _) => return None,
+                (false, _) => {}
+            }
+        }
+        (!units.is_empty()).then_some(units)
+    }
+}
+
+/// An equipped item with what its stats depend on: the item, its quality, its effect rows
+/// (`item_effect.xml`) and trait rows (`item_potential.xml`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct WornItem {
+    pub item: i32,
+    pub quality: f32,
+    pub effects: Vec<i16>,
+    pub traits: Vec<usize>,
+    /// Whether the traits add to its stats (the game's item unit gates them on a flag word,
+    /// which is 0 for items as made).
+    pub traits_count: bool,
+}
+
+impl WornItem {
+    /// From the game's item unit.
+    fn from_unit(u: &crate::data::save::ItemUnit) -> WornItem {
+        WornItem { item: i32::from(u.item), quality: u.quality, effects: u.effects.iter().copied().filter(|&e| e >= 0).collect(), traits: held_traits(u), traits_count: u.word_e == 0 }
+    }
+
+    /// An item from the basket, as it was made.
+    fn from_got(g: &crate::gather::Got) -> WornItem {
+        WornItem { item: g.item, quality: g.quality, effects: Vec::new(), traits: g.traits.clone(), traits_count: true }
+    }
+
+    /// Back into the basket.
+    fn got(&self) -> crate::gather::Got {
+        crate::gather::Got { item: self.item, quality: self.quality, traits: self.traits.clone() }
+    }
+
+    /// The item unit the equipment rules read (`equipment::item_stat`): unused rows are -1.
+    pub fn unit(&self) -> crate::data::save::ItemUnit {
+        let mut effects = [-1i16; 4];
+        for (o, &e) in effects.iter_mut().zip(&self.effects) {
+            *o = e;
+        }
+        let mut traits = [-1i16; 3];
+        for (o, &t) in traits.iter_mut().zip(&self.traits) {
+            *o = t as i16;
+        }
+        crate::data::save::ItemUnit { serial: 1, item: self.item as i16, quality: self.quality, traits, word_e: u16::from(!self.traits_count), effects, equip_cost: 0, word_1a: 0, counts: [0; 4] }
+    }
+
+    /// Its `wear` line for member `c`'s slot `k`:
+    /// `wear C SLOT ITEM QUALITY EFFECTS|- TRAITS|- COUNTS(1/0)`.
+    fn line(&self, c: usize, k: usize) -> String {
+        let list = |v: Vec<String>| if v.is_empty() { "-".to_string() } else { v.join(",") };
+        let effects = list(self.effects.iter().map(i16::to_string).collect());
+        let traits = list(self.traits.iter().map(usize::to_string).collect());
+        format!("wear {c} {k} {} {} {effects} {traits} {}\n", self.item, self.quality, u8::from(self.traits_count))
+    }
+
+    /// From a `wear` line's words after the member and slot.
+    fn parse(w: &[&str]) -> Option<WornItem> {
+        let list = |v: &str| -> Option<Vec<i64>> { if v == "-" { Some(Vec::new()) } else { v.split(',').map(|x| x.parse().ok()).collect() } };
+        Some(WornItem {
+            item: w.first()?.parse().ok()?,
+            quality: w.get(1)?.parse().ok()?,
+            effects: list(w.get(2)?)?.into_iter().map(|e| i16::try_from(e).ok()).collect::<Option<_>>()?,
+            traits: list(w.get(3)?)?.into_iter().map(|t| usize::try_from(t).ok()).collect::<Option<_>>()?,
+            traits_count: *w.get(4)? != "0",
+        })
+    }
 }
 
 /// A carried battle item: the item, its quality, the uses left, its effect rows
@@ -171,14 +259,43 @@ pub struct Session {
 }
 
 impl Session {
+    /// A session with nothing in it yet: a new game's money, no party, no calendar, standing
+    /// in field 0. The constructors set what they know on top of it, so a new field of the
+    /// session needs its default here only.
+    fn bare(chain: Chain) -> Session {
+        Session {
+            chain,
+            calendar: None,
+            carried: 0,
+            basket: Vec::new(),
+            scene: Scene::Field(0),
+            field: None,
+            logy: false,
+            money: NEW_GAME_MONEY,
+            party: Vec::new(),
+            squad: Vec::new(),
+            known: Default::default(),
+            opened: Default::default(),
+            worn: Default::default(),
+            visited: Default::default(),
+            field_gauge: 0,
+            field_state: Default::default(),
+            taken: [None; TAKEN_SLOTS],
+            rank: (0, 0),
+            friendship: Vec::new(),
+            alchemy: (0, 0),
+            library_new: false,
+        }
+    }
+
     /// A new game with the lead chosen (`logy`), opening with its first event.
     pub fn new_game(chain: Chain, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Event(new_game_event(logy, false).to_string()), field: None, logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false }
+        Session { scene: Scene::Event(new_game_event(logy, false).to_string()), logy, ..Session::bare(chain) }
     }
 
     /// A session already in free play in field `map` with the story where `chain` has it.
     pub fn in_field(chain: Chain, map: u32, logy: bool) -> Session {
-        Session { chain, calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(map), field: Some(map), logy, money: NEW_GAME_MONEY, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false }
+        Session { scene: Scene::Field(map), field: Some(map), logy, ..Session::bare(chain) }
     }
 
     /// The player walks from field `from` to field `to` in free play: the event that starts as
@@ -218,7 +335,7 @@ impl Session {
     /// already holds keep their own.
     pub fn with_party(mut self, defaults: &[crate::data::battle_data::PartyDefault]) -> Session {
         for d in defaults.iter().skip(self.party.len()) {
-            self.party.push(Member { level: 1, experience: 0, equipment: d.equipment, battle_items: Vec::new(), now: None });
+            self.party.push(Member::fresh(1, 0, d.equipment));
         }
         self
     }
@@ -283,8 +400,8 @@ impl Session {
 
     /// Puts basket item `pick` on member `member` (character number) in slot `slot` (0 weapon,
     /// 1 armour, 2 and 3 accessories) when it fits there (`ItemRow::fits`); what the slot held
-    /// goes back into the basket. Not yet the game's: the item keeps no quality or traits once
-    /// worn and comes back at quality 50 (the stats read are the row's, as `Tables::equip`).
+    /// goes back into the basket with its quality and traits (quality 50 and none when only its
+    /// number was known). Not yet the game's: a worn item's effects are not kept in the basket.
     pub fn equip(&mut self, member: usize, slot: usize, pick: usize, items: &[crate::equipment::ItemRow]) -> Result<(), String> {
         let got = self.basket.get(pick).ok_or("no such basket item")?;
         let row = usize::try_from(got.item).ok().and_then(|i| items.get(i)).ok_or("no such item")?;
@@ -292,10 +409,12 @@ impl Session {
             return Err("it does not fit there".into());
         }
         let m = self.party.get_mut(member).ok_or("no such member")?;
-        let worn = std::mem::replace(&mut m.equipment[slot], got.item);
+        let off = std::mem::replace(&mut m.equipment[slot], got.item);
+        let off_unit = std::mem::replace(&mut m.worn[slot], Some(WornItem::from_got(got)));
         self.basket.remove(pick);
-        if worn >= 0 {
-            self.basket.push(crate::gather::Got { item: worn, quality: 50.0, traits: Vec::new() });
+        if off >= 0 {
+            // What was worn comes back as it was held (as made when only its number is known).
+            self.basket.push(off_unit.filter(|w| w.item == off).map_or(crate::gather::Got { item: off, quality: 50.0, traits: Vec::new() }, |w| w.got()));
         }
         Ok(())
     }
@@ -521,11 +640,17 @@ impl Session {
                     return None;
                 }
                 let kit: Vec<i32> = w[4].split(',').filter_map(|v| v.parse().ok()).collect();
-                Some(Member { level: w[2].parse().ok()?, experience: w[3].parse().ok()?, equipment: kit.try_into().ok()?, battle_items: Vec::new(), now: None })
+                Some(Member::fresh(w[2].parse().ok()?, w[3].parse().ok()?, kit.try_into().ok()?))
             })
             .collect::<Vec<_>>();
         for l in text.lines() {
             let w: Vec<&str> = l.split_whitespace().collect();
+            if w.first() == Some(&"wear") {
+                if let (Some(m), Some(k), Some(item)) = (w.get(1).and_then(|c| c.parse::<usize>().ok()).and_then(|c| party.get_mut(c)), w.get(2).and_then(|k| k.parse::<usize>().ok()).filter(|&k| k < 4), WornItem::parse(&w[3.min(w.len())..])) {
+                    m.worn[k] = Some(item);
+                }
+                continue;
+            }
             if w.first() != Some(&"carry") {
                 continue;
             }
@@ -539,7 +664,7 @@ impl Session {
     /// Saved text with a won battle's spoils paid in (as [`Session::won`]): for the battle a
     /// field encounter opens, which carries its field's save and hands it back.
     pub fn won_in_save(text: &str, fighters: &[usize], exp: i32, money: i32, drops: &[(i32, i32, f32)], exp_table: &[(i32, i32)]) -> String {
-        let mut s = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: NEW_GAME_MONEY, party: Self::party_in(text), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false };
+        let mut s = Session { party: Self::party_in(text), ..Session::bare(Chain::new(Vec::new(), Vec::new(), Vec::new())) };
         if let Some(m) = text.lines().find_map(|l| l.strip_prefix("money ")).and_then(|v| v.trim().parse().ok()) {
             s.money = m;
         }
@@ -560,7 +685,7 @@ impl Session {
             }
         }
         // The drops join the basket: its `item` lines (in any order: `load` reads them all).
-        let mut found = Session { chain: Chain::new(Vec::new(), Vec::new(), Vec::new()), calendar: None, carried: 0, basket: Vec::new(), scene: Scene::Field(0), field: None, logy: false, money: 0, party: Vec::new(), squad: Vec::new(), known: Default::default(), opened: Default::default(), worn: Default::default(), visited: Default::default(), field_gauge: 0, field_state: Default::default(), taken: [None; TAKEN_SLOTS], rank: (0, 0), friendship: Vec::new(), alchemy: (0, 0), library_new: false };
+        let mut found = Session { money: 0, ..Session::bare(Chain::new(Vec::new(), Vec::new(), Vec::new())) };
         found.found(drops);
         for g in &found.basket {
             out += &format!("item {} {}\n", g.item, g.quality);
@@ -628,6 +753,13 @@ impl Session {
         for (c, m) in self.party.iter().enumerate() {
             let kit: Vec<String> = m.equipment.iter().map(i32::to_string).collect();
             out += &format!("member {c} {} {} {}\n", m.level, m.experience, kit.join(","));
+        }
+        for (c, m) in self.party.iter().enumerate() {
+            for (k, w) in m.worn.iter().enumerate() {
+                if let Some(w) = w {
+                    out += &w.line(c, k);
+                }
+            }
         }
         for (c, m) in self.party.iter().enumerate() {
             for b in &m.battle_items {
@@ -712,7 +844,12 @@ impl Session {
                     }
                     let kit: Vec<i32> = w.get(4).ok_or_else(|| bad(line))?.split(',').map(|v| v.parse().map_err(|_| bad(line))).collect::<Result<_, _>>()?;
                     let equipment: [i32; 4] = kit.try_into().map_err(|_| bad(line))?;
-                    party.push(Member { level: num(2)? as i32, experience: num(3)? as i32, equipment, battle_items: Vec::new(), now: None });
+                    party.push(Member::fresh(num(2)? as i32, num(3)? as i32, equipment));
+                }
+                "wear" => {
+                    let item = WornItem::parse(&w[3.min(w.len())..]).ok_or_else(|| bad(line))?;
+                    let slot = party.get_mut(num(1)? as usize).and_then(|m| m.worn.get_mut(num(2).ok()? as usize)).ok_or_else(|| bad(line))?;
+                    *slot = Some(item);
                 }
                 "carry" => {
                     let item = BattleItem::parse(&w[2.min(w.len())..]).ok_or_else(|| bad(line))?;
@@ -764,7 +901,7 @@ impl Session {
         let field = field.ok_or_else(|| BadSave("no field line".into()))?;
         story.field_map = Some(field as i32);
         known.extend(basket.iter().map(|g: &crate::gather::Got| g.item));
-        Ok((Session { chain, calendar: None, carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, squad: Vec::new(), known, opened, worn, visited, field_gauge, field_state, taken, rank, friendship: Vec::new(), alchemy: (0, 0), library_new: false }, at))
+        Ok((Session { carried, basket, scene: Scene::Field(field), field: Some(field), logy, money, party, known, opened, worn, visited, field_gauge, field_state, taken, rank, ..Session::bare(chain) }, at))
     }
 
     /// A session from either save format, by its bytes: Barrel's text (it starts `barrel-save`)
@@ -812,6 +949,7 @@ impl Session {
                 level: m.level,
                 experience: m.exp,
                 equipment: m.equipment,
+                worn: m.units.each_ref().map(|u| u.as_ref().map(WornItem::from_unit)),
                 now: Some([m.hp, m.equipped[0], m.mp, m.equipped[1]]),
                 battle_items: sum.battle_items.get(m.character as usize).into_iter().flatten().map(BattleItem::from_unit).collect(),
             })
@@ -852,9 +990,6 @@ impl Session {
         }
         Ok((
             Session {
-                chain,
-                calendar: None,
-                carried: 0,
                 basket,
                 scene: Scene::Field(field),
                 field: Some(field),
@@ -873,6 +1008,7 @@ impl Session {
                 friendship: by_character.iter().map(|m| m.friendship).collect(),
                 alchemy: sum.alchemy.unwrap_or((0, 0)),
                 library_new: sum.library_new,
+                ..Session::bare(chain)
             },
             at,
         ))
@@ -1016,7 +1152,7 @@ mod tests {
         // Item 0 a material, 1 Escha's staff, 2 Logy's sword, 3 an accessory for all.
         let items = [ItemRow { equip: false, stats: [0; 9], slots: &[], wearers: 0 }, row(&[0], 1), row(&[0], 2), row(&[2, 3], 0x7ff)];
         let mut s = Session::in_field(chain(), 3, false);
-        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], now: None, battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], battle_items: Vec::new(), now: None }];
+        s.party = vec![Member { level: 1, experience: 0, equipment: [-1; 4], worn: Default::default(), now: None, battle_items: vec![BattleItem { item: 270, quality: 55.0, uses: 2, effects: vec![12, -1], traits: vec![3] }] }, Member { level: 1, experience: 0, equipment: [2, -1, -1, -1], worn: Default::default(), battle_items: Vec::new(), now: None }];
         s.basket = [0, 1, 3].iter().map(|&item| crate::gather::Got { item, quality: 60.0, traits: Vec::new() }).collect();
         assert!(s.equip(0, 0, 0, &items).is_err(), "a material is no weapon");
         assert!(s.equip(1, 0, 1, &items).is_err(), "Escha's staff is not Logy's");
@@ -1031,6 +1167,15 @@ mod tests {
         let (back, _) = Session::load(chain(), &text).unwrap();
         assert_eq!(back.party, s.party);
         assert_eq!(Session::party_in(&text), s.party);
+        // Worn units (equip put the basket's items on) are in the text and come back.
+        assert!(text.contains("wear 0 0 1 60 - -"), "{text}");
+        assert!(s.party[0].worn[0].is_some() && back.party[0].worn[0] == s.party[0].worn[0]);
+        let mut with_effects = s.party.clone();
+        with_effects[1].worn[0] = Some(WornItem { item: 2, quality: 69.5, effects: vec![4, 9], traits: vec![7, 8], traits_count: false });
+        s.party = with_effects;
+        let (again, _) = Session::load(chain(), &s.save([0.0, 0.0]).unwrap()).unwrap();
+        assert_eq!(again.party[1].worn[0], s.party[1].worn[0]);
+        s.party[1].worn[0] = None;
         // A battle spent one of Escha's two uses.
         let spent = Session::spent_in_save(&text, 0, &[(0, 1)]);
         let mut after = s.party.clone();

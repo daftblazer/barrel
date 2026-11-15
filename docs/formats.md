@@ -554,6 +554,16 @@ game save (the user's, 8/20), the two agree in everything the text holds:
   (`[1, N]`: N minus the durability left is the wear; `[0, N]`: open when the flag byte is
   clear); none are worn or opened in this save.
 
+Barrel's text save holds each equipped item beside the `member` line's item numbers, as
+`wear C SLOT ITEM QUALITY EFFECTS TRAITS COUNTS`: member C's slot SLOT (0 weapon, 1 armour, 2
+and 3 accessories), the `itemData.xml` row, the quality, the effect rows and the trait rows
+(comma lists, `-` for none) and 1 when the traits add to the item's stats (the game unit's
+flag word at +0xe is 0), 0 when not. A game save fills them from the equipped item units
+(`Session::from_game_save`); a text save without `wear` lines (older ones) reads as before and
+fights in fresh quality-50 items made from the item numbers. The play binary's fights build
+each member through `Tables::outfit`, which uses the worn items when every equipped slot has
+one (Awin's Sledge Head, quality 69 with two traits, gives the game's attack and defence).
+
 Not in the text key: the alchemists' battle items (`carry`), which the game save holds
 (Escha's, Logy's) and the session now carries; the key was made before `carry` lines existed.
 The field time carried (`tenths`) is not in a game save: it is zero on the area map.
