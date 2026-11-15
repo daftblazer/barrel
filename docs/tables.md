@@ -2566,3 +2566,12 @@ character wear it: the 53 weapons name one character each, armour 2, 6 or all 11
 accessories all 11 (the Traditional Staff `PC00` only, the Cotton Shirt all, the Leather Coat 1,
 2, 3, 4, 6, 8). `Session::equip` swaps a basket item onto a member, what the slot held back to
 the basket (not yet the game's: at quality 50, the worn item's own quality and traits not kept).
+
+### Battle fighters (live)
+
+The objects `0x1401c1970 (?, battle, user, target, damage, element)` and `0x1401bd410 (battle,
+user, target, action)` are handed (escha-recomp battle-hits scenario, `tools/hits.py`): a party
+member's vtable is `0x140808540`, a monster's `0x1408083d0`; +0x70 the fighter's place in the
+battle, +0x78 the party member number or monster number, +0x88 level, +0x8c HP now, +0x90 MP
+now, +0x94 maximum HP (Escha 35 with her equipment in the user's save). The damage dealt is
+the fifth argument (an integer), the element the sixth (-1 for none).
