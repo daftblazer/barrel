@@ -1380,7 +1380,15 @@ for the action's kind 1), it adds `trunc((stat16 − trunc(−100 m / n) − 100
 +50 when the target's +0x2dc is set (set as it goes down), plus the carry at +0x1458 (then
 cleared); a single-target hit gives 25. `ACT_SUPPORT_INCRESAS` (212) adds its amount
 (`0x1401a0d50`), `ACT_SUPPORT_DECRESAS` (179) takes it (`0x1401a0df0`); `0x1401a0c00` adds 100
-or 300; `0x140192879` takes (support attacks, not read). `battle::support_gain` is the gain.
+or 300; `0x140192879` takes the request's +0x18 (the support request run by `0x140192760`, which
+marks the supporter's +0x28e and starts its action, kind 0xa or 0xc/0xd by the request's +0x10).
+A member may support (`0x1401b7c00(member, cost)`) when the gauge is at least the cost, its
++0x282 is set, its +0x281 clear and its check 9 (`0x1401afd10`) false; `0x1401abf26` asks it
+with the cost at the request's +0x5c, by the request's kind +0x60 (1 to 4; kind 4 also needs the
+member's +0x3ac at 100 or more and `0x141077e5c` clear). The skill table holds no cost:
+Support Attack (act 6 `ASSIST_ATTACK`, 45 to 50 or 68 to 75) and Support Guard (act 86
+`ASSIST_GUARD`, 33) have records per member (154/155, 168/169, ...). `battle::support_gain`
+is the gain.
 
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first
