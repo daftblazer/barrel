@@ -146,7 +146,12 @@ likely settle them where static reading failed.
 - **Skill scenes' frame.** Which rotation a battle character's +0x880 object has (taken as
   the party's facing towards the monsters for any target); how a monster's skill event names
   its actor and target and which way its offsets turn; what characters 10002+ beyond the
-  stand-ins are; `skill_scene::play` is not shown in play yet.
+  stand-ins are. In play (`BARREL_SKILL_SCENES=1`) a member's Attack and Support Attack play
+  their scenes (actor moved, scene camera, step as long as the scene; hits still shown at its
+  start, the actor's clips not switched by the scene). Off by default: at Barrel's stage centre
+  (a guess) and sector places the members stand near BF_POINT19's edge, and the scene's eye,
+  some 750 behind the actor, ends inside the trees and rocks. Needs the game's battle centre
+  and formation first.
 
 ## Synthesis
 

@@ -20,10 +20,10 @@ pub const TARGET: u32 = 10001;
 ///
 /// The facing is the one the events' offsets turn by. The game takes it from the object a
 /// battle character hangs from (`0x1402f0fa0`: its +0x880's +0x240 rotation when it has one,
-/// not read), and the events only make sense if that is the party's facing towards the
-/// monsters for the target too: `Skill_PARTY_ESCHA_0` puts her 600 to the target's −z, and a
-/// camera stand-in 350 there looking at it, the eye behind that. So give a monster target the
-/// party's facing, not its own.
+/// not read), and the events only make sense if, for the target, that points from the actor
+/// to it: `Skill_PARTY_ESCHA_0` puts her 600 to the target's −z, and a camera stand-in 350
+/// there looking at it, the eye behind that. So give the target the way from the actor to it,
+/// not its own facing (with the party in a row facing the monsters, the party's facing).
 #[derive(Clone, Copy, Debug)]
 pub struct Cast {
     pub position: [f32; 3],

@@ -1113,3 +1113,10 @@ only under flag 32768, so a game that never sets it (Escha) draws as before.
 `RenderSettings::foliage` (full, reduced, least; config `foliage`) is how much of a field's
 plants a game draws, named for the game's own grass presets (Ryza: Middle, Low, VeryLow, with
 their density and draw range). The desktop presets take full, the handheld ones reduced.
+
+**Skill scenes in battle** (`BARREL_SKILL_SCENES=1`). A member's Attack (command 0) and Support
+Attack (8) play `Skill_PARTY_<member>_<command>` through `barrel_escha::skill_scene::play`.
+The actor's motion lengths come from its clips and `CharaDiv` divisions, and the target is
+anchored by the way from the actor to it. The step lasts as long as the scene. Each frame the
+actor's body takes the scene's place and facing and the camera takes the scene's eye and
+target; both go back when the scene ends.

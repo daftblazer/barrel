@@ -1376,13 +1376,33 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         tex_base += body.count;
         packs.extend(body.packs);
         if let Some((skeleton, motions, anim, _)) = body.rig {
-            fighters[k] = Some(BattleFighter { body: first_body + bodies.len(), place: pos, motions, back_at: None, down: false, party: k < party.len() });
+            fighters[k] = Some(BattleFighter { body: first_body + bodies.len(), place: pos, facing: angle.to_radians(), chara, motions, back_at: None, down: false, party: k < party.len() });
             bodies.push(TownBody { instance: body.instance, skeleton, anim, clock: Some(0.0), from: None, held: None, last_locals: Vec::new(), hidden: false });
         }
     }
+    let scenes = {
+        let mut divisions = barrel_formats::chara_div::Divisions::new();
+        for name in ["CharaDiv.xml", "SubCharaDiv.xml"] {
+            if let Some(t) = table(name) {
+                barrel_formats::chara_div::read(&t, &mut divisions);
+            }
+        }
+        let motion_names = std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe"))
+            .ok()
+            .and_then(|b| barrel_formats::pe::Pe::parse(&b).ok().map(|pe| barrel_escha::gesture::motions(&pe)))
+            .unwrap_or_default();
+        let curves = std::fs::read(root.join("Saves/curve/curve_data.xml"))
+            .ok()
+            .and_then(|b| barrel_formats::table::parse(&b).ok())
+            .map(|t| barrel_engine::curve::Curve::table(&t))
+            .unwrap_or_default();
+        SceneData { on: std::env::var_os("BARREL_SKILL_SCENES").is_some(), root: root.to_path_buf(), curves, motion_names, divisions, measures: barrel_engine::stage::Measures::table(&charas) }
+    };
     let music = barrel_escha::auto_battle::group_kind(&tables, group).and_then(|k| barrel_escha::battle::music(k, sound_quest, logy));
     Ok((packs, bodies, BattlePlay {
         fighters,
+        scenes,
+        scene: None,
         now: outcome.start.clone(),
         charas: party.iter().map(|p| p.0).collect(),
         outcome,
@@ -1472,6 +1492,11 @@ struct BattlePlay {
     /// A monster's action on a member held back for Support Guards: its event's index, when
     /// the hold began, whether a guard was given.
     guard_hold: Option<(usize, f32, bool)>,
+    /// What the actions' skill scenes are played with.
+    scenes: SceneData,
+    /// The skill scene playing (`barrel_escha::skill_scene`): it places the actor and moves the
+    /// camera while it runs.
+    scene: Option<ActionScene>,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1504,6 +1529,38 @@ const COMMAND_ROW: [i32; 7] = {
     [ATTACK, ITEM, SKILL, MOVE, WAIT, CHANGE, RUN]
 };
 
+/// The game data the battle's skill scenes need.
+struct SceneData {
+    /// Whether actions play their scenes (`BARREL_SKILL_SCENES`).
+    on: bool,
+    root: PathBuf,
+    curves: std::collections::BTreeMap<u32, barrel_engine::curve::Curve>,
+    /// The `MOTION_*` names, by number (the events' motions).
+    motion_names: Vec<String>,
+    divisions: barrel_formats::chara_div::Divisions,
+    /// `Chara.xml`'s measures by row.
+    measures: std::collections::BTreeMap<u32, barrel_engine::stage::Measures>,
+}
+
+/// A skill scene playing: when it began, its frames, the actor and the target.
+struct ActionScene {
+    start: f32,
+    frames: Vec<barrel_engine::stage::Snapshot>,
+    actor: usize,
+}
+
+impl ActionScene {
+    fn seconds(&self) -> f32 {
+        self.frames.len() as f32 * barrel_engine::stage::FRAME
+    }
+
+    /// The frame shown at battle time `time`, while it runs.
+    fn at(&self, time: f32) -> Option<&barrel_engine::stage::Snapshot> {
+        let k = ((time - self.start) / barrel_engine::stage::FRAME).max(0.0) as usize;
+        self.frames.get(k)
+    }
+}
+
 /// A battle's tables, sides, generator and the commands given so far.
 struct BattleFight {
     tables: barrel_escha::auto_battle::Tables,
@@ -1518,6 +1575,9 @@ struct BattleFighter {
     body: usize,
     /// Where it stands (field units).
     place: [f32; 3],
+    /// Its facing at its place (radians about y, 0 towards +z) and its `Chara.xml` row.
+    facing: f32,
+    chara: usize,
     motions: Motions,
     /// When its one-off motion ends (back to its wait).
     back_at: Option<f32>,
@@ -1573,6 +1633,61 @@ impl BattlePlay {
             }).or(turn.next_places.first()).copied().unwrap_or(0),
             plate,
         })
+    }
+
+    /// The skill scene of member `who`'s action on `target` with battle command `command`
+    /// (`battle::party_skill_event`), its motions' lengths from the member's clips; `None`
+    /// when either has no body or the event is missing.
+    fn party_scene(&mut self, who: usize, target: usize, command: u8) -> Option<ActionScene> {
+        use barrel_escha::skill_scene::{Cast, ACTOR};
+        let member = *self.charas.get(who)?;
+        let name = barrel_escha::battle::party_skill_event(member, command)?;
+        let bytes = std::fs::read(self.scenes.root.join("Event").join(name)).ok()?;
+        let event = barrel_formats::ebd::Ebd::parse(&bytes).ok()?;
+        let t = self.fighters.get(target)?.as_ref()?;
+        let (t_place, t_chara) = (t.place, t.chara);
+        // The actor's motions' lengths, each (motion, division) the event plays.
+        let mut lengths: std::collections::HashMap<(u32, Option<u32>), (f32, bool)> = Default::default();
+        {
+            use barrel_engine::event::Step;
+            let player = barrel_engine::event::Player::new(&event, &[], &barrel_formats::ebd::OperandTable::escha()).ok()?.anchored_places();
+            let mut current = None;
+            let mut wanted = Vec::new();
+            for step in player {
+                match step {
+                    Step::Motion { character: ACTOR, motion, division, .. } => {
+                        current = Some(motion);
+                        wanted.push((motion, division));
+                    }
+                    Step::MotionDivision { character: ACTOR, division, .. } => wanted.extend(current.map(|m| (m, Some(division)))),
+                    _ => {}
+                }
+            }
+            let a = self.fighters.get_mut(who)?.as_mut()?;
+            for (motion, division) in wanted {
+                let Some(column) = self.scenes.motion_names.get(motion as usize) else { continue };
+                let Some(duration) = a.motions.get(column).map(|c| c.duration) else { continue };
+                let found = division.and_then(|k| *self.scenes.divisions.get(&(a.motions.head.clone(), column.clone()))?.get(k as usize)?);
+                let length = match found {
+                    Some(d) => (d.end.unwrap_or(duration).min(duration) - d.start).max(0.0),
+                    None => duration,
+                };
+                lengths.insert((motion, division), (length, found.is_some_and(|d| d.loops)));
+            }
+        }
+        let a = self.fighters.get(who)?.as_ref()?;
+        let measures = |c: usize| self.scenes.measures.get(&(c as u32)).copied();
+        let actor = Cast { position: a.place, facing: a.facing, measures: measures(a.chara) };
+        // The target's offsets turn by the way from the actor to it (`skill_scene::Cast`).
+        let toward = (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]);
+        let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
+        let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
+        let frames = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
+        if std::env::var("BARREL_SCENE_LOG").is_ok() {
+            let first = frames.iter().find(|f| f.characters.get(&ACTOR).is_some_and(|c| c.0 != actor.position));
+            eprintln!("scene: actor {:?} facing {:.2}, target {:?} anchored facing {:.2}; placed {:?}, eye {:?} at {:?}; ends {:?}", actor.position, actor.facing, foe.position, foe.facing, first.map(|f| f.characters[&ACTOR]), first.and_then(|f| f.eye), first.and_then(|f| f.target), frames.last().map(|f| f.characters[&ACTOR]));
+        }
+        Some(ActionScene { start: self.time, frames, actor: who })
     }
 
     /// Fighter `k`'s place on the stage, if it has a body.
@@ -1879,6 +1994,27 @@ impl BattlePlay {
             && self.acting.as_ref().is_none_or(|a| (a.0, a.1) != (*who, self.time))
         {
             self.acting = Some((*who, self.time, Vec::new()));
+        }
+        // A member's attack or Support Attack plays its skill scene, the step lasting as long
+        // (its hits already shown as it starts: the scene's strike is not timed to them yet).
+        // Its other skills keep the plain step until their commands are known here.
+        // Only with BARREL_SKILL_SCENES for now: at Barrel's guessed stage centre and sector
+        // places the scenes' camera ends up inside the stage's scenery (`docs/escha/open.md`).
+        if let Event::Acted { who, target, skill, .. } = &event
+            && *who < self.charas.len()
+            && self.scenes.on
+            && self.scene.as_ref().is_none_or(|s| s.start != self.time)
+        {
+            let command = match skill.as_str() {
+                "Attack" => Some(0),
+                SUPPORT_SKILL_NAME => Some(barrel_escha::skirmish::SUPPORT_ATTACK_COMMAND),
+                _ => None,
+            };
+            if let Some(scene) = command.and_then(|c| self.party_scene(*who, *target, c)) {
+                self.until = self.until.max(self.time + scene.seconds());
+                eprintln!("battle: skill scene {:.2} s", scene.seconds());
+                self.scene = Some(scene);
+            }
         }
         // The action's rate (the event after its hits) shows with them, taking no step itself.
         if let Some(Event::Rate { rate, support, .. }) = self.outcome.events.get(self.next) {
@@ -4001,6 +4137,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     }
     let mut battle_keys: std::collections::VecDeque<title::Button> = title::keys(&std::env::var("BARREL_BATTLE_KEYS").unwrap_or_default()).into();
     let mut battle_guards: std::collections::VecDeque<usize> = std::env::var("BARREL_BATTLE_GUARDS").unwrap_or_default().split(',').filter_map(|k| k.trim().parse().ok()).collect();
+    // The battle's own camera while a skill scene has the view.
+    let mut battle_view: Option<(Vec3, Vec3)> = None;
     let mut battle_supports: std::collections::VecDeque<usize> = std::env::var("BARREL_BATTLE_SUPPORTS").unwrap_or_default().split(',').filter_map(|k| k.trim().parse().ok()).collect();
     let mut battle_layer = match battle_play.as_ref() {
         Some(_) if std::env::var("BARREL_NO_HUD").is_err() => {
@@ -5018,6 +5156,32 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             if let Some(play) = battle_play.as_mut() {
                 let speed = battlehud::FAST_FORWARD_SPEEDS[usize::from(FAST_FORWARD.load(std::sync::atomic::Ordering::Relaxed)).min(2)];
                 play.step(&mut town_bodies, dt * speed);
+                // A skill scene: its actor where the scene has it and the scene's camera (game
+                // space, x mirrored); put back as the battle had them once it ends.
+                let shown = play.scene.as_ref().and_then(|sc| Some((sc.actor, sc.at(play.time)?.clone())));
+                match shown {
+                    Some((actor, snap)) => {
+                        let mirror = Vec3::new(-1.0, 1.0, 1.0);
+                        if let (Some(&(p, f)), Some(body)) = (snap.characters.get(&barrel_escha::skill_scene::ACTOR), play.body_of(actor))
+                            && let Some(b) = town_bodies.get(body) {
+                                instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f), Vec3::from(p)));
+                            }
+                        if let (Some(e), Some(t)) = (snap.eye, snap.target) {
+                            battle_view.get_or_insert((eye, target));
+                            (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
+                        }
+                    }
+                    None => {
+                        if let Some(sc) = play.scene.take()
+                            && let Some(f) = play.fighters.get(sc.actor).and_then(Option::as_ref)
+                            && let Some(b) = town_bodies.get(f.body) {
+                                instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f.facing), Vec3::from(f.place)));
+                            }
+                        if let Some((e, t)) = battle_view.take() {
+                            (eye, target) = (e, t);
+                        }
+                    }
+                }
                 // Offscreen: `BARREL_BATTLE_KEYS` (as `BARREL_MENU_KEYS`), a key a frame while a
                 // member's turn waits.
                 if presenter.is_none() && play.waiting()
