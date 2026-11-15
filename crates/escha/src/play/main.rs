@@ -1403,6 +1403,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         fighters,
         scenes,
         scene: None,
+        later: Vec::new(),
         now: outcome.start.clone(),
         charas: party.iter().map(|p| p.0).collect(),
         outcome,
@@ -1497,6 +1498,8 @@ struct BattlePlay {
     /// The skill scene playing (`barrel_escha::skill_scene`): it places the actor and moves the
     /// camera while it runs.
     scene: Option<ActionScene>,
+    /// Motions held for a scene's hit: when, the fighter, the column.
+    later: Vec<(f32, usize, &'static str)>,
     /// The battle's music track (`battle::music`), played in a window.
     music: Option<u32>,
     /// The victory music has started (with the Result screen).
@@ -1547,6 +1550,8 @@ struct ActionScene {
     start: f32,
     frames: Vec<barrel_engine::stage::Snapshot>,
     actor: usize,
+    /// Its hits: battle time, share of the damage (percent).
+    hits: Vec<(f32, i32)>,
 }
 
 impl ActionScene {
@@ -1682,12 +1687,18 @@ impl BattlePlay {
         let toward = (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]);
         let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
         let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
-        let frames = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
+        let barrel_escha::skill_scene::Scene { frames, hits } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
+        let hits = hits.into_iter().map(|(t, share)| (self.time + t, share)).collect();
         if std::env::var("BARREL_SCENE_LOG").is_ok() {
             let first = frames.iter().find(|f| f.characters.get(&ACTOR).is_some_and(|c| c.0 != actor.position));
             eprintln!("scene: actor {:?} facing {:.2}, target {:?} anchored facing {:.2}; placed {:?}, eye {:?} at {:?}; ends {:?}", actor.position, actor.facing, foe.position, foe.facing, first.map(|f| f.characters[&ACTOR]), first.and_then(|f| f.eye), first.and_then(|f| f.target), frames.last().map(|f| f.characters[&ACTOR]));
         }
-        Some(ActionScene { start: self.time, frames, actor: who })
+        Some(ActionScene { start: self.time, frames, actor: who, hits })
+    }
+
+    /// The hits of a scene that began with this step, if one did.
+    fn scene_hits(&self) -> Option<Vec<(f32, i32)>> {
+        self.scene.as_ref().filter(|s| s.start == self.time && !s.hits.is_empty()).map(|s| s.hits.clone())
     }
 
     /// Fighter `k`'s place on the stage, if it has a body.
@@ -1926,6 +1937,11 @@ impl BattlePlay {
                 }
             }
         }
+        let due: Vec<(usize, &'static str)> = self.later.iter().filter(|l| l.0 <= now).map(|l| (l.1, l.2)).collect();
+        self.later.retain(|l| l.0 > now);
+        for (k, column) in due {
+            self.play(bodies, k, column);
+        }
         if self.time < self.until {
             return;
         }
@@ -2025,7 +2041,20 @@ impl BattlePlay {
             self.next += 1;
         }
         match event {
-            Event::Acted { target, damage, .. } if damage > 0 => self.numbers.push((target, -damage, self.time)),
+            // In a scene, split over its hits as they land (the last takes what rounding left).
+            Event::Acted { target, damage, .. } if damage > 0 => match self.scene_hits() {
+                Some(hits) => {
+                    let mut left = damage;
+                    for (k, &(at, share)) in hits.iter().enumerate() {
+                        let part = if k + 1 == hits.len() { left } else { (damage * share / 100).min(left) };
+                        left -= part;
+                        if part > 0 {
+                            self.numbers.push((target, -part, at));
+                        }
+                    }
+                }
+                None => self.numbers.push((target, -damage, self.time)),
+            },
             Event::Healed { target, amount, .. } if amount > 0 => self.numbers.push((target, amount, self.time)),
             Event::Poisoned { who, damage, .. } if damage > 0 => self.numbers.push((who, -damage, self.time)),
             _ => {}
@@ -2041,14 +2070,23 @@ impl BattlePlay {
             self.play(bodies, w, "ATTACK00");
         }
         if let Some(t) = target {
-            if fell {
+            // In a scene, at its first hit.
+            let at = self.scene_hits().and_then(|h| h.first().map(|h| h.0));
+            let column = if fell {
                 if let Some(f) = self.fighters.get_mut(t).and_then(Option::as_mut) {
                     f.down = true;
                 }
                 let party = self.fighters.get(t).and_then(Option::as_ref).is_some_and(|f| f.party);
-                self.play(bodies, t, if party { "DOWN" } else { "DAMAGE" });
+                Some(if party { "DOWN" } else { "DAMAGE" })
             } else if matches!(event, Event::Acted { damage, .. } if damage > 0) || matches!(event, Event::Poisoned { .. }) {
-                self.play(bodies, t, "DAMAGE");
+                Some("DAMAGE")
+            } else {
+                None
+            };
+            match (column, at) {
+                (Some(c), Some(at)) => self.later.push((at, t, c)),
+                (Some(c), None) => self.play(bodies, t, c),
+                _ => {}
             }
         }
     }
@@ -6052,6 +6090,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let numbers: Vec<hud::Element> = play
             .numbers
             .iter()
+            .filter(|n| n.2 <= play.time)
             .filter_map(|&(k, value, at)| {
                 // Its place as the scene draws it (x mirrored).
                 let p = play.place_of(k)?;

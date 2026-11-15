@@ -146,9 +146,10 @@ likely settle them where static reading failed.
 - **Skill scenes' frame.** Which rotation a battle character's +0x880 object has (taken as
   the party's facing towards the monsters for any target); how a monster's skill event names
   its actor and target and which way its offsets turn; what characters 10002+ beyond the
-  stand-ins are. In play a member's Attack and Support Attack play their scenes; the hits
-  still show at the scene's start (not at its strike) and the actor's clips are not switched by
-  the scene's motion commands yet.
+  stand-ins are. In play a member's Attack and Support Attack play their scenes, the damage
+  number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the HP plates still
+  drop at the scene's start, and the actor's clips are not switched by the scene's motion
+  commands yet. The `s1` handler is not read (marker 0 = a hit is from the data).
 
 ## Synthesis
 

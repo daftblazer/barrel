@@ -31,6 +31,18 @@ pub struct Cast {
     pub measures: Option<Measures>,
 }
 
+/// A played scene: its frames, and its hits as (seconds from its start, share of the damage
+/// in percent).
+pub struct Scene {
+    pub frames: Vec<Snapshot>,
+    pub hits: Vec<(f32, i32)>,
+}
+
+/// `s1` (`ECT_CHARA_SET_MARKER`, `{character, marker, 0, 4, share}`): marker 0 is a hit landing,
+/// dealing `share` percent of the action's damage (each event's shares add to 100: one 100 for
+/// a single strike, `Skill_MONSTER_WARDOG_00_0` two); marker 2 (24 uses) is not read.
+const SET_MARKER: u32 = 0x7300_0001;
+
 /// The scene a frame ([`FRAME`]) apart, from its start to its last step, at most `limit`
 /// seconds. `motion_length` gives a motion's length (character, motion, division), for the
 /// event's waits on a motion's end; without it those waits take no time.
@@ -41,13 +53,20 @@ pub fn play(
     curves: &BTreeMap<u32, barrel_engine::curve::Curve>,
     motion_length: Option<barrel_engine::event::MotionLength<'_>>,
     limit: f32,
-) -> Result<Vec<Snapshot>, String> {
+) -> Result<Scene, String> {
     let player = barrel_engine::event::Player::new(event, &[], &OperandTable::escha()).map_err(|e| e.to_string())?.anchored_places();
     let player = match motion_length {
         Some(m) => player.motion_length(m),
         None => player,
     };
     let steps = player.schedule();
+    let hits = steps
+        .iter()
+        .filter_map(|t| match &t.step {
+            barrel_engine::event::Step::Command { word: SET_MARKER, operands: [_, 0, _, _, share, ..], .. } => Some((t.time, *share as i32)),
+            _ => None,
+        })
+        .collect();
     let mut measures = BTreeMap::new();
     let mut stage = Stage { curves: curves.clone(), ..Stage::default() };
     for (who, c) in [(ACTOR, actor), (TARGET, target)] {
@@ -66,7 +85,7 @@ pub fn play(
         play.tick();
         out.push(play.stage.snapshot());
     }
-    Ok(out)
+    Ok(Scene { frames: out, hits })
 }
 
 #[cfg(test)]
@@ -85,9 +104,15 @@ mod tests {
         let her = Cast { position: [0.0, 0.0, -800.0], facing: 0.0, measures: None };
         let it = Cast { position: [0.0, 0.0, 0.0], facing: 0.0, measures: None };
         // Every motion 0.6 s long (her attack's clips are not read here).
-        let frames = play(&event, her, it, &BTreeMap::new(), Some(Box::new(|_, _, _| Some((0.6, false)))), 20.0).unwrap();
+        let scene = play(&event, her, it, &BTreeMap::new(), Some(Box::new(|_, _, _| Some((0.6, false)))), 20.0).unwrap();
+        let frames = scene.frames;
+        // One hit, the whole damage, once she has run in.
+        assert_eq!(scene.hits.len(), 1);
+        assert_eq!(scene.hits[0].1, 100);
         let at = |k: usize| frames[k].characters[&ACTOR].0;
         let gap = |k: usize| at(k)[2].abs();
+        let struck = (scene.hits[0].0 / FRAME) as usize;
+        assert!((gap(struck.min(frames.len() - 1)) - 170.0).abs() < 1.0, "hit at {:?}", at(struck));
         let first = frames.iter().position(|f| f.characters[&ACTOR].0 != [0.0, 0.0, -800.0]).expect("she is placed");
         // Placed 600 off, and already a frame into her run (800/s).
         assert!((gap(first) - (600.0 - 800.0 * FRAME)).abs() < 1.0, "placed at {:?}", at(first));

@@ -642,7 +642,11 @@ stand-in (10004) goes 350 out facing the target, the eye behind it at (200, 200,
 to (350, 150, −100) in a second; after the strike she runs 600 back along her own −z. So the
 target's anchoring rotation is the party's facing, not the monster's (taken so, not read).
 `event::Player::anchored_places` reads these (`Step::PlaceAt`), and
-`barrel_escha::skill_scene::play` plays an event between two fighters.
+`barrel_escha::skill_scene::play` plays an event between two fighters. Its hits are `s1` (`ECT_CHARA_SET_MARKER`, `{character, marker, 0,
+4, share}`, 998 uses in the skill events): marker 0 (974) is a hit landing, `share` its percent
+of the damage, and each event's shares add to 100 (one 100 for a single strike;
+`Skill_MONSTER_WARDOG_00_0` has two); on any character (10004 and up for thrown things).
+Marker 2 (24 uses) is not read. Read from the data, not from the handler.
 
 **The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
 `t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):
