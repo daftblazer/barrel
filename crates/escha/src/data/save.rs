@@ -491,11 +491,17 @@ pub struct Member {
     pub speed: i32,
     /// Max HP, max MP, attack, defense, speed with equipment.
     pub equipped: [i32; 5],
+    /// The whole in-use stat block (`equipment::STATS` words from +0x118, `0x14032de50`): the
+    /// five above, then the resistances, critical stats, support gauge and the rest, with
+    /// equipment and passives counted.
+    pub in_use: [i32; 32],
     /// The skill rows of commands 0 to 9.
     pub skills: [i32; 10],
     pub friendship: f32,
     /// The `itemData` rows worn: weapon, armour, two accessories (-1 none).
     pub equipment: [i32; 4],
+    /// The same four item units whole (quality, effects, traits), `None` for an empty slot.
+    pub units: [Option<ItemUnit>; 4],
 }
 
 /// Where a `Party` record's four equipped item units start.
@@ -516,8 +522,10 @@ pub fn member(d: &[u8]) -> Option<Member> {
         defense: w(9)?,
         speed: w(10)?,
         equipped: [w(0x46)?, w(0x47)?, w(0x48)?, w(0x49)?, w(0x4a)?],
+        in_use: std::array::from_fn(|k| w(0x46 + k).unwrap_or(0)),
         skills: std::array::from_fn(|k| w(0x8c + 3 * k).unwrap_or(-1)),
         friendship: f,
+        units: std::array::from_fn(|k| d.get(EQUIPMENT + k * ITEM_UNIT..EQUIPMENT + (k + 1) * ITEM_UNIT).and_then(|u| item_units(u).into_iter().next())),
         equipment: std::array::from_fn(|k| d.get(EQUIPMENT + k * ITEM_UNIT + 2..EQUIPMENT + k * ITEM_UNIT + 4).map_or(-1, |b| i32::from(i16::from_le_bytes([b[0], b[1]])))),
     })
 }

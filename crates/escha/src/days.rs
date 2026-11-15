@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn a_save_sets_the_calendar() {
         use crate::data::save::{Member, Summary};
-        let member = |c, f| Member { character: c, level: 1, exp: 0, hp: 1, mp: 1, max_hp: 1, max_mp: 1, attack: 1, defense: 1, speed: 1, equipped: [1; 5], skills: [-1; 10], friendship: f, equipment: [-1; 4] };
+        let member = |c, f| Member { character: c, level: 1, exp: 0, hp: 1, mp: 1, max_hp: 1, max_mp: 1, attack: 1, defense: 1, speed: 1, equipped: [1; 5], skills: [-1; 10], friendship: f, equipment: [-1; 4], in_use: [0; 32], units: [None; 4] };
         let mut month = vec![0u8; 0x144];
         month[0x13c] = 3;
         month[0x140] = 2;

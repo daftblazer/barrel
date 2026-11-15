@@ -6,7 +6,7 @@
 //! Not yet the game's: the party members' stats their base stats at their level plus a new
 //! game's starting kit (not the save's own equipment), HP and MP full, the battle items a session carries ([`Tables::carry`]); everything [`crate::skirmish`] leaves out.
 
-use crate::data::battle_data::{self as bd, ActInfo, EncounterGroup, ItemEffect, LevelStats, Monster, PartySkill, Skill};
+use crate::data::battle_data::{self as bd, ActInfo, EncounterGroup, ItemEffect, LevelStats, Monster, PartySkill, Skill, StatBlock};
 use barrel_formats::pe::Pe;
 
 use crate::fight::Event;
@@ -32,10 +32,18 @@ pub struct Tables {
     acts: Vec<ActInfo>,
     kinds: Vec<String>,
     effects: Vec<ItemEffect>,
+    /// The `ACT_*` names by number, for the equipment rules ([`crate::equipment::Tables`]).
+    act_names: Vec<String>,
     radii: Vec<f32>,
     /// What each member's starting kit adds (`party_defaults`' equipment through
     /// `equipment::item_stat`): HP, MP, attack, defence, speed, the four resistances.
     kit: Vec<[i32; 9]>,
+    /// Each member's own resistances to the four elements, a base stat from its defaults
+    /// (`PartyDefault::more`, the saved base block's stats 5 to 8): Escha 10 to fire, water and wind.
+    resist: Vec<[i32; 4]>,
+    /// A member's equipped item units as saved ([`Tables::equip_units`]), whose quality, effects
+    /// and traits count; they take the place of its kit's fresh items.
+    units: Vec<Option<Vec<crate::data::save::ItemUnit>>>,
     /// `itemData.xml`'s equipment values, for [`Tables::equip`].
     items: Vec<crate::equipment::ItemRow>,
     /// The experience table (`battle_data::exp_table`).
@@ -54,6 +62,55 @@ pub struct Tables {
 }
 
 impl Tables {
+    /// Member `c`'s stat block at `level` and its most MP: the growth row plus what its
+    /// equipment adds (the kit: HP, attack, defence, speed and the four resistances), the
+    /// save's maxima ([`Tables::current`]) replacing the HP and MP when given.
+    pub fn party_block(&self, c: usize, level: i32) -> Result<(StatBlock, i32), String> {
+        let stats = self.growth.get(c).and_then(|l| l.get((level as usize).wrapping_sub(1))).ok_or_else(|| format!("character {c}: no growth row for level {level}"))?;
+        let mut block = crate::duel::party_block(level, stats);
+        block.resist = self.resist.get(c).copied().unwrap_or_default();
+        let names: Vec<&str> = self.act_names.iter().map(String::as_str).collect();
+        let rules = crate::equipment::Tables { items: &self.items, effects: &self.effects, traits: &self.traits, acts: &names };
+        let kit = match self.units.get(c).and_then(Option::as_ref) {
+            // Saved items: what each adds to stats 0 to 8 (`equipment::item_stat`, rolls at their
+            // low bounds), the base being the growth row's stat (what an evolve trait scales).
+            Some(units) => {
+                let base = [stats.hp, stats.mp, stats.attack, stats.defense, stats.speed];
+                let mut kit = [0; 9];
+                for (k, o) in kit.iter_mut().enumerate() {
+                    *o = units.iter().map(|u| crate::equipment::item_stat(&rules, u, k, base.get(k).copied().unwrap_or(0), &mut |lo, _| lo)).sum();
+                }
+                kit
+            }
+            None => self.kit.get(c).copied().unwrap_or_default(),
+        };
+        block.hp += kit[0];
+        block.attack += kit[2];
+        block.defense += kit[3];
+        block.speed += kit[4];
+        for (r, k) in block.resist.iter_mut().zip(&kit[5..]) {
+            *r += k;
+        }
+        // The learnt passive skills (`equipment::passives`).
+        let mut extra = [0; crate::equipment::STATS];
+        if let Some(list) = self.lists.get(c) {
+            crate::equipment::passives(&rules, list, &self.skills, level, &mut extra, &mut |lo, _| lo);
+        }
+        block.hp += extra[0];
+        block.attack += extra[2];
+        block.defense += extra[3];
+        block.speed += extra[4];
+        for (r, k) in block.resist.iter_mut().zip(&extra[5..]) {
+            *r += k;
+        }
+        let vitals = self.now.get(c).copied().flatten();
+        if let Some([_, max_hp, _, _]) = vitals {
+            block.hp = max_hp;
+        }
+        let mp = vitals.map_or(stats.mp + kit[1] + extra[1], |v| v[3]);
+        Ok((block, mp))
+    }
+
     /// The skill scene monster `monster`'s action named `skill` plays: the event its stat block
     /// gives that skill (`battle_data::StatBlock::skills`, e.g. the Ore Rat's Ram
     /// `skill/Skill_MONSTER_ROCKRAT_00_0.ebd`), from the first block that has it. The executable
@@ -103,6 +160,18 @@ impl Tables {
             self.kit.resize(member + 1, [0; 9]);
         }
         self.kit[member] = kit_stats(&self.items, items);
+        if let Some(u) = self.units.get_mut(member) {
+            *u = None;
+        }
+    }
+
+    /// Member `member` fights in the item units a save holds (equipped, with their quality,
+    /// effects and traits) instead of fresh ones.
+    pub fn equip_units(&mut self, member: usize, units: &[crate::data::save::ItemUnit]) {
+        if self.units.len() <= member {
+            self.units.resize(member + 1, None);
+        }
+        self.units[member] = Some(units.to_vec());
     }
 
     /// Member `member` starts its battles with `[hp, most hp, mp, most mp]` (a save's values,
@@ -156,6 +225,7 @@ impl Tables {
     pub fn load(pe: &Pe, effects_xml: &barrel_formats::table::Element, chara: Option<&barrel_formats::table::Element>, items: Option<&barrel_formats::table::Element>) -> Result<Tables, String> {
         let (act_names, _) = pe.enum_names("ACT_DAMAGE_HP").ok_or("no ACT_* enum")?;
         let rows: Vec<crate::equipment::ItemRow> = items.map(|i| i.children.iter().map(crate::equipment::ItemRow::from_row).collect()).unwrap_or_default();
+        let resist = bd::party_defaults(pe, bd::PARTY_DEFAULTS_EN).map(|d| d.iter().map(|d| [d.more[0], d.more[1], d.more[2], d.more[3]]).collect()).unwrap_or_default();
         let kit = match bd::party_defaults(pe, bd::PARTY_DEFAULTS_EN) {
             Some(defaults) if !rows.is_empty() => defaults.iter().map(|d| kit_stats(&rows, &d.equipment)).collect(),
             _ => Vec::new(),
@@ -170,8 +240,11 @@ impl Tables {
             acts: bd::acts(pe, bd::ACTS_EN),
             kinds: bd::trait_kinds(pe).into_iter().map(str::to_string).collect(),
             effects: bd::item_effects(effects_xml, &act_names),
+            act_names: act_names.iter().map(|n| n.to_string()).collect(),
             radii: chara.map(bd::chara_radii).unwrap_or_default(),
             kit,
+            resist,
+            units: Vec::new(),
             items: rows,
             exp: bd::exp_table(pe, bd::EXP_TABLE_EN).unwrap_or_default(),
             item_battles: bd::item_battles(pe, bd::ITEM_BATTLE_EN, bd::ITEM_BATTLE_END_EN),
@@ -276,21 +349,8 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
     let mut start = Vec::new();
     let mut members = Vec::new();
     for &(c, level) in party {
-        let stats = t.growth.get(c).and_then(|l| l.get((level as usize).wrapping_sub(1))).ok_or_else(|| format!("character {c}: no growth row for level {level}"))?;
-        let mut block = crate::duel::party_block(level, stats);
-        let kit = t.kit.get(c).copied().unwrap_or_default();
-        block.hp += kit[0];
-        block.attack += kit[2];
-        block.defense += kit[3];
-        block.speed += kit[4];
-        for (r, k) in block.resist.iter_mut().zip(&kit[5..]) {
-            *r += k;
-        }
+        let (block, mp) = t.party_block(c, level)?;
         let vitals = t.now.get(c).copied().flatten();
-        if let Some([_, max_hp, _, _]) = vitals {
-            block.hp = max_hp;
-        }
-        let mp = vitals.map_or(stats.mp + kit[1], |v| v[3]);
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
         let mut member = crate::skirmish::Member::new(block.clone(), mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);

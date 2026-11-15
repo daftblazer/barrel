@@ -2575,3 +2575,32 @@ member's vtable is `0x140808540`, a monster's `0x1408083d0`; +0x70 the fighter's
 battle, +0x78 the party member number or monster number, +0x88 level, +0x8c HP now, +0x90 MP
 now, +0x94 maximum HP (Escha 35 with her equipment in the user's save). The damage dealt is
 the fifth argument (an integer), the element the sixth (-1 for none).
+
+Decoded from the 14 hits (words are 32-bit, counted from the object's start):
+
+| Offset (word) | Fighter object |
+|---|---|
+| +0x74 (29) | -1 for a monster, the member's slot for a party member (0 to 2 here) |
+| +0x80 (32) | 1 while on the battle; +0x84 (33) 1 for the fighter whose turn it is |
+| +0x88 (34) | the 35 battle stats of "Battle stats", as they stand: level, HP, MP, max HP, max MP, attack, defence, speed (words 34 to 41), the four element resistances (42 to 45: fire, water, wind, earth), 46 the ailment resistance, 47 critical chance (5), 48 critical bonus (25), 51 passive-skill stat |
+| +0x114 (69) | the same stats with no states (the same layout; HP and MP as at battle start) |
+
+Resistances here are the in-use block's stats 5 to 8 (`equipment::STATS`) shifted by 3, and for
+the party they are the member's own base resistances (`PartyDefault::more`: Escha 10 to
+fire, water and wind, Katla 50 to earth, Wilbell 30 to fire and wind, Awin 20 to earth) plus
+equipment and passives, not equipment alone. Attack, defence and speed in the words are
+exactly the saved in-use block's (`barrel save`'s `equipped` and `in_use`).
+
+| Offset (word) | Action object (`0x1401bd410`'s argument) |
+|---|---|
+| +0x10, +0x14 (4, 5) | the user's and the target's place in the battle (+0x70 of each) |
+| +0x30 (12) | the user's attack stat used by the damage (stat 5) |
+| +0x44 (17) | the skill's row in the skill table (`SKILLS_EN`: 1 Attack for most monsters, 59 Neck Hunt, 60 Blade Horn, 39 Spitball; a member's own attack, 147 Escha, 175 Awin, 235 Wilbell, 259 Katla) |
+| +0x2c (11) | 100 to 161, differs per action; not decoded |
+
+`battle_hits` (`crates/escha/tests/battle_hits.rs`) checks Barrel against the 14 hits: with the
+party built as the play binary builds it (`auto_battle::Tables::party_block`), 12 of 14 fall
+inside the damage range at rate 0 and the other two (Katla's 21, Wilbell's 26) inside a rate
+step (a flank hit and a critical); all of Barrel's stats match the game's (with the save's
+equipped item units, `Tables::equip_units`; the session's fresh-item equipment leaves
+Awin's attack and defence 6 and 9 under, as her Sledge Head is quality 69 with two traits).
