@@ -559,10 +559,12 @@ Eight movies play at the openings, chapter breaks and endings (`docs/events.md`,
 frames a second) and WMA 9 Professional audio (48 kHz stereo). Chosen 2026-11-14: native
 decoders in Rust on the CPU (`barrel-movie`, and `barrel-wma` under the LGPL: `docs/formats.md`,
 "Movies"); FFmpeg is only a PC test oracle, never linked or shipped. Checked against it:
-`avantitle` (2,883 pictures), `opening_escha` (2,584) and `opening_logy` (1,871) bit-exact,
-their sound within 135 dB. A movie's file is looked up in `Movie_EN` then `Movie` (the two
-openings are only in `Movie`). The startup plays `avantitle` after the logos
-(`docs/renderer.md`, "Movies"); `u46` in the events does not play its movie yet.
+`opening` (2,818 pictures), `avantitle` (2,883), `opening_escha` (2,584) and `opening_logy`
+(1,871) bit-exact, their sound within 135 dB. A movie's file is looked up in `Movie_EN` then
+`Movie` (the openings are only in `Movie`). The boot plays movie 0, `opening`, after the logos:
+the escha-recomp's file trace shows the game asking for `Movie_EN/opening.wmv` there
+(`avantitle` is the chapter 3 event's, `docs/events.md`; Barrel played it at the boot by
+mistake for a day). `u46` in the events does not play its movie yet.
 
 ## Deliberate differences
 

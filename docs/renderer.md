@@ -1137,8 +1137,8 @@ BF_POINT19 it put the scene camera inside AREA_01_01's trees.
 into a persistent staging buffer, uploaded to three `R8_UNORM` images (3 MB a 1080p picture,
 half of RGBA) and turned into RGB in `movie.frag` (limited range, BT.709: the files carry no
 colour description and Media Foundation takes HD video without one as BT.709). Scaled to fit
-and centred, black around. Escha's startup plays `avantitle.wmv` after the logos with it
+and centred, black around. Escha's startup plays `opening.wmv` after the logos with it
 (`play/movie.rs`): the picture follows the sound's clock (samples the device has played), any
 button skips. Offscreen, `BARREL_SPLASH_AT` past the logos and the 0.15 s gap renders a movie
-picture: at 20 s it is within 1 level of ffmpeg's BT.709 conversion (mean 0.04; BT.601 would be
+picture: at 20 s it is within 1 level of ffmpeg's BT.709 conversion (mean 0.05; BT.601 would be
 up to 12 off).

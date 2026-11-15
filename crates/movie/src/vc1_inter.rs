@@ -100,6 +100,9 @@ struct Blocks<'a> {
     intra_y: Vec<Option<IntraState>>,
     intra_c: [Vec<Option<IntraState>>; 2],
     mode3: Option<(u32, u32)>,
+    /// With overlap smoothing (P pictures, PQUANT ≥ 9): the intra blocks' signed 10-bit
+    /// reconstruction (Y, Cb, Cr planes), smoothed and clamped once the picture is decoded.
+    smooth: Option<[Vec<i16>; 3]>,
 }
 
 /// An inter block's transform layout for the loop filter: middle edges and the sub-blocks with
@@ -135,6 +138,7 @@ impl<'a> Blocks<'a> {
             intra_y: vec![None; 4 * cols * rows],
             intra_c: [vec![None; cols * rows], vec![None; cols * rows]],
             mode3: None,
+            smooth: None,
         }
     }
 
@@ -216,7 +220,45 @@ impl<'a> Blocks<'a> {
         for (o, v) in out.iter_mut().zip(r.iter()) {
             *o = (v + 128).clamp(0, 255) as u8;
         }
+        if let Some(planes) = &mut self.smooth {
+            let (plane, stride) = if is_luma { (&mut planes[0], 16 * self.cols) } else { (&mut planes[k - 3], 8 * self.cols) };
+            for y in 0..8 {
+                for x in 0..8 {
+                    plane[(gy * 8 + y) * stride + gx * 8 + x] = r[y * 8 + x] as i16;
+                }
+            }
+        }
         Ok(())
+    }
+
+    /// Overlap smoothing in a P picture (8.5): each edge between two intra blocks, on their
+    /// unclamped reconstruction, then those blocks' pixels into `out` (before the loop filter).
+    fn smooth_intra(&mut self, out: &mut Picture) {
+        let Some(mut planes) = self.smooth.take() else { return };
+        let rows = out.height / 16;
+        for (k, plane) in planes.iter_mut().enumerate() {
+            let (g, size) = if k == 0 { (0, 8) } else { (k + 3, 8) };
+            let (w, h) = if k == 0 { (16 * self.cols, 16 * rows) } else { (8 * self.cols, 8 * rows) };
+            let intra = |x: usize, y: usize| self.is_intra(g, (x / size) as isize, (y / size) as isize);
+            crate::vc1_intra::overlap(plane, w, h, |x0, y0, x1, y1| intra(x0, y0) && intra(x1, y1));
+            let (dst, stride) = match k {
+                0 => (&mut out.y, out.width),
+                1 => (&mut out.u, out.width / 2),
+                _ => (&mut out.v, out.width / 2),
+            };
+            for by in 0..h / 8 {
+                for bx in 0..w / 8 {
+                    if !intra(bx * 8, by * 8) {
+                        continue;
+                    }
+                    for y in by * 8..by * 8 + 8 {
+                        for x in bx * 8..bx * 8 + 8 {
+                            dst[y * stride + x] = (plane[y * w + x] as i32 + 128).clamp(0, 255) as u8;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// A coded inter block's residual (8.3.6.2 to 8.3.6.4) into `err`: its transform from TTFRM,
@@ -373,7 +415,8 @@ fn bitplane_bit(b: &mut Bits, p: &Bitplane, mx: usize, my: usize, cols: usize) -
 /// Decodes a P picture from `reference` into `out`. `coded` is the coded size (the reference
 /// repeats past it); `fast_uvmc` is the entry point's FASTUVMC.
 #[allow(clippy::too_many_arguments)]
-pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols: usize, rows: usize, coded: (usize, usize), fast_uvmc: bool, reference: &Picture, out: &mut Picture) -> Result<PResult, Error> {
+/// `overlap`: the sequence's OVERLAP flag (smoothing between intra blocks when PQUANT ≥ 9).
+pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols: usize, rows: usize, coded: (usize, usize), fast_uvmc: bool, overlap: bool, reference: &Picture, out: &mut Picture) -> Result<PResult, Error> {
     // Intensity compensation (8.3.8): the reference remapped through LUTs first.
     let remap;
     let reference = match h.intensity {
@@ -386,6 +429,9 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
     let mut b = Bits::new(data);
     b.skip(h.mb_start as u32);
     let mut blocks = Blocks::new(it, pt, h, cols, rows);
+    if overlap && h.pquant >= 9 {
+        blocks.smooth = Some([vec![0; 256 * cols * rows], vec![0; 64 * cols * rows], vec![0; 64 * cols * rows]]);
+    }
     let rnd = h.round_control as i32;
     let half = matches!(h.mv_mode, MvMode::OneHalf | MvMode::OneHalfBilinear);
     let bilinear_luma = h.mv_mode == MvMode::OneHalfBilinear;
@@ -539,6 +585,7 @@ pub fn decode(it: &IntraTables, pt: &PTables, h: &InterHeader, data: &[u8], cols
     if b.over() {
         return Err(Error("macroblocks run out".into()));
     }
+    blocks.smooth_intra(out);
     Ok(PResult { cells, colocated })
 }
 
@@ -744,6 +791,14 @@ mod movie_tests {
                 e.1 += 1;
             } else if e.0 - e.1 <= 5 {
                 eprintln!("picture {shown} ({:?}): {diff} values differ", s.kind);
+                // The macroblocks that differ in luma (column, row), the first few.
+                let mut mbs = std::collections::BTreeSet::new();
+                for (i, (a, b)) in got[..w * h].iter().zip(&want[..w * h]).enumerate() {
+                    if a != b {
+                        mbs.insert((i / w / 16, i % w / 16));
+                    }
+                }
+                eprintln!("  luma macroblocks (row, column): {} of them, first {:?}", mbs.len(), mbs.iter().take(8).collect::<Vec<_>>());
             }
             shown += 1;
             true

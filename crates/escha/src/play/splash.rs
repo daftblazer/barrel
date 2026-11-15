@@ -5,7 +5,7 @@
 //! black at 6.08 s, full at 6.62, fading out from 8.62, black at 9.10 as Gust starts fading in
 //! (no gap), Gust full 9.63 to 11.62, black at 12.10. Before them the game shows its Loading
 //! plate while it reads its data (Barrel needs none); after them come the pre-title movie
-//! (`Movie_EN/avantitle.wmv`, `crate::movie`) and the title.
+//! (`opening.wmv`, in `Movie` as no `Movie_EN` copy exists; `crate::movie`) and the title.
 
 use std::path::Path;
 use std::time::Instant;
@@ -26,7 +26,7 @@ const EACH: f32 = FADE_IN + HOLD + FADE_OUT;
 /// Black between the last logo and the pre-title movie (the recording: 12.10 to 12.25 s).
 const MOVIE_GAP: f32 = 0.15;
 /// The pre-title movie, played in the slot after the logos.
-pub const INTRO_MOVIE: &str = "avantitle.wmv";
+pub const INTRO_MOVIE: &str = "opening.wmv";
 
 /// Which logo shows and how bright (0 black to 255 full), at `t` seconds; `None` once all have
 /// shown and the black before the movie has passed.
@@ -105,7 +105,8 @@ pub fn run(
     Ok(())
 }
 
-/// The movie the slot between the logos and the title plays: `Movie_EN/avantitle.wmv` (96 s).
+/// The movie the boot plays after the logos: `opening.wmv` (movie 0, "Opening"), looked up in
+/// `Movie_EN` first as the game does (the escha-recomp boot's file trace), then `Movie`.
 fn intro_movie(root: &Path) -> Option<std::path::PathBuf> {
     let x64 = root.join("Data/x64");
     let file = [x64.join("Movie_EN").join(INTRO_MOVIE), x64.join("Movie").join(INTRO_MOVIE)].into_iter().find(|p| p.exists());

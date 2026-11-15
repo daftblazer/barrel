@@ -378,7 +378,7 @@ pub fn decode(tables: &IntraTables, header: &IntraHeader, data: &[u8], cols: usi
 /// so. The core filter: y0 = (7·x0 + x3 + r0) / 8, y1 = (−x0 + 7·x1 + x2 + x3 + r1) / 8,
 /// y2 = (x0 + x1 + 7·x2 − x3 + r0) / 8, y3 = (x0 + 7·x3 + r1) / 8, with (r0, r1) = (4, 3) on
 /// odd rows / columns of the block counted from 1, (3, 4) on even ones.
-fn overlap(px: &mut [i16], width: usize, height: usize, smooth: impl Fn(usize, usize, usize, usize) -> bool) {
+pub(crate) fn overlap(px: &mut [i16], width: usize, height: usize, smooth: impl Fn(usize, usize, usize, usize) -> bool) {
     let core = |x: [i32; 4], odd: bool| -> [i16; 4] {
         let (r0, r1) = if odd { (4, 3) } else { (3, 4) };
         [

@@ -82,8 +82,11 @@ impl VideoStream {
                     PictureType::P => {
                         let reference = &self.newer.as_ref().ok_or_else(|| Error("a P picture before any anchor".into()))?.picture;
                         let h = s.inter_header(e, &data, &self.planes, &self.headers)?;
+                        if std::env::var_os("BARREL_VC1_HEADERS").is_some() {
+                            eprintln!("P at {time_ms}: pq {} idx {} half {} uniform {} round {} range {} {:?} ic {:?} tt {:?}/{} ac {} dc {}", h.pquant, h.pqindex, h.half_qp, h.uniform, h.round_control, h.mv_range, h.mv_mode, h.intensity, h.frame_transform, h.mb_transform, h.ac_set, h.dc_high);
+                        }
                         let mut p = Picture::new(cols, rows);
-                        let r = decode(&self.intra, &self.inter, &h, &data, cols, rows, coded, e.fast_uvmc, reference, &mut p)?;
+                        let r = decode(&self.intra, &self.inter, &h, &data, cols, rows, coded, e.fast_uvmc, e.overlap, reference, &mut p)?;
                         if filter {
                             let (q, w, hh) = (h.pquant as i32, p.width, p.height);
                             p_plane(&mut p.y, w, hh, q, &r.cells[0]);
