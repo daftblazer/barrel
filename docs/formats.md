@@ -2161,3 +2161,14 @@ Norm-6 tile table 81 entered by hand since the PDF's text garbles it, checked pr
 `avantitle` all 85 (79 I, 6 BI) read with `PQINDEX` 1 to 5 (uniform quantizer, `HALFQP` read),
 `CONDOVER` "none" (PQINDEX 1 to 3) or "by `OVERFLAGS`" (4, 5), both coding sets and both DC tables
 in use; no `DQUANT`, pan-scan or explicit quantizer (refused for now).
+
+Intra macroblocks (`barrel_movie::vc1_intra`, 8.1): CBPCY with its prediction from the
+neighbouring luma blocks, DC differentials (escape 119) against the above / left neighbour,
+AC run-level with escape modes 1 to 3, AC prediction and its scans, uniform / non-uniform
+dequantization, Annex A's 8 × 8 transform (the PDF's text loses its minus signs; the magnitudes
+are the standard matrix's), +128 and clamping. Checked against ffmpeg with its loop filter off
+(`-skip_loop_filter all`, `-skip_frame nokey`): `avantitle`'s key frames 0 to 3, 10, 30, 50 and 70
+(PQINDEX 1 to 3, all three coding sets, both DC tables) are bit-exact in Y, U and V, 13 to 23 ms
+a frame on one PC core unoptimized. With PQINDEX ≤ 2 the loop filter changes nothing; from 3 on
+it does (61–65 dB against ffmpeg's filtered frame), and PQINDEX 4 / 5 frames also need overlap
+smoothing (CONDOVER by `OVERFLAGS`).
