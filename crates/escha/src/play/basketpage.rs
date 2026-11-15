@@ -206,6 +206,15 @@ fn line_of(item: &Item, k: usize) -> Option<String> {
 /// The card's elements for `item`.
 fn card(pe: &Pe, l: &Layouts, item: &Item) -> Vec<Element> {
     let mut out = tiled(pe, PANEL, CARD_PANEL.0, CARD_PANEL.1);
+    out.extend(card_at(pe, l, item, CARD_AT, 1));
+    out
+}
+
+/// The card without its panel, its layout placed at `origin`, "Item Info" in `pages` pages (the
+/// page turning button shows when there are two or more).
+pub fn card_at(pe: &Pe, l: &Layouts, item: &Item, origin: [i32; 2], pages: i32) -> Vec<Element> {
+    let mut out = Vec::new();
+    let mut numbers = 0;
     let (mut line, mut bars) = (0, 0);
     let section_y: Vec<i32> = {
         // Each group's first bar, from the layout's: the bars follow in steps of `LINE_STEP`.
@@ -219,7 +228,7 @@ fn card(pe: &Pe, l: &Layouts, item: &Item) -> Vec<Element> {
         if HIDDEN_IN_CARD.iter().any(|&h| inside(h)) {
             continue;
         }
-        let at = if inside(INFO) { [p.at[0] + CARD_AT[0] + INFO_SHIFT[0], p.at[1] + CARD_AT[1] + INFO_SHIFT[1]] } else { [p.at[0] + CARD_AT[0], p.at[1] + CARD_AT[1]] };
+        let at = if inside(INFO) { [p.at[0] + origin[0] + INFO_SHIFT[0], p.at[1] + origin[1] + INFO_SHIFT[1]] } else { [p.at[0] + origin[0], p.at[1] + origin[1]] };
         let placed = Placed { at, ..p.clone() };
         match (n.part, n.cut) {
             (TEXT, _) => {
@@ -241,7 +250,7 @@ fn card(pe: &Pe, l: &Layouts, item: &Item) -> Vec<Element> {
                 let g = GROUPS.iter().scan(0, |s, &n| { *s += n; Some(*s) }).position(|end| bars < end).unwrap_or(0);
                 let k = bars - GROUPS[..g].iter().sum::<usize>();
                 bars += 1;
-                let y = section_y.get(g).map_or(at[1], |&y| y + CARD_AT[1] + INFO_SHIFT[1] + LINE_STEP * k as i32);
+                let y = section_y.get(g).map_or(at[1], |&y| y + origin[1] + INFO_SHIFT[1] + LINE_STEP * k as i32);
                 out.push(Element::Sprite { part: 0xbe, cut: 2, at: [at[0], y] });
             }
             (0xbe, 10..=12) if inside(SECTIONS) => out.push(Element::stored(&placed)),
@@ -269,9 +278,12 @@ fn card(pe: &Pe, l: &Layouts, item: &Item) -> Vec<Element> {
             (0xd6, _) if inside(BADGES) => out.push(Element::Scaled { part: 0xd6, cut: item.picture as i32, at, percent: PICTURE_PERCENT, about: at }),
             (0xbc, 1) if inside(NAME) || p.path.len() == 2 => out.push(Element::stored(&placed)),
             (0x63, _) if inside(PAGER) => out.push(Element::stored(&placed)),
+            (0x41, _) if inside(PAGER) && pages > 1 => out.push(Element::stored(&placed)),
             (0x4f, cut) if inside(PAGER) => {
                 if n.kind == NUMBER_CENTRED {
-                    out.extend(number(pe, &placed, 1));
+                    // The page, then the page count.
+                    out.extend(number(pe, &placed, if numbers == 0 { 1 } else { pages }));
+                    numbers += 1;
                 } else if cut == 12 {
                     out.push(Element::Tinted { part: 0x4f, cut: 12, at, rgb: ink(pe, &placed) });
                 }

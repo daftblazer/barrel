@@ -37,6 +37,7 @@ mod basket;
 mod basketpage;
 mod picker;
 mod statuspage;
+mod battleequip;
 mod formation;
 mod kit;
 mod assignment;

@@ -1866,6 +1866,32 @@ The Status numbers' RES values are the save's in-use stats 5 to 8 (Escha: 10, 10
 the equipment's alone; a kind 4 node (the RES icons, part 0x67) is drawn at the percent of its
 word 5 (80).
 
+The pages a picker's confirm opens (`statuspage.rs`, `battleequip.rs`):
+
+- Status (the picker's confirm on the Status command): the desk (cut 1), the chosen member's figure
+  (361, the big `a15_menu_chara01` picture, not the bookmark: the game draws no bookmark here),
+  then layout 400's book 399: the notebook pieces, the right page 431 in layout order (labels,
+  numbers in the notebook's brown ink with the slashes tinted the same, element icons, name
+  plate), the left page 398 (panel part 0xb cut 8, four slot icons part 0xb cuts 1, 2, 3, 3,
+  "Effect & Property", the first group 396's twelve lines, part 0xb cut 7, and no bars or texts
+  with no traits; the second group 397, 578 and the skill pages 388, 387 are not drawn), the title
+  tab 0xbe cut 11, and the pager 751 reading "1/2" (kind 29 numbers at 388 and 426 and a tinted
+  slash), then the footer (`Menu_Line_Help.xml` row 37), header (`SysInfo.xml` row 9) and tab
+  (cut 5). The lead's page has no "Friend" label and number.
+- Battle Equip. (layout 404, the page at the capture is not scrolled or compared): desk, the
+  notebook at [642, 132] (399 with the right page and the bookmark 393, unrotated here), the slot
+  panel 403 (two kind 15 panels, part 0x32 at [90, 144] 496 x 356 and part 0xad at [102, 156] 468
+  x 334, four kind 19 bars, the slots 390: a bar part 0x3d drawn only on the chosen slot and
+  pulsing white to tan, the item name in the notebook's brown ink, the kind icon part 0xb cuts 1,
+  2, 3, 3 a fixed 56 apart), the footer (row 17, "Select, Details, Character, Remove, Return,
+  Confirm"), the item list 568 (scroll bar and frame only, empty while the cursor is on the
+  slots), the card 752 at [660, 190] (16 left and 10 down the Basket's, without its stretched
+  panel, "Item Info" two pages: the pager shows the turning button, part 0x41 cut 6, and "1/2"), then
+  the header (row 43, "Select equipment to change."), the tab (cut 3) and the cursor glow at
+  [-90, -66] from the chosen slot's icon. The chosen slot's bar colour follows a cosine of period
+  about 62 ticks of the glow clock to the power 0.75 (a tan of (224, 179, 93)), only roughly:
+  the nine captured frames fit to a few per cent, the game's own phase jitters.
+
 The item grid is layout 456 (placed at [100, 252]; the Container screen, layout 458, shows it
 twice, at x 44 and 480, under the tab layout 457 with "Name" between the LB / RB marks): 25 cells
 in five rows of five, 98 to 104 pixels apart. The plain cell is layout 451: the lit frame (part

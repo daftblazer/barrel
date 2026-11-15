@@ -20,8 +20,8 @@ use crate::hud::Element;
 use crate::kit::{number, raised};
 
 const SCREEN: u32 = 400;
-const RIGHT_PAGE: u32 = 431;
-const BOOKMARK: u32 = 393;
+pub const RIGHT_PAGE: u32 = 431;
+pub const BOOKMARK: u32 = 393;
 const LEFT_PAGE: u32 = 398;
 /// The left page's first group of effect rows (layout 396: 4 slots of 3 lines; 397 is the second)
 /// and its pager.
@@ -54,16 +54,16 @@ impl Layouts {
     }
 }
 
-/// The right page's nodes for `m`: the labels, the numbers (the lead has no friendship), the
-/// element icons and the name plate, in the layout's order.
-fn right_page(pe: &Pe, l: &Layouts, m: &Member, lead: bool) -> Vec<Element> {
+/// The right page's `nodes` (layout 431 in place) for `m`: the labels, the numbers (the lead has no
+/// friendship), the element icons and the name plate, in the layout's order. The Equip page
+/// draws the same page, with the bookmark.
+pub fn right_page(pe: &Pe, nodes: &[&Placed], m: &Member, lead: bool) -> Vec<Element> {
     let texts = |p: &Placed| layout::text(pe, p).filter(|t| !(lead && t.text == "Friend"));
     let mut numbers = m.values.numbers().to_vec();
     if lead {
         numbers.pop();
     }
-    let nodes: Vec<&Placed> = l.screen.iter().filter(|p| p.path.get(2) == Some(&RIGHT_PAGE) && p.path.get(3) != Some(&BOOKMARK)).collect();
-    crate::overview::face(pe, &nodes, &texts, &m.values.name, None, &numbers)
+    crate::overview::face(pe, nodes, &texts, &m.values.name, None, &numbers)
 }
 
 /// The left page: its panel, slot icons and title, the effect rows' lines, the title tab and
@@ -100,7 +100,8 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, members: &[M
     for p in l.screen.iter().filter(|p| p.path.len() == 2 && p.path[1] == 399) {
         out.push(Element::stored(p));
     }
-    out.extend(right_page(pe, l, m, m.face.character as usize == lead));
+    let page: Vec<&Placed> = l.screen.iter().filter(|p| p.path.get(2) == Some(&RIGHT_PAGE) && p.path.get(3) != Some(&BOOKMARK)).collect();
+    out.extend(right_page(pe, &page, m, m.face.character as usize == lead));
     out.extend(left_page(pe, l));
     out.extend(crate::picker::chrome(pe, (&l.footer, &words.footer), (&l.header, &words.header), &l.tab, crate::picker::Kind::Status.tab_cut()));
     out

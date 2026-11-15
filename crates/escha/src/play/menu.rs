@@ -433,8 +433,27 @@ pub fn run(
     };
     let status_layouts = crate::statuspage::Layouts::load(&pe);
     let status_words = words_at(crate::statuspage::HEADER_ROW, crate::statuspage::FOOTER_ROW);
-    let member_elements = |k: crate::picker::Kind, chosen: usize, _tick: u32| match k {
+    // Battle Equip.: what the chosen member wears, each slot's item with its card's lines.
+    let equip_layouts = crate::battleequip::Layouts::load(&pe);
+    let equip_words = words_at(crate::battleequip::HEADER_ROW, crate::battleequip::FOOTER_ROW);
+    let catalog = crate::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children };
+    let worn_items = |c: usize| -> [Option<crate::basket::Item>; 4] {
+        let held = |w: &barrel_escha::session::WornItem| {
+            let got = barrel_escha::gather::Got { item: w.item, quality: w.quality, traits: w.traits.clone() };
+            crate::basket::held(&crate::basket::Stock { items: vec![got], limit: 0, container: Vec::new() }, &catalog).pop()
+        };
+        let member = source.and_then(|s| s.party.get(c));
+        std::array::from_fn(|k| member.and_then(|m| m.worn[k].as_ref()).and_then(held))
+    };
+    let member_elements = |k: crate::picker::Kind, chosen: usize, tick: u32| match k {
         crate::picker::Kind::Status => crate::statuspage::elements(&pe, &status_layouts, &status_words, &party, chosen, lead_character),
+        crate::picker::Kind::BattleEquip => match party.get(chosen) {
+            Some(m) => {
+                let w = crate::battleequip::Worn { member: crate::formation::Member { face: m.face.clone(), values: m.values.clone() }, slots: worn_items(m.face.character as usize) };
+                crate::battleequip::elements(&pe, &equip_layouts, &equip_words, &w, 0, lead_character, tick)
+            }
+            None => Vec::new(),
+        },
         _ => Vec::new(),
     };
     let formation_elements = |f: &crate::formation::Formation, tick: u32| crate::formation::elements(&pe, &formation_layouts, &formation_words, f, &party, lead_character, tick);
@@ -470,12 +489,14 @@ pub fn run(
     every.extend(option_layouts.flips());
     every.extend(picker_layouts.flips());
     every.extend(formation_layouts.flips());
+    every.extend(equip_layouts.flips());
     for chosen in 0..party.len().max(1) {
         for k in [crate::picker::Kind::AdventureEquip, crate::picker::Kind::BattleEquip, crate::picker::Kind::Status] {
             every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0));
         }
         every.extend(formation_elements(&crate::formation::Formation { chosen, count: party.len() }, 0));
         every.extend(member_elements(crate::picker::Kind::Status, chosen, 0));
+        every.extend(member_elements(crate::picker::Kind::BattleEquip, chosen, 0));
     }
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
