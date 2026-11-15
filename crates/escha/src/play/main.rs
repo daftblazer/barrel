@@ -36,6 +36,7 @@ mod requests;
 mod basket;
 mod basketpage;
 mod picker;
+mod statuspage;
 mod formation;
 mod kit;
 mod assignment;
@@ -3804,7 +3805,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 menu_mode = true;
                 // In the list's order off a town (it starts at the Basket; 6 is Request).
                 const PAGES: [&str; 9] = ["basket", "picker-adventure", "picker-battle", "formation", "picker-status", "assignment", "request", "journal", "option"];
-                if let Some(page) = it.clone().next().filter(|n| PAGES.contains(&n.as_str())) {
+                // The pages a picker opens for its first member: the picker's keys and one more confirm.
+                const MEMBER_PAGES: [(&str, &str); 2] = [("status-page", "picker-status"), ("equip-battle", "picker-battle")];
+                let member_page = it.clone().next().and_then(|n| MEMBER_PAGES.iter().find(|(m, _)| m == n));
+                if let Some((_, picker)) = member_page {
+                    it.next();
+                    let downs = PAGES.iter().position(|p| p == picker).unwrap_or(0);
+                    menu_page_keys = format!("{}confirm,confirm", "down,".repeat(downs));
+                } else if let Some(page) = it.clone().next().filter(|n| PAGES.contains(&n.as_str())) {
                     it.next();
                     // Down to the command (the list starts at the Basket), then confirm.
                     let downs = PAGES.iter().position(|p| p == page).unwrap_or(0);

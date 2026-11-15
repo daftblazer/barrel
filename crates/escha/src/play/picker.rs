@@ -29,7 +29,7 @@ const SLOTS: u32 = 365;
 const HEADER: u32 = 371;
 const FOOTER: u32 = 372;
 const TAB: u32 = 531;
-const DESK_CUT: i32 = 1;
+pub const DESK_CUT: i32 = 1;
 const ROW_PART: i32 = 0x16a;
 /// The chosen row's frame (part 0x2, the flipbook node of layout 362) and the Friend label and
 /// number nodes the lead's row leaves out.

@@ -120,6 +120,8 @@ pub enum Page {
     Journal(crate::journal::Journal),
     Option(crate::optionpage::OptionPage),
     Picker(crate::picker::Kind, crate::picker::Picker),
+    /// The page a picker's confirm opens for its chosen member (Status, Battle Equip.).
+    Member(crate::picker::Kind, crate::picker::Picker),
     Formation(crate::formation::Formation),
 }
 
@@ -160,7 +162,7 @@ impl Menu {
             Start::Page(Page::Assignment(_)) => c == Command::Assignment,
             Start::Page(Page::Journal(_)) => c == Command::Journal,
             Start::Page(Page::Option(_)) => c == Command::Option,
-            Start::Page(Page::Picker(k, _)) => c == k.command(),
+            Start::Page(Page::Picker(k, _) | Page::Member(k, _)) => c == k.command(),
             Start::Page(Page::Formation(_)) => c == Command::Formation,
             Start::System => c == Command::Option,
         });
@@ -189,10 +191,18 @@ impl Menu {
 
     /// A button press, with `count` items in the basket (for its page).
     pub fn press(&mut self, b: Button, count: usize) -> Option<Outcome> {
-        // The Status picker's confirm opens the Status page (of the lead for now).
-        if matches!(self.page, Some(Page::Picker(crate::picker::Kind::Status, _))) && b == Button::Confirm {
-            self.page = Some(Page::Status);
-            return None;
+        // A picker's confirm opens the member's page (Status, Battle Equip.); Back returns to it.
+        use crate::picker::Kind;
+        match self.page {
+            Some(Page::Picker(k @ (Kind::Status | Kind::BattleEquip), p)) if b == Button::Confirm => {
+                self.page = Some(Page::Member(k, p));
+                return None;
+            }
+            Some(Page::Member(k, p)) if b == Button::Back => {
+                self.page = Some(Page::Picker(k, p));
+                return None;
+            }
+            _ => {}
         }
         let close = match self.page.as_mut() {
             Some(Page::Status) => b == Button::Back,
@@ -206,6 +216,7 @@ impl Menu {
                 Some(crate::optionpage::Leave::Graphics { .. }) => return Some(Outcome::Graphics(*o)),
             },
             Some(Page::Picker(_, p)) => p.press(b),
+            Some(Page::Member(..)) => false,
             Some(Page::Formation(f)) => f.press(b),
             None => return self.press_list(b),
         };
@@ -420,6 +431,12 @@ pub fn run(
         let faces: Vec<crate::overview::Face> = party.iter().map(|m| &m.face).filter(|f| k.lists(&[f.character as usize]).len() == 1).cloned().collect();
         crate::picker::elements(&pe, &picker_layouts, &picker_words, k, v, &faces, lead_character, tick)
     };
+    let status_layouts = crate::statuspage::Layouts::load(&pe);
+    let status_words = words_at(crate::statuspage::HEADER_ROW, crate::statuspage::FOOTER_ROW);
+    let member_elements = |k: crate::picker::Kind, chosen: usize, _tick: u32| match k {
+        crate::picker::Kind::Status => crate::statuspage::elements(&pe, &status_layouts, &status_words, &party, chosen, lead_character),
+        _ => Vec::new(),
+    };
     let formation_elements = |f: &crate::formation::Formation, tick: u32| crate::formation::elements(&pe, &formation_layouts, &formation_words, f, &party, lead_character, tick);
     let texts = |p: &Placed| barrel_escha::data::layout::text(&pe, p);
     let overview_elements = |m: &Menu, v: &crate::overview::Overview| {
@@ -458,6 +475,7 @@ pub fn run(
             every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0));
         }
         every.extend(formation_elements(&crate::formation::Formation { chosen, count: party.len() }, 0));
+        every.extend(member_elements(crate::picker::Kind::Status, chosen, 0));
     }
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
@@ -514,6 +532,7 @@ pub fn run(
                 e
             }
             Some(Page::Picker(k, p)) => picker_elements(k, &p, m.tick),
+            Some(Page::Member(k, p)) => member_elements(k, p.chosen, m.tick),
             Some(Page::Formation(f)) => formation_elements(&f, m.tick),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
