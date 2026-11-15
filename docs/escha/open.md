@@ -345,6 +345,11 @@ likely settle them where static reading failed.
 - **Field entry lines.** Entering a field the game shows a random line from a per-character table
   (in the executable, near file offset 8,756,000); Barrel shows the window only when
   `BARREL_ENTRY_LINE` gives the line. Read the table and the choice (hook the window's setup).
+  Lead: the lines sit in a 480-record table of field talk at `0x1408e2ca0`..`0x1408e77a0`
+  (0x28 bytes: two words, 0, the text pointer, a line id from 0x175 up, an index and a
+  condition word, -1 or a flag-like 0x1fe, 0x1ff...; the record framing is not settled), with
+  townspeople's lines mixed in; code at `0x140261027` loads it (others use its end,
+  `0x1408e7798`, at `0x1402614f0`, `0x140264210`...).
 - **Field gauge 44 vs 45.** The area map and field HUD draw the gauge at 44 % where the save
   holds 45: the shown value is not the saved one (a decay on load, a rounding, or another
   source). Read the live value.
