@@ -262,6 +262,118 @@ impl Sequence {
     }
 }
 
+/// A P picture's header (Table 20), progressive.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterHeader {
+    pub repeat: u8,
+    pub round_control: bool,
+    pub pqindex: u8,
+    pub pquant: u8,
+    pub half_qp: bool,
+    pub uniform: bool,
+    /// MVRANGE 0 to 3 (Table 37).
+    pub mv_range: u8,
+    /// The motion mode, MVMODE2's when MVMODE asks for intensity compensation.
+    pub mv_mode: crate::vc1_small::MvMode,
+    /// LUMSCALE and LUMSHIFT with intensity compensation.
+    pub intensity: Option<(u8, u8)>,
+    /// MVTYPEMB with mixed motion vectors: one or four vectors a macroblock.
+    pub mv_type: Option<Bitplane>,
+    pub skipped: Bitplane,
+    pub mv_table: u8,
+    pub cbp_table: u8,
+    /// TTFRM: the transform for every inter block when TTMBF is set.
+    pub frame_transform: Option<u8>,
+    /// TTMBF off: each macroblock signals its transform.
+    pub mb_transform: bool,
+    pub ac_set: u8,
+    pub dc_high: bool,
+    pub mb_start: usize,
+}
+
+/// The P header's small tables, built once.
+pub struct InterTables {
+    mvmode: [crate::vc1_small::Coded<crate::vc1_small::MvMode>; 2],
+    mvmode2: [crate::vc1_small::Coded<crate::vc1_small::MvMode>; 2],
+    mvrange: crate::vc1_small::Coded<u8>,
+}
+
+impl Default for InterTables {
+    fn default() -> Self {
+        use crate::vc1_small::*;
+        InterTables {
+            mvmode: [Coded::new(MVMODE_LOW, |r| *r), Coded::new(MVMODE_HIGH, |r| *r)],
+            mvmode2: [Coded::new(MVMODE2_LOW, |r| *r), Coded::new(MVMODE2_HIGH, |r| *r)],
+            mvrange: Coded::new(MVRANGE, |r| *r),
+        }
+    }
+}
+
+impl Sequence {
+    /// Reads a P picture's header from the unescaped frame.
+    pub fn inter_header(&self, entry: &EntryPoint, data: &[u8], planes: &BitplaneTables, tables: &InterTables) -> Result<InterHeader> {
+        use crate::vc1_small::MvMode;
+        let start = self.picture_start(data)?;
+        if start.kind != PictureType::P {
+            return Err(Error(format!("{:?} picture, not P", start.kind)));
+        }
+        if entry.panscan || entry.quantizer != 0 || entry.dquant != 0 {
+            return Err(Error("pan-scan, an explicit quantizer or DQUANT: not supported yet".into()));
+        }
+        let mut b = Bits::new(data);
+        b.skip(self.interlace as u32 + 1);
+        if self.frame_counter {
+            b.read(8);
+        }
+        if self.pulldown {
+            b.read(2);
+        }
+        let round_control = b.bit();
+        if self.interlace {
+            b.read(1);
+        }
+        if self.frame_interpolation {
+            b.read(1);
+        }
+        let pqindex = b.read(5) as u8;
+        if pqindex == 0 {
+            return Err(Error("PQINDEX 0".into()));
+        }
+        let half_qp = pqindex <= 8 && b.bit();
+        let pquant = PQUANT_IMPLICIT[pqindex as usize];
+        if self.postproc {
+            b.read(2);
+        }
+        let mv_range = if entry.extended_mv { tables.mvrange.read(&mut b).ok_or_else(|| Error("MVRANGE".into()))? } else { 0 };
+        let rate = (pquant <= 12) as usize;
+        let mut mv_mode = tables.mvmode[rate].read(&mut b).ok_or_else(|| Error("MVMODE".into()))?;
+        let mut intensity = None;
+        if mv_mode == MvMode::IntensityCompensation {
+            mv_mode = tables.mvmode2[rate].read(&mut b).ok_or_else(|| Error("MVMODE2".into()))?;
+            intensity = Some((b.read(6) as u8, b.read(6) as u8));
+        }
+        let (cols, rows) = self.macroblocks(entry);
+        let mv_type = if mv_mode == MvMode::Mixed { Some(planes.read(&mut b, cols, rows).ok_or_else(|| Error("MVTYPEMB bitplane".into()))?) } else { None };
+        let skipped = planes.read(&mut b, cols, rows).ok_or_else(|| Error("SKIPMB bitplane".into()))?;
+        let mv_table = b.read(2) as u8;
+        let cbp_table = b.read(2) as u8;
+        let (mut frame_transform, mut mb_transform) = (None, false);
+        if entry.vstransform {
+            if b.bit() {
+                frame_transform = Some(b.read(2) as u8);
+            } else {
+                mb_transform = true;
+            }
+        }
+        let ac_set = if !b.bit() { 0 } else if !b.bit() { 1 } else { 2 };
+        let dc_high = b.bit();
+        if b.over() {
+            return Err(Error("picture header runs out".into()));
+        }
+        Ok(InterHeader { repeat: start.repeat, round_control, pqindex, pquant, half_qp, uniform: pqindex <= 8, mv_range, mv_mode, intensity, mv_type, skipped, mv_table, cbp_table, frame_transform, mb_transform, ac_set, dc_high, mb_start: b.position() })
+    }
+}
+
 impl EntryPoint {
     pub fn parse(body: &[u8], sequence: &Sequence) -> Result<Self> {
         let data = unescape(body);
@@ -365,6 +477,20 @@ mod movie_tests {
             }
         }
         eprintln!("(pqindex, condover, set luma, set chroma, dc high): {seen:?}");
+        let inter = InterTables::default();
+        let mut p_seen = std::collections::BTreeMap::new();
+        for o in asf.objects().unwrap().iter().filter(|o| o.stream == video.number) {
+            if s.picture_start(&o.data).unwrap().kind != PictureType::P {
+                continue;
+            }
+            let data = unescape(&o.data);
+            let h = s.inter_header(&e, &data, &planes, &inter).unwrap();
+            let skip = match &h.skipped { Bitplane::Raw => "raw", _ => "plane" };
+            *p_seen.entry(format!("{:?} range {} ic {} mvtab {} cbptab {} tt {:?}/{} {}", h.mv_mode, h.mv_range, h.intensity.is_some(), h.mv_table, h.cbp_table, h.frame_transform, h.mb_transform, skip)).or_insert(0) += 1;
+        }
+        for (k, n) in &p_seen {
+            eprintln!("P {n}: {k}");
+        }
         assert!(s.pulldown && !s.interlace);
     }
 }

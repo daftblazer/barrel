@@ -5,5 +5,6 @@ pub mod bitplane;
 pub mod bits;
 pub mod vc1;
 pub mod vc1_intra;
+pub mod vc1_small;
 pub mod vc1_loop;
 pub mod vc1_tables;

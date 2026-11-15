@@ -2179,3 +2179,10 @@ CONDOVER 10b, with 11b inner luma edges of flagged macroblocks and edges between
 then runs before the loop filter. All 79 of `avantitle`'s key frames (10 of them smoothed by
 `OVERFLAGS`, PQINDEX 4 and 5) are bit-exact with ffmpeg, 11 to 30 ms each (median 22) on one PC
 core, unoptimized.
+
+P pictures (`Sequence::inter_header`, Table 20; small tables `barrel_movie::vc1_small`: TTMB
+54–56, TTBLK 62–64, SUBBLKPAT 65–68, MVMODE / MVMODE2 46–50, MVRANGE 37, entered by hand as the
+standard prints them and checked prefix-free; MV differential tables 246–249 generated). All
+1,229 of `avantitle`'s P headers read: mostly mixed 1-MV / 4-MV (`MVTYPEMB`), every other mode
+too (1-MV quarter-pel, half-pel bicubic, half-pel bilinear), intensity compensation in 4, MVRANGE 0
+or 1, all four MV and CBP tables, transforms both per frame (TTFRM) and per macroblock.
