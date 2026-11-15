@@ -3,7 +3,7 @@
 
     tools/oracle/clip-fit.py MIX.wav CLIP.wav [CLIP.wav ...]
 
-MIX is a recording of the game or a Barrel capture (`barrel-escha --audio`). Each clip is found by
+MIX is a recording of the game or a Barrel capture (`barrel --audio`). Each clip is found by
 cross-correlation (normalised by the mix's local energy) and its gain fitted by least squares; what
 else plays under it (music) does not correlate with it. Both are taken to mono with FFmpeg's
 downmix, so compare gains between mixes, not with 1. Needs numpy and ffmpeg.

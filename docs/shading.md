@@ -570,7 +570,7 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
 
 - **Vertex programs** (0 rigid, 1 skinned, 2 one joint) take position, normal, UV and tangent:
   **no `COLOR0`**. So the models' vertex colours do not reach these materials, and
-  `barrel-ryza` draws them white (the attic's cabinet holds masks there for other passes).
+  `barrel` draws them white (the attic's cabinet holds masks there for other passes).
 - **Pixel program 3**, textures `sStage0` (the colour tile, kind 1), `sSpMap` (kind 2), `sNMap`
   (kind 3); constants `vDifScl`, `vSpcScl`, `atColor`. With `m` = `sSpMap.g` and metal =
   `sSpMap.b` ≥ 0.5:
@@ -581,7 +581,7 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
     frame, turned to view space by `mWV`, octahedral-encoded in xy), and `sSpMap.a ×
     vSpcScl.w` (roughness or gloss) packed in w;
   - targets 3 and 4: 1.
-  `barrel-ryza` draws the normal map (`model.frag`'s flag 8192, the map in the mask slot):
+  `barrel` draws the normal map (`model.frag`'s flag 8192, the map in the mask slot):
   its tangent frame comes from the screen derivatives of the position and UV (the vertices
   carry no tangent here), and with the mapped normal the sun's Lambert term and the cube
   map's light are taken again per pixel (the vertex's light otherwise). Every field draw at
@@ -589,7 +589,7 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
   0.07 ms at 1280×720 on the PC. Whether green points up or down in the tangent frame is not
   checked against the game.
   The red maps of the attic's furniture (green and blue near 0) give the colour tile as the
-  diffuse and no specular: albedo times light, as `barrel-ryza` draws them.
+  diffuse and no specular: albedo times light, as `barrel` draws them.
 
 **The lighting pass** (`pbb-n_cll.g1s`, pixel program 3, 168 KB: a forward pass that samples the
 colour, specular and normal maps itself, with the shadow maps, the light grid `sLit`, the
@@ -662,7 +662,7 @@ her hair (`@C86A7C58`, `@E905E6C7`) `alr2HAdj` (-0.11) and `alr2HDir` (0, 1, 0, 
 anisotropic highlight along the hair, "Alr2h" in the `PBB-Alr2h…` program names); her eyes
 (`@E24D26E6`) have texture transforms and a parallax (`vPlx` 0, -0.05), her face's outline-like
 part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constants' values
-(`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found. `barrel-ryza` lays the ramp
+(`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found. `barrel` lays the ramp
 over the field-model light on her draws (`model.frag` flag 128, the row in bits 16 to 23, the
 ramp in the mask slot): u is the sun's half-Lambert term as is.
 
@@ -683,7 +683,7 @@ highlight map (`sAlbedoRetouch2HighlightMap`, the material's kind-66 texture: Ry
 `pc00a_model.g1t` #16, 512×512 BC7, orange bands with their strength in alpha) over the albedo
 by its alpha, at the hair's UV shifted along v by `dot(V, alr2HDir) × alr2HAdj` (`alr2HDir`
 (0,1,0), `alr2HAdj` -0.11: the band slides up and down the hair with the view's pitch).
-`barrel-ryza` composites it unshifted at load (`composite_overlays`, as Escha's eyes).
+`barrel` composites it unshifted at load (`composite_overlays`, as Escha's eyes).
 Ryza's sky dome (`data\x64\field\skydome\<time>_<weather>.elixir.gz`, Rasenboden's noon
 takes `morning_sunny`: two submeshes, a band of thin clouds and one of big ones, 2048 × 1024
 and 2048 × 512 BC3, scrolled by `txC0` 0.004 and 0.002) draws with `PBSkyDome-NT0Tn`
@@ -693,7 +693,7 @@ albedo, plus a specular term from the kind-3 map and the ambient specular map, t
 height fog layers (`cHFog`, `hFogParam`, a sum of 20-odd sines for their wavy top). The
 dome's normals point inward and down (y -0.5 to -0.76), so the sun's N·L is 0 overhead and
 the clouds take the ambient and the specular: how bright they come out rests on run-time
-scales not read (`vAmbParam`, `vAmbDifScl`, `cb0[48..50]`). `barrel-ryza` lights the dome
+scales not read (`vAmbParam`, `vAmbDifScl`, `cb0[48..50]`). `barrel` lights the dome
 with the light an upward-facing surface takes (the light map upward times the ambient colour,
 plus the two lights by their elevation, times the exposure; look slot 92, `model.vert`'s flag
 4096): a stand-in for the game's lighting, whose scales are not read. The cloud texture's
@@ -722,7 +722,7 @@ linear light and finishes with `pow(f(x) / f(W), 1 / fGamma)`; the set's `trueHD
 game's still: at an exposure of 1.2 (the default override's `vExposureRange` top) the sunlit
 sand comes out 221, 203, 157 against 222, 203, 146 and the sunlit stone 221, 223, 220 against
 224, 227, 216, with the colour textures sampled as sRGB (as stored values the sand's blue
-comes out twice too high). `barrel-ryza` does this (`post.frag`'s `filmic`, `Frame::tone_gamma`;
+comes out twice too high). `barrel` does this (`post.frag`'s `filmic`, `Frame::tone_gamma`;
 `upload_texture`'s `linear`).
 
 **`SaturationScaleEx`** (`saturationscaleex.g1s`, constant `fScale`; the per-set values of
@@ -745,7 +745,7 @@ override's -200 to -450; both `cHFog` zero there (no height fog at noon), so `x 
 start)`, `y = -start / (end - start)`. Then the scene fog, as Escha's: extinction `min(exp2(L
 × Scat[0]), 1)` with `L = distance × fog.x + fog.y`, the colour mixed toward the in-scattered
 light `(1 + cos²θ) Scat[2] + Scat[3] (cosθ Scat[2].w + Scat[3].w)^-1.5 + Scat[1]`.
-`barrel-ryza` draws the scene fog from the set's `fog_` (Rasenboden's noon: from 5000 to
+`barrel` draws the scene fog from the set's `fog_` (Rasenboden's noon: from 5000 to
 700,000 units, so only the far hills take it), built as the sky's `Scat` is; the height fog is
 not drawn.
 
@@ -816,7 +816,7 @@ drawn with `ObjectGrassPBS`. Vertex program 1 (the one with the pigment map):
   `g_fFarClipBegin` and `g_fFarClipEnd` (cb0[39].x, .y) of distance from the eye; nearer than
   `g_fNearClip` (cb0[39].z) the card collapses to nothing. Between `g_fFarScaleBegin` and
   `End` (cb0[40].y, .z) it grows by `g_fWidthScale`-like factors (cb0[39].w, cb0[40].x): far
-  plants drawn larger. `barrel-ryza` shrinks them the same way (`model.vert` flag 16384).
+  plants drawn larger. `barrel` shrinks them the same way (`model.vert` flag 16384).
 - **Sway** (program 0's own code). With f = 2π · frac(POSITION.x) · `g_fAttCache1` (the
   plant's phase, kept in its position's fraction), h the corner's height after the fade, k = 1
   − `g_fAttCache1`, s = sin(f + `g_fPhase`) · 0.5 + 1 and r = h · 0.01 · `g_vAttCache0`: the
@@ -824,7 +824,7 @@ drawn with `ObjectGrassPBS`. Vertex program 1 (the one with the pigment map):
   sin(Osc) · k)), Osc = `g_fOscPhase`; the corner moves by normalize(L) · h − (0, h, 0), only
   where h > 0.01 (the top corners): the card bends on an arc and keeps its height. With the
   measured (a, a, a/2, −a/2) the top leans steadily toward +x +z (about 0.01 · a · √2 of the
-  height: some 8°) and circles by a/2 · 0.01 as Osc turns. `barrel-ryza` does exactly this
+  height: some 8°) and circles by a/2 · 0.01 as Osc turns. `barrel` does exactly this
   (`model.vert` flag 16384, sway slots 0 and 1), the strength held at 9.6.
 - **Pigment.** `sPigmentMap` (t9) is sampled at the plant's ground point, `(x, z) -
   g_vFieldRange.xy` over `g_vFieldRange.zw` (cb0[41]), clamped: a map over the whole field.
@@ -837,7 +837,7 @@ g_vPigmentMapScale.x` (cb0[7], cb0[6], cb0[23]): the vertex colour and the pigme
 weighted together, the pigment's share set by the game. Which texture is the pigment map and
 the scale's values are set at run time (not read): `_grass.g1t`'s second texture, a flat
 red, may be it (or a placeholder). It then normal-maps (`sNMap`, the cards' normal maps) and
-lights as the field's models do. `barrel-ryza` draws the plants without the pigment, and sways their
+lights as the field's models do. `barrel` draws the plants without the pigment, and sways their
 tops by stand-in values (docs/ryza/open.md).
 
 ### Ryza DX: the plants' constants as the game sets them (measured)

@@ -11,7 +11,7 @@ achievements are the player's own, and the DX version has not been played there)
 
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
   first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").
-- **Field lighting.** `barrel-ryza --time T --weather W` lights a field in linear light as
+- **Field lighting.** `barrel --time T --weather W` lights a field in linear light as
   the game does (docs/shading.md, "Ryza DX: the tone curve, saturation and fog passes"): colour
   textures sampled as sRGB, the sun and the second light from the set (their directions match
   the game's `litDir` exactly), the game's filmic curve with the set's `fLumiMax` and `fGamma`,
@@ -42,14 +42,14 @@ achievements are the player's own, and the DX version has not been played there)
   as the still's, a little brighter (her hat 240, 232, 215 against 225, 215, 195).
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds
   diffuse 0.8 and ambient 0 (`barrel g1m-materials`): their shaders (`PBB-N`, `PBB-EmN`, ...)
-  take the ambient from the environment, not `cAmb`. `barrel-ryza` gives every draw the full
+  take the ambient from the environment, not `cAmb`. `barrel` gives every draw the full
   material until those shaders are read.
 - **Emissive and odd materials.** `PBB-EmN` submeshes (the attic wall's windows; at
   Rasenboden three houses' windows, a bridge pillar and the light poles) have an emission map
   (texture kind 19) and flicker parameters (`emFrq` 1, `emRange` (0, 1) or (1, 1), `emStart`
   0 in Ryza's house). The lighting pass adds `sEmi × |emScl|`: to the light (times the colour)
   when `emScl` ≥ 0, to the finished colour when negative; `emScl` is not among the material's
-  parameters (set at run time). `barrel-ryza` draws the map as light (`model.frag` flag
+  parameters (set at run time). `barrel` draws the map as light (`model.frag` flag
   32768, the map bound as the draw's set 3) at a stand-in strength by time of day
   (`EMISSION_BY_TIME`: none by day, 2 at evening, 3 at night): the house's window glows at
   night. The flicker is not done: no pass of `PBB-EmN` (`_gb`, `_gba2`, `_cll`) reads
@@ -80,18 +80,18 @@ A recorded run of the original (a new game: the opening, the attic event at dusk
 from the path outside Ryza's house; kept outside the repository) is the reference. Ryza's house
 is `obj-A21-S06-HOUSE-01` (32538, 6194, 28804); free play starts on the path down from its gate,
 past the signpost (32148, 6003, 31151) toward the light poles. Close to the game's first view:
-`barrel-ryza INSTALL s06_t_rasen OUT --look-at 32400,6350,30600 --distance 800 --pitch 12 --yaw 150
+`barrel INSTALL s06_t_rasen OUT --look-at 32400,6350,30600 --distance 800 --pitch 12 --yaw 150
 --time morning`. What differs there, largest first:
 
 - **Shadows.** The game's path and rocks lie in the trees' shade, lit blue by the sky.
-  `barrel-ryza` now casts the sun's shadow from every placed model and Ryza (`--no-shadows`
+  `barrel` now casts the sun's shadow from every placed model and Ryza (`--no-shadows`
   to compare) over one square around the target (`1.5 ×` the camera distance, 1500 to 6000
   units across each way) and a far layer out to 30000 units, fading from 20000 (the
   override's `shadowMap_ShadowErase*`; docs/renderer.md, "Shadows"). The far square moves in
   2000-unit steps and is drawn again over 8 frames (about 1 ms each on the PC; on the RP6 to
   be measured). The shade
   comes out lighter than the game's.
-- **The sky.** `barrel-ryza` draws the sky plane with the game's measured scattering (the set's
+- **The sky.** `barrel` draws the sky plane with the game's measured scattering (the set's
   `skyFog_`, the sun times its power). Stand-ins: the path length's terms (`skyPos`, `fog`:
   an atmosphere `end` thick over a ground ten times as wide) and no glow around the sun
   (`vGlowDir`, `cGlow`, `hGlowParam` not read). Against the game at Rasenboden's noon the blue
@@ -115,7 +115,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   frame yet, so its colour (too bright and green here) cannot be checked.
 - **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
   Its plants (flowers, weeds, tufts, wheat) come from `_grass.bin` / `_grass.g1t` (a grid of
-  plant kinds per 500 units and 8 card textures, docs/formats.md): `barrel-ryza` draws them
+  plant kinds per 500 units and 8 card textures, docs/formats.md): `barrel` draws them
   as upright cards turning about the vertical (look slots 37 to 39), on the heightmap, one
   draw per 8 × 8 cells: Rasenboden's 44,015 plants in 66 draws, about 0.14 ms at the gate
   view on the PC. Stand-ins, not read: the spread (a kind's last float as plants per 100 ×
@@ -176,7 +176,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   view's side. The game's own camera collision and how it pulls in (pitching up?) are not read. Heights look only at the floors in
   their 256-unit cell (`walk::Ground`): 0.6 µs a height in Rasenboden on the PC, from 1.8 ms
   searching all 282,000 triangles.
-- **Walking her** (`barrel-ryza ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
+- **Walking her** (`barrel ... --ryza X,Y,Z --window`, `barrel_ryza::player`). Stand-ins,
   not read from the game: the lean that starts a run (0.6), how fast she turns and the step she climbs (60). The camera looks 128 above her feet
   (measured: the game's eye and her position at the gate with the field camera's 8° and 400;
   about 0.8 of `chara.xml`'s `CamH` 160, the rule not read). With it
@@ -253,7 +253,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   triangles, every placed object at full detail. On the PC (RX 9070 XT, 1920x1080, offscreen,
   60 frames, median) the frame is 5.97 ms at the desktop preset and 5.89 ms at the handheld one
   (75 % scale): the scene pass barely changes with the resolution, so it is bound by vertices
-  and draws. The field's draw distances are applied (`barrel-ryza --draw-ranges pc|nx|off`, the
+  and draws. The field's draw distances are applied (`barrel --draw-ranges pc|nx|off`, the
   PC's by default: a field object farther from the eye than its class's `disp_range`, taken as
   metres, is left out): at the gate they leave out 45 (PC) or 63 (Switch) pixels of 1920x1080
   and take the frame from 5.97 to 5.89 or 5.88 ms, since the landmarks (3000 m) carry the cost.
@@ -310,7 +310,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   achievements, Steam saves) but no restart-through-Steam check was found among its strings;
   whether it starts without the client is unchecked.
 - **Levels of detail.** Rasenboden's object container holds 138 `_hi` models, 26 `_mid` and
-  14 `_low`. `barrel-ryza` loads all three (`Placement::lods`, `Draw::lod`) and shows each by
+  14 `_low`. `barrel` loads all three (`Placement::lods`, `Draw::lod`) and shows each by
   the distance from the eye to its box's centre at the game's High LOD preset (10000, 30000;
   docs/formats.md, "the graphics presets"). In a far view of the village it saves about
   0.08 ms of 7.2 on the PC with 12 pixels changed; the landmarks (cliffs, windmills) have no

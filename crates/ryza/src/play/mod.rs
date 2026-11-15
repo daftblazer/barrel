@@ -302,10 +302,6 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
     eprintln!("plants: {} in {} draws", plants.len(), blocks.len());
 }
 
-pub fn main() -> Result<()> {
-    run(std::env::args().skip(1).collect(), None)
-}
-
 /// Plays Ryza with `raw`, the command line after the program's name. `chosen` is the install the
 /// `barrel` program found and set up (`locate::start`); without it this finds the game itself:
 /// `--game DIR`, the command line's INSTALL, `BARREL_GAME_DIR`, the config's, Steam's, else the

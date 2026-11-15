@@ -3405,10 +3405,6 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
     Ok(Loaded { scene, pack_bytes, field_maps, field_looks, sky_instances, focus, event_camera, actors, absent, creatures, battles, battle_play, town_bodies, start_at, start_field, patterns, walker })
 }
 
-pub fn main() -> Result<()> {
-    run(std::env::args().skip(1).collect(), None)
-}
-
 /// Plays Escha with `args`, the command line after the program's name. `chosen` is the install
 /// the `barrel` program found and set up (`locate::start`); without it this finds the game
 /// itself: `--game DIR`, the one the command line's paths are in (Kintsugi's `--title FOLDER`),

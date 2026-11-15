@@ -1,4 +1,4 @@
-//! GPU timings per stage of the frame (`barrel-escha --timings`): timestamps written at the
+//! GPU timings per stage of the frame (`barrel --timings`): timestamps written at the
 //! stage boundaries, read back after each frame (the viewer waits for every frame anyway), and
 //! the stages' medians printed at the end.
 

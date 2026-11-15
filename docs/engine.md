@@ -91,7 +91,7 @@ pixels, one by more than 6%. Still to weigh: the glow's eleven passes, and a sun
 for the shadow comparison.
 
 **Render scale.** The scene, its depth, the frozen frame and the glow levels are drawn at the
-output size times a render scale (`barrel-escha --scale S`, 0.25 to 2; `Targets::scene_size`),
+output size times a render scale (`barrel --scale S`, 0.25 to 2; `Targets::scene_size`),
 and the post pass scales the scene to the output (bilinear, through the normalized
 coordinates it already sampled by) while the text is drawn at the output's own size, so it
 stays sharp. Scale 1 renders exactly as before; 0.5 draws a quarter of the pixels (softer
@@ -100,7 +100,7 @@ scale is where an upscaler goes as an option: FSR 1 (AMD FidelityFX Super Resolu
 its notice kept in the shaders) is ported to plain GLSL, its edge-adaptive scale
 (`shaders/easu.frag`, 12 taps by `textureGather`) and its sharpening (`shaders/rcas.frag`),
 with their constants worked out in `fsr.rs`; both need only the finished frame. With
-`barrel-escha --fsr` and a scale below 1, `upscale.rs` runs EASU (scene to an output-size
+`barrel --fsr` and a scale below 1, `upscale.rs` runs EASU (scene to an output-size
 target) and RCAS (0.2 stops below the sharpest) after the glow, and the post pass reads the
 sharpened image in the scene's place; the glow and the frozen frame stay at the scene's size.
 In the first opening at 1280×720 from half size, FSR reads visibly sharper than the bilinear
@@ -109,7 +109,7 @@ scale (closer to the full-size frame by eye) though a little further by PSNR (29
 anti-aliased input, and the scene's hard edges come out crisper rather than smoother, so
 anti-aliasing is the next piece. At scale 1 `--fsr` changes nothing.
 
-**Motion vectors.** With `motion` on (`barrel-escha --motion`, `--show-motion` to see them as
+**Motion vectors.** With `motion` on (`barrel --motion`, `--show-motion` to see them as
 red and green, 40 times their size) the scene pass writes a second colour target
 (`R16G16_SFLOAT`, single-sampled: motion turns MSAA off): each pixel's movement since the last
 frame in texture coordinates, `(this clip position − last frame's) / 2` from the vertex shader,
@@ -128,7 +128,7 @@ camera gives zero. The viewer's seek to `--at` falls between its first two frame
 temporal methods have to treat as a cut (they drop their history there). With motion off the
 frame is exactly as before.
 
-**Jitter.** With `jitter` on (`barrel-escha --jitter`) each frame's drawn view-projection is
+**Jitter.** With `jitter` on (`barrel --jitter`) each frame's drawn view-projection is
 shifted by a sub-pixel offset, the Halton sequence in bases 2 and 3 over 16 frames
 (`settings::jitter`, -0.5 to 0.5 pixel), applied as a clip-space translation (2 × offset /
 the scene's size) so it holds for any projection. The motion vectors leave it out: the shaders
@@ -236,7 +236,7 @@ defaults for exposure (RG32F) and the reactive and transparency masks (R8). Two 
 (point and linear clamp) at bindings 1000/1001. On a reset, accumulation, the SPD mips and frame
 info (-1, 1) are cleared.
 
-**Timings** (`barrel-escha --timings`: GPU timestamps at the stage boundaries, medians after 3
+**Timings** (`barrel --timings`: GPU timestamps at the stage boundaries, medians after 3
 warm-up frames). The first opening's still shot at 25 s, 30 frames, on the desktop's RDNA 4
 Radeon (Navi 48), in ms; "AA/up" includes the glow:
 
@@ -310,7 +310,7 @@ Order: store depth, then GSR 1 (small, handheld), the temporal upscalers on the 
 
 **Wide screens.** The projection keeps the vertical field of view and widens the horizontal
 one with the aspect, so 21:9 (3440×1440) and 32:9 (5120×1440) show more to the sides without
-stretching (`barrel-escha --size` takes up to 8192 either way; the first opening at 5120×1440
+stretching (`barrel --size` takes up to 8192 either way; the first opening at 5120×1440
 with 4× MSAA renders in about 0.6 s offscreen, 4K about the same). Event scenes were framed for
 16:9: at 32:9 the first opening's camera sees past the end of the room's set into the empty
 background on the right. Still to decide: fill such views (pillarbox events to the game's
@@ -319,12 +319,12 @@ background on the right. Still to decide: fill such views (pillarbox events to t
 **Settings.** `settings::RenderSettings` holds the scale, the upscaler (bilinear or FSR 1), the
 MSAA samples and the shadow map, with presets: `DESKTOP` (full size, no MSAA, the large shadow
 map: the renderer as it was), `DESKTOP_HIGH` (4× MSAA) and `HANDHELD` (three-quarter scale
-through FSR 1, no MSAA, the small 16-bit shadow map). `barrel-escha --preset NAME` picks one and
+through FSR 1, no MSAA, the small 16-bit shadow map). `barrel --preset NAME` picks one and
 the single options (`--scale`, `--fsr`, `--msaa`, `--shadows`) change fields over it. In the
 first opening the desktop preset matches the earlier plain frame and desktop-high the earlier
 4× MSAA frame pixel for pixel; the handheld preset comes to 31.1 dB against the full frame.
 
-**MSAA.** `barrel-escha --msaa N` (1, 2, 4 or 8, capped at what the device allows for both
+**MSAA.** `barrel --msaa N` (1, 2, 4 or 8, capped at what the device allows for both
 colour and depth) draws the scene with N samples a pixel into a transient multisampled colour
 and depth, resolved into the scene image at the end of the scene pass (so on the handhelds the
 samples stay in tile memory and only the resolved image is written out); the scene pipelines
@@ -380,7 +380,7 @@ files need no special case. `GameFs` is the same API on a value (`GameFs::new(in
 - `barrel-cli` (the developer tool) reads files directly: it works on extracted or original
   folders, not on a played game.
 - The layers are installed once a run (`barrel_files::install`, from `barrel_render::locate::
-  resolve` at the start of `barrel-escha` and `barrel-ryza`); before that, and in tests, reads
+  resolve` at the start of `barrel` and `barrel`); before that, and in tests, reads
   are plain. The unit tests cover override order, case-insensitive lookup, missing-file errors
   and a mod overriding one file (`crates/files`, `crates/escha/tests/mod_layers.rs`).
 
@@ -662,7 +662,7 @@ interpolates across it as a whole clip would (the ignored test `streams_like_cli
 the two over two wraps). Decoding happens in the frame loop's pump, a packet (about a
 thousandth of a second of work on the PC) at a time.
 
-**To a file.** `barrel-escha ... --event FILE.ebd --audio OUT.wav` (offscreen) mixes the event's
+**To a file.** `barrel ... --event FILE.ebd --audio OUT.wav` (offscreen) mixes the event's
 sound into a `Capture` instead of a device: at each frame exactly up to the event's clock (from
 `--at`), so the WAV (16-bit stereo, 48 kHz) lines up with the frames written, run after run.
 It is written when the run ends. The reference recording of the opening carries the game's own
@@ -702,7 +702,7 @@ trigger once, and if nothing starts on the road walks the player from the world 
 field the end point opens; `barrel event-chain ROOT START trip:T0>A0p0` takes it after the
 opening (4 days, nothing starts). `WorldMap::path` lays the trip out as
 the routes' dots in order (`world::route_path`, each next dot the nearest left, from the end
-at the mark the trip is at) between the marks; `barrel-escha --field .../A15_WMAP OUT
+at the mark the trip is at) between the marks; `barrel --field .../A15_WMAP OUT
 --world-trip T0 A0p0` has Escha run that way at her run speed (13 waypoints: from the town past
 `R0`'s marks, through the forest's path dots, onto `A0p0`'s mark), the play camera following.
 How the game itself moves the player along a route (its speed, the marker, the days ticking

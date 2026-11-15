@@ -6,8 +6,8 @@ Barrel is one program, `barrel` (`barrel.exe` on Windows), that reads the origin
 and works out which game to start; it never needs a launcher. One release package per platform
 (`tools/package.sh release`: `barrel-<version>-linux-x86_64.tar.gz`, `-linux-aarch64.tar.gz`,
 `-windows-x86_64.zip`), each with a README.txt on how to run it. The games' own programs
-(`barrel-escha`, `barrel-ryza`) stay as developer tools with every offscreen/debug flag
-(`tools/parity.sh` uses `barrel-escha`); `barrel-tool` is the data inspector (it was `barrel`).
+(`barrel`, `barrel`) stay as developer tools with every offscreen/debug flag
+(`tools/parity.sh` uses `barrel`); `barrel-tool` is the data inspector (it was `barrel`).
 
 - **Which game** (`barrel_files::detect`). In order: `--game DIR` (the folder's contents say
   which game: its program file and a `Data` folder); a path among the arguments inside an

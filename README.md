@@ -44,7 +44,7 @@ The code is split by game; nothing shared names a game's rules:
 | `crates/render` | The Vulkan renderer (`renderer::Renderer`, drawing the `Frame` a game hands it), the text and 2D layer, the window, the pad, the graphics settings |
 | `crates/engine` | What every game's play shares: the event player and its stage, cameras, the Squirrel VM, walking against a field's collision, posing skeletons, the clock, wind |
 | `crates/audio` | The mixer and SDL3 output over Barrel's own Vorbis decoder |
-| `crates/escha` | Escha & Logy DX: its rules, its own data (`data`: its executable's tables, its saves, its own XML tables) and the `barrel-escha` program (`src/play`: its screens and run) |
+| `crates/escha` | Escha & Logy DX: its rules, its own data (`data`: its executable's tables, its saves, its own XML tables) and the `barrel` program (`src/play`: its screens and run) |
 | `crates/cli` | The `barrel` tool over all of them |
 
 Open problems are kept per game (`docs/escha/open.md`, `docs/ryza/open.md`) and for the shared
@@ -90,17 +90,17 @@ target/release/barrel-tool g1m-scan "<install>/Data"       # every model
 target/release/barrel-tool g1m-obj FILE.elixir.gz#N OUT.obj  # a model as OBJ
 ```
 
-`barrel` is the one program that plays the games (it works out which one: `docs/mods.md`, "Running"). `barrel-escha` is Escha & Logy DX's own program, the developer tool (a Kintsugi launch starts `barrel`, below);
+`barrel` is the one program that plays the games (it works out which one: `docs/mods.md`, "Running"). `barrel` is Escha & Logy DX's own program, the developer tool (a Kintsugi launch starts `barrel`, below);
 as a tool it draws a model, a field or an event: to PNG files offscreen, or live in a window (`--window FRAMES`). With an event it plays
 it on (`--at`, `--line`, `--frames`, `--fps`) and with `--chain` goes on to the events the story
 starts after it (`docs/renderer.md`).
 
 ```sh
-target/release/barrel-escha MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
-target/release/barrel-escha MODEL#N TEXTURES#N out.png --skeleton BASE_MODEL#N --anim MOTION#N --time 2
-target/release/barrel-escha --field "<install>/Data/x64/Field/AREA_01_01" out.png
-target/release/barrel-escha --field auto out.png --event "<install>/Event/event/MM01_OP1/EVENT_MM01_OP1_111.ebd" --window 100000 --chain
-BARREL_VALIDATION=1 target/release/barrel-escha ...      # with the Khronos validation layer
+target/release/barrel MODEL.elixir.gz#N TEXTURES.elixir.gz#N out.png [--size N] [--yaw DEG]
+target/release/barrel MODEL#N TEXTURES#N out.png --skeleton BASE_MODEL#N --anim MOTION#N --time 2
+target/release/barrel --field "<install>/Data/x64/Field/AREA_01_01" out.png
+target/release/barrel --field auto out.png --event "<install>/Event/event/MM01_OP1/EVENT_MM01_OP1_111.ebd" --window 100000 --chain
+BARREL_VALIDATION=1 target/release/barrel ...      # with the Khronos validation layer
 ```
 
 Building the renderer needs `glslc` (shaderc, part of the Vulkan SDK) to compile its shaders;

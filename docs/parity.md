@@ -29,7 +29,7 @@ A diff of the two says where Barrel differs, without pixels and without judging 
    The exit status is 0 when nothing differs. Draws that read a render target (the copy to
    the back buffer, post effects) and 3D draws are counted, not compared.
 
-`tools/parity.sh <capture dir> <game frame> <barrel-escha arguments...>` does steps 3 and 4 for
+`tools/parity.sh <capture dir> <game frame> <barrel arguments...>` does steps 3 and 4 for
 one offscreen Barrel frame (exit status 0 when nothing differs).
 
 Animation phase: `barrel-parity align <trace dir> <a-b/step> <barrel trace> <a-b> [index.tsv]`

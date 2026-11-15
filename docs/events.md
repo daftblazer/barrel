@@ -152,7 +152,7 @@ y, z, 0, angle in degrees, ...}` in field coordinates (all 14 operands below, "A
 removing characters"); `ECT_CHARA_POS_SET` (`s4`) is
 `{character, 0, 0, 0, x, y, z}`. A character's model is found through its `Chara.xml` row's
 `BaseTag` and that tag's `Model` in `CharaBase.xml` (`PC20/PC20_MODEL`, under
-`Data/x64/Character/`). `barrel-escha --field <TOWN_04> --event FILE.ebd` draws an event's
+`Data/x64/Character/`). `barrel --field <TOWN_04> --event FILE.ebd` draws an event's
 opening: the field and each character at its first placement. `EVENT_MM08_AS4_130` (field
 3, `TOWN_04`) puts Escha and Logy on the grass by a curved stone wall and Threia and Reyfer a
 few metres off, all standing at ground height.
@@ -190,7 +190,7 @@ camera back to play, so a scene never draws with it; the stage keeps the flag
 
 The camera looks at target + offset from `distance` away, turned by yaw and pitch. In
 `EVENT_MM08_AS4_130` that opens on Threia and Reyfer by the plaza's planter, with a market
-stall and flowerbeds behind them and Escha coming into frame. `barrel-escha --event` uses the
+stall and flowerbeds behind them and Escha coming into frame. `barrel --event` uses the
 event's camera; `--free-camera` places the view on the characters instead. The field of
 view is not in the command (40° is used for now).
 
@@ -207,7 +207,7 @@ the executable reads a command's operands (`0x1401ddcbe` and the like, after the
 resolved), each that equals 749 becomes what `0x14035ebb0` returns: the global `0x141098a48`,
 which the new game's choice screen sets (`0x1400ce4f3`: 1 if the choice is Logy, else 0). So
 749 is row 0, Escha, or row 1, Logy. `Player::hero` sets the choice (Escha by default;
-`barrel-escha --hero logy`) and `Player::slot` swaps 749 for it, the camera's follow (`t18`)
+`barrel --hero logy`) and `Player::slot` swaps 749 for it, the camera's follow (`t18`)
 included. The save keeps the choice in its `global` record (+0x38; `docs/formats.md`, Saves).
 
 **Where the eye is** (`0x1401e68f0`, settled from the code). The point looked at is the
@@ -777,7 +777,7 @@ executable's `FIELDMAP_*` enum (122 names, found by `FIELDMAP_TOWN_01`): `TOWN_0
 `A15_WMAP`. Without the prefix the names are the field directories under `Data/x64/Field`.
 `EVENT_MM08_AS4_130` changes to 3, `TOWN_04` (the plaza it is drawn in), `_110` to 2
 (`TOWN_03`) and `_020` to 8 (`TOWN_09`). `play-event` prints the change with its name, and
-`barrel-escha --field auto --event FILE` draws the event in its own field
+`barrel --field auto --event FILE` draws the event in its own field
 (`event::field_maps`, `event::first_field`). 512 of the 1,021 story events change field; the
 others play wherever the player already is (their field is not in the event).
 
@@ -825,7 +825,7 @@ removes it, and `s5`/`s10` set the motion it plays. `s5` (`ECT_CHARA_MOTION_SET`
 +0x828 (not read); `s10` passes 0 there and then clears the motion's play range
 (`0x1402036d0` with -1, -1), so it loops from the start. With `--at` the viewer poses each
 character in its stage motion that far in (looping ones wrap).
-`barrel-escha --field <DIR> --event FILE.ebd --at SECONDS` draws the stage as it stands at that
+`barrel --field <DIR> --event FILE.ebd --at SECONDS` draws the stage as it stands at that
 time: every character where it has walked to and facing where it turned, seen from the
 stage's camera when the event has set its eye and target (the skill camera), otherwise from
 the event's field camera. Positions on kinds 2 to 4 are not placed yet; the stage counts what it skips. Story events
@@ -1826,15 +1826,15 @@ ending's 29 to 40 `telop14` to `telop25` (the second atlas, whose lines echo the
 and 333 to 385 down, centred, as the opening recording shows it to the pixel. The `uvwh`
 rectangles are in the `neo_` atlases' pixels (`res_<lang>\ui\neo\neo_a21_telopNN.g1t`, 2400
 × 2048 BC7), the plain atlases (1200 × 1024) half that (`telop::place`, `telop::quad`;
-`barrel-ryza ... --telop N` draws one over a frame, from the `neo_` atlas above 1080 lines).
+`barrel ... --telop N` draws one over a frame, from the `neo_` atlas above 1080 lines).
 `barrel_ryza::event` reads an event from the archives (`event_jp\<chapter>\`), schedules it
-and plays it on the shared stage's clock; `barrel-ryza ... --event mm00_010 --at T` draws the
+and plays it on the shared stage's clock; `barrel ... --event mm00_010 --at T` draws the
 telop the stage shows T seconds in at its opacity (2.5 s: the first half-faded in). The
 field-map numbers (`q2` / `q12`, the `field N` steps) are the executable's `FIELDMAP_*` enum
 from `FIELDMAP_S01_I_ATTIC` (0) to `FIELDMAP_S00_COMMON_MODEL` (341 names, reserves and DLC
 included; `barrel_ryza::maps`): the opening's field 5 is `s06_t_rasen`, and its characters
 stand on Rasenboden's beach (46373, 4089, 22678), as the recording shows. With FIELD `-`,
-`barrel-ryza` loads the event's field. Ryza's `t25/0x10` (`ECT_FIELDMAP_CAMERA_ALL_ABSOLUTE`)
+`barrel` loads the event's field. Ryza's `t25/0x10` (`ECT_FIELDMAP_CAMERA_ALL_ABSOLUTE`)
 is Escha's `t20/0x10` with the same eleven operands (yaw, roll, field of view and pitch in
 hundredths of a degree, distance, target, offset; across 3,347 uses mostly 180°, 0, 22.5°, 8°,
 400 and offset (0, 9, 0): the field camera's own defaults). The opening's first shot is
@@ -1854,7 +1854,7 @@ and the free camera's field of view (`t24`, `ECT_CAMERA_FOV_SET` 24°) not appli
 Ryza's `s2/0x30` (`ECT_CHARA_POS_SET`, 13,217 uses) has a relative form: kind 8 in the second
 operand (10,352 uses) makes it `{character, 8, of, 1, x, y, z}`, the offset turned by `of`'s
 facing (z along it) and added to its position (`Step::PlaceNear`); Escha's events never use
-it. `barrel-ryza --event` puts Ryza (character 0) at the stage's position and facing: at 13 s
+it. `barrel --event` puts Ryza (character 0) at the stage's position and facing: at 13 s
 she stands at the beach point (46373, 4089, 22678) facing the camera, as in the recording,
 though upright where the recording has her crouched (her event motion, `s8` frames 130 to
 181, is not played in stills yet). (`str_telop.xml` holds the field

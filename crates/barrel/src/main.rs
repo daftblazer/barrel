@@ -2,8 +2,8 @@
 //! start (`barrel_files::detect`: `--game DIR`, a path or Steam's `%command%` among the arguments,
 //! Steam's app id, `BARREL_GAME_DIR`, the saved and Steam folders), asks when several games are
 //! installed (the picker) or where the game is when none is found (the "Locate game files"
-//! screen), and hands over to the game's own `run` with the arguments left. The games' own
-//! programs (`barrel-escha`, `barrel-ryza`) take the same developer flags without the choice.
+//! screen), and hands over to the game's own `run` with the arguments left, developer flags
+//! included (with both games installed, `--game DIR` picks one without the picker).
 //!
 //! `BARREL_LOCATE_SHOT=out.png` writes the two screens as pictures (`out.png`, `out-pick.png`)
 //! and exits, for checking how they look.

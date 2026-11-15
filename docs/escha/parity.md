@@ -49,7 +49,7 @@ Barrel frame.
 
 ## Time alignment (`barrel-parity align`)
 
-`PARITY_ALIGN=a-b/step tools/parity.sh <capture> <frame> <barrel-escha args> --frames N` diffs every
+`PARITY_ALIGN=a-b/step tools/parity.sh <capture> <frame> <barrel args> --frames N` diffs every
 captured game frame of the range against each of Barrel's frames 0..N-1 and reports the best
 Barrel frame per game frame and the one offset (game frame - Barrel frame) with the fewest
 total mismatches (docs/parity.md). Full arguments of a run (the rows above abbreviate them):

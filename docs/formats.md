@@ -791,7 +791,7 @@ voices (`voice::first_clips`). 521 events have voices; the opening's are as the 
 040 have none (021, 022 and 040 do not share the other alchemist's clips after all). The
 multi-language executable holds the same table, so the Japanese and English banks share the
 numbering. The viewer plays each line's clip from it as the line comes up
-(`stage::Stage::story_voice`; `barrel-escha` prints "story voices from clip 12900" for the first
+(`stage::Stage::story_voice`; `barrel` prints "story voices from clip 12900" for the first
 opening scene). Matching clip sizes to line lengths (`voice::story_start`) guessed the starts
 before the table was found; `barrel voice-map INSTALL` now compares the two: of its 520 guesses
 135 are the table's, and 111 of the 192 strong ones (correlation 0.85 or more), so it is only a
@@ -1275,7 +1275,7 @@ vertex programs take position, normal, colour, UV, tangent and a billboard size,
 sway phase `g_fPhase`, `g_fOscPhase`), so the choice is in the executable. The grass quality
 and range presets (`saves/graphicssetting/grassqualitypreset.xml`, `grassrangepreset.xml`):
 density 1 and fading from 8000 to 15000 units at Middle, the highest. `barrel_ryza::grass`
-reads the file; `barrel-ryza` draws the plants (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes
+reads the file; `barrel` draws the plants (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes
 (position, rotation in radians, three sizes, then two words: 2 and 15 in all of Rasenboden's;
 44 bytes each), then a u32 count of cylinders (position, rotation, radius, height, the same two
 words; 40 bytes). Rasenboden's four boxes are tall and thin (38 × 715 × 37 by its first, near
@@ -1345,7 +1345,7 @@ irradiance map and a pre-filtered specular one, unlike Escha's per-field light t
 The cube maps are not the field's own: the attic's and Rasenboden's `_ad.g1t` are the same
 file byte for byte (their `_env.bin` differ), and the env containers come in a few sizes
 only. The diffuse map's faces are in the game's axes, y up: +y is the sky's blue (0.19, 0.26,
-0.42), -y a warm ground bounce (0.47, 0.36, 0.28), the sides about 0.3. `barrel-ryza` turns it
+0.42), -y a warm ground bounce (0.47, 0.36, 0.28), the sides about 0.3. `barrel` turns it
 into nine spherical-harmonic coefficients (`barrel_ryza::environment`) for the renderer's
 ambient term (model.vert's `sh`), scaled and tinted by the set's `indirectStage_` block (0x54c:
 scale, specular scale, colour, ..., `AmbientLightScale` at +0x30; `StageLight`), the characters'
