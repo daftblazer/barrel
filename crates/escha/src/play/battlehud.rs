@@ -402,14 +402,26 @@ const ICON: i32 = 0xe7;
 const ROW_PARTS: i32 = 0xe8;
 const LABEL: i32 = 0xec;
 
+/// The command row's flipbooks: their cuts (node word 5) and cuts a second (node word 6, 10: the
+/// area map's cursor glow, word 6 = 8, turns at the 8 cuts a second the game was seen to cycle).
+pub const FLIPBOOK_CUTS: usize = 4;
+pub const FLIPBOOK_RATE: f32 = 10.0;
+
+/// The flipbooks' step at `time` seconds of the battle's clock (it counts from the battle's
+/// start; the game's start is found by `PARITY_ALIGN`, docs/escha/parity.md).
+pub fn flip_step(time: f32) -> usize {
+    (time * FLIPBOOK_RATE) as usize % FLIPBOOK_CUTS
+}
+
 /// The command row: `commands` (icon cuts) in their places, the chosen one on the diamond
 /// (layout 857) with the arrows either side and its label on a plate below (858), the others
 /// in their dark frames (855).
 ///
 /// The diamond and the arrows are nodes of kind 36, a flipbook of word 5 cuts from the node's
-/// (4: the diamond cuts 2 to 5, the arrows 6 to 9 and 10 to 13); drawn at their first frame
-/// until the HUD has a clock.
-pub fn command_row(commands: &[i32], chosen: usize) -> (Vec<Element>, Vec<Element>) {
+/// (4: the diamond cuts 2 to 5, the arrows 6 to 9 and 10 to 13); `step` is the clock's step
+/// ([`flip_step`]), taken modulo the cuts.
+pub fn command_row(commands: &[i32], chosen: usize, step: usize) -> (Vec<Element>, Vec<Element>) {
+    let step = (step % FLIPBOOK_CUTS) as i32;
     let n = commands.len().clamp(1, MAX_COMMANDS);
     // The places in order, drawn before the field information; the chosen one's arrows and
     // label after it (the arrows lie over the neighbours, the recording's right arrow over the
@@ -420,10 +432,10 @@ pub fn command_row(commands: &[i32], chosen: usize) -> (Vec<Element>, Vec<Elemen
         let node = [(ROW_CENTRE_X - ROW_CENTRE[0] as f32 + ROW_PITCH * (k as f32 - (n - 1) as f32 / 2.0)).round() as i32, ROW_Y];
         let at = |x: i32, y: i32| [node[0] + x, node[1] + y];
         if k == chosen {
-            places.push(Element::Sprite { part: ROW_PARTS, cut: 2, at: at(96 - 66, 50 - 72) });
+            places.push(Element::Sprite { part: ROW_PARTS, cut: 2 + step, at: at(96 - 66, 50 - 72) });
             places.push(Element::Sprite { part: ICON, cut: c, at: at(ROW_CENTRE[0] - 48, ROW_CENTRE[1] - 48) });
-            marks.push(Element::Sprite { part: ROW_PARTS, cut: 6, at: at(-12, 20) });
-            marks.push(Element::Sprite { part: ROW_PARTS, cut: 10, at: at(154, 20) });
+            marks.push(Element::Sprite { part: ROW_PARTS, cut: 6 + step, at: at(-12, 20) });
+            marks.push(Element::Sprite { part: ROW_PARTS, cut: 10 + step, at: at(154, 20) });
             marks.push(Element::Sprite { part: LABEL, cut: 9, at: at(4, 100) });
             marks.push(Element::Sprite { part: LABEL, cut: c, at: at(48, 112) });
         } else {

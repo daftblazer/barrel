@@ -1361,6 +1361,8 @@ struct BattleHud {
     exe: Vec<u8>,
     /// What it shows now, and at what size (the wipe: its day and fade step).
     shown: Option<((Vec<battlehud::Member>, Vec<Option<usize>>), Option<battlehud::Commands>, Option<result::Values>, Option<(u32, u32)>, u32, u32, usize, Vec<hud::Element>, Option<String>, Option<(i32, i32)>, i32, Vec<usize>)>,
+    /// The command row's flipbook cut that list was built with (`battlehud::flip_step`).
+    flip: usize,
 }
 
 fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Path) -> Result<BattleHud> {
@@ -1380,10 +1382,10 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     every.extend(every_digits);
     every.extend((0..11).map(|cut| hud::Element::Sprite { part: 0xf2, cut, at: [0, 0] }));
     let all_commands: Vec<i32> = (0..9).collect();
-    every.extend((0..2).flat_map(|chosen| {
-        let (places, marks) = battlehud::command_row(&all_commands, chosen);
-        places.into_iter().chain(marks)
-    }));
+    for (chosen, step) in (0..2).flat_map(|c| (0..battlehud::FLIPBOOK_CUTS).map(move |s| (c, s))) {
+        let (places, marks) = battlehud::command_row(&all_commands, chosen, step);
+        every.extend(places.into_iter().chain(marks));
+    }
     let plate_nodes = barrel_escha::data::layout::placed(&pe, battlehud::TARGET_PLATE);
     let bubble_nodes = barrel_escha::data::layout::placed(&pe, battlehud::SUPPORT_BUBBLES);
     every.extend(battlehud::support_bubbles(&bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &[0, 1, 2], battlehud::SUPPORT_LABEL));
@@ -1418,7 +1420,7 @@ fn battle_hud(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, root: &Pat
     }
     let size = images[0].width as f32;
     let layer = text::Layer::new(gpu, pool, pass, &images)?;
-    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, bubble_nodes, rate_nodes, result_nodes, field_nodes, exe, shown: None })
+    Ok(BattleHud { layer, font: text::Font { glyphs, size }, sheets, nodes, plate_nodes, bubble_nodes, rate_nodes, result_nodes, field_nodes, exe, shown: None, flip: 0 })
 }
 
 /// How long an offscreen run shows a won battle's Result screen before going back.
@@ -1464,7 +1466,10 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
     }
     let level = |c: usize| members.get(c).map_or(1, |m| m.level.max(1));
     let mut rng = barrel_engine::rng::Rng::seeded(1);
-    let drawn = barrel_escha::auto_battle::draw(&tables, group, &mut rng)?;
+    // `BARREL_BATTLE_COUNT` fixes how many monsters the group draws (a check against a captured
+    // battle); which monsters fill them follows the group as in the game.
+    let count = std::env::var("BARREL_BATTLE_COUNT").ok().and_then(|v| v.parse().ok());
+    let drawn = barrel_escha::auto_battle::draw_counted(&tables, group, count, &mut rng)?;
     let sizes: Vec<f32> = drawn.iter().map(|d| d.1).collect();
     // The battle scatters the monsters first: a copy of its generator gives the same spots.
     let spots = barrel_escha::battle::scatter(&sizes, &mut rng.clone());
@@ -6610,10 +6615,13 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         let banner = play.banner.as_ref().filter(|(_, at)| play.time - at < battlehud::BANNER_SECONDS).map(|(name, _)| name.clone());
         let rate = play.rate.filter(|&(_, _, at)| play.time - at < battlehud::BANNER_SECONDS).map(|(r, t, _)| (r, t));
         let bubbles = play.support_plates();
+        // The command row's flipbooks (diamond, arrows) turn with the battle's clock.
+        let flip = battlehud::flip_step(play.time);
         let shown_result = play.result.as_ref().map(|(v, _)| v.clone());
         // The wipe's day and its fade in twentieths (20: white, the panel on it).
         let wipe = play.wiped.map(|(at, day)| (day, (((play.time - at) / WIPE_FADE).clamp(0.0, 1.0) * 20.0) as u32));
-        if h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone(), rate, play.support, bubbles.clone()))
+        if (h.shown.as_ref() != Some(&(members.clone(), commands.clone(), shown_result.clone(), wipe, width, height, fast, numbers.clone(), banner.clone(), rate, play.support, bubbles.clone()))
+            || (h.flip != flip && commands.as_ref().is_some_and(|c| !c.row.is_empty())))
             && let Ok(pe) = barrel_formats::pe::Pe::parse(&h.exe) {
                 let mut elements = match &shown_result {
                     // The Result screen, in place of the battle's HUD.
@@ -6621,7 +6629,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     None => {
                         // The game's row, drawn among the HUD's parts; the skills' list and the
                         // target's name still Barrel's own text.
-                        let row = commands.as_ref().filter(|c| !c.row.is_empty()).map(|c| battlehud::command_row(&c.row, c.at)).unwrap_or_default();
+                        let row = commands.as_ref().filter(|c| !c.row.is_empty()).map(|c| battlehud::command_row(&c.row, c.at, flip)).unwrap_or_default();
                         let mut e = battlehud::elements(&h.nodes, |p| barrel_escha::data::layout::text(&pe, p), &members.0, &play.reserve, &members.1, fast, commands.as_ref().and_then(|c| c.marked), commands.as_ref().and_then(|c| c.next), play.support, row);
                         if let Some(c) = &commands {
                             if let Some(plate) = &c.plate {
@@ -6655,6 +6663,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 }
                 h.layer.set(&gpu, &hud::quads(&pe, Some(&h.font), &h.sheets, &elements, width as f32, height as f32))?;
                 h.shown = Some((members, commands, shown_result, wipe, width, height, fast, numbers, banner, rate, play.support, bubbles));
+                h.flip = flip;
             }
     }
     // Offscreen, the frames written to files (with --save-every, only some): only those are

@@ -84,7 +84,15 @@ pub fn death_chance(act: u32, amount: i32, user_level: i32, target: &crate::figh
 /// reached (so later slots fill only what earlier ones leave). The game places them itself (each
 /// comes with the position (0, -1, 0), "place it").
 pub fn encounter_monsters(group: &crate::data::battle_data::EncounterGroup, rng: &mut barrel_engine::rng::Rng) -> Vec<i32> {
-    let mut left = rng.range(group.count.0, group.count.1);
+    encounter_monsters_counted(group, None, rng)
+}
+
+/// [`encounter_monsters`] with the rolled count replaced by `count` (clamped to the group's
+/// range) when given, for checks that compare against a captured battle. The roll is still taken,
+/// so the generator ends where it would have.
+pub fn encounter_monsters_counted(group: &crate::data::battle_data::EncounterGroup, count: Option<i32>, rng: &mut barrel_engine::rng::Rng) -> Vec<i32> {
+    let rolled = rng.range(group.count.0, group.count.1);
+    let mut left = count.map_or(rolled, |c| c.clamp(group.count.0, group.count.1));
     let mut out = Vec::new();
     for &(monster, most) in &group.monsters {
         let mut n = most;

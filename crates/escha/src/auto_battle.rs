@@ -353,8 +353,13 @@ pub fn group_kind(t: &Tables, group: i32) -> Option<i32> {
 /// Encounter group `group`'s monsters (by its id) drawn as the game draws them, each with its
 /// size (`Chara.xml` radius).
 pub fn draw(t: &Tables, group: i32, rng: &mut Rng) -> Result<Vec<(usize, f32)>, String> {
+    draw_counted(t, group, None, rng)
+}
+
+/// [`draw`] with the monster count fixed (`battle::encounter_monsters_counted`).
+pub fn draw_counted(t: &Tables, group: i32, count: Option<i32>, rng: &mut Rng) -> Result<Vec<(usize, f32)>, String> {
     let g = t.groups.iter().find(|g| g.id == group).ok_or_else(|| format!("no encounter group {group}"))?;
-    Ok(crate::battle::encounter_monsters(g, rng).into_iter().map(|m| (m as usize, bd::monster_size(&t.radii, m as usize).unwrap_or(MONSTER_SIZE))).collect())
+    Ok(crate::battle::encounter_monsters_counted(g, count, rng).into_iter().map(|m| (m as usize, bd::monster_size(&t.radii, m as usize).unwrap_or(MONSTER_SIZE))).collect())
 }
 
 /// Encounter group `group` (its id, as a field enemy names it) against `party`, each a
