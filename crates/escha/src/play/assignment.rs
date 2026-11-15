@@ -1,44 +1,87 @@
-//! The main menu's Assignment page, from the game's layout 430 (`a15_menu.g1t`): its book (layout
-//! 428, with the Tasks and Bonus tabs) showing the period's card (layout 425: 25 squares, layout
-//! 419 each, in five columns A to E and five rows 1 to 5, the centre square's emblem part 0xf
-//! cut 12 drawn by the card itself) and the details panel (layout 418: the chosen task's name,
-//! a kind 22 text, its icon and its description), with the rank box (layout 527).
+//! The main menu's Assignment page, from the game's layout 430 (`a15_menu.g1t`) over the desk
+//! (383) with the footer (372), the header (371) and the tab (531): its book (layout 428, with the
+//! Tasks and Bonus tabs) showing the period's card (layout 425: 25 squares, layout 419 each, in
+//! five columns A to E and five rows 1 to 5) and the details panel (layout 418: the chosen task's
+//! name, a kind 22 text, its icon, its description, the page count and the reward), with the rank
+//! box (layout 527).
 //!
 //! The card is the period's (`calendar::period`: card k for period k, `SubjectCardData.xml`'s
 //! `CARD_0k`), its tasks `SubjectData.xml`'s rows with that `CardTag`, each at its `Pos` (`A1`
-//! column A row 1). A square's icon is part 0xe: cut 5 "?" (12 lit), and by `Type` a sword for
+//! column A row 1); a square shared by the steps of a chain shows the one the save has reached.
+//! The game draws the squares column by column. What a square shows follows its task's record in
+//! the save (the state and the completion in hundredths of a percent, `data::subject`): a cleared
+//! one (state 8) is only its stamp ("OK", part 0x10); an achieved one (7) has its plate (part
+//! 0xf cut 6), icon, the "Report!" glow (part 0x9c) and "100%" in big digits (part 0xaf); an open
+//! one (6, or 5 with a mark, part 0xd cut 15) its icon and its completion in percent (part 0x56)
+//! unless a hidden event keeps it a "?" (icon cut 5, nothing else); the chosen square has the
+//! cursor frame (part 0xd cut 11) and the centre's main assignment its own plate (part 0xf cut
+//! 7, with no icon). A square's icon is part 0xe: cut 5 "?" (12 lit), and by `Type` a sword for
 //! `SUBJECT_CATEGORY_BTL` (6, lit 13), a basket for `ADV` (8, lit 14), a pot for `MIX` (10, lit
-//! 15); cuts 7, 9 and 11 are the same in orange (likely cleared). `OTHER` (the centre square's
-//! main assignment) has none, the card's emblem shows there.
+//! 15); the main assignment (`OTHER`) is cut 21 (lit 22) in the details.
 //!
-//! Not yet the game's: the task shown on a square shared by several rows (the first whose
-//! `isHiddenEvent` has been seen, else the first, as "?"); "?" with the name and description
-//! hidden while that event is unseen; every task uncleared (Barrel does not count them yet: no
-//! stamps, progress numbers, completion stars or points); the lit icon on the chosen square
-//! with no cursor frame; the description wrapped by character count with its markup dropped;
-//! the Bonus tab, the past cards list (layout 429) and the lines overlay (424) left out.
+//! The text of a task can start with a Shift-JIS symbol the game's font does not have: the game
+//! shows two boxes ([`plain`]).
+//!
+//! Not yet the game's: the glow's and the cursor's cuts (they cycle by time), the pulse of a
+//! chosen square's plate, the stars of the reward's row, the Bonus tab and the past cards list
+//! (layout 429), the lines overlay (424) and the stamps' variants; tasks never seen in a save
+//! count as open at nothing; the "new" mark's meaning (state 5) is a guess from one square.
 
 use std::path::Path;
 
-use barrel_escha::data::layout::{Placed, Text};
+use barrel_escha::data::layout::{self, Placed, Text};
+use barrel_escha::data::subject::SavedSubject;
+use barrel_formats::pe::Pe;
 
 use crate::hud::Element;
+use crate::kit::{number, raised};
 use crate::title::Button;
 
 pub const LAYOUT: u32 = 430;
+const BACKGROUND: u32 = 383;
+const HEADER: u32 = 371;
+const FOOTER: u32 = 372;
+const TAB: u32 = 531;
 const BONUS_PAGE: u32 = 426;
-const PAST: u32 = 429;
+const PAST_CARDS: u32 = 429;
 const SQUARE: u32 = 419;
 const LINES: u32 = 424;
 const PANEL: u32 = 418;
-/// The cleared stamps (layouts 949, "OK", and 704).
-const STAMPS: [u32; 2] = [0x3b5, 0x2c0];
+const CARD: u32 = 425;
+const PAGER: u32 = 459;
+const REWARD_ROW: u32 = 413;
+const STARS: u32 = 412;
+const REWARD: u32 = 414;
+const TASKS_TAB: u32 = 410;
+const BONUS_TAB: u32 = 411;
 const ICON: i32 = 0xe;
 const PLATE: i32 = 0xf;
+const CURSOR_FRAME: i32 = 0xd;
+const GLOW: i32 = 0x9c;
+const TEXT: i32 = 0x164;
 const SIDE: usize = 5;
 /// Characters a description line holds before it is wrapped.
 const WRAP: usize = 40;
-const LINE_STEP: i32 = 40;
+/// The description's lines are this far apart.
+const LINE_STEP: i32 = 45;
+/// The header's line in `SysInfo.xml` ("Select an assignment to check.") and the footer's in
+/// `Menu_Line_Help.xml` ("Select, Change Entry, Return").
+pub const HEADER_ROW: usize = 81;
+pub const FOOTER_ROW: usize = 43;
+/// The tab's cut for the Assignment command (the seventh of the menu's commands).
+const TAB_CUT: i32 = 6;
+const DESK_CUT: i32 = 1;
+/// The tabs not open are drawn in this grey (the capture: 178 of 255).
+const GREY: [u8; 3] = [178, 178, 178];
+/// The square the cursor starts on: the centre, the main assignment.
+pub const CENTRE: usize = 12;
+/// The centre's plate (part 0xf cut 7, 104 pixels) from the square's place, fitted to the capture.
+const CENTRE_PLATE_FROM_SQUARE: [i32; 2] = [8, 8];
+/// The details' icon for the main assignment, lit.
+const MAIN_ICON_LIT: i32 = 22;
+/// The cursor's glow (part 0x9f, 96 pixels) from the chosen square's place, fitted to the capture.
+const CURSOR: i32 = 0x9f;
+const CURSOR_FROM_SQUARE: [i32; 2] = [-72, -72];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Category {
@@ -56,7 +99,22 @@ pub struct Task {
     pub text: String,
     /// Its event is unseen: shown as "?".
     pub hidden: bool,
+    /// The save's record of it (`data::subject::SavedSubject`): its state and its completion in
+    /// hundredths of a percent; without a save a task is open and at nothing.
+    pub state: i32,
+    pub completion: i32,
+    /// The points it pays (`Score`).
+    pub score: i32,
 }
+
+/// A task's state (the save's): 5 and 6 open (5 with the "new" mark), 7 achieved and waiting to
+/// be reported, 8 cleared; 1 a step of a chain already past and 9 one not yet reached.
+const OPEN: i32 = 6;
+const NEW: i32 = 5;
+const ACHIEVED: i32 = 7;
+const CLEARED: i32 = 8;
+const PAST: i32 = 1;
+const AHEAD: i32 = 9;
 
 impl Task {
     /// Its icon cut (lit when chosen), if it has one.
@@ -72,20 +130,27 @@ impl Task {
     }
 }
 
-/// The period's card for day `today`: 25 squares, row by row (`seen` says whether an event
-/// has been seen).
-pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool) -> crate::Result<Vec<Option<Task>>> {
+/// The period's card for day `today`: 25 squares, row by row (`seen` says whether an event has
+/// been seen, `subjects` the save's records by `SubjectData` row).
+pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool, subjects: &[SavedSubject]) -> crate::Result<Vec<Option<Task>>> {
     let mut squares: Vec<Option<Task>> = vec![None; SIDE * SIDE];
     let Some(k) = barrel_escha::calendar::period(today) else { return Ok(squares) };
     let tag = format!("CARD_{k:02}");
     let table = barrel_formats::table::parse(&std::fs::read(root.join("Saves_EN/subject/SubjectData.xml"))?)?;
-    for row in table.children.iter().filter(|r| r.attr("CardTag") == Some(tag.as_str())) {
+    for (index, row) in table.children.iter().enumerate().filter(|(_, r)| r.attr("CardTag") == Some(tag.as_str())) {
         let Some(slot) = row.attr("Pos").and_then(square_index) else { continue };
+        let saved = subjects.get(index);
+        let (state, completion) = saved.map_or((OPEN, 0), |s| (s.state, s.completion));
         let event = row.attr("isHiddenEvent").unwrap_or("");
-        let hidden = !event.is_empty() && !seen(event);
-        // A shared square shows its first task already open, else its first.
-        if squares[slot].as_ref().is_some_and(|t| !t.hidden || hidden) {
-            continue;
+        // A hidden task shows as "?" until it is achieved (or, without a save, its event seen).
+        let hidden = !event.is_empty() && !seen(event) && !(saved.is_some() && state >= ACHIEVED);
+        // A square shared by the steps of a chain shows the one the save has reached: the first
+        // not past nor ahead (without a save, the first already open, else the first).
+        if let Some(have) = squares[slot].as_ref() {
+            let better = if saved.is_some() { matches!(have.state, PAST | AHEAD) && !matches!(state, PAST | AHEAD) } else { have.hidden && !hidden };
+            if !better {
+                continue;
+            }
         }
         let category = match row.attr("Type").unwrap_or("") {
             "SUBJECT_CATEGORY_BTL" => Category::Battle,
@@ -94,7 +159,8 @@ pub fn card(root: &Path, today: u32, seen: impl Fn(&str) -> bool) -> crate::Resu
             _ => Category::Other,
         };
         let text = [row.attr("Text1"), row.attr("Text2")].into_iter().flatten().map(plain).collect::<Vec<_>>().join(" ");
-        squares[slot] = Some(Task { name: row.attr("Name").unwrap_or("").to_string(), category, text, hidden });
+        let score = row.attr("Score").and_then(|v| v.parse().ok()).unwrap_or(0);
+        squares[slot] = Some(Task { name: row.attr("Name").unwrap_or("").to_string(), category, text, hidden, state, completion, score });
     }
     Ok(squares)
 }
@@ -107,7 +173,8 @@ fn square_index(pos: &str) -> Option<usize> {
     Some(row * SIDE + col)
 }
 
-/// A table text without its markup (`<CLBL>` ...).
+/// A table text without its markup (`<CLBL>` ...), and with a symbol the font lacks (a
+/// Shift-JIS double-byte code) as the two boxes the game draws for its two bytes.
 fn plain(t: &str) -> String {
     let mut out = String::new();
     let mut tag = false;
@@ -115,8 +182,9 @@ fn plain(t: &str) -> String {
         match ch {
             '<' => tag = true,
             '>' => tag = false,
-            c if !tag => out.push(c),
-            _ => {}
+            _ if tag => {}
+            c if c.is_ascii() => out.push(c),
+            _ => out.push_str("\u{25a0}\u{25a0}"),
         }
     }
     out
@@ -139,9 +207,42 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Assignment {
     pub chosen: usize,
+}
+
+impl Default for Assignment {
+    fn default() -> Assignment {
+        Assignment { chosen: CENTRE }
+    }
+}
+
+/// The layouts the page is made of, placed once.
+pub struct Layouts {
+    desk: Vec<Placed>,
+    header: Vec<Placed>,
+    footer: Vec<Placed>,
+    tab: Vec<Placed>,
+    screen: Vec<Placed>,
+    rank: Vec<Placed>,
+}
+
+/// Where the rank box (layout 527) sits, fitted to the capture.
+const RANK_BOX_AT: [i32; 2] = [1426, 840];
+const RANK_BOX: u32 = 527;
+
+impl Layouts {
+    pub fn load(pe: &Pe) -> Layouts {
+        let get = |id| layout::placed(pe, id);
+        Layouts { desk: get(BACKGROUND), header: get(HEADER), footer: get(FOOTER), tab: get(TAB), screen: get(LAYOUT), rank: get(RANK_BOX) }
+    }
+}
+
+/// The header's and the footer's lines.
+pub struct Words {
+    pub header: String,
+    pub footer: String,
 }
 
 impl Assignment {
@@ -159,81 +260,214 @@ impl Assignment {
         false
     }
 
-    /// The elements to draw from layout 430's placed nodes (`texts` gives a node's text).
-    pub fn elements(&self, nodes: &[Placed], texts: impl Fn(&Placed) -> Option<Text>, card: &[Option<Task>]) -> Vec<Element> {
-        // The squares' places: by column (x) and row (y).
-        let mut origins: Vec<[i32; 2]> = Vec::new();
-        for p in nodes.iter().filter(|p| p.path.last() == Some(&SQUARE)) {
-            let o = [p.at[0] - p.node.at[0], p.at[1] - p.node.at[1]];
-            if !origins.contains(&o) {
-                origins.push(o);
+    /// All the page's elements over the period's `card`; `rank` the rank box's icon and the
+    /// points to the next rank.
+    pub fn elements(&self, pe: &Pe, l: &Layouts, words: &Words, card: &[Option<Task>], rank: crate::requests::Panel) -> Vec<Element> {
+        let line = |nodes: &[Placed], text: &str| -> Vec<Element> {
+            nodes.iter().flat_map(|p| match layout::text(pe, p) {
+                Some(t) => vec![raised(t, text)],
+                None => vec![Element::stored(p)],
+            }).collect()
+        };
+        let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: DESK_CUT, at: p.at }).collect();
+        out.extend(line(&l.footer, &words.footer));
+        out.extend(line(&l.header, &words.header));
+        for p in &l.tab {
+            out.push(match Element::stored(p) {
+                Element::Sprite { part, at, .. } if part == 0x2e || part == 0x2c => Element::Sprite { part, cut: TAB_CUT, at },
+                e => e,
+            });
+        }
+        let chosen = card.get(self.chosen).and_then(Option::as_ref);
+        // The tabs come twice: first both greyed, last the open one (Tasks) over the rest.
+        let (mut pass, mut in_tabs) = (0, false);
+        let mut squares: Vec<Vec<&Placed>> = Vec::new();
+        for p in &l.screen {
+            let n = p.node;
+            let inside = |id: u32| p.path.contains(&id);
+            if inside(BONUS_PAGE) || inside(PAST_CARDS) || inside(LINES) {
+                continue;
+            }
+            if inside(SQUARE) {
+                // A square starts at its plate.
+                if n.part == PLATE && p.path.last() == Some(&SQUARE) {
+                    squares.push(Vec::new());
+                }
+                if let Some(s) = squares.last_mut() {
+                    s.push(p);
+                }
+                continue;
+            }
+            // The squares are drawn where the first of them is: flush them (column by column).
+            if !squares.is_empty() && p.path.get(2) != Some(&CARD) {
+                out.extend(self.squares(pe, &squares, card));
+                squares.clear();
+            }
+            let tab = inside(TASKS_TAB) || inside(BONUS_TAB);
+            if tab && !in_tabs {
+                pass += 1;
+            }
+            in_tabs = tab;
+            if tab {
+                let plain_text = layout::text(pe, p).is_some_and(|t| t.colour[0] == 0);
+                match (pass, n.part) {
+                    // First both tabs, greyed: the plate and the plain text.
+                    (1, TEXT) if plain_text => out.extend(layout::text(pe, p).map(|t| Element::Label(Text { at: [t.at[0], t.at[1] - crate::hud::TEXT_RISE], colour: [0xff, GREY[0], GREY[1], GREY[2]], ..t }))),
+                    (1, TEXT) => {}
+                    (1, _) => out.push(Element::Tinted { part: n.part, cut: n.cut, at: p.at, rgb: GREY }),
+                    // Then the open tab, Tasks, with both its texts.
+                    (_, TEXT) if inside(TASKS_TAB) => out.extend(layout::text(pe, p).map(|t| raised(t.clone(), &t.text))),
+                    (_, _) if inside(TASKS_TAB) => out.push(Element::stored(p)),
+                    _ => {}
+                }
+                continue;
+            }
+            if inside(PANEL) {
+                out.extend(self.panel(pe, p, chosen));
+            } else if n.part == 0xc {
+                // The book (425) and the spine (428).
+                out.push(Element::stored(p));
             }
         }
-        let rank = |v: i32, axis: usize| {
-            let mut all: Vec<i32> = origins.iter().map(|o| o[axis]).collect();
-            all.sort();
-            all.dedup();
-            all.iter().position(|&x| x == v).unwrap_or(0)
-        };
-        let chosen = card.get(self.chosen).and_then(Option::as_ref);
+        if !squares.is_empty() {
+            out.extend(self.squares(pe, &squares, card));
+        }
+        // The rank box.
+        let (mut icon, mut numbers) = (true, 0);
+        for p in &l.rank {
+            let at = [p.at[0] + RANK_BOX_AT[0], p.at[1] + RANK_BOX_AT[1]];
+            let moved = Placed { at, ..p.clone() };
+            match p.node.part {
+                0x31 => {
+                    if std::mem::take(&mut icon) {
+                        out.push(Element::Sprite { part: 0x31, cut: rank.icon, at });
+                    }
+                }
+                0x4e if p.node.kind == 28 => {
+                    if numbers == 0 {
+                        out.extend(number(pe, &moved, rank.to_next));
+                    }
+                    numbers += 1;
+                }
+                0x4e => {}
+                TEXT => out.extend(layout::text(pe, &moved).map(|t| raised(t.clone(), &t.text))),
+                _ => out.push(Element::stored(&moved)),
+            }
+        }
+        // The cursor's glow (it cycles its eight cuts by time: here the first), drawn last.
+        let (col, row) = (self.chosen % SIDE, self.chosen / SIDE);
+        let origin = l.screen.iter().filter(|p| p.path.last() == Some(&SQUARE) && p.node.part == PLATE).nth(col * SIDE + row);
+        out.extend(origin.map(|p| Element::Sprite { part: CURSOR, cut: 0, at: [p.at[0] + CURSOR_FROM_SQUARE[0], p.at[1] + CURSOR_FROM_SQUARE[1]] }));
+        out
+    }
+
+    /// The squares, column by column (`squares` in the layout's order).
+    fn squares(&self, pe: &Pe, squares: &[Vec<&Placed>], card: &[Option<Task>]) -> Vec<Element> {
         let mut out = Vec::new();
-        for p in nodes {
-            let n = p.node;
-            if p.path.iter().any(|&l| l == BONUS_PAGE || l == PAST || l == LINES) {
-                continue;
-            }
-            // A square's stamps ("Report!", "OK") and counters are nested layouts: none show
-            // while no task is counted.
-            if p.path.contains(&SQUARE) && p.path.last() != Some(&SQUARE) {
-                continue;
-            }
-            if p.path.iter().any(|l| STAMPS.contains(l)) {
-                continue;
-            }
-            if p.path.last() == Some(&SQUARE) {
-                let o = [p.at[0] - n.at[0], p.at[1] - n.at[1]];
-                let k = rank(o[1], 1) * SIDE + rank(o[0], 0);
-                match n.part {
-                    PLATE => out.push(Element::stored(p)),
-                    ICON => {
-                        if let Some(cut) = card.get(k).and_then(Option::as_ref).and_then(|t| t.icon(k == self.chosen)) {
-                            out.push(Element::Sprite { part: ICON, cut, at: p.at });
-                        }
-                    }
-                    _ => {} // stamps, progress numbers and glows: no task is counted yet
-                }
-                continue;
-            }
-            let in_panel = p.path.contains(&PANEL);
-            if n.part == 0x164 {
-                let Some(t) = texts(p) else { continue };
-                // Each tab label is there twice, plain (no colour: white) and dark: Tasks, the
-                // open tab, white; Bonus dark.
-                if !in_panel && (t.text == "Tasks" || t.text == "Bonus") && (t.colour[0] == 0) != (t.text == "Tasks") {
-                    continue;
-                }
-                if in_panel && t.kind == 22 {
-                    let name = chosen.map_or(String::new(), |c| if c.hidden { "???".into() } else { c.name.clone() });
-                    out.push(Element::Label(Text { text: name, ..t }));
-                } else if in_panel && t.text.starts_with("By pressing") {
-                    let text = chosen.map_or(String::new(), |c| if c.hidden { "???".into() } else { c.text.clone() });
-                    for (i, line) in wrap(&text, WRAP).into_iter().enumerate() {
-                        out.push(Element::Label(Text { text: line, at: [t.at[0], t.at[1] + LINE_STEP * i as i32], ..t.clone() }));
-                    }
-                } else if !t.text.is_empty() && !t.filled_in() {
-                    out.push(Element::Label(t));
-                }
-                continue;
-            }
-            if in_panel && n.part == ICON {
-                if let Some(cut) = chosen.and_then(|c| c.icon(true)) {
-                    out.push(Element::Sprite { part: ICON, cut, at: p.at });
-                }
-                continue;
-            }
-            out.push(Element::stored(p));
+        for (g, nodes) in squares.iter().enumerate() {
+            let (col, row) = (g / SIDE, g % SIDE);
+            let k = row * SIDE + col;
+            out.extend(self.square(pe, nodes, card.get(k).and_then(Option::as_ref), k == self.chosen));
         }
         out
+    }
+
+    /// One square's elements from its layout's nodes (419): the plate, the cursor frame, the icon,
+    /// the stamp, the percent, the mark, the glow, the big percent.
+    fn square(&self, pe: &Pe, nodes: &[&Placed], task: Option<&Task>, chosen: bool) -> Vec<Element> {
+        let Some(task) = task else { return Vec::new() };
+        let mut out = Vec::new();
+        let at = |i: usize| nodes.get(i).map_or([0, 0], |p| p.at);
+        let (plate, frame, icon, stamp, percent, sign, mark, glow, big, big_sign) = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        let main = task.category == Category::Other;
+        if task.state == CLEARED {
+            out.push(Element::Sprite { part: 0x10, cut: 0, at: at(stamp) });
+            return out;
+        }
+        if chosen {
+            out.push(Element::Sprite { part: CURSOR_FRAME, cut: 11, at: at(frame) });
+        }
+        if task.state == ACHIEVED {
+            out.push(Element::Sprite { part: PLATE, cut: 6, at: at(plate) });
+        } else if main && chosen {
+            let from = at(plate);
+            out.push(Element::Sprite { part: PLATE, cut: 7, at: [from[0] + CENTRE_PLATE_FROM_SQUARE[0], from[1] + CENTRE_PLATE_FROM_SQUARE[1]] });
+        }
+        if let Some(cut) = task.icon(false) {
+            out.push(Element::Sprite { part: ICON, cut, at: at(icon) });
+        }
+        let shown = !task.hidden;
+        if task.state == ACHIEVED && shown {
+            out.push(Element::Sprite { part: GLOW, cut: 0, at: at(glow) });
+            if let Some(p) = nodes.get(big) {
+                out.extend(number(pe, p, 100));
+            }
+            out.push(Element::Sprite { part: 0xaf, cut: 13, at: at(big_sign) });
+        } else if shown && (task.state == OPEN || task.state == NEW) {
+            if let Some(p) = nodes.get(percent) {
+                out.extend(number(pe, p, task.completion / 100));
+            }
+            out.push(Element::Sprite { part: 0x56, cut: 13, at: at(sign) });
+            if task.state == NEW {
+                out.push(Element::Sprite { part: CURSOR_FRAME, cut: 15, at: at(mark) });
+            }
+        }
+        out
+    }
+
+    /// A node of the details panel for the chosen task.
+    fn panel(&self, pe: &Pe, p: &Placed, chosen: Option<&Task>) -> Vec<Element> {
+        let n = p.node;
+        let inside = |id: u32| p.path.contains(&id);
+        // The reward row's stars are not drawn; its plate (413 itself) is.
+        if inside(STARS) {
+            return Vec::new();
+        }
+        if p.path.last() == Some(&REWARD_ROW) {
+            return vec![Element::stored(p)];
+        }
+        if inside(PAGER) {
+            return match (n.part, n.cut) {
+                (0x63, _) => vec![Element::stored(p)],
+                (0x4f, _) if n.kind == 29 => number(pe, p, 1),
+                (0x4f, 12) => vec![Element::Tinted { part: 0x4f, cut: 12, at: p.at, rgb: crate::kit::ink(pe, p) }],
+                _ => Vec::new(),
+            };
+        }
+        if inside(REWARD) {
+            return match (n.part, n.kind) {
+                (TEXT, _) => layout::text(pe, p).map(|t| raised(t.clone(), &t.text)).into_iter().collect(),
+                (0x5a, _) => chosen.map_or_else(Vec::new, |c| number(pe, p, c.score)),
+                _ => vec![Element::stored(p)],
+            };
+        }
+        if inside(949) {
+            // The stamp of a cleared task.
+            return chosen.filter(|c| c.state == CLEARED).map(|_| Element::stored(p)).into_iter().collect();
+        }
+        match n.part {
+            TEXT => {
+                let Some(t) = layout::text(pe, p) else { return Vec::new() };
+                if t.kind == 22 {
+                    let name = chosen.map_or(String::new(), |c| if c.hidden { "???".into() } else { c.name.clone() });
+                    return vec![raised(t, &name)];
+                }
+                if t.text.starts_with("By pressing") {
+                    let text = chosen.map_or(String::new(), |c| if c.hidden { "???".into() } else { c.text.clone() });
+                    return wrap(&text, WRAP)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, line)| raised(Text { at: [t.at[0], t.at[1] + LINE_STEP * i as i32], ..t.clone() }, &line))
+                        .collect();
+                }
+                Vec::new()
+            }
+            ICON => {
+                let cut = chosen.and_then(|c| if c.category == Category::Other { Some(MAIN_ICON_LIT) } else { c.icon(true) });
+                cut.map(|cut| Element::Sprite { part: ICON, cut, at: p.at }).into_iter().collect()
+            }
+            _ => vec![Element::stored(p)],
+        }
     }
 }
 
@@ -248,8 +482,9 @@ mod tests {
         assert_eq!(square_index("C3"), Some(12));
         assert_eq!(square_index("F1"), None);
         assert_eq!(plain("Increase your <CLBL>Adventurer Level<CLNR>!"), "Increase your Adventurer Level!");
+        assert_eq!(plain("\u{2605}Go"), "\u{25a0}\u{25a0}Go");
         assert_eq!(wrap("aa bb cc", 5), vec!["aa bb", "cc"]);
-        let mut a = Assignment::default();
+        let mut a = Assignment { chosen: 0 };
         a.press(Button::Down);
         a.press(Button::Right);
         assert_eq!(a.chosen, 6);
@@ -257,5 +492,6 @@ mod tests {
         a.press(Button::Up);
         assert_eq!(a.chosen, 1);
         assert!(a.press(Button::Back));
+        assert_eq!(Assignment::default().chosen, CENTRE);
     }
 }

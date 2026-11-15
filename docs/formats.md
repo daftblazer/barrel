@@ -2407,3 +2407,56 @@ the party plates (360), the footer (372), the header (371), and last the field H
   = the character number), name, LV, HP and MP as now / most, Next and **Friend** (the `Party`
   record's friendship float, +0x2b0, truncated; `Session::friendship`). The reserve row (382, 380)
   shows nothing without a waiting member.
+
+### The main menu's Basket and Assignment pages (`menu-cmd-0`, `menu-cmd-5` captures)
+
+Both pages open as the game opens them from the area map (Y, Down to the command, A; the list
+has no Container off a town, so the Basket is first and the Assignment the sixth: `--menu basket`
+and `--menu assignment` offscreen). Both are drawn desk 383 (cut 1), footer 372, then the page,
+then the header 371 and tab 531 (the Basket) or footer, header, tab, page (the Assignment). The
+footer lines are `Menu_Line_Help.xml` rows 5 (Basket) and 43 (Assignment); the headers
+`SysInfo.xml` rows 36 ("Please select an item.") and 81 ("Select an assignment to check.").
+Layouts compose at places the game sets at run time (fitted: constants in `basketpage.rs` and
+`assignment.rs`). New node kinds seen: **kind 29** a number *centred* on its node (kind 28 ends
+at it); **kind 20** a bar of three cuts down (top end, a middle repeated, bottom end, length in
+word 6); a stretched piece (kind 15) the game still draws as a zero-sized middle when its size
+leaves none (the Possessed box is 300 by 192: its middle row and column are empty quads).
+
+**Basket.** The grid is 568 at (74, 152): the scroll bar (563: frame part 0x45 cut 23, the thumb
+part 0x46 as above, 330 of its 390 track with 34 items, fitted as the track less 30 per row past
+five), three of the five category tabs (558: plate cut 1 lit or 0, icons cuts 29, 32, 30), the
+basket's free places (559, the first box: "Empty" and the number, limit less items held, 60 - 34;
+the second box, the container's, is not drawn), the frame (565's part 0x45 cut 24), then 30 cells
+(six rows of five, 561): only the chosen cell's frame (part 0x44 cut 1; cut 0 alternates with it
+by time) and the item's picture, **part 0xd7 cut `ImageNo`** at 70% from the cell's place + (16,
+10) (the sprite table has a cut per picture: pages `a15_itempic.g1t#519, 525, 527` of 96-pixel
+cells; the number, the quality grade and the lock marks the layout has are not drawn). The card is
+752 at (600, 162) behind a stretched panel (part 0x61, 440 by 820 at (616, 152)); its draw order
+is its node order. Alchemy LV is `itemData`'s `level` (part 0x4d, centred), the Stats number its
+`value` (part 0x50) with the bar squeezed (not cropped) to value over 50, the four element icons
+(part 0xc1 cuts 25, 27, 29, 31 always, 24, 26, 28, 30 lit for `fire`, `water`, `wind`, `soil`
+above 0), the EFF gauge (part 0xbc cut 11 *cropped* to quality over 120, the quality cap), the
+picture part 0xd6 cut `ImageNo` at 70%. "Item Info" (748) sits 2 right and 18 up of its layout
+place; its three groups of lines (742: 2, 4 and 3 lines, bars 36 apart, the layout's fourth bar of
+the second group at +4 is not the game's) are the properties, effects and traits: properties are
+`Saves/item/item_status.xml`'s `ESP_00/01` tags (row n = item n; `ITEM_MIX_POT_ZONE_EARTH_2` is
+`item_mat_pot.xml`'s "Earth Bonus x2": the other tags are named by the same pattern, unseen),
+effects the unit's four effect rows (the session's basket does not keep them yet: none shown) and
+traits `item_potential.xml` `PotName` of the unit's trait rows (`ITEM_POTENTIAL_RECYCLE_2` is row
+55, "Recycle+"). The page counter 751 shows "1/1". "Possessed" (706 at (1110, 144), its heading
+bar and ends drawn at 70% of the layout's width) counts the item in the basket and in the
+container (`m_unitContainer`; `Session::container`, `basket_limit`).
+
+**Assignment.** The squares (layout 419) are drawn column by column (A1 to A5, then B). What a
+square shows follows `subject/subject_save` (a record per `SubjectData` row: progress,
+completion in hundredths of a percent, state): state 8 cleared is only the stamp (part 0x10); 7
+achieved has the plate (0xf cut 6), icon, "Report!" glow (0x9c) and "100" in part 0xaf digits with
+the percent sign; 6 open has the icon and the completion in percent (part 0x56), and 5 the same
+with part 0xd cut 15; a task whose `isHiddenEvent` is unseen and not achieved is a "?" (icon cut
+5) with nothing else. The steps of a chain share a square (`Pos`): the first row whose state is not
+1 (past) or 9 (ahead) is shown. The cursor starts on the centre; the chosen square has the frame
+(0xd cut 11), the main assignment (`OTHER`) its plate cut 7 (104 pixels) with no icon, its detail
+icon cut 22 and "Reward" the task's `Score` in 40-pixel digits (part 0x5a). The two tabs are
+drawn greyed (178) first, then the open one over everything. Task texts can begin with a Shift-JIS
+symbol the font lacks: the game draws two boxes. The rank box is layout 527 at (1426, 840). The
+cursor glow (part 0x9f) is drawn last; its cut cycles with time.

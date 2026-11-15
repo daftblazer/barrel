@@ -22,13 +22,14 @@
 //! page lists "all items" only), the pages of "Item Info" beyond the first, the effect lines'
 //! values, and equipment's "Equip. Cost".
 
-use barrel_escha::data::layout::{self, Placed, Text};
+use barrel_escha::data::layout::{self, Placed};
 use barrel_formats::pe::Pe;
 
 use crate::basket::{Basket, Item, COLUMNS};
-use crate::hud::{Element, TEXT_RISE};
+use crate::hud::Element;
+use crate::kit::{number, raised, shifted, tiled, vertical_bar, ink};
 
-/// The header's line in  ("Please select an item.").
+/// The header's line in `SysInfo.xml` ("Please select an item.").
 pub const HEADER_ROW: usize = 36;
 const DESK: u32 = 383;
 const HEADER: u32 = 371;
@@ -56,7 +57,6 @@ const STATS: u32 = 739;
 const STAT_BAR: u32 = 737;
 const BAR_KIND: i32 = 20;
 const STRETCHED: i32 = 15;
-const NUMBER_ENDS: i32 = 28;
 const NUMBER_CENTRED: i32 = 29;
 const TEXT: i32 = 0x164;
 const DESK_CUT: i32 = 1;
@@ -75,8 +75,6 @@ const PANEL: i32 = 0x61;
 /// The box's heading is drawn 70% as wide as its layout (the bar and the places along it).
 const HEADING_SCALE: f32 = 0.7;
 
-/// Cells in the grid: six rows of five.
-pub const CELLS: usize = 30;
 /// The category tabs the page shows, the lit one first, and their icons (part 0x45's cuts).
 const TAB_ICONS: [i32; 3] = [29, 32, 30];
 const TAB_LIT: i32 = 1;
@@ -113,97 +111,6 @@ impl Layouts {
 pub struct Words {
     pub header: String,
     pub footer: String,
-}
-
-fn shifted(p: &Placed, by: [i32; 2]) -> Placed {
-    Placed { at: [p.at[0] + by[0], p.at[1] + by[1]], ..p.clone() }
-}
-
-/// A text of a node as the game draws it: raised by `TEXT_RISE`, opaque (the layouts store the
-/// ink's alpha as 0xe1, the game draws it whole).
-fn raised(t: Text, text: &str) -> Element {
-    let colour = if t.colour[0] == 0 { t.colour } else { [0xff, t.colour[1], t.colour[2], t.colour[3]] };
-    Element::Label(Text { at: [t.at[0], t.at[1] - TEXT_RISE], text: text.into(), colour, ..t })
-}
-
-/// A number node's ink (its word 7, stored r, g, b, a).
-fn ink(pe: &Pe, p: &Placed) -> [u8; 3] {
-    let [r, g, b, _] = layout::word(pe, p, 7).unwrap_or(0).to_le_bytes();
-    [r, g, b]
-}
-
-/// A number from digit sprites of the node's part in the node's ink: centred on the node (kind
-/// 29) or ending at it (kind 28, the last digit just left of the node).
-fn number(pe: &Pe, p: &Placed, value: i32) -> Vec<Element> {
-    let part = p.node.part;
-    let advance = layout::sprite(pe, part, 0, [0, 0]).map_or(20, |s| i32::from(s.src[2] - s.src[0]));
-    let digits = value.max(0).to_string();
-    let n = digits.len() as i32;
-    let first = if p.node.kind == NUMBER_ENDS { p.at[0] - advance * n } else { p.at[0] - advance * n / 2 };
-    let rgb = ink(pe, p);
-    digits.bytes().enumerate().map(|(i, d)| Element::Tinted { part, cut: i32::from(d - b'0'), at: [first + advance * i as i32, p.at[1]], rgb }).collect()
-}
-
-/// A piece cut in nine (`part`'s cuts 0 to 8 in rows) tiled over `size` from `at`, in the game's
-/// order: the top row, the left column, the right column, the bottom row, then the middle row by
-/// row. The edge and middle tiles repeat at their size, the last one cut short; a middle there is
-/// no room for is still drawn, empty.
-fn tiled(pe: &Pe, part: i32, at: [i32; 2], size: [i32; 2]) -> Vec<Element> {
-    let Some(cuts) = (0..9).map(|c| layout::sprite(pe, part, c, [0, 0])).collect::<Option<Vec<_>>>() else { return Vec::new() };
-    let wide = |c: usize| i32::from(cuts[c].src[2] - cuts[c].src[0]);
-    let high = |c: usize| i32::from(cuts[c].src[3] - cuts[c].src[1]);
-    // The pieces along one axis: (cut column or row, start, length).
-    let along = |first: i32, mid: i32, last: i32, total: i32| {
-        let mut out = vec![(0, 0, first)];
-        let mut x = first;
-        loop {
-            out.push((1, x, mid.min((total - last - x).max(0))));
-            x += mid;
-            if x >= total - last {
-                break;
-            }
-        }
-        out.push((2, total - last, last));
-        out
-    };
-    let xs = along(wide(0), wide(1), wide(2), size[0]);
-    let ys = along(high(0), high(3), high(6), size[1]);
-    let slice = |c: usize, x: (usize, i32, i32), y: (usize, i32, i32)| {
-        let p = &cuts[c];
-        let [l, t, ..] = p.src.map(f32::from);
-        Element::Slice { pack: p.texture.clone(), index: p.index, src: [l, t, l + x.2 as f32, t + y.2 as f32], rect: [at[0] + x.1, at[1] + y.1, at[0] + x.1 + x.2, at[1] + y.1 + y.2] }
-    };
-    let (top, bottom) = (ys[0], *ys.last().unwrap());
-    let (left, right) = (xs[0], *xs.last().unwrap());
-    let mut out: Vec<Element> = xs.iter().map(|&x| slice(x.0, x, top)).collect();
-    let middle = &ys[1..ys.len() - 1];
-    out.extend(middle.iter().map(|&y| slice(3, left, y)));
-    out.extend(middle.iter().map(|&y| slice(5, right, y)));
-    out.extend(xs.iter().map(|&x| slice(6 + x.0, x, bottom)));
-    for &y in middle {
-        out.extend(xs[1..xs.len() - 1].iter().map(|&x| slice(4, x, y)));
-    }
-    out
-}
-
-/// A bar of three cuts down (`part`'s cuts 0 to 2: top end, middle, bottom end; node kind 20)
-/// over `length` from `at`: the middle repeated, its last repeat cut short.
-fn vertical_bar(pe: &Pe, part: i32, at: [i32; 2], length: i32) -> Vec<Element> {
-    let Some(cuts) = (0..3).map(|c| layout::sprite(pe, part, c, [0, 0])).collect::<Option<Vec<_>>>() else { return Vec::new() };
-    let high = |c: usize| i32::from(cuts[c].src[3] - cuts[c].src[1]);
-    let slice = |c: usize, y: i32, h: i32| {
-        let p = &cuts[c];
-        let [l, t, r, _] = p.src.map(f32::from);
-        Element::Slice { pack: p.texture.clone(), index: p.index, src: [l, t, r, t + h as f32], rect: [at[0], at[1] + y, at[0] + (r - l) as i32, at[1] + y + h] }
-    };
-    let mut out = vec![slice(0, 0, high(0))];
-    let mut y = high(0);
-    while y < length - high(2) {
-        out.push(slice(1, y, high(1).min(length - high(2) - y)));
-        y += high(1);
-    }
-    out.push(slice(2, length - high(2), high(2)));
-    out
 }
 
 /// The grid's elements: the scroll bar, the tabs, the free places, the frame and the cells.

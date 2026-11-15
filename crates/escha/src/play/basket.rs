@@ -1,20 +1,12 @@
-//! The main menu's Basket page: the items the player carries, in the game's item grid (layout
-//! 456 on `a15_menu.g1t`: 25 cells, five rows of five, each a frame, the item's picture, part
-//! 0xd7, and a number, part 0x54; the first column's cells are layouts 452 to 455, the others
-//! 451) under its tab (layout 457: a title between the LB / RB marks).
+//! The items the player carries and the Basket page's cursor. The page itself is drawn by
+//! `basketpage.rs` (the game's grid 568 and item card 752, as in its capture). What is left here
+//! is the older grid (layout 456 on `a15_menu.g1t`: 25 cells, five rows of five, each a frame,
+//! the item's picture, part 0xd7, and a number, part 0x54; the first column's cells are layouts
+//! 452 to 455, the others 451) under its tab (layout 457) that the Drops screen still borrows;
+//! it is not the game's (the game's drops screen is not drawn from it).
 //!
 //! A cell's picture is the item's `ImageNo` (`itemData.xml`) as the picture index in
-//! `WinXls/a15_itempic.g1t` (528 pictures of 96 × 96; the layout's own placeholder is picture
-//! 519). Read from the layouts: the pieces and their places.
-//!
-//! Not yet the game's (the game's Basket screen is not identified among its layouts; the grid is
-//! the one its Container screen, layout 458, shows twice): the grid alone on the desk at the
-//! layout's own place; the tab's title "Basket"; the cell's number taken as the item's quality;
-//! the lit frame (part 0x17 cut 5) on the chosen cell only and the other items' pictures at half
-//! strength; the chosen item's name and quality as a line under the grid; the first column's
-//! cells of rows 2 to 5 (layouts 452 to 455: wider frames, 240 to 546 pixels, likely the
-//! cursor over several cells) drawn as plain cells at their places; more than 25 items
-//! scrolling by rows.
+//! `WinXls/a15_itempic.g1t` (the layouts' part 0xd7 and 0xd6 carry the same index as a cut).
 
 use barrel_escha::data::layout::{Placed, Text};
 
@@ -231,6 +223,16 @@ pub fn held(stock: &Stock, cat: &Catalog) -> Vec<Item> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn properties_are_named_from_their_tags() {
+        assert_eq!(property_name("ITEM_MIX_POT_ZONE_EARTH_2").as_deref(), Some("Earth Bonus x2"));
+        assert_eq!(property_name("ITEM_MIX_POT_ZONE_FIRE_P4").as_deref(), Some("Fire Bonus x4"));
+        assert_eq!(property_name("ITEM_MIX_POT_ZONE_ALL_3").as_deref(), Some("All Elements x3"));
+        assert_eq!(property_name("ITEM_MIX_POT_QUALITY_P3").as_deref(), Some("Effect Power+15"));
+        assert_eq!(property_name("ITEM_MIX_POT_LEVEL_2").as_deref(), Some("Appearance Lv+2"));
+        assert_eq!(property_name("ITEM_POTENTIAL_RECYCLE_2"), None);
+    }
 
     #[test]
     fn moves_in_rows_of_five_and_scrolls() {

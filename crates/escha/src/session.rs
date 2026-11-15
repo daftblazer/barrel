@@ -229,6 +229,9 @@ pub struct Session {
     /// The items (`itemData` rows) in the workshop's container, for the menu's counts: Barrel
     /// keeps no container of its own, so a loaded save's list stays as it was.
     pub container: Vec<i32>,
+    /// The assignments' progress as the save has it, a record for each `SubjectData.xml` row
+    /// (empty before a loaded save).
+    pub subjects: Vec<crate::data::subject::SavedSubject>,
     scene: Scene,
     /// The field the player is in (the last an event changed to), if any yet.
     field: Option<u32>,
@@ -278,6 +281,7 @@ impl Session {
             basket: Vec::new(),
             basket_limit: DEFAULT_BASKET_LIMIT,
             container: Vec::new(),
+            subjects: Vec::new(),
             scene: Scene::Field(0),
             field: None,
             logy: false,
@@ -1003,6 +1007,7 @@ impl Session {
                 basket,
                 basket_limit: sum.limits.map_or(DEFAULT_BASKET_LIMIT, |l| l.0),
                 container: sum.container.iter().map(|u| i32::from(u.item)).collect(),
+                subjects: sum.subjects.clone(),
                 scene: Scene::Field(field),
                 field: Some(field),
                 logy: sum.hero == Some(1),

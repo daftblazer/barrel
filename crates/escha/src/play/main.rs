@@ -35,6 +35,7 @@ mod status;
 mod requests;
 mod basket;
 mod basketpage;
+mod kit;
 mod assignment;
 mod battlehud;
 mod result;
@@ -740,7 +741,7 @@ const ATELIER_MAP: u32 = 0;
 /// when the table cannot be read).
 fn card_of(root: &Path, session: Option<&barrel_escha::session::Session>) -> Vec<Option<assignment::Task>> {
     let Some(s) = session else { return Vec::new() };
-    assignment::card(root, s.today().max(0) as u32, |e| s.event_seen(e)).unwrap_or_else(|e| {
+    assignment::card(root, s.today().max(0) as u32, |e| s.event_seen(e), &s.subjects).unwrap_or_else(|e| {
         eprintln!("no assignment card: {e}");
         Vec::new()
     })

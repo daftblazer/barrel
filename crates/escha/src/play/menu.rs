@@ -326,13 +326,6 @@ pub fn run(
     let items = crate::basket::held(stock, &crate::basket::Catalog { items: &item_rows.children, status: &status.children, potentials: &potentials.children });
     let page_layouts = crate::basketpage::Layouts::load(&pe);
     let empty = (stock.limit - stock.items.len() as i32).max(0);
-    // The Assignment page: the card over the desk.
-    let card_nodes: Vec<Placed> = [BACKGROUND, crate::assignment::LAYOUT].iter().flat_map(|&id| barrel_escha::data::layout::placed(&pe, id)).collect();
-    let assignment_elements = |a: &crate::assignment::Assignment, texts: &dyn Fn(&Placed) -> Option<Text>| {
-        let mut e: Vec<crate::hud::Element> = card_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
-        e.extend(a.elements(&card_nodes, texts, card));
-        e
-    };
     let status_elements = |texts: &dyn Fn(&Placed) -> Option<Text>| {
         let mut e: Vec<crate::hud::Element> = status_nodes.iter().filter(|p| p.path.first() == Some(&BACKGROUND)).map(crate::hud::Element::stored).collect();
         e.extend(crate::status::elements(&status_nodes, texts, &values));
@@ -340,6 +333,15 @@ pub fn run(
     };
     // The party overview: the page the list shows when nothing is open over it.
     let ranks = barrel_escha::rank::ranks(&table("Saves/rank/RankData.xml")?);
+    // The Assignment page: the period's card, the rank box's numbers and its two lines.
+    let assignment_layouts = crate::assignment::Layouts::load(&pe);
+    let (sys_info, line_help) = (table("Saves_EN/systemMessage/SysInfo.xml")?, table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
+    let assignment_words = crate::assignment::Words {
+        header: barrel_escha::data::sys_text::lines(&sys_info, "Text").get(crate::assignment::HEADER_ROW).cloned().unwrap_or_default(),
+        footer: barrel_escha::data::sys_text::lines(&line_help, "LineHelp").get(crate::assignment::FOOTER_ROW).cloned().unwrap_or_default(),
+    };
+    let rank_panel = source.map_or(crate::requests::Panel { icon: 0, to_next: 0 }, |s| crate::requests::Panel::of(&ranks, s.rank.0, s.rank.1));
+    let assignment_elements = |a: &crate::assignment::Assignment| a.elements(&pe, &assignment_layouts, &assignment_words, card, rank_panel);
     let overview = source.and_then(|s| crate::overview::Overview::of(&pe, s, &item_rows.children, &ranks));
     let words = crate::overview::Words::read(&table("Saves_EN/systemMessage/SysInfo.xml")?, &table("Saves_EN/systemMessage/Menu_Line_Help.xml")?);
     let screen_layouts = crate::overview::Layouts::load(&pe);
@@ -378,7 +380,9 @@ pub fn run(
             every.extend(basket_elements(&crate::basket::Basket { chosen, first }));
         }
     }
-    every.extend(assignment_elements(&crate::assignment::Assignment::default(), &texts));
+    for chosen in 0..25 {
+        every.extend(assignment_elements(&crate::assignment::Assignment { chosen }));
+    }
     // Every task icon, plain and lit.
     every.extend((5..=15).map(|cut| crate::hud::Element::Sprite { part: 0xe, cut, at: [0, 0] }));
     // Every digit the numbers may show.
@@ -399,7 +403,7 @@ pub fn run(
         let e = match m.page {
             Some(Page::Status) => status_elements(&texts),
             Some(Page::Basket(b)) => basket_elements(&b),
-            Some(Page::Assignment(a)) => assignment_elements(&a, &texts),
+            Some(Page::Assignment(a)) => assignment_elements(&a),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
         };
