@@ -126,6 +126,22 @@ pub enum Command {
     Run,
     /// The Move command: to another sector round the battle.
     Move { sector: i32 },
+    /// The Item command: carried item `item` (its index in the member's items) on `target`.
+    Item { item: usize, target: usize },
+}
+
+/// Member `who` uses `held` on `target` (`BtlCharaActionItem`): the item's action at its power,
+/// with its traits' bonus rolled for this use when there are traits and the rules to read them
+/// (a party target: no enemy-size terms; one target).
+fn use_held(b: &mut Battle, rules: ItemRules, who: usize, held: &Held, target: usize, rng: &mut Rng) -> Vec<Event> {
+    if held.traits.is_empty() || rules.kinds.is_empty() {
+        return b.use_item(who, &held.action, held.power, target, rng);
+    }
+    let traits: Vec<&crate::data::battle_data::Trait> = held.traits.iter().collect();
+    let mut action = held.action.clone();
+    action.effects.extend(battle::trait_effects(&traits, rules.effects, rng));
+    let boost = crate::fight::Boost { traits: &traits, kinds: rules.kinds, inputs: battle::ItemBonusInputs::default(), acts: rules.acts };
+    b.use_item_boosted(who, &action, held.power, boost, target, rng)
 }
 
 /// A skirmish fought a turn at a time: whoever's turn comes ([`Skirmish::begin_turn`]) acts
@@ -241,6 +257,12 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         self.battle.timeline.entries.iter().map(|&(c, _)| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down())).collect()
     }
 
+    /// Member `who`'s items: (name, how many are left), in its carried order.
+    pub fn items(&self, who: usize) -> Vec<(String, u32)> {
+        let Some(m) = self.party.get(who) else { return Vec::new() };
+        m.items.iter().zip(&self.left[who]).map(|(h, &n)| (h.action.name.clone(), n)).collect()
+    }
+
     /// The monsters still standing.
     pub fn foes_standing(&self) -> Vec<usize> {
         (self.party.len()..self.battle.fighters.len()).filter(|&k| !self.battle.fighters[k].down()).collect()
@@ -264,6 +286,15 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             Command::Wait => self.battle.wait_turn(who, rng),
             Command::Run => events.push(self.battle.run_turn(who, rng)),
             Command::Move { sector } => events.push(self.battle.move_turn(who, sector, rng)),
+            Command::Item { item, target } if self.left[who].get(item).is_some_and(|&n| n > 0) => {
+                let held = &member.items[item];
+                let candidates = self.battle.candidates(who, &held.action);
+                let target = if candidates.contains(&target) { target } else { candidates.first().copied().unwrap_or(fallback) };
+                self.left[who][item] -= 1;
+                events.extend(use_held(&mut self.battle, self.rules, who, held, target, rng));
+            }
+            // none of it left: the normal attack
+            Command::Item { target, .. } => events.extend(self.battle.act(who, member.attack, None, valid(target), rng)),
         }
         let mut all = events;
         let from = 0;
@@ -305,17 +336,7 @@ impl<'p, 'a> Skirmish<'p, 'a> {
             };
             if let Some((i, target)) = item {
                 left[who][i] -= 1;
-                let held = &party[who].items[i];
-                if held.traits.is_empty() || rules.kinds.is_empty() {
-                    events.extend(b.use_item(who, &held.action, held.power, target, rng));
-                } else {
-                    // The bonus rolled for this use (a party target: no enemy-size terms; one target).
-                    let traits: Vec<&crate::data::battle_data::Trait> = held.traits.iter().collect();
-                    let mut action = held.action.clone();
-                    action.effects.extend(battle::trait_effects(&traits, rules.effects, rng));
-                    let boost = crate::fight::Boost { traits: &traits, kinds: rules.kinds, inputs: battle::ItemBonusInputs::default(), acts: rules.acts };
-                    events.extend(b.use_item_boosted(who, &action, held.power, boost, target, rng));
-                }
+                events.extend(use_held(b, rules, who, &party[who].items[i], target, rng));
             } else {
                 let ((skill, cost), target) = heal.unwrap_or_else(|| (party[who].choose(b.fighters[who].mp()), foe_target));
                 b.pay_mp(who, cost);
@@ -431,6 +452,27 @@ mod tests {
         // Out of MP: the normal attack instead.
         let e = s.command(who, Command::Skill { skill: 0, target: 9 }, &mut rng);
         assert!(matches!(&e[0], Event::Acted { target: 1, skill, .. } if skill == "Attack"));
+    }
+
+    #[test]
+    fn the_item_command_uses_one_and_attacks_when_none_are_left() {
+        let table = [skill("Attack", 600, 1, 1)];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }];
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let mut m = Member::new(block.clone(), 0, &list, &table).unwrap();
+        m.items.push(Held { action: skill("Bomb", 600, 2, 2), power: 100, count: 1, traits: Vec::new() });
+        let foe_block = StatBlock { hp: 50_000, speed: 1, ..block };
+        let claw = skill("Claw", 600, 1, 1);
+        let foe = Foe { block: foe_block, normal: &claw, skills: None, death_immune: false, chara: -1 };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let party = [m];
+        let mut s = Skirmish::new(&party, std::slice::from_ref(&foe), &[], ItemRules::default(), &mut rng);
+        assert_eq!(s.items(0), vec![("Bomb".to_string(), 1)]);
+        let e = s.command(0, Command::Item { item: 0, target: 9 }, &mut rng);
+        assert!(e.iter().any(|e| matches!(e, Event::Acted { skill, target: 1, .. } if skill == "Bomb")), "{e:?}");
+        assert_eq!(s.items(0), vec![("Bomb".to_string(), 0)]);
+        let e = s.command(0, Command::Item { item: 0, target: 1 }, &mut rng);
+        assert!(e.iter().any(|e| matches!(e, Event::Acted { skill, .. } if skill == "Attack")), "{e:?}");
     }
 
     #[test]

@@ -258,6 +258,8 @@ pub struct Turn {
     pub next_places: Vec<usize>,
     /// The member's sector round the battle (0 to 2; its place +0x394 less 3).
     pub sector: i32,
+    /// Its items: (name, how many are left).
+    pub items: Vec<(String, u32)>,
 }
 
 /// Monsters already drawn against `party` with the player's `commands`, one per member turn in
@@ -286,7 +288,7 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
             Some(&c) => events.extend(s.command(who, c, rng)),
             None => {
                 let skills = s.skills(who).into_iter().map(|(k, cost, can)| (k.name.clone(), cost, can)).collect();
-                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who), sector: s.battle.fighters[who].slot - 3 }));
+                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who), sector: s.battle.fighters[who].slot - 3, items: s.items(who) }));
             }
         }
     }
