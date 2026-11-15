@@ -663,6 +663,9 @@ square holds the index of the item over it, -1 when free, 25 when locked (past t
 capacity, 10 in the save read). Escha's there: a Bomb (cost 3) at 0, another at 5, a Healing
 Salve (1) at 8, so `0 0 0 -1 -1 5 5 5 8 -1` and 25 after. `explore::grid` rebuilds it, and
 `BARREL_ITEMS=itemData.xml barrel save` checks both alchemists' grids against the costs.
+A new game (`0x140364ff0`, one of the set-up's resets, docs/tables.md "A new game's party")
+empties both lists and their take-over lists (`0x14029ce70` on each unit) and opens 5 squares
+of each grid (-1), the other 20 locked (25): no battle items to start, capacity 5.
 
 **World map** (`worldmap`, written by `0x14035dd00`, one block from `0x141098b70`):
 `knowledgeRoute`, an i32 per area record (85, docs/tables.md "Field areas"), and

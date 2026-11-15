@@ -180,7 +180,8 @@ impl Session {
     /// The calendar from `data`, starting as a new game's (`days::World::new_game`, the main
     /// generator as `rng`) on the story's date.
     /// The party as a new game sets it up (`0x1403619d0`): every member at level 1 with no
-    /// experience, in its default kit (`battle_data::party_defaults`). Members a loaded save
+    /// experience, in its default kit (`battle_data::party_defaults`), carrying no battle items
+    /// (`0x140364ff0` empties the alchemists' lists). Members a loaded save
     /// already holds keep their own.
     pub fn with_party(mut self, defaults: &[crate::data::battle_data::PartyDefault]) -> Session {
         for d in defaults.iter().skip(self.party.len()) {
@@ -876,6 +877,16 @@ mod tests {
         let mut t = back;
         t.use_items(0, &[(0, 1)]);
         assert_eq!(t.party, after);
+    }
+
+    #[test]
+    fn a_new_game_carries_no_battle_items() {
+        // `0x140364ff0` empties both alchemists' battle item lists.
+        let kit = |e: [i32; 4]| crate::data::battle_data::PartyDefault { flag: 0, level: 1, experience: 0, stats: crate::data::battle_data::LevelStats { hp: 1, mp: 1, attack: 1, defense: 1, speed: 1 }, more: [0; 5], equipment: e };
+        let s = Session::in_field(chain(), 3, false).with_party(&[kit([364, 417, -1, -1]), kit([369, 438, -1, -1])]);
+        assert!(s.party.iter().all(|m| m.battle_items.is_empty()));
+        let text = s.save([0.0, 0.0]).unwrap();
+        assert!(!text.lines().any(|l| l.starts_with("carry ")));
     }
 
     #[test]
