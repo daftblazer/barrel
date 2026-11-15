@@ -5678,6 +5678,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         },
         _ => 0,
     };
+    if std::env::var("BARREL_SCENE_LOG").is_ok() && battle_view.is_some() {
+        eprintln!("scene view: eye {eye:?} target {target:?} up {up:?} dist {dist} fov {fov} orbit {orbit:?}");
+    }
     let mvp = view_proj(eye, target, up, dist, fov, width, height, orbit);
     if let Some(c) = cpu.as_mut() {
         c.mark("acquire");
