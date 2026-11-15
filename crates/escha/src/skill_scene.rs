@@ -48,6 +48,10 @@ pub struct Scene {
 /// a single strike, `Skill_MONSTER_WARDOG_00_0` two); marker 2 (24 uses) is not read.
 const SET_MARKER: u32 = 0x7300_0001;
 
+/// `origin`: where the battle's own origin stands in the field. The events' field positions
+/// (`SKILL_COMMON_SYSTEM_START_CAM_01` puts its camera stand-in at (0, 0, 0)) are the battle's,
+/// as the party's places are (`battle::party_spot`); the casts and the frames are in the field's.
+///
 /// The scene a frame ([`barrel_engine::stage::FRAME`]) apart, from its start to its last step, at most `limit`
 /// seconds. `motion_length` gives a motion's length (character, motion, division), for the
 /// event's waits on a motion's end; without it those waits take no time.
@@ -58,7 +62,10 @@ pub fn play(
     curves: &BTreeMap<u32, barrel_engine::curve::Curve>,
     motion_length: Option<barrel_engine::event::MotionLength<'_>>,
     limit: f32,
+    origin: [f32; 3],
 ) -> Result<Scene, String> {
+    let local = |p: [f32; 3]| [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]];
+    let field = |p: [f32; 3]| [p[0] + origin[0], p[1] + origin[1], p[2] + origin[2]];
     let player = barrel_engine::event::Player::new(event, &[], &OperandTable::escha()).map_err(|e| e.to_string())?.anchored_places();
     let player = match motion_length {
         Some(m) => player.motion_length(m),
@@ -75,7 +82,7 @@ pub fn play(
     let mut measures = BTreeMap::new();
     let mut stage = Stage { curves: curves.clone(), ..Stage::default() };
     for (who, c) in [(ACTOR, actor), (TARGET, target)] {
-        stage.apply(&barrel_engine::event::Step::Place { action: 0, character: who, position: c.position });
+        stage.apply(&barrel_engine::event::Step::Place { action: 0, character: who, position: local(c.position) });
         if let Some(b) = stage.characters.get_mut(&who) {
             b.facing = c.facing;
         }
@@ -86,10 +93,20 @@ pub fn play(
     stage.measures = measures;
     let mut play = Playback::new(stage, steps);
     let motion = |p: &Playback| p.stage.characters.get(&ACTOR).and_then(|b| b.motion);
-    let (mut out, mut motions) = (vec![play.stage.snapshot()], vec![motion(&play)]);
-    while (!play.finished() || play.stage.characters.values().any(|b| b.moving())) && play.stage.time < limit {
+    let snapshot = |p: &Playback| {
+        let mut s = p.stage.snapshot();
+        for c in s.characters.values_mut() {
+            c.0 = field(c.0);
+        }
+        s.eye = s.eye.map(field);
+        s.target = s.target.map(field);
+        s
+    };
+    let (mut out, mut motions) = (vec![snapshot(&play)], vec![motion(&play)]);
+    let busy = |p: &Playback| !p.finished() || p.stage.characters.values().any(|b| b.moving()) || p.stage.eye.moving() || p.stage.target.moving();
+    while busy(&play) && play.stage.time < limit {
         play.tick();
-        out.push(play.stage.snapshot());
+        out.push(snapshot(&play));
         motions.push(motion(&play));
     }
     Ok(Scene { frames: out, hits, motions, unresolved: play.stage.unresolved })
@@ -99,6 +116,26 @@ pub fn play(
 mod tests {
     use super::*;
     use barrel_engine::stage::FRAME;
+
+    /// The battle's start camera (`SKILL_COMMON_SYSTEM_START_CAM_01`) looks at the battle's
+    /// origin, wherever that stands in the field: from 1,200 to the side and 500 up, in to
+    /// 1,000 and 200 over a second.
+    #[test]
+    #[ignore = "needs the game (BARREL_ROOT)"]
+    fn the_start_camera_flies_in_on_the_battle_origin() {
+        let root = std::path::PathBuf::from(std::env::var("BARREL_ROOT").expect("BARREL_ROOT"));
+        let bytes = std::fs::read(root.join("Event/skill/SKILL_COMMON_SYSTEM_START_CAM_01.ebd")).unwrap();
+        let event = Ebd::parse(&bytes).unwrap();
+        let nobody = Cast { position: [3200.0, 0.0, 3200.0], facing: 0.0, measures: None };
+        let scene = play(&event, nobody, nobody, &BTreeMap::new(), None, 10.0, [3200.0, 0.0, 3200.0]).unwrap();
+        let first = scene.frames.iter().find_map(|f| f.eye.zip(f.target)).unwrap();
+        let (eye, target) = scene.frames.last().and_then(|f| f.eye.zip(f.target)).unwrap();
+        // (Its first frame is already a tick into the move.)
+        let near = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 20.0);
+        assert!(near(first.0, [2000.0, 500.0, 3600.0]) && near(first.1, [2700.0, 100.0, 3200.0]), "{first:?}");
+        assert_eq!((eye, target), ([2200.0, 200.0, 3400.0], [3200.0, 50.0, 3200.0]));
+        assert!((scene.frames.len() as f32 * FRAME - 1.0).abs() < 0.1, "{} frames", scene.frames.len());
+    }
 
     /// Escha's attack (`Skill_PARTY_ESCHA_0`) on a monster at the stage centre (given the
     /// party's facing, as [`Cast`] says): she
@@ -112,7 +149,7 @@ mod tests {
         let her = Cast { position: [0.0, 0.0, -800.0], facing: 0.0, measures: None };
         let it = Cast { position: [0.0, 0.0, 0.0], facing: 0.0, measures: None };
         // Every motion 0.6 s long (her attack's clips are not read here).
-        let scene = play(&event, her, it, &BTreeMap::new(), Some(Box::new(|_, _, _| Some((0.6, false)))), 20.0).unwrap();
+        let scene = play(&event, her, it, &BTreeMap::new(), Some(Box::new(|_, _, _| Some((0.6, false)))), 20.0, [0.0; 3]).unwrap();
         // Her attack motion (14, ATTACK00) in its divisions 0 to 6.
         let divisions: Vec<Option<u32>> = scene.motions.iter().flatten().filter(|p| p.motion == 14).map(|p| p.division).collect();
         assert!(divisions.contains(&Some(0)) && divisions.contains(&Some(6)), "{:?}", divisions.last());

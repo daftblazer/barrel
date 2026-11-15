@@ -187,6 +187,13 @@ pub struct CameraPoint {
     mover: Option<Mover>,
 }
 
+impl CameraPoint {
+    /// Whether a move is still taking it somewhere.
+    pub fn moving(&self) -> bool {
+        self.mover.as_ref().is_some_and(|m| !m.done())
+    }
+}
+
 /// A sound the event asks for, for whoever plays the stage (it has no sound of its own).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Cue {

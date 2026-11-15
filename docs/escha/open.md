@@ -158,6 +158,12 @@ likely settle them where static reading failed.
   lengths; the target's HP plate drops a share at each hit (from what it showed before, so an
   overkill does not bump it up first). The `s1` handler is not read (marker 0 = a hit is from the data).
 
+- **Battle start camera.** Barrel opens every battle with `SKILL_COMMON_SYSTEM_START_CAM_01`
+  (in on the battle's origin over a second); `_02` (circling down from above) is the other, and
+  which the game picks, and whether the HUD shows meanwhile, are not read. After it, and between
+  scenes, the camera is still Barrel's overview from behind the lead (`MOB_AFTER_*` scenes and
+  the game's idle battle camera not done).
+
 ## Synthesis
 
 - **Property point spending** (+0x3f8): only UI reads it; a trait's `point` is likely its PP

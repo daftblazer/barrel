@@ -1401,7 +1401,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         SceneData { on: std::env::var("BARREL_SKILL_SCENES").map_or(true, |v| v != "0"), root: root.to_path_buf(), curves, motion_names, divisions, measures: barrel_engine::stage::Measures::table(&charas) }
     };
     let music = barrel_escha::auto_battle::group_kind(&tables, group).and_then(|k| barrel_escha::battle::music(k, sound_quest, logy));
-    Ok((packs, bodies, BattlePlay {
+    let mut play = BattlePlay {
         fighters,
         scenes,
         scene: None,
@@ -1434,7 +1434,9 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         row: 0,
         choosing: Choosing::Row,
         target: 0,
-    }))
+    };
+    play.start_scene();
+    Ok((packs, bodies, play))
 }
 
 /// The battle's Fast Forward (0 off, 1 ×1.5, 2 ×2: `battlehud::FAST_FORWARD_SPEEDS`), kept from
@@ -1657,6 +1659,23 @@ impl BattlePlay {
         self.scene_of(who, target, &name)
     }
 
+    /// The battle's opening camera (`SKILL_COMMON_SYSTEM_START_CAM_01`: in on the battle's
+    /// origin over a second), the first step held until it ends. `_02` (circling down from
+    /// above) is the other; which the game picks is not read, so Barrel always takes `_01`.
+    fn start_scene(&mut self) {
+        use barrel_escha::skill_scene::Cast;
+        if !self.scenes.on {
+            return;
+        }
+        let Ok(bytes) = std::fs::read(self.scenes.root.join("Event/skill/SKILL_COMMON_SYSTEM_START_CAM_01.ebd")) else { return };
+        let Ok(event) = barrel_formats::ebd::Ebd::parse(&bytes) else { return };
+        let nobody = Cast { position: BATTLE_CENTRE, facing: 0.0, measures: None };
+        let Ok(barrel_escha::skill_scene::Scene { frames, .. }) = barrel_escha::skill_scene::play(&event, nobody, nobody, &self.scenes.curves, None, 10.0, BATTLE_CENTRE) else { return };
+        let scene = ActionScene { start: self.time, frames, actor: usize::MAX, hits: Vec::new(), motions: Vec::new(), shown: None };
+        self.until = self.until.max(self.time + scene.seconds());
+        self.scene = Some(scene);
+    }
+
     /// The skill scene `name` (under `Event`) of fighter `who`'s action on `target`, its
     /// motions' lengths from the actor's clips; `None` when either has no body or the event is
     /// missing. The target's offsets turn by the way from the party's side to the monsters'
@@ -1704,7 +1723,7 @@ impl BattlePlay {
         let toward = if a.party { (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]) } else { (a.place[0] - t_place[0]).atan2(a.place[2] - t_place[2]) };
         let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
         let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
-        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0).ok()?;
+        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0, BATTLE_CENTRE).ok()?;
         let hits = hits.into_iter().map(|(t, share)| (self.time + t, share)).collect();
         if unresolved > 0 {
             eprintln!("battle: skill scene {name}: {unresolved} steps name what it lacks");
