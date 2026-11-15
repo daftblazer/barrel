@@ -1360,6 +1360,16 @@ state's method `0x1401d7a70`), 30 right after Wilbell's and after Escha's attack
 | passive 0xdb | the actor's value of it |
 | per effect | the act table's last word (`0x14002aa70`: `0x140ce9590` + 20 × act + 0x10; 5 for acts 0 and 2, 3 for act 1, 25 for act 6), added after the effects are applied |
 
+The actor's virtual +0x100 value in the critical chance (vtable slot +0x100: monsters'
+`0x1401b7810` in the vtable at `0x1408083d0`, the party's `0x1401b8560` in `0x140808540`):
+the fighter's +0x2a0, then, when its second argument is 0, + the battle stat at +0xbc (stat 13
+of the 35 at +0x88; the stat equipment's ACT_PASSIVE_CHANGE_SUPPORTGAUGE and ACT_ADD_SUPGAUGE
+feed, `0x1402a17a3`) if `0x14015fac0` accepts the kind its virtual +0x88 gives, + passive 0x63's
+value (`0x14015f6a0`). The party's version first adds passive 0x6e's value (`0x14032f850` on the
+member's +0x3b0) when its HP is at most 25% of its maximum (stats 1 and 3: `HP × 100 / max ≤ 25`).
+Act 218 (`ACT_ADD_SUPGAUGE`) falls to the effect switch's default in `0x1401bde10`: the Support
+gauge itself is not read yet.
+
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first
 (a flank attack and a critical, labelled 140 % once the attack's own 5 was added). Without the
