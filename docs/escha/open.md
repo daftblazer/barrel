@@ -151,7 +151,8 @@ likely settle them where static reading failed.
   close-ups on Logy, a leap, the strike) has no recording to compare against yet, and its
   battle-screen commands: `r20` (show/hide) is played for kinds 0 to 8 (the third fighter,
   battle +0x70, and which side is 0 not read; a skill with several targets has only the one
-  Barrel knows); `r14`'s colour fade is not played, what its colour multiplies being unread;
+  Barrel knows); `r14` tints the stage (fade curve `mode`, the alpha and when the game restores it
+  not read);
   `r4` `ECT_BATTLE_ADD_EFFECT_ID` not done. Attack and Support Attack: the damage
   number(s) and the target's hurt motion at the scene's hits (`s1` marker 0); the actor plays the
   scene's motions (motion and `CharaDiv` division, switched as the scene sets them, blended over

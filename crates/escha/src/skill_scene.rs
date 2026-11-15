@@ -45,6 +45,29 @@ pub struct Scene {
     pub unresolved: usize,
     /// Its `r20` steps: (seconds from its start, the fighters' kind, shown).
     pub shows: Vec<(f32, i32, bool)>,
+    /// Its `r14` steps: (seconds from its start, the stage's colour to fade to, over seconds).
+    pub tints: Vec<(f32, [f32; 3], f32)>,
+}
+
+/// `r14` (`0x7200000e`, `{r, g, b, a, hundredths, mode}`): the battle's arena (its +0xf40, the
+/// stage) fades to (r, g, b) / 128 (`docs/events.md`, "Battle-screen commands").
+const TINT: u32 = 0x7200_000e;
+
+/// The stage's colour at `now` after `tints` (as [`Scene::tints`], at the same clock), each
+/// fading linearly from the colour shown when it began (its `mode` curve not read); `None`
+/// before the first.
+pub fn tint_at(tints: &[(f32, [f32; 3], f32)], now: f32) -> Option<[f32; 3]> {
+    let at = |fade: (f32, [f32; 3], [f32; 3], f32), t: f32| {
+        let (start, from, to, seconds) = fade;
+        let k = if seconds > 0.0 { ((t - start) / seconds).clamp(0.0, 1.0) } else { 1.0 };
+        [0, 1, 2].map(|i| from[i] + (to[i] - from[i]) * k)
+    };
+    let mut fade: Option<(f32, [f32; 3], [f32; 3], f32)> = None;
+    for &(start, to, seconds) in tints.iter().filter(|t| t.0 <= now) {
+        let from = fade.map_or([1.0; 3], |f| at(f, start));
+        fade = Some((start, from, to, seconds));
+    }
+    fade.map(|f| at(f, now))
 }
 
 /// `r20` (`0x72000014`, `{kind, on}`): the battle shows (scale 1) or hides (scale 0, the
@@ -121,6 +144,15 @@ pub fn play_cast(
             _ => None,
         })
         .collect();
+    let tints = steps
+        .iter()
+        .filter_map(|t| match &t.step {
+            barrel_engine::event::Step::Command { word: TINT, operands: [r, g, b, _, hundredths, ..], .. } => {
+                Some((t.time, [*r, *g, *b].map(|c| c as i32 as f32 / 128.0), *hundredths as i32 as f32 / 100.0))
+            }
+            _ => None,
+        })
+        .collect();
     let mut measures = BTreeMap::new();
     let mut stage = Stage { curves: curves.clone(), ..Stage::default() };
     for &(who, c) in cast {
@@ -151,7 +183,7 @@ pub fn play_cast(
         out.push(snapshot(&play));
         motions.push(motion(&play));
     }
-    Ok(Scene { frames: out, hits, motions, unresolved: play.stage.unresolved, shows })
+    Ok(Scene { frames: out, hits, motions, unresolved: play.stage.unresolved, shows, tints })
 }
 
 #[cfg(test)]
@@ -169,6 +201,17 @@ mod tests {
         assert_eq!(shown_kind(1, true, false, true), Some(false));
         assert_eq!(shown_kind(1, false, true, false), Some(true));
         assert_eq!(shown_kind(9, false, false, false), None);
+    }
+
+    /// `r14`: High Strike's dim to 64/128 over half a second, then a fade to black from there.
+    #[test]
+    fn r14_fades_from_the_colour_shown() {
+        let tints = [(0.0, [0.5; 3], 0.5), (1.0, [0.0; 3], 1.0)];
+        assert_eq!(tint_at(&tints, -0.1), None);
+        assert_eq!(tint_at(&tints, 0.25), Some([0.75; 3]));
+        assert_eq!(tint_at(&tints, 0.9), Some([0.5; 3]));
+        assert_eq!(tint_at(&tints, 1.5), Some([0.25; 3]));
+        assert_eq!(tint_at(&tints, 3.0), Some([0.0; 3]));
     }
 
     /// The battle's start camera (`SKILL_COMMON_SYSTEM_START_CAM_01`) looks at the battle's

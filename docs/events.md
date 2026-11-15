@@ -721,8 +721,12 @@ often:
   +0xf40 object (+0x28, from its current +0x80) to (r, g, b, a) / 128 over hundredths / 100 s
   (`0x1401aaf00`; `mode`, 0 or 3, picks a keyed curve, `0x1404e1770`). The events dim it
   (`89 89 89 128`, `64 64 64 128`, Escha's skill `32 32 80 128`, a dark blue) and seldom
-  bring it back (`128 128 128 128`), so the battle restores it after the scene. What the
-  colour multiplies (the stage, by the scenes' look, or the battle's light) is not read.
+  bring it back (`128 128 128 128`), so the battle restores it after the scene. The +0xf40
+  object is the battle's arena (`0x1401a2490`, built with the battle, `0x14019f6c0`): the
+  stage, not the fighters, which stay lit; High Strike dims it to half, then 30/128, then black
+  for its strike. Barrel tints the stage's instances (those made before the battle's people)
+  with it, fading linearly (the `mode` curve not read), back to its own colour when the scene
+  ends (when the game does is not read); the alpha is not used.
 - `r20` (`0x72000014`, 693 uses) `{kind, on}`: the fighters chosen by `kind`
   (`0x1401b2b30(battle, out, kind)`) get 1, 1, 1 or 0 at their model's +0x250. The chooser
   (jump table `0x1401b2e90`) sets four tests, the actor (battle +0x60), the targets (the list

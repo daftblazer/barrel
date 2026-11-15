@@ -1430,6 +1430,8 @@ fn battle_people(root: &Path, group: i32, logy: bool, sound_quest: bool, members
         guard_hold: None,
         menu_since: None,
         hidden: Vec::new(),
+        stage_instances: 0,
+        stage_tinted: false,
         music,
         victory_played: false,
         wiped: None,
@@ -1507,6 +1509,10 @@ struct BattlePlay {
     menu_since: Option<(usize, f32)>,
     /// The fighters a scene's `r20` hides now (by fighter index).
     hidden: Vec<bool>,
+    /// The scene instances that are the stage (those before the battle's people), and whether
+    /// a scene's `r14` has them tinted.
+    stage_instances: usize,
+    stage_tinted: bool,
     /// What the actions' skill scenes are played with.
     scenes: SceneData,
     /// The skill scene playing (`barrel_escha::skill_scene`): it places the actor and moves the
@@ -1581,6 +1587,8 @@ struct ActionScene {
     /// The fighter acted on, if any, and the scene's `r20` steps at battle times.
     target: Option<usize>,
     shows: Vec<(f32, i32, bool)>,
+    /// Its `r14` stage colours at battle times.
+    tints: Vec<(f32, [f32; 3], f32)>,
 }
 
 impl ActionScene {
@@ -1701,7 +1709,7 @@ impl BattlePlay {
         else {
             return;
         };
-        let scene = ActionScene { start: self.time, frames, actor: who, hits: Vec::new(), motions, shown: None, poser: WINNER, target: None, shows: Vec::new() };
+        let scene = ActionScene { start: self.time, frames, actor: who, hits: Vec::new(), motions, shown: None, poser: WINNER, target: None, shows: Vec::new(), tints: Vec::new() };
         self.until = self.until.max(self.time + scene.seconds());
         eprintln!("battle: victory scene {tag} {:.2} s", scene.seconds());
         self.scene = Some(scene);
@@ -1825,7 +1833,7 @@ impl BattlePlay {
         let Ok(event) = barrel_formats::ebd::Ebd::parse(&bytes) else { return };
         let nobody = Cast { position: BATTLE_CENTRE, facing: 0.0, measures: None };
         let Ok(barrel_escha::skill_scene::Scene { frames, .. }) = barrel_escha::skill_scene::play(&event, nobody, nobody, &self.scenes.curves, None, 10.0, BATTLE_CENTRE) else { return };
-        let scene = ActionScene { start: self.time, frames, actor: usize::MAX, hits: Vec::new(), motions: Vec::new(), shown: None, poser: barrel_escha::skill_scene::ACTOR, target: None, shows: Vec::new() };
+        let scene = ActionScene { start: self.time, frames, actor: usize::MAX, hits: Vec::new(), motions: Vec::new(), shown: None, poser: barrel_escha::skill_scene::ACTOR, target: None, shows: Vec::new(), tints: Vec::new() };
         self.until = self.until.max(self.time + scene.seconds());
         self.scene = Some(scene);
     }
@@ -1877,7 +1885,7 @@ impl BattlePlay {
         let toward = if a.party { (t_place[0] - a.place[0]).atan2(t_place[2] - a.place[2]) } else { (a.place[0] - t_place[0]).atan2(a.place[2] - t_place[2]) };
         let foe = Cast { position: t_place, facing: toward, measures: measures(t_chara) };
         let length = move |c: u32, m: u32, d: Option<u32>| (c == ACTOR).then(|| lengths.get(&(m, d)).copied()).flatten();
-        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved, shows } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0, BATTLE_CENTRE).ok()?;
+        let barrel_escha::skill_scene::Scene { frames, hits, motions, unresolved, shows, tints } = barrel_escha::skill_scene::play(&event, actor, foe, &self.scenes.curves, Some(Box::new(length)), 15.0, BATTLE_CENTRE).ok()?;
         let hits = hits.into_iter().map(|(t, share)| (self.time + t, share)).collect();
         if unresolved > 0 {
             eprintln!("battle: skill scene {name}: {unresolved} steps name what it lacks");
@@ -1890,7 +1898,8 @@ impl BattlePlay {
             eprintln!("scene: r20 (seconds, kind, shown) {shows:?}");
         }
         let shows = shows.into_iter().map(|(t, kind, on)| (self.time + t, kind, on)).collect();
-        Some(ActionScene { start: self.time, frames, actor: who, hits, motions, shown: None, poser: barrel_escha::skill_scene::ACTOR, target: Some(target), shows })
+        let tints = tints.into_iter().map(|(t, c, secs)| (self.time + t, c, secs)).collect();
+        Some(ActionScene { start: self.time, frames, actor: who, hits, motions, shown: None, poser: barrel_escha::skill_scene::ACTOR, target: Some(target), shows, tints })
     }
 
     /// The scene's motion for its actor now: its body switched when the scene changes it (to
@@ -3164,7 +3173,9 @@ fn load_scene(spec: SceneSpec) -> Result<Loaded> {
         let members = battle_party.as_deref().map(barrel_escha::session::Session::party_in).unwrap_or_default();
         // The vocal song's flag (`EVENT_FLAG_SOUND_QUEST_FLAG`) in the field's save.
         let sound_quest = battle_party.as_deref().is_some_and(|t| t.lines().any(|l| l.split_whitespace().collect::<Vec<_>>() == ["flag", "149", "1"]));
-        let (packs, bodies, play) = battle_people(&root, group, logy, sound_quest, &members, &mut scene, base, town_bodies.len())?;
+        let stage_instances = scene.instances.len();
+        let (packs, bodies, mut play) = battle_people(&root, group, logy, sound_quest, &members, &mut scene, base, town_bodies.len())?;
+        play.stage_instances = stage_instances;
         pack_bytes.extend(packs);
         town_bodies.extend(bodies);
         battle_play = Some(play);
@@ -5518,6 +5529,18 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                 }
                 play.hidden = hide;
+                // `r14`: the stage (not the fighters) in the scene's colour; back to its own when
+                // the scene ends (when the game restores it is not read).
+                let tint = play.scene.as_ref().and_then(|sc| barrel_escha::skill_scene::tint_at(&sc.tints, play.time));
+                if tint.is_some() || play.stage_tinted {
+                    let bodies: std::collections::HashSet<u32> = town_bodies.iter().map(|b| b.instance).collect();
+                    for (k, i) in instances.iter_mut().enumerate().take(play.stage_instances) {
+                        if !bodies.contains(&(k as u32)) {
+                            i.set_tint(tint.map(|c| (c, [0.0; 3])));
+                        }
+                    }
+                    play.stage_tinted = tint.is_some();
+                }
                 // Offscreen: `BARREL_BATTLE_KEYS` (as `BARREL_MENU_KEYS`), a key a frame while a
                 // member's turn waits.
                 if presenter.is_none() && play.waiting()
