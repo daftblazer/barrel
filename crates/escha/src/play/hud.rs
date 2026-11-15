@@ -15,9 +15,9 @@
 //! none, across for half), is left out (the HUD draws no turned sprites yet). Layout 609 lists
 //! the segments clockwise from the top (cuts 2 to 6, then 11 down to 7). Not yet the game's: the button list (620)
 //! moved up 121 pixels, as the screenshot has it (the layout puts the list at y 792, past the
-//! screen's foot); the days left are a kind 22 text, centred on their node; the text size (the node's size × 1.47
-//! over the font's line); white for texts
-//! without a colour and for the days left. Under the date, the ten request cards (layout 603
+//! screen's foot); the days left are small digits (part 0xe5)
+//! centred on their node; the text size (the node's size ÷ 36 atlas pixels); white for texts
+//! without a colour. Under the date, the ten request cards (layout 603
 //! at the panel's ten 0x25b nodes, five a row, the second row staggered): one per slot of the
 //! requests taken, part 0x8b cut 3 (a scroll) while open, cut 5 (pink) with the red tick
 //! (cut 1, the layout's second node) once done, cut 6 (blank) for an empty slot, each with its
@@ -222,7 +222,6 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
     let mut out = Vec::new();
     let mut numbers = 0;
     let mut segment = 0;
-    let mut left_shown = false;
     let mut card = 0usize;
     for p in nodes {
         let Some(&branch) = p.path.get(1) else { continue };
@@ -301,14 +300,9 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
         }
         match n.part {
             0x164 => match texts(p) {
-                // The text after "Left": the days left.
-                Some(t) if t.text.is_empty() && p.path.len() == 2 && p.path[1] == 605 && n.kind == 22 && !left_shown => {
-                    out.push(Element::Label(layout::Text { text: v.left.to_string(), colour: WHITE, at, ..t }));
-                    left_shown = true;
-                }
-                // "Left" starts at its node (measured on the recording: x 78 to 122 at 1080p,
-                // its node at 80), though kind 22 texts elsewhere are centred.
-                Some(t) if p.path.len() == 2 && p.path[1] == PANEL && !t.text.is_empty() => out.push(Element::Label(layout::Text { at, kind: 21, ..t })),
+                // "Left" starts at its node (the area map's capture: 4 left and 1 lower than the
+                // node puts Barrel's glyphs), though kind 22 texts elsewhere are centred.
+                Some(t) if p.path.len() == 2 && p.path[1] == PANEL && !t.text.is_empty() => out.push(Element::Label(layout::Text { at: [at[0] - 4, at[1] + 1], kind: 21, ..t })),
                 Some(t) if !t.text.is_empty() && !t.filled_in() => out.push(Element::Label(layout::Text { at, ..t })),
                 _ => {}
             },
@@ -321,7 +315,14 @@ pub fn elements(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text
                 }
                 numbers += 1;
             }
-            SMALL_DIGITS if n.kind == 29 => {}
+            // The days left, in small digits centred on the node (the area map's capture).
+            SMALL_DIGITS if n.kind == 29 => {
+                let digits: Vec<i32> = v.left.to_string().bytes().map(|b| i32::from(b - b'0')).collect();
+                let start = at[0] - SMALL_ADVANCE * digits.len() as i32 / 2;
+                for (k, d) in digits.into_iter().enumerate() {
+                    out.push(Element::Sprite { part: SMALL_DIGITS, cut: d, at: [start + SMALL_ADVANCE * k as i32, at[1]] });
+                }
+            }
             YEAR if n.cut >= 3 => out.push(Element::Sprite { part: YEAR, cut: (v.year as i32 + 2).clamp(3, 7), at: p.at }),
             DIAL if (2..=11).contains(&n.cut) => {
                 if segment < v.tenths_spent {
@@ -349,7 +350,11 @@ pub fn date_panel(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Te
 /// The maps' button lists (layout 636: Info, Assignment, System on the left, Requests and
 /// Message Log on the right), placed by the game at run time where the recording has them.
 pub const MAP_LIST: u32 = 636;
-pub const MAP_LIST_AT: [i32; 2] = [6, 854];
+pub const MAP_LIST_AT: [i32; 2] = [6, 855];
+/// How far above Barrel's glyph placing the game draws a layout text (the capture of the area
+/// map: every text of the maps' panels and lists, whatever its size from 30 to 36, sits 7
+/// pixels higher than a node's top-left puts it).
+pub const TEXT_RISE: i32 = 7;
 /// The left list's first row as the game words it (strings in the executable next to each
 /// other): on the world map, and on an area map.
 pub const AREA_INFO: &str = "<IM04> Area Info";
@@ -362,17 +367,18 @@ pub const RETURN: &str = "<IM02> Return";
 pub fn map_list(nodes: &[Placed], texts: impl Fn(&Placed) -> Option<layout::Text>, first: Option<&str>) -> Vec<Element> {
     let mut out = Vec::new();
     let mut first_done = false;
+    let raised = |at: [i32; 2]| [at[0], at[1] - TEXT_RISE];
     for p in nodes.iter().filter(|p| p.path.first() == Some(&MAP_LIST)) {
         let at = [p.at[0] + MAP_LIST_AT[0], p.at[1] + MAP_LIST_AT[1]];
         if p.node.part == 0x164 {
             match texts(p) {
                 Some(t) if !t.text.is_empty() && !first_done => {
                     if let Some(first) = first {
-                        out.push(Element::Label(layout::Text { at, text: first.to_string(), ..t }));
+                        out.push(Element::Label(layout::Text { at: raised(at), text: first.to_string(), ..t }));
                     }
                     first_done = true;
                 }
-                Some(t) if !t.text.is_empty() => out.push(Element::Label(layout::Text { at, ..t })),
+                Some(t) if !t.text.is_empty() => out.push(Element::Label(layout::Text { at: raised(at), ..t })),
                 _ => {}
             }
         } else if first.is_none() && p.node.part == LIST_PLATE && p.node.cut == 0 {
@@ -466,7 +472,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let [w, h] = sheets.sizes[slot];
                 let [l, t, r, b] = piece.src.map(f32::from);
                 let [x, y] = piece.at.map(|v| v as f32);
-                out.push(Quad { turn: true, rect: [dx + (x - (b - t)) * k, y * k, dx + x * k, (y + r - l) * k], uv: [l / w, t / h, r / w, b / h], color: [1.0; 4], texture: sheets.first + slot });
+                out.push(Quad { turn: true, rect: [dx + (x - (b - t)) * k, y * k, dx + x * k, (y + r - l) * k], uv: [l / w, b / h, r / w, t / h], color: [1.0; 4], texture: sheets.first + slot });
             }
             &Element::Cropped { part, cut, at, fill } => {
                 let Some(piece) = layout::sprite(pe, part, cut, at) else { continue };
@@ -515,7 +521,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 let Some(font) = font else { continue };
                 let [a, r, g, b] = t.colour;
                 let colour = if a == 0 { [1.0; 4] } else { [r, g, b, a].map(|c| f32::from(c) / 255.0) };
-                let scale = t.size * k / crate::message::LINE * 1.47;
+                let scale = t.size * k / crate::message::LAYOUT_TEXT_UNIT;
                 // Kind 23 texts end at their node (the numbers at x 1800 in the save list's
                 // details), kind 22 are centred on it ("Select your character." at x 954, the
                 // HUD's days left), the others start there.

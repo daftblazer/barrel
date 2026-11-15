@@ -343,6 +343,7 @@ impl AreaMap {
             all.extend(area_panel::label(&pe, [960, 540], "", side));
         }
         all.extend(question::elements(&pe, "", true));
+        all.extend(hud::map_list(&barrel_escha::data::layout::placed(&pe, hud::MAP_LIST), |_| None, Some(hud::RETURN)));
         let keys = screen::sheet_keys(&pe, all);
         let packs = screen::read_packs(root, &keys)?;
         let parsed = packs.iter().map(|(n, b)| Ok((n.clone(), G1t::parse(b)?))).collect::<Result<Vec<_>>>()?;
@@ -522,7 +523,7 @@ impl AreaMap {
         let pe = barrel_formats::pe::Pe::parse(&self.pe_bytes)?;
         let p = &self.places[self.at];
         let font = &self.font;
-        let measure = |s: &str, size: f32| message::width_of(font, s) * size / message::LINE * 1.47;
+        let measure = |s: &str, size: f32| message::width_of(font, s) * size / message::LAYOUT_TEXT_UNIT;
         let mut e = if self.world {
             let sector = format!("{}p", p.tag);
             let sectors: Vec<String> = self.places.iter().enumerate().filter(|(k, q)| q.kind == 1 && q.tag.starts_with(&sector) && !self.closed.get(*k).copied().unwrap_or(false)).map(|(_, q)| q.name.clone()).collect();
@@ -557,6 +558,14 @@ impl AreaMap {
                 area_panel::elements(&pe, self.region_name(self.at), &p.name, &p.description, &items, Some(levels.tier(false)), measure)
             }
         };
+        // The button lists (Return or Area Info, Assignment, System; Requests, Message Log),
+        // drawn after the panels and before the labels.
+        let first_row = match (self.world, self.on_town()) {
+            (true, true) => None,
+            (true, false) => Some(hud::AREA_INFO),
+            (false, _) => Some(hud::RETURN),
+        };
+        e.extend(hud::map_list(&barrel_escha::data::layout::placed(&pe, hud::MAP_LIST), |p| barrel_escha::data::layout::text(&pe, p), first_row));
         if let Some(mvp) = mvp.filter(|_| self.asking.is_none()) {
             // On the 1920 × 1080 layout screen (scaled to the height, centred).
             let k = height as f32 / 1080.0;
@@ -581,8 +590,8 @@ impl AreaMap {
                 // (colseit-arrival 1:25, measured at 720p, the Left one mirrored, unseen).
                 let at = match (self.world, side) {
                     (true, area_panel::Side::Below) => [at[0], at[1] - WORLD_LABEL_LIFT],
-                    (true, area_panel::Side::Right) => [at[0] - WORLD_LABEL_SIDE[0], at[1] - WORLD_LABEL_SIDE[1]],
-                    (true, area_panel::Side::Left) => [at[0] + WORLD_LABEL_SIDE[0], at[1] - WORLD_LABEL_SIDE[1]],
+                    (true, area_panel::Side::Right) => [at[0] - WORLD_LABEL_RIGHT[0], at[1] - WORLD_LABEL_RIGHT[1]],
+                    (true, area_panel::Side::Left) => [at[0] + WORLD_LABEL_LEFT[0], at[1] - WORLD_LABEL_LEFT[1]],
                     _ => at,
                 };
                 e.extend(area_panel::label(&pe, at, name, side));
@@ -611,6 +620,44 @@ const SEEN_ROUTE: u32 = u32::from_le_bytes([170, 255, 170, 255]);
 
 /// The area map's Back question (the executable's string at `0x140949850`).
 const RETURN_TO_WORLD_MAP: &str = "Return to World Map?";
+
+/// The field HUD's layer (the font atlas, then the pictures of layout 625 and, on the maps,
+/// the date panel's), the font, the pictures' slots and the layouts' nodes.
+type FieldHud = (text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>);
+
+fn field_hud_layer(gpu: &Gpu, pool: vk::CommandPool, pass: vk::RenderPass, exe: &[u8], root: &Path, area_mode: bool) -> Option<FieldHud> {
+    let pe = barrel_formats::pe::Pe::parse(exe).ok()?;
+    let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN)?;
+    let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
+    let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
+    let mut nodes = barrel_escha::data::layout::placed(&pe, hud::FIELD_HUD);
+    if area_mode {
+        nodes.extend(barrel_escha::data::layout::placed(&pe, hud::MAP_LIST));
+    }
+    let keys = hud::sheet_keys(&pe, &nodes);
+    let mut packs: Vec<(String, Vec<u8>)> = Vec::new();
+    for (name, _) in &keys {
+        if !packs.iter().any(|(n, _)| n == name) {
+            let x64 = root.join("Data/x64");
+            match std::fs::read(x64.join("WinXls_EN").join(name)).or_else(|_| std::fs::read(x64.join("WinXls").join(name))) {
+                Ok(bytes) => packs.push((name.clone(), bytes)),
+                Err(e) => eprintln!("HUD: {name}: {e}"),
+            }
+        }
+    }
+    let parsed: Vec<(String, barrel_formats::g1t::G1t)> = packs.iter().filter_map(|(n, b)| Some((n.clone(), barrel_formats::g1t::G1t::parse(b).ok()?))).collect();
+    let mut images = vec![atlas.textures.first()?];
+    let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
+    for (name, index) in keys {
+        let Some(t) = parsed.iter().find(|(n, _)| *n == name).and_then(|(_, g)| g.textures.get(index as usize)) else { continue };
+        sheets.sizes.push([t.width as f32, t.height as f32]);
+        sheets.keys.push((name, index));
+        images.push(t);
+    }
+    let size = images[0].width as f32;
+    let layer = text::Layer::new(gpu, pool, pass, &images).ok()?;
+    Some((layer, text::Font { glyphs, size }, sheets, nodes))
+}
 
 /// A lost battle's line for the lead (`Saves_EN/systemMessage/SysMess.xml`, row 240 for Escha,
 /// 241 for Logy: the one the game showed after a wipe; row 61, Escha's other, presumably
@@ -1146,9 +1193,13 @@ const AREA_CAMERA_AHEAD: f32 = 178.0;
 const WORLD_CAMERA_PITCH: f32 = 35.0;
 /// How much higher a label under its route stands on the world map than on an area map, and
 /// how much farther in and higher one beside it (1080p; the recording at 1:25: the Southern
-/// Ruins' plate 59 and the Twilight Forest's 35 left and 13 higher at 720p).
+/// Ruins' plate 59 and the Twilight Forest's 35 left and 13 higher at 720p). The sideways ones
+/// are those fitted places (56 and 11) over the area map's plates as they stood then; the
+/// plates' own offsets have since moved to the area map's capture (`area_panel::label`), so
+/// these carry the difference (13 and 2 less in, 5 more up).
 const WORLD_LABEL_LIFT: i32 = 80;
-const WORLD_LABEL_SIDE: [i32; 2] = [56, 11];
+const WORLD_LABEL_LEFT: [i32; 2] = [54, 16];
+const WORLD_LABEL_RIGHT: [i32; 2] = [69, 16];
 const WORLD_CAMERA_FOV: f32 = 21.0;
 const WORLD_CAMERA_DISTANCE: f32 = 8016.0;
 const WORLD_CAMERA_AHEAD: f32 = 357.0;
@@ -4377,43 +4428,10 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
     // The field's HUD (layout 625); on the maps its date panel and the maps' button lists (636).
     // Not in a battle: the game shows only the battle's own HUD there (the battle recordings).
     if session.is_some() && player.is_none() && battle_play.is_none() && std::env::var("BARREL_NO_HUD").is_err() {
-        let made = (|| -> Option<(text::Layer, text::Font, hud::Sheets, Vec<barrel_escha::data::layout::Placed>)> {
-            let Some(exe) = hud_exe.as_ref() else {
-                return None;
-            };
-            let root = hud_root.as_ref()?;
-            let pe = barrel_formats::pe::Pe::parse(exe).ok()?;
-            let glyphs = barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN)?;
-            let atlas_bytes = std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t")).ok()?;
-            let atlas = barrel_formats::g1t::G1t::parse(&atlas_bytes).ok()?;
-            let mut nodes = barrel_escha::data::layout::placed(&pe, hud::FIELD_HUD);
-            if area_mode {
-                nodes.extend(barrel_escha::data::layout::placed(&pe, hud::MAP_LIST));
-            }
-            let keys = hud::sheet_keys(&pe, &nodes);
-            let mut packs: Vec<(String, Vec<u8>)> = Vec::new();
-            for (name, _) in &keys {
-                if !packs.iter().any(|(n, _)| n == name) {
-                    let x64 = root.join("Data/x64");
-                    match std::fs::read(x64.join("WinXls_EN").join(name)).or_else(|_| std::fs::read(x64.join("WinXls").join(name))) {
-                        Ok(bytes) => packs.push((name.clone(), bytes)),
-                        Err(e) => eprintln!("HUD: {name}: {e}"),
-                    }
-                }
-            }
-            let parsed: Vec<(String, barrel_formats::g1t::G1t)> = packs.iter().filter_map(|(n, b)| Some((n.clone(), barrel_formats::g1t::G1t::parse(b).ok()?))).collect();
-            let mut images = vec![atlas.textures.first()?];
-            let mut sheets = hud::Sheets { keys: Vec::new(), sizes: Vec::new(), first: 1 };
-            for (name, index) in keys {
-                let Some(t) = parsed.iter().find(|(n, _)| *n == name).and_then(|(_, g)| g.textures.get(index as usize)) else { continue };
-                sheets.sizes.push([t.width as f32, t.height as f32]);
-                sheets.keys.push((name, index));
-                images.push(t);
-            }
-            let size = images[0].width as f32;
-            let layer = text::Layer::new(&gpu, renderer.pool, renderer.post_pass, &images).ok()?;
-            Some((layer, text::Font { glyphs, size }, sheets, nodes))
-        })();
+        let made = match (hud_exe.as_ref(), hud_root.as_ref()) {
+            (Some(exe), Some(root)) => field_hud_layer(&gpu, renderer.pool, renderer.post_pass, exe, root, area_mode),
+            _ => None,
+        };
         match made {
             Some((layer, font, sheets, nodes)) => field_hud = Some((layer, font, sheets, nodes, None)),
             None => eprintln!("no HUD: the English executable, the font or a WinXls pack is missing"),
@@ -5127,6 +5145,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         a.seen_routes = known.difference(&walked).filter(|r| !world_routes.contains(r)).filter_map(|&r| a.routes.get(r as usize).cloned()).collect();
                     }
                     area_map = Some(a);
+                    // The HUD draws over the maps' layer, so its layer is made after it (the draw
+                    // trace numbers layers in the order they are made).
+                    if let (Some(hud), Some(exe), Some(root)) = (field_hud.as_mut(), hud_exe.as_ref(), hud_root.as_ref())
+                        && let Some(fresh) = field_hud_layer(&gpu, renderer.pool, renderer.post_pass, exe, root, area_mode) {
+                            unsafe { gpu.device.device_wait_idle()? };
+                            let (layer, font, sheets, nodes) = fresh;
+                            std::mem::replace(&mut hud.0, layer).destroy(&gpu);
+                            (hud.1, hud.2, hud.3, hud.4) = (font, sheets, nodes, None);
+                        }
                 }
                 Err(e) => {
                     eprintln!("no area map: {e}");
@@ -6393,11 +6420,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
             && let Ok(pe) = barrel_formats::pe::Pe::parse(exe) {
                 let texts = |p: &barrel_escha::data::layout::Placed| barrel_escha::data::layout::text(&pe, p);
                 let elements = match area_map.as_ref() {
-                    Some(a) => [hud::date_panel(nodes, texts, v), hud::map_list(nodes, texts, match (a.world, a.on_town()) {
-                        (true, true) => None,
-                        (true, false) => Some(hud::AREA_INFO),
-                        (false, _) => Some(hud::RETURN),
-                    })].concat(),
+                    // (The maps' button lists belong to the maps' own layer.)
+                    Some(_) => hud::date_panel(nodes, texts, v),
                     None => hud::elements(nodes, texts, v),
                 };
                 layer.set(&gpu, &hud::quads(&pe, Some(font), sheets, &elements, width as f32, height as f32))?;
@@ -6479,7 +6503,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                     }
                     elements.extend(battlehud::support_bubbles(&h.bubble_nodes, |p| barrel_escha::data::layout::text(&pe, p), &bubbles, if play.guard_window().is_some() { battlehud::GUARD_LABEL } else { battlehud::SUPPORT_LABEL }));
                     if let Some(name) = &banner {
-                        let width = message::width_of(&h.font, name) * battlehud::BANNER_TEXT_SIZE / message::LINE * 1.47;
+                        let width = message::width_of(&h.font, name) * battlehud::BANNER_TEXT_SIZE / message::LAYOUT_TEXT_UNIT;
                         elements.extend(battlehud::banner(&pe, name, width));
                     }
                 }

@@ -8,6 +8,10 @@
 
 use barrel_render::text::{Font, Quad, FONT, UI};
 
+/// A layout text's size unit: a node's size over this, times the screen's height over 1080, is
+/// the screen pixels per atlas pixel (the area map's capture: size 51 draws at 1.41667).
+pub const LAYOUT_TEXT_UNIT: f32 = 36.0;
+
 /// The font's line height in atlas pixels (the Latin glyphs reach 53 below a line's top; the
 /// game's own spacing is not read).
 pub const LINE: f32 = 53.0;
@@ -143,7 +147,7 @@ pub fn run(font: &Font, s: &str, x: f32, y: f32, scale: f32, base: [f32; 4], out
         let Some(g) = font.glyphs.get(&c) else { continue };
         // Icons keep their own colours.
         let tint = if (ICONS..ICONS + 33).contains(&u32::from(c)) { [1.0; 4] } else { color };
-        if g.width > 3 {
+        if g.width > 3 || c == ' ' {
             let (gx, gy, gw, gh) = (f32::from(g.x), f32::from(g.y), f32::from(g.width), f32::from(g.height));
             let left = pen + g.x_offset as f32 * scale;
             let top = y + g.y_offset as f32 * scale;

@@ -31,7 +31,8 @@ pub struct Font {
 /// One rectangle to draw: `rect` and `uv` are (left, top, right, bottom), in pixels and
 /// texture coordinates (a right edge left of the left one mirrors it); a negative `uv[0]`
 /// fills the rectangle with `color` alone. `texture` is [`FONT`] or [`UI`]. `turn` turns the
-/// picture a quarter clockwise into `rect` (its top edge down the rectangle's right side).
+/// picture a quarter clockwise into `rect` (its top edge down the rectangle's right side); its
+/// `uv` then names the picture's corners as they land on the rectangle's top-left and bottom-right.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quad {
     pub turn: bool,
@@ -200,7 +201,7 @@ impl Layer {
             if q.turn {
                 // Clockwise: the picture's bottom-left at the top-left, its top-left at the
                 // top-right, its top-right at the bottom-right.
-                verts.extend([v(l, t, u0, v1), v(r, t, u0, v0), v(r, b, u1, v0), v(l, t, u0, v1), v(r, b, u1, v0), v(l, b, u1, v1)]);
+                verts.extend([v(l, t, u0, v0), v(r, t, u0, v1), v(r, b, u1, v1), v(l, t, u0, v0), v(r, b, u1, v1), v(l, b, u1, v0)]);
             } else {
                 verts.extend([v(l, t, u0, v0), v(r, t, u1, v0), v(r, b, u1, v1), v(l, t, u0, v0), v(r, b, u1, v1), v(l, b, u0, v1)]);
             }
