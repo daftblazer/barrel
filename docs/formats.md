@@ -2147,3 +2147,11 @@ bucket; its entry point: closed, `REFDIST_FLAG`, loop filter, extended motion ve
 extended differential), variable-size transform, overlap transform, `DQUANT` 0, quantizer
 implied by `PQINDEX`. Its 2,883 frames: 79 I (all the key frames), 1,229 P, 1,430 B, 6 BI and
 139 skipped.
+
+The decoder's tables come from SMPTE ST 421:2013 section 11, free from SMPTE
+(`pub.smpte.org/doc/st421/20131008-pub/st0421-2013.pdf`): `tools/vc1_tables.py` reads the PDF's
+text (`pdftotext -layout`) and writes `crates/movie/src/vc1_tables.rs`, checking each table as
+it goes (indices without gaps, prefix-free codes, Kraft sums: 1 for all but the two mid-rate AC
+tables, 0.998; each AC set's run/level rows covering its codes but the escape; scans
+permutations, read column by column since the standard stacks their two-digit numbers). The
+small tables of sections 7 and 8 (IMODE, Norm-2/6, escape sizes, PQINDEX) are not generated.

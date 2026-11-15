@@ -261,3 +261,19 @@ mod movie_tests {
         assert!(s.pulldown && !s.interlace);
     }
 }
+
+#[cfg(test)]
+mod table_tests {
+    use crate::vc1_tables::*;
+
+    /// The generated tables hang together: each AC set's run/level rows cover its codes but the
+    /// escape, and the intra scans start as the standard prints them.
+    #[test]
+    fn tables_hang_together() {
+        assert_eq!(HIGH_MOTION_INTRA_RUN_LEVEL_0.len() + HIGH_MOTION_INTRA_RUN_LEVEL_1.len() + 1, HIGH_MOTION_INTRA_VLC.len());
+        assert_eq!(HIGH_MOTION_INTRA_LAST_FROM, HIGH_MOTION_INTRA_RUN_LEVEL_0.len());
+        assert_eq!(&INTRA_NORMAL_SCAN[..8], &[0, 8, 1, 2, 9, 16, 24, 17]);
+        assert_eq!(I_CBPCY[0], (1, 1));
+        assert_eq!(DC_LOW_LUMA.len(), 120);
+    }
+}
