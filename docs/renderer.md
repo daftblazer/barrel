@@ -308,7 +308,9 @@ then to the target); Enter on the target gives it, Back goes a step back (offscr
 `BARREL_BATTLE_KEYS`, a key a frame while a turn waits: `confirm,confirm` attacks the first
 monster). Item opens the list of the battle items the member carries (the session's `carry`
 lines, `auto_battle::Tables::carry`; name and uses left, spent ones grey), Enter on one thrown at
-the monsters goes to the target, on one for the party uses it on the member itself. Move goes to
+the monsters goes to the target, on one for the party uses it on the member itself. However
+the battle ends, the uses left go back into the field's save (`Session::spent_in_save`; the
+field's own auto battles through `Session::use_items`). Move goes to
 the next sector round (`fight::Battle::move_turn`). Wait and Run are given (Run: `fight::Battle::run_turn`; escaped, the battle ends and
 goes back to the field with no spoils and no lost day); Change is not yet. The battle is then fought
 again from its start with the commands so far (`auto_battle::fight_commanded`: the same

@@ -534,6 +534,39 @@ impl Session {
         out
     }
 
+    /// Member `c`'s battle items get the uses a battle left them (`uses`: index among its items,
+    /// uses left; `auto_battle::Tables::uses_left`). Spent ones stay carried at 0.
+    pub fn use_items(&mut self, c: usize, uses: &[(usize, i32)]) {
+        let Some(m) = self.party.get_mut(c) else { return };
+        for &(k, n) in uses {
+            if let Some(b) = m.battle_items.get_mut(k) {
+                b.uses = n;
+            }
+        }
+    }
+
+    /// [`Session::use_items`] on a field save's text: member `c`'s `carry` lines, in their order.
+    pub fn spent_in_save(text: &str, c: usize, uses: &[(usize, i32)]) -> String {
+        let mut k = 0;
+        let mut out = String::new();
+        for line in text.lines() {
+            let w: Vec<&str> = line.split_whitespace().collect();
+            if w.first() == Some(&"carry") && w.get(1).and_then(|v| v.parse::<usize>().ok()) == Some(c) {
+                match (uses.iter().find(|u| u.0 == k), BattleItem::parse(&w[2.min(w.len())..])) {
+                    (Some(&(_, n)), Some(mut b)) => {
+                        b.uses = n;
+                        out += &b.line(c);
+                    }
+                    _ => out += &format!("{line}\n"),
+                }
+                k += 1;
+            } else {
+                out += &format!("{line}\n");
+            }
+        }
+        out
+    }
+
     /// A lost battle in a field save's text: a day passes (`today` + 1; the game's wipe turns the
     /// date panel 8/20 → 8/21 on white, `docs/events.md` "A lost battle"); the rest is kept.
     /// Not yet the game's: the party comes back where the battle was touched, not on the area
@@ -835,6 +868,14 @@ mod tests {
         let (back, _) = Session::load(chain(), &text).unwrap();
         assert_eq!(back.party, s.party);
         assert_eq!(Session::party_in(&text), s.party);
+        // A battle spent one of Escha's two uses.
+        let spent = Session::spent_in_save(&text, 0, &[(0, 1)]);
+        let mut after = s.party.clone();
+        after[0].battle_items[0].uses = 1;
+        assert_eq!(Session::party_in(&spent), after);
+        let mut t = back;
+        t.use_items(0, &[(0, 1)]);
+        assert_eq!(t.party, after);
     }
 
     #[test]

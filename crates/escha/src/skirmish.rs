@@ -102,6 +102,12 @@ const MONSTER_SIZE: f32 = 100.0;
 /// (`battle_data::monster_size`, its `Chara.xml` radius). Returns the events and the winning
 /// side (0 the party). Every member's turn is the stand-in's ([`Skirmish::auto`]).
 pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>) {
+    let (events, winner, _) = fought(party, foes, foe_sizes, rules, rng, max_events);
+    (events, winner)
+}
+
+/// [`skirmish`], with what is left of each member's items after it ([`Skirmish::items_left`]).
+pub fn fought(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRules, rng: &mut Rng, max_events: usize) -> (Vec<Event>, Option<u8>, Vec<Vec<u32>>) {
     let mut s = Skirmish::new(party, foes, foe_sizes, rules, rng);
     let mut events = Vec::new();
     while events.len() < max_events && s.winner().is_none() {
@@ -111,7 +117,8 @@ pub fn skirmish(party: &[Member], foes: &[Foe], foe_sizes: &[f32], rules: ItemRu
             events.extend(s.auto(who, rng));
         }
     }
-    (events, s.winner())
+    let winner = s.winner();
+    (events, winner, s.items_left())
 }
 
 /// A member's command (a player's choice): the normal attack or one of the skills it may use
@@ -255,6 +262,11 @@ impl<'p, 'a> Skirmish<'p, 'a> {
     /// The fighters standing, in turn order (the timeline's: the next to act first).
     pub fn order(&self) -> Vec<usize> {
         self.battle.timeline.entries.iter().map(|&(c, _)| c as usize).filter(|&k| self.battle.fighters.get(k).is_some_and(|f| !f.down())).collect()
+    }
+
+    /// The uses left of each member's items, in their carried order.
+    pub fn items_left(&self) -> Vec<Vec<u32>> {
+        self.left.clone()
     }
 
     /// Member `who`'s items: (name, how many are left, whether it is thrown at the other side),

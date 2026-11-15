@@ -1366,6 +1366,7 @@ fn battle_people(root: &Path, group: i32, logy: bool, members: &[barrel_escha::s
         result: None,
         result_closed: false,
         lost_noted: false,
+        items_noted: false,
         wiped: None,
         drops_shown: false,
         turn,
@@ -1417,6 +1418,8 @@ struct BattlePlay {
     result_closed: bool,
     /// A lost battle's day has gone into the field's save.
     lost_noted: bool,
+    /// The battle items' spent uses are in the field's save.
+    items_noted: bool,
     /// A lost battle's wipe: when it began and the day it turns to.
     wiped: Option<(f32, u32)>,
     /// A won battle's drops screen has been shown.
@@ -4292,6 +4295,11 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                                 }
                                 // The spoils: money in, experience for the members who fought.
                                 let (exp, money) = tables.spoils(&o);
+                                if let Some(s) = session.as_mut() {
+                                    for (slot, &(c, _)) in party.iter().enumerate() {
+                                        s.use_items(c, &tables.uses_left(c, o.items_left.get(slot).map_or(&[][..], Vec::as_slice)));
+                                    }
+                                }
                                 if let Some(s) = session.as_mut().filter(|_| o.winner == Some(0)) {
                                     s.won(&[party[0].0, party[1].0], exp, money, &tables.exp);
                                     s.found(&o.drops);
@@ -4770,6 +4778,15 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                 if presenter.is_none() && play.waiting()
                     && let Some(b) = battle_keys.pop_front() {
                         play.press(b);
+                    }
+                // Over, however it ended: the battle items' uses left go into the field's save.
+                if play.over() && !play.items_noted
+                    && let Some(save) = carry.back.as_mut().and_then(|b| b.1.save.as_mut()) {
+                        for (slot, &c) in play.charas.iter().enumerate() {
+                            let uses = play.fight.tables.uses_left(c, play.outcome.items_left.get(slot).map_or(&[][..], Vec::as_slice));
+                            *save = barrel_escha::session::Session::spent_in_save(save, c, &uses);
+                        }
+                        play.items_noted = true;
                     }
                 // Over and won: the spoils go into the field's save (money, the fighters'
                 // experience, the drops) and the Result screen comes up with the party's

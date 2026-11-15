@@ -46,8 +46,9 @@ pub struct Tables {
     item_names: Vec<String>,
     /// `item_potential.xml`'s traits ([`Tables::with_traits`]); none: carried items roll no bonus.
     traits: Vec<bd::Trait>,
-    /// The battle items each member carries ([`Tables::carry`]).
-    held: Vec<Vec<crate::skirmish::Held>>,
+    /// The battle items each member carries ([`Tables::carry`]), and for each the index of
+    /// the session item it was made from.
+    held: Vec<Vec<(usize, crate::skirmish::Held)>>,
 }
 
 impl Tables {
@@ -91,14 +92,21 @@ impl Tables {
         }
         self.held[member] = items
             .iter()
-            .filter_map(|u| {
+            .enumerate()
+            .filter_map(|(k, u)| {
                 let row = self.item_battles.iter().find(|b| b.item == u.item)?;
                 let name = self.item_names.get(u.item as usize).cloned().unwrap_or_default();
                 let action = crate::battle::item_action(&name, row.target, row.area, row.wait, &u.effects, &self.effects);
                 let traits = u.traits.iter().filter_map(|&t| self.traits.get(t).cloned()).collect();
-                Some(crate::skirmish::Held { action, power: crate::battle::item_power(u.quality), count: u.uses.max(0) as u32, traits })
+                Some((k, crate::skirmish::Held { action, power: crate::battle::item_power(u.quality), count: u.uses.max(0) as u32, traits }))
             })
             .collect();
+    }
+
+    /// The uses left after a battle of member `member`'s carried items (`left`: an outcome's
+    /// [`Outcome::items_left`] entry for it), as (index among the session's items, uses).
+    pub fn uses_left(&self, member: usize, left: &[u32]) -> Vec<(usize, i32)> {
+        self.held.get(member).map(|h| h.iter().zip(left).map(|((k, _), &n)| (*k, n as i32)).collect()).unwrap_or_default()
     }
 
     /// From the English executable, `item_effect.xml`'s table (`effects_xml`) and `Chara.xml`'s
@@ -162,6 +170,8 @@ pub struct Outcome {
     pub monsters: Vec<usize>,
     /// What the defeated monsters dropped (a won battle only): item, count, quality.
     pub drops: Vec<(i32, i32, f32)>,
+    /// The uses left of each party member's items (party order, their battle items' order).
+    pub items_left: Vec<Vec<u32>>,
 }
 
 impl Outcome {
@@ -234,7 +244,7 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
         let list = t.lists.get(c).ok_or_else(|| format!("character {c}: no skill list"))?;
         let mut member = crate::skirmish::Member::new(block.clone(), mp, list, &t.skills).ok_or("no party attack")?;
         member.size = bd::party_size(&t.radii, c).unwrap_or(0.0);
-        member.items = t.held.get(c).cloned().unwrap_or_default();
+        member.items = t.held.get(c).map(|h| h.iter().map(|(_, h)| h.clone()).collect()).unwrap_or_default();
         start.push([block.hp, block.hp, mp, mp]);
         members.push(member);
         names.push(MEMBER_NAMES.get(c).map_or_else(|| format!("member {c}"), |n| n.to_string()));
@@ -250,10 +260,10 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
     let sizes: Vec<f32> = drawn.iter().map(|&k| bd::monster_size(&t.radii, k).unwrap_or(MONSTER_SIZE)).collect();
     let kinds: Vec<&str> = t.kinds.iter().map(String::as_str).collect();
     let rules = crate::skirmish::ItemRules { acts: &t.acts, kinds: &kinds, effects: &t.effects };
-    let (events, winner, turn) = match commands {
+    let (events, winner, turn, items_left) = match commands {
         None => {
-            let (events, winner) = crate::skirmish::skirmish(&members, &foes, &sizes, rules, rng, MAX_EVENTS);
-            (events, winner, None)
+            let (events, winner, left) = crate::skirmish::fought(&members, &foes, &sizes, rules, rng, MAX_EVENTS);
+            (events, winner, None, left)
         }
         Some(commands) => run_commanded(&members, &foes, &sizes, rules, rng, commands),
     };
@@ -279,7 +289,7 @@ fn fight_with(t: &Tables, party: &[(usize, i32)], drawn: &[usize], rng: &mut Rng
             }
         }
     }
-    Ok((Outcome { names, start, events, winner, monsters: drawn.to_vec(), drops }, turn))
+    Ok((Outcome { names, start, events, winner, monsters: drawn.to_vec(), drops, items_left }, turn))
 }
 
 /// A member's turn waiting for a command: who, the skills it may use (name, MP cost, whether it
@@ -310,7 +320,7 @@ pub fn fight_commanded(t: &Tables, party: &[(usize, i32)], drawn: &[usize], mut 
     fight_with(t, party, drawn, &mut rng, Some(commands))
 }
 
-fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fighter], sizes: &[f32], rules: crate::skirmish::ItemRules, rng: &mut Rng, commands: &[Command]) -> (Vec<Event>, Option<u8>, Option<Turn>) {
+fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fighter], sizes: &[f32], rules: crate::skirmish::ItemRules, rng: &mut Rng, commands: &[Command]) -> (Vec<Event>, Option<u8>, Option<Turn>, Vec<Vec<u32>>) {
     let mut s = crate::skirmish::Skirmish::new(members, foes, sizes, rules, rng);
     let mut events = Vec::new();
     let mut given = commands.iter();
@@ -328,12 +338,12 @@ fn run_commanded(members: &[crate::skirmish::Member], foes: &[crate::duel::Fight
             Some(&c) => events.extend(s.command(who, c, rng)),
             None => {
                 let skills = s.skills(who).into_iter().map(|(k, cost, can)| (k.name.clone(), cost, can)).collect();
-                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who), sector: s.battle.fighters[who].slot - 3, items: s.items(who) }));
+                return (events, None, Some(Turn { who, skills, foes: s.foes_standing(), order: s.order(), slots: s.slots(), next_places: s.next_places(who), sector: s.battle.fighters[who].slot - 3, items: s.items(who) }), s.items_left());
             }
         }
     }
     let winner = s.winner();
-    (events, winner, None)
+    (events, winner, None, s.items_left())
 }
 
 #[cfg(test)]
@@ -349,6 +359,7 @@ mod tests {
             winner: Some(0),
             monsters: vec![0],
             drops: Vec::new(),
+            items_left: Vec::new(),
         };
         assert_eq!(o.lines(), vec!["Escha uses Attack on Puni: 12 damage (0 HP left)".to_string(), "the party wins".into()]);
     }
@@ -409,6 +420,8 @@ mod tests {
             let (o, turn) = fight_commanded(&t, &[(0, 1), (1, 1)], &[rat], rng.clone(), &commands).unwrap();
             if thrown {
                 assert!(o.events.iter().any(|e| matches!(e, Event::Acted { who: 0, skill, .. } if *skill == name)), "{:?}", o.lines());
+                // One of its two uses spent, back on the session's item 0.
+                assert_eq!(t.uses_left(0, &o.items_left[0]), vec![(0, 1)]);
                 return;
             }
             let Some(turn) = turn else { panic!("the battle ended first: {:?}", o.lines()) };

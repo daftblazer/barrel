@@ -230,5 +230,6 @@ likely settle them where static reading failed.
 
 - Battle items: where Item sits in an alchemist's command row (Barrel puts it after Attack, by
   command number; check a recording of Escha's or Logy's turn), choosing a party member for a
-  heal item (Barrel uses it on the user), and the uses spent in a battle are not written back
-  to the session's `carry` lines yet. A new game's starting battle items are not read.
+  heal item (Barrel uses it on the user), and when spent items fill up again (Barrel keeps them
+  at 0 uses; the game refills them at the atelier, not read). A new game's starting battle
+  items are not read.
