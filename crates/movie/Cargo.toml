@@ -1,0 +1,9 @@
+[package]
+name = "barrel-movie"
+description = "Barrel's movie playback: native VC-1 Advanced and WMA 9 Pro decoders for the games' .wmv files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+barrel-formats = { path = "../formats" }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/formats", "crates/cli", "crates/render", "crates/engine", "crates/escha", "crates/audio"]
+members = ["crates/formats", "crates/cli", "crates/render", "crates/engine", "crates/escha", "crates/audio", "crates/movie"]
 
 [workspace.package]
 version = "0.1.0"

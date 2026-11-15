@@ -2137,5 +2137,13 @@ also those inside the header extension's extended stream properties) and puts ea
 media objects back together from the packets' payloads (single or multiple, replicated data
 with object size and time, compressed payloads). `avantitle.wmv` (96.24 s) gives 282 audio objects
 of 8,192 bytes and 2,883 video objects, as ffmpeg reads it: about 29.97 frames a second, though
-the stream is tagged 59.94 (VC-1's own picture headers will say whether frames repeat or are
-fields).
+ffmpeg guesses 59.94 (the sequence header's display rate is 30000/1001, and no picture repeats).
+
+The video (`barrel_movie::vc1`): the codec data is one byte (0x25), the sequence header (start
+code 0x0F) and an entry point (0x0E); each ASF object is one frame, escaped but without a start
+code (`avantitle` ends with one end-of-sequence unit, 0x0A). `avantitle`'s sequence: level 3,
+4:2:0, 1920 × 1080, progressive, `PULLDOWN` on (each picture's `RPTFRM`, always 0 here), one HRD
+bucket; its entry point: closed, `REFDIST_FLAG`, loop filter, extended motion vectors (no
+extended differential), variable-size transform, overlap transform, `DQUANT` 0, quantizer
+implied by `PQINDEX`. Its 2,883 frames: 79 I (all the key frames), 1,229 P, 1,430 B, 6 BI and
+139 skipped.

@@ -113,6 +113,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "barrel-movie"
+version = "0.1.0"
+dependencies = [
+ "barrel-formats",
+]
+
+[[package]]
 name = "barrel-render"
 version = "0.1.0"
 dependencies = [
