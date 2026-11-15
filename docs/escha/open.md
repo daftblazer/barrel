@@ -263,3 +263,7 @@ likely settle them where static reading failed.
   `0x141077e78` / `0x141077e7c` that stop it and the carry +0x1458 are not modelled; the start's
   300 case (setup +0x38 = 1) neither; the support attacks and guards that spend it
   (`0x140192879`) are not in yet.
+
+- Support costs: Escha and Katla 100, Logy 50 for a Support Attack (live, 2026-11-15); where the
+  cost comes from (the request's +0x5c through the timeline entry `0x14018d890`) and why Logy's
+  is half (a passive or his equipment?) are not read; Support Guard's cost (50?) not confirmed.

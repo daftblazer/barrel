@@ -1390,6 +1390,15 @@ Support Attack (act 6 `ASSIST_ATTACK`, 45 to 50 or 68 to 75) and Support Guard (
 `ASSIST_GUARD`, 33) have records per member (154/155, 168/169, ...). `battle::support_gain`
 is the gain.
 
+**Checked live** (2026-11-15, the copied save at the Ruins Entrance, recorded as
+escha-support-attack): the gauge was 100 at the start; a plain single-target hit added 25, a
+felling hit 75, a critical 37, and the monsters' hits on the party nothing, as
+`battle::support_gain` gives. A Support Attack took 100 for Escha and for Katla and 50 for Logy
+(taken as it is chosen, before the supporter's hit; that hit then adds 25 as a party hit: seen
+for Escha and Katla, not within 4.5 s for Logy). A Support Guard was offered with the gauge at
+75; one most likely taken there cost 50. The support's banner reads "Support Attack" and its
+damage rate 105% (the attack's own 5).
+
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first
 (a flank attack and a critical, labelled 140 % once the attack's own 5 was added). Without the
