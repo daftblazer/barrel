@@ -168,6 +168,12 @@ likely settle them where static reading failed.
   on the member who acted last, before the Result screen. Which member and when `_02` plays are
   not read.
 
+- **Battle camera between actions.** Choosing a target takes `setTargetCameraCraneShot`'s
+  high form (seen in the recording); when the game takes the low form, the cross-fade into it,
+  and point 13 (`MODEL_OFFSET_DEFENCE`) are not read. The command choice's camera (the
+  recording holds a slow close-up of the member, `macro_battle.nut` has no function for it that
+  is read yet) and the camera while monsters choose are still Barrel's overview.
+
 ## Synthesis
 
 - **Property point spending** (+0x3f8): only UI reads it; a trait's `point` is likely its PP

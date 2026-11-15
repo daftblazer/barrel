@@ -1724,6 +1724,24 @@ impl BattlePlay {
         lengths
     }
 
+    /// The camera while a member chooses a target (`macro_battle.nut`'s
+    /// `setTargetCameraCraneShot`, high form): the eye at the member's point 13
+    /// (`MODEL_OFFSET_DEFENCE`, not read: its place) and (0, 800, −600) turned by its facing,
+    /// looking at the battle's origin. The recording (`ruins-entrance-battle-stats-60hz`, 353 s)
+    /// shows the high form for a target choice; when the game takes the low one, (0, 200, −400),
+    /// is not read. The game cross-fades into it (`POST_EFFECT_CROSS_FADE`, 25), Barrel cuts.
+    fn target_camera(&self) -> Option<([f32; 3], [f32; 3])> {
+        if !matches!(self.choosing, Choosing::Target { .. } | Choosing::ItemTarget(_)) || !self.waiting() || !self.scenes.on {
+            return None;
+        }
+        let who = self.turn.as_ref()?.who;
+        let f = self.fighters.get(who)?.as_ref()?;
+        let (s, c) = f.facing.sin_cos();
+        let (x, y, z) = (0.0, 800.0, -600.0);
+        let eye = [f.place[0] + x * c + z * s, f.place[1] + y, f.place[2] - x * s + z * c];
+        Some((eye, BATTLE_CENTRE))
+    }
+
     /// The battle's opening camera (`SKILL_COMMON_SYSTEM_START_CAM_01`: in on the battle's
     /// origin over a second), the first step held until it ends. `_02` (circling down from
     /// above) is the other; which the game picks is not read, so Barrel always takes `_01`.
@@ -5364,6 +5382,14 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                                 instances[b.instance as usize].model = render_space(Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f), Vec3::from(p)));
                             }
                         if let (Some(e), Some(t)) = (snap.eye, snap.target) {
+                            battle_view.get_or_insert((eye, target));
+                            (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
+                        }
+                    }
+                    None if play.target_camera().is_some() => {
+                        // Choosing a target: the game's crane shot over the acting member.
+                        if let Some((e, t)) = play.target_camera() {
+                            let mirror = Vec3::new(-1.0, 1.0, 1.0);
                             battle_view.get_or_insert((eye, target));
                             (eye, target) = (Vec3::from(e) * mirror, Vec3::from(t) * mirror);
                         }
