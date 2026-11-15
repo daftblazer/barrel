@@ -552,6 +552,27 @@ no other effect), **Move 300**, **Run 250** (a constant method, `0x1401ba6a0`), 
 its caller gives. `battle::WAIT_COMMAND` / `MOVE_COMMAND` / `RUN_COMMAND`; Barrel gives Wait
 (`fight::Battle::wait_turn`).
 
+The factory (`0x1401b9f70 (ctx, kind, value, …)`, through `0x1401b9e10`) picks the action by
+kind from a table at `0x1401ba2a8`: 5 Move (`0x140808bf8`, +0x38 = 300), 6 Wait (`0x140808c48`,
+320), 7 Change (`0x140808ac8`, +0x38 = 0, +0x3c = the value), **8 Run** (`BtlCharaActionEscape`,
+`0x140808a78`, +0x38 = the value). The value is the command record's +0x28 (kind at +0x24),
+set by `0x1401ab300 (command, kind, value, time)`; the battle script's command
+(`0x1401acb80`: kind, value and time from its arguments 3 to 5) is one writer, the player's
+command row is another, not yet traced.
+
+Run's execute (`0x1401ba560`) decides the escape:
+
+    chance = actor stat 7 (speed) - action +0x38 + 60
+           + the actor's value for trait 0x82 when it has one (virtual +0x48 / +0x50)
+           + 30 × (tries - 3) when this battle has seen more than 3 tries
+    escaped = Rng::chance(chance)                 (0x1404ca5f0)
+
+`tries` is the global `0x141077dcc`, raised after every attempt. On success the battle's
+escape flag `0x141077e30` is set to 1 and the party leaves (`0x1401b2b30` on the battle +0x8d0,
+`0x14019b0a0`); on failure `0x14019b5b0` runs, the battle's +0x890 gets event 0x0f for the actor
+(`0x1401c62a0`) and the actor's +0x2f4 is set to 1. Not yet known: the player's command value
+(the subtrahend), and where `tries` is reset.
+
 ### Falling and guts (executable)
 
 After each effect on a target (`0x1401c0676` and on) the game sets the MP power back to 100,

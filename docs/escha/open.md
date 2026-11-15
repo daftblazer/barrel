@@ -137,6 +137,10 @@ likely settle them where static reading failed.
   found.
 - **Reaction queue timing.** When a queued boss reaction acts, against the battle state machine
   (`0x1401d4308`..`0x1401d5d4f`).
+- **Run's escape value.** The escape chance subtracts the Run action's +0x38, which the
+  factory copies from the command record's +0x28; the player's command row writes it somewhere
+  not yet found (the script command `0x1401acb80` is the only writer traced). Next: a live read
+  of the action's +0x38 on the oracle, and where `tries` (`0x141077dcc`) is reset.
 - **Missing rules for a full battle** (stage 4): traits, states, support attacks, items in the
   loop; see `crates/game/src/duel.rs`'s header for what the partial battle leaves out.
 
