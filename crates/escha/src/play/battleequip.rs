@@ -10,8 +10,7 @@
 //! The card is the Basket card's layout 16 left and 10 down from where the Basket page puts it,
 //! without its panel (`basketpage::card_at`); the node places the layout 404 gives its nested
 //! layouts are the Basket's, the game moves them. The slot icons' cut is the slot's kind (weapon
-//! 1, armour 2, accessories 3). The pulse is fitted to the capture's nine frames (60 apart in
-//! phase, see [`pulse`]).
+//! 1, armour 2, accessories 3). The bar's pulse is the page's own clock's (see [`pulse`]).
 //!
 //! Not yet the game's: the cursor stays on the first slot (no moving, no list, no comparison
 //! arrows of layout 406), the item's effect lines (the card shows its traits and properties).
@@ -53,24 +52,27 @@ pub const FOOTER_ROW: usize = 17;
 /// The cursor's glow from the chosen slot's icon (the capture: (56, 140) with the icon at (146, 206)).
 const CURSOR_FROM_ICON: [i32; 2] = [-90, -66];
 
-/// The pulse's far colour (the capture's tan at 2820), its period in ticks of the clock the glows
-/// keep (`game frame + 204`), the tick it is white at, and the curve's exponent. Fitted to the
-/// nine captured frames (the first slot's bar at 2700 to 2860, every 20).
-const TAN: [f32; 3] = [0.877, 0.703, 0.364];
-const PULSE_PERIOD: f32 = 62.125;
-const PULSE_WHITE_AT: f32 = 6.5;
-const PULSE_SHAPE: f32 = 0.75;
+/// The lit slot bar's pulse, the same on the Battle and the Adventure Equip. pages: its colour
+/// runs from white to a tan and back as a triangle wave in the page's own ticks (since it opened),
+/// white a moment before the opening. Read from the every-frame capture `equip-open` (frames 2590
+/// to 2800, the page opened at 2600): the far colour (the bar's minimum, 219, 166, 64), constant
+/// slopes, the white held about 2.5 ticks and the tan about 1.5, the period 60.7 ticks in that
+/// run. The game's timer is time-based and its period in ticks wanders by run: the nine frames of
+/// the Battle and Adventure captures (20 ticks apart, other runs) fit 62.15 (`PULSE_PERIOD`,
+/// `PULSE_WHITE_AT`, fitted to those, the checks), within 2 levels of the colour at the
+/// frames where the runs' own timers agree, a few levels off elsewhere.
+const TAN: [f32; 3] = [219.0 / 255.0, 166.0 / 255.0, 64.0 / 255.0];
+const PULSE_PERIOD: f32 = 62.15;
+const PULSE_WHITE_AT: f32 = -2.9;
+/// The share of the triangle's rise held at white and at tan (the colour clips at both ends).
+const PULSE_WHITE_HOLD: f32 = 0.04;
+const PULSE_TAN_HOLD: f32 = 0.02;
 
-/// The chosen slot bar's colour at clock tick `tick`: white to tan.
-fn pulse(tick: u32) -> [u8; 3] {
-    pulse_with(tick, PULSE_PERIOD, PULSE_WHITE_AT)
-}
-
-/// The same pulse with another period and white tick: a page's pulse starts when it opens, so
-/// each page's phase is its own (the Adventure Equip. page's frame is fitted apart).
-pub fn pulse_with(tick: u32, period: f32, white_at: f32) -> [u8; 3] {
-    let phase = (tick as f32 - white_at) / period * std::f32::consts::TAU;
-    let u = ((1.0 - phase.cos()) / 2.0).powf(PULSE_SHAPE);
+/// The pulse's colour `age` ticks after the page opened: white to tan.
+pub fn pulse(age: u32) -> [u8; 3] {
+    let phase = ((age as f32 - PULSE_WHITE_AT) / PULSE_PERIOD).rem_euclid(1.0);
+    let rise = 1.0 - (phase * 2.0 - 1.0).abs();
+    let u = ((rise - PULSE_WHITE_HOLD) / (1.0 - PULSE_WHITE_HOLD - PULSE_TAN_HOLD)).clamp(0.0, 1.0);
     TAN.map(|t| ((1.0 - (1.0 - t) * u) * 255.0).round() as u8)
 }
 
@@ -106,7 +108,7 @@ pub struct Worn {
 }
 
 /// The slot panel (403): its stretched panels, bars and the four slots.
-fn slots(pe: &Pe, l: &Layouts, w: &Worn, chosen: usize, tick: u32, cursor: &mut Option<[i32; 2]>) -> Vec<Element> {
+fn slots(pe: &Pe, l: &Layouts, w: &Worn, chosen: usize, age: u32, cursor: &mut Option<[i32; 2]>) -> Vec<Element> {
     let mut out = Vec::new();
     let (mut slot, mut first_icon) = (0, 0);
     for p in l.screen.iter().filter(|p| p.path.get(1) == Some(&SLOT_PANEL)) {
@@ -124,7 +126,7 @@ fn slots(pe: &Pe, l: &Layouts, w: &Worn, chosen: usize, tick: u32, cursor: &mut 
             // A slot's nodes: its bar (only the chosen one's is drawn), name text, kind icon.
             let item = w.slots[slot].as_ref();
             match n.part {
-                SLOT_BAR if slot == chosen => out.push(Element::Tinted { part: SLOT_BAR, cut: n.cut, at: p.at, rgb: pulse(tick) }),
+                SLOT_BAR if slot == chosen => out.push(Element::Tinted { part: SLOT_BAR, cut: n.cut, at: p.at, rgb: pulse(age) }),
                 0x164 => out.extend(item.and_then(|i| layout::text(pe, p).map(|t| raised(Text { colour: NAME_INK, ..t }, &i.name)))),
                 SLOT_ICON => {
                     // The icons are a fixed step apart (the layout's third and fourth are 2 low).
@@ -161,8 +163,9 @@ fn list(pe: &Pe, l: &Layouts) -> Vec<Element> {
 }
 
 /// All the page's elements for the chosen member `w`, slot `chosen` lit, `lead` the lead's
-/// character number, `tick` the clock's 60 Hz ticks.
-pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, chosen: usize, lead: usize, tick: u32) -> Vec<Element> {
+/// character number, `tick` the global clock's 60 Hz ticks (the cursor's glow), `age` the ticks since
+/// the page opened (the bar's pulse).
+pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, chosen: usize, lead: usize, tick: u32, age: u32) -> Vec<Element> {
     let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::picker::DESK_CUT, at: p.at }).collect();
     let mut cursor = None;
     for p in l.screen.iter().filter(|p| p.path.get(1) == Some(&NOTEBOOK) && p.path.len() == 2) {
@@ -170,7 +173,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, ch
     }
     let page: Vec<&Placed> = l.screen.iter().filter(|p| p.path.get(2) == Some(&crate::statuspage::RIGHT_PAGE)).collect();
     out.extend(crate::statuspage::right_page(pe, &page, &w.member, w.member.face.character as usize == lead));
-    out.extend(slots(pe, l, w, chosen, tick, &mut cursor));
+    out.extend(slots(pe, l, w, chosen, age, &mut cursor));
     out.extend(crate::picker::chrome(pe, (&l.footer, &words.footer), (&[], ""), &[], 0));
     out.extend(list(pe, l));
     if let Some(item) = w.slots.get(chosen).and_then(Option::as_ref) {
@@ -179,4 +182,18 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, ch
     out.extend(crate::picker::chrome(pe, (&[], ""), (&l.header, &words.header), &l.tab, crate::picker::Kind::BattleEquip.tab_cut()));
     out.extend(cursor.map(|at| Element::Sprite { part: crate::kit::CURSOR, cut: l.cursor.map_or(0, |f| f.cut(tick)), at }));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pulse_starts_white_and_runs_to_tan_and_back() {
+        // White at the opening (the white hold is 2.5 ticks wide, about 3 ticks before it), tan half
+        // a period on, white again a period on.
+        assert!(pulse(0).iter().all(|&c| c >= 240));
+        assert_eq!(pulse(28), [219, 166, 64]);
+        assert!(pulse(62).iter().all(|&c| c >= 240));
+    }
 }

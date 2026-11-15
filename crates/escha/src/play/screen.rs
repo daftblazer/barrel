@@ -52,8 +52,16 @@ pub fn set_offscreen_frames(n: u32) {
 /// flipbooks all run from one frame counter that was 204 ahead of the capture's frame number
 /// (`docs/escha/parity.md`, "Time alignment"), so a check against game frame F starts Barrel's
 /// clock at F + 204.
-fn clock_start() -> u32 {
+pub fn clock_start() -> u32 {
     std::env::var("BARREL_CLOCK_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+/// The ticks since the page on screen opened at the first frame of an offscreen check
+/// (`BARREL_PAGE_AGE`, default 0): a page's own animations run from its opening, not from the
+/// global clock, so a check against game frame F needs F less the frame of the press that opened
+/// the page (`docs/escha/parity.md`, "Page clocks").
+pub fn page_age_start() -> u32 {
+    std::env::var("BARREL_PAGE_AGE").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
 }
 
 /// The 60 Hz tick the game's clocks count (every animation's rates are in these ticks).

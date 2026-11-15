@@ -41,7 +41,7 @@ animation phase: a cycling sprite that matches at some frame but not at the same
 once for N frames and aligns frames 0..N-1 (frames with nothing on screen are left out; a Barrel
 that draws the same quads in all of them is reported). `diff` is unchanged. The 2D screens' clock starts at `BARREL_CLOCK_AT` (a tick, default 0;
 docs/escha/parity.md, "Time alignment"): a plain check against game frame F uses F + 204 for the
-Escha screens.
+Escha screens. A page's own animations (the picker's row frame, the Equip. pages' pulse) start when the page opens: `BARREL_PAGE_AGE=<ticks since the page opened>` is the age at the first frame (docs/escha/parity.md, "Page clocks").
 
 `PARITY_SKIP=prefix,...` leaves textures whose game file name starts with a prefix out of the
 diff on both sides, for what a check does not cover yet (`Data/x64/Effect/`: particles).

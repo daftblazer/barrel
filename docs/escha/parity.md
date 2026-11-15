@@ -14,13 +14,13 @@ Barrel frame.
 | field-enter (field HUD) | 3100 | `--field AREA_03_02 --load GAMEDATA00 --frames 120`, PARITY_SKIP=Data/x64/Effect/, `BARREL_ENTRY_DRAW=5` (the line is a random draw from the executable's field talk; `BARREL_ENTRY_LINE` still overrides it) | 0 | at parity with the draw fixed (the gauge in steps of 2 as on the area map) |
 | area-menu (main menu, first page) | 2220 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu`, frame 0 | 6 (0 with `BARREL_CLOCK_AT=2424`) | the chosen button's frame (part 0x1e), the Journal badge's strip (0x4a) and the cursor glow over the chosen button (74, 219; it was taken for the field effect's glow, it is the cursor's) turn with the clock; the name plate (layout 369) is drawn tilted 9 degrees clockwise about its node (the kind 7 node in 368, word 5 = -9) with its text (`Element::Tilted`), no scale |
 | menu-cmd-0 (main menu, Basket page) | 2560 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu basket`, frame 0 (366 before) | 2 (was 1: the lit frame's cut 1 matched at 2560 by chance while it stood still; 0 with `BARREL_CLOCK_AT=2764`) | the cursor glow (part 0x9f) and the lit cell frame (part 0x44, five steps of 10 ticks over cuts 0, 1, 2, 1, 0) turn with the clock. Items, qualities and order of the 34 held items equal the game's; the rest at parity: grid 568, card 752, Possessed box 706, empty places 26 (limit 60 less 34) |
-| menu-cmd-1 (main menu, Adventure Equip. picker) | 2500-2560 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu picker-adventure`, frame 0, `BARREL_CLOCK_AT=<frame + 204>` | 58 quads: 0 at 2500, 2520, 2540, 2560 (was 0, 1, 1, 1) | everything equal; the chosen row's frame (part 0x2, five cuts of 10 ticks, flipbook of layout 362) runs 10 ticks behind the global clock the glow keeps (`picker::Kind::pulse_lag`, see Picker pulse) |
-| menu-cmd-2 (main menu, Battle Equip. picker) | 2500-2560 | `--menu picker-battle`, same | 130 quads: 0, 0, 0, 0 (pulse on the global clock, lag 0) | five members (Escha, Katla, Wilbell, Awin, Logy) from the save's squad; at parity |
-| menu-cmd-4 (main menu, Status picker) | 2500-2560 | `--menu picker-status`, same | 130 quads: 0, 0, 1, 0 (was 0, 1, 0, 1) | the same list as Battle Equip. under another tab; the frame's cuts 0, 1, 0, 0 fit the 10-tick lag of Adventure Equip. at 2500, 2520 and 2560; 2540 reads 0 where the lag gives cut 1 (see Picker pulse) |
+| menu-cmd-1 (main menu, Adventure Equip. picker) | 2500-2560 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu picker-adventure`, frame 0, `BARREL_CLOCK_AT=<frame + 204> BARREL_PAGE_AGE=<frame - 2400>` | 58 quads: 0 at all four with `BARREL_PAGE_AGE=f-2410` (0, 1, 1, 1 with `f-2400`) | everything equal; the chosen row's frame (part 0x2, five cuts of 10 ticks, flipbook of layout 362) runs on the picker's own clock from its opening (see Page clocks; this run opened 10 ticks late) |
+| menu-cmd-2 (main menu, Battle Equip. picker) | 2500-2560 | `--menu picker-battle`, same | 130 quads: 0, 0, 0, 0 with `BARREL_PAGE_AGE=f-2400` | five members (Escha, Katla, Wilbell, Awin, Logy) from the save's squad; at parity |
+| menu-cmd-4 (main menu, Status picker) | 2500-2560 | `--menu picker-status`, same | 130 quads: 0, 1, 0, 1 with `f-2400`; 0, 0, 1, 0 with `f-2410` | the same list as Battle Equip. under another tab; the frame's cuts 0, 1, 0, 0 fit no page age at all four frames (see Page clocks); the every-frame `picker-open` (the same picker, every frame 2390 to 2600) is 0 at 11 of 13 frames tried with `f-2400`, the two others the cursor glow (global clock) one cut off |
 | menu-cmd-3 (main menu, Formation page) | 2500-2560 | `--menu formation`, same | 216 quads: 0 at 2560 with `BARREL_CLOCK_AT=2764` (was 10) | slots, plates, tabs, Status panel numbers (RES from the save's in-use block), cursor frame and glow at parity at all four frames; the bookmark's five pieces (layout 393, node kind 7 in 431, word 5 = 4) are tilted 4 degrees anticlockwise about the node, as `Placed::tilt` carries it |
 | menu-status-page (Status page of the picker) | 2700-2860 every 20 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu status-page`, frame 0, `BARREL_CLOCK_AT=<frame + 204>` | 80 quads: 0 at all nine frames (99 before: the older lead-only page) | desk cut 1, the figure 361, notebook, right page values (stats with equipment, RES from the save), the left page's slot icons, title and twelve empty lines, the "1/2" pager, footer, header and tab. The page is still (no flipbook, no glow). Escha's figure is drawn for every member |
-| menu-equip-battle (Battle Equip. page of the picker) | 2700-2860 every 20 | `--menu equip-battle`, same | 329 quads: 0 at 2700, 1 at 2780 and 2860 (the bookmark tilts since b3765a0) | left: the first slot's pulsing bar (phase, `battleequip::pulse` fitted) |
-| menu-equip-adventure (Adventure Equip. page of the picker) | 2700-2860 every 20 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu equip-adventure`, frame 0, `BARREL_CLOCK_AT=<frame + 204>` | 162 quads: 0 at 2700, 2740, 2800 and 1 at the other six (not drawn before: all 162 differed) | the one difference is the lit frame's pulse colour (`battleequip::pulse_with`, period 62.1, white at tick 6.4, fitted to the nine frames, within 2 %: its phase is the page's own, not the Battle page's); everything else equal: container grid 456 at (44, 252), Escha's three pieces of gear packed by equip cost, name tab 457, figure, card 752 with its "Equip. Cost" plate and seal, red effect lines |
+| menu-equip-battle (Battle Equip. page of the picker) | 2700-2860 every 20 | `--menu equip-battle`, `BARREL_CLOCK_AT=<frame + 204> BARREL_PAGE_AGE=<frame - 2600>` | 329 quads: 0 at 2740, 2760, 2780, 2820, 2860; 1 at 2700, 2720, 2800, 2840 (`BARREL_PAGE_AGE=f-2600`) | left: the first slot's pulsing bar (`battleequip::pulse`, the page's own clock, see Page clocks: the triangle wave read off `equip-open`; the nine captured frames come from another run whose timer is a few ticks off) |
+| menu-equip-adventure (Adventure Equip. page of the picker) | 2700-2860 every 20 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu equip-adventure`, frame 0, `BARREL_CLOCK_AT=<frame + 204>` | 162 quads: 0 at 2700, 2720, 2780, 2820 and 1 at the other five (`BARREL_PAGE_AGE=f-2600`) | the one difference is the lit frame's pulse colour (`battleequip::pulse`, the Battle page's: the two pages' colours agree at 2780 and 2820 and are within 3 levels elsewhere, so one page clock); everything else equal: container grid 456 at (44, 252), Escha's three pieces of gear packed by equip cost, name tab 457, figure, card 752 with its "Equip. Cost" plate and seal, red effect lines |
 | menu-cmd-5 (main menu, Assignment page) | 2560 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu assignment`, frame 0 (173 before) | 2 (was 1, as the Basket row; 0 with `BARREL_CLOCK_AT=2764`) | the cursor glow, the cursor frame (part 0xd) and the "Report!" glows (part 0x9c) turn with the clock; cards, percents, stamps, details and rank box at parity. State 5's "new" mark (part 0xd cut 15) is read from one square |
 | menu-cmd-7 (main menu, Journal page) | 2560 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu journal`, frame 0, `BARREL_CLOCK_AT=2764` | 0 at 2520 and 2560 (the page was not built before: the list stood in) ; 1 at 2500 and 2540 | five library tabs from layouts 485 to 491, desk, panel, header, footer, title tab, cursor glow: 26 quads. What is left is the chosen tab's pulsing plate (part 0x1a cut 4): its colour runs white to tan, four captured frames (0.91, 0, 0.82, 1.0 of the way to tan at 2500 to 2560) fit a cosine to a power only at the white frame and at 2560 (`journal::pulse`) |
 | menu-cmd-8 (main menu, Option command) | 2560 | `--field TOWN_04 --load GAMEDATA00 --area-map --menu option`, frame 0, `BARREL_CLOCK_AT=2764` | 0 (was 4: the name plate's tilt; 475 before: the Save/Load list stood in; 13 before the rules' cut-short pieces took their ink, `Element::InkedSlice`), the same at 2500, 2520, 2540 with their clocks | the command opens the Options screen (layout 511: volume sliders, Fast Forward Event, Voice Language, Default, Confirm) over the overview the game has drawn that frame; the page is at parity, the name plate tilted as in area-menu. The glow cut is the only thing that changes with time |
@@ -82,24 +82,43 @@ checks above with it), and an align over a Barrel run of 1700 frames from clock 
 | menu-cmd-5 | 2500-2560/20 | 0-1699 (same) | aligned: offset 1393, 0 mismatches over 4 game frames (plain: 2 at each): glow, cursor frame and "Report!" glows |
 | battle-walk | 3000 | 0-239 | the battle HUD now has a clock: the command row's flipbooks (diamond cuts 2 to 5, arrows 6 to 9 and 10 to 13) step at 10 cuts a second (node word 6; the area map's glow has word 6 = 8 and cycles at the 8 cuts a second the captures show), so a trace lists the row every 6 frames. `BARREL_BATTLE_COUNT=3`: best Barrel frame 234 (offset 2766 by the loose search), 7 mismatches at every frame: the leftovers above do not depend on the cut (the game's pieces are mid-animation, flipped and squashed, whatever cut). The phase is not resolved: one captured game frame holds the row (3200 and later are other states), so the offset (game frame - Barrel frame) fits any value; the game's cut there is 4 (uv x 1056) (Barrel's cut 4 shows on frames 12-17 + 24k of its clock) |
 
-### Picker pulse
+### Page clocks
 
-The chosen row's frame (part 0x2, five cuts of 10 ticks) in the three pickers, captured at frames 2500,
-2520, 2540, 2560 (uv row of the 816 px wide quad; the glow reads the same cuts, 2, 4, 7, 1, in all three,
-so the global clock `frame + 204` is the same in each):
+A page's own animations count ticks since the page opened (`Menu::age`, the tick at the press that
+opened it), not the global clock (`game frame + 204`) the glows and badges keep. Offscreen checks
+give the age at the first frame with `BARREL_PAGE_AGE=<ticks since the page opened>`, next to
+`BARREL_CLOCK_AT`: the game frame less the frame of the opening press. Pickers (A at 2400):
+`f - 2400`; member pages (Status, Battle Equip., Adventure Equip., A at 2600): `f - 2600`.
 
-| picker | cuts | phase |
-|---|---|---|
-| Battle Equip. (cmd-2) | 0, 2, 0, 1 | the global clock |
-| Adventure Equip. (cmd-1, chosen row in the second place) | 0, 1, 1, 0 | the global clock 10 ticks behind |
-| Status (cmd-4) | 0, 1, 0, 0 | no uniform stepping fits: sampled 20 ticks apart the 10-tick loop (cuts 0, 1, 2, 1, 0) gives one of 0 2 0 1, 1 1 0 2, 2 0 1 1, 1 0 2 0 or 0 1 1 0, and 0 1 0 0 is none; a search over loops with holds, up to 12 steps long, finds no pulse shape that gives all three runs either |
+```
+BARREL_CLOCK_AT=$((f+204)) BARREL_PAGE_AGE=$((f-2400)) PARITY_INDEX=... tools/parity.sh .../menu-cmd-4/draws $f --field ... --load g00.pcsave --area-map --menu picker-status
+BARREL_CLOCK_AT=$((f+204)) BARREL_PAGE_AGE=$((f-2600)) ...                .../menu-equip-battle/draws $f ... --menu equip-battle
+```
 
-Not the press time: A is pressed at frame 2400 in all three, and the cursor moves before it (1, 2, 4 DOWNs,
-the last at 2160, 2180, 2220) give no pattern. The pulse timer is its own and, like the title's prompt
-(whose period wanders by a frame), time-based and not tick-exact: `Kind::pulse_lag` sets 0 for Battle
-Equip. and 10 for the others (fitted to the three runs, not derived), which leaves the Status picker's
-frame 2540 (cut 0 against the lag's cut 1). A denser capture of one picker (every frame from the open)
-would show whether the pulse slips.
+**Picker row frame** (part 0x2, flipbook of layout 362: five cuts of 10 ticks, cut 0, 1, 2, 1, 0 of
+the sheet): the every-frame capture `picker-open` (frames 2390 to 2600, A at 2400) shows the row
+from 2410 at the sheet's v 0.070, 0.141, 0.070, 0, 0, 0.070 ..., ten frames each: exactly the
+flipbook's cut at `age` = frame - 2400 (cut 1 from tick 10; its cut 0 is not seen, the page fades in
+at 2410 to 2412). The "opening cut at 2405-2409" is the main menu's command plates fading out (the
+page's own list), not the row. The three picker captures (frames 2500, 2520, 2540, 2560, other
+runs, one per picker) do not all open at tick 0 of the frame counter: Battle Equip. (cmd-2) is at
+`f - 2400`, Adventure Equip. (cmd-1) at `f - 2410` (the page's opening is 10 ticks late in that
+run), the Status picker (cmd-4) at `f - 2410` gives 0, 1, 1, 0 for the captured 0, 1, 0, 0: one
+frame (2540) off at either base, and no uniform stepping fits all four (the timer is time-based
+and wanders between runs, like the equip pulse below). With the plain rule `f - 2400` the four frames give 0 mismatches for cmd-2, 3 for cmd-1 and 2 for cmd-4; with `f - 2410` cmd-1 is 0 at all four and cmd-4 has 1.
+
+**Equip. pages' bar pulse** (`battleequip::pulse`, the Battle slot bar and the Adventure lit
+frame: one function): the every-frame capture `equip-open` (frames 2590 to 2800, A at 2600, the
+first slot's bar quad (164, 212, 548, 256)) shows a triangle wave: constant colour slope
+(0.0256 of the range per frame), white held 4 to 5 frames and the tan (219, 166, 64) 1 to 2, half
+period 30.4: white at 2659.5, 2721, 2780.5, tan at 2628.5, 2690, 2749.5 (period 60.7). A
+clipped triangle (`white hold` 4 %, `tan hold` 2 % of the rise) fits the 192 frames to 0.024 RMS of
+the range; a cosine does not (the old fit, period 62.125, was one). The nine frames of
+menu-equip-battle / menu-equip-adventure (every 20, other runs) fit the same shape at a period
+of 62.15 (`PULSE_PERIOD`, `PULSE_WHITE_AT` -2.9: fitted to those nine and 18 samples within 8
+levels): the game's timer is time-based and wanders by about 2 % between runs, so checks sit 0 to
+4 mismatches of nine whatever the constants (the check's tolerance is 1.5 levels of 255, the
+bar's blue moves 6 levels a tick).
 
 The offsets differ between the rows because they tie: the flipbooks repeat every 64, 50 and 320 frames,
 so every offset equal to the best one modulo 1600 (or one of the other fitted values) gives the same

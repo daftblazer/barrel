@@ -49,11 +49,6 @@ const STRIP_TRIM: i32 = 4;
 const PICTURE_PERCENT: i32 = 60;
 /// The glow's place from the lit frame (the capture: (-12, 186) with the frame at (62, 262)).
 const CURSOR_FROM_FRAME: [i32; 2] = [-74, -76];
-/// The lit frame's pulse (`battleequip::pulse_with`), its period and the tick it is white at,
-/// fitted to the nine captured frames (frames 2700 to 2860 every 20, tick = frame + 204; three
-/// match exactly, the rest are within 2 %: the game's own phase jitters).
-const PULSE_PERIOD: f32 = 62.1;
-const PULSE_WHITE_AT: f32 = 6.4;
 /// The SysInfo.xml row ("Select a slot to change.") and the Menu_Line_Help.xml row (Select,
 /// Details, Character, Move, Return, Confirm) of the header and footer.
 pub const HEADER_ROW: usize = 45;
@@ -155,8 +150,10 @@ fn cells_of(gear: &[Gear]) -> Vec<usize> {
         .collect()
 }
 
-/// All the page's elements for `w` with gear `chosen` lit, `tick` the clock's 60 Hz ticks.
-pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, chosen: usize, tick: u32) -> Vec<Element> {
+/// All the page's elements for `w` with gear `chosen` lit, `tick` the global clock's 60 Hz ticks
+/// (the cursor's glow) and `age` the ticks since the page opened (the lit frame's pulse, the
+/// Battle Equip. bar's).
+pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, chosen: usize, tick: u32, age: u32) -> Vec<Element> {
     let cells = cells_of(&w.gear);
     let rows_used: Vec<usize> = cells.iter().map(|c| c / COLUMNS).collect();
     let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: crate::picker::DESK_CUT, at: p.at }).collect();
@@ -200,7 +197,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &crate::picker::Words, w: &Worn, ch
     }
     let mut cursor = None;
     if let Some(p) = lit {
-        out.push(Element::Tinted { part: p.node.part, cut: p.node.cut, at: p.at, rgb: crate::battleequip::pulse_with(tick, PULSE_PERIOD, PULSE_WHITE_AT) });
+        out.push(Element::Tinted { part: p.node.part, cut: p.node.cut, at: p.at, rgb: crate::battleequip::pulse(age) });
         cursor = Some([p.at[0] + CURSOR_FROM_FRAME[0], p.at[1] + CURSOR_FROM_FRAME[1]]);
     }
     out.extend(l.figure.iter().map(Element::stored));

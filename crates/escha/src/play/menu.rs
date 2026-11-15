@@ -107,6 +107,8 @@ pub struct Menu {
     pub container: bool,
     /// The clock's 60 Hz ticks since the menu opened (the glows' and badges' flipbooks).
     pub tick: u32,
+    /// The clock tick the page on screen opened at (a page's own animations count from it).
+    pub opened: u32,
     /// How many members the party has (the character pickers' and the formation's lists).
     pub party: usize,
 }
@@ -150,7 +152,7 @@ pub enum Outcome {
 
 impl Menu {
     pub fn new() -> Menu {
-        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true, tick: 0, party: 0 }
+        Menu { chosen: 0, first: 0, option: None, page: None, direct: false, container: true, tick: 0, opened: 0, party: 0 }
     }
 
     /// The menu opened straight on `page`, as the field's shortcuts do; backing out of the page
@@ -171,7 +173,7 @@ impl Menu {
             Start::Page(p) => (Some(p), None),
             Start::System => (None, Some(0)),
         };
-        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true, tick: 0, party: 0 }
+        Menu { chosen, first: (chosen + 1).saturating_sub(VISIBLE), page, option, direct: true, container: true, tick: 0, opened: 0, party: 0 }
     }
 
     /// The menu without its Container command (the chosen one stays the same command).
@@ -191,6 +193,20 @@ impl Menu {
 
     /// A button press, with `count` items in the basket (for its page).
     pub fn press(&mut self, b: Button, count: usize) -> Option<Outcome> {
+        let before = self.page.as_ref().map(std::mem::discriminant);
+        let outcome = self.press_page(b, count);
+        if self.page.as_ref().map(std::mem::discriminant) != before {
+            self.opened = self.tick;
+        }
+        outcome
+    }
+
+    /// The ticks since the page on screen opened (the page's own clock).
+    pub fn age(&self) -> u32 {
+        self.tick.saturating_sub(self.opened)
+    }
+
+    fn press_page(&mut self, b: Button, count: usize) -> Option<Outcome> {
         // A picker's confirm opens the member's page (Status, Battle Equip.); Back returns to it.
         use crate::picker::Kind;
         match self.page {
@@ -427,9 +443,9 @@ pub fn run(
     });
     let picker_layouts = crate::picker::Layouts::load(&pe);
     let formation_layouts = crate::formation::Layouts::load(&pe);
-    let picker_elements = |k: crate::picker::Kind, v: &crate::picker::Picker, tick: u32| {
+    let picker_elements = |k: crate::picker::Kind, v: &crate::picker::Picker, tick: u32, age: u32| {
         let faces: Vec<crate::overview::Face> = party.iter().map(|m| &m.face).filter(|f| k.lists(&[f.character as usize]).len() == 1).cloned().collect();
-        crate::picker::elements(&pe, &picker_layouts, &picker_words, k, v, &faces, lead_character, tick)
+        crate::picker::elements(&pe, &picker_layouts, &picker_words, k, v, &faces, lead_character, tick, age)
     };
     let status_layouts = crate::statuspage::Layouts::load(&pe);
     let status_words = words_at(crate::statuspage::HEADER_ROW, crate::statuspage::FOOTER_ROW);
@@ -462,16 +478,16 @@ pub fn run(
         });
         crate::adventureequip::Worn { name: name.into(), gear }
     };
-    let member_elements = |k: crate::picker::Kind, chosen: usize, tick: u32| match k {
+    let member_elements = |k: crate::picker::Kind, chosen: usize, tick: u32, age: u32| match k {
         crate::picker::Kind::Status => crate::statuspage::elements(&pe, &status_layouts, &status_words, &party, chosen, lead_character),
         crate::picker::Kind::AdventureEquip => match party.get(chosen) {
-            Some(m) => crate::adventureequip::elements(&pe, &adventure_layouts, &adventure_words, &adventure_worn(m.face.character as usize, &m.face.name), 0, tick),
+            Some(m) => crate::adventureequip::elements(&pe, &adventure_layouts, &adventure_words, &adventure_worn(m.face.character as usize, &m.face.name), 0, tick, age),
             None => Vec::new(),
         },
         crate::picker::Kind::BattleEquip => match party.get(chosen) {
             Some(m) => {
                 let w = crate::battleequip::Worn { member: crate::formation::Member { face: m.face.clone(), values: m.values.clone() }, slots: worn_items(m.face.character as usize) };
-                crate::battleequip::elements(&pe, &equip_layouts, &equip_words, &w, 0, lead_character, tick)
+                crate::battleequip::elements(&pe, &equip_layouts, &equip_words, &w, 0, lead_character, tick, age)
             }
             None => Vec::new(),
         },
@@ -514,12 +530,12 @@ pub fn run(
     every.extend(adventure_layouts.flips());
     for chosen in 0..party.len().max(1) {
         for k in [crate::picker::Kind::AdventureEquip, crate::picker::Kind::BattleEquip, crate::picker::Kind::Status] {
-            every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0));
+            every.extend(picker_elements(k, &crate::picker::Picker { chosen, count: party.len() }, 0, 0));
         }
         every.extend(formation_elements(&crate::formation::Formation { chosen, count: party.len() }, 0));
-        every.extend(member_elements(crate::picker::Kind::Status, chosen, 0));
-        every.extend(member_elements(crate::picker::Kind::BattleEquip, chosen, 0));
-        every.extend(member_elements(crate::picker::Kind::AdventureEquip, chosen, 0));
+        every.extend(member_elements(crate::picker::Kind::Status, chosen, 0, 0));
+        every.extend(member_elements(crate::picker::Kind::BattleEquip, chosen, 0, 0));
+        every.extend(member_elements(crate::picker::Kind::AdventureEquip, chosen, 0, 0));
     }
     every.extend(cursor.into_iter().flat_map(|f| crate::kit::cuts_of(crate::kit::CURSOR, f)));
     if let Some(v) = overview.as_ref().map(|v| crate::overview::Overview { new_journal: true, ..v.clone() }) {
@@ -575,8 +591,8 @@ pub fn run(
                 e.extend(option_elements(&o, m.tick));
                 e
             }
-            Some(Page::Picker(k, p)) => picker_elements(k, &p, m.tick),
-            Some(Page::Member(k, p)) => member_elements(k, p.chosen, m.tick),
+            Some(Page::Picker(k, p)) => picker_elements(k, &p, m.tick, m.age()),
+            Some(Page::Member(k, p)) => member_elements(k, p.chosen, m.tick, m.age()),
             Some(Page::Formation(f)) => formation_elements(&f, m.tick),
             None if m.option.is_none() && overview.is_some() => overview_elements(m, overview.as_ref().unwrap()),
             None => m.elements(&nodes, texts),
@@ -585,6 +601,10 @@ pub fn run(
     };
     let mut menu = start.map_or_else(Menu::new, Menu::at);
     menu.party = party.len();
+    // An offscreen check starts mid-page: the pages its keys open (and the one it starts on) opened
+    // `BARREL_PAGE_AGE` ticks before the clock's start.
+    menu.tick = screen::clock_start().saturating_sub(screen::page_age_start());
+    menu.opened = menu.tick;
     if !source.is_none_or(|s| s.container) {
         menu = menu.without_container();
     }
@@ -654,6 +674,24 @@ mod tests {
         assert_eq!(m.press(Button::Back, 0), None);
         assert_eq!(m.page, None);
         assert_eq!(m.press(Button::Back, 0), Some(Outcome::Close));
+    }
+
+    #[test]
+    fn a_page_counts_its_age_from_its_opening() {
+        let mut m = Menu::new();
+        m.tick = 100;
+        m.press(Button::Down, 0);
+        m.press(Button::Confirm, 0);
+        assert!(matches!(m.page, Some(Page::Basket(_))));
+        m.tick = 130;
+        assert_eq!(m.age(), 30);
+        // A press within the page keeps its clock; backing out and opening another restarts it.
+        m.press(Button::Down, 0);
+        assert_eq!(m.age(), 30);
+        m.press(Button::Back, 0);
+        m.press(Button::Down, 0);
+        m.press(Button::Confirm, 0);
+        assert_eq!(m.age(), 0);
     }
 
     #[test]

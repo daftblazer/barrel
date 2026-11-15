@@ -61,20 +61,6 @@ impl Kind {
         }
     }
 
-    /// Ticks the chosen row's frame pulse lags the global clock the cursor's glow keeps. The pulse
-    /// is not on the global clock (captured at frames 2500, 2520, 2540 and 2560, the global clock
-    /// being the frame + 204): Battle Equip.'s cuts 0, 2, 0, 1 are the clock's, Adventure Equip.'s
-    /// 0, 1, 1, 0 are the clock 10 ticks (one cut) behind, and the Status picker's 0, 1, 0, 0 are
-    /// that lag's at 2500, 2520 and 2560 but not at 2540 (no uniform 10-tick stepping makes that
-    /// run: the game's pulse timer is time-based and slips by up to a cut between captures, see
-    /// docs/escha/parity.md, "Picker pulse"). Fitted, not derived.
-    pub fn pulse_lag(self) -> u32 {
-        match self {
-            Kind::BattleEquip => 0,
-            Kind::AdventureEquip | Kind::Status => 10,
-        }
-    }
-
     /// The command the picker belongs to.
     pub fn command(self) -> crate::menu::Command {
         use crate::menu::Command;
@@ -179,8 +165,8 @@ pub fn chrome(pe: &Pe, footer: (&[Placed], &str), header: (&[Placed], &str), tab
 }
 
 /// The row of member `face` at `slot`: the nodes of layout 362 at the slot's place, the lead's
-/// without "Friend", the chosen one's with its frame cut by `tick` (the pulse's own clock, see [`Kind::pulse_lag`]).
-fn row(pe: &Pe, l: &Layouts, slot: [i32; 2], face: &Face, lead: bool, chosen: bool, tick: u32) -> Vec<Element> {
+/// without "Friend", the chosen one's with its frame cut by `age` (the page's own clock, ticks since the picker opened).
+fn row(pe: &Pe, l: &Layouts, slot: [i32; 2], face: &Face, lead: bool, chosen: bool, age: u32) -> Vec<Element> {
     let nodes: Vec<Placed> = l.row.iter().map(|p| shifted(p, slot)).collect();
     let texts = |p: &Placed| layout::text(pe, p).filter(|t| !(lead && t.text == "Friend"));
     let own: Vec<&Placed> = nodes.iter().filter(|p| p.node.part != FRAME).collect();
@@ -188,14 +174,15 @@ fn row(pe: &Pe, l: &Layouts, slot: [i32; 2], face: &Face, lead: bool, chosen: bo
     let numbers = if lead { &numbers[..FRIEND_NUMBER] } else { &numbers[..] };
     let mut out = crate::overview::face(pe, &own, &texts, &face.name, Some(face.character), numbers);
     if chosen && let Some(p) = nodes.iter().find(|p| p.node.part == FRAME) {
-        out.push(Element::Sprite { part: FRAME, cut: p.node.flip().map_or(0, |f| f.cut(tick)), at: p.at });
+        out.push(Element::Sprite { part: FRAME, cut: p.node.flip().map_or(0, |f| f.cut(age)), at: p.at });
     }
     out
 }
 
 /// All the picker's elements: `faces` the members listed (in order), `lead` the lead's character
-/// number, `tick` the clock's 60 Hz ticks.
-pub fn elements(pe: &Pe, l: &Layouts, words: &Words, kind: Kind, view: &Picker, faces: &[Face], lead: usize, tick: u32) -> Vec<Element> {
+/// number, `tick` the global clock's 60 Hz ticks (the cursor's glow) and `age` the ticks since the
+/// picker opened (the chosen row's frame).
+pub fn elements(pe: &Pe, l: &Layouts, words: &Words, kind: Kind, view: &Picker, faces: &[Face], lead: usize, tick: u32, age: u32) -> Vec<Element> {
     let mut out: Vec<Element> = l.desk.iter().map(|p| Element::Sprite { part: p.node.part, cut: DESK_CUT, at: p.at }).collect();
     out.extend(l.figure.iter().map(Element::stored));
     let first = 5usize.saturating_sub(faces.len()) / 2;
@@ -203,7 +190,7 @@ pub fn elements(pe: &Pe, l: &Layouts, words: &Words, kind: Kind, view: &Picker, 
     for (k, face) in faces.iter().enumerate() {
         let Some(&slot) = l.slots.get(first + k) else { break };
         let chosen = k == view.chosen;
-        out.extend(row(pe, l, slot, face, face.character as usize == lead, chosen, tick.saturating_sub(kind.pulse_lag())));
+        out.extend(row(pe, l, slot, face, face.character as usize == lead, chosen, age));
         if chosen {
             cursor = Some([slot[0] + CURSOR_FROM_ROW[0], slot[1] + CURSOR_FROM_ROW[1]]);
         }
