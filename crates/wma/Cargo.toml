@@ -1,0 +1,11 @@
+[package]
+name = "barrel-wma"
+description = "Barrel's WMA 9 Pro audio decoder, written in Rust after FFmpeg's wmaprodec (LGPL)"
+version.workspace = true
+edition.workspace = true
+license = "LGPL-2.1-or-later"
+
+[dependencies]
+
+[dev-dependencies]
+barrel-formats = { path = "../formats" }

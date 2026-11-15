@@ -2252,3 +2252,20 @@ the remapped one. B and BI pictures are filtered like I pictures and are not ref
 Checked end to end: all 2,883 pictures of `avantitle` in display order (anchors held back one
 picture, B / BI shown at once) are bit-exact with ffmpeg, loop filter on, at 15 to 25 ms a
 1080p picture on one PC core (`movie_tests::movie_against_ffmpeg`).
+
+### WMA 9 Pro audio
+
+`crates/wma` (`barrel-wma`) decodes the movies' WMA Pro audio. The format has no public
+specification; FFmpeg's `wmaprodec.c` is the only description, so this crate is written after it
+and is under the LGPL 2.1 or later (the rest of Barrel stays MIT and only calls it; nothing links
+FFmpeg). `avantitle`: 48 kHz stereo, 16 bits, extra data `10 00 03 00 00 00 … e0 00` (decode
+flags 0xe0: frames length-prefixed, a dynamic range gain in each frame, up to 16 subframes),
+packets of 8,192 bytes, 2,048 samples a frame (`Params`). A packet is a 4-bit sequence number,
+2 bits, the 17-bit count of bits finishing the previous packet's last frame, then frames; each
+frame's 17-bit length counts its own last bit, "another frame follows" (`Packets`). The frame
+header (`FrameHeader`): the tile header (each channel's subframe lengths, a fixed layout bit or
+per-channel "takes the next subframe" bits), an optional post-processing matrix, the gain, start
+/ end trims. All 2,256 frames of `avantitle` cut and read: 0 packets out of sequence, 19
+subframe layouts (1,759 frames one 2,048 block for both channels), trims 2,048 at the start and
+827 at the end: 2,255 × 2,048 − 827 = 4,617,413 samples, ffmpeg's count (the first frame is
+never output).

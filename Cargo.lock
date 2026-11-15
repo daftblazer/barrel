@@ -146,6 +146,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "barrel-wma"
+version = "0.1.0"
+dependencies = [
+ "barrel-formats",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
