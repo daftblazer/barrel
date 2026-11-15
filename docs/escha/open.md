@@ -253,3 +253,8 @@ likely settle them where static reading failed.
 - The damage rate panel is drawn level at its layout's places; the game tilts it about 7°
   (rising to the right), its labels lower and further left, the numbers higher (the
   ruins-entrance recording at 104 s). Its drawing code, and how long it stays, are not read.
+
+- The target cursor: while a target is chosen the game shows a cyan 3D mark over the target's
+  head (the ruins-entrance-battle-result recording at 102.8 s). It is not in a15_battle.g1t, so
+  likely an effect model; not found or drawn yet. The game's camera also moves behind the actor
+  facing the target while choosing; Barrel's stays put.

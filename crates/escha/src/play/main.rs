@@ -1533,8 +1533,11 @@ impl BattlePlay {
             Choosing::Item => turn.items.iter().map(|(name, left, _)| (format!("{name}  ×{left}"), *left > 0)).collect(),
             _ => turn.skills.iter().map(|(name, cost, can)| (format!("{name}  {cost} MP"), *can)).collect(),
         };
+        // While a target is chosen the game puts the row away (the ruins-entrance-battle-result
+        // recording at 102.8 s: the plate, the turn bar's line and mark, no row).
+        let targeting = matches!(self.choosing, Choosing::Target { .. } | Choosing::ItemTarget(_));
         Some(battlehud::Commands {
-            row: COMMAND_ROW.to_vec(),
+            row: if targeting { Vec::new() } else { COMMAND_ROW.to_vec() },
             at: self.row,
             skills: matches!(self.choosing, Choosing::Skill | Choosing::Item).then(|| (list, self.chosen)),
             title: String::new(),
@@ -5749,7 +5752,9 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
                         if let Some(c) = &commands {
                             // The game's row; the skills' list and the target's name still
                             // Barrel's own text.
-                            e.extend(battlehud::command_row(&c.row, c.at));
+                            if !c.row.is_empty() {
+                                e.extend(battlehud::command_row(&c.row, c.at));
+                            }
                             if let Some(plate) = &c.plate {
                                 e.extend(battlehud::target_plate(&h.plate_nodes, |p| barrel_escha::data::layout::text(&pe, p), plate));
                             }
