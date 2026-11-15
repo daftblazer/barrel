@@ -1397,7 +1397,9 @@ felling hit 75, a critical 37, and the monsters' hits on the party nothing, as
 (taken as it is chosen, before the supporter's hit; that hit then adds 25 as a party hit: seen
 for Escha and Katla, not within 4.5 s for Logy). A Support Guard was offered with the gauge at
 75; one most likely taken there cost 50. The support's banner reads "Support Attack" and its
-damage rate 105% (the attack's own 5).
+damage rate 105% (the attack's own 5). Barrel: `fight::Battle::support_act` (the gauge pays, the support
+skill acts out of turn), `skirmish::Skirmish::support` / `supporters`, the member's command-8
+skill (`skirmish::SUPPORT_ATTACK_COMMAND`) at `battle::support_attack_cost`.
 
 The hits were dealt at 100 + the steps known before them: 125 % in the second run (a flank
 attack: Wilbell 23 to 26 × 1.25 = 28 to 32, seen 28; Escha 1 to 2, seen 1) and 135 % in the first

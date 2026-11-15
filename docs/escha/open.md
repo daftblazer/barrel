@@ -267,3 +267,8 @@ likely settle them where static reading failed.
 - Support costs: Escha and Katla 100, Logy 50 for a Support Attack (live, 2026-11-15); where the
   cost comes from (the request's +0x5c through the timeline entry `0x14018d890`) and why Logy's
   is half (a passive or his equipment?) are not read; Support Guard's cost (50?) not confirmed.
+
+- Support Attacks in Barrel's battle: the supporter's own turn is left where it was (not
+  checked against the game: the recording's turn bar after a support would tell); members
+  other than Escha, Logy and Katla take 100; not yet offered in play (the prompts during a
+  party hit, Y / LB / RB / X by the plates) nor used by the stand-in.

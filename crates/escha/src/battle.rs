@@ -1316,6 +1316,17 @@ pub fn support_gain(bonus: i32, targets: usize, critical: bool, four: bool, fell
     if felled { gain + 50 } else { gain }
 }
 
+/// What a Support Attack takes from the gauge, by party member (0 Escha, 1 Logy, ...): read live
+/// (2026-11-15, the copied save) as 100 for Escha and Katla and 50 for Logy; where the game
+/// gets it (the request's +0x5c) is not read, so the others take 100 and an unknown member
+/// (`None`) too.
+pub fn support_attack_cost(member: Option<usize>) -> i32 {
+    match member {
+        Some(1) => 50,
+        _ => 100,
+    }
+}
+
 /// The gauge after adding `gain`, clamped.
 pub fn support_add(gauge: i32, gain: i32) -> i32 {
     (gauge + gain.clamp(0, SUPPORT_MAX)).clamp(0, SUPPORT_MAX)

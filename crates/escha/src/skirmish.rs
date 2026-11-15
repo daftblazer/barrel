@@ -26,6 +26,9 @@ pub struct Member<'a> {
     pub now: Option<(i32, i32)>,
     /// Its size in battle (its `Chara.xml` radius: `battle_data::party_size`); 0 when unknown.
     pub size: f32,
+    /// Its Support Attack (its skill list's command 8) and what it takes from the Support
+    /// gauge (`battle::support_attack_cost`).
+    pub support: Option<(&'a Skill, i32)>,
 }
 
 /// A carried item.
@@ -60,6 +63,10 @@ impl Held {
     }
 }
 
+/// The skill list's command that is the Support Attack (`docs/tables.md`, "Each party member's
+/// skills").
+pub const SUPPORT_ATTACK_COMMAND: u8 = 8;
+
 impl<'a> Member<'a> {
     /// A member from its skill list at `level`: command 0 is the attack, commands 1 to 3 the
     /// skills learnt at or below the level, at their listed MP cost (no equipment, so no cut).
@@ -72,7 +79,8 @@ impl<'a> Member<'a> {
             .filter(|e| (1..=3).contains(&e.command) && e.level.is_some_and(|l| i32::from(l) <= level))
             .filter_map(|e| Some((skill(e)?, battle::party_mp_cost(e.mp, 0, 0, 0))))
             .collect();
-        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0 })
+        let support = list.iter().find(|e| e.command == SUPPORT_ATTACK_COMMAND).and_then(skill).map(|s| (s, battle::support_attack_cost(None)));
+        Some(Member { block, mp, attack, skills, items: Vec::new(), now: None, size: 0.0, support })
     }
 
     /// The costliest affordable heal aimed at its own side (one that revives, when `revive`).
@@ -315,6 +323,21 @@ impl<'p, 'a> Skirmish<'p, 'a> {
         all
     }
 
+    /// Member `who` supports the action just given with a Support Attack on `target` (the
+    /// player's button while a party member's hit lands): nothing when it has none, the gauge
+    /// is short of its cost, it is down or the target is.
+    pub fn support(&mut self, who: usize, target: usize, rng: &mut Rng) -> Vec<Event> {
+        let Some((skill, cost)) = self.party.get(who).and_then(|m| m.support) else { return Vec::new() };
+        let mut all = self.battle.support_act(who, skill, cost, target, rng);
+        react(&mut self.battle, self.foes, self.party.len(), &mut self.reactions, &mut self.felled, 0, &mut all, rng);
+        all
+    }
+
+    /// The members who may support now (standing, their cost in the gauge), but not `actor`.
+    pub fn supporters(&self, actor: usize) -> Vec<usize> {
+        (0..self.party.len()).filter(|&k| k != actor && self.party[k].support.is_some_and(|(_, c)| self.battle.may_support(k, c))).collect()
+    }
+
     /// `who` acts by the stand-in (a member) or its rules (a monster).
     pub fn auto(&mut self, who: usize, rng: &mut Rng) -> Vec<Event> {
         let (party, foes, rules, n) = (self.party, self.foes, self.rules, self.party.len());
@@ -438,6 +461,28 @@ mod tests {
 
     fn skill(name: &str, wait: i32, lo: i32, hi: i32) -> Skill {
         Skill { name: name.into(), category: String::new(), wait, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: lo, max: hi, min2: 0, max2: 0 }], description: String::new() }
+    }
+
+    #[test]
+    fn a_member_supports_while_the_gauge_holds_its_cost() {
+        let table = [skill("Attack", 600, 1, 1), skill("Support Attack", 600, 45, 50)];
+        let list = [PartySkill { skill: 0, order: -1, command: 0, level: Some(0), mp: 0 }, PartySkill { skill: 1, order: -1, command: SUPPORT_ATTACK_COMMAND, level: None, mp: 0 }];
+        let block = StatBlock { level: 10, hp: 100, attack: 40, defense: 10, speed: 20, resist: [0; 4], stat12: 0, skills: Vec::new(), rules: Vec::new(), slots: [-1; 9], reactions: Vec::new() };
+        let party: Vec<Member> = (0..2).map(|_| Member::new(block.clone(), 0, &list, &table).unwrap()).collect();
+        assert_eq!(party[0].support.map(|(s, c)| (s.name.as_str(), c)), Some(("Support Attack", 100)));
+        let claw = skill("Claw", 600, 1, 1);
+        let foe = Foe { block: StatBlock { hp: 5000, speed: 1, ..block }, normal: &claw, skills: None, death_immune: false, chara: -1 };
+        let foes = [foe];
+        let acts = vec![crate::data::battle_data::ActInfo { flags: [false; 12], limit: 9999, last: 5 }; 8];
+        let rules = ItemRules { acts: &acts, ..ItemRules::default() };
+        let mut rng = Rng::from_state([1, 2, 3, 4]);
+        let mut s = Skirmish::new(&party, &foes, &[], rules, &mut rng);
+        // The battle starts the gauge at 100: one support, then none until hits refill it.
+        assert_eq!(s.supporters(0), vec![1]);
+        let e = s.support(1, 2, &mut rng);
+        assert!(e.iter().any(|e| matches!(e, Event::Acted { who: 1, skill, .. } if skill == "Support Attack")), "{e:?}");
+        assert!(s.supporters(0).is_empty(), "gauge {}", s.battle.support);
+        assert!(s.support(1, 2, &mut rng).is_empty());
     }
 
     #[test]

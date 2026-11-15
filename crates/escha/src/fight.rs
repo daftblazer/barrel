@@ -549,6 +549,30 @@ impl Battle {
 
     /// Its next wait (`0x1401b9b70`, `0x14018c9d0`) and the action counted (`0x1401aecda`); an
     /// action that wins the battle ends it before the wait.
+    /// Whether `who` may give a support costing `cost` now (`0x1401b7c00`: the gauge holds the
+    /// cost; the member is standing: its +0x282 / +0x281 and check 9 are taken as that).
+    pub fn may_support(&self, who: usize, cost: i32) -> bool {
+        self.support >= cost && self.fighters[who].side == 0 && !self.fighters[who].down()
+    }
+
+    /// A Support Attack by `who` on `target` (`0x140192760`): the gauge pays `cost` as it is
+    /// chosen, then `skill` acts as a party action (its hit fills the gauge as any does), out of
+    /// turn: the supporter's place on the timeline stays as it was. Nothing when it may not.
+    pub fn support_act(&mut self, who: usize, skill: &Skill, cost: i32, target: usize, rng: &mut Rng) -> Vec<Event> {
+        if !self.may_support(who, cost) || self.fighters[target].down() {
+            return Vec::new();
+        }
+        self.support = (self.support - cost).clamp(0, battle::SUPPORT_MAX);
+        let place = self.timeline.entries.iter().position(|&(c, _)| c as usize == who).map(|i| (i, self.timeline.entries[i].1));
+        let pending = self.pending;
+        let events = self.act_with(who, skill, None, target, None, None, rng);
+        if let Some((i, wait)) = place {
+            self.timeline.entries[i].1 = wait;
+        }
+        self.pending = pending;
+        events
+    }
+
     fn end_action(&mut self, who: usize, wait: i32, rng: &mut Rng) {
         if self.winner().is_none() {
             let wait = battle::action_wait(wait, self.fighters[who].stats[stat::SPEED], None, None, &mut self.pending);
@@ -616,6 +640,22 @@ mod tests {
         assert!(rate == 30 || rate == 40, "{rate}");
         // The gauge from its start: 25 for a single target, 37 on a critical.
         assert!(support == 125 || support == 137, "{support}");
+    }
+
+    #[test]
+    fn a_support_attack_pays_its_cost_and_keeps_the_supporters_turn() {
+        let fighters = vec![Fighter::new(&block(100), 0, 999), Fighter::new(&block(100), 0, 999), Fighter::new(&block(500), 1, 999_999)];
+        let mut b = Battle::new(fighters).with_act_steps(vec![5; 8]);
+        let mut rng = Rng::seeded(5);
+        let attack = Skill { name: "Support Attack".into(), category: String::new(), wait: 600, target: 2, spread: 0, effects: vec![SkillEffect { act: 0, element: None, min: 45, max: 50, min2: 0, max2: 0 }], description: String::new() };
+        let wait_before = b.timeline.entries.iter().find(|e| e.0 == 1).unwrap().1;
+        assert!(!b.may_support(1, 150), "100 in the gauge");
+        assert!(b.support_act(1, &attack, 150, 2, &mut rng).is_empty());
+        let e = b.support_act(1, &attack, 100, 2, &mut rng);
+        assert!(e.iter().any(|e| matches!(e, Event::Acted { who: 1, skill, .. } if skill == "Support Attack")), "{e:?}");
+        // 100 paid, then its own hit's 25 (37 on a critical).
+        assert!(b.support == 25 || b.support == 37, "{}", b.support);
+        assert_eq!(b.timeline.entries.iter().find(|e| e.0 == 1).unwrap().1, wait_before);
     }
 
     #[test]
