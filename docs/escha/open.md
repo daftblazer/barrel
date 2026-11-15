@@ -143,6 +143,11 @@ likely settle them where static reading failed.
 - **Missing rules for a full battle** (stage 4): traits, states, support attacks, items in the
   loop; see `crates/game/src/duel.rs`'s header for what the partial battle leaves out.
 
+- **Skill scenes' frame.** Which rotation a battle character's +0x880 object has (taken as
+  the party's facing towards the monsters for any target); how a monster's skill event names
+  its actor and target and which way its offsets turn; what characters 10002+ beyond the
+  stand-ins are; `skill_scene::play` is not shown in play yet.
+
 ## Synthesis
 
 - **Property point spending** (+0x3f8): only UI reads it; a trait's `point` is likely its PP

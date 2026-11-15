@@ -632,6 +632,18 @@ files numbered 11 to 26, come another way, not read). A monster's is its tag (`0
 e.g. `MONSTER_WARDOG_00`) and a number its caller gives (not read); a third path takes a whole
 name (format `0x140803730`). `battle::party_skill_event`.
 
+The skill events place their actors from one another: `s4` with anchor kind 5 (1,241 uses)
+or 1 (415) is `{character, kind, id, point, x, y, z}`, an event position (the story events use
+only kinds 0 and 3, and those stay field points). Kinds 1 and 5 resolve alike
+(`0x1402f0fa0`), the offset turned by the rotation of the object the character hangs from
+(+0x880's +0x240, else its own). `Skill_PARTY_ESCHA_0` ("basic placement from the target"):
+the actor (10000) is put 600 to the target's (10001) −z and runs in to 170 at 800/s, a camera
+stand-in (10004) goes 350 out facing the target, the eye behind it at (200, 200, −400) easing
+to (350, 150, −100) in a second; after the strike she runs 600 back along her own −z. So the
+target's anchoring rotation is the party's facing, not the monster's (taken so, not read).
+`event::Player::anchored_places` reads these (`Step::PlaceAt`), and
+`barrel_escha::skill_scene::play` plays an event between two fighters.
+
 **The skill camera.** `CameraCManual` (`0x1401eb170`, the camera of the battle skill events,
 `t1 1`) keeps the eye and the target as two moving points (+0x18 and +0x28):
 

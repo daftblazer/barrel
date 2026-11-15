@@ -4,6 +4,7 @@
 pub mod data;
 pub mod area_map;
 pub mod auto_battle;
+pub mod skill_scene;
 pub mod battle;
 pub mod bonus;
 pub mod calendar;

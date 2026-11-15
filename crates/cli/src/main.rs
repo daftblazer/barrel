@@ -3863,6 +3863,9 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
         Player::translated(&event, &messages, &table, barrel_formats::ebd_names::SOPHIE2, &[])?
     } else if ryza {
         Player::translated(&event, &messages, &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA)?
+    } else if file.parent().and_then(|d| d.file_name()).is_some_and(|d| d == "skill") {
+        // A battle skill event: its actors placed from one another.
+        Player::new(&event, &messages, &table)?.anchored_places()
     } else {
         Player::new(&event, &messages, &table)?
     };
@@ -3899,6 +3902,10 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
             Step::Place { action, character, position } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("{action:3} {who} at ({}, {}, {})", position[0], position[1], position[2]);
+            }
+            Step::PlaceAt { action, character, at } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), String::clone);
+                println!("{action:3} {who} at {}", describe_position(&at));
             }
             Step::PlaceNear { action, character, of, offset } => {
                 let who = |n: u32| names.get(n as usize).map_or("?", String::as_str).to_string();

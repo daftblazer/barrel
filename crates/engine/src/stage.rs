@@ -367,6 +367,10 @@ impl Stage {
                 }
                 None => self.unresolved += 1,
             },
+            Step::PlaceAt { character, at, .. } => match self.resolve(at) {
+                Some(p) => self.apply(&Step::Place { action: 0, character: *character, position: p }),
+                None => self.unresolved += 1,
+            },
             Step::Motion { character, motion, looping, blend, division, .. } => match self.characters.get_mut(character) {
                 Some(b) => b.motion = Some(Playing { motion: *motion, since: self.time, looping: *looping, blend: blend.max(0.0), division: *division }),
                 None => self.unresolved += 1,

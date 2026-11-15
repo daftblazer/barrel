@@ -351,6 +351,10 @@ pub enum Step<'a> {
     /// x, y, z}`; Ryza's events use it, Escha's never do): the offset turned by `of`'s facing
     /// (z along it), added to `of`'s position.
     PlaceNear { action: usize, character: u32, of: u32, offset: [f32; 3] },
+    /// A character is put at a position anchored to a thing (`s4` with anchor kind 1, 5 or 6,
+    /// as the battle skill events place their actors: `{character, kind, id, point, x, y, z}`,
+    /// the offset turned by the anchor's facing). Only with [`Player::anchored_places`].
+    PlaceAt { action: usize, character: u32, at: crate::camera::Position },
     /// A character plays a looping motion (`s10`; a `MOTION_*` number), blending over `blend`
     /// seconds.
     /// `s10` loops the whole clip (`0x1402036d0` with -1, -1 clears the play range); `s5`
@@ -463,6 +467,8 @@ pub struct Player<'a> {
     vars: [i32; 20],
     /// Watched again from the Extra menu: `w4` starts its actions.
     replay: bool,
+    /// `s4` with anchor kinds 1, 5 and 6 read as anchored positions ([`Step::PlaceAt`]).
+    anchored_places: bool,
 }
 
 /// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
@@ -500,7 +506,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -543,6 +549,15 @@ impl<'a> Player<'a> {
 
     /// Plays as `hero` (`Chara.xml` row: 0 Escha, the default, or 1 Logy), whom
     /// [`MASTER_CHARACTER`] then stands for.
+    /// Reads `s4`'s anchor kinds 1, 5 and 6 as positions anchored to a thing, as the battle
+    /// skill events use them (`Event/skill`: 1,241 kind 5, 415 kind 1, 2 kind 6). The story
+    /// events use only kinds 0 and 3, which stay world positions; Ryza's are not checked, so
+    /// this is off unless asked for.
+    pub fn anchored_places(mut self) -> Self {
+        self.anchored_places = true;
+        self
+    }
+
     pub fn hero(mut self, hero: u32) -> Self {
         self.hero = hero;
         self
@@ -637,6 +652,11 @@ impl<'a> Player<'a> {
             (CHARA_WAIT, [character, ..]) => out.push(Step::WaitForCharacter { character: self.slot(*character) }),
             (CHARA_TIME_WAIT, [character, hundredths, ..]) => {
                 out.push(Step::CharacterWait { action, character: self.slot(*character), seconds: f(*hundredths) / 100.0 })
+            }
+            (CHARA_POS_SET, [character, kind @ (1 | 5 | 6), rest @ ..]) if self.anchored_places && rest.len() >= 5 => {
+                if let Some((at, _)) = crate::camera::Position::read(&[&[*kind], rest].concat()) {
+                    out.push(Step::PlaceAt { action, character: self.slot(*character), at: self.slot_position(at) });
+                }
             }
             (CHARA_POS_SET, [character, 8, of, _, x, y, z, ..]) => {
                 out.push(Step::PlaceNear { action, character: self.slot(*character), of: self.slot(*of), offset: [f(*x), f(*y), f(*z)] })
@@ -1258,6 +1278,7 @@ mod tests {
                 Step::Command { name, .. } => name.unwrap_or("?").to_string(),
                 Step::Wait { seconds } => format!("wait {seconds}"),
                 Step::PlaceNear { character, of, offset, .. } => format!("place {character} at {offset:?} from {of}"),
+                Step::PlaceAt { character, at, .. } => format!("{character} at {at:?}"),
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
                 Step::EventFlagAdd { flag, amount } => format!("flag {flag} += {amount}"),
