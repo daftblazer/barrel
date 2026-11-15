@@ -125,6 +125,7 @@ dependencies = [
 name = "barrel-parity"
 version = "0.1.0"
 dependencies = [
+ "barrel-escha",
  "barrel-formats",
  "serde_json",
 ]

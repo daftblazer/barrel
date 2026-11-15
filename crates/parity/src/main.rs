@@ -4,6 +4,7 @@
 //!   barrel-parity textures <game folder> <index.tsv>   every texture's content hash and file
 //!   barrel-parity shader <trace dir> <name>            a captured shader's buffers and code
 //!   barrel-parity screen <trace dir> <frame> [index]   a frame's draws, screen-space
+//!   barrel-parity quads <trace dir> <frame> [index]    its 2D rectangles and text, as diffed
 //!   barrel-parity diff <trace dir> <frame> <barrel trace> <frame> [index]
 //!                                                      the game's 2D quads against Barrel's
 //!
@@ -69,21 +70,46 @@ fn textures(root: &Path, out: &Path) -> Result<()> {
             }
         }
     }
+    // the English font, for reading text off the screen
+    if let (Ok(exe), Ok(atlas)) = (std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")), std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))) {
+        let pe = barrel_formats::pe::Pe::parse(&exe)?;
+        let g = G1t::parse(&atlas)?;
+        if let (Some(glyphs), Some(t)) = (barrel_escha::data::font::glyphs(&pe, barrel_escha::data::font::FONT_EN), g.textures.first()) {
+            let n = t.format.level_size(t.width, t.height).min(t.levels[0].len());
+            lines.push_str(&format!("font\t{:016x}\t{}\n", hash(&t.levels[0][..n]), t.width));
+            let mut v: Vec<_> = glyphs.into_iter().collect();
+            v.sort_by_key(|(c, _)| *c);
+            for (c, gl) in v.into_iter().filter(|(c, _)| !c.is_control() && *c != '\t' && *c != '\n') {
+                lines.push_str(&format!("glyph\t{}\t{}\t{c}\n", gl.x, gl.y));
+            }
+        }
+    }
     std::fs::write(out, lines)?;
     Ok(())
 }
 
-fn index(path: Option<&str>) -> Result<HashMap<String, String>> {
+/// The index: texture names by hash, and the font's glyphs.
+fn index(path: Option<&str>) -> Result<(HashMap<String, String>, Option<Glyphs>)> {
     let mut m = HashMap::new();
+    let mut glyphs: Option<Glyphs> = None;
     if let Some(p) = path {
         for l in std::fs::read_to_string(p)?.lines() {
-            let mut f = l.split('\t');
-            if let (Some(h), Some(n)) = (f.next(), f.next()) {
-                m.entry(format!("tex{h}")).or_insert_with(|| n.to_string());
+            let f: Vec<&str> = l.split('\t').collect();
+            match f.as_slice() {
+                ["font", tex, size] => glyphs = Some(Glyphs { tex: format!("tex{tex}"), size: size.parse()?, at: HashMap::new() }),
+                ["glyph", x, y, c] => {
+                    if let (Some(g), Some(c)) = (glyphs.as_mut(), c.chars().next()) {
+                        g.at.insert((x.parse()?, y.parse()?), c);
+                    }
+                }
+                [h, n, ..] => {
+                    m.entry(format!("tex{h}")).or_insert_with(|| n.to_string());
+                }
+                _ => {}
             }
         }
     }
-    Ok(m)
+    Ok((m, glyphs))
 }
 
 struct Trace {
@@ -182,7 +208,7 @@ fn shader(trace: &Path, name: &str) -> Result<()> {
 /// its texture coordinate and colour; 3D draws only their counts.
 fn screen(trace: &Path, frame: u64, idx: Option<&str>) -> Result<()> {
     let t = Trace { dir: trace.into() };
-    let names = index(idx)?;
+    let (names, _) = index(idx)?;
     let tex = |n: &str| names.get(n).cloned().unwrap_or_else(|| n.to_string());
     for e in t.frame(frame)? {
         if let Some(c) = e.get("clear") {
@@ -224,13 +250,14 @@ fn screen(trace: &Path, frame: u64, idx: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// A 2D rectangle as both sides describe it.
+/// A 2D rectangle as both sides describe it; a run of font glyphs is one, its `text` set.
 #[derive(Clone, Debug)]
 struct Q {
     tex: String,
     rect: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4],
+    text: Option<String>,
     /// the game's pixel shader and its constants (what the colour does not say: fades)
     how: String,
 }
@@ -239,10 +266,11 @@ fn arr<const N: usize>(v: &Value) -> [f32; N] {
     std::array::from_fn(|i| v.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32)
 }
 
-/// The game's 2D draws of a frame as rectangles: each 4-vertex strip with a float4 position,
-/// placed by its vertex shader's matrix (cb0, `mL2P`), on the screen the frame ends on; draws
-/// that read a render target (the copy to the back buffer, post effects) and 3D draws are
-/// counted, not compared.
+/// The game's 2D draws of a frame as rectangles. A 2D draw is a triangle strip with a float4
+/// position placed by its vertex shader's matrix (cb0, `mL2P`); strips of several rectangles
+/// (text) join them with repeated vertices, so each run of four distinct vertices is one.
+/// Draws that read a render target (the copy to the back buffer, post effects) and 3D draws
+/// are counted, not compared.
 fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
     let mut out = Vec::new();
     let mut other = 0;
@@ -256,18 +284,18 @@ fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
         let vb = &e["vb"][0];
         let stride = vb["stride"].as_u64().unwrap_or(0) as usize;
         let pos = lay.iter().find(|l| l.0 == "POSITION0").map(|l| (l.1, l.2));
-        let (Some((2, pos_off)), 4, 5) = (pos, e["count"].as_u64().unwrap_or(0), e["topology"].as_u64().unwrap_or(0)) else {
+        let (Some((2, pos_off)), 5) = (pos, e["topology"].as_u64().unwrap_or(0)) else {
             other += 1;
             continue;
         };
-        if tex0.starts_with("rt") || stride == 0 {
+        if tex0.starts_with("rt") || stride == 0 || e.get("indices").is_some() {
             other += 1;
             continue;
         }
         let data = t.blob(vb["data"].as_str().unwrap_or("")).unwrap_or_default();
         let m = e["vs_cb"].get("0").and_then(Value::as_str).and_then(|h| t.blob(h).ok()).map(|b| floats(&b)).unwrap_or_default();
         let find = |n: &str| lay.iter().find(|l| l.0 == n).map(|l| (l.1, l.2));
-        let mut pts = Vec::new();
+        let mut pts: Vec<(f32, f32, Vec<f32>, Vec<f32>)> = Vec::new();
         for v in data.chunks_exact(stride) {
             let p = attribute(v, 2, pos_off);
             let (x, y) = if m.len() >= 16 {
@@ -279,26 +307,72 @@ fn game_quads(t: &Trace, frame: u64) -> Result<(Vec<Q>, usize)> {
             };
             let uv = find("TEXCOORD0").map(|(f, o)| attribute(v, f, o)).unwrap_or_default();
             let col = find("COLOR0").map(|(f, o)| attribute(v, f, o)).unwrap_or_else(|| vec![1.0; 4]);
+            // a repeated vertex joins two rectangles
+            if pts.last().is_some_and(|l| l.0 == x && l.1 == y && l.2 == uv) {
+                continue;
+            }
             pts.push((x, y, uv, col));
         }
-        if pts.len() != 4 {
+        if pts.len() % 4 != 0 {
             other += 1;
             continue;
         }
-        // the corner nearest the top left and the one opposite it
-        let tl = pts.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
-        let br = pts.iter().max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
-        let uv = |p: &(f32, f32, Vec<f32>, Vec<f32>), i: usize| p.2.get(i).copied().unwrap_or(0.0);
         let ps_cb = e["ps_cb"].get("0").and_then(Value::as_str).and_then(|h| t.blob(h).ok()).map(|b| floats(&b)).unwrap_or_default();
-        out.push(Q {
-            tex: tex0,
-            rect: [tl.0, tl.1, br.0, br.1],
-            uv: [uv(tl, 0), uv(tl, 1), uv(br, 0), uv(br, 1)],
-            color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0)),
-            how: format!("{} {:?}", s("ps"), ps_cb),
-        });
+        for q in pts.chunks_exact(4) {
+            // the corner nearest the top left and the one opposite it
+            let tl = q.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
+            let br = q.iter().max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
+            let uv = |p: &(f32, f32, Vec<f32>, Vec<f32>), i: usize| p.2.get(i).copied().unwrap_or(0.0);
+            out.push(Q {
+                tex: tex0.clone(),
+                rect: [tl.0, tl.1, br.0, br.1],
+                uv: [uv(tl, 0), uv(tl, 1), uv(br, 0), uv(br, 1)],
+                color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0)),
+                text: None,
+                how: format!("{} {:?}", s("ps"), ps_cb),
+            });
+        }
     }
     Ok((out, other))
+}
+
+/// The font: its texture's name, atlas size and each glyph's character by its place in the
+/// atlas (the index's `glyph` lines).
+struct Glyphs {
+    tex: String,
+    size: f32,
+    at: HashMap<(u16, u16), char>,
+}
+
+/// Runs of font glyphs as one text item each: consecutive glyph rectangles of one colour on
+/// one line, a gap wider than a third of the line's height read as a space.
+fn text_runs(qs: Vec<Q>, g: Option<&Glyphs>) -> Vec<Q> {
+    let Some(g) = g else { return qs };
+    let mut out: Vec<Q> = Vec::new();
+    for q in qs {
+        if q.tex != g.tex {
+            out.push(q);
+            continue;
+        }
+        let key = ((q.uv[0] * g.size).round() as u16, (q.uv[1] * g.size).round() as u16);
+        let c = g.at.get(&key).copied().unwrap_or('?');
+        if let Some(last) = out.last_mut().filter(|l| l.text.is_some() && close(&l.color, &q.color, 0.002)) {
+            let h = (last.rect[3] - last.rect[1]).max(1.0);
+            let overlap = q.rect[1] < last.rect[3] && q.rect[3] > last.rect[1];
+            let gap = q.rect[0] - last.rect[2];
+            if overlap && gap > -h * 0.5 && gap < h * 2.0 {
+                let t = last.text.as_mut().unwrap();
+                if gap > h / 3.0 {
+                    t.push(' ');
+                }
+                t.push(c);
+                last.rect = [last.rect[0].min(q.rect[0]), last.rect[1].min(q.rect[1]), last.rect[2].max(q.rect[2]), last.rect[3].max(q.rect[3])];
+                continue;
+            }
+        }
+        out.push(Q { tex: "text".into(), uv: [0.0; 4], text: Some(c.to_string()), ..q });
+    }
+    out
 }
 
 /// Barrel's quads on screen at `frame`: each layer's last list set by then.
@@ -315,7 +389,7 @@ fn barrel_quads(path: &Path, frame: u64) -> Result<Vec<Q>> {
             continue;
         }
         if let Some(qs) = v["quads"].as_array() {
-            layers.insert(id, qs.iter().map(|q| Q { tex: q["tex"].as_str().unwrap_or("").into(), rect: arr(&q["rect"]), uv: arr(&q["uv"]), color: arr(&q["color"]), how: String::new() }).collect());
+            layers.insert(id, qs.iter().map(|q| Q { tex: q["tex"].as_str().unwrap_or("").into(), rect: arr(&q["rect"]), uv: arr(&q["uv"]), color: arr(&q["color"]), text: None, how: String::new() }).collect());
         }
     }
     Ok(layers.into_values().flatten().collect())
@@ -329,11 +403,12 @@ fn close(a: &[f32; 4], b: &[f32; 4], tol: f32) -> bool {
 /// reports each pair's differences and what only one side draws. Returns the mismatches.
 fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>) -> Result<usize> {
     let t = Trace { dir: trace.into() };
-    let names = index(idx)?;
+    let (names, glyphs) = index(idx)?;
     let tex = |n: &str| names.get(n).cloned().unwrap_or_else(|| n.to_string());
     let (g, other) = game_quads(&t, gframe)?;
-    let b = barrel_quads(barrel, bframe)?;
-    let same = |x: &Q, y: &Q| x.tex == y.tex && close(&x.rect, &y.rect, 8.0);
+    let g = text_runs(g, glyphs.as_ref());
+    let b = text_runs(barrel_quads(barrel, bframe)?, glyphs.as_ref());
+    let same = |x: &Q, y: &Q| x.tex == y.tex && close(&x.rect, &y.rect, 8.0) && (x.text.is_none() || x.text == y.text || close(&x.rect, &y.rect, 2.0));
     let (n, m) = (g.len(), b.len());
     let mut l = vec![vec![0usize; m + 1]; n + 1];
     for i in (0..n).rev() {
@@ -342,13 +417,19 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
         }
     }
     let (mut i, mut j, mut bad) = (0, 0, 0);
-    let show = |q: &Q| format!("{} rect {:?} uv {:?} color {:?}", tex(&q.tex), q.rect, q.uv, q.color);
+    let show = |q: &Q| match &q.text {
+        Some(t) => format!("text {t:?} rect {:?} color {:?}", q.rect, q.color),
+        None => format!("{} rect {:?} uv {:?} color {:?}", tex(&q.tex), q.rect, q.uv, q.color),
+    };
     while i < n || j < m {
         if i < n && j < m && same(&g[i], &b[j]) {
             let (x, y) = (&g[i], &b[j]);
             let mut d = Vec::new();
             if !close(&x.rect, &y.rect, 0.5) {
                 d.push(format!("rect {:?} vs {:?}", x.rect, y.rect));
+            }
+            if x.text != y.text {
+                d.push(format!("text {:?} vs {:?}", x.text, y.text));
             }
             if !close(&x.uv, &y.uv, 0.001) {
                 d.push(format!("uv {:?} vs {:?}", x.uv, y.uv));
@@ -357,10 +438,10 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
                 d.push(format!("color {:?} vs {:?}", x.color, y.color));
             }
             if d.is_empty() {
-                println!("  same   {}", tex(&x.tex));
+                println!("  same   {}", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")));
             } else {
                 bad += 1;
-                println!("  DIFF   {}: {}  [game {}]", tex(&x.tex), d.join("; "), x.how);
+                println!("  DIFF   {}: {}  [game {}]", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")), d.join("; "), x.how);
             }
             i += 1;
             j += 1;
@@ -386,6 +467,19 @@ fn main() -> Result<()> {
         Some("diff") if a.len() >= 5 => {
             let bad = diff(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str))?;
             std::process::exit(if bad == 0 { 0 } else { 1 })
+        }
+        Some("quads") if a.len() >= 3 => {
+            let (names, glyphs) = index(a.get(3).map(String::as_str))?;
+            let (qs, other) = game_quads(&Trace { dir: a[1].clone().into() }, a[2].parse()?)?;
+            for q in text_runs(qs, glyphs.as_ref()) {
+                let r = q.rect.map(|v| v.round() as i32);
+                match &q.text {
+                    Some(t) => println!("text {t:?} {r:?} color {:?}", q.color),
+                    None => println!("{} {r:?} uv {:?} color {:?}", names.get(&q.tex).unwrap_or(&q.tex), q.uv, q.color),
+                }
+            }
+            println!("({other} draws not 2D)");
+            Ok(())
         }
         Some("screen") if a.len() >= 3 => screen(Path::new(&a[1]), a[2].parse()?, a.get(3).map(String::as_str)),
         _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv]".into()),
