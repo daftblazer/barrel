@@ -98,14 +98,17 @@ impl Measures {
     ///   `Extra` x, y, z;
     /// - 8 and 24: the same place at height 0;
     /// - 10 and 12: at height 0, the radius in front of or behind the character;
+    /// - 13 (`MODEL_OFFSET_DEFENCE`): not on the character but its side's guard spot, 700 from
+    ///   the origin ([`defence_point`]);
     /// - 0 and 26 (the character's +0x3d8), 9 and 11 (the radius along the camera's direction)
-    ///   and 13 to 16, 25: not read, the place itself.
+    ///   and 14 to 16, 25: not read, the place itself.
     pub fn point(&self, point: u32, position: [f32; 3], facing: f32) -> [f32; 3] {
         let [x, y, z] = position;
         match point {
             1..=7 => [x, y + self.height * self.fractions[point as usize - 1], z],
             17..=23 => [x, y + self.height * self.fractions[point as usize - 17], z],
             8 | 24 => [x, 0.0, z],
+            13 => defence_point(position),
             10 | 12 => {
                 let r = if point == 10 { self.radius } else { -self.radius };
                 let (s, c) = facing.sin_cos();
@@ -114,6 +117,17 @@ impl Measures {
             _ => position,
         }
     }
+}
+
+/// Point 13 (`MODEL_OFFSET_DEFENCE`, `0x1401f3b80` case `0x1401f3f37`) of a character at
+/// `position` (the battle's own frame, its origin the stage centre): 700 from the origin in the
+/// sector the character stands in, (0, 0, −700) when its z is below −4.5, else (606, 0, 350)
+/// (x above 4.5, turned 240°) or (−606, 0, 350) (turned 120°).
+pub fn defence_point(position: [f32; 3]) -> [f32; 3] {
+    let [x, _, z] = position;
+    let turn: f32 = if z < -4.5 { 0.0 } else if x > 4.5 { 240f32.to_radians() } else { 120f32.to_radians() };
+    let (s, c) = turn.sin_cos();
+    [-700.0 * s, 0.0, -700.0 * c]
 }
 
 /// A motion a character plays: its `MOTION_*` number, since when (stage seconds), whether
@@ -915,5 +929,19 @@ mod tests {
         assert_eq!(escha.point(10, [0.0, 50.0, 0.0], 0.0), [0.0, 0.0, 27.0]);
         // Character 9 was never placed.
         assert_eq!((stage.eye.position, stage.unresolved), (None, 1));
+    }
+}
+
+#[cfg(test)]
+mod defence_tests {
+    use super::defence_point;
+
+    /// Point 13: each side's guard spot, 700 out.
+    #[test]
+    fn point_13_is_the_sides_guard_spot() {
+        let near = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.5);
+        assert!(near(defence_point([0.0, 0.0, -800.0]), [0.0, 0.0, -700.0]));
+        assert!(near(defence_point([692.8, 0.0, 400.0]), [606.2, 0.0, 350.0]));
+        assert!(near(defence_point([-692.8, 0.0, 400.0]), [-606.2, 0.0, 350.0]));
     }
 }

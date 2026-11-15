@@ -1749,7 +1749,7 @@ impl BattlePlay {
 
     /// The camera while a member chooses a target (`macro_battle.nut`'s
     /// `setTargetCameraCraneShot`, low form): the eye at the member's point 13
-    /// (`MODEL_OFFSET_DEFENCE`, not read: its place) and (0, 200, −400) turned by its slot's
+    /// (`MODEL_OFFSET_DEFENCE`, its side's guard spot, `stage::defence_point`) and (0, 200, −400) turned by its slot's
     /// angle (`battle::party_slot_angle`, not the way to the centre), looking at the battle's
     /// origin. The recording (`ruins-entrance-battle-stats-60hz`, 353.6 s) shows the low form
     /// for a target choice: the camera just above Wilbell's head, behind her, she to the right;
@@ -1764,7 +1764,10 @@ impl BattlePlay {
         let turn = if f.party { barrel_escha::battle::party_slot_angle((who % 3) as i32) } else { f.facing };
         let (s, c) = turn.sin_cos();
         let (x, y, z) = (0.0, 200.0, -400.0);
-        let eye = [f.place[0] + x * c + z * s, f.place[1] + y, f.place[2] - x * s + z * c];
+        let local = [0, 1, 2].map(|i| f.place[i] - BATTLE_CENTRE[i]);
+        let spot = barrel_engine::stage::defence_point(local);
+        let spot = [0, 1, 2].map(|i| spot[i] + BATTLE_CENTRE[i]);
+        let eye = [spot[0] + x * c + z * s, spot[1] + y, spot[2] - x * s + z * c];
         Some((eye, BATTLE_CENTRE))
     }
 

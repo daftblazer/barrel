@@ -673,6 +673,12 @@ wait takes the rest of the motion at its speed. It changed 453 skill events' and
 events' timing (none in the opening); the carried-over games' events leave `s9` unread
 (`Player::translated`), so Ryza's 1,683 schedules stay as they were.
 
+**Point 13** (`MODEL_OFFSET_DEFENCE`, `0x1401f3b80` case `0x1401f3f37`) is not on the character:
+it is its side's guard spot, 700 from the battle's origin, (0, 0, −700) when the character's z is
+below −4.5, else turned 240° ((606, 0, 350), x above 4.5) or 120° ((−606, 0, 350))
+(`stage::defence_point`). 81 skill events use it (294 times), no story event, no Ryza event;
+`setTargetCameraCraneShot` puts its eye there.
+
 **The battle's own camera lists.** Besides the skill events and `macro_battle.nut`, the exe
 builds short command lists on the stack and runs them with `0x140296bc0` (27 call sites, most
 in `0x14019a000`..`0x14019d600`; `tools/inline_ect.py` prints them). Read so far:
