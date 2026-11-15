@@ -2283,4 +2283,8 @@ resampled to this block size), then coefficients: vectors of 4 / 2 / 1 values wi
 lands in the channel's frame buffer, then the sine window overlaps it with the previous block.
 The Huffman tables are generated from FFmpeg's `wmaprodata.h` (`crates/wma/gen_tables.py`,
 codes assigned as `ff_vlc_init_from_lengths` assigns them). Against ffmpeg's float output for
-`avantitle`'s first 206 frames: largest difference 2.4e-7, 138 dB signal to error.
+`avantitle`'s first 206 frames: largest difference 2.4e-7, 138 dB signal to error. The inverse
+MDCT runs as a DCT-IV on a half-length complex FFT (`barrel_wma::mdct`; the half IMDCT is
+(−1)^m · DCT-IV of the reversed, alternately negated input). The whole of `avantitle`'s track,
+4,617,413 samples a channel like ffmpeg's, decodes in 0.32 s on one PC core (300 × real time)
+at 135 dB to ffmpeg (largest difference 4.8e-7).

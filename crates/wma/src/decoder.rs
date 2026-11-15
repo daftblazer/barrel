@@ -4,6 +4,7 @@
 
 use crate::bits::Reader;
 use crate::frames::{FrameHeader, Packets};
+use crate::mdct::Imdct;
 use crate::params::{Params, MAX_BANDS};
 use crate::tables as t;
 use crate::vlc::Vlc;
@@ -59,6 +60,8 @@ pub struct Decoder {
     /// Sine windows by log2 length.
     windows: Vec<Vec<f32>>,
     sin64: [f32; 33],
+    /// Inverse MDCTs by log2 block size.
+    imdct: Vec<Option<Imdct>>,
     first: bool,
     pub frames: usize,
 }
@@ -103,6 +106,7 @@ impl Decoder {
             channels: vec![channel; params.channels],
             windows,
             sin64: std::array::from_fn(|i| (i as f64 * std::f64::consts::PI / 64.0).sin() as f32),
+            imdct: (0..=13u32).map(|b| (b >= crate::params::BLOCK_MIN_BITS).then(|| Imdct::new(1 << b))).collect(),
             first: true,
             frames: 0,
             params: std::sync::Arc::new(params),
@@ -327,7 +331,8 @@ impl Decoder {
                 }
             }
             // Inverse quantization, then the inverse MDCT in place.
-            let scale = 1.0 / (len as f64 / 2.0) / (1u64 << (p.bits_per_sample - 1)) as f64;
+            let scale = (1.0 / (len as f64 / 2.0) / (1u64 << (p.bits_per_sample - 1)) as f64) as f32;
+            let imdct = self.imdct[len.ilog2() as usize].as_ref().unwrap();
             for &c in &here {
                 let ch = &mut self.channels[c];
                 let sf = ch.saved_sf[ch.sf_use];
@@ -340,7 +345,7 @@ impl Decoder {
                         tmp[i] = ch.out[start + i] * quant;
                     }
                 }
-                imdct_half(&tmp, &mut ch.out[start..start + len], scale);
+                imdct.half(&tmp, &mut ch.out[start..start + len], scale);
             }
         }
         // The sine window over the overlap with the previous block.
@@ -534,19 +539,6 @@ fn coefficients(t: &Tables, r: &mut Reader, block: &mut [f32], num_vec: usize, t
         return Err(Error("coefficients past the block".into()));
     }
     Ok(())
-}
-
-/// The inverse MDCT's middle half for `x.len()` = N coefficients: N samples
-/// `y[m] = −scale · Σ x[k] cos(π/N (m + N + 1/2) (k + 1/2))` (FFmpeg's sign).
-fn imdct_half(x: &[f32], y: &mut [f32], scale: f64) {
-    let n = x.len();
-    for (m, out) in y.iter_mut().enumerate() {
-        let mut s = 0f64;
-        for (k, &v) in x.iter().enumerate() {
-            s += v as f64 * (std::f64::consts::PI / n as f64 * (m as f64 + n as f64 + 0.5) * (k as f64 + 0.5)).cos();
-        }
-        *out = (-s * scale) as f32;
-    }
 }
 
 #[cfg(test)]

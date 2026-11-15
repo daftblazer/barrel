@@ -8,6 +8,7 @@
 pub mod bits;
 pub mod decoder;
 pub mod frames;
+pub mod mdct;
 pub mod params;
 mod tables;
 pub mod vlc;
