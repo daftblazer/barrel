@@ -12,8 +12,8 @@
 //! "shadow_vp":[16]}`, matrices column-major (glam's `to_cols_array`, render space: x mirrored).
 //! Each draw: `pass` (`shadow` the sun's shadow map, `scene` the lit colour pass, `sky` the
 //! distant view, `outline`, `terrain`), `idx` its index count, `inst` its instances, `tex` its
-//! textures by content name (as the capture names them; the colour texture, then mask and
-//! emission where it has them) and `world` its model matrix. `view_proj` is the colour pass's
+//! textures by content name (as the capture names them; the colour texture, then mask, normal
+//! map and emission where it has them) and `world` its model matrix. `view_proj` is the colour pass's
 //! (the camera's jitter included); the renderer keeps no separate view and projection.
 
 use std::io::Write as _;

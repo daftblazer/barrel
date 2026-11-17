@@ -260,6 +260,12 @@ fn barrel_frame(path: &Path, frame: u64) -> Result<(Vec<BarrelDraw>, Option<M>)>
 /// matter) and the index count.
 type Key = (Vec<String>, u64);
 
+/// Whether a game draw's key stands for a Barrel draw's: the same index count and every texture
+/// Barrel binds among the game's (the game binds maps Barrel has no slot for yet).
+fn covers(game: &Key, barrel: &Key) -> bool {
+    game.1 == barrel.1 && barrel.0.iter().all(|n| game.0.contains(n))
+}
+
 fn key(names: &HashMap<String, String>, textures: impl Iterator<Item = String>, count: u64) -> Key {
     let tiny = super::TINY.get();
     let mut n: Vec<String> = textures.filter(|h| !tiny.is_some_and(|t| t.contains(h))).filter_map(|h| names.get(&h).cloned()).collect();
@@ -290,7 +296,7 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     let (names, _) = index(idx)?;
     let game: Vec<GameDraw> = game_draws(&t, gframe)?.into_iter().filter(|d| d.rt.len() >= 4 && d.ds != "-").collect();
     let (bdraws, bvp) = barrel_frame(barrel, bframe)?;
-    let bdraws: Vec<&BarrelDraw> = bdraws.iter().filter(|d| d.pass == "scene" || d.pass == "sky").collect();
+    let bdraws: Vec<&BarrelDraw> = bdraws.iter().filter(|d| d.pass == "scene" || d.pass == "sky" || d.pass == "terrain").collect();
     let gkeys: Vec<Key> = game.iter().map(|d| key(&names, d.textures.iter().map(|x| x.1.clone()), d.count)).collect();
     let bkeys: Vec<Key> = bdraws.iter().map(|d| key(&names, d.tex.iter().cloned(), d.idx)).collect();
     let mut bused = vec![false; bdraws.len()];
@@ -298,12 +304,13 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     let mut worst_at = String::new();
     let mut mirror_wins = 0usize;
     let mut unmatched_game: Vec<&Key> = Vec::new();
+    let mut unmatched_vs: std::collections::BTreeMap<String, usize> = Default::default();
     for (i, g) in game.iter().enumerate() {
         let world = g.vars.iter().find(|v| v.0 == "mL2W").and_then(|v| game_world(&v.2));
         // The unused Barrel draw of the same key nearest in world matrix (the first without one).
         let mut best: Option<(usize, f32, bool)> = None;
         for (j, b) in bdraws.iter().enumerate() {
-            if bused[j] || bkeys[j] != gkeys[i] {
+            if bused[j] || !covers(&gkeys[i], &bkeys[j]) {
                 continue;
             }
             let (d, m) = world.map_or((0.0, false), |w| world_diff(&w, &b.world));
@@ -317,6 +324,7 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
         let placed = best.is_some_and(|(j, ..)| bdraws[j].world != IDENTITY);
         let Some((j, d, m)) = best else {
             unmatched_game.push(&gkeys[i]);
+            *unmatched_vs.entry(g.vs.chars().take(8).collect::<String>()).or_default() += 1;
             continue;
         };
         bused[j] = true;
@@ -332,6 +340,7 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     }
     let unmatched_barrel: Vec<&Key> = bkeys.iter().zip(&bused).filter(|(_, u)| !**u).map(|(k, _)| k).collect();
     println!("game draws without a Barrel match: {}\n{}", unmatched_game.len(), group(&unmatched_game));
+    println!("  by vertex shader: {}", unmatched_vs.iter().map(|(v, n)| format!("{v} x{n}")).collect::<Vec<_>>().join(", "));
     println!("Barrel draws without a game match: {}\n{}", unmatched_barrel.len(), group(&unmatched_barrel));
     println!("world matrices compared: {compared} ({mirror_wins} fit best with Barrel's x mirror); worst: {worst_at}");
     let vp = game.iter().flat_map(|d| d.vars.iter()).find(|v| v.0 == "mW2P").and_then(|v| game_view_proj(&v.2));
