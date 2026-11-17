@@ -158,6 +158,17 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
+- **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
+  loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
+  `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
+  45.4`, row `rasen-3d-2550`), 673 of the game's 913 draws have a Barrel match. The 240
+  without: the townsfolk and Ryza (about 130 character draws: Barrel places no one in a
+  field yet), the terrain's 42 strips (Barrel draws a patch at once), some 20 plant cells,
+  10 of a shore foam effect, a few props (boards, a ship, a fruit) and 22 of the field's
+  models. Barrel draws 164 the game does not: nearly all are in view (so hidden behind the
+  town, or cut by a range or level of detail Barrel has different: not told apart yet;
+  `tools/pair3d.py` lists them). The game's projection is narrower than 16:9 by 1% (its
+  x scale 1.3578 against 1.3447 for the same y scale): not read.
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
   first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").
 - **Field lighting.** `barrel --time T --weather W` lights a field in linear light as
@@ -283,7 +294,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   helpers `0x1406ae5e0` to `0x1406ae6b0` (2,600 calls as the title's field loads, 458 a
   loop from `0x14059f24e` on), `0x14059db10`, the `0x343fd` generators at `0x140bba130`
   and `0x140bc17d0`, and the functions at `0x140971ac0`, `0x140972260`, `0x140a58c60`,
-  `0x140a5b4b0`, `0x140a658b0`, `0x140a81ed0` (none called by frame 900)), how a lower grass quality thins the plants, a sway of the
+  `0x140a5b4b0`, `0x140a658b0`, `0x140a81ed0` (none called by frame 900). The cells'
+  vertices are not allocated a cell at a time from the main allocator (`0x140dc64e0`: no
+  run of 0x2600-byte blocks, a 38-plant cell's 152 vertices, up to frame 1140)), how a lower grass quality thins the plants, a sway of the
   cards' tops by stand-in wind values (`PLANT_SWAY`: the game's `g_vAttCache0` / `g_fPhase`
   are set at run time; sway slots 0 and 1, free in Ryza's fields), no shadows cast, lit as
   the field's models with an upward normal, normal-mapped by the cards' own normal maps

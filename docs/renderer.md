@@ -812,7 +812,9 @@ diagonal (the deepest cell the title draws is at 15000.0 by this measure), and n
 outside a side of the view than a fixed length measured across the view (the plane's distance
 divided by the projection's scale on that axis: the title's cells are drawn out to 656 and
 hidden from 695; `PLANT_EDGE` is 675, a stand-in between the two). Of the title's 348 cells
-all are drawn, and Barrel draws 2 the game does not (one behind the eye).
+all are drawn, and Barrel draws 2 the game does not (one behind the eye). The objects' draw
+ranges do not apply to plant cells: in Rasenboden the game draws cells out to the grass
+range's end, far past the nearest object class's range.
 
 The gain is small: only the current field's objects were drawn before too (an event's other
 fields wait), and from the third-person camera most of a field is in view. On the RP6 at native

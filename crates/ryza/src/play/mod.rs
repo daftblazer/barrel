@@ -969,7 +969,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {
         None => Default::default(),
-        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky).filter_map(|d| {
+        // The plants have their own range (`shown`, below), not an object's.
+        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants").filter_map(|d| {
             let b = d.bounds?;
             let m = instances.get(d.instance as usize)?.model;
             let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
