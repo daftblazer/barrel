@@ -78,6 +78,16 @@ fn textures(root: &Path, out: &Path) -> Result<()> {
             }
         }
     }
+    // the PAK archives' files (Ryza): named by their path inside the archives, lower case
+    if let Ok(paks) = barrel_formats::pak::Archives::open_dir(&root.join("Data")) {
+        let mut names: Vec<String> = paks.names().filter(|n| n.ends_with(".g1t")).map(str::to_owned).collect();
+        names.sort();
+        for n in &names {
+            if let Some(Ok(data)) = paks.read(n) {
+                add(n, &data);
+            }
+        }
+    }
     // the English font, for reading text off the screen
     if let (Ok(exe), Ok(atlas)) = (std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")), std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))) {
         let pe = barrel_formats::pe::Pe::parse(&exe)?;

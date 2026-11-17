@@ -1,8 +1,10 @@
 # Parity checks
 
 Barrel is checked against what the original game draws and does, as recorded by a recomp
-of the game. For Escha that is `../escha-recomp`, which runs headless with a null Direct3D 11.
-A diff of the two says where Barrel differs, without pixels and without judging by eye.
+of the game. For Escha that is `../escha-recomp`, for Ryza `../ryza-recomp`: both run headless
+with a null Direct3D 11 and the same draw capture (Ryza's variables are `RYZA_*`, its scenarios
+run on a 1920 × 1080 headless display). A diff of the two says where Barrel differs, without
+pixels and without judging by eye.
 
 ## Draw parity (2D)
 
@@ -10,8 +12,11 @@ A diff of the two says where Barrel differs, without pixels and without judging 
    capture") writes every draw with its state, textures named by content hash. Run at 60 fps,
    bounded with `ESCHA_FRAMES`, optionally scripted with `ESCHA_PAD` / `ESCHA_KEYS`.
 2. Name the textures. `barrel-parity textures <game folder> <index.tsv>` hashes every g1t
-   texture in the game's files (loose or in elixir containers) the same way, so a captured
-   texture reads as `Data/x64/WinXls_EN/a15_title.g1t#0`.
+   texture in the game's files (loose, in elixir containers or in Ryza's PAK archives) the same
+   way, so a captured texture reads as `Data/x64/WinXls_EN/a15_title.g1t#0` (Escha) or
+   `\data\x64\res_en\ui\a21_title.g1t#0` (Ryza: the archives' own names, lower case).
+   Ryza's index goes to `../ryza-recomp/work/traces/textures.tsv` (`PARITY_INDEX` for
+   tools/parity.sh).
 3. Trace Barrel. `BARREL_TRACE_DRAWS=file` makes every 2D layer (`barrel_render::text::Layer`)
    write its quads when they change, with textures named the same way, on a 1920 × 1080 screen.
 4. Diff. `barrel-parity diff <capture dir> <game frame> <barrel trace> <barrel frame>
