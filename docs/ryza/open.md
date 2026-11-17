@@ -164,12 +164,11 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   45.4 --ryza 32517,6180,30336 --done MM00_010`, row `rasen-3d-2550`), 858 of the game's 913
   draws have a Barrel match. The 55 without: the terrain's 42 strips (Barrel draws a patch at
   once), 10 of a shore foam effect, one `npc23a` draw and 2 of the field's models. Barrel
-  draws 324 the game does not: some 170 of the field's models, nearly all in view and hidden
-  behind the town, as on the title (leaving 138 of them out changes 604 pixels of the picture,
-  all at one far spot): the game's occlusion test, which Barrel does not make
-  (`tools/pair3d.py` lists them); and 91 draws of the townsfolk (`npc30a`, `npc30b`, `npc31a`,
-  `npc23b`), whom the game's scene pass does not draw at this frame although its capture
-  loads them (hidden by the same test, unverified). What got it here from 809: objects are
+  draws 113 the game does not: 62 of the field's models and some 20 townsfolk draws, in view
+  and hidden behind the town's buildings and ground (the game's own test of what is hidden
+  is not read; Barrel's stand-in, the ground's skyline, leaves out 211 draws the game also
+  leaves out and none it draws: `docs/renderer.md`, "Ryza DX: objects behind the ground"),
+  and 15 draws of the title's backdrop. What got it here from 809: objects are
   in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
   drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
   game's code and capture say ("Ryza DX: object draw ranges"). The story's progress decides

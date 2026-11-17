@@ -75,6 +75,8 @@ struct Args {
     story: barrel_ryza::story::Story,
     /// A save file to take the story's progress from (`--save`).
     save: Option<String>,
+    /// `--no-skyline`: objects behind the ground are drawn too.
+    no_skyline: bool,
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
     /// The camera's vertical field of view, degrees (`--fov`).
@@ -131,7 +133,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), story: Default::default(), save: None, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), story: Default::default(), save: None, no_skyline: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -183,6 +185,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
             "--save" => a.save = Some(value()?),
+            "--no-skyline" => a.no_skyline = true,
             "--ryza" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
@@ -379,6 +382,10 @@ const PLANT_LIMIT: usize = 200_000;
 const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
 // STAND-IN: The plant cells' reach past the view's sides is a measured bound; the real thing is the game's own cull test.
+/// A standing person's sphere for the skyline test: its centre's height above the feet and
+/// its radius (a person is some 170 units tall; the arms and what they carry reach wider).
+const PERSON_SPHERE: (f32, f32) = (90.0, 120.0);
+
 /// How far outside a side of the view a plant cell's centre may be, across the view, and
 /// still be drawn: on the title the game draws cells out to 656 and hides them from 695.
 const PLANT_EDGE: f32 = 675.0;
@@ -441,6 +448,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             bounds: None,
             class: 0,
             object: 0,
+            part: None,
             bones: Vec::new(),
             shader: String::new(),
         });
@@ -933,6 +941,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         whole.entry((d.object, d.lod & 3)).and_modify(|w| *w = Bounds { lo: w.lo.min(b.lo), hi: w.hi.max(b.hi), pad: w.pad.max(b.pad), round: true }).or_insert(Bounds { round: true, ..b });
     }
     for d in draws.iter_mut().filter(|d| d.object != 0 && d.bounds.is_some()) {
+        d.part = d.bounds.map(|b| (b.lo, b.hi));
         d.bounds = whole.get(&(d.object, d.lod & 3)).copied();
     }
     if draws.is_empty() {
@@ -1102,6 +1111,24 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         Some(((d.first_index, d.instance), (lo, hi)))
     }).collect();
     eprintln!("draw ranges: {ranges:?}");
+    // STAND-IN: A placed object wholly below the ground's skyline is left out of the scene; the real thing is the game's own test of what is hidden, not read (this one, on the sphere the view test uses, hides 65 of the 107 objects the game hides in Rasenboden's capture and none it draws).
+    // The skyline is the field's heightmap seen from the eye (docs/renderer.md, "Ryza DX:
+    // objects behind the ground"); `--no-skyline` draws them all.
+    let horizon = (!a.no_skyline && !a.title)
+        .then(|| barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase())).or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e))))
+        .flatten()
+        .and_then(|b| barrel_formats::khm::parse(b).ok())
+        .map(|g| std::cell::RefCell::new(barrel_ryza::horizon::Horizon::new(g)));
+    let npc_spots = std::cell::RefCell::new(std::collections::HashMap::<u32, Vec3>::new());
+    let in_sight = |d: &Draw| {
+        let Some(h) = &horizon else { return true };
+        // STAND-IN: A townsperson is tested as a sphere of PERSON_SPHERE.1 units around a point PERSON_SPHERE.0 above the feet; the real thing is the game's own bounds for a character.
+        if let Some(&feet) = npc_spots.borrow().get(&d.instance) {
+            return !h.borrow().hides(feet + Vec3::Y * PERSON_SPHERE.0, PERSON_SPHERE.1);
+        }
+        // The boxes are in the renderer's space, the skyline in the field's: x is mirrored.
+        !horizon.as_ref().zip(boxes.get(&(d.first_index, d.instance))).is_some_and(|(h, &(lo, hi))| h.borrow().hides((lo + hi) * Vec3::new(-0.5, 0.5, 0.5), lo.distance(hi) * 0.5))
+    };
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
     // The plants' cells are drawn only as deep into the view as the grass preset's range ends:
     // a cell shows while its box's centre is nearer than that by the box's diagonal (the
@@ -1330,6 +1357,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow, title_clip);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
+        if let Some(h) = &horizon {
+            h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
+            // Where the townsfolk stand this frame, in the field's space (x mirrored back).
+            let mut spots = npc_spots.borrow_mut();
+            spots.clear();
+            spots.extend(npc_drawn.iter().map(|&(_, i, ..)| (i, instances[i as usize].model.w_axis.truncate() * Vec3::new(-1.0, 1.0, 1.0))));
+        }
         forward_now.set((center - eye_now.get()).normalize_or_zero());
         // The view's four side planes, each scaled to measure across the view (along its own
         // axis) rather than square to the plane.
@@ -1439,6 +1473,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             current_field: 0,
             hidden: &hidden,
             shown: &shown,
+            in_sight: &in_sight,
             material: &material,
             draw_vp: view.vp,
             view_planes: view_planes(&view.vp),

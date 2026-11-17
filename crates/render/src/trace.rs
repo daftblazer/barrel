@@ -151,12 +151,12 @@ impl Draws3d {
         last.push_str(&format!(",\"box\":{:?}}}", [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z]));
     }
 
-    /// Adds what the draw just added (`add`) is: its name, its draw-distance class and its
-    /// level of detail, as the scene holds them.
-    pub fn what(&mut self, name: &str, class: u8, lod: u8) {
+    /// Adds what the draw just added (`add`) is: its name, its draw-distance class, its
+    /// level of detail and which placed object it is part of, as the scene holds them.
+    pub fn what(&mut self, name: &str, class: u8, lod: u8, object: u32) {
         let Some(last) = self.0.as_mut().and_then(|v| v.last_mut()) else { return };
         last.pop();
-        last.push_str(&format!(",\"name\":{name:?},\"class\":{class},\"lod\":{lod}}}"));
+        last.push_str(&format!(",\"name\":{name:?},\"class\":{class},\"lod\":{lod},\"object\":{object}}}"));
     }
 
     /// Adds the bone palette to the draw just added (`add`).

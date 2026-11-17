@@ -9,6 +9,7 @@ pub mod face;
 pub mod gimmick;
 pub mod grass;
 pub mod presets;
+pub mod horizon;
 pub mod install;
 pub mod koc;
 pub mod light;

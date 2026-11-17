@@ -803,11 +803,27 @@ against the game's draws in Rasenboden (913 draws, frame 2550, paired by index c
 place): with each part tested by its own box, 41 of the game's field model draws had no pair,
 among them parts of the gate behind the camera and small parts a step from the eye; with
 each part's own sphere, 22; with the object's sphere, 2. What the game really tests is not
-read from its code. The game also leaves out models inside the view that stand behind other
-scenery (fences, stairs, rocks: 46 draws on the title, some 170 in Rasenboden, hidden and
-drawn ones at the same distances and of the same draw-distance classes): leaving them out of
-Barrel's frame changes 118 pixels of the title's and 604 of Rasenboden's, so the game tests
-what is hidden. Barrel draws them; how the game tests is not read.
+read from its code.
+
+**Ryza DX: objects behind the ground.** The game also leaves out models inside the view
+that something stands in front of (fences, stairs, rocks: 46 draws on the title, some 190
+in Rasenboden, and the townsfolk out of sight), hidden and drawn ones at the same distances
+and of the same draw-distance classes. How it tests is not read: its files hold no occluder
+shapes, and it is not the GPU's occlusion queries (the answer key reports none visible, and
+most objects are drawn). The ground explains most of it: of Rasenboden's 107 objects the
+game hides whole, 92 have the heightmap between the eye and all eight corners of their box,
+against 3 of the 213 it draws whole. Barrel's test (`barrel_ryza::horizon`, a stand-in)
+takes the ground's skyline from the eye: for each of 1,440 directions, the steepest slope
+up to any ground within each distance, half a cell a step (made for the directions asked,
+kept while the eye stays). An object is left out of the scene when, in every direction its
+sphere spans (the sphere of the view test), ground nearer than the sphere stands steeper
+than the sphere's top. A townsperson is a sphere of 120 units around a point 90 above the
+feet. It hides 65 of those 107 objects and none the game draws (the box in place of the
+sphere hides 92, and 3 objects the game draws), and the six townsfolk the game leaves out
+of the nine it does not draw; Rasenboden goes from 1,182 scene draws to 971 against the
+game's 913, the picture the same to the byte there and from eight other views. The shadow
+pass is not tested (a hidden object's shadow can fall in sight); the title has no test.
+`--no-skyline` draws everything.
 
 **Ryza DX: object draw ranges.** The field's camera file gives a draw range for each class
 of object (`disp_range`: `obj_near`, `obj_middle`, `obj_far`, `obj_landmark`, in metres), and

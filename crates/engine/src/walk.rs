@@ -192,15 +192,7 @@ impl Ground {
 
     /// The heightmap's height at (x, z), bilinear between its vertices; none outside it.
     fn terrain(&self, x: f32, z: f32) -> Option<f32> {
-        let h = self.heightmap.as_ref()?;
-        let (fx, fz) = (x / h.cell_size, z / h.cell_size);
-        if fx < 0.0 || fz < 0.0 || fx >= h.cells_x as f32 || fz >= h.cells_z as f32 {
-            return None;
-        }
-        let (ix, iz) = (fx as usize, fz as usize);
-        let (tx, tz) = (fx - ix as f32, fz - iz as f32);
-        let row = |z: usize| h.height(ix, z) * (1.0 - tx) + h.height(ix + 1, z) * tx;
-        Some(row(iz) * (1.0 - tz) + row(iz + 1) * tz)
+        self.heightmap.as_ref()?.at(x, z)
     }
 
     /// Where a character with its feet at `y` stands at (x, z): the highest of the heightmap and

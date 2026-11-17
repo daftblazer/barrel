@@ -112,6 +112,9 @@ pub struct Frame<'a> {
     pub hidden: &'a [bool],
     /// Whether the game shows a draw this frame (besides `hidden` and the field).
     pub shown: &'a dyn Fn(&Draw) -> bool,
+    /// Whether a shown draw is in sight by a test of the game's own, past the view's planes
+    /// (something stands in front of it): asked for the scene, not for the shadows it casts.
+    pub in_sight: &'a dyn Fn(&Draw) -> bool,
     /// The game's material bits for a draw (`model.frag`'s flags past the renderer's own:
     /// 16 a solid piece of the distant view, 32 unlit, bits 8 to 11 the sway group, 128 a Ryza
     /// character's toon ramp with its row in bits 16 to 23, 4096 a sky dome lit by the
@@ -626,7 +629,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -827,7 +830,7 @@ impl Renderer {
                 d.cmd_draw(cb, 3, 1, 0, 0);
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             }
-            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d)) {
+            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)) {
                 // The instance, and whether it is shaded as a character (not part of a field), as
                 // an eye and as the distant view; the game's own material bits and tint.
                 let (bits, tint) = material(draw);
@@ -846,10 +849,10 @@ impl Renderer {
                     // A character's mask slot holds the toon ramp (flag 128), a texture of Barrel's own.
                     let mask = draw.mask.filter(|_| flags & 128 == 0);
                     trace3d.add(if pass_sky { "sky" } else { "scene" }, draw.index_count, &[Some(draw.texture), mask, draw.normal_map, draw.emission], &inst.model);
-                    if let Some(b) = &draw.bounds {
-                        trace3d.bounds(b.lo, b.hi);
+                    if let Some((lo, hi)) = draw.part.or(draw.bounds.map(|b| (b.lo, b.hi))) {
+                        trace3d.bounds(lo, hi);
                     }
-                    trace3d.what(&draw.name, draw.class, draw.lod);
+                    trace3d.what(&draw.name, draw.class, draw.lod, draw.object);
                     if !draw.bones.is_empty() {
                         trace3d.bones(&frame.scene.traced_palette(), inst.palette as usize, &draw.bones, &inst.model);
                     }

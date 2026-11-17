@@ -6820,6 +6820,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         current_field,
         hidden: &hidden,
         shown: &shown,
+        in_sight: &|_| true,
         material: &material,
         draw_vp,
         view_planes: view_planes_now,

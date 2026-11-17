@@ -22,6 +22,18 @@ impl Heightmap {
     pub fn height(&self, x: usize, z: usize) -> f32 {
         self.heights[z * (self.cells_x + 1) + x]
     }
+
+    /// The height at (x, z) in field units, bilinear between the vertices; none outside the map.
+    pub fn at(&self, x: f32, z: f32) -> Option<f32> {
+        let (fx, fz) = (x / self.cell_size, z / self.cell_size);
+        if !(fx >= 0.0 && fz >= 0.0 && fx < self.cells_x as f32 && fz < self.cells_z as f32) {
+            return None;
+        }
+        let (ix, iz) = (fx as usize, fz as usize);
+        let (tx, tz) = (fx - ix as f32, fz - iz as f32);
+        let row = |z: usize| self.height(ix, z) * (1.0 - tx) + self.height(ix + 1, z) * tx;
+        Some(row(iz) * (1.0 - tz) + row(iz + 1) * tz)
+    }
 }
 
 pub fn parse(d: &[u8]) -> Result<Heightmap, Error> {
