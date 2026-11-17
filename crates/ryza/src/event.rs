@@ -20,14 +20,73 @@ pub fn schedule(event: &Ebd) -> Result<Vec<Timed<'_>>, String> {
     Ok(player.schedule())
 }
 
+/// The number the game's `u104` draws when the clock reads `seconds` (`0x140479dec`): it seeds
+/// the C library's generator with the time, throws one number away and maps the next onto
+/// `low..=high` in equal shares of 0..0x7fff, drawing again above the last whole share.
+pub fn clock_pick(seconds: u32, low: i32, high: i32) -> i32 {
+    let n = high.saturating_add(1).saturating_sub(low);
+    if n <= 0 {
+        return low;
+    }
+    let mut state = seconds;
+    let mut rand = || {
+        state = state.wrapping_mul(214013).wrapping_add(2531011);
+        (state >> 16 & 0x7fff) as i32
+    };
+    rand();
+    let limit = 0x7fff - 0x7fff % n;
+    let mut r = rand();
+    while r > limit {
+        r = rand();
+    }
+    // the game's count runs one past `high` when the number is exactly the limit; kept in range
+    (low + r / (0x7fff / n)).min(high)
+}
+
+/// A looping event's steps (the title's `tt01_010`: a wait and one of three actions, drawn
+/// each time round), up to `until` seconds. Its random commands take `given` numbers first,
+/// in the order the event asks (for playing what a recorded run of the game drew), then draw
+/// as the game does: a pick from the clock's seconds (`clock` at the event's start, plus the
+/// waits so far), a wait anywhere in its range.
+pub fn schedule_drawn<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<Vec<Timed<'a>>, String> {
+    Ok(drawn_player(event, given, clock, until)?.schedule())
+}
+
+fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<Player<'a>, String> {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+    let given = Rc::new(RefCell::new(given.iter().copied().collect::<std::collections::VecDeque<f32>>()));
+    let waited = Rc::new(Cell::new(0.0f32));
+    let (g, w) = (given.clone(), waited.clone());
+    let whole = move |low: i32, high: i32| match g.borrow_mut().pop_front() {
+        Some(n) => n as i32,
+        None => clock_pick(clock.wrapping_add(w.get() as u32), low, high),
+    };
+    let mut state = clock | 1;
+    let seconds = move |low: f32, high: f32| {
+        let s = given.borrow_mut().pop_front().unwrap_or_else(|| {
+            // xorshift: any even spread will do, the game's own generator is shared with all it draws
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            low + (high - low) * (state >> 8) as f32 / (1u32 << 24) as f32
+        });
+        waited.set(waited.get() + s);
+        s
+    };
+    let chance = barrel_engine::event::Chance { whole: Box::new(whole), seconds: Box::new(seconds) };
+    let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?;
+    Ok(player.counted_waits().chance(chance).until(until))
+}
+
 /// The event's commands as Barrel's player takes them, for comparing with the game's own log
 /// (ryza-recomp's `tools/cmdlog.py --hex`): the time in seconds, the action, and the command's
-/// words as the script has them (the word, then its operands).
-pub fn commands(event: &Ebd) -> Result<Vec<(f32, usize, Vec<u32>)>, String> {
+/// words as the script has them (the word, then its operands). `given` are the random commands'
+/// numbers in the order asked for (the lowest after them) and `until` where a looping event stops.
+pub fn commands(event: &Ebd, given: &[f32], until: f32) -> Result<Vec<(f32, usize, Vec<u32>)>, String> {
     let table = OperandTable::ryza();
-    let player = Player::translated(event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("{e}"))?.counted_waits();
     let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
-    let (_, taken) = player.schedule_traced();
+    let (_, taken) = drawn_player(event, given, 0, until)?.schedule_traced();
     Ok(taken
         .into_iter()
         .filter_map(|(time, action, at)| {
@@ -55,6 +114,20 @@ pub fn telop(stage: &Stage) -> Option<(u32, f32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picks_from_the_clock_stay_in_range_and_spread() {
+        let mut seen = [0u32; 3];
+        for t in 0..3000 {
+            let n = clock_pick(1_700_000_000 + t, 0, 2);
+            assert!((0..=2).contains(&n));
+            seen[n as usize] += 1;
+        }
+        assert!(seen.iter().all(|&c| c > 800), "{seen:?}");
+        assert_eq!(clock_pick(5, 4, 4), 4);
+        // the C library's second number after srand(1) is 18467: the middle share of three
+        assert_eq!(clock_pick(1, 0, 2), 1);
+    }
 
     #[test]
     fn paths_by_chapter() {

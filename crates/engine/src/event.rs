@@ -183,6 +183,29 @@ pub const GOTO_VAR: u32 = 0x7500_0008;
 pub const GOTO_ABOVE: u32 = 0x7500_0009;
 /// `u10` (`{first, v, c}`): from label `first` when variable `v` is `c`, else `first + 1`.
 pub const GOTO_EQUAL: u32 = 0x7500_000a;
+/// Barrel's own words (no game's script has a word with 0xee in its third byte) for commands
+/// only games other than Escha have; [`Player::translated`]'s `same` list maps a game's words
+/// to them whatever their operand counts.
+///
+/// `{variable, first}`: go to the label `first` plus the variable's value (Ryza DX's `u100`,
+/// `0x14047a5d0`; Escha's [`GOTO_VAR`] takes the two the other way round).
+pub const GOTO_VAR_FROM: u32 = 0x75ee_0001;
+/// `{variable, lowest, highest}`: sets the variable to a whole number drawn between the two
+/// (Ryza DX's `u104`, `0x140479dec`: it seeds the C library's generator with the clock's
+/// seconds and takes its second number, so the draw is a new one every second).
+pub const VAR_RANDOM: u32 = 0x75ee_0002;
+/// `{shortest, longest}` in hundredths of a second: waits a time drawn between the two (Ryza
+/// DX's `p6`, `0x14047999e`, from the engine's own generator).
+pub const WAIT_RANDOM: u32 = 0x70ee_0001;
+
+/// Where an event's random commands get their numbers ([`Player::chance`]). Without one they
+/// take the lowest.
+pub struct Chance<'a> {
+    /// A whole number from `lowest` to `highest`, both included.
+    pub whole: Box<dyn FnMut(i32, i32) -> i32 + 'a>,
+    /// A time in seconds from `shortest` to `longest`.
+    pub seconds: Box<dyn FnMut(f32, f32) -> f32 + 'a>,
+}
 /// `u22` (`ECT_EVENT_CONTRAST_SET_MIX`): `{contrast id, preset, hundredths of a second}`: the
 /// screen's colour overlay moves from the preset's first colour to its second over the time
 /// (`docs/events.md`, "Fades").
@@ -486,6 +509,10 @@ pub struct Player<'a> {
     /// Waits take the frames the game's countdown takes ([`counted_wait`]); see
     /// [`Player::counted_waits`].
     counted_waits: bool,
+    /// The random commands' numbers; see [`Player::chance`].
+    chance: Option<Chance<'a>>,
+    /// Where [`Player::schedule`] stops an event that loops; see [`Player::until`].
+    until: Option<f32>,
 }
 
 /// How long a wait of `seconds` lasts at 60 frames a second when it is counted down as Ryza
@@ -494,6 +521,16 @@ pub struct Player<'a> {
 /// next command starts in that same frame). The floats' rounding makes some waits a frame
 /// shorter than their length: 0.5 s is 29 frames, 0.45 s 26 and 0.3 s 17, while 1, 1.25, 2 and
 /// 2.5 s are 60, 75, 120 and 150 (all as measured in the game).
+// STAND-IN: How long a fade holds its event is a rule fitted to three measured fades; the real thing is the game's own test of the fade's end (behind `0x14050fdb0`).
+/// How long Ryza DX's event waits on a screen fade (`u49`) of `seconds`, at 60 frames a second.
+/// Measured in the game: 3 frames for a fade of no length, 32 for 0.5 s, 94 for 1.5 s (the
+/// picture's own fade takes 30 and 90). The rule here fits those three, a frame for each 16 ms
+/// and never under 3; the game's own is not read.
+pub fn fade_hold(seconds: f32) -> f32 {
+    let frames = ((seconds.max(0.0) * 1000.0).round() / 16.0).ceil().max(3.0);
+    frames / 60.0
+}
+
 pub fn counted_wait(seconds: f32) -> f32 {
     let step = 1.0f32 / 60.0;
     let (mut left, mut frames) = (seconds, 0u32);
@@ -541,7 +578,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, chance: None, until: None })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -567,7 +604,7 @@ impl<'a> Player<'a> {
                 (Some(Some(_)), Some(None)) => true,
                 (e, g) => e == g,
             };
-            if let Some(&(_, w)) = same.iter().find(|&&(g, w)| g == c.word && fits(w)) {
+            if let Some(&(_, w)) = same.iter().find(|&&(g, w)| g == c.word && (w >> 16 & 0xff == 0xee || fits(w))) {
                 c.word = w;
                 continue;
             }
@@ -609,6 +646,19 @@ impl<'a> Player<'a> {
         self
     }
 
+    /// Gives the random commands ([`VAR_RANDOM`], [`WAIT_RANDOM`]) their numbers.
+    pub fn chance(mut self, chance: Chance<'a>) -> Self {
+        self.chance = Some(chance);
+        self
+    }
+
+    /// Stops [`Player::schedule`] taking commands once an action's time passes `seconds`: for
+    /// an event that loops for as long as its screen stays up (Ryza DX's title).
+    pub fn until(mut self, seconds: f32) -> Self {
+        self.until = Some(seconds);
+        self
+    }
+
     /// Plays the event as the Extra menu replays it: `w4` ([`REPLAY_START_ACTION`]) starts its
     /// actions (in play it does nothing).
     pub fn replay(mut self, replay: bool) -> Self {
@@ -640,6 +690,7 @@ impl<'a> Player<'a> {
             (GOTO_SUM, [a, b, ..]) => a.wrapping_add(*b),
             (GOTO_FROM_BASE, [n, ..]) => LABEL_BASE.wrapping_add(*n),
             (GOTO_VAR, [first, v, ..]) => first.wrapping_add(var(*v) as u32),
+            (GOTO_VAR_FROM, [v, first, ..]) => first.wrapping_add(var(*v) as u32),
             (GOTO_ABOVE, [first, v, c, ..]) => first.wrapping_add(u32::from(var(*v) > *c as i32)),
             (GOTO_EQUAL, [first, v, c, ..]) => first.wrapping_add(u32::from(var(*v) != *c as i32)),
             _ => return None,
@@ -930,7 +981,37 @@ impl<'a> Player<'a> {
                     continue;
                 }
             }
+            // A looping event ends where it was asked to, or after a million commands (a loop
+            // with no wait in it).
+            if self.until.is_some_and(|end| now > end) || taken.len() >= 1_000_000 {
+                threads[t].2 = self.actions[action].len();
+                continue;
+            }
             taken.push((now, action, pc));
+            match (c.word, c.operands) {
+                (VAR_RANDOM, [v, low, high, ..]) => {
+                    let (low, high) = (*low as i32, *high as i32);
+                    let n = match &mut self.chance {
+                        Some(chance) if high > low => (chance.whole)(low, high).clamp(low, high),
+                        _ => low,
+                    };
+                    if let Some(var) = self.vars.get_mut(*v as usize) {
+                        *var = n;
+                    }
+                    continue;
+                }
+                (WAIT_RANDOM, [low, high, ..]) => {
+                    let (low, high) = (*low as i32 as f32 / 100.0, *high as i32 as f32 / 100.0);
+                    let seconds = match &mut self.chance {
+                        Some(chance) if high > low => (chance.seconds)(low, high).clamp(low, high),
+                        _ => low,
+                    };
+                    out.push(Timed { time: now, action, step: Step::Wait { seconds } });
+                    threads[t].0 += if self.counted_waits { counted_wait(seconds) } else { seconds.max(0.0) };
+                    continue;
+                }
+                _ => {}
+            }
             if let Some(to) = self.jump(action, c) {
                 threads[t].2 = to;
                 continue;
@@ -967,6 +1048,8 @@ impl<'a> Player<'a> {
                         }
                     }
                     Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
+                    // Ryza DX's events wait on their fades.
+                    Step::Fade { seconds, .. } if self.counted_waits => threads[t].0 += fade_hold(*seconds),
                     Step::CharacterMove { character, .. } => {
                         scratch.apply(&s);
                         match scratch.move_left(*character) {
@@ -1084,6 +1167,9 @@ mod counted_wait_tests {
             assert_eq!((super::counted_wait(hundredths as f32 / 100.0) * 60.0).round() as u32, frames, "p1 {hundredths}");
         }
         assert_eq!(super::counted_wait(0.0), 0.0);
+        for (seconds, frames) in [(0.0, 3), (0.5, 32), (1.5, 94)] {
+            assert_eq!((super::fade_hold(seconds) * 60.0).round() as u32, frames);
+        }
     }
 }
 
@@ -1135,6 +1221,33 @@ mod tests {
         assert!(matches!(motion.step, Step::Motion { character: 0, motion: 92511, .. }));
         // after the shortest wait, 10 s
         assert!((motion.time - 10.0).abs() < 1e-3, "{}", motion.time);
+    }
+
+    /// Ryza's title loop: a label, a random wait, a random pick among three cases, each going
+    /// back to the label. With a chance the picked case alone plays each time round.
+    #[test]
+    fn ryza_loops_pick_one_case() {
+        use barrel_formats::ebd::{Action, Ebd, END};
+        let (label, goto, goto_var, random) = (0x7500_005c, 0x7500_005e, 0x7500_0064, 0x7500_0068);
+        let mut words = vec![label, 0, 0x7000_0006, 1000, 2000, random, 10, 0, 2, goto_var, 10, 10];
+        for case in 0..3 {
+            words.extend([label, 10 + case, 0x7300_0022, case, 100 + case, 0, 0, 0, goto, 0]);
+        }
+        words.push(END);
+        let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words }], resources: vec![] };
+        let table = OperandTable::ryza();
+        let play = |picks: Vec<i32>| -> Vec<(u32, f32)> {
+            let mut picks = picks.into_iter();
+            let chance = Chance { whole: Box::new(move |low, _| picks.next().unwrap_or(low)), seconds: Box::new(|_, longest| longest) };
+            let p = Player::translated(&event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).unwrap();
+            let steps = p.chance(chance).until(50.0).schedule();
+            steps.iter().filter_map(|t| match t.step { Step::Motion { motion, .. } => Some((motion, t.time)), _ => None }).collect()
+        };
+        assert_eq!(play(vec![2, 0, 1]), [(102, 20.0), (100, 40.0)]);
+        // with no chance: the shortest wait and the first case, until the time asked for
+        let p = Player::translated(&event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).unwrap();
+        let first: Vec<u32> = p.until(15.0).schedule().iter().filter_map(|t| match t.step { Step::Motion { motion, .. } => Some(motion), _ => None }).collect();
+        assert_eq!(first, [100]);
     }
 
     #[test]

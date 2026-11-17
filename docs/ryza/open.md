@@ -31,35 +31,36 @@ checks are `runchecks docs/ryza/checks.txt` (21 rows; frames are the exact captu
 The game runs every command through per-subject queues (`0x140489410` steps a runner's queue:
 the event's own `u`/`w`/`p` words, characters' `s`, the camera's `t`, the `q` loads), and
 ryza-recomp logs them with their frames (`scenarios/hooks/commands.hooks`,
-`tools/cmdlog.py`). `barrel-tool ryza-commands INSTALL EVENT` prints what Barrel's player
-takes and `tools/cmddiff.py` pairs the two per group (docs/parity.md, "Event commands").
-Found so far, none fixed:
+`tools/cmdlog.py`). `barrel-tool ryza-commands INSTALL EVENT [DRAWS]` prints what Barrel's
+player takes and `tools/cmddiff.py` pairs the two per group (docs/parity.md, "Event commands").
+Read from the game and now Barrel's (docs/events.md, "Atelier Ryza DX's events"): waits
+count down in 32-bit floats (some a frame short), the title's loop (a label, a jump, a number
+drawn from the clock, a jump by it), the random wait, and an event waiting on its fades.
+With the game's two draws given (`18.1,2`) the title's event pairs 66 of 69 commands and the
+opening's first 132 of 135, each group at one offset. Left:
 
-- **The title's event (`tt01_010`, game frames from 874).** All 18 `q` and 8 `t` commands pair
-  at one offset. The game then differs from Barrel's straight run through the script:
-  - `u49 1 3 150` (a 1.5 s fade) holds the event for 94 frames; Barrel takes it as instant, so
-    everything after it is 94 frames early against the game.
-  - After `u92 0` and the wait `p6 1000 2000` the game ran one of the cases only (`u92 12`:
-    `u104 10 0 2`, `u100 10 10`, `s90 3 ...`, `s92 3`), 1,086 frames (18.1 s) after the wait
-    began. Barrel plays the wait as 10 s and then the cases `u92 10`, `11`, `12` one after the
-    other, so it starts Ryza's action (case 10, action 12's `s34`/`s38`/`s39`) where the game
-    picked Tao's. `u92`/`u94` are a pick among cases, and both the pick and the wait are
-    random: the recomp's run repeats them, so they come from a generator seeded the same each
-    run. Way in: what `u92`, `u100` and `u104` read (hook the `u` runner's handler,
-    `[runner vtable+0x48]`), and where `p6` gets its number.
-- **The opening's first event (`mm00_010`, game frames from 1601; the run stops at its first
-  line that waits for a button).** 132 of the game's 135 commands pair in order. Not paired:
-  the two `s69` commands differ in one operand (the 14th: `-4300` in the game's queue, `0` in
-  the script: the game fills it in), and one wait is counted twice. Timing:
-  - Loading comes first: the event's `q5`/`q10` loads run from 1603 to 1667 behind `p1 10`
-    polls, the placements at 1667, and the event's clock starts at 1699. Barrel has all of it
-    at 0.
-  - Waits `p1 N` are N hundredths of a second, but some come out a frame short: `p1 50` takes
-    29 frames (twice), `p1 45` 26, `p1 30` 17, while `p1 200`, `250`, `125`, `90` and `100`
-    take exactly 120, 150, 75, 54 and 60. Barrel counts them all exactly, so it drifts 2 to 6
-    frames late by frame 3037. The rule is not read (a wait's first frame is stepped twice).
-  - `s36 0` (wait for the motion) holds the game 122 frames at 2589; `ryza-commands` gives no
-    motion lengths to the player, so its `s36` takes no time (the tool's gap, not the play's).
+- **Loading is not timed.** The game's event runs its first commands, then loads its
+  characters behind `p1 10` polls (title: 874 to 917; opening: 1601 to 1667, its clock from
+  1699), and only then places them. Barrel places them at once, so its early commands sit 40
+  (title) and 64 to 95 (opening) frames from the game's, a constant after that
+  (`actors::EVENT_START` is fitted to it).
+- **How long a fade holds the event** is fitted to three fades (`event::fade_hold`: 3, 32 and
+  94 frames for 0, 0.5 and 1.5 s; the picture's own fade is 30 and 90). The game's test is
+  behind `0x14050fdb0` (to `0x140509f30`), not read. Rules tried that give 93 for 1.5 s: the
+  fade's frames plus a fixed 2 or 3, and a float sum against the length plus 1/30 s.
+- **The title's fade from black is not drawn.** The game covers the screen with a black quad
+  (vertex shader with `rate`, `sColor`, `eColor`; no texture) from the title's first frame
+  and fades it from capture frame 929 at 1/90 a frame (`u49 1 2 0`, then `u49 1 3 150`:
+  preset 2 is clear to black, 3 black to clear). Barrel's stage has the fade
+  (`Stage::fade`); Ryza's play does not draw it, and the 2D diff has no row for it.
+- **The draws are the game's only when given.** The pick is seeded by the clock's seconds, as
+  the game's; the wait's generator is the game's shared one (`0x1406ae6b0`), which Barrel
+  does not follow, so a parity run gives the numbers (`BARREL_EVENT_DRAWS`).
+- **`s69`** carries -4300 in its 14th operand in the game's queue where the script has 0, and
+  `s36` (wait for the motion) takes no time in `ryza-commands`, which gives the player no
+  motion lengths (the play does).
+- The cast's other gaps stand: Ryza's head (`s88`, a look-at), the weapons and the characters
+  the event adds (`q5`, slot 216 on).
 
 ## File bytes Barrel never uses
 

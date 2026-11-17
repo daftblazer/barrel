@@ -687,10 +687,19 @@ pub static RYZA: &[(u32, &str)] = &[
 /// `s34` (`ECT_CHARA_MOTION_SET`, `{character, motion, division, blend, flag}`: the title's
 /// `s34 0 92511 0 0 0`) plays a motion as Escha's `s5` does; Escha's takes one operand fewer.
 /// `p6` (`ECT_MACRO_TIME_WAIT_RANDOM`, `{shortest, longest}` hundredths of a second; the title's
-/// `p6 1000 2000` before Ryza's action) waits as `p1` does, for the shortest: the game's
-/// time is random.
+/// `p6 1000 2000` before a character's action) waits a time drawn between the two. `u92 {n}` is
+/// a label (Escha's `u3`), `u94 {n}` goes to it (`u5`), `u104 {variable, lowest, highest}` draws
+/// a whole number and `u100 {variable, first}` goes to label `first` plus the variable: the
+/// title loops through a wait and one of three actions drawn each time.
 pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[
-    (0x70000006, 0x70000001),
+    // the random wait and the title's loop: a label, a jump back, a random number and a jump
+    // by it (the last three are the engine's own words, `barrel_engine::event::WAIT_RANDOM`,
+    // `VAR_RANDOM` and `GOTO_VAR_FROM`)
+    (0x70000006, 0x70ee0001),
+    (0x7500005c, 0x75000003),
+    (0x7500005e, 0x75000005),
+    (0x75000068, 0x75ee0002),
+    (0x75000064, 0x75ee0001),
     (0x73000022, 0x73000005),
     (0x75000011, 0x75000012),
     (0x75000041, 0x75000037),

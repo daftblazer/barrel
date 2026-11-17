@@ -499,13 +499,22 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         true => Some(barrel_formats::ebd::Ebd::parse(&install.read(&barrel_ryza::event::path(actors::TITLE_EVENT).ok_or("title event")?)?)?),
         false => None,
     };
-    let mut title_play = match &title_event {
-        Some(e) => Some(barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), barrel_ryza::event::schedule(e)?)),
+    // The event loops: a random wait, then one of three actions drawn each time. BARREL_EVENT_DRAWS
+    // (numbers with commas between) gives the first draws in the order the event asks, for
+    // playing what a run of the game drew; after them the clock draws as the game's does. An
+    // hour of it is laid out.
+    let title_steps = match &title_event {
+        Some(e) => {
+            let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
+            let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
+            Some(barrel_ryza::event::schedule_drawn(e, &given, clock, 3600.0)?)
+        }
         None => None,
     };
+    let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
+    let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
     let mut cast_files: Vec<actors::Files> = Vec::new();
-    if let (Some(e), Some(play)) = (&title_event, title_play.as_mut()) {
-        let motions = actors::motions_of(&barrel_ryza::event::schedule(e)?);
+    if let (Some(motions), Some(play)) = (title_motions, title_play.as_mut()) {
         actors::advance(play, a.title_at - actors::EVENT_START);
         for &slot in play.stage.characters.keys() {
             cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()))?);

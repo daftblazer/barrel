@@ -1862,3 +1862,23 @@ notices, not these.) `u28`'s operand is a
 voice number, not a line (it never names a line `u17` shows, across all events). 303 commands stay unmapped; the
 commonest `s40` (`ECT_CHARA_MOTION_SET_LOOP`, five operands against Escha's four, as in Sophie
 2), `t25` (Ryza only), `u17`'s neighbours `u66`, `q5` (`_ADDITION_EX`, 13 against 14), `t18`.
+
+**Timing and loops, read from the game** (its command queues: `0x140489410` steps a runner,
+whose handlers are its vtable's slots 8, start, and 9, each frame until done; the event's own
+runner's are `0x140479820` and `0x14047c660`):
+
+- A wait (`p1 {hundredths}`) sets a 32-bit float timer (`0x14048eb90`) and takes 1/60 s off it
+  each frame from its first (`0x14048ebe0`), ending at zero or below; the next command starts
+  in that frame. The floats make 0.5 s 29 frames, 0.45 s 26 and 0.3 s 17, where 1, 2 and
+  2.5 s are 60, 120 and 150 (`event::counted_wait`, `Player::counted_waits`).
+- `p6 {shortest, longest}` waits a time drawn between the two by the engine's shared
+  generator (`0x1406ae340`).
+- `u92 {n}` is a label, `u94 {n}` goes to it, `u104 {variable, lowest, highest}` sets the
+  variable to a whole number drawn between the two, and `u100 {variable, first}` goes to label
+  `first` plus the variable. `u104` seeds the C library's generator with the clock's seconds,
+  throws one number away and maps the next (`ryza::event::clock_pick`), so the number depends
+  only on the second it is asked in. The title (`tt01_010`) loops: a wait of 10 to 20 s, one of
+  three actions drawn, back to the start (`Player::chance`, `Player::until`; the play lays an
+  hour of it out).
+- `u49 {1, preset, hundredths}` (`ECT_EVENT_CONTRAST_SET_MIX`, Escha's `u22`) fades the screen
+  and the event waits for it (`event::fade_hold`, fitted: docs/ryza/open.md).

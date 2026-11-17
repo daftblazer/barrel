@@ -623,6 +623,10 @@ mistake for a day). `u46` in the events does not play its movie yet.
   nothing; once the engine is finished, unlocking them could become an option the player turns
   on. Lockstep checks skip the step (it changes no game state).
 
+- **The title's pick never runs past its range.** Ryza DX's `u104` maps a number from 0 to
+  32767 onto its range in equal shares and, once in 32768 draws, lands one past the highest
+  (the title would then play no action that round). Barrel keeps it at the highest
+  (`ryza::event::clock_pick`).
 - **Recipe effect flags.** When an item gains an effect that is not one of its recipe's, the
   original's lookup comes back -1 and it marks the previous recipe's tenth effect as revealed
   (one byte before the right recipe's flags, `0x140367ad0`). That is corruption of another
