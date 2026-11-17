@@ -149,3 +149,15 @@ text, an error, or a panic); the tool bisects the file down to `--gran` bytes (d
 `FILE: N bytes, U unused in R ranges (P%), parser X`. A parser that allocates what a mutated
 length field asks for can exhaust memory; run it under the memory cap. The elixir container's
 entries are listed, not parsed, so their bytes are reported unused.
+
+
+## Event commands
+
+The answer key logs the commands the game's queues run, each with the frames it ran over
+(ryza-recomp: a scenario with `HOOKS=scenarios/hooks/commands.hooks`, then `tools/cmdlog.py
+--hex hooks.log`). `barrel-tool ryza-commands INSTALL EVENT` prints the commands Barrel's
+player takes from the same event, as `frame aACTION word operands...` in hex, frames at 60 a
+second from the event's start. `tools/cmddiff.py GAME BARREL --from FRAME` pairs the two in
+order within each group of commands (the word's letter) and prints, per group, the counts, the
+commands only one side has, and the pairs whose frames are off the commonest offset. An event
+is at parity when every command pairs and none is off the offset.

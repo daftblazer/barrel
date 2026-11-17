@@ -42,6 +42,8 @@ usage:
   barrel-tool ebm-scan DIR          read every message file under DIR
   barrel-tool opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
                                in PAK archives: Sophie 2, the Ryza games)
+  barrel-tool ryza-commands INSTALL EVENT  a Ryza DX event's commands as Barrel's player takes them: `frame aACTION word operands...`
+      in hex (frames at 60 a second from the event's start), for tools/cmddiff.py against the game's log
   barrel-tool ryza-field INSTALL [FIELD]  a Ryza DX field loaded from the archives into a scene (no
                                FIELD: every field, one line each)
   barrel-tool opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
@@ -152,6 +154,7 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["opl2-scan", paks @ ..] => opl2_scan_paks(paks),
         ["opl2", file] => opl2_list(file),
+        ["ryza-commands", root, event] => ryza_commands(Path::new(root), event),
         ["ryza-field", root] => ryza_field(Path::new(root), None),
         ["ryza-field", root, field] => ryza_field(Path::new(root), Some(field)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
@@ -3475,6 +3478,18 @@ fn opl2_scan_paks(paks: &[&str]) -> Result<()> {
         println!("failed: {f}");
     }
     if failed.is_empty() { Ok(()) } else { Err("some lists did not read".into()) }
+}
+
+/// A Ryza DX event's commands in the order and at the frames Barrel's player takes them.
+fn ryza_commands(root: &Path, event: &str) -> Result<()> {
+    let install = barrel_ryza::install::Install::open(root)?;
+    let path = barrel_ryza::event::path(event).ok_or(format!("{event}: not an event name"))?;
+    let e = Ebd::parse(&install.read(&path)?).map_err(|err| format!("{path}: {err}"))?;
+    for (time, action, words) in barrel_ryza::event::commands(&e)? {
+        let words: Vec<String> = words.iter().map(|w| format!("{w:x}")).collect();
+        println!("{} a{action} {}", (time * 60.0).round() as i64, words.join(" "));
+    }
+    Ok(())
 }
 
 /// Ryza DX fields through `barrel_engine::field::load` (no tags read yet: nothing casts or

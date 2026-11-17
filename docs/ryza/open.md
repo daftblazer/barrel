@@ -26,6 +26,41 @@ checks are `runchecks docs/ryza/checks.txt` (21 rows; frames are the exact captu
    not drawn. Solved when diff3d also matches those 6 draws and Ryza's palette is within the
    others' tolerance.
 
+## Event commands against the game's own log
+
+The game runs every command through per-subject queues (`0x140489410` steps a runner's queue:
+the event's own `u`/`w`/`p` words, characters' `s`, the camera's `t`, the `q` loads), and
+ryza-recomp logs them with their frames (`scenarios/hooks/commands.hooks`,
+`tools/cmdlog.py`). `barrel-tool ryza-commands INSTALL EVENT` prints what Barrel's player
+takes and `tools/cmddiff.py` pairs the two per group (docs/parity.md, "Event commands").
+Found so far, none fixed:
+
+- **The title's event (`tt01_010`, game frames from 874).** All 18 `q` and 8 `t` commands pair
+  at one offset. The game then differs from Barrel's straight run through the script:
+  - `u49 1 3 150` (a 1.5 s fade) holds the event for 94 frames; Barrel takes it as instant, so
+    everything after it is 94 frames early against the game.
+  - After `u92 0` and the wait `p6 1000 2000` the game ran one of the cases only (`u92 12`:
+    `u104 10 0 2`, `u100 10 10`, `s90 3 ...`, `s92 3`), 1,086 frames (18.1 s) after the wait
+    began. Barrel plays the wait as 10 s and then the cases `u92 10`, `11`, `12` one after the
+    other, so it starts Ryza's action (case 10, action 12's `s34`/`s38`/`s39`) where the game
+    picked Tao's. `u92`/`u94` are a pick among cases, and both the pick and the wait are
+    random: the recomp's run repeats them, so they come from a generator seeded the same each
+    run. Way in: what `u92`, `u100` and `u104` read (hook the `u` runner's handler,
+    `[runner vtable+0x48]`), and where `p6` gets its number.
+- **The opening's first event (`mm00_010`, game frames from 1601; the run stops at its first
+  line that waits for a button).** 132 of the game's 135 commands pair in order. Not paired:
+  the two `s69` commands differ in one operand (the 14th: `-4300` in the game's queue, `0` in
+  the script: the game fills it in), and one wait is counted twice. Timing:
+  - Loading comes first: the event's `q5`/`q10` loads run from 1603 to 1667 behind `p1 10`
+    polls, the placements at 1667, and the event's clock starts at 1699. Barrel has all of it
+    at 0.
+  - Waits `p1 N` are N hundredths of a second, but some come out a frame short: `p1 50` takes
+    29 frames (twice), `p1 45` 26, `p1 30` 17, while `p1 200`, `250`, `125`, `90` and `100`
+    take exactly 120, 150, 75, 54 and 60. Barrel counts them all exactly, so it drifts 2 to 6
+    frames late by frame 3037. The rule is not read (a wait's first frame is stepped twice).
+  - `s36 0` (wait for the motion) holds the game 122 frames at 2589; `ryza-commands` gives no
+    motion lengths to the player, so its `s36` takes no time (the tool's gap, not the play's).
+
 ## The answer key's runs repeat exactly
 
 ryza-recomp's scenarios run on virtual clocks by default (RYZA_DETERMINISTIC): each frame is

@@ -20,6 +20,23 @@ pub fn schedule(event: &Ebd) -> Result<Vec<Timed<'_>>, String> {
     Ok(player.schedule())
 }
 
+/// The event's commands as Barrel's player takes them, for comparing with the game's own log
+/// (ryza-recomp's `tools/cmdlog.py --hex`): the time in seconds, the action, and the command's
+/// words as the script has them (the word, then its operands).
+pub fn commands(event: &Ebd) -> Result<Vec<(f32, usize, Vec<u32>)>, String> {
+    let table = OperandTable::ryza();
+    let player = Player::translated(event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("{e}"))?;
+    let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
+    let (_, taken) = player.schedule_traced();
+    Ok(taken
+        .into_iter()
+        .filter_map(|(time, action, at)| {
+            let c = scripts.get(action)?.get(at)?;
+            Some((time, action, std::iter::once(c.word).chain(c.operands.iter().copied()).collect()))
+        })
+        .collect())
+}
+
 /// The stage `seconds` into the event, played tick by tick from its start.
 pub fn stage_at(steps: Vec<Timed<'_>>, seconds: f32) -> Stage {
     let mut play = Playback::new(Stage::default(), steps);

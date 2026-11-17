@@ -849,7 +849,15 @@ impl<'a> Player<'a> {
     /// (`docs/events.md`), so overlapping waits may run differently there; not settled. Messages take no time here
     /// (the game waits for the player to read them), nor do waits for characters or the
     /// camera, whose lengths depend on what they wait for.
-    pub fn schedule(mut self) -> Vec<Timed<'a>> {
+    pub fn schedule(self) -> Vec<Timed<'a>> {
+        self.schedule_traced().0
+    }
+
+    /// [`Player::schedule`], and the commands as they were taken: when, in seconds from the
+    /// event's start, and which (the action and the command's place in it), in the order the
+    /// player took them. For comparing against the original's own command log.
+    pub fn schedule_traced(mut self) -> (Vec<Timed<'a>>, Vec<(f32, usize, usize)>) {
+        let mut taken = Vec::new();
         // (ready at, action, next command), in start order.
         let mut threads: Vec<(f32, usize, usize)> = vec![];
         if !self.actions.is_empty() {
@@ -894,6 +902,7 @@ impl<'a> Player<'a> {
                     continue;
                 }
             }
+            taken.push((now, action, pc));
             if let Some(to) = self.jump(action, c) {
                 threads[t].2 = to;
                 continue;
@@ -979,7 +988,7 @@ impl<'a> Player<'a> {
         // (event 212: action 20's camera cut, at line 2, came after lines 2 to 4 and was
         // never reached while they showed).
         out.sort_by(|a, b| a.time.total_cmp(&b.time));
-        out
+        (out, taken)
     }
 }
 
