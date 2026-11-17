@@ -27,6 +27,7 @@ Not read yet:
 - **The player alone.** The model's folder also matches other draws that share its textures
   (62 draws at the save's spot, 28 after walking away from them), so the mean moves when they
   are culled. To do: keep the draws of one index-count set, or the root joint only.
-- **The world clock and weather.** Not looked for; the field's lighting constants in the
-  capture follow from them.
+- **The world clock.** The time of day and weather in force are read (a hook on
+  `0x14071e970` and `0x14071e9d0`, the environment's setters: the save's Rasenboden loads at
+  weather 0, time 1, noon); the clock that moves them is not.
 - **Facing.** In the bone matrices' rotation; not printed.

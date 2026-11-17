@@ -1417,6 +1417,31 @@ directional light (1, 1, 1 at 7°, 45°), an ambient colour, and the diffuse cub
 offsets are not placed yet. The first words of set 0 for comparison: 4.2, 15, 1, 1000 (fog
 on, 1000; noon has 0 and 10,000).
 
+**The file against the game's memory.** In memory a set is `elixir::EnvDataOne`, 0x20d0
+bytes (the file's is 0x1fe0): the environment object holds the 12 at +0x10, the set in use
+copied to +0x189d0, the weather at +0x1aaa0 and the time of day at +0x1aaa4
+(`0x14071e9d0` and `0x14071e970` set them and copy the set; `0x140727680 (object, weather,
+time)` calls both). The XML reader's offsets above are that structure's. Rasenboden's first
+set, read from the running game (a hook on `0x14071e970`) and laid against the file's words,
+gives where the file's bytes go, up to 0x4fc:
+
+| File | Memory | |
+|---|---|---|
+| 0x000 to 0x08c | the same | the HDR block and the first fog layer's start |
+| 0x08c to 0x108 | +0x04 | |
+| 0x108 to 0x174 | +0x08 | |
+| 0x174 to 0x274 | +0x0c | the sky plane glow (memory 0x180), the clouds |
+| 0x274 to 0x310 | reordered | `shadowMap_` (memory 0x284) and what follows it: single words at +0x10, +0x14, +0x20, +0x24, then 0x2c4 to 0x300 at +0x4c |
+| 0x310 to 0x4fc | +0x44 | `gust_` (file 0x308), `lightShaft_` 0x33c, `lpv_` 0x35c, `SkyDome_` 0x3d8, `mainAmbientLight_` 0x484, the two lights 0x494 |
+
+So the memory structure has members the file lacks (4 bytes each at 0x8c, 0x108 and 0x174,
+more in the shadow block), and the game fills the structure member by member, not by a copy.
+After 0x4fc the two no longer run side by side: both hold three arrays of 0x6c-byte records
+(file from 0x83c, 0x1034 and 0x182c; memory 0x1f8, 0x22c and 0x258 later), and between them
+blocks in another order (`indirectStage_`: memory 0xda0, file 0x54c). The code that fills
+the structure from the file is not found (`0x14071ea30` beside the setters has no copies);
+with it every member's place in the file follows.
+
 **The sky.** A set names its sky dome at 0x3d8 (64 bytes, zero-ended; `SkyDome_`'s
 `SkyDomeDisplaySetFactory` in the executable, whose reader also reads `SkyDomeLightGroupID`,
 `SkyDomeWorldPosition`, `SkyDomeWorldScale` and two more): a container

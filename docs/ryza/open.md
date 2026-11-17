@@ -71,8 +71,12 @@ and one field's files (`s01_i_attic`):
   every time of day and weather Barrel reads). Barrel takes the fog, the stage light, the
   character light and the sun; the rest holds what several stand-ins guess at (exposure,
   saturation, the sky's scales, emission by time of day, the wind: `tools/standins.sh`). The
-  largest known gap between the game's data and what Barrel reads; way in: the file's layout
-  from the game's reader, set by set.
+  largest known gap between the game's data and what Barrel reads. The file's first 0x4fc
+  bytes are now placed against the game's structure (docs/formats.md, "Ryza field
+  environment": the running game's set read by a hook), so the XML reader's member names
+  give their places in the file; the rest waits on the code that fills the structure from
+  the file, which is not found. Way in: a hook on the C library's copy (`0x140d61d00`) or on
+  the structure's readers while a field loads, to see who writes the set.
 - **The placement list (`.opl2`): 68% unused**, nearly all empty slots (the 8 collision records
   of a type with no collision files); really unread are 28 of the 32 bytes after an instance's
   tags and 3 floats a collision record (docs/formats.md).
