@@ -15,6 +15,42 @@ use barrel_render::text::{Glyph, Quad, FONT, UI};
 
 use crate::font::ATLAS_SIZE;
 
+/// The field the title draws behind its layer. The capture's G-buffer draws use textures found
+/// only in this field's pack (`barrel-parity textures` over the archives' containers: 28 of the
+/// scene's textures sit in this one pack and no other), and its draws reappear here with the same
+/// textures and index counts (`diff3d`). Not `event_titleback`, the field the name suggests: its
+/// terrain and textures do not match the capture.
+pub const FIELD: &str = "s19_l_highway_03";
+
+/// The title's camera, read off the capture's `mW2P` (the same at every captured frame, 300 to
+/// 1900): the eye and forward vector in the game's world (x not mirrored), a 45 degree vertical
+/// field of view, near 50 and far 300000 (the projection's depth terms; the far is fitted to
+/// 300073 +- the float noise of a 5-digit division, so 300000).
+#[derive(Clone, Copy, Debug)]
+pub struct Camera {
+    pub eye: [f32; 3],
+    pub forward: [f32; 3],
+    /// Vertical field of view in degrees.
+    pub fov: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
+pub const CAMERA: Camera = Camera { eye: [29789.2, 6484.96, 41557.74], forward: [0.404546, 0.105280, -0.908621], fov: 45.0, near: 50.0, far: 300_000.0 };
+
+impl Camera {
+    /// The camera as the field renderer takes it: the look point in render space (x mirrored),
+    /// then the yaw and pitch in degrees and the distance from that point back to the eye
+    /// (`near` is a hundredth of it, as the renderer's own rule has it).
+    pub fn look(&self) -> (glam::Vec3, f32, f32, f32) {
+        let dist = self.near * 100.0;
+        let eye = glam::Vec3::new(-self.eye[0], self.eye[1], self.eye[2]);
+        let fwd = glam::Vec3::new(-self.forward[0], self.forward[1], self.forward[2]).normalize();
+        let back = -fwd;
+        (eye + fwd * dist, back.x.atan2(back.z).to_degrees(), back.y.asin().to_degrees(), dist)
+    }
+}
+
 /// The layout's height in pixels; the atlas's pictures are three times this size.
 const LAYOUT_HEIGHT: f32 = 720.0;
 const ATLAS_PER_LAYOUT: f32 = 3.0;

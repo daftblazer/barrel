@@ -94,6 +94,16 @@ fn textures(root: &Path, out: &Path) -> Result<()> {
                 add(n, &data);
             }
         }
+        // the textures packed inside the archives' containers (a field's terrain and models)
+        let mut packs: Vec<String> = paks.names().filter(|n| n.ends_with(".elixir.gz") || n.ends_with(".elixir")).map(str::to_owned).collect();
+        packs.sort();
+        for n in &packs {
+            let Some(Ok(bytes)) = paks.read(n) else { continue };
+            let Ok(e) = Elixir::parse(&bytes) else { continue };
+            for entry in e.entries.iter().filter(|e| e.name.ends_with(".g1t")) {
+                add(&format!("{n}:{}", entry.name), e.data(entry));
+            }
+        }
     }
     // the English font, for reading text off the screen
     if let (Ok(exe), Ok(atlas)) = (std::fs::read(root.join("Atelier_Escha_and_Logy_EN.exe")), std::fs::read(root.join("Data/x64/Font_EN/MainFont_x64_0.g1t"))) {
@@ -117,6 +127,7 @@ fn textures(root: &Path, out: &Path) -> Result<()> {
 fn index(path: Option<&str>) -> Result<(HashMap<String, String>, Option<Glyphs>)> {
     let mut m = HashMap::new();
     let mut opaque = std::collections::HashSet::new();
+    let mut tiny = std::collections::HashSet::new();
     let mut glyphs: Option<Glyphs> = None;
     if let Some(p) = path {
         for l in std::fs::read_to_string(p)?.lines() {
@@ -133,16 +144,25 @@ fn index(path: Option<&str>) -> Result<(HashMap<String, String>, Option<Glyphs>)
                     if rest.last() == Some(&"opaque") {
                         opaque.insert(format!("tex{h}"));
                     }
+                    // the 16 x 16 placeholders a material binds for a map it lacks
+                    if let [w, ht, ..] = rest {
+                        if w.parse::<u32>().is_ok_and(|w| w <= 16) && ht.parse::<u32>().is_ok_and(|h| h <= 16) {
+                            tiny.insert(format!("tex{h}"));
+                        }
+                    }
                 }
                 _ => {}
             }
         }
     }
     let _ = OPAQUE.set(opaque);
+    let _ = TINY.set(tiny);
     Ok((m, glyphs))
 }
 
 static OPAQUE: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+/// Textures of 16 x 16 or less (by hash): placeholders, left out of a 3D draw's texture key.
+static TINY: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
 
 /// Drops rectangles that a later opaque one covers whole (an opaque texture at full alpha):
 /// they draw nothing visible.

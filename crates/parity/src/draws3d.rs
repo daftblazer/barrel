@@ -157,6 +157,8 @@ pub fn draws(dir: &Path, frame: u64, idx: Option<&str>, vars: Option<&str>, pass
 
 type M = [f32; 16];
 
+const IDENTITY: M = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+
 /// The game's mL2W as a column-vector matrix in column-major order. The constant buffer holds
 /// three registers, each one output row `(m0 m1 m2 t)`: world.x = row0 . (p, 1), and so on.
 fn game_world(l2w: &[f32]) -> Option<M> {
@@ -186,6 +188,20 @@ fn mirrored(m: &M) -> M {
     for c in 0..4 {
         for r in 0..4 {
             if (c == 0) != (r == 0) {
+                o[c * 4 + r] = -o[c * 4 + r];
+            }
+        }
+    }
+    o
+}
+
+/// The game's `mW2P` in Barrel's clip space: its world input mirrored in x (the render space)
+/// and its clip y flipped (Vulkan's downward y), `F * G * S`.
+fn render_clip(game: &M) -> M {
+    let mut o = *game;
+    for c in 0..4 {
+        for r in 0..4 {
+            if (c == 0) != (r == 1) {
                 o[c * 4 + r] = -o[c * 4 + r];
             }
         }
@@ -245,7 +261,8 @@ fn barrel_frame(path: &Path, frame: u64) -> Result<(Vec<BarrelDraw>, Option<M>)>
 type Key = (Vec<String>, u64);
 
 fn key(names: &HashMap<String, String>, textures: impl Iterator<Item = String>, count: u64) -> Key {
-    let mut n: Vec<String> = textures.filter_map(|h| names.get(&h).cloned()).collect();
+    let tiny = super::TINY.get();
+    let mut n: Vec<String> = textures.filter(|h| !tiny.is_some_and(|t| t.contains(h))).filter_map(|h| names.get(&h).cloned()).collect();
     n.sort();
     n.dedup();
     (n, count)
@@ -294,13 +311,17 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
                 best = Some((j, d, m));
             }
         }
+        // A draw Barrel keeps at the identity (a static object, placed in its vertices) has no
+        // world to compare.
+        let best = best.map(|(j, d, m)| if bdraws[j].world == IDENTITY { (j, 0.0, false) } else { (j, d, m) });
+        let placed = best.is_some_and(|(j, ..)| bdraws[j].world != IDENTITY);
         let Some((j, d, m)) = best else {
             unmatched_game.push(&gkeys[i]);
             continue;
         };
         bused[j] = true;
         matched += 1;
-        if world.is_some() {
+        if world.is_some() && placed {
             compared += 1;
             mirror_wins += usize::from(m);
             if d > worst {
@@ -315,7 +336,7 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     println!("world matrices compared: {compared} ({mirror_wins} fit best with Barrel's x mirror); worst: {worst_at}");
     let vp = game.iter().flat_map(|d| d.vars.iter()).find(|v| v.0 == "mW2P").and_then(|v| game_view_proj(&v.2));
     if let (Some(g), Some(b)) = (vp, bvp) {
-        println!("view-projection (first game mW2P vs Barrel's): max difference {:.4}", world_diff(&g, &b).0);
+        println!("view-projection (first game mW2P in Barrel's clip space vs Barrel's): max difference {:.4}", max_diff(&render_clip(&g), &b));
     }
     println!("{} game draws, {} Barrel draws, {} matched, max world diff {:.4}", game.len(), bdraws.len(), matched, worst);
     Ok(())
@@ -378,6 +399,16 @@ mod tests {
         assert_eq!(&r[12..], &[-10.0, 20.0, 30.0, 1.0]);
         assert_eq!(r[0], 2.0);
         assert_eq!(world_diff(&m, &r), (0.0, true));
+    }
+
+    #[test]
+    fn render_clip_mirrors_world_x_and_flips_clip_y() {
+        // clip = G (p, 1); Barrel's clip of the mirrored point has y negated.
+        let g: M = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0];
+        let c = render_clip(&g);
+        let apply = |m: &M, p: [f32; 3]| -> [f32; 4] { std::array::from_fn(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]) };
+        let (a, b) = (apply(&g, [-2.0, 3.0, 5.0]), apply(&c, [2.0, 3.0, 5.0]));
+        assert_eq!([a[0], -a[1], a[2], a[3]], b);
     }
 
     #[test]

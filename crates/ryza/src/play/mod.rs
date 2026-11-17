@@ -192,6 +192,12 @@ fn args(args: Vec<String>) -> Result<Args> {
             _ => return Err(format!("unknown option {flag}").into()),
         }
     }
+    // The title draws its own scene whatever field was named: the title's field, with no draw
+    // ranges (the capture's backdrop is whole to the horizon; the game's rule for it is not read).
+    if a.title {
+        a.field = barrel_ryza::title::FIELD.into();
+        a.draw_ranges = "off".into();
+    }
     Ok(a)
 }
 
@@ -839,7 +845,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let follow = (rig.is_some() && (pump.is_some() || a.look_at.is_none())).then(|| {
         install.read(&barrel_ryza::camera::FreeCamera::path(&a.field)).ok().and_then(|b| barrel_ryza::camera::FreeCamera::parse(&b).map_err(|e| eprintln!("{e}")).ok()).unwrap_or(barrel_ryza::camera::FreeCamera::DEFAULT)
     });
-    let fov = a.fov.unwrap_or(follow.map_or(30.0, |c| c.fov)).to_radians();
+    let fov = a.fov.unwrap_or(if a.title { barrel_ryza::title::CAMERA.fov } else { follow.map_or(30.0, |c| c.fov) }).to_radians();
     // How high above her feet the camera looks (`LOOK_HEIGHT`).
     let look_height = LOOK_HEIGHT;
     let (mut yaw, mut pitch) = match (follow, &rig) {
@@ -852,6 +858,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         (Some(_), Some(r)) => (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
         _ => center,
     };
+    // The title's camera is fixed (`title::CAMERA`).
+    let title_clip = a.title.then_some((barrel_ryza::title::CAMERA.near, barrel_ryza::title::CAMERA.far));
+    if a.title {
+        (center, yaw, pitch, dist) = barrel_ryza::title::CAMERA.look();
+    }
     let shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
 
     let hidden = vec![false; instances.len()];
@@ -880,8 +891,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     eprintln!("draw ranges: {ranges:?}");
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
     let shown = |d: &Draw| {
-        !a.title
-            && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
+        !a.hide.iter().any(|h| d.name.contains(h.as_str()))
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
@@ -1055,7 +1065,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
             _ => dist,
         };
-        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow);
+        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow, title_clip);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         // `g_vAttCache0` (a, a, a/2, -a/2) and {`g_fAttCache1` 1, `g_fPhase` 0, `g_fOscPhase`}.
@@ -1142,7 +1152,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             overlay: [0.0; 4],
             layers: &layers,
             readback: readback.map(|(b, _)| b),
-            sky_plane: view.sky_plane && !a.title,
+            sky_plane: view.sky_plane,
         };
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
@@ -1233,14 +1243,14 @@ struct View {
 /// its look block (`barrel_render`'s `Look`): the eye, the view-projection and last frame's
 /// (`prev_vp`; this one's when there is none), and the environment's light, sky and the sun's
 /// shadow (`shadow_size`: the shadow map's, none without shadows; `shadow_reach`: the preset's
-/// scale of the far layer's reach). With no environment, a
+/// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, exposure_range: Option<(f32, f32)>, shadow_size: Option<u32>, shadow_reach: f32) -> View {
+fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, exposure_range: Option<(f32, f32)>, shadow_size: Option<u32>, shadow_reach: f32, clip: Option<(f32, f32)>) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let (near, far) = (dist * 0.01, (dist * 20.0).max(80_000.0));
+    let (near, far) = clip.unwrap_or((dist * 0.01, (dist * 20.0).max(80_000.0)));
     let mut proj = Mat4::perspective_rh(fov, width as f32 / height as f32, near, far);
     proj.y_axis.y *= -1.0;
     proj.x_axis.x *= -1.0;
