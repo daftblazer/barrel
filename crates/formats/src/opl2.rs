@@ -7,9 +7,12 @@
 //!
 //! ```text
 //! u32 type count
-//! per type:     u32 name length, name, u32, then 16 bytes (Escha: 0xff in most; the name
-//!               ends with its 0) or 336 (Ryza DX: 48 of 0xff, 288 of 0; no 0 after the
-//!               name), u32 instance count
+//! per type:     u32 name length, name, u32 (Ryza DX: the model's entry in the field's objects
+//!               container), then 16 bytes (Escha: 0xff in most; the name ends with its 0)
+//!               or 336 (Ryza DX, no 0 after the name: 12 i32 entry numbers, -1 for none,
+//!               the third to the tenth the model's collision files; then 8 records of 36
+//!               bytes, one for each collision file: a rotation in radians, an offset, 3
+//!               floats not read), u32 instance count
 //! per instance: position (3 floats, 1 pad), rotation in radians (3 floats, 1 pad),
 //!               scale (3 floats, 1 pad), u32 tag length, tags, 32 bytes
 //! ```
@@ -34,7 +37,20 @@ pub struct Instance {
 #[derive(Clone, Debug)]
 pub struct PlacedType {
     pub name: String,
+    /// Ryza DX: the model's collision files (none in Escha's lists).
+    pub collisions: Vec<CollisionFile>,
     pub instances: Vec<Instance>,
+}
+
+/// One collision file of a placed model (Ryza DX): its entry in the field's objects container,
+/// and where its shape sits within the model: turned by `rotation` (radians, as a placement's),
+/// then moved by `offset`. Zero for most; stairs, floors and tunnel rocks carry an offset, and
+/// some boxes a turn from z-up.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CollisionFile {
+    pub entry: u32,
+    pub rotation: [f32; 3],
+    pub offset: [f32; 3],
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +65,26 @@ fn f32_at(d: &[u8], at: usize) -> Result<f32, Error> {
 
 /// The bytes after a type's name and its word, by game: Escha & Logy DX's 16, Ryza DX's 336.
 const TYPE_EXTRA: [usize; 2] = [16, 336];
+/// In Ryza DX's 336: where the collision files' entry numbers start (the third of 12), how
+/// many there are, and their records after the 12 numbers.
+const COLLISION_ENTRIES: usize = 8;
+const COLLISION_COUNT: usize = 8;
+const COLLISION_RECORDS: usize = 48;
+const COLLISION_RECORD: usize = 36;
+
+/// A Ryza DX type header's collision files (`header`: the 336 bytes).
+fn collisions(d: &[u8], header: usize) -> Result<Vec<CollisionFile>, Error> {
+    let mut out = Vec::new();
+    for k in 0..COLLISION_COUNT {
+        let entry = u32_at(d, header + COLLISION_ENTRIES + 4 * k)?;
+        if entry == u32::MAX {
+            continue;
+        }
+        let v = |n: usize| f32_at(d, header + COLLISION_RECORDS + COLLISION_RECORD * k + 4 * n);
+        out.push(CollisionFile { entry, rotation: [v(0)?, v(1)?, v(2)?], offset: [v(3)?, v(4)?, v(5)?] });
+    }
+    Ok(out)
+}
 
 fn list(d: &[u8], p: &mut usize, extra: usize) -> Result<Vec<PlacedType>, Error> {
     let count = u32_at(d, *p)? as usize;
@@ -62,7 +98,9 @@ fn list(d: &[u8], p: &mut usize, extra: usize) -> Result<Vec<PlacedType>, Error>
         let raw = d.get(*p + 4..*p + 4 + len).ok_or(Error::Corrupt("opl2 name past the end"))?;
         let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
         let name = String::from_utf8_lossy(&raw[..end]).into_owned();
-        *p += 4 + len + 4 + extra;
+        let header = *p + 4 + len + 4;
+        let collisions = if extra == TYPE_EXTRA[1] { collisions(d, header)? } else { Vec::new() };
+        *p = header + extra;
         let n = u32_at(d, *p)? as usize;
         *p += 4;
         if n > d.len() / 84 {
@@ -83,7 +121,7 @@ fn list(d: &[u8], p: &mut usize, extra: usize) -> Result<Vec<PlacedType>, Error>
             }
             instances.push(Instance { position, rotation, scale, tags, word });
         }
-        out.push(PlacedType { name, instances });
+        out.push(PlacedType { name, collisions, instances });
     }
     Ok(out)
 }
@@ -136,8 +174,14 @@ mod tests {
         f.extend_from_slice(&2u32.to_le_bytes());
         f.extend_from_slice(b"ab");
         f.extend_from_slice(&13u32.to_le_bytes());
-        f.extend_from_slice(&[0xffu8; 48]);
-        f.extend_from_slice(&[0u8; 288]);
+        // 12 entry numbers: the fourth names a collision file, whose record is the second
+        let mut header = [0xffu8; 48].to_vec();
+        header[12..16].copy_from_slice(&628u32.to_le_bytes());
+        header.extend_from_slice(&[0u8; 288]);
+        for (k, v) in [0.0f32, -1.5708, 0.0, 0.375, -120.5, 181.0].iter().enumerate() {
+            header[48 + 36 + 4 * k..][..4].copy_from_slice(&v.to_le_bytes());
+        }
+        f.extend_from_slice(&header);
         f.extend_from_slice(&1u32.to_le_bytes());
         for v in [4360.5f32, 1998.5, 3803.9, 0.0, 0.0, 1.5708, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0] {
             f.extend_from_slice(&v.to_le_bytes());
@@ -146,6 +190,7 @@ mod tests {
         f.extend_from_slice(&[0u8; 32]);
         let p = super::parse(&f).unwrap();
         assert_eq!(p.objects[0].name, "ab");
+        assert_eq!(p.objects[0].collisions, [super::CollisionFile { entry: 628, rotation: [0.0, -1.5708, 0.0], offset: [0.375, -120.5, 181.0] }]);
         assert_eq!(p.objects[0].instances[0].position[0], 4360.5);
         assert_eq!(p.objects[0].instances[0].tags, "");
     }

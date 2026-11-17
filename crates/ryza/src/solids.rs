@@ -5,69 +5,73 @@
 //! and the boxes and capsules made into meshes (a capsule as an eight-sided prism), each placed
 //! as its placement puts the model, give the walk its walls and the floors on models (stairs,
 //! raised floors, rocks, crates); tree trunks are capsules, and the hulls (`HLP_`, read by
-//! `hull`) cover the cliffs and the trees' roots. Some boxes are in a z-up space where the model is y-up (the light
-//! poles), which nothing in the file says: a box or capsule is kept as it is if it lies mostly
-//! inside its model's bounds, turned from z-up to y-up if that lies more inside, and left out
-//! if neither does (a stand-in, `docs/ryza/open.md`). Docs: docs/formats.md, "Ryza model collision".
+//! `hull`) cover the cliffs and the trees' roots. A shape is not always in its model's space:
+//! the placement list gives each collision file a rotation and an offset within the model
+//! (stairs and floors moved, the light poles' boxes turned from z-up). Docs: docs/formats.md,
+//! "Ryza model collision".
 
 use barrel_formats::elixir::Elixir;
 use barrel_formats::g1co::{self, Collision};
 use barrel_formats::opl2;
 use glam::Vec3;
 
-/// Placement word bits (`opl2::Instance::word`) on the placements whose collision meshes do
-/// not lie on their models: in Rasenboden exactly `a21-s06-floor-01`, the four
-/// `a21-s07-stair-01` and `a21-s09-stair-02`, and none whose meshes fit. Their meshes are
-/// left out; the terrain carries her over those stairs (a stand-in for what the bits mean,
-/// `docs/ryza/open.md`).
-pub const NO_COLLISION: u32 = 0xc000;
-
-/// Whether a placement's collision meshes are used (`NO_COLLISION`).
-pub fn collides(i: &opl2::Instance) -> bool {
-    i.word & NO_COLLISION != NO_COLLISION
+/// How the placed shapes lie in their models (`placed_meshes`): the shapes placed, and those of
+/// them lying mostly outside their model's bounds (a sign of a transform read wrong).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fit {
+    pub placed: usize,
+    pub outside: usize,
 }
 
-/// Each placed model's collision meshes, in game space.
-pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> Vec<Collision> {
-    // The meshes by model name (the entries' names drop the placement's `obj-`).
-    let mut meshes: std::collections::HashMap<String, Vec<Collision>> = Default::default();
-    // The models' bounds (`obj-<model>_hi.g1m`'s geometry: min, then max), to fit shapes in.
+/// A shape counts as outside its model when under this share of its box lies in the model's.
+const OUTSIDE: f32 = 0.2;
+
+/// Each placed model's collision shapes as meshes, in game space, and how they fit. A type's
+/// collision files are the ones its placement header names (`opl2::CollisionFile`, by entry in
+/// the objects container); each shape is first put where its file's rotation and offset say
+/// within the model (`field::collision_within`: the game does the same when it builds a
+/// placement's collision, 0x140750ca0), then placed as the model is.
+pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> (Vec<Collision>, Fit) {
+    // The models' bounds (`obj-<model>_hi.g1m`'s geometry: min, then max), to check the fit.
     let mut model_bounds: std::collections::HashMap<String, [f32; 6]> = Default::default();
     for e in objects.entries.iter().filter(|e| !e.is_dummy()) {
         let Some(model) = e.name.strip_suffix("_hi.g1m") else { continue };
         if let Some(b) = barrel_formats::g1m::G1m::parse(objects.data(e)).ok().and_then(|m| m.geometry.map(|g| g.bounds)) {
-            model_bounds.insert(model.strip_prefix("obj-").unwrap_or(model).to_ascii_lowercase(), b);
+            model_bounds.insert(model.to_ascii_lowercase(), b);
         }
     }
-    for e in objects.entries.iter().filter(|e| !e.is_dummy()) {
-        let Some(stem) = e.name.strip_suffix(".g1co") else { continue };
-        let Some((model, kind)) = stem.rsplit_once('_') else { continue };
-        let data = objects.data(e);
-        let mesh = if kind.starts_with("cbvh") {
-            g1co::parse(data).ok()
-        } else if kind.starts_with("cbox") || kind.starts_with("ccap") {
-            shape(data).and_then(|c| fitted(c, model_bounds.get(&model.to_ascii_lowercase())?))
-        } else if kind.starts_with("cplh") {
-            hull(data).and_then(|c| fitted(c, model_bounds.get(&model.to_ascii_lowercase())?))
-        } else {
-            None
-        };
-        if let Some(c) = mesh {
-            meshes.entry(model.to_ascii_lowercase()).or_default().push(c);
-        }
-    }
-    let mut out = Vec::new();
+    let (mut out, mut fit) = (Vec::new(), Fit::default());
     for t in &placements.objects {
-        let name = t.name.strip_prefix("obj-").unwrap_or(&t.name).to_ascii_lowercase();
-        let Some(list) = meshes.get(&name) else { continue };
-        for i in t.instances.iter().filter(|i| collides(i)) {
-            let m = barrel_engine::field::placement_transform(i);
-            for c in list {
-                out.push(placed(c, |v| m.transform_point3(Vec3::from(v)).to_array()));
+        let bounds = model_bounds.get(&t.name.to_ascii_lowercase());
+        for file in &t.collisions {
+            let Some(e) = objects.entries.get(file.entry as usize).filter(|e| !e.is_dummy()) else { continue };
+            let Some(kind) = e.name.strip_suffix(".g1co").and_then(|stem| stem.rsplit_once('_')).map(|(_, kind)| kind) else { continue };
+            let data = objects.data(e);
+            let shape = if kind.starts_with("cbvh") {
+                g1co::parse(data).ok()
+            } else if kind.starts_with("cbox") || kind.starts_with("ccap") {
+                shape(data)
+            } else if kind.starts_with("cplh") {
+                hull(data)
+            } else {
+                None
+            };
+            let Some(shape) = shape else { continue };
+            let within = barrel_engine::field::collision_within(file);
+            let shape = placed(&shape, |v| within.transform_point3(Vec3::from(v)).to_array());
+            let outside = bounds.is_some_and(|b| inside(&shape, b) < OUTSIDE);
+            for i in &t.instances {
+                let m = barrel_engine::field::placement_transform(i);
+                out.push(placed(&shape, |v| m.transform_point3(Vec3::from(v)).to_array()));
+                fit.placed += 1;
+                fit.outside += outside as usize;
+            }
+            if outside && std::env::var_os("BARREL_VERBOSE").is_some() {
+                eprintln!("collision outside its model: {} in {}, turned {:?}, moved {:?}", e.name, t.name, file.rotation, file.offset);
             }
         }
     }
-    out
+    (out, fit)
 }
 
 /// A field's own collision shapes, `<FIELD>_coll.bin` in its main container: a u32 count of
@@ -145,15 +149,6 @@ fn inside(c: &Collision, bounds: &[f32; 6]) -> f32 {
             ((hi[a].min(bounds[a + 3]) - lo[a].max(bounds[a])).max(0.0) / span).min(1.0)
         })
         .product()
-}
-
-/// A shape as it fits its model (`bounds`): as it is, or turned from z-up to y-up, whichever
-/// lies more inside the model, if that is at least a fifth; none otherwise.
-fn fitted(c: Collision, bounds: &[f32; 6]) -> Option<Collision> {
-    let turned = placed(&c, |v| [v[0], v[2], -v[1]]);
-    let (a, b) = (inside(&c, bounds), inside(&turned, bounds));
-    let (best, fit) = if b > a { (turned, b) } else { (c, a) };
-    (fit >= 0.2).then_some(best)
 }
 
 /// A hull file (`OC1G`, then an `HLP_` chunk) as a triangle mesh. In the chunk (offsets from
@@ -247,14 +242,6 @@ fn placed(c: &Collision, f: impl Fn([f32; 3]) -> [f32; 3]) -> Collision {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn floors_and_stairs_marked_0xc000_have_no_collision() {
-        let i = |word| barrel_formats::opl2::Instance { position: [0.0; 3], rotation: [0.0; 3], scale: [1.0; 3], tags: String::new(), word };
-        assert!(!super::collides(&i(0x0c0ab)));
-        assert!(super::collides(&i(0x120a9)));
-        assert!(super::collides(&i(0x000ab)));
-    }
-
     fn file(kind: u8, floats: &[f32]) -> Vec<u8> {
         let mut d = b"OC1G2\0\0\0\0\0\x01\0\0\0\0\0".to_vec();
         d.push(kind);
@@ -322,13 +309,16 @@ mod tests {
     }
 
     #[test]
-    fn a_z_up_box_is_turned_to_fit_its_model() {
-        // A pole along z in the file, along y in the model.
+    fn a_z_up_box_is_turned_upright_by_its_collision_rotation() {
+        // A pole along z in the file; the light poles' record turns it along y in the model.
         let d = file(0, &[0.0, 0.0, 500.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 50.0, 500.0, 0.0]);
-        let c = super::fitted(super::shape(&d).unwrap(), &[-60.0, 0.0, -60.0, 60.0, 1000.0, 60.0]).unwrap();
-        assert_eq!((c.nodes[0].min[1], c.nodes[0].max[1]), (0.0, 1000.0));
-        // One that fits neither way is left out.
-        assert!(super::fitted(super::shape(&d).unwrap(), &[-60.0, 0.0, -60.0, 60.0, 30.0, 60.0]).is_none());
+        let quarter = std::f32::consts::FRAC_PI_2;
+        let file = barrel_formats::opl2::CollisionFile { entry: 0, rotation: [-quarter, -quarter, 0.0], offset: [0.0, 10.0, 0.0] };
+        let within = barrel_engine::field::collision_within(&file);
+        let c = super::placed(&super::shape(&d).unwrap(), |v| within.transform_point3(glam::Vec3::from(v)).to_array());
+        let (lo, hi) = (c.nodes[0].min, c.nodes[0].max);
+        assert!((lo[1] - 10.0).abs() < 1e-2 && (hi[1] - 1010.0).abs() < 1e-2, "{lo:?} {hi:?}");
+        assert!((hi[0] - lo[0] - 100.0).abs() < 1e-2 && (hi[2] - lo[2] - 100.0).abs() < 1e-2, "{lo:?} {hi:?}");
     }
 
     #[test]

@@ -3394,7 +3394,13 @@ fn opl2_list(spec: &str) -> Result<()> {
         let mut tags: Vec<&str> = t.instances.iter().map(|i| i.tags.as_str()).collect();
         tags.sort();
         tags.dedup();
-        println!("{:4} {:40} tags {:?}", t.instances.len(), t.name, tags);
+        // the placement words in use, each with how many instances carry it
+        let mut words: std::collections::BTreeMap<u32, usize> = Default::default();
+        for i in &t.instances {
+            *words.entry(i.word).or_default() += 1;
+        }
+        let words: Vec<String> = words.iter().map(|(w, n)| format!("{w:#x} x{n}")).collect();
+        println!("{:4} {:40} tags {:?} words {}", t.instances.len(), t.name, tags, words.join(", "));
         if std::env::var("BARREL_VERBOSE").is_ok() {
             for i in &t.instances {
                 println!("       at {:.1?} turned {:.1?} scaled {:.2?} {}", i.position, i.rotation, i.scale, i.tags);

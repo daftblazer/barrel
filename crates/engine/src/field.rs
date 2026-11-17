@@ -37,6 +37,13 @@ pub fn placement_transform(i: &opl2::Instance) -> Mat4 {
     Mat4::from_scale_rotation_translation(Vec3::from(i.scale), rotation, Vec3::from(i.position))
 }
 
+/// Where a collision file's shape sits within its model: turned by its rotation (the same
+/// angle rule as a placement's), then moved by its offset.
+pub fn collision_within(c: &opl2::CollisionFile) -> Mat4 {
+    let r = c.rotation;
+    Mat4::from_rotation_translation(Quat::from_euler(EulerRot::ZYX, r[2], r[1], r[0]), Vec3::from(c.offset))
+}
+
 /// A container's entry by name (dummies passed over).
 pub fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
     container.entries.iter().find(|e| e.name == name && !e.is_dummy()).map(|e| container.data(e))

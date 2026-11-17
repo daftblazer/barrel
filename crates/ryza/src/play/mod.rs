@@ -564,7 +564,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // on models, added after she is stood on the terrain (so she does not start on a
         // tree's top).
         let placements = barrel_engine::field::named(&main, &format!("{}.opl2", files.area)).map(barrel_formats::opl2::parse).transpose()?;
-        let mut solids = placements.map(|p| barrel_ryza::solids::placed_meshes(&p, &objects)).unwrap_or_default();
+        let (mut solids, fit) = placements.map(|p| barrel_ryza::solids::placed_meshes(&p, &objects)).unwrap_or_default();
+        eprintln!("model collision: {fit:?}");
         // And the field's own shapes (`<FIELD>_coll.bin`).
         if let Some(b) = main.entries.iter().find(|e| !e.is_dummy() && e.name.to_ascii_lowercase().ends_with("_coll.bin")).map(|e| main.data(e)) {
             solids.extend(barrel_ryza::solids::field_shapes(b)?);

@@ -1328,8 +1328,9 @@ capsule), then floats with no chunk: a box's centre, its three axes and its half
 floats (the axes identity in all of Rasenboden's 47); a capsule's centre and axis (four floats
 each, the axis (0, 1, 0) in all 26), its length and its radius (tree trunks: radius 46 to 284).
 Most are in the model's y-up space and taller than the mesh (the signpost's box is 416 high over
-a 140-unit post); a few lie along z instead (the light pole, the clothes pole), which nothing in
-the file marks, and the bags' boxes fit their mesh in neither way.
+a 140-unit post). A shape is not always where its model is: the placement list gives each
+collision file a rotation and an offset within the model (below), which turns the light pole's
+and the clothes pole's boxes from z-up and moves the stairs' and floors' meshes onto them.
 `barrel_ryza::solids` places each mesh as its placement puts the model
 (`field::placement_transform`): in Rasenboden 956 placed meshes, 282,000 triangles, giving the
 walk its walls (upright triangles) and floors (the rest) beside the `_le.koc` quads.
@@ -1444,14 +1445,23 @@ Read by `barrel_formats::opl2`. All 141 of Escha's read: 20,283 objects and 150 
 
 **Ryza DX and Ryza 2 DX** keep the same instance records but a longer type header, and no
 effects list: the file ends after the objects. A type is `u32 name length`, the name without
-a 0, a word (0, 13, 26, ... in `s01_i_attic`: 13 apart from type to type), 48 bytes of 0xff,
-288 of 0, then the instance count. Their 32 bytes after an instance's tags hold 16 zero bytes,
+a 0, a u32 (the model's entry in the field's objects container: 0, 13, 26, ... in
+`s01_i_attic`), 12 entry numbers (i32, -1 for none; the third to the tenth are the model's
+collision files, in the container's order), then 8 records of 36 bytes, one for each collision
+file: a rotation in radians (turned as a placement's), an offset, and three floats not read;
+then the instance count (`opl2::CollisionFile`). The game puts a shape at that rotation and
+offset within the model, then places it as the model (0x140750ca0, which builds a placement's
+collision: it loads each file through 0x1406f5f20, turns the offset by the placement's
+rotation, scales it and adds it). `a21-s07-stair-01`'s first file is moved (0.4, -120.5,
+181.0); `a21-s06-floor-01`'s four by field coordinates (its meshes are about the origin);
+the tunnel rocks' are turned 90° round z; the light poles' boxes by (-90°, -90°, 0). Counted
+in the running game (ryza-recomp, a hook on the loader): 1,628 shapes for Rasenboden, 9 for
+the attic, 1,212 for `s19_l_highway_03`, each the list's instances times collision files. Their 32 bytes after an instance's tags hold 16 zero bytes,
 8 of 0xff and a word (`opl2::Instance::word`). Its bits 0-1 look like the draw-distance class
 of the field camera file's `disp_range` (0 near, 1 middle, 2 far, 3 landmark: in Rasenboden bags
 and pots are 0, grapes and fallen trees 1, stumps and fences 2, cliffs, mountains and the far-end
 trees 3; 102, 222, 225 and 646 placements). Bits 0xc000 are on floors and stairs and 0x12000 on
-stairs and bridges; in Rasenboden the 0xc000 ones are exactly the placements whose collision
-meshes do not lie on their models (`barrel_ryza::solids::NO_COLLISION` leaves them out); the rest (0x08, 0x20, 0x40, 0x80, 0x100) not read. All read: Ryza DX 96 lists
+stairs and bridges (the 0xc000 placements' collision is built like any other's); the rest (0x08, 0x20, 0x40, 0x80, 0x100) not read. All read: Ryza DX 96 lists
 (6,741 types, 53,698 objects), Ryza 2 DX 105 (8,037 types, 78,588 objects). **Ryza 3 DX's**
 differ again (116 of 117 fail at the first instance count): not read yet.
 

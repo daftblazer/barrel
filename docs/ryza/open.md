@@ -20,13 +20,7 @@ checks are `runchecks docs/ryza/checks.txt` (21 rows) and
    the event (Barrel's rig draws one pc00a in her field motions), find the motions' phase
    against the capture's bone palettes, then the NPCs, weapons and objects the event adds.
    Solved when diff3d at frame 1400 matches the 58 character draws within a stated tolerance.
-2. **Misplaced collision meshes** (blocks P3's walk; worked around now). See "The garden stairs'
-   collision" under "Ryza in the field". Some `_cbvh` meshes lie about 180 units off their
-   model. Their placement words have bits 0xc000 set, and Barrel leaves those meshes out. The
-   game's own collision transform is in its code (EXCollisionScene). With the recomp, hook
-   where it builds the collision scene for s06_t_rasen and read the matrix it applies. Solved
-   when the meshes are placed by that rule and the gate walk goes down the stairs.
-3. **The answer key's runs repeat only to a frame** (rows carry tolerances and fitted offsets).
+2. **The answer key's runs repeat only to a frame** (rows carry tolerances and fitted offsets).
    See the section of that name and "The 2D animations run about 1% ahead of the frame count"
    below. The virtual clock is not the cause (measured: the game's frame time is 1/60 s to
    1 µs). What is left: loading threads finish in real time, so the frame the title starts on
@@ -222,12 +216,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (half-sizes or full ones, and where a cylinder starts, not checked).
   The placed models' collision meshes (`_cbvh`, docs/formats.md) are: walls and floors on
   models, and she steps over a wall whose top is within a step (60) of her feet. The boxes and capsules are
-  used too (boxes as boxes, capsules as eight-sided prisms): kept as they are when they lie mostly
-  inside their model's bounds, turned from z-up to y-up when that fits better (the light poles),
-  left out when neither fits (the bags): a stand-in until where the game places them is known
-  (a z-up flag, or the model's own data). The hulls (`_cplh`) are read
-  and used the same way (Rasenboden: 449 of them; with the meshes, boxes and capsules 1,577
-  placed shapes, 293,000 triangles). The camera keeps out of
+  used too (boxes as boxes, capsules as eight-sided prisms). Every shape is put where the
+  placement list says within its model (`opl2::CollisionFile`: a rotation and an offset for each
+  collision file, docs/formats.md) before the model's placement, as the game does. The hulls (`_cplh`) are read
+  and used the same way (Rasenboden: 449 of them; with the meshes, boxes and capsules 1,617
+  placed shapes, 293,000 triangles; the game builds 1,628, the 11 more being kinds not read). The camera keeps out of
   the ground behind her (`camera::clear_distance`: pulled in where terrain or a floor comes
   within 30 below to 400 above its line, no nearer than 60, easing back out): banks no longer
   swallow it; it also stops short of the first wall its line passes through
@@ -251,45 +244,14 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   walk and run change loop to loop, each change mixing the last motion out over 0.2 s. How
   the game moves her during the start and stop (here eased in and out) and its mixing time
   are not read.
-- **The garden stairs' collision** (worked around; `a21-s07-stair-01`, placed at 32507, 6006, 30997 nearly
-  unturned): its `_cbvh` mesh (20 triangles; `_cbvh1` and `_cbvh2` are a thin side piece) spans
-  local z -707 to 391 and y -279 to 295, its model z -499 to 546 and y -252 to 181 (one joint at
-  the origin, no offset; the mesh's header has no transform). Down the stairs' middle (x 32537)
-  the heights are:
-
-  | z | 30300 | 30400 | 30500 | 30600 | 30800 | 31000 | 31200 |
-  |---|---|---|---|---|---|---|---|
-  | terrain (`.khm`) | 6182 | 6176 | 6170 | 6136 | 6069 | 6001 | 6001 |
-  | with the mesh's floors | 6287 | 6268 | 6235 | 6201 | 6134 | 6067 | 6001 |
-
-  The terrain and the model agree (the top at 6182 to 6186); the mesh's slope is as steep but
-  twice as long, its top 105 higher, with a landing at z 30284 to 30330. Starting there
-  (`--ryza 32537,0,30300`) she is inside the mesh's end, between faces 33 units apart: a walk
-  cannot get out (a run's longer steps can). Not a mirror or a turn of the model (no flip of
-  y or z fits). The mesh is read right (8 distinct corners of a ramp: its top slopes 369 over
-  1057, 19°, as the model's step edges do, 350 over 1000), but it lies about 180 units toward
-  -z from the model (its ends -208 and -155 past the model's, its plane 56 above the step
-  edges, which a 180 shift along the slope also gives). Across Rasenboden's 37 `_cbvh` meshes
-  most lie inside their model's bounds (parts of it); the ones that do not: this one,
-  `a21-s09-stair-02` (y ±485 against ±380, z -278 to 97 against ±258), the tunnel rocks
-  (`a21-common-rock-tunnel-01/02`: 1314 × 202 × 1352 against the model's 216 × 1341 × 1364, x
-  and y swapped) and `a21-s06-floor-01` (four meshes tens of thousands of units outside the
-  model: likely in field space; the canal's paving, above). `a21-s09-stair-03`'s hull fits.
-  `.g1pf` is not a placement list (an `FP1G` grid over 128,000 units: likely navigation).
-  `a21-s06-floor-01` is placed at the origin unturned, and its four meshes land near it (x -3144
-  to 4223, z -1207 to 1867), but its model's geometry is in field coordinates (x 1210 to 56805,
-  z 33342 to 53823): the meshes are not. The tunnel rocks are placed turned about 86° round z,
-  and their meshes look like their models already turned once more. Nothing found places the
-  meshes: the stair model's chunks hold no offset (`MM1G` an identity matrix, `FM1G` zeros, one
-  joint at the origin), the container's slots around the meshes are empty `dummy` entries, and
-  the mesh files have no transform. Their placements tell them apart: the placement word
-  (`opl2::Instance::word`) of `a21-s06-floor-01`, the four `a21-s07-stair-01` and
-  `a21-s09-stair-02` all have bits 0xc000 (`0x0c0ab`), and no placement whose meshes fit has
-  them (`a21-s09-stair-03`, whose hull fits, has 0x12000; cliffs `0x000ab`, rocks `0x000a9`,
-  trees `0x0006b`, tunnel rocks `0x0002b`). `solids::NO_COLLISION` leaves those placements'
-  meshes out (a stand-in for what the bits mean): the terrain carries her over the stairs, and
-  a walk from the gate goes down them. The tunnel rocks' meshes (no such bits) are still used
-  as they are.
+- **Collision shapes outside their models** (small). With the placement list's per-file
+  rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
+  (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair
+  mesh lay 105 too high). Left: 26 of Rasenboden's 1,617 placed shapes, 1 of the attic's 9 and
+  1 of the title field's 1,212 still lie mostly outside their model's bounds, all boxes or
+  capsules on props from older games (`a13-case`, `a14-box2`, `a17_...`, `02bag`, a trash can;
+  `BARREL_VERBOSE=1` lists them). Each record's last three floats are not read (zero where
+  looked). Not checked by a driven walk: Barrel's Ryza has no scripted input yet.
 - **Her shading.** Drawn as a field model (the environment's light) with the characters' toon
   ramp on it (`model.frag` flag 128: `chara_rmp`'s row by her materials' `rampIndex`, u the
   sun's half-Lambert term as the default environment override's `ir_` settings give it, and
