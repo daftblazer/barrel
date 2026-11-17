@@ -14,66 +14,27 @@ is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run no
 checks are `runchecks docs/ryza/checks.txt` (21 rows) and
 `docs/escha/checks.txt` (17).
 
-1. **The recomp hangs in the opening** (blocks P0's New Game scenario and every stage after it).
-   Full notes: "The opening hangs at the 39th voice line" below. In short: run
-   `tools/scenario.sh scenarios/opening-probe.sh` in ryza-recomp (New Game, A every 120 frames).
-   It stops presenting at the 39th open of `Sound/voice.ktsl2asbin`: frame 9270, or 9870 with
-   A every 240 (`work/opening-240.sh`). There is no trap. The hang is the same on virtual and
-   real clocks. The main thread spins in 0x140c06ea0's slot loop (block 0x140c07970, in
-   `build/gen/funcs_191.c` near line 25551). 0x140be2dd0 returns true there, so the loop's
-   5 ms wait never runs. No gdb breakpoint in that loop has ever fired, even when enabled only
-   after the hang, so check first that this really is the spinning thread
-   (`tools/stacks.sh` with SNAPS=3). Then dump the busy slot through a runtime hook rather
-   than gdb. Find what should clear field +0x38: likely a sound or stream request that never
-   completes. Solved when opening-probe.sh runs to its last frame and exits 0.
-2. **WaitForMultipleObjects with wait-all is not atomic** (a correctness flaw; it may feed
-   item 1). `imp_kernel32_WaitForMultipleObjects` in `crates/runtime/src/imports/misc.rs` takes
-   the objects one at a time, so an auto event or semaphore can be consumed while the others
-   are not yet signalled. Windows takes all of them in one step or none. Solved when wait-all
-   takes every object under one lock (or retries without consuming any), the runtime's tests
-   cover it, and the boot-title scenario still matches (`ref-boot` row).
-3. **The recomp's virtual clock is not the game's 60 Hz** (makes rows need fitted offsets).
-   See "The answer key's runs repeat only to a frame" and "The capture's clock against 60 Hz"
-   below. RYZA_DETERMINISTIC adds 1 µs for each clock read, so time runs fast inside a frame. Runs
-   drift by about a frame, and Barrel carries `boot::GLOW_DRIFT` (crates/ryza/src/boot.rs) and
-   per-row time offsets to match. Solved when reads within a frame return that frame's time (or
-   a per-thread counter), two boot-title runs give the same draws, and GLOW_DRIFT and the rows'
-   offsets can be removed with every row still passing.
-4. **The title backdrop's characters** (blocks P1). pc00a, pc02a and pc03a stand at known spots
+1. **The title backdrop's characters** (blocks P1). pc00a, pc02a and pc03a stand at known spots
    (from the capture's bone palettes, docs/renderer.md, backdrop section) and play an idle
    motion, but which motion file and phase is not known. The title scene's definition was not
    found in the archives; it is probably built in the executable. Way in: hook the motion loads
    (file opens around frame 1380 with RYZA_TRACE_FILES) and the game's motion-play call, in the
    boot-title scenario. Solved when diff3d at frame 1400 matches the 58 character draws within
    a stated tolerance.
-5. **Misplaced collision meshes** (blocks P3's walk; worked around now). See "The garden stairs'
+2. **Misplaced collision meshes** (blocks P3's walk; worked around now). See "The garden stairs'
    collision" under "Ryza in the field". Some `_cbvh` meshes lie about 180 units off their
    model. Their placement words have bits 0xc000 set, and Barrel leaves those meshes out. The
    game's own collision transform is in its code (EXCollisionScene). With the recomp, hook
    where it builds the collision scene for s06_t_rasen and read the matrix it applies. Solved
    when the meshes are placed by that rule and the gate walk goes down the stairs.
-
-## The opening hangs at the 39th voice line (recomp)
-
-`scenarios/opening-probe.sh` (New Game, A every 120 frames) stops presenting at frame 9270,
-virtual and real clocks alike, no trap. The main game thread loops in 0x140c06ea0
-(0x140c07970-0x140c07a33): under the lock at [rsi+0x1a8] it scans slots (groups at [rsi+0x240],
-0x58 bytes, each with slots of 0x218 bytes) for one whose field +0x38 lies in [r14, rdi); while
-one does it calls 0x140be2dd0(rsi, 0), resets the event at [rsi+0xec8], waits 5 ms on it and
-calls 0x140cad8a0. The last file opened is Sound/voice.ktsl2asbin, at 9270. Ruled out: the
-virtual clock (REALTIME hangs too); traps; XAudio2 (passes go on, no Stop or Flush near the
-hang; a real bug found on the way: buffers flushed from a stopped voice never ended, fixed);
-synchronous overlapped ReadFile (sets the event and Internal). Tools: RYZA_TRACE_WAITS (blocked,
-polling and long waits, a 30 s no-frame watchdog with each thread's last waits and stack),
-RYZA_TRACE_XAUDIO2, tools/stacks.sh SNAPS=N, tools/stacksum.py.
-The cadence does not matter: with A every 240 frames the hang moves to 9870, but in both runs it
-is the 39th open of Sound/voice.ktsl2asbin (content, not timing). XAudio2 calls around that
-line look normal (create/start/stop/destroy pairs, two voices still streaming).
-gdb breakpoints on 0x140be2dd0 and on the wait wrapper 0x140c0d780 (also by source line,
-2 locations) never fire, even when enabled only after the hang: the wait loop's calls are
-inlined, and a breakpoint on the loop's own call line (funcs_191.c:25551) never fires either.
-In the generated C the 5 ms wait is skipped whenever 0x140be2dd0 returns true, so the loop can
-spin without waiting at all. Next: see item 1 of "Most pressing".
+3. **The answer key's runs repeat only to a frame** (rows carry tolerances and fitted offsets).
+   See the section of that name and "The 2D animations run about 1% ahead of the frame count"
+   below. The virtual clock is not the cause (measured: the game's frame time is 1/60 s to
+   1 µs). What is left: loading threads finish in real time, so the frame the title starts on
+   moves by one; and the boot's glows and the title's prompt run about one frame ahead each
+   ~105, for a reason inside the game. Solved when two boot-title runs give the same draws, and
+   `boot::GLOW_DRIFT` (crates/ryza/src/boot.rs) and the rows' offsets are either explained by
+   the game's own animation code or gone.
 
 ## The answer key's runs repeat only to a frame
 
@@ -84,21 +45,27 @@ the first shifted by about one frame (at the best shift 1,143 of 1,924 draws car
 vertex constants), and the draw count varies by 1-2 (1,923-1,925). Loading threads finish in real
 time, so the frame the title starts on moves. So: compare at aligned frames (`barrel-parity
 align`, or find the shift as above) and fit nothing to a single run's random rolls; a check row
-states its tolerance. Way in, if it matters: per-thread read counters for the clock, and a
-frame-locked wait on the loader's completion (the frame it finishes on, from a hook).
+states its tolerance. The clock's 1 µs a read is not it (about ten reads a
+frame; see the next section). Way in, if it matters: a frame-locked wait on the loader's
+completion (the frame it finishes on, from a hook), and Sleep and timed waits on the virtual
+clock.
 
-## The capture's clock against 60 Hz
+## The 2D animations run about 1% ahead of the frame count
 
-The 2D rows need small clock corrections that point opposite ways: the title's prompt pulse at
-capture frames 1700 / 1800 sits 2 / 1 frames behind `(frame - 1140) / 60` (rows use 9.30 and
-10.9667 s), while the boot's spinner glows run about one frame ahead each 105 frames
-(`boot::GLOW_DRIFT`, fitted to frames 900-1105, so Barrel's glows run 1% fast to match). Both
-may come from the recomp's virtual clock (RYZA_DETERMINISTIC adds 1 µs per clock read, so a
-thread reading the clock often sees time run fast within a frame) rather than from the game.
-Way in: hook the game's frame-time source (the value its animation timers add each frame) in a
-deterministic run and compare with 1/60; if it is the virtual clock, fix the clock in
-ryza-recomp (a per-thread read counter, or reads within a frame return the frame's time) and
-drop GLOW_DRIFT and the corrected rows' offsets.
+The 2D rows need small clock corrections: the title's prompt pulse at capture frames 1700 / 1800
+sits 2 / 1 frames behind `(frame - 1140) / 60` (rows use 9.30 and 10.9667 s, so it gains a frame
+in those 100), and the boot's spinner glows run about one frame ahead each 105 frames
+(`boot::GLOW_DRIFT`, fitted to frames 900-1105, so Barrel's glows run 1% fast to match).
+Ruled out: the recomp's virtual clock. The game reads only QueryPerformanceCounter (through
+0x140b8c9f0), about ten times a frame on the main thread, and its frame time (the read at
+0x1406b94ab, `now - last` over the frequency, stored at +0x80 and +0x84 of the object in rbx and
+capped at +0x88) steps by 16,665.7 to 16,667.7 µs, mean 16,666.67, over frames 900-1105
+(`RYZA_TRACE_CLOCK=900-1105` in ryza-recomp prints each reader's steps). So the game is handed
+1/60 s a frame and the gain is its own: a loop that drops its last frame, a rate other than 60
+in the animation data, or a second timer. One lead: a second thread (the reader under
+0x1407656e0, by a Sleep loop) ticks 171 times in those 206 frames. Way in: find what the
+layout animation's time is advanced by (the users of the frame time at +0x80 / +0x84), in the
+boot-title scenario.
 
 ## Fields
 
