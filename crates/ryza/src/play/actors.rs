@@ -165,6 +165,23 @@ pub fn motions_of(steps: &[barrel_engine::event::Timed]) -> BTreeMap<u32, BTreeS
 
 /// Runs the event's stage on to the tick nearest `seconds` (it never runs back; a time on a tick's
 /// edge, like the capture frame 1400's 3.7333 s, must not flip with float noise).
+// STAND-IN: The fade's two presets are the colours the capture shows (2 clear to black, 3 black to clear); the real thing is the game's own table of contrast presets.
+/// How much of the screen the event's fade covers in black (`u49`, [`Stage::fade`]): 1 before
+/// the event's first fade (the title comes up black), then from one of the preset's ends to
+/// the other, a step a frame from the command's own frame (the game's quad: `rate` k/90 on the
+/// k-th frame of a 1.5 s fade).
+pub fn cover(stage: &barrel_engine::stage::Stage) -> f32 {
+    let Some((preset, seconds, since)) = stage.fade else { return 1.0 };
+    let (from, to) = match preset {
+        2 => (0.0, 1.0),
+        3 => (1.0, 0.0),
+        _ => return 0.0,
+    };
+    let (frames, length) = (((stage.time - since) * 60.0).round(), (seconds * 60.0).round());
+    let rate = if length <= 0.0 { 1.0 } else { ((frames + 1.0) / length).clamp(0.0, 1.0) };
+    from + (to - from) * rate
+}
+
 pub fn advance(play: &mut Playback, seconds: f32) {
     while play.stage.time + barrel_engine::stage::FRAME * 0.5 < seconds {
         play.tick();

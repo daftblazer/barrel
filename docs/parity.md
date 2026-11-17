@@ -64,6 +64,10 @@ dropped. Font glyphs become text runs, read through the game's glyph table (the 
 The game's pixel shaders take constants the vertex colour does not show (`ps_cb`, printed with
 each game-side difference). Reading what they do is part of matching a screen.
 
+A quad of one plain colour compares by its place and colour alone: the game's screen fade (a
+vertex shader with `rate`, `sColor` and `eColor` over the whole screen, no texture read) and a
+Barrel quad that samples a single point of a texture both read as `(plain colour)`.
+
 ## Draw parity (3D)
 
 The same capture holds the scene's mesh draws (frame 1400 of Ryza's boot-title scenario: the

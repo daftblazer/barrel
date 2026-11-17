@@ -250,8 +250,13 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
         (font.width, font.height),
     )?;
     // Textures in the order of `text::FONT`, `text::UI`, then the boot screens' (`boot::TEXTURES`).
+    // Without the boot the Gust logo comes third: the fade's black is drawn from a point of it
+    // (the game has it bound then too).
     if !boot {
-        return Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui])?, title, None));
+        let logo_bytes = install.read("\\data\\x64\\res_en\\ipu\\logo_gust.g1t")?;
+        let logo = barrel_formats::g1t::G1t::parse(&logo_bytes).map_err(|e| format!("logo_gust: {e}"))?;
+        let logo = logo.textures.first().ok_or("logo_gust: no texture")?;
+        return Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui, logo])?, title, None));
     }
     // (file, texture number) of each boot texture, in the order of `boot::TEXTURES` after the title's two.
     let wanted = [
@@ -515,7 +520,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
     let mut cast_files: Vec<actors::Files> = Vec::new();
     if let (Some(motions), Some(play)) = (title_motions, title_play.as_mut()) {
-        actors::advance(play, a.title_at - actors::EVENT_START);
+        // after the boot the title's own time starts where the boot ends
+        let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
+        actors::advance(play, a.title_at + boot_ahead - actors::EVENT_START);
         for &slot in play.stage.characters.keys() {
             cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()))?);
         }
@@ -1078,7 +1085,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // The title's characters on the event's stage at this frame's moment.
         if let Some(play) = title_play.as_mut().filter(|_| !cast.is_empty()) {
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
-            actors::advance(play, a.title_at + clock - actors::EVENT_START);
+            let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
+            actors::advance(play, a.title_at + boot_ahead + clock - actors::EVENT_START);
             prev_palette.copy_from_slice(&palette);
             for actor in &cast {
                 if let Some(body) = play.stage.characters.get(&actor.slot) {
@@ -1155,6 +1163,14 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 }
                 None => title.quads(a.title_at + clock, (width, height)),
             };
+            // The event's fade over the title: black from a point of the Gust logo.
+            let mut quads = quads;
+            let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= barrel_ryza::boot::TITLE_START);
+            let alpha = title_play.as_ref().filter(|_| showing_title).map_or(0.0, |p| actors::cover(&p.stage));
+            if alpha > 0.0 {
+                let texture = if boot.is_some() { barrel_ryza::boot::LOGO_GUST } else { 2 };
+                quads.push(text::Quad { turn: false, spin: None, rect: [0.0, 0.0, width as f32, height as f32], uv: [0.5; 4], color: [0.0, 0.0, 0.0, alpha], texture });
+            }
             layer.set(&gpu, &quads)?;
         }
         let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _)| l)).collect();

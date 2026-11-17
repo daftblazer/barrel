@@ -68,9 +68,10 @@ const WINDOW_START: f32 = (532.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT: f32 = (802.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT_SPEED: f32 = 0.3;
 const WINDOW_OUT: f32 = SPINNER_OUT + 0.2;
-// STAND-IN: The title's start is a capture frame, and the title's own fade from black is not drawn; the real thing is the game's boot ending when its loading does, with that fade.
+// STAND-IN: The title's start is a capture frame; the real thing is the game's boot ending when its loading does.
 /// The title's first frame (capture frame 875, where `--title-at 0` sits): the screen is black
-/// from the window's end until then (the title's own fade from black is not drawn).
+/// from the window's end until then, and after it under the title's event's fade
+/// (`play::actors::cover`).
 pub const TITLE_START: f32 = (875.0 - CAPTURE_START) / FPS;
 
 /// The seconds of the boot sequence (the title starts at [`TITLE_START`]).

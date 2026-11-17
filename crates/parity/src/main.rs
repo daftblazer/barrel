@@ -334,6 +334,11 @@ fn screen(trace: &Path, frame: u64, idx: Option<&str>) -> Result<()> {
 }
 
 /// A 2D rectangle as both sides describe it; a run of font glyphs is one, its `text` set.
+/// The texture name of a quad of one plain colour: the game's screen fades (a vertex shader
+/// with `rate`, `sColor` and `eColor`, no texture read) and Barrel's quads that sample a single
+/// point of a texture.
+const SOLID: &str = "(plain colour)";
+
 #[derive(Clone, Debug)]
 struct Q {
     tex: String,
@@ -452,6 +457,24 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
             continue;
         }
         let data = t.blob(vb["data"].as_str().unwrap_or("")).unwrap_or_default();
+        // A screen fade: the vertex shader blends two colours by `rate` over the whole screen
+        // (positions already in clip space) and the pixel shader reads no texture.
+        let vs_cb0 = e["vs_cb"].get("0").and_then(Value::as_str).and_then(|h| t.blob(h).ok()).map(|b| floats(&b)).unwrap_or_default();
+        let fade = dxbc::program(&t.blob(&s("vs")).unwrap_or_default()).ok().and_then(|p| {
+            let vars: Vec<_> = p.buffers.iter().filter(|b| b.name == "$Globals").flat_map(|b| b.variables.iter().map(|v| (v.name.clone(), v.offset as usize / 4))).collect();
+            let at = |n: &str| vars.iter().find(|v| v.0 == n).map(|v| v.1);
+            let (rate, from, to) = (at("rate")?, at("sColor")?, at("eColor")?);
+            let rate = *vs_cb0.get(rate)?;
+            let color: [f32; 4] = std::array::from_fn(|i| {
+                let (a, b) = (vs_cb0.get(from + i).copied().unwrap_or(0.0), vs_cb0.get(to + i).copied().unwrap_or(0.0));
+                a + (b - a) * rate
+            });
+            Some(color)
+        });
+        if let Some(color) = fade {
+            out.push(Q { tex: SOLID.into(), rect: [0.0, 0.0, 1920.0, 1080.0], uv: [0.0; 4], color, text: None, corners: None, how: format!("{} {:?}", s("vs"), vs_cb0) });
+            continue;
+        }
         let m = e["vs_cb"].get("0").and_then(Value::as_str).and_then(|h| t.blob(h).ok()).map(|b| floats(&b)).unwrap_or_default();
         let find = |n: &str| lay.iter().find(|l| l.0 == n).map(|l| (l.1, l.2));
         let mut pts: Vec<(f32, f32, Vec<f32>, Vec<f32>)> = Vec::new();
@@ -582,7 +605,12 @@ fn barrel_layer(v: &Value) -> Option<Vec<Q>> {
                     let br = c.iter().max_by(|a, b| sum(a).total_cmp(&sum(b))).unwrap();
                     [tl[0], tl[1], br[0], br[1]]
                 });
-                Q { tex: q["tex"].as_str().unwrap_or("").into(), rect, uv: arr(&q["uv"]), color: arr(&q["color"]), text: None, corners, how: String::new() }
+                // a quad that samples one point of its texture is a plain colour
+                let uv: [f32; 4] = arr(&q["uv"]);
+                if uv[0] == uv[2] && uv[1] == uv[3] {
+                    return Q { tex: SOLID.into(), rect, uv: [0.0; 4], color: arr(&q["color"]), text: None, corners, how: String::new() };
+                }
+                Q { tex: q["tex"].as_str().unwrap_or("").into(), rect, uv, color: arr(&q["color"]), text: None, corners, how: String::new() }
             })
             .collect(),
     )

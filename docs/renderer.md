@@ -1280,6 +1280,11 @@ the `title-cycle` capture has them (capture frame 278 is t = 0, so frame N shows
    window slides back out from 1077 to 1107. Opacities are bytes multiplied down the node tree and
    truncated (`boot::byte`). Barrel loads nothing, so the length (about 5.2 s) is the capture's.
 
+The title comes up black and fades in: its event's `u49 1 2 0` and, 55 frames on, `u49 1 3
+150` (docs/events.md) drive a black quad over everything, 1/90 clearer each frame from capture
+frame 929 and gone at 1019. Barrel draws it from the event's stage (`play::actors::cover`), as
+a point of the Gust logo's texture coloured black.
+
 The game's own sequence (found with the answer key's hooks): one object, stepped each frame
 from `0x1404db7ac`, whose state `0x1400db160` sets: 1 the notice (frame 11 of the capture's
 run), 2 and then 8 polled every 4 frames while the first loading runs (136 to 169), 4 the Koei
