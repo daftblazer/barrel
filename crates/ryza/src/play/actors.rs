@@ -164,6 +164,30 @@ impl Files {
         Ok(Files { slot: 0, entry: base_tag, tag: tag.to_string(), size, model, pack, anims, bases, face: None, prop: None })
     }
 
+    /// The gimmick model `tag` (`FM_BOARD_01`, [`barrel_ryza::gimmick::Gimmick::tag`]): a static
+    /// object in `charabase.xml`'s files for it (a folder of its own, entries named after the
+    /// file stem), placed by its callers: its matrix is the identity.
+    pub fn read_gimmick(install: &Install, tag: &str) -> Result<Files> {
+        let (chara, base) = (install.read("\\saves\\chara\\chara.xml")?, install.read("\\saves\\chara\\charabase.xml")?);
+        // STAND-IN: The notice boards (`FM_BOARD_01`, `_02`) have no row of their own and are both drawn as the town's `A21_H_BOARD_02`; the real thing is the game's own name for them. The capture draws both Rasenboden boards with that mesh (draw sizes 60, 2583, 7119, 450) and its textures: `_01`'s mesh and `_03`'s (one draw smaller) do not match.
+        let alias = tag.starts_with("FM_BOARD_").then(|| "A21_H_BOARD_02".to_string());
+        let mut found = None;
+        for t in [Some(tag.to_string()), alias].into_iter().flatten() {
+            if let Some(files) = barrel_ryza::chara::model_files(&base, &t)? {
+                found = Some((t, files));
+                break;
+            }
+        }
+        let (row, (model, texture)) = found.ok_or_else(|| format!("{tag}: no charabase row"))?;
+        let size = barrel_ryza::chara::size(&chara, &row)?;
+        let path = |name: &str| format!("\\data\\x64\\character\\{}", name.to_ascii_lowercase().replace('/', "\\"));
+        let (m, pack) = (install.read(&format!("{}.elixir.gz", path(&model)))?, install.read(&format!("{}.g1t", path(&texture)))?);
+        // The entries are named after the file stem, but a copy of a model keeps its original's
+        // (`A21_H_BOARD_03`'s are `-02`): read the name off the mesh entry.
+        let stem = Elixir::parse(&m)?.entries.iter().find_map(|e| e.name.strip_suffix("_default.g1m").map(str::to_string)).ok_or_else(|| format!("{model}: no mesh entry"))?;
+        Ok(Files { slot: 0, entry: stem, tag: tag.to_string(), size, model: m, pack, anims: BTreeMap::new(), bases: BTreeMap::new(), face: None, prop: Some(Mat4::IDENTITY) })
+    }
+
     /// The character's tag.
     pub fn tag(&self) -> &str {
         &self.tag
@@ -239,6 +263,13 @@ impl Actor<'_> {
             (None, Some(b)) => Mat4::from_scale_rotation_translation(Vec3::from(self.size), Quat::from_rotation_y(b.facing), Vec3::from(b.position)),
             (None, None) => Mat4::IDENTITY,
         }
+    }
+
+    /// Its model matrix (a gimmick's size) at `position`, turned `yaw` degrees about the
+    /// vertical, then by `rotation` (degrees about x, y, z) and scaled by `scale`.
+    pub fn gimmick_model(&self, position: Vec3, yaw: f32, rotation: [f32; 3], scale: [f32; 3]) -> Mat4 {
+        let turn = Quat::from_rotation_y(yaw.to_radians()) * barrel_ryza::event::rotation(rotation);
+        Mat4::from_scale_rotation_translation(Vec3::from(self.size) * Vec3::from(scale), turn, position)
     }
 
     /// Its model matrix standing at `position`, turned `yaw` radians about the vertical.

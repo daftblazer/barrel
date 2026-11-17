@@ -58,6 +58,16 @@ fn find<'a>(e: &'a Element, name: &str, tag: &str) -> Option<&'a Element> {
     e.children.iter().find_map(|c| find(c, name, tag))
 }
 
+/// The files of the model `tag` names in `charabase.xml`: its `Model` and `defaultTexture`
+/// attributes, a folder and a file stem under `data\x64\character\` (`A21_H_BOARD_01/obj-A21-H-BOARD-01_hi`),
+/// or None when the base has no row for the tag.
+pub fn model_files(charabase: &[u8], tag: &str) -> Result<Option<(String, String)>, String> {
+    let base = table::parse(charabase).map_err(|e| format!("CharaBase: {e}"))?;
+    let Some(row) = find(&base, "CharaBase", tag) else { return Ok(None) };
+    let get = |k: &str| row.attr(k).map(str::to_string).ok_or(format!("CharaBase: {tag} has no {k}"));
+    Ok(Some((get("Model")?, get("defaultTexture")?)))
+}
+
 /// The tag of row `row` of `chara.xml`: the character an event's slot number names (slot 2 is
 /// `PC02A`).
 pub fn row_tag(chara: &[u8], row: usize) -> Result<String, String> {
@@ -105,6 +115,14 @@ mod tests {
         assert_eq!(found.iter().map(|s| s.dir.as_str()).collect::<Vec<_>>(), ["PC02A", "CM01"]);
         assert_eq!(found.iter().map(|s| s.skeleton_base).collect::<Vec<_>>(), [None, Some(98.0)]);
         assert!(super::motion_sets(base, sets, "PC09A").is_err());
+    }
+
+    #[test]
+    fn models_by_their_rows() {
+        let base = br#"<Root><CharaBase BaseTag="FM_UNI" Model="FM_UNI/obj-FM-UNI_hi" defaultTexture="FM_UNI/obj-FM-UNI_hi"/></Root>"#;
+        let (m, t) = super::model_files(base, "FM_UNI").unwrap().unwrap();
+        assert_eq!((m.as_str(), t.as_str()), ("FM_UNI/obj-FM-UNI_hi", "FM_UNI/obj-FM-UNI_hi"));
+        assert!(super::model_files(base, "FM_BOARD_01").unwrap().is_none());
     }
 
     #[test]

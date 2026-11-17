@@ -161,12 +161,12 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
   `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
-  45.4 --ryza 32517,6180,30336`, row `rasen-3d-2550`), 801 of the game's 913 draws have a
-  Barrel match. The 112
+  45.4 --ryza 32517,6180,30336`, row `rasen-3d-2550`), 809 of the game's 913 draws have a
+  Barrel match. The 104
   without: the townsfolk Barrel does not place (the story-conditioned ones and a few `npc22b` and `npc34a` draws: about 15), the
   terrain's 42 strips (Barrel draws a patch at once), some 20 plant cells,
-  10 of a shore foam effect, the field's gimmicks (`saves\fieldmap\gimmick\gimmick_fieldmap_<field>.xml`: notice boards, gathering spots as a fruit, a ship: not placed) and 22 of the field's
-  models. Barrel draws 306 the game does not: 164 of the field's models, nearly all in view and
+  10 of a shore foam effect, two rainbow grapes and a ship (not rows of the field's gimmick table, `docs/tables.md`, "Ryza DX: field gimmicks": where they come from is open) and 22 of the field's
+  models. The gimmicks with a model and no story event (the four notice boards) are placed; the story-conditioned ones are not. Barrel draws 306 the game does not: 164 of the field's models, nearly all in view and
   hidden behind the town, as on the title (leaving 138 of them out changes 604 pixels of the
   picture, all at one far spot): the game's occlusion test, which Barrel does not make
   (`tools/pair3d.py` lists them); and 91 draws of the townsfolk (`npc30a`, `npc30b`, `npc31a`,

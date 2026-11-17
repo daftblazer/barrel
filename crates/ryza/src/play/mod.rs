@@ -331,6 +331,20 @@ fn standing_npcs(install: &barrel_ryza::install::Install, field: &str, time: Tim
     }
 }
 
+/// The gimmicks with a model that `field` has out at `time`: the ones that do not depend on the
+/// story (the others are not placed).
+fn standing_gimmicks(install: &barrel_ryza::install::Install, field: &str, time: Time) -> Vec<barrel_ryza::gimmick::Gimmick> {
+    let name = format!("\\saves\\fieldmap\\gimmick\\gimmick_fieldmap_{}.xml", field.to_ascii_lowercase());
+    match install.read(&name).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::gimmick::read(&b)) {
+        // STAND-IN: The gimmicks whose rows name a story event (`startEvent`, `endEvent`) are left out; the real thing is the story's progress. Rasenboden's capture, after the opening, draws the boards (no event) and none of the rows that start at `EVENT_MM01_111`.
+        Ok(all) => all.into_iter().filter(|g| !g.story && g.present(time)).collect(),
+        Err(e) => {
+            eprintln!("gimmicks of {field}: {e}");
+            Vec::new()
+        }
+    }
+}
+
 fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
     let (e, a) = (elevation.to_radians(), azimuth.to_radians());
     let toward = Vec3::new(e.cos() * a.sin(), e.sin(), e.cos() * a.cos());
@@ -605,7 +619,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The characters' toon ramp (`DSChara-Cll`'s `sRamp`, docs/shading.md).
     // The field's townsfolk, the ones standing there now (`barrel_ryza::npc`, docs/tables.md).
     let townsfolk = if a.title { Vec::new() } else { standing_npcs(&install, &a.field, a.time, a.weather) };
-    let ramp_bytes = match ryza_files.is_some() || a.title || !townsfolk.is_empty() {
+    let gimmicks = if a.title { Vec::new() } else { standing_gimmicks(&install, &a.field, a.time) };
+    let ramp_bytes = match ryza_files.is_some() || a.title || !townsfolk.is_empty() || !gimmicks.is_empty() {
         true => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
         false => None,
     };
@@ -785,6 +800,27 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
         }
         eprintln!("townsfolk: {} drawn of {} here", npc_drawn.len(), townsfolk.len());
+    }
+    // The gimmicks' models, one set of files each however many places use it, and one instance
+    // a place, posed in the bind pose.
+    let gimmick_files: Vec<actors::Files> = gimmicks.iter().map(|g| g.tag.as_str()).collect::<std::collections::BTreeSet<_>>().into_iter().filter_map(|tag| actors::Files::read_gimmick(&install, tag).map_err(|e| eprintln!("{tag}: not drawn: {e}")).ok()).collect();
+    let gimmick_models = gimmick_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
+    let gimmick_actors = gimmick_files.iter().zip(&gimmick_models).map(|(f, m)| f.open(m)).collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut gimmick_instances: Vec<u32> = Vec::new();
+    if let (Some(r), false) = (&ramp_pack, gimmick_actors.is_empty()) {
+        let ramp = textures.len();
+        textures.extend(r.textures.first());
+        for (file, actor) in gimmick_files.iter().zip(&gimmick_actors) {
+            let base = textures.len();
+            textures.extend(actor.pack.textures.iter());
+            let joints = actor.joints_of(None, 0.0, 0.0);
+            for g in gimmicks.iter().filter(|g| g.tag == file.tag()) {
+                let instance = scene.instance(actor.gimmick_model(Vec3::from(g.position), g.yaw, g.rotation, g.scale));
+                actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, file.tag(), &actor.swing, &mut ramp_rows)?;
+                gimmick_instances.push(instance);
+            }
+        }
+        eprintln!("gimmicks: {} drawn of {} here", gimmick_instances.len(), gimmicks.len());
     }
     // STAND-IN: The sky dome is centred under the view's target at height 0; the real thing is the game's SkyDomeWorldPosition and WorldScale.
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -1037,8 +1073,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {
         None => Default::default(),
-        // The plants have their own range (`shown`, below), not an object's, and the townsfolk none (STAND-IN: the game's own range for them is not read; its capture shows them at 7000 to 12000 units, past the objects' first range).
-        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, ..)| i == d.instance)).filter_map(|d| {
+        // The plants have their own range (`shown`, below), not an object's, and the townsfolk and gimmicks none (STAND-IN: the game's own range for them is not read; its capture shows them at 7000 to 12000 units, past the objects' first range).
+        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, ..)| i == d.instance) && !gimmick_instances.contains(&d.instance)).filter_map(|d| {
             let b = d.bounds?;
             let m = instances.get(d.instance as usize)?.model;
             let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));

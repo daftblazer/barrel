@@ -2504,6 +2504,44 @@ kind and 48 rows in each table.
   folder (`character/npc30b/npc30b_model.g1t`); the size (`chara.xml`) and the motion sets
   (`charabase.xml`) are the base's.
 
+## Ryza DX: field gimmicks (`Saves/fieldmap/gimmick/`)
+
+A field's gimmicks come from `gimmick_fieldmap_<field>.xml` (field in lower case, Shift_JIS;
+`barrel_ryza::gimmick`): `<Root>` holds one `<Property>` a gimmick (notice board, gathering
+spot, crate, warp, call, message box ...), Rasenboden's 105 rows of which 54 carry a `model`.
+Only those are drawn. A row has `fixID`, `gimmickTypeTag`, `formTag` and `formParam` (its
+collision shape), `rotationY` (degrees), `position="x,y,z"` (metres, times 100 for world
+units, in the field's own frame as the NPC markers are), `model="CHARA_<TAG>"`, and
+sometimes `objScale`, `objRot`, `startEvent`, `endEvent`, `startTZ`, `endTZ`.
+
+- The model is the character `<TAG>` (`FM_BOARD_01`): `charabase.xml`'s row for it gives its
+  `Model` and `defaultTexture` (`A21_FM_RAINBOW_GRAPE_01/obj-A21-FM-RAINBOW-GRAPE-01_hi`, a
+  folder and file stem under `data/x64/character/`, lower-cased; the tag's own spelling is not
+  the folder's), and `chara.xml` the size. The container's entries are the stem (`<stem>.g1m`
+  the skeleton, `<stem>_default.g1m` the mesh); a copy of a model keeps its original's stem
+  (`A21_H_BOARD_03`'s entries say `-02`). It is a static object: the bind pose, one instance
+  a place.
+- The notice boards (`FM_BOARD_01`, `FM_BOARD_02`) have no row. The game's capture draws both
+  of Rasenboden's with the mesh and textures of `A21_H_BOARD_02` (the draw sizes 60, 2583, 7119
+  and 450; `A21_H_BOARD_01` draws other sizes, `_03` one 15 smaller): a stand-in names it.
+- Placement: scaled by the model's size and `objScale`, turned about the vertical by `rotationY`
+  and then by `objRot` (degrees about x, y, z as an event prop: `Rz Ry Rx`), moved to the
+  position. The boards at (334.62, 59.91, 311.2) and (275.23, 49.96, 407.29) match the capture's
+  at (33462, 5991, 31120) and (27523, 4996, 40729) to a unit (both turned 360 degrees; the
+  turn's direction and `objRot` are not checked against a capture).
+- Rows with `startEvent` or `endEvent` depend on the story (Rasenboden: the grapes, flowers,
+  bushes, crates, honeycombs and sea urchins all start at `EVENT_MM01_111`, the field's other
+  variants at other events). The capture, after the opening, draws none of those and draws the
+  boards, which have none: a stand-in leaves the story-conditioned rows out. Of Rasenboden's
+  four boards the capture draws two (why not the other two is not known); Barrel draws all four.
+- `startTZ` and `endTZ` (`TIME_ZONE_MORNING`, `_EVENING`, `_NIGHT`: the only names in the
+  tables) span the times from start to end, both included, wrapping (`EVENING` to `MORNING`
+  is evening, night, morning: the 248 such rows leave out one time of four). The names do not
+  list the bit order of the NPC conditions: no table in the archives names the times in order.
+- The grapes the capture draws (at 33605, 5547, 39929 and 29142, 5676, 42013) are not rows of
+  this table (its grapes are at x 339 to 410, z 233 to 263 and start at `EVENT_MM01_111`);
+  where they come from is open.
+
 ## The world map's field (`Data/x64/Field/A15_WMAP`)
 
 The world map is a field like the others: `A15_WMAP.elixir.gz` holds its terrain (`A15_WMAP.ktf`
