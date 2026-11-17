@@ -7,19 +7,53 @@ Everything Barrel is stuck on for Atelier Ryza DX, has not worked out yet, or kn
 The original Ryza DX is never run through Steam without asking first (its playtime and
 achievements are the player's own, and the DX version has not been played there).
 
-## The answer key's runs repeat only to a frame
+## Most pressing (worked first; each entry stands on its own)
 
-ryza-recomp's scenarios run with virtual clocks by default (RYZA_DETERMINISTIC: each frame is
-1/60 s; each clock read in a frame adds 1 µs, shared across threads), and state descriptions are
-hashed with their padding zeroed. Two boot-title runs (2026-11-16) still differ: the second is
-the first shifted by about one frame (at the best shift 1,143 of 1,924 draws carry identical
-vertex constants), and the draw count varies by 1-2 (1,923-1,925). Loading threads finish in real
-time, so the frame the title starts on moves. So: compare at aligned frames (`barrel-parity
-align`, or find the shift as above) and fit nothing to a single run's random rolls; a check row
-states its tolerance. Way in, if it matters: per-thread read counters for the clock, and a
-frame-locked wait on the loader's completion (the frame it finishes on, from a hook).
+Ranked by what it blocks. Each says what is known, what is ruled out, where to start, and when it
+is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run notes); Barrel's
+checks are `runchecks docs/ryza/checks.txt` (21 rows) and
+`docs/escha/checks.txt` (17).
 
-## The opening hangs at frame 9270 (recomp)
+1. **The recomp hangs in the opening** (blocks P0's New Game scenario and every stage after it).
+   Full notes: "The opening hangs at the 39th voice line" below. In short: run
+   `tools/scenario.sh scenarios/opening-probe.sh` in ryza-recomp (New Game, A every 120 frames).
+   It stops presenting at the 39th open of `Sound/voice.ktsl2asbin`: frame 9270, or 9870 with
+   A every 240 (`work/opening-240.sh`). There is no trap. The hang is the same on virtual and
+   real clocks. The main thread spins in 0x140c06ea0's slot loop (block 0x140c07970, in
+   `build/gen/funcs_191.c` near line 25551). 0x140be2dd0 returns true there, so the loop's
+   5 ms wait never runs. No gdb breakpoint in that loop has ever fired, even when enabled only
+   after the hang, so check first that this really is the spinning thread
+   (`tools/stacks.sh` with SNAPS=3). Then dump the busy slot through a runtime hook rather
+   than gdb. Find what should clear field +0x38: likely a sound or stream request that never
+   completes. Solved when opening-probe.sh runs to its last frame and exits 0.
+2. **WaitForMultipleObjects with wait-all is not atomic** (a correctness flaw; it may feed
+   item 1). `imp_kernel32_WaitForMultipleObjects` in `crates/runtime/src/imports/misc.rs` takes
+   the objects one at a time, so an auto event or semaphore can be consumed while the others
+   are not yet signalled. Windows takes all of them in one step or none. Solved when wait-all
+   takes every object under one lock (or retries without consuming any), the runtime's tests
+   cover it, and the boot-title scenario still matches (`ref-boot` row).
+3. **The recomp's virtual clock is not the game's 60 Hz** (makes rows need fitted offsets).
+   See "The answer key's runs repeat only to a frame" and "The capture's clock against 60 Hz"
+   below. RYZA_DETERMINISTIC adds 1 µs for each clock read, so time runs fast inside a frame. Runs
+   drift by about a frame, and Barrel carries `boot::GLOW_DRIFT` (crates/ryza/src/boot.rs) and
+   per-row time offsets to match. Solved when reads within a frame return that frame's time (or
+   a per-thread counter), two boot-title runs give the same draws, and GLOW_DRIFT and the rows'
+   offsets can be removed with every row still passing.
+4. **The title backdrop's characters** (blocks P1). pc00a, pc02a and pc03a stand at known spots
+   (from the capture's bone palettes, docs/renderer.md, backdrop section) and play an idle
+   motion, but which motion file and phase is not known. The title scene's definition was not
+   found in the archives; it is probably built in the executable. Way in: hook the motion loads
+   (file opens around frame 1380 with RYZA_TRACE_FILES) and the game's motion-play call, in the
+   boot-title scenario. Solved when diff3d at frame 1400 matches the 58 character draws within
+   a stated tolerance.
+5. **Misplaced collision meshes** (blocks P3's walk; worked around now). See "The garden stairs'
+   collision" under "Ryza in the field". Some `_cbvh` meshes lie about 180 units off their
+   model. Their placement words have bits 0xc000 set, and Barrel leaves those meshes out. The
+   game's own collision transform is in its code (EXCollisionScene). With the recomp, hook
+   where it builds the collision scene for s06_t_rasen and read the matrix it applies. Solved
+   when the meshes are placed by that rule and the gate walk goes down the stairs.
+
+## The opening hangs at the 39th voice line (recomp)
 
 `scenarios/opening-probe.sh` (New Game, A every 120 frames) stops presenting at frame 9270,
 virtual and real clocks alike, no trap. The main game thread loops in 0x140c06ea0
@@ -37,9 +71,21 @@ is the 39th open of Sound/voice.ktsl2asbin (content, not timing). XAudio2 calls 
 line look normal (create/start/stop/destroy pairs, two voices still streaming).
 gdb breakpoints on 0x140be2dd0 and on the wait wrapper 0x140c0d780 (also by source line,
 2 locations) never fire, even when enabled only after the hang: the wait loop's calls are
-inlined into a copy gdb does not map. Next: find the loop's code in build/gen by its call to
-the event wait (grep the generated C for 0x140c07970's block) and break on that line, or add a
-runtime hook (guest address -> dump rsi's slots) instead of gdb.
+inlined, and a breakpoint on the loop's own call line (funcs_191.c:25551) never fires either.
+In the generated C the 5 ms wait is skipped whenever 0x140be2dd0 returns true, so the loop can
+spin without waiting at all. Next: see item 1 of "Most pressing".
+
+## The answer key's runs repeat only to a frame
+
+ryza-recomp's scenarios run with virtual clocks by default (RYZA_DETERMINISTIC: each frame is
+1/60 s; each clock read in a frame adds 1 µs, shared across threads), and state descriptions are
+hashed with their padding zeroed. Two boot-title runs (2026-11-16) still differ: the second is
+the first shifted by about one frame (at the best shift 1,143 of 1,924 draws carry identical
+vertex constants), and the draw count varies by 1-2 (1,923-1,925). Loading threads finish in real
+time, so the frame the title starts on moves. So: compare at aligned frames (`barrel-parity
+align`, or find the shift as above) and fit nothing to a single run's random rolls; a check row
+states its tolerance. Way in, if it matters: per-thread read counters for the clock, and a
+frame-locked wait on the loader's completion (the frame it finishes on, from a hook).
 
 ## The capture's clock against 60 Hz
 
