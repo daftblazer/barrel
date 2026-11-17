@@ -470,6 +470,13 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
             let ((t, tk), (r, rk), swing) = palette_diff(&g.palette, &bdraws[j].bones, &bdraws[j].simulated);
             if std::env::var_os("DIFF3D_POSES").is_some() {
                 println!("  skinned draw #{} ({} indices): translation {t:.3} (bone {tk}), rotation {r:.4} (bone {rk}), {swing} swing bones left out", g.n, g.count);
+                // DIFF3D_POSES=bones: the worst bone's two matrices (the game's mirrored into
+                // Barrel's space), for working out what turns it.
+                if std::env::var("DIFF3D_POSES").is_ok_and(|v| v == "bones") && t > 1.0 {
+                    if let (Some(gm), Some(bm)) = (game_bone(&g.palette, tk), bdraws[j].bones.get(tk)) {
+                        println!("    game   {:?}\n    barrel {:?}", mirrored(&gm), bm);
+                    }
+                }
             }
             let p = poses.entry(gkeys[i].0.first().map_or_else(String::new, |n| folder(n))).or_default();
             p.0 += 1;

@@ -52,6 +52,26 @@ pub fn schedule_drawn<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32)
     Ok(drawn_player(event, given, clock, until)?.schedule())
 }
 
+/// A command the player took, as the script has it: when, in which action, and its words (the
+/// word, then its operands). The steps carry Escha's words for the commands carried over;
+/// these are Ryza's own.
+pub type Taken = (f32, usize, Vec<u32>);
+
+/// [`schedule_drawn`] with the commands taken ([`Taken`]) from the same run.
+pub fn schedule_drawn_taken<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<(Vec<Timed<'a>>, Vec<Taken>), String> {
+    let table = OperandTable::ryza();
+    let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
+    let (steps, taken) = drawn_player(event, given, clock, until)?.schedule_traced();
+    let taken = taken
+        .into_iter()
+        .filter_map(|(time, action, at)| {
+            let c = scripts.get(action)?.get(at)?;
+            Some((time, action, std::iter::once(c.word).chain(c.operands.iter().copied()).collect()))
+        })
+        .collect();
+    Ok((steps, taken))
+}
+
 fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<Player<'a>, String> {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
@@ -83,17 +103,8 @@ fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Re
 /// (ryza-recomp's `tools/cmdlog.py --hex`): the time in seconds, the action, and the command's
 /// words as the script has them (the word, then its operands). `given` are the random commands'
 /// numbers in the order asked for (the lowest after them) and `until` where a looping event stops.
-pub fn commands(event: &Ebd, given: &[f32], until: f32) -> Result<Vec<(f32, usize, Vec<u32>)>, String> {
-    let table = OperandTable::ryza();
-    let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
-    let (_, taken) = drawn_player(event, given, 0, until)?.schedule_traced();
-    Ok(taken
-        .into_iter()
-        .filter_map(|(time, action, at)| {
-            let c = scripts.get(action)?.get(at)?;
-            Some((time, action, std::iter::once(c.word).chain(c.operands.iter().copied()).collect()))
-        })
-        .collect())
+pub fn commands(event: &Ebd, given: &[f32], until: f32) -> Result<Vec<Taken>, String> {
+    Ok(schedule_drawn_taken(event, given, 0, until)?.1)
 }
 
 /// `q5` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{slot, 0, 0, 0, x, y, z, rx, ry, rz, 0, 0, 2}`, adds

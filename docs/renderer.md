@@ -1291,6 +1291,11 @@ the `title-cycle` capture has them (capture frame 278 is t = 0, so frame N shows
    window slides back out from 1077 to 1107. Opacities are bytes multiplied down the node tree and
    truncated (`boot::byte`). Barrel loads nothing, so the length (about 5.2 s) is the capture's.
 
+The event turns Ryza's head: `s88 0 -7 0 0` holds it 7 degrees about the model's x axis, in
+the head joint's bind frame, over her motion (`actors::HEAD_TURN`; with it her bones are
+within 0.008 of the capture's, without 13.6 off). The command is read from the event's own
+words (`event::schedule_drawn_taken`): the steps carry Escha's words for what is carried over.
+
 The title comes up black and fades in: its event's `u49 1 2 0` and, 55 frames on, `u49 1 3
 150` (docs/events.md) drive a black quad over everything, 1/90 clearer each frame from capture
 frame 929 and gone at 1019. Barrel draws it from the event's stage (`play::actors::cover`), as

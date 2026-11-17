@@ -11,20 +11,18 @@ achievements are the player's own, and the DX version has not been played there)
 
 Ranked by what it blocks. Each says what is known, what is ruled out, where to start, and when it
 is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run notes); Barrel's
-checks are `runchecks docs/ryza/checks.txt` (21 rows; frames are the exact capture's) and
+checks are `runchecks docs/ryza/checks.txt` (28 rows; frames are the exact capture's) and
 `docs/escha/checks.txt` (17).
 
-1. **The title backdrop's cast** (blocks P1). Ryza, Lent and Tao are drawn from the event
-   `tt01_010` (docs/renderer.md, "The backdrop"): placed, turned and in their motions, with
-   the capture's phase; diff3d at frame 1400 matches all 52 of their draws (611 of 995 in
-   all), Lent's and Tao's bone palettes within 0.012 units at frames 1400, 1500 and 1700.
-   Left: Ryza's head is 13.7 units off at every frame (the game turns it toward the camera,
-   the event's `s88 0 -7`: a look-at, not done); the event's random wait `p6 1000 2000` is
-   played as its shortest (10 s), so Ryza's action (action 12) starts at a fixed time where the
-   game's is random; the cloth submeshes are drawn rigid on one joint; the weapons
-   (`pc0x_wep_01`), `npc34a` and the other characters the event adds (`q5`, slot 216 on) are
-   not drawn. Solved when diff3d also matches those 6 draws and Ryza's palette is within the
-   others' tolerance.
+1. **The title backdrop's cast: what is left** (P1). Ryza, Lent and Tao and the three
+   weapons lying by them are drawn from the event `tt01_010` (docs/renderer.md, "The
+   backdrop"; docs/events.md, "Timing and loops"): diff3d at frame 1400 matches 615 of 995
+   draws, all three characters' bones within 0.012 units (rows `title-3d-poses-1400`,
+   `title-3d-props-1400`), the event's commands pair with the game's log. Left: the cloth
+   submeshes are drawn rigid on one joint (the game's cloth and swing simulation); a head turn
+   (`s88`) takes its first angle only, at once (the title's `s88 0 -7 0 0` is 7 degrees about
+   the model's x axis in the head's bind frame; the opening's `s88 0 0 56 -4` and the timed
+   `s90` are the way to the other two); `npc34a`'s two draws have no Barrel bones to compare.
 
 ## Event commands against the game's own log
 
@@ -58,9 +56,6 @@ opening's first 132 of 135, each group at one offset. Left:
 - **`s69`** carries -4300 in its 14th operand in the game's queue where the script has 0, and
   `s36` (wait for the motion) takes no time in `ryza-commands`, which gives the player no
   motion lengths (the play does).
-- The cast's other gap stands: Ryza's head (`s88`, a look-at). The three weapons the event's
-  `q5` adds (slots 216, 226, 231) are drawn, lying where it puts them (docs/renderer.md, "The
-  backdrop"); the title's event adds no other characters.
 
 ## File bytes Barrel never uses
 

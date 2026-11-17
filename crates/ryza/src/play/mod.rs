@@ -512,11 +512,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         Some(e) => {
             let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
             let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
-            Some(barrel_ryza::event::schedule_drawn(e, &given, clock, 3600.0)?)
+            Some(barrel_ryza::event::schedule_drawn_taken(e, &given, clock, 3600.0)?)
         }
         None => None,
     };
+    let (title_steps, title_taken) = title_steps.map_or((None, Vec::new()), |(s, t)| (Some(s), t));
     let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
+    let title_heads = actors::head_turns(&title_taken);
     let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
     let added = title_event.as_ref().map(barrel_ryza::event::added).transpose()?.unwrap_or_default();
     let mut cast_files: Vec<actors::Files> = Vec::new();
@@ -532,6 +534,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     }
     let cast_models = cast_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
     let mut cast = cast_files.iter().zip(&cast_models).map(|(f, m)| f.open(m)).collect::<std::result::Result<Vec<_>, _>>()?;
+    for a in cast.iter_mut() {
+        a.head = title_heads.get(&a.slot).cloned().unwrap_or_default();
+    }
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     // STAND-IN: Ryza is lit as the field's models are; the real thing is her own shaders and lighting.
     // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the

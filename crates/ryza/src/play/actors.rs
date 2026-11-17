@@ -65,6 +65,26 @@ pub struct Actor<'a> {
     pub instance: u32,
     /// A prop's model matrix ([`Files::read`]).
     prop: Option<Mat4>,
+    /// The event's turns of its head ([`head_turns`]): when, and the command's three angles.
+    pub head: Vec<(f32, [f32; 3])>,
+}
+
+/// `s88` `{character, a, b, c}`: turns the character's head by whole degrees. The title's
+/// `s88 0 -7 0 0` holds Ryza's head 7 degrees about the model's x axis off her motion's (the
+/// capture's head matrix against the motion's: the same x axis, y and z turned 6.97 degrees).
+pub const HEAD_TURN: u32 = 0x7300_0058;
+/// The head's bone, as the motions number it (joint 6 of the playable characters' skeletons).
+const HEAD: u32 = 6;
+
+/// Each character's head turns among an event's commands, in time order.
+pub fn head_turns(taken: &[barrel_ryza::event::Taken]) -> BTreeMap<u32, Vec<(f32, [f32; 3])>> {
+    let mut out: BTreeMap<u32, Vec<(f32, [f32; 3])>> = BTreeMap::new();
+    for (time, _, words) in taken {
+        if let [HEAD_TURN, character, a, b, c, ..] = words[..] {
+            out.entry(character).or_default().push((*time, [a, b, c].map(|v| v as i32 as f32)));
+        }
+    }
+    out
 }
 
 impl Files {
@@ -125,12 +145,12 @@ impl Files {
         let geometry = G1m::parse(named(format!("{}{suffix}_default.g1m", self.tag))?)?.geometry.ok_or("the mesh has no geometry")?;
         let face = self.face.as_ref().map(|a| barrel_ryza::face::Face::new(&skeleton, a));
         let swing = unmoved_joints(&skeleton, self.anims.values(), face.as_ref());
-        Ok(Actor { slot: self.slot, size: self.size, skeleton, geometry, pack: G1t::parse(&self.pack)?, anims: &self.anims, bases: &self.bases, swing, face, instance: 0, prop: self.prop })
+        Ok(Actor { slot: self.slot, size: self.size, skeleton, geometry, pack: G1t::parse(&self.pack)?, anims: &self.anims, bases: &self.bases, swing, face, instance: 0, prop: self.prop, head: Vec::new() })
     }
 }
 
 impl Actor<'_> {
-    // STAND-IN: Ryza's head look-at is not applied, so her head follows only her motion; the real thing is the game's look-at turning it toward its target.
+    // STAND-IN: Only the first angle of a head turn (`s88`) is applied, about the model's x axis, and at once; the real thing is all three angles as the game applies them, and `s90`'s timed turn.
     /// Its joints' skinning matrices for `body` at stage time `now`.
     pub fn joints(&self, body: Option<&Body>, now: f32) -> Vec<Mat4> {
         let playing = body.and_then(|b| b.motion.as_ref());
@@ -147,6 +167,18 @@ impl Actor<'_> {
         }
         if let Some(f) = &self.face {
             f.apply(&mut locals, None, 0.0);
+        }
+        // The event's latest turn of the head, laid over the motion's.
+        if let (Some(&(_, [a, ..])), Some(head)) = (self.head.iter().rev().find(|(at, _)| *at <= now), self.skeleton.joint(HEAD)) {
+            // about the model's x axis as the head has it in the bind pose (the capture's head
+            // matrix and the motion's share their x column)
+            let mut bind = Quat::IDENTITY;
+            let mut at = Some(head);
+            while let Some(j) = at {
+                bind = Quat::from_array(self.skeleton.joints[j].rotation).normalize() * bind;
+                at = self.skeleton.joints[j].parent;
+            }
+            locals[head].1 *= bind.inverse() * Quat::from_rotation_x(a.to_radians()) * bind;
         }
         barrel_engine::skin::skin(&self.skeleton, &locals)
     }
