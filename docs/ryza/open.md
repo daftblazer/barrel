@@ -25,13 +25,6 @@ checks are `runchecks docs/ryza/checks.txt` (21 rows; frames are the exact captu
    (`pc0x_wep_01`), `npc34a` and the other characters the event adds (`q5`, slot 216 on) are
    not drawn. Solved when diff3d also matches those 6 draws and Ryza's palette is within the
    others' tolerance.
-2. **One glow at the loading window's fade-out** (small). On the exact capture every 2D row is
-   at 0 with no fitted time except frame 825 (`--boot-at 13.5667`): the sixth orb's glow is 114
-   of 255 in the game and 112 in Barrel, the other 216 quads the same. Barrel's value is the
-   curve's (`anm_loading_icon_eff_6`, 1.2 frames past its peak: 234.6, times the window's and
-   the spinner's bytes); the game's needs 237 or more there. Not a time offset (the scan of plus
-   and minus 12 frames has no better frame) and not the fade's bytes (they are shared by all
-   16 quads). Way in: what the window's getOut does to the icon's animations besides the fade.
 
 ## The answer key's runs repeat exactly
 
@@ -46,6 +39,14 @@ often the presenting one, has done its part. Two title-cycle runs and two openin
 the same captures frame for frame, paced or not, so scenarios run unpaced: the 14,000-frame
 opening in about 2.5 minutes for 4.5, a boot to the title in seconds. The boot is 265 frames
 shorter than in the first captures (its loading no longer runs across frames in real time).
+Timeouts (Sleep, timed waits) end on a clock of their own (ryza-recomp d155a88): in Present
+up to the next display refresh, else when every thread is idle, the earliest first and one
+thread at a time; a thread woken (an event, a lock, a futex, a start) counts as at work until
+it runs. On real time they ended wherever the host got to them, which moved loads by a frame
+between runs. Load Game (scenarios/load-rasen.sh, from a save in Rasenboden) and the opening
+now repeat frame for frame too. The recapture starts the boot a frame later (the notice at
+12) with the title where it was; it also ended the one glow quad at frame 825 that no time
+could match (the game's value there came with the old timing, not from a curve Barrel lacks).
 Left: the runtime's timer and thread-pool threads still fire in real time (none seen to matter
 yet), and a thread that computes for a minute without a wait makes the frames stop waiting
 (a line in the log names it).
