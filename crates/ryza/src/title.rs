@@ -23,7 +23,7 @@ use crate::font::ATLAS_SIZE;
 pub const FIELD: &str = "s19_l_highway_03";
 
 /// The title's camera, read off the capture's `mW2P` (the same at every captured frame, 300 to
-/// 1900): the eye and forward vector in the game's world (x not mirrored), a 45 degree vertical
+/// 1900): the eye and forward vector (the depth row of the matrix) in the game's world (x not mirrored), a 45 degree vertical
 /// field of view, near 50 and far 300000 (the projection's depth terms; the far is fitted to
 /// 300073 +- the float noise of a 5-digit division, so 300000).
 #[derive(Clone, Copy, Debug)]
@@ -36,7 +36,7 @@ pub struct Camera {
     pub far: f32,
 }
 
-pub const CAMERA: Camera = Camera { eye: [29789.2, 6484.96, 41557.74], forward: [0.404546, 0.105280, -0.908621], fov: 45.0, near: 50.0, far: 300_000.0 };
+pub const CAMERA: Camera = Camera { eye: [29789.2, 6484.96, 41557.74], forward: [0.404478, 0.105262, -0.908470], fov: 45.0, near: 50.0, far: 300_000.0 };
 
 impl Camera {
     /// The camera as the field renderer takes it: the look point in render space (x mirrored),
@@ -408,5 +408,19 @@ mod tests {
         assert!(curve(ANIMS, "anm_common_slide_in_bottom", "rot").is_err());
         // The blink's repeated third key is dropped: it runs 0.75 s.
         assert_eq!(curve(ANIMS, "anm_common_juvenile_blink", "color").unwrap().duration(), 0.75);
+    }
+
+    #[test]
+    fn camera_look_puts_the_eye_back_at_the_mirrored_game_eye() {
+        let (center, yaw, pitch, dist) = CAMERA.look();
+        let (y, p) = (yaw.to_radians(), pitch.to_radians());
+        // The renderer's own rule (`look_for`): eye = center + (sin y cos p, sin p, cos y cos p) * dist.
+        let eye = center + glam::Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
+        let want = glam::Vec3::new(-CAMERA.eye[0], CAMERA.eye[1], CAMERA.eye[2]);
+        assert!(eye.distance(want) < 0.05, "{eye:?} vs {want:?}");
+        // The look direction is the mirrored forward vector (a unit one).
+        let f = (center - eye).normalize();
+        assert!((f.x + CAMERA.forward[0]).abs() < 1e-4 && (f.y - CAMERA.forward[1]).abs() < 1e-4 && (f.z - CAMERA.forward[2]).abs() < 1e-4);
+        assert_eq!(dist * 0.01, CAMERA.near);
     }
 }

@@ -107,5 +107,15 @@ Conventions found in the capture (checked on the title's characters, `sha0de8a` 
   Ryza's archives) has different scenes and cameras, so its numbers (13 of 995 matched, world
   differences in the tens of thousands) say nothing yet. The tool is the means for the next
   step: render the same field and character as the capture and drive the count to zero.
+- Matching (after the title backdrop): by index count, Barrel's textures among the game's (the
+  game binds maps Barrel has no slot for; 16 x 16 placeholders are left out), nearest world
+  first; a Barrel draw kept at the identity (a static object, placed in its vertices) has no
+  world to compare. Barrel's `terrain` draws are included. The view-projection is compared in
+  Barrel's clip space: the game's `mW2P` with its world x and clip y negated. The unmatched
+  game draws are also counted by vertex shader. Frame 1400 against `--title`: 557 of 995 matched
+  (before: 13, with the wrong field), view-projection within 0.03.
+- A skinned draw's constant buffer (vertex shader `sha0de8a`): 16 bytes zero, `mW2P` (64), then
+  the bone palette, three registers per bone (rows `m0 m1 m2 t`, world.x = row0 . (p, 1)), 33
+  bones for the player characters; bone 0's translation is where the character stands.
 - Not covered yet: shadow passes (game and Barrel both list them; `diff3d` compares colour
   passes only), instanced draws (Barrel writes `inst` 1), view and projection separately.

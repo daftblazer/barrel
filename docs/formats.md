@@ -393,6 +393,16 @@ message window pieces in texture 28, item and character icons), `a15_menu`, `a15
 backgrounds, logos). Where each piece of a texture is placed on screen is in the executable's
 interface code (not read).
 
+### Field textures in the archives (Ryza)
+
+A Ryza field's textures are the entries ending `.g1t` of its `<field>.elixir.gz` container
+(`S19_L_HIGHWAY_03.g1t`, `S19_L_HIGHWAY_03_grass.g1t`) inside the PAK archives, and many are
+shared byte for byte across fields (a rock or ground map appears in a dozen packs). The draw
+capture's texture names (FNV-1a 64 of the top mip) therefore resolve to the first field whose
+pack holds them; `barrel-parity textures INSTALL OUT` writes these as `name:entry#n` lines,
+next to the loose `.g1t` files, so a hash seen in the capture says which field (or object)
+a draw belongs to: a texture found in one pack only names the field.
+
 ## The font (`Data/x64/Font_EN/MainFont_x64_0.g1t` and a table in the executable)
 
 Each language has one atlas (`Font`, `Font_EN`, `Font_SC`, `Font_TC`): a 2048×2048 BC3 texture

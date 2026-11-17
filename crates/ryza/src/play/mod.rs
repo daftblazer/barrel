@@ -890,8 +890,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     eprintln!("draw ranges: {ranges:?}");
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
+    // The boot sequence's screens come before the scene exists: it is left out until the title.
+    let scene_on = std::cell::Cell::new(true);
     let shown = |d: &Draw| {
-        !a.hide.iter().any(|h| d.name.contains(h.as_str()))
+        scene_on.get()
+            && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
@@ -1109,6 +1112,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 // The boot sequence, then the title from its own start.
                 Some(boot) => {
                     let t = a.boot_at + clock;
+                    scene_on.set(t >= barrel_ryza::boot::TITLE_START);
                     if t < barrel_ryza::boot::TITLE_START { boot.quads(t, (width, height)) } else { title.quads(t - barrel_ryza::boot::TITLE_START + a.title_at, (width, height)) }
                 }
                 None => title.quads(a.title_at + clock, (width, height)),

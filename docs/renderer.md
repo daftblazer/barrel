@@ -1158,8 +1158,8 @@ DX's title as it stands with no input, 2D only: `barrel_ryza::title::Title` lays
 frame `quads(t, screen)` gives the quads of a `render::text::Layer` (font atlas = `FONT`, the
 `a21_title.g1t` atlas = `UI`), so the 2D draw trace records them. `t` is the seconds into the
 title; `--title-at` is the moment of Barrel's first frame, then 60 Hz offscreen or the window's
-clock. The field named on the command line is loaded but not drawn (the 3D backdrop is a later
-packet; the frame shows what the scene leaves, a grey clear and a stray flat shape).
+clock. The field named on the command line is ignored: `--title` always loads `title::FIELD`
+(`s19_l_highway_03`) and draws it, as the backdrop, behind the layer.
 
 Draw order, as the capture has it: logo, prompt, the version text 9 times black at half alpha
 (a 3 x 3 grid of offsets of `bold_size` 1 layout pixel, columns first) then once white, the
@@ -1186,8 +1186,40 @@ black half alpha; the hidden autosave notice drawn at alpha 0), and quads wholly
 draw nothing (sprites parked at x = -1338).
 
 Not drawn yet: the fade from black in the first second of the title (a full-screen fill drawn
-by a separate shader, frames 1140 to 1275 in the capture), the menu behind the prompt and the 3D
-backdrop.
+by a separate shader, frames 1140 to 1275 in the capture) and the menu behind the prompt.
+
+### The backdrop
+
+What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `barrel-parity`:
+
+- **The field** is `s19_l_highway_03`, not `event_titleback` (the name suggests it; its terrain and
+  textures do not match the capture) and not the `charatest` set the lighting names. The
+  texture index (`barrel-parity textures`, which now also reads the textures packed in the
+  archives' `.elixir.gz` containers, so the field packs' hashes resolve) names 28 of the
+  scene's textures that sit in this field's pack alone, and Barrel's field draws reappear with
+  the same textures and index counts (one 13,752-index draw, 84 draws of 2,841 indices ...).
+- **The camera** is fixed over every captured frame (300 to 1900): from the first G-buffer draw's
+  `mW2P`, eye (29789.2, 6485.0, 41557.7), forward (0.4045, 0.1053, -0.9085) in the game's world,
+  45 degrees vertical, 16:9, near 50, far 300000 (the projection's depth terms give 300073: the
+  far is a 5-digit division of float noise, taken as 300000). `title::CAMERA` holds it;
+  `play::look_for` takes the clip planes it fixes in place of its distance rule. In render
+  space (x mirrored) Barrel's `view_proj` equals the game's `mW2P` with its x column and y row
+  negated: `diff3d` max difference 0.03 on entries up to 60,000.
+- **The characters**, from the skinned draws' bone palettes (33 bones; palette bone 0's
+  translation): Ryza `pc00a` (29812.7, 6383.6, 41279.1), `pc02a` (30696.9, 6436.2, 40649.8) and
+  `pc03a` (30803.4, 6536.4, 40656.6), within 0.2 units of those at every frame from 1380 to 1900,
+  the palettes changing each frame (an idle motion). They stand 280 to 900 units before the
+  camera. With them: `npc00a`, `npc02a`, `npc34a`, the `btl_obj_03_blackbox`, `ev_obj_28_fruit`
+  and the `pc0x_wep_01` weapons. **Not drawn**: Barrel's rig draws
+  one `pc00a`; the title's characters, their motions and the charatest light are not decoded.
+- **Lit** by the field's own environment (as every field): the capture's characters use the
+  `charatest` probes, which a field draw does not.
+- **Draw ranges are off** in the title (`event_titleback`'s camera file has no readable ranges,
+  and the capture's backdrop is whole); the boot screens leave the scene out until the title.
+
+`diff3d` at frame 1400 (see `docs/parity.md`): 557 of 995 game draws matched against 674 Barrel
+draws, from 13 with the wrong field. Left: the 348 grass cards (Barrel draws grass as its own
+instanced pass, not in the trace), 32 terrain patches (different splits), 58 character draws.
 
 ### The boot screens
 
