@@ -158,12 +158,19 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
+- **Water** (P2). Barrel draws no water in Ryza's fields. The game draws Rasenboden's in a
+  pass of its own after the scene: 10 draws of 8,710 indices each (strips), one vertex and
+  one pixel shader, with the wave volume texture, the shore bubble texture
+  (`waterqualitypreset.xml`'s `EnableShoreBubble`), the scene's colour and depth and
+  reflection matrices (`mRrW2T`, `vRrCameraPos`). Where the surface's shape comes from
+  (the field's `_river.bin`, 1,332 bytes in Rasenboden, is not read) and both shaders are
+  to be read: `barrel-parity draws` on the `load-rasen` capture, frame 2550, pass 13.
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
   `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
   45.4 --ryza 32517,6180,30336 --done MM00_010`, row `rasen-3d-2550`), 858 of the game's 913
   draws have a Barrel match. The 55 without: the terrain's 42 strips (Barrel draws a patch at
-  once), 10 of a shore foam effect, one `npc23a` draw and 2 of the field's models. Barrel
+  once), the water's 10 (below), one `npc23a` draw and 2 of the field's models. Barrel
   draws 113 the game does not: 62 of the field's models and some 20 townsfolk draws, in view
   and hidden behind the town's buildings and ground (the game's own test of what is hidden
   is not read; Barrel's stand-in, the ground's skyline, leaves out 211 draws the game also
