@@ -14,13 +14,12 @@ is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run no
 checks are `runchecks docs/ryza/checks.txt` (21 rows) and
 `docs/escha/checks.txt` (17).
 
-1. **The title backdrop's characters** (blocks P1). pc00a, pc02a and pc03a stand at known spots
-   (from the capture's bone palettes, docs/renderer.md, backdrop section) and play an idle
-   motion, but which motion file and phase is not known. The title scene's definition was not
-   found in the archives; it is probably built in the executable. Way in: hook the motion loads
-   (file opens around frame 1380 with RYZA_TRACE_FILES) and the game's motion-play call, in the
-   boot-title scenario. Solved when diff3d at frame 1400 matches the 58 character draws within
-   a stated tolerance.
+1. **The title backdrop's characters** (blocks P1). The scene is the event `tt01_010`
+   (docs/renderer.md, "The backdrop"): it places pc00a, pc02a and pc03a and names their
+   motions (92511, 2190, 12301, in the shared `cf01` / `cm0x` sets). Left: draw the three from
+   the event (Barrel's rig draws one pc00a in her field motions), find the motions' phase
+   against the capture's bone palettes, then the NPCs, weapons and objects the event adds.
+   Solved when diff3d at frame 1400 matches the 58 character draws within a stated tolerance.
 2. **Misplaced collision meshes** (blocks P3's walk; worked around now). See "The garden stairs'
    collision" under "Ryza in the field". Some `_cbvh` meshes lie about 180 units off their
    model. Their placement words have bits 0xc000 set, and Barrel leaves those meshes out. The

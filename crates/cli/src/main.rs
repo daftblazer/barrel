@@ -50,6 +50,7 @@ usage:
   barrel-tool g1a-scan DIR          read every animation in the containers
   barrel-tool pak-ls FILE.PAK       list a PAK archive's files (Sophie 2, Ryza 1-3)
   barrel-tool pak-get FILE.PAK NAME OUT  extract one file from a PAK archive
+  barrel-tool pak-reads DATA_DIR LOG  name the archive files a ryza-recomp run read (RYZA_TRACE_FILES), each at its first frame
   barrel-tool pak-scan FILE.PAK...  read every texture, model, animation, morph, event and message in archives
   barrel-tool xml-e FILE.xml.e OUT.xml  decrypt an encrypted table (Sophie 2, Ryza)
   barrel-tool pak-xml-e FILE.PAK    decrypt every encrypted table in an archive, compared with its plain twin
@@ -157,6 +158,7 @@ fn main() -> ExitCode {
         ["g1a-moves", file, rest @ ..] => g1a_moves(file, rest.first().copied()),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
         ["pak-ls", file] => pak_ls(Path::new(file)),
+        ["pak-reads", data, log] => pak_reads(Path::new(data), Path::new(log)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),
         ["pak-extract", file, part, out] => pak_extract(Path::new(file), part, Path::new(out)),
         ["pak-scan", files @ ..] if !files.is_empty() => pak_scan(files),
@@ -1090,6 +1092,35 @@ fn pak_ls(file: &Path) -> Result<()> {
         println!("{:>10} {}", e.size, e.name);
     }
     println!("{} files", pak.entries.len());
+    Ok(())
+}
+
+/// Names the archive files a run read: each `[file] FRAME read PATH.PAK OFFSET LENGTH` line of
+/// a ryza-recomp log (RYZA_TRACE_FILES) is matched to the entry holding that offset, and each
+/// entry is printed once, at the frame of its first read.
+fn pak_reads(data: &Path, log: &Path) -> Result<()> {
+    let text = std::fs::read_to_string(log).map_err(|e| format!("{}: {e}", log.display()))?;
+    let mut paks: std::collections::HashMap<String, Vec<(u64, u64, String)>> = Default::default();
+    let mut seen = std::collections::HashSet::new();
+    for line in text.lines() {
+        let mut w = line.split_whitespace();
+        let (Some("[file]"), Some(frame), Some("read"), Some(path), Some(offset)) = (w.next(), w.next(), w.next(), w.next(), w.next()) else { continue };
+        let Some(pak) = Path::new(path).file_name().and_then(|n| n.to_str()).filter(|n| n.to_ascii_uppercase().ends_with(".PAK")) else { continue };
+        let Ok(offset) = offset.parse::<u64>() else { continue };
+        if !paks.contains_key(pak) {
+            let archive = open_pak(&data.join(pak))?;
+            let mut spans: Vec<_> = archive.pak.entries.iter().map(|e| (e.offset, e.offset + e.size as u64, e.name.clone())).collect();
+            spans.sort();
+            paks.insert(pak.to_string(), spans);
+        }
+        let spans = &paks[pak];
+        let k = spans.partition_point(|s| s.0 <= offset);
+        if let Some(s) = k.checked_sub(1).map(|k| &spans[k]).filter(|s| offset < s.1) {
+            if seen.insert((pak.to_string(), s.0)) {
+                println!("{frame:>6} {}", s.2);
+            }
+        }
+    }
     Ok(())
 }
 

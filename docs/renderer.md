@@ -1211,7 +1211,20 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
   the palettes changing each frame (an idle motion). They stand 280 to 900 units before the
   camera. With them: `npc00a`, `npc02a`, `npc34a`, the `btl_obj_03_blackbox`, `ev_obj_28_fruit`
   and the `pc0x_wep_01` weapons. **Not drawn**: Barrel's rig draws
-  one `pc00a`; the title's characters, their motions and the charatest light are not decoded.
+  one `pc00a`; the charatest light is not decoded.
+- **The scene is an event**: the game reads `\event\event_jp\tt01\event_tt01_010.ebd` at
+  capture frame 1152, then the field at 1155 and the weapons from 1155 to 1182 (found with
+  ryza-recomp's `RYZA_TRACE_FILES`, which now logs every read, and `barrel-tool pak-reads`,
+  which names the archive file each read falls in). The event's actions: 3 switches the map
+  (`q2 18`), 4 adds the characters (`q5`, slots 0, 2, 3, 216 ...), 7 to 9 place Ryza, Lent and
+  Tao (`s2` position, `s13` turn, `s34` motion), 10 and 11 set the camera (`t25`), 12 is
+  Ryza's action (motions 120, 92510, then back to 92511), 13 and 14 turn Tao's head (`s90`).
+  Ryza: `s2 0 0 0 0 29797 6381 41302`, `s13 0 0 -233 0`, `s34 0 92511 0 0 0`, face `s88 0 -7`.
+  Lent: `s2 2 0 0 0 30694 6514 40693`, `s13 2 0 -184 0`, `s34 2 2190 0 0 0`. Tao:
+  `s2 3 0 0 0 30806 6535 40682`, `s13 3 0 -192 0`, `s34 3 12301 0 0 0`. The motions are in the
+  shared sets, not the characters' own: `cf01_92511`, `cf01_92510`, `cm00` or `cm01` `_02190`,
+  `cm01` or `cf01` `_12301` (which set: `charabase.xml`'s `motset1`). `tt01_020` to `_050` are
+  the title's other scenes.
 - **Lit** by the field's own environment (as every field): the capture's characters use the
   `charatest` probes, which a field draw does not.
 - **Draw ranges are off** in the title (`event_titleback`'s camera file has no readable ranges,
