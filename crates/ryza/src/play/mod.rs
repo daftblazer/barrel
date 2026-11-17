@@ -315,15 +315,15 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 /// The way a directional light travels, in render space: from `elevation` degrees above the
 /// horizon and `azimuth` degrees around y from +z toward +x (game space: the lighting pass's
 /// `litDir` read from the running game matches both lights, docs/shading.md), x mirrored.
-/// The townsfolk of `field` that stand there at `time` in `weather`: the unconditional ones that
-/// stand still (the others follow the story's progress or walk a path: not placed).
+/// The townsfolk of `field` there at `time` in `weather`: the unconditional ones, standing or
+/// walking their paths (the others follow the story's progress: not placed).
 fn standing_npcs(install: &barrel_ryza::install::Install, field: &str, time: Time, weather: Weather) -> Vec<barrel_ryza::npc::Npc> {
     let read = |name: &str| install.read(&format!("\\saves\\fieldmap\\npc\\{name}.xml"));
     let tables = (|| Ok::<_, Box<dyn std::error::Error>>((read("npcbasedata")?, read("npcpeople")?, read("npcmarker")?, read("npccondition")?)))();
     let Ok((b, p, m, c)) = tables else { return Vec::new() };
     match barrel_ryza::npc::read(&b, &p, &m, &c, &field.to_ascii_uppercase()) {
-        // STAND-IN: The people whose rows depend on the story (`ev_range_*`, `ev_ex_*`) and those that walk a path (a zero marker) are left out; the real thing is the story's progress (`npcevrange.xml`) and the `move_data` paths.
-        Ok(all) => all.into_iter().filter(|n| !n.story && !n.walks && n.present(time, weather)).collect(),
+        // STAND-IN: The people whose rows depend on the story (`ev_range_*`, `ev_ex_*`) are left out; the real thing is the story's progress (`npcevrange.xml`).
+        Ok(all) => all.into_iter().filter(|n| !n.story && n.present(time, weather)).collect(),
         Err(e) => {
             eprintln!("townsfolk of {field}: {e}");
             Vec::new()
@@ -738,9 +738,20 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     }
     // The townsfolk: one set of files and one texture pack a character, one instance (and its
     // own copy of the mesh) a person, each in its looped motion from the field's clock.
+    // A walker's path (`move_data`), and the motion it goes in.
+    let walks: Vec<Option<barrel_ryza::npc::Path>> = townsfolk.iter().map(|n| {
+        let name = n.path.as_ref()?;
+        let read = install.read(&format!("\\saves\\fieldmap\\npc\\move_data\\{name}.xml")).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::npc::path(&b));
+        read.map_err(|e| eprintln!("{name}: {e}")).ok()
+    }).collect();
+    // STAND-IN: A walker runs from 2 m a second and walks below; the real thing is the game's choice of motion for a path's speed (its paths have 1 and 3).
+    let gait = |w: &barrel_ryza::npc::Path| if w.speed >= 200.0 { barrel_ryza::motion::RUN } else { barrel_ryza::motion::WALK };
     let mut npc_files: Vec<actors::Files> = Vec::new();
     for tag in townsfolk.iter().map(|n| n.character()).collect::<std::collections::BTreeSet<_>>() {
-        let motions = townsfolk.iter().filter(|n| n.character() == tag).map(|n| n.motion).collect();
+        let motions = townsfolk.iter().zip(&walks).filter(|(n, _)| n.character() == tag).flat_map(|(n, w)| match w {
+            Some(w) => vec![barrel_ryza::motion::STAND, gait(w)],
+            None => vec![n.motion],
+        }).collect();
         match actors::Files::read_npc(&install, tag, &motions) {
             Ok(f) => npc_files.push(f),
             Err(e) => eprintln!("{tag}: not drawn: {e}"),
@@ -749,7 +760,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let npc_models = npc_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
     let npc_actors = npc_files.iter().zip(&npc_models).map(|(f, m)| f.open(m)).collect::<std::result::Result<Vec<_>, _>>()?;
     // (actor, instance, motion) of each person drawn
-    let mut npc_drawn: Vec<(usize, u32, u32)> = Vec::new();
+    let mut npc_drawn: Vec<(usize, u32, u32, Option<&barrel_ryza::npc::Path>)> = Vec::new();
     if let (Some(r), false) = (&ramp_pack, npc_actors.is_empty()) {
         let ramp = textures.len();
         textures.extend(r.textures.first());
@@ -757,13 +768,20 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let tag = npc_files[k].tag();
             let base = textures.len();
             textures.extend(actor.pack.textures.iter());
-            for n in townsfolk.iter().filter(|n| n.character() == tag) {
+            for (n, walk) in townsfolk.iter().zip(&walks).filter(|(n, _)| n.character() == tag) {
+                // A walker without its path has nowhere to be.
+                if n.path.is_some() && walk.is_none() {
+                    continue;
+                }
                 // STAND-IN: A person stands at its marker's height even when `no_gravity` is 0; the real thing is dropping it onto the ground.
-                let at = Vec3::from(n.position);
-                let instance = scene.instance(actor.placed(at, n.yaw.to_radians()));
-                let joints = actor.joints_of(Some(n.motion), 0.0, 0.0);
+                let (at, yaw, motion) = match walk {
+                    Some(w) => (w.at(0.0).0, w.at(0.0).1, gait(w)),
+                    None => (n.position, n.yaw, n.motion),
+                };
+                let instance = scene.instance(actor.placed(Vec3::from(at), yaw.to_radians()));
+                let joints = actor.joints_of(Some(motion), 0.0, 0.0);
                 actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, tag, &actor.swing, &mut ramp_rows)?;
-                npc_drawn.push((k, instance, n.motion));
+                npc_drawn.push((k, instance, motion, walk.as_ref()));
             }
         }
         eprintln!("townsfolk: {} drawn of {} here", npc_drawn.len(), townsfolk.len());
@@ -1020,7 +1038,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {
         None => Default::default(),
         // The plants have their own range (`shown`, below), not an object's, and the townsfolk none (STAND-IN: the game's own range for them is not read; its capture shows them at 7000 to 12000 units, past the objects' first range).
-        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, _)| i == d.instance)).filter_map(|d| {
+        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, ..)| i == d.instance)).filter_map(|d| {
             let b = d.bounds?;
             let m = instances.get(d.instance as usize)?.model;
             let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
@@ -1136,9 +1154,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         for m in &moving {
             m.pose(field_time, &instances, &mut palette);
         }
-        for &(k, instance, motion) in &npc_drawn {
+        for &(k, instance, motion, walk) in &npc_drawn {
             let actor = &npc_actors[k];
+            // A walker is where its path has it by now, standing still through its pauses.
+            let walking = walk.map(|w| w.at(field_time));
+            let motion = if walking.is_some_and(|(.., moving)| !moving) { barrel_ryza::motion::STAND } else { motion };
             actor.pose_standing(instance, motion, field_time, &mut instances, &mut palette);
+            if let Some((at, yaw, _)) = walking {
+                instances[instance as usize].model = barrel_render::render_space(actor.placed(Vec3::from(at), yaw.to_radians()));
+            }
         }
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {

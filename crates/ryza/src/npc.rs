@@ -26,8 +26,74 @@ pub struct Npc {
     pub weather: u32,
     /// It depends on the story's progress (`ev_range_*`, `ev_ex_*` of its condition).
     pub story: bool,
-    /// Its marker is all zero: it walks a path from `move_data` instead of standing.
-    pub walks: bool,
+    /// The path it walks instead of standing (`move_data` of its base row: a file of
+    /// `saves\fieldmap\npc\move_data\`, without the `.xml`).
+    pub path: Option<String>,
+}
+
+/// A walker's path (`move_data\<name>.xml`): it starts at `start`, walks to each of `points`
+/// in turn at `speed`, and goes round them again from the first.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Path {
+    /// World units a second (`move_speed`, metres a second: 1 a walk, 3 a run, as the
+    /// capture's walkers cover the ground).
+    pub speed: f32,
+    pub start: [f32; 3],
+    /// Each point and the pause there in seconds.
+    pub points: Vec<([f32; 3], f32)>,
+}
+
+/// A walker's path from its file's bytes.
+pub fn path(bytes: &[u8]) -> Result<Path, String> {
+    let root = table::parse(bytes).map_err(|e| e.to_string())?;
+    let child = |name: &str| root.children.iter().find(|e| e.name == name);
+    let num = |e: &Element, k: &str| e.attr(k).and_then(|v| v.trim().parse::<f32>().ok());
+    let base = child("base_setting");
+    let point = |e: &Element| -> Result<([f32; 3], f32), String> {
+        let v: Vec<f32> = e.attr("to_point").ok_or("a move has no to_point")?.split(',').map(|v| v.trim().parse::<f32>().map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
+        let [x, y, z] = v[..] else { return Err("a to_point is not x,y,z".into()) };
+        // STAND-IN: A pause is the shortest the row allows (`interval_min`); the real thing is the game's draw between it and `interval_max`.
+        let pause = num(e, "interval_min").or(base.and_then(|b| num(b, "interval_min"))).unwrap_or(0.0);
+        Ok(([x * 100.0, y * 100.0, z * 100.0], pause))
+    };
+    let points_of = |name: &str| child(name).map(|e| e.children.iter().filter(|m| m.name == "move_data").map(point).collect::<Result<Vec<_>, _>>()).transpose().map(Option::unwrap_or_default);
+    let start = points_of("start")?.first().ok_or("a path has no start")?.0;
+    Ok(Path { speed: base.and_then(|b| num(b, "move_speed")).unwrap_or(1.0) * 100.0, start, points: points_of("loop")? })
+}
+
+impl Path {
+    /// Where the walker is `time` seconds after the field appears, the way it faces (degrees
+    /// about y, as a marker's) and whether it is walking (not pausing at a point).
+    pub fn at(&self, time: f32) -> ([f32; 3], f32, bool) {
+        let v = |p: [f32; 3]| glam::Vec3::from(p);
+        let facing = |from: glam::Vec3, to: glam::Vec3| (to.x - from.x).atan2(to.z - from.z).to_degrees();
+        let Some(&(first, _)) = self.points.first() else { return (self.start, 0.0, false) };
+        let (mut left, mut from) = (time.max(0.0), v(self.start));
+        // The way to the first point, once; then the round, as often as the time allows.
+        let round: f32 = (0..self.points.len()).map(|i| v(self.points[i].0).distance(v(self.points[(i + 1) % self.points.len()].0)) / self.speed + self.points[i].1).sum();
+        let lead = from.distance(v(first)) / self.speed;
+        let mut next = 0;
+        if left >= lead {
+            left = if round > 0.0 { (left - lead) % round } else { 0.0 };
+            // At the first point: its pause, then on.
+            loop {
+                let (here, pause) = self.points[next];
+                let to = v(self.points[(next + 1) % self.points.len()].0);
+                if left < pause || round <= 0.0 {
+                    return (here, facing(from, v(here)), false);
+                }
+                left -= pause;
+                let leg = v(here).distance(to) / self.speed;
+                if left < leg {
+                    return (v(here).lerp(to, left / leg.max(1e-6)).to_array(), facing(v(here), to), true);
+                }
+                left -= leg;
+                from = v(here);
+                next = (next + 1) % self.points.len();
+            }
+        }
+        (from.lerp(v(first), left / lead.max(1e-6)).to_array(), facing(from, v(first)), true)
+    }
 }
 
 impl Npc {
@@ -96,7 +162,7 @@ pub fn read(basedata: &[u8], people: &[u8], marker: &[u8], condition: &[u8], fie
             timezone: int(c, "timezone") as u32,
             weather: int(c, "weather") as u32,
             story: c.attributes.iter().any(|(k, _)| k.starts_with("ev_range") || k.starts_with("ev_ex")),
-            walks: [x, y, z] == [0.0; 3],
+            path: row.attr("move_data").map(str::to_ascii_lowercase),
         });
     }
     Ok(out)
@@ -110,7 +176,7 @@ mod tests {
         <S06_T_RASEN_BaseData people="A" marker="M1" condition="C1"/>
         <S06_T_RASEN_BaseData people="B" marker="M2" condition="C2"/>
         <S06_T_RASEN_BaseData people="B" marker="M2" condition="C2"/>
-        <S06_T_RASEN_BaseData people="C" marker="M3" condition="C1"/>
+        <S06_T_RASEN_BaseData people="C" marker="M3" move_data="s06_move_data_002_N" condition="C1"/>
     </S06_T_RASEN><S07_X><S07_X_BaseData people="Z" marker="Z" condition="Z"/></S07_X></root>"#;
     const PEOPLE: &[u8] = br#"<root><S06_T_RASEN_people chara_tag="MIO" init_mot_no="0"/>
         <S06_T_RASEN_people chara_tag="NPC30A_00" init_mot_no="2101" mot_idx="-1" no_gravity="1"/>
@@ -126,8 +192,23 @@ mod tests {
         let b = &npcs[1];
         assert_eq!((b.chara.as_str(), b.motion, b.set, b.no_gravity, b.timezone, b.weather), ("NPC30A_00", 2101, -1, true, 24, 1));
         assert!((b.position[0] - 29452.0).abs() < 1e-2 && (b.yaw + 58.46).abs() < 1e-4);
-        // the third person's marker is all zero and its condition is the first's
-        assert!(npcs[2].walks && npcs[2].story && !npcs[0].walks);
+        // the third person walks a path and its condition is the first's
+        assert_eq!((npcs[2].path.as_deref(), npcs[2].story, &npcs[0].path), (Some("s06_move_data_002_n"), true, &None));
+    }
+
+    #[test]
+    fn a_path_goes_to_its_points_and_round() {
+        let p = path(b"<Root>\n<!-- note -->\n<base_setting move_speed = \"2\" interval_min = \"0.0\" interval_max = \"0.0\" />\n<start><move_data to_point = \"0,\t1, 0\" /></start>\n<loop><move_data to_point = \"4, 1, 0\" /><move_data to_point = \"4, 1, 4\" interval_min = \"1.0\" interval_max = \"3.0\"/></loop></Root>").unwrap();
+        assert_eq!((p.speed, p.start, p.points.len(), p.points[1]), (200.0, [0.0, 100.0, 0.0], 2, ([400.0, 100.0, 400.0], 1.0)));
+        // on the way to the first point, facing +x
+        assert_eq!(p.at(1.0), ([200.0, 100.0, 0.0], 90.0, true));
+        // 2 s there, 1 s on towards the second, facing +z
+        assert_eq!(p.at(3.0), ([400.0, 100.0, 200.0], 0.0, true));
+        // 4 s: at the second, pausing a second; then back to the first, and round again
+        assert_eq!(p.at(4.5).0, [400.0, 100.0, 400.0]);
+        assert!(!p.at(4.5).2);
+        assert_eq!(p.at(6.0), ([400.0, 100.0, 200.0], 180.0, true));
+        assert_eq!(p.at(8.0).0, p.at(3.0).0);
     }
 
     #[test]

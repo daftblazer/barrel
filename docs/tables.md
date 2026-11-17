@@ -2484,12 +2484,21 @@ kind and 48 rows in each table.
   same for both), `no_gravity` (1: stays at its marker's height), `talk`, `no_turn`.
 - `marker`: `marker="x,y,z,yaw"`, metres (times 100 for world units) and degrees; the model is
   turned about the vertical by the yaw as the capture's root matrices have it (a rotation about
-  y by the yaw, in game space). An all-zero marker is a walker (`S06_NPC_MOVE_*`), whose path is
-  in `move_data/move_data_NNN.xml` (not read).
+  y by the yaw, in game space). A walker (`S06_NPC_MOVE_*`) has an all-zero marker and
+  names its path in the base row's `move_data` (`s06_move_data_002`: the file
+  `move_data/<name>.xml`): a `base_setting` (`move_speed` in metres a second, `interval_min`
+  and `interval_max`, a pause in seconds), a `start` point and the `loop`'s points
+  (`to_point="x, y, z"` in metres, each with its own pause if it gives one). It appears at the
+  start with the field, walks to each loop point in turn and round again from the first,
+  facing the way it goes: three of Rasenboden's walkers follow this within a few units over
+  13 s of the capture (speeds 1 and 3). Between points the game keeps them on the ground;
+  Barrel goes straight from point to point, pauses the shortest time, and picks the walk
+  below 2 m a second and the run from there (stand-ins).
 - `condition`: `timezone` and `weather`, bit masks (Rasenboden's day people 7, their night
   twins 24, others 31 or 3; weather 63 is any). The bits are taken in the order of the times
   (morning, noon, evening, night, midnight) and weathers (sunny, cloudy, foggy): a stand-in.
   `ev_range_NN`, `ev_ex_NN` depend on the story (`npcevrange.xml`; the named characters).
+- `npcevrange.xml` rows (`<FIELD>_EvRange start="MM00_010" end="MM00_080"`, some with a start alone) are the story spans a condition's `ev_range_NN` (there within it) and `ev_ex_NN` (away within it) name, by the same Nth-tag rule; the names are story events. Not applied: Barrel has no story progress in a field yet.
 - A character's tag is its model's: `NPC30B_00` is `NPC30B`, whose model is its base's
   (`NPC30A`: `character/npc30a/npc30a_model.elixir.gz`) with the texture pack of its own
   folder (`character/npc30b/npc30b_model.g1t`); the size (`chara.xml`) and the motion sets
