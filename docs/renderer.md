@@ -821,7 +821,9 @@ than the sphere's top. A townsperson is a sphere of 120 units around a point 90 
 feet. It hides 65 of those 107 objects and none the game draws (the box in place of the
 sphere hides 92, and 3 objects the game draws), and the six townsfolk the game leaves out
 of the nine it does not draw; Rasenboden goes from 1,182 scene draws to 971 against the
-game's 913, the picture the same to the byte there and from eight other views. The shadow
+game's 913, the picture the same to the byte there and from eight other views. On the PC
+(RX 9070 XT, 1920x1080, offscreen, 117 frames, median) the scene pass goes from 5.42 to
+4.69 ms and the frame from 6.92 to 6.20. The shadow
 pass is not tested (a hidden object's shadow can fall in sight); the title has no test.
 `--no-skyline` draws everything.
 
