@@ -59,8 +59,9 @@ opening's first 132 of 135, each group at one offset. Left:
 - **`s69`** carries -4300 in its 14th operand in the game's queue where the script has 0, and
   `s36` (wait for the motion) takes no time in `ryza-commands`, which gives the player no
   motion lengths (the play does).
-- The cast's other gaps stand: Ryza's head (`s88`, a look-at), the weapons and the characters
-  the event adds (`q5`, slot 216 on).
+- The cast's other gap stands: Ryza's head (`s88`, a look-at). The three weapons the event's
+  `q5` adds (slots 216, 226, 231) are drawn, lying where it puts them (docs/renderer.md, "The
+  backdrop"); the title's event adds no other characters.
 
 ## File bytes Barrel never uses
 

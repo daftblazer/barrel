@@ -1210,8 +1210,8 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
   `pc03a` (30803.4, 6536.4, 40656.6), within 0.2 units of those at every frame from 1380 to 1900,
   the palettes changing each frame (an idle motion). They stand 280 to 900 units before the
   camera. With them: `npc00a`, `npc02a`, `npc34a`, the `btl_obj_03_blackbox`, `ev_obj_28_fruit`
-  and the `pc0x_wep_01` weapons. **Drawn** (`play/actors.rs`): Ryza, Lent and Tao from the
-  event's stage (below); not yet the NPCs, weapons, blackbox and fruit; the charatest light is
+  and the `pc0x_wep_01` weapons. **Drawn** (`play/actors.rs`): Ryza, Lent and Tao and the three weapons from the
+  event (below); not yet the NPCs, blackbox and fruit; the charatest light is
   not decoded.
 - **The scene is an event**: the game reads `\event\event_jp\tt01\event_tt01_010.ebd` at
   capture frame 1152, then the field at 1155 and the weapons from 1155 to 1182 (found with
@@ -1239,6 +1239,17 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
   `SkeletonBase`: Tao's 80.1 against CM01's 98 stands 17.9 lower; x and z are the motion's); a
   motion plays looped. Submeshes whose normal is a Float4 (the cloth parts, 10 of Ryza's 25) were
   not drawn before and are now (rigid on one joint as Barrel draws such submeshes).
+- **The weapons** (slots 216, 226 and 231: rows `PC00_WEP_01`, `PC02_WEP_01`, `PC03_WEP_01`)
+  are three more characters the event's `q5` adds
+  (`{slot, 0, 0, 0, x, y, z, rx, ry, rz, 0, 0, 2}`), lying in the scene, not held, with no
+  motion. Their model is `character\pc0x_wep_01\pc0x_wep_01` (the entries `<TAG>` and
+  `<TAG>_default`, without a person's `_MODEL`), drawn in its bind pose at the `q5`'s position
+  with the matrix `Rz Ry Rx` of its three angles in degrees, which `diff3d` finds the game's
+  world matrices to within 0.002 (the unit test `event::props_turn_as_the_games_matrices`
+  holds all three). Shared `Place` and `Turn` steps keep only a yaw and Ryza's `q5` is not
+  carried over to them, so `play` reads the position and angles from the event itself
+  (`event::added`) and holds them fixed. The second weapon's 630-index part is skinned, drawn
+  from the same bind pose.
 - **Pose against the capture** (`diff3d`'s `pose` lines): Lent and Tao within 0.012 units and
   0.0000 (rotation, matrix entries) at frames 1400, 1500 and 1700; Ryza's body the same, her head
   (joint 6 and what hangs from it) 13.7 units and 0.126 off at every frame: the game turns it

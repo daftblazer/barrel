@@ -28,15 +28,26 @@ impl Chara {
         };
         let (c, b) = (row(chara, "Chara")?, row(charabase, "CharaBase")?);
         let num = |e: &Element, k: &str| e.attr(k).and_then(|v| v.trim().parse::<f32>().ok()).ok_or(format!("{tag}: no {k}"));
-        let size = c.attr("Size").ok_or(format!("{tag}: no Size"))?.split(',').map(|v| v.trim().parse::<f32>().map_err(|e| e.to_string())).collect::<Result<Vec<f32>, String>>()?;
         Ok(Chara {
-            size: [size[0], *size.get(1).unwrap_or(&size[0]), *size.get(2).unwrap_or(&size[0])],
+            size: size_of(&c, tag)?,
             cam_height: num(&c, "CamH")?,
             radius: num(&b, "FMrad")? * 100.0,
             height: num(&b, "FMhig")? * 100.0,
             slope: num(&b, "FMslp")?,
         })
     }
+}
+
+/// The model scale of character `tag` alone (what the props, which have no `charabase.xml` row,
+/// are drawn at).
+pub fn size(chara: &[u8], tag: &str) -> Result<[f32; 3], String> {
+    let root = table::parse(chara).map_err(|e| format!("Chara: {e}"))?;
+    size_of(find(&root, "Chara", tag).ok_or(format!("Chara: no {tag}"))?, tag)
+}
+
+fn size_of(row: &Element, tag: &str) -> Result<[f32; 3], String> {
+    let size = row.attr("Size").ok_or(format!("{tag}: no Size"))?.split(',').map(|v| v.trim().parse::<f32>().map_err(|e| e.to_string())).collect::<Result<Vec<f32>, String>>()?;
+    Ok([size[0], *size.get(1).unwrap_or(&size[0]), *size.get(2).unwrap_or(&size[0])])
 }
 
 /// The first element named `name` with `BaseTag` `tag`, anywhere under `e`.

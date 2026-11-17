@@ -96,6 +96,44 @@ pub fn commands(event: &Ebd, given: &[f32], until: f32) -> Result<Vec<(f32, usiz
         .collect())
 }
 
+/// `q5` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{slot, 0, 0, 0, x, y, z, rx, ry, rz, 0, 0, 2}`, adds
+/// a character at a position turned by three angles in whole degrees.
+pub const CHARA_ADD: u32 = 0x7100_0005;
+
+/// Where and how an event's `q5` adds a slot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Added {
+    pub position: [f32; 3],
+    /// Degrees about x, y and z.
+    pub degrees: [f32; 3],
+}
+
+/// What the event's `q5` commands add (the last one for a slot). The shared stage does not take
+/// them over (Ryza's `q5` has one operand fewer than Escha's `q4`, which keeps only the yaw): the
+/// props lying in the scene (the weapons) are read from here, with all three angles
+/// ([`rotation`]).
+pub fn added(event: &Ebd) -> Result<std::collections::BTreeMap<u32, Added>, String> {
+    let table = OperandTable::ryza();
+    let mut out = std::collections::BTreeMap::new();
+    for a in &event.actions {
+        for c in barrel_formats::ebd::decode(&a.words, &table).map_err(|e| format!("{e}"))? {
+            if let (CHARA_ADD, [slot, _, _, _, x, y, z, rx, ry, rz, ..]) = (c.word, c.operands) {
+                let whole = |v: &u32| *v as i32 as f32;
+                out.insert(*slot, Added { position: [x, y, z].map(whole), degrees: [rx, ry, rz].map(whole) });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The turn of a prop added at angles `degrees` about x, y and z: a right-handed turn about x,
+/// then y, then z (the matrix `Rz Ry Rx`). It reproduces the game's world matrices of the
+/// title's three weapons from their `q5` angles (see the test).
+pub fn rotation(degrees: [f32; 3]) -> glam::Quat {
+    let [x, y, z] = degrees.map(f32::to_radians);
+    glam::Quat::from_euler(glam::EulerRot::ZYX, z, y, x)
+}
+
 /// The stage `seconds` into the event, played tick by tick from its start.
 pub fn stage_at(steps: Vec<Timed<'_>>, seconds: f32) -> Stage {
     let mut play = Playback::new(Stage::default(), steps);
@@ -114,6 +152,25 @@ pub fn telop(stage: &Stage) -> Option<(u32, f32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn props_turn_as_the_games_matrices() {
+        // The game's local-to-world rotations of the title's three weapons (its draw capture)
+        // against the angles of their `q5` commands.
+        let cases = [
+            ([-35.0, -295.0, -280.0], [[0.0734, -0.8970, -0.4360], [0.4162, -0.3697, 0.8307], [-0.9063, -0.2424, 0.3462]]),
+            ([-19.0, -18.0, -129.0], [[-0.5985, 0.6715, 0.4369], [-0.7391, -0.6732, 0.0222], [0.3090, -0.3096, 0.8992]]),
+            ([-48.0, -41.0, -100.0], [[-0.1311, 0.5743, 0.8081], [-0.7432, -0.5963, 0.3033], [0.6561, -0.5609, 0.5050]]),
+        ];
+        for (angles, rows) in cases {
+            let m = glam::Mat3::from_quat(rotation(angles));
+            for (r, row) in rows.iter().enumerate() {
+                for (c, want) in row.iter().enumerate() {
+                    assert!((m.col(c)[r] - want).abs() < 1e-3, "{angles:?} [{r}][{c}]: {} against {want}", m.col(c)[r]);
+                }
+            }
+        }
+    }
 
     #[test]
     fn picks_from_the_clock_stay_in_range_and_spread() {

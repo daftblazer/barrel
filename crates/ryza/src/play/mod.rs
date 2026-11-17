@@ -518,13 +518,16 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
     let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
+    let added = title_event.as_ref().map(barrel_ryza::event::added).transpose()?.unwrap_or_default();
     let mut cast_files: Vec<actors::Files> = Vec::new();
     if let (Some(motions), Some(play)) = (title_motions, title_play.as_mut()) {
         // after the boot the title's own time starts where the boot ends
         let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
         actors::advance(play, a.title_at + boot_ahead - actors::EVENT_START);
-        for &slot in play.stage.characters.keys() {
-            cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()))?);
+        // the people the stage has placed, then the props only the event's `q5` adds
+        let slots: std::collections::BTreeSet<u32> = play.stage.characters.keys().chain(added.keys()).copied().collect();
+        for slot in slots {
+            cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()), added.get(&slot))?);
         }
     }
     let cast_models = cast_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -667,12 +670,17 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let ramp = textures.len();
             textures.extend(r.textures.first());
             for actor in cast.iter_mut() {
-                let (Some(play), Some(body)) = (&title_play, title_play.as_ref().and_then(|p| p.stage.characters.get(&actor.slot))) else { continue };
+                let Some(play) = &title_play else { continue };
+                // a prop has no body on the stage: the event's `q5` places it for good
+                let body = play.stage.characters.get(&actor.slot);
+                if body.is_none() && !actor.is_prop() {
+                    continue;
+                }
                 let joints = actor.joints(body, play.stage.time);
                 actor.instance = scene.instance(actor.model(body));
                 let name = format!("slot {}", actor.slot);
                 let drawn = actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, actor.instance, textures.len(), ramp, &name, &actor.swing, &mut ramp_rows)?;
-                eprintln!("{name}: {drawn} draws at {:?}, facing {:.1}, {:?} at stage {:.3} s", body.position, body.facing.to_degrees(), body.motion, play.stage.time);
+                eprintln!("{name}: {drawn} draws, {:?} at stage {:.3} s", body.map(|b| (b.position, b.facing.to_degrees(), &b.motion)), play.stage.time);
                 textures.extend(actor.pack.textures.iter());
             }
         }

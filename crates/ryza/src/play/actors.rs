@@ -40,6 +40,9 @@ pub struct Files {
     /// The hip height each motion of a shared set is made for.
     bases: BTreeMap<u32, f32>,
     face: Option<Animation>,
+    /// For a prop (a weapon lying in the scene as a character of its own, never moved): its model
+    /// matrix, from the position and three angles its `q5` adds it with.
+    prop: Option<Mat4>,
 }
 
 /// A character of the stage, parsed from its [`Files`].
@@ -60,21 +63,32 @@ pub struct Actor<'a> {
     face: Option<barrel_ryza::face::Face>,
     /// Its instance in the scene, once added.
     pub instance: u32,
+    /// A prop's model matrix ([`Files::read`]).
+    prop: Option<Mat4>,
 }
 
 impl Files {
-    // STAND-IN: Only the playable characters are drawn: the event's other characters and every weapon are not; the real thing is drawing them all.
+    // STAND-IN: Only the playable characters and the weapons lying in the scene are drawn: the event's other characters are not (the title's event has none); the real thing is drawing them all, with held weapons.
     /// Reads the character of event slot `slot` (a row of `chara.xml`) with `motions`, or None
-    /// when its tag is not a playable character's (`PC..`: the others are not drawn yet).
-    pub fn read(install: &Install, slot: u32, motions: &BTreeSet<u32>) -> Result<Option<Files>> {
+    /// when its tag is neither a playable character's (`PC00A`) nor a weapon's (`PC00_WEP_01`:
+    /// a prop with no motion, placed as the event's `q5` adds it: `added`, [`barrel_ryza::event::added`]).
+    pub fn read(install: &Install, slot: u32, motions: &BTreeSet<u32>, added: Option<&barrel_ryza::event::Added>) -> Result<Option<Files>> {
         let (chara, base) = (install.read("\\saves\\chara\\chara.xml")?, install.read("\\saves\\chara\\charabase.xml")?);
         let tag = barrel_ryza::chara::row_tag(&chara, slot as usize)?;
         let set = tag.to_ascii_lowercase();
+        let root = format!("\\data\\x64\\character\\{set}\\{set}");
+        if let (Some(a), true) = (added, tag.starts_with("PC") && tag.get(4..).is_some_and(|rest| rest.starts_with("_WEP_"))) {
+            let (model, pack) = (install.read(&format!("{root}.elixir.gz"))?, install.read(&format!("{root}.g1t"))?);
+            let size = barrel_ryza::chara::size(&chara, &tag)?;
+            eprintln!("{tag} (slot {slot}): a prop at {:?} turned {:?}", a.position, a.degrees);
+            let prop = Some(Mat4::from_scale_rotation_translation(Vec3::from(size), barrel_ryza::event::rotation(a.degrees), Vec3::from(a.position)));
+            return Ok(Some(Files { slot, tag, size, model, pack, anims: BTreeMap::new(), bases: BTreeMap::new(), face: None, prop }));
+        }
         if !(tag.starts_with("PC") && tag.len() == 5) {
             return Ok(None);
         }
         let size = barrel_ryza::chara::Chara::read(&chara, &base, &tag)?.size;
-        let dir = format!("\\data\\x64\\character\\{set}\\{set}_model");
+        let dir = format!("{root}_model");
         let (model, pack) = (install.read(&format!("{dir}.elixir.gz"))?, install.read(&format!("{dir}.g1t"))?);
         let folders = barrel_ryza::chara::motion_sets(&base, &install.read("\\saves\\chara\\charamotionset.xml")?, &tag)?;
         let first = |bytes: &[u8]| -> Result<Animation> {
@@ -94,7 +108,7 @@ impl Files {
         }
         let face = install.read(&barrel_ryza::face::path(&tag, "expression_default")).ok().and_then(|b| first(&b).ok());
         eprintln!("{tag} (slot {slot}): motions {:?} from {folders:?}", anims.keys().collect::<Vec<_>>());
-        Ok(Some(Files { slot, tag, size, model, pack, anims, bases, face }))
+        Ok(Some(Files { slot, tag, size, model, pack, anims, bases, face, prop: None }))
     }
 
     /// Its model container, unpacked (the actor's mesh borrows from it).
@@ -105,19 +119,21 @@ impl Files {
     /// The actor, its mesh read from `model` (this character's [`Files::container`]).
     pub fn open<'a>(&'a self, model: &'a Elixir<'a>) -> Result<Actor<'a>> {
         let named = |name: String| barrel_engine::field::named(model, &name).ok_or(format!("no {name}"));
-        let skeleton = G1m::parse(named(format!("{}_MODEL.g1m", self.tag))?)?.skeleton.ok_or("the model has no skeleton")?;
-        let geometry = G1m::parse(named(format!("{}_MODEL_default.g1m", self.tag))?)?.geometry.ok_or("the mesh has no geometry")?;
+        // A person's entries are `<TAG>_MODEL`, a prop's the bare `<TAG>`.
+        let suffix = if self.prop.is_some() { "" } else { "_MODEL" };
+        let skeleton = G1m::parse(named(format!("{}{suffix}.g1m", self.tag))?)?.skeleton.ok_or("the model has no skeleton")?;
+        let geometry = G1m::parse(named(format!("{}{suffix}_default.g1m", self.tag))?)?.geometry.ok_or("the mesh has no geometry")?;
         let face = self.face.as_ref().map(|a| barrel_ryza::face::Face::new(&skeleton, a));
         let swing = unmoved_joints(&skeleton, self.anims.values(), face.as_ref());
-        Ok(Actor { slot: self.slot, size: self.size, skeleton, geometry, pack: G1t::parse(&self.pack)?, anims: &self.anims, bases: &self.bases, swing, face, instance: 0 })
+        Ok(Actor { slot: self.slot, size: self.size, skeleton, geometry, pack: G1t::parse(&self.pack)?, anims: &self.anims, bases: &self.bases, swing, face, instance: 0, prop: self.prop })
     }
 }
 
 impl Actor<'_> {
     // STAND-IN: Ryza's head look-at is not applied, so her head follows only her motion; the real thing is the game's look-at turning it toward its target.
     /// Its joints' skinning matrices for `body` at stage time `now`.
-    pub fn joints(&self, body: &Body, now: f32) -> Vec<Mat4> {
-        let playing = body.motion.as_ref();
+    pub fn joints(&self, body: Option<&Body>, now: f32) -> Vec<Mat4> {
+        let playing = body.and_then(|b| b.motion.as_ref());
         let number = playing.map(|p| p.motion).filter(|n| self.anims.contains_key(n)).or_else(|| self.anims.keys().next().copied());
         let still = Animation { duration: 0.0, tracks: Vec::new() };
         let anim = number.and_then(|n| self.anims.get(&n)).unwrap_or(&still);
@@ -135,20 +151,30 @@ impl Actor<'_> {
         barrel_engine::skin::skin(&self.skeleton, &locals)
     }
 
-    /// Its model matrix for `body` (game space: scaled, turned about y, moved).
-    pub fn model(&self, body: &Body) -> Mat4 {
-        Mat4::from_scale_rotation_translation(Vec3::from(self.size), Quat::from_rotation_y(body.facing), Vec3::from(body.position))
+    /// Whether it is a prop (a weapon lying in the scene), which has no body on the stage.
+    pub fn is_prop(&self) -> bool {
+        self.prop.is_some()
+    }
+
+    /// Its model matrix for `body` (game space: scaled, turned about y, moved; a prop's is its
+    /// own, fixed by where its `q5` adds it, and takes no body).
+    pub fn model(&self, body: Option<&Body>) -> Mat4 {
+        match (self.prop, body) {
+            (Some(prop), _) => prop,
+            (None, Some(b)) => Mat4::from_scale_rotation_translation(Vec3::from(self.size), Quat::from_rotation_y(b.facing), Vec3::from(b.position)),
+            (None, None) => Mat4::IDENTITY,
+        }
     }
 
     /// Poses its instance for `body` at `now` in the scene's instances and palette (render space).
     pub fn pose(&self, body: &Body, now: f32, instances: &mut [Instance], palette: &mut [Mat4]) {
         let base = instances[self.instance as usize].palette as usize;
-        for (slot, j) in palette[base..].iter_mut().zip(self.joints(body, now)) {
+        for (slot, j) in palette[base..].iter_mut().zip(self.joints(Some(body), now)) {
             *slot = render_space(j);
         }
         let i = &mut instances[self.instance as usize];
         i.prev_model = i.model;
-        i.model = render_space(self.model(body));
+        i.model = render_space(self.model(Some(body)));
     }
 }
 
