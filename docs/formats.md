@@ -448,7 +448,8 @@ The coded game state follows. `SYSDATA.pcsave`, the settings, is coded whole.
 
 **The coding** (`0x1400219a0 (codec, buffer, length, &coded_length, encode)`, in place; the
 settings writer `0x14015d380` calls it with encode 1 and `fwrite`s the result). Decoding
-(`barrel_formats::save::decode`) undoes, in order:
+(`barrel_escha::data::save::decode`; the coding itself is `barrel_formats::save_code`, shared
+with Ryza DX, each game with its own keys) undoes, in order:
 
 1. trailing zero bytes are dropped and the rest padded to 16 (`P` bytes);
 2. a bit shuffle over the last `min(P, 0x800)` bytes (`0x14001fe10`): the indices of their
@@ -763,6 +764,32 @@ one save); `shop/shop_data`, the four shops' stock exactly as the game keeps it 
 `shop::Stock`); `monthrep/data` (19,440 bytes: sixty 0x144-byte month reports, presumably,
 twelve a year over five years); `party/m_squad`, the 11-slot list the daily friendship gain
 reads (`0x141093530`). `save::Summary` reads the seed, the rank and the stock.
+
+## Ryza DX saves (`GameData<NN>/data.dat`)
+
+The game saves under `<local app data>/KoeiTecmo/Atelier Ryza DX/<user id>/`: a folder a
+slot (`GameData00`, ...), `AutoSaveData` and `SystemData` (the settings), each with a
+`data.dat`. A file is 0x100 plain bytes (what the load screen shows: at +0x30 the time of
+saving as a `FILETIME`, then words not read) and the state in the coding of "Saves" above,
+with other keys: the word pass's stream key 0xd5c1 (Escha 0xd727), modulus 0xdb2 and
+threshold 0x6d9 (0xec2, 0x761), the byte runs' keys 0x9f73, 0xaee3, 0x394d (0xa22f, 0xa129,
+0x394d); the bit swap's key, the runs' lengths, the trailer and the two packings are the
+same (`0x140477630`; the load job `0x140326790` calls it on the file past its first 0x100
+bytes). The game's decoder has a third unpacking step and a flag from the file's header
+that are not read: the three files of one install decode without them, sums checked, and a
+game save's first 196,608 bytes equal the running game's copy byte for byte
+(ryza-recomp's `save-bytes` scenario). `barrel_ryza::save`.
+
+The state: `01 33 79 c9`, zeros to 0x20, then records: a little-endian u32 size counting
+itself, a NUL-terminated name, the contents. A top record is a part of the game (`info`,
+`PlayGo`, `dlc`, `event`, `knowledge`, `money`, `party`, ...: the game's save sections, each
+a class with a name, a writer and a reader, vtables from `0x14111c310`) and holds records
+of its own, an array each: a big-endian u32 count and the elements, big-endian
+(`0x140584cd0` reads one: name, destination, count, element size; a shorter array leaves
+the rest zero). ryza-recomp's `save-fields` scenario lists every record a load reads, in
+order. Read so far: `event` / `execFlag`, 1,683 bytes, the story's events
+(`docs/tables.md`, "Ryza DX: story spans"); beside it `short` (0x41be two-byte words),
+`date`, `eventFlag`, `isDoneToday`, `episode`.
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

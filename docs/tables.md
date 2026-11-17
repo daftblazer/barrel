@@ -2567,8 +2567,10 @@ and some sixty other callers (quests, shops, map marks: not read). `barrel_ryza:
 
 Read from the running game (ryza-recomp's `story-flags` scenario dumps the array): the title
 has one event set, and the save in Rasenboden 35, of the main story only `MM00_010` (the
-rest are `DX00`, `TT01`, `XX01`, `ZZ01` to `ZZ03` rows). Where a save file holds the array is
-not read: Barrel's story is what `--done` says, nothing by default.
+rest are `DX00`, `TT01`, `XX01`, `ZZ01` to `ZZ03` rows). A save holds the array as its
+`event` / `execFlag` record (`docs/formats.md`, "Ryza DX saves"): `barrel FIELD --save
+data.dat` takes the story from one (the same 35 events from the capture's save); without
+`--save` or `--done` nothing has played.
 
 ## The world map's field (`Data/x64/Field/A15_WMAP`)
 

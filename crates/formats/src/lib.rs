@@ -33,6 +33,7 @@ pub mod opl2;
 pub mod pak;
 pub mod pe;
 pub mod quake;
+pub mod save_code;
 pub mod png;
 pub mod pssg;
 pub mod swg;

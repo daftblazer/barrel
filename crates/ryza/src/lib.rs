@@ -17,6 +17,7 @@ pub mod motion;
 pub mod npc;
 pub mod player;
 pub mod solids;
+pub mod save;
 pub mod story;
 pub mod event;
 pub mod telop;

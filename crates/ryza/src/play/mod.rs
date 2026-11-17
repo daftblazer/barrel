@@ -14,7 +14,8 @@
 //! the field environment's set for the time and weather (noon, sunny by default). `--hide`
 //! leaves out the objects whose placement names contain NAME (to find which object is which).
 //! `--done` names the story events that have played (`MM00_010`): the people and objects the
-//! field's tables hang on the story follow them (none played by default).
+//! field's tables hang on the story follow them (none played by default). `--save FILE`
+//! takes them from a save of the game's (a `data.dat`) instead.
 //! `--ryza` stands Ryza (`pc00a`) at X,Y,Z turned DEG about y, posed by her motion N
 //! (`pc00a_<N>`, default 00000) at S seconds. Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
@@ -70,8 +71,10 @@ struct Args {
     time: Time,
     weather: Weather,
     hide: Vec<String>,
-    /// The story's progress (`--done`).
+    /// The story's progress (`--done`, or the save's with `--save`).
     story: barrel_ryza::story::Story,
+    /// A save file to take the story's progress from (`--save`).
+    save: Option<String>,
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
     /// The camera's vertical field of view, degrees (`--fov`).
@@ -128,7 +131,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), story: Default::default(), ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), story: Default::default(), save: None, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -179,6 +182,7 @@ fn args(args: Vec<String>) -> Result<Args> {
                 a.lean = [x, y];
             }
             "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
+            "--save" => a.save = Some(value()?),
             "--ryza" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
@@ -482,6 +486,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // (`Frame::tone_white`) sees past the half range's 2.0.
     let graphics = RenderSettings { hdr_scene: true, ..graphics };
     let install = Install::open(Path::new(&a.install))?;
+    if let Some(save) = &a.save {
+        let state = barrel_ryza::save::decode(&barrel_files::read(Path::new(save))?).map_err(|e| format!("{save}: {e}"))?;
+        let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
+        a.story = barrel_ryza::save::story(&state, &pe).map_err(|e| format!("{save}: {e}"))?;
+        eprintln!("{save}: {} story events played", barrel_ryza::save::events_done(&state).map_or(0, |e| e.len()));
+    }
     // `--event NAME --at T`: the event's stage T seconds in; with FIELD `-`, its field (the
     // field map it last changed to, by the executable's `FIELDMAP_*` names).
     let event_stage = match &a.event {

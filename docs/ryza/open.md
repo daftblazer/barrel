@@ -176,8 +176,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   who and what a field places (`docs/tables.md`, "Ryza DX: story spans"; this save has only
   `MM00_010` of the main story, which leaves the same 22 people and 4 boards as before).
   The townsfolk stand where `npcmarker.xml` puts them, turned as the capture's root matrices
-  (`npc25c`: within 6 units and 0.01 of the game's). Left: where a save holds the story's
-  events (Barrel takes them from `--done`), the object ranges' own measure and classes below
+  (`npc25c`: within 6 units and 0.01 of the game's). The story comes from a save with `--save` (`docs/formats.md`,
+  "Ryza DX saves"). Left: the object ranges' own measure and classes below
   the top setting (the placement word's bits 0-1 as the class is still a guess: nothing at
   High tells), the game's switch for levels of detail, the walkers' pauses, motions and
   ground between points (`docs/tables.md`), the people's drop to the ground when
