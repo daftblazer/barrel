@@ -19,6 +19,28 @@ align`, or find the shift as above) and fit nothing to a single run's random rol
 states its tolerance. Way in, if it matters: per-thread read counters for the clock, and a
 frame-locked wait on the loader's completion (the frame it finishes on, from a hook).
 
+## The opening hangs at frame 9270 (recomp)
+
+`scenarios/opening-probe.sh` (New Game, A every 120 frames) stops presenting at frame 9270,
+virtual and real clocks alike, no trap. The main game thread loops in 0x140c06ea0
+(0x140c07970-0x140c07a33): under the lock at [rsi+0x1a8] it scans slots (groups at [rsi+0x240],
+0x58 bytes, each with slots of 0x218 bytes) for one whose field +0x38 lies in [r14, rdi); while
+one does it calls 0x140be2dd0(rsi, 0), resets the event at [rsi+0xec8], waits 5 ms on it and
+calls 0x140cad8a0. The last file opened is Sound/voice.ktsl2asbin, at 9270. Ruled out: the
+virtual clock (REALTIME hangs too); traps; XAudio2 (passes go on, no Stop or Flush near the
+hang; a real bug found on the way: buffers flushed from a stopped voice never ended, fixed);
+synchronous overlapped ReadFile (sets the event and Internal). Tools: RYZA_TRACE_WAITS (blocked,
+polling and long waits, a 30 s no-frame watchdog with each thread's last waits and stack),
+RYZA_TRACE_XAUDIO2, tools/stacks.sh SNAPS=N, tools/stacksum.py.
+The cadence does not matter: with A every 240 frames the hang moves to 9870, but in both runs it
+is the 39th open of Sound/voice.ktsl2asbin (content, not timing). XAudio2 calls around that
+line look normal (create/start/stop/destroy pairs, two voices still streaming).
+gdb breakpoints on 0x140be2dd0 and on the wait wrapper 0x140c0d780 (also by source line,
+2 locations) never fire, even when enabled only after the hang: the wait loop's calls are
+inlined into a copy gdb does not map. Next: find the loop's code in build/gen by its call to
+the event wait (grep the generated C for 0x140c07970's block) and break on that line, or add a
+runtime hook (guest address -> dump rsi's slots) instead of gdb.
+
 ## The capture's clock against 60 Hz
 
 The 2D rows need small clock corrections that point opposite ways: the title's prompt pulse at
