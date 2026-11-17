@@ -1280,12 +1280,14 @@ the `title-cycle` capture has them (capture frame 278 is t = 0, so frame N shows
    window slides back out from 1077 to 1107. Opacities are bytes multiplied down the node tree and
    truncated (`boot::byte`). Barrel loads nothing, so the length (about 5.2 s) is the capture's.
 
-Fitted, not read (each named in `boot.rs`): `CAPTURE_START` (278: the notice's start), the
-schedule's capture frames (notice fade at 383, logos at 437 and 616, window at 795, getOut at
-1065, the title at 1140), `LOGO_HOLD`, `LINE_STEP` (22 layout lines between the sentence's
-lines), `TEXT_TOP` (-4, the same as the title's version string), `WRAP_FACTOR` and `GLOW_DRIFT`
-(the capture's frame clock runs a frame behind 60 Hz about every 105 frames, which shows in the
-glows' phase; the window and the pen sit on the ideal clock, so nothing else needs it).
+Read from the capture, not from the game's code (each named in `boot.rs`): `CAPTURE_START` (11:
+the notice's start), the schedule's capture frames (notice fade at 117, logos at 171 and 351,
+window at 531, getOut at 801, the title at 875: the frames of the current capture, 265 lower
+than the first capture's that the text above cites, less the two frames the exact clock moved
+them), `LOGO_HOLD` (120), `LINE_STEP` (22 layout lines between the sentence's lines), `TEXT_TOP`
+(-4, the same as the title's version string) and `WRAP_FACTOR`. The loops (the pen, the
+glows, the title prompt's pulse) follow the game's own rule, a 32-bit float sum restarted at
+the loop's length (`boot::loop_time`): nothing fitted.
 
 Parity (`docs/ryza/checks-boot.txt`, local): 0 mismatches at capture frames 300, 370, 390
 (notice), 445 and 500 (Koei Tecmo), 625 and 780 (Gust), 800, 900 and 1090 (the window sliding in,

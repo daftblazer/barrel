@@ -33,41 +33,35 @@ const LAYOUT_HEIGHT: f32 = 720.0;
 /// A style's pixels per layout pixel (the 2160-line atlases).
 const ATLAS_PER_LAYOUT: f32 = 3.0;
 
-// The schedule, in seconds from the notice's start. The capture (`title-cycle`, frames 300 to
-// 1900) starts mid-notice, so the whole timeline is fitted to its frames, which tick near 60 Hz;
-// the start is the frame the notice's picture list (a 0.3 s step each) says it began at.
-/// The capture frame the notice starts at: the picture list's third entry shows at 312 (276 if
-/// it steps every 0.3 s from the start) and the pen's bob and move sit 2 frames behind that.
-const CAPTURE_START: f32 = 278.0;
+// The schedule, in seconds from the notice's start, read from the capture (`title-cycle`,
+// every 5th frame from 35 to 1635, made on ryza-recomp's exact virtual clock: 60 frames a
+// second, the same frame for frame in every run). Each time is the one frame offset at which
+// the capture's quads match at the frames named (a scan of plus and minus 12 frames).
+/// The capture frame the notice starts at (its pictures and pen match at frames 35 and 105).
+const CAPTURE_START: f32 = 11.0;
 const FPS: f32 = 60.0;
-/// The notice fades out from capture frame 383 over `anm_common_fade_out`'s 15 frames and is gone
-/// at 398.
-const NOTICE_FADE_OUT_AT: f32 = (383.0 - CAPTURE_START) / FPS;
-const NOTICE_END: f32 = (398.0 - CAPTURE_START) / FPS;
-/// The Koei Tecmo logo's fade-in starts at capture frame 437, the Gust logo's at 616 (the
-/// logo's fade is 30 frames each way, read from the capture's `fAlphaRate`: 0.5 s) and the hold
-/// between is 119 frames (the capture's two holds).
-const KT_START: f32 = (437.0 - CAPTURE_START) / FPS;
-const GUST_START: f32 = (616.0 - CAPTURE_START) / FPS;
+/// The notice fades out from capture frame 117 over `anm_common_fade_out`'s 15 frames (frame
+/// 125) and is gone at 132.
+const NOTICE_FADE_OUT_AT: f32 = (117.0 - CAPTURE_START) / FPS;
+const NOTICE_END: f32 = (132.0 - CAPTURE_START) / FPS;
+/// The Koei Tecmo logo's fade-in starts at capture frame 171 (frame 180) and the Gust logo's
+/// at 351, as the first has faded out: a logo fades for 30 frames each way (the capture's
+/// `fAlphaRate`: 0.5 s) and holds for 120 between (the Gust logo's fade-out at frame 515).
+const KT_START: f32 = (171.0 - CAPTURE_START) / FPS;
+const GUST_START: f32 = (351.0 - CAPTURE_START) / FPS;
 const LOGO_FADE: f32 = 30.0 / FPS;
-const LOGO_HOLD: f32 = 119.0 / FPS;
-/// The autosave window slides in at capture frame 795 and its getOut starts at 1065: the spinner
-/// fades out then (`anm_common_fade_in` played backwards at speed 0.3, the window's `getOut`) and
-/// the window's own slide back follows 0.2 s later (`delay` of that bind).
-const WINDOW_START: f32 = (795.0 - CAPTURE_START) / FPS;
-const SPINNER_OUT: f32 = (1065.0 - CAPTURE_START) / FPS;
+const LOGO_HOLD: f32 = 120.0 / FPS;
+/// The autosave window slides in at capture frame 531, as the Gust logo is gone (frames 535 and
+/// 635), and its getOut starts at 801 (frame 825): the spinner fades out then
+/// (`anm_common_fade_in` played backwards at speed 0.3, the window's `getOut`) and the window's
+/// own slide back follows 0.2 s later (`delay` of that bind).
+const WINDOW_START: f32 = (531.0 - CAPTURE_START) / FPS;
+const SPINNER_OUT: f32 = (801.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT_SPEED: f32 = 0.3;
 const WINDOW_OUT: f32 = SPINNER_OUT + 0.2;
-/// How much faster the reference capture's glow animations run than the loop rule of
-/// [`loop_time`]: one more frame ahead each ~105 frames. The capture was made on a virtual clock
-/// whose frame time wandered by a microsecond, which tips the glow's loop between 50 and 51
-/// frames (docs/ryza/open.md, "Loops that take 50 or 51 frames"); it goes when the capture is
-/// made again on the exact clock. Fitted to the glow alphas of capture frames 900 to 1105; the
-/// +0.1 is the fit's offset.
-const GLOW_DRIFT: f32 = 1.0 / 105.0;
-/// The title's first frame (capture frame 1140, where `--title-at 0` sits): the screen is black
+/// The title's first frame (capture frame 875, where `--title-at 0` sits): the screen is black
 /// from the window's end until then (the title's own fade from black is not drawn).
-pub const TITLE_START: f32 = (1140.0 - CAPTURE_START) / FPS;
+pub const TITLE_START: f32 = (875.0 - CAPTURE_START) / FPS;
 
 /// The seconds of the boot sequence (the title starts at [`TITLE_START`]).
 pub const LENGTH: f32 = TITLE_START;
@@ -553,7 +547,6 @@ impl Boot {
     fn orb_quads(&self, since: f32, k: f32, left: f32, window: u32, spinner: u32, slide: f32) -> Vec<Quad> {
         let mut out = Vec::new();
         let ticks = (since * FPS).round();
-        let ticks = ticks + (ticks * GLOW_DRIFT + 0.1).floor();
         let (pw, ph) = (self.orb_size * self.orb_scale * k, self.orb_size * self.orb_scale * k);
         // Opacities are bytes multiplied down the node tree, each product truncated.
         let base = window * spinner / 255;
@@ -579,13 +572,27 @@ fn byte(alpha: f32) -> u32 {
     (alpha.clamp(0.0, 1.0) * 255.0 + 1e-3).floor() as u32
 }
 
-/// The time inside a looping animation of `duration` seconds at `speed` after `ticks` 60 Hz
-/// frames. The game adds `speed / 60` of a second a frame and restarts once the sum reaches the
-/// duration, dropping the remainder: a loop takes the whole number of frames above its length
-/// (an exact 50 frames takes 51, as the accumulated sum falls just short).
-fn loop_time(ticks: f32, duration: f32, speed: f32) -> f32 {
-    let period = (duration * FPS / speed + 1e-3).floor() + 1.0;
-    ticks % period / FPS * speed
+/// The game's frame time at 60 frames a second, as the 32-bit float it holds it in
+/// (16,666,667 ns over 1e9).
+const FRAME: f32 = 0.016_666_668;
+
+/// The time inside a looping animation of `duration` seconds at `speed` after `ticks` frames,
+/// as the game counts it: each frame it adds `speed x frame time` to a 32-bit float and starts
+/// again from 0 once the sum reaches the duration, dropping the remainder. A loop so takes the
+/// whole number of frames above its length, and one whose length is an exact number of frames
+/// takes one more (50 frames' worth takes 51: the sum falls a hair short), or not, by the
+/// float sums: at a frame time 4 ns longer the same loop takes 50 (docs/ryza/open.md, "Loops
+/// that take 50 or 51 frames").
+pub(crate) fn loop_time(ticks: f32, duration: f32, speed: f32) -> f32 {
+    let step = FRAME * speed;
+    let mut t = 0.0f32;
+    for _ in 0..ticks.max(0.0) as u32 {
+        t += step;
+        if t >= duration {
+            t = 0.0;
+        }
+    }
+    t
 }
 
 /// A logo's opacity `t` seconds after its start: in, hold, out.

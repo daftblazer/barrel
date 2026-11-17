@@ -11,7 +11,7 @@ achievements are the player's own, and the DX version has not been played there)
 
 Ranked by what it blocks. Each says what is known, what is ruled out, where to start, and when it
 is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run notes); Barrel's
-checks are `runchecks docs/ryza/checks.txt` (21 rows) and
+checks are `runchecks docs/ryza/checks.txt` (21 rows; frames are the exact capture's) and
 `docs/escha/checks.txt` (17).
 
 1. **The title backdrop's cast** (blocks P1). Ryza, Lent and Tao are drawn from the event
@@ -25,37 +25,30 @@ checks are `runchecks docs/ryza/checks.txt` (21 rows) and
    (`pc0x_wep_01`), `npc34a` and the other characters the event adds (`q5`, slot 216 on) are
    not drawn. Solved when diff3d also matches those 6 draws and Ryza's palette is within the
    others' tolerance.
-2. **Re-baseline the title capture on the exact clock** (rows carry fitted offsets until then).
-   See "The answer key's runs repeat to a start offset" and "Loops that take 50 or 51 frames"
-   below. The cause of the 1% gain is known and fixed in ryza-recomp (its virtual clock now
-   hands the game the same frame time every frame), but the reference capture
-   (work/scenarios/title-cycle) and Barrel's rows still come from the old clock. To do:
-   capture title-cycle again, find its start offset (the title's first frame was 1140 in the
-   old capture), drop `boot::GLOW_DRIFT` (crates/ryza/src/boot.rs), give the title's prompt
-   pulse the loop rule (46 frames a run), and move the rows' times to
-   `(frame - start) / 60`. Solved when every row passes with no fitted time offset. Then the
-   start offset itself (the section below).
+2. **One glow at the loading window's fade-out** (small). On the exact capture every 2D row is
+   at 0 with no fitted time except frame 825 (`--boot-at 13.5667`): the sixth orb's glow is 114
+   of 255 in the game and 112 in Barrel, the other 216 quads the same. Barrel's value is the
+   curve's (`anm_loading_icon_eff_6`, 1.2 frames past its peak: 234.6, times the window's and
+   the spinner's bytes); the game's needs 237 or more there. Not a time offset (the scan of plus
+   and minus 12 frames has no better frame) and not the fade's bytes (they are shared by all
+   16 quads). Way in: what the window's getOut does to the icon's animations besides the fade.
 
-## The answer key's runs repeat to a start offset
+## The answer key's runs repeat exactly
 
 ryza-recomp's scenarios run on virtual clocks by default (RYZA_DETERMINISTIC): each frame is
 1/60 s and every read a thread makes within a frame returns the frame's time (only past 64
 reads in one frame does a thread's clock creep, 1 µs a read, so a loop waiting on the clock
-still ends); the null XAudio2's passes follow the frames presented; state descriptions are
-hashed with their padding zeroed. With the clock exact, two title-cycle runs give the same
-draws frame for frame (the title's 1,957 3D draws included), one run a constant few frames
-behind the other: 5 in the pair compared, the title's first frame at 1140 to 1150 over the
-runs made. The offset is set during the boot's loading: the files' first reads fall on
-different frames from frame 69 on (`RYZA_TRACE_FILES` and `barrel-tool pak-reads` on two
-boot-title runs), because the loader threads work in real time while the main thread goes on
-presenting. So: compare at aligned frames (`barrel-parity align`, or find the offset from a
-frame with a known start) and fit nothing to a single run's random rolls.
-Tried and taken out: Present waiting until every other game thread is in a wait. The loader
-(thread 0x1024 in the runs made) never waits: it spins on SwitchToThread in 0x140d2ddc0 (under
-0x140728dc0, 0x1406d9f70) for the main thread's answer, and counting a yield as a wait let
-some frames through early (one run in two still stalled, and the pair no longer matched).
-Way in: find what that loop waits for (a request the main thread serves once a frame?) and
-make the frame wait on that, or serve it at once.
+still ends); the null XAudio2's passes follow the frames presented; and Present waits until no
+other game thread is at work, so what a frame set going (a load) is finished before the next
+frame. A thread in a blocking wait is not at work, nor is one spinning on SwitchToThread: the
+game's wait for a resource (0x140728dc0, 83 callers) loops on a yield until another thread,
+often the presenting one, has done its part. Two title-cycle runs and two opening probes give
+the same captures frame for frame, paced or not, so scenarios run unpaced: the 14,000-frame
+opening in about 2.5 minutes for 4.5, a boot to the title in seconds. The boot is 265 frames
+shorter than in the first captures (its loading no longer runs across frames in real time).
+Left: the runtime's timer and thread-pool threads still fire in real time (none seen to matter
+yet), and a thread that computes for a minute without a wait makes the frames stop waiting
+(a line in the log names it).
 
 ## Loops that take 50 or 51 frames
 
@@ -71,8 +64,9 @@ time wandered by a microsecond either way (16,665.7 to 16,667.7 µs over frames 
 `RYZA_TRACE_CLOCK`) and the loops took 50 or 51 frames by turns: the "one frame ahead each 105"
 of `boot::GLOW_DRIFT` and the title rows' times 9.30 and 10.9667 s (for frames 1700 and 1800
 after a start at 1140) are fits to that. On real hardware the same comparison goes either way
-with the display's timing; the exact clock gives 51 and 46 every time. The reference capture
-in use was made on the old clock (item 2 of "Most pressing").
+with the display's timing; the exact clock gives 51 every time, and 91 for the prompt's whole
+1.5 s pulse. The reference capture is made on the exact clock now and `GLOW_DRIFT` is gone:
+`boot::loop_time` adds the game's float frame time as the game does.
 
 ## Fields
 

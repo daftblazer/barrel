@@ -258,8 +258,10 @@ impl Title {
         if since < 0.0 {
             return 0.0;
         }
+        // The dip and the way back are one loop, which takes a frame more than its length
+        // (`boot::loop_time`: 91 frames for the 1.5 s).
         let d = self.blink.duration();
-        let phase = t.rem_euclid(2.0 * d);
+        let phase = crate::boot::loop_time((t * 60.0).round(), 2.0 * d, 1.0);
         let pulse = self.blink.at(if phase < d { phase } else { 2.0 * d - phase })[3] / 255.0;
         self.slide_color.at(since)[3] / 255.0 * pulse
     }
@@ -392,9 +394,10 @@ mod tests {
         assert_eq!(t.prompt_alpha(1.9), 0.0);
         // Half a second into the slide it is fully faded in (the blink aside).
         assert!(near(t.prompt_alpha(2.5), t.blink.at(0.5 % 0.75)[3] / 255.0, 0.05));
-        // The blink: full at its start, half at 0.75 s and back after another 0.75.
-        let at = |s: f32| t.prompt_alpha(s);
-        assert!(near(at(3.0), 1.0, 1e-3) && near(at(3.75), 127.0 / 255.0, 1e-3) && near(at(4.5), 1.0, 1e-3));
+        // The blink: full at its start, half 0.75 s on and back after another 0.75; the 1.5 s
+        // loop takes 91 frames, so by 3 s (180 frames) it is one frame behind.
+        let at = |frames: f32| t.prompt_alpha(frames / 60.0);
+        assert!(near(at(182.0), 1.0, 1e-3) && near(at(182.0 + 45.0), 127.0 / 255.0, 1e-3) && near(at(273.0), 1.0, 1e-3));
         // Early in the slide the prompt is still low on the screen.
         let q = t.quads(2.1, (1920, 1080));
         assert!(q[1].rect[1] > 643.5 + 20.0);
