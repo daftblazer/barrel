@@ -1143,6 +1143,9 @@ pub fn upload_textures(
     root: Option<&Path>,
     linear: &[bool],
 ) -> Result<(Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>, Option<usize>, usize)> {
+    if trace::enabled() {
+        trace::scene_textures(all_textures.iter().map(|t| trace::texture_name(t)).collect());
+    }
     let mut textures = Vec::new();
     for (k, t) in all_textures.iter().enumerate() {
         textures.push(upload_texture(gpu, pool, t, linear.get(k).copied().unwrap_or(false))?);

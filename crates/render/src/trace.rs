@@ -7,6 +7,14 @@
 //! when it is destroyed. Each quad: its texture by content (`tex` and the FNV-1a 64 hash of its
 //! first mip's first layer, as the capture names it), rect and uv as (left, top, right,
 //! bottom) with the rect on a 1920 × 1080 screen, colour, and whether it is turned.
+//!
+//! The scene's 3D draws, one line per frame: `{"frame":f,"draws3d":[…],"view_proj":[16],
+//! "shadow_vp":[16]}`, matrices column-major (glam's `to_cols_array`, render space: x mirrored).
+//! Each draw: `pass` (`shadow` the sun's shadow map, `scene` the lit colour pass, `sky` the
+//! distant view, `outline`, `terrain`), `idx` its index count, `inst` its instances, `tex` its
+//! textures by content name (as the capture names them; the colour texture, then mask and
+//! emission where it has them) and `world` its model matrix. `view_proj` is the colour pass's
+//! (the camera's jitter included); the renderer keeps no separate view and projection.
 
 use std::io::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -74,6 +82,50 @@ pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], 
     let mut g = o.lock().unwrap();
     let _ = g.write_all(line.as_bytes());
     let _ = g.flush();
+}
+
+/// The names of the scene's textures by texture number (set by `upload_textures`), for
+/// [`Draws3d`].
+static SCENE_TEXTURES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Records the scene textures' trace names (the textures `Draw::texture` numbers).
+pub fn scene_textures(names: Vec<String>) {
+    *SCENE_TEXTURES.lock().unwrap() = names;
+}
+
+/// One frame's 3D draws, collected while the scene is recorded; `None` with the trace off, so
+/// the hot path pays one branch per draw.
+pub struct Draws3d(Option<Vec<String>>);
+
+impl Draws3d {
+    pub fn new() -> Draws3d {
+        Draws3d(enabled().then(Vec::new))
+    }
+
+    pub fn on(&self) -> bool {
+        self.0.is_some()
+    }
+
+    /// One mesh draw: its pass, index count, textures (scene texture numbers) and world matrix.
+    pub fn add(&mut self, pass: &str, index_count: u32, textures: &[Option<usize>], world: &glam::Mat4) {
+        let Some(v) = self.0.as_mut() else { return };
+        let names = SCENE_TEXTURES.lock().unwrap();
+        let tex: Vec<&str> = textures.iter().flatten().filter_map(|&t| names.get(t).map(String::as_str)).collect();
+        v.push(format!("{{\"pass\":\"{pass}\",\"idx\":{index_count},\"inst\":1,\"tex\":{tex:?},\"world\":{:?}}}", world.to_cols_array()));
+    }
+
+    pub fn finish(self, frame: u64, view_proj: &glam::Mat4, shadow_vp: &glam::Mat4) {
+        let (Some(v), Some(o)) = (self.0, out()) else { return };
+        let line = format!(
+            "{{\"frame\":{frame},\"draws3d\":[{}],\"view_proj\":{:?},\"shadow_vp\":{:?}}}\n",
+            v.join(","),
+            view_proj.to_cols_array(),
+            shadow_vp.to_cols_array()
+        );
+        let mut g = o.lock().unwrap();
+        let _ = g.write_all(line.as_bytes());
+        let _ = g.flush();
+    }
 }
 
 pub fn gone(frame: u64, layer: u64) {

@@ -645,6 +645,7 @@ impl Renderer {
                 &[],
                 &[],
             );
+            let mut trace3d = trace::Draws3d::new();
             if let Some(t) = &timer {
                 t.begin(d, cb);
             }
@@ -735,6 +736,9 @@ impl Renderer {
                     d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                    if trace3d.on() {
+                        trace3d.add("shadow", draw.index_count, &[Some(draw.texture)], &instances[draw.instance as usize].model);
+                    }
                     drawn[1] += 1;
                 }
                 d.cmd_end_render_pass(cb);
@@ -805,6 +809,9 @@ impl Renderer {
                             terrain_push[22..28].copy_from_slice(&scene_gpu::bake_words(&patch.bake).map(f32::from_bits));
                             d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(terrain_push.as_ptr() as *const u8, PUSH_SIZE as usize));
                             d.cmd_draw_indexed(cb, patch.index_count, 1, patch.first_index, 0, 0);
+                            if trace3d.on() {
+                                trace3d.add("terrain", patch.index_count, &[], &Mat4::IDENTITY);
+                            }
                         }
                     }
                 }
@@ -834,6 +841,9 @@ impl Renderer {
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)]], &[]);
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                if trace3d.on() {
+                    trace3d.add(if pass_sky { "sky" } else { "scene" }, draw.index_count, &[Some(draw.texture), draw.mask, draw.emission], &instances[draw.instance as usize].model);
+                }
                 drawn[0] += 1;
             }
             }
@@ -852,9 +862,13 @@ impl Renderer {
                     d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                    if trace3d.on() {
+                        trace3d.add("outline", draw.index_count, &[Some(draw.texture)], &instances[draw.instance as usize].model);
+                    }
                 }
             }
             d.cmd_end_render_pass(cb);
+            trace3d.finish(gpu.frame.get(), &draw_vp, &shadow_vp);
             if let Some(t) = &timer {
                 t.mark(d, cb, 2);
             }

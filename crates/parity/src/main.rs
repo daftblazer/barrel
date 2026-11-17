@@ -7,6 +7,11 @@
 //!   barrel-parity quads <trace dir> <frame> [index]    its 2D rectangles and text, as diffed
 //!   barrel-parity diff <trace dir> <frame> <barrel trace> <frame> [index]
 //!                                                      the game's 2D quads against Barrel's
+//!   barrel-parity draws <trace dir> <frame> [index] [--vars A,B] [--pass N] [--summary]
+//!                                                      a frame's draws by pass, with the
+//!                                                      constant buffers' values (3D)
+//!   barrel-parity diff3d <trace dir> <frame> <barrel trace> <frame> [index]
+//!                                                      the game's 3D draws against Barrel's
 //!   barrel-parity align <trace dir> <a-b/step> <barrel trace> <a-b> [index]
 //!                                                      the same over ranges of frames: the best
 //!                                                      Barrel frame per game frame and the one
@@ -14,6 +19,8 @@
 //!
 //! Screen positions are in a 1920 × 1080 frame whatever size the game drew at, so captures at
 //! any resolution compare.
+
+mod draws3d;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -778,8 +785,25 @@ fn main() -> Result<()> {
             println!("({other} draws not 2D)");
             Ok(())
         }
+        Some("draws") if a.len() >= 3 => {
+            let (mut pos, mut vars, mut pass, mut summary) = (Vec::new(), None, None, false);
+            let mut it = a[1..].iter();
+            while let Some(x) = it.next() {
+                match x.as_str() {
+                    "--vars" => vars = it.next().map(String::as_str),
+                    "--pass" => pass = Some(it.next().ok_or("--pass needs a number")?.parse()?),
+                    "--summary" => summary = true,
+                    _ => pos.push(x.as_str()),
+                }
+            }
+            if pos.len() < 2 {
+                return Err("usage: barrel-parity draws <trace> <frame> [index.tsv] [--vars A,B] [--pass N] [--summary]".into());
+            }
+            draws3d::draws(Path::new(pos[0]), pos[1].parse()?, pos.get(2).copied(), vars, pass, summary)
+        }
+        Some("diff3d") if a.len() >= 5 => draws3d::diff3d(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str)),
         Some("screen") if a.len() >= 3 => screen(Path::new(&a[1]), a[2].parse()?, a.get(3).map(String::as_str)),
-        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv]".into()),
+        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv] | draws <trace> <frame> [index.tsv] [--vars A,B] [--pass N] [--summary] | diff3d <trace> <frame> <barrel trace> <frame> [index.tsv]".into()),
     }
 }
 
