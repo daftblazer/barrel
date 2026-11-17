@@ -20,6 +20,7 @@
 
 use crate::{Error, g1t::G1t, khm, u32_at};
 
+#[derive(Debug)]
 pub struct Terrain<'a> {
     pub layers: G1t<'a>,
     pub blend: G1t<'a>,

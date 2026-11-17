@@ -1,5 +1,7 @@
 //! `barrel-tool`: inspect and unpack Atelier game data.
 
+mod unread;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -97,6 +99,7 @@ usage:
   barrel-tool party EXE             each party member's base stats by level (HP/MP/ATK/DEF/SPD)
   barrel-tool party-skills EXE      each party member's skill list: command, level learnt, MP cost
   barrel-tool duel EXE A B [--equip NAME[@Q]]  two fighters (monster numbers, or p<member>:<level>) trading normal attacks: a partial battle
+  barrel-tool unread FILE [--gran N] [--budget SECONDS]  byte ranges of a data file the parser never uses
   barrel-tool recipes EXE           list the synthesis recipes compiled into Escha & Logy DX's executable
   barrel-tool synth INSTALL ITEM MATERIAL...  simulate a synthesis (item numbers; names from Saves_EN)
   barrel-tool play-event FILE.ebd --chain [LANG]  the event, then each one the story starts after it
@@ -157,6 +160,7 @@ fn main() -> ExitCode {
         ["g1a", file, bone] => bone.parse().map_err(|_| format!("{bone}: not a bone number").into()).and_then(|b| g1a(file, Some(b))),
         ["g1a-moves", file, rest @ ..] => g1a_moves(file, rest.first().copied()),
         ["g1a-scan", dir] => g1a_scan(Path::new(dir)),
+        ["unread", file, rest @ ..] => unread::unread(Path::new(file), rest),
         ["pak-ls", file] => pak_ls(Path::new(file)),
         ["pak-reads", data, log] => pak_reads(Path::new(data), Path::new(log)),
         ["pak-get", file, name, out] => pak_get(Path::new(file), name, Path::new(out)),

@@ -31,6 +31,7 @@ pub fn unwrap(d: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>, Error> {
     }
 }
 
+#[derive(Debug)]
 pub struct Pssg<'a> {
     pub schema: Schema,
     pub root: Node<'a>,
