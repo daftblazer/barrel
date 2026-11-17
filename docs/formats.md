@@ -1436,11 +1436,29 @@ gives where the file's bytes go, up to 0x4fc:
 
 So the memory structure has members the file lacks (4 bytes each at 0x8c, 0x108 and 0x174,
 more in the shadow block), and the game fills the structure member by member, not by a copy.
-After 0x4fc the two no longer run side by side: both hold three arrays of 0x6c-byte records
-(file from 0x83c, 0x1034 and 0x182c; memory 0x1f8, 0x22c and 0x258 later), and between them
-blocks in another order (`indirectStage_`: memory 0xda0, file 0x54c). The code that fills
-the structure from the file is not found (`0x14071ea30` beside the setters has no copies);
-with it every member's place in the file follows.
+
+The rest, from all 12 of Rasenboden's sets in the running game against the file's 12 (a
+word is placed where its 12 values are the same in both; words that differ between sets pin
+136 of them, the runs between follow):
+
+| File | Memory | |
+|---|---|---|
+| 0x4fc to 0x54c | +0x850 | `fog_` (memory 0xd4c), `stageAmbientLight_` (0xd78, file 0x528) |
+| 0x54c to 0x584 | -0x44 | the head of the block at memory 0x508 (what `StageLight` reads) |
+| 0x584 to 0x614 | +0x1060 | `patternMap_` (0x15e4), `skyFog_` (0x1604, file 0x5a4), the head of `indirectChara_` (0x1630, file 0x5d0) |
+| 0x674 to 0x7c0 | +0x1868 | `albedoRetouch_` (0x1edc), `twinkle_` (0x1f40, file 0x6d8) and what follows to memory 0x2028 |
+| 0x7f4 to 0xff0 | -0x2ac | the array of the block at 0x508 (memory 0x548 to 0xd44) |
+| 0xff0 to 0x17e8 | -0x20c | the array of `indirectStage_` (memory 0xde4 to 0x15dc) |
+| 0x17e8 to 0x1fe0 | -0x174 | the array of `indirectChara_` (memory 0x1674 to 0x1e6c) |
+
+The three blocks at memory 0x508, 0xda0 and 0x1630 are built alike (`0x14071c800`, three
+times a set): a head of 0x44 bytes and an array of 0x6c-byte records. Not placed by the
+values: file 0x614 to 0x674 (the head of `indirectStage_` should be among it: its values
+repeat others'), 0x7c0 to 0x7f4, and the single words left over in the shadow block. The
+structure's last 0xa8 bytes (from 0x2028) are not in the file; the two lights are there a
+second time (memory 0x2034). The code that fills the structure is still not found: none of
+the environment module's functions (`0x14071c000` to `0x140728000`) copies from the file
+while a field loads, and `0x14071ea30 (object, source)` works from a source already parsed.
 
 **The sky.** A set names its sky dome at 0x3d8 (64 bytes, zero-ended; `SkyDome_`'s
 `SkyDomeDisplaySetFactory` in the executable, whose reader also reads `SkyDomeLightGroupID`,
