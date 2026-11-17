@@ -593,7 +593,7 @@ pub fn quads(pe: &barrel_formats::pe::Pe, font: Option<&text::Font>, sheets: &Sh
                 out.extend(quads(pe, font, sheets, std::slice::from_ref(inner), width, height));
                 let pivot = [dx + about[0] as f32 * k, about[1] as f32 * k];
                 for q in &mut out[from..] {
-                    q.spin = Some(text::Spin { pivot, angle: (*degrees as f32).to_radians() });
+                    q.spin = Some(text::Spin::About { pivot, angle: (*degrees as f32).to_radians() });
                 }
             }
             &Element::Turned { part, cut, at } => {

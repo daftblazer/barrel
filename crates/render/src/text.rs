@@ -33,7 +33,8 @@ pub struct Font {
 /// fills the rectangle with `color` alone. `texture` is [`FONT`] or [`UI`]. `turn` turns the
 /// picture a quarter clockwise into `rect` (its top edge down the rectangle's right side); its
 /// `uv` then names the picture's corners as they land on the rectangle's top-left and bottom-right.
-/// `spin` then turns the placed rectangle freely about a point (a node drawn tilted).
+/// `spin` then turns the placed rectangle freely about a point (a node drawn tilted) or names
+/// its corners outright.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quad {
     pub turn: bool,
@@ -44,12 +45,15 @@ pub struct Quad {
     pub texture: usize,
 }
 
-/// A free turn of a quad's rectangle about `pivot` (pixels, in the layer's own screen), `angle`
-/// radians clockwise on the screen.
+/// How a quad's rectangle is placed other than upright.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Spin {
-    pub pivot: [f32; 2],
-    pub angle: f32,
+pub enum Spin {
+    /// A free turn about `pivot` (pixels, in the layer's own screen), `angle` radians clockwise
+    /// on the screen.
+    About { pivot: [f32; 2], angle: f32 },
+    /// The four corners outright (top-left, top-right, bottom-right, bottom-left of the
+    /// picture), for a node turned out of the screen's plane and seen in perspective.
+    Corners([[f32; 2]; 4]),
 }
 
 impl Quad {
@@ -58,7 +62,11 @@ impl Quad {
     pub fn corners(&self) -> [[f32; 2]; 4] {
         let [l, t, r, b] = self.rect;
         let c = [[l, t], [r, t], [r, b], [l, b]];
-        let Some(Spin { pivot: [px, py], angle }) = self.spin else { return c };
+        let (px, py, angle) = match self.spin {
+            None => return c,
+            Some(Spin::Corners(placed)) => return placed,
+            Some(Spin::About { pivot: [px, py], angle }) => (px, py, angle),
+        };
         let (s, k) = angle.sin_cos();
         c.map(|[x, y]| {
             let (dx, dy) = (x - px, y - py);
@@ -326,7 +334,7 @@ mod tests {
     #[test]
     fn a_turn_is_clockwise_about_its_pivot() {
         // A quarter about the top-left: the top edge runs down the screen.
-        let c = quad(Some(Spin { pivot: [10.0, 20.0], angle: std::f32::consts::FRAC_PI_2 })).corners();
+        let c = quad(Some(Spin::About { pivot: [10.0, 20.0], angle: std::f32::consts::FRAC_PI_2 })).corners();
         let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-3 && (a[1] - b[1]).abs() < 1e-3;
         assert!(near(c[0], [10.0, 20.0]) && near(c[1], [10.0, 120.0]) && near(c[2], [-40.0, 120.0]));
     }

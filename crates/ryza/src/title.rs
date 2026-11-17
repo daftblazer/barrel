@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 
 use barrel_formats::table::{self, Element};
+use crate::title_menu::{Input, Menu};
 use barrel_render::text::{Glyph, Quad, FONT, UI};
 
 use crate::font::ATLAS_SIZE;
@@ -53,8 +54,8 @@ impl Camera {
 }
 
 /// The layout's height in pixels; the atlas's pictures are three times this size.
-const LAYOUT_HEIGHT: f32 = 720.0;
-const ATLAS_PER_LAYOUT: f32 = 3.0;
+pub(crate) const LAYOUT_HEIGHT: f32 = 720.0;
+pub(crate) const ATLAS_PER_LAYOUT: f32 = 3.0;
 
 // STAND-IN: The text line's offset (TEXT_TOP) is fitted to the capture; the real thing is the game's own text layout rule.
 /// How far above the layout's `pos.y` the version string's line top sits, in layout pixels.
@@ -164,17 +165,17 @@ pub fn curve(anims: &[u8], name: &str, attr: &str) -> Result<Curve, String> {
     Ok(Curve { keys, easing })
 }
 
-fn numbers(e: &Element, attr: &str) -> Vec<f32> {
+pub(crate) fn numbers(e: &Element, attr: &str) -> Vec<f32> {
     e.attr(attr).unwrap_or("").split(',').filter_map(|v| v.trim().parse().ok()).collect()
 }
 
-fn pair(e: &Element, attr: &str, default: [f32; 2]) -> [f32; 2] {
+pub(crate) fn pair(e: &Element, attr: &str, default: [f32; 2]) -> [f32; 2] {
     let v = numbers(e, attr);
     [v.first().copied().unwrap_or(default[0]), v.get(1).copied().unwrap_or(default[1])]
 }
 
 /// The layout's nodes by name, each with the positions of the nodes above it added up.
-fn find<'a>(e: &'a Element, name: &str, at: [f32; 2]) -> Option<(&'a Element, [f32; 2])> {
+pub(crate) fn find<'a>(e: &'a Element, name: &str, at: [f32; 2]) -> Option<(&'a Element, [f32; 2])> {
     let here = pair(e, "pos", [0.0; 2]);
     let at = [at[0] + here[0], at[1] + here[1]];
     if e.attr("name") == Some(name) {
@@ -286,6 +287,14 @@ impl Title {
 
     /// The quads `t` seconds into the title on a `screen` of pixels, in draw order.
     pub fn quads(&self, t: f32, screen: (u32, u32)) -> Vec<Quad> {
+        self.quads_with(t, screen, None)
+    }
+
+    /// As `quads`, with the menu and what the player has done: after the button the prompt
+    /// fades from where its pulse stopped, and the menu's cursor and items follow it.
+    pub fn quads_with(&self, t: f32, screen: (u32, u32), menu: Option<(&Menu, &Input)>) -> Vec<Quad> {
+        let frame = (t * 60.0).round() as i32;
+        let pressed = menu.and_then(|(m, i)| Some((m, i, m.pressed(i).filter(|&p| p <= frame)?)));
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let place = |i: &Image, shift: [f32; 2], alpha: f32| -> Quad {
@@ -299,11 +308,18 @@ impl Title {
             Quad { turn: false, spin: None, rect: [l, top, l + w_px, top + h_px], uv: [x / aw, y / ah, (x + w) / aw, (y + h) / ah], color: [1.0, 1.0, 1.0, alpha], texture: UI }
         };
         let mut out = vec![place(&self.logo, [0.0; 2], 1.0)];
-        let alpha = self.prompt_alpha(t);
+        let alpha = match pressed {
+            // the pulse stops with the frame before the button's
+            Some((m, _, p)) => m.prompt_fade(frame, p).map_or(0.0, |f| f * self.prompt_alpha((p - 1) as f32 / 60.0)),
+            None => self.prompt_alpha(t),
+        };
         // the game's opacity is a byte: under one step of it nothing is drawn
         if alpha * 255.0 >= 1.0 {
             let slide = self.slide_pos.at(t - self.prompt_delay - SLIDE_LATE)[1];
             out.push(place(&self.prompt, [0.0, slide], alpha));
+        }
+        if let Some((m, i, p)) = pressed {
+            out.extend(m.quads(frame, p, i, screen));
         }
         out.extend(self.version_quads(k, left));
         out.push(place(&self.copyright, [0.0; 2], 1.0));

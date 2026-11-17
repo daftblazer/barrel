@@ -1264,6 +1264,48 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
 draws, from 13 with the wrong field. Left: the 348 grass cards (Barrel draws grass as its own
 instanced pass, not in the trace), 32 terrain patches (different splits), the weapons (4).
 
+### The title's menu
+
+A button at the prompt brings up the menu (`crates/ryza/src/title_menu.rs`; the title's code is
+`0x1400d6400`-`0x1400dc900`, its sequencer's states are set through `0x1400db160`). Frames below
+count from the button's frame P.
+
+- **The button** (`0x1400d7640`) counts only once the prompt's slide-in has ended. The prompt's
+  pulse stops at its value of the frame before, and its `in` animation (the common fade-in,
+  bound at half speed: 30 frames) plays backwards from two steps in: opacity
+  `1 - (k + 2) / 30` of that value on frame P + k. A wait of 0.25 s follows (`0x1400d80d0`: a
+  32-bit sum of frame times, the first step on P itself, going on once past 0.25), so the prompt
+  is last drawn on P + 14 and the menu's first frame is M = P + 15.
+- **The items** (`0x1400dc440`) are the six nodes `menu/new_game`, `load_game`, `setting`,
+  `extra`, `episode`, `end_game`. New Game, Settings and End always show; Load Game with a save;
+  Extra once unlocked; Episodes when any of the five is owned. With n showing, the k-th sits at
+  `(6 s + b) / 2 - n s / 2 + k s` within the menu node, b being New Game's layout y and s the
+  distance to Load Game's (four items: 648.75, 714.75, 780.75, 846.75 on 1080 lines; five:
+  from 615.75). Each is drawn at its picture's own size (Load Game's `size_wh` is not used) and
+  `offset_uvwh` moves the picture in the atlas by three atlas pixels per unit. The cursor starts
+  on Load Game with a save, else on New Game.
+- **The entrance** (`0x1400d8220`): every item plays `up2`, the common slide-in from below at
+  speed 1.5, item k starting 0.08 s of animation time after the one above: on frame M - 1 + e
+  item k is `1.5 e / 60 - 0.08 k` seconds in. When the last has ended (`0x1400d6db0`; e = 30 for
+  four items, 33 for five) the next frame shows the cursor, the selected item's second picture
+  and its pulse (the prompt's pulse shape, counted from 2 on that frame).
+- **The cursor** is three pictures of `a21_balloon_frame.g1t` (two props and a core) drawn
+  before the items. Its `in` plays the common slide-in from the left (30 frames) and a full turn
+  about the upright axis at speed 3 (20 frames, 18 degrees a frame) about the cursor node's own
+  origin, seen in perspective from the layout's centre. The two props then turn against each
+  other 1.5 degrees a frame (`anm_rotate`, 240 frames); at the loop's end the frame shows what
+  is past the end and the next starts from 0, so the first step is shown twice running.
+- **Moving**: up or down selects the neighbour on the press's frame (its pulse starts over, the
+  old item is plain at once) and the cursor's line travels there in six frames, whatever the
+  distance. A press at either end goes round to the other. A held direction repeats after 37
+  frames and then every 15, and a repeat stops at the ends.
+
+Barrel takes the same from a window (Enter, the arrows, the pad's buttons standing for them) or
+from `--title-press F`, `--title-keys F:down:N,...` and `--title-saves` (title frames). The
+captures are ryza-recomp's `title-menu`, `title-menu-wrap` and `title-menu-saves` scenarios;
+with a save the boot is 332 frames shorter (the title starts at frame 543, not 875), and the
+prompt's pulse keeps its place relative to the title's start.
+
 ### The title's sound
 
 `barrel_ryza::sound` holds the title's cues as data (`title_cues`): the music from title frame

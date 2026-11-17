@@ -52,7 +52,7 @@ Escha screens. A page's own animations (the picker's row frame, the Equip. pages
 diff on both sides, for what a check does not cover yet (`Data/x64/Effect/`: particles).
 
 `barrel-parity quads <capture dir> <frame> [index.tsv]` lists a captured frame's 2D rectangles
-and text as the diff sees them. `barrel-parity screen <capture dir> <frame> [index.tsv]` lists a captured frame's draws.
+and text as the diff sees them. `barrel-parity screen <capture dir> <frame> [index.tsv]` lists a captured frame's draws. `barrel-parity quads <capture dir> <frame or a-b/step> [index.tsv]` prints each frame's 2D quads unrounded with their corners, a range in one pass (for measuring an animation frame by frame).
 `barrel-parity shader <capture dir> <name>` disassembles a captured shader.
 
 The game's 2D pixel shaders scale alpha by `fAlphaRate` (folded into the compared colour) and

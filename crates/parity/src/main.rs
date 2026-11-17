@@ -853,6 +853,26 @@ fn main() -> Result<()> {
             let bad = align(Path::new(&a[1]), &a[2], Path::new(&a[3]), &a[4], a.get(5).map(String::as_str))?;
             std::process::exit(if bad == 0 { 0 } else { 1 })
         }
+        // a range of frames (a-b/step) in one pass, each under a `== frame` line, places unrounded
+        Some("quads") if a.len() >= 3 && a[2].contains('-') => {
+            let (names, glyphs) = index(a.get(3).map(String::as_str))?;
+            let t = Trace { dir: a[1].clone().into() };
+            let (from, to, step) = parse_range(&a[2])?;
+            let wanted: Vec<u64> = (from..=to).step_by(step as usize).collect();
+            let mut events = t.frames(&wanted)?;
+            for f in wanted {
+                let Some(e) = events.remove(&f) else { continue };
+                println!("== {f}");
+                for q in text_runs(game_quads_of(&t, e)?.0, glyphs.as_ref()) {
+                    let turned = q.corners.map(|c| format!(" corners {c:?}")).unwrap_or_default();
+                    match &q.text {
+                        Some(text) => println!("text {text:?} {:?} color {:?}", q.rect, q.color),
+                        None => println!("{} {:?} uv {:?} color {:?}{turned}", names.get(&q.tex).unwrap_or(&q.tex), q.rect, q.uv, q.color),
+                    }
+                }
+            }
+            Ok(())
+        }
         Some("quads") if a.len() >= 3 => {
             let (names, glyphs) = index(a.get(3).map(String::as_str))?;
             let (qs, other) = game_quads(&Trace { dir: a[1].clone().into() }, a[2].parse()?)?;
@@ -886,7 +906,7 @@ fn main() -> Result<()> {
         Some("diff3d") if a.len() >= 5 => draws3d::diff3d(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str)),
         Some("state") if a.len() >= 5 => draws3d::state(Path::new(&a[1]), parse_range(&a[2])?, Some(a[3].as_str()), &a[4]),
         Some("screen") if a.len() >= 3 => screen(Path::new(&a[1]), a[2].parse()?, a.get(3).map(String::as_str)),
-        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv] | draws <trace> <frame> [index.tsv] [--vars A,B] [--pass N] [--summary] | diff3d <trace> <frame> <barrel trace> <frame> [index.tsv] | state <trace> <a-b/step> <index.tsv> <model folder>".into()),
+        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | quads <trace> <frame or a-b/step> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv] | draws <trace> <frame> [index.tsv] [--vars A,B] [--pass N] [--summary] | diff3d <trace> <frame> <barrel trace> <frame> [index.tsv] | state <trace> <a-b/step> <index.tsv> <model folder>".into()),
     }
 }
 

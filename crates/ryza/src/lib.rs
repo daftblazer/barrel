@@ -19,6 +19,7 @@ pub mod event;
 pub mod telop;
 pub mod font;
 pub mod title;
+pub mod title_menu;
 pub mod boot;
 pub mod sound;
 

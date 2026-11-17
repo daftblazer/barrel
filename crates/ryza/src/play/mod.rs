@@ -93,6 +93,10 @@ struct Args {
     /// `--title-at S` (or `BARREL_TITLE_AT`): the seconds into the title the first frame shows.
     title: bool,
     title_at: f32,
+    /// What the player does on the title when no one is at the keys: `--title-press F` the
+    /// title frame of the button at the prompt, `--title-keys F:down:N,F:up:N,...` a direction
+    /// going down on frame F for N frames, `--title-saves` as if a save existed.
+    title_input: barrel_ryza::title_menu::Input,
     /// `--boot`: the boot screens (system-data notice, the two logos, the autosave window) before
     /// the title, and `--boot-at S` (or `BARREL_BOOT_AT`): the seconds into the boot the first
     /// frame shows (the title follows `barrel_ryza::boot::TITLE_START` seconds in).
@@ -119,7 +123,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -150,6 +154,15 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--frames" => a.frames = Some(value()?.parse()?),
             "--title" => a.title = true,
             "--title-at" => a.title_at = value()?.parse()?,
+            "--title-press" => a.title_input.press = Some(value()?.parse()?),
+            "--title-saves" => a.title_input.saves = true,
+            "--title-keys" => {
+                for key in value()?.split(',') {
+                    let [from, way, held] = key.split(':').collect::<Vec<_>>()[..] else { return Err("--title-keys F:down:N,...".into()) };
+                    let (from, way) = (from.parse::<i32>()?, if way == "up" { -1 } else { 1 });
+                    a.title_input.holds.push(barrel_ryza::title_menu::Hold { from, until: Some(from + held.parse::<i32>()?), way });
+                }
+            }
             "--boot" => (a.boot, a.title) = (true, true),
             "--boot-at" => a.boot_at = value()?.parse()?,
             "--telop" => a.telop = Some(value()?.parse()?),
@@ -225,17 +238,37 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 }
 
 /// The title screen's layer (empty until each frame's quads are set) with its layout.
-fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, boot: bool) -> Result<(text::Layer, barrel_ryza::title::Title, Option<barrel_ryza::boot::Boot>)> {
+fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, boot: bool) -> Result<(text::Layer, barrel_ryza::title::Title, barrel_ryza::title_menu::Menu, Option<barrel_ryza::boot::Boot>)> {
     let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
     let glyphs = barrel_ryza::font::glyphs(&exe).ok_or("the executable's font table")?;
     let (font_bytes, ui_bytes) = (install.read("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t")?, install.read("\\data\\x64\\res_en\\ui\\a21_title.g1t")?);
     let font = barrel_formats::g1t::G1t::parse(&font_bytes).map_err(|e| format!("mainfont01: {e}"))?;
     let ui = barrel_formats::g1t::G1t::parse(&ui_bytes).map_err(|e| format!("a21_title: {e}"))?;
     let (font, ui) = (font.textures.first().ok_or("mainfont01: no texture")?, ui.textures.first().ok_or("a21_title: no texture")?);
+    let (layout, styles, anims) = (install.read("\\saves\\ui_en\\a21_title\\uil_a21_title.xml")?, install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_title.xml")?, install.read("\\saves\\ui_en\\uia_common.xml")?);
+    // The menu's cursor has its own atlas, the layer's last texture.
+    let cursor_bytes = install.read("\\data\\x64\\res_en\\ui\\a21_balloon_frame.g1t")?;
+    let cursor = barrel_formats::g1t::G1t::parse(&cursor_bytes).map_err(|e| format!("a21_balloon_frame: {e}"))?;
+    let cursor = cursor.textures.first().ok_or("a21_balloon_frame: no texture")?;
+    let menu = |texture: usize| {
+        barrel_ryza::title_menu::Menu::read(
+            &layout,
+            &styles,
+            &anims,
+            barrel_ryza::title_menu::Cursor {
+                styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_balloon_frame.xml")?,
+                anims: &install.read("\\saves\\ui_cmn\\a21_balloon_frame\\uia_a21_balloon_frame.xml")?,
+                atlas: (cursor.width * 2, cursor.height * 2),
+                texture,
+            },
+            (ui.width * 2, ui.height * 2),
+        )
+        .map_err(Box::<dyn std::error::Error>::from)
+    };
     let title = barrel_ryza::title::Title::read(
-        &install.read("\\saves\\ui_en\\a21_title\\uil_a21_title.xml")?,
-        &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_title.xml")?,
-        &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        &layout,
+        &styles,
+        &anims,
         glyphs,
         // The styles' pixels are the 2160-line atlas's; the 1080-line one drawn is half its size.
         (ui.width * 2, ui.height * 2),
@@ -248,7 +281,7 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
         let logo_bytes = install.read("\\data\\x64\\res_en\\ipu\\logo_gust.g1t")?;
         let logo = barrel_formats::g1t::G1t::parse(&logo_bytes).map_err(|e| format!("logo_gust: {e}"))?;
         let logo = logo.textures.first().ok_or("logo_gust: no texture")?;
-        return Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui, logo])?, title, None));
+        return Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui, logo, cursor])?, title, menu(3)?, None));
     }
     // (file, texture number) of each boot texture, in the order of `boot::TEXTURES` after the title's two.
     let wanted = [
@@ -275,8 +308,8 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
         glyphs: barrel_ryza::font::glyphs(&exe).ok_or("the executable's font table")?,
         sizes: [size(&tex[0]), size(&tex[1]), size(&tex[4]), size(&tex[5]), (font.width, font.height)],
     })?;
-    let all = [font, ui, tex[0], tex[1], tex[2], tex[3], tex[4], tex[5]];
-    Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &all)?, title, Some(boot)))
+    let all = [font, ui, tex[0], tex[1], tex[2], tex[3], tex[4], tex[5], cursor];
+    Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &all)?, title, menu(barrel_ryza::boot::TEXTURES)?, Some(boot)))
 }
 
 /// The way a directional light travels, in render space: from `elevation` degrees above the
@@ -1009,6 +1042,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let mut last = std::time::Instant::now();
     let started = last;
     let (mut stale, mut frame_no) = (false, 0u32);
+    // The keys pressed this frame, for the title's menu, and what the player has done there.
+    let mut title_keys: Vec<winit::keyboard::KeyCode> = Vec::new();
+    let mut title_input = a.title_input.clone();
     // The title's music and voice (on the device in a window; offscreen only the cue log).
     let mut title_sound = a.title.then(|| barrel_ryza::sound::TitleSound::new(&install.root, pump.is_some()));
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
@@ -1017,7 +1053,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
-            if !p.pump() || p.take_pressed().contains(&K::Escape) || a.frames.is_some_and(|n| frame_no >= n) {
+            title_keys = p.take_pressed();
+            if !p.pump() || title_keys.contains(&K::Escape) || a.frames.is_some_and(|n| frame_no >= n) {
                 break;
             }
             let now = std::time::Instant::now();
@@ -1166,20 +1203,40 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         // The title's quads for this frame's moment: the first frame at `--title-at`, then on the
         // clock (a window's own, 60 Hz offscreen).
-        if let Some((layer, title, boot)) = title_layer.as_mut() {
+        if let Some((layer, title, menu, boot)) = title_layer.as_mut() {
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+            let title_seconds = match boot {
+                Some(_) => a.boot_at + clock - barrel_ryza::boot::TITLE_START + a.title_at,
+                None => a.title_at + clock,
+            };
+            // The player's keys in a window (the pad's buttons stand for them): Enter at the
+            // prompt, the arrows on the menu. A direction is held while its key is down.
+            if let Some(p) = pump.as_ref() {
+                use winit::keyboard::KeyCode as K;
+                let frame = (title_seconds * 60.0).round() as i32;
+                if title_keys.contains(&K::Enter) && menu.pressed(&title_input).is_none() {
+                    title_input.press = Some(frame);
+                }
+                for (key, way) in [(K::ArrowDown, 1), (K::ArrowUp, -1)] {
+                    let held = p.held(key);
+                    for h in title_input.holds.iter_mut().filter(|h| h.way == way && h.until.is_none() && !held) {
+                        h.until = Some(frame);
+                    }
+                    if title_keys.contains(&key) {
+                        // (a pad's direction is not held as a key is: it counts as a tap)
+                        title_input.holds.push(barrel_ryza::title_menu::Hold { from: frame, until: (!held).then_some(frame + 1), way });
+                    }
+                }
+            }
+            let with_menu = Some((&*menu, &title_input));
             let quads = match boot {
                 // The boot sequence, then the title from its own start.
                 Some(boot) => {
                     let t = a.boot_at + clock;
                     scene_on.set(t >= barrel_ryza::boot::TITLE_START);
-                    if t < barrel_ryza::boot::TITLE_START { boot.quads(t, (width, height)) } else { title.quads(t - barrel_ryza::boot::TITLE_START + a.title_at, (width, height)) }
+                    if t < barrel_ryza::boot::TITLE_START { boot.quads(t, (width, height)) } else { title.quads_with(title_seconds, (width, height), with_menu) }
                 }
-                None => title.quads(a.title_at + clock, (width, height)),
-            };
-            let title_seconds = match boot {
-                Some(_) => a.boot_at + clock - barrel_ryza::boot::TITLE_START + a.title_at,
-                None => a.title_at + clock,
+                None => title.quads_with(title_seconds, (width, height), with_menu),
             };
             if let Some(sound) = title_sound.as_mut() {
                 sound.tick(title_seconds);
@@ -1194,7 +1251,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
             layer.set(&gpu, &quads)?;
         }
-        let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _)| l)).collect();
+        let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).collect();
         let frame = Frame {
             image,
             width,

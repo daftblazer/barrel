@@ -448,7 +448,7 @@ impl Boot {
             let [cx, cy] = px(c);
             let (hw, hh) = (l.size[0] * scale * k / 2.0, l.size[1] * scale * k / 2.0);
             let rect = [cx - hw, cy - hh, cx + hw, cy + hh];
-            let spin = (rot != 0.0).then(|| Spin { pivot: [cx, cy], angle: rot.to_radians() });
+            let spin = (rot != 0.0).then(|| Spin::About { pivot: [cx, cy], angle: rot.to_radians() });
             out.push(self.quad(0, SAVELOAD_LETTERS, l.uvwh, rect, color, spin));
         }
         // The pen hangs from the icon's bottom right corner, turned about its top left.
@@ -460,7 +460,7 @@ impl Boot {
         let rot = self.pen_rot.at(tau)[2];
         let [x, y] = px([self.icon_at[0] + w + dx, self.icon_at[1] + h + dy]);
         let [pw, ph] = [self.pen_style[2] / ATLAS_PER_LAYOUT * k, self.pen_style[3] / ATLAS_PER_LAYOUT * k];
-        out.push(self.quad(1, SAVELOAD_PICTURES, self.pen_style, [x, y, x + pw, y + ph], color, Some(Spin { pivot: [x, y], angle: rot.to_radians() })));
+        out.push(self.quad(1, SAVELOAD_PICTURES, self.pen_style, [x, y, x + pw, y + ph], color, Some(Spin::About { pivot: [x, y], angle: rot.to_radians() })));
         out
     }
 
@@ -569,7 +569,7 @@ impl Boot {
             let at = |i: usize| self.group_at[i] + self.group_pivot[i] + (o.center[i] - self.group_pivot[i]) * self.orb_scale;
             let (cx, cy) = (left + at(0) * k, (at(1) + slide) * k);
             let rect = [cx - pw / 2.0, cy - ph / 2.0, cx + pw / 2.0, cy + ph / 2.0];
-            let spin = (o.rot != 0.0).then(|| Spin { pivot: [cx, cy], angle: o.rot.to_radians() });
+            let spin = (o.rot != 0.0).then(|| Spin::About { pivot: [cx, cy], angle: o.rot.to_radians() });
             out.push(self.quad(3, SPINNER, self.orb_pictures[0], rect, [1.0, 1.0, 1.0, base as f32 / 255.0], spin));
             let glow = &self.glows[o.glow];
             let g = glow.at(loop_time(ticks, glow.duration(), self.orb_speed))[3].floor() as u32 * base / 255;
@@ -588,7 +588,7 @@ fn byte(alpha: f32) -> u32 {
 
 /// The game's frame time at 60 frames a second, as the 32-bit float it holds it in
 /// (16,666,667 ns over 1e9).
-const FRAME: f32 = 0.016_666_668;
+pub(crate) const FRAME: f32 = 0.016_666_668;
 
 /// The time inside a looping animation of `duration` seconds at `speed` after `ticks` frames,
 /// as the game counts it: each frame it adds `speed x frame time` to a 32-bit float and starts

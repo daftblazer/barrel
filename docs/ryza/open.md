@@ -11,7 +11,7 @@ achievements are the player's own, and the DX version has not been played there)
 
 Ranked by what it blocks. Each says what is known, what is ruled out, where to start, and when it
 is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run notes); Barrel's
-checks are `runchecks docs/ryza/checks.txt` (28 rows; frames are the exact capture's) and
+checks are `runchecks docs/ryza/checks.txt` (43 rows; frames are the exact capture's) and
 `docs/escha/checks.txt` (17).
 
 1. **The title backdrop's cast: what is left** (P1). Ryza, Lent and Tao and the three
@@ -23,6 +23,31 @@ checks are `runchecks docs/ryza/checks.txt` (28 rows; frames are the exact captu
    (`s88`) takes its first angle only, at once (the title's `s88 0 -7 0 0` is 7 degrees about
    the model's x axis in the head's bind frame; the opening's `s88 0 0 56 -4` and the timed
    `s90` are the way to the other two); `npc34a`'s two draws have no Barrel bones to compare.
+   The 380 game draws without a Barrel match at frame 1135, by cause: 348 are the short grass,
+   blades in batches of 228 or 348 indices a ground cell (vertex program `sh99e935`, the grass
+   atlases of the field), where Barrel draws only the plant cards (30 draws; "Grass" below); 32
+   are the terrain, triangle strips in 32 patches (the pass's first draws; 24 by `sh0cf28a`, 8
+   by `sh499eb4`), where Barrel draws it as 16 lists. The 122 Barrel draws without a game match:
+   those 16 and 30, 5 of the characters' (the cloth submeshes), and 71 of the field's models
+   the game does not draw there or draws with another index count (the title is drawn without
+   draw ranges, a stand-in; which of culling, ranges and detail levels it is, is not sorted).
+
+2. **The title's sparkles** (P1). The menu's own quads match the game's on every frame checked
+   (rows `menu-*`), but the game also draws particles Barrel does not: a burst at the button
+   (frames P + 1 to P + 31, up to 96 quads) and a trail for about a second after each move of
+   the cursor (20 to 105 quads). They come from the effect player (`Saves/ez_eff_player/title.xml`,
+   effect 1663 for the burst, started in `0x1400d7640`), drawn with unnamed textures between
+   the prompt and the cursor. Barrel reads no `.g1e` effect yet (docs/formats.md, "Effects"), and
+   the particles are scattered by the game's random numbers. Start: effect 1663's `.g1e` and the
+   effect player's update. Solved
+   when frames P + 10 and a move's frame + 3 diff to 0.
+3. **The title's menu: what is not read** (P1). Stand-ins in `title_menu.rs`: the cursor's
+   six-frame travel and the held direction's 37 / 15 frame repeat (the list control's own
+   values), the perspective's eye distance (fitted 1340 to 0.015 pixels; a 30 degree view over
+   720 lines gives 1343.5), the fade's two steps ahead, and Episodes always showing
+   (`0x1405a2350`, the ownership check). Not captured: confirming an item, whether a direction
+   counts before the cursor shows, and the sequencer's state 0xc (60 s without a button at the
+   prompt, `0x140de7824`).
 
 ## Event commands against the game's own log
 
@@ -257,7 +282,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   with a field-wide pigment map by `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the
   plants"); which texture is the pigment and
   the scale's values are set at run time, not read. Whether the dense
-  short grass is these cards or the terrain's own is not known.
+  short grass is these cards or the terrain's own is not known. (The title's capture has it: blades
+  drawn after the terrain by vertex program `sh99e935`, 228 or 348 indices a batch; entry 1
+  above.)
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
   evening 0.8) on the stored scene and its `fBloomWeight` (0.4, evening 0.6): a soft halo on
