@@ -58,11 +58,12 @@ const WINDOW_START: f32 = (795.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT: f32 = (1065.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT_SPEED: f32 = 0.3;
 const WINDOW_OUT: f32 = SPINNER_OUT + 0.2;
-/// How much faster the capture's glow animations run than 60 Hz with the loop rule of
-/// [`loop_time`]: one more frame ahead each ~105 frames (the game's own doing: its frame time in the
-/// capture is 1/60 s; the pen and the window, in the first half second of each, stay on the
-/// ideal clock; docs/ryza/open.md, "The 2D animations run about 1% ahead").
-/// Fitted to the glow alphas of capture frames 900 to 1105; the +0.1 is the fit's offset.
+/// How much faster the reference capture's glow animations run than the loop rule of
+/// [`loop_time`]: one more frame ahead each ~105 frames. The capture was made on a virtual clock
+/// whose frame time wandered by a microsecond, which tips the glow's loop between 50 and 51
+/// frames (docs/ryza/open.md, "Loops that take 50 or 51 frames"); it goes when the capture is
+/// made again on the exact clock. Fitted to the glow alphas of capture frames 900 to 1105; the
+/// +0.1 is the fit's offset.
 const GLOW_DRIFT: f32 = 1.0 / 105.0;
 /// The title's first frame (capture frame 1140, where `--title-at 0` sits): the screen is black
 /// from the window's end until then (the title's own fade from black is not drawn).
