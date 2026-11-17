@@ -33,6 +33,7 @@ const LAYOUT_HEIGHT: f32 = 720.0;
 /// A style's pixels per layout pixel (the 2160-line atlases).
 const ATLAS_PER_LAYOUT: f32 = 3.0;
 
+// STAND-IN: The boot's timeline (notice, logos, window, spinner, the title's start) is read off a capture's frame numbers; the real thing is the game's own timeline of these animations and its load times.
 // The schedule, in seconds from the notice's start, read from the capture (`title-cycle`,
 // every 5th frame from 35 to 1635, made on ryza-recomp's exact virtual clock: 60 frames a
 // second, the same frame for frame in every run). Each time is the one frame offset at which
@@ -52,6 +53,7 @@ const NOTICE_END: f32 = (133.0 - CAPTURE_START) / FPS;
 const KT_START: f32 = (172.0 - CAPTURE_START) / FPS;
 const GUST_START: f32 = (352.0 - CAPTURE_START) / FPS;
 const LOGO_FADE: f32 = 30.0 / FPS;
+// STAND-IN: How long a logo holds between its fades is read off the capture; the real thing is the game's own hold time.
 const LOGO_HOLD: f32 = 120.0 / FPS;
 /// The autosave window slides in at capture frame 532, as the Gust logo is gone (frames 535 and
 /// 635), and its getOut starts at 802 (frame 825): the spinner fades out then
@@ -61,6 +63,7 @@ const WINDOW_START: f32 = (532.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT: f32 = (802.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT_SPEED: f32 = 0.3;
 const WINDOW_OUT: f32 = SPINNER_OUT + 0.2;
+// STAND-IN: The title's start is a capture frame, and the title's own fade from black is not drawn; the real thing is the game's boot ending when its loading does, with that fade.
 /// The title's first frame (capture frame 875, where `--title-at 0` sits): the screen is black
 /// from the window's end until then (the title's own fade from black is not drawn).
 pub const TITLE_START: f32 = (875.0 - CAPTURE_START) / FPS;
@@ -268,14 +271,17 @@ pub struct Sources<'a> {
 const STR_UI_BASE: u32 = 6_619_137;
 /// The autosave sentence's `STR_UI` number (the window's text node names it).
 const SENTENCE: u32 = 896;
+// STAND-IN: The text line's offset (TEXT_TOP) is fitted to the capture; the real thing is the game's own text layout rule.
 /// The text line's top against its node, in layout pixels. Fitted to the capture (the first
 /// glyph row 6 pixels above where the node's `pos.y` puts it at 1080 lines): the title's version
 /// string needed the same 4 pixels (`title::TEXT_TOP`), the game's own rule is not read.
 const TEXT_TOP: f32 = -4.0;
+// STAND-IN: The line step (LINE_STEP) is fitted to the capture; the real thing is the font's line height plus the file's line_space.
 /// The distance between the window text's lines in layout pixels. Fitted to the capture (lines
 /// 33 pixels apart at 1080 lines); the file's `line_space` of 9 is added to a line height the
 /// layout does not give.
 const LINE_STEP: f32 = 22.0;
+// STAND-IN: The wrap width (WRAP_FACTOR) is fitted to the capture; the real thing is the game's own use of the node's line_char_length.
 /// How wide a line may run before the text wraps, in `font_size` units: the node's
 /// `line_char_length`. Fitted: the capture's first line is 640 pixels wide at 1080 lines.
 const WRAP_FACTOR: f32 = 1.0;

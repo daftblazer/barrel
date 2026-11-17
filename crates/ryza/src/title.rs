@@ -22,6 +22,7 @@ use crate::font::ATLAS_SIZE;
 /// terrain and textures do not match the capture.
 pub const FIELD: &str = "s19_l_highway_03";
 
+// STAND-IN: The title's camera is read off the capture's matrices; the real thing is the camera the game's title scene or event sets.
 /// The title's camera, read off the capture's `mW2P` (the same at every captured frame, 300 to
 /// 1900): the eye and forward vector (the depth row of the matrix) in the game's world (x not mirrored), a 45 degree vertical
 /// field of view, near 50 and far 300000 (the projection's depth terms; the far is fitted to
@@ -55,12 +56,15 @@ impl Camera {
 const LAYOUT_HEIGHT: f32 = 720.0;
 const ATLAS_PER_LAYOUT: f32 = 3.0;
 
+// STAND-IN: The text line's offset (TEXT_TOP) is fitted to the capture; the real thing is the game's own text layout rule.
 /// How far above the layout's `pos.y` the version string's line top sits, in layout pixels.
 /// Fitted to the capture (the first glyph row at 1034.5 on 1080 lines, 12 atlas pixels below the
 /// line top: 686 layout lines for a node at 690); the game's own rule is not read.
 const TEXT_TOP: f32 = -4.0;
+// STAND-IN: The outline's alpha is the capture's value; the real thing is the game's own outline material.
 /// The outline's alpha: the outline draws' `materialColor` in the capture is black at 0.5.
 const OUTLINE_ALPHA: f32 = 0.5;
+// STAND-IN: The patch level shown is the capture's; the real thing is the level in force, from the game's own patch state.
 /// The patch level the capture was taken at (`Ver. 1.02`): the executable's patch table
 /// (`Patch 1.01` ... `Patch 1.15`) lists the levels' strings, the level in force is not read.
 pub const PATCH_VERSION: &str = "1.02";
@@ -205,6 +209,7 @@ pub struct Title {
     atlas: [(f32, f32); 2],
 }
 
+// STAND-IN: The pulse's start (PULSE_FROM) is a capture frame, of which only the place in the 91-frame loop is known; the real thing is the frame the game starts that animation on.
 /// The frame after the notice's start from which the prompt's pulse loop counts (only its
 /// place within the 91-frame loop is known: 864 is the first frame of the title in the capture
 /// whose boot started at frame 11).

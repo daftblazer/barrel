@@ -13,6 +13,7 @@ pub fn path(name: &str) -> Option<String> {
     Some(format!("\\event\\event_jp\\{chapter}\\event_{name}.ebd"))
 }
 
+// STAND-IN: Events are read without their messages; the real thing is the game's message tables playing each line.
 /// The event's steps on its timeline (no messages read yet: its lines come up by number).
 pub fn schedule(event: &Ebd) -> Result<Vec<Timed<'_>>, String> {
     let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?;

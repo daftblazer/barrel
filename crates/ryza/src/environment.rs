@@ -367,6 +367,7 @@ mod tests {
     }
 }
 
+// STAND-IN: The rim table is taken as one entry per override value; the real thing is the table the game fills at run time.
 /// The characters' rim light from an environment override (`saves\fieldmap\override_env\
 /// env_<name>.xml`, one `<root>` of `group_name="value"` attributes; `env_default.xml` for a
 /// field with none): `ir_rimSharpness` (the power on `1 - N·V`), `ir_rimScaler` times

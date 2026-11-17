@@ -50,10 +50,12 @@ const NORMAL_MAPPED: u32 = 8192;
 const FADED: u32 = 16384;
 /// `model.frag`'s flag for a field model lit by its emission map (`PBB-EmN`).
 const EMISSIVE: u32 = 32768;
+// STAND-IN: The emission strengths by time of day are chosen by the stills; the real thing is the game's run-time emScl.
 /// The emission maps' strength by time of day (morning, noon, evening, night), in the light's
 /// units: a stand-in, the game's `emScl` is set at run time (not read): its windows and lamps
 /// unlit by day, lit at evening and night.
 const EMISSION_BY_TIME: [f32; 4] = [0.0, 0.0, 2.0, 3.0];
+// STAND-IN: The wind is held at the middle of its measured range; the real thing is the game's wind curve over time.
 /// The plants' wind (model.vert, flag 16384: `g_vAttCache0` = (a, a, a/2, -a/2)): measured at
 /// the garden gate wandering between about 8.7 and 10.5 in gusts (docs/shading.md); its curve
 /// over time is not read, so it holds the middle of that range.
@@ -194,6 +196,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             _ => return Err(format!("unknown option {flag}").into()),
         }
     }
+    // STAND-IN: The title draws with no draw ranges; the real thing is the game's own rule for them.
     // The title draws its own scene whatever field was named: the title's field, with no draw
     // ranges (the capture's backdrop is whole to the horizon; the game's rule for it is not read).
     if a.title {
@@ -208,6 +211,7 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     use barrel_ryza::telop;
     let node = match telop::Node::of(n) {
         Some(telop::Node::Caption(k)) => format!("telop{k:02}"),
+        // STAND-IN: Name-card telops are not drawn; the real thing is drawing them.
         Some(telop::Node::Name(_)) => return Err(format!("--telop {n}: a name card (not drawn yet)").into()),
         None => return Err(format!("--telop {n}: no such telop").into()),
     };
@@ -287,11 +291,13 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
     -toward * Vec3::new(-1.0, 1.0, 1.0)
 }
 
+// STAND-IN: The exposure is held at the range's top; the real thing is the game's adaptation between the range's ends.
 /// The frame's exposure where the default override gives no range: its `trueHDR_vExposureRange`
 /// top. The game adapts between the range's ends (not read); the gate's noon still sits at the
 /// top (sunlit sand and stone match it within a few levels at 1.2).
 const EXPOSURE: f32 = 1.2;
 
+// STAND-IN: The sky and dome scales are fitted to one still; the real thing is the game's own scales.
 /// The sky plane's in-scattered light scaled, and the sky dome's light scaled, both fitted to
 /// the gate's noon still under the game's tone curve (stand-ins: the game's own scales are not
 /// read; five sky regions' RGB error 170, from 359 at 2.5 and 1).
@@ -302,6 +308,7 @@ const DOME_SCALE: f32 = 2.5;
 /// scene is.
 const GLOW_RANGE: f32 = 2.0;
 
+// STAND-IN: The kind-to-card table is chosen by the stills; the real thing is the game's own choice in its code.
 /// The plant card each kind draws from `_grass.g1t`'s atlas (4 × 2 cards: 0 to 3 the top row,
 /// weeds, a leafy stem, a flower, a bush; 4 to 7 the bottom, wheat, a grass tuft, cornflowers,
 /// lupins). The game picks them in its code (not read): a stand-in by the stills, kind 7 (the
@@ -458,6 +465,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
     let mut scene = Scene::new();
     scene.field = Some(0);
+    // STAND-IN: Every placed model casts the sun's shadow and nothing sways; the real thing is the game's own caster choice and sway.
     // Ryza's placements carry no tags (Escha marks its casters `xDS_`): every placed model
     // casts the sun's shadow; nothing sways yet (`docs/ryza/open.md`).
     // Each keeps its placement's draw class (near, middle, far, landmark), for the field's draw
@@ -506,6 +514,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let cast_models = cast_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
     let mut cast = cast_files.iter().zip(&cast_models).map(|(f, m)| f.open(m)).collect::<std::result::Result<Vec<_>, _>>()?;
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
+    // STAND-IN: Ryza is lit as the field's models are; the real thing is her own shaders and lighting.
     // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the
     // field's. Lit as the field's models are until her own shaders are read
     // (`docs/ryza/open.md`).
@@ -652,6 +661,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
         }
     }
+    // STAND-IN: The sky dome is centred under the view's target at height 0; the real thing is the game's SkyDomeWorldPosition and WorldScale.
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
     // drawn as the distant view (unlit, after the sky plane, alpha-blended). Where the game
     // puts it (`SkyDomeWorldPosition`, `WorldScale`) is not read: centred under the view's
@@ -721,6 +731,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
     }
     for d in draws.iter_mut() {
+        // STAND-IN: Ryza's models are lit at full ambient; the real thing is the game's own lighting from the environment.
         // Ryza's models' lighting material (G1MG section 0x10001) holds ambient 0: their
         // shaders light from the environment, not `cAmb`. Full until those shaders are read
         // (`docs/ryza/open.md`).
@@ -879,6 +890,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         "off" => None,
         which => {
             let bytes = install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))?;
+            // STAND-IN: Object draw ranges are capped by the general preset's; the real thing is how the game combines the two.
             // Capped by the general preset's object ranges (a guess at how the game combines
             // the two: the field's own are at or under the High preset's, docs/ryza/open.md).
             Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?.limit(presets.objects))
@@ -1159,6 +1171,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored) and `fBloomWeight` as the rate.
             glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _)| (l.lumi_threshold, l.bloom_weight * GLOW_RANGE)),
+            // STAND-IN: The saturation is left off; the real thing is the game's own saturation scales.
             // No saturation: neither the set's `vSaturationScale` nor `SaturationScaleEx` (1.6
             // at noon) brings the gate's noon closer to the still (docs/ryza/open.md).
             saturation: [0.0; 3],
@@ -1237,6 +1250,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     Ok(())
 }
 
+// STAND-IN: The camera's look height is 0.8 of her CamH, measured from one frame; the real thing is the game's own rule.
 /// How high above her feet the camera behind Ryza looks: measured from the game's eye (32526.8,
 /// 6363.3, 29944.7) with her at (32518.2, 6179.6, 30331.5) and the field camera's 8° and 400;
 /// about 0.8 of her `CamH` (160). The rule itself is not read (`docs/ryza/open.md`).
@@ -1343,6 +1357,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         }
         // The sky plane (docs/shading.md, "Ryza DX: the sky"): Scat as measured in the game,
         // from `skyFog_` and the sun's colour times its power (scaled by the frame's exposure).
+        // STAND-IN: The sky plane's path length is chosen and it has no glow; the real thing is the game's own scattering terms.
         // Stand-ins, not read: the path length's terms (an atmosphere `end` thick over a ground
         // ten times as wide, so the zenith is one fog span and the horizon about 4.6) and no
         // glow (`docs/ryza/open.md`).
@@ -1368,6 +1383,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             look[s0 + 7] = [sun_way.x, sun_way.y, sun_way.z, 0.0];
             sky_plane = true;
         }
+        // STAND-IN: The sun's shadow is one square over the camera's target; the real thing is the game's cascades.
         // The sun's shadow map: one square over the camera's target, wide enough for the
         // view (the game's cascades, `shadowMap_`, are not read), unless --no-shadows.
         if let Some(size) = shadow_size {

@@ -83,6 +83,7 @@ impl FreeCamera {
     }
 }
 
+// STAND-IN: The camera's ground and wall pull-in is a simple line march; the real thing is the game's own camera collision.
 /// How far the camera may stand from `target` along `way` (game space, a unit vector from the
 /// target toward the eye), up to `dist`: the line is followed in steps, and the first point
 /// with ground (`ground`: terrain and floors) from 30 below it to 400 above it stops it a step

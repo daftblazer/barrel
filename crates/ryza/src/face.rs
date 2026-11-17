@@ -44,6 +44,7 @@ impl Face {
     }
 }
 
+// STAND-IN: The blink's period and timings are chosen, not read; the real thing is the game's own blink rule.
 /// How shut her eyes are `t` seconds in: a blink every 4 seconds, closing over 0.06 s, shut
 /// for 0.04 s and opening over 0.08 s.
 pub fn blink(t: f32) -> f32 {

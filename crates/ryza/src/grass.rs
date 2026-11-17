@@ -89,6 +89,7 @@ fn unit(mut v: u32) -> f32 {
 }
 
 impl Grass {
+    // STAND-IN: The plants' spread from a kind's floats is a guess at their meaning; the real thing is the game's own grass placement.
     /// The plants of every cell, at most `limit`, standing on `ground` (cells it has no height
     /// for are left out). A stand-in for the game's own spread, which is not read: a kind's
     /// last float taken as plants per 100 × 100 units, its first two as the height and its

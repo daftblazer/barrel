@@ -127,3 +127,25 @@ Conventions found in the capture (checked on the title's characters, `sha0de8a` 
   `DIFF3D_POSES=1` lists each draw.
 - Not covered yet: shadow passes (game and Barrel both list them; `diff3d` compares colour
   passes only), instanced draws (Barrel writes `inst` 1), view and projection separately.
+
+## Stand-ins
+
+A stand-in is anything the code uses that is not the game's own rule or data: a value fitted
+from a capture, a placeholder, a simplification, something skipped. Each one carries a comment
+line with `STAND-IN:` and one sentence saying what is stood in and what the real thing would
+be, on the line above the item. `tools/standins.sh` lists every tag under `crates/` as
+`file:line: text`, sorted, with a last line `N stand-ins`; a stand-in that is replaced by the
+real thing loses its tag.
+
+## Unused file bytes
+
+`barrel-tool unread FILE [--gran N] [--budget SECONDS]` shows which byte ranges of one game
+data file Barrel's parser never uses, so ignored fields are visible. The parser is chosen by the
+file's magic or name (g1m, g1t, g1a, g1h, g1co, ktf, khm, swg, pssg, kwb, elixir, xml, xml.e,
+ebd, oid, opl2). A range is used when inverting its bytes changes the parse result (its `Debug`
+text, an error, or a panic); the tool bisects the file down to `--gran` bytes (default 4) until
+`--budget` seconds (default 60) run out, and the blocks it did not get to split are reported as
+"used (not refined)". Output is one `offset..end (len) bytes` line per unused range, then
+`FILE: N bytes, U unused in R ranges (P%), parser X`. A parser that allocates what a mutated
+length field asks for can exhaust memory; run it under the memory cap. The elixir container's
+entries are listed, not parsed, so their bytes are reported unused.

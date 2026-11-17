@@ -23,6 +23,7 @@ use barrel_render::text::Glyph;
 pub const MAIN_FONT_01_HD1080: u64 = 0x1_4130_9320;
 /// How many glyphs the table holds (the run of records that rise in code and end in a 0 word).
 pub const MAIN_FONT_01_HD1080_COUNT: usize = 1774;
+// STAND-IN: The atlas size (ATLAS_SIZE) is fitted to one captured glyph; the real thing is the font's own size from the game's text code.
 /// The font's size in the atlas: a glyph set at layout size `s` on a screen k times the 720-line
 /// layout is drawn at `s * k / ATLAS_SIZE` of its atlas pixels. Fitted to the capture: the
 /// title's size-11 version string at 1080 lines draws its 29-pixel `V` 13.29 pixels wide

@@ -12,19 +12,24 @@ use glam::Vec3;
 
 use crate::motion;
 
+// STAND-IN: The walking and running speeds are chosen, not read from the game.
 /// Walking and running speeds, units (centimetres) a second.
 pub const WALK_SPEED: f32 = 150.0;
 pub const RUN_SPEED: f32 = 480.0;
+// STAND-IN: The lean that starts a run is chosen, not read from the game.
 /// The lean at and above which she runs.
 pub const RUN_LEAN: f32 = 0.6;
+// STAND-IN: The turn rate is chosen, not read from the game.
 /// How fast she turns toward where she goes, radians a second.
 pub const TURN_RATE: f32 = 12.0;
+// STAND-IN: The fallback collision size and step height are chosen; the real thing is the character tables' values and the game's own step rule.
 /// Her size against the walls when the character tables give none (`chara::Chara`), and the
 /// highest step she climbs.
 pub const RADIUS: f32 = 30.0;
 pub const HEIGHT: f32 = 170.0;
 pub const STEP_UP: f32 = 60.0;
 
+// STAND-IN: The mixing time between motions is chosen; the real thing is the game's own blend times.
 /// How long the last motion takes to mix out, seconds.
 pub const BLEND: f32 = 0.2;
 

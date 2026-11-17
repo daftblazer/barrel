@@ -75,6 +75,7 @@ pub fn placed_meshes(placements: &opl2::Placements, objects: &Elixir) -> (Vec<Co
 }
 
 /// A field's own collision shapes, `<FIELD>_coll.bin` in its main container: a u32 count of
+// STAND-IN: The field collision's box and cylinder sizes are read as half-sizes and an upward height without being checked against the game; the real thing is the game's own interpretation.
 /// boxes, each a position, a rotation (radians, turned as placements are), three sizes and two
 /// words (2 and 15 in all of Rasenboden's: not read), 44 bytes; then a u32 count of cylinders,
 /// each a position, a rotation, a radius and a height and the same two words, 40 bytes. Taken

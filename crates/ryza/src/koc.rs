@@ -4,6 +4,7 @@
 //! quad is (a, top), (a, bottom), (b, bottom), (b, top). A few are not upright (Rasenboden:
 //! two slopes and one flat), not used yet (`docs/ryza/open.md`). Docs: docs/formats.md.
 
+// STAND-IN: The field's sloped and flat quads are not used, only the upright ones; the real thing is all of them blocking or shaping the player's walk.
 use barrel_engine::walk::Wall;
 
 pub type Quad = [[f32; 3]; 4];

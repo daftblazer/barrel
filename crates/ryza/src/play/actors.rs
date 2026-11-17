@@ -19,6 +19,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The title's event: its characters, their turns and motions (docs/renderer.md, "The backdrop").
 pub const TITLE_EVENT: &str = "tt01_010";
 
+// STAND-IN: The event's start (EVENT_START) is fitted to a capture's frames; the real thing is the game's own start of the event on its clock.
 /// Seconds of the title that pass before the event's clock starts. Fitted to the `title-cycle`
 /// capture's frames 1400, 1500 and 1700 (title time 4.33, 6.0 and 9.3 s; the clock starts 1140
 /// frames in): the game reads the event at frame 1152 and shows the scene at 1155.
@@ -47,6 +48,7 @@ pub struct Actor<'a> {
     pub pack: G1t<'a>,
     anims: &'a BTreeMap<u32, Animation>,
     bases: &'a BTreeMap<u32, f32>,
+    // STAND-IN: The hair and skirt joints stay where their parents carry them; the real thing is the game's cloth and swing simulation.
     /// The joints no motion or expression moves off their bind pose (the hair and skirt, which
     /// the game's cloth and swing simulation moves): the draw trace marks them, as Barrel
     /// leaves them where their parents carry them.
@@ -58,6 +60,7 @@ pub struct Actor<'a> {
 }
 
 impl Files {
+    // STAND-IN: Only the playable characters are drawn: the event's other characters and every weapon are not; the real thing is drawing them all.
     /// Reads the character of event slot `slot` (a row of `chara.xml`) with `motions`, or None
     /// when its tag is not a playable character's (`PC..`: the others are not drawn yet).
     pub fn read(install: &Install, slot: u32, motions: &BTreeSet<u32>) -> Result<Option<Files>> {
@@ -108,6 +111,7 @@ impl Files {
 }
 
 impl Actor<'_> {
+    // STAND-IN: Ryza's head look-at is not applied, so her head follows only her motion; the real thing is the game's look-at turning it toward its target.
     /// Its joints' skinning matrices for `body` at stage time `now`.
     pub fn joints(&self, body: &Body, now: f32) -> Vec<Mat4> {
         let playing = body.motion.as_ref();
