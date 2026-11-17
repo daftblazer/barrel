@@ -3510,7 +3510,7 @@ fn ryza_field(root: &Path, only: Option<&str>) -> Result<()> {
             let (main, objects) = (Elixir::parse(&f.main)?, Elixir::parse(&f.objects)?);
             let mut scene = barrel_render::Scene::new();
             let place = |_: &barrel_formats::opl2::PlacedType, _: &barrel_formats::opl2::Instance| barrel_engine::field::Placement::default();
-            let (pack, _) = barrel_engine::field::load(&f.area, &main, &objects, &mut scene, 0, &place)?;
+            let pack = barrel_engine::field::load(&f.area, &main, &objects, &mut scene, 0, &place)?.textures;
             let textures = barrel_formats::g1t::G1t::parse(&pack)?.textures.len();
             if let Some(ktf) = barrel_engine::field::named(&main, &format!("{}.ktf", f.area))
                 && !barrel_formats::ktf::parse(ktf)?.layers.textures.is_empty()

@@ -765,7 +765,17 @@ impl Geometry<'_> {
         let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
         let Some(palette) = self.bone_maps.get(s.bone_map) else { return Ok(None) };
         let (Some(bones), Some(weights)) = (find(Semantic::BoneIndices), find(Semantic::Weights)) else {
-            return Ok(palette.first().map(|r| vec![([r.joint; 4], [1.0, 0.0, 0.0, 0.0]); hi - lo]));
+            let Some(first) = palette.first().map(|r| r.joint) else { return Ok(None) };
+            // Indices without weights: each vertex wholly on its first index's joint (a
+            // windmill's sails turn on one joint, its tower in the same submesh stands on
+            // another).
+            return Ok(Some(match find(Semantic::BoneIndices).filter(|_| self.palette_indexed(s)) {
+                Some(bones) => {
+                    let vb = &self.vertex_buffers[layout.buffers[bones.buffer as usize] as usize];
+                    (lo..hi).map(|v| ([palette.get(bone_indices(vb, bones, v)[0] as usize / 3).map_or(first, |r| r.joint); 4], [1.0, 0.0, 0.0, 0.0])).collect()
+                }
+                None => vec![([first; 4], [1.0, 0.0, 0.0, 0.0]); hi - lo],
+            }));
         };
         let buffer = |a: &Attribute| &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
         let (bvb, wvb) = (buffer(bones), buffer(weights));

@@ -818,6 +818,10 @@ parts the containers' `.swg` and `.rigbin` files drive. The reader treats a subm
 palette-skinned only when every index is a multiple of 3 and keeps the others rigid on
 their palette's first joint for now.
 
+A layout with bone indices and no weights (Ryza DX's field objects that move: a windmill, a
+moored boat) puts each vertex wholly on its first index's joint. One submesh can hold parts
+on different joints this way (the windmill's tower and the frames of its sails).
+
 ## Morph targets (`*.g1h`)
 
 A character's facial shapes, next to its model in the same container

@@ -805,6 +805,12 @@ rocks, 46 draws on the title, hidden and drawn ones at the same distances and of
 draw-distance classes): leaving them out of Barrel's frame changes 118 of its pixels, so the
 game tests what is hidden. Barrel draws them; how the game tests is not read.
 
+**Ryza DX: field objects that move.** A placed object whose container has a motion under
+its name (`<model>.g1a` beside `<model>_hi.g1m`: Rasenboden's windmill and boat) is skinned
+by its joints, the motion looped in real time (the windmill's 12 s a turn, as the capture's
+0.5° a frame); the game draws these with its skinned vertex shader, the rest baked. Escha's
+fields do not ask for it (`Placement::moves`).
+
 **Ryza DX: which plant cells are drawn.** A plant cell (`_grass.bin`, one draw a cell) has its
 own test, on the cell's box (its 500-unit square from its lowest foot to its highest top):
 drawn while the box's centre is nearer in view depth than the grass range's end by the box's

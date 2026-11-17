@@ -161,13 +161,17 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
   `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
-  45.4`, row `rasen-3d-2550`), 673 of the game's 913 draws have a Barrel match. The 240
+  45.4`, row `rasen-3d-2550`), 676 of the game's 913 draws have a Barrel match. The 240
   without: the townsfolk and Ryza (about 130 character draws: Barrel places no one in a
   field yet), the terrain's 42 strips (Barrel draws a patch at once), some 20 plant cells,
   10 of a shore foam effect, a few props (boards, a ship, a fruit) and 22 of the field's
-  models. Barrel draws 164 the game does not: nearly all are in view (so hidden behind the
-  town, or cut by a range or level of detail Barrel has different: not told apart yet;
-  `tools/pair3d.py` lists them). The game's projection is narrower than 16:9 by 1% (its
+  models. Barrel draws 164 the game does not: nearly all are in view and hidden behind the
+  town, as on the title (leaving 138 of them out changes 604 pixels of the picture, all at
+  one far spot): the game's occlusion test, which Barrel does not make (`tools/pair3d.py`
+  lists them). The windmills' sails turn and the boat rocks by the motions the object
+  container has under their names (`<model>.g1a`, looped: the game turns the sails 0.5° a
+  frame, all windmills together); where in the motion the game is when a field appears is
+  not read (Barrel starts it with the field). The game's projection is narrower than 16:9 by 1% (its
   x scale 1.3578 against 1.3447 for the same y scale): not read.
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
   first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").

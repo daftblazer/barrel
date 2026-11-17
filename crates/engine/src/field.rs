@@ -5,11 +5,13 @@
 //! the game's, given as `place`.
 
 use barrel_formats::elixir::Elixir;
-use barrel_formats::g1m::G1m;
+use barrel_formats::g1a::Animation;
+use barrel_formats::g1m::{G1m, Skeleton};
 use barrel_formats::g1t::G1t;
 use barrel_formats::opl2::{self, Instance, PlacedType};
 use barrel_formats::ktf;
 use barrel_render::{Scene, TerrainDraw};
+use std::rc::Rc;
 use glam::{EulerRot, Mat4, Quat, Vec3};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -28,6 +30,36 @@ pub struct Placement {
     /// Also its `_mid` and `_low` models where the container has them, each draw marked with
     /// its level (`Draw::lod`) for the game to pick by distance.
     pub lods: bool,
+    /// It plays the motion the object container has under its name (`<model>.g1a`), looped.
+    pub moves: bool,
+}
+
+/// A placed object that plays its motion (a windmill's sails, a moored boat).
+pub struct Moving {
+    pub instance: u32,
+    pub skeleton: Rc<Skeleton>,
+    pub motion: Rc<Animation>,
+}
+
+impl Moving {
+    /// Its joints `time` seconds into the field (the motion looped), to the scene's palette.
+    pub fn pose(&self, time: f32, instances: &[barrel_render::Instance], palette: &mut [Mat4]) {
+        let at = if self.motion.duration > 0.0 { time % self.motion.duration } else { 0.0 };
+        let base = instances[self.instance as usize].palette as usize;
+        for (slot, j) in palette[base..].iter_mut().zip(crate::skin::pose(&self.skeleton, &self.motion, at)) {
+            *slot = barrel_render::render_space(j);
+        }
+    }
+}
+
+/// What `load` gives back of a field.
+pub struct Loaded {
+    /// Its texture pack.
+    pub textures: Vec<u8>,
+    /// Its light texture (`<AREA>_pat.g1t`; indoor fields carry a 64-byte stub, taken as none).
+    pub pattern: Option<Vec<u8>>,
+    /// Its objects that play a motion.
+    pub moving: Vec<Moving>,
 }
 
 /// Where a placement puts its model: scale, then rotate about x, y and z in that order, then
@@ -50,9 +82,8 @@ pub fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
 }
 
 /// A field's ground and objects into the scene, as field `scene.field`, its textures taken to
-/// start at `base` in the scene's list. Returns its texture pack and its light texture
-/// (`<AREA>_pat.g1t`; indoor fields carry a 64-byte stub, taken as none).
-pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base: usize, place: &dyn Fn(&PlacedType, &Instance) -> Placement) -> Result<(Vec<u8>, Option<Vec<u8>>)> {
+/// start at `base` in the scene's list.
+pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base: usize, place: &dyn Fn(&PlacedType, &Instance) -> Placement) -> Result<Loaded> {
     let first_draw = scene.draws.len();
     let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
     let pattern = named(&main, &format!("{area}_pat.g1t")).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty())).map(<[u8]>::to_vec);
@@ -99,6 +130,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
     }
     let placements = opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
     let (mut placed, mut missing) = (0usize, 0usize);
+    let mut moving = Vec::new();
     for t in &placements.objects {
         let Some(bytes) = named(&objects, &format!("{}_hi.g1m", t.name)) else {
             missing += t.instances.len();
@@ -107,6 +139,8 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         let model = G1m::parse(bytes)?;
         let Some(geometry) = model.geometry.as_ref() else { continue };
         // Its lower levels of detail, for a game that draws them (`Placement::lods`).
+        // Its motion, when the container has one for it and the model has joints to move.
+        let motion = named(&objects, &format!("{}.g1a", t.name)).and_then(|b| barrel_formats::g1a::parse(b).ok()).zip(model.skeleton.clone()).map(|(a, s)| (Rc::new(s), Rc::new(a)));
         let lower: Vec<G1m> = ["_mid", "_low"].iter().filter_map(|l| named(&objects, &format!("{}{l}.g1m", t.name)).and_then(|b| G1m::parse(b).ok())).filter(|m| m.geometry.is_some()).collect();
         for i in &t.instances {
             let transform = placement_transform(i);
@@ -116,7 +150,15 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
                 let before = scene.draws.len();
                 // An object the game moves (a tree's spring) gets its own instance; the rest
                 // are baked.
-                if how.own_instance {
+                if let Some((skeleton, anim)) = motion.as_ref().filter(|_| how.moves) {
+                    // Posed by its joints, the placement on its instance; lower levels of
+                    // detail take the palette the first level made.
+                    let instance = scene.instance(transform);
+                    scene.add_posed(g, Mat4::IDENTITY, texture_count, Some(&crate::skin::pose(skeleton, anim, 0.0)), instance)?;
+                    if level == 0 {
+                        moving.push(Moving { instance, skeleton: skeleton.clone(), motion: anim.clone() });
+                    }
+                } else if how.own_instance {
                     let instance = scene.instance(transform);
                     scene.add_posed(g, Mat4::IDENTITY, texture_count, None, instance)?;
                 } else {
@@ -144,6 +186,6 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         d.normal_map = d.normal_map.map(|m| m + base);
         d.emission = d.emission.map(|m| m + base);
     }
-    Ok((textures, pattern))
+    Ok(Loaded { textures, pattern, moving })
 }
 

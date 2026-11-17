@@ -503,8 +503,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // casts the sun's shadow; nothing sways yet (`docs/ryza/open.md`).
     // Each keeps its placement's draw class (near, middle, far, landmark), for the field's draw
     // distances.
-    let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, lods: true, ..Default::default() };
-    let (pack, _) = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
+    let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, lods: true, moves: true, ..Default::default() };
+    let barrel_engine::field::Loaded { textures: pack, moving, .. } = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
     let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
@@ -1079,6 +1079,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
     let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
     loop {
+        // Last frame's joints, then the field's moving objects at this frame's moment (the
+        // game turns Rasenboden's windmills once in their motion's 12 s, all together).
+        prev_palette.copy_from_slice(&palette);
+        let field_time = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+        for m in &moving {
+            m.pose(field_time, &instances, &mut palette);
+        }
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
@@ -1125,7 +1132,6 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                     f.apply(&mut locals, r.shut.as_ref(), barrel_ryza::face::blink(started.elapsed().as_secs_f32()));
                 }
                 let joints = barrel_engine::skin::skin(&r.skeleton, &locals);
-                prev_palette.copy_from_slice(&palette);
                 let base = instances[r.instance as usize].palette as usize;
                 for (slot, j) in palette[base..].iter_mut().zip(&joints) {
                     *slot = render_space(*j);
@@ -1162,7 +1168,6 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
             let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
             actors::advance(play, a.title_at + boot_ahead + clock - actors::EVENT_START);
-            prev_palette.copy_from_slice(&palette);
             for actor in &cast {
                 if let Some(body) = play.stage.characters.get(&actor.slot) {
                     actor.pose(body, play.stage.time, &mut instances, &mut palette);
@@ -1170,7 +1175,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
         }
         sync.wait_slot(&gpu, renderer.pool)?;
-        if pump.is_some() || !cast.is_empty() {
+        if pump.is_some() || !cast.is_empty() || !moving.is_empty() {
             scene.write_instances(&gpu, &instances)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
