@@ -13,6 +13,7 @@ pub mod koc;
 pub mod light;
 pub mod maps;
 pub mod motion;
+pub mod npc;
 pub mod player;
 pub mod solids;
 pub mod event;

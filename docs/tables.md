@@ -2469,6 +2469,32 @@ still worth feeding is the remaining days over `dec_day` (`0x1400daef5`). The ta
 singleton at `0x140dfccd0` (`0x1400e1880`), looked up by item (`0x1400e1af0`). `day` is
 presumably the job's length in days; where a job's time is first set was not found.
 
+## Ryza DX: field NPCs (`Saves/fieldmap/npc/`)
+
+A field's townsfolk come from four Shift_JIS tables of `PACK02.PAK` (`barrel_ryza::npc`).
+`npcbasedata.xml` is `<FIELD><FIELD_BaseData people= marker= condition= [message_tag=]/>...</FIELD>`,
+one row a person (FIELD in upper case, `S06_T_RASEN`). The tags are not attributes of the other
+tables: the Nth distinct tag of a kind (in order of first appearance in that field's rows) is
+the Nth `FIELD_people`, `FIELD_marker` or `FIELD_Condition` row of the field in `npcpeople.xml`,
+`npcmarker.xml` or `npccondition.xml`. Rasenboden has 56 base rows, 48 distinct tags of each
+kind and 48 rows in each table.
+
+- `people`: `chara_tag` (`NPC30B_00`), `init_mot_no` (the motion it plays looped), `mot_idx`
+  (0 or -1; the motion is found in the character's motion sets, `motset0` then `motset1`, the
+  same for both), `no_gravity` (1: stays at its marker's height), `talk`, `no_turn`.
+- `marker`: `marker="x,y,z,yaw"`, metres (times 100 for world units) and degrees; the model is
+  turned about the vertical by the yaw as the capture's root matrices have it (a rotation about
+  y by the yaw, in game space). An all-zero marker is a walker (`S06_NPC_MOVE_*`), whose path is
+  in `move_data/move_data_NNN.xml` (not read).
+- `condition`: `timezone` and `weather`, bit masks (Rasenboden's day people 7, their night
+  twins 24, others 31 or 3; weather 63 is any). The bits are taken in the order of the times
+  (morning, noon, evening, night, midnight) and weathers (sunny, cloudy, foggy): a stand-in.
+  `ev_range_NN`, `ev_ex_NN` depend on the story (`npcevrange.xml`; the named characters).
+- A character's tag is its model's: `NPC30B_00` is `NPC30B`, whose model is its base's
+  (`NPC30A`: `character/npc30a/npc30a_model.elixir.gz`) with the texture pack of its own
+  folder (`character/npc30b/npc30b_model.g1t`); the size (`chara.xml`) and the motion sets
+  (`charabase.xml`) are the base's.
+
 ## The world map's field (`Data/x64/Field/A15_WMAP`)
 
 The world map is a field like the others: `A15_WMAP.elixir.gz` holds its terrain (`A15_WMAP.ktf`

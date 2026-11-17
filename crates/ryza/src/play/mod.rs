@@ -315,6 +315,22 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 /// The way a directional light travels, in render space: from `elevation` degrees above the
 /// horizon and `azimuth` degrees around y from +z toward +x (game space: the lighting pass's
 /// `litDir` read from the running game matches both lights, docs/shading.md), x mirrored.
+/// The townsfolk of `field` that stand there at `time` in `weather`: the unconditional ones that
+/// stand still (the others follow the story's progress or walk a path: not placed).
+fn standing_npcs(install: &barrel_ryza::install::Install, field: &str, time: Time, weather: Weather) -> Vec<barrel_ryza::npc::Npc> {
+    let read = |name: &str| install.read(&format!("\\saves\\fieldmap\\npc\\{name}.xml"));
+    let tables = (|| Ok::<_, Box<dyn std::error::Error>>((read("npcbasedata")?, read("npcpeople")?, read("npcmarker")?, read("npccondition")?)))();
+    let Ok((b, p, m, c)) = tables else { return Vec::new() };
+    match barrel_ryza::npc::read(&b, &p, &m, &c, &field.to_ascii_uppercase()) {
+        // STAND-IN: The people whose rows depend on the story (`ev_range_*`, `ev_ex_*`) and those that walk a path (a zero marker) are left out; the real thing is the story's progress (`npcevrange.xml`) and the `move_data` paths.
+        Ok(all) => all.into_iter().filter(|n| !n.story && !n.walks && n.present(time, weather)).collect(),
+        Err(e) => {
+            eprintln!("townsfolk of {field}: {e}");
+            Vec::new()
+        }
+    }
+}
+
 fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
     let (e, a) = (elevation.to_radians(), azimuth.to_radians());
     let toward = Vec3::new(e.cos() * a.sin(), e.sin(), e.cos() * a.cos());
@@ -587,7 +603,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     let ryza_pack = ryza_files.as_ref().map(|(_, t, _)| G1t::parse(t)).transpose()?;
     // The characters' toon ramp (`DSChara-Cll`'s `sRamp`, docs/shading.md).
-    let ramp_bytes = match ryza_files.is_some() || a.title {
+    // The field's townsfolk, the ones standing there now (`barrel_ryza::npc`, docs/tables.md).
+    let townsfolk = if a.title { Vec::new() } else { standing_npcs(&install, &a.field, a.time, a.weather) };
+    let ramp_bytes = match ryza_files.is_some() || a.title || !townsfolk.is_empty() {
         true => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
         false => None,
     };
@@ -717,6 +735,38 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 textures.extend(actor.pack.textures.iter());
             }
         }
+    }
+    // The townsfolk: one set of files and one texture pack a character, one instance (and its
+    // own copy of the mesh) a person, each in its looped motion from the field's clock.
+    let mut npc_files: Vec<actors::Files> = Vec::new();
+    for tag in townsfolk.iter().map(|n| n.character()).collect::<std::collections::BTreeSet<_>>() {
+        let motions = townsfolk.iter().filter(|n| n.character() == tag).map(|n| n.motion).collect();
+        match actors::Files::read_npc(&install, tag, &motions) {
+            Ok(f) => npc_files.push(f),
+            Err(e) => eprintln!("{tag}: not drawn: {e}"),
+        }
+    }
+    let npc_models = npc_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
+    let npc_actors = npc_files.iter().zip(&npc_models).map(|(f, m)| f.open(m)).collect::<std::result::Result<Vec<_>, _>>()?;
+    // (actor, instance, motion) of each person drawn
+    let mut npc_drawn: Vec<(usize, u32, u32)> = Vec::new();
+    if let (Some(r), false) = (&ramp_pack, npc_actors.is_empty()) {
+        let ramp = textures.len();
+        textures.extend(r.textures.first());
+        for (k, actor) in npc_actors.iter().enumerate() {
+            let tag = npc_files[k].tag();
+            let base = textures.len();
+            textures.extend(actor.pack.textures.iter());
+            for n in townsfolk.iter().filter(|n| n.character() == tag) {
+                // STAND-IN: A person stands at its marker's height even when `no_gravity` is 0; the real thing is dropping it onto the ground.
+                let at = Vec3::from(n.position);
+                let instance = scene.instance(actor.placed(at, n.yaw.to_radians()));
+                let joints = actor.joints_of(Some(n.motion), 0.0, 0.0);
+                actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, tag, &actor.swing, &mut ramp_rows)?;
+                npc_drawn.push((k, instance, n.motion));
+            }
+        }
+        eprintln!("townsfolk: {} drawn of {} here", npc_drawn.len(), townsfolk.len());
     }
     // STAND-IN: The sky dome is centred under the view's target at height 0; the real thing is the game's SkyDomeWorldPosition and WorldScale.
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -969,8 +1019,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {
         None => Default::default(),
-        // The plants have their own range (`shown`, below), not an object's.
-        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants").filter_map(|d| {
+        // The plants have their own range (`shown`, below), not an object's, and the townsfolk none (STAND-IN: the game's own range for them is not read; its capture shows them at 7000 to 12000 units, past the objects' first range).
+        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, _)| i == d.instance)).filter_map(|d| {
             let b = d.bounds?;
             let m = instances.get(d.instance as usize)?.model;
             let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
@@ -1086,6 +1136,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         for m in &moving {
             m.pose(field_time, &instances, &mut palette);
         }
+        for &(k, instance, motion) in &npc_drawn {
+            let actor = &npc_actors[k];
+            actor.pose_standing(instance, motion, field_time, &mut instances, &mut palette);
+        }
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
@@ -1175,7 +1229,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
         }
         sync.wait_slot(&gpu, renderer.pool)?;
-        if pump.is_some() || !cast.is_empty() || !moving.is_empty() {
+        if pump.is_some() || !cast.is_empty() || !moving.is_empty() || !npc_drawn.is_empty() {
             scene.write_instances(&gpu, &instances)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }

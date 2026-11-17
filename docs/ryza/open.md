@@ -161,14 +161,23 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
   `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
-  45.4`, row `rasen-3d-2550`), 676 of the game's 913 draws have a Barrel match. The 240
-  without: the townsfolk and Ryza (about 130 character draws: Barrel places no one in a
-  field yet), the terrain's 42 strips (Barrel draws a patch at once), some 20 plant cells,
+  45.4`, row `rasen-3d-2550`), 765 of the game's 913 draws have a Barrel match. The 148
+  without: Ryza and the townsfolk Barrel does not place (the story-conditioned ones, the
+  walkers of `S06_NPC_MOVE_*`, and a few `npc22b` and `npc34a` draws: about 15), the
+  terrain's 42 strips (Barrel draws a patch at once), some 20 plant cells,
   10 of a shore foam effect, a few props (boards, a ship, a fruit) and 22 of the field's
-  models. Barrel draws 164 the game does not: nearly all are in view and hidden behind the
-  town, as on the title (leaving 138 of them out changes 604 pixels of the picture, all at
-  one far spot): the game's occlusion test, which Barrel does not make (`tools/pair3d.py`
-  lists them). The windmills' sails turn and the boat rocks by the motions the object
+  models. Barrel draws 259 the game does not: 164 of the field's models, nearly all in view and
+  hidden behind the town, as on the title (leaving 138 of them out changes 604 pixels of the
+  picture, all at one far spot): the game's occlusion test, which Barrel does not make
+  (`tools/pair3d.py` lists them); and 91 draws of the townsfolk (`npc30a`, `npc30b`, `npc31a`,
+  `npc23b`), whom the game's scene pass does not draw at this frame although its capture
+  loads them (hidden by the same test, unverified). The townsfolk stand where `npcmarker.xml`
+  puts them, turned as the capture's root matrices (`npc25c`: within 6 units and 0.01 of
+  the game's). Left: the people whose rows depend on the story (`npcevrange.xml`), the
+  walkers (`move_data`), their drop to the ground when `no_gravity` is 0 (ten of Rasenboden's
+  rows have it 0, with motion 0 and no turning), the draw distance of people (not applied: the game
+  draws them at 7000 to 12000 units), and the bits of `timezone` and `weather` (stand-in
+  order). The windmills' sails turn and the boat rocks by the motions the object
   container has under their names (`<model>.g1a`, looped: the game turns the sails 0.5° a
   frame, all windmills together); where in the motion the game is when a field appears is
   not read (Barrel starts it with the field). The game's projection is narrower than 16:9 by 1% (its
