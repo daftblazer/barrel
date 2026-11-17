@@ -205,6 +205,11 @@ pub struct Title {
     atlas: [(f32, f32); 2],
 }
 
+/// The frame after the notice's start from which the prompt's pulse loop counts (only its
+/// place within the 91-frame loop is known: 864 is the first frame of the title in the capture
+/// whose boot started at frame 11).
+const PULSE_FROM: f32 = 864.0;
+
 impl Title {
     /// Reads the layout (`uil_a21_title.xml`), its styles (`uis_gen_a21_title.xml`) and the common
     /// animations (`uia_common.xml`); `title_atlas` and `font_atlas` are the sizes of
@@ -259,9 +264,12 @@ impl Title {
             return 0.0;
         }
         // The dip and the way back are one loop, which takes a frame more than its length
-        // (`boot::loop_time`: 91 frames for the 1.5 s).
+        // (`boot::loop_time`: 91 frames for the 1.5 s). It runs from `PULSE_FROM` frames after
+        // the notice's start, not from the title's first frame: two captures whose boots began a
+        // frame apart, with the title at the same frame, have the pulse a frame apart.
         let d = self.blink.duration();
-        let phase = crate::boot::loop_time((t * 60.0).round(), 2.0 * d, 1.0);
+        let frames = (t * 60.0).round() + (crate::boot::TITLE_START * 60.0).round() - PULSE_FROM;
+        let phase = crate::boot::loop_time(frames, 2.0 * d, 1.0);
         let pulse = self.blink.at(if phase < d { phase } else { 2.0 * d - phase })[3] / 255.0;
         self.slide_color.at(since)[3] / 255.0 * pulse
     }
@@ -395,9 +403,10 @@ mod tests {
         // Half a second into the slide it is fully faded in (the blink aside).
         assert!(near(t.prompt_alpha(2.5), t.blink.at(0.5 % 0.75)[3] / 255.0, 0.05));
         // The blink: full at its start, half 0.75 s on and back after another 0.75; the 1.5 s
-        // loop takes 91 frames, so by 3 s (180 frames) it is one frame behind.
+        // loop takes 91 frames and starts a frame into the title (`PULSE_FROM`), so it is full
+        // again at frame 183.
         let at = |frames: f32| t.prompt_alpha(frames / 60.0);
-        assert!(near(at(182.0), 1.0, 1e-3) && near(at(182.0 + 45.0), 127.0 / 255.0, 1e-3) && near(at(273.0), 1.0, 1e-3));
+        assert!(near(at(183.0), 1.0, 1e-3) && near(at(183.0 + 45.0), 127.0 / 255.0, 1e-3) && near(at(274.0), 1.0, 1e-3));
         // Early in the slide the prompt is still low on the screen.
         let q = t.quads(2.1, (1920, 1080));
         assert!(q[1].rect[1] > 643.5 + 20.0);

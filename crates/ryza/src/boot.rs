@@ -36,27 +36,29 @@ const ATLAS_PER_LAYOUT: f32 = 3.0;
 // The schedule, in seconds from the notice's start, read from the capture (`title-cycle`,
 // every 5th frame from 35 to 1635, made on ryza-recomp's exact virtual clock: 60 frames a
 // second, the same frame for frame in every run). Each time is the one frame offset at which
-// the capture's quads match at the frames named (a scan of plus and minus 12 frames).
+// the capture's quads match at the frames named (a scan of plus and minus 12 frames; the capture made with the
+// timeouts on the virtual clock starts the notice a frame later, at 12, and the title where it
+// was).
 /// The capture frame the notice starts at (its pictures and pen match at frames 35 and 105).
-const CAPTURE_START: f32 = 11.0;
+const CAPTURE_START: f32 = 12.0;
 const FPS: f32 = 60.0;
-/// The notice fades out from capture frame 117 over `anm_common_fade_out`'s 15 frames (frame
-/// 125) and is gone at 132.
-const NOTICE_FADE_OUT_AT: f32 = (117.0 - CAPTURE_START) / FPS;
-const NOTICE_END: f32 = (132.0 - CAPTURE_START) / FPS;
-/// The Koei Tecmo logo's fade-in starts at capture frame 171 (frame 180) and the Gust logo's
-/// at 351, as the first has faded out: a logo fades for 30 frames each way (the capture's
+/// The notice fades out from capture frame 118 over `anm_common_fade_out`'s 15 frames (frame
+/// 125) and is gone at 133.
+const NOTICE_FADE_OUT_AT: f32 = (118.0 - CAPTURE_START) / FPS;
+const NOTICE_END: f32 = (133.0 - CAPTURE_START) / FPS;
+/// The Koei Tecmo logo's fade-in starts at capture frame 172 (frame 180) and the Gust logo's
+/// at 352, as the first has faded out: a logo fades for 30 frames each way (the capture's
 /// `fAlphaRate`: 0.5 s) and holds for 120 between (the Gust logo's fade-out at frame 515).
-const KT_START: f32 = (171.0 - CAPTURE_START) / FPS;
-const GUST_START: f32 = (351.0 - CAPTURE_START) / FPS;
+const KT_START: f32 = (172.0 - CAPTURE_START) / FPS;
+const GUST_START: f32 = (352.0 - CAPTURE_START) / FPS;
 const LOGO_FADE: f32 = 30.0 / FPS;
 const LOGO_HOLD: f32 = 120.0 / FPS;
-/// The autosave window slides in at capture frame 531, as the Gust logo is gone (frames 535 and
-/// 635), and its getOut starts at 801 (frame 825): the spinner fades out then
+/// The autosave window slides in at capture frame 532, as the Gust logo is gone (frames 535 and
+/// 635), and its getOut starts at 802 (frame 825): the spinner fades out then
 /// (`anm_common_fade_in` played backwards at speed 0.3, the window's `getOut`) and the window's
 /// own slide back follows 0.2 s later (`delay` of that bind).
-const WINDOW_START: f32 = (531.0 - CAPTURE_START) / FPS;
-const SPINNER_OUT: f32 = (801.0 - CAPTURE_START) / FPS;
+const WINDOW_START: f32 = (532.0 - CAPTURE_START) / FPS;
+const SPINNER_OUT: f32 = (802.0 - CAPTURE_START) / FPS;
 const SPINNER_OUT_SPEED: f32 = 0.3;
 const WINDOW_OUT: f32 = SPINNER_OUT + 0.2;
 /// The title's first frame (capture frame 875, where `--title-at 0` sits): the screen is black
