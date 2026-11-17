@@ -2714,3 +2714,15 @@ more. `getIn` binds `anm_common_slide_in_bottom` to the window; `getOut` fades t
 speed 0.3 and slides the window back 0.2 s later. `STR_UI_nnnn` is string `6619137 + nnnn` of
 `saves/text_<lang>/str_ui.xml`. The logos are `ipu/logo_kt.g1t` and `ipu/logo_gust.g1t`, 1920 x
 1080 pictures drawn over the whole screen with a fade the code sets.
+
+## Ryza DX: sound containers (KTSR)
+
+`Data/x64/Sound/*.ktsl2stbin` (`bgm`, `voice`, ...) are `KTSR` files: a 0x40-byte header
+(`KTSR`, three u32, 8 zero bytes, the file's size twice, zeros), then chunks back to back to the
+end of the file. A chunk is a 0x20-byte header, `u32 kind` (0x15f4d409 for a stream), `u32 size`
+(to the next chunk, a multiple of 16), `u32 id`, `u32 start` (0x20), `u32 length`, 12 zero bytes,
+then the stream: one `KOVS` clip (the obfuscated Ogg Vorbis of Escha's `.kvs`, same loop fields),
+padded to the chunk's size. The streams of one file are named by id; their `KOVS` offset is
+the chunk's plus 0x20. `barrel_formats::ktsr` walks the chunk headers with seeks
+(`parse_streams`), finds the stream at an offset (`stream_at`) and reads one (`read_stream`),
+so a 240 MB file is never held. The `.ktsl2asbin` banks (which choose streams) are not read yet.

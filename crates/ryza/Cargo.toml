@@ -9,6 +9,7 @@ license.workspace = true
 barrel-files = { path = "../files" }
 barrel-formats = { path = "../formats" }
 barrel-engine = { path = "../engine" }
+barrel-audio = { path = "../audio" }
 barrel-render = { path = "../render" }
 ash = "0.38"
 glam = "0.33"

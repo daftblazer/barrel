@@ -1015,6 +1015,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let mut last = std::time::Instant::now();
     let started = last;
     let (mut stale, mut frame_no) = (false, 0u32);
+    // The title's music and voice (on the device in a window; offscreen only the cue log).
+    let mut title_sound = a.title.then(|| barrel_ryza::sound::TitleSound::new(&install.root, pump.is_some()));
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
     let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
     loop {
@@ -1176,6 +1178,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 }
                 None => title.quads(a.title_at + clock, (width, height)),
             };
+            let title_seconds = match boot {
+                Some(_) => a.boot_at + clock - barrel_ryza::boot::TITLE_START + a.title_at,
+                None => a.title_at + clock,
+            };
+            if let Some(sound) = title_sound.as_mut() {
+                sound.tick(title_seconds);
+            }
             // The event's fade over the title: black from a point of the Gust logo.
             let mut quads = quads;
             let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= barrel_ryza::boot::TITLE_START);

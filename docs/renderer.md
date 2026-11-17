@@ -1264,6 +1264,19 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
 draws, from 13 with the wrong field. Left: the 348 grass cards (Barrel draws grass as its own
 instanced pass, not in the trace), 32 terrain patches (different splits), the weapons (4).
 
+### The title's sound
+
+`barrel_ryza::sound` holds the title's cues as data (`title_cues`): the music from title frame
+18 (the `bgm` container's stream at offset 151456224; it loops from the clip's own loop start)
+and one voice clip from frame 106 (the `voice` container's stream at 94885392; played once),
+the frames at which a run of the game starts the two sounds, 60 a second from the title's first
+frame (after the boot screens, `boot::TITLE_START` in). They are a stand-in for the game's own
+choice of streams. `TitleSound::tick` starts each cue when the title's clock reaches its frame,
+through `barrel_audio::Mixer` and `Output` in a window; an offscreen run opens no device. With
+`BARREL_TRACE_CUES=<file>` set, each cue started appends a line `<frame> <kind> <file> <offset>`
+(`18 music bgm.ktsl2stbin 151456224`); an offscreen run at `--title-at T` logs every cue at or
+before T's frame, so the log can be compared with the original's.
+
 ### The boot screens
 
 `--boot [--boot-at S]` (or `BARREL_BOOT_AT=S`; implies `--title`) plays what comes before the

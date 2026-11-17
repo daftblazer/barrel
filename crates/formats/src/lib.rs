@@ -24,6 +24,7 @@ pub mod g1t;
 pub mod game;
 pub mod inflate;
 pub mod khm;
+pub mod ktsr;
 pub mod ktf;
 pub mod kwb;
 pub mod magic;
