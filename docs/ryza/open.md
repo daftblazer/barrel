@@ -7,6 +7,18 @@ Everything Barrel is stuck on for Atelier Ryza DX, has not worked out yet, or kn
 The original Ryza DX is never run through Steam without asking first (its playtime and
 achievements are the player's own, and the DX version has not been played there).
 
+## The answer key's runs repeat only to a frame
+
+ryza-recomp's scenarios run with virtual clocks by default (RYZA_DETERMINISTIC: each frame is
+1/60 s; each clock read in a frame adds 1 µs, shared across threads), and state descriptions are
+hashed with their padding zeroed. Two boot-title runs (2026-11-16) still differ: the second is
+the first shifted by about one frame (at the best shift 1,143 of 1,924 draws carry identical
+vertex constants), and the draw count varies by 1-2 (1,923-1,925). Loading threads finish in real
+time, so the frame the title starts on moves. So: compare at aligned frames (`barrel-parity
+align`, or find the shift as above) and fit nothing to a single run's random rolls; a check row
+states its tolerance. Way in, if it matters: per-thread read counters for the clock, and a
+frame-locked wait on the loader's completion (the frame it finishes on, from a hook).
+
 ## Fields
 
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
