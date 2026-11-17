@@ -48,11 +48,10 @@ opening's first 132 of 135, each group at one offset. Left:
   94 frames for 0, 0.5 and 1.5 s; the picture's own fade is 30 and 90). The game's test is
   behind `0x14050fdb0` (to `0x140509f30`), not read. Rules tried that give 93 for 1.5 s: the
   fade's frames plus a fixed 2 or 3, and a float sum against the length plus 1/30 s.
-- **The prompt's slide-in is off while it moves.** The title's fade from black is drawn now
-  (`actors::cover`, rows `title-fade-900`, `930` and `950` at 0), and with it the frames up to
-  1020 can be compared: at 1000 and 1015 "Press any button" is 3.2 and 0.6 pixels lower in the
-  game and fainter (alpha 0.278 against 0.338, 0.561 against 0.570); at 1020 it is at rest and
-  the same. Its entrance starts when the event's fade ends or runs on another curve: not read.
+- **The prompt's slide-in starts a frame late, for a reason not read.** Frame by frame the
+  game's prompt is the layout's curve a frame after its `delay` (`title::SLIDE_LATE`, rows
+  `title-prompt-in-1000` and `1010` at 0, with the fade's rows `title-fade-900`, `930`, `950`).
+  What makes the layout's animations start a frame after the title's first frame is not found.
 - **The draws are the game's only when given.** The pick is seeded by the clock's seconds, as
   the game's; the wait's generator is the game's shared one (`0x1406ae6b0`), which Barrel
   does not follow, so a parity run gives the numbers (`BARREL_EVENT_DRAWS`).

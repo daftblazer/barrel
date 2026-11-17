@@ -214,6 +214,11 @@ pub struct Title {
 /// place within the 91-frame loop is known: 864 is the first frame of the title in the capture
 /// whose boot started at frame 11).
 const PULSE_FROM: f32 = 864.0;
+// STAND-IN: The slide-in starts a frame after its delay because the capture has it there; the real thing is the frame the game starts the layout's animations on.
+/// The prompt's slide-in runs a frame behind its `delay`: frame by frame from capture frame 997
+/// to 1022 its place is the curve's a frame earlier (669.54 at 1001, 656.83 at 1006, 645.17 at
+/// 1016).
+const SLIDE_LATE: f32 = 1.0 / 60.0;
 
 impl Title {
     /// Reads the layout (`uil_a21_title.xml`), its styles (`uis_gen_a21_title.xml`) and the common
@@ -264,7 +269,7 @@ impl Title {
     /// bound beside it) times the blink, a dip to half over `blink`'s run and back (the capture's
     /// pulse is symmetric about its dip, so the run is played forward and then back).
     pub fn prompt_alpha(&self, t: f32) -> f32 {
-        let since = t - self.prompt_delay;
+        let since = t - self.prompt_delay - SLIDE_LATE;
         if since < 0.0 {
             return 0.0;
         }
@@ -295,8 +300,9 @@ impl Title {
         };
         let mut out = vec![place(&self.logo, [0.0; 2], 1.0)];
         let alpha = self.prompt_alpha(t);
-        if alpha > 0.0 {
-            let slide = self.slide_pos.at(t - self.prompt_delay)[1];
+        // the game's opacity is a byte: under one step of it nothing is drawn
+        if alpha * 255.0 >= 1.0 {
+            let slide = self.slide_pos.at(t - self.prompt_delay - SLIDE_LATE)[1];
             out.push(place(&self.prompt, [0.0, slide], alpha));
         }
         out.extend(self.version_quads(k, left));
