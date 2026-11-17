@@ -69,7 +69,8 @@ and one field's files (`s01_i_attic`):
   largest known gap between the game's data and what Barrel reads. Nearly all of the file is
   now placed against the game's structure (docs/formats.md, "Ryza field environment": the
   running game's 12 sets read by a hook and matched to the file's by value), so each block
-  the XML reader names has its place in the file. Left: the members' names and types inside
+  the XML reader names has its place in the file. The wind is read (`gust_`, `environment::Gust`:
+  docs/shading.md). Left: the members' names and types inside
   each block (the XML reader's per-block functions name them, from `0x14071d000`), then
   reading them in `environment.rs` in place of the stand-ins; and the pieces the values could
   not place (file 0x614 to 0x674, the shadow block's single words).

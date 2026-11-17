@@ -179,6 +179,91 @@ pub struct Fog {
 const FOG: usize = 0x4fc;
 const SKY_FOG: usize = 0x5a4;
 
+/// Where a set's `gust_` block is (the game's structure has it at 0x34c).
+const GUST: usize = 0x308;
+
+/// The field's wind (`gust_`): it blows at `interval_power`, and after a pause rises over
+/// `to_max` seconds to a gust, holds it `max_time` seconds and falls back over `to_interval`.
+/// What the plants get from its power `p` at a moment (measured in the game's draws, frame by
+/// frame through a gust in Rasenboden: power 1.5 between gusts, 2 with 0.5 either way in
+/// them, 2 s up, 8 s held, 1 s down): their bend `g_vAttCache0.x` is 5 sqrt(2 p) (8.660 at
+/// 1.5), their sway's phase turns sqrt(p) radians a second, and the power moves between its two
+/// levels as half a cosine wave, (1 - cos(pi u)) / 2 (30 frames of a rise fit to 0.0001).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Gust {
+    pub power: f32,
+    pub power_random: f32,
+    pub to_max: f32,
+    pub to_interval: f32,
+    pub max_time: f32,
+    pub interval_power: f32,
+    pub interval_time: f32,
+    pub interval_random: f32,
+}
+
+impl Gust {
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Gust, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |k: usize| f32::from_le_bytes(set[GUST + 4 * k..GUST + 4 * k + 4].try_into().unwrap());
+        // after azimuth and elevation: power, powerRandom, powerToMaxTime, powerToIntervalTime,
+        // powerMaxTime, intervalPower, intervalTime, intervalTimeRandom
+        Ok(Gust { power: f(2), power_random: f(3), to_max: f(4), to_interval: f(5), max_time: f(6), interval_power: f(7), interval_time: f(8), interval_random: f(9) })
+    }
+
+    // STAND-IN: Each gust's strength and the pause before it are drawn by a generator of Barrel's own, and the first pause starts with the field; the real thing is the game's shared generator and where its cycle stands when the field comes up.
+    /// The wind's power `seconds` after the field came up, and how far the plants' sway has
+    /// turned by then (radians, the power's root added up a 60th of a second at a time).
+    pub fn at(&self, seconds: f32) -> (f32, f32) {
+        let smooth = |u: f32| (1.0 - (std::f32::consts::PI * u.clamp(0.0, 1.0)).cos()) * 0.5;
+        // a number in 0..1 for the n-th draw: the same every run
+        let draw = |n: u32| {
+            let mut x = n.wrapping_mul(0x9e37_79b9) ^ 0x85eb_ca6b;
+            x ^= x >> 15;
+            x = x.wrapping_mul(0x2c1b_3c6d);
+            x ^= x >> 12;
+            (x >> 8) as f32 / (1u32 << 24) as f32
+        };
+        let (mut cycle, mut start) = (0u32, 0.0f32);
+        let mut phases = [0.0f32; 4];
+        let mut peak = self.power;
+        let mut lay = |cycle: u32, phases: &mut [f32; 4], peak: &mut f32| {
+            *phases = [self.interval_time + draw(2 * cycle) * self.interval_random, self.to_max, self.max_time, self.to_interval].map(|t| t.max(0.0));
+            *peak = self.power + (2.0 * draw(2 * cycle + 1) - 1.0) * self.power_random;
+        };
+        lay(0, &mut phases, &mut peak);
+        let (step, mut turned, mut power) = (1.0 / 60.0, 0.0f32, self.interval_power);
+        let frames = (seconds.max(0.0) * 60.0).round() as u32;
+        for k in 0..=frames {
+            let t = k as f32 * step;
+            while phases.iter().sum::<f32>() > 0.0 && t - start >= phases.iter().sum::<f32>() {
+                start += phases.iter().sum::<f32>();
+                cycle += 1;
+                lay(cycle, &mut phases, &mut peak);
+            }
+            let into = t - start;
+            let [pause, up, hold, _] = phases;
+            power = if into < pause {
+                self.interval_power
+            } else if into < pause + up {
+                self.interval_power + (peak - self.interval_power) * smooth((into - pause) / up)
+            } else if into < pause + up + hold {
+                peak
+            } else {
+                peak + (self.interval_power - peak) * smooth((into - pause - up - hold) / phases[3].max(1e-6))
+            };
+            if k < frames {
+                turned += power.max(0.0).sqrt() * step;
+            }
+        }
+        (power, turned)
+    }
+
+    /// The plants' bend for a power: `g_vAttCache0.x`.
+    pub fn bend(power: f32) -> f32 {
+        5.0 * (2.0 * power.max(0.0)).sqrt()
+    }
+}
+
 impl Fog {
     fn at(set: &[u8], o: usize) -> Fog {
         let f = |k: usize| f32::from_le_bytes(set[o + 4 * k..o + 4 * k + 4].try_into().unwrap());
@@ -268,6 +353,27 @@ impl Light {
             bloom_weight: f(BLOOM_WEIGHT),
             lumi_threshold: f(LUMI_THRESHOLD),
             ambient: rgb(MAIN_AMBIENT), parallel: [parallel(0), parallel(1)] })
+    }
+}
+
+#[cfg(test)]
+mod gust_tests {
+    use super::Gust;
+
+    #[test]
+    fn a_gust_rises_holds_and_falls_as_measured() {
+        // Rasenboden's noon wind with no chance in it: 1 s pause, then the gust
+        let g = Gust { power: 2.127, power_random: 0.0, to_max: 2.0, to_interval: 1.0, max_time: 8.0, interval_power: 1.5, interval_time: 1.0, interval_random: 0.0 };
+        let bend = |t: f32| Gust::bend(g.at(t).0);
+        assert!((bend(0.5) - 8.660).abs() < 1e-3);
+        // the game's frames 1750 and 1787 of a rise that began at 1727: 8.818 and 9.522
+        assert!((bend(1.0 + 23.0 / 60.0) - 8.818).abs() < 3e-3, "{}", bend(1.0 + 23.0 / 60.0));
+        assert!((bend(2.0) - 9.522).abs() < 3e-3, "{}", bend(2.0));
+        assert!((bend(5.0) - 10.313).abs() < 1e-3);
+        assert!((bend(12.5) - 8.660).abs() < 1e-3);
+        // held at the gust the sway turns sqrt(power) a second: 0.024308 a frame
+        let turn = g.at(6.0).1 - g.at(5.0).1;
+        assert!((turn / 60.0 - 0.024308).abs() < 1e-5, "{}", turn / 60.0);
     }
 }
 

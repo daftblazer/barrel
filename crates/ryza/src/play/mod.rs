@@ -55,14 +55,6 @@ const EMISSIVE: u32 = 32768;
 /// units: a stand-in, the game's `emScl` is set at run time (not read): its windows and lamps
 /// unlit by day, lit at evening and night.
 const EMISSION_BY_TIME: [f32; 4] = [0.0, 0.0, 2.0, 3.0];
-// STAND-IN: The wind is held at the middle of its measured range; the real thing is the game's wind curve over time.
-/// The plants' wind (model.vert, flag 16384: `g_vAttCache0` = (a, a, a/2, -a/2)): measured at
-/// the garden gate wandering between about 8.7 and 10.5 in gusts (docs/shading.md); its curve
-/// over time is not read, so it holds the middle of that range.
-const PLANT_WIND: f32 = 9.6;
-/// How fast the plants' `g_fOscPhase` turns: radians a second (0.0232 a frame at 60 Hz,
-/// measured; it wraps at 2π).
-const PLANT_SWAY_SPEED: f32 = 1.39;
 
 struct Args {
     install: String,
@@ -773,6 +765,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     }
     // The field's light: its environment's diffuse cube map, and the set for the time and
     // weather (sun, second light, ambient colour).
+    let mut gust: Option<barrel_ryza::environment::Gust> = None;
     let environment = match files.env.as_deref().map(Elixir::parse).transpose()? {
         Some(env) => {
             let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
@@ -780,7 +773,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let bin = barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)).ok_or("environment has no settings")?;
             let light = Light::read(bin, a.time, a.weather)?;
             let (fog, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
-            eprintln!("light ({:?}, {:?}): {light:?}", a.time, a.weather);
+            gust = Some(barrel_ryza::environment::Gust::read(bin, a.time, a.weather)?);
+            eprintln!("light ({:?}, {:?}): {light:?}; wind {gust:?}", a.time, a.weather);
             let chara = barrel_ryza::environment::CharaLight::read(bin, a.time, a.weather)?;
             eprintln!("character light: {chara:?}");
             // Her draws take the sun at the characters' scale (their light word's diffuse).
@@ -1133,8 +1127,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         // `g_vAttCache0` (a, a, a/2, -a/2) and {`g_fAttCache1` 1, `g_fPhase` 0, `g_fOscPhase`}.
-        view.look[50] = [PLANT_WIND, PLANT_WIND, PLANT_WIND * 0.5, -PLANT_WIND * 0.5];
-        view.look[51] = [1.0, 0.0, (started.elapsed().as_secs_f32() * PLANT_SWAY_SPEED) % std::f32::consts::TAU, 0.0];
+        // From the field's wind (`environment::Gust`): the bend from its power now, the sway's
+        // phase what it has turned since the field came up (a window's own clock, 60 Hz offscreen).
+        let wind_clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+        let (wind_power, wind_turned) = gust.map_or((0.0, 0.0), |g| g.at(wind_clock));
+        let bend = barrel_ryza::environment::Gust::bend(wind_power);
+        view.look[50] = [bend, bend, bend * 0.5, -bend * 0.5];
+        view.look[51] = [1.0, 0.0, wind_turned % std::f32::consts::TAU, 0.0];
         view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
         view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
         if frame_no == 0

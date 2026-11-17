@@ -847,11 +847,20 @@ Read from the running game at Rasenboden's garden gate, 10 AM, the High preset (
 constant ring is kept locally). The plants draw with `objectgrasspbs`'s 656-byte vertex block,
 the variant without `g_vFieldRange`: no pigment map is sampled at the gate. Per draw:
 
-- `g_vAttCache0` = (a, a, a/2, −a/2) with a, the sway's strength, wandering between about 8.7
-  and 10.5 over seconds (gusts; 8.94 and 10.13 held for seconds at a time, 10.54 seen too);
-  `g_fAttCache1` 1.
-- `g_fPhase` 0; `g_fOscPhase` climbs 0.0232 a frame (1.39 radians a second at 60 Hz) and wraps
-  at 2π.
+- `g_vAttCache0` = (a, a, a/2, −a/2) with a, the sway's strength, 5 sqrt(2 p) for the wind's
+  power p; `g_fAttCache1` 1.
+- `g_fPhase` 0; `g_fOscPhase` turns sqrt(p) radians a second and wraps at 2π.
+- The power is the field's wind, the environment set's `gust_` block (file 0x308 of a set:
+  azimuth, elevation, `power`, `powerRandom`, `powerToMaxTime`, `powerToIntervalTime`,
+  `powerMaxTime`, `intervalPower`, `intervalTime`, `intervalTimeRandom`, three more): it
+  blows at `intervalPower`, after a pause of `intervalTime` and up to `intervalTimeRandom`
+  more rises over `powerToMaxTime` seconds to a gust of `power` give or take `powerRandom`,
+  holds `powerMaxTime` and falls back over `powerToIntervalTime`, moving between the two
+  levels as half a cosine wave. Measured in Rasenboden at noon (1.5 between gusts, 2 and 0.5,
+  2 s, 8 s, 1 s): a 8.660 between gusts, a rise of 120 frames fitted to 0.0001 at 30 of them,
+  10.313 held for 480 frames, 60 frames down; the phase 0.024308 a frame at 10.313 and
+  0.022368 at 9.490. `barrel_ryza::environment::Gust` plays it; which gust strength and
+  pause the game draws, and where the cycle stands when a field comes up, are Barrel's own.
 - `g_vEyePosition` the eye (32527, 6363, 29945 here).
 - `g_fFarClipBegin` / `End` 8000 / 15000 (the Middle grass preset: as Barrel has it),
   `g_fNearClip` 10.
