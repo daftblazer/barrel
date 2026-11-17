@@ -542,6 +542,8 @@ impl<'a> Player<'a> {
             // game's: extra trailing ones (Ryza's camera moves add a curve) are left to the end.
             let fits = |w: u32| match (escha.get(w), table.get(c.word)) {
                 (Some(Some(e)), Some(Some(g))) => e <= g,
+                // The game's runs to the next command (its count is not fixed: Ryza's `s34`).
+                (Some(Some(_)), Some(None)) => true,
                 (e, g) => e == g,
             };
             if let Some(&(_, w)) = same.iter().find(|&&(g, w)| g == c.word && fits(w)) {
@@ -1066,6 +1068,25 @@ mod tests {
         assert_eq!(p.actions[0][0].word, TIME_WAIT);
         // 0x7400_0007 is a camera command in Escha: the stranger's word is kept off it.
         assert_eq!(p.actions[0][1].word, 0x7400_0007 | UNMAPPED);
+    }
+
+    /// Ryza's `s34` (a motion, five operands in the title) and `p6 1000 2000` (a random wait)
+    /// read as Escha's motion step and wait: the title's `s34 0 92511 0 0 0` and the wait
+    /// before Ryza's action.
+    #[test]
+    fn ryza_motions_and_random_waits() {
+        use barrel_formats::ebd::{Action, Ebd, END};
+        let event = Ebd {
+            actions: vec![Action { flags: 0, name: vec![], description: vec![], words: vec![0x7000_0006, 1000, 2000, 0x7300_0022, 0, 92511, 0, 0, 0, END] }],
+            resources: vec![],
+        };
+        let table = OperandTable::ryza();
+        let p = Player::translated(&event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).unwrap();
+        let steps = p.schedule();
+        let motion = steps.iter().find(|t| matches!(t.step, Step::Motion { .. })).expect("the motion step");
+        assert!(matches!(motion.step, Step::Motion { character: 0, motion: 92511, .. }));
+        // after the shortest wait, 10 s
+        assert!((motion.time - 10.0).abs() < 1e-3, "{}", motion.time);
     }
 
     #[test]

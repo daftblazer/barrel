@@ -842,7 +842,13 @@ impl Renderer {
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)]], &[]);
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 if trace3d.on() {
-                    trace3d.add(if pass_sky { "sky" } else { "scene" }, draw.index_count, &[Some(draw.texture), draw.mask, draw.normal_map, draw.emission], &instances[draw.instance as usize].model);
+                    let inst = &instances[draw.instance as usize];
+                    // A character's mask slot holds the toon ramp (flag 128), a texture of Barrel's own.
+                    let mask = draw.mask.filter(|_| flags & 128 == 0);
+                    trace3d.add(if pass_sky { "sky" } else { "scene" }, draw.index_count, &[Some(draw.texture), mask, draw.normal_map, draw.emission], &inst.model);
+                    if !draw.bones.is_empty() {
+                        trace3d.bones(&frame.scene.traced_palette(), inst.palette as usize, &draw.bones, &inst.model);
+                    }
                 }
                 drawn[0] += 1;
             }

@@ -1210,8 +1210,9 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
   `pc03a` (30803.4, 6536.4, 40656.6), within 0.2 units of those at every frame from 1380 to 1900,
   the palettes changing each frame (an idle motion). They stand 280 to 900 units before the
   camera. With them: `npc00a`, `npc02a`, `npc34a`, the `btl_obj_03_blackbox`, `ev_obj_28_fruit`
-  and the `pc0x_wep_01` weapons. **Not drawn**: Barrel's rig draws
-  one `pc00a`; the charatest light is not decoded.
+  and the `pc0x_wep_01` weapons. **Drawn** (`play/actors.rs`): Ryza, Lent and Tao from the
+  event's stage (below); not yet the NPCs, weapons, blackbox and fruit; the charatest light is
+  not decoded.
 - **The scene is an event**: the game reads `\event\event_jp\tt01\event_tt01_010.ebd` at
   capture frame 1152, then the field at 1155 and the weapons from 1155 to 1182 (found with
   ryza-recomp's `RYZA_TRACE_FILES`, which now logs every read, and `barrel-tool pak-reads`,
@@ -1225,14 +1226,32 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
   shared sets, not the characters' own: `cf01_92511`, `cf01_92510`, `cm00` or `cm01` `_02190`,
   `cm01` or `cf01` `_12301` (which set: `charabase.xml`'s `motset1`). `tt01_020` to `_050` are
   the title's other scenes.
+- **The cast** is read from the event's stage, not placed by hand: slot n is row n of
+  `chara.xml` (0 `PC00A`, 2 `PC02A`, 3 `PC03A`), its position and turn are the event's (no
+  ground snap; the 78 units Lent's palette sits below the event's y are her motion's hip, not a
+  snap), its motion `s34` (translated as Escha's `s5`; `p6`, the random wait, as `p1` for its
+  shortest, which keeps Ryza's action 12 past 10 s, where the capture shows her still in 92511
+  since stage 0). A motion is looked for in `motset0`'s folder, then `motset1`'s
+  (`barrel_ryza::chara::motion_sets`). Three measured rules, each exact against the capture:
+  the event's clock starts 35 ticks (`EVENT_START`, 0.583 s) into the title (fitted to frames
+  1400, 1500 and 1700: stage tick = capture frame - 1140 - 35); a motion of a shared set moves
+  the hip's height only in proportion to the model's own hip (model hip bind y / the set's
+  `SkeletonBase`: Tao's 80.1 against CM01's 98 stands 17.9 lower; x and z are the motion's); a
+  motion plays looped. Submeshes whose normal is a Float4 (the cloth parts, 10 of Ryza's 25) were
+  not drawn before and are now (rigid on one joint as Barrel draws such submeshes).
+- **Pose against the capture** (`diff3d`'s `pose` lines): Lent and Tao within 0.012 units and
+  0.0000 (rotation, matrix entries) at frames 1400, 1500 and 1700; Ryza's body the same, her head
+  (joint 6 and what hangs from it) 13.7 units and 0.126 off at every frame: the game turns it
+  toward the camera (`s88 0 -7`, look target; not done). Hair and skirt joints no motion moves are
+  the game's cloth simulation and are left out of the comparison.
 - **Lit** by the field's own environment (as every field): the capture's characters use the
   `charatest` probes, which a field draw does not.
 - **Draw ranges are off** in the title (`event_titleback`'s camera file has no readable ranges,
   and the capture's backdrop is whole); the boot screens leave the scene out until the title.
 
-`diff3d` at frame 1400 (see `docs/parity.md`): 557 of 995 game draws matched against 674 Barrel
+`diff3d` at frame 1400 (see `docs/parity.md`): 611 of 995 game draws matched against 733 Barrel
 draws, from 13 with the wrong field. Left: the 348 grass cards (Barrel draws grass as its own
-instanced pass, not in the trace), 32 terrain patches (different splits), 58 character draws.
+instanced pass, not in the trace), 32 terrain patches (different splits), the weapons (4).
 
 ### The boot screens
 

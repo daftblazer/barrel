@@ -47,8 +47,55 @@ fn find<'a>(e: &'a Element, name: &str, tag: &str) -> Option<&'a Element> {
     e.children.iter().find_map(|c| find(c, name, tag))
 }
 
+/// The tag of row `row` of `chara.xml`: the character an event's slot number names (slot 2 is
+/// `PC02A`).
+pub fn row_tag(chara: &[u8], row: usize) -> Result<String, String> {
+    let root = table::parse(chara).map_err(|e| format!("Chara: {e}"))?;
+    root.children.iter().filter(|e| e.name == "Chara").nth(row).and_then(|e| e.attr("BaseTag")).map(str::to_string).ok_or(format!("Chara: no row {row}"))
+}
+
+/// A set of motions: its folder and, for a set shared by a body type, the hip height its
+/// motions are made for (`charamotionset.xml`'s `SkeletonBase`; -1 for a character's own set).
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionSet {
+    pub dir: String,
+    pub skeleton_base: Option<f32>,
+}
+
+/// The sets a character's motions are looked for in, in order: the base's own motion set
+/// (`charabase.xml`'s `motset0`) and the shared one of its body type (`motset1`), each named
+/// by `charamotionset.xml`'s `Directory` (`CF01`, `CM01` ...). Ryza keeps one container a
+/// motion (`motion::path`), unlike Sophie 2's one a set, so this is the same rule as Sophie
+/// 2's (`barrel_formats::chara_motion::Motions::files`) over other files.
+pub fn motion_sets(charabase: &[u8], motionset: &[u8], tag: &str) -> Result<Vec<MotionSet>, String> {
+    let base = table::parse(charabase).map_err(|e| format!("CharaBase: {e}"))?;
+    let sets = table::parse(motionset).map_err(|e| format!("CharaMotionset: {e}"))?;
+    let row = find(&base, "CharaBase", tag).ok_or(format!("CharaBase: no {tag}"))?;
+    let mut out = Vec::new();
+    for key in ["motset0", "motset1"] {
+        let Some(name) = row.attr(key).and_then(|t| t.strip_prefix("CHARA_MOTIONSET_")) else { continue };
+        let set = sets.children.iter().find(|e| e.attr("MotionsetTag") == Some(name)).ok_or(format!("CharaMotionset: no {name}"))?;
+        let skeleton_base = set.attr("SkeletonBase").and_then(|v| v.trim().parse::<f32>().ok()).filter(|&b| b > 0.0);
+        out.push(MotionSet { dir: set.attr("Directory").ok_or(format!("CharaMotionset: {name} has no Directory"))?.to_string(), skeleton_base });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn slots_and_motion_folders() {
+        let chara = br#"<Root><Chara BaseTag="PC00A"/><Chara BaseTag="PC01A"/><Chara BaseTag="PC02A"/></Root>"#;
+        assert_eq!(super::row_tag(chara, 2).unwrap(), "PC02A");
+        assert!(super::row_tag(chara, 3).is_err());
+        let base = br#"<Root><CharaBase BaseTag="PC02A" motset0="CHARA_MOTIONSET_PC02A" motset1="CHARA_MOTIONSET_CM01"/></Root>"#;
+        let sets = br#"<Root><CharaMotionset MotionsetTag="PC02A" Directory="PC02A" SkeletonBase="-1"/><CharaMotionset MotionsetTag="CM01" Directory="CM01" SkeletonBase="98"/></Root>"#;
+        let found = super::motion_sets(base, sets, "PC02A").unwrap();
+        assert_eq!(found.iter().map(|s| s.dir.as_str()).collect::<Vec<_>>(), ["PC02A", "CM01"]);
+        assert_eq!(found.iter().map(|s| s.skeleton_base).collect::<Vec<_>>(), [None, Some(98.0)]);
+        assert!(super::motion_sets(base, sets, "PC09A").is_err());
+    }
+
     #[test]
     fn ryza_from_the_tables() {
         let chara = br#"<Root><Chara BaseTag="PC00B" Size="1,1,1" CamH="100"/><Chara BaseTag="PC00A" Foot="0" Size="1.04,1.04,1.04" Height="154" Radius="44" CamH="160" CamR="50"/></Root>"#;

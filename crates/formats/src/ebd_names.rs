@@ -684,7 +684,14 @@ pub static RYZA: &[(u32, &str)] = &[
 /// (Escha's `t3`), `t12` the field of view (`t7`), `t14` the pitch (`t9`), `t16` the distance
 /// (`t11`), `t18` the target (`t13`); the curve (0, 1, 3, 13) is not read. Their other words,
 /// `t10` (a roll: 0 or 5 to 15°), `t20` (the offset, (0, 9, 0)) and `t22`, have no Escha match.
+/// `s34` (`ECT_CHARA_MOTION_SET`, `{character, motion, division, blend, flag}`: the title's
+/// `s34 0 92511 0 0 0`) plays a motion as Escha's `s5` does; Escha's takes one operand fewer.
+/// `p6` (`ECT_MACRO_TIME_WAIT_RANDOM`, `{shortest, longest}` hundredths of a second; the title's
+/// `p6 1000 2000` before Ryza's action) waits as `p1` does, for the shortest: the game's
+/// time is random.
 pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[
+    (0x70000006, 0x70000001),
+    (0x73000022, 0x73000005),
     (0x75000011, 0x75000012),
     (0x75000041, 0x75000037),
     (0x75000042, 0x75000038),

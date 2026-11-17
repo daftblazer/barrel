@@ -96,9 +96,8 @@ Conventions found in the capture (checked on the title's characters, `sha0de8a` 
   column-vector world-to-clip matrix, so it compares to Barrel's `view_proj` directly. Its z
   and w columns are nearly equal (a reversed or near-plane projection at the title's camera).
 - `mL2W` is 48 bytes: three registers, each one output row `(m0 m1 m2 t)`: world.x =
-  row0 . (p, 1). `game_world` expands it to a column-major 4x4. Skinned draws carry no
-  `mL2W` (their buffer holds `mW2P` and a palette of the same 3-register rows, with the model
-  at the identity), so they match by textures and counts only.
+  row0 . (p, 1). `game_world` expands it to a column-major 4x4. A skinned draw's
+  `mL2W` is its whole bone palette (below, not a world), so it is compared by its bones.
 - Barrel's render space mirrors x. `diff3d` compares each game world matrix both as it is and
   as S M S (S = diag(-1, 1, 1)) and keeps the smaller difference, reporting how many fit the
   mirrored one.
@@ -115,7 +114,16 @@ Conventions found in the capture (checked on the title's characters, `sha0de8a` 
   game draws are also counted by vertex shader. Frame 1400 against `--title`: 557 of 995 matched
   (before: 13, with the wrong field), view-projection within 0.03.
 - A skinned draw's constant buffer (vertex shader `sha0de8a`): 16 bytes zero, `mW2P` (64), then
-  the bone palette, three registers per bone (rows `m0 m1 m2 t`, world.x = row0 . (p, 1)), 33
-  bones for the player characters; bone 0's translation is where the character stands.
+  the bone palette, three registers per bone (rows `m0 m1 m2 t`, world.x = row0 . (p, 1)), 32
+  bones in the order of the submesh's bone map.
+- A skinned draw's `mL2W` is the palette: 1536 bytes, 32 bones of three registers (the reflection
+  names the array `mL2W`; a rigid draw's is 48 bytes), then `bSkin`. `diff3d` reads it, takes
+  Barrel's `bones` from its trace (the model matrix times each joint's skin matrix, in the
+  slots of the submesh's bone map, render space), pairs a skinned draw with the Barrel draw of the
+  same key whose palette is nearest, and prints per texture folder `pose ...: N skinned draws,
+  bones worst translation T, rotation R` (the largest entry difference of the 3 x 3 part). Joints
+  the game moves by cloth simulation (`simulated` in the trace: no motion moves them off the bind
+  pose) and submeshes Barrel draws rigid (`palette_indexed` false) are not compared.
+  `DIFF3D_POSES=1` lists each draw.
 - Not covered yet: shadow passes (game and Barrel both list them; `diff3d` compares colour
   passes only), instanced draws (Barrel writes `inst` 1), view and projection separately.

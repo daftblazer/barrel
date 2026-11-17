@@ -37,6 +37,8 @@ use barrel_ryza::environment::{Light, Time, Weather};
 use barrel_ryza::install::Install;
 use glam::{Mat4, Vec3};
 
+mod actors;
+
 /// The renderer's material bit for a draw shown with its texture alone, unlit (`model.frag`).
 const UNLIT: u32 = 32;
 /// `model.vert`'s flag for a sky dome lit by the look's `DOME_LIGHT_SLOT`.
@@ -365,6 +367,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             tint: 0,
             bounds: None,
             class: 0,
+            bones: Vec::new(),
             shader: String::new(),
         });
     }
@@ -482,6 +485,26 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let plant_preset = presets.grass;
     let lod_dist = presets.lod;
     eprintln!("presets: {:?} {presets:?}", graphics.foliage);
+    // The title's backdrop: its event's stage run to the first frame's moment, and the characters
+    // it stages (`actors`: Ryza, Lent and Tao), loaded before the textures that borrow them.
+    let title_event = match a.title {
+        true => Some(barrel_formats::ebd::Ebd::parse(&install.read(&barrel_ryza::event::path(actors::TITLE_EVENT).ok_or("title event")?)?)?),
+        false => None,
+    };
+    let mut title_play = match &title_event {
+        Some(e) => Some(barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), barrel_ryza::event::schedule(e)?)),
+        None => None,
+    };
+    let mut cast_files: Vec<actors::Files> = Vec::new();
+    if let (Some(e), Some(play)) = (&title_event, title_play.as_mut()) {
+        let motions = actors::motions_of(&barrel_ryza::event::schedule(e)?);
+        actors::advance(play, a.title_at - actors::EVENT_START);
+        for &slot in play.stage.characters.keys() {
+            cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()))?);
+        }
+    }
+    let cast_models = cast_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut cast = cast_files.iter().zip(&cast_models).map(|(f, m)| f.open(m)).collect::<std::result::Result<Vec<_>, _>>()?;
     let mut textures: Vec<&barrel_formats::g1t::Texture> = pack.textures.iter().collect();
     // Ryza herself: her mesh, posed by her skeleton and a motion, her textures after the
     // field's. Lit as the field's models are until her own shaders are read
@@ -503,18 +526,18 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     let ryza_pack = ryza_files.as_ref().map(|(_, t, _)| G1t::parse(t)).transpose()?;
     // The characters' toon ramp (`DSChara-Cll`'s `sRamp`, docs/shading.md).
-    let ramp_bytes = match ryza_files {
-        Some(_) => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
-        None => None,
+    let ramp_bytes = match ryza_files.is_some() || a.title {
+        true => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
+        false => None,
     };
     let ramp_pack = ramp_bytes.as_deref().map(G1t::parse).transpose()?;
     // Her draws' ramp rows by (first index, instance): each submesh's `rampIndex`, and whether
     // it has a rim (`rmIndex`).
     let mut ramp_rows: std::collections::HashMap<(u32, u32), (u32, bool)> = Default::default();
     // The characters' rim (`environment::Rim`, the default environment override's).
-    let rim = match ryza_files {
-        Some(_) => install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::Rim::parse(&b).map_err(|e| eprintln!("{e}")).ok()),
-        None => None,
+    let rim = match ryza_files.is_some() || a.title {
+        true => install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::Rim::parse(&b).map_err(|e| eprintln!("{e}")).ok()),
+        false => None,
     };
     eprintln!("character rim: {rim:?}");
     // The exposure's cap (`exposure`): the default override's `trueHDR_vExposureRange` top.
@@ -589,49 +612,14 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             })
         });
         eprintln!("model collision: {} meshes, {} triangles", solids.len(), solids.iter().map(|c| c.triangles.len()).sum::<usize>());
-        let first = scene.draws.len();
         // Her settings from the character tables (`barrel_ryza::chara`): her model's scale, her
         // size against the walls, the camera's look height.
         let chara = barrel_ryza::chara::Chara::read(&install.read("\\saves\\chara\\chara.xml")?, &install.read("\\saves\\chara\\charabase.xml")?, "PC00A")?;
         eprintln!("Ryza: {chara:?}");
         let instance = scene.instance(Mat4::from_scale_rotation_translation(Vec3::from(chara.size), glam::Quat::from_rotation_y(turn.to_radians()), *at));
-        scene.add_posed(geometry, Mat4::IDENTITY, rp.textures.len(), Some(&joints), instance)?;
-        // Her submeshes' ramp rows (`rampIndex`), one draw each in order for those with UVs and
-        // normals (the others draw nothing, `Scene::add_posed`); the ramp texture follows her
-        // own.
-        let drawn: Vec<&barrel_formats::g1m::Submesh> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).collect();
-        let rows: Vec<(u32, bool)> = drawn.iter().map(|s| (geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255), geometry.param_record(s, "rmIndex").is_some())).collect();
-        // Her hair's highlight (`sAlbedoRetouch2HighlightMap`, texture kind 66): laid over the
-        // hair's colour by its alpha. The game shifts it along v by `dot(V, alr2HDir) ×
-        // alr2HAdj` (-0.11 at most, about 0.015 at the field camera's pitch): laid on unshifted
-        // (docs/shading.md).
-        let highlights: Vec<Option<usize>> = drawn.iter().map(|s| geometry.materials.get(s.material as usize).and_then(|m| m.textures.iter().find(|t| t.kind == 66)).map(|t| t.index as usize)).collect();
-        if scene.draws.len() - first == highlights.len() {
-            for (d, h) in scene.draws[first..].iter_mut().zip(&highlights) {
-                if let Some(h) = h {
-                    d.overlay = Some(*h);
-                }
-            }
-        }
-        if scene.draws.len() - first == rows.len() {
-            for (d, &row) in scene.draws[first..].iter().zip(&rows) {
-                ramp_rows.insert((d.first_index, d.instance), row);
-            }
-        } else {
-            eprintln!("Ryza: {} draws for {} submeshes: no toon ramp", scene.draws.len() - first, rows.len());
-        }
-        for d in &mut scene.draws[first..] {
-            if ramp_rows.contains_key(&(d.first_index, d.instance)) {
-                d.mask = Some(rp.textures.len());
-            }
-            d.texture += textures.len();
-            d.mask = d.mask.map(|m| m + textures.len());
-            d.overlay = d.overlay.map(|o| o + textures.len());
-            d.field = Some(0);
-            d.name = "ryza".into();
-            d.casts = true;
-        }
-        eprintln!("Ryza: {} draws, {} joints, motion {motion} {:.2}s long", scene.draws.len() - first, joints.len(), anim.duration);
+        // Her pack follows the scene's textures, the toon ramp her pack.
+        let drawn = actors::add_character(&mut scene, geometry, rp.textures.len(), &joints, instance, textures.len(), textures.len() + rp.textures.len(), "ryza", &[], &mut ramp_rows)?;
+        eprintln!("Ryza: {drawn} draws, {} joints, motion {motion} {:.2}s long", joints.len(), anim.duration);
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
         let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
         (player.radius, player.height) = (chara.radius, chara.height);
@@ -645,6 +633,23 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         textures.extend(rp.textures.iter());
         if let Some(r) = &ramp_pack {
             textures.extend(r.textures.first());
+        }
+    }
+    // The title's characters, one instance each, posed as the event's stage has them (the ramp
+    // texture first, then each one's pack).
+    if !cast.is_empty() {
+        if let Some(r) = &ramp_pack {
+            let ramp = textures.len();
+            textures.extend(r.textures.first());
+            for actor in cast.iter_mut() {
+                let (Some(play), Some(body)) = (&title_play, title_play.as_ref().and_then(|p| p.stage.characters.get(&actor.slot))) else { continue };
+                let joints = actor.joints(body, play.stage.time);
+                actor.instance = scene.instance(actor.model(body));
+                let name = format!("slot {}", actor.slot);
+                let drawn = actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, actor.instance, textures.len(), ramp, &name, &actor.swing, &mut ramp_rows)?;
+                eprintln!("{name}: {drawn} draws at {:?}, facing {:.1}, {:?} at stage {:.3} s", body.position, body.facing.to_degrees(), body.motion, play.stage.time);
+                textures.extend(actor.pack.textures.iter());
+            }
         }
     }
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
@@ -1049,8 +1054,19 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 stale = false;
             }
         }
+        // The title's characters on the event's stage at this frame's moment.
+        if let Some(play) = title_play.as_mut().filter(|_| !cast.is_empty()) {
+            let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+            actors::advance(play, a.title_at + clock - actors::EVENT_START);
+            prev_palette.copy_from_slice(&palette);
+            for actor in &cast {
+                if let Some(body) = play.stage.characters.get(&actor.slot) {
+                    actor.pose(body, play.stage.time, &mut instances, &mut palette);
+                }
+            }
+        }
         sync.wait_slot(&gpu, renderer.pool)?;
-        if pump.is_some() {
+        if pump.is_some() || !cast.is_empty() {
             scene.write_instances(&gpu, &instances)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }

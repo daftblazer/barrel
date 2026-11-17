@@ -13,7 +13,10 @@
 //! Each draw: `pass` (`shadow` the sun's shadow map, `scene` the lit colour pass, `sky` the
 //! distant view, `outline`, `terrain`), `idx` its index count, `inst` its instances, `tex` its
 //! textures by content name (as the capture names them; the colour texture, then mask, normal
-//! map and emission where it has them) and `world` its model matrix. `view_proj` is the colour pass's
+//! map and emission where it has them) and `world` its model matrix. A skinned draw also has
+//! `bones`: its bone palette in slot order (the joints its submesh names), each bone as 16
+//! floats, column-major, the instance's model matrix times the joint's skinning matrix (render
+//! space); `simulated` the slots the game moves by its cloth simulation, which Barrel does not. `view_proj` is the colour pass's
 //! (the camera's jitter included); the renderer keeps no separate view and projection.
 
 use std::io::Write as _;
@@ -140,6 +143,16 @@ impl Draws3d {
         v.push(format!("{{\"pass\":\"{pass}\",\"idx\":{index_count},\"inst\":1,\"tex\":{tex:?},\"world\":{:?}}}", world.to_cols_array()));
     }
 
+    /// Adds the bone palette to the draw just added (`add`).
+    pub fn bones(&mut self, palette: &[glam::Mat4], base: usize, joints: &[u32], model: &glam::Mat4) {
+        let Some(last) = self.0.as_mut().and_then(|v| v.last_mut()) else { return };
+        let joint = |j: &u32| (j & !crate::Draw::SIMULATED) as usize;
+        let all: Vec<f32> = joints.iter().flat_map(|j| (*model * palette.get(base + joint(j)).copied().unwrap_or(glam::Mat4::IDENTITY)).to_cols_array()).collect();
+        let simulated: Vec<usize> = (0..joints.len()).filter(|&k| joints[k] & crate::Draw::SIMULATED != 0).collect();
+        last.pop();
+        last.push_str(&format!(",\"bones\":{all:?},\"simulated\":{simulated:?}}}"));
+    }
+
     pub fn finish(self, frame: u64, view_proj: &glam::Mat4, shadow_vp: &glam::Mat4) {
         let (Some(v), Some(o)) = (self.0, out()) else { return };
         let line = format!(
@@ -159,5 +172,30 @@ pub fn gone(frame: u64, layer: u64) {
         let mut g = o.lock().unwrap();
         let _ = writeln!(g, "{{\"frame\":{frame},\"layer\":{layer},\"gone\":true}}");
         let _ = g.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::{Mat4, Vec3};
+
+    /// A skinned draw's trace line carries its bones in palette slot order: the model times the
+    /// joint's matrix, the simulated ones named by slot.
+    #[test]
+    fn a_draws_bones_follow_its_palette_slots() {
+        let mut t = Draws3d(Some(Vec::new()));
+        let model = Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0));
+        let palette = [Mat4::IDENTITY, Mat4::from_translation(Vec3::new(0.0, 5.0, 0.0)), Mat4::from_translation(Vec3::new(0.0, 0.0, 7.0))];
+        t.add("scene", 3, &[], &model);
+        // slot 0 is joint 2, slot 1 joint 1 (swinging)
+        t.bones(&palette[..], 0, &[2, 1 | crate::Draw::SIMULATED], &model);
+        let line = t.0.unwrap().pop().unwrap();
+        let bones = line.split("\"bones\":[").nth(1).unwrap().split(']').next().unwrap();
+        let v: Vec<f32> = bones.split(',').map(|x| x.trim().parse().unwrap()).collect();
+        assert_eq!(v.len(), 32);
+        assert_eq!(&v[12..15], &[10.0, 0.0, 7.0]);
+        assert_eq!(&v[28..31], &[10.0, 5.0, 0.0]);
+        assert!(line.ends_with("\"simulated\":[1]}"), "{line}");
     }
 }

@@ -101,6 +101,8 @@ pub struct SceneGpu {
     instances: Ring,
     palette: Ring,
     half: u64,
+    /// The palette as last written, kept only while the draw trace is on (`trace_palette`).
+    traced: std::sync::Mutex<Vec<Mat4>>,
     weights: Ring,
     delta_buf: vk::Buffer,
     delta_mem: vk::DeviceMemory,
@@ -230,6 +232,7 @@ impl SceneGpu {
             instances,
             palette,
             half,
+            traced: std::sync::Mutex::new(if crate::trace::enabled() { data.palette.to_vec() } else { Vec::new() }),
             weights,
             delta_buf,
             delta_mem,
@@ -253,8 +256,16 @@ impl SceneGpu {
         Ok(())
     }
 
+    /// The joint palette the frame draws with, for the draw trace (empty with the trace off).
+    pub fn traced_palette(&self) -> std::sync::MutexGuard<'_, Vec<Mat4>> {
+        self.traced.lock().unwrap()
+    }
+
     /// This frame's joints and last frame's.
     pub fn write_palette(&self, gpu: &Gpu, palette: &[Mat4], prev: &[Mat4]) -> Result<()> {
+        if crate::trace::enabled() {
+            *self.traced.lock().unwrap() = palette.to_vec();
+        }
         self.palette.write(gpu, 0, bytes(palette));
         self.palette.write(gpu, self.half, bytes(prev));
         Ok(())

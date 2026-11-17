@@ -823,7 +823,8 @@ impl Geometry<'_> {
         };
         let find = |sem: Semantic| layout.attributes.iter().find(|a| a.semantic == sem && a.layer == 0);
         let pos = find(Semantic::Position).ok_or(Error::Corrupt("submesh has no positions"))?;
-        let nrm = find(Semantic::Normal).filter(|a| a.kind == AttrType::Float3);
+        // (A Ryza character's cloth layouts keep the normal in a Float4, as they do the position.)
+        let nrm = find(Semantic::Normal).filter(|a| a.kind == AttrType::Float3 || (a.kind == AttrType::Float4 && pos.kind == AttrType::Float4));
         let uv = find(Semantic::TexCoord).filter(|a| a.kind == AttrType::Float2);
         let color = find(Semantic::Color).filter(|a| matches!(a.kind, AttrType::UNorm4 | AttrType::Float4));
         let corner = find(Semantic::PointSize).filter(|a| a.kind == AttrType::Float3);

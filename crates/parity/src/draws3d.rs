@@ -55,6 +55,9 @@ struct GameDraw {
     rt: Vec<String>,
     ds: String,
     vars: Vec<Var>,
+    /// A skinned draw's bone palette: its `mL2W` is an array of bones (1536 bytes, 32 bones of
+    /// three registers, see `game_bone`) where a rigid draw's is one matrix (48).
+    palette: Vec<f32>,
 }
 
 fn strs(v: &Value) -> Vec<String> {
@@ -79,10 +82,12 @@ fn game_draws(t: &Trace, frame: u64) -> Result<Vec<GameDraw>> {
             for (slot, hash) in e[cbs].as_object().into_iter().flatten() {
                 let (Ok(slot), Some(h)) = (slot.parse::<u32>(), hash.as_str()) else { continue };
                 if let Ok(blob) = t.blob(h) {
-                    vars.extend(read_vars(&cache[&shader], slot, &blob));
+                    let read = read_vars(&cache[&shader], slot, &blob);
+                    vars.extend(read);
                 }
             }
         }
+        let palette = vars.iter().find(|v| v.0 == "mL2W" && v.1 > 48).map(|v| v.2.clone()).unwrap_or_default();
         let mut textures = Vec::new();
         for k in ["ps_tex", "vs_tex"] {
             for (slot, h) in e[k].as_object().into_iter().flatten() {
@@ -100,6 +105,7 @@ fn game_draws(t: &Trace, frame: u64) -> Result<Vec<GameDraw>> {
             rt: strs(&e["rt"]),
             ds: e["ds"].as_str().unwrap_or("-").to_string(),
             vars,
+            palette,
         });
     }
     Ok(out)
@@ -182,6 +188,55 @@ fn game_view_proj(w2p: &[f32]) -> Option<M> {
     w2p.get(..16)?.try_into().ok()
 }
 
+/// Bone `k` of the game's palette as a column-vector matrix in column-major order (the same
+/// three registers a bone as `mL2W`); None past the palette or for an unused (all zero) bone.
+fn game_bone(palette: &[f32], k: usize) -> Option<M> {
+    let regs = palette.get(k * 12..k * 12 + 12)?;
+    if regs.iter().all(|&x| x == 0.0) {
+        return None;
+    }
+    game_world(regs)
+}
+
+/// How far two bone matrices are apart: the largest difference of the translations, and of the
+/// rest (the 3 x 3 part, rotation and scale).
+fn bone_diff(a: &M, b: &M) -> (f32, f32) {
+    let (mut t, mut r) = (0f32, 0f32);
+    for c in 0..4 {
+        for row in 0..3 {
+            let d = (a[c * 4 + row] - b[c * 4 + row]).abs();
+            if c == 3 {
+                t = t.max(d);
+            } else {
+                r = r.max(d);
+            }
+        }
+    }
+    (t, r)
+}
+
+/// The worst translation and rotation difference over a skinned draw's bones, with the slot of
+/// each. The game's bones are mirrored to Barrel's render space. The `simulated` bones (hair,
+/// skirt: the game's cloth simulation, which Barrel does not run) are left out and counted.
+fn palette_diff(game: &[f32], barrel: &[M], simulated: &[usize]) -> ((f32, usize), (f32, usize), usize) {
+    let (mut t, mut r, mut swing) = ((0f32, 0), (0f32, 0), 0);
+    for (k, b) in barrel.iter().enumerate() {
+        let Some(g) = game_bone(game, k) else { continue };
+        if simulated.contains(&k) {
+            swing += 1;
+            continue;
+        }
+        let (dt, dr) = bone_diff(&mirrored(&g), b);
+        if dt > t.0 {
+            t = (dt, k);
+        }
+        if dr > r.0 {
+            r = (dr, k);
+        }
+    }
+    (t, r, swing)
+}
+
 /// `S * m * S` with S the x mirror Barrel's render space applies.
 fn mirrored(m: &M) -> M {
     let mut o = *m;
@@ -225,6 +280,16 @@ struct BarrelDraw {
     idx: u64,
     tex: Vec<String>,
     world: M,
+    /// A skinned draw's bone matrices in palette slot order (model times skin matrix).
+    bones: Vec<M>,
+    /// The slots among them the game moves by its cloth simulation.
+    simulated: Vec<usize>,
+}
+
+/// A trace draw's `bones`: 16 floats a bone.
+fn bones(v: &Value) -> Vec<M> {
+    let f: Vec<f32> = v.as_array().into_iter().flatten().filter_map(|x| x.as_f64().map(|x| x as f32)).collect();
+    f.chunks_exact(16).map(|c| c.try_into().unwrap()).collect()
 }
 
 fn barrel_frame(path: &Path, frame: u64) -> Result<(Vec<BarrelDraw>, Option<M>)> {
@@ -251,7 +316,7 @@ fn barrel_frame(path: &Path, frame: u64) -> Result<(Vec<BarrelDraw>, Option<M>)>
         .as_array()
         .into_iter()
         .flatten()
-        .map(|d| BarrelDraw { pass: d["pass"].as_str().unwrap_or("").to_string(), idx: d["idx"].as_u64().unwrap_or(0), tex: strs(&d["tex"]), world: m(&d["world"]).unwrap_or([0.0; 16]) })
+        .map(|d| BarrelDraw { pass: d["pass"].as_str().unwrap_or("").to_string(), idx: d["idx"].as_u64().unwrap_or(0), tex: strs(&d["tex"]), world: m(&d["world"]).unwrap_or([0.0; 16]), bones: bones(&d["bones"]), simulated: d["simulated"].as_array().into_iter().flatten().filter_map(|x| x.as_u64().map(|x| x as usize)).collect() })
         .collect();
     Ok((draws, m(&v["view_proj"])))
 }
@@ -304,16 +369,29 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     let mut worst_at = String::new();
     let mut mirror_wins = 0usize;
     let mut unmatched_game: Vec<&Key> = Vec::new();
+    // Skinned draws' bone palettes by the folder of their texture: draws, worst translation and
+    // rotation difference with where.
+    let mut poses: BTreeMap<String, (usize, (f32, String), (f32, String))> = BTreeMap::new();
     let mut unmatched_vs: std::collections::BTreeMap<String, usize> = Default::default();
     for (i, g) in game.iter().enumerate() {
-        let world = g.vars.iter().find(|v| v.0 == "mL2W").and_then(|v| game_world(&v.2));
+        let world = g.vars.iter().find(|v| v.0 == "mL2W" && v.1 == 48).and_then(|v| game_world(&v.2));
         // The unused Barrel draw of the same key nearest in world matrix (the first without one).
         let mut best: Option<(usize, f32, bool)> = None;
         for (j, b) in bdraws.iter().enumerate() {
             if bused[j] || !covers(&gkeys[i], &bkeys[j]) {
                 continue;
             }
-            let (d, m) = world.map_or((0.0, false), |w| world_diff(&w, &b.world));
+            let (d, m) = match world {
+                Some(w) => world_diff(&w, &b.world),
+                // A skinned draw: the nearest palette (translation, rotation counted a hundred times).
+                None if !g.palette.is_empty() && !b.bones.is_empty() => {
+                    let ((t, _), (r, _), _) = palette_diff(&g.palette, &b.bones, &b.simulated);
+                    (t + 100.0 * r, false)
+                }
+                // Barrel's draw with no bones for the game's skinned one: the last resort.
+                None if !g.palette.is_empty() => (f32::MAX, false),
+                None => (0.0, false),
+            };
             if best.is_none_or(|x| d < x.1) {
                 best = Some((j, d, m));
             }
@@ -329,6 +407,20 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
         };
         bused[j] = true;
         matched += 1;
+        if !g.palette.is_empty() && !bdraws[j].bones.is_empty() {
+            let ((t, tk), (r, rk), swing) = palette_diff(&g.palette, &bdraws[j].bones, &bdraws[j].simulated);
+            if std::env::var_os("DIFF3D_POSES").is_some() {
+                println!("  skinned draw #{} ({} indices): translation {t:.3} (bone {tk}), rotation {r:.4} (bone {rk}), {swing} swing bones left out", g.n, g.count);
+            }
+            let p = poses.entry(gkeys[i].0.first().map_or_else(String::new, |n| folder(n))).or_default();
+            p.0 += 1;
+            if t > p.1 .0 {
+                p.1 = (t, format!("draw #{} bone {tk}", g.n));
+            }
+            if r > p.2 .0 {
+                p.2 = (r, format!("draw #{} bone {rk}", g.n));
+            }
+        }
         if world.is_some() && placed {
             compared += 1;
             mirror_wins += usize::from(m);
@@ -343,6 +435,9 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     println!("  by vertex shader: {}", unmatched_vs.iter().map(|(v, n)| format!("{v} x{n}")).collect::<Vec<_>>().join(", "));
     println!("Barrel draws without a game match: {}\n{}", unmatched_barrel.len(), group(&unmatched_barrel));
     println!("world matrices compared: {compared} ({mirror_wins} fit best with Barrel's x mirror); worst: {worst_at}");
+    for (who, (n, (t, tat), (r, rat))) in &poses {
+        println!("pose {who}: {n} skinned draws, bones worst translation {t:.3} ({tat}), rotation {r:.4} ({rat})");
+    }
     let vp = game.iter().flat_map(|d| d.vars.iter()).find(|v| v.0 == "mW2P").and_then(|v| game_view_proj(&v.2));
     if let (Some(g), Some(b)) = (vp, bvp) {
         println!("view-projection (first game mW2P in Barrel's clip space vs Barrel's): max difference {:.4}", max_diff(&render_clip(&g), &b));
@@ -418,6 +513,23 @@ mod tests {
         let apply = |m: &M, p: [f32; 3]| -> [f32; 4] { std::array::from_fn(|r| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]) };
         let (a, b) = (apply(&g, [-2.0, 3.0, 5.0]), apply(&c, [2.0, 3.0, 5.0]));
         assert_eq!([a[0], -a[1], a[2], a[3]], b);
+    }
+
+    #[test]
+    fn palettes_compare_bone_by_bone_in_render_space() {
+        // Bones of three registers (rows m0 m1 m2 t): the first at (10, 20, 30), the second
+        // at the origin, the third unused (zeros).
+        let mut game = vec![1.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 20.0, 0.0, 0.0, 1.0, 30.0];
+        game.extend([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        game.extend([0.0; 12]);
+        assert!(game_bone(&game, 2).is_none() && game_bone(&game, 3).is_none());
+        let bone = game_bone(&game, 0).unwrap();
+        // Barrel's matrix is the game's mirrored in x; one 0.5 off in y, one swinging bone left out
+        let mut barrel = mirrored(&bone);
+        barrel[13] += 0.5;
+        let (t, r, swing) = palette_diff(&game, &[barrel, barrel], &[1]);
+        assert_eq!((t, r, swing), ((0.5, 0), (0.0, 0), 1));
+        assert_eq!(bone_diff(&bone, &bone), (0.0, 0.0));
     }
 
     #[test]

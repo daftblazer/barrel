@@ -16,6 +16,10 @@ pub const RUN_START: u32 = 20;
 pub const RUN: u32 = 21;
 pub const RUN_STOP: u32 = 22;
 
+/// The hip's bone id: the joint a motion's root translation drives (a motion of a set shared by
+/// a body type is made for a hip `SkeletonBase` high, and moves a model's hip in proportion).
+pub const HIP: u32 = 1;
+
 /// The feet's bone ids (`SK_L_Foot`, `SK_R_Foot` in the model's `Oid.bin`).
 pub const FEET: [u32; 2] = [11, 12];
 

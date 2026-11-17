@@ -188,6 +188,18 @@ pub struct Draw {
     /// A field object's draw class (Ryza's placement lists: near, middle, far, landmark as 0 to
     /// 3, each with its field's draw distance); 0 elsewhere.
     pub class: u8,
+    /// A posed model's draw: the skeleton joints its submesh's bone palette names, in slot
+    /// order (what the draw trace writes the pose by; empty for what is not skinned). A joint
+    /// the game moves by its cloth simulation (hair, skirt: the model's `.swg`), which Barrel
+    /// does not, has [`Draw::SIMULATED`] set. Empty too for a submesh whose bone numbers are
+    /// not palette slots (the cloth parts, `Geometry::palette_indexed`), which Barrel draws
+    /// rigid on one joint.
+    pub bones: Vec<u32>,
+}
+
+impl Draw {
+    /// A flag on a `bones` entry: the joint swings in the game.
+    pub const SIMULATED: u32 = 1 << 31;
 }
 
 /// A draw's box in its model's space (its vertices on the scene's starting joints) and how far
@@ -701,7 +713,7 @@ impl Scene {
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
         }
         Ok(())
     }
