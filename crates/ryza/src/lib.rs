@@ -17,6 +17,8 @@ pub mod player;
 pub mod solids;
 pub mod event;
 pub mod telop;
+pub mod font;
+pub mod title;
 
 // The game's play (its program: `barrel-ryza`, and `barrel`, which picks the game).
 // The play code names its own crate by its package name.

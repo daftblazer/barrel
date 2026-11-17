@@ -435,12 +435,19 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
         // scales it back, so it is not.
         let ps = t.blob(&s("ps")).unwrap_or_default();
         let (mut rgb_k, mut a_k) = (1.0f32, 1.0f32);
+        // Ryza's 2D pixel shader multiplies the texel and vertex colour by `materialColor`
+        // (a text outline is black at half alpha, a hidden text has alpha 0).
+        let mut material = [1.0f32; 4];
         if let Ok(p) = dxbc::program(&ps) {
             for v in p.buffers.iter().filter(|b| b.name == "$Globals").flat_map(|b| &b.variables) {
                 let val = ps_cb.get(v.offset as usize / 4).copied().unwrap_or(1.0);
                 match v.name.as_str() {
                     "HdrRangeInv" => rgb_k = 1.0f32.min(val / val),
                     "fAlphaRate" => a_k = val,
+                    "materialColor" => {
+                        let o = v.offset as usize / 4;
+                        material = std::array::from_fn(|i| ps_cb.get(o + i).copied().unwrap_or(1.0));
+                    }
                     _ => {}
                 }
             }
@@ -455,7 +462,7 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
                 tex: tex0.clone(),
                 rect: [tl.0, tl.1, br.0, br.1],
                 uv: [uv(tl, 0), uv(tl, 1), uv(br, 0), uv(br, 1)],
-                color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0) * if i == 3 { a_k } else { rgb_k }),
+                color: std::array::from_fn(|i| tl.3.get(i).copied().unwrap_or(1.0) * material[i] * if i == 3 { a_k } else { rgb_k }),
                 text: None,
                 corners,
                 how: format!("{} {:?}", s("ps"), ps_cb),
@@ -464,7 +471,8 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
     }
     // fully transparent rectangles draw nothing (the 2D blend is alpha blending)
     let before = out.len();
-    out.retain(|q| q.color[3] > 0.0);
+    // as do those wholly off the screen (the title's sparkle sprites wait at x = -1338)
+    out.retain(|q| q.color[3] > 0.0 && q.rect[2] > 0.0 && q.rect[0] < 1920.0 && q.rect[3] > 0.0 && q.rect[1] < 1080.0);
     let dropped = before - out.len();
     Ok((out, other + dropped))
 }

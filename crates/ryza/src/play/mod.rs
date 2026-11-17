@@ -93,6 +93,10 @@ struct Args {
     telop: Option<u32>,
     /// `--event NAME --at T`: the event's stage T seconds in (its telop shown as it would be).
     event: Option<(String, f32)>,
+    /// `--title`: the title screen's 2D layer over a blank frame (the field is not drawn), and
+    /// `--title-at S` (or `BARREL_TITLE_AT`): the seconds into the title the first frame shows.
+    title: bool,
+    title_at: f32,
 }
 
 /// Ryza as posed and walked: her skeleton, her motions by number, her instance, the field's
@@ -114,7 +118,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -143,6 +147,8 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
+            "--title" => a.title = true,
+            "--title-at" => a.title_at = value()?.parse()?,
             "--telop" => a.telop = Some(value()?.parse()?),
             "--event" => a.event = Some((value()?, 0.0)),
             "--at" => a.event.as_mut().ok_or("--at after --event")?.1 = value()?.parse()?,
@@ -205,6 +211,27 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     let mut layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[t])?;
     layer.set(gpu, &[text::Quad { turn: false, spin: None, rect, uv, color: [1.0, 1.0, 1.0, alpha], texture: 0 }])?;
     Ok(layer)
+}
+
+/// The title screen's layer (empty until each frame's quads are set) with its layout.
+fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::title::Title)> {
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = barrel_ryza::font::glyphs(&exe).ok_or("the executable's font table")?;
+    let (font_bytes, ui_bytes) = (install.read("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t")?, install.read("\\data\\x64\\res_en\\ui\\a21_title.g1t")?);
+    let font = barrel_formats::g1t::G1t::parse(&font_bytes).map_err(|e| format!("mainfont01: {e}"))?;
+    let ui = barrel_formats::g1t::G1t::parse(&ui_bytes).map_err(|e| format!("a21_title: {e}"))?;
+    let (font, ui) = (font.textures.first().ok_or("mainfont01: no texture")?, ui.textures.first().ok_or("a21_title: no texture")?);
+    let title = barrel_ryza::title::Title::read(
+        &install.read("\\saves\\ui_en\\a21_title\\uil_a21_title.xml")?,
+        &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_title.xml")?,
+        &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        glyphs,
+        // The styles' pixels are the 2160-line atlas's; the 1080-line one drawn is half its size.
+        (ui.width * 2, ui.height * 2),
+        (font.width, font.height),
+    )?;
+    // Textures in the order of `text::FONT`, `text::UI`.
+    Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui])?, title))
 }
 
 /// The way a directional light travels, in render space: from `elevation` degrees above the
@@ -817,7 +844,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     eprintln!("draw ranges: {ranges:?}");
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
     let shown = |d: &Draw| {
-        !a.hide.iter().any(|h| d.name.contains(h.as_str()))
+        !a.title
+            && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
@@ -876,7 +904,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         Some((n, alpha)) => Some(telop_layer(&install, &gpu, &renderer, n, alpha, (width, height))?),
         None => None,
     };
-    let layers: Vec<&text::Layer> = telop_layer.iter().collect();
+    // The title screen (`--title`): its glyphs from the executable, its layout from the archives.
+    let mut title_layer = match a.title {
+        true => Some(title_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
     let bytes = u64::from(width) * u64::from(height) * 4;
     let readback = match pump {
         Some(_) => None,
@@ -1023,6 +1055,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             },
             None => 0,
         };
+        // The title's quads for this frame's moment: the first frame at `--title-at`, then on the
+        // clock (a window's own, 60 Hz offscreen).
+        if let Some((layer, title)) = title_layer.as_mut() {
+            let t = a.title_at + if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+            layer.set(&gpu, &title.quads(t, (width, height)))?;
+        }
+        let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _)| l)).collect();
         let frame = Frame {
             image,
             width,
@@ -1059,7 +1098,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             overlay: [0.0; 4],
             layers: &layers,
             readback: readback.map(|(b, _)| b),
-            sky_plane: view.sky_plane,
+            sky_plane: view.sky_plane && !a.title,
         };
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };

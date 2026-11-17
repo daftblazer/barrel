@@ -1149,3 +1149,42 @@ and centred, black around. Escha's startup plays `opening.wmv` after the logos w
 button skips. Offscreen, `BARREL_SPLASH_AT` past the logos and the 0.15 s gap renders a movie
 picture: at 20 s it is within 1 level of ffmpeg's BT.709 conversion (mean 0.05; BT.601 would be
 up to 12 off).
+
+## Ryza's title screen
+
+`barrel ... INSTALL FIELD OUT.png --title [--title-at S]` (or `BARREL_TITLE_AT=S`) draws Atelier Ryza
+DX's title as it stands with no input, 2D only: `barrel_ryza::title::Title` lays out the logo, the
+"press any button" prompt, the version string with its outline and the copyright line, and each
+frame `quads(t, screen)` gives the quads of a `render::text::Layer` (font atlas = `FONT`, the
+`a21_title.g1t` atlas = `UI`), so the 2D draw trace records them. `t` is the seconds into the
+title; `--title-at` is the moment of Barrel's first frame, then 60 Hz offscreen or the window's
+clock. The field named on the command line is loaded but not drawn (the 3D backdrop is a later
+packet; the frame shows what the scene leaves, a grey clear and a stray flat shape).
+
+Draw order, as the capture has it: logo, prompt, the version text 9 times black at half alpha
+(a 3 x 3 grid of offsets of `bold_size` 1 layout pixel, columns first) then once white, the
+copyright line. Everything comes from the archives (`docs/formats.md`, "Ryza's title layout")
+and the executable's font table (`barrel_ryza::font`, 1,774 glyphs at a fixed address), except
+the constants `title.rs` names: `TEXT_TOP` (the text line's top against its node, fitted),
+`OUTLINE_ALPHA` (read from the capture's `materialColor`), `PATCH_VERSION` ("1.02", the capture's
+build; the executable's patch table lists the strings but the level in force is not read) and
+`font::ATLAS_SIZE` (36, fitted: a size-11 glyph at 1080 lines is 16.5 pixels).
+
+The prompt's opacity is the slide-in's colour curve (it replaces the plain fade-in bound beside
+it) times the blink: `anm_common_juvenile_blink` runs 255 to 127 over 0.75 s with an in-cubic
+ease; the capture's pulse is symmetric about its dip, so it plays forward and then back, a dip
+every 1.5 s starting at 0.75 s, one dip per period although the layout also binds a reversed
+copy to the image (the capture shows a single dip; not explained). The prompt appears 2 s in and
+slides up 30 layout pixels over 0.5 s.
+
+Parity: `barrel-parity diff` on `ryza-recomp`'s `title-cycle` capture, frames 1400 to 1800, 0
+mismatches (`docs/ryza/checks-title.txt`). Frame N maps to `--title-at (N - 1140) / 60`, except
+frames 1700 and 1800 (9.30 and 10.9667 instead of 9.3333 and 11.0): the capture's clock drifts
+from 60 Hz by a couple of frames by then, which the pulse's phase shows. Two things in the
+diff tool serve this screen: Ryza's 2D pixel shader multiplies by `materialColor` (the outline's
+black half alpha; the hidden autosave notice drawn at alpha 0), and quads wholly off the screen
+draw nothing (sprites parked at x = -1338).
+
+Not drawn yet: the fade from black in the first second of the title (a full-screen fill drawn
+by a separate shader, frames 1140 to 1275 in the capture), the menu behind the prompt, the 3D
+backdrop, and the screens before it (autosave notice, logos, loading).

@@ -2560,3 +2560,34 @@ icon cut 22 and "Reward" the task's `Score` in 40-pixel digits (part 0x5a). The 
 drawn greyed (178) first, then the open one over everything. Task texts can begin with a Shift-JIS
 symbol the font lacks: the game draws two boxes. The rank box is layout 527 at (1426, 840). The
 cursor glow (part 0x9f) is drawn last; its cut cycles with time.
+
+## Ryza's title layout (`saves/ui_<lang>/a21_title/uil_a21_title.xml`)
+
+A node tree in a 1280 x 720 layout (positions add down the tree; the 1080-line screen scales
+by 1.5, a wider one is centred). Pictures name a style of `saves/ui_<lang>/gen_styles/
+uis_gen_a21_title.xml`, which gives `uvwh` in the 2160-line atlas (`a21_title.g1t`, 2048 x 2560
+there, the 1080-line file half that), a third of a layout pixel per atlas pixel; an `image_list`
+style holds the two states of a menu entry (the first is shown, the second the highlighted
+one). Decoded:
+
+| Node | Position | Picture |
+|---|---|---|
+| `logo` | (315, 55), scale 0.95 | `gen_a21_title01_logo` 4,21,2040,1033 |
+| `press_start_top` > `press_start` (-2, -30) > `press_start_image` | (456.33, 459) | `gen_a21_title01_anybutton` 11,1779,1099,112 |
+| `copyright` | (491, 664), `size_wh` 300 x 18 | `gen_a21_title01_copyright` 151,2487,1044,63 |
+| `patch` > `patch_ver` (text) | (1241, 690), right-aligned, `font_size` 11, `bold_size` 1 | "Ver. " + the patch level, MainFont01 |
+| `title_menu` | (514, 436) | new game, load game, setting, extra, episode (menu, not drawn yet) |
+
+Many nodes are `visible="false"` in the file; the game shows them from code, so visibility is
+not the file's. Animations are `anim_ctrl` children binding `uia_common.xml` animations to nodes
+(`delay` seconds, `speed`, `loop`, `reverse`); `press_start_top`'s `up` (delay 2) binds
+`anm_common_fade_in` and `anm_common_slide_in_bottom`, both on the colour, and the capture shows
+only the slide's colour curve in effect. `uia_common.xml`'s keys are `frame60` (frames at 60 a
+second; a key that does not come after the one before it repeats its frame and is dropped),
+easings `easing_incubic` / `easing_outcubic` (u cubed, 1 - (1 - u) cubed). The text is laid out
+from the font table in the executable (`MainFont01_HD1080`: 28-byte records as Escha's font
+table, `u32 code, u16 x, y, w, h, i32 x offset, y offset, u32 advance, 0`, at 0x141309320
+in the Steam build, 1,774 of them; `MainFont00`'s 2,820 start at file offset 0x12c0ba0): a
+glyph quad is the pen plus the x offset, the line's top plus the y offset, scaled by
+`font_size * 1.5 / 36`. The "Ver. " string is in the executable (`Ver. `, followed by a patch
+table `Patch day1` 1.00, 1.01, 1.02, ...); the build's level is not read (Barrel says 1.02).
