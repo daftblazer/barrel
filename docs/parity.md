@@ -148,7 +148,10 @@ ebd, oid, opl2). A range is used when inverting its bytes changes the parse resu
 text, an error, or a panic); the tool bisects the file down to `--gran` bytes (default 4) until
 `--budget` seconds (default 60) run out, and the blocks it did not get to split are reported as
 "used (not refined)". Output is one `offset..end (len) bytes` line per unused range, then
-`FILE: N bytes, U unused in R ranges (P%), parser X`. A parser that allocates what a mutated
+`FILE: N bytes, U unused in R ranges (P%), parser X`. It also knows Ryza DX's own field files
+(`_env.bin`, `_light.bin`, `_grass.bin`, `_coll.bin`, `.koc`). `tools/unread-survey.sh DATA_DIR
+WORK_DIR` runs it over a sample of a game's archives and prints a table by kind of file.
+A parser that allocates what a mutated
 length field asks for can exhaust memory; run it under the memory cap. The elixir container's
 entries are listed, not parsed, so their bytes are reported unused.
 

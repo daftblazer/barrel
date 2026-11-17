@@ -1280,12 +1280,23 @@ the `title-cycle` capture has them (capture frame 278 is t = 0, so frame N shows
    window slides back out from 1077 to 1107. Opacities are bytes multiplied down the node tree and
    truncated (`boot::byte`). Barrel loads nothing, so the length (about 5.2 s) is the capture's.
 
+The game's own sequence (found with the answer key's hooks): one object, stepped each frame
+from `0x1404db7ac`, whose state `0x1400db160` sets: 1 the notice (frame 11 of the capture's
+run), 2 and then 8 polled every 4 frames while the first loading runs (136 to 169), 4 the Koei
+Tecmo logo (173), 5 the Gust logo (353), 6 the loading window (533), 7 and 10 (854), 11 the
+title (877). A logo fades in, then `0x1400db440` runs a timer against a pair of floats for
+that screen in the table at `0x140e4c838` (when a button may end it early, how long it holds:
+0 and 2.0 s for both logos; the first entry, 1.0 and 4.0, is for a screen this run does not
+show), then it fades out over the 0.5 s at `0x140de75c8`. So `LOGO_FADE` and `LOGO_HOLD` are
+the game's; the notice's end, the window's stay and the title's start wait on loading, not on
+timers, and stay the capture's. Barrel does not yet let a button end a logo early.
+
 Read from the capture, not from the game's code (each named in `boot.rs`): `CAPTURE_START` (12:
 the notice's start), the schedule's capture frames (notice fade at 118, logos at 172 and 352,
 window at 532, getOut at 802, the title at 875: the frames of the current capture, 265 lower
 than the first capture's that the text above cites, less the two frames the exact clock moved
 them; the capture made since timeouts end on the virtual clock starts the boot a frame later
-and the title at the same frame), `LOGO_HOLD` (120), `LINE_STEP` (22 layout lines between the
+and the title at the same frame), `LINE_STEP` (22 layout lines between the
 sentence's lines), `TEXT_TOP` (-4, the same as the title's version string) and `WRAP_FACTOR`.
 The loops (the pen, the glows, the title prompt's pulse) follow the game's own rule, a 32-bit
 float sum restarted at the loop's length (`boot::loop_time`): nothing fitted. The prompt's

@@ -33,7 +33,7 @@ const LAYOUT_HEIGHT: f32 = 720.0;
 /// A style's pixels per layout pixel (the 2160-line atlases).
 const ATLAS_PER_LAYOUT: f32 = 3.0;
 
-// STAND-IN: The boot's timeline (notice, logos, window, spinner, the title's start) is read off a capture's frame numbers; the real thing is the game's own timeline of these animations and its load times.
+// STAND-IN: When the notice ends, the loading window comes and goes and the title starts are read off a capture's frame numbers; the real thing is the game's boot sequence moving on as each load finishes (its states 1, 6 and 7 wait on loading, not on a timer), and a button ending a logo early.
 // The schedule, in seconds from the notice's start, read from the capture (`title-cycle`,
 // every 5th frame from 35 to 1635, made on ryza-recomp's exact virtual clock: 60 frames a
 // second, the same frame for frame in every run). Each time is the one frame offset at which
@@ -52,9 +52,14 @@ const NOTICE_END: f32 = (133.0 - CAPTURE_START) / FPS;
 /// `fAlphaRate`: 0.5 s) and holds for 120 between (the Gust logo's fade-out at frame 515).
 const KT_START: f32 = (172.0 - CAPTURE_START) / FPS;
 const GUST_START: f32 = (352.0 - CAPTURE_START) / FPS;
-const LOGO_FADE: f32 = 30.0 / FPS;
-// STAND-IN: How long a logo holds between its fades is read off the capture; the real thing is the game's own hold time.
-const LOGO_HOLD: f32 = 120.0 / FPS;
+/// A logo's fade each way: the 0.5 s the game's boot sequence passes its screens (the float at
+/// `0x140de75c8`; the sequence is the object stepped from `0x1404db7ac`, its states set by
+/// `0x1400db160`).
+const LOGO_FADE: f32 = 0.5;
+/// How long a logo holds between its fades: 2.0 s, the game's own (`0x1400db440` runs a timer
+/// from the fade-in's end against the table at `0x140e4c838`, a pair of floats a screen: when
+/// a button may end it early, and how long it holds. Both logos: 0 and 2.0).
+const LOGO_HOLD: f32 = 2.0;
 /// The autosave window slides in at capture frame 532, as the Gust logo is gone (frames 535 and
 /// 635), and its getOut starts at 802 (frame 825): the spinner fades out then
 /// (`anm_common_fade_in` played backwards at speed 0.3, the window's `getOut`) and the window's

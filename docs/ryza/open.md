@@ -61,6 +61,26 @@ Found so far, none fixed:
   - `s36 0` (wait for the motion) holds the game 122 frames at 2589; `ryza-commands` gives no
     motion lengths to the player, so its `s36` takes no time (the tool's gap, not the play's).
 
+## File bytes Barrel never uses
+
+`barrel-tool unread` over a sample of the archives (`tools/unread-survey.sh`, docs/parity.md)
+and one field's files (`s01_i_attic`):
+
+- **The environment file (`<field>_env.bin`): 97% unused** (95,232 of 97,920 bytes, over
+  every time of day and weather Barrel reads). Barrel takes the fog, the stage light, the
+  character light and the sun; the rest holds what several stand-ins guess at (exposure,
+  saturation, the sky's scales, emission by time of day, the wind: `tools/standins.sh`). The
+  largest known gap between the game's data and what Barrel reads; way in: the file's layout
+  from the game's reader, set by set.
+- **The placement list (`.opl2`): 68% unused**, nearly all empty slots (the 8 collision records
+  of a type with no collision files); really unread are 28 of the 32 bytes after an instance's
+  tags and 3 floats a collision record (docs/formats.md).
+- **The field's shapes (`_coll.bin`): 18%** (32 of 180 bytes in 4 ranges, not looked at).
+- Animations (`.g1a`, 45 files): 12% unused, all of it padding to 16 bytes and header words.
+  Models, textures, events, tables, the terrain (`.ktf` 1.3%, `.khm` 1.3%): under 2%.
+- No parser to ask: `.g1s`, `.g1pf`, `.trmd`, `Oid.bin`, and the collision primitives
+  (`_cbox`, `_ccap`, `_cplh.g1co`: the shared `g1co` reader takes only their header).
+
 ## The answer key's runs repeat exactly
 
 ryza-recomp's scenarios run on virtual clocks by default (RYZA_DETERMINISTIC): each frame is
