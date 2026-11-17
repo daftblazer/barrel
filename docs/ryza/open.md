@@ -19,6 +19,19 @@ align`, or find the shift as above) and fit nothing to a single run's random rol
 states its tolerance. Way in, if it matters: per-thread read counters for the clock, and a
 frame-locked wait on the loader's completion (the frame it finishes on, from a hook).
 
+## The capture's clock against 60 Hz
+
+The 2D rows need small clock corrections that point opposite ways: the title's prompt pulse at
+capture frames 1700 / 1800 sits 2 / 1 frames behind `(frame - 1140) / 60` (rows use 9.30 and
+10.9667 s), while the boot's spinner glows run about one frame ahead each 105 frames
+(`boot::GLOW_DRIFT`, fitted to frames 900-1105, so Barrel's glows run 1% fast to match). Both
+may come from the recomp's virtual clock (RYZA_DETERMINISTIC adds 1 µs per clock read, so a
+thread reading the clock often sees time run fast within a frame) rather than from the game.
+Way in: hook the game's frame-time source (the value its animation timers add each frame) in a
+deterministic run and compare with 1/60; if it is the virtual clock, fix the clock in
+ryza-recomp (a per-thread read counter, or reads within a frame return the frame's time) and
+drop GLOW_DRIFT and the corrected rows' offsets.
+
 ## Fields
 
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
