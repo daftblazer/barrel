@@ -483,6 +483,27 @@ pub struct Player<'a> {
     /// `s9` read as [`Step::MotionSpeed`] (Escha's; off for the carried-over events, whose
     /// motions keep playing as they did).
     motion_speeds: bool,
+    /// Waits take the frames the game's countdown takes ([`counted_wait`]); see
+    /// [`Player::counted_waits`].
+    counted_waits: bool,
+}
+
+/// How long a wait of `seconds` lasts at 60 frames a second when it is counted down as Ryza
+/// DX's command queues do (`0x14048eb90` sets a 32-bit timer to the wait, `0x14048ebe0` takes a
+/// frame's 1/60 s off it each frame from the wait's first and ends it at zero or below; the
+/// next command starts in that same frame). The floats' rounding makes some waits a frame
+/// shorter than their length: 0.5 s is 29 frames, 0.45 s 26 and 0.3 s 17, while 1, 1.25, 2 and
+/// 2.5 s are 60, 75, 120 and 150 (all as measured in the game).
+pub fn counted_wait(seconds: f32) -> f32 {
+    let step = 1.0f32 / 60.0;
+    let (mut left, mut frames) = (seconds, 0u32);
+    loop {
+        left -= step;
+        if left <= 0.0 || frames > 60 * 3600 {
+            return frames as f32 / 60.0;
+        }
+        frames += 1;
+    }
 }
 
 /// `Chara.xml` row 749, "Master Character": a stand-in for the protagonist the player chose.
@@ -520,7 +541,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -578,6 +599,13 @@ impl<'a> Player<'a> {
 
     pub fn hero(mut self, hero: u32) -> Self {
         self.hero = hero;
+        self
+    }
+
+    /// Waits last the frames of the game's countdown ([`counted_wait`]): Ryza DX's. Off by
+    /// default: the other games' waits are their lengths.
+    pub fn counted_waits(mut self) -> Self {
+        self.counted_waits = true;
         self
     }
 
@@ -916,7 +944,7 @@ impl<'a> Player<'a> {
                 }
             for s in steps.drain(..) {
                 if let Step::Wait { seconds } = s {
-                    threads[t].0 += seconds.max(0.0);
+                    threads[t].0 += if self.counted_waits { counted_wait(seconds) } else { seconds.max(0.0) };
                 }
                 let held = match (&s, self.reading) {
                     (Step::Message { text, .. }, Some(f)) => f(&text.replace("<CR>", "")).max(0.0),
@@ -1046,6 +1074,17 @@ pub fn first_field(steps: &[Timed]) -> Option<u32> {
         Step::FieldChange { map, .. } => Some(map),
         _ => None,
     })
+}
+
+#[cfg(test)]
+mod counted_wait_tests {
+    #[test]
+    fn waits_take_the_frames_measured_in_the_game() {
+        for (hundredths, frames) in [(10, 6), (30, 17), (45, 26), (50, 29), (90, 54), (100, 60), (125, 75), (150, 90), (200, 120), (250, 150), (300, 180), (600, 359)] {
+            assert_eq!((super::counted_wait(hundredths as f32 / 100.0) * 60.0).round() as u32, frames, "p1 {hundredths}");
+        }
+        assert_eq!(super::counted_wait(0.0), 0.0);
+    }
 }
 
 #[cfg(test)]

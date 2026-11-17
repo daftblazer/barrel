@@ -16,7 +16,7 @@ pub fn path(name: &str) -> Option<String> {
 // STAND-IN: Events are read without their messages; the real thing is the game's message tables playing each line.
 /// The event's steps on its timeline (no messages read yet: its lines come up by number).
 pub fn schedule(event: &Ebd) -> Result<Vec<Timed<'_>>, String> {
-    let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?;
+    let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?.counted_waits();
     Ok(player.schedule())
 }
 
@@ -25,7 +25,7 @@ pub fn schedule(event: &Ebd) -> Result<Vec<Timed<'_>>, String> {
 /// words as the script has them (the word, then its operands).
 pub fn commands(event: &Ebd) -> Result<Vec<(f32, usize, Vec<u32>)>, String> {
     let table = OperandTable::ryza();
-    let player = Player::translated(event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("{e}"))?;
+    let player = Player::translated(event, &[], &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("{e}"))?.counted_waits();
     let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
     let (_, taken) = player.schedule_traced();
     Ok(taken

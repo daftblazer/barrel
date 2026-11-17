@@ -3918,7 +3918,7 @@ fn play(file: &Path, event: Ebd, lang: Option<&str>, timed: bool) -> Result<()> 
     let player = if sophie2 {
         Player::translated(&event, &messages, &table, barrel_formats::ebd_names::SOPHIE2, &[])?
     } else if ryza {
-        Player::translated(&event, &messages, &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA)?
+        Player::translated(&event, &messages, &table, barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA)?.counted_waits()
     } else if file.parent().and_then(|d| d.file_name()).is_some_and(|d| d == "skill") {
         // A battle skill event: its actors placed from one another.
         Player::new(&event, &messages, &table)?.anchored_places()
