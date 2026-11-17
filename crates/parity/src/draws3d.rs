@@ -500,6 +500,12 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     println!("game draws without a Barrel match: {}\n{}", unmatched_game.len(), group(&unmatched_game));
     println!("  by vertex shader: {}", unmatched_vs.iter().map(|(v, n)| format!("{v} x{n}")).collect::<Vec<_>>().join(", "));
     println!("Barrel draws without a game match: {}\n{}", unmatched_barrel.len(), group(&unmatched_barrel));
+    // PARITY_LIST=1: each unmatched Barrel draw's first texture and index count.
+    if std::env::var_os("PARITY_LIST").is_some() {
+        for k in &unmatched_barrel {
+            println!("  barrel only: {} indices, {}", k.1, k.0.first().map_or("(no named texture)", |n| n.as_str()));
+        }
+    }
     println!("world matrices compared: {compared} ({mirror_wins} fit best with Barrel's x mirror); worst: {worst_at}");
     for (who, (n, (t, tat), (r, rat))) in &poses {
         println!("pose {who}: {n} skinned draws, bones worst translation {t:.3} ({tat}), rotation {r:.4} ({rat})");

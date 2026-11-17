@@ -1268,21 +1268,29 @@ same class, so the cell size is likely not 125 units either. Likely the footstep
 gathering material (`SE_FLD_057_FOOT_GRASS01`...); not the terrain's holes.
 
 **`_grass.bin` and `_grass.g1t`** (Ryza DX, in the main container): the field's plants.
-`_grass.bin` (Rasenboden: 263,116 bytes) begins with the area's size (f32 128000, 128000), a
-u32 30000 (likely the draw distance), an f32 0.01, the grid's size (u32 256, 256) and a u32
-count of plant kinds (19). Then 5 floats per kind (zero-padded to 0x3cc): Rasenboden's first
-(50, 100, 60, 40, 0.1), (110, 30, 60, 60, 0.1), (70, 30, 60, 20, 3): sizes in units and,
-last, a density (0.01 to 3); which float is which is not settled. The rest of the file is the
-grid, 256 × 256 u32 cells of 500 units over the area from the origin, x fastest: the kind in
-each cell, 0xff for none. Rasenboden fills 1,446 cells (x cells 0 to 100, z 37 to 131), with
-kinds 7 (785 cells: the large yellow fields), 6 (483, strung along the paths), 5, 8, 9, 10
-and 0. `_grass.g1t` holds three 2048 × 1024 textures: an atlas of 8 plant cards (4 × 2,
+`_grass.bin` (Rasenboden: 263,116 bytes), as the game's loader reads it (`0x1407c5380`):
+the area's size (f32 128000, 128000), a u32 30000 (likely the draw distance), an f32 0.01 (the
+scale of a density, below), the grid's size (u32 256, 256), then four counted lists. **Kinds**
+(u32 count; 5 floats each): a card's least width and the spread over it, its least height and
+the spread over it, and a density: `density × (cell × 0.01)²` plants a cell, rounded down (25
+times the density in a 500-unit cell: 2.34 gives 58, 1.5 gives 37, 0.05 gives 1). **Groups**
+(u32 count; 3 words each): the atlas's rows and columns (2, 4) and how many members the group
+has. **Members** (u32 count; 3 words each, every group's in turn): the card's row and column
+in the atlas and the kind. **Cells** (u32 count, 65,536; a u32 each, x fastest): the group
+growing in each 500-unit cell from the origin, 0xff for none. The game builds one draw a cell,
+the group's members in order, each plant a quad of four 64-byte vertices (the foot's position
+and the range's end in the first four floats, the corner's offset from the foot, an upward
+normal, the card's UV, white): the title's field (`s19_l_highway_03`, 20 kinds, 6 groups, 9
+members) draws 344 cells of 38 plants (1 + 37) and 4 of 58. A plant's width and height fall
+anywhere in their ranges and its foot anywhere in the cell, by the game's random numbers (not
+read). Rasenboden fills 1,446 cells (x cells 0 to 100, z 37 to 131).
+`_grass.g1t` holds three 2048 × 1024 textures: an atlas of 8 plant cards (4 × 2,
 512 × 512 each: weeds, flowering plants, a grass tuft, wheat, BC3 with alpha), one filled with
-red (BC3; a placeholder or a mask) and the cards' normal maps (BC1). Which card a kind draws
-is not in its record: the game builds the plants' quads on the CPU (`ObjectGrassPBS.g1s`'s
+red (BC3; a placeholder or a mask) and the cards' normal maps (BC1). The game builds the
+plants' quads on the CPU (`ObjectGrassPBS.g1s`'s
 vertex programs take position, normal, colour, UV, tangent and a billboard size, with
 `g_fWidthScale`, `g_fHeightScale`, `g_fFarClipBegin`/`End`, `g_fFarScaleBegin`/`End` and a
-sway phase `g_fPhase`, `g_fOscPhase`), so the choice is in the executable. The grass quality
+sway phase `g_fPhase`, `g_fOscPhase`). The grass quality
 and range presets (`saves/graphicssetting/grassqualitypreset.xml`, `grassrangepreset.xml`):
 density 1 and fading from 8000 to 15000 units at Middle, the highest. `barrel_ryza::grass`
 reads the file; `barrel` draws the plants (docs/ryza/open.md). `_coll.bin` is a u32 count of boxes

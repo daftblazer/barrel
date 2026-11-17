@@ -23,14 +23,16 @@ checks are `runchecks docs/ryza/checks.txt` (43 rows; frames are the exact captu
    (`s88`) takes its first angle only, at once (the title's `s88 0 -7 0 0` is 7 degrees about
    the model's x axis in the head's bind frame; the opening's `s88 0 0 56 -4` and the timed
    `s90` are the way to the other two); `npc34a`'s two draws have no Barrel bones to compare.
-   The 380 game draws without a Barrel match at frame 1135, by cause: 348 are the short grass,
-   blades in batches of 228 or 348 indices a ground cell (vertex program `sh99e935`, the grass
-   atlases of the field), where Barrel draws only the plant cards (30 draws; "Grass" below); 32
-   are the terrain, triangle strips in 32 patches (the pass's first draws; 24 by `sh0cf28a`, 8
-   by `sh499eb4`), where Barrel draws it as 16 lists. The 122 Barrel draws without a game match:
-   those 16 and 30, 5 of the characters' (the cloth submeshes), and 71 of the field's models
-   the game does not draw there or draws with another index count (the title is drawn without
-   draw ranges, a stand-in; which of culling, ranges and detail levels it is, is not sorted).
+   Of the 995 game draws at frame 1135, 963 have a Barrel match (row `title-3d-1135`). The 32
+   without are the terrain, triangle strips in 32 patches (the pass's first draws; 24 by
+   `sh0cf28a`, 8 by `sh499eb4`): the game draws every draw record of a terrain patch (`.ktf`:
+   a layer or a pair of layers each, as a strip) on its own, where Barrel draws a patch once,
+   its layers blended in one pass (16 patches in view; the strips are not checked against
+   the file's records index by index). The 105 Barrel draws
+   without a game match: those 16, 13 plant cells at the view's edges (below, "Grass"), 5 of
+   the characters' (the cloth submeshes), and 71 of the field's models the game does not draw
+   there or draws with another index count (the title is drawn without draw ranges, a
+   stand-in; which of culling, ranges and detail levels it is, is not sorted).
 
 2. **The title's sparkles** (P1). The menu's own quads match the game's on every frame checked
    (rows `menu-*`), but the game also draws particles Barrel does not: a burst at the button
@@ -257,18 +259,21 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   in every still it is the full sun, so 10 AM is already the noon set. The hours where the
   others begin are not read yet (the executable names `time_zone`, `EVENT_SET_TIMEZONE`). Night has no reference
   frame yet, so its colour (too bright and green here) cannot be checked.
-- **Grass.** The game's grass is blades over the ground; the terrain is flat colour here.
-  Its plants (flowers, weeds, tufts, wheat) come from `_grass.bin` / `_grass.g1t` (a grid of
-  plant kinds per 500 units and 8 card textures, docs/formats.md): `barrel` draws them
-  as upright cards turning about the vertical (look slots 37 to 39), on the heightmap, one
-  draw per 8 × 8 cells: Rasenboden's 44,015 plants in 66 draws, about 0.14 ms at the gate
-  view on the PC. Stand-ins, not read: the spread (a kind's last float as plants per 100 ×
-  100 units, its first two as height and spread, the next two as width and spread), which card
-  each kind draws (`PLANT_CARDS`, by the stills: kind 6 along the paths as the grass tuft,
-  kind 7 in the yellow fields as wheat), a sway of the cards' tops by stand-in wind
-  values (`PLANT_SWAY`: the game's `g_vAttCache0` / `g_fPhase` are set at run time; sway
-  slots 0 and 1, free in Ryza's fields), no shadows cast, lit
-  as the field's models with an upward normal, normal-mapped by the cards' own normal maps
+- **Grass.** The plants (flowers, weeds, tufts, wheat) come from `_grass.bin` / `_grass.g1t`
+  (docs/formats.md): which kinds grow in a cell, how many, their cards and their sizes' ranges
+  are the file's, and `barrel` draws them as the game does, one draw a 500-unit cell of upright
+  cards turning about the vertical (look slots 37 to 39), on the heightmap: the title's 348
+  plant draws all have their match by card atlas and plant count. A cell is drawn while its
+  box's centre (the cell's square from its lowest foot to its highest top) is nearer in view
+  depth than the grass range's end by the box's diagonal (the deepest cell the title draws is
+  at 15000.0 by this measure); Barrel draws 13 more cells at the view's edges than the game,
+  whose test against the view's sides is not read. Stand-ins: where a plant stands in its
+  cell and where in its ranges its size falls (a fixed hash; the game's random numbers and
+  the code that builds a cell are not found: the loader is `0x1407c5380`, called from the
+  field's loader `0x140777d80`), how a lower grass quality thins the plants, a sway of the
+  cards' tops by stand-in wind values (`PLANT_SWAY`: the game's `g_vAttCache0` / `g_fPhase`
+  are set at run time; sway slots 0 and 1, free in Ryza's fields), no shadows cast, lit as
+  the field's models with an upward normal, normal-mapped by the cards' own normal maps
   (`_grass.g1t`'s third texture, flag 8192, as the game's plant program does). In the shade
   they come out teal where the game's are green: the cards are green (the grass tuft's opaque
   pixels average 60, 83, 25) but the sky light from above is blue (noon's 2.7, 3.0, 5.2 ×
@@ -276,15 +281,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   over the game's grass preset's range as the game's do (`model.vert` flag 16384, look slot
   93); the near clip and the far scale-up are not done. The preset follows the graphics'
   `foliage` (full: Middle, density 1, 8000 to 15000; reduced, the handheld preset: Low, 0.75,
-  3000 to 3100; least: VeryLow, 0.5, 2000 to 2100; `barrel_ryza::grass::Preset`): at the gate
-  44,015 plants and 5.91 ms on the desktop preset, 32,980 and 5.71 ms on the handheld one
-  (PC). The game's plant program mixes the vertex colour
-  with a field-wide pigment map by `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the
-  plants"); which texture is the pigment and
-  the scale's values are set at run time, not read. Whether the dense
-  short grass is these cards or the terrain's own is not known. (The title's capture has it: blades
-  drawn after the terrain by vertex program `sh99e935`, 228 or 348 indices a batch; entry 1
-  above.)
+  3000 to 3100; least: VeryLow, 0.5, 2000 to 2100; `barrel_ryza::grass::Preset`). Rasenboden
+  at the gate: 120,884 plants in 1,432 draws, 4.5 ms a frame on the PC at 1280 × 720. The
+  game's plant program mixes the vertex colour with a field-wide pigment map by
+  `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the plants"); which texture is the pigment
+  and the scale's values are set at run time, not read. The title's capture has no
+  other grass draws: whatever grass shows on the ground itself is the terrain's own shading.
 - **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
   (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
   evening 0.8) on the stored scene and its `fBloomWeight` (0.4, evening 0.6): a soft halo on

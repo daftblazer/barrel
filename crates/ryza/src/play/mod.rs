@@ -338,47 +338,44 @@ const DOME_SCALE: f32 = 2.5;
 /// scene is.
 const GLOW_RANGE: f32 = 2.0;
 
-// STAND-IN: The kind-to-card table is chosen by the stills; the real thing is the game's own choice in its code.
-/// The plant card each kind draws from `_grass.g1t`'s atlas (4 × 2 cards: 0 to 3 the top row,
-/// weeds, a leafy stem, a flower, a bush; 4 to 7 the bottom, wheat, a grass tuft, cornflowers,
-/// lupins). The game picks them in its code (not read): a stand-in by the stills, kind 7 (the
-/// large yellow fields) as wheat and kind 6 (along the paths) as the grass tuft.
-const PLANT_CARDS: [u32; 19] = [1, 0, 2, 3, 0, 0, 5, 4, 2, 6, 7, 1, 3, 0, 5, 5, 6, 4, 5];
 /// The most plants a field draws (Rasenboden: about 36,000 at the kinds' densities).
 const PLANT_LIMIT: usize = 200_000;
-/// Plants are grouped into draws of this many grid cells a side, so the view culls them.
-const PLANT_BLOCK: usize = 8;
 /// The plants' normal in the card's frame (turned by the billboard axes): up, so a plant takes
 /// the light of the ground it stands on rather than of a wall facing the camera.
 const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
 /// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
-/// per block of grid cells, the atlas being texture `atlas`.
-fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) {
+/// a grid cell as the game's, the atlas being texture `atlas`.
+/// Returns each draw's first index with its cell's box in render space: the cell's square from
+/// the lowest foot to the highest top of its plants.
+fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) -> std::collections::HashMap<u32, (Vec3, Vec3)> {
+    let mut boxes = std::collections::HashMap::new();
     let Some(ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
         .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
         .and_then(|b| barrel_formats::khm::parse(b).ok())
         .map(barrel_engine::walk::Ground::of_heightmap)
     else {
-        return;
+        return boxes;
     };
-    let plants = g.plants(PLANT_LIMIT, density, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
     let [cx, cz] = g.cell();
-    let mut blocks: std::collections::BTreeMap<(usize, usize), Vec<&barrel_ryza::grass::Plant>> = Default::default();
+    let plants = g.plants(PLANT_LIMIT, density, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
+    let mut blocks: std::collections::BTreeMap<(u32, u32), Vec<&barrel_ryza::grass::Plant>> = Default::default();
     for p in &plants {
-        blocks.entry(((p.at[0] / cx) as usize / PLANT_BLOCK, (p.at[2] / cz) as usize / PLANT_BLOCK)).or_default().push(p);
+        blocks.entry((p.cell[0], p.cell[1])).or_default().push(p);
     }
     let instance = scene.instance(Mat4::IDENTITY);
-    for list in blocks.values() {
+    for (&(i, j), list) in &blocks {
         let first_index = scene.indices.len() as u32;
+        let (foot, top) = list.iter().fold((f32::MAX, f32::MIN), |(f, t), p| (f.min(p.at[1]), t.max(p.at[1] + p.size[1])));
+        // (render space: game x mirrored)
+        boxes.insert(first_index, (Vec3::new(-((i + 1) as f32) * cx, foot, j as f32 * cz), Vec3::new(-(i as f32) * cx, top, (j + 1) as f32 * cz)));
         for p in list {
-            let card = PLANT_CARDS.get(p.kind as usize).copied().unwrap_or(0);
-            let (u, v) = ((card % 4) as f32 * 0.25, (card / 4) as f32 * 0.5);
+            let [u, v, cw, ch] = p.card;
             let [w, h] = p.size;
             // Vertices are built in render space: game x mirrored (`render_space`).
             let centre = [-p.at[0], p.at[1] + h * 0.5, p.at[2]];
             let base = scene.vertices.len() as u32;
-            for (dx, dy, uv) in [(-0.5, -0.5, [u, v + 0.5]), (0.5, -0.5, [u + 0.25, v + 0.5]), (0.5, 0.5, [u + 0.25, v]), (-0.5, 0.5, [u, v])] {
+            for (dx, dy, uv) in [(-0.5, -0.5, [u, v + ch]), (0.5, -0.5, [u + cw, v + ch]), (0.5, 0.5, [u + cw, v]), (-0.5, 0.5, [u, v])] {
                 scene.vertices.push(Vertex { pos: centre, normal: PLANT_NORMAL, uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0] });
             }
             scene.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -409,6 +406,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
         });
     }
     eprintln!("plants: {} in {} draws", plants.len(), blocks.len());
+    boxes
 }
 
 /// Plays Ryza with `raw`, the command line after the program's name. `chosen` is the install the
@@ -759,11 +757,12 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         eprintln!("sky dome {}: {} draws", dome_files.as_ref().unwrap().0, scene.draws.len() - first);
         textures.extend(dp.textures.iter());
     }
+    let mut plant_boxes = std::collections::HashMap::new();
     if let (Some(g), Some(gp)) = (&grass, &grass_pack) {
         if let Some(atlas) = gp.textures.first() {
             // The cards' normal maps (the pack's third texture), for `NORMAL_MAPPED`.
             let normals = gp.textures.get(2).map(|_| textures.len() + 1);
-            add_plants(&mut scene, g, &main, &files.area, textures.len(), normals, plant_preset.density);
+            plant_boxes = add_plants(&mut scene, g, &main, &files.area, textures.len(), normals, plant_preset.density);
             textures.push(atlas);
             textures.extend(gp.textures.get(2));
         }
@@ -964,11 +963,16 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     eprintln!("draw ranges: {ranges:?}");
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
+    // The plants' cells are drawn only as deep into the view as the grass preset's range ends:
+    // a cell shows while its box's centre is nearer than that by the box's diagonal (the
+    // title's capture: the deepest cell drawn is at 15000.0 by this measure, to the unit).
+    let forward_now = std::cell::Cell::new(Vec3::ZERO);
     // The boot sequence's screens come before the scene exists: it is left out until the title.
     let scene_on = std::cell::Cell::new(true);
     let shown = |d: &Draw| {
         scene_on.get()
             && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
+            && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&(lo, hi)| forward_now.get().dot((lo + hi) * 0.5 - eye_now.get()) - lo.distance(hi) <= plant_preset.far[1])
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
@@ -1162,6 +1166,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow, title_clip);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
+        forward_now.set((center - eye_now.get()).normalize_or_zero());
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         // `g_vAttCache0` (a, a, a/2, -a/2) and {`g_fAttCache1` 1, `g_fPhase` 0, `g_fOscPhase`}.
         // From the field's wind (`environment::Gust`): the bend from its power now, the sway's

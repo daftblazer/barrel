@@ -1,13 +1,36 @@
 //! A field's plants, `<FIELD>_grass.bin` in its main container (docs/formats.md, "`_grass.bin`
-//! and `_grass.g1t`"): the area's size, a draw distance, the plant kinds' records (5 floats
-//! each, their meaning not settled) and a grid of 500-unit cells, each naming the kind that
-//! grows there (0xff: none). The game builds the plants' quads on the CPU from it and draws
-//! them with `ObjectGrassPBS` over the cards in `_grass.g1t`.
+//! and `_grass.g1t`"), as the game's loader reads it (`0x1407c5380`): the area's size, a draw
+//! distance, the scale of a density, the plant kinds, the groups of kinds that grow together
+//! and a grid of 500-unit cells, each naming the group that grows there (0xff: none). The game
+//! builds the plants' quads on the CPU from it, one draw a cell, and draws them with
+//! `ObjectGrassPBS` over the cards in `_grass.g1t`.
 
 /// A cell with no plants.
 pub const NONE: u32 = 0xff;
-/// Where the kinds' records begin (after the header's seven words).
-const RECORDS: usize = 0x1c;
+
+/// One kind of plant: a card's width and height, each from a least value over a spread, and
+/// how many grow (a density: plants per square of `1 / Grass::density_scale` units).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Kind {
+    pub width: [f32; 2],
+    pub height: [f32; 2],
+    pub density: f32,
+}
+
+/// One kind growing in a group, and its card in the atlas (row from the top, column).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Member {
+    pub card: [u32; 2],
+    pub kind: u32,
+}
+
+/// The kinds that grow together in a cell, and the cards across the atlas they are cut from
+/// (rows, columns: 2 by 4 in every field seen).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Group {
+    pub atlas: [u32; 2],
+    pub members: Vec<Member>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grass {
@@ -15,67 +38,28 @@ pub struct Grass {
     pub area: [f32; 2],
     /// Likely the draw distance (Rasenboden: 30000).
     pub distance: u32,
-    /// The header's other float (Rasenboden: 0.01), use not known.
-    pub unknown: f32,
+    /// What a density is counted over: a kind grows `density` plants a square of
+    /// `1 / density_scale` units (0.01: 100 by 100 units, so 25 times it in a 500-unit cell).
+    pub density_scale: f32,
     /// The grid's cells along x and z.
     pub size: [u32; 2],
-    /// Each kind's five floats (sizes in units and, last, a density; not settled).
-    pub kinds: Vec<[f32; 5]>,
-    /// The grid, x fastest: each cell's kind, or `NONE`.
+    pub kinds: Vec<Kind>,
+    pub groups: Vec<Group>,
+    /// The grid, x fastest: each cell's group, or `NONE`.
     pub cells: Vec<u32>,
 }
 
-impl Grass {
-    pub fn parse(b: &[u8]) -> Result<Grass, String> {
-        if b.len() < RECORDS {
-            return Err("grass: shorter than its header".into());
-        }
-        let u = |o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap());
-        let f = |o: usize| f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
-        let size = [u(0x10), u(0x14)];
-        let count = u(0x18) as usize;
-        let cells = (size[0] as usize).checked_mul(size[1] as usize).ok_or("grass: grid too large")?;
-        // The grid ends the file; the records sit between the header and it, zero-padded.
-        let grid = b.len().checked_sub(cells * 4).ok_or_else(|| format!("grass: {}×{} grid needs {} bytes, {} there", size[0], size[1], cells * 4, b.len()))?;
-        if grid < RECORDS + count * 20 {
-            return Err(format!("grass: {count} kinds do not fit before the grid at {grid:#x}"));
-        }
-        Ok(Grass {
-            area: [f(0), f(4)],
-            distance: u(8),
-            unknown: f(0xc),
-            size,
-            kinds: (0..count).map(|k| std::array::from_fn(|i| f(RECORDS + k * 20 + i * 4))).collect(),
-            cells: (0..cells).map(|c| u(grid + c * 4)).collect(),
-        })
-    }
-
-    /// A cell's size along x and z, in game units.
-    pub fn cell(&self) -> [f32; 2] {
-        [self.area[0] / self.size[0].max(1) as f32, self.area[1] / self.size[1].max(1) as f32]
-    }
-
-    /// The kind growing at game point (x, z), if any.
-    pub fn kind_at(&self, x: f32, z: f32) -> Option<u32> {
-        let [cx, cz] = self.cell();
-        if x < 0.0 || z < 0.0 {
-            return None;
-        }
-        let (i, j) = ((x / cx) as usize, (z / cz) as usize);
-        if i >= self.size[0] as usize || j >= self.size[1] as usize {
-            return None;
-        }
-        Some(self.cells[j * self.size[0] as usize + i]).filter(|&k| k != NONE)
-    }
-}
-
-/// One plant: where its foot stands (game units), its size and which kind it is.
+/// One plant: where its foot stands (game units), its size, its card and the cell it grows in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plant {
     pub at: [f32; 3],
     /// Width and height, game units.
     pub size: [f32; 2],
+    /// The card's left, top, width and height in the atlas, as shares of it.
+    pub card: [f32; 4],
     pub kind: u32,
+    /// The cell's place in the grid (x, z).
+    pub cell: [u32; 2],
 }
 
 /// A small fixed hash to a number in [0, 1), so a field's plants come out the same each run.
@@ -89,32 +73,106 @@ fn unit(mut v: u32) -> f32 {
 }
 
 impl Grass {
-    // STAND-IN: The plants' spread from a kind's floats is a guess at their meaning; the real thing is the game's own grass placement.
+    pub fn parse(b: &[u8]) -> Result<Grass, String> {
+        let mut at = 0usize;
+        let mut word = |what: &str| -> Result<[u8; 4], String> {
+            let w = b.get(at..at + 4).ok_or_else(|| format!("grass: ends in {what} at {at:#x}"))?;
+            at += 4;
+            Ok(w.try_into().unwrap())
+        };
+        let area = [f32::from_le_bytes(word("the header")?), f32::from_le_bytes(word("the header")?)];
+        let distance = u32::from_le_bytes(word("the header")?);
+        let density_scale = f32::from_le_bytes(word("the header")?);
+        let size = [u32::from_le_bytes(word("the header")?), u32::from_le_bytes(word("the header")?)];
+        // a count, checked against the file's size before anything is set aside for it
+        let fits = |n: [u8; 4], what: &str, each: usize| -> Result<usize, String> {
+            let n = u32::from_le_bytes(n) as usize;
+            if n.saturating_mul(each) > b.len() { Err(format!("grass: {n} {what} do not fit")) } else { Ok(n) }
+        };
+        let mut kinds = Vec::new();
+        for _ in 0..fits(word("kinds")?, "kinds", 20)? {
+            let mut f = [0f32; 5];
+            for v in &mut f {
+                *v = f32::from_le_bytes(word("the kinds")?);
+            }
+            kinds.push(Kind { width: [f[0], f[1]], height: [f[2], f[3]], density: f[4] });
+        }
+        // The groups (rows, columns, how many members), then every group's members in turn.
+        let mut heads = Vec::new();
+        for _ in 0..fits(word("groups")?, "groups", 12)? {
+            let mut u = [0u32; 3];
+            for v in &mut u {
+                *v = u32::from_le_bytes(word("the groups")?);
+            }
+            heads.push(u);
+        }
+        let mut members = Vec::new();
+        for _ in 0..fits(word("members")?, "members", 12)? {
+            let mut u = [0u32; 3];
+            for v in &mut u {
+                *v = u32::from_le_bytes(word("the members")?);
+            }
+            if u[2] as usize >= kinds.len() {
+                return Err(format!("grass: a member of kind {} of {}", u[2], kinds.len()));
+            }
+            members.push(Member { card: [u[0], u[1]], kind: u[2] });
+        }
+        if heads.iter().map(|h| h[2] as usize).sum::<usize>() != members.len() {
+            return Err(format!("grass: the groups name {} members, {} there", heads.iter().map(|h| h[2] as usize).sum::<usize>(), members.len()));
+        }
+        let mut rest = members.into_iter();
+        let groups = heads.iter().map(|h| Group { atlas: [h[0], h[1]], members: rest.by_ref().take(h[2] as usize).collect() }).collect();
+        let n = fits(word("cells")?, "cells", 4)?;
+        if n != (size[0] as usize).saturating_mul(size[1] as usize) {
+            return Err(format!("grass: {n} cells for a {}×{} grid", size[0], size[1]));
+        }
+        let mut cells = Vec::with_capacity(n);
+        for _ in 0..n {
+            cells.push(u32::from_le_bytes(word("the cells")?));
+        }
+        Ok(Grass { area, distance, density_scale, size, kinds, groups, cells })
+    }
+
+    /// A cell's size along x and z, in game units.
+    pub fn cell(&self) -> [f32; 2] {
+        [self.area[0] / self.size[0].max(1) as f32, self.area[1] / self.size[1].max(1) as f32]
+    }
+
+    /// How many plants of `kind` grow in a cell: its density over the cell's area, rounded
+    /// down (2.34 in a 500-unit cell: 58; 1.5: 37; 0.05: 1, as the game draws).
+    pub fn count(&self, kind: &Kind) -> u32 {
+        let [cx, cz] = self.cell();
+        (kind.density * cx * self.density_scale * cz * self.density_scale).floor().max(0.0) as u32
+    }
+
+    // STAND-IN: Where in its cell a plant stands and where in its ranges its size falls are a fixed hash; the real thing is the game's own random numbers as it builds a cell.
+    // STAND-IN: A preset's density keeps that share of the plants by the hash; the real thing is how the game thins them at the lower grass qualities.
     /// The plants of every cell, at most `limit`, standing on `ground` (cells it has no height
-    /// for are left out). A stand-in for the game's own spread, which is not read: a kind's
-    /// last float taken as plants per 100 × 100 units, its first two as the height and its
-    /// spread, the next two as the width and its spread. `density` (a preset's, 0 to 1) keeps
+    /// for are left out), a cell's in the order of its group's members. Which kinds, how many,
+    /// their cards and their sizes' ranges are the file's; `density` (a preset's, 0 to 1) keeps
     /// that share of them, the same ones each run.
     pub fn plants(&self, limit: usize, density: f32, ground: impl Fn(f32, f32) -> Option<f32>) -> Vec<Plant> {
         let [cx, cz] = self.cell();
         let mut out = Vec::new();
-        for (c, &kind) in self.cells.iter().enumerate() {
-            let Some(k) = self.kinds.get(kind as usize) else { continue };
-            let (i, j) = ((c % self.size[0] as usize) as f32, (c / self.size[0] as usize) as f32);
-            let count = (k[4] * cx * cz / 10_000.0).round().max(0.0) as u32;
-            for n in 0..count {
-                if out.len() >= limit {
-                    return out;
+        for (c, &group) in self.cells.iter().enumerate() {
+            let Some(g) = self.groups.get(group as usize) else { continue };
+            let cell = [(c % self.size[0] as usize) as u32, (c / self.size[0] as usize) as u32];
+            let (w, h) = (1.0 / g.atlas[1].max(1) as f32, 1.0 / g.atlas[0].max(1) as f32);
+            for (m, member) in g.members.iter().enumerate() {
+                let k = &self.kinds[member.kind as usize];
+                for n in 0..self.count(k) {
+                    if out.len() >= limit {
+                        return out;
+                    }
+                    let seed = (c as u32).wrapping_mul(9781).wrapping_add(n.wrapping_mul(6271)).wrapping_add((m as u32).wrapping_mul(40503));
+                    if unit(seed ^ 0x2545_f491) >= density {
+                        continue;
+                    }
+                    let (x, z) = ((cell[0] as f32 + unit(seed)) * cx, (cell[1] as f32 + unit(seed ^ 0x5bd1_e995)) * cz);
+                    let Some(y) = ground(x, z) else { continue };
+                    let size = [k.width[0] + k.width[1] * unit(seed ^ 0x1b56_c4e9), k.height[0] + k.height[1] * unit(seed ^ 0x68e3_1da4)];
+                    out.push(Plant { at: [x, y, z], size, card: [member.card[1] as f32 * w, member.card[0] as f32 * h, w, h], kind: member.kind, cell });
                 }
-                let seed = (c as u32).wrapping_mul(9781).wrapping_add(n.wrapping_mul(6271));
-                if unit(seed ^ 0x2545_f491) >= density {
-                    continue;
-                }
-                let (x, z) = ((i + unit(seed)) * cx, (j + unit(seed ^ 0x5bd1_e995)) * cz);
-                let Some(y) = ground(x, z) else { continue };
-                let h = k[0] + k[1] * (unit(seed ^ 0x68e3_1da4) - 0.5);
-                let w = k[2] + k[3] * (unit(seed ^ 0x1b56_c4e9) - 0.5);
-                out.push(Plant { at: [x, y, z], size: [w.max(1.0), h.max(1.0)], kind });
             }
         }
         out
@@ -139,7 +197,8 @@ impl Preset {
 mod tests {
     use super::*;
 
-    fn file(kinds: &[[f32; 5]], cells: &[u32], size: u32, pad: usize) -> Vec<u8> {
+    /// A file of `kinds`, groups of (row, column, kind) members and a square grid.
+    fn file(kinds: &[[f32; 5]], groups: &[&[[u32; 3]]], cells: &[u32], size: u32) -> Vec<u8> {
         let mut b = Vec::new();
         for v in [128000.0f32, 128000.0] {
             b.extend(v.to_le_bytes());
@@ -149,12 +208,20 @@ mod tests {
         b.extend(size.to_le_bytes());
         b.extend(size.to_le_bytes());
         b.extend((kinds.len() as u32).to_le_bytes());
-        for k in kinds {
-            for v in k {
+        for v in kinds.iter().flatten() {
+            b.extend(v.to_le_bytes());
+        }
+        b.extend((groups.len() as u32).to_le_bytes());
+        for g in groups {
+            for v in [2, 4, g.len() as u32] {
                 b.extend(v.to_le_bytes());
             }
         }
-        b.extend(vec![0u8; pad]);
+        b.extend((groups.iter().map(|g| g.len()).sum::<usize>() as u32).to_le_bytes());
+        for v in groups.iter().flat_map(|g| g.iter()).flatten() {
+            b.extend(v.to_le_bytes());
+        }
+        b.extend((cells.len() as u32).to_le_bytes());
         for c in cells {
             b.extend(c.to_le_bytes());
         }
@@ -162,41 +229,52 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_header_kinds_and_grid() {
+    fn reads_the_header_kinds_groups_and_grid() {
         let kinds = [[50.0, 100.0, 60.0, 40.0, 0.1], [110.0, 30.0, 60.0, 60.0, 0.1]];
         let cells = [NONE, 1, 0, NONE];
-        let g = Grass::parse(&file(&kinds, &cells, 2, 12)).unwrap();
-        assert_eq!((g.area, g.distance, g.size), ([128000.0; 2], 30000, [2, 2]));
-        assert_eq!(g.kinds, kinds.to_vec());
+        let g = Grass::parse(&file(&kinds, &[&[[0, 1, 1], [1, 1, 0]], &[[0, 2, 0]]], &cells, 2)).unwrap();
+        assert_eq!((g.area, g.distance, g.density_scale, g.size), ([128000.0; 2], 30000, 0.01, [2, 2]));
+        assert_eq!(g.kinds[1], Kind { width: [110.0, 30.0], height: [60.0, 60.0], density: 0.1 });
+        assert_eq!(g.groups[0], Group { atlas: [2, 4], members: vec![Member { card: [0, 1], kind: 1 }, Member { card: [1, 1], kind: 0 }] });
+        assert_eq!(g.groups[1].members, vec![Member { card: [0, 2], kind: 0 }]);
         assert_eq!(g.cells, cells.to_vec());
         assert_eq!(g.cell(), [64000.0, 64000.0]);
-        assert_eq!(g.kind_at(70000.0, 10.0), Some(1));
-        assert_eq!(g.kind_at(10.0, 70000.0), Some(0));
-        assert_eq!(g.kind_at(10.0, 10.0), None);
-        assert_eq!(g.kind_at(-1.0, 10.0), None);
-        assert_eq!(g.kind_at(200000.0, 10.0), None);
     }
 
     #[test]
-    fn plants_fill_their_cells_on_the_ground() {
-        // One kind at 1 plant per 100 × 100 units over 64000-unit cells: 409,600 a cell.
-        let g = Grass::parse(&file(&[[100.0, 0.0, 60.0, 0.0, 1.0]], &[NONE, 0, NONE, NONE], 2, 0)).unwrap();
-        let p = g.plants(1000, 1.0, |x, _| Some(x / 1000.0));
-        assert_eq!(p.len(), 1000);
-        assert!(p.iter().all(|p| (64000.0..128000.0).contains(&p.at[0]) && p.at[2] < 64000.0));
-        assert!(p.iter().all(|p| p.at[1] == p.at[0] / 1000.0 && p.size == [60.0, 100.0] && p.kind == 0));
-        assert_eq!(p, g.plants(1000, 1.0, |x, _| Some(x / 1000.0)));
-        assert!(g.plants(1000, 1.0, |_, _| None).is_empty());
+    fn a_cell_grows_its_groups_kinds_as_the_title_draws_them() {
+        // The title's field, 500-unit cells: its group 0 is one plant of a sparse kind on the
+        // top row's second card and 37 of a dense one on the card below (38 a draw in the
+        // capture, widths 60 to 120, heights 40 to 170); its group 4 is 58 of one kind on the
+        // top row's third card, 100 to 150 wide and 60 to 120 high.
+        let kinds = [[60.0, 50.0, 60.0, 110.0, 0.05], [60.0, 60.0, 40.0, 40.0, 1.5], [100.0, 50.0, 60.0, 60.0, 2.34]];
+        let mut cells = vec![NONE; 256 * 256];
+        (cells[0], cells[257]) = (0, 1);
+        let g = Grass::parse(&file(&kinds, &[&[[0, 1, 0], [1, 1, 1]], &[[0, 2, 2]]], &cells, 256)).unwrap();
+        let p = g.plants(usize::MAX, 1.0, |x, _| Some(x / 1000.0));
+        let (a, b): (Vec<&Plant>, Vec<&Plant>) = p.iter().partition(|p| p.cell == [0, 0]);
+        assert_eq!((a.len(), b.len()), (38, 58));
+        assert_eq!((a[0].kind, a[0].card), (0, [0.25, 0.0, 0.25, 0.5]));
+        assert!(a[1..].iter().all(|p| p.kind == 1 && p.card == [0.25, 0.5, 0.25, 0.5]));
+        assert!(a[1..].iter().all(|p| (60.0..120.0).contains(&p.size[0]) && (40.0..80.0).contains(&p.size[1])));
+        assert!(a.iter().all(|p| p.at[0] < 500.0 && p.at[2] < 500.0 && p.at[1] == p.at[0] / 1000.0));
+        assert!(b.iter().all(|p| p.cell == [1, 1] && p.card == [0.5, 0.0, 0.25, 0.5] && (500.0..1000.0).contains(&p.at[0])));
+        assert!(b.iter().all(|p| (100.0..150.0).contains(&p.size[0]) && (60.0..120.0).contains(&p.size[1])));
+        assert_eq!(p, g.plants(usize::MAX, 1.0, |x, _| Some(x / 1000.0)));
+        assert!(g.plants(usize::MAX, 1.0, |_, _| None).is_empty());
+        assert_eq!(g.plants(10, 1.0, |_, _| Some(0.0)).len(), 10);
         // A preset's density keeps about that share.
-        let all = g.plants(usize::MAX, 1.0, |_, _| Some(0.0)).len() as f32;
-        let some = g.plants(usize::MAX, 0.5, |_, _| Some(0.0)).len() as f32;
-        assert!((some / all - 0.5).abs() < 0.01, "{some} of {all}");
+        let some = g.plants(usize::MAX, 0.5, |_, _| Some(0.0)).len();
+        assert!((30..66).contains(&some), "{some} of 96");
     }
 
     #[test]
-    fn refuses_a_grid_that_does_not_fit() {
-        let b = file(&[[1.0; 5]], &[0; 3], 2, 0);
-        assert!(Grass::parse(&b).is_err());
+    fn refuses_a_file_that_does_not_add_up() {
+        let good = file(&[[1.0; 5]], &[&[[0, 0, 0]]], &[0; 4], 2);
+        assert!(Grass::parse(&good).is_ok());
+        assert!(Grass::parse(&good[..good.len() - 4]).is_err());
+        assert!(Grass::parse(&file(&[[1.0; 5]], &[&[[0, 0, 0]]], &[0; 3], 2)).is_err());
+        assert!(Grass::parse(&file(&[[1.0; 5]], &[&[[0, 0, 1]]], &[0; 4], 2)).is_err());
     }
 
     /// Rasenboden's file, when the install is at hand (`BARREL_RYZA_GRASS` names an unpacked
