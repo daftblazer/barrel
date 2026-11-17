@@ -14,12 +14,17 @@ is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run no
 checks are `runchecks docs/ryza/checks.txt` (21 rows) and
 `docs/escha/checks.txt` (17).
 
-1. **The title backdrop's characters** (blocks P1). The scene is the event `tt01_010`
-   (docs/renderer.md, "The backdrop"): it places pc00a, pc02a and pc03a and names their
-   motions (92511, 2190, 12301, in the shared `cf01` / `cm0x` sets). Left: draw the three from
-   the event (Barrel's rig draws one pc00a in her field motions), find the motions' phase
-   against the capture's bone palettes, then the NPCs, weapons and objects the event adds.
-   Solved when diff3d at frame 1400 matches the 58 character draws within a stated tolerance.
+1. **The title backdrop's cast** (blocks P1). Ryza, Lent and Tao are drawn from the event
+   `tt01_010` (docs/renderer.md, "The backdrop"): placed, turned and in their motions, with
+   the capture's phase; diff3d at frame 1400 matches all 52 of their draws (611 of 995 in
+   all), Lent's and Tao's bone palettes within 0.012 units at frames 1400, 1500 and 1700.
+   Left: Ryza's head is 13.7 units off at every frame (the game turns it toward the camera,
+   the event's `s88 0 -7`: a look-at, not done); the event's random wait `p6 1000 2000` is
+   played as its shortest (10 s), so Ryza's action (action 12) starts at a fixed time where the
+   game's is random; the cloth submeshes are drawn rigid on one joint; the weapons
+   (`pc0x_wep_01`), `npc34a` and the other characters the event adds (`q5`, slot 216 on) are
+   not drawn. Solved when diff3d also matches those 6 draws and Ryza's palette is within the
+   others' tolerance.
 2. **The answer key's runs repeat only to a frame** (rows carry tolerances and fitted offsets).
    See the section of that name and "The 2D animations run about 1% ahead of the frame count"
    below. The virtual clock is not the cause (measured: the game's frame time is 1/60 s to
