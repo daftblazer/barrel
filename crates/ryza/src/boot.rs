@@ -51,10 +51,18 @@ const KT_START: f32 = (437.0 - CAPTURE_START) / FPS;
 const GUST_START: f32 = (616.0 - CAPTURE_START) / FPS;
 const LOGO_FADE: f32 = 30.0 / FPS;
 const LOGO_HOLD: f32 = 119.0 / FPS;
-/// The autosave window slides in at 795 and its getOut starts at 1077 (the window's own slide
-/// back, delayed 0.2 s from the spinner's fade).
+/// The autosave window slides in at capture frame 795 and its getOut starts at 1065: the spinner
+/// fades out then (`anm_common_fade_in` played backwards at speed 0.3, the window's `getOut`) and
+/// the window's own slide back follows 0.2 s later (`delay` of that bind).
 const WINDOW_START: f32 = (795.0 - CAPTURE_START) / FPS;
-const WINDOW_OUT: f32 = (1077.0 - CAPTURE_START) / FPS;
+const SPINNER_OUT: f32 = (1065.0 - CAPTURE_START) / FPS;
+const SPINNER_OUT_SPEED: f32 = 0.3;
+const WINDOW_OUT: f32 = SPINNER_OUT + 0.2;
+/// How much faster the capture's glow animations run than 60 Hz with the loop rule of
+/// [`loop_time`]: one more frame ahead each ~105 frames (the capture's frame clock is not exactly
+/// 60 Hz; the pen and the window, in the first half second of each, stay on the ideal clock).
+/// Fitted to the glow alphas of capture frames 900 to 1105; the +0.1 is the fit's offset.
+const GLOW_DRIFT: f32 = 1.0 / 105.0;
 /// The title's first frame (capture frame 1140, where `--title-at 0` sits): the screen is black
 /// from the window's end until then (the title's own fade from black is not drawn).
 pub const TITLE_START: f32 = (1140.0 - CAPTURE_START) / FPS;
@@ -262,9 +270,10 @@ pub struct Sources<'a> {
 const STR_UI_BASE: u32 = 6_619_137;
 /// The autosave sentence's `STR_UI` number (the window's text node names it).
 const SENTENCE: u32 = 896;
-/// The text line's top against its node, in layout pixels: the first glyph's top is 2 layout
-/// pixels below the node's `pos.y` and its `y_offset` accounts for the rest.
-const TEXT_TOP: f32 = 0.0;
+/// The text line's top against its node, in layout pixels. Fitted to the capture (the first
+/// glyph row 6 pixels above where the node's `pos.y` puts it at 1080 lines): the title's version
+/// string needed the same 4 pixels (`title::TEXT_TOP`), the game's own rule is not read.
+const TEXT_TOP: f32 = -4.0;
 /// The distance between the window text's lines in layout pixels. Fitted to the capture (lines
 /// 33 pixels apart at 1080 lines); the file's `line_space` of 9 is added to a line height the
 /// layout does not give.
@@ -436,8 +445,7 @@ impl Boot {
         // A looping animation restarts on the first 60 Hz tick after its period (the game steps in
         // whole frames and drops the remainder), so the second pass runs a part of a frame behind.
         let ticks = (t * FPS).round();
-        let period = (self.pen_pos.duration().max(self.pen_rot.duration()) * FPS / self.pen_speed).ceil();
-        let tau = ticks % period / FPS * self.pen_speed;
+        let tau = loop_time(ticks, self.pen_pos.duration().max(self.pen_rot.duration()), self.pen_speed);
         let [dx, dy, _, _] = self.pen_pos.at(tau);
         let rot = self.pen_rot.at(tau)[2];
         let [x, y] = px([self.icon_at[0] + w + dx, self.icon_at[1] + h + dy]);
@@ -457,6 +465,8 @@ impl Boot {
             let back = self.slide_color.duration() - (t - WINDOW_OUT);
             (self.slide_color.at(back)[3] / 255.0, self.slide_pos.at(back)[1])
         };
+        // Colours are bytes in the game: an opacity is truncated to 1/255.
+        let alpha = byte(alpha) as f32 / 255.0;
         if alpha <= 0.0 {
             return Vec::new();
         }
@@ -494,7 +504,8 @@ impl Boot {
             }
         }
         out.extend(self.sentence_quads(ox, oy, k, left, alpha));
-        out.extend(self.orb_quads(since, k, left, alpha, slide));
+        let spinner = if t < SPINNER_OUT { 1.0 } else { self.fade_out.at((t - SPINNER_OUT) * SPINNER_OUT_SPEED)[3] / 255.0 };
+        out.extend(self.orb_quads(since, k, left, byte(alpha), byte(spinner), slide));
         out
     }
 
@@ -507,6 +518,8 @@ impl Boot {
         for word in self.sentence.split(' ') {
             let candidate = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
             if !cur.is_empty() && width(&candidate) > limit {
+                // The space before the break stays on the line (the game draws it there).
+                cur.push(' ');
                 lines.push(std::mem::take(&mut cur));
                 cur = word.to_string();
             } else {
@@ -535,24 +548,42 @@ impl Boot {
 
     /// The spinner: eight orbs about the group's pivot, each with its glow over it (a glow
     /// that is clear draws nothing).
-    fn orb_quads(&self, since: f32, k: f32, left: f32, alpha: f32, slide: f32) -> Vec<Quad> {
+    fn orb_quads(&self, since: f32, k: f32, left: f32, window: u32, spinner: u32, slide: f32) -> Vec<Quad> {
         let mut out = Vec::new();
+        let ticks = (since * FPS).round();
+        let ticks = ticks + (ticks * GLOW_DRIFT + 0.1).floor();
         let (pw, ph) = (self.orb_size * self.orb_scale * k, self.orb_size * self.orb_scale * k);
+        // Opacities are bytes multiplied down the node tree, each product truncated.
+        let base = window * spinner / 255;
         for o in &self.orbs {
             // The group scales about its pivot: a point p lands at origin + pivot + (p - pivot) * scale.
             let at = |i: usize| self.group_at[i] + self.group_pivot[i] + (o.center[i] - self.group_pivot[i]) * self.orb_scale;
             let (cx, cy) = (left + at(0) * k, (at(1) + slide) * k);
             let rect = [cx - pw / 2.0, cy - ph / 2.0, cx + pw / 2.0, cy + ph / 2.0];
             let spin = (o.rot != 0.0).then(|| Spin { pivot: [cx, cy], angle: o.rot.to_radians() });
-            out.push(self.quad(3, SPINNER, self.orb_pictures[0], rect, [1.0, 1.0, 1.0, alpha], spin));
+            out.push(self.quad(3, SPINNER, self.orb_pictures[0], rect, [1.0, 1.0, 1.0, base as f32 / 255.0], spin));
             let glow = &self.glows[o.glow];
-            let a = glow.at((since * self.orb_speed) % glow.duration())[3] / 255.0 * alpha;
-            if a > 0.0 {
-                out.push(self.quad(3, SPINNER, self.orb_pictures[1], rect, [1.0, 1.0, 1.0, a], spin));
+            let g = glow.at(loop_time(ticks, glow.duration(), self.orb_speed))[3].floor() as u32 * base / 255;
+            if g > 0 {
+                out.push(self.quad(3, SPINNER, self.orb_pictures[1], rect, [1.0, 1.0, 1.0, g as f32 / 255.0], spin));
             }
         }
         out
     }
+}
+
+/// An opacity as the byte the game holds it in (truncated).
+fn byte(alpha: f32) -> u32 {
+    (alpha.clamp(0.0, 1.0) * 255.0 + 1e-3).floor() as u32
+}
+
+/// The time inside a looping animation of `duration` seconds at `speed` after `ticks` 60 Hz
+/// frames. The game adds `speed / 60` of a second a frame and restarts once the sum reaches the
+/// duration, dropping the remainder: a loop takes the whole number of frames above its length
+/// (an exact 50 frames takes 51, as the accumulated sum falls just short).
+fn loop_time(ticks: f32, duration: f32, speed: f32) -> f32 {
+    let period = (duration * FPS / speed + 1e-3).floor() + 1.0;
+    ticks % period / FPS * speed
 }
 
 /// A logo's opacity `t` seconds after its start: in, hold, out.

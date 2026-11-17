@@ -68,14 +68,20 @@ pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], 
             // The capture's own form (`barrel-parity`'s `rotated`): the picture's corner nearest the
             // screen's top left names (u0, v0) and the farthest (u1, v1), whatever the turn.
             let [u0, v0, u1, v1] = q.uv;
-            let uvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
-            let key = |i: usize| c[i][0] + c[i][1];
-            let near = (0..4).min_by(|&a, &b| key(a).total_cmp(&key(b))).unwrap();
-            let far = (0..4).max_by(|&a, &b| key(a).total_cmp(&key(b))).unwrap();
+            // In the game's strip order (top-left, top-right, bottom-left, bottom-right), so a tie
+            // between two corners (a quad turned a quarter) falls as it does there.
+            let uvs = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
+            let pos = [c[0], c[1], c[3], c[2]];
+            // Corners within 0.01 pixels of one another's distance tie, and the leftmost (rightmost
+            // for the far one) is taken, as `barrel-parity` reads the capture.
+            let key = |i: usize| pos[i][0] + pos[i][1];
+            let (lo, hi) = ((0..4).map(key).fold(f32::MAX, f32::min), (0..4).map(key).fold(f32::MIN, f32::max));
+            let left_first = |&a: &usize, &b: &usize| pos[a][0].total_cmp(&pos[b][0]).then(pos[a][1].total_cmp(&pos[b][1]));
+            let near = (0..4).filter(|&i| key(i) < lo + 0.01).min_by(left_first).unwrap();
+            let far = (0..4).filter(|&i| key(i) > hi - 0.01).max_by(left_first).unwrap();
             let (n, f) = (uvs[near], uvs[far]);
             let at = |u: f32, v: f32| (0..4).min_by(|&a, &b| ((uvs[a][0] - u).abs() + (uvs[a][1] - v).abs()).total_cmp(&((uvs[b][0] - u).abs() + (uvs[b][1] - v).abs()))).unwrap();
-            let old = c;
-            c = [old[at(n[0], n[1])], old[at(f[0], n[1])], old[at(f[0], f[1])], old[at(n[0], f[1])]];
+            c = [pos[at(n[0], n[1])], pos[at(f[0], n[1])], pos[at(f[0], f[1])], pos[at(n[0], f[1])]];
             uv = [n[0], n[1], f[0], f[1]];
         }
         // A turned quad's rect is the box round its corners, and its corners are listed.

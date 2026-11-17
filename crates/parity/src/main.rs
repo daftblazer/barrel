@@ -333,6 +333,18 @@ struct Q {
 /// A strip's four vertices as the four corners of a rectangle turned by some angle, in the
 /// picture's top-left, top-right, bottom-right, bottom-left order (by their texture coordinates);
 /// `None` for an axis-aligned rectangle.
+/// A strip's corner nearest the screen's top left and the one farthest from it. A quad turned an
+/// eighth or a quarter has corners the same distance out (a 45 degree diamond's left and top), where
+/// float noise would pick either; those within 0.01 pixels count as tied and the leftmost
+/// (rightmost for the far one) is taken. `barrel_render::trace` writes Barrel's quads by the same rule.
+fn extremes<A, B>(q: &[(f32, f32, A, B)]) -> Option<(&(f32, f32, A, B), &(f32, f32, A, B))> {
+    let key = |p: &(f32, f32, A, B)| p.0 + p.1;
+    let (lo, hi) = (q.iter().map(key).reduce(f32::min)?, q.iter().map(key).reduce(f32::max)?);
+    let tl = q.iter().filter(|p| key(p) < lo + 0.01).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)))?;
+    let br = q.iter().filter(|p| key(p) > hi - 0.01).max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)))?;
+    Some((tl, br))
+}
+
 fn rotated(q: &[(f32, f32, Vec<f32>, Vec<f32>)]) -> Option<[[f32; 2]; 4]> {
     let apart = |a: f32, b: f32| (a - b).abs() > 0.01;
     let (mut xs, mut ys) = (Vec::<f32>::new(), Vec::<f32>::new());
@@ -348,8 +360,7 @@ fn rotated(q: &[(f32, f32, Vec<f32>, Vec<f32>)]) -> Option<[[f32; 2]; 4]> {
         return None;
     }
     let uv = |p: &(f32, f32, Vec<f32>, Vec<f32>)| (p.2.first().copied().unwrap_or(0.0), p.2.get(1).copied().unwrap_or(0.0));
-    let tl = q.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)))?;
-    let br = q.iter().max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)))?;
+    let (tl, br) = extremes(q)?;
     let (u0, v0, u1, v1) = (uv(tl).0, uv(tl).1, uv(br).0, uv(br).1);
     let at = |u: f32, v: f32| q.iter().min_by(|a, b| ((uv(a).0 - u).abs() + (uv(a).1 - v).abs()).total_cmp(&((uv(b).0 - u).abs() + (uv(b).1 - v).abs()))).map(|p| [p.0, p.1]);
     Some([at(u0, v0)?, at(u1, v0)?, at(u1, v1)?, at(u0, v1)?])
@@ -455,8 +466,7 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
         for q in pts.chunks_exact(4) {
             let corners = rotated(q);
             // the corner nearest the top left and the one opposite it
-            let tl = q.iter().min_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
-            let br = q.iter().max_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1))).unwrap();
+            let (tl, br) = extremes(q).unwrap();
             let uv = |p: &(f32, f32, Vec<f32>, Vec<f32>), i: usize| p.2.get(i).copied().unwrap_or(0.0);
             out.push(Q {
                 tex: tex0.clone(),
