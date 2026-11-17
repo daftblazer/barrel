@@ -23,16 +23,19 @@ checks are `runchecks docs/ryza/checks.txt` (43 rows; frames are the exact captu
    (`s88`) takes its first angle only, at once (the title's `s88 0 -7 0 0` is 7 degrees about
    the model's x axis in the head's bind frame; the opening's `s88 0 0 56 -4` and the timed
    `s90` are the way to the other two); `npc34a`'s two draws have no Barrel bones to compare.
-   Of the 995 game draws at frame 1135, 963 have a Barrel match (row `title-3d-1135`). The 32
+   Of the 995 game draws at frame 1135, 962 have a Barrel match (row `title-3d-1135`). The 32
    without are the terrain, triangle strips in 32 patches (the pass's first draws; 24 by
    `sh0cf28a`, 8 by `sh499eb4`): the game draws every draw record of a terrain patch (`.ktf`:
    a layer or a pair of layers each, as a strip) on its own, where Barrel draws a patch once,
    its layers blended in one pass (16 patches in view; the strips are not checked against
-   the file's records index by index). The 105 Barrel draws
-   without a game match: those 16, 13 plant cells at the view's edges (below, "Grass"), 5 of
-   the characters' (the cloth submeshes), and 71 of the field's models the game does not draw
-   there or draws with another index count (the title is drawn without draw ranges, a
-   stand-in; which of culling, ranges and detail levels it is, is not sorted).
+   the file's records index by index). The Barrel draws
+   without a game match (row `title-3d-1135` counts the matched): those 16, 2 plant cells
+   (below, "Grass"), 5 of the characters' (the cloth submeshes), and 46 of the field's models
+   that the game leaves out because they stand behind other scenery (docs/renderer.md, "View
+   culling"; how the game tests what is hidden is not read, and nothing shows of it). One
+   game draw more has no match: a bush just outside the view, out of sight. The title is
+   drawn without draw ranges, a stand-in: with the field's own ranges 400 game draws go
+   missing, so the title's ranges are not the field camera file's.
 
 2. **The title's sparkles** (P1). The menu's own quads match the game's on every frame checked
    (rows `menu-*`), but the game also draws particles Barrel does not: a burst at the button
@@ -266,8 +269,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   plant draws all have their match by card atlas and plant count. A cell is drawn while its
   box's centre (the cell's square from its lowest foot to its highest top) is nearer in view
   depth than the grass range's end by the box's diagonal (the deepest cell the title draws is
-  at 15000.0 by this measure); Barrel draws 13 more cells at the view's edges than the game,
-  whose test against the view's sides is not read. Stand-ins: where a plant stands in its
+  at 15000.0 by this measure); at the view's sides a cell is drawn while its centre is no further
+  outside than a measured length (`PLANT_EDGE`, a stand-in between the last cell drawn and
+  the first hidden: docs/renderer.md, "View culling"); Barrel draws 2 more cells than the game. Stand-ins: where a plant stands in its
   cell and where in its ranges its size falls (a fixed hash; the game's random numbers and
   the code that builds a cell are not found: the loader is `0x1407c5380`, called from the
   field's loader `0x140777d80`), how a lower grass quality thins the plants, a sway of the

@@ -846,6 +846,9 @@ impl Renderer {
                     // A character's mask slot holds the toon ramp (flag 128), a texture of Barrel's own.
                     let mask = draw.mask.filter(|_| flags & 128 == 0);
                     trace3d.add(if pass_sky { "sky" } else { "scene" }, draw.index_count, &[Some(draw.texture), mask, draw.normal_map, draw.emission], &inst.model);
+                    if let Some(b) = &draw.bounds {
+                        trace3d.bounds(b.lo, b.hi);
+                    }
                     if !draw.bones.is_empty() {
                         trace3d.bones(&frame.scene.traced_palette(), inst.palette as usize, &draw.bones, &inst.model);
                     }

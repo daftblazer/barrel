@@ -13,7 +13,8 @@
 //! Each draw: `pass` (`shadow` the sun's shadow map, `scene` the lit colour pass, `sky` the
 //! distant view, `outline`, `terrain`), `idx` its index count, `inst` its instances, `tex` its
 //! textures by content name (as the capture names them; the colour texture, then mask, normal
-//! map and emission where it has them) and `world` its model matrix. A skinned draw also has
+//! map and emission where it has them) and `world` its model matrix; `box` the corners of
+//! its box in its own space (lowest, then highest), where it has one. A skinned draw also has
 //! `bones`: its bone palette in slot order (the joints its submesh names), each bone as 16
 //! floats, column-major, the instance's model matrix times the joint's skinning matrix (render
 //! space); `simulated` the slots the game moves by its cloth simulation, which Barrel does not. `view_proj` is the colour pass's
@@ -141,6 +142,13 @@ impl Draws3d {
         let names = SCENE_TEXTURES.lock().unwrap();
         let tex: Vec<&str> = textures.iter().flatten().filter_map(|&t| names.get(t).map(String::as_str)).collect();
         v.push(format!("{{\"pass\":\"{pass}\",\"idx\":{index_count},\"inst\":1,\"tex\":{tex:?},\"world\":{:?}}}", world.to_cols_array()));
+    }
+
+    /// Adds the box of the draw just added (`add`): its corners in the draw's own space.
+    pub fn bounds(&mut self, lo: glam::Vec3, hi: glam::Vec3) {
+        let Some(last) = self.0.as_mut().and_then(|v| v.last_mut()) else { return };
+        last.pop();
+        last.push_str(&format!(",\"box\":{:?}}}", [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z]));
     }
 
     /// Adds the bone palette to the draw just added (`add`).

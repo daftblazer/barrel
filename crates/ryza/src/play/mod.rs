@@ -344,6 +344,11 @@ const PLANT_LIMIT: usize = 200_000;
 /// the light of the ground it stands on rather than of a wall facing the camera.
 const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
+// STAND-IN: The plant cells' reach past the view's sides is a measured bound; the real thing is the game's own cull test.
+/// How far outside a side of the view a plant cell's centre may be, across the view, and
+/// still be drawn: on the title the game draws cells out to 656 and hides them from 695.
+const PLANT_EDGE: f32 = 675.0;
+
 /// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
 /// a grid cell as the game's, the atlas being texture `atlas`.
 /// Returns each draw's first index with its cell's box in render space: the cell's square from
@@ -790,7 +795,18 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // (`docs/ryza/open.md`).
         d.light = FULL_LIGHT;
         let base = instances.get(d.instance as usize).map_or(0, |i| i.palette);
-        d.bounds = Bounds::of(&vertices, &indices, d.first_index, d.index_count, &palette, base);
+        // A plant cell has its own rule for the view's edges (`shown`, below): its box is kept
+        // for the draw trace, padded past any view.
+        d.bounds = match plant_boxes.get(&d.first_index).filter(|_| d.name == "plants") {
+            Some(&(lo, hi)) => Some(Bounds { lo, hi, pad: f32::INFINITY }),
+            // A rigid draw is where its vertices are (nothing but the plants sways in Ryza's
+            // fields yet), so its box alone decides, as in the game: on the title it hides
+            // the models whose boxes are outside the view. A skinned one keeps the padding.
+            None => Bounds::of(&vertices, &indices, d.first_index, d.index_count, &palette, base).map(|b| {
+                let rigid = indices.get(d.first_index as usize).and_then(|&i| vertices.get(i as usize)).is_some_and(|v| v.weights == [0; 4]);
+                if rigid { Bounds { pad: 0.0, ..b } } else { b }
+            }),
+        };
     }
     if draws.is_empty() {
         return Err("nothing to draw".into());
@@ -967,12 +983,20 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // a cell shows while its box's centre is nearer than that by the box's diagonal (the
     // title's capture: the deepest cell drawn is at 15000.0 by this measure, to the unit).
     let forward_now = std::cell::Cell::new(Vec3::ZERO);
+    let sides_now = std::cell::Cell::new([glam::Vec4::ZERO; 4]);
     // The boot sequence's screens come before the scene exists: it is left out until the title.
     let scene_on = std::cell::Cell::new(true);
     let shown = |d: &Draw| {
         scene_on.get()
             && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
-            && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&(lo, hi)| forward_now.get().dot((lo + hi) * 0.5 - eye_now.get()) - lo.distance(hi) <= plant_preset.far[1])
+            // A plant cell is drawn while its box's centre is short of the grass range's end by
+            // the box's diagonal in depth, and no further outside a side of the view than
+            // `PLANT_EDGE` across it (measured on the title: docs/renderer.md, "Ryza DX: which
+            // plant cells are drawn").
+            && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&(lo, hi)| {
+                let c = (lo + hi) * 0.5;
+                forward_now.get().dot(c - eye_now.get()) - lo.distance(hi) <= plant_preset.far[1] && sides_now.get().iter().all(|p| p.truncate().dot(c) + p.w >= -PLANT_EDGE)
+            })
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
@@ -1167,6 +1191,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow, title_clip);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         forward_now.set((center - eye_now.get()).normalize_or_zero());
+        // The view's four side planes, each scaled to measure across the view (along its own
+        // axis) rather than square to the plane.
+        let (across, up, deep) = (view.vp.row(0), view.vp.row(1), view.vp.row(3));
+        sides_now.set([(deep + across) / across.truncate().length(), (deep - across) / across.truncate().length(), (deep + up) / up.truncate().length(), (deep - up) / up.truncate().length()]);
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         // `g_vAttCache0` (a, a, a/2, -a/2) and {`g_fAttCache1` 1, `g_fPhase` 0, `g_fOscPhase`}.
         // From the field's wind (`environment::Gust`): the bend from its power now, the sway's

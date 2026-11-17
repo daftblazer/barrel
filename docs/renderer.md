@@ -795,6 +795,25 @@ matrix each frame and is tested against the six planes of the view-projection dr
 everything; frames are byte-identical either way (32 frames: Sector One, the opening from 20 s,
 TOWN_04 from four sides). `--timings` also prints the draws recorded every 100 frames.
 
+**Ryza DX: which field models are drawn.** A rigid draw's box is not padded in Ryza's fields
+(nothing moves a rigid draw there but its placement; a skinned draw keeps the padding). The
+game does the same: paired by index count and place with the game's draws on the title (995
+draws, frame 1135), every model whose box lies wholly outside the view is one the game leaves
+out, bar one bush whose box is 30 units outside (not drawn by Barrel, and out of sight). The
+game also leaves out models inside the view that stand behind other scenery (fences, stairs,
+rocks, 46 draws on the title, hidden and drawn ones at the same distances and of the same
+draw-distance classes): leaving them out of Barrel's frame changes 118 of its pixels, so the
+game tests what is hidden. Barrel draws them; how the game tests is not read.
+
+**Ryza DX: which plant cells are drawn.** A plant cell (`_grass.bin`, one draw a cell) has its
+own test, on the cell's box (its 500-unit square from its lowest foot to its highest top):
+drawn while the box's centre is nearer in view depth than the grass range's end by the box's
+diagonal (the deepest cell the title draws is at 15000.0 by this measure), and no further
+outside a side of the view than a fixed length measured across the view (the plane's distance
+divided by the projection's scale on that axis: the title's cells are drawn out to 656 and
+hidden from 695; `PLANT_EDGE` is 675, a stand-in between the two). Of the title's 348 cells
+all are drawn, and Barrel draws 2 the game does not (one behind the eye).
+
 The gain is small: only the current field's objects were drawn before too (an event's other
 fields wait), and from the third-person camera most of a field is in view. On the RP6 at native
 1080p: Sector One 179 → 171 scene draws and 131 → 106 shadow draws (shadow 0.73 → 0.65 ms); the

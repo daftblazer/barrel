@@ -3412,7 +3412,7 @@ fn opl2_list(spec: &str) -> Result<()> {
         println!("{:4} {:40} tags {:?} words {}", t.instances.len(), t.name, tags, words.join(", "));
         if std::env::var("BARREL_VERBOSE").is_ok() {
             for i in &t.instances {
-                println!("       at {:.1?} turned {:.1?} scaled {:.2?} {}", i.position, i.rotation, i.scale, i.tags);
+                println!("       at {:.1?} turned {:.1?} scaled {:.2?} {} {:#x}", i.position, i.rotation, i.scale, i.tags, i.word);
             }
         }
     }
