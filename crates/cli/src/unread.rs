@@ -133,6 +133,24 @@ fn parser_for(name: &str, data: &[u8]) -> Option<(&'static str, Fingerprint)> {
         _ if name.ends_with(".ebd") => ("ebd", parser!(|d| f::ebd::Ebd::parse(d))),
         _ if name.ends_with(".oid") => ("oid", parser!(f::oid::parse)),
         _ if name.ends_with(".opl2") => ("opl2", parser!(f::opl2::parse)),
+        // Ryza DX's own field files (`crates/ryza`): the environment over every time of day
+        // and weather, since each read takes one set.
+        _ if name.ends_with("_env.bin") => (
+            "ryza env",
+            parser!(|d| {
+                use barrel_ryza::environment::{CharaLight, Fog, Light, StageLight, Time, Weather};
+                let sets: Vec<_> = [Time::Morning, Time::Noon, Time::Evening, Time::Night]
+                    .into_iter()
+                    .flat_map(|t| [Weather::Sunny, Weather::Cloudy, Weather::Foggy].into_iter().map(move |w| (t, w)))
+                    .map(|(t, w)| (Fog::read(d, t, w), StageLight::read(d, t, w), CharaLight::read(d, t, w), Light::read(d, t, w)))
+                    .collect();
+                sets
+            }),
+        ),
+        _ if name.ends_with("_light.bin") => ("ryza light", parser!(barrel_ryza::light::parse)),
+        _ if name.ends_with("_grass.bin") => ("ryza grass", parser!(|d| barrel_ryza::grass::Grass::parse(d))),
+        _ if name.ends_with("_coll.bin") => ("ryza coll", parser!(barrel_ryza::solids::field_shapes)),
+        _ if name.ends_with(".koc") => ("ryza koc", parser!(barrel_ryza::koc::parse)),
         _ => return None,
     })
 }
