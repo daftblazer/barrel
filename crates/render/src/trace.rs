@@ -57,6 +57,9 @@ pub fn texture_name(t: &barrel_formats::g1t::Texture) -> String {
     format!("tex{:016x}", hash(&top[..n]))
 }
 
+/// A turned quad narrower than this (pixels) in either direction is a card seen edge on.
+const EDGE_ON: f32 = 8.0;
+
 pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], quads: &[Quad]) {
     let Some(o) = out() else { return };
     let (sx, sy) = (1920.0 / width as f32, 1080.0 / height as f32);
@@ -64,7 +67,9 @@ pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], 
     for (i, q) in quads.iter().enumerate() {
         let mut c = q.corners().map(|[x, y]| [x * sx, y * sy]);
         let mut uv = q.uv;
-        if q.spin.is_some() && !q.turn {
+        let extent = |i: usize| c.iter().map(|p| p[i]).fold(f32::MIN, f32::max) - c.iter().map(|p| p[i]).fold(f32::MAX, f32::min);
+        // (A card seen edge on is left as it is.)
+        if q.spin.is_some() && !q.turn && extent(0) >= EDGE_ON && extent(1) >= EDGE_ON {
             // The capture's own form (`barrel-parity`'s `rotated`): the picture's corner nearest the
             // screen's top left names (u0, v0) and the farthest (u1, v1), whatever the turn.
             let [u0, v0, u1, v1] = q.uv;

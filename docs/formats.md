@@ -2591,3 +2591,29 @@ in the Steam build, 1,774 of them; `MainFont00`'s 2,820 start at file offset 0x1
 glyph quad is the pen plus the x offset, the line's top plus the y offset, scaled by
 `font_size * 1.5 / 36`. The "Ver. " string is in the executable (`Ver. `, followed by a patch
 table `Patch day1` 1.00, 1.01, 1.02, ...); the build's level is not read (Barrel says 1.02).
+
+## Ryza's boot screens (`saves/ui_<lang>/a21_saveload/`, `saves/ui_cmn/a21_saveload/`)
+
+`uil_a21_saveload_progress.xml` holds the "Creating system data..." notice: `progress` (532, 245)
+> `icon_saving` (an `image_list` style `gen_a21_saveload02_save`, 584 x 498 pictures in the
+3000 x 1200 atlas of `a21_saveload.g1t#2`, switched every `flick_time` seconds), its
+`text_anime_creating` (-31, 160) with one `image` per letter (style `gen_a21_saveload00_text_*`,
+80 x 80 in the 1200 x 200 atlas of `#0`, so 26.67 layout pixels; pivot 13.33) bound to
+`anm_hopping` or, for the three dots, `anm_hopping_ten` with a `delay` each, and `prompt_icon`
+(the pen, `gen_a21_saveload02_save_pen` 72 x 282) bound to `anm_penmove`, anchored at the icon's
+bottom right (`pos_ratio` 1, 1) and turned about its top left. The animations are in
+`uia_a21_saveload.xml` (`frame60` keys; a repeated frame is a jump: the pen's 72 is a step).
+`uia_a21_saveload.xml` also holds `anm_loading_icon_eff_1` to `_8`, the spinner's glows.
+
+`saves/ui_cmn/a21_saveload/uil_a21_notification_display.xml` holds the autosave window that shows
+while loading: `save_load_Window` (-81, 65) > `window` (388, 100) with `size_wh` 665 x 330, style
+`gen_a21_mmap03_info_base` of `uis_gen_a21_memorymap.xml` (`prim_type="wrap"`, `edge_margin`
+545,370,255,430 in atlas pixels: a nine-slice whose middle row and column repeat), its `text`
+(109, 106, font size 16, `line_char_length` 28, colour 26,0,0, `STR_UI_0896`), and `loading_1`
+(715, 335, scale 1.3 about its pivot 8.5, 8.5) with eight `circle_base` orbs (style
+`gen_a21_cmn_al_001_orb` of `ui_cmn/gen_styles/uis_gen_a21v2_saveload.xml`, 31 x 31 in the
+256 x 128 atlas of `a21v2_saveload.g1t#0`; picture 0 the orb, 1 its glow) each turned 45 degrees
+more. `getIn` binds `anm_common_slide_in_bottom` to the window; `getOut` fades the spinner out at
+speed 0.3 and slides the window back 0.2 s later. `STR_UI_nnnn` is string `6619137 + nnnn` of
+`saves/text_<lang>/str_ui.xml`. The logos are `ipu/logo_kt.g1t` and `ipu/logo_gust.g1t`, 1920 x
+1080 pictures drawn over the whole screen with a fade the code sets.

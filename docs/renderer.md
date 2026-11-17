@@ -1186,5 +1186,51 @@ black half alpha; the hidden autosave notice drawn at alpha 0), and quads wholly
 draw nothing (sprites parked at x = -1338).
 
 Not drawn yet: the fade from black in the first second of the title (a full-screen fill drawn
-by a separate shader, frames 1140 to 1275 in the capture), the menu behind the prompt, the 3D
-backdrop, and the screens before it (autosave notice, logos, loading).
+by a separate shader, frames 1140 to 1275 in the capture), the menu behind the prompt and the 3D
+backdrop.
+
+### The boot screens
+
+`--boot [--boot-at S]` (or `BARREL_BOOT_AT=S`; implies `--title`) plays what comes before the
+title, `barrel_ryza::boot::Boot::quads(t, screen)` on the same text layer (it holds the font, the
+title atlas and six more textures, `boot::TEXTURES`), then hands over to the title at
+`boot::TITLE_START` (14.4 s; the screen is black from the window's end until then). In order, as
+the `title-cycle` capture has them (capture frame 278 is t = 0, so frame N shows at
+`--boot-at (N - 278) / 60`):
+
+1. The "Creating system data..." notice (`a21_saveload.g1t`, frames to 398; the capture starts
+   inside it): the saving icon (a 5-entry picture list stepping every `flick_time` 0.3 s), 21 letter
+   images hopping (`anm_hopping`: lift 15, a full turn and a shrink to 0.6 over 24 frames, each
+   letter `delay` later, the control at speed 1.3; the dots only lift) and the pen
+   (`anm_penmove`, speed 1.33, bobbing and then writing; its loop restarts on the first 60 Hz tick
+   after its period, see `boot::loop_time`). It fades out (`anm_common_fade_out`) from frame 383.
+2. The Koei Tecmo logo and the Gust logo (`logo_kt.g1t`, `logo_gust.g1t`): one full-screen picture
+   each, 0.5 s fade in, 119 frames hold, 0.5 s out (the capture's `fAlphaRate` ramps 1/30 a
+   frame); Koei Tecmo from frame 437, Gust from 616.
+3. The loading screen is the autosave window (`uil_a21_notification_display.xml`, sentence
+   `STR_UI_0896` = string 6620033 of `str_ui.xml`; the string number is `STR_UI_BASE` plus the
+   `STR_UI` number): a nine-slice of `gen_a21_mmap03_info_base` (`edge_margin` left, top, right,
+   bottom; the middle tiles repeat and the last is cropped), the sentence wrapped to
+   `line_char_length` x `font_size` and the 8-orb spinner (orb i at 45 i degrees; each has a glow
+   copy over it lit by `anm_loading_icon_eff_i`, speed 0.8). The window slides in (`anm_common_slide_in_bottom`) from frame 795; at 1065 the spinner fades out (the fade at speed 0.3) and the
+   window slides back out from 1077 to 1107. Opacities are bytes multiplied down the node tree and
+   truncated (`boot::byte`). Barrel loads nothing, so the length (about 5.2 s) is the capture's.
+
+Fitted, not read (each named in `boot.rs`): `CAPTURE_START` (278: the notice's start), the
+schedule's capture frames (notice fade at 383, logos at 437 and 616, window at 795, getOut at
+1065, the title at 1140), `LOGO_HOLD`, `LINE_STEP` (22 layout lines between the sentence's
+lines), `TEXT_TOP` (-4, the same as the title's version string), `WRAP_FACTOR` and `GLOW_DRIFT`
+(the capture's frame clock runs a frame behind 60 Hz about every 105 frames, which shows in the
+glows' phase; the window and the pen sit on the ideal clock, so nothing else needs it).
+
+Parity (`docs/ryza/checks-boot.txt`, local): 0 mismatches at capture frames 300, 370, 390
+(notice), 445 and 500 (Koei Tecmo), 625 and 780 (Gust), 800, 900 and 1090 (the window sliding in,
+steady and out) and 1400 (the title after the boot), and also 305 to 395, 440, 590 to 640, 765 to
+790, 825 to 1105 as tried. The title rows are unchanged. Two shared changes serve it: the trace writer
+(`render::trace::quads`) lists a turned quad as the capture reads one (the picture's corner
+nearest the screen's top left names (u0, v0); quads under `EDGE_ON` pixels across are left as
+they were), and `barrel-parity` settles ties between a turned rectangle's equidistant corners
+(a 45 degree diamond's left and top, where the capture's float noise picks either) when
+`PARITY_TURNED_TIES=left` is set; off by default because Escha's diamonds are matched to the
+noise as it falls (the checks-boot rows set it). Escha's 15 2D rows stay 0 (run with the
+change).

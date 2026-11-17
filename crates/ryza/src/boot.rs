@@ -595,3 +595,52 @@ fn logo_alpha(t: f32) -> f32 {
 fn logo(texture: usize, alpha: f32, screen: (u32, u32)) -> Quad {
     Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32, screen.1 as f32], uv: [0.0, 0.0, 1.0, 1.0], color: [1.0, 1.0, 1.0, alpha], texture }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn near(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-4
+    }
+
+    #[test]
+    fn a_logo_fades_in_holds_and_fades_out() {
+        assert!(near(logo_alpha(0.0), 0.0));
+        assert!(near(logo_alpha(LOGO_FADE / 2.0), 0.5));
+        assert!(near(logo_alpha(LOGO_FADE + LOGO_HOLD / 2.0), 1.0));
+        assert!(near(logo_alpha(2.0 * LOGO_FADE + LOGO_HOLD), 0.0));
+    }
+
+    #[test]
+    fn a_loop_takes_the_whole_frame_above_its_length() {
+        // 40 frames at speed 0.8 are 50 ticks of the clock; the sum falls short and the 51st restarts.
+        assert!(near(loop_time(50.0, 40.0 / 60.0, 0.8), 50.0 * 0.8 / 60.0));
+        assert!(near(loop_time(51.0, 40.0 / 60.0, 0.8), 0.0));
+        // 120 frames at speed 1.33 are 90.2 ticks: the restart is at tick 91.
+        assert!(near(loop_time(90.0, 2.0, 1.33), 90.0 * 1.33 / 60.0));
+        assert!(near(loop_time(91.0, 2.0, 1.33), 0.0));
+    }
+
+    #[test]
+    fn opacities_are_truncated_to_bytes() {
+        assert_eq!(byte(0.4213), 107);
+        assert_eq!(byte(1.0), 255);
+        assert_eq!(byte(1.5), 255);
+    }
+
+    #[test]
+    fn a_track_keeps_a_jump_and_eases() {
+        let anims = table::parse_str(
+            r#"<root><anim name="a"><curve attr="pos"><key value="0,0,0"/><key frame60="60" value="10,0,0"/><key frame60="60" value="0,5,0"/><key frame60="120" value="0,15,0"/></curve></anim>
+            <anim name="b"><curve attr="color" interpolate="easing_outcubic"><key value="0,0,0,0"/><key frame60="30" value="0,0,0,255"/></curve></anim></root>"#,
+        )
+        .unwrap();
+        let a = Track::read(&anims, "a", "pos").unwrap();
+        assert!(near(a.at(0.5)[0], 5.0));
+        assert!(near(a.at(1.0)[1], 5.0), "the later key of a repeated frame holds from there");
+        assert!(near(a.at(1.5)[1], 10.0));
+        let b = Track::read(&anims, "b", "color").unwrap();
+        assert!(near(b.at(0.25)[3], 255.0 * (1.0 - 0.5f32.powi(3))));
+    }
+}

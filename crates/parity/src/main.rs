@@ -333,12 +333,28 @@ struct Q {
 /// A strip's four vertices as the four corners of a rectangle turned by some angle, in the
 /// picture's top-left, top-right, bottom-right, bottom-left order (by their texture coordinates);
 /// `None` for an axis-aligned rectangle.
+/// A turned quad narrower than this (pixels) in either direction is a card seen edge on.
+const EDGE_ON: f32 = 8.0;
+
 /// A strip's corner nearest the screen's top left and the one farthest from it. A quad turned an
 /// eighth or a quarter has corners the same distance out (a 45 degree diamond's left and top), where
-/// float noise would pick either; those within 0.01 pixels count as tied and the leftmost
-/// (rightmost for the far one) is taken. `barrel_render::trace` writes Barrel's quads by the same rule.
+/// float noise in the capture picks either. `PARITY_TURNED_TIES=left` settles such ties (within
+/// 0.01 pixels, on a rectangle at least `EDGE_ON` pixels across) by taking the leftmost corner
+/// (the rightmost for the far one), as `barrel_render::trace` writes Barrel's turned quads; off by
+/// default, since Escha's diamonds are matched to the capture's noise as it falls.
 fn extremes<A, B>(q: &[(f32, f32, A, B)]) -> Option<(&(f32, f32, A, B), &(f32, f32, A, B))> {
     let key = |p: &(f32, f32, A, B)| p.0 + p.1;
+    // Only a rectangle (a quad turned about its centre: equal diagonals bisecting each other) has
+    // ties worth settling; a sheared or edge-on card keeps the plain first/last rule.
+    let d = |i: usize, j: usize| ((q[i].0 - q[j].0).hypot(q[i].1 - q[j].1), (q[i].0 + q[j].0, q[i].1 + q[j].1));
+    let (a, b) = (d(0, 3), d(1, 2));
+    let rectangle = q.len() == 4 && (a.0 - b.0).abs() < 0.05 && (a.1 .0 - b.1 .0).abs() < 0.05 && (a.1 .1 - b.1 .1).abs() < 0.05;
+    let span = |f: fn(&(f32, f32, A, B)) -> f32| q.iter().map(f).fold(f32::MIN, f32::max) - q.iter().map(f).fold(f32::MAX, f32::min);
+    static SETTLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let settle = *SETTLE.get_or_init(|| std::env::var("PARITY_TURNED_TIES").is_ok_and(|v| v == "left"));
+    if !settle || !rectangle || span(|p| p.0) < EDGE_ON || span(|p| p.1) < EDGE_ON {
+        return Some((q.iter().min_by(|a, b| key(a).total_cmp(&key(b)))?, q.iter().max_by(|a, b| key(a).total_cmp(&key(b)))?));
+    }
     let (lo, hi) = (q.iter().map(key).reduce(f32::min)?, q.iter().map(key).reduce(f32::max)?);
     let tl = q.iter().filter(|p| key(p) < lo + 0.01).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)))?;
     let br = q.iter().filter(|p| key(p) > hi - 0.01).max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)))?;
