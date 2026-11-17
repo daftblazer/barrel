@@ -26,7 +26,7 @@ pub const TITLE_EVENT: &str = "tt01_010";
 /// frames into the event (the first fade's hold), so 38 frames puts them a frame from there.
 /// Fitted: at 38 the bones are within 0.012 of the capture's at frames 1400 and 1500 (0.1 and
 /// more a frame either side).
-pub const EVENT_START: f32 = 39.0 / 60.0;
+pub const EVENT_START: f32 = 38.0 / 60.0;
 
 /// A character's files, read: its model container and texture pack as stored, and the motions
 /// the event plays on it.
@@ -168,8 +168,8 @@ pub fn motions_of(steps: &[barrel_engine::event::Timed]) -> BTreeMap<u32, BTreeS
 // STAND-IN: The fade's two presets are the colours the capture shows (2 clear to black, 3 black to clear); the real thing is the game's own table of contrast presets.
 /// How much of the screen the event's fade covers in black (`u49`, [`Stage::fade`]): 1 before
 /// the event's first fade (the title comes up black), then from one of the preset's ends to
-/// the other, a step a frame from the command's own frame (the game's quad: `rate` k/90 on the
-/// k-th frame of a 1.5 s fade).
+/// the other, a step a frame (the game's quad: `rate` k/90 on the k-th frame of a 1.5 s fade,
+/// the first being the command's own; the stage has the command a frame before).
 pub fn cover(stage: &barrel_engine::stage::Stage) -> f32 {
     let Some((preset, seconds, since)) = stage.fade else { return 1.0 };
     let (from, to) = match preset {
@@ -178,7 +178,7 @@ pub fn cover(stage: &barrel_engine::stage::Stage) -> f32 {
         _ => return 0.0,
     };
     let (frames, length) = (((stage.time - since) * 60.0).round(), (seconds * 60.0).round());
-    let rate = if length <= 0.0 { 1.0 } else { ((frames + 1.0) / length).clamp(0.0, 1.0) };
+    let rate = if length <= 0.0 { 1.0 } else { (frames / length).clamp(0.0, 1.0) };
     from + (to - from) * rate
 }
 
