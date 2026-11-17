@@ -173,6 +173,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
                     d.version = how.version;
                     d.class = how.class;
                     d.lod = lod;
+                    d.object = placed as u32 + 1;
                 }
             }
             placed += 1;

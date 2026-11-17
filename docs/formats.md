@@ -2306,7 +2306,8 @@ The DX release's graphics options are tables of presets, one element per `Type`,
 - `disprangepreset.xml` (units from the eye): High ObjNear 8000, ObjMiddle 20000, ObjFar 40000,
   Chara / Enemy / Gimmick / Effect 10000; Middle 7000 / 15000 / 30000 / 7000; Low 5000 / 10000 /
   20000 / 5000. The field's own `cameraparam` `disp_range` (in metres: `obj_middle` 200.0) is
-  the same High range, a hundredth of it.
+  the same High range, a hundredth of it (the loader multiplies by 100, `0x1406a8829`). The
+  PC game uses the ranges only below High (`docs/renderer.md`, "Ryza DX: object draw ranges").
 - `loddistpreset.xml`: `Lod_hi_dist` / `Lod_mid_dist` High 10000 / 30000, Middle 8000 / 25000,
   Low 6000 / 20000: a model's `_hi` up to the first, `_mid` to the second, `_low` past it. The
   field's `cameraparam` `lod` (`use_lod` false on PC, `hi_mid` 400 and `mid_low` 800 m; its

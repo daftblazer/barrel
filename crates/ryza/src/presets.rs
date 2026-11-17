@@ -14,9 +14,15 @@ pub struct Graphics {
     /// Where an object's full model gives way to its middle level of detail, and that to its
     /// low one, from the eye (`LODDistType`: `Lod_hi_dist`, `Lod_mid_dist`).
     pub lod: [f32; 2],
+    // STAND-IN: Levels of detail are used below the top `LODDistType` only; the real thing is the game's own switch (at High its capture draws full models at 45,000 to 78,000 units, past both distances).
+    /// Whether levels of detail are used at all.
+    pub lods: bool,
     /// How far the near, middle and far field objects are drawn (`DispRangeType`: `ObjNear`,
-    /// `ObjMiddle`, `ObjFar`); the field's own ranges cap them (`camera::DrawRanges::limit`).
+    /// `ObjMiddle`, `ObjFar`), in place of the field's own (`camera::DrawRanges::preset`).
     pub objects: [f32; 3],
+    /// Whether objects have draw ranges at all: not at the top setting (`DispRangeType`
+    /// `High`), where the PC game draws every object whatever its distance (`0x14011a32c`).
+    pub ranged: bool,
     /// A scale of how far the sun's shadows reach (`ShadowDistType`: `Distance`, 1 on High).
     pub shadow: f32,
     /// How many of each texture's largest mip levels are left out (`TextureType`:
@@ -26,7 +32,7 @@ pub struct Graphics {
 
 impl Graphics {
     /// The game's `High` general preset, as shipped.
-    pub const HIGH: Graphics = Graphics { grass: grass::Preset::MIDDLE, lod: [10000.0, 30000.0], objects: [8000.0, 20000.0, 40000.0], shadow: 1.0, texture_bias: 0 };
+    pub const HIGH: Graphics = Graphics { grass: grass::Preset::MIDDLE, lod: [10000.0, 30000.0], lods: false, objects: [8000.0, 20000.0, 40000.0], ranged: false, shadow: 1.0, texture_bias: 0 };
 
     /// The general preset `general` ("High", "Middle", "Low"), its tables read through `read`
     /// (a file name under `saves/graphicssetting`).
@@ -46,7 +52,9 @@ impl Graphics {
         Ok(Graphics {
             grass: grass::Preset { density: number(&q, "Density")?, far: [number(&r, "FarClipBegin")?, number(&r, "FarClipEnd")?] },
             lod: [number(&l, "Lod_hi_dist")?, number(&l, "Lod_mid_dist")?],
+            lods: lod != "High",
             objects: [number(&d, "ObjNear")?, number(&d, "ObjMiddle")?, number(&d, "ObjFar")?],
+            ranged: disp != "High",
             shadow: number(&s, "Distance")?,
             texture_bias: number(&t, "TextureMipBias")? as usize,
         })
@@ -96,7 +104,7 @@ mod tests {
         assert_eq!(Graphics::read("High", &tables).unwrap(), Graphics::HIGH);
         assert_eq!(
             Graphics::read("Middle", &tables).unwrap(),
-            Graphics { grass: grass::Preset { density: 0.75, far: [3000.0, 3100.0] }, lod: [8000.0, 25000.0], objects: [7000.0, 15000.0, 30000.0], shadow: 0.7, texture_bias: 1 }
+            Graphics { grass: grass::Preset { density: 0.75, far: [3000.0, 3100.0] }, lod: [8000.0, 25000.0], lods: true, objects: [7000.0, 15000.0, 30000.0], ranged: true, shadow: 0.7, texture_bias: 1 }
         );
         assert!(Graphics::read("Low", &tables).is_err());
         assert!(Graphics::read("High", &|_| None).is_err());

@@ -161,22 +161,29 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
   `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
-  45.4 --ryza 32517,6180,30336`, row `rasen-3d-2550`), 809 of the game's 913 draws have a
-  Barrel match. The 104
-  without: the townsfolk Barrel does not place (the story-conditioned ones and a few `npc22b` and `npc34a` draws: about 15), the
-  terrain's 42 strips (Barrel draws a patch at once), some 20 plant cells,
-  10 of a shore foam effect, two rainbow grapes and a ship (not rows of the field's gimmick table, `docs/tables.md`, "Ryza DX: field gimmicks": where they come from is open) and 22 of the field's
-  models. The gimmicks with a model and no story event (the four notice boards) are placed; the story-conditioned ones are not. Barrel draws 306 the game does not: 164 of the field's models, nearly all in view and
-  hidden behind the town, as on the title (leaving 138 of them out changes 604 pixels of the
-  picture, all at one far spot): the game's occlusion test, which Barrel does not make
+  45.4 --ryza 32517,6180,30336 --done MM00_010`, row `rasen-3d-2550`), 858 of the game's 913
+  draws have a Barrel match. The 55 without: the terrain's 42 strips (Barrel draws a patch at
+  once), 10 of a shore foam effect, one `npc23a` draw and 2 of the field's models. Barrel
+  draws 324 the game does not: some 170 of the field's models, nearly all in view and hidden
+  behind the town, as on the title (leaving 138 of them out changes 604 pixels of the picture,
+  all at one far spot): the game's occlusion test, which Barrel does not make
   (`tools/pair3d.py` lists them); and 91 draws of the townsfolk (`npc30a`, `npc30b`, `npc31a`,
   `npc23b`), whom the game's scene pass does not draw at this frame although its capture
-  loads them (hidden by the same test, unverified). The townsfolk stand where `npcmarker.xml`
-  puts them, turned as the capture's root matrices (`npc25c`: within 6 units and 0.01 of
-  the game's). Left: the people whose rows depend on the story (`npcevrange.xml`), the
-  walkers' pauses, motions and ground between points (`docs/tables.md`), the people's drop to the ground when `no_gravity` is 0 (ten of Rasenboden's
-  rows have it 0, with motion 0 and no turning), the draw distance of people (not applied: the game
-  draws them at 7000 to 12000 units), and the bits of `timezone` and `weather` (stand-in
+  loads them (hidden by the same test, unverified). What got it here from 809: objects are
+  in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
+  drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
+  game's code and capture say ("Ryza DX: object draw ranges"). The story's progress decides
+  who and what a field places (`docs/tables.md`, "Ryza DX: story spans"; this save has only
+  `MM00_010` of the main story, which leaves the same 22 people and 4 boards as before).
+  The townsfolk stand where `npcmarker.xml` puts them, turned as the capture's root matrices
+  (`npc25c`: within 6 units and 0.01 of the game's). Left: where a save holds the story's
+  events (Barrel takes them from `--done`), the object ranges' own measure and classes below
+  the top setting (the placement word's bits 0-1 as the class is still a guess: nothing at
+  High tells), the game's switch for levels of detail, the walkers' pauses, motions and
+  ground between points (`docs/tables.md`), the people's drop to the ground when
+  `no_gravity` is 0 (ten of Rasenboden's rows have it 0, with motion 0 and no turning), the
+  people's and gimmicks' own ranges below the top setting, and the bits of `timezone` and
+  `weather` (stand-in
   order). The windmills' sails turn and the boat rocks by the motions the object
   container has under their names (`<model>.g1a`, looped: the game turns the sails 0.5° a
   frame, all windmills together); where in the motion the game is when a field appears is
@@ -408,13 +415,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   triangles, every placed object at full detail. On the PC (RX 9070 XT, 1920x1080, offscreen,
   60 frames, median) the frame is 5.97 ms at the desktop preset and 5.89 ms at the handheld one
   (75 % scale): the scene pass barely changes with the resolution, so it is bound by vertices
-  and draws. The field's draw distances are applied (`barrel --draw-ranges pc|nx|off`, the
-  PC's by default: a field object farther from the eye than its class's `disp_range`, taken as
-  metres, is left out): at the gate they leave out 45 (PC) or 63 (Switch) pixels of 1920x1080
-  and take the frame from 5.97 to 5.89 or 5.88 ms, since the landmarks (3000 m) carry the cost.
-  Whether the units are metres is a guess (the near class at 70 would be 70 units otherwise,
-  a few steps). Choosing the Switch's ranges belongs with the handheld preset (a graphics
-  setting, not yet). LOD (`lod`, off on the PC, on for the Switch's `lod_NX`) is not applied.
+  and draws. The field's draw distances count only below the top object-distance setting,
+  as in the PC game (`docs/renderer.md`, "Ryza DX: object draw ranges"; `barrel --draw-ranges
+  pc|nx` forces them on, and these timings were taken with them on). Choosing the Switch's
+  ranges belongs with the handheld preset (a graphics setting, not yet). The timings below
+  are from before objects were culled whole and before levels of detail were tied to the
+  setting: to be taken again.
   Where the frame goes at the gate (1920x1080, desktop preset, 57 frames, median 5.83 ms): the
   shadow map 1.70 ms, the scene 4.04, the rest 0.08. After view culling, by placement class
   (draws / triangles):
@@ -472,13 +478,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   lower levels. The graphics' `foliage` picks the game's general preset
   (`barrel_ryza::presets::Graphics`: full High, reduced Middle, least Low), and the plants and
   these distances come from the tables it names (Middle 8000 / 25000 on the handheld preset).
-  The general preset's object draw ranges (`DispRangeType`) cap the field's own
-  (`DrawRanges::limit`: the smaller of the two for near, middle and far; landmarks keep the
-  field's). That rule is a guess: Rasenboden's own (7000, 20000, 40000) are at or under the
-  High preset's (8000, 20000, 40000), so the desktop draws as before, and the handheld's Middle
-  (7000, 15000, 30000) drops some far small objects: 7.14 to 6.77 ms in a far view (PC). How
-  the game really combines the field's `disp_range` with the preset is unknown (an oracle read
-  of the ranges in use would tell). The shadow distance (`ShadowDistType`: 1, 0.7, 0.5) scales the far
+  The general preset's object draw ranges (`DispRangeType`) take the place of the field's
+  own below the top setting and are not used at it (`docs/renderer.md`, "Ryza DX: object
+  draw ranges"): the handheld's Middle (7000, 15000, 30000) drops far small objects. The shadow distance (`ShadowDistType`: 1, 0.7, 0.5) scales the far
   shadow layer's fade (20000 to 30000 on High; 14000 to 21000 on the handheld's Middle): a
   guess at what it scales, as the game's cascades (1200 / 6000 / 13000) are not drawn as such.
   In the far view 0.5% of the pixels change and the time does not (the far layer is redrawn

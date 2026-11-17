@@ -795,15 +795,43 @@ matrix each frame and is tested against the six planes of the view-projection dr
 everything; frames are byte-identical either way (32 frames: Sector One, the opening from 20 s,
 TOWN_04 from four sides). `--timings` also prints the draws recorded every 100 frames.
 
-**Ryza DX: which field models are drawn.** A rigid draw's box is not padded in Ryza's fields
-(nothing moves a rigid draw there but its placement; a skinned draw keeps the padding). The
-game does the same: paired by index count and place with the game's draws on the title (995
-draws, frame 1135), every model whose box lies wholly outside the view is one the game leaves
-out, bar one bush whose box is 30 units outside (not drawn by Barrel, and out of sight). The
-game also leaves out models inside the view that stand behind other scenery (fences, stairs,
-rocks, 46 draws on the title, hidden and drawn ones at the same distances and of the same
-draw-distance classes): leaving them out of Barrel's frame changes 118 of its pixels, so the
-game tests what is hidden. Barrel draws them; how the game tests is not read.
+**Ryza DX: which field models are drawn.** A placed object is in or out as a whole: every
+part of it is drawn when the sphere around the box of all its parts (the box's centre, half
+its diagonal) reaches into the view (`Bounds::round`, `Draw::object`). A rigid part's box is
+not padded (nothing moves it but its placement; a skinned one keeps the padding). Measured
+against the game's draws in Rasenboden (913 draws, frame 2550, paired by index count and
+place): with each part tested by its own box, 41 of the game's field model draws had no pair,
+among them parts of the gate behind the camera and small parts a step from the eye; with
+each part's own sphere, 22; with the object's sphere, 2. What the game really tests is not
+read from its code. The game also leaves out models inside the view that stand behind other
+scenery (fences, stairs, rocks: 46 draws on the title, some 170 in Rasenboden, hidden and
+drawn ones at the same distances and of the same draw-distance classes): leaving them out of
+Barrel's frame changes 118 pixels of the title's and 604 of Rasenboden's, so the game tests
+what is hidden. Barrel draws them; how the game tests is not read.
+
+**Ryza DX: object draw ranges.** The field's camera file gives a draw range for each class
+of object (`disp_range`: `obj_near`, `obj_middle`, `obj_far`, `obj_landmark`, in metres), and
+the graphics setting for object distance (`DispRangeType`) gives its own near, middle and
+far. The PC game uses none of them at the top setting: its test (`0x1404d1ae0`, each frame,
+each class) takes 999999.9 for every class unless a flag is set, and the flag is set by a
+`use_disp_range` in the field's file (no shipped file has one; the PC's default is off,
+`0x1404fc3d0`) or by an object-distance setting below the top (`0x14011a32c`). Logged in the
+running game at High: the fallback is taken every frame, on the title and in Rasenboden,
+where it draws near-class objects 8,000 to 12,000 units away. With the flag set, the
+setting's three ranges replace the field's (the field's are set first, then the setting's:
+`0x14011a2ec`) and the landmarks keep the field's; an object is drawn while its point is
+within its class's range of the camera measured over the ground (x and z alone), fades out
+past it and comes back only 300 units inside it. Barrel does the same test without the fade
+or the 300 units, from the centre of the object's box (`camera::DrawRanges`,
+`presets::Graphics::ranged`; `--draw-ranges pc` or `nx` forces the ranges on). The people
+and gimmicks have ranges of their own in the same file (`chara`, `gimmick`), not applied.
+
+**Ryza DX: levels of detail.** At the top setting the game draws an object's full model at
+any distance (Rasenboden's far mountains, 45,000 to 78,000 units away, are their full
+13,752-index models, past both of the setting's distances). Barrel uses the lower models
+only below the top `LODDistType`, by the setting's two distances: a guess, as the game's
+own switch is not read (the field file's `lod` block is not read by the PC executable at
+all: its names are not in it).
 
 **Ryza DX: field objects that move.** A placed object whose container has a motion under
 its name (`<model>.g1a` beside `<model>_hi.g1m`: Rasenboden's windmill and boat) is skinned
@@ -819,8 +847,7 @@ outside a side of the view than a fixed length measured across the view (the pla
 divided by the projection's scale on that axis: the title's cells are drawn out to 656 and
 hidden from 695; `PLANT_EDGE` is 675, a stand-in between the two). Of the title's 348 cells
 all are drawn, and Barrel draws 2 the game does not (one behind the eye). The objects' draw
-ranges do not apply to plant cells: in Rasenboden the game draws cells out to the grass
-range's end, far past the nearest object class's range.
+ranges do not apply to plant cells.
 
 The gain is small: only the current field's objects were drawn before too (an event's other
 fields wait), and from the third-person camera most of a field is in view. On the RP6 at native
@@ -1284,8 +1311,8 @@ What the capture's G-buffer holds (frame 1400, 995 draws) was worked out with `b
   the game's cloth simulation and are left out of the comparison.
 - **Lit** by the field's own environment (as every field): the capture's characters use the
   `charatest` probes, which a field draw does not.
-- **Draw ranges are off** in the title (`event_titleback`'s camera file has no readable ranges,
-  and the capture's backdrop is whole); the boot screens leave the scene out until the title.
+- **Draw ranges are off** in the title as in every field at the top object-distance setting
+  ("Ryza DX: object draw ranges"); the boot screens leave the scene out until the title.
 
 `diff3d` at frame 1400 (see `docs/parity.md`): 611 of 995 game draws matched against 733 Barrel
 draws, from 13 with the wrong field. Left: the 348 grass cards (Barrel draws grass as its own

@@ -6,6 +6,7 @@
 use barrel_formats::table::{self, Element};
 
 use crate::environment::{Time, Weather};
+use crate::story::{Span, Story};
 
 /// A person a field places.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,8 +25,10 @@ pub struct Npc {
     /// The times of day and the weathers it is there for, as bit masks.
     pub timezone: u32,
     pub weather: u32,
-    /// It depends on the story's progress (`ev_range_*`, `ev_ex_*` of its condition).
-    pub story: bool,
+    /// The story spans it is there within (`ev_range_*` of its condition: any one of them,
+    /// when there are any) and the ones it is away for (`ev_ex_*`).
+    pub ranges: Vec<Span>,
+    pub away: Vec<Span>,
     /// The path it walks instead of standing (`move_data` of its base row: a file of
     /// `saves\fieldmap\npc\move_data\`, without the `.xml`).
     pub path: Option<String>,
@@ -104,8 +107,13 @@ impl Npc {
     }
 
     // STAND-IN: The bits of `timezone` and `weather` are taken in the order of the game's times and weathers (bit 0 morning, noon, evening, night, midnight; bit 0 sunny, cloudy, foggy); the real thing is the executable's own numbering. The data fits: the day rows carry 7, their night twins 24.
-    /// Whether it is there at `time` in `weather`.
-    pub fn present(&self, time: Time, weather: Weather) -> bool {
+    /// Whether it is there at `time` in `weather` at this point of the `story` (the story
+    /// part is the game's `0x14040f9e0`: within one of its spans when it has any, and within
+    /// none of the spans it is away for, which count only once their start has played).
+    pub fn present(&self, time: Time, weather: Weather, story: &Story) -> bool {
+        if !self.ranges.is_empty() && !self.ranges.iter().any(|s| story.within(s, false)) || self.away.iter().any(|s| story.within(s, true)) {
+            return false;
+        }
         let t = match time {
             Time::Morning => 0,
             Time::Noon => 1,
@@ -123,13 +131,22 @@ impl Npc {
 
 /// The people of `field` (`S06_T_RASEN`: its name in upper case) from the four tables' bytes.
 /// The tags of the base data are not attributes of the other tables: a field's Nth distinct tag
-/// of a kind (in order of first appearance) is the Nth row of that field in that table.
-pub fn read(basedata: &[u8], people: &[u8], marker: &[u8], condition: &[u8], field: &str) -> Result<Vec<Npc>, String> {
+/// of a kind (in order of first appearance) is the Nth row of that field in that table. A
+/// condition's story spans are rows of `evrange` by the number their tag ends in
+/// (`S06_EVR_003` is the field's third).
+pub fn read(basedata: &[u8], people: &[u8], marker: &[u8], condition: &[u8], evrange: &[u8], field: &str) -> Result<Vec<Npc>, String> {
     let parse = |b: &[u8], name: &str| table::parse(b).map_err(|e| format!("{name}: {e}"));
     let base = parse(basedata, "npcbasedata")?;
     let Some(rows) = base.children.iter().find(|e| e.name == field) else { return Ok(Vec::new()) };
     let rows_of = |root: &Element, suffix: &str| -> Vec<Element> { root.children.iter().filter(|e| e.name == format!("{field}_{suffix}")).cloned().collect() };
     let (people, marker, condition) = (rows_of(&parse(people, "npcpeople")?, "people"), rows_of(&parse(marker, "npcmarker")?, "marker"), rows_of(&parse(condition, "npccondition")?, "Condition"));
+    let spans: Vec<Span> = rows_of(&parse(evrange, "npcevrange")?, "EvRange").iter().map(|e| Span::new(e.attr("start"), e.attr("end"))).collect();
+    let spans_of = |c: &Element, kind: &str| -> Result<Vec<Span>, String> {
+        c.attributes.iter().filter(|(k, _)| k.starts_with(kind)).map(|(_, tag)| {
+            let n = tag.rsplit('_').next().and_then(|n| n.parse::<usize>().ok()).filter(|n| *n > 0).ok_or(format!("{field}: {tag} has no number"))?;
+            spans.get(n - 1).cloned().ok_or(format!("{field}: no story span {tag}"))
+        }).collect()
+    };
     let (mut tags, mut out): ([Vec<&str>; 3], Vec<Npc>) = (Default::default(), Vec::new());
     let mut seen: Vec<[usize; 3]> = Vec::new();
     for row in &rows.children {
@@ -161,7 +178,8 @@ pub fn read(basedata: &[u8], people: &[u8], marker: &[u8], condition: &[u8], fie
             no_gravity: int(p, "no_gravity") == 1,
             timezone: int(c, "timezone") as u32,
             weather: int(c, "weather") as u32,
-            story: c.attributes.iter().any(|(k, _)| k.starts_with("ev_range") || k.starts_with("ev_ex")),
+            ranges: spans_of(c, "ev_range")?,
+            away: spans_of(c, "ev_ex")?,
             path: row.attr("move_data").map(str::to_ascii_lowercase),
         });
     }
@@ -182,18 +200,19 @@ mod tests {
         <S06_T_RASEN_people chara_tag="NPC30A_00" init_mot_no="2101" mot_idx="-1" no_gravity="1"/>
         <S06_T_RASEN_people chara_tag="NPC24B_00" init_mot_no="12531" mot_idx="0"/><S07_X_people chara_tag="OTHER"/></root>"#;
     const MARKER: &[u8] = br#"<root><S06_T_RASEN_marker marker="1,2,3,90"/><S06_T_RASEN_marker marker="294.52,57.77,257.06,-58.46"/><S06_T_RASEN_marker marker="0,0,0,0"/></root>"#;
-    const CONDITION: &[u8] = br#"<root><S06_T_RASEN_Condition ev_ex_00="X" timezone="3" weather="63"/><S06_T_RASEN_Condition timezone="24" weather="1"/></root>"#;
+    const CONDITION: &[u8] = br#"<root><S06_T_RASEN_Condition ev_ex_00="S06_EVR_002" timezone="3" weather="63"/><S06_T_RASEN_Condition ev_range_00="S06_EVR_001" ev_range_01="S06_EVR_002" timezone="24" weather="1"/></root>"#;
+    const RANGES: &[u8] = br#"<root><S02_X_EvRange start="A"/><S06_T_RASEN_EvRange end="MM01_111"/><S06_T_RASEN_EvRange start="MM00_010" end="MM00_080"/></root>"#;
 
     #[test]
     fn rows_are_the_nth_distinct_tag() {
-        let npcs = read(BASE, PEOPLE, MARKER, CONDITION, "S06_T_RASEN").unwrap();
+        let npcs = read(BASE, PEOPLE, MARKER, CONDITION, RANGES, "S06_T_RASEN").unwrap();
         assert_eq!(npcs.len(), 3);
-        assert_eq!((npcs[0].chara.as_str(), npcs[0].story, npcs[0].position), ("MIO", true, [100.0, 200.0, 300.0]));
+        assert_eq!((npcs[0].chara.as_str(), npcs[0].away.len(), npcs[0].position), ("MIO", 1, [100.0, 200.0, 300.0]));
         let b = &npcs[1];
         assert_eq!((b.chara.as_str(), b.motion, b.set, b.no_gravity, b.timezone, b.weather), ("NPC30A_00", 2101, -1, true, 24, 1));
         assert!((b.position[0] - 29452.0).abs() < 1e-2 && (b.yaw + 58.46).abs() < 1e-4);
         // the third person walks a path and its condition is the first's
-        assert_eq!((npcs[2].path.as_deref(), npcs[2].story, &npcs[0].path), (Some("s06_move_data_002_n"), true, &None));
+        assert_eq!((npcs[2].path.as_deref(), npcs[2].away == npcs[0].away, &npcs[0].path), (Some("s06_move_data_002_n"), true, &None));
     }
 
     #[test]
@@ -213,14 +232,25 @@ mod tests {
 
     #[test]
     fn present_by_bits() {
-        let npcs = read(BASE, PEOPLE, MARKER, CONDITION, "S06_T_RASEN").unwrap();
-        assert!(npcs[0].present(Time::Noon, Weather::Foggy) && !npcs[0].present(Time::Night, Weather::Sunny));
-        assert!(npcs[1].present(Time::Night, Weather::Sunny) && !npcs[1].present(Time::Night, Weather::Cloudy));
+        let npcs = read(BASE, PEOPLE, MARKER, CONDITION, RANGES, "S06_T_RASEN").unwrap();
+        let none = Story::default();
+        assert!(npcs[0].present(Time::Noon, Weather::Foggy, &none) && !npcs[0].present(Time::Night, Weather::Sunny, &none));
+        assert!(npcs[1].present(Time::Night, Weather::Sunny, &none) && !npcs[1].present(Time::Night, Weather::Cloudy, &none));
+    }
+
+    #[test]
+    fn present_by_the_story() {
+        let npcs = read(BASE, PEOPLE, MARKER, CONDITION, RANGES, "S06_T_RASEN").unwrap();
+        let at = |n: usize, done: &str| npcs[n].present(if n == 0 { Time::Noon } else { Time::Night }, Weather::Sunny, &Story::after(done));
+        // away for a span only once its start has played, until its end has
+        assert!(at(0, "") && !at(0, "MM00_010") && at(0, "MM00_010,MM00_080"));
+        // there within any one of its spans: the first is open until MM01_111
+        assert!(at(1, "") && at(1, "MM01_111,MM00_010") && !at(1, "MM01_111") && !at(1, "MM01_111,MM00_010,MM00_080"));
     }
 
     #[test]
     fn other_fields_and_short_tables() {
-        assert!(read(BASE, PEOPLE, MARKER, CONDITION, "S99").unwrap().is_empty());
-        assert!(read(BASE, PEOPLE, b"<root/>", CONDITION, "S06_T_RASEN").is_err());
+        assert!(read(BASE, PEOPLE, MARKER, CONDITION, RANGES, "S99").unwrap().is_empty());
+        assert!(read(BASE, PEOPLE, b"<root/>", CONDITION, RANGES, "S06_T_RASEN").is_err());
     }
 }

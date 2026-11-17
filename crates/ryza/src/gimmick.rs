@@ -5,6 +5,7 @@
 use barrel_formats::table;
 
 use crate::environment::Time;
+use crate::story::{Span, Story};
 
 /// A gimmick with a model.
 #[derive(Clone, Debug, PartialEq)]
@@ -20,8 +21,8 @@ pub struct Gimmick {
     /// A turn of the model about x, y and z in degrees (`objRot`), and its scale (`objScale`).
     pub rotation: [f32; 3],
     pub scale: [f32; 3],
-    /// Whether it depends on the story's progress (`startEvent` or `endEvent`).
-    pub story: bool,
+    /// The stretch of the story it is there for (`startEvent` to `endEvent`).
+    pub story: Span,
     /// The times of day it is there between (`startTZ`, `endTZ`), wrapping, both included.
     pub span: Option<(Time, Time)>,
 }
@@ -39,8 +40,12 @@ fn zone(name: &str) -> Option<Time> {
 }
 
 impl Gimmick {
-    /// Whether it is there at `time` of day (a row without a span is there all day).
-    pub fn present(&self, time: Time) -> bool {
+    /// Whether it is there at `time` of day (a row without a span is there all day) at this
+    /// point of the `story`.
+    pub fn present(&self, time: Time, story: &Story) -> bool {
+        if !story.within(&self.story, false) {
+            return false;
+        }
         let Some((from, to)) = self.span else { return true };
         let at = |t: Time| t as u8;
         match at(from) <= at(to) {
@@ -71,7 +76,7 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Gimmick>, String> {
             yaw: row.attr("rotationY").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
             rotation: numbers(row.attr("objRot"), [0.0; 3])?,
             scale: numbers(row.attr("objScale"), [1.0; 3])?,
-            story: row.attr("startEvent").is_some() || row.attr("endEvent").is_some(),
+            story: Span::new(row.attr("startEvent"), row.attr("endEvent")),
             span: match (zone_of("startTZ")?, zone_of("endTZ")?) {
                 (Some(a), Some(b)) => Some((a, b)),
                 _ => None,
@@ -95,14 +100,16 @@ mod tests {
     fn rows_with_a_model() {
         let g = read(XML.as_bytes()).unwrap();
         assert_eq!(g.len(), 2);
-        assert_eq!((g[0].id, g[0].tag.as_str(), g[0].position, g[0].yaw, g[0].scale, g[0].story), (107, "FM_BOARD_01", [450.0, 50.0, 200.0], 40.5, [1.0; 3], false));
-        assert_eq!((g[1].scale, g[1].rotation, g[1].story), ([1.5; 3], [-6.5, 0.0, 1.0], true));
+        assert_eq!((g[0].id, g[0].tag.as_str(), g[0].position, g[0].yaw, g[0].scale, g[0].story.open()), (107, "FM_BOARD_01", [450.0, 50.0, 200.0], 40.5, [1.0; 3], true));
+        assert_eq!((g[1].scale, g[1].rotation, g[1].story.start.as_deref()), ([1.5; 3], [-6.5, 0.0, 1.0], Some("X")));
     }
 
     #[test]
     fn spans_wrap() {
         let g = read(XML.as_bytes()).unwrap();
-        assert!(g[0].present(Time::Night));
-        assert!(!g[1].present(Time::Noon) && g[1].present(Time::Evening) && g[1].present(Time::Night) && g[1].present(Time::Morning));
+        let (none, x) = (Story::default(), Story::after("X"));
+        assert!(g[0].present(Time::Night, &none));
+        assert!(!g[1].present(Time::Noon, &x) && g[1].present(Time::Evening, &x) && g[1].present(Time::Night, &x) && g[1].present(Time::Morning, &x));
+        assert!(!g[1].present(Time::Evening, &none));
     }
 }

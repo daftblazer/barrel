@@ -849,6 +849,7 @@ impl Renderer {
                     if let Some(b) = &draw.bounds {
                         trace3d.bounds(b.lo, b.hi);
                     }
+                    trace3d.what(&draw.name, draw.class, draw.lod);
                     if !draw.bones.is_empty() {
                         trace3d.bones(&frame.scene.traced_palette(), inst.palette as usize, &draw.bones, &inst.model);
                     }

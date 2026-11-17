@@ -2497,8 +2497,16 @@ kind and 48 rows in each table.
 - `condition`: `timezone` and `weather`, bit masks (Rasenboden's day people 7, their night
   twins 24, others 31 or 3; weather 63 is any). The bits are taken in the order of the times
   (morning, noon, evening, night, midnight) and weathers (sunny, cloudy, foggy): a stand-in.
-  `ev_range_NN`, `ev_ex_NN` depend on the story (`npcevrange.xml`; the named characters).
-- `npcevrange.xml` rows (`<FIELD>_EvRange start="MM00_010" end="MM00_080"`, some with a start alone) are the story spans a condition's `ev_range_NN` (there within it) and `ev_ex_NN` (away within it) name, by the same Nth-tag rule; the names are story events. Not applied: Barrel has no story progress in a field yet.
+  `ev_range_NN` (up to four) and `ev_ex_NN` (up to four) name story spans ("Ryza DX: story
+  spans" below): with any `ev_range`, the person is there only within one of them; within
+  any `ev_ex` span whose start has played, the person is away (the game's `0x14040f9e0`).
+- `npcevrange.xml` rows (`<FIELD>_EvRange start="MM00_010" end="MM00_080"`, some with one end
+  alone) are those spans. A condition names one by a tag ending in its number among the
+  field's rows (`S06_EVR_003` is Rasenboden's third; the tags are not in the executable, and
+  Rasenboden's conditions do not tell this from the order of first use, which the other
+  three tables go by). In the save the capture loads only `MM00_010` of the main story has
+  played: Rasenboden's first span (`MM00_010` to `MM00_080`) is on, so the three people away
+  for it are not placed, and the 22 placed are the 22 Barrel drew before it had the story.
 - A character's tag is its model's: `NPC30B_00` is `NPC30B`, whose model is its base's
   (`NPC30A`: `character/npc30a/npc30a_model.elixir.gz`) with the texture pack of its own
   folder (`character/npc30b/npc30b_model.g1t`); the size (`chara.xml`) and the motion sets
@@ -2529,11 +2537,12 @@ sometimes `objScale`, `objRot`, `startEvent`, `endEvent`, `startTZ`, `endTZ`.
   position. The boards at (334.62, 59.91, 311.2) and (275.23, 49.96, 407.29) match the capture's
   at (33462, 5991, 31120) and (27523, 4996, 40729) to a unit (both turned 360 degrees; the
   turn's direction and `objRot` are not checked against a capture).
-- Rows with `startEvent` or `endEvent` depend on the story (Rasenboden: the grapes, flowers,
+- `startEvent` and `endEvent` are a story span ("Ryza DX: story spans" below): the row is
+  there within it (the game's `0x1403eccb1`, `0x1403f09d1`). Rasenboden's grapes, flowers,
   bushes, crates, honeycombs and sea urchins all start at `EVENT_MM01_111`, the field's other
-  variants at other events). The capture, after the opening, draws none of those and draws the
-  boards, which have none: a stand-in leaves the story-conditioned rows out. Of Rasenboden's
-  four boards the capture draws two (why not the other two is not known); Barrel draws all four.
+  variants at other events; the capture's save is before them all, and it draws only the
+  boards, which have no span. Of Rasenboden's four boards the capture draws two (why not the
+  other two is not known); Barrel draws all four.
 - `startTZ` and `endTZ` (`TIME_ZONE_MORNING`, `_EVENING`, `_NIGHT`: the only names in the
   tables) span the times from start to end, both included, wrapping (`EVENING` to `MORNING`
   is evening, night, morning: the 248 such rows leave out one time of four). The names do not
@@ -2541,6 +2550,25 @@ sometimes `objScale`, `objRot`, `startEvent`, `endEvent`, `startTZ`, `endTZ`.
 - The grapes the capture draws (at 33605, 5547, 39929 and 29142, 5676, 42013) are not rows of
   this table (its grapes are at x 339 to 410, z 233 to 263 and start at `EVENT_MM01_111`);
   where they come from is open.
+
+## Ryza DX: story spans
+
+The story's progress is one byte an event: an array of 1,683 at `0x141abfaf0` (English
+executable), indexed by the `EVENT_*` enum (`EVENT_AA01_010` first, `EVENT_ZZ03_240` last:
+`Pe::enum_names`), non-zero once the event has played. Tables name events with the `EVENT_`
+(gimmicks) or without it (`npcevrange.xml`, which the game prefixes: `0x140412290`).
+
+A span is a start event and an end event, either left out. The game's test (`0x1405a2c20`:
+start, end, a flag) says the story is within the span when the start has played and the end
+has not. A span without a start has begun, unless the flag asks for a named start (the NPC
+conditions' `ev_ex` spans do). The same test serves the field gimmicks, the NPC conditions
+and some sixty other callers (quests, shops, map marks: not read). `barrel_ryza::story`
+(`Story`, `Span`); `barrel FIELD --done MM00_010,...` names the events that have played.
+
+Read from the running game (ryza-recomp's `story-flags` scenario dumps the array): the title
+has one event set, and the save in Rasenboden 35, of the main story only `MM00_010` (the
+rest are `DX00`, `TT01`, `XX01`, `ZZ01` to `ZZ03` rows). Where a save file holds the array is
+not read: Barrel's story is what `--done` says, nothing by default.
 
 ## The world map's field (`Data/x64/Field/A15_WMAP`)
 

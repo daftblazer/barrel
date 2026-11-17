@@ -3,9 +3,9 @@
 //! ```text
 //!     barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--yaw DEG] [--pitch DEG]
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
-//!                 [--weather sunny|cloudy|foggy] [--hide NAME]...
+//!                 [--weather sunny|cloudy|foggy] [--done EVENT[,EVENT...]] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
-//!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG] [--draw-ranges pc|nx|off]
+//!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG] [--draw-ranges auto|pc|nx|off]
 //! ```
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
@@ -13,6 +13,8 @@
 //! or looks at X,Y,Z (field units, as the placement list gives them) from D away. The light is
 //! the field environment's set for the time and weather (noon, sunny by default). `--hide`
 //! leaves out the objects whose placement names contain NAME (to find which object is which).
+//! `--done` names the story events that have played (`MM00_010`): the people and objects the
+//! field's tables hang on the story follow them (none played by default).
 //! `--ryza` stands Ryza (`pc00a`) at X,Y,Z turned DEG about y, posed by her motion N
 //! (`pc00a_<N>`, default 00000) at S seconds. Every draw is shown unlit
 //! (its texture as it is) until Ryza's own lighting is read (`docs/ryza/open.md`).
@@ -68,12 +70,15 @@ struct Args {
     time: Time,
     weather: Weather,
     hide: Vec<String>,
+    /// The story's progress (`--done`).
+    story: barrel_ryza::story::Story,
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
     /// The camera's vertical field of view, degrees (`--fov`).
     fov: Option<f32>,
-    /// The field's draw distances: the PC game's (`pc`, the default), the Switch's (`nx`) or none
-    /// (`off`) (`--draw-ranges`).
+    /// The field's draw distances (`--draw-ranges`): as the PC game uses them (`auto`, the
+    /// default: none at the top object-distance setting), always the PC's (`pc`) or the
+    /// Switch's (`nx`), or none (`off`).
     draw_ranges: String,
     window: bool,
     /// Graphics: a preset by name (`RenderSettings::preset`), and fullscreen.
@@ -123,7 +128,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), story: Default::default(), ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -173,6 +178,7 @@ fn args(args: Vec<String>) -> Result<Args> {
                 let [x, y] = v[..] else { return Err("--lean X,Y".into()) };
                 a.lean = [x, y];
             }
+            "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
             "--ryza" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
@@ -201,12 +207,9 @@ fn args(args: Vec<String>) -> Result<Args> {
             _ => return Err(format!("unknown option {flag}").into()),
         }
     }
-    // STAND-IN: The title draws with no draw ranges; the real thing is the game's own rule for them.
-    // The title draws its own scene whatever field was named: the title's field, with no draw
-    // ranges (the capture's backdrop is whole to the horizon; the game's rule for it is not read).
+    // The title draws its own scene whatever field was named: the title's field.
     if a.title {
         a.field = barrel_ryza::title::FIELD.into();
-        a.draw_ranges = "off".into();
     }
     Ok(a)
 }
@@ -315,15 +318,14 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 /// The way a directional light travels, in render space: from `elevation` degrees above the
 /// horizon and `azimuth` degrees around y from +z toward +x (game space: the lighting pass's
 /// `litDir` read from the running game matches both lights, docs/shading.md), x mirrored.
-/// The townsfolk of `field` there at `time` in `weather`: the unconditional ones, standing or
-/// walking their paths (the others follow the story's progress: not placed).
-fn standing_npcs(install: &barrel_ryza::install::Install, field: &str, time: Time, weather: Weather) -> Vec<barrel_ryza::npc::Npc> {
+/// The townsfolk of `field` there at `time` in `weather` at this point of the `story`, standing
+/// or walking their paths.
+fn standing_npcs(install: &barrel_ryza::install::Install, field: &str, time: Time, weather: Weather, story: &barrel_ryza::story::Story) -> Vec<barrel_ryza::npc::Npc> {
     let read = |name: &str| install.read(&format!("\\saves\\fieldmap\\npc\\{name}.xml"));
-    let tables = (|| Ok::<_, Box<dyn std::error::Error>>((read("npcbasedata")?, read("npcpeople")?, read("npcmarker")?, read("npccondition")?)))();
-    let Ok((b, p, m, c)) = tables else { return Vec::new() };
-    match barrel_ryza::npc::read(&b, &p, &m, &c, &field.to_ascii_uppercase()) {
-        // STAND-IN: The people whose rows depend on the story (`ev_range_*`, `ev_ex_*`) are left out; the real thing is the story's progress (`npcevrange.xml`).
-        Ok(all) => all.into_iter().filter(|n| !n.story && n.present(time, weather)).collect(),
+    let tables = (|| Ok::<_, Box<dyn std::error::Error>>((read("npcbasedata")?, read("npcpeople")?, read("npcmarker")?, read("npccondition")?, read("npcevrange")?)))();
+    let Ok((b, p, m, c, e)) = tables else { return Vec::new() };
+    match barrel_ryza::npc::read(&b, &p, &m, &c, &e, &field.to_ascii_uppercase()) {
+        Ok(all) => all.into_iter().filter(|n| n.present(time, weather, story)).collect(),
         Err(e) => {
             eprintln!("townsfolk of {field}: {e}");
             Vec::new()
@@ -331,13 +333,11 @@ fn standing_npcs(install: &barrel_ryza::install::Install, field: &str, time: Tim
     }
 }
 
-/// The gimmicks with a model that `field` has out at `time`: the ones that do not depend on the
-/// story (the others are not placed).
-fn standing_gimmicks(install: &barrel_ryza::install::Install, field: &str, time: Time) -> Vec<barrel_ryza::gimmick::Gimmick> {
+/// The gimmicks with a model that `field` has out at `time` at this point of the `story`.
+fn standing_gimmicks(install: &barrel_ryza::install::Install, field: &str, time: Time, story: &barrel_ryza::story::Story) -> Vec<barrel_ryza::gimmick::Gimmick> {
     let name = format!("\\saves\\fieldmap\\gimmick\\gimmick_fieldmap_{}.xml", field.to_ascii_lowercase());
     match install.read(&name).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::gimmick::read(&b)) {
-        // STAND-IN: The gimmicks whose rows name a story event (`startEvent`, `endEvent`) are left out; the real thing is the story's progress. Rasenboden's capture, after the opening, draws the boards (no event) and none of the rows that start at `EVENT_MM01_111`.
-        Ok(all) => all.into_iter().filter(|g| !g.story && g.present(time)).collect(),
+        Ok(all) => all.into_iter().filter(|g| g.present(time, story)).collect(),
         Err(e) => {
             eprintln!("gimmicks of {field}: {e}");
             Vec::new()
@@ -436,6 +436,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             tint: 0,
             bounds: None,
             class: 0,
+            object: 0,
             bones: Vec::new(),
             shader: String::new(),
         });
@@ -618,8 +619,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let ryza_pack = ryza_files.as_ref().map(|(_, t, _)| G1t::parse(t)).transpose()?;
     // The characters' toon ramp (`DSChara-Cll`'s `sRamp`, docs/shading.md).
     // The field's townsfolk, the ones standing there now (`barrel_ryza::npc`, docs/tables.md).
-    let townsfolk = if a.title { Vec::new() } else { standing_npcs(&install, &a.field, a.time, a.weather) };
-    let gimmicks = if a.title { Vec::new() } else { standing_gimmicks(&install, &a.field, a.time) };
+    let townsfolk = if a.title { Vec::new() } else { standing_npcs(&install, &a.field, a.time, a.weather, &a.story) };
+    let gimmicks = if a.title { Vec::new() } else { standing_gimmicks(&install, &a.field, a.time, &a.story) };
     let ramp_bytes = match ryza_files.is_some() || a.title || !townsfolk.is_empty() || !gimmicks.is_empty() {
         true => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
         false => None,
@@ -902,7 +903,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // A plant cell has its own rule for the view's edges (`shown`, below): its box is kept
         // for the draw trace, padded past any view.
         d.bounds = match plant_boxes.get(&d.first_index).filter(|_| d.name == "plants") {
-            Some(&(lo, hi)) => Some(Bounds { lo, hi, pad: f32::INFINITY }),
+            Some(&(lo, hi)) => Some(Bounds { lo, hi, pad: f32::INFINITY, round: false }),
             // A rigid draw is where its vertices are (nothing but the plants sways in Ryza's
             // fields yet), so its box alone decides, as in the game: on the title it hides
             // the models whose boxes are outside the view. A skinned one keeps the padding.
@@ -911,6 +912,17 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 if rigid { Bounds { pad: 0.0, ..b } } else { b }
             }),
         };
+    }
+    // A placed object is in or out of the view as a whole, by the sphere around all its parts
+    // (docs/renderer.md, "Ryza DX: which objects are drawn"): the game draws every part of an
+    // object that reaches into the view, parts behind the camera among them.
+    let mut whole: std::collections::HashMap<(u32, u8), Bounds> = Default::default();
+    for d in draws.iter().filter(|d| d.object != 0) {
+        let Some(b) = d.bounds else { continue };
+        whole.entry((d.object, d.lod & 3)).and_modify(|w| *w = Bounds { lo: w.lo.min(b.lo), hi: w.hi.max(b.hi), pad: w.pad.max(b.pad), round: true }).or_insert(Bounds { round: true, ..b });
+    }
+    for d in draws.iter_mut().filter(|d| d.object != 0 && d.bounds.is_some()) {
+        d.bounds = whole.get(&(d.object, d.lod & 3)).copied();
     }
     if draws.is_empty() {
         return Err("nothing to draw".into());
@@ -1061,27 +1073,23 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The field's draw distances (`camera::DrawRanges`): a field object farther from the eye
     // than its class's range is left out. Field objects stay where they were placed, so each
     // draw's box is found once (render space, as the eye).
-    let ranges = match a.draw_ranges.as_str() {
-        "off" => None,
-        which => {
-            let bytes = install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))?;
-            // STAND-IN: Object draw ranges are capped by the general preset's; the real thing is how the game combines the two.
-            // Capped by the general preset's object ranges (a guess at how the game combines
-            // the two: the field's own are at or under the High preset's, docs/ryza/open.md).
-            Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?.limit(presets.objects))
-        }
+    // The PC game uses them only below the top object-distance setting, or when the field's
+    // file asks (docs/renderer.md, "Ryza DX: object draw ranges"); the setting's near, middle
+    // and far ranges then stand in place of the field's.
+    let ranges = match (a.draw_ranges.as_str(), install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))) {
+        ("off", _) | (_, Err(_)) => None,
+        ("auto", Ok(bytes)) if !presets.ranged && !barrel_ryza::camera::DrawRanges::asked_for(&bytes) => None,
+        (which, Ok(bytes)) => Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?.preset(presets.objects)),
     };
-    let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = match ranges {
-        None => Default::default(),
-        // The plants have their own range (`shown`, below), not an object's, and the townsfolk and gimmicks none (STAND-IN: the game's own range for them is not read; its capture shows them at 7000 to 12000 units, past the objects' first range).
-        Some(_) => draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, ..)| i == d.instance) && !gimmick_instances.contains(&d.instance)).filter_map(|d| {
-            let b = d.bounds?;
-            let m = instances.get(d.instance as usize)?.model;
-            let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
-            let (lo, hi) = corners.fold((Vec3::MAX, Vec3::MIN), |(l, h), c| (l.min(c), h.max(c)));
-            Some(((d.first_index, d.instance), (lo, hi)))
-        }).collect(),
-    };
+    // STAND-IN: The townsfolk and gimmicks have no draw range; the real thing is the field file's `chara` and `gimmick` ranges, which like the objects' count only when ranges are in use.
+    // The plants have their own range (`shown`, below), not an object's.
+    let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, ..)| i == d.instance) && !gimmick_instances.contains(&d.instance)).filter_map(|d| {
+        let b = d.bounds?;
+        let m = instances.get(d.instance as usize)?.model;
+        let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
+        let (lo, hi) = corners.fold((Vec3::MAX, Vec3::MIN), |(l, h), c| (l.min(c), h.max(c)));
+        Some(((d.first_index, d.instance), (lo, hi)))
+    }).collect();
     eprintln!("draw ranges: {ranges:?}");
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
     // The plants' cells are drawn only as deep into the view as the grass preset's range ends:
@@ -1108,9 +1116,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
             // An object's level of detail by its distance from the eye (the game's LOD
             // distances, `presets.lod`): its full model nearer than the first, its middle one to
-            // the second, its low one past it; without a box (draw ranges off), the full one.
+            // the second, its low one past it; a draw without a box, and every draw at the top setting,
+            // the full one.
             && (d.lod == 0
-                || boxes.get(&(d.first_index, d.instance)).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
+                || boxes.get(&(d.first_index, d.instance)).filter(|_| presets.lods).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
                     let far = ((lo + hi) * 0.5).distance(eye_now.get());
                     let level = d.lod & 3;
                     let start = match level {

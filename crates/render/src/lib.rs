@@ -188,6 +188,9 @@ pub struct Draw {
     /// A field object's draw class (Ryza's placement lists: near, middle, far, landmark as 0 to
     /// 3, each with its field's draw distance); 0 elsewhere.
     pub class: u8,
+    /// Which placed object of its field it is part of, counted from 1 (for a game that leaves
+    /// out a whole object at once); 0 for anything else.
+    pub object: u32,
     /// A posed model's draw: the skeleton joints its submesh's bone palette names, in slot
     /// order (what the draw trace writes the pose by; empty for what is not skinned). A joint
     /// the game moves by its cloth simulation (hair, skirt: the model's `.swg`), which Barrel
@@ -210,6 +213,8 @@ pub struct Bounds {
     pub lo: Vec3,
     pub hi: Vec3,
     pub pad: f32,
+    /// Tested against the view as the sphere around the box, not the box itself.
+    pub round: bool,
 }
 
 impl Bounds {
@@ -237,7 +242,7 @@ impl Bounds {
             hi = hi.max(p);
             corner = corner.max(Vec3::from(v.corner).length());
         }
-        (lo.x <= hi.x).then(|| Bounds { lo, hi, pad: (hi - lo).max_element() * 0.25 + 100.0 + corner })
+        (lo.x <= hi.x).then(|| Bounds { lo, hi, pad: (hi - lo).max_element() * 0.25 + 100.0 + corner, round: false })
     }
 
     /// Whether any of it may be inside the view of `planes` ([`view_planes`]) placed by `model`:
@@ -261,6 +266,10 @@ impl Bounds {
             hi = hi.max(w);
         }
         let (lo, hi) = (lo - Vec3::splat(self.pad), hi + Vec3::splat(self.pad));
+        if self.round && self.pad.is_finite() {
+            let (centre, radius) = ((lo + hi) * 0.5, lo.distance(hi) * 0.5);
+            return planes.iter().all(|p| p.truncate().dot(centre) + p.w >= -radius * p.truncate().length());
+        }
         planes.iter().all(|p| {
             let far = Vec3::new(if p.x >= 0.0 { hi.x } else { lo.x }, if p.y >= 0.0 { hi.y } else { lo.y }, if p.z >= 0.0 { hi.z } else { lo.z });
             p.truncate().dot(far) + p.w >= 0.0
@@ -713,7 +722,7 @@ impl Scene {
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
         }
         Ok(())
     }

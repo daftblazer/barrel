@@ -39,20 +39,29 @@ impl DrawRanges {
         Ok(DrawRanges([f("obj_near")?, f("obj_middle")?, f("obj_far")?, f("obj_landmark")?]))
     }
 
-    /// These ranges capped by a graphics preset's for the near, middle and far objects (the
-    /// landmarks keep theirs): the smaller of the field's and the preset's.
-    pub fn limit(self, objects: [f32; 3]) -> DrawRanges {
-        let mut r = self.0;
-        for (r, o) in r.iter_mut().zip(objects) {
-            *r = r.min(o);
-        }
-        DrawRanges(r)
+    /// Whether the field's file itself asks for its ranges to be used (`use_disp_range`, any
+    /// value but `false`; no shipped field has it). Without it the PC game uses ranges only
+    /// below the top object-distance setting (`presets::Graphics::ranged`).
+    pub fn asked_for(bytes: &[u8]) -> bool {
+        table::parse(bytes).ok().and_then(|root| find(&root, &["disp_range"]).and_then(|e| e.attr("use_disp_range").map(|v| v.trim() != "false"))).unwrap_or(false)
     }
 
-    /// Whether a box (`lo`, `hi`) is close enough to `eye` for its class to be drawn.
+    /// These ranges with a graphics preset's for the near, middle and far objects in place of
+    /// the field's (the game sets the field's, then the setting's over them, `0x14011a2ec`);
+    /// the landmarks keep the field's.
+    pub fn preset(self, objects: [f32; 3]) -> DrawRanges {
+        DrawRanges([objects[0], objects[1], objects[2], self.0[3]])
+    }
+
+    // STAND-IN: An object's distance is measured to its box's centre; the real thing is the point the game keeps for it (its test, `0x1404d1ae0`, reads one position an object).
+    /// Whether a box (`lo`, `hi`) is close enough to `eye` for its class to be drawn: within
+    /// the class's range of the eye over the ground (the game leaves height out). The game
+    /// also fades an object out past the range and back in only 300 units inside it; this is
+    /// the test alone.
     pub fn shows(&self, class: u8, eye: glam::Vec3, lo: glam::Vec3, hi: glam::Vec3) -> bool {
         let range = self.0[(class & 3) as usize];
-        eye.clamp(lo, hi).distance_squared(eye) <= range * range
+        let c = (lo + hi) * 0.5;
+        (c.x - eye.x).powi(2) + (c.z - eye.z).powi(2) <= range * range
     }
 }
 
@@ -130,8 +139,11 @@ mod tests {
         let (lo, hi) = (glam::Vec3::new(10000.0, 0.0, 0.0), glam::Vec3::new(10100.0, 50.0, 100.0));
         assert!(!pc.shows(0, glam::Vec3::ZERO, lo, hi));
         assert!(pc.shows(1, glam::Vec3::ZERO, lo, hi));
-        assert_eq!(pc.limit([8000.0, 20000.0, 40000.0]).0, pc.0);
-        assert_eq!(pc.limit([7000.0, 15000.0, 30000.0]).0, [7000.0, 15000.0, 30000.0, 300000.0]);
+        // height does not count
+        assert!(pc.shows(0, glam::Vec3::new(4000.0, 90000.0, 0.0), lo, hi));
+        assert_eq!(pc.preset([8000.0, 15000.0, 30000.0]).0, [8000.0, 15000.0, 30000.0, 300000.0]);
+        assert!(!super::DrawRanges::asked_for(xml));
+        assert!(super::DrawRanges::asked_for(br#"<root><disp_range use_disp_range="true" obj_near="70.0"/></root>"#));
     }
 
     use super::*;
