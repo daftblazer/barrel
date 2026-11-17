@@ -856,8 +856,9 @@ fn main() -> Result<()> {
             draws3d::draws(Path::new(pos[0]), pos[1].parse()?, pos.get(2).copied(), vars, pass, summary)
         }
         Some("diff3d") if a.len() >= 5 => draws3d::diff3d(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str)),
+        Some("state") if a.len() >= 5 => draws3d::state(Path::new(&a[1]), parse_range(&a[2])?, Some(a[3].as_str()), &a[4]),
         Some("screen") if a.len() >= 3 => screen(Path::new(&a[1]), a[2].parse()?, a.get(3).map(String::as_str)),
-        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv] | draws <trace> <frame> [index.tsv] [--vars A,B] [--pass N] [--summary] | diff3d <trace> <frame> <barrel trace> <frame> [index.tsv]".into()),
+        _ => Err("usage: barrel-parity textures <game> <index.tsv> | shader <trace> <name> | screen <trace> <frame> [index.tsv] | diff <trace> <frame> <barrel trace> <frame> [index.tsv] | align <trace> <a-b/step> <barrel trace> <a-b> [index.tsv] | draws <trace> <frame> [index.tsv] [--vars A,B] [--pass N] [--summary] | diff3d <trace> <frame> <barrel trace> <frame> [index.tsv] | state <trace> <a-b/step> <index.tsv> <model folder>".into()),
     }
 }
 

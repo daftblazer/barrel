@@ -80,6 +80,8 @@ title's 3D backdrop, about 1,900 draws: shadow maps, a four-target G-buffer, lig
   frame (format in `crates/render/src/trace.rs`): pass (`shadow`, `scene`, `sky`, `outline`,
   `terrain`), index count, textures by the same content hash, the world matrix, and the
   frame's `view_proj`. The trace is off by one branch per draw.
+- `barrel-parity state <capture> <a-b/step> <index.tsv> <model folder>` prints, a frame a line,
+  where the camera is and where a model's skinned draws are (docs/ryza/state.md).
 - `barrel-parity diff3d <capture> <frame> <barrel trace> <frame> [index.tsv]` takes the game's
   G-buffer draws (four or more colour targets and a depth target) and Barrel's `scene` and
   `sky` draws, and matches them by (set of texture names the index knows, index count),

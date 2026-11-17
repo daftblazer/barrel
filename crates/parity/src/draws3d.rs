@@ -354,6 +354,65 @@ fn group(keys: &[&Key]) -> String {
     g.iter().map(|(f, n)| format!("    {n:5} {f}")).collect::<Vec<_>>().join("\n")
 }
 
+/// Where a view-projection's camera is: the point whose clip x, y and w are all 0.
+fn eye(vp: &M) -> Option<[f32; 3]> {
+    // rows 0, 1 and 3 of the column-major matrix: row . (e, 1) = 0
+    let row = |r: usize| [vp[r] as f64, vp[4 + r] as f64, vp[8 + r] as f64, vp[12 + r] as f64];
+    let (a, b, c) = (row(0), row(1), row(3));
+    let det3 = |m: [[f64; 3]; 3]| {
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    };
+    let d = det3([[a[0], a[1], a[2]], [b[0], b[1], b[2]], [c[0], c[1], c[2]]]);
+    if d.abs() < 1e-12 {
+        return None;
+    }
+    let col = |k: usize| {
+        let mut m = [[a[0], a[1], a[2]], [b[0], b[1], b[2]], [c[0], c[1], c[2]]];
+        for (r, v) in [a, b, c].iter().enumerate() {
+            m[r][k] = -v[3];
+        }
+        (det3(m) / d) as f32
+    };
+    Some([col(0), col(1), col(2)])
+}
+
+/// `barrel-parity state`: per captured frame, where the camera is (from the first G-buffer
+/// draw's `mW2P`) and where a model is: the mean of the bone translations of the skinned draws
+/// whose textures' folder holds `model` (a character's own folder, as `pc00a`). The game's
+/// state as its draws show it, a frame a line, for following a walk.
+pub fn state(dir: &Path, (from, to, step): (u64, u64, u64), idx: Option<&str>, model: &str) -> Result<()> {
+    let t = Trace { dir: dir.into() };
+    let (names, _) = index(idx)?;
+    let mut frame = from;
+    while frame <= to {
+        let Ok(draws) = game_draws(&t, frame) else {
+            frame += step;
+            continue;
+        };
+        let scene: Vec<&GameDraw> = draws.iter().filter(|d| d.rt.len() >= 4 && d.ds != "-").collect();
+        let vp = scene.iter().find_map(|d| d.vars.iter().find(|v| v.0 == "mW2P" && v.1 == 64).and_then(|v| game_view_proj(&v.2)));
+        let (mut sum, mut bones, mut count) = ([0f64; 3], 0usize, 0usize);
+        for d in scene.iter().filter(|d| !d.palette.is_empty()) {
+            let k = key(&names, d.textures.iter().map(|x| x.1.clone()), d.count);
+            if !k.0.iter().any(|n| folder(n).contains(model)) {
+                continue;
+            }
+            count += 1;
+            for b in (0..d.palette.len() / 12).filter_map(|i| game_bone(&d.palette, i)) {
+                for a in 0..3 {
+                    sum[a] += b[12 + a] as f64;
+                }
+                bones += 1;
+            }
+        }
+        let e = vp.as_ref().and_then(eye).map_or("-".to_string(), |e| format!("{:.3} {:.3} {:.3}", e[0], e[1], e[2]));
+        let at = if bones > 0 { format!("{:.3} {:.3} {:.3}", sum[0] / bones as f64, sum[1] / bones as f64, sum[2] / bones as f64) } else { "-".to_string() };
+        println!("frame {frame} eye {e} | {model} {at} ({count} draws)");
+        frame += step;
+    }
+    Ok(())
+}
+
 /// `barrel-parity diff3d`. Game draws are the ones into a G-buffer (a depth target and four or
 /// more colour targets); Barrel's are its `scene` and `sky` pass draws.
 pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>) -> Result<()> {
