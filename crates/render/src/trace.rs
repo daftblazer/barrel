@@ -62,7 +62,22 @@ pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], 
     let (sx, sy) = (1920.0 / width as f32, 1080.0 / height as f32);
     let mut line = format!("{{\"frame\":{frame},\"layer\":{layer},\"quads\":[");
     for (i, q) in quads.iter().enumerate() {
-        let c = q.corners().map(|[x, y]| [x * sx, y * sy]);
+        let mut c = q.corners().map(|[x, y]| [x * sx, y * sy]);
+        let mut uv = q.uv;
+        if q.spin.is_some() && !q.turn {
+            // The capture's own form (`barrel-parity`'s `rotated`): the picture's corner nearest the
+            // screen's top left names (u0, v0) and the farthest (u1, v1), whatever the turn.
+            let [u0, v0, u1, v1] = q.uv;
+            let uvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+            let key = |i: usize| c[i][0] + c[i][1];
+            let near = (0..4).min_by(|&a, &b| key(a).total_cmp(&key(b))).unwrap();
+            let far = (0..4).max_by(|&a, &b| key(a).total_cmp(&key(b))).unwrap();
+            let (n, f) = (uvs[near], uvs[far]);
+            let at = |u: f32, v: f32| (0..4).min_by(|&a, &b| ((uvs[a][0] - u).abs() + (uvs[a][1] - v).abs()).total_cmp(&((uvs[b][0] - u).abs() + (uvs[b][1] - v).abs()))).unwrap();
+            let old = c;
+            c = [old[at(n[0], n[1])], old[at(f[0], n[1])], old[at(f[0], f[1])], old[at(n[0], f[1])]];
+            uv = [n[0], n[1], f[0], f[1]];
+        }
         // A turned quad's rect is the box round its corners, and its corners are listed.
         let [l, t, r, b] = if q.spin.is_some() {
             let f = |i: usize, g: fn(f32, f32) -> f32| c.iter().map(|p| p[i]).reduce(g).unwrap_or(0.0);
@@ -75,7 +90,7 @@ pub fn quads(frame: u64, layer: u64, width: u32, height: u32, names: &[String], 
         line.push_str(&format!(
             "{}{{\"tex\":\"{tex}\",\"rect\":[{},{},{},{}],\"uv\":{:?},\"color\":{:?},\"turn\":{}{corners}}}",
             if i > 0 { "," } else { "" },
-            l * sx, t * sy, r * sx, b * sy, q.uv, q.color, q.turn
+            l * sx, t * sy, r * sx, b * sy, uv, q.color, q.turn
         ));
     }
     line.push_str("]}\n");

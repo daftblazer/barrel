@@ -97,6 +97,11 @@ struct Args {
     /// `--title-at S` (or `BARREL_TITLE_AT`): the seconds into the title the first frame shows.
     title: bool,
     title_at: f32,
+    /// `--boot`: the boot screens (system-data notice, the two logos, the autosave window) before
+    /// the title, and `--boot-at S` (or `BARREL_BOOT_AT`): the seconds into the boot the first
+    /// frame shows (the title follows `barrel_ryza::boot::TITLE_START` seconds in).
+    boot: bool,
+    boot_at: f32,
 }
 
 /// Ryza as posed and walked: her skeleton, her motions by number, her instance, the field's
@@ -118,7 +123,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), ryza: None, no_shadows: false, fov: None, draw_ranges: "pc".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -149,6 +154,8 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--frames" => a.frames = Some(value()?.parse()?),
             "--title" => a.title = true,
             "--title-at" => a.title_at = value()?.parse()?,
+            "--boot" => (a.boot, a.title) = (true, true),
+            "--boot-at" => a.boot_at = value()?.parse()?,
             "--telop" => a.telop = Some(value()?.parse()?),
             "--event" => a.event = Some((value()?, 0.0)),
             "--at" => a.event.as_mut().ok_or("--at after --event")?.1 = value()?.parse()?,
@@ -214,7 +221,7 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 }
 
 /// The title screen's layer (empty until each frame's quads are set) with its layout.
-fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::title::Title)> {
+fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, boot: bool) -> Result<(text::Layer, barrel_ryza::title::Title, Option<barrel_ryza::boot::Boot>)> {
     let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
     let glyphs = barrel_ryza::font::glyphs(&exe).ok_or("the executable's font table")?;
     let (font_bytes, ui_bytes) = (install.read("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t")?, install.read("\\data\\x64\\res_en\\ui\\a21_title.g1t")?);
@@ -230,8 +237,37 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
         (ui.width * 2, ui.height * 2),
         (font.width, font.height),
     )?;
-    // Textures in the order of `text::FONT`, `text::UI`.
-    Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui])?, title))
+    // Textures in the order of `text::FONT`, `text::UI`, then the boot screens' (`boot::TEXTURES`).
+    if !boot {
+        return Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[font, ui])?, title, None));
+    }
+    // (file, texture number) of each boot texture, in the order of `boot::TEXTURES` after the title's two.
+    let wanted = [
+        ("\\data\\x64\\res_en\\ui\\a21_saveload.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_saveload.g1t", 2),
+        ("\\data\\x64\\res_en\\ipu\\logo_kt.g1t", 0),
+        ("\\data\\x64\\res_en\\ipu\\logo_gust.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_memorymap.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_saveload.g1t", 0),
+    ];
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let size = |t: &&barrel_formats::g1t::Texture| (t.width, t.height);
+    let boot = barrel_ryza::boot::Boot::read(barrel_ryza::boot::Sources {
+        progress: &install.read("\\saves\\ui_en\\a21_saveload\\uil_a21_saveload_progress.xml")?,
+        saveload_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_saveload.xml")?,
+        saveload_anims: &install.read("\\saves\\ui_en\\a21_saveload\\uia_a21_saveload.xml")?,
+        common_anims: &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        notification: &install.read("\\saves\\ui_cmn\\a21_saveload\\uil_a21_notification_display.xml")?,
+        window_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_memorymap.xml")?,
+        spinner_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_saveload.xml")?,
+        strings: &install.read("\\saves\\text_en\\str_ui.xml")?,
+        glyphs: barrel_ryza::font::glyphs(&exe).ok_or("the executable's font table")?,
+        sizes: [size(&tex[0]), size(&tex[1]), size(&tex[4]), size(&tex[5]), (font.width, font.height)],
+    })?;
+    let all = [font, ui, tex[0], tex[1], tex[2], tex[3], tex[4], tex[5]];
+    Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &all)?, title, Some(boot)))
 }
 
 /// The way a directional light travels, in render space: from `elevation` degrees above the
@@ -906,7 +942,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     // The title screen (`--title`): its glyphs from the executable, its layout from the archives.
     let mut title_layer = match a.title {
-        true => Some(title_layer(&install, &gpu, &renderer)?),
+        true => Some(title_layer(&install, &gpu, &renderer, a.boot)?),
         false => None,
     };
     let bytes = u64::from(width) * u64::from(height) * 4;
@@ -1057,11 +1093,19 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         // The title's quads for this frame's moment: the first frame at `--title-at`, then on the
         // clock (a window's own, 60 Hz offscreen).
-        if let Some((layer, title)) = title_layer.as_mut() {
-            let t = a.title_at + if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
-            layer.set(&gpu, &title.quads(t, (width, height)))?;
+        if let Some((layer, title, boot)) = title_layer.as_mut() {
+            let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+            let quads = match boot {
+                // The boot sequence, then the title from its own start.
+                Some(boot) => {
+                    let t = a.boot_at + clock;
+                    if t < barrel_ryza::boot::TITLE_START { boot.quads(t, (width, height)) } else { title.quads(t - barrel_ryza::boot::TITLE_START + a.title_at, (width, height)) }
+                }
+                None => title.quads(a.title_at + clock, (width, height)),
+            };
+            layer.set(&gpu, &quads)?;
         }
-        let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _)| l)).collect();
+        let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _)| l)).collect();
         let frame = Frame {
             image,
             width,
