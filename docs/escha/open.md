@@ -12,6 +12,18 @@ Oracle runs (the real game under Proton, with memory reads and a virtual pad:
 player's own save folder. Many entries below are marked **live read**: one short oracle run would
 likely settle them where static reading failed.
 
+## The answer key's captures are not repeatable
+
+escha-recomp's scenarios run on real clocks, so a rerun of the same build gives another random
+roll and another animation phase: field-enter's entry line changed between two runs of one
+build (2026-11-16), and battle-walk's rolls with it. The rows fitted to one capture
+(`BARREL_ENTRY_DRAW=5`, `BARREL_BATTLE_ROLLS`, the page clocks) hold only against the captures in
+`escha-recomp/work/scenarios`, which stay the reference: after the regenerated analysis (switch
+`0x1402d4370` with all its cases, the buffer context fix) a full rerun failed field-hud (5),
+battle-hud (47) and equip-btl (1), and the old captures still pass all 17. A new capture of a row
+means refitting it. Way in: capture with `ESCHA_DETERMINISTIC=1` (virtual clocks; screens repeat,
+particles still vary) and check two runs give the same 2D frames before refitting the rows.
+
 ## Issues found during manual testing
 - Escha's hat and puffballs don't move correctly with the character, they float above Escha
   - Fixed (2026-11-13): the hat's submeshes have a bone palette (joint 18, under the head) but no
