@@ -135,6 +135,9 @@ pub struct Frame<'a> {
     pub alpha_cutoff: f32,
     /// The glow: its bright pass's threshold and its rate (0: none).
     pub glow: (f32, f32),
+    /// The exposure to meter the scene to (the Ryza games'; the scene was lit at `baked`, and the
+    /// tone pass and the bloom take it to the metered one), none for the scene as lit.
+    pub meter: Option<meter::Params>,
     /// The finished frame's saturation scale per channel (0: none).
     pub saturation: [f32; 3],
     /// The finished frame's tone curve white point (extended Reinhard; 0: none).
@@ -441,7 +444,7 @@ impl Renderer {
         ];
         let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
         // The post pass's one texture: the scene.
-        let post_binding = [0, 1, 2, 3].map(|b| {
+        let post_binding = [0, 1, 2, 3, 4].map(|b| {
             vk::DescriptorSetLayoutBinding::default()
                 .binding(b)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -450,7 +453,7 @@ impl Renderer {
         });
         let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
         // Two sets: GSR 2 swaps its output each frame, and the post pass reads the one just written.
-        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 8 }];
+        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 10 }];
         let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&post_sizes), None)? };
         let post_layouts = [post_set_layout, post_set_layout];
         let post_sets: [vk::DescriptorSet; 2] = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))? }
@@ -674,7 +677,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -950,7 +953,7 @@ impl Renderer {
             // the post pass.
             let (threshold, rate) = glow;
             if let Some(g) = &targets.glow {
-                g.record(d, &glow_pipelines, cb, threshold, tone_white);
+                g.record(d, &glow_pipelines, cb, threshold, tone_white, meter.as_ref());
             }
             if let (Some(t), Some(p)) = (&targets.taa, &taa_pipelines) {
                 let fresh = targets.history_fresh.replace(false);
@@ -993,6 +996,8 @@ impl Renderer {
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[targets.post_set()], &[]);
             let mut post_push = [0u8; 80];
             post_push[48..52].copy_from_slice(&filter_strength.to_le_bytes());
+            let metered = meter.is_some() && targets.glow.as_ref().is_some_and(|g| g.has_meter());
+            post_push[52..56].copy_from_slice(&(if metered { 1.0f32 } else { 0.0 }).to_le_bytes());
             post_push[..4].copy_from_slice(&rate.to_le_bytes());
             post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
             post_push[8..12].copy_from_slice(&(if show_motion { 1.0f32 } else { 0.0 }).to_le_bytes());

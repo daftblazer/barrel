@@ -108,6 +108,10 @@ pub struct Light {
     /// the set's own, not the override's (Rasenboden's noon: 0.9 to 2.4, 1.8, (1.27, 1.3,
     /// 1.2), 0.4).
     pub exposure_range: (f32, f32),
+    /// `fLightAdaptedScale` and `fDarkAdaptedScale`: how much of the way the exposure's
+    /// metering goes toward a darker and toward a brighter scene (0.5 and 0.5 at noon).
+    pub light_adapted_scale: f32,
+    pub dark_adapted_scale: f32,
     pub gamma: f32,
     pub color_scale: [f32; 3],
     pub bloom_weight: f32,
@@ -125,6 +129,8 @@ pub struct Light {
 const LUMI_MAX: usize = 0x00;
 const MIDDLE_GRAY: usize = 0x1c;
 const EXPOSURE_RANGE: usize = 0x20;
+const LIGHT_ADAPTED_SCALE: usize = 0x28;
+const DARK_ADAPTED_SCALE: usize = 0x2c;
 const GAMMA: usize = 0x40;
 const LUMI_THRESHOLD: usize = 0x18;
 const COLOR_SCALE: usize = 0x44;
@@ -607,6 +613,8 @@ impl Light {
             lumi_max: f(LUMI_MAX),
             middle_gray: f(MIDDLE_GRAY),
             exposure_range: (f(EXPOSURE_RANGE), f(EXPOSURE_RANGE + 4)),
+            light_adapted_scale: f(LIGHT_ADAPTED_SCALE),
+            dark_adapted_scale: f(DARK_ADAPTED_SCALE),
             gamma: f(GAMMA),
             color_scale: rgb(COLOR_SCALE),
             bloom_weight: f(BLOOM_WEIGHT),
@@ -647,6 +655,8 @@ mod tests {
         let set = 2 * SET_SIZE;
         let mut put = |o: usize, v: f32| env[set + o..set + o + 4].copy_from_slice(&v.to_le_bytes());
         put(0, 4.2);
+        put(0x28, 0.5);
+        put(0x2c, 0.3);
         put(0x1c, 0.18);
         put(0x484, 2.0);
         for (k, v) in [0.9, 2.4].into_iter().enumerate() {
@@ -664,6 +674,7 @@ mod tests {
         let l = Light::read(&env, Time::Evening, Weather::Sunny).unwrap();
         assert_eq!((l.lumi_max, l.middle_gray, l.ambient[0]), (4.2, 0.18, 2.0));
         assert_eq!((l.exposure_range, l.gamma, l.color_scale, l.bloom_weight), ((0.9, 2.4), 2.2, [1.2, 1.1, 1.0], 0.6));
+        assert_eq!((l.light_adapted_scale, l.dark_adapted_scale), (0.5, 0.3));
         assert_eq!(l.lumi_threshold, 0.8);
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());

@@ -205,8 +205,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   every pass, its formula and its constants at Rasenboden's noon, from the answer key's
   capture): colour textures sampled as sRGB, the sun at the stage's key scale (3 at noon) and
   the second light from the set, the cloud pattern on the sun (strength 0.7), the stage's
-  ambient from the diffuse light map (7 × (0.1, 0.2602, 1)), the exposure at the bottom of
-  the set's range (0.9), the colour scale (1.27, 1.3, 1.2), the filmic curve with the set's
+  ambient from the diffuse light map (7 × (0.1, 0.2602, 1)), the exposure metered (0.9 at
+  noon), the colour scale (1.27, 1.3, 1.2), the filmic curve with the set's
   `fLumiMax` and `fGamma`, and `SaturationScaleEx` (1.6) after the gamma. Against the game's
   noon still at the gate (`work/ryza-ref/rasen-gate-noon.png`, fourteen spots): sunlit sand
   237, 217, 144 against 246, 232, 175, stone 226, 227, 209 against 236, 236, 210, a path in
@@ -227,9 +227,12 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   light does not explain yet. (3) **the ambient occlusion**
   and its tint: not drawn (1 in the direct specular too). The direct specular is drawn for
   the models with a specular map and for the terrain (docs/shading.md, "What Barrel does of
-  the lighting pass"); the characters' and the plants' are not. (4) **the exposure** is not metered
-  (the game's rule is read: 0.18 over the log-average luminance, inside 0.9 to 2.4): night
-  and interiors would rise above 0.9. (5) **the bloom**: the game's bright pass and chain are done, its star
+  the lighting pass"); the characters' and the plants' are not. (4) **the exposure** is metered by the
+  game's rule (docs/shading.md, "The exposure"): daylit views and the attic's backdrop stay at
+  the set's floor (0.9), as the game's noon still's own brightness says it does, so the
+  sunlit sand's tenth is not the exposure; the night view rises to 1.14. Left of it: the depth
+  of field's weighting of the metered layer, and the adaptation's base rate and time (0.95
+  and 3 s, from the capture: no lighting set carries them). (5) **the bloom**: the game's bright pass and chain are done, its star
   filter is not. (6) **the cloud pattern's
   phase** starts with the field (the game's is not read), and the pattern's switch for the
   other times of day is a reading of one word (stand-in). (7) **the sky**: the plane and the dome take the game's own constants (below). Evening,

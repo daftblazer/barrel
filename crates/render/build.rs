@@ -8,7 +8,7 @@ fn main() {
     // Included by others.
     println!("cargo:rerun-if-changed=shaders/gsr2_common.glsl");
     println!("cargo:rerun-if-changed=shaders/specular_ambient.glsl");
-    for name in ["model.vert", "model.frag", "terrain.frag", "text.vert", "text.frag", "movie.vert", "movie.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "cloud_density.frag", "cloud_map.frag", "cloud_strip.vert", "cloud_strip.frag", "glow.frag", "shadow.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
+    for name in ["model.vert", "model.frag", "terrain.frag", "text.vert", "text.frag", "movie.vert", "movie.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "cloud_density.frag", "cloud_map.frag", "cloud_strip.vert", "cloud_strip.frag", "glow.frag", "bright.frag", "meter.frag", "shadow.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
         let src = PathBuf::from("shaders").join(name);
         println!("cargo:rerun-if-changed={}", src.display());
         let dst = out.join(format!("{name}.spv"));

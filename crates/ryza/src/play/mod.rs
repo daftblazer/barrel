@@ -1542,6 +1542,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored) and `fBloomWeight` as the rate.
             glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, l.bloom_weight * GLOW_RANGE)),
+            // The exposure's metering by the set's rule (a window's frame time; offscreen the
+            // first frame meters to the scene).
+            meter: environment.as_ref().zip(view.exposure).map(|((_, _, l, _, _, _, _), baked)| barrel_render::meter::Params {
+                rule: barrel_render::meter::Rule { key: l.middle_gray, range: l.exposure_range, toward_darker: l.light_adapted_scale, toward_brighter: l.dark_adapted_scale },
+                baked,
+                dt: if frame_dt > 0.0 { frame_dt } else { 1.0 / 60.0 },
+            }),
             saturation: [0.0; 3],
             // The game's tone curve: filmic, the set's `fLumiMax` as its white point, then the
             // set's `fGamma` (docs/shading.md, "Ryza DX: the tone curve").
@@ -1579,6 +1586,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 sync.submit_offscreen(&gpu, cb)?;
                 sync.wait_submitted(&gpu)?;
                 eprintln!("{} draws in the scene", drawn[0]);
+                if let Some((e, lum)) = renderer.targets.glow.as_ref().and_then(|g| g.metered(&gpu)) {
+                    eprintln!("metered exposure {e:.4} (scene luminance {lum:.4})");
+                }
                 let mut pixels = vec![0u8; bytes as usize];
                 unsafe {
                     let p = d.map_memory(rmem, 0, bytes, vk::MemoryMapFlags::empty())? as *const u8;
@@ -1690,7 +1700,8 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     // light as the stage takes it (`StageLight`; model.vert's `sh`), the sun and the second light
     // as the field's two directional lights, all scaled by one exposure.
     if let Some((c, stage, light, sky_fog, fog, chara, key)) = environment {
-        // STAND-IN: The exposure is held at the bottom of the set's range, where daylight puts it; the real thing is the game's metering (0.18 over the frame's log-average luminance, eased over 3 s, kept inside the range).
+        // The scene is lit at the bottom of the set's range, and the renderer's metering
+        // (`barrel_render::meter`) takes the frame to the exposure its brightness calls for.
         let k = light.exposure_range.0;
         // The sky dome's clouds: the set's own ambient and sun for them (`DomeLight`).
         {

@@ -9,6 +9,7 @@
 
 use ash::vk;
 
+use crate::meter;
 use crate::{Gpu, Result};
 
 pub const LEVELS: usize = 5;
@@ -19,6 +20,7 @@ const BLOOM_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
 
 const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv"));
 const GLOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/glow.frag.spv"));
+const BRIGHT_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bright.frag.spv"));
 
 /// The pipelines, made once: one that overwrites its target and one that adds into it.
 pub struct Pipelines {
@@ -32,6 +34,18 @@ pub struct Pipelines {
     /// The Ryza games' bloom instead of the glow (an HDR scene's): the bright parts by
     /// luminance, blurred at a quarter and an eighth of the screen (`Targets::record`).
     bloom: bool,
+    /// With the bloom: its bright pass (`bright.frag`, which can take the metered exposure from
+    /// a second set) and the metering's own pipeline.
+    bright: Option<Bright>,
+    meter: Option<meter::Pipelines>,
+}
+
+/// The bloom's bright pass: its pipeline, layout (the scene's set, then the exposure's) and
+/// shader modules.
+struct Bright {
+    layout: vk::PipelineLayout,
+    modules: [vk::ShaderModule; 2],
+    pipeline: vk::Pipeline,
 }
 
 /// One target: its image, view and framebuffer, and a set to read it from.
@@ -49,6 +63,10 @@ struct Target {
 pub struct Targets {
     pool: vk::DescriptorPool,
     scene_set: vk::DescriptorSet,
+    /// The exposure the bright pass reads: the metered one, or the scene's set when there is no
+    /// metering (never read then).
+    exposure_set: vk::DescriptorSet,
+    meter: Option<meter::Targets>,
     x: Vec<Target>,
     y: Vec<Target>,
     bloom: bool,
@@ -155,13 +173,33 @@ impl Pipelines {
             };
             let overwrite = make(false, overwrite_pass)?;
             let add = make(true, add_pass)?;
-            Ok(Pipelines { overwrite_pass, add_pass, set_layout, layout, modules, overwrite, add, bloom })
+            let (bright, meter) = if bloom {
+                let layouts = [set_layout, set_layout];
+                let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: size_of::<Push>() as u32 }];
+                let bright_layout = d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts).push_constant_ranges(&push), None)?;
+                let bright_modules = [meter::shader_module(gpu, POST_VERT)?, meter::shader_module(gpu, BRIGHT_FRAG)?];
+                let pipeline = meter::fullscreen(gpu, bright_layout, overwrite_pass, &bright_modules)?;
+                (Some(Bright { layout: bright_layout, modules: bright_modules, pipeline }), Some(meter::Pipelines::new(gpu)?))
+            } else {
+                (None, None)
+            };
+            Ok(Pipelines { overwrite_pass, add_pass, set_layout, layout, modules, overwrite, add, bloom, bright, meter })
         }
     }
 
     pub fn destroy(self, gpu: &Gpu) {
         let d = &gpu.device;
+        if let Some(m) = self.meter {
+            m.destroy(gpu);
+        }
         unsafe {
+            if let Some(b) = self.bright {
+                d.destroy_pipeline(b.pipeline, None);
+                for m in b.modules {
+                    d.destroy_shader_module(m, None);
+                }
+                d.destroy_pipeline_layout(b.layout, None);
+            }
             d.destroy_pipeline(self.overwrite, None);
             d.destroy_pipeline(self.add, None);
             for m in self.modules {
@@ -179,7 +217,7 @@ impl Targets {
     /// The targets for a `width` × `height` screen, reading the scene from `scene`.
     pub fn new(gpu: &Gpu, p: &Pipelines, scene: vk::ImageView, sampler: vk::Sampler, width: u32, height: u32) -> Result<Targets> {
         let d = &gpu.device;
-        let n = (2 * LEVELS + 1) as u32;
+        let n = (2 * LEVELS + 2) as u32;
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: n }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)? };
         let set_for = |view: vk::ImageView| -> Result<vk::DescriptorSet> {
@@ -228,7 +266,33 @@ impl Targets {
             x.push(target(w, h)?);
             y.push(target(w, h)?);
         }
-        Ok(Targets { pool, scene_set: set_for(scene)?, x, y, bloom: p.bloom })
+        let scene_set = set_for(scene)?;
+        let meter = match &p.meter {
+            Some(m) => Some(meter::Targets::new(gpu, m, scene, sampler)?),
+            None => None,
+        };
+        let exposure_set = match &meter {
+            Some(m) => set_for(m.exposure())?,
+            None => scene_set,
+        };
+        Ok(Targets { pool, scene_set, exposure_set, meter, x, y, bloom: p.bloom })
+    }
+
+    /// The metered exposure (its ratio to the one the scene was lit with in the second channel),
+    /// for the post pass to read; the glow when there is no metering (to read nothing from).
+    pub fn exposure(&self) -> vk::ImageView {
+        self.meter.as_ref().map_or_else(|| self.result(), meter::Targets::exposure)
+    }
+
+    /// Whether the frame can be metered (the Ryza games' bloom).
+    pub fn has_meter(&self) -> bool {
+        self.meter.is_some()
+    }
+
+    /// The exposure the last finished frame metered to and the luminance it came from, if it
+    /// was metered.
+    pub fn metered(&self, gpu: &Gpu) -> Option<(f32, f32)> {
+        self.meter.as_ref().and_then(|m| m.read(gpu).ok())
     }
 
     /// The finished glow, for the post pass to read.
@@ -239,8 +303,9 @@ impl Targets {
     /// Records the glow: bright pass, blurs down, blurs back up adding.
     ///
     /// # Safety
-    /// `cb` is recording outside a render pass, after the scene's pass.
-    pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, threshold: f32, white: f32) {
+    /// `cb` is recording outside a render pass, after the scene's pass. `metered`: the exposure
+    /// to meter the scene to first (the Ryza games' bloom only).
+    pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, threshold: f32, white: f32, metered: Option<&meter::Params>) {
         let run = |to: &Target, from: vk::DescriptorSet, add: bool, push: Push| unsafe {
             let (w, h) = to.size;
             let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: w, height: h } };
@@ -260,7 +325,24 @@ impl Targets {
             // eighth, then a Gaussian across and down; the eighth's is the result.
             let texel = |t: &Target| [1.0 / t.size.0 as f32, 1.0 / t.size.1 as f32];
             let (q, e) = (0, 1);
-            run(&self.y[q], self.scene_set, false, Push { step: [threshold * white, white], threshold: 0.0, mode: 2 });
+            let on = metered.zip(self.meter.as_ref().zip(p.meter.as_ref()));
+            if let Some((params, (m, mp))) = on {
+                m.record(d, mp, cb, params);
+            }
+            // The bright pass (its own program: the exposure's set rides with the scene's).
+            if let Some(b) = &p.bright {
+                let to = &self.y[q];
+                let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: to.size.0, height: to.size.1 } };
+                d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(p.overwrite_pass).framebuffer(to.framebuffer).render_area(area), vk::SubpassContents::INLINE);
+                d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: to.size.0 as f32, height: to.size.1 as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                d.cmd_set_scissor(cb, 0, &[area]);
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, b.pipeline);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, b.layout, 0, &[self.scene_set, self.exposure_set], &[]);
+                let push = Push { step: [threshold * white, white], threshold: if on.is_some() { 1.0 } else { 0.0 }, mode: 0 };
+                d.cmd_push_constants(cb, b.layout, vk::ShaderStageFlags::FRAGMENT, 0, std::slice::from_raw_parts((&push as *const Push) as *const u8, size_of::<Push>()));
+                d.cmd_draw(cb, 3, 1, 0, 0);
+                d.cmd_end_render_pass(cb);
+            }
             run(&self.x[q], self.y[q].set, false, Push { step: texel(&self.x[q]), threshold: 0.0, mode: 3 });
             run(&self.x[e], self.x[q].set, false, Push { step: [0.0; 2], threshold: 0.0, mode: 5 });
             run(&self.y[e], self.x[e].set, false, Push { step: texel(&self.y[e]), threshold: 0.0, mode: 3 });
@@ -296,6 +378,9 @@ impl Targets {
                 d.free_memory(t.memory, None);
             }
             d.destroy_descriptor_pool(self.pool, None);
+        }
+        if let Some(m) = self.meter {
+            m.destroy(gpu);
         }
     }
 }

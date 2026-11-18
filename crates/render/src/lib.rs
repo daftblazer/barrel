@@ -16,6 +16,7 @@ pub mod clouds;
 pub mod fsr;
 pub mod glow;
 pub mod locate;
+pub mod meter;
 mod locate_font;
 pub mod fsr3;
 pub mod gsr2;
@@ -967,6 +968,7 @@ impl Targets {
         // The post pass samples the new scene image (TAA's, GSR 2's or FSR's when they run) and
         // the glow.
         let glow_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.result()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let exposure_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(glow.exposure()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let frozen_info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(frozen_view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         for (k, &post_set) in post_sets.iter().enumerate() {
             let shown = match (show_motion, motion_target) {
@@ -983,6 +985,7 @@ impl Targets {
                         vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info),
                         vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&glow_info),
                         vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&frozen_info),
+                        vk::WriteDescriptorSet::default().dst_set(post_set).dst_binding(4).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&exposure_info),
                     ],
                     &[],
                 )

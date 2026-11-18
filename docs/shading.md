@@ -893,11 +893,29 @@ depth of field and distant blur, the 2D effects taken back through the curve and
 luma by `vSaturationScale` (1 here), the filmic curve times `1 / f(fLumiMax)`, the gamma
 (`1 / fGamma`), then `fSaturationScaleEx`.
 
-**The exposure** is metered: the half-size scene × E is averaged as `exp2(mean(log2(lum +
-1))) − 1` down to one pixel, divided by E again, eased toward over `fAdaptTime` (3 s; rate
-`1 − (1 − 0.95)^(dt / 3)`, halved by `fLightAdaptedScale` / `fDarkAdaptedScale` 0.5), and
-`E = 0.18 / L` kept inside the set's `vExposureRange` (0.9 to 2.4). Any daylit view averages
-far above 0.2, so E sits at 0.9.
+**The exposure** is metered, from the program of each pass (read in the capture's frame, the
+chain before the tone pass): the scene (the lit scene as it stands before the tone pass: sky,
+fog and transparent draws in, no bloom) goes through the depth-of-field pass, which copies
+it with the circle of confusion in alpha, and a pass that takes it to a quarter size
+(480 × 270) times the last frame's E (one pixel read; E is held in a one-pixel float target),
+two layers weighted by the circle of confusion (the first is metered). A
+pass makes a 64 × 64 target of `log2(lum + fLumDelta)` (`fLumDelta` 1; `lum` by (0.29891,
+0.58661, 0.11448); four bilinear taps a pixel), two passes average it by four taps (a plain
+mean of four by four) to 16 × 16 and 4 × 4, and the last takes the mean of the 4 × 4 and
+returns it as `exp2(mean) − fLumDelta` (a NaN is 0). A last pass eases and turns it into the
+next E: `L = metered / E` (the scene's own luminance), the eye's `Lp = fMiddleGray / E`, the
+rate `1 − (1 − fAdaptBaseRate)^(fFrameTime / fAdaptTime)` (0.95, 1/60 s, 3 s in the capture:
+0.0165 a frame) times `fLightAdaptedScale` when `L < Lp` and `fDarkAdaptedScale` otherwise
+(the set's, 0.5 and 0.5 at noon, the evening's second 0.3), `Lp += (L − Lp) × rate`, and
+`E = fMiddleGray / Lp` (0.18 over it) clamped to the set's `vExposureRange` (0.9 to 2.4
+at noon; 0.7 to 2.4 in the morning). The clamped E is what is kept, and what the tone
+pass multiplies the scene by (the E from before the frame's own metering).
+The still of the gate gives the rule's outcome: undoing its tone curve, gamma and colour
+scale on its pixels, the metered average `exp2(mean(log2(lum + 1))) − 1` of the frame is
+0.47, against the 0.18 an unclamped E would hold it to, so E is at the range's bottom, 0.9
+(the same figure from Barrel's own frame at E = 0.9 is 0.47: the two frames are as bright
+overall, and the sunlit sand's tenth is not the exposure). Only dark scenes leave the
+range's floor.
 
 **The bloom's bright pass**: `c × saturate((lum − T) / (fLumiMax − T))` on the metered
 quarter-size scene, `T = fLumiThreshold × fLumiMax` (1.29 at noon), `lum` by (0.29891,
@@ -909,8 +927,16 @@ diamond there, then a Gaussian across and down (centre 0.19967563; pairs at 1.40
 adds the result times `fBloomWeight`. A star filter (twelve passes at a quarter) follows.
 
 **What `barrel` does of this**: the sun at the stage's key scale, the cloud pattern
-(`environment::Pattern`; its phase starts with the field), the exposure at the range's
-bottom, the colour scale, the curve, the gamma, the last saturation, and the bloom's bright
+(`environment::Pattern`; its phase starts with the field), the exposure metered by the rule
+above (`render::meter`: the scene is lit at the range's bottom, and the tone pass and the
+bloom's bright pass take it to the metered E by the ratio of the two; a frame meters its own
+scene, so no frame waits on the last, and the first frame of a view, and every offscreen
+frame, takes the exposure its scene calls for, where a window eases toward it over the
+adaptation's seconds; the pass is four small draws and a one-pixel copy; the depth of field's
+weighting of the metered layer is not done: a plain mean of the scene's quarter). The gate
+at noon, evening and in the attic's title backdrop meters to the range's bottom (the scene's
+luminance 0.52, 0.50 and 0.93 where 0.18 would leave it), the morning to its 0.7 and the
+night to 1.14 (luminance 0.157); the colour scale, the curve, the gamma, the last saturation, and the bloom's bright
 pass and chain (`render::glow`). Against the gate's
 still, fourteen spots' mean error falls from 14.5 to 12.8 levels a channel; the sunlit sand
 and stone and the path in shade come within 10 (a shaded path 25, 57, 117 against 25, 57,

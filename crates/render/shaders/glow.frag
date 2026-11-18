@@ -11,18 +11,8 @@ void main() {
         color = vec4(clamp(texture(src, uv).rgb - pc.threshold, 0.0, 1.0), 1.0);
         return;
     }
-    // The Ryza games' bloom (docs/shading.md, "the frame as the game draws it"). Mode 2 its
-    // bright pass on the scene (stored at half, as its result is): c × saturate((luma − T) /
-    // (white − T)), T and the white point in `step`, the scene taken down by four taps.
-    if (pc.mode == 2u) {
-        vec2 t = 1.0 / vec2(textureSize(src, 0));
-        vec3 s = (texture(src, uv + t * vec2(-1.0, -1.0)).rgb + texture(src, uv + t * vec2(1.0, -1.0)).rgb
-            + texture(src, uv + t * vec2(-1.0, 1.0)).rgb + texture(src, uv + t * vec2(1.0, 1.0)).rgb) * 0.5;
-        float luma = dot(s, vec3(0.29891, 0.58661, 0.11448));
-        color = vec4(s * clamp((luma - pc.step.x) / (pc.step.y - pc.step.x), 0.0, 1.0) * 0.5, 1.0);
-        return;
-    }
-    // Mode 3: its 13-tap diamond, `step` one texel.
+    // The Ryza games' bloom (docs/shading.md, "the frame as the game draws it"; its bright pass
+    // is bright.frag). Mode 3: its 13-tap diamond, `step` one texel.
     if (pc.mode == 3u) {
         vec4 d = texture(src, uv) * 0.18385795;
         d += (texture(src, uv + pc.step * vec2(1.0, 0.0)) + texture(src, uv + pc.step * vec2(-1.0, 0.0))

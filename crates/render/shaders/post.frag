@@ -8,6 +8,9 @@ layout(set = 0, binding = 2) uniform sampler2D frozen;
 // The screen filter (Escha's PostEffectTexFilter): its colour overlay-blended over the frame,
 // by its alpha times screen.x (overlayModifier; 0: none).
 layout(set = 0, binding = 3) uniform sampler2D screen_filter;
+// The metered exposure (render::meter) when screen.y is 1: its second channel is the ratio of
+// the exposure to the one the scene was lit with.
+layout(set = 0, binding = 4) uniform sampler2D exposure;
 // The fade's colour (u22), laid over by its alpha. saturation: a scale per channel about the
 // BT.601 luma (0: none), and in w a tone curve's white point (0: none): extended Reinhard,
 // c (1 + c / w²) / (1 + c), or with a gamma in pad.y the Ryza games' filmic curve over the
@@ -28,8 +31,9 @@ void main() {
         color = vec4(abs(texture(scene, uv).rg) * 40.0, 0.0, 1.0);
         return;
     }
-    vec3 live = texture(scene, uv).rgb * 2.0 + texture(glow, uv).rgb * pc.rate;
-    vec3 before = texture(frozen, uv).rgb * 2.0;
+    float metered = pc.screen.y > 0.5 ? texelFetch(exposure, ivec2(0), 0).g : 1.0;
+    vec3 live = texture(scene, uv).rgb * 2.0 * metered + texture(glow, uv).rgb * pc.rate;
+    vec3 before = texture(frozen, uv).rgb * 2.0 * metered;
     vec3 c = mix(live, before, pc.frozen_weight);
     if (pc.screen.x > 0.0) {
         vec4 f = texture(screen_filter, uv);
