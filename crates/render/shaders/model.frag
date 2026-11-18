@@ -228,9 +228,19 @@ void main() {
             // only what N·L leaves of the sun.
             float nl = max(dot(n, -normalize(look.sun_dir.xyz)), 0.0);
             lit += look.sun_color.rgb * unpackUnorm2x16(pc.light).x * min(rim, 1.0 - nl);
-            float h = dot(n, -normalize(look.sun_dir.xyz)) * 0.5 + 0.5;
+            // The ramp as the game's character lighting pass samples it (docs/shading.md):
+            // u is the sun's half-Lambert term times its shadow (the cascades' and the cloud
+            // pattern's) times `rampCoordScaler`, kept inside `rampCoordRange`, so only the
+            // row's short run from its shade tint (0.2) toward white is used; v is the row
+            // before the material's `rampIndex` (index 0: no ramp).
+            const float RAMP_SCALE = 0.27;            // rampCoordScaler.x, as captured at Rasenboden
+            const vec2 RAMP_RANGE = vec2(0.2, 0.5);   // rampCoordRange, as captured there
+            float h = clamp(dot(n, -normalize(look.sun_dir.xyz)) * 0.5 + 0.5, 0.0, 1.0);
             float row = float((pc.flags >> 16) & 255u);
-            lit *= textureLod(mask, vec2(clamp(h, 0.0, 1.0), (row + 0.5) / 256.0), 0.0).rgb;
+            if (row > 0.0) {
+                float u = clamp(RAMP_SCALE * h * sun_shadow(world) * cloud_light(world), RAMP_RANGE.x, RAMP_RANGE.y);
+                lit *= textureLod(mask, vec2(u, (row - 0.5) / 256.0), 0.0).rgb;
+            }
         }
         color = vec4(tinted(mix(fog_add, lit * c.rgb * at_color, fog_keep)) * pc.params.w, 1.0);
         return;

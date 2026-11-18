@@ -642,11 +642,18 @@ clustered lights (`tCllLightIndices/Positions/Attributes`). What it does, from t
   (Schlick Fresnel from GBuf1's colour, normalised by `gloss × 0.125 + 0.25`). The diffuse is
   `litCol × (rim + N·L) + litCol × N·L × back-light`, times the albedo mixed toward white by the
   occlusion (`fOccAlbScl`).
-- **Ramp** (toon): its u is each directional light's half-Lambert (`N·L × 0.5 + 0.5` after a
-  signed power, `rampCoordScaler`), times the light's luminance pulled toward 1
-  (`rampCoordBias`), the larger of the two, clamped to `rampCoordRange`; its v the GBuf4 ramp
-  row over `rampTexHeight`. The diffuse is multiplied by the ramp's colour when GBuf0's flag
-  says so; the output is specular plus diffuse.
+- **Ramp** (toon): for the sun, `u = sat(lum' × (sign(N·L) |N·L|^p × 0.5 + 0.5)) × s.x ×
+  min(occlusion, shadow)`, where `lum'` is the light's luminance pulled toward 1 by
+  `rampCoeAdj` (1: no luminance left), `p` the second pair of `rampCoordScaler`'s vector
+  (1, 1), `s` its first pair (0.27, 0.116), the occlusion GBuf0's `w` and the shadow the
+  ambient pass's alpha (the cascades' shadow times the cloud pattern); a second term does
+  the same with the occlusion in N·L's place and `s.y`; u is the larger, kept inside
+  `rampCoordRange` (0.2 to 0.5), or `occlusion × 0.2` where the occlusion is under
+  `occThresForIRShadow` (0.2). So u runs from 0.2 (shade) to 0.27 (facing the sun, unshadowed):
+  the short run of a row where its shade tint turns white. v is `(rampIndex - 0.5) /
+  rampTexHeight`: the texture's row before the index (index 1 takes row 0), and index 0 takes
+  no ramp. The diffuse is multiplied by the ramp's colour; the output is specular plus
+  diffuse. (Values as captured at Rasenboden's noon; where the game keeps them is not found.)
 
 The ramp texture (`Data/x64/shader/texture/chara_rmp.g1t`, 256 × 256 BC7) is white but for a
 few thin rows going from a dark tint to white: one row per kind of material. Row 0 is a light
@@ -655,16 +662,18 @@ white within a quarter of the row, row 4 a long warm brown, row 9 a dark blue-gr
 are white.
 
 Ryza's materials name their row: her submeshes' parameter sets (G1MG 0x10003) carry
-`rampIndex` (an integer in a type-1 word: 3 on submeshes 0 to 4, drawn with `@CB0965E5`,
-likely her skin; 1 on the rest), `rampRimColorAdj` (1, 1, 1), `rampRimThres` (1), `rmIndex` (0:
+`rampIndex` (an integer in a type-1 word: 3 on submeshes 0 to 4, her coat's cloth pieces,
+which take row 2, a grey pink; 1 on the rest, which take row 0, the light red), `rampRimColorAdj` (1, 1, 1), `rampRimThres` (1), `rmIndex` (0:
 likely her rim row), the wetness (`wtWet`, `wtBldPrms`, `wtDtFade`, `wtDtMkFade`: all 0) and on
 her hair (`@C86A7C58`, `@E905E6C7`) `alr2HAdj` (-0.11) and `alr2HDir` (0, 1, 0, 6: an
 anisotropic highlight along the hair, "Alr2h" in the `PBB-Alr2h…` program names); her eyes
 (`@E24D26E6`) have texture transforms and a parallax (`vPlx` 0, -0.05), her face's outline-like
 part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constants' values
 (`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found. `barrel` lays the ramp
-over the field-model light on her draws (`model.frag` flag 128, the row in bits 16 to 23, the
-ramp in the mask slot): u is the sun's half-Lambert term as is.
+over the field-model light on her draws (`model.frag` flag 128, the index in bits 16 to 23,
+the ramp in the mask slot) as the pass does for the sun: 0.27 × the half-Lambert term × the
+shadow, inside 0.2 to 0.5, on the row before the index (the occlusion and the second term,
+which never passes 0.2, are left out).
 
 The pass's constants come from the environment overrides (`saves\fieldmap\override_env\
 env_<name>.xml`, one `<root>` of `group_name` attributes; `env_default.xml` and a few fields'
