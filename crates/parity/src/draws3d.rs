@@ -124,7 +124,9 @@ fn passes<K: PartialEq + Clone>(keys: &[K]) -> Vec<(K, usize, usize)> {
 }
 
 fn floats_text(v: &[f32]) -> String {
-    let n: Vec<String> = v.iter().map(|f| format!("{f:.4}")).collect();
+    // PARITY_FULL: every digit (for reading a constant out), else four decimals.
+    let full = std::env::var_os("PARITY_FULL").is_some();
+    let n: Vec<String> = v.iter().map(|f| if full { format!("{f}") } else { format!("{f:.4}") }).collect();
     format!("[{}]", n.join(" "))
 }
 

@@ -329,6 +329,11 @@ pub fn disassemble(code: &[u8]) -> Vec<String> {
             // customdata (an immediate constant buffer): its length is the next token.
             len = t.get(at + 1).copied().unwrap_or(2) as usize;
             out.push(format!("{}customdata ({} values)", "  ".repeat(depth), len.saturating_sub(2)));
+            // its rows of four floats
+            for row in t.get(at + 2..(at + len).min(t.len())).unwrap_or(&[]).chunks(4) {
+                let values: Vec<String> = row.iter().map(|w| format!("{}", f32::from_bits(*w))).collect();
+                out.push(format!("{}  {{{}}}", "  ".repeat(depth), values.join(", ")));
+            }
             at += len.max(1);
             continue;
         }
