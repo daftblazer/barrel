@@ -263,7 +263,9 @@ void main() {
             vec3 tg = p2 * du1.x + p1 * du2.x;
             vec3 bt = p2 * du1.y + p1 * du2.y;
             float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
-            vec3 nm = normalize(mat3(tg * inv, bt * inv, n) * tn);
+            // Green runs against the texture's v (the game's frame is the mesh's tangent and
+            // `cross(N, T) * w`; against its normal target this sign halves the error).
+            vec3 nm = normalize(mat3(tg * inv, -bt * inv, n) * tn);
             float after = max(dot(nm, -normalize(look.sun_dir.xyz)), 0.0);
             vec2 material = unpackUnorm2x16(pc.light);
             sun_now = look.sun_color.rgb * material.x * after;

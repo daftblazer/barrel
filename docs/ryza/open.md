@@ -284,11 +284,13 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     texture, so the occlusion's pattern differs (mean abs 0.128 against the half size picture, its
     regions' means 0.02 to 0.08 above the game's: the left canopy 0.741 against 0.657); the tree
     regions of the lit stage are still 1.5 to 2 times the game's brightness (item below).
-    **The far hills** (the strip (1500, 330, 1800, 350), lit and fogged 0.265, 0.566, 0.647
-    against the game's fogged 0.128, 0.318, 0.427): their models stand at 0.47 of their height
-    and the game turns normals by the placement's own matrix, so they lean toward the viewer
-    and away from the sun; Barrel does the same now (it turned them by the inverse transpose,
-    the strip at 0.38, 0.72, 0.70). What is left there is not found: twice the game's light.
+    **The far hills** (the strip (1500, 330, 1800, 350), lit and fogged 0.150, 0.387, 0.535
+    against the game's fogged 0.128, 0.318, 0.427): two causes found and fixed. Their models
+    stand at 0.47 of their height and the game turns normals by the placement's own matrix
+    (Barrel turned them by the inverse transpose), and the normal map's green runs against the
+    texture's v (Barrel's frame from the screen derivatives had it along v: over the stage the
+    median angle to the game's normal target went from 14.6 to 11.8 degrees, the stone wall
+    from 24.5 to 16.3). What is left there is about 20%.
   - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9): where the clouds stand
     (random per run), the cloud particles, the dome's scroll, a few percent on the clear sky.
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by

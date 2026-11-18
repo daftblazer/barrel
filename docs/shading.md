@@ -599,7 +599,8 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
   - targets 3 and 4: 1.
   `barrel` draws the normal map (`model.frag`'s flag 8192, the map in the mask slot):
   its tangent frame comes from the screen derivatives of the position and UV (the vertices
-  carry no tangent here), and with the mapped normal the sun's Lambert term and the cube
+  carry no tangent here; the map's red runs along u and its green against v, which is the
+  sign that agrees with the game's normal target), and with the mapped normal the sun's Lambert term and the cube
   map's light are taken again per pixel (the vertex's light otherwise). Every field draw at
   Rasenboden has one; it shows as relief on the rocks and bark, the shade included, for about
   0.07 ms at 1280×720 on the PC. Whether green points up or down in the tangent frame is not
