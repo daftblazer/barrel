@@ -249,7 +249,7 @@ void main() {
     float sun_lit = sun_shadow(world) * cloud_light(world);
     // The stage dump of the sun's share (`dump::Stop::Shadow`).
     if (look.shadow_info.w > 0.5) {
-        color = vec4(vec3(sun_lit) * pc.params.w, 1.0);
+        color = vec4(vec3(look.shadow_info.w > 1.5 ? 0.0 : sun_lit) * pc.params.w, 1.0);
         return;
     }
     if (per_pixel) {

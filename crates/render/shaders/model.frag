@@ -203,7 +203,9 @@ void main() {
     // The stage dump of the sun's share (`dump::Stop::Shadow`): what the shading multiplies the sun by.
     if (look.shadow_info.w > 0.5 && (pc.flags & 4096u) == 0u && ((pc.flags & 8u) == 0u || (pc.flags & 16u) != 0u)) {
         if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
-        color = vec4(vec3(sun_shadow(world) * cloud_light(world)) * pc.params.w, 1.0);
+        // (Stage 2: the coverage of a Ryza character, flag 128.)
+        float share = look.shadow_info.w > 1.5 ? float((pc.flags & 128u) != 0u) : sun_shadow(world) * cloud_light(world);
+        color = vec4(vec3(share) * pc.params.w, 1.0);
         return;
     }
     if ((pc.flags & 8u) != 0u) {
@@ -341,46 +343,49 @@ void main() {
         if ((pc.flags & 32768u) != 0u) {
             lit += texture(emissive, uv).rgb * look.emission.x;
         }
-        // A Ryza character (flag 128): the rim (its word in the tint's place: sharpness / 64
-        // and strength / 4 as unorm8), where the eye looks into the sun, `pow(1 - N·V,
-        // sharpness) × strength` of the sun's colour, up to the full sun; then the toon ramp (the mask slot holds
-        // `chara_rmp`) on the light, its u the sun's half-Lambert term and its row (bits 16-23)
-        // the material's `rampIndex` (DSChara-Cll's, docs/shading.md).
+        // A Ryza character (flag 128), lit as the game's character lighting pass lights it
+        // (`DSChara-Cll`, docs/shading.md): two directional lights, each with its diffuse weight
+        // `sat(rim * sat(litDir . V) + sat(N . L))`, the occlusion map's and the shadow's `min`
+        // on the sun, the albedo's own colour toward the light by the occlusion, the ambient,
+        // then the toon ramp (the mask slot holds `chara_rmp`, its row in bits 16-23). The
+        // specular term and the back-light amount (the G-buffer's, 0 and 0 here) are not done.
         if ((pc.flags & 128u) != 0u) {
-            vec2 rp = unpackUnorm4x8(tint).xy * vec2(64.0, 4.0);
+            const float OCC_COLOUR = 0.50278664;              // fOccAlbScl, as captured at Rasenboden
+            const float OCC_ON_SUN = 0.24965833;              // IRAFade, as captured there
+            const vec2 OCC_ON_AMBIENT = vec2(0.75268143, 0.24731857); // vAmbOccRat, as captured there
+            const float OCC_DEEP = 0.2;                       // occThresForIRShadow, as captured there
+            const vec2 RAMP_SCALE = vec2(0.27, 0.116);        // rampCoordScaler, as captured there
+            const vec2 RAMP_RANGE = vec2(0.2, 0.5);           // rampCoordRange, as captured there
+            const vec2 RIM = vec2(1.0, 2.0);                  // cRimTbl's entry (strength, power), as captured there
+            vec2 material = unpackUnorm2x16(pc.light);
             vec3 to_eye = normalize(look.eye.xyz - world);
-            float backlit = clamp(dot(normalize(look.sun_dir.xyz), to_eye), 0.0, 1.0);
-            float rim = pow(1.0 - clamp(dot(n, to_eye), 0.0, 1.0), max(rp.x, 1.0)) * rp.y * backlit;
-            // As in the game, the rim and the sun's N·L are saturated together: the rim adds
-            // only what N·L leaves of the sun.
-            float nl = max(dot(n, -normalize(look.sun_dir.xyz)), 0.0);
-            vec3 sun_rim = look.sun_color.rgb * unpackUnorm2x16(pc.light).x * min(rim, 1.0 - nl);
-            // The occlusion map (the emissive slot holds it, white without one; its green) as
-            // the game's character lighting pass uses it (docs/shading.md): the sun and its
-            // rim take the smaller of it and the sun's shadow; it tints the light toward the
-            // surface's own colour (`fOccAlbScl`), part of it on the sun (`IRAFade`) and most
-            // of it on the ambient (`vAmbOccRat`); and it moves the ramp's u.
-            const float OCC_COLOUR = 0.5028;              // fOccAlbScl, as captured at Rasenboden
-            const float OCC_ON_SUN = 0.2497;              // IRAFade, as captured there
-            const vec2 OCC_ON_AMBIENT = vec2(0.7527, 0.2473); // vAmbOccRat, as captured there
-            const float OCC_DEEP = 0.2;                   // occThresForIRShadow, as captured there
-            float occ = texture(emissive, uv).g * occlusion;
-            float lit_part = min(occ, sun_shadow(world) * cloud_light(world));
-            float occ_sun = 1.0 + OCC_ON_SUN * (occ - 1.0);
-            vec3 own = c.rgb * OCC_COLOUR;
-            lit = field_now * mix(own, vec3(1.0), occ * OCC_ON_AMBIENT.x + OCC_ON_AMBIENT.y)
-                + (sun_now + sun_rim) * mix(own, vec3(1.0), occ_sun) * lit_part;
-            // The ramp as the pass samples it: u is the larger of the sun's half-Lambert term
-            // times that lit part times `rampCoordScaler.x` and the occlusion's own term
-            // (`rampCoordScaler.y`), kept inside `rampCoordRange`, so only the row's short run
-            // from its shade tint (0.2) toward white is used, and under it where the occlusion
-            // is deep; v is the row before the material's `rampIndex` (index 0: no ramp).
-            const vec2 RAMP_SCALE = vec2(0.27, 0.116);    // rampCoordScaler, as captured at Rasenboden
-            const vec2 RAMP_RANGE = vec2(0.2, 0.5);       // rampCoordRange, as captured there
-            float h = clamp(dot(n, -normalize(look.sun_dir.xyz)) * 0.5 + 0.5, 0.0, 1.0);
+            float rim = pow(1.0 - clamp(dot(n, to_eye), 0.0, 1.0), RIM.y) * RIM.x;
+            // The two lights: the sun, and the second light at its own scale (sh_on.y over the draw's).
+            vec3 way0 = -normalize(look.sun_dir.xyz);
+            vec3 way1 = dot(look.fill_dir.xyz, look.fill_dir.xyz) > 0.0 ? -normalize(look.fill_dir.xyz) : vec3(0.0);
+            vec3 col0 = look.sun_color.rgb * material.x;
+            vec3 col1 = look.fill_color.rgb * material.x * look.sh_on.y;
+            float nl0 = dot(n, way0), nl1 = dot(n, way1);
+            float weight0 = clamp(rim * clamp(dot(-way0, to_eye), 0.0, 1.0) + clamp(nl0, 0.0, 1.0), 0.0, 1.0);
+            float weight1 = clamp(rim * clamp(dot(-way1, to_eye), 0.0, 1.0) + clamp(nl1, 0.0, 1.0), 0.0, 1.0);
+            // The occlusion map (the emissive slot holds it, white without one; its green) times
+            // the screen occlusion; the sun takes the smaller of it and the shadow (a character's
+            // row 0 takes the shadow alone).
             float row = float((pc.flags >> 16) & 255u);
+            float occ = texture(emissive, uv).g * occlusion;
+            float shadow = sun_shadow(world) * cloud_light(world);
+            float lit_part = row > 0.0 ? min(occ, shadow) : shadow;
+            float occ_light = row > 0.0 ? 1.0 + OCC_ON_SUN * (occ - 1.0) : occ;
+            vec3 own = c.rgb * OCC_COLOUR;
+            vec3 toward_light = mix(own, vec3(1.0), occ_light);
+            lit = field_now * mix(own, vec3(1.0), occ * OCC_ON_AMBIENT.x + OCC_ON_AMBIENT.y)
+                + (col0 * weight0 * lit_part + col1 * weight1) * toward_light;
+            // The ramp: u the larger of 0.27 times the sun's half-Lambert term times the lit part
+            // and 0.116 times the second light's, kept inside `rampCoordRange`, so only the row's
+            // short run from its shade tint toward white is used; under it where the occlusion is
+            // deep. v is the row before the material's `rampIndex` (index 0: no ramp).
             if (row > 0.0) {
-                float u = clamp(max(RAMP_SCALE.x * h * lit_part, RAMP_SCALE.y * clamp(occ_sun * 0.5 + 0.5, 0.0, 1.0)), RAMP_RANGE.x, RAMP_RANGE.y);
+                float u = clamp(max(RAMP_SCALE.x * clamp(nl0 * 0.5 + 0.5, 0.0, 1.0) * lit_part, RAMP_SCALE.y * clamp(nl1 * 0.5 + 0.5, 0.0, 1.0)), RAMP_RANGE.x, RAMP_RANGE.y);
                 if (occ < OCC_DEEP) {
                     u = occ * RAMP_RANGE.x;
                 }

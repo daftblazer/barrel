@@ -690,19 +690,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         false => None,
     };
     let ramp_pack = ramp_bytes.as_deref().map(G1t::parse).transpose()?;
-    // Her draws' ramp rows by (first index, instance): each submesh's `rampIndex`, and whether
-    // it has a rim (`rmIndex`).
-    let mut ramp_rows: std::collections::HashMap<(u32, u32), (u32, bool)> = Default::default();
-    // The characters' rim (`environment::Rim`, the default environment override's).
-    let rim = match ryza_files.is_some() || a.title {
-        true => install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::Rim::parse(&b).map_err(|e| eprintln!("{e}")).ok()),
-        false => None,
-    };
-    eprintln!("character rim: {rim:?}");
+    // Her draws' ramp rows by (first index, instance): each submesh's `rampIndex`.
+    let mut ramp_rows: std::collections::HashMap<(u32, u32), u32> = Default::default();
     // The saturation after the gamma, from the light sets' table.
     let tone_vivid = install.read(barrel_ryza::environment::SATURATION_PATH).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::environment::saturation_ex(&b, barrel_ryza::environment::SATURATION_SET, a.time, a.weather)).map_err(|e| eprintln!("{e}")).unwrap_or(0.0);
     eprintln!("saturation after the gamma: {tone_vivid}");
-    let rim_word = |sharpness: f32, strength: f32| u32::from_le_bytes([(sharpness / 64.0 * 255.0).round().clamp(0.0, 255.0) as u8, (strength / 4.0 * 255.0).round().clamp(0.0, 255.0) as u8, 0, 0]);
     let mut rig: Option<Rig> = None;
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
         let model = Elixir::parse(model)?;
@@ -1273,10 +1265,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // A field model with a specular map reflects the environment's cube map.
         let base = if spec_on && d.specular.is_some() && !d.sky && d.name != "plants" && !ramp_rows.contains_key(&(d.first_index, d.instance)) { base | SPECULAR_AMBIENT } else { base };
         match ramp_rows.get(&(d.first_index, d.instance)) {
-            Some(&(row, has_rim)) if ramp_pack.is_some() && environment.is_some() => {
-                let r = rim.map_or(0, |r| if has_rim { rim_word(r.sharpness, r.strength) } else { rim_word(r.hair_sharpness, r.hair_strength) });
-                (base | 128 | row << 16, r)
-            }
+            Some(&row) if ramp_pack.is_some() && environment.is_some() => (base | 128 | row << 16, 0),
             _ => (base, 0),
         }
     };
@@ -1650,10 +1639,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // scene written; the last, full frame below adds the rest.
         if renderer.dump.is_some() && readback.is_some() && presenter.is_none() && frame_no + 1 >= a.frames.unwrap_or(1) {
             use barrel_render::dump::Stop;
-            for stage in [Stop::Lit, Stop::Shadow, Stop::Plane, Stop::Layer1, Stop::Dome, Stop::Sky] {
+            for stage in [Stop::Lit, Stop::Shadow, Stop::Chara, Stop::Plane, Stop::Layer1, Stop::Dome, Stop::Sky] {
                 renderer.upto.set(stage);
-                // The shadow stage's look: the shaders write the sun's share (slot 31's w).
-                view.look[31][3] = if stage == Stop::Shadow { 1.0 } else { 0.0 };
+                // The shadow stage's look: the shaders write the sun's share (slot 31's w 1), the
+                // characters' stage their coverage (2).
+                view.look[31][3] = match stage {
+                    Stop::Shadow => 1.0,
+                    Stop::Chara => 2.0,
+                    _ => 0.0,
+                };
                 renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(view.look.as_ptr() as *const u8, LOOK_SIZE as usize) });
                 let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
                 unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };

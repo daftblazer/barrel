@@ -333,7 +333,7 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   as the game's pass does (docs/shading.md, "Ramp"): coat 161, 146, 69 against the still's
   162, 150, 75, thigh 154, 138, 142 against 156, 143, 102, hat 149, 142, 138 against 162,
   160, 161; left: the frill under the coat (142, 119, 61 against 90, 75, 48: the occlusion,
-  which also drives the ramp), the boot calves (95, 60, 27 against 60, 40, 25: the rim), the
+  which also drives the ramp), the boot calves (95, 60, 27 against 60, 40, 25: her forward outline pass, docs/shading.md), the
   still's dark creases on the coat and red sheen on the boots (occlusion and specular).
   The ramp's constants are the ones captured at Rasenboden's noon, taken for every field.
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds
@@ -525,17 +525,25 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   capsules on props from older games (`a13-case`, `a14-box2`, `a17_...`, `02bag`, a trash can;
   `BARREL_VERBOSE=1` lists them). Each record's last three floats are not read (zero where
   looked). Not checked by a driven walk: Barrel's Ryza has no scripted input yet.
-- **Her shading.** Drawn as a field model (the environment's light) with the characters' toon
-  ramp on it (`model.frag` flag 128: `chara_rmp`'s row by her materials' `rampIndex`, u the
-  sun's half-Lambert term as the default environment override's `ir_` settings give it, and
-  the rim from them; docs/shading.md). Which override a field uses (most have none:
-  `env_default`), the second light, the point lights' ramp, the specular are not done;
-  the hair highlight is laid on fixed (the game slides it with the view's pitch). Her own G-buffer programs are not read: her mesh names them by hashes that match no shader pack's name (docs/formats.md,
-  "Ryza's character files"); where they live is not found (no
-  pack, table string or executable bytes match). The deferred character lighting pass
-  (`DSChara-Cll`: a ramp, a rim table; read in docs/shading.md): her materials' ramp rows
-  (`rampIndex` 3 for her skin, 1 elsewhere) are read; the pass's run-time constants are not) and the eyes' `EYET` are named in `shader.xml`; her
-  G-buffer programs are likely `PBB` variants picked by her materials' textures. Her face takes its default expression
+- **Her shading.** Drawn as a field model with the characters' lighting pass as the program
+  has it (`model.frag` flag 128; docs/shading.md, "Ryza DX: the character lighting pass": two
+  lights with the rim weight, the occlusion's and the shadow's `min`, the ramp's `u` from the
+  two lights' half-Lambert terms), the pass's constants the capture's at Rasenboden's noon
+  (a stand-in on the constants board: where the game keeps them is not found). Over her
+  pixels the game's lit target is reproduced from its own G-buffer to 2.8%; Barrel's differs
+  by its inputs (the board's `chara` lines: mean colour within 1%, the sorted luminance
+  distributions 3.4% apart). Left: her forward outline pass (draws 1986 to 2031: an inverted
+  hull, its colour her texture times `vOLColorScaler` and `fOLLtEfFade`, fogged: read in
+  docs/shading.md, not drawn; the boots 0.010 lit and 0.057 after it, the thigh 0.20 and 0.26,
+  the largest difference on her), the normal map in her lighting (the vertex normal is
+  used), the specular term (0.4% of her light), the back-light amount, the second light on
+  fields where it differs, the hair highlight is laid on fixed (the game slides it with the
+  view's pitch). Which override a field uses (most have none: `env_default`) and the point
+  lights' share of the pass are not done. A field's gimmicks go through the character path
+  here and are grey where the game's are lit as the stage (the purple building at the gate's
+  left). Her own G-buffer programs are not read: her mesh names them by hashes that match no
+  shader pack's name (docs/formats.md, "Ryza's character files"); her materials' ramp rows
+  (`rampIndex` 3 for her coat's cloth, 1 elsewhere) are read. Her face takes its default expression
   and blinks (every 4 s, a stand-in timing); the other expressions and the eyes' directions
   are not used. Her hair, skirt and bust do not swing: the settings (`.swg`, 10 records over
   652 swing bones, docs/formats.md "Swing settings") are read but their floats are not

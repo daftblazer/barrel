@@ -208,6 +208,22 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   Y%, barrel-only Z%, game-only W%` (the game's from its depth at the far plane, a half-size pixel
   the game's when two of its four are) and the two crown cells of the 6 by 4 grid of 320 by 270
   pixels, `cell (2,0)` and `cell (3,0)`: their Barrel-only and game-only shares.
+- A `chara` stage (`Stop::Chara`, `look` slot 31's w 2) draws the terrain and the models as
+  coverage: 1 where a draw of the character path (flag 128) lands, 0 elsewhere, the water
+  skipped. `barrel-parity pixels` takes the connected pieces of it that touch the game's
+  characters (stencil 8) as Barrel's own character pixels (Barrel draws a field's gimmicks
+  through the character path too; the game lights them as the stage), and under the `lit`,
+  `scene` and `tone` stages prints a `chara <stage>` line: the mean colour of the game's
+  characters and of Barrel's, each over its own pixels (with the pixel counts), the mean
+  luminance's difference in percent, the mean absolute difference between the two sorted
+  luminance distributions (the sorted lists resampled to the shorter one's length, so the pose
+  does not count: in the stage's units, and over the game's mean luminance as `rel`) and the
+  same for the saturation `(max - min) / max`. The `lit` stage has Barrel's fog in it and the
+  game's not (the game adds it before the sky, with the forward draws), so the `scene` line is
+  the one to read. At the gate: mean colour within 1% (0.4109 0.3126 0.2245 against 0.4130
+  0.3149 0.2248), the luminance distributions 0.0112 apart (3.4% of the mean; 0.0164 before the
+  character lighting followed the program, docs/shading.md), the tone stage's 3.14 of 255 (3.53
+  before). What is left is her outline pass (docs/shading.md, "Her forward passes").
 - The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
   not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
   `BARREL_PATTERN_PHASE=<offset>` (the cloud shadows' pattern, both axes, in repeats) and

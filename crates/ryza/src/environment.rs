@@ -748,35 +748,6 @@ mod tests {
     }
 }
 
-// STAND-IN: The rim table is taken as one entry per override value; the real thing is the table the game fills at run time.
-/// The characters' rim light from an environment override (`saves\fieldmap\override_env\
-/// env_<name>.xml`, one `<root>` of `group_name="value"` attributes; `env_default.xml` for a
-/// field with none): `ir_rimSharpness` (the power on `1 - N·V`), `ir_rimScaler` times
-/// `ir_rimColorScaler` (its strength), and the hair's (`ir_hairRim*`). `DSChara-Cll`'s rim table
-/// (`cRimTbl`, docs/shading.md) is filled from them at run time: taken as one entry each.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rim {
-    pub sharpness: f32,
-    pub strength: f32,
-    pub hair_sharpness: f32,
-    pub hair_strength: f32,
-}
-
-impl Rim {
-    /// The override file's path in the archives.
-    pub const DEFAULT_PATH: &'static str = "\\saves\\fieldmap\\override_env\\env_default.xml";
-
-    pub fn parse(bytes: &[u8]) -> Result<Rim, String> {
-        let num = |k: &str| override_number(bytes, k);
-        Ok(Rim {
-            sharpness: num("ir_rimSharpness")?,
-            strength: num("ir_rimScaler")? * num("ir_rimColorScaler")?,
-            hair_sharpness: num("ir_hairRimSharpness")?,
-            hair_strength: num("ir_hairRimScaler")? * num("ir_hairRimColorScaler")?,
-        })
-    }
-}
-
 /// The stage's ambient from an environment override: the diffuse light map is scaled by
 /// `indirectStage_IDLScalerOfAmbientDiffuseMap` times `..ColorRGB` (the default: 2.5 × (1.642,
 /// 1.978, 4.0), a blue tint), and the set's `mainAmbientLight` by
@@ -858,13 +829,9 @@ mod grade_tests {
 }
 
 #[cfg(test)]
-mod rim_tests {
+mod override_tests {
     #[test]
-    fn default_rim() {
-        let xml = br#"<root ver="100" ir_rimScaler="15" ir_rimSharpness="10" ir_rimColorScaler="0.100000, 0.100000, 0.100000" ir_hairRimScaler="15" ir_hairRimSharpness="10" ir_hairRimColorScaler="0.000000, 0.000000, 0.000000"></root>"#;
-        let r = super::Rim::parse(xml).unwrap();
-        assert_eq!((r.sharpness, r.hair_sharpness, r.hair_strength), (10.0, 10.0, 0.0));
-        assert!((r.strength - 1.5).abs() < 1e-5);
+    fn override_values_read() {
         let s = br#"<root trueHDR_vSaturationScale="1.200000, 1.200000, 1.200000"></root>"#;
         assert_eq!(super::override_number(s, "trueHDR_vSaturationScale"), Ok(1.2));
         let r = br#"<root trueHDR_vExposureRange="0.900000, 1.200000"></root>"#;

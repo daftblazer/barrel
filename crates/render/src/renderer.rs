@@ -1127,7 +1127,7 @@ impl Renderer {
                 drawn[0] += 1;
             }
             // The water, over the opaque scene (it writes depth: the sky plane shows past it).
-            if !pass_sky && water_pieces > 0 {
+            if !pass_sky && water_pieces > 0 && upto != dump::Stop::Chara {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.water_pipeline);
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
             }
@@ -1165,7 +1165,7 @@ impl Renderer {
             let baked = meter.as_ref().map_or(1.0, |m| m.baked);
             if let Some(dump) = &self.dump {
                 // The sun's share is written as it is, times the storage's half.
-                let scene_scale = if upto == dump::Stop::Shadow { 1.0 / HDR_RANGE_INV } else { 1.0 / (HDR_RANGE_INV * baked) };
+                let scene_scale = if matches!(upto, dump::Stop::Shadow | dump::Stop::Chara) { 1.0 / HDR_RANGE_INV } else { 1.0 / (HDR_RANGE_INV * baked) };
                 dump.grab(gpu, cb, upto.name(), targets.scene, targets.scene_size, dump::Texels::of(self.settings.scene_format()), scene_scale);
             }
             trace3d.finish(gpu.frame.get(), &draw_vp, &shadow_vp);

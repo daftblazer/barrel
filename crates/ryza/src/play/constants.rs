@@ -49,6 +49,27 @@ pub(super) struct Inputs<'a> {
 
 type Consts = BTreeMap<&'static str, Vec<Option<f32>>>;
 
+/// The character lighting pass's constants (`DSChara-Cll`) that `model.frag`'s flag 128 path
+/// holds as numbers, as the capture has them at Rasenboden's noon. STAND-IN: the game sets them
+/// at run time (the environment's `ir_` settings; where is not found), so they are one frame's,
+/// taken for every field. `IRDFade`, `IRShadowFade`, `rampCoeAdj` and `rampCoordBias` are 1 and
+/// `rampTexHeight` 256: the shader folds them away.
+pub(super) const CHARA_PASS: &[(&str, &[f32])] = &[
+    ("fOccAlbScl", &[0.50278664]),
+    ("IRAFade", &[0.24965833]),
+    ("IRDFade", &[1.0]),
+    ("IRShadowFade", &[1.0]),
+    ("occThresForIRShadow", &[0.2]),
+    ("rampCoordScaler", &[0.27, 0.116]),
+    ("rampCoordBias", &[1.0, 1.0]),
+    ("rampCoordRange", &[0.2, 0.5]),
+    ("rampCoeAdj", &[1.0, 1.0]),
+];
+/// `vAmbOccRat`'s first two values (the others are not used).
+pub(super) const AMBIENT_OCCLUSION_RATIO: [f32; 2] = [0.75268143, 0.24731857];
+/// The rim table's entries as the capture has them, all alike: strength (`x`) and power (`w`).
+pub(super) const RIM_ENTRY: [f32; 2] = [1.0, 2.0];
+
 fn some(v: &[f32]) -> Vec<Option<f32>> {
     v.iter().copied().map(Some).collect()
 }
@@ -111,6 +132,15 @@ pub(super) fn json(i: &Inputs) -> String {
     lighting.insert("vEye", v_eye.clone());
     put("lighting.stage", lighting.clone());
     lighting.insert("litCol", chara_col);
+    for (name, values) in CHARA_PASS {
+        lighting.insert(name, values.iter().map(|&v| Some(v)).collect());
+    }
+    lighting.insert("vAmbOccRat", vec![Some(AMBIENT_OCCLUSION_RATIO[0]), Some(AMBIENT_OCCLUSION_RATIO[1]), None, None]);
+    lighting.insert("cRimTbl", (0..64).map(|i| match i % 4 {
+        0 => Some(RIM_ENTRY[0]),
+        3 => Some(RIM_ENTRY[1]),
+        _ => None,
+    }).collect());
     put("lighting.chara", lighting);
 
     // The ambient-and-shadow pass. Barrel lights every stage surface with the light map at the
@@ -331,6 +361,25 @@ pub(super) fn write_if_asked(i: impl FnOnce() -> Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_character_shader_holds_the_same_constants() {
+        let source = include_str!("../../../render/shaders/model.frag");
+        // The numbers of `const <type> NAME = [vecN](a, b, ...);`.
+        let numbers = |name: &str| -> Vec<f32> {
+            let line = source.lines().find(|l| l.contains(&format!(" {name} = "))).unwrap_or_else(|| panic!("model.frag has no {name}"));
+            let rhs = line.split(" = ").nth(1).unwrap().split(';').next().unwrap();
+            rhs.split_once('(').map_or(rhs, |(_, inner)| inner.trim_end_matches(')')).split(',').map(|v| v.trim().parse().unwrap_or_else(|_| panic!("{name}: {v}"))).collect()
+        };
+        let pass = |name: &str| CHARA_PASS.iter().find(|(n, _)| *n == name).unwrap().1.to_vec();
+        assert_eq!(numbers("OCC_COLOUR"), pass("fOccAlbScl"));
+        assert_eq!(numbers("OCC_ON_SUN"), pass("IRAFade"));
+        assert_eq!(numbers("OCC_DEEP"), pass("occThresForIRShadow"));
+        assert_eq!(numbers("RAMP_SCALE"), pass("rampCoordScaler"));
+        assert_eq!(numbers("RAMP_RANGE"), pass("rampCoordRange"));
+        assert_eq!(numbers("OCC_ON_AMBIENT"), AMBIENT_OCCLUSION_RATIO);
+        assert_eq!(numbers("RIM"), RIM_ENTRY);
+    }
 
     #[test]
     fn scat_undoes_the_exposure_on_the_light_rows_only() {

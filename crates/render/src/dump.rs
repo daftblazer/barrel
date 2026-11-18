@@ -23,6 +23,9 @@ pub enum Stop {
     /// The terrain and the models drawn as the sun's share at each pixel (the shadow and the
     /// cloud pattern, 0 to 1 in all three channels), the game's ambient-and-shadow pass's alpha.
     Shadow,
+    /// The same draws as a coverage: 1 where a Ryza character is drawn, 0 elsewhere (the
+    /// pixel board's mask of Barrel's own characters).
+    Chara,
     /// And the sky plane alone (the game's first sky draw), then with the dome's first layer.
     Plane,
     Layer1,
@@ -39,6 +42,7 @@ impl Stop {
             Stop::Full => "scene",
             Stop::Lit => "lit",
             Stop::Shadow => "shadow",
+            Stop::Chara => "chara",
             Stop::Plane => "plane",
             Stop::Layer1 => "dome1",
             Stop::Dome => "dome",
@@ -48,7 +52,7 @@ impl Stop {
 
     /// Whether the second pass (the sky's) is drawn, and its clouds, and the outlines.
     pub fn sky(self) -> bool {
-        !matches!(self, Stop::Lit | Stop::Shadow)
+        !matches!(self, Stop::Lit | Stop::Shadow | Stop::Chara)
     }
     /// How many of the dome's layers are drawn.
     pub fn dome_layers(self) -> usize {

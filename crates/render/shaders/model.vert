@@ -222,11 +222,9 @@ void main() {
     vec3 wn = normalize(mat3(i.model) * n);
     // (A Ryza character, flag 128, takes the flat ambient: its own, not the stage's.)
     vec3 amb = look.sh_on.x > 0.5 && (pc.flags & 128u) == 0u ? environment_light(wn) : look.ambient.rgb;
-    vec3 diffuse = lambert(wn, look.fill_dir.xyz) * look.fill_color.rgb;
-    // A Ryza character's second light has a scale of its own (sh_on.y over the draw's).
-    if ((pc.flags & 128u) != 0u) {
-        diffuse *= look.sh_on.y;
-    }
+    // (A Ryza character's second light is taken per pixel with the sun, model.frag: here only
+    // its point lights.)
+    vec3 diffuse = (pc.flags & 128u) != 0u ? vec3(0.0) : lambert(wn, look.fill_dir.xyz) * look.fill_color.rgb;
     // The terrain (flag 64) takes no point lights: its vertex program (the field's `.g1s`
     // program 2) has only the two directional lights and the ambient.
     int points = (pc.flags & 64u) != 0u ? 0 : int(look.misc.y);

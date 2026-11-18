@@ -352,14 +352,14 @@ pub fn add_character(
     ramp: usize,
     name: &str,
     swing: &[u32],
-    ramp_rows: &mut HashMap<(u32, u32), (u32, bool)>,
+    ramp_rows: &mut HashMap<(u32, u32), u32>,
 ) -> Result<usize> {
     let first = scene.draws.len();
     scene.add_posed(geometry, Mat4::IDENTITY, texture_count, Some(joints), instance)?;
     // Her submeshes' ramp rows (`rampIndex`), one draw each in order for those with UVs and
     // normals (the others draw nothing, `Scene::add_posed`).
     let drawn: Vec<&Submesh> = geometry.submeshes.iter().filter(|s| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty())).collect();
-    let rows: Vec<(u32, bool)> = drawn.iter().map(|s| (geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255), geometry.param_record(s, "rmIndex").is_some())).collect();
+    let rows: Vec<u32> = drawn.iter().map(|s| geometry.param_record(s, "rampIndex").and_then(|p| p.integer()).unwrap_or(1).min(255)).collect();
     // The hair's highlight (`sAlbedoRetouch2HighlightMap`, texture kind 66): laid over the hair's
     // colour by its alpha. The game shifts it along v by `dot(V, alr2HDir) x alr2HAdj` (-0.11 at
     // most, about 0.015 at the field camera's pitch): laid on unshifted (docs/shading.md).

@@ -664,18 +664,22 @@ clustered lights (`tCllLightIndices/Positions/Attributes`). What it does, from t
   (Schlick Fresnel from GBuf1's colour, normalised by `gloss × 0.125 + 0.25`). The diffuse is
   `litCol × (rim + N·L) + litCol × N·L × back-light`, times the albedo mixed toward white by the
   occlusion (`fOccAlbScl`).
-- **Ramp** (toon): for the sun, `u = sat(lum' × (sign(N·L) |N·L|^p × 0.5 + 0.5)) × s.x ×
-  min(occlusion, shadow)`, where `lum'` is the light's luminance pulled toward 1 by
-  `rampCoeAdj` (1: no luminance left), `p` the second pair of `rampCoordScaler`'s vector
-  (1, 1), `s` its first pair (0.27, 0.116), the occlusion GBuf0's `w` and the shadow the
-  ambient pass's alpha (the cascades' shadow times the cloud pattern); a second term does
-  the same with the occlusion in N·L's place and `s.y`; u is the larger, kept inside
-  `rampCoordRange` (0.2 to 0.5), or `occlusion × 0.2` where the occlusion is under
-  `occThresForIRShadow` (0.2). So u runs from 0.2 (shade) to 0.27 (facing the sun, unshadowed):
-  the short run of a row where its shade tint turns white. v is `(rampIndex - 0.5) /
-  rampTexHeight`: the texture's row before the index (index 1 takes row 0), and index 0 takes
-  no ramp. The diffuse is multiplied by the ramp's colour; the output is specular plus
-  diffuse. (Values as captured at Rasenboden's noon; where the game keeps them is not found.)
+- **Ramp** (toon): `u = clamp(max(s.x × h0 × m, s.y × h1), range.x, range.y)`, where `h0` and `h1`
+  are the two lights' half-Lambert terms (`sign(N·L) |N·L|^p × 0.5 + 0.5` taken with the
+  light's luminance pulled toward 1 by `rampCoeAdj`: with the captured `p` and `rampCoeAdj`
+  of 1, just `N·L × 0.5 + 0.5`), `m = min(occlusion, shadow)` (the occlusion GBuf0's `w`, the
+  shadow the ambient pass's alpha: the cascades' shadow times the cloud pattern; GBuf4's `w`
+  is 1 on her), `s` is `rampCoordScaler` (0.27, 0.116) and `range` `rampCoordRange` (0.2,
+  0.5); `u` is `occlusion × 0.2` where the occlusion is under `occThresForIRShadow` (0.2). So
+  `u` runs from 0.2 (shade) to 0.27 (facing the sun, unshadowed): the short run of a row
+  where its shade tint turns white. v is `(rampIndex - 0.5) / rampTexHeight` (256): the
+  texture's row before the index (index 1 takes row 0), and index 0 takes no ramp. The ramp
+  multiplies the diffuse (albedo times all the light, ambient included), not the specular;
+  the output is specular plus ramped diffuse. (Values as captured at Rasenboden's noon; where
+  the game keeps them is not found. The G-buffer's colour targets are read through the sRGB
+  view: GBuf0's albedo is in gamma space in the dump.) With the capture's G-buffer (her
+  pixels' GBuf0, 1, 2, 4, 5 and the ramp) the program above reproduces the game's lit target
+  over her to a mean absolute difference of 0.0085 (2.8% of the light) and a mean within 0.2%.
 
 The ramp texture (`Data/x64/shader/texture/chara_rmp.g1t`, 256 × 256 BC7) is white but for a
 few thin rows going from a dark tint to white: one row per kind of material. Row 0 is a light
@@ -690,23 +694,44 @@ likely her rim row), the wetness (`wtWet`, `wtBldPrms`, `wtDtFade`, `wtDtMkFade`
 her hair (`@C86A7C58`, `@E905E6C7`) `alr2HAdj` (-0.11) and `alr2HDir` (0, 1, 0, 6: an
 anisotropic highlight along the hair, "Alr2h" in the `PBB-Alr2h…` program names); her eyes
 (`@E24D26E6`) have texture transforms and a parallax (`vPlx` 0, -0.05), her face's outline-like
-part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constants' values
-(`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found. `barrel` lays the ramp
-over the field-model light on her draws (`model.frag` flag 128, the index in bits 16 to 23,
-the ramp in the mask slot) as the pass does for the sun: 0.27 × the half-Lambert term × the
-shadow, inside 0.2 to 0.5, on the row before the index, with the occlusion as the pass
-takes it. The occlusion is the green of the material's kind-5 texture (`sOcc`, written to
-GBuf0's `w` by the G-buffer program as `1 + saturate(fOccScaler) × (g − 1)`; sampled as
-stored, in `model.frag`'s emission slot), for the submeshes with a `rampIndex`: a plain
-piece's program (`shf0a7409ad8ddab19`: colour and specular map only) samples none though
-its material names one. With `o` the occlusion and `s` the shadow: the
-lit part is `min(o, s)`; the sun's light is × mix(albedo × `fOccAlbScl`, 1, `1 + 0.2497 ×
-(o − 1)`) × the lit part; the ambient × mix(albedo × `fOccAlbScl`, 1, `0.7527 × o +
-0.2473`); the ramp's u is the larger of 0.27 × half-Lambert × the lit part and 0.116 ×
-saturate((1 + 0.2497 × (o − 1)) × 0.5 + 0.5), or `o × 0.2` where `o` is under 0.2. The
-constants (`fOccAlbScl` 0.5028, `IRAFade` 0.2497, `vAmbOccRat` (0.7527, 0.2473), the
-threshold 0.2) are one captured frame's (Rasenboden's noon). Not done: the pass's specular
-term, its rim by the table's power, the second light's own ramp.
+part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The pass's constants
+(`rampCoord*`, `fOccAlbScl`, `cRimTbl`) are set at run time and not found; the capture's
+are in `model.frag` and on the constants board (`CHARA_PASS` in
+`crates/ryza/src/play/constants.rs`). Her G-buffer on the capture: GBuf4 is (rim row 0, ramp
+row 1 or 3, back-light 0, occlusion 1) on every pixel, GBuf1's flags are 0 (no emissive) and
+its specular colour small (mean 0.03, 4,430 pixels over 0.1), GBuf2's gloss 0.09 on average.
+
+`barrel` lights her (`model.frag` flag 128) as the pass does, per pixel, with the field's two
+lights at the characters' scales (the sun's and the second light's, `look.sun_*`,
+`look.fill_*`), the ambient flat, her occlusion map's green times the screen occlusion for
+`o`, and the shadow `s`. With `m = min(o, s)` the sun's diffuse weight is `sat(rim ×
+sat(litDir · V) + sat(N·L))` with `rim = (1 - N·V)^2` (the capture's `cRimTbl`: every entry
+strength 1, power 2, row 0 on her), and the diffuse light is `(sun × w0 × m + second × w1)
+× mix(albedo × fOccAlbScl, 1, o')` plus the ambient × `mix(albedo × fOccAlbScl, 1, 0.7527 o +
+0.2473)`, with `o' = 1 + IRAFade (o - 1)` (0.2497); a material without a ramp row takes `o`
+for `o'` and the shadow alone for `m`. The result times the ramp's colour at `u` above. Not
+done: the specular term (0.4% of her light on the capture), the back-light amount (0 on her),
+the point lights' share of the pass, the normal map (the G-buffer's normal carries it; the
+vertex normal is used), and the forward outline pass below.
+
+**Her forward passes.** After the lighting pass the game draws her again in the forward
+pass (draws 1986 to 2031 of the capture, one per submesh, with `sh470bcc97a7144d67` and
+`sh0d2367f637ea8f6a`, their textures her colour and specular map, the G-buffer targets, the
+occlusion and the ambient cube maps): it is an outline ("OL") pass, an inverted hull
+inflated along the clip-space normal, and it changes her pixels a lot: the boots go from 0.010
+to 0.057 in red and the thigh from 0.20 to 0.26 over the pass. The vertex program: the skinned
+position and normal; the thickness is `((1 - sat(z / w))^fOLZDecayRatio × (vOLIntensity.y -
+vOLIntensity.x) + vOLIntensity.x) × vertex colour alpha × (1 + fOLThicknessConstantRatio (w -
+1))`, the clip-space normal's direction (normalised over its four components) times it, its x by
+`fAdjByAspect` and its z (kept positive) by `fOLZScale`, added to the clip position. The
+constants at the gate: `vOLIntensity` (0, 0.6), `fOLZDecayRatio` 0.35,
+`fOLThicknessConstantRatio` 0.01, `fAdjByAspect` 1, `fOLZScale` 0.1, `vOLColorScaler` 0.5,
+`fOLLtEfFade` 0.5, `fOLCSatFade` 0, `vOLAmbEfScaler` 0. The pixel program takes her colour
+texture (and with `vSpMap` the specular map's red as a second term), adds them, scales by
+`vOLColorScaler`, pushes the saturation (`fOLCSatFade`: the channels below the brightest zeroed
+by that share) and fogs the result with the two height-fog layers and the scattering as the
+other forward draws. Barrel draws no outline on her: the outline pipeline is Escha's
+`CharaFra*` one, keyed on a material's `atEdge`, which her materials do not have.
 
 The pass's constants come from the environment overrides (`saves\fieldmap\override_env\
 env_<name>.xml`, one `<root>` of `group_name` attributes; `env_default.xml` and a few fields'
@@ -717,7 +742,7 @@ ramped), the ramp coefficient adjusters 1, `ir_rampCoordRangeMin/Max` 0 and 1, `
 and `ir_IRAFade` 1, the rim (`ir_rimScaler` 15, `ir_rimSharpness` 10, `ir_rimColorScaler` 0.1;
 the hair's the same with colour 0: no rim on hair; `ir_rimElevation/Azimuth` 0), the hair's
 highlight (`ir_hairHighlight*`: reflection ratio 0.4, scaler 0.3) and a mask
-(`ir_maskScale` 20, rotation 45). Next to it the `albedoRetouch_` group (toon, rim and specular
+(`ir_maskScale` 20, rotation 45). (The captured `cRimTbl` holds strength 1 and power 2 on every entry, not these rim settings: the rim the pass draws is the table's.) Next to it the `albedoRetouch_` group (toon, rim and specular
 light directions, a shadow colour limit 0.5), `outline_`, `indirectChara_` and the field's
 lights, fog, HDR and shadow cascades (`shadowMap_ShadowCascadeStart` 1200, 6000, 13000; erased
 from 20000 to 30000). The hair's G-buffer program (`_DSGb` with `alr2H`) lays the

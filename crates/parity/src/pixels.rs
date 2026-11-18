@@ -119,6 +119,86 @@ fn region_mean(im: &Image, masks: Option<&Image>, [x0, y0, x1, y1]: [usize; 4]) 
     sum.map(|v| if n > 0.0 { v / n } else { 0.0 })
 }
 
+/// Barrel's own characters: the connected pieces of its coverage stage (`chara`, 1 where a
+/// character-path draw is) that touch the game's characters (stencil 8). Barrel draws a few
+/// props (a field's gimmicks) through the character path too; the game lights them as the stage.
+fn own_characters(masks: &Image, chara: &Image) -> Vec<bool> {
+    let (w, h) = (chara.w, chara.h);
+    let covered = |i: usize| chara.px[4 * i] > 0.5;
+    let game = |i: usize| masks.px[4 * i] < 1.0 && masks.px[4 * i + 1] as u32 == 8;
+    let mut keep = vec![false; w * h];
+    let mut stack = Vec::new();
+    for start in (0..w * h).filter(|&i| game(i) && covered(i)) {
+        if keep[start] {
+            continue;
+        }
+        keep[start] = true;
+        stack.push(start);
+        while let Some(i) = stack.pop() {
+            let (x, y) = (i % w, i / w);
+            for (nx, ny) in [(x.wrapping_sub(1), y), (x + 1, y), (x, y.wrapping_sub(1)), (x, y + 1)] {
+                if nx < w && ny < h && covered(ny * w + nx) && !keep[ny * w + nx] {
+                    keep[ny * w + nx] = true;
+                    stack.push(ny * w + nx);
+                }
+            }
+        }
+    }
+    keep
+}
+
+/// What the characters mask holds of a picture: the colour of the game's characters (its
+/// stencil's 8) and of Barrel's own (`own_characters`), each over its own pixels,
+/// and the two sorted luminance and saturation distributions compared (the sorted lists
+/// resampled to the shorter one's length), so the pose does not count. The error of the
+/// distributions is the mean absolute difference over the quantiles, in the stage's units (and
+/// over the game's mean luminance); the saturation's is `(max - min) / max`.
+fn chara_stats(name: &str, game: &Image, barrel: &Image, masks: &Image, own: &[bool], scale: f64) {
+    type Px = ([f32; 3], f32, f32);
+    let (mut g, mut b): (Vec<Px>, Vec<Px>) = (Vec::new(), Vec::new());
+    let take = |p: &[f32]| -> Px {
+        let lum = 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+        let hi = p[0].max(p[1]).max(p[2]);
+        let sat = if hi > 1.0e-6 { (hi - p[0].min(p[1]).min(p[2])) / hi } else { 0.0 };
+        ([p[0], p[1], p[2]], lum, sat)
+    };
+    for y in 0..game.h {
+        for x in 0..game.w {
+            let m = masks.at(x, y);
+            if m[0] < 1.0 && m[1] as u32 == 8 {
+                g.push(take(game.at(x, y)));
+            }
+            if own[y * game.w + x] {
+                b.push(take(barrel.at(x, y)));
+            }
+        }
+    }
+    if g.is_empty() || b.is_empty() {
+        println!("  chara {name}: game {} pixels, barrel {}", g.len(), b.len());
+        return;
+    }
+    let mean = |v: &[Px]| -> [f64; 3] { std::array::from_fn(|c| v.iter().map(|p| f64::from(p.0[c])).sum::<f64>() / v.len() as f64) };
+    let (gm, bm) = (mean(&g), mean(&b));
+    let sorted = |v: &[Px], k: usize| -> Vec<f32> {
+        let mut s: Vec<f32> = v.iter().map(|p| if k == 0 { p.1 } else { p.2 }).collect();
+        s.sort_by(f32::total_cmp);
+        s
+    };
+    let distance = |a: &[f32], b: &[f32]| -> f64 {
+        let n = a.len().min(b.len());
+        (0..n).map(|i| f64::from((a[i * a.len() / n] - b[i * b.len() / n]).abs())).sum::<f64>() / n as f64
+    };
+    let (gl, bl) = (sorted(&g, 0), sorted(&b, 0));
+    let (gs, bs) = (sorted(&g, 1), sorted(&b, 1));
+    let glum = gl.iter().map(|&v| f64::from(v)).sum::<f64>() / gl.len() as f64;
+    let blum = bl.iter().map(|&v| f64::from(v)).sum::<f64>() / bl.len() as f64;
+    println!(
+        "  chara {name}: game {:.4} {:.4} {:.4} over {}, barrel {:.4} {:.4} {:.4} over {}; mean luminance {:+.1}%; sorted luminance mean abs {:.4} (rel {:.3}), sorted saturation mean abs {:.4}",
+        gm[0] * scale, gm[1] * scale, gm[2] * scale, g.len(), bm[0] * scale, bm[1] * scale, bm[2] * scale, b.len(),
+        100.0 * (blum - glum) / glum.max(1.0e-9), distance(&gl, &bl) * scale, distance(&gl, &bl) / glum.max(1.0e-9), distance(&gs, &bs)
+    );
+}
+
 /// In the frame's order. Where Barrel has no pass of its own, the game's later stage is the
 /// match: its scene fog is in each fragment's light, so its picture before the sky is compared
 /// with the game's after the fog (`lit`: the game's lit scene without it, kept for the
@@ -390,6 +470,7 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
         std::fs::create_dir_all(p)?;
     }
     let masks = load_f32(&game.join(MASKS)).ok();
+    let chara = load_f32(&barrel.join("chara")).ok();
     let mut tone = None;
     for stage in STAGES {
         let (g, b) = match (load(game, stage.game), load(barrel, if stage.barrel == "tone" { "tone" } else { stage.barrel })) {
@@ -433,6 +514,11 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
         }
         // The regions are in the full-size picture's pixels; a half-size stage (the occlusion) takes
         // them halved (and has no masks).
+        if let (Some(m), Some(c)) = (full, chara.as_ref().filter(|c| (c.w, c.h) == (g.w, g.h))) {
+            if matches!(stage.name, "lit" | "scene" | "tone") {
+                chara_stats(stage.name, &g, &b, m, &own_characters(m, c), stage.scale);
+            }
+        }
         if stage.regions && ((g.w, g.h) == (1920, 1080) || (g.w, g.h) == (960, 540)) {
             let k = 1920 / g.w;
             for (name, r) in REGIONS {
