@@ -465,6 +465,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             specular: None,
             eye: false,
             sky: false,
+            scroll: 0.0,
             outline: None,
             field: Some(0),
             casts: false,
@@ -882,7 +883,6 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
         eprintln!("gimmicks: {} drawn of {} here ({})", gimmick_instances.len(), gimmicks.len(), gimmick_files.iter().map(|f| f.tag()).collect::<Vec<_>>().join(", "));
     }
-    // STAND-IN: The sky dome's clouds stand still; the real thing is the game's scroll of their two layers (`txTrs01`, the second at half the first's rate).
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
     // drawn as the distant view (after the sky plane, alpha-blended), where the set puts it
     // (`environment::sky_dome_place`: a place in the field, at height 0, and a scale).
@@ -1248,6 +1248,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     };
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     // Her draws take the toon ramp (flag 128, the row in bits 16-23).
+    // The dome's clock, set each frame: its layers' textures slide by it (`dome_shift`).
+    let dome_clock = std::cell::Cell::new(0.0f32);
     let material = |d: &Draw| {
         // The sky dome's clouds lit by the set's light for them (flag 4096, look
         // slots `DOME_LIGHT_SLOT`, `DOME_SUN_SLOT`), as the game's `PBSkyDome` does.
@@ -1269,6 +1271,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let base = if spec_on && d.specular.is_some() && !d.sky && d.name != "plants" { base | SPECULAR_AMBIENT } else { base };
         match ramp_rows.get(&(d.first_index, d.instance)) {
             Some(&row) if ramp_pack.is_some() && environment.is_some() => (base | 128 | row << 16, 0),
+            // A dome's layer carries how far its texture has slid in the tint's place.
+            _ if base & DOME_LIT != 0 => (base, dome_shift(d.scroll, dome_clock.get()).to_bits()),
             _ => (base, 0),
         }
     };
@@ -1432,6 +1436,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         // The field's clock for the sky (the clouds' wind): a window's own, 60 Hz offscreen.
         let sky_clock = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 });
+        // The dome's layers have slid since the field was entered, before the sky's clock
+        // began (`BARREL_DOME_CLOCK`: that time on a captured frame).
+        dome_clock.set(phase_override("BARREL_DOME_CLOCK").unwrap_or(sky_clock));
         // Her box (the player's draws, in render space) for the characters' shadow map.
         let sub_box = draws.iter().filter(|d| d.sub_bias.is_some()).filter_map(|d| Some((d.bounds?, instances[d.instance as usize].model))).fold(None, |acc: Option<(Vec3, Vec3)>, (b, m)| {
             let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
@@ -1740,6 +1747,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
 /// threshold from `BARREL_CLOUD_THRESHOLD`, in place of the field's own (the game's differ by
 /// run: docs/parity.md, "The pixel board"). The same clock turns the windmills and rocks the boat
 /// (the capture's sail joints sit where the clock's seconds put them: 7.05 at frame 2150).
+/// How far along u a sky dome's layer has slid: the game's `txTrs01.x`, which grows by half
+/// the material's `txC0` each second (0.0568 and 0.0435 on two frames 400 apart at 60 a
+/// second, for a `txC0` of 0.004; the second layer's 0.002 gives 0.0284 and 0.0217).
+fn dome_shift(rate: f32, seconds: f32) -> f32 {
+    (rate * 0.5 * seconds).fract()
+}
+
 fn phase_override(name: &str) -> Option<f32> {
     std::env::var(name).ok()?.trim().parse().ok()
 }

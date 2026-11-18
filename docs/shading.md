@@ -799,7 +799,11 @@ stands at (30000, 0, 30000) three times its size, its two layers scrolled by `tx
 `barrel` lights the dome so: (`ambLit` + `litCol` × N·L, the normal from the dome's normal
 map where it has one) × the exposure × the cloud texture (look slots 92, 95 and 96,
 `model.vert`'s and `model.frag`'s flag 4096), fogged with the sky's scattering, placed where
-the set says. Not done: the specular term, the scroll. The dome is the thin, pale layer of
+the set says, with the program's specular term, and each layer's texture slid along u by the
+game's `txTrs01`: half the material's `txC0` a second (0.0568 and 0.0435 on two frames 400
+apart, for the first layer's 0.004; the second layer's is half that), counted from when the
+field was entered (`play::dome_shift`; the push constants' last float carries it for a dome's
+draw). The dome is the thin, pale layer of
 the sky only: the game's large white clouds are two more draws of its sky pass, a strip
 showing a 1024 × 1024 target the clouds are ray-marched into (the set's `cloud_` block) and
 the cloud particles (`\data\x64\sky\cloudpiece.g1t`, the set's `cloudParticle_` block),

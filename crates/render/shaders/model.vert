@@ -324,5 +324,7 @@ void main() {
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;
     tangent = vec4(mat3(i.model) * t, in_tangent.w);
-    uv = in_uv;
+    // A sky dome's layer slides along u (flag 4096: the push's last float is how far, the
+    // game's `txTrs01`).
+    uv = (pc.flags & 4096u) != 0u ? in_uv + vec2(pc.outline_colour, 0.0) : in_uv;
 }

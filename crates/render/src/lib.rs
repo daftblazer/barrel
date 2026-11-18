@@ -213,6 +213,9 @@ pub struct Draw {
     pub eye: bool,
     /// Part of a field's distant view (unlit: its texture on its vertex colour).
     pub sky: bool,
+    /// How far the texture slides along u for each unit of its clock (the material's `txC0`;
+    /// a sky dome's cloud layers), 0 for a texture that stays put.
+    pub scroll: f32,
     /// The outline pass's colour (the material's `atOutCol`, grey), when the material has an
     /// outline (an `atEdge` parameter).
     pub outline: Option<f32>,
@@ -800,8 +803,9 @@ impl Scene {
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let specular = material.and_then(|m| m.textures.iter().find(|t| t.kind == 2)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
+            let scroll = geometry.param(s, "txC0").and_then(|c| c.first().copied()).unwrap_or(0.0);
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, outline, field: self.field, casts: true, sub_bias: None, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string(), two_sided: two_sided(geometry, submesh) });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, scroll, outline, field: self.field, casts: true, sub_bias: None, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string(), two_sided: two_sided(geometry, submesh) });
         }
         Ok(())
     }

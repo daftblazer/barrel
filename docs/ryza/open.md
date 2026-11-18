@@ -271,7 +271,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   degrees) and the turn view's from 19.5 to 10.9, all of the "thin edge offset". The turn view
   then lost its windmill-tower band when the field clock turned the sails to the capture's phase
   (7.05 s; the sail shadow had fallen on the tower's other side): tone 10.12 (stage 9.11, sky
-  16.4, characters 26.4 over her pose). Shares left on the turn view (lit, game against Barrel):
+  16.4, characters 26.4 over her pose). With the dome's layers slid as the game's
+  (`BARREL_DOME_CLOCK`) the gate reads 8.12 (sky 3.7) and the turn view 9.05 (sky 4.9). Shares left on the turn view (lit, game against Barrel):
   the tower's sunlit side 1.70 against 1.86 and shaded 0.86 against 0.93 (the sun's share 0.43
   against 0.47 and 0.45 against 0.48: the cloud pattern's level; the occlusion and normals
   agree, the normals within 3 to 4 degrees), the house's white wall 2.41 against 2.77 (share
@@ -329,9 +330,10 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     green and blue; the game's sun term there is about 0.37 stronger; the mesh's own tangent, now in
     Barrel's vertices, changed the `dome` stage by less than 0.001, so that is not the cause),
     the strip's contribution 0.106 (0.241 with the grid cells split along the other diagonal; the rest is in
-    the rows 0 to 60), the finished sky 0.51. The dome's scroll (`txTrs01`: 0.0568 and 0.0284 at
-    this frame, the second layer at half the first's rate, 0.00414 a second) is not drawn (a
-    stand-in), as are the cloud particles: the game's draw `1916` leaves the picture as it is at
+    the rows 0 to 60), the finished sky 0.51. Those were measured with the dome's layers standing still: with their
+    scroll (`txTrs01`, docs/shading.md) the second layer's weakness is gone (it was the clouds
+    standing elsewhere), the `dome` stage's sky reads 0.079 and the finished picture's sky 3.7
+    of 255 at the gate and 4.9 in the turn view (12.5 and 16.4 before). Not drawn are the cloud particles: the game's draw `1916` leaves the picture as it is at
     this frame (its target equals the strip's, every pixel exactly), so they are not built.
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
     10 to 15 pixels at her feet (the idle's phase), her shaded side and outlines. The
@@ -439,8 +441,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   tried, the game's still 153). Left, largest first: **the cloud particles** (`cloudParticle_`: a few dozen
   billboards from a CPU system whose rules are not read), the clouds' stand-ins (their
   threshold moves with a height noise and the sharpness follows it, `3 / (1 - threshold)`; the grid's height and fall are read from
-  one frame, so other eye heights and sets are unchecked), the dome's specular term, its
-  layers' scroll.
+  one frame, so other eye heights and sets are unchecked), how long the dome's layers have
+  slid when the sky's clock starts (the game's dome runs some 14.7 seconds ahead in the captured runs; Barrel's starts with the sky's).
   At the gate's noon a gap in the leaves at the top of the view shows bright sky where the
   still shows leaves: the tree's foliage there, not the sky. Morning, evening and night have
   no reference frame.

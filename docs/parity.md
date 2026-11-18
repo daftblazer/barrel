@@ -277,6 +277,9 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   beside it and the glow's bleed into the blue).
 - The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
   not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
+  `BARREL_DOME_CLOCK=<seconds>` (how long the dome's layers have slid: the first layer's
+  `txTrs01.x` over 0.002, `28.40` at the gate's frame and `21.73` at the turn view's; the
+  dome's clock starts some 14.7 seconds before the sky's in these runs),
   `BARREL_PATTERN_PHASE=<offset>` (the cloud shadows' pattern, both axes, in repeats) and
   `BARREL_CLOUD_THRESHOLD=<t>` (the cloud map's threshold; the sharpness follows as `3 / (1 -
   t)`) give them the capture's values. Frame 2550: `13.7166` (the strip's `vTexOf` offset
