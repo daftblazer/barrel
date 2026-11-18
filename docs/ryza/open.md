@@ -229,6 +229,14 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   the sun at 0.8, the set's ambient at 0.2 plus the light map's mean at 1.5 × (0.8, 1, 1),
   flat rather than by her normals); the game also scales her second light (0.487) and adds
   the light volume, which Barrel does not.
+  Ryza herself, seen from behind at the gate (her shaded side), is brighter than the still
+  by about a fifth: coat 193, 187, 102 against 162, 150, 75, hat 187, 184, 177 against 162,
+  160, 161, the frill under the coat 170, 156, 91 against 90, 75, 48, boot calves 100, 65,
+  35 against 60, 40, 25; the still's coat shows dark creases and its boots a red sheen that
+  Barrel's lack. Taking the characters' light map by the normal instead of its mean changes
+  none of these (tried). What the game has there and Barrel does not: the occlusion on the
+  ambient (`vAmbOccRat` 0.7527, 0.2473 and `fOccAlbScl` 0.5028 in the characters' lighting
+  draw), the specular, and whatever its G-buffer program does with the ramp (not read).
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds
   diffuse 0.8 and ambient 0 (`barrel g1m-materials`): their shaders (`PBB-N`, `PBB-EmN`, ...)
   take the ambient from the environment, not `cAmb`. `barrel` gives every draw the full
