@@ -197,7 +197,13 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   who and what a field places (`docs/tables.md`, "Ryza DX: story spans"; this save has only
   `MM00_010` of the main story, which leaves the same 22 people and 4 boards as before).
   The townsfolk stand where `npcmarker.xml` puts them, turned as the capture's root matrices
-  (`npc25c`: within 6 units and 0.01 of the game's). The story comes from a save with `--save` (`docs/formats.md`,
+  (`npc25c`: within 6 units and 0.01 of the game's). The walkers are where the game has them only at the
+  game's own field time: row `rasen-3d-2550` runs with `BARREL_SKY_CLOCK=13.7166` (the pixel
+  board's clock for that frame; at 0 the two walkers in view stood at their paths' starts,
+  1,200 and 3,600 units off). At that clock the townsfolk's bones are within 55 units of the
+  game's (`npc29a` running on `s06_move_data_003`, 3 m/s), 41 (`npc22a/b` walking
+  `s06_move_data_005`) and under 9 for those standing; what is left is Barrel's straight line
+  between points where the game keeps them on the ground, and the pace of their motions. The story comes from a save with `--save` (`docs/formats.md`,
   "Ryza DX saves"). Left: the object ranges' own measure and classes below
   the top setting (the placement word's bits 0-1 as the class is still a guess: nothing at
   High tells), the game's switch for levels of detail, the walkers' pauses, motions and
