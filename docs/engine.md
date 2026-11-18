@@ -637,6 +637,19 @@ mistake for a day). `u46` in the events does not play its movie yet.
   `Stage::window`), so it does not close for a frame between the lines of a conversation; how
   the original keeps its window between lines is not read. Presentation only: no event state
   depends on it.
+- **Cloth: the parent's move is exact.** The cloth solver (`crates/engine/src/cloth.rs`)
+  takes `D = old parent x inverse(new parent)` in f64; the original's float32 product carries
+  about 0.004 of noise at world coordinates near 32,000 (the whole-frame check against the
+  captured skirt is within 0.004 in position, 0.18 in velocity, for that reason).
+- **Cloth starts settled.** At a scene's first frame a cloth piece is placed at rest and
+  stepped 120 times on that pose (`play/cloth.rs`, `SETTLE_STEPS`), so it never opens falling
+  from its rest shape; the original's has been running since the model was loaded. A frame
+  catches up at most 4 steps of 1/60 s.
+- **Cloth leaves out** the parent's rotation limit (`rotation_limit`, the skirt has none), the
+  acceleration smoothing's finer filter (the clamps of the move's acceleration are applied
+  to the plain acceleration against the smoothed velocity) and, for now, every cloth but the
+  player's (the title's and the townsfolk's characters hang at rest). The wind's strength is
+  the plants' `Gust::at` stand-in times `clothWindScale`.
 
 ## Sound
 

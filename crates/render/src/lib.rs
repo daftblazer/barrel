@@ -624,6 +624,33 @@ pub struct Scene {
     /// While set, geometry without skin weights is bound wholly to this joint of the pose
     /// (an accessory hung from a node: its vertices are already in that joint's bind frame).
     pub rigid_joint: Option<u16>,
+    /// Where each posed cloth submesh's moving vertices keep their place in the palette (see
+    /// [`ClothSlots`]); the game's simulation rewrites them every frame.
+    pub cloth_slots: Vec<ClothSlots>,
+}
+
+/// A posed cloth submesh's moving vertices: each takes its place, normal and tangent from a
+/// palette entry (`Vertex::morph` is `[entry, CLOTH_VERTEX]`; the entry's columns are the
+/// position, the normal and the tangent, mirrored like the vertices, before the skin), one
+/// entry for each vertex [`barrel_formats::g1m::Geometry::cloth_vertices`] gives a place,
+/// from `first` on in that order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClothSlots {
+    pub instance: u32,
+    /// The submesh's number in its geometry.
+    pub submesh: usize,
+    pub first: u32,
+}
+
+/// `Vertex::morph[1]` of a vertex that takes its place from the palette (a moving cloth vertex).
+pub const CLOTH_VERTEX: u32 = u32::MAX;
+
+/// A cloth vertex's palette entry: position, normal and tangent as the GPU wants them (game
+/// space turned to render space, x mirrored).
+pub fn cloth_entry(v: &barrel_formats::g1m::ClothVertex) -> Mat4 {
+    let mirror = Vec3::new(-1.0, 1.0, 1.0);
+    let col = |a: [f32; 3], w: f32| (Vec3::from(a) * mirror).extend(w);
+    Mat4::from_cols(col(v.pos, 1.0), col(v.normal, 0.0), col(v.tangent, 0.0), glam::Vec4::ZERO)
 }
 
 impl Scene {
@@ -642,6 +669,7 @@ impl Scene {
             lo: Vec3::splat(f32::MAX),
             hi: Vec3::splat(f32::MIN),
             rigid_joint: None,
+            cloth_slots: Vec::new(),
         }
     }
 
@@ -722,6 +750,14 @@ impl Scene {
             let mirror = Vec3::new(-1.0, 1.0, 1.0);
             let morph = self.morph.get(&s.layout).map(|(t, _)| t);
             let weight_offset = sets.iter().find(|(l, _)| *l == s.layout).map_or(0, |&(_, o)| o);
+            // A posed cloth submesh: its moving vertices' places go to the palette (from the
+            // points at rest), where the cloth's simulation rewrites them each frame.
+            let cloth_rest = match (joints, geometry.cloth_of(s)) {
+                (Some(_), Some(c)) if instance != 0 => geometry.cloth_vertices(s, &c.points),
+                _ => None,
+            };
+            let first_slot = self.palette.len() as u32;
+            let mut cloth_count = 0;
             for i in 0..mesh.positions.len() {
                 let (pos, nrm) = (Vec3::from(mesh.positions[i]), Vec3::from(mesh.normals[i]));
                 // This vertex's offset in each target, for the GPU to weight.
@@ -772,7 +808,15 @@ impl Scene {
                     let tn = (normals.transform_vector3(Vec3::new(t[0], t[1], t[2])).normalize_or_zero() * mirror).normalize_or_zero();
                     pack_tangent(tn, t[3].signum())
                 });
+                if let Some(Some(cv)) = cloth_rest.as_ref().map(|r| r[i]) {
+                    morph_ref = [first_slot + cloth_count, CLOTH_VERTEX];
+                    self.palette.push(cloth_entry(&cv));
+                    cloth_count += 1;
+                }
                 self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q, morph: morph_ref, color, corner, tangent });
+            }
+            if cloth_count > 0 {
+                self.cloth_slots.push(ClothSlots { instance, submesh, first: first_slot });
             }
             let first_index = self.indices.len() as u32;
             for t in &mesh.triangles {

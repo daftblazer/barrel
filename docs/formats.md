@@ -958,6 +958,21 @@ Each frame (dt 1/60: one substep):
 
 The control points then go to the vertex program (`vCtrl`) as above.
 
+**Barrel's solver** is `crates/engine/src/cloth.rs` (`ClothSim`), built from `g1m::Cloth` (the
+whole entry: settings, links, pins, collider groups, ranges, limits) and the `COLL` colliders
+(`Geometry::collider_groups`). Its tables, every stage and a whole frame match the captured
+skirt (`BARREL_CLOTH_KEY`, `BARREL_CLOTH_MODEL`: the tests skip without them): the tables
+exactly, each stage from the previous state within 2e-6, a frame within 0.004 (the game's own
+float32 noise in the parent's matrices). The parent-motion checks (a jump of the parent:
+above 0.4 of the piece's half diagonal, or an acceleration over the hard or soft limits, 0x228
+and 0x22a) make the points ride the parent instead of keeping their world place. Left out: the
+parent's rotation limit and the acceleration smoothing's filter (docs/engine.md, "Deliberate
+differences"). The wind's direction is the quaternion stored just before the field's `gust_`
+power, applied to +z (Rasenboden: 45 degrees about y); the strength is `clothWindScale`
+(`charabase.xml`, Ryza 300) times the gust's power. `play/cloth.rs` feeds a player's
+pieces and writes the vertices (`Geometry::cloth_vertices`) to the scene's palette
+(`Scene::cloth_slots`), where `model.vert` reads them (`morph.y` all ones marks the vertex).
+
 A layout with bone indices and no weights (Ryza DX's field objects that move: a windmill, a
 moored boat) puts each vertex wholly on its first index's joint. One submesh can hold parts
 on different joints this way (the windmill's tower and the frames of its sails).

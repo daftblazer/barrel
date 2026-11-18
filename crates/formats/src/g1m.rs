@@ -248,6 +248,8 @@ pub struct Cloth {
     pub parent_bone: u32,
     /// The points at rest, in the parent's space until [`Cloth::place`] moves them.
     pub points: Vec<[f32; 3]>,
+    /// The points at rest in the parent's space, kept once [`Cloth::place`] has moved `points`.
+    pub parent_points: Vec<[f32; 3]>,
     /// Once placed: the parent's joint and its bind matrix (three rows of four), which took
     /// the points into the model's space and takes the piece's ordinary vertices there too.
     pub placed: Option<(u32, [[f32; 4]; 3])>,
@@ -267,6 +269,15 @@ pub struct Cloth {
     pub ranges: Vec<(u32, u32)>,
     /// Points held within a length of an anchor point.
     pub limits: Vec<ClothLimit>,
+}
+
+/// A cloth vertex built from the control points: its place and the normal and tangent frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClothVertex {
+    pub pos: [f32; 3],
+    pub normal: [f32; 3],
+    /// Zero when the layout has no tangent.
+    pub tangent: [f32; 3],
 }
 
 /// A point's neighbours in the grid and the lengths to two of them at rest.
@@ -405,10 +416,22 @@ pub struct Collider {
 }
 
 impl Cloth {
+    /// The points at rest in the parent joint's space (where the solver works).
+    pub fn parent_points(&self) -> &[[f32; 3]] {
+        if self.placed.is_some() { &self.parent_points } else { &self.points }
+    }
+
+    /// A point in the parent joint's space, in the model's (bind pose) space: where the
+    /// placed points live. Unplaced: unchanged.
+    pub fn to_model(&self, p: [f32; 3]) -> [f32; 3] {
+        self.placed.as_ref().map_or(p, |(_, rows)| apply(rows, p, 1.0))
+    }
+
     /// Move the points from the parent joint's space into the model's by the parent's bind
     /// matrix (`rows`: its first three rows; `joint`: the parent in the skeleton's joints).
     pub fn place(&mut self, joint: u32, rows: [[f32; 4]; 3]) {
         if self.placed.is_none() {
+            self.parent_points.clone_from(&self.points);
             for p in &mut self.points {
                 *p = apply(&rows, *p, 1.0);
             }
@@ -480,6 +503,7 @@ fn parse_cloths(body: &[u8]) -> Vec<Cloth> {
                         parent_bone: word(p)? & 0x7fff_ffff,
                         points,
                         placed: None,
+                        parent_points: Vec::new(),
                         palette: word(p + 16)?,
                         row_len: word(p + 44)?,
                         settings: ClothSettings::read(&body[p..p + header]),
@@ -1158,7 +1182,7 @@ impl Geometry<'_> {
     /// sheet along their cross product by the normal's fourth word, and its normal is the
     /// stored one in that frame. None for a vertex with no second group: an ordinary skinned
     /// vertex (the piece's row sewn to the body), kept in the parent joint's space.
-    fn cloth_vertex(&self, layout: &Layout, cloth: &Cloth, v: usize) -> Option<([f32; 3], [f32; 3])> {
+    fn cloth_vertex(&self, layout: &Layout, points: &[[f32; 3]], v: usize) -> Option<ClothVertex> {
         let find = |sem: Semantic, layer: u8| layout.attributes.iter().find(|a| a.semantic == sem && a.layer == layer);
         let buffer = |a: &Attribute| &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
         let floats = |a: &Attribute| -> Option<[f32; 4]> {
@@ -1180,7 +1204,7 @@ impl Geometry<'_> {
         for (g, group) in groups.iter().enumerate() {
             let (mut corner, mut leaning) = ([0.0; 3], [0.0; 3]);
             for (i, &point) in group.iter().enumerate() {
-                let p = *cloth.points.get(point as usize)?;
+                let p = *points.get(point as usize)?;
                 corner = add(corner, p, along[i]);
                 leaning = add(leaning, p, lean[i]);
             }
@@ -1189,9 +1213,25 @@ impl Geometry<'_> {
             d0 = add(d0, leaning, mix[g]);
         }
         let off = [d1[1] * d0[2] - d1[2] * d0[1], d1[2] * d0[0] - d1[0] * d0[2], d1[0] * d0[1] - d1[1] * d0[0]];
-        let n = add(add(add([0.0; 3], d0, normal[0]), d1, normal[1]), off, normal[2]);
-        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-        Some((add(centre, off, normal[3]), if len > 0.0 { n.map(|x| x / len) } else { n }))
+        let unit = |n: [f32; 3]| {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if len > 0.0 { n.map(|x| x / len) } else { n }
+        };
+        let frame = |w: [f32; 4]| unit(add(add(add([0.0; 3], d0, w[0]), d1, w[1]), off, w[2]));
+        let tangent = find(Semantic::Tangent, 0).and_then(floats).map_or([0.0; 3], frame);
+        Some(ClothVertex { pos: add(centre, off, normal[3]), normal: frame(normal), tangent })
+    }
+
+    /// The vertices of a cloth submesh with the control points at `points` (in the model's space,
+    /// as [`Cloth::to_model`] gives them), in [`Geometry::simple_mesh`]'s order: None for an
+    /// ordinary vertex (sewn to the body) and None altogether for a submesh that is not cloth.
+    pub fn cloth_vertices(&self, s: &Submesh, points: &[[f32; 3]]) -> Option<Vec<Option<ClothVertex>>> {
+        self.cloth_of(s)?;
+        let layout = self.layouts.get(s.layout)?;
+        let ib = &self.index_buffers[s.index_buffer][s.index_start..s.index_start + s.index_count];
+        let lo = ib.iter().copied().min().unwrap_or(0) as usize;
+        let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
+        Some((lo..hi).map(|v| self.cloth_vertex(layout, points, v)).collect())
     }
 
     /// How many vertices a layout's buffers hold.
@@ -1228,9 +1268,9 @@ impl Geometry<'_> {
         let cloth = self.cloth_of(s);
         for v in lo..hi {
             // A cloth vertex is built from its piece's control points.
-            if let Some((p, n)) = cloth.and_then(|c| self.cloth_vertex(layout, c, v)) {
-                m.positions.push(p);
-                m.normals.push(n);
+            if let Some(cv) = cloth.and_then(|c| self.cloth_vertex(layout, &c.points, v)) {
+                m.positions.push(cv.pos);
+                m.normals.push(cv.normal);
             } else if let Some((_, rows)) = cloth.and_then(|c| c.placed.as_ref()) {
                 m.positions.push(apply(rows, read(v, pos, 3)?, 1.0));
                 if let Some(a) = nrm {

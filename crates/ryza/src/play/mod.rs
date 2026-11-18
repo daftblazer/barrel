@@ -44,6 +44,7 @@ use barrel_ryza::install::Install;
 use glam::{Mat4, Vec3};
 
 mod actors;
+mod cloth;
 mod constants;
 
 /// The renderer's material bit for a draw shown with its texture alone, unlit (`model.frag`).
@@ -141,6 +142,9 @@ struct Rig {
     /// Her face's expression and her shut eyes (`barrel_ryza::face`).
     face: Option<barrel_ryza::face::Face>,
     shut: Option<barrel_ryza::face::Face>,
+    /// Her cloth's solvers, and her skinning matrices as last posed (game space).
+    cloth: Option<cloth::ClothDriver>,
+    joints: Vec<Mat4>,
 }
 
 fn args(args: Vec<String>) -> Result<Args> {
@@ -708,11 +712,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The saturation after the gamma, from the light sets' table.
     let tone_vivid = install.read(barrel_ryza::environment::SATURATION_PATH).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::environment::saturation_ex(&b, barrel_ryza::environment::SATURATION_SET, a.time, a.weather)).map_err(|e| eprintln!("{e}")).unwrap_or(0.0);
     eprintln!("saturation after the gamma: {tone_vivid}");
+    // Her model and mesh outlive the loop: her cloth's vertices are built from the mesh each frame.
+    let ryza_model = ryza_files.as_ref().map(|(m, _, _)| Elixir::parse(m)).transpose()?;
+    let mut ryza_mesh = match &ryza_model {
+        Some(model) => Some(G1m::parse(barrel_engine::field::named(model, "PC00A_MODEL_default.g1m").ok_or("no PC00A_MODEL_default.g1m")?)?),
+        None => None,
+    };
     let mut rig: Option<Rig> = None;
-    if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
-        let model = Elixir::parse(model)?;
-        let skeleton = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL.g1m").ok_or("no PC00A_MODEL.g1m")?)?.skeleton.ok_or("Ryza's model has no skeleton")?;
-        let mut mesh = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL_default.g1m").ok_or("no PC00A_MODEL_default.g1m")?)?;
+    if let (Some((at, turn, motion, time)), Some((_, _, motions)), Some(rp), Some(model), Some(mesh)) = (&a.ryza, &ryza_files, &ryza_pack, &ryza_model, ryza_mesh.as_mut()) {
+        let skeleton = G1m::parse(barrel_engine::field::named(model, "PC00A_MODEL.g1m").ok_or("no PC00A_MODEL.g1m")?)?.skeleton.ok_or("Ryza's model has no skeleton")?;
         if let Some(g) = mesh.geometry.as_mut() {
             actors::place_cloths(g, &skeleton);
         }
@@ -796,7 +804,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         if let Some(v) = stride(barrel_ryza::motion::WALK) { player.walk_speed = v; }
         if let Some(v) = stride(barrel_ryza::motion::RUN) { player.run_speed = v; }
         eprintln!("Ryza: walk {:.0}, run {:.0} units a second", player.walk_speed, player.run_speed);
-        rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut });
+        // Her cloth (hair, skirt): the pieces' solvers, fed her pose each frame.
+        let cloth = cloth::ClothDriver::new(geometry, &skeleton, &scene.cloth_slots, instance, chara.local_gravity);
+        rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut, cloth, joints: joints.clone() });
         textures.extend(rp.textures.iter());
         if let Some(r) = &ramp_pack {
             textures.extend(r.textures.first());
@@ -1134,6 +1144,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let specular_cube = specular_cube.map(|c| c.0);
     let spec_on = specular_cube.is_some();
     let grounds = upload_grounds(&gpu, renderer.pool, &terrains, true)?;
+    // Her cloth settled on her first pose, before the scene goes up.
+    if let (Some(r), Some(mesh)) = (rig.as_mut(), ryza_mesh.as_ref().and_then(|m| m.geometry.as_ref()))
+        && let Some(cloth) = r.cloth.as_mut()
+    {
+        let wind = cloth::world_wind(gust, r.chara.cloth_wind_scale, 0.0);
+        cloth.update(mesh, &r.joints, cloth::model_matrix(r.chara.size, r.player.turn, r.player.at), wind, 0.0, &mut palette);
+    }
     let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], specular_cubes: vec![specular_cube], white };
     let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
@@ -1394,6 +1411,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                     f.apply(&mut locals, r.shut.as_ref(), barrel_ryza::face::blink(started.elapsed().as_secs_f32()));
                 }
                 let joints = barrel_engine::skin::skin(&r.skeleton, &locals);
+                r.joints.clone_from(&joints);
                 let base = instances[r.instance as usize].palette as usize;
                 for (slot, j) in palette[base..].iter_mut().zip(&joints) {
                     *slot = render_space(*j);
@@ -1431,8 +1449,19 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 }
             }
         }
+        // Her cloth on her pose now, in the wind now.
+        let mut cloth_moves = false;
+        if let (Some(r), Some(mesh)) = (rig.as_mut(), ryza_mesh.as_ref().and_then(|m| m.geometry.as_ref()))
+            && let Some(cloth) = r.cloth.as_mut()
+        {
+            let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+            let wind = cloth::world_wind(gust, r.chara.cloth_wind_scale, clock);
+            let dt = if pump.is_some() { frame_dt } else { 1.0 / 60.0 };
+            cloth.update(mesh, &r.joints, cloth::model_matrix(r.chara.size, r.player.turn, r.player.at), wind, dt, &mut palette);
+            cloth_moves = true;
+        }
         sync.wait_slot(&gpu, renderer.pool)?;
-        if pump.is_some() || !cast.is_empty() || !moving.is_empty() || !npc_drawn.is_empty() {
+        if pump.is_some() || cloth_moves || !cast.is_empty() || !moving.is_empty() || !npc_drawn.is_empty() {
             scene.write_instances(&gpu, &instances)?;
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }

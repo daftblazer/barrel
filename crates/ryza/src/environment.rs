@@ -234,6 +234,9 @@ const GUST: usize = 0x308;
 /// levels as half a cosine wave, (1 - cos(pi u)) / 2 (30 frames of a rise fit to 0.0001).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Gust {
+    /// The direction it blows toward, a unit vector in game space: +z turned by the quaternion
+    /// stored just before the power (Rasenboden's, 45 degrees about y: (0.7071, 0, 0.7071)).
+    pub direction: [f32; 3],
     pub power: f32,
     pub power_random: f32,
     pub to_max: f32,
@@ -248,9 +251,13 @@ impl Gust {
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Gust, String> {
         let set = set_of(env, time, weather)?;
         let f = |k: usize| f32::from_le_bytes(set[GUST + 4 * k..GUST + 4 * k + 4].try_into().unwrap());
-        // after azimuth and elevation: power, powerRandom, powerToMaxTime, powerToIntervalTime,
-        // powerMaxTime, intervalPower, intervalTime, intervalTimeRandom
-        Ok(Gust { power: f(2), power_random: f(3), to_max: f(4), to_interval: f(5), max_time: f(6), interval_power: f(7), interval_time: f(8), interval_random: f(9) })
+        // The direction's quaternion (x, y, z, w) is the two words before the block and its first two
+        // (the words before it are other settings); then power, powerRandom,
+        // powerToMaxTime, powerToIntervalTime, powerMaxTime, intervalPower, intervalTime,
+        // intervalTimeRandom.
+        let at = |o: usize| f32::from_le_bytes(set[o..o + 4].try_into().unwrap());
+        let way = glam::Quat::from_xyzw(at(GUST - 8), at(GUST - 4), f(0), f(1)).normalize() * glam::Vec3::Z;
+        Ok(Gust { direction: way.to_array(), power: f(2), power_random: f(3), to_max: f(4), to_interval: f(5), max_time: f(6), interval_power: f(7), interval_time: f(8), interval_random: f(9) })
     }
 
     // STAND-IN: Each gust's strength and the pause before it are drawn by a generator of Barrel's own, and the first pause starts with the field; the real thing is the game's shared generator and where its cycle stands when the field comes up.
@@ -635,7 +642,7 @@ mod gust_tests {
     #[test]
     fn a_gust_rises_holds_and_falls_as_measured() {
         // Rasenboden's noon wind with no chance in it: 1 s pause, then the gust
-        let g = Gust { power: 2.127, power_random: 0.0, to_max: 2.0, to_interval: 1.0, max_time: 8.0, interval_power: 1.5, interval_time: 1.0, interval_random: 0.0 };
+        let g = Gust { direction: [0.0, 0.0, 1.0], power: 2.127, power_random: 0.0, to_max: 2.0, to_interval: 1.0, max_time: 8.0, interval_power: 1.5, interval_time: 1.0, interval_random: 0.0 };
         let bend = |t: f32| Gust::bend(g.at(t).0);
         assert!((bend(0.5) - 8.660).abs() < 1e-3);
         // the game's frames 1750 and 1787 of a rise that began at 1727: 8.818 and 9.522

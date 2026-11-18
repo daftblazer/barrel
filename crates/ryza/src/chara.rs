@@ -17,6 +17,11 @@ pub struct Chara {
     pub radius: f32,
     pub height: f32,
     pub slope: f32,
+    /// How hard the field's wind blows her cloth (`charabase.xml`'s `clothWindScale`; Ryza 300),
+    /// 0 when the row has none.
+    pub cloth_wind_scale: f32,
+    /// How far her cloth's gravity is blended toward its own axis (`localGravity`; Ryza 0.5).
+    pub local_gravity: f32,
 }
 
 impl Chara {
@@ -34,6 +39,8 @@ impl Chara {
             radius: num(&b, "FMrad")? * 100.0,
             height: num(&b, "FMhig")? * 100.0,
             slope: num(&b, "FMslp")?,
+            cloth_wind_scale: num(&b, "clothWindScale").unwrap_or(0.0),
+            local_gravity: num(&b, "localGravity").unwrap_or(0.0),
         })
     }
 }
@@ -128,8 +135,9 @@ mod tests {
     #[test]
     fn ryza_from_the_tables() {
         let chara = br#"<Root><Chara BaseTag="PC00B" Size="1,1,1" CamH="100"/><Chara BaseTag="PC00A" Foot="0" Size="1.04,1.04,1.04" Height="154" Radius="44" CamH="160" CamR="50"/></Root>"#;
-        let base = br#"<Root><CharaBase BaseTag="PC00A" FMrad="0.28" FMhig="1.5" FMslp="75"/></Root>"#;
+        let base = br#"<Root><CharaBase BaseTag="PC00A" FMrad="0.28" FMhig="1.5" FMslp="75" clothWindScale="300" localGravity="0.5"/></Root>"#;
         let c = super::Chara::read(chara, base, "PC00A").unwrap();
         assert_eq!((c.size, c.cam_height, c.radius, c.height, c.slope), ([1.04; 3], 160.0, 28.0, 150.0, 75.0));
+        assert_eq!((c.cloth_wind_scale, c.local_gravity), (300.0, 0.5));
     }
 }

@@ -214,7 +214,7 @@ impl ClothSim {
     /// A solver for a piece whose colliders (its groups' records in order) are `colliders`.
     pub fn new(cloth: &Cloth, colliders: &[Collider], local_gravity: f32) -> ClothSim {
         let n = cloth.points.len();
-        let rest: Vec<Vec3> = cloth.points.iter().map(|&p| Vec3::from(p)).collect();
+        let rest: Vec<Vec3> = cloth.parent_points().iter().map(|&p| Vec3::from(p)).collect();
         let mut movable = vec![false; n];
         for &(first, last) in &cloth.ranges {
             for m in movable.iter_mut().take(last as usize + 1).skip(first as usize) {

@@ -130,7 +130,10 @@ void main() {
     Instance i = instances.inst[pc.instance];
     vec4 pos = vec4(in_pos, 1.0);
     // Facial morphs first, in the bind pose, as the game does before skinning.
-    uint count = in_morph.y & 0xffffu;
+    // A moving cloth vertex (morph.y all ones) keeps its place, normal and tangent in the
+    // palette entry morph.x (the columns: lib.rs `cloth_entry`), written every frame.
+    bool cloth = in_morph.y == 0xffffffffu;
+    uint count = cloth ? 0u : (in_morph.y & 0xffffu);
     uint first_weight = i.info.y + (in_morph.y >> 16);
     for (uint k = 0u; k < count; k++) {
         // Offsets are stored in game space: mirror x like the vertices.
@@ -142,6 +145,16 @@ void main() {
     // Last frame's position too, for the motion vectors: the same vertex on last frame's joints
     // and model matrix (its morphs taken as this frame's).
     vec4 prev_pos = pos;
+    if (cloth) {
+        mat4 c = palette.joint[in_morph.x];
+        pos = vec4(c[0].xyz, 1.0);
+        n = c[1].xyz;
+        t = c[2].xyz;
+        // Last frame's entry sits where last frame's joints do: the palette's second half.
+        // (An instance with no last frame, z = 0, takes this frame's.)
+        uint last = i.info.z == 0u ? in_morph.x : in_morph.x + (i.info.z - i.info.x);
+        prev_pos = vec4(palette.joint[last][0].xyz, 1.0);
+    }
     if (total > 0.0) {
         uint base = i.info.x;
         mat4 skin = (in_weights.x * palette.joint[base + in_joints.x] + in_weights.y * palette.joint[base + in_joints.y]
