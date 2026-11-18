@@ -473,21 +473,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   depth than the grass range's end by the box's diagonal (the deepest cell the title draws is
   at 15000.0 by this measure); at the view's sides a cell is drawn while its centre is no further
   outside than a measured length (`PLANT_EDGE`, a stand-in between the last cell drawn and
-  the first hidden: docs/renderer.md, "View culling"); Barrel draws 2 more cells than the game. Stand-ins: where a plant stands in its
-  cell and where in its ranges its size falls (a fixed hash; the game's random numbers and
-  the code that builds a cell are not found: the loader is `0x1407c5380`, called from the
-  field's loader `0x140777d80`; the file's object has vtable `0x1413dd3d0`. What the title's
-  cells show of it: the numbers are seeded for each cell and member from a small space
-  (about 16 bits), since cells repeat each other: cells (58, 81) and (60, 52) hold the same
-  38 plants, place and size; (59, 83) and (61, 54), of different groups, share their first
-  plant; (81, 67) and (70, 57) share their second member's plants but not the first's. The
-  places are finer than 16 bits of a cell's side. Not the generator: the Mersenne twister's
-  helpers `0x1406ae5e0` to `0x1406ae6b0` (2,600 calls as the title's field loads, 458 a
-  loop from `0x14059f24e` on), `0x14059db10`, the `0x343fd` generators at `0x140bba130`
-  and `0x140bc17d0`, and the functions at `0x140971ac0`, `0x140972260`, `0x140a58c60`,
-  `0x140a5b4b0`, `0x140a658b0`, `0x140a81ed0` (none called by frame 900). The cells'
-  vertices are not allocated a cell at a time from the main allocator (`0x140dc64e0`: no
-  run of 0x2600-byte blocks, a 38-plant cell's 152 vertices, up to frame 1140)), how a lower grass quality thins the plants, a sway of the
+  the first hidden: docs/renderer.md, "View culling"); Barrel draws 2 more cells than the game. Where a plant stands in its
+  cell and where in its ranges its size falls are the game's own numbers
+  (`barrel_ryza::grass::Scatter`, from the game's cell builder `0x140a77060`, which fills a
+  cell's vertices the first time the cell is drawn: a generator `s × 69069 + 1` seeded from
+  the cell's grid index, each member's run seeded from the cell's, four numbers a plant):
+  all 574 plant cells of the pixel board's three captures come out plant for plant, place
+  and size. Not read in the builder: a second run of numbers that can drop plants (none is
+  dropped in these captures), and a branch for cells at the edge of a neighbour with
+  another setting (flags at the cell's +0x100, +0x104, +0x124). The row length in the seed
+  (256) is the builder's on Rasenboden; whether it follows the grid's size is not checked on
+  another field. Stand-ins: how a lower grass quality thins the plants, a sway of the
   cards' tops by stand-in wind values (`PLANT_SWAY`: the game's `g_vAttCache0` / `g_fPhase`
   are set at run time; sway slots 0 and 1, free in Ryza's fields), no shadows cast, lit as
   the field's models with an upward normal, normal-mapped by the cards' own normal maps

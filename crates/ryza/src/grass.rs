@@ -145,12 +145,12 @@ impl Grass {
         (kind.density * cx * self.density_scale * cz * self.density_scale).floor().max(0.0) as u32
     }
 
-    // STAND-IN: Where in its cell a plant stands and where in its ranges its size falls are a fixed hash; the real thing is the game's own random numbers as it builds a cell.
-    // STAND-IN: A preset's density keeps that share of the plants by the hash; the real thing is how the game thins them at the lower grass qualities.
+    // STAND-IN: A preset's density keeps that share of the plants by a hash; the real thing is how the game thins them at the lower grass qualities.
     /// The plants of every cell, at most `limit`, standing on `ground` (cells it has no height
     /// for are left out), a cell's in the order of its group's members. Which kinds, how many,
-    /// their cards and their sizes' ranges are the file's; `density` (a preset's, 0 to 1) keeps
-    /// that share of them, the same ones each run.
+    /// their cards and their sizes' ranges are the file's; where each stands in its cell and
+    /// where in its ranges its size falls are the game's own numbers ([`Scatter`]); `density`
+    /// (a preset's, 0 to 1) keeps that share of them, the same ones each run.
     pub fn plants(&self, limit: usize, density: f32, ground: impl Fn(f32, f32) -> Option<f32>) -> Vec<Plant> {
         let [cx, cz] = self.cell();
         let mut out = Vec::new();
@@ -158,24 +158,69 @@ impl Grass {
             let Some(g) = self.groups.get(group as usize) else { continue };
             let cell = [(c % self.size[0] as usize) as u32, (c / self.size[0] as usize) as u32];
             let (w, h) = (1.0 / g.atlas[1].max(1) as f32, 1.0 / g.atlas[0].max(1) as f32);
+            let mut seeds = Scatter::of_cell(cell);
             for (m, member) in g.members.iter().enumerate() {
                 let k = &self.kinds[member.kind as usize];
+                let mut numbers = seeds.member();
                 for n in 0..self.count(k) {
                     if out.len() >= limit {
                         return out;
                     }
-                    let seed = (c as u32).wrapping_mul(9781).wrapping_add(n.wrapping_mul(6271)).wrapping_add((m as u32).wrapping_mul(40503));
-                    if unit(seed ^ 0x2545_f491) >= density {
+                    // Four numbers a plant, in the game's order: x, z, width, height.
+                    let [u, v, wide, tall] = [numbers.next(), numbers.next(), numbers.next(), numbers.next()];
+                    let thin = (c as u32).wrapping_mul(9781).wrapping_add(n.wrapping_mul(6271)).wrapping_add((m as u32).wrapping_mul(40503));
+                    if unit(thin ^ 0x2545_f491) >= density {
                         continue;
                     }
-                    let (x, z) = ((cell[0] as f32 + unit(seed)) * cx, (cell[1] as f32 + unit(seed ^ 0x5bd1_e995)) * cz);
+                    let (x, z) = ((cell[0] as f32 + u) * cx, (cell[1] as f32 + v) * cz);
                     let Some(y) = ground(x, z) else { continue };
-                    let size = [k.width[0] + k.width[1] * unit(seed ^ 0x1b56_c4e9), k.height[0] + k.height[1] * unit(seed ^ 0x68e3_1da4)];
+                    let size = [k.width[0] + k.width[1] * wide, k.height[0] + k.height[1] * tall];
                     out.push(Plant { at: [x, y, z], size, card: [member.card[1] as f32 * w, member.card[0] as f32 * h, w, h], kind: member.kind, cell });
                 }
             }
         }
         out
+    }
+}
+
+/// The game's random numbers as it builds a cell's plants (its builder `0x140a77060`): a
+/// generator `s = s × 69069 + 1` over 32 bits whose number is the top 16 bits over 65535.
+/// A cell's seed comes from its place in the grid; each member of the cell's group takes the
+/// generator's next 16 bits as the seed of its own run, and each of its plants four numbers
+/// from that run: where it stands along x and z in the cell, then its width and its height
+/// within the kind's ranges. A captured cell's 114 plants come out to the float.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scatter(u32);
+
+impl Scatter {
+    /// The grid index's row length in the seed (the game's builder's own value, read on
+    /// Rasenboden's 128 by 128 grid: `row × 256 + column`).
+    const ROW: u32 = 256;
+    /// The seed's multiplier (the float at `0x141792f58`) and scale (`0x141792f5c`).
+    const TURN: f32 = 0.362_436_06;
+    const SCALE: f32 = 100_000_000.0;
+
+    /// A cell's generator: its seed is the fraction of its index times `TURN`, times `SCALE`,
+    /// in single floats as the game computes it.
+    pub fn of_cell(cell: [u32; 2]) -> Scatter {
+        let turned = (cell[1] * Self::ROW + cell[0]) as f32 * Self::TURN;
+        Scatter(((turned - turned.trunc()) * Self::SCALE) as u32)
+    }
+
+    fn step(&mut self) -> u32 {
+        self.0 = self.0.wrapping_mul(69069).wrapping_add(1);
+        self.0 >> 16
+    }
+
+    /// The next member's own run.
+    pub fn member(&mut self) -> Scatter {
+        Scatter(self.step())
+    }
+
+    /// The run's next number, 0 to 1.
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> f32 {
+        self.step() as f32 / 65535.0
     }
 }
 
@@ -195,6 +240,19 @@ impl Preset {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scatter_is_the_games() {
+        // Cell (66, 60) of Rasenboden: the game's first member's run starts at 13093 and its
+        // first plant stands 105.27 and 360.02 units into the 500-unit cell.
+        let mut cell = super::Scatter::of_cell([66, 60]);
+        let mut run = cell.member();
+        assert_eq!(run, super::Scatter(13093));
+        assert!((run.next() * 500.0 - 105.272).abs() < 0.002);
+        assert!((run.next() * 500.0 - 360.021).abs() < 0.002);
+        assert!((25.0 + 40.0 * run.next() - 32.520).abs() < 0.002);
+        assert!((25.0 + 40.0 * run.next() - 33.305).abs() < 0.002);
+    }
+
     use super::*;
 
     /// A file of `kinds`, groups of (row, column, kind) members and a square grid.
