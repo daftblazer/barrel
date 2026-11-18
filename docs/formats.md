@@ -884,6 +884,80 @@ position in the parent joint's space, skinned through the palette with its weigh
 `barrel` builds the cloth vertices once from the points at rest
 (`Geometry::cloth_of`, `Cloth::place`) and lets the parent joint carry them.
 
+**The entry in full.** Header words: 0 the parent bone (top bit set), 1 the point count `n`,
+2 the pinned count `a` (the first `a` points), 3 the collider group count `b`, 4 the skin
+palette (the mesh's bone palette the pinned points are skinned by), 5 the movable range count
+`d`, 6 the limit count `e`, 11 the points per row. From byte 0x38 on the header is the
+simulation's settings (listed below by their offset from 0x38). The tail, in order:
+
+- `a` pin records of 48 bytes: the pinned point's unit normal `{x, y, z, 0}`, four weights,
+  a u32 count and four u8 palette slots (then padding): the pinned point is skinned like a
+  vertex and expressed in the parent joint's space each frame.
+- `b` u32: the `COLL` chunk's groups whose colliders act on the piece.
+- `d` ranges `{u32 first, last}`: the movable points (Ryza's skirt: 26 to 155).
+- `e` limits `{u32 point, u32 anchor, f32 length}`: the point is kept within `length` of the
+  anchor (a pinned point up its column).
+
+The 24-byte links are the neighbours left, right, up and down (-1: none) and the lengths to
+the right and down neighbours at rest.
+
+**Colliders (`COLL`, version 0014).** `{u32 section count}`, sections `{type 0x20001, size,
+group count}`, each group `{u32 1, u32 n}` and `n` records of 0x70 bytes: u32 shape (5 a
+capsule along its local y, 6 a sphere), u32 bone (top bit set), -1, 0, size `{r, h, r, 0}`
+(sphere: `r` thrice), a 4×4 offset matrix (row vectors) from the bone, then 0x00ff00ff and three
+zeros. A piece's colliders are its `b` groups' records in order (Ryza's skirt: groups 0 and 4,
+six colliders: a body capsule, a sphere, a chest capsule, two thigh capsules, a head capsule).
+
+**The simulation** (Ryza DX's NUNO solver, read from the executable and matched to rounding
+against its per-stage state on standing frames; ryza-recomp `work/scratch/cloth/`). Everything
+runs in the parent joint's space; positions are `{x, y, z, 1}`. Per point it keeps the position
+`P`, the previous position `R`, the velocity `V` and a normal `S`. Settings by offset from
+header byte 0x38 (Ryza's skirt's value): 0x00 gravity scale `g` (3), 0x04 damping (0.1),
+0x08 / 0x10 / 0x0c the stiffness of horizontal, shear and vertical links (kinds 0, 1, 2: 0.7,
+0.5, 0.7; kind 3 is 0.8 fixed), 0x14 bend stiffness (0.4), 0x18 drag (0.1), 0x20 wind damping
+(0.8), 0x48 the parent velocity scale (1), 0x4c the parent spin scale (1), byte 0x58 the
+iterations (2), byte 0x5b the local-gravity axis (1 +x, 2 −x, 3 +y, 4 −y, 5 +z, 6 −z, 0
+none), 0x74 the bend skip threshold (×0.1), 0x80 the bend factor for a pinned centre, bytes
+0x85 / 0x86 / 0x87 the distance, bend and collision passes (1, 1, 1), 0x88 the local gravity
+scale (1). The header past 0xb8 is not mapped one to one (the spin term's factor is read
+from the solver's object). Derived once:
+
+- the depth of each point: 0 for pinned ones, then breadth first over the links; `blend =
+  (deepest + 2) / 2` (skirt 6);
+- the step limit = the mean rest length of the distance constraints × 1.2;
+- world gravity `(0, −980 g, 0)`; local gravity = the axis × 980 g × setting 0x88; each frame
+  the world gravity in the parent's space is blended toward the local gravity by
+  `charabase.xml`'s `localGravity` (Ryza 0.5);
+- the constraint tables, from the links, for each point `p` in order (an entry only when an
+  end is movable; a movable end's weight ±0.5, a pinned one's 0):
+  - distances: `(p, right)` kind 0, `(p, right of up)` kind 1 with rest `sqrt(right² + down²)`
+    of the up neighbour's link lengths, `(p, down)` kind 2;
+  - bends (three points, the third the centre): `(left, right, p)`, `(down-left, up-right,
+    p)`, `(up, down, p)`, rest = `|P_c − (P_a + P_b + P_c)/3|²` at rest; end weights 0.5,
+    centre −1;
+  - triangles (for the capsules' surface test): per grid cell `(tl+down, tl, tl+right)` and
+    `(tl+down, tl+right, tl+down+right)`.
+
+Each frame (dt 1/60: one substep):
+
+1. Pinned points from the skin. The parent's motion: `D = old parent × inverse(new)`;
+   movable points move by `P += (P·D − P)·t`, velocities likewise by D's 3×3, `t = (depth /
+   blend)³` (1 from `blend` down): deep points keep their world place, the top rows follow.
+2. The parent's velocity (its move this frame / dt, × 0x48) and spin (the rotation vector of
+   `inverse(old) × new`, `(E12−E21, E20−E02, E01−E10)·2/(1+trace)`, / dt × 0x4c) in its space.
+3. Normals `S = normalize(cross)` of `right − left` and `down − up` (an absent neighbour: the
+   point itself).
+4. Integrate: `R = P`; force = local gravity + a spin term; `V = (V + F dt)(1 − damping)`;
+   `P = R + V dt`; drag toward the wind relative to the parent's velocity along `S` (full)
+   and across it (×0.1), `× dt × −0.05 × drag`.
+5. `iterations` × { bends; distances (`P_a += u·k·w_a`, `k = (L − rest)·stiffness`); collisions
+   (capsules and spheres: points pushed out along the shape's normal, edges by their midpoint
+   ×0.75; on the first iteration a capsule also pushes triangles its axis passes through) }.
+6. Limits: a point farther than its length from its anchor is pulled onto that sphere.
+7. `V = (P − R)`, clamped to the step limit, / dt.
+
+The control points then go to the vertex program (`vCtrl`) as above.
+
 A layout with bone indices and no weights (Ryza DX's field objects that move: a windmill, a
 moored boat) puts each vertex wholly on its first index's joint. One submesh can hold parts
 on different joints this way (the windmill's tower and the frames of its sails).

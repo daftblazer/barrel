@@ -226,6 +226,11 @@ fn palette_diff(game: &[f32], barrel: &[M], simulated: &[usize]) -> ((f32, usize
         let Some(g) = game_bone(game, k) else { continue };
         if simulated.contains(&k) {
             swing += 1;
+            // `DIFF3D_POSES=swing`: how far the game's simulation has each one from Barrel's.
+            if std::env::var("DIFF3D_POSES").is_ok_and(|v| v == "swing") {
+                let (dt, dr) = bone_diff(&mirrored(&g), b);
+                println!("    swing bone {k}: translation {dt:.3}, rotation {dr:.4}");
+            }
             continue;
         }
         let (dt, dr) = bone_diff(&mirrored(&g), b);
