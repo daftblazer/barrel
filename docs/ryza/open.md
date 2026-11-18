@@ -254,6 +254,20 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   volume's clusters, the depth of field, the star filter, the light shafts, the temporal
   anti-aliasing), or in a formula. The board's values that are stand-ins (the dome's and the
   strip's wind offsets are left out: time-dependent) are marked in `play/constants.rs`.
+  (9) **The halo around the clouds.** The clouds are far brighter than the sky in the scene's
+  light: the strip's draw takes the sun at (35, 48.8, 70) on a colour of (0.32, 0.47, 0.8), so
+  a thin cloud is 16 and more where the clear sky is about 4, and the bloom (everything above
+  1.29, times 0.4) spreads a wide halo from it. The game's targets do not clip this: its scene
+  and bloom targets are 11-bit float and its quarter-size layers 16-bit float (the views'
+  formats, read in a run), and its strip, sky plane, dome, bright pass and tone pass are
+  `barrel`'s line for line. So a halo belongs where a cloud is; what differs from the still is
+  where the clouds are (their drift is the game's clock, a stand-in here), which puts
+  `barrel`'s halo over the trees at the gate where the still has clear sky. The sky spots of a
+  comparison with a still are therefore not a measure. What is left that does not depend on
+  the clouds: lit surfaces come out about a tenth darker on screen than the still's (sand,
+  grass, stone, the hat) while shade matches, and the trunk's shade lacks the still's blue.
+  Telling an exposure difference from a missing light needs the game's own pixels for a frame
+  whose draws are captured, which the reference run (it draws nothing) cannot give.
   Ryza herself, seen from behind at the gate (her shaded side), with the toon ramp sampled
   as the game's pass does (docs/shading.md, "Ramp"): coat 161, 146, 69 against the still's
   162, 150, 75, thigh 154, 138, 142 against 156, 143, 102, hat 149, 142, 138 against 162,
