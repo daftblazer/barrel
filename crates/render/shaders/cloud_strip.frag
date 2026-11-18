@@ -25,6 +25,8 @@ layout(location = 0) out vec4 colour;
 layout(location = 1) out vec4 motion;
 
 const int STEPS = 16;
+// The scene is stored at half (`HDR_RANGE_INV`, as water.frag and the models have it).
+const float HDR_RANGE_INV = 0.5;
 
 void main() {
     vec3 to_eye = normalize(look.eye.xyz - world);
@@ -55,6 +57,6 @@ void main() {
     float c = dot(to_eye, way);
     float mie = pow(max(c * look.cloud[10].w + look.cloud[11].w, 0.0001), -1.5);
     vec3 scatter = ((1.0 + c * c) * look.cloud[10].xyz + look.cloud[11].xyz * mie + look.cloud[9].xyz) * (lit * look.cloud[6].w);
-    colour = vec4(transmit * (light - scatter) + scatter, alpha);
+    colour = vec4((transmit * (light - scatter) + scatter) * HDR_RANGE_INV, alpha);
     motion = vec4(0.0);
 }
