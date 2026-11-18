@@ -242,7 +242,7 @@ impl Targets {
                     .mip_levels(1)
                     .array_layers(1)
                     .samples(vk::SampleCountFlags::TYPE_1)
-                    .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED),
+                    .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC),
             )?;
             let view = unsafe {
                 d.create_image_view(
@@ -293,6 +293,11 @@ impl Targets {
     /// was metered.
     pub fn metered(&self, gpu: &Gpu) -> Option<(f32, f32)> {
         self.meter.as_ref().and_then(|m| m.read(gpu).ok())
+    }
+
+    /// The Ryza bloom's bright pass and its finished result, with their sizes (the stage dumps).
+    pub fn bloom_images(&self) -> Option<((vk::Image, (u32, u32)), (vk::Image, (u32, u32)))> {
+        self.bloom.then(|| ((self.y[0].image, self.y[0].size), (self.y[1].image, self.y[1].size)))
     }
 
     /// The finished glow, for the post pass to read.

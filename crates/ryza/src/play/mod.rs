@@ -373,8 +373,12 @@ const GLOW_RANGE: f32 = 2.0;
 
 // STAND-IN: The cloud map's threshold is the game's first frame at Rasenboden's noon; the real thing is the set's density moved by its height noise (`CloudHeightNoiseChangeSpeed`, `CloudHeightNoiseScale`), not found.
 const CLOUD_THRESHOLD: f32 = 0.6413691;
-// STAND-IN: The cloud map's sharpness is the game's first frame at Rasenboden's noon; the real rule (moved with the height noise too) is not found.
-const CLOUD_SHARPNESS: f32 = 8.365147;
+/// The cloud map's sharpness follows its threshold as `3 / (1 - threshold)` (read from the
+/// seventeen frames of the game's capture at Rasenboden's noon, to six figures: 0.6413 gives
+/// 8.3639, 0.6560 gives 8.7215).
+fn cloud_sharpness(threshold: f32) -> f32 {
+    3.0 / (1.0 - threshold)
+}
 
 /// The sky plane's ground radius and atmosphere height (the game's `skyPos`, as its sky
 /// plane's constants hold them: 6,378 km and 10 km in metres).
@@ -1413,7 +1417,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             _ => dist,
         };
         // The field's clock for the sky (the clouds' wind): a window's own, 60 Hz offscreen.
-        let sky_clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+        let sky_clock = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 });
         let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
@@ -1437,7 +1441,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let bend = barrel_ryza::environment::Gust::bend(wind_power);
         // STAND-IN: The cloud shadows' drift starts with the field; the real thing is the game's own phase.
         if let Some((p, _)) = &cloud {
-            let drift = |speed: f32| (wind_clock * speed).rem_euclid(1.0);
+            let drift = |speed: f32| phase_override("BARREL_PATTERN_PHASE").unwrap_or_else(|| (wind_clock * speed).rem_euclid(1.0));
             view.look[48] = [1.0 / p.size[0], 1.0 / p.size[1], drift(p.speed[0]), drift(p.speed[1])];
             view.look[49] = [1.0, p.strength, 0.0, 0.0];
         }
@@ -1607,6 +1611,24 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 tone_vivid: frame.tone_vivid,
             }))
         });
+        // The stage dumps (`BARREL_DUMP_STAGES`): the frame drawn again up to each stage, its
+        // scene written; the last, full frame below adds the rest.
+        if renderer.dump.is_some() && readback.is_some() && presenter.is_none() && frame_no + 1 >= a.frames.unwrap_or(1) {
+            use barrel_render::dump::Stop;
+            for stage in [Stop::Lit, Stop::Dome, Stop::Sky] {
+                renderer.upto.set(stage);
+                let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
+                unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
+                renderer.record(&gpu, cb, &frame);
+                unsafe { d.end_command_buffer(cb)? };
+                sync.submit_offscreen(&gpu, cb)?;
+                sync.wait_submitted(&gpu)?;
+                if let Some(dump) = &renderer.dump {
+                    dump.write(&gpu)?;
+                }
+            }
+            renderer.upto.set(Stop::Full);
+        }
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
         let drawn = renderer.record(&gpu, cb, &frame);
@@ -1635,6 +1657,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                     d.unmap_memory(rmem);
                 }
                 std::fs::write(&a.out, barrel_formats::png::encode_rgba(width, height, &pixels))?;
+                if let Some(dump) = &renderer.dump {
+                    dump.write(&gpu)?;
+                    // The final picture, as the game's tone pass leaves it.
+                    std::fs::write(dump.dir.join("tone.png"), barrel_formats::png::encode_rgba(width, height, &pixels))?;
+                }
                 eprintln!("wrote {}", a.out);
                 break;
             }
@@ -1670,6 +1697,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         gpu.instance.destroy_instance(None);
     }
     Ok(())
+}
+
+/// A debug aid for comparing a frame with the game's: the sky's clock (seconds; the clouds'
+/// wind and the water's flow) from `BARREL_SKY_CLOCK`, the cloud shadows' pattern offset
+/// (both axes, in the pattern's own widths) from `BARREL_PATTERN_PHASE`, and the cloud map's
+/// threshold from `BARREL_CLOUD_THRESHOLD`, in place of the field's own (the game's differ by
+/// run: docs/parity.md, "The pixel board").
+fn phase_override(name: &str) -> Option<f32> {
+    std::env::var(name).ok()?.trim().parse().ok()
 }
 
 // STAND-IN: The camera's look height is 0.8 of her CamH, measured from one frame; the real thing is the game's own rule.
@@ -1865,7 +1901,10 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             let (range, persistence, scale) = set.noise();
             clouds = Some(CloudFrame {
                 density: CloudDensity { range, persistence, scale, octaves: barrel_ryza::environment::CLOUD_OCTAVES },
-                shape: CloudShape { threshold: [CLOUD_THRESHOLD; 4], sharpness: [CLOUD_SHARPNESS; 4], thinness: [1.0; 4], height: [1.0; 4] },
+                shape: {
+                    let threshold = phase_override("BARREL_CLOUD_THRESHOLD").unwrap_or(CLOUD_THRESHOLD);
+                    CloudShape { threshold: [threshold; 4], sharpness: [cloud_sharpness(threshold); 4], thinness: [1.0; 4], height: [1.0; 4] }
+                },
             });
         }
         // STAND-IN: The sun's shadow is one square over the camera's target; the real thing is the game's cascades.

@@ -76,6 +76,10 @@ pub struct Renderer {
     pub water_modules: [vk::ShaderModule; 2],
     /// The clouds' maps, made when a frame first asks for clouds.
     pub clouds: std::cell::RefCell<Option<clouds::Maps>>,
+    /// The stage dumps (`BARREL_DUMP_STAGES`, `dump`), when asked for, and how far the next
+    /// frame is recorded for them.
+    pub dump: Option<dump::Dump>,
+    pub upto: std::cell::Cell<dump::Stop>,
 }
 
 /// The images the post pass draws into: the window's swapchain images, or the offscreen one.
@@ -688,7 +692,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default() })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -700,6 +704,7 @@ impl Renderer {
         self.targets.frozen_ready = true;
         let d = &gpu.device;
         let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces } = *frame;
+        let upto = self.upto.get();
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -835,6 +840,9 @@ impl Renderer {
                 }
                 if let Some(m) = maps.as_mut() {
                     m.prepare(d, cb, want);
+                    if let Some(dump) = &self.dump {
+                        dump.grab(gpu, cb, "cloud_map", m.map_image(), (clouds::MAP_SIZE, clouds::MAP_SIZE), dump::Texels::Rgba8, 1.0);
+                    }
                 }
             }
             let clear = [
@@ -876,6 +884,9 @@ impl Renderer {
             // they leave the far plane bare (as if drawn first and covered, without shading the
             // covered part).
             for (pass_sky, pipe) in [(false, pipeline), (true, sky_pipeline)] {
+            if pass_sky && !upto.sky() {
+                break;
+            }
             if !pass_sky {
                 {
                     let tg = &terrain_gpu;
@@ -951,7 +962,7 @@ impl Renderer {
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
             }
             // The sky's large clouds, over the dome (on the far plane too, so where nothing covers it).
-            if pass_sky && cloud_frame.is_some() && let Some(m) = self.clouds.borrow().as_ref() {
+            if pass_sky && upto.clouds() && cloud_frame.is_some() && let Some(m) = self.clouds.borrow().as_ref() {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.cloud_pipeline);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.cloud_layout, 0, &[m.set, instance_set], &[]);
                 d.cmd_draw(cb, clouds::GRID_VERTICES, 1, 0, 0);
@@ -959,7 +970,7 @@ impl Renderer {
             }
             d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
             // The outlines: the outlined materials again, pushed out, with the outline texture.
-            if let Some(outline_tex) = outline_tex {
+            if let Some(outline_tex) = outline_tex.filter(|_| upto.outlines()) {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex], sets[white], sets[white]], &[]);
@@ -978,6 +989,13 @@ impl Renderer {
                 }
             }
             d.cmd_end_render_pass(cb);
+            // The stage dumps: the scene in the game's units (it is stored at half and lit at
+            // the exposure it was baked with).
+            let baked = meter.as_ref().map_or(1.0, |m| m.baked);
+            if let Some(dump) = &self.dump {
+                let scene_scale = 1.0 / (HDR_RANGE_INV * baked);
+                dump.grab(gpu, cb, upto.name(), targets.scene, targets.scene_size, dump::Texels::of(self.settings.scene_format()), scene_scale);
+            }
             trace3d.finish(gpu.frame.get(), &draw_vp, &shadow_vp);
             if let Some(t) = &timer {
                 t.mark(d, cb, 2);
@@ -987,6 +1005,12 @@ impl Renderer {
             let (threshold, rate) = glow;
             if let Some(g) = &targets.glow {
                 g.record(d, &glow_pipelines, cb, threshold, tone_white, meter.as_ref());
+                if let (Some(dump), Some((bright, bloom))) = (self.dump.as_ref().filter(|_| upto == dump::Stop::Full), g.bloom_images()) {
+                    // The glow's targets are stored at half too (the post pass doubles them).
+                    let k = 1.0 / HDR_RANGE_INV;
+                    dump.grab(gpu, cb, "bright", bright.0, bright.1, dump::Texels::Rgba16F, k);
+                    dump.grab(gpu, cb, "bloom", bloom.0, bloom.1, dump::Texels::Rgba16F, k);
+                }
             }
             if let (Some(t), Some(p)) = (&targets.taa, &taa_pipelines) {
                 let fresh = targets.history_fresh.replace(false);

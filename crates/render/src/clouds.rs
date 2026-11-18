@@ -185,7 +185,7 @@ impl Maps {
                         .mip_levels(1)
                         .array_layers(1)
                         .samples(vk::SampleCountFlags::TYPE_1)
-                        .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED),
+                        .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC),
                 )?;
                 let view = d.create_image_view(
                     &vk::ImageViewCreateInfo::default()
@@ -239,6 +239,11 @@ impl Maps {
             run(self.map_pass, &self.map, self.map_pipeline, self.density.set, unsafe { bytes(&want.shape) });
             self.made_shape = Some((want.density, want.shape));
         }
+    }
+
+    /// The cloud map's image, for the stage dumps.
+    pub fn map_image(&self) -> vk::Image {
+        self.map.image
     }
 
     pub fn destroy(self, gpu: &Gpu) {
