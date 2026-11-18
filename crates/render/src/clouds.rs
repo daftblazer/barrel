@@ -107,6 +107,8 @@ pub struct Maps {
     map: Target,
     made_density: Option<Density>,
     made_shape: Option<(Density, Shape)>,
+    /// The map was filled from a picture (`load_map`): the passes no longer run.
+    fixed: bool,
     /// The cloud map, for the strip's set 0.
     pub set: vk::DescriptorSet,
 }
@@ -185,7 +187,7 @@ impl Maps {
                         .mip_levels(1)
                         .array_layers(1)
                         .samples(vk::SampleCountFlags::TYPE_1)
-                        .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC),
+                        .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST),
                 )?;
                 let view = d.create_image_view(
                     &vk::ImageViewCreateInfo::default()
@@ -208,7 +210,7 @@ impl Maps {
             let permutation = upload_texture(gpu, command_pool, &texture, false)?;
             let permutation_set = set_for(permutation.2)?;
             let set = map.set;
-            Ok(Maps { pool, sampler, density_pass, map_pass, layout, modules, density_pipeline, map_pipeline, permutation, permutation_set, density, map, made_density: None, made_shape: None, set })
+            Ok(Maps { pool, sampler, density_pass, map_pass, layout, modules, density_pipeline, map_pipeline, permutation, permutation_set, density, map, made_density: None, made_shape: None, fixed: false, set })
         }
     }
 
@@ -218,6 +220,9 @@ impl Maps {
     /// # Safety
     /// `cb` is recording outside a render pass.
     pub unsafe fn prepare(&mut self, d: &ash::Device, cb: vk::CommandBuffer, want: &CloudFrame) {
+        if self.fixed {
+            return;
+        }
         let run = |pass: vk::RenderPass, target: &Target, pipeline: vk::Pipeline, set: vk::DescriptorSet, push: &[u8]| unsafe {
             let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: MAP_SIZE, height: MAP_SIZE } };
             d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(pass).framebuffer(target.framebuffer).render_area(area), vk::SubpassContents::INLINE);
@@ -239,6 +244,30 @@ impl Maps {
             run(self.map_pass, &self.map, self.map_pipeline, self.density.set, unsafe { bytes(&want.shape) });
             self.made_shape = Some((want.density, want.shape));
         }
+    }
+
+    /// Fills the cloud map from `rgba` (MAP_SIZE by MAP_SIZE, 8 bits a channel, rows top to
+    /// bottom) in place of the passes, which then no longer run: a parity tool for the game's own
+    /// map, whose noise lattice is shuffled each run (docs/parity.md, "The pixel board").
+    pub fn load_map(&mut self, gpu: &Gpu, pool: vk::CommandPool, rgba: &[u8]) -> Result<()> {
+        let d = &gpu.device;
+        let (staging, memory) = gpu.buffer(rgba.len() as u64, vk::BufferUsageFlags::TRANSFER_SRC, true)?;
+        gpu.upload(memory, rgba)?;
+        let region = vk::BufferImageCopy::default()
+            .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
+            .image_extent(vk::Extent3D { width: MAP_SIZE, height: MAP_SIZE, depth: 1 });
+        let image = self.map.image;
+        gpu.submit(pool, |cb| unsafe {
+            crate::barrier(d, cb, image, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+            d.cmd_copy_buffer_to_image(cb, staging, image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
+            crate::barrier(d, cb, image, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        })?;
+        unsafe {
+            d.destroy_buffer(staging, None);
+            d.free_memory(memory, None);
+        }
+        self.fixed = true;
+        Ok(())
     }
 
     /// The cloud map's image, for the stage dumps.

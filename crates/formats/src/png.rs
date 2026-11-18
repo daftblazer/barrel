@@ -76,3 +76,68 @@ mod tests {
         assert_eq!(raw, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
     }
 }
+
+/// A decoded 8-bit PNG: `channels` (3 or 4) bytes per pixel, rows top to bottom.
+pub struct Decoded {
+    pub width: usize,
+    pub height: usize,
+    pub channels: usize,
+    pub pixels: Vec<u8>,
+}
+
+/// Decode an 8-bit RGB or RGBA PNG that is not interlaced.
+pub fn decode(b: &[u8]) -> Result<Decoded, String> {
+    if b.get(..8) != Some(&[0x89, b'P', b'N', b'G', 13, 10, 26, 10]) {
+        return Err("not a PNG".into());
+    }
+    let (mut w, mut h, mut channels) = (0usize, 0usize, 0usize);
+    let mut data = Vec::new();
+    let mut at = 8;
+    while at + 8 <= b.len() {
+        let len = u32::from_be_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+        let body = b.get(at + 8..at + 8 + len).ok_or("truncated PNG")?;
+        match &b[at + 4..at + 8] {
+            b"IHDR" => {
+                w = u32::from_be_bytes(body[0..4].try_into().unwrap()) as usize;
+                h = u32::from_be_bytes(body[4..8].try_into().unwrap()) as usize;
+                if body[8] != 8 || body[12] != 0 {
+                    return Err("only 8-bit PNGs that are not interlaced".into());
+                }
+                channels = match body[9] {
+                    2 => 3,
+                    6 => 4,
+                    t => return Err(format!("PNG colour type {t}")),
+                };
+            }
+            b"IDAT" => data.extend_from_slice(body),
+            _ => {}
+        }
+        at += 12 + len;
+    }
+    let raw = crate::inflate::zlib_decompress(&data, (w * channels + 1) * h).map_err(|e| format!("{e:?}"))?;
+    let stride = w * channels;
+    let mut rows = vec![0u8; stride * h];
+    for y in 0..h {
+        let line = &raw[y * (stride + 1)..(y + 1) * (stride + 1)];
+        let (filter, line) = (line[0], &line[1..]);
+        for i in 0..stride {
+            let left = if i >= channels { rows[y * stride + i - channels] } else { 0 };
+            let up = if y > 0 { rows[(y - 1) * stride + i] } else { 0 };
+            let corner = if y > 0 && i >= channels { rows[(y - 1) * stride + i - channels] } else { 0 };
+            let predicted = match filter {
+                0 => 0,
+                1 => left,
+                2 => up,
+                3 => ((u16::from(left) + u16::from(up)) / 2) as u8,
+                4 => {
+                    let (p, a, bb, c) = (i32::from(left) + i32::from(up) - i32::from(corner), i32::from(left), i32::from(up), i32::from(corner));
+                    let (pa, pb, pc) = ((p - a).abs(), (p - bb).abs(), (p - c).abs());
+                    if pa <= pb && pa <= pc { left } else if pb <= pc { up } else { corner }
+                }
+                f => return Err(format!("PNG filter {f}")),
+            };
+            rows[y * stride + i] = line[i].wrapping_add(predicted);
+        }
+    }
+    Ok(Decoded { width: w, height: h, channels, pixels: rows })
+}

@@ -88,6 +88,9 @@ pub struct Renderer {
     pub water_modules: [vk::ShaderModule; 2],
     /// The clouds' maps, made when a frame first asks for clouds.
     pub clouds: std::cell::RefCell<Option<clouds::Maps>>,
+    /// A picture to fill the cloud map with (RGBA, `clouds::MAP_SIZE` square) in place of the
+    /// passes: a parity tool (`BARREL_CLOUD_MAP`).
+    pub fixed_cloud_map: Option<Vec<u8>>,
     /// The stage dumps (`BARREL_DUMP_STAGES`, `dump`), when asked for, and how far the next
     /// frame is recorded for them.
     pub dump: Option<dump::Dump>,
@@ -743,7 +746,7 @@ impl Renderer {
         let ao_gbuf_terrain_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_ground).rasterization_state(&ao_ground_raster).layout(terrain_gpu.pipeline_layout)], None).map_err(|(_, e)| e)?[0] };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -877,6 +880,9 @@ impl Renderer {
                 let mut maps = self.clouds.borrow_mut();
                 if maps.is_none() {
                     *maps = clouds::Maps::new(gpu, self.pool, self.cloud_set_layout).ok();
+                    if let (Some(m), Some(rgba)) = (maps.as_mut(), &self.fixed_cloud_map) {
+                        let _ = m.load_map(gpu, self.pool, rgba);
+                    }
                 }
                 if let Some(m) = maps.as_mut() {
                     m.prepare(d, cb, want);

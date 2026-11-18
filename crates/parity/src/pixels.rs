@@ -10,7 +10,6 @@
 
 use std::path::Path;
 
-use barrel_formats::inflate::zlib_decompress;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -52,61 +51,10 @@ fn load_f32(base: &Path) -> Result<Image> {
 
 /// An 8-bit RGB or RGBA PNG (not interlaced), its values 0 to 1.
 fn load_png(path: &Path) -> Result<Image> {
-    let b = std::fs::read(path)?;
-    if b.get(..8) != Some(&[0x89, b'P', b'N', b'G', 13, 10, 26, 10]) {
-        return Err(format!("{}: not a PNG", path.display()).into());
-    }
-    let (mut w, mut h, mut channels) = (0usize, 0usize, 0usize);
-    let mut data = Vec::new();
-    let mut at = 8;
-    while at + 8 <= b.len() {
-        let len = u32::from_be_bytes(b[at..at + 4].try_into()?) as usize;
-        let body = &b[at + 8..at + 8 + len];
-        match &b[at + 4..at + 8] {
-            b"IHDR" => {
-                w = u32::from_be_bytes(body[0..4].try_into()?) as usize;
-                h = u32::from_be_bytes(body[4..8].try_into()?) as usize;
-                if body[8] != 8 || body[12] != 0 {
-                    return Err("only 8-bit PNGs that are not interlaced".into());
-                }
-                channels = match body[9] {
-                    2 => 3,
-                    6 => 4,
-                    t => return Err(format!("PNG colour type {t}").into()),
-                };
-            }
-            b"IDAT" => data.extend_from_slice(body),
-            _ => {}
-        }
-        at += 12 + len;
-    }
-    let raw = zlib_decompress(&data, (w * channels + 1) * h)?;
-    let stride = w * channels;
-    let mut rows = vec![0u8; stride * h];
-    for y in 0..h {
-        let line = &raw[y * (stride + 1)..(y + 1) * (stride + 1)];
-        let (filter, line) = (line[0], &line[1..]);
-        for i in 0..stride {
-            let left = if i >= channels { rows[y * stride + i - channels] } else { 0 };
-            let up = if y > 0 { rows[(y - 1) * stride + i] } else { 0 };
-            let corner = if y > 0 && i >= channels { rows[(y - 1) * stride + i - channels] } else { 0 };
-            let predicted = match filter {
-                0 => 0,
-                1 => left,
-                2 => up,
-                3 => ((u16::from(left) + u16::from(up)) / 2) as u8,
-                4 => {
-                    let (p, a, bb, c) = (i32::from(left) + i32::from(up) - i32::from(corner), i32::from(left), i32::from(up), i32::from(corner));
-                    let (pa, pb, pc) = ((p - a).abs(), (p - bb).abs(), (p - c).abs());
-                    if pa <= pb && pa <= pc { left } else if pb <= pc { up } else { corner }
-                }
-                f => return Err(format!("PNG filter {f}").into()),
-            };
-            rows[y * stride + i] = line[i].wrapping_add(predicted);
-        }
-    }
+    let png = barrel_formats::png::decode(&std::fs::read(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (w, h, channels) = (png.width, png.height, png.channels);
     let mut px = Vec::with_capacity(4 * w * h);
-    for p in rows.chunks_exact(channels) {
+    for p in png.pixels.chunks_exact(channels) {
         px.extend(p[..3].iter().map(|&v| f32::from(v) / 255.0));
         px.push(if channels == 4 { f32::from(p[3]) / 255.0 } else { 1.0 });
     }
@@ -176,6 +124,7 @@ fn region_mean(im: &Image, masks: Option<&Image>, [x0, y0, x1, y1]: [usize; 4]) 
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
     Stage { name: "cloud_map", game: "1911-1911_rt1024x1024.27#4", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "dome", game: "1914-1914_rt1920x1080.26#4", barrel: "dome", scale: 1.0, alpha: false, regions: false },
     Stage { name: "ao", game: "914-914_rt960x540.27#2", barrel: "ao", scale: 1.0, alpha: false, regions: true },
     Stage { name: "shadow", game: "1892-1894_rt1920x1080.9#15", barrel: "shadow", scale: 1.0, alpha: true, regions: true },
     Stage { name: "lit", game: "1895-1898_rt1920x1080.26#4", barrel: "lit", scale: 1.0, alpha: false, regions: true },
@@ -299,6 +248,45 @@ fn coverage(masks: &Image, depth: &Image) {
     }
 }
 
+/// The cloud strip's own contribution (the stage after it less the stage before, the game's
+/// `1915` less `1914`, Barrel's `sky` less `dome`) over the sky pixels, by bands of rows: the
+/// mean absolute difference of the two contributions, and each one's mean light.
+fn strip(game: &Path, barrel: &Path, masks: &Image) {
+    let (Ok(g1), Ok(g0), Ok(b1), Ok(b0)) = (load(game, "1915-1915_rt1920x1080.26#4"), load(game, "1914-1914_rt1920x1080.26#4"), load(barrel, "sky"), load(barrel, "dome")) else {
+        println!("strip: missing");
+        return;
+    };
+    if [&g0, &b1, &b0, masks].iter().any(|i| (i.w, i.h) != (g1.w, g1.h)) {
+        println!("strip: sizes differ");
+        return;
+    }
+    const BAND: usize = 60;
+    let mut bands = vec![([0f64; 3], [0f64; 3], 0f64, 0f64); g1.h.div_ceil(BAND)];
+    for y in 0..g1.h {
+        for x in 0..g1.w {
+            if masks.at(x, y)[0] < 1.0 {
+                continue;
+            }
+            let band = &mut bands[y / BAND];
+            for c in 0..3 {
+                let (g, b) = (g1.at(x, y)[c] - g0.at(x, y)[c], b1.at(x, y)[c] - b0.at(x, y)[c]);
+                band.0[c] += f64::from(g);
+                band.1[c] += f64::from(b);
+                band.3 += f64::from((g - b).abs());
+            }
+            band.2 += 1.0;
+        }
+    }
+    let n: f64 = bands.iter().map(|b| b.2).sum();
+    let abs: f64 = bands.iter().map(|b| b.3).sum();
+    println!("strip: mean abs {:.4} over {} sky pixels", abs / (3.0 * n.max(1.0)), n as u64);
+    for (i, b) in bands.iter().enumerate().filter(|(_, b)| b.2 > 0.0) {
+        let m = |v: [f64; 3]| v.map(|v| v / b.2);
+        let (g, d) = (m(b.0), m(b.1));
+        println!("  rows {}-{}: mean abs {:.4}, game {:.3} {:.3} {:.3}, barrel {:.3} {:.3} {:.3}", i * BAND, (i + 1) * BAND, b.3 / (3.0 * b.2), g[0], g[1], g[2], d[0], d[1], d[2]);
+    }
+}
+
 pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
     if let Some(p) = pictures {
         std::fs::create_dir_all(p)?;
@@ -362,6 +350,9 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
             let (w, h, rgba) = side_by_side(&g, &b, stage.scale == 1.0);
             std::fs::write(p.join(format!("{}.png", stage.name)), barrel_formats::png::encode_rgba(w, h, &rgba))?;
         }
+    }
+    if let Some(m) = &masks {
+        strip(game, barrel, m);
     }
     if let (Some(m), Ok(d)) = (&masks, load_f32(&barrel.join("depth"))) {
         coverage(m, &d);

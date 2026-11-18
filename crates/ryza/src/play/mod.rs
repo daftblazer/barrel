@@ -1060,6 +1060,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         eprintln!("window: {width}x{height}");
     }
     let mut renderer = Renderer::new(&gpu, graphics, presenter.as_ref(), width, height, a.timings, false)?;
+    renderer.fixed_cloud_map = cloud_map_override()?;
     let d = &gpu.device;
     // In a window the joints move: last frame's go to the palette's second half (the motion
     // vectors').
@@ -1725,6 +1726,20 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
 /// run: docs/parity.md, "The pixel board").
 fn phase_override(name: &str) -> Option<f32> {
     std::env::var(name).ok()?.trim().parse().ok()
+}
+
+/// A parity tool: `BARREL_CLOUD_MAP=<png>` fills the cloud map (1024 by 1024, 8 bits a channel)
+/// from that picture in place of the passes, for the game's own map (its noise lattice is
+/// shuffled each run, so its clouds cannot be made again: docs/parity.md, "The pixel board").
+fn cloud_map_override() -> Result<Option<Vec<u8>>> {
+    let Ok(path) = std::env::var("BARREL_CLOUD_MAP") else { return Ok(None) };
+    let png = barrel_formats::png::decode(&std::fs::read(&path)?)?;
+    let side = barrel_render::clouds::MAP_SIZE as usize;
+    if (png.width, png.height) != (side, side) {
+        return Err(format!("BARREL_CLOUD_MAP: {} by {}, not {side} square", png.width, png.height).into());
+    }
+    let rgba = png.pixels.chunks_exact(png.channels).flat_map(|p| [p[0], p[1], p[2], if png.channels == 4 { p[3] } else { 255 }]).collect();
+    Ok(Some(rgba))
 }
 
 // STAND-IN: The camera's look height is 0.8 of her CamH, measured from one frame; the real thing is the game's own rule.

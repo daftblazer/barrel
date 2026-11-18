@@ -216,8 +216,18 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   0.03857833 over its 0.0028125 a second; the second layer's `vTexOf` offsets, 1000 and 500
   over the grid a second, give the same 13.7), `-0.07133281` (`mW2Pt`'s translation) and `0.6538959` (`vThreshold`). The
   game's cloud map also comes from a noise lattice it shuffles each run, so where its clouds
-  stand is not reproducible (the share of the sky error that is placement is in
-  `docs/ryza/open.md`).
+  stand is not reproducible by Barrel's own passes (the share of the sky error that is
+  placement is in `docs/ryza/open.md`).
+- `BARREL_CLOUD_MAP=<png>` fills the renderer's cloud map (1024 by 1024, 8 bits a channel) from
+  the game's own map (`1911-1911_rt1024x1024.27#4.png` in the dump folder) in place of the
+  density and map passes (`Maps::load_map`), so the clouds stand where the game's do and the
+  `cloud_map` stage reads 0. The strip's wind still comes from `BARREL_SKY_CLOCK`. The cloud
+  shadows on the ground are not from this map (they are the shadow pass's own pattern,
+  `BARREL_PATTERN_PHASE`), so the `shadow` stage does not move with it.
+- Two stages are for the sky: `dome` (the game's `1914`, after the plane and both dome layers,
+  against Barrel's `dome`), and after the stage lines `strip`, the cloud strip's own
+  contribution over the sky pixels (the game's `1915` less `1914`, Barrel's `sky` less `dome`):
+  the mean abs of the two contributions and, by bands of 60 rows, each one's mean light.
 - `barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
   (`cloud_map`, `ao` (the game's `914-914_rt960x540.27#2`: the occlusion, half size, with the
   regions' means taken over the half size picture), `shadow`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),
