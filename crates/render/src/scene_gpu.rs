@@ -92,6 +92,8 @@ pub struct Shared {
     pub terrain_layout: vk::DescriptorSetLayout,
     /// A black cube map, bound where a field has no specular cube map.
     pub black_cube: vk::ImageView,
+    /// The renderer's command pool, for the one-off copies of the scene's uploads.
+    pub pool: vk::CommandPool,
 }
 
 pub struct SceneGpu {
@@ -135,8 +137,21 @@ impl SceneGpu {
             gpu.upload(mem, b)?;
             Ok((buf, mem))
         };
-        let (vbuf, vmem) = host(data.vertices, vk::BufferUsageFlags::VERTEX_BUFFER)?;
-        let (ibuf, imem) = host(data.indices, vk::BufferUsageFlags::INDEX_BUFFER)?;
+        // The geometry never changes: it sits in the device's own memory (through a staging
+        // buffer), not in host memory the vertex fetch would read across the bus every pass.
+        let local = |b: &[u8], usage| -> Result<(vk::Buffer, vk::DeviceMemory)> {
+            let (staging, staging_mem) = gpu.buffer(b.len() as u64, vk::BufferUsageFlags::TRANSFER_SRC, true)?;
+            gpu.upload(staging_mem, b)?;
+            let (buf, mem) = gpu.buffer(b.len() as u64, usage | vk::BufferUsageFlags::TRANSFER_DST, false)?;
+            gpu.submit(shared.pool, |cb| unsafe { d.cmd_copy_buffer(cb, staging, buf, &[vk::BufferCopy::default().size(b.len() as u64)]) })?;
+            unsafe {
+                d.destroy_buffer(staging, None);
+                d.free_memory(staging_mem, None);
+            }
+            Ok((buf, mem))
+        };
+        let (vbuf, vmem) = local(data.vertices, vk::BufferUsageFlags::VERTEX_BUFFER)?;
+        let (ibuf, imem) = local(data.indices, vk::BufferUsageFlags::INDEX_BUFFER)?;
         let textures = data.textures;
         let n = textures.len() as u32;
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: n }];

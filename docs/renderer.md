@@ -636,11 +636,16 @@ sun's view around a slice of the view's frustum (`shadow::fit_view_proj`; docs/s
 layer before the last cascade's end. The cascades' depth is written with the game's own bias
 (`shadow_cascade.frag`, `shadow::Bias`; the near square keeps the fixed bias), and casters
 under four of a layer's texels across are left out of layers 1 to 3 (`Bounds::extent`). At
-Rasenboden's gate (1920x1080) the shadow pass takes 6.9 ms (1.4 for the one near square and
-the far square moving a slice a frame before) and the frame 11.6 ms against 6.4: 1,100 caster
-draws a frame (160, 235 and 687 in the cascades; the game's passes hold 104, 177 and 669),
-about 6 µs a draw, not the vertex work (a position-only vertex path and no depth write changed
-it by under 10%). The preset's shadow distance (`shadow_reach`, 1 on High, 0.7 on Middle)
+Rasenboden's gate (1920x1080) the shadow pass took 6.9 ms and the frame 11.6 ms (6.4 with the one
+near square): 1,100 caster draws a frame (160, 235 and 687 in the cascades; the game's passes
+hold 104, 177 and 669). That was the geometry's place, not the draws, the vertex work or the
+textures: the vertices and indices sat in host-visible memory, which the vertex fetch read
+across the bus in every pass (draws cut to three indices each took the ambient occlusion's pass
+from 4.4 ms to 0.2; a position-only vertex shader, no textures and no descriptor changes moved
+nothing). They are copied into device memory once through a staging buffer
+(`SceneGpu::new`): the shadow pass takes 1.86 ms, the scene pass 1.25 (4.85) and the frame 3.7
+ms with the occlusion (0.48) in it (median of 37 frames, the gate on an RX 9070 XT; the
+instances, palette and morphs stay in host memory, as they change each frame). The preset's shadow distance (`shadow_reach`, 1 on High, 0.7 on Middle)
 scales the cascades' ends; how the game applies it is not known.
 
 **Ambient occlusion.** The Ryza games' frames (`Frame::occlusion`; the graphics setting

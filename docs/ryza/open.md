@@ -378,7 +378,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   game's sun slope half Barrel's. With the occlusion built (docs/shading.md, "What is left in
   the lit scene") the canopy's lit colour is 0.044 against the game's 0.022: the sun's share
   (0.034 against 0.010) and an ambient 15 to 20% high on the leaf cards remain. The shadow pass
-  is 1.9 ms (6.9 before the geometry moved into device memory, docs/renderer.md).
+  is 1.9 ms (6.9 before the geometry moved into device memory, docs/renderer.md); which draws
+  cast is still the open part (160, 235 and 687 against the game's 104, 177 and 669).
 - **The sky.** `barrel` draws the sky plane with the game's own constants (the set's
   `skyFog_`, the sun times its power, the path through the atmosphere, the horizon haze of
   the glow block) and the set's cloud dome where the set places it, lit by the set's ambient

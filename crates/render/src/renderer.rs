@@ -319,6 +319,7 @@ impl Renderer {
             shadow_view: shadow_target.view,
             terrain_layout,
             black_cube: black_cube.2,
+            pool,
         };
 
         // Offscreen target.
