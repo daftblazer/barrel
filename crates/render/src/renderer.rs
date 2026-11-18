@@ -57,6 +57,11 @@ pub struct Renderer {
     /// The same writing a cascade's depth with the game's bias (`shadow::Bias`).
     pub shadow_cascade_pipeline: vk::Pipeline,
     pub shadow_cascade_fs: vk::ShaderModule,
+    /// The ambient occlusion (`ao.rs`): its targets and passes, and the pipelines that draw the
+    /// models' and the terrain's normals and depth into them.
+    pub ao: ao::Occlusion,
+    ao_gbuf_pipeline: vk::Pipeline,
+    ao_gbuf_terrain_pipeline: vk::Pipeline,
     pub post_vs: vk::ShaderModule,
     pub post_fs: vk::ShaderModule,
     pub post_layout: vk::PipelineLayout,
@@ -191,6 +196,9 @@ pub struct Frame<'a> {
     /// The water's pieces (their look slots from `WATER_SLOT`), drawn after the field's opaque
     /// geometry; 0 for none.
     pub water_pieces: u32,
+    /// Whether the game's frame has the screen-space ambient occlusion (`ao.rs`; Ryza's): it is
+    /// made when the graphics setting `occlusion` is on too.
+    pub occlusion: bool,
 }
 
 impl Renderer {
@@ -556,8 +564,8 @@ impl Renderer {
         let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
         // Set 0 the colour, 1 the instances (and the look), 2 the mask.
         // Sets 0, 2 and 3: a draw's texture, mask and emission map.
-        // Set 4: its specular map.
-        let set_layouts = [set_layout, instance_layout, set_layout, set_layout, set_layout];
+        // Set 4: its specular map. Set 5: the ambient occlusion's map.
+        let set_layouts = [set_layout, instance_layout, set_layout, set_layout, set_layout, set_layout];
         let pipeline_layout = unsafe {
             d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
         };
@@ -694,7 +702,7 @@ impl Renderer {
         // Terrain: one pipeline with the terrain fragment shader, over each field's ground set
         // (2 blend maps + 6 layers, `SceneGpu`).
         let terrain_gpu = {
-            let tpl_layouts = [terrain_layout, instance_layout];
+            let tpl_layouts = [terrain_layout, instance_layout, set_layout];
             let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
             let tfs = module(TERRAIN_FRAG)?;
             let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
@@ -706,8 +714,25 @@ impl Renderer {
             TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
         };
 
+        // The ambient occlusion's normal and depth pass: the models' and the terrain's own
+        // fragment programs, specialised to write the pixel's normal and depth in place of its
+        // light (`AO_PASS`), into a half-size target of one sample, back faces culled as the
+        // scene's (the terrain's heightmap both ways).
+        let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion, targets.scene_size)?;
+        let ao_pass_on = 1u32.to_le_bytes();
+        let ao_entry = [vk::SpecializationMapEntry { constant_id: 0, offset: 0, size: 4 }];
+        let ao_special = vk::SpecializationInfo::default().map_entries(&ao_entry).data(&ao_pass_on);
+        let ao_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..1]);
+        let ao_stages = |fs| [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main").specialization_info(&ao_special)];
+        let ao_models = ao_stages(fs);
+        let ao_ground = ao_stages(terrain_gpu.shader);
+        let ao_info = pipeline_info.multisample_state(&msaa).color_blend_state(&ao_blend).render_pass(ao.gbuf_pass);
+        let ao_ground_raster = raster.cull_mode(vk::CullModeFlags::NONE);
+        let ao_gbuf_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_models)], None).map_err(|(_, e)| e)?[0] };
+        let ao_gbuf_terrain_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_ground).rasterization_state(&ao_ground_raster).layout(terrain_gpu.pipeline_layout)], None).map_err(|(_, e)| e)?[0] };
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -718,10 +743,11 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion } = *frame;
         let upto = self.upto.get();
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
+        let ao_set = self.ao.map_set();
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
         let (scene_width, scene_height) = targets.scene_size;
         let scene_area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: scene_width, height: scene_height } };
@@ -848,6 +874,95 @@ impl Renderer {
                     }
                 }
             }
+            // The scene's push constants: view_proj, params, the terrain's scales; the instance
+            // number goes in per draw. Word 31: the lighting material (Draw::light); full for
+            // what pushes no draw's own (the terrain).
+            let scene_push = {
+                let mut push = [0f32; 32];
+                push[31] = f32::from_bits(FULL_LIGHT);
+                push[..16].copy_from_slice(&draw_vp.to_cols_array());
+                push[16] = alpha_cutoff;
+                push[17] = sway_cutoff;
+                push[18] = width as f32 / height.max(1) as f32;
+                push[19] = HDR_RANGE_INV;
+                push
+            };
+            let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+            // The ambient occlusion: the field's models and terrain (and the distant view's solid
+            // pieces) as world normal and depth at half size, the occlusion from them (ao.frag);
+            // a map of 1 where the setting or the game has none.
+            if self.ao.on() && occlusion {
+                self.ao.begin_gbuf(gpu, cb);
+                d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
+                d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
+                let bytes = |p: &[f32; 32]| std::slice::from_raw_parts(p.as_ptr() as *const u8, PUSH_SIZE as usize);
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.ao_gbuf_terrain_pipeline);
+                let mut ground_push = scene_push;
+                // Flags (word 29): 64, the terrain (model.vert: no point lights).
+                ground_push[29] = f32::from_bits(64);
+                let tg = &terrain_gpu;
+                for g in scene.grounds.iter().filter(|g| g.field == current_field) {
+                    ground_push[17] = g.cell;
+                    ground_push[20] = g.extent[0];
+                    ground_push[21] = g.extent[1];
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set, sets[white]], &[]);
+                    for patch in g.patches.iter().filter(|p| p.index_count > 0) {
+                        // The bake list as the main pass pushes it.
+                        ground_push[22..28].copy_from_slice(&scene_gpu::bake_words(&patch.bake).map(f32::from_bits));
+                        d.cmd_push_constants(cb, tg.pipeline_layout, stages_pc, 0, bytes(&ground_push));
+                        d.cmd_draw_indexed(cb, patch.index_count, 1, patch.first_index, 0, 0);
+                    }
+                }
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.ao_gbuf_pipeline);
+                d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, bytes(&scene_push));
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+                // The models' normal map (flag 8192) is the mask set; the rest hold a white one.
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[white], sets[white], sets[white], sets[white]], &[]);
+                // The draws by texture (the order does not matter to a depth test), so a texture is
+                // bound once for its run.
+                let mut batch: Vec<(&Draw, u32, u32)> = draws
+                    .iter()
+                    .filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now)))
+                    .filter(|d| !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d))
+                    .filter_map(|draw| {
+                        let (bits, tint) = material(draw);
+                        // The distant view's solid pieces (flag 16) have the game's own occlusion; its
+                        // sky and clouds none.
+                        (!draw.sky || bits & 16 != 0).then(|| (draw, u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | bits, tint))
+                    })
+                    .collect();
+                batch.sort_by_key(|(draw, flags, _)| (flags & 8192 != 0, draw.texture));
+                let (mut texture, mut mask_bound) = (usize::MAX, false);
+                for (draw, flags, tint) in batch {
+                    let mut per_draw = [0u8; 16];
+                    per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
+                    per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
+                    per_draw[8..12].copy_from_slice(&tint.to_le_bytes());
+                    per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
+                    d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
+                    if draw.texture != texture {
+                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                        texture = draw.texture;
+                    }
+                    // A model's normal map (flag 8192) is the mask set; the rest hold a white one.
+                    let mask = flags & 8192 != 0;
+                    if mask || mask_bound {
+                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.filter(|_| mask).unwrap_or(white)]], &[]);
+                        mask_bound = mask;
+                    }
+                    d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                }
+                d.cmd_end_render_pass(cb);
+                self.ao.shade(gpu, cb, Some(&ao::View::of(&draw_vp)));
+            } else {
+                self.ao.shade(gpu, cb, None);
+            }
+            if let (Some(dump), Some((image, size))) = (&self.dump, self.ao.map_image()) {
+                dump.grab(gpu, cb, "ao", image, size, dump::Texels::Rgba8, 1.0);
+            }
+            if let Some(t) = &timer {
+                t.mark(d, cb, 2);
+            }
             let clear = [
                 vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
                 vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
@@ -867,22 +982,14 @@ impl Renderer {
             d.cmd_set_scissor(cb, 0, &[scene_area]);
             d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
             d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
-            let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-            // view_proj, params, the terrain's scales; the instance number goes in per draw.
-            let mut push = [0f32; 32];
-                // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
-                push[31] = f32::from_bits(FULL_LIGHT);
-            push[..16].copy_from_slice(&draw_vp.to_cols_array());
-            push[16] = alpha_cutoff;
-            push[17] = sway_cutoff;
-            push[18] = width as f32 / height.max(1) as f32;
-            push[19] = HDR_RANGE_INV;
+            let mut push = scene_push;
             // The terrain's push constants: the shared ones with its field size and layer scales.
             let mut terrain_push = push;
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
             let pc = std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize);
             d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 5, &[ao_set], &[]);
             // The terrain and the field's models first, then the current field's distant view where
             // they leave the far plane bare (as if drawn first and covered, without shading the
             // covered part).
@@ -900,7 +1007,7 @@ impl Renderer {
                         // Flags (word 29): 64, the terrain (model.vert: no point lights).
                         terrain_push[29] = f32::from_bits(64);
                         d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline);
-                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set], &[]);
+                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, tg.pipeline_layout, 0, &[g.set, instance_set, ao_set], &[]);
                         // A patch at a time, its bake list in the push constants' floats 22 to 27
                         // (their bits: the count, then two entries a word).
                         for patch in g.patches.iter().filter(|p| p.index_count > 0) {
@@ -915,6 +1022,7 @@ impl Renderer {
                 }
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 5, &[ao_set], &[]);
             }
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             // The distant view's fragments on the far plane (see `sky_pipeline`).
@@ -977,6 +1085,7 @@ impl Renderer {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex], sets[white], sets[white]], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 5, &[ao_set], &[]);
                 for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none() && !d.eye) {
                     let Some(colour) = draw.outline else { continue };
                     let mut per_draw = [0u8; 12];
@@ -1002,7 +1111,7 @@ impl Renderer {
             }
             trace3d.finish(gpu.frame.get(), &draw_vp, &shadow_vp);
             if let Some(t) = &timer {
-                t.mark(d, cb, 2);
+                t.mark(d, cb, 3);
             }
             // The glow from the scene's bright parts: its bright pass's threshold, and its rate in
             // the post pass.
@@ -1045,7 +1154,7 @@ impl Renderer {
                 u.record(d, p, cb);
             }
             if let Some(t) = &timer {
-                t.mark(d, cb, 3);
+                t.mark(d, cb, 4);
             }
             // The post pass: the scene back to its range with the glow, then the text over it.
             d.cmd_begin_render_pass(
@@ -1083,7 +1192,7 @@ impl Renderer {
             }
             d.cmd_end_render_pass(cb);
             if let Some(t) = &timer {
-                t.mark(d, cb, 4);
+                t.mark(d, cb, 5);
             }
             if let (Some((color, _)), Some(readback)) = (offscreen, readback) {
                 let region = vk::BufferImageCopy::default()
@@ -1099,6 +1208,7 @@ impl Renderer {
     pub fn rebuild_targets(&mut self, gpu: &Gpu, presenter: Option<&Presenter>, width: u32, height: u32) -> Result<()> {
         self.targets.destroy(gpu);
         let s = &self.settings;
+        self.ao.resize(gpu, s.scene_size(width, height))?;
         self.targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format())?;
         Ok(())
     }
@@ -1127,6 +1237,8 @@ impl Renderer {
             d.free_memory(self.filter.1, None);
             d.destroy_render_pass(self.post_pass, None);
             d.destroy_pipeline(self.outline_pipeline, None);
+            d.destroy_pipeline(self.ao_gbuf_pipeline, None);
+            d.destroy_pipeline(self.ao_gbuf_terrain_pipeline, None);
             d.destroy_pipeline(self.shadow_pipeline, None);
             d.destroy_pipeline(self.shadow_cascade_pipeline, None);
             d.destroy_shader_module(self.shadow_cascade_fs, None);
@@ -1184,6 +1296,7 @@ impl Renderer {
         }
         self.look_ring.destroy(gpu);
         self.shadow_target.destroy(gpu);
+        self.ao.destroy(gpu);
         unsafe {
             d.destroy_descriptor_set_layout(self.instance_layout, None);
             d.destroy_command_pool(self.pool, None);

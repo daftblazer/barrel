@@ -14,6 +14,7 @@ use super::{Result, Trace};
 /// passes, counted as runs of one target set, and the draw within the pass; docs/shading.md,
 /// "Ryza DX: the frame as the game draws it").
 const ROLES: &[(&str, usize, usize)] = &[
+    ("occlusion", 4, 0),
     ("ambient.stage", 11, 0),
     ("ambient.second", 11, 1),
     ("ambient.chara", 11, 2),

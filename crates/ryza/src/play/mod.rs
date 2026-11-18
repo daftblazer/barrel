@@ -1605,6 +1605,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             sky_plane: view.sky_plane,
             clouds: view.clouds,
             water_pieces,
+            occlusion: true,
         };
         constants::write_if_asked(|| {
             Some(constants::json(&constants::Inputs {
@@ -1620,6 +1621,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 tone_gamma: frame.tone_gamma,
                 tone_scale: frame.tone_scale,
                 tone_vivid: frame.tone_vivid,
+                near: view.near,
+                far: view.far,
+                scene_size: renderer.targets.scene_size,
             }))
         });
         // The stage dumps (`BARREL_DUMP_STAGES`): the frame drawn again up to each stage, its

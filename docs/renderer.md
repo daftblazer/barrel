@@ -643,6 +643,21 @@ about 6 µs a draw, not the vertex work (a position-only vertex path and no dept
 it by under 10%). The preset's shadow distance (`shadow_reach`, 1 on High, 0.7 on Middle)
 scales the cascades' ends; how the game applies it is not known.
 
+**Ambient occlusion.** The Ryza games' frames (`Frame::occlusion`; the graphics setting
+`occlusion`, on in the desktop presets and off in the handheld's, config `occlusion on | off`)
+draw a pass before the scene (`ao.rs`): the terrain, the field's models and the distant view's
+solid pieces at half the scene's size into a target of world normal and linear depth (the models'
+and the terrain's own fragment programs, specialised by `AO_PASS` to write them; the normal maps
+they read give the normals; the depth test culls the rest), then a full-screen pass (`ao.frag`)
+turns that into the occlusion, an 8-bit half size target (docs/shading.md, "The ambient
+occlusion"). The scene's fragments read it bilinearly through their position (`occlusion.glsl`,
+set 5 of the model layout and set 2 of the terrain's; a one-texel white map where there is none,
+so Escha's frames and a setting off draw exactly as before) and apply it as the game's lighting
+pass: to all the diffuse light, tinted by the colour, and to the direct and ambient specular.
+`BARREL_DUMP_STAGES` writes it as `ao`. At the gate (1920 × 1080) it costs 0.48 ms
+(`--timings`: "occlusion"): the normal pass 0.3 ms for 950 draws and 680,000 triangles at half
+size, the full-screen pass 0.2.
+
 **`xEF_` models are not lit.** Field objects whose names hold `xEF_` (TOWN_03's
 `obj-xEF_windows_tw03`, the light through the bureau's windows; TOWN_11's `obj-xEF_einn`,
 `_eine`, `_einw`) are drawn as the distant view's clouds are: their texture on their vertex

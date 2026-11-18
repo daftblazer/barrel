@@ -220,14 +220,15 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   cube map by the reflected view, from the set's scale and tint, fogged; docs/shading.md),
   but the bark's specular map is dull (`F0` 0.02, gloss 0.2), so it adds a few levels;
   what is left is the screen-space reflections (the pass mixes the cube map toward them),
-  the ambient occlusion in the pass's terms (taken as 1), and the terrain's, the plants' and
+  and the terrain's, the plants' and
   the characters' specular ambient (not drawn; the terrain's tiles are as dull). (2) **sunlit grass**
   lacks red and blue (150, 194, 47 against 171, 210, 64; 133, 190, 2 before the direct
   specular and the terrain's normal maps): the plants' own ambient (the pass's
   second kind, a flat (3, 6, 4), is a guess) and the bloom. Sunlit sand is 193, 195, 94
   against 217, 219, 114: a gap of about a tenth in every channel that the ground's
   light does not explain yet. (3) **the ambient occlusion**
-  and its tint: not drawn (1 in the direct specular too). The direct specular is drawn for
+  and its tint: drawn (docs/shading.md, "The ambient occlusion"), in the direct and ambient
+  specular too. The direct specular is drawn for
   the models with a specular map and for the terrain (docs/shading.md, "What Barrel does of
   the lighting pass"); the characters' and the plants' are not. (4) **the exposure** is metered by the
   game's rule (docs/shading.md, "The exposure"): daylit views and the attic's backdrop stay at
@@ -287,7 +288,11 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     here), neither checked.
   - **The ambient occlusion: about 13%** (the pixels with an occlusion below 0.85 are 35% of
     the picture at a mean error of 27.4 against 15.0 elsewhere; the game's own occlusion laid
-    over Barrel's scene takes the tone error from 23.2 to 20.1). The feature is not built.
+    over Barrel's scene took the tone error from 23.2 to 20.1). The feature is built from the
+    game's program (the tone error is 20.6 on the board: 22.8 before) with a stand-in noise
+    texture, so the occlusion's pattern differs (mean abs 0.128 against the half size picture, its
+    regions' means 0.02 to 0.08 above the game's: the left canopy 0.741 against 0.657); the tree
+    regions of the lit stage are still 1.5 to 2 times the game's brightness (item below).
   - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9): where the clouds stand
     (random per run), the cloud particles, the dome's scroll, a few percent on the clear sky.
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
@@ -370,8 +375,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   not in the capture). The lit canopy's brightness (0.05 against 0.022) is not the sun's share
   but the occlusion: regressing the lit stage on the share per pixel, Barrel's ambient part is
   0.061 against the game's 0.039 in the canopy and 0.070 against 0.031 on the middle tree, the
-  game's sun slope half Barrel's (the ambient occlusion is not built, above). The shadow
-  pass is 6.9 ms against 1.4.
+  game's sun slope half Barrel's. With the occlusion built (docs/shading.md, "What is left in
+  the lit scene") the canopy's lit colour is 0.044 against the game's 0.022: the sun's share
+  (0.034 against 0.010) and an ambient 15 to 20% high on the leaf cards remain. The shadow pass
+  is 1.9 ms (6.9 before the geometry moved into device memory, docs/renderer.md).
 - **The sky.** `barrel` draws the sky plane with the game's own constants (the set's
   `skyFog_`, the sun times its power, the path through the atmosphere, the horizon haze of
   the glow block) and the set's cloud dome where the set places it, lit by the set's ambient

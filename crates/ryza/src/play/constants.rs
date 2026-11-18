@@ -41,6 +41,10 @@ pub(super) struct Inputs<'a> {
     pub tone_gamma: f32,
     pub tone_scale: [f32; 3],
     pub tone_vivid: f32,
+    /// The projection's planes and the scene's size (the occlusion pass's depth and view terms).
+    pub near: f32,
+    pub far: f32,
+    pub scene_size: (u32, u32),
 }
 
 type Consts = BTreeMap<&'static str, Vec<Option<f32>>>;
@@ -222,6 +226,24 @@ pub(super) fn json(i: &Inputs) -> String {
     strip.insert("vTraceParams", some(&look[c0 + 6]));
     strip.insert("vTraceDeltaScale", some(&[look[c0 + 7][0], look[c0 + 7][1]]));
     put("sky.clouds", strip);
+
+    // The ambient occlusion's pass (its program's constants: the depth terms
+    // from the projection, the target's size, the rest as captured; `vRadiusParam`'s first three
+    // words are not read by the program).
+    {
+        let (w, h) = barrel_render::ao::half(i.scene_size);
+        let (w, h) = (w as f32, h as f32);
+        let mut c = Consts::new();
+        c.insert("vResolutionParam", some(&[w, h, 1.0 / w, 1.0 / h]));
+        c.insert("vDepthParam", vec![Some(1.0 / i.far - 1.0 / i.near), Some(1.0 / i.near), Some(barrel_render::ao::DEPTH_FAR), None]);
+        // (`vViewParam` is not dumped: the program takes it from the frame's projection, 45 degrees
+        // in the capture, and the board's view carries its own field of view.)
+        c.insert("vRadiusParam", vec![None, None, None, Some(barrel_render::ao::MAX_PIXELS)]);
+        c.insert("vRadiusParam2", some(&barrel_render::ao::RADIUS));
+        c.insert("vRayParam", some(&barrel_render::ao::RAY));
+        c.insert("vOccParam", some(&[barrel_render::ao::OCC[0], barrel_render::ao::OCC[1], w / 4.0, h / 4.0]));
+        put("occlusion", c);
+    }
 
     // The specular ambient: the stage's draw and the characters'.
     let spec = |diffuse: f32, scale: f32, tint: [f32; 3], mips: f32| -> Consts {

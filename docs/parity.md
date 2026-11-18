@@ -192,13 +192,15 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   sky stage, and with Barrel's fog already in, its stage after the fog), `scene` (the finished
   HDR scene, with the outlines), `cloud_map` (the strip's 1024 by 1024 map, 0 to 1), `bright`
   (the bloom's bright pass at a quarter) and `bloom` (its result at an eighth). Barrel has no
-  G-buffer, ambient pass or lighting pass of its own, so those have no dump. Nothing is made
-  while the variable is unset.
+  G-buffer, ambient pass or lighting pass of its own, so those have no dump; the occlusion has
+  one (`ao`, the pass's 8-bit result at half size, 0 to 1, in all four channels). Nothing is
+  made while the variable is unset.
 - A `shadow` stage (`Stop::Shadow`, `look` slot 31's w) draws the terrain and the models as the
   sun's share per pixel (the cascades' light times the cloud pattern, the same meaning as the
   alpha of the game's ambient-and-shadow pass, `1892-1894_rt1920x1080.9#15`), paired by
   `barrel-parity pixels` with that alpha. The stages marked in `pixels.rs` print the mean of
-  seven regions of the picture (canopy, trunk, grass, sand, far hills), the game's and Barrel's,
+  ten regions of the picture (canopy, trunk, grass, sand, far hills, the dark canopy, the stone
+  wall, the shaded path), the game's and Barrel's,
   over the pixels the game drew before the sky.
 - The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
   not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
@@ -211,7 +213,8 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   stand is not reproducible (the share of the sky error that is placement is in
   `docs/ryza/open.md`).
 - `barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
-  (`cloud_map`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),
+  (`cloud_map`, `ao` (the game's `914-914_rt960x540.27#2`: the occlusion, half size, with the
+  regions' means taken over the half size picture), `shadow`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),
   `sky`, `scene`, `bright` (the game's 482 by 272 cropped to Barrel's 480 by 270), `bloom`,
   `tone`) and prints one line each: `stage: mean abs X, rel Y, worst region (c,r) Z`, `X` the
   mean absolute difference over the three colour channels (in the game's units, in 0 to 255

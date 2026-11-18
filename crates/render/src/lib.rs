@@ -12,6 +12,7 @@ use glam::{Mat4, Vec3};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+pub mod ao;
 pub mod clouds;
 pub mod dump;
 pub mod fsr;
@@ -43,6 +44,7 @@ pub const SKY_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.vert.s
 pub const SKY_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv"));
 pub const WATER_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.vert.spv"));
 pub const WATER_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.frag.spv"));
+pub const AO_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ao.frag.spv"));
 pub const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 pub const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
 pub const SHADOW_CASCADE_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow_cascade.frag.spv"));

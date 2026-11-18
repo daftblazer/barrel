@@ -61,11 +61,15 @@ pub struct RenderSettings {
     /// instead of 8-bit RGBA, so what passes the half range's 2.0 keeps for the tone curve
     /// (`Frame::tone_white`). A game's choice, not a config entry (Ryza's trueHDR; Escha 8-bit).
     pub hdr_scene: bool,
+    /// The screen-space ambient occlusion (`ao.rs`) for the games that have it (Ryza's: the
+    /// capture's "PC High" has it on; Escha's frames never ask for it): a pass over the scene
+    /// at half size before the main pass. Config `occlusion on | off`.
+    pub occlusion: bool,
 }
 
 impl RenderSettings {
     /// The desktop: full size, no anti-aliasing, the large shadow map (the renderer as it was).
-    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 16, foliage: Foliage::Full, hdr_scene: false };
+    pub const DESKTOP: RenderSettings = RenderSettings { scale: 1.0, upscaler: Upscaler::Bilinear, msaa: 1, shadows: Shadows::DESKTOP, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 16, foliage: Foliage::Full, hdr_scene: false, occlusion: true };
     /// The desktop with its quality options on: 4× MSAA.
     pub const DESKTOP_HIGH: RenderSettings = RenderSettings { msaa: 4, ..Self::DESKTOP };
     /// The desktop with FSR 3.1 as anti-aliasing at full resolution (its "native AA").
@@ -76,7 +80,7 @@ impl RenderSettings {
     pub const DESKTOP_TAA: RenderSettings = RenderSettings { taa: true, motion: true, jitter: true, sharpen: true, ..Self::DESKTOP };
     /// The handhelds: the small 16-bit shadow map, the scene at three quarters scaled up by
     /// FSR 1, and no MSAA (costly in their bandwidth; FSR 1 takes its place).
-    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 4, foliage: Foliage::Reduced, hdr_scene: false };
+    pub const HANDHELD: RenderSettings = RenderSettings { scale: 0.75, upscaler: Upscaler::Fsr1, msaa: 1, shadows: Shadows::HANDHELD, motion: false, jitter: false, taa: false, sharpen: false, gsr2: false, fsr3: false, anisotropy: 4, foliage: Foliage::Reduced, hdr_scene: false, occlusion: false };
 
     /// A preset by name (`desktop`, `desktop-high`, `desktop-taa`, `desktop-fsr3`, `handheld`, `handheld-gsr2`).
     pub fn preset(name: &str) -> Option<RenderSettings> {
@@ -133,7 +137,7 @@ impl RenderSettings {
 /// Barrel's graphics config (its own file, not the game's: the Options screen's graphics page
 /// writes it): one `key value` a line, `scale`, `upscaler` (bilinear, fsr1, gsr1), `msaa`,
 /// `shadows` (high, low), `taa`, `sharpen`, `gsr2`, `fsr3` (on, off), `anisotropy`, `foliage`
-/// (full, reduced, least).
+/// (full, reduced, least), `occlusion` (on, off).
 impl RenderSettings {
     pub fn to_config(&self) -> String {
         let on = |b: bool| if b { "on" } else { "off" };
@@ -144,13 +148,14 @@ impl RenderSettings {
         };
         let shadows = if self.shadows.size >= Shadows::DESKTOP.size { "high" } else { "low" };
         format!(
-            "scale {}\nupscaler {upscaler}\nmsaa {}\nshadows {shadows}\ntaa {}\nsharpen {}\ngsr2 {}\nfsr3 {}\nanisotropy {}\nfoliage {}\n",
+            "scale {}\nupscaler {upscaler}\nmsaa {}\nshadows {shadows}\ntaa {}\nsharpen {}\ngsr2 {}\nfsr3 {}\nanisotropy {}\nfoliage {}\nocclusion {}\n",
             self.scale, self.msaa, on(self.taa), on(self.sharpen), on(self.gsr2), on(self.fsr3), self.anisotropy,
             match self.foliage {
                 Foliage::Full => "full",
                 Foliage::Reduced => "reduced",
                 Foliage::Least => "least",
-            }
+            },
+            on(self.occlusion)
         )
     }
 
@@ -182,6 +187,7 @@ impl RenderSettings {
                 "gsr2" => s.gsr2 = on,
                 "fsr3" => s.fsr3 = on,
                 "anisotropy" => s.anisotropy = value.parse::<u32>().map_or(s.anisotropy, |v| v.clamp(1, 16)),
+                "occlusion" => s.occlusion = on,
                 "foliage" => {
                     s.foliage = match value {
                         "reduced" => Foliage::Reduced,

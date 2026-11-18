@@ -136,15 +136,31 @@ float sun_shadow(vec3 p) {
     return mix(far, 1.0, fade);
 }
 
+#define AO_SET 2
+#include "occlusion.glsl"
 #include "environment_light.glsl"
 #include "specular_direct.glsl"
 
 layout(location = 0) out vec4 color;
+// Set by the ambient occlusion's pipeline (ao.rs): the normal and depth are written, not the light.
+layout(constant_id = 0) const bool AO_PASS = false;
 // The motion vector (`--motion`): how far this point moved on screen since the last frame, in
 // texture coordinates (no attachment takes it when motion is off).
 layout(location = 9) in vec4 cur_clip;
 layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
+// The ground's normal from the blended normal map `nm`, in the frame of the vertex normal (the
+// game's space, x not mirrored; the map's red along the side axis, green along the slope, blue
+// along the normal), back in the render space.
+vec3 ground_normal(vec4 nm) {
+    vec3 up = normalize(vec3(-normal.x, normal.y, normal.z));
+    vec3 slope = normalize(vec3(0.0, up.z, -up.y));
+    vec3 side = cross(slope, up);
+    vec3 t = normalize(nm.rgb - 0.5);
+    vec3 n_game = up * t.z + side * t.x + slope * t.y;
+    return normalize(vec3(-n_game.x, n_game.y, n_game.z));
+}
+
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     int code = int(uv.x + 0.5), reps = int(uv.y + 0.5);
@@ -220,6 +236,12 @@ void main() {
         c = bake / max(bake_w + wa, 1.0 / 1024.0) + ta * wa;
         nm = bake_n / max(bake_w + wa, 1.0 / 1024.0) + na * wa;
     }
+    // The ambient occlusion's pass (ao.rs, the pipeline made with AO_PASS): the ground's normal
+    // and depth in place of its light.
+    if (AO_PASS) {
+        color = vec4(per_pixel ? ground_normal(nm) : normalize(normal), 1.0 / gl_FragCoord.w);
+        return;
+    }
     float sun_lit = sun_shadow(world) * cloud_light(world);
     // The stage dump of the sun's share (`dump::Stop::Shadow`).
     if (look.shadow_info.w > 0.5) {
@@ -233,18 +255,14 @@ void main() {
         // normal), the specular colour from the colour tiles' alpha and the gloss from the
         // normal maps'; no vertex colour. The diffuse light takes (1 - F0) of itself, the two
         // lights' highlights add.
-        vec3 up = normalize(vec3(-normal.x, normal.y, normal.z));
-        vec3 slope = normalize(vec3(0.0, up.z, -up.y));
-        vec3 side = cross(slope, up);
-        vec3 t = normalize(nm.rgb - 0.5);
-        vec3 n_game = up * t.z + side * t.x + slope * t.y;
-        vec3 n = normalize(vec3(-n_game.x, n_game.y, n_game.z));
+        vec3 n = ground_normal(nm);
         vec3 ambient = look.sh_on.x > 0.5 ? environment_light(n) : look.ambient.rgb;
         vec3 fill = (dot(look.fill_dir.xyz, look.fill_dir.xyz) > 0.0 ? max(dot(n, -normalize(look.fill_dir.xyz)), 0.0) : 0.0) * look.fill_color.rgb;
         vec3 sun = (dot(look.sun_dir.xyz, look.sun_dir.xyz) > 0.0 ? max(dot(n, -normalize(look.sun_dir.xyz)), 0.0) : 0.0) * look.sun_color.rgb;
         vec3 f0 = vec3(c.a);
-        vec3 lit = (ambient + fill + sun * sun_lit) * (1.0 - f0);
-        vec3 highlights = direct_specular(n, f0, nm.a, sun_lit);
+        float occlusion = screen_occlusion();
+        vec3 lit = (ambient + fill + sun * sun_lit) * (1.0 - f0) * occlusion_tint(c.rgb, occlusion);
+        vec3 highlights = direct_specular(n, f0, nm.a, sun_lit, occlusion);
         color = vec4(mix(fog_add, lit * c.rgb + highlights, fog_keep) * pc.params.w, 1.0);
         return;
     }

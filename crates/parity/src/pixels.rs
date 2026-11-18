@@ -145,6 +145,9 @@ const REGIONS: &[(&str, [usize; 4])] = &[
     ("sand", [1100, 950, 1500, 1050]),
     ("hills right", [1500, 330, 1800, 350]),
     ("far field", [700, 380, 820, 410]),
+    ("canopy dark", [150, 300, 500, 420]),
+    ("stone wall", [860, 400, 1000, 450]),
+    ("shaded path", [600, 620, 800, 680]),
 ];
 
 /// The mean of a region's three channels, per channel, over the pixels the game drew before the
@@ -173,6 +176,7 @@ fn region_mean(im: &Image, masks: Option<&Image>, [x0, y0, x1, y1]: [usize; 4]) 
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
     Stage { name: "cloud_map", game: "1911-1911_rt1024x1024.27#4", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "ao", game: "914-914_rt960x540.27#2", barrel: "ao", scale: 1.0, alpha: false, regions: true },
     Stage { name: "shadow", game: "1892-1894_rt1920x1080.9#15", barrel: "shadow", scale: 1.0, alpha: true, regions: true },
     Stage { name: "lit", game: "1895-1898_rt1920x1080.26#4", barrel: "lit", scale: 1.0, alpha: false, regions: true },
     Stage { name: "lit_fogged", game: "1919-1919_rt1920x1080.26#4", barrel: "sky", scale: 1.0, alpha: false, regions: false },
@@ -303,9 +307,13 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
                 println!("  {name}: mean abs {:.4}, rel {:.4}", s.mean_abs(stage.scale), s.rel());
             }
         }
-        if stage.regions && (g.w, g.h) == (1920, 1080) {
+        // The regions are in the full-size picture's pixels; a half-size stage (the occlusion) takes
+        // them halved (and has no masks).
+        if stage.regions && ((g.w, g.h) == (1920, 1080) || (g.w, g.h) == (960, 540)) {
+            let k = 1920 / g.w;
             for (name, r) in REGIONS {
-                let (gm, bm) = (region_mean(&g, full, *r), region_mean(&b, full, *r));
+                let r = r.map(|v| v / k);
+                let (gm, bm) = (region_mean(&g, full, r), region_mean(&b, full, r));
                 println!("  region {name}: game {:.3} {:.3} {:.3}, barrel {:.3} {:.3} {:.3}", gm[0], gm[1], gm[2], bm[0], bm[1], bm[2]);
             }
         }

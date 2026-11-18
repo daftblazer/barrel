@@ -805,8 +805,8 @@ decoded as sRGB is known, not guessed.
 
 **The passes**, in order: a depth pre-pass (9 draws); the G-buffer (903 draws into four
 targets: colour, specular colour, normal and gloss, a fourth); the ambient occlusion (the
-depth made linear at half size, the occlusion from depth and normals, a blur, the result
-written into the colour target's alpha); four shadow maps (two cascades of 2000 × 2400, one
+depth made linear at half size, the occlusion from depth and normals, the result stretched
+bilinearly over the colour target's alpha; below); four shadow maps (two cascades of 2000 × 2400, one
 of 1600 × 1600, one of 1024 × 1024); the ambient-and-shadow pass (3 draws, below); the
 lighting pass (4 draws, below); the water (10 draws) and its own ambient and lighting; the
 sky (the scattering plane, the dome's two layers, the clouds); the scene fog; screen-space
@@ -926,10 +926,62 @@ vertex program rebuilds `N` from two bytes and takes no vertex colour), with `T 
 -N.y)` normalised and `B = T × N`: `n = N × blue + B × red + T × green`. The bark's specular
 map has `F0` 0.02 and `g` 0.2.
 
+**The ambient occlusion** (passes 2 to 6, draws 912 to 916 of the capture, after the G-buffer:
+they read this frame's depth and normals, not the frame before's). Draw 912 makes the full
+size depth linear (`1 / (depth × vDepthParam.x + vDepthParam.y)`: near 50, far 300000), 913 takes
+every other pixel of it into a half size target (960 × 540), and 914 is the occlusion
+(`sh2c8cde6c41b0e437`) into an 8-bit half size target from that depth, the normal target
+(octahedral, view space) and a 4 × 4 noise texture the game fills at run time (it is not in the
+capture). Per pixel with view position `P = (uv × vViewParam.xy + vViewParam.zw, -1) × d` (d the
+linear depth):
+
+- the radius is `50 + 150 × saturate(d / 1500 - 1/3)` world units, which is `radius × 960 /
+  vViewParam.x / d` pixels; steps = min(that, 6), the step `pixels / (steps + 1)`; where `54
+  / step < steps` the steps become `floor(54 / step)` (at least 1) and the step `54 / steps`
+  (`vRadiusParam.w` is the longest reach); under one step, and past the far plane (299910), the
+  pixel is not shaded (occlusion 1);
+- the tangent plane: each neighbour's position (the four, one pixel away) is slid along its ray
+  onto the plane through `P` with the normal `N` when it lies in front of that plane's far
+  side (`N·Q < 0`), and the screen axes' tangents are the shorter of the two sides of each
+  pair (`Tx`, and `Ty` scaled by `540 / 960`);
+- eight directions (`vRayParam.x`) round the pixel, the first turned by the noise's x times a
+  direction's share of the turn (`2π × 0.125`); a direction's step in whole pixels is `step ×
+  (cos, sin)` rounded to even, its start `noise.y × step` rounded likewise; its tangent
+  `T = Tx × step.x + Ty × step.y` gives the surface's horizon, `tan = T.z / |T.xy| + 0.1763`
+  (`vRayParam.w`: ten degrees' bias);
+- along the direction, for each step: the sample's view position `S`, `d = S - P`, its slope
+  `d.z / |d.xy|`; a sample inside the radius that rises above the horizon so far raises it, adding
+  `(sin(new) - sin(old)) × (1 - |d|² / radius²)`; a direction counts when any sample was inside
+  the radius or under the horizon; each direction's sum is saturated;
+- the occlusion is `min(sum / counted × 2.5, 0.8)` (`vOccParam.xy`), written as `1 - it`.
+
+Draw 915 copies the colour target (albedo and the material's own occlusion, from the G-buffer
+program, in alpha) and 916 writes it back with alpha times the half size result, read through
+a bilinear sampler: no blur of its own. The lighting pass (above) takes this alpha as `o`.
+Measured at the gate: the occlusion is 0.66 on the left canopy, 0.46 on the middle tree, 0.74 on
+the trunks, 0.92 on the grass, 0.91 on the sand, 0.79 on the far hills, 0.96 on the shaded
+path: the pass's own AO is mild on the ground and strongest in foliage.
+
+**What Barrel does of the occlusion** (Ryza's frames; `crates/render/src/ao.rs`,
+`ao.frag`): the program is read as above (constants as captured, named in `ao.frag` and
+`ao.rs`, which a test keeps equal), fed by a pass that draws the terrain, the field's models
+and the distant view's solid pieces at half size into a world normal and linear depth target
+(the models' and terrain's own fragment programs specialised to write them, so the normal
+maps the programs read give the same normals; the game's G-buffer is that pass's counterpart).
+The main pass reads the occlusion through the pixel's position and takes it as the lighting
+pass does for the stage: all the diffuse light (ambient, sun, second light) times `a + o (1 -
+a)` (`fOccAlbScl` 1 for the stage), the direct and ambient specular's `o` as it is, and a
+character's own occlusion map times it. Stand-in: the noise texture (a Bayer matrix for the
+angle, the start offset 0); at the gate the regions' mean occlusion is 0.74 against the
+game's 0.66 on the left canopy, 0.48 against 0.46 on the middle tree, 0.76 against 0.74 on the
+trunk, 0.94 against 0.92 on the grass, 0.92 against 0.91 on the sand, 0.82 against 0.79 on the
+hills, mean abs 0.128 (0.157 of the game's own); the picture's structure matches and the
+pattern of the noise is the rest.
+
 **What Barrel does of the lighting pass** (Ryza fields; Escha's are as before): the field
 models with a specular map and the terrain take the pass's rule per pixel: diffuse times
 `(1 - F0)`, and the highlights of the sun (times its shadow and cloud light, the pass's
-alpha) and of the second light, with `o` = 1 (stand-in: no screen-space occlusion). The
+alpha) and of the second light, with `o` the screen-space occlusion (above). The
 ground takes its normal, `F0` and gloss from the layers' normal maps and colour tiles as the
 G-buffer program does, blended by the same weights (the bake's entries included), and its
 ambient, second light and sun per pixel on that normal with no vertex colour; the colour
@@ -955,9 +1007,16 @@ frame's stages as the game wrote them):
   of the game's (specular ambient included: it is a later pass of the game's, so the board's
   `lit` stage, which has it in already, reads 12 to 20% high in the shade). Where the sun
   reaches (alpha above 0), the sunlit sand and stone are within 6%.
-- What is left in the lit scene, measured over the stage's pixels: the ambient occlusion
-  (13% of the tone error: the game's own occlusion laid over Barrel's scene
-  takes the tone error from 23.2 to 20.1), the leaves (below), and the shadows' edges.
+- What is left in the lit scene, measured over the stage's pixels: the occlusion is built
+  (tone error 22.8 to 20.6 on the board), the leaves (below), and the shadows' edges. The tree
+  regions of the lit stage, with the occlusion: left canopy 0.044, 0.068, 0.054 against the
+  game's 0.022, 0.042, 0.032, middle tree 0.071, 0.105, 0.057 against 0.064, 0.089, 0.033,
+  trunk 0.036, 0.047, 0.049 against 0.019, 0.028, 0.031 (before: 0.053, 0.086, 0.067; 0.134,
+  0.191, 0.102; 0.043, 0.059, 0.061). What the occlusion leaves is the sun's share (the canopy's
+  0.034 against the game's 0.010, the trunk's 0.012 against 0.001: about a third of the
+  canopy's red) and an ambient and albedo 15 to 20% above the game's there (the ambient on the
+  leaf cards' vertex normals, the game's on its normal maps); the ground came 4% down (sand
+  1.169 against 1.274, grass 0.552 against 0.570), as its occlusion (0.92) matches the game's.
 
 **The tone pass** (the last full-screen pass): `c = scene × E` (the metered exposure), the
 depth of field and distant blur, the 2D effects taken back through the curve and laid over,
@@ -1017,11 +1076,11 @@ and stone and the path in shade come within 10 (a shaded path 25, 57, 117 agains
 program (`model.frag`, `specular_ambient.glsl`; flag 1 << 24 on a model with a specular map):
 the cube map from the set (`_as`, scale and tint of the stage's block), the specular map in a
 set of its own, the fog on the light. Left out of it: the screen-space reflections (the cube
-map alone), the occlusion (taken as 1, so the pass's occlusion terms vanish), the terrain
+map alone), the occlusion (the screen-space one, above, as the pass's `o`), the terrain
 and the plants, and the characters (their specular colour and gloss come from other
 G-buffer programs). Its light on bark and leaves is small, as the specular maps are dull
 (`F0` 0.02), and the shade stays well below the still's. What it does not, largest first by
-what shows: the reflections and what makes the shade bluer, the ambient occlusion and its tint, the direct specular, the second
+what shows: the reflections and what makes the shade bluer, the ambient occlusion's tint (built), the direct specular, the second
 kind's ambient (which draws take it is not read; plants are likely), the bloom's star filter, the metering (night and interiors would rise above 0.9), the light volume,
 the point lights, the height fog.
 

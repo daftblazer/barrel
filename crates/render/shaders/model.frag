@@ -94,6 +94,9 @@ layout(location = 7) in vec3 fog_add;
 layout(location = 8) in vec3 fog_keep;
 layout(set = 1, binding = 5) uniform sampler2DArrayShadow shadow_map;
 layout(location = 0) out vec4 color;
+// Set by the ambient occlusion's pipeline (ao.rs): the pixel's normal and depth are written, not
+// its light.
+layout(constant_id = 0) const bool AO_PASS = false;
 // The motion vector (`--motion`): how far this point moved on screen since the last frame, in
 // texture coordinates (no attachment takes it when motion is off).
 layout(location = 9) in vec4 cur_clip;
@@ -126,6 +129,8 @@ vec3 soft_light(vec3 a, vec4 kw) {
 layout(set = 1, binding = 6) uniform sampler2D pattern_map;
 // The field's specular environment cube map (the game's axes: x not mirrored).
 layout(set = 1, binding = 7) uniform samplerCube spec_cube;
+#define AO_SET 5
+#include "occlusion.glsl"
 #include "environment_light.glsl"
 #include "specular_direct.glsl"
 #include "specular_ambient.glsl"
@@ -201,6 +206,10 @@ void main() {
         if ((pc.flags & 16u) != 0u) {
             if (c.a < pc.params.x) discard;
             c.a = 1.0;
+            if (AO_PASS) {
+                color = vec4(normalize(normal), 1.0 / gl_FragCoord.w);
+                return;
+            }
         }
         // Flag 4096: a sky dome lit by its own ambient (`field_light`) and sun, by the pixel's
         // normal: the vertex's, or with flag 8192 the normal map in the mask slot (Ryza's
@@ -229,6 +238,10 @@ void main() {
     // The alpha test: a swaying draw (a plant) against its own reference (params.y).
     if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
     vec3 n = normalize(normal);
+    if (AO_PASS && (pc.flags & 1u) != 0u) {
+        color = vec4(n, 1.0 / gl_FragCoord.w);
+        return;
+    }
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the
         // light texture and shadows are not done yet, nor fog. Its atColor (a run-time tint,
@@ -260,7 +273,12 @@ void main() {
             }
             n = nm;
         }
+        if (AO_PASS) {
+            color = vec4(n, 1.0 / gl_FragCoord.w);
+            return;
+        }
         float sun_lit = sun_shadow(world) * cloud_light(world);
+        float occlusion = screen_occlusion();
         vec3 lit = field_now + sun_now * sun_lit;
         // A model with a specular map (flag 1 << 24): its specular colour takes its share of the
         // diffuse light (1 - F0), and the lights' highlights are added.
@@ -271,7 +289,12 @@ void main() {
         if (specular) {
             specular_surface(c.rgb, f0, gloss);
             lit *= 1.0 - f0;
-            highlights = direct_specular(n, f0, gloss, sun_lit);
+            highlights = direct_specular(n, f0, gloss, sun_lit, occlusion);
+        }
+        // The lighting pass's occlusion on all the diffuse light, tinted by the colour. (A Ryza
+        // character's own lighting below takes it with its occlusion map.)
+        if ((pc.flags & 128u) == 0u) {
+            lit *= occlusion_tint(c.rgb, occlusion);
         }
         // Flag 32768: the emission map as light of its own (PBB-EmN's `sEmi × emScl`, added to
         // the light before the colour multiplies it).
@@ -301,7 +324,7 @@ void main() {
             const float OCC_ON_SUN = 0.2497;              // IRAFade, as captured there
             const vec2 OCC_ON_AMBIENT = vec2(0.7527, 0.2473); // vAmbOccRat, as captured there
             const float OCC_DEEP = 0.2;                   // occThresForIRShadow, as captured there
-            float occ = texture(emissive, uv).g;
+            float occ = texture(emissive, uv).g * occlusion;
             float lit_part = min(occ, sun_shadow(world) * cloud_light(world));
             float occ_sun = 1.0 + OCC_ON_SUN * (occ - 1.0);
             vec3 own = c.rgb * OCC_COLOUR;
@@ -326,7 +349,7 @@ void main() {
         }
         vec3 rgb = tinted(mix(fog_add, lit * c.rgb * at_color + highlights, fog_keep));
         if (specular && look.spec_amb.x > 0.0) {
-            rgb += specular_light(n, f0, gloss);
+            rgb += specular_light(n, f0, gloss, occlusion);
         }
         color = vec4(rgb * pc.params.w, 1.0);
         return;
