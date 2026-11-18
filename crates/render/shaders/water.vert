@@ -2,8 +2,8 @@
 // The Ryza games' water (docs/shading.md, "Ryza DX: the water"): ribbons along cubic centre
 // lines, drawn from no vertex buffer. A piece is a grid of CELLS_T by CELLS_L cells; its curve,
 // widths and look come from the look block's water slots (WATER_SLOT on): [0] {pieces, seconds},
-// then five slots a piece: the curve's a, b, c, d (xyz; a.w and b.w the widths at its ends) and
-// {albedo rgb, the reflectance at normal incidence}. Render space has x mirrored.
+// then five slots a piece: the curve's a, b, c, d (xyz; a.w and b.w the widths at its ends; c.w and
+// d.w the body's refraction, water.frag's) and {albedo rgb, the reflectance at normal incidence}. Render space has x mirrored.
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 head[4];
     vec4 eye;

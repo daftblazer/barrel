@@ -1809,8 +1809,9 @@ struct View {
 }
 
 /// A field's water as look slots from `WATER_SLOT` (`water.vert`): {pieces, 0}, then a piece's five:
-/// its curve (x mirrored into render space) with its end widths, and its body's colour and
-/// reflectance at normal incidence.
+/// its curve (x mirrored into render space) with its end widths, the body's refraction (the
+/// refractive index less 1, and how far the light goes through it) in the `w` of the curve's
+/// last two terms, and its body's colour and reflectance at normal incidence.
 fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
     let mut slots = vec![[0.0; 4]];
     for body in bodies {
@@ -1819,7 +1820,7 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
                 break;
             }
             let mirror = |v: [f32; 3], w: f32| [-v[0], v[1], v[2], w];
-            slots.extend([mirror(p.a, p.widths[0]), mirror(p.b, p.widths[1]), mirror(p.c, 0.0), mirror(p.d, 0.0), [body.albedo[0], body.albedo[1], body.albedo[2], body.reflectance[0]]]);
+            slots.extend([mirror(p.a, p.widths[0]), mirror(p.b, p.widths[1]), mirror(p.c, body.refractive_index - 1.0), mirror(p.d, body.transparency), [body.albedo[0], body.albedo[1], body.albedo[2], body.reflectance[0]]]);
         }
     }
     slots[0][0] = ((slots.len() - 1) / 5) as f32;

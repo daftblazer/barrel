@@ -27,6 +27,13 @@ pub struct Renderer {
     pub color_view: Option<vk::ImageView>,
     pub samples: vk::SampleCountFlags,
     pub render_pass: vk::RenderPass,
+    /// The scene pass in two parts, for a frame with water (`ScenePart`).
+    pub water_passes: [vk::RenderPass; 2],
+    /// The water's view of the opaque scene (`Targets::refraction`): its set (the texture sets'
+    /// layout), the pool of it and the sampler.
+    pub refraction_set: vk::DescriptorSet,
+    refraction_pool: vk::DescriptorPool,
+    refraction_sampler: vk::Sampler,
     pub post_pass: vk::RenderPass,
     pub post_set_layout: vk::DescriptorSetLayout,
     pub post_pool: vk::DescriptorPool,
@@ -215,6 +222,80 @@ pub struct Frame<'a> {
     pub occlusion: bool,
 }
 
+/// Points the water's refraction set at the refraction image.
+fn write_refraction_set(d: &ash::Device, set: vk::DescriptorSet, sampler: vk::Sampler, view: vk::ImageView) {
+    let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+    unsafe { d.update_descriptor_sets(&[vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)], &[]) };
+}
+
+/// Which part of the scene pass a render pass is: the whole of it, or the first part of a frame
+/// with water (the opaque scene: its colour and depth kept, the colour left for a copy) and the
+/// second (them loaded again, the water and the rest drawn over). The three are compatible: the
+/// pipelines are made with the whole.
+#[derive(Clone, Copy, PartialEq)]
+enum ScenePart {
+    Whole,
+    First,
+    Second,
+}
+
+/// The scene pass (see `ScenePart`): colour (multisampled with a resolve into the scene image, or
+/// the scene image itself with a motion target after depth) and depth.
+fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::SampleCountFlags, part: ScenePart) -> Result<vk::RenderPass> {
+    use vk::{AttachmentLoadOp as Load, AttachmentStoreOp as Store, ImageLayout as Layout};
+    let multisampled = samples != vk::SampleCountFlags::TYPE_1;
+    let single = vk::SampleCountFlags::TYPE_1;
+    let (first, second) = (part == ScenePart::First, part == ScenePart::Second);
+    let attachment = |format, samples, load, store, initial, last| {
+        vk::AttachmentDescription::default().format(format).samples(samples).load_op(load).store_op(store).initial_layout(initial).final_layout(last)
+    };
+    // What each attachment starts from and ends in: the first part leaves the scene image for the
+    // copy; the second finds it, and the kept images, ready to draw into.
+    let load = if second { Load::LOAD } else { Load::CLEAR };
+    let initial = |layout| if second { layout } else { Layout::UNDEFINED };
+    let depth_last = if settings.keeps_depth() { Layout::SHADER_READ_ONLY_OPTIMAL } else { Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+    // Kept for GSR 2 to read, else only across the two parts.
+    let depth_store = if settings.keeps_depth() || first { Store::STORE } else { Store::DONT_CARE };
+    let depth = attachment(DEPTH_FORMAT, samples, load, depth_store, initial(Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL), if first { Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { depth_last });
+    let scene_last = if first { Layout::TRANSFER_SRC_OPTIMAL } else { Layout::SHADER_READ_ONLY_OPTIMAL };
+    let mut attachments = vec![];
+    if multisampled {
+        // The multisampled colour, kept across the parts only.
+        attachments.push(attachment(settings.scene_format(), samples, load, if first { Store::STORE } else { Store::DONT_CARE }, initial(Layout::COLOR_ATTACHMENT_OPTIMAL), Layout::COLOR_ATTACHMENT_OPTIMAL));
+        attachments.push(depth);
+        // The resolve target: the scene image, copied after the first part.
+        attachments.push(attachment(settings.scene_format(), single, Load::DONT_CARE, Store::STORE, initial(Layout::COLOR_ATTACHMENT_OPTIMAL), scene_last));
+    } else {
+        attachments.push(attachment(settings.scene_format(), single, load, Store::STORE, initial(Layout::COLOR_ATTACHMENT_OPTIMAL), scene_last));
+        attachments.push(depth);
+        if settings.motion {
+            // The motion vectors: a second colour target after depth.
+            attachments.push(attachment(MOTION_FORMAT, single, load, Store::STORE, initial(Layout::COLOR_ATTACHMENT_OPTIMAL), if first { Layout::COLOR_ATTACHMENT_OPTIMAL } else { Layout::SHADER_READ_ONLY_OPTIMAL }));
+        }
+    }
+    let colour_refs = [
+        vk::AttachmentReference { attachment: 0, layout: Layout::COLOR_ATTACHMENT_OPTIMAL },
+        vk::AttachmentReference { attachment: 2, layout: Layout::COLOR_ATTACHMENT_OPTIMAL },
+    ];
+    let colour = &colour_refs[..if settings.motion && !multisampled { 2 } else { 1 }];
+    let resolve = [vk::AttachmentReference { attachment: 2, layout: Layout::COLOR_ATTACHMENT_OPTIMAL }];
+    let depth_ref = vk::AttachmentReference { attachment: 1, layout: Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+    let mut subpass = vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(colour).depth_stencil_attachment(&depth_ref);
+    if multisampled {
+        subpass = subpass.resolve_attachments(&resolve);
+    }
+    // What reads the scene after the pass: the post pass, or the copy of the first part.
+    let done = [vk::SubpassDependency::default()
+        .src_subpass(0)
+        .dst_subpass(vk::SUBPASS_EXTERNAL)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TRANSFER)
+        .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::TRANSFER_READ)];
+    let subpasses = [subpass];
+    Ok(unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachments).subpasses(&subpasses).dependencies(&done), None)? })
+}
+
 impl Renderer {
     /// This frame's static shadow layer (`shadow::Far::plan`): `want` where the game has it
     /// (drawn whole when it changes); gives the view-projection and layer for the look
@@ -376,89 +457,14 @@ impl Renderer {
                 .find(|&(n, f)| n <= if settings.motion { 1 } else { settings.msaa.max(1) } && allowed.contains(f))
                 .map_or(vk::SampleCountFlags::TYPE_1, |(_, f)| f)
         };
-        let multisampled = samples != vk::SampleCountFlags::TYPE_1;
         // The scene pass: its colour ends ready to be sampled by the post pass. Multisampled, it
-        // draws into a transient multisampled colour and depth and resolves into the scene image
-        // at the end of the pass (in tile memory on the handhelds).
-        let single_attachments = [
-            vk::AttachmentDescription::default()
-                .format(settings.scene_format())
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
-            vk::AttachmentDescription::default()
-                .format(DEPTH_FORMAT)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                // Kept for GSR 2 to read, else never stored.
-                .store_op(if settings.keeps_depth() { vk::AttachmentStoreOp::STORE } else { vk::AttachmentStoreOp::DONT_CARE })
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(if settings.keeps_depth() { vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL } else { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL }),
-        ];
-        let multi_attachments = [
-            vk::AttachmentDescription::default()
-                .format(settings.scene_format())
-                .samples(samples)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
-            single_attachments[1].samples(samples),
-            vk::AttachmentDescription::default()
-                .format(settings.scene_format())
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
-        ];
-        // With motion vectors (single-sampled only): a second colour target after depth.
-        let motion_attachments = [
-            single_attachments[0],
-            single_attachments[1],
-            vk::AttachmentDescription::default()
-                .format(MOTION_FORMAT)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL),
-        ];
-        let attachments: &[vk::AttachmentDescription] = if multisampled {
-            &multi_attachments
-        } else if settings.motion {
-            &motion_attachments
-        } else {
-            &single_attachments
-        };
-        let color_refs = [
-            vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
-            vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL },
-        ];
-        let color_ref = &color_refs[..if settings.motion && !multisampled { 2 } else { 1 }];
-        let resolve_ref = [vk::AttachmentReference { attachment: 2, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
-        let depth_ref = vk::AttachmentReference { attachment: 1, layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-        let mut subpass_desc = vk::SubpassDescription::default()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(color_ref)
-            .depth_stencil_attachment(&depth_ref);
-        if multisampled {
-            subpass_desc = subpass_desc.resolve_attachments(&resolve_ref);
-        }
-        let subpass = [subpass_desc];
-        // The post pass reads what the scene pass wrote.
-        let scene_done = [vk::SubpassDependency::default()
-            .src_subpass(0)
-            .dst_subpass(vk::SUBPASS_EXTERNAL)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
-            .dst_access_mask(vk::AccessFlags::SHADER_READ)];
-        let render_pass = unsafe {
-            d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(attachments).subpasses(&subpass).dependencies(&scene_done), None)?
-        };
+        // draws into a multisampled colour and depth and resolves into the scene image at the end
+        // of the pass. A frame with water draws it in two parts, the opaque scene first and the
+        // rest after a copy of it (the water's refraction), which the same attachments carry on
+        // through (`ScenePart`).
+        let render_pass = scene_render_pass(d, &settings, samples, ScenePart::Whole)?;
+        let water_passes = [scene_render_pass(d, &settings, samples, ScenePart::First)?, scene_render_pass(d, &settings, samples, ScenePart::Second)?];
+        let colour_targets = if settings.motion && samples == vk::SampleCountFlags::TYPE_1 { 2 } else { 1 };
         // The post pass: into the window's image or the offscreen one, no depth.
         let post_attachment = [vk::AttachmentDescription::default()
             .format(color_format)
@@ -524,6 +530,20 @@ impl Renderer {
         let gsr2_pipelines = if settings.gsr2 { Some(gsr2::Pipelines::new(&gpu)?) } else { None };
         let fsr3_pipelines = if settings.fsr3 { Some(fsr3::Pipelines::new(&gpu)?) } else { None };
         let timer = if timings { timing::Timer::new(&gpu)? } else { None };
+        // The water's refraction image's set: one texel sampler, clamped.
+        let refraction_sampler = unsafe {
+            d.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
+                None,
+            )?
+        };
+        let refraction_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 }];
+        let refraction_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&refraction_sizes), None)? };
+        let refraction_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(refraction_pool).set_layouts(&[set_layout]))?[0] };
         let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion, settings.scene_format())?;
 
         // Pipeline.
@@ -571,7 +591,6 @@ impl Renderer {
             .depth_compare_op(vk::CompareOp::LESS);
         // The motion target, when there is one, takes the vectors unblended.
         let motion_blend = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G);
-        let colour_targets = color_ref.len();
         if colour_targets > 1 && unsafe { gpu.instance.get_physical_device_features(gpu.physical) }.independent_blend == 0 {
             return Err("motion vectors need the device's independent blending".into());
         }
@@ -756,7 +775,8 @@ impl Renderer {
         let ao_gbuf_terrain_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_ground).rasterization_state(&ao_ground_raster).layout(terrain_gpu.pipeline_layout)], None).map_err(|(_, e)| e)?[0] };
 
 
-        Ok(Renderer { forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
+        Ok(Renderer { water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1020,10 +1040,13 @@ impl Renderer {
                 // The motion target's (no movement), when there is one.
                 vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
             ];
+            // A frame with water draws the scene in two parts, the water refracting a copy of the
+            // first (it needs the occlusion's depth of the opaque scene).
+            let refract = water_pieces > 0 && upto != dump::Stop::Chara && self.ao.on() && occlusion;
             d.cmd_begin_render_pass(
                 cb,
                 &vk::RenderPassBeginInfo::default()
-                    .render_pass(render_pass)
+                    .render_pass(if refract { self.water_passes[0] } else { render_pass })
                     .framebuffer(targets.scene_framebuffer)
                     .render_area(scene_area)
                     .clear_values(&clear),
@@ -1086,6 +1109,8 @@ impl Renderer {
             }
             if pass_sky && sky_plane && water_pieces > 0 {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.water_far_pipeline);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[if refract { self.refraction_set } else { sets[white] }], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[if refract { self.ao.gbuf_set() } else { sets[white] }], &[]);
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             }
@@ -1133,7 +1158,39 @@ impl Renderer {
             }
             // The water, over the opaque scene (it writes depth: the sky plane shows past it).
             if !pass_sky && water_pieces > 0 && upto != dump::Stop::Chara {
+                if refract {
+                    // The second part of the scene pass, after a copy of the first.
+                    d.cmd_end_render_pass(cb);
+                    let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
+                    let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width: scene_width, height: scene_height, depth: 1 });
+                    barrier(d, cb, targets.refraction, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+                    d.cmd_copy_image(cb, targets.scene, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, targets.refraction, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
+                    barrier(d, cb, targets.refraction, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                    barrier(d, cb, targets.scene, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+                    // The kept colour and depth, written by the first part, are read again by the second.
+                    let (kept, aspect) = (targets.multisample.map_or(targets.scene, |m| m.0), vk::ImageAspectFlags::COLOR);
+                    barrier(d, cb, kept, aspect, 1, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+                    barrier(d, cb, targets.depth, vk::ImageAspectFlags::DEPTH, 1, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                    if let Some((motion, ..)) = targets.motion {
+                        barrier(d, cb, motion, aspect, 1, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+                    }
+                    d.cmd_begin_render_pass(
+                        cb,
+                        &vk::RenderPassBeginInfo::default().render_pass(self.water_passes[1]).framebuffer(targets.scene_framebuffer).render_area(scene_area).clear_values(&clear),
+                        vk::SubpassContents::INLINE,
+                    );
+                    d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                    d.cmd_set_scissor(cb, 0, &[scene_area]);
+                    d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
+                    d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
+                    d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, pc);
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 5, &[ao_set], &[]);
+                }
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.water_pipeline);
+                // Set 0 the refraction (white: none), set 2 the opaque scene's depth.
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[if refract { self.refraction_set } else { sets[white] }], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[if refract { self.ao.gbuf_set() } else { sets[white] }], &[]);
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
             }
             // The sky's large clouds, over the dome (on the far plane too, so where nothing covers it).
@@ -1299,7 +1356,9 @@ impl Renderer {
         self.targets.destroy(gpu);
         let s = &self.settings;
         self.ao.resize(gpu, s.scene_size(width, height))?;
-        self.targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format())?;
+        let targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format())?;
+        write_refraction_set(&gpu.device, self.refraction_set, self.refraction_sampler, targets.refraction_view);
+        self.targets = targets;
         Ok(())
     }
 
@@ -1326,6 +1385,11 @@ impl Renderer {
             d.destroy_image(self.filter.0, None);
             d.free_memory(self.filter.1, None);
             d.destroy_render_pass(self.post_pass, None);
+            for pass in self.water_passes {
+                d.destroy_render_pass(pass, None);
+            }
+            d.destroy_descriptor_pool(self.refraction_pool, None);
+            d.destroy_sampler(self.refraction_sampler, None);
             d.destroy_pipeline(self.outline_pipeline, None);
             d.destroy_pipeline(self.forward_pipeline, None);
             d.destroy_pipeline(self.ao_gbuf_pipeline, None);

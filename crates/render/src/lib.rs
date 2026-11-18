@@ -908,6 +908,11 @@ pub struct Targets {
     pub frozen_memory: vk::DeviceMemory,
     pub frozen_view: vk::ImageView,
     pub frozen_ready: bool,
+    /// The opaque scene as the first part of a frame with water left it, for the water to
+    /// refract (`renderer::ScenePart`).
+    pub refraction: vk::Image,
+    pub refraction_memory: vk::DeviceMemory,
+    pub refraction_view: vk::ImageView,
     /// The scene's own size: the output's times the render scale (`--scale`); the post pass
     /// scales it to the output, which keeps the text sharp.
     pub scene_size: (u32, u32),
@@ -973,14 +978,15 @@ impl Targets {
             image(scene_format, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_SRC)?;
         let (frozen, frozen_memory) = image(scene_format, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
         let frozen_view = view(frozen, scene_format, vk::ImageAspectFlags::COLOR)?;
+        let (refraction, refraction_memory) = image(scene_format, vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST)?;
+        let refraction_view = view(refraction, scene_format, vk::ImageAspectFlags::COLOR)?;
         let scene_view = view(scene, scene_format, vk::ImageAspectFlags::COLOR)?;
-        // Depth is cleared and never stored (the scene pass): transient.
-        // Depth is transient unless GSR 2 reads it (then the scene pass stores it).
-        let depth_usage = if gsr2_pipelines.is_some() || fsr3_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::TRANSIENT_ATTACHMENT };
+        // Depth is sampled when GSR 2 reads it. It is kept across the two parts of a frame with water.
+        let depth_usage = if gsr2_pipelines.is_some() || fsr3_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::empty() };
         let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | depth_usage, samples)?;
-        // With samples, the multisampled colour the pass resolves into the scene: transient too.
+        // With samples, the multisampled colour the pass resolves into the scene.
         let multisample = if samples != vk::SampleCountFlags::TYPE_1 {
-            let (image, memory) = image_with(scene_format, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT, samples)?;
+            let (image, memory) = image_with(scene_format, vk::ImageUsageFlags::COLOR_ATTACHMENT, samples)?;
             Some((image, memory, view(image, scene_format, vk::ImageAspectFlags::COLOR)?))
         } else {
             None
@@ -1078,6 +1084,9 @@ impl Targets {
             frozen_memory,
             frozen_view,
             frozen_ready: false,
+            refraction,
+            refraction_memory,
+            refraction_view,
         })
     }
 
@@ -1092,6 +1101,9 @@ impl Targets {
             d.destroy_image_view(self.frozen_view, None);
             d.destroy_image(self.frozen, None);
             d.free_memory(self.frozen_memory, None);
+            d.destroy_image_view(self.refraction_view, None);
+            d.destroy_image(self.refraction, None);
+            d.free_memory(self.refraction_memory, None);
             if let Some(g) = self.glow.take() {
                 g.destroy(gpu);
             }
