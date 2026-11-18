@@ -4233,6 +4233,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         weights: &morph_weights,
         grounds,
         patterns: pattern_textures,
+        specular_cubes: Vec::new(),
         white,
     };
     let scene = scene_gpu::SceneGpu::new(&gpu, scene_data, &renderer.shared)?;

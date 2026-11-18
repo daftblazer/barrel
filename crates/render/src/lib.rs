@@ -60,7 +60,12 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// field's plants).
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
-pub const LOOK_SLOTS: usize = 109;
+/// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
+pub const LOOK_SLOTS: usize = 111;
+/// The specular ambient's look slots (`model.frag`'s flag 1 << 24, the environment cube map
+/// reflected off a surface): {the light's scale, the mip count less one, 0, 0}, then {rgb
+/// tint}. The scale is 0 for a field without the cube map.
+pub const SPECULAR_SLOT: usize = 109;
 /// The first of the sky clouds' look slots (`cloud_strip.vert`): the light's way, its colour,
 /// the ambient, the clouds' colour and density, the grid and the surface's shape, the map's
 /// tiling and offset, the march's constants, the step's scale and the fog, then Scat (12).
@@ -160,6 +165,10 @@ pub struct Draw {
     /// The material's emission map (its kind-19 texture), if it has one: bound as the draw's
     /// set 3 (white otherwise), drawn only where a game asks (`model.frag`'s flag 32768).
     pub emission: Option<usize>,
+    /// The material's specular map (its kind-2 texture), if it has one: bound as the draw's
+    /// set 4 (white otherwise), read only for the specular ambient (`model.frag`'s flag
+    /// 1 << 24).
+    pub specular: Option<usize>,
     /// Shaded as an eye (`CharaEYE`: `docs/shading.md`, "Eyes").
     pub eye: bool,
     /// Part of a field's distant view (unlit: its texture on its vertex colour).
@@ -477,15 +486,13 @@ impl Gpu {
     }
 }
 
-pub fn barrier(
-    d: &ash::Device,
-    cb: vk::CommandBuffer,
-    image: vk::Image,
-    aspect: vk::ImageAspectFlags,
-    levels: u32,
-    from: vk::ImageLayout,
-    to: vk::ImageLayout,
-) {
+pub fn barrier(d: &ash::Device, cb: vk::CommandBuffer, image: vk::Image, aspect: vk::ImageAspectFlags, levels: u32, from: vk::ImageLayout, to: vk::ImageLayout) {
+    barrier_layers(d, cb, image, aspect, levels, 1, from, to)
+}
+
+/// [`barrier`] over `layers` array layers (a cube map's six).
+#[allow(clippy::too_many_arguments)]
+pub fn barrier_layers(d: &ash::Device, cb: vk::CommandBuffer, image: vk::Image, aspect: vk::ImageAspectFlags, levels: u32, layers: u32, from: vk::ImageLayout, to: vk::ImageLayout) {
     let b = vk::ImageMemoryBarrier::default()
         .image(image)
         .old_layout(from)
@@ -494,7 +501,7 @@ pub fn barrier(
         .dst_access_mask(vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(aspect).level_count(levels).layer_count(1));
+        .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(aspect).level_count(levels).layer_count(layers));
     unsafe {
         d.cmd_pipeline_barrier(
             cb,
@@ -605,6 +612,7 @@ impl Scene {
             d.mask = d.mask.map(|m| m + base);
             d.normal_map = d.normal_map.map(|m| m + base);
             d.emission = d.emission.map(|m| m + base);
+            d.specular = d.specular.map(|m| m + base);
         }
         Ok(instance)
     }
@@ -729,8 +737,9 @@ impl Scene {
             };
             let normal_map = material.and_then(|m| m.textures.iter().find(|t| t.kind == 3)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
+            let specular = material.and_then(|m| m.textures.iter().find(|t| t.kind == 2)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
         }
         Ok(())
     }
@@ -1064,27 +1073,89 @@ pub fn render_space(transform: Mat4) -> Mat4 {
     s * transform * s
 }
 
+/// The Vulkan format a stored texture format is sampled as (`linear`: its sRGB variant where
+/// it has one).
+fn vk_format(format: Format, linear: bool) -> vk::Format {
+    match (format, linear) {
+        (Format::Bc1, true) => vk::Format::BC1_RGBA_SRGB_BLOCK,
+        (Format::Bc3, true) => vk::Format::BC3_SRGB_BLOCK,
+        (Format::Bc7, true) => vk::Format::BC7_SRGB_BLOCK,
+        (Format::Rgba8, true) => vk::Format::R8G8B8A8_SRGB,
+        (Format::Bc1, _) => vk::Format::BC1_RGBA_UNORM_BLOCK,
+        (Format::Bc3, _) => vk::Format::BC3_UNORM_BLOCK,
+        (Format::Bc7, _) => vk::Format::BC7_UNORM_BLOCK,
+        (Format::Bc4, _) => vk::Format::BC4_UNORM_BLOCK,
+        (Format::Bc5, _) => vk::Format::BC5_UNORM_BLOCK,
+        (Format::Bc6h, _) => vk::Format::BC6H_UFLOAT_BLOCK,
+        (Format::Float32, _) => vk::Format::R32_SFLOAT,
+        (Format::Rgba16f, _) => vk::Format::R16G16B16A16_SFLOAT,
+        (Format::Rgba8, _) => vk::Format::R8G8B8A8_UNORM,
+    }
+}
+
+/// Upload a six-face cube map as it is stored (all mip levels, each holding its faces one after
+/// another), for sampling through a cube view.
+pub fn upload_cube(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Texture) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
+    let d = &gpu.device;
+    if t.layers != 6 {
+        return Err("not a six-face cube map".into());
+    }
+    let format = vk_format(t.format, false);
+    let levels = t.levels.len() as u32;
+    let (image, mem) = gpu.image(
+        &vk::ImageCreateInfo::default()
+            .flags(vk::ImageCreateFlags::CUBE_COMPATIBLE)
+            .image_type(vk::ImageType::TYPE_2D)
+            .format(format)
+            .extent(vk::Extent3D { width: t.width, height: t.height, depth: 1 })
+            .mip_levels(levels)
+            .array_layers(6)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED),
+    )?;
+    let data: Vec<u8> = t.levels.concat();
+    let (staging, smem) = gpu.buffer(data.len() as u64, vk::BufferUsageFlags::TRANSFER_SRC, true)?;
+    gpu.upload(smem, &data)?;
+    let mut regions = Vec::new();
+    let mut offset = 0u64;
+    for (level, bytes) in t.levels.iter().enumerate() {
+        regions.push(
+            vk::BufferImageCopy::default()
+                .buffer_offset(offset)
+                .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).mip_level(level as u32).layer_count(6))
+                .image_extent(vk::Extent3D { width: (t.width >> level).max(1), height: (t.height >> level).max(1), depth: 1 }),
+        );
+        offset += bytes.len() as u64;
+    }
+    gpu.submit(pool, |cb| unsafe {
+        barrier_layers(d, cb, image, vk::ImageAspectFlags::COLOR, levels, 6, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        d.cmd_copy_buffer_to_image(cb, staging, image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &regions);
+        barrier_layers(d, cb, image, vk::ImageAspectFlags::COLOR, levels, 6, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    })?;
+    unsafe {
+        d.destroy_buffer(staging, None);
+        d.free_memory(smem, None);
+    }
+    let view = unsafe {
+        d.create_image_view(
+            &vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(vk::ImageViewType::CUBE)
+                .format(format)
+                .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(levels).layer_count(6)),
+            None,
+        )?
+    };
+    Ok((image, mem, view))
+}
+
 /// Upload a texture as it is stored (BC blocks and all mip levels) for sampling. `linear`: a
 /// colour texture sampled in linear light (its sRGB format; a game that lights in linear light,
 /// the Ryza games); otherwise its values as they are.
 pub fn upload_texture(gpu: &Gpu, pool: vk::CommandPool, t: &barrel_formats::g1t::Texture, linear: bool) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
     let d = &gpu.device;
     {
-        let format = match t.format {
-            Format::Bc1 if linear => vk::Format::BC1_RGBA_SRGB_BLOCK,
-            Format::Bc3 if linear => vk::Format::BC3_SRGB_BLOCK,
-            Format::Bc7 if linear => vk::Format::BC7_SRGB_BLOCK,
-            Format::Rgba8 if linear => vk::Format::R8G8B8A8_SRGB,
-            Format::Bc1 => vk::Format::BC1_RGBA_UNORM_BLOCK,
-            Format::Bc3 => vk::Format::BC3_UNORM_BLOCK,
-            Format::Bc7 => vk::Format::BC7_UNORM_BLOCK,
-            Format::Bc4 => vk::Format::BC4_UNORM_BLOCK,
-            Format::Bc5 => vk::Format::BC5_UNORM_BLOCK,
-            Format::Bc6h => vk::Format::BC6H_UFLOAT_BLOCK,
-            Format::Float32 => vk::Format::R32_SFLOAT,
-            Format::Rgba16f => vk::Format::R16G16B16A16_SFLOAT,
-            Format::Rgba8 => vk::Format::R8G8B8A8_UNORM,
-        };
+        let format = vk_format(t.format, linear);
         let levels = t.levels.len() as u32;
         let (image, mem) = gpu.image(
             &vk::ImageCreateInfo::default()

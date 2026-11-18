@@ -52,6 +52,8 @@ const NORMAL_MAPPED: u32 = 8192;
 /// `model.vert`'s flag for billboards shrinking away over the look's `FADE_SLOT` range (the
 /// plants, as `ObjectGrassPBS` does).
 const FADED: u32 = 16384;
+/// `model.frag`'s flag for a field model that reflects the environment's specular cube map.
+const SPECULAR_AMBIENT: u32 = 1 << 24;
 /// `model.frag`'s flag for a field model lit by its emission map (`PBB-EmN`).
 const EMISSIVE: u32 = 32768;
 // STAND-IN: The emission strengths by time of day are chosen by the stills; the real thing is the game's run-time emScl.
@@ -433,6 +435,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             mask: normals,
             normal_map: normals,
             emission: None,
+            specular: None,
             eye: false,
             sky: false,
             outline: None,
@@ -888,6 +891,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             d.texture += textures.len();
             d.mask = d.mask.map(|m| m + textures.len());
             d.overlay = d.overlay.map(|o| o + textures.len());
+            d.specular = None;
             d.field = Some(0);
             d.sky = true;
             d.casts = false;
@@ -961,6 +965,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // weather (sun, second light, ambient colour).
     let mut gust: Option<barrel_ryza::environment::Gust> = None;
     let mut cloud: Option<(barrel_ryza::environment::Pattern, Vec<u8>)> = None;
+    // The specular light map (`_as.g1t`, the file's bytes) with the stage's scale and tint of it.
+    let mut specular: Option<(Vec<u8>, f32, [f32; 3])> = None;
     let environment = match files.env.as_deref().map(Elixir::parse).transpose()? {
         Some(env) => {
             let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
@@ -981,6 +987,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             // The stage's ambient (`StageLight`): the light map at the set's scale and colour.
             let stage = barrel_ryza::environment::StageLight::read(bin, a.time, a.weather)?;
             eprintln!("stage light: {stage:?}");
+            specular = barrel_engine::field::named(&env, &format!("{}_as.g1t", files.area)).map(|b| (b.to_vec(), stage.specular_map, stage.specular_map_color));
             // The sun on the stage is the set's times the stage's key scale (3 at Rasenboden's
             // noon); a character's draws take their own scale of it (0.8 there).
             let key = if stage.key > 0.0 { stage.key } else { 1.0 };
@@ -1070,8 +1077,19 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         Some((_, bytes)) => Some(barrel_render::upload_texture(&gpu, renderer.pool, &G1t::parse(bytes)?.textures[0], true)?),
         None => None,
     };
+    // The specular light map as a cube map; its mip count less one is how far the gloss may
+    // blur the reflection (`vAmbParam.z`).
+    let specular_cube = specular.as_ref().and_then(|(bytes, ..)| {
+        let g = G1t::parse(bytes).map_err(|e| eprintln!("specular light map: {e}")).ok()?;
+        let t = g.textures.first()?;
+        let cube = upload_cube(&gpu, renderer.pool, t).map_err(|e| eprintln!("specular light map: {e}")).ok()?;
+        Some((cube, t.levels.len().saturating_sub(1) as f32))
+    });
+    let specular_mips = specular_cube.as_ref().map_or(0.0, |c| c.1);
+    let specular_cube = specular_cube.map(|c| c.0);
+    let spec_on = specular_cube.is_some();
     let grounds = upload_grounds(&gpu, renderer.pool, &terrains, true)?;
-    let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], white };
+    let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], specular_cubes: vec![specular_cube], white };
     let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
     // The camera: on the given point (or on Ryza in a window), framing the ground (render
@@ -1214,6 +1232,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         } else {
             UNLIT
         };
+        // A field model with a specular map reflects the environment's cube map.
+        let base = if spec_on && d.specular.is_some() && !d.sky && d.name != "plants" && !ramp_rows.contains_key(&(d.first_index, d.instance)) { base | SPECULAR_AMBIENT } else { base };
         match ramp_rows.get(&(d.first_index, d.instance)) {
             Some(&(row, has_rim)) if ramp_pack.is_some() && environment.is_some() => {
                 let r = rim.map_or(0, |r| if has_rim { rim_word(r.sharpness, r.strength) } else { rim_word(r.hair_sharpness, r.hair_strength) });
@@ -1413,6 +1433,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         view.look[51] = [1.0, 0.0, wind_turned % std::f32::consts::TAU, 0.0];
         view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
         view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
+        if let Some((_, scale, tint)) = &specular {
+            // STAND-IN: the light's weight (`vAmbSpcWgt.x`, 1 in the capture at Rasenboden's noon) is 1; the real thing is a run-time fade of it, not found in the set.
+            view.look[SPECULAR_SLOT] = [*scale, specular_mips, 0.0, 0.0];
+            view.look[SPECULAR_SLOT + 1] = [tint[0], tint[1], tint[2], 0.0];
+        }
         if frame_no == 0
             && let Some(k) = view.exposure
         {

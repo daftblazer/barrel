@@ -27,6 +27,9 @@ pub struct SceneData<'a> {
     pub grounds: Vec<GroundData>,
     /// Each field's light texture (none: `white`'s), one set 1 for each field.
     pub patterns: Vec<Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>>,
+    /// Each field's specular environment cube map (`upload_cube`), indexed as `patterns`; none:
+    /// the field has no specular ambient term.
+    pub specular_cubes: Vec<Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>>,
     /// White's place in `textures`.
     pub white: usize,
 }
@@ -87,6 +90,8 @@ pub struct Shared {
     pub shadow_sampler: vk::Sampler,
     pub shadow_view: vk::ImageView,
     pub terrain_layout: vk::DescriptorSetLayout,
+    /// A black cube map, bound where a field has no specular cube map.
+    pub black_cube: vk::ImageView,
 }
 
 pub struct SceneGpu {
@@ -108,10 +113,11 @@ pub struct SceneGpu {
     delta_mem: vk::DeviceMemory,
     inst_pool: vk::DescriptorPool,
     /// Set 1, for each slot and each field (slot-major): instances (0), palette (1), morph
-    /// offsets (2) and weights (3), lighting (4), shadow (5), the field's light texture (6).
+    /// offsets (2) and weights (3), lighting (4), shadow (5), the field's light texture (6), its specular cube map (7).
     instance_sets: Vec<vk::DescriptorSet>,
     fields: usize,
     patterns: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    cubes: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     ground_pool: Option<vk::DescriptorPool>,
     pub grounds: Vec<Ground>,
     /// One set per texture (layout `set_layout`: one combined image sampler), in texture order.
@@ -162,7 +168,7 @@ impl SceneGpu {
         let inst_sizes = [
             vk::DescriptorPoolSize { ty: vk::DescriptorType::STORAGE_BUFFER, descriptor_count: 4 * n },
             vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: n },
-            vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 * n },
+            vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 3 * n },
         ];
         let inst_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&inst_sizes), None)? };
         let inst_layouts = vec![shared.instance_layout; fields * SLOTS];
@@ -174,8 +180,11 @@ impl SceneGpu {
         let pattern_infos: Vec<_> = (0..fields)
             .map(|k| image(shared.sampler, data.patterns.get(k).and_then(|p| p.as_ref()).map_or(white_view, |p| p.2)))
             .collect();
+        let cube_infos: Vec<_> = (0..fields)
+            .map(|k| image(shared.sampler, data.specular_cubes.get(k).and_then(|p| p.as_ref()).map_or(shared.black_cube, |p| p.2)))
+            .collect();
         for (k, set) in instance_sets.iter().enumerate() {
-            let (slot, pattern_info) = (k / fields, &pattern_infos[k % fields]);
+            let (slot, pattern_info, cube_info) = (k / fields, &pattern_infos[k % fields], &cube_infos[k % fields]);
             let infos = [[instances.info(slot)], [palette.info(slot)], delta_info, [weights.info(slot)]];
             let look_info = [shared.look[slot]];
             let mut writes: Vec<_> = infos
@@ -186,9 +195,11 @@ impl SceneGpu {
             writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(4).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&look_info));
             writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(5).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&shadow_info));
             writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(6).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(pattern_info));
+            writes.push(vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(7).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(cube_info));
             unsafe { d.update_descriptor_sets(&writes, &[]) };
         }
         let patterns = data.patterns.into_iter().flatten().collect();
+        let cubes = data.specular_cubes.into_iter().flatten().collect();
 
         let mut ground_pool = None;
         let mut grounds = Vec::new();
@@ -240,6 +251,7 @@ impl SceneGpu {
             instance_sets,
             fields,
             patterns,
+            cubes,
             sets,
         })
     }
@@ -285,7 +297,7 @@ impl SceneGpu {
             if let Some(p) = self.ground_pool {
                 d.destroy_descriptor_pool(p, None);
             }
-            for (image, mem, view) in self.textures.into_iter().chain(self.grounds.into_iter().flat_map(|g| g.textures)).chain(self.patterns) {
+            for (image, mem, view) in self.textures.into_iter().chain(self.grounds.into_iter().flat_map(|g| g.textures)).chain(self.patterns).chain(self.cubes) {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
                 d.free_memory(mem, None);

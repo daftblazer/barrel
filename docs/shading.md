@@ -843,6 +843,33 @@ target's alpha), gloss `g`:
 
 No division by π anywhere: the set's light is the surface's brightness for a white albedo.
 
+**The specular ambient pass** (after the screen-space reflections; one program, two draws
+told apart by stencil: the stage's models, the characters). It reads depth, the three G-buffer
+targets (specular colour `F0` in GBuf1, the normal and gloss `g` in GBuf2, the occlusion `o` in
+GBuf0's alpha), the reflections at half size (`sRLR`) and the field's specular cube map
+(`<FIELD>_as.g1t`, `sAmbSpc0`), and adds to the lit scene:
+
+- `NV = sat(N·V)`, `specOcc = sat(o + (o + NV)² − 1)`, `F = F0 + (max(F0, g) − F0)(1 − NV)⁵`;
+- `env = cube(reflect(−V, N), lod = vAmbParam.z (1 − g)) × vAmbSpcWgt.x × vAmbParam.y ×
+  vAmbSpcScl`, then toward `sRLR.rgb` by `sRLR.a × vMerge.x`;
+- `env` fogged as the scene (the height fog, then `mix(inscatter, env, extinction)`);
+- `o' = o × vAmbOccRat.z + vAmbOccRat.w`, the added light `o' F env (o' + specOcc (1 − o'))`.
+
+The constants at Rasenboden's noon: the stage's draw has `vAmbParam` (7, 1, 5, 1/256),
+`vAmbSpcScl` (1, 1, 1), `vAmbOccRat` (1, 0, 1, 0), `vAmbSpcWgt.x` 1; the characters' draw
+(1.5, 6, 5, 1/256), (0.6, 0.6, 0.6), (0.7527, 0.2473, 1, 0), 1. They are words of the set's
+`indirectStage_` and `indirectChara_` blocks: `vAmbParam.y` is the block's word at +4 (the
+specular map's scale: 1 and 6 at noon, 0.1 at night), `vAmbSpcScl` its
+colour at +0x14, `vAmbOccRat.x` the word at +0x20 (the characters' 0.7527; `.y` is its
+complement); `vAmbParam.z` is the cube map's mip count less one. `vAmbSpcWgt.x` is 1 in the
+capture and not found in the set; `vAmbOccRat.zw` and `vMerge` are as captured. A field
+model's `F0` and `g` are the G-buffer program's: `pbb-n_gb` writes `F0` = the specular map's
+green (a metal, blue ≥ 0.5, takes the colour tile × (1 − green) instead) and `g` = its alpha,
+each times `vSpcScl` (1 on every field draw of the capture). The terrain's program writes
+the blended colour tiles' alpha as `F0` and the blended normal maps' alpha as `g`: at
+Rasenboden the ground's are a few hundredths, so the term adds almost nothing there (read from the render, not the files). The
+bark's specular map has `F0` 0.02 and `g` 0.2.
+
 **The tone pass** (the last full-screen pass): `c = scene × E` (the metered exposure), the
 depth of field and distant blur, the 2D effects taken back through the curve and laid over,
 `+ bloom × fBloomWeight` (0.4) `+ star + flare + light shafts`, `× vColorScale` (the set's
@@ -871,9 +898,15 @@ bottom, the colour scale, the curve, the gamma, the last saturation, and the blo
 pass and chain (`render::glow`). Against the gate's
 still, fourteen spots' mean error falls from 14.5 to 12.8 levels a channel; the sunlit sand
 and stone and the path in shade come within 10 (a shaded path 25, 57, 117 against 25, 57,
-115). What it does not, largest first by what shows: the specular ambient and reflections
-(dark bark and leaves in shade stay at half the still's brightness: light that does not
-scale with the albedo), the ambient occlusion and its tint, the direct specular, the second
+115). The field's models add the specular ambient as the pass does, in their own fragment
+program (`model.frag`, `specular_ambient.glsl`; flag 1 << 24 on a model with a specular map):
+the cube map from the set (`_as`, scale and tint of the stage's block), the specular map in a
+set of its own, the fog on the light. Left out of it: the screen-space reflections (the cube
+map alone), the occlusion (taken as 1, so the pass's occlusion terms vanish), the terrain
+and the plants, and the characters (their specular colour and gloss come from other
+G-buffer programs). Its light on bark and leaves is small, as the specular maps are dull
+(`F0` 0.02), and the shade stays well below the still's. What it does not, largest first by
+what shows: the reflections and what makes the shade bluer, the ambient occlusion and its tint, the direct specular, the second
 kind's ambient (which draws take it is not read; plants are likely), the bloom's star filter, the metering (night and interiors would rise above 0.9), the light volume,
 the point lights, the height fog.
 

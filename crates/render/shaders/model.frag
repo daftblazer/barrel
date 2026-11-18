@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Models. Characters (flags bit 0) are shaded the way the game's character pixel program
 // (CharaMTC) does it, step by step as in docs/shading.md; the rest keep a plain light.
 layout(set = 0, binding = 0) uniform sampler2D tex;
@@ -7,6 +8,8 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(set = 2, binding = 0) uniform sampler2D mask;
 // A field model's emission map (flag 32768; white otherwise).
 layout(set = 3, binding = 0) uniform sampler2D emissive;
+// A field model's specular map (flag 1 << 24: `sSpMap`, as stored; white otherwise).
+layout(set = 4, binding = 0) uniform sampler2D spec_map;
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
     // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
     uint light; } pc;
@@ -65,6 +68,11 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // Slots 95 and 96: a sky dome's sun, its colour and the way to it (flag 4096).
     vec4 dome_sun;
     vec4 dome_sun_way;
+    // Slots 97 to 108: the clouds'. 109: the specular ambient's light scale and its mip range;
+    // 110: its tint.
+    vec4 cloud_pad[12];
+    vec4 spec_amb;
+    vec4 spec_tint;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -108,6 +116,9 @@ vec3 soft_light(vec3 a, vec4 kw) {
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
 // and a half apart), 1 lit to 0 shadowed (atColor white: the full strength).
 layout(set = 1, binding = 6) uniform sampler2D pattern_map;
+// The field's specular environment cube map (the game's axes: x not mirrored).
+layout(set = 1, binding = 7) uniform samplerCube spec_cube;
+#include "specular_ambient.glsl"
 
 // The field's light texture at world point p (render space): the point slid along the
 // sunlight onto the plane 1000 units up, in the field's own space (x mirrored back), then
@@ -165,6 +176,13 @@ vec3 environment_light(vec3 n) {
     }
     return max(c, vec3(0.0));
 }
+// A field model's specular ambient: its specular colour and gloss from its specular map as
+// the G-buffer program writes them (green: reflectance, blue: metal; alpha: gloss).
+vec3 specular_ambient(vec3 n, vec3 albedo) {
+    vec4 sp = texture(spec_map, uv);
+    return specular_light(n, sp.b >= 0.5 ? albedo * (1.0 - sp.g) : vec3(sp.g), sp.a);
+}
+
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec4 c = texture(tex, uv);
@@ -284,7 +302,11 @@ void main() {
                 lit *= textureLod(mask, vec2(u, (row - 0.5) / 256.0), 0.0).rgb;
             }
         }
-        color = vec4(tinted(mix(fog_add, lit * c.rgb * at_color, fog_keep)) * pc.params.w, 1.0);
+        vec3 rgb = tinted(mix(fog_add, lit * c.rgb * at_color, fog_keep));
+        if ((pc.flags & (1u << 24)) != 0u && look.spec_amb.x > 0.0) {
+            rgb += specular_ambient(n, c.rgb);
+        }
+        color = vec4(rgb * pc.params.w, 1.0);
         return;
     }
     vec3 col;

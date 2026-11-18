@@ -212,10 +212,14 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   237, 217, 144 against 246, 232, 175, stone 226, 227, 209 against 236, 236, 210, a path in
   shade 25, 57, 117 against 25, 57, 115, a rock in shade 46, 73, 119 against 56, 82, 118;
   mean error 12.8 levels a channel (14.5 before these). Left, largest first:
-  (1) **dark surfaces in shade** come out at half the still's brightness (a trunk 22, 23, 29
-  against 43, 52, 63, dark leaves 21, 56, 31 against 50, 85, 77): the game adds the specular
-  ambient (the `_as` cube map by the reflected view, with screen-space reflections) in a
-  pass of its own, light that does not scale with the albedo; not drawn. (2) **sunlit grass**
+  (1) **dark surfaces in shade** come out dimmer and less blue than the still's (a trunk 32,
+  32, 31 against 44, 53, 63, dark leaves 23, 65, 74 against 44, 81, 78): the game adds the
+  specular ambient in a pass of its own and Barrel's models do it as the pass does (the `_as`
+  cube map by the reflected view, from the set's scale and tint, fogged; docs/shading.md),
+  but the bark's specular map is dull (`F0` 0.02, gloss 0.2), so it adds a few levels;
+  what is left is the screen-space reflections (the pass mixes the cube map toward them),
+  the ambient occlusion in the pass's terms (taken as 1), and the terrain's, the plants' and
+  the characters' specular ambient (not drawn; the terrain's tiles are as dull). (2) **sunlit grass**
   lacks red and blue (136, 199, 1 against 170, 208, 64): the plants' own ambient (the pass's
   second kind, a flat (3, 6, 4), is a guess) and the bloom. (3) **the ambient occlusion**
   and its tint, and the direct specular: not drawn. (4) **the exposure** is not metered

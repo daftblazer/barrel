@@ -186,6 +186,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         d.mask = d.mask.map(|m| m + base);
         d.normal_map = d.normal_map.map(|m| m + base);
         d.emission = d.emission.map(|m| m + base);
+        d.specular = d.specular.map(|m| m + base);
     }
     Ok(Loaded { textures, pattern, moving })
 }

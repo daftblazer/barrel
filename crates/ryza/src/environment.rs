@@ -513,6 +513,10 @@ pub struct CloudShader {
 pub struct StageLight {
     pub diffuse_map: f32,
     pub diffuse_map_color: [f32; 3],
+    /// The scale and tint of the specular light map (`_as`, reflected off the surfaces): 1 and
+    /// white at Rasenboden's noon, 0.1 at night.
+    pub specular_map: f32,
+    pub specular_map_color: [f32; 3],
     pub ambient: f32,
     /// The scale on the sun (`KeyLight0Scale`: 3 at Rasenboden's noon, where the game's
     /// lighting pass takes the sun at three times the set's colour).
@@ -525,7 +529,7 @@ impl StageLight {
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<StageLight, String> {
         let set = set_of(env, time, weather)?;
         let f = |o: usize| f32::from_le_bytes(set[INDIRECT_STAGE + o..INDIRECT_STAGE + o + 4].try_into().unwrap());
-        Ok(StageLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], ambient: f(0x30), key: f(0x34) })
+        Ok(StageLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], specular_map: f(4), specular_map_color: [f(0x14), f(0x18), f(0x1c)], ambient: f(0x30), key: f(0x34) })
     }
 
     /// The stage's ambient as the nine coefficients the renderer takes: the light map's times
@@ -566,6 +570,9 @@ impl Pattern {
 pub struct CharaLight {
     pub diffuse_map: f32,
     pub diffuse_map_color: [f32; 3],
+    /// The specular light map's scale and tint (6 and 0.6 at Rasenboden's noon).
+    pub specular_map: f32,
+    pub specular_map_color: [f32; 3],
     pub ambient: f32,
     pub key: f32,
 }
@@ -576,7 +583,7 @@ impl CharaLight {
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<CharaLight, String> {
         let set = set_of(env, time, weather)?;
         let f = |o: usize| f32::from_le_bytes(set[INDIRECT_CHARA + o..INDIRECT_CHARA + o + 4].try_into().unwrap());
-        Ok(CharaLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], ambient: f(0x30), key: f(0x34) })
+        Ok(CharaLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], specular_map: f(4), specular_map_color: [f(0x14), f(0x18), f(0x1c)], ambient: f(0x30), key: f(0x34) })
     }
 
     /// The flat ambient a character takes: the set's ambient colour and the light map's mean
@@ -666,11 +673,11 @@ mod tests {
     fn stage_light_of_a_set() {
         let mut env = vec![0u8; SET_SIZE * SETS];
         let at = SET_SIZE + 0x54c;
-        for (k, v) in [(0, 7.0f32), (8, 0.1), (12, 0.2602), (16, 1.0), (0x30, 0.25), (0x34, 3.0)] {
+        for (k, v) in [(0, 7.0f32), (4, 1.0), (8, 0.1), (12, 0.2602), (16, 1.0), (0x14, 1.0), (0x18, 1.0), (0x1c, 1.0), (0x30, 0.25), (0x34, 3.0)] {
             env[at + k..at + k + 4].copy_from_slice(&v.to_le_bytes());
         }
         let st = StageLight::read(&env, Time::Noon, Weather::Sunny).unwrap();
-        assert_eq!(st, StageLight { diffuse_map: 7.0, diffuse_map_color: [0.1, 0.2602, 1.0], ambient: 0.25, key: 3.0 });
+        assert_eq!(st, StageLight { diffuse_map: 7.0, diffuse_map_color: [0.1, 0.2602, 1.0], specular_map: 1.0, specular_map_color: [1.0; 3], ambient: 0.25, key: 3.0 });
         let mut light = Light::read(&env, Time::Noon, Weather::Sunny).unwrap();
         light.ambient = [3.0, 3.0, 4.0];
         let mut h = [[0.0; 3]; 9];
@@ -685,11 +692,11 @@ mod tests {
         let mut env = vec![0u8; SET_SIZE * SETS];
         // Noon, sunny: set 1.
         let at = SET_SIZE + 0x5d0;
-        for (k, v) in [(0, 1.5f32), (8, 0.8), (12, 1.0), (16, 1.0), (0x30, 0.2), (0x34, 0.8)] {
+        for (k, v) in [(0, 1.5f32), (4, 6.0), (8, 0.8), (12, 1.0), (16, 1.0), (0x14, 0.6), (0x18, 0.6), (0x1c, 0.6), (0x30, 0.2), (0x34, 0.8)] {
             env[at + k..at + k + 4].copy_from_slice(&v.to_le_bytes());
         }
         let c = CharaLight::read(&env, Time::Noon, Weather::Sunny).unwrap();
-        assert_eq!(c, CharaLight { diffuse_map: 1.5, diffuse_map_color: [0.8, 1.0, 1.0], ambient: 0.2, key: 0.8 });
+        assert_eq!(c, CharaLight { diffuse_map: 1.5, diffuse_map_color: [0.8, 1.0, 1.0], specular_map: 6.0, specular_map_color: [0.6; 3], ambient: 0.2, key: 0.8 });
         let mut light = Light::read(&env, Time::Noon, Weather::Sunny).unwrap();
         light.ambient = [3.0, 3.0, 4.0];
         let mut h = [[0.0; 3]; 9];

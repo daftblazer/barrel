@@ -21,6 +21,7 @@ pub struct Renderer {
     pub terrain_layout: vk::DescriptorSetLayout,
     pub shadow_target: shadow::ShadowTarget,
     pub shared: scene_gpu::Shared,
+    black_cube: (vk::Image, vk::DeviceMemory, vk::ImageView),
     pub extent: vk::Extent3D,
     pub offscreen: Option<(vk::Image, vk::DeviceMemory)>,
     pub color_view: Option<vk::ImageView>,
@@ -245,6 +246,12 @@ impl Renderer {
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            // The field's specular environment cube map (binding 7).
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(7)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
         ];
         let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
         // Each field's ground textures: a set of 2 blend maps + 6 layers.
@@ -262,6 +269,9 @@ impl Renderer {
         ];
         let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
         let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
+        // A black cube map for the fields that have no specular one.
+        let black = [0u8; 48];
+        let black_cube = upload_cube(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba16f, format_code: 0, layers: 6, volume: false, levels: vec![&black[..]] })?;
         let shared = scene_gpu::Shared {
             set_layout,
             sampler,
@@ -270,6 +280,7 @@ impl Renderer {
             shadow_sampler: shadow_target.sampler,
             shadow_view: shadow_target.view,
             terrain_layout,
+            black_cube: black_cube.2,
         };
 
         // Offscreen target.
@@ -515,7 +526,8 @@ impl Renderer {
         let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
         // Set 0 the colour, 1 the instances (and the look), 2 the mask.
         // Sets 0, 2 and 3: a draw's texture, mask and emission map.
-        let set_layouts = [set_layout, instance_layout, set_layout, set_layout];
+        // Set 4: its specular map.
+        let set_layouts = [set_layout, instance_layout, set_layout, set_layout, set_layout];
         let pipeline_layout = unsafe {
             d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)?
         };
@@ -646,7 +658,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, clouds: Default::default() })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, clouds: Default::default() })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -880,7 +892,7 @@ impl Renderer {
                 per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)]], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)], sets[draw.specular.unwrap_or(white)]], &[]);
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 if trace3d.on() {
                     let inst = &instances[draw.instance as usize];
@@ -909,7 +921,7 @@ impl Renderer {
             if let Some(outline_tex) = outline_tex {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, outline_pipeline);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex], sets[white]], &[]);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex], sets[white], sets[white]], &[]);
                 for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none() && !d.eye) {
                     let Some(colour) = draw.outline else { continue };
                     let mut per_draw = [0u8; 12];
@@ -1036,6 +1048,9 @@ impl Renderer {
             d.destroy_descriptor_pool(self.post_pool, None);
             d.destroy_descriptor_set_layout(self.post_set_layout, None);
             d.destroy_sampler(self.post_sampler, None);
+            d.destroy_image_view(self.black_cube.2, None);
+            d.destroy_image(self.black_cube.0, None);
+            d.free_memory(self.black_cube.1, None);
             d.destroy_image_view(self.filter.2, None);
             d.destroy_image(self.filter.0, None);
             d.free_memory(self.filter.1, None);
