@@ -62,7 +62,7 @@ struct Push {
     mode: u32,
 }
 
-fn pass(gpu: &Gpu, format: vk::Format, load: vk::AttachmentLoadOp) -> Result<vk::RenderPass> {
+pub(crate) fn pass(gpu: &Gpu, format: vk::Format, load: vk::AttachmentLoadOp) -> Result<vk::RenderPass> {
     let attachment = [vk::AttachmentDescription::default()
         .format(format)
         .samples(vk::SampleCountFlags::TYPE_1)

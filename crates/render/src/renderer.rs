@@ -63,6 +63,14 @@ pub struct Renderer {
     /// The far shadow square's layers (`shadow::Far`): a game asks `far_shadow` each frame
     /// before writing its look block.
     pub far_shadow: std::cell::RefCell<shadow::Far>,
+    /// The sky clouds' strip (cloud_strip.*): its pipeline reads the cloud map as set 0 and the
+    /// look block as set 1.
+    pub cloud_set_layout: vk::DescriptorSetLayout,
+    pub cloud_layout: vk::PipelineLayout,
+    pub cloud_pipeline: vk::Pipeline,
+    pub cloud_modules: [vk::ShaderModule; 2],
+    /// The clouds' maps, made when a frame first asks for clouds.
+    pub clouds: std::cell::RefCell<Option<clouds::Maps>>,
 }
 
 /// The images the post pass draws into: the window's swapchain images, or the offscreen one.
@@ -154,6 +162,9 @@ pub struct Frame<'a> {
     pub readback: Option<vk::Buffer>,
     /// Draw the sky plane (its look slots from `SKY_SLOT`) behind the distant view.
     pub sky_plane: bool,
+    /// Draw the sky's large clouds after the distant view (their look slots from `CLOUD_SLOT`),
+    /// making the maps they read as asked.
+    pub clouds: Option<clouds::CloudFrame>,
 }
 
 impl Renderer {
@@ -556,6 +567,18 @@ impl Renderer {
         let sky_raster = raster.cull_mode(vk::CullModeFlags::NONE);
         let sky_plane_info = pipeline_info.stages(&sky_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).depth_stencil_state(&no_depth).color_blend_state(&blend);
         let sky_plane_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_plane_info], None).map_err(|(_, e)| e)?[0] };
+        // The sky's large clouds: a grid with no vertex buffer, blended over the sky like the
+        // dome, reading the cloud map (set 0) and the look block (set 1).
+        let cloud_set_layout = clouds::set_layout(&gpu)?;
+        let cloud_set_layouts = [cloud_set_layout, instance_layout];
+        let cloud_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&cloud_set_layouts), None)? };
+        let cloud_modules = [module(clouds::STRIP_VERT)?, module(clouds::STRIP_FRAG)?];
+        let cloud_stages = [
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(cloud_modules[0]).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(cloud_modules[1]).name(c"main"),
+        ];
+        let cloud_info = pipeline_info.stages(&cloud_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).depth_stencil_state(&no_depth).color_blend_state(&sky_blend).layout(cloud_layout);
+        let cloud_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[cloud_info], None).map_err(|(_, e)| e)?[0] };
 
         // The characters' outline pass: the same shaders in outline mode, front faces culled (an
         // inverted hull: only the pushed-out back faces show, as a rim).
@@ -623,7 +646,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion, far_shadow: Default::default() })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, clouds: Default::default() })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -634,7 +657,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -762,6 +785,16 @@ impl Renderer {
             if let Some(t) = &timer {
                 t.mark(d, cb, 1);
             }
+            // The clouds' maps, when the frame has clouds and their constants changed.
+            if let Some(want) = &cloud_frame {
+                let mut maps = self.clouds.borrow_mut();
+                if maps.is_none() {
+                    *maps = clouds::Maps::new(gpu, self.pool, self.cloud_set_layout).ok();
+                }
+                if let Some(m) = maps.as_mut() {
+                    m.prepare(d, cb, want);
+                }
+            }
             let clear = [
                 vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
                 vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
@@ -863,6 +896,12 @@ impl Renderer {
                     }
                 }
                 drawn[0] += 1;
+            }
+            // The sky's large clouds, over the dome (on the far plane too, so where nothing covers it).
+            if pass_sky && cloud_frame.is_some() && let Some(m) = self.clouds.borrow().as_ref() {
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.cloud_pipeline);
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.cloud_layout, 0, &[m.set, instance_set], &[]);
+                d.cmd_draw(cb, clouds::GRID_VERTICES, 1, 0, 0);
             }
             }
             d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
@@ -1008,6 +1047,15 @@ impl Renderer {
             d.destroy_pipeline(self.sky_plane_pipeline, None);
             d.destroy_shader_module(self.sky_vs, None);
             d.destroy_shader_module(self.sky_fs, None);
+            d.destroy_pipeline(self.cloud_pipeline, None);
+            d.destroy_pipeline_layout(self.cloud_layout, None);
+            d.destroy_descriptor_set_layout(self.cloud_set_layout, None);
+            for m in self.cloud_modules {
+                d.destroy_shader_module(m, None);
+            }
+            if let Some(m) = self.clouds.take() {
+                m.destroy(gpu);
+            }
             d.destroy_pipeline(self.pipeline, None);
             d.destroy_pipeline_layout(self.pipeline_layout, None);
             d.destroy_shader_module(self.vs, None);

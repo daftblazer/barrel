@@ -932,6 +932,86 @@ at +0x58..+0x84 and copies them to +0x128..+0x17c each update (0x14035b200, 0x14
 0x140546e20).
 
 
+### Ryza DX: the sky, the clouds
+
+Pass 17 of the game's frame draws the sky in five steps: the plane, the dome's two layers, then
+**the large clouds** and the cloud particles. The clouds are a strip over the sky that shows a
+cloud map ray-marched from the light, and they are what makes the sky white in places. Barrel
+draws the strip (`clouds.rs`, `cloud_*.vert/frag`, the look block's slots from `CLOUD_SLOT`);
+the particles are not drawn (below).
+
+**The density map** (once per field, `cloud_density.frag`; the game's pixel program
+`sh24132e3c`): a 1024 × 1024 map of tileable 4D Perlin noise. The pixel's `uv` becomes two
+circles, `p = (sin 2πu, cos 2πu, sin 2πv, cos 2πv)` each pair scaled by its sampling range
+over 2π (`vSamplingRangeU`, `V`), so the map joins at its edges. Eleven octaves (`nOctave`):
+`sum += noise(p) × a; p *= 2; a *= vPersistence`; the output is `sum × vNoiseScale × 0.5 + 0.5`.
+The noise is Perlin's improved one: a quintic fade, the lattice hash `P[P[P[P[x] + y] + z] + w]`
+over a permutation table `P` (the game's is a 256 × 1 texture it reshuffles each run; Barrel's
+is one fixed shuffle), and from the hash's low five bits a gradient: `u = h < 24 ? x : y`,
+`v = h < 12 ? y : z`, `w = h < 8 ? z : t`, with the signs from bits 0, 1 and 2. The noise's
+members come from the set's `cloud_` block: `vPersistence` is `CloudHeightNoiseSeedPersistence`
+(0.56), `vNoiseScale` `CloudHeightNoiseSeedScale` (1.5), and the ranges `SeedFreqScale ×
+SeedOctave` (0.96 × 8 = 7.68, as captured). The octave count 11 is the game's, not the set's
+(`SeedOctave` is 8).
+
+**The cloud map** (`cloud_map.frag`, `sh03e41bad`): per channel (four layers, alike at noon),
+`x = saturate(d - vThreshold) × vSharpness`, `c = (1 - 2^-x)^vThinness × vHeightScale` (the
+game's `exp` and `log` are base 2). The game makes it every frame; Barrel when its constants
+change. Noon: threshold 0.6414, sharpness 8.365 (both read from a captured frame, see below),
+thinness and height scale 1.
+
+**The strip** (`cloud_strip.vert/frag`; `sh8a4c237c`, `shf2d21137`): a grid of 16 × 16 cells
+(574 vertices as the game's one triangle strip; Barrel's is a list built in the vertex shader),
+`vPosOf` wide, centred on the eye in x and z; the height is a parabola in the distance `r` from
+the eye's column, `y = vRange.w + vRange.z r²`. The map's coordinate is the grid's `(u, v)` times
+the tiling (`CloudDensityMapFrequencyX/Z`, 1.2) plus the wind's offset, `-Wind × t × tiling /
+gridWidth` (`CloudWindX/Z`, t the seconds since the field came up). Each vertex also carries
+`cDif` (the set's cloud colour) with an alpha `min(1.5 (1 - min(|2(u,v) - 1|², 1)), 1) ×
+CloudDensity`, which fades the grid out toward its edge; the pixel program takes tents
+`max(1 - 4|a - c|, 0)` of it at 0.25, 0.5, 0.75 and 1 as weights over the map's four channels
+(so a thin edge picks a faint value), and `alpha = dot(weights, map)`.
+
+The march: the light's way `L` (the set's cloud light, below) takes the thickness (`CloudThickness`,
+1050) down through the layer, `down = L × thickness / L.y`, whose x and z, scaled to the map's
+coordinates (`tiling / gridWidth`) and limited to `CloudMaxRayTraceDeltaUV` (0.02) long, are the
+whole step; 15 taps at 1/15 of it each add `clamp(map - i/16, 0, 1/16)` to a depth that starts at
+`min(alpha, 1/16)` (the map is the cloud's height field: what stands above a ray at its height).
+`lit = 2^(-|down| × depth / CloudAttenuationDistance)` (the extinction is the reciprocal of
+`CloudAttenuationDistance`, 500), the light on the cloud `(litCol × lit + ambLit) × cDif`.
+Scattering is the sky's (`Scat`, built as the sky plane's, below) with `cosθ = to-eye · L`:
+`in = (1 + cos²θ) Scat2 + Scat3 × (cosθ Scat2.w + Scat3.w)^-1.5 + Scat1`, `s = in × lit ×
+CloudScatteringAttenuationScale`, `T = min(2^(Scat0 × e^(-height / top) × fogDistance), 1)` with
+`fogDistance` the sky's fog ramp on the clip `w`, and the colour is `T (light - s) + s` with the
+alpha above, blended over the dome. (The game's pixel program also mixes in two height fog
+layers from `cHFog`; both are zero at noon and Barrel does not draw the scene's height fog
+either, so they are left out.)
+
+**Where each constant comes from** (`environment::Clouds`, `Clouds::shader`; the test
+`the_clouds_constants_are_the_games` compares them to a captured frame at Rasenboden's noon,
+to four figures):
+
+- the light is the set's second light, at 0x538: colour (35, 48.84, 70) and, from 30 degrees up
+  and 30 round, `litDir`; `Scat` is the sky plane's with this colour times `skyFog_.power` as
+  the sun (so the clouds' Scat rows 2 and 3 are not the plane's); the fog ramp (`fog`) is the
+  sky's `1 / (end - start)`, `-start / (end - start)`.
+- `cDif` and `vRange.y` are the block's colour and `CloudDensity`; `vTraceParams` is
+  (`CloudThickness`, `CloudMaxRayTraceDeltaUV`, 1 / `CloudAttenuationDistance`,
+  `CloudScatteringAttenuationScale`); `vTexOf` the tilings (`CloudDensityMapFrequency*`, then
+  `CloudDensityNoiseMapFrequency*`, 4, whose layer the strip's program does not read) and the
+  offsets above (the capture is at t = 1/60 s); `vTraceDeltaScale` the tilings over 64,000.
+- **Stand-ins**: the grid's width 64,000 and its middle height `eye.y + 6000 + CloudOffsetY` (12,000
+  over the eye at noon; the offset could also count twice), its fall `5/6` of that height at
+  `CloudViewRange` (a ratio read from one frame; 5/6 is also 1 / 1.2, the tiling), the cloud map's
+  threshold 0.6414 and sharpness 8.365 (a frame's values: the game moves them with a height noise,
+  `CloudHeightNoiseChangeSpeed` 0.1 and `Scale` 0.05, whose rule is not found; 1 - `CloudDensity`
+  is 0.65), the clouds' ambient light (zero in the frame).
+- The sky's exposure folds into the colours as the sky plane's does.
+
+**Not drawn: the cloud particles** (`shb50b0ba6`, `sh040b16cf`, `cloudpiece.g1t`, set block
+`cloudParticle_`): billboards a CPU system places, in the frame read 49 quads (294 indices)
+around 50,000 to 60,000 units out, a unit or so across (just spawned), lit by the same light
+through their normal map. Their spawning, growth and fade rules are not read.
+
 ## Ryza DX: the plants (`ObjectGrassPBS.g1s`)
 
 The field's plants (`_grass.bin`, docs/formats.md) are quads the game builds on the CPU,

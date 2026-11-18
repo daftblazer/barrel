@@ -360,6 +360,150 @@ mod sky_tests {
     }
 }
 
+/// The sky's large clouds (the set's `cloud_` block and the light it names for them at 0x538;
+/// docs/shading.md, "Ryza DX: the sky, the clouds"). Rasenboden's sunny noon: density 0.35,
+/// colour (0.32, 0.4688, 0.8), wind (0, -150), a surface 6000 up, 50,000 out, the map
+/// tiled 1.2 times across the grid, 1050 thick, light (35, 48.84, 70) from 30 degrees up and
+/// round.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Clouds {
+    pub density: f32,
+    pub color: [f32; 3],
+    pub wind: [f32; 2],
+    pub offset_y: f32,
+    pub view_range: f32,
+    pub frequency: [f32; 2],
+    pub thickness: f32,
+    pub attenuation_distance: f32,
+    pub scattering_scale: f32,
+    pub max_delta_uv: f32,
+    /// The density map's noise: `CloudHeightNoiseSeed*`.
+    pub seed_octave: f32,
+    pub seed_persistence: f32,
+    pub seed_frequency: [f32; 2],
+    pub seed_scale: f32,
+    /// The second layer: its wind and its map's tiling.
+    pub second_wind: [f32; 2],
+    pub noise_frequency: [f32; 2],
+    pub light: [f32; 3],
+    pub light_elevation: f32,
+    pub light_azimuth: f32,
+}
+
+const CLOUDS: usize = 0x198;
+const CLOUD_LIGHT: usize = 0x538;
+
+/// How wide the cloud grid is, in field units (the game's `vPosOf` at Rasenboden's noon; not
+/// found in the set: 1.28 times the view range there).
+pub const CLOUD_GRID: f32 = 64_000.0;
+/// STAND-IN: how far above the eye the cloud surface's middle stands, before the set's
+/// `CloudOffsetY` (12,000 over the eye at noon, where the offset is 6000; the real rule is not
+/// found, and could as well be twice the offset).
+pub const CLOUD_RISE: f32 = 6_000.0;
+/// STAND-IN: how much of the surface's height is gone at the view range (5/6: the captured
+/// parabola's fall; the real rule, maybe the map's frequency 1.2 as a divisor, is not found).
+pub const CLOUD_FALL: f32 = 5.0 / 6.0;
+/// The density map's octaves (the game's `nOctave` at noon; the set's `SeedOctave` is 8).
+pub const CLOUD_OCTAVES: u32 = 11;
+
+impl Clouds {
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Clouds, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |o: usize| f32::from_le_bytes(set[o..o + 4].try_into().unwrap());
+        let c = |o: usize| f(CLOUDS + o);
+        Ok(Clouds {
+            density: c(0),
+            color: [c(0x4), c(0x8), c(0xc)],
+            wind: [c(0x14), c(0x18)],
+            offset_y: c(0x1c),
+            view_range: c(0x20),
+            frequency: [c(0x24), c(0x28)],
+            thickness: c(0x34),
+            attenuation_distance: c(0x38),
+            scattering_scale: c(0x3c),
+            max_delta_uv: c(0x44),
+            seed_octave: c(0x50),
+            seed_persistence: c(0x54),
+            seed_frequency: [c(0x58), c(0x5c)],
+            seed_scale: c(0x60),
+            second_wind: [c(0x64), c(0x68)],
+            noise_frequency: [c(0x70), c(0x74)],
+            light: [f(CLOUD_LIGHT), f(CLOUD_LIGHT + 4), f(CLOUD_LIGHT + 8)],
+            light_elevation: f(CLOUD_LIGHT + 0xc),
+            light_azimuth: f(CLOUD_LIGHT + 0x10),
+        })
+    }
+
+    /// The density map's noise (`vSamplingRangeU/V`, `vPersistence`, `vNoiseScale`): the
+    /// sampling range is the seed's frequency scale over its octave count (0.96 times 8 is
+    /// the captured 7.68).
+    pub fn noise(&self) -> ([f32; 2], f32, f32) {
+        ([self.seed_frequency[0] * self.seed_octave, self.seed_frequency[1] * self.seed_octave], self.seed_persistence, self.seed_scale)
+    }
+
+    /// The constants the strip's programs take, in the game's space (x not mirrored), for a
+    /// camera at `eye`, `seconds` after the field came up, in the sky's scattering `sky` (the
+    /// light's colour times its power).
+    pub fn shader(&self, sky: &Fog, eye: [f32; 3], seconds: f32) -> CloudShader {
+        let (e, a) = (self.light_elevation.to_radians(), self.light_azimuth.to_radians());
+        let lit_dir = [-e.cos() * a.sin(), -e.sin(), -e.cos() * a.cos()];
+        let [fx, fz] = self.frequency;
+        let [nx, nz] = self.noise_frequency;
+        // The wind carries each layer's map over the grid: its rate in grid widths, times the
+        // map's tiling. (The second layer is not read by the strip's program.)
+        let scroll = |wind: f32, freq: f32| -wind * seconds * freq / CLOUD_GRID;
+        let top = eye[1] + CLOUD_RISE + self.offset_y;
+        let thick = (sky.end - sky.start).max(1.0);
+        // The scattering as the sky's is, with this light as the sun (docs/shading.md).
+        let sun = self.light.map(|v| v * sky.power);
+        let ext: [f32; 3] = std::array::from_fn(|i| sky.rayleigh[i] + sky.mie[i]);
+        let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
+        let ray_k = 3.0 / (16.0 * std::f32::consts::PI);
+        let mie_k = (1.0 - sky.g) * (1.0 - sky.g) / (4.0 * std::f32::consts::PI);
+        let log2e = std::f32::consts::LOG2_E;
+        CloudShader {
+            lit_dir,
+            lit_col: self.light,
+            c_dif: self.color,
+            pos_of: [CLOUD_GRID, CLOUD_GRID, eye[0] - CLOUD_GRID / 2.0, eye[2] - CLOUD_GRID / 2.0],
+            tex_of: [fx, fz, nx, nz, scroll(self.wind[0], fx), scroll(self.wind[1], fz), scroll(self.second_wind[0], nx), scroll(self.second_wind[1], nz)],
+            range: [0.0, self.density, -CLOUD_FALL * top / (self.view_range * self.view_range), top],
+            fog: [1.0 / thick, -sky.start / thick],
+            trace_params: [self.thickness, self.max_delta_uv, 1.0 / self.attenuation_distance, self.scattering_scale],
+            trace_delta_scale: [fx / CLOUD_GRID, fz / CLOUD_GRID],
+            scat: [
+                [-ext[0] * log2e, -ext[1] * log2e, -ext[2] * log2e, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [ray_k * sun[0] * part(sky.rayleigh, 0), ray_k * sun[1] * part(sky.rayleigh, 1), ray_k * sun[2] * part(sky.rayleigh, 2), -2.0 * sky.g],
+                [mie_k * sun[0] * part(sky.mie, 0), mie_k * sun[1] * part(sky.mie, 1), mie_k * sun[2] * part(sky.mie, 2), 1.0 + sky.g * sky.g],
+            ],
+        }
+    }
+}
+
+/// The strip's constants as the game's programs name them (`vEye`'s companions): see
+/// [`Clouds::shader`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CloudShader {
+    pub lit_dir: [f32; 3],
+    pub lit_col: [f32; 3],
+    pub c_dif: [f32; 3],
+    /// `vPosOf`: the grid's width and depth, and its corner's x and z.
+    pub pos_of: [f32; 4],
+    /// `vTexOf`: the map's tiling in x and z, the second layer's, then each layer's offset.
+    pub tex_of: [f32; 8],
+    /// `vRange`: unused, the density, the surface's fall with the square of the distance, and
+    /// its height over the eye's field.
+    pub range: [f32; 4],
+    pub fog: [f32; 2],
+    /// `vTraceParams`: the layer's thickness, the most one step moves the map's coordinate,
+    /// the extinction per unit of thickness, the scattering's scale.
+    pub trace_params: [f32; 4],
+    pub trace_delta_scale: [f32; 2],
+    /// `Scat`.
+    pub scat: [[f32; 4]; 4],
+}
+
 /// How the stage takes the set's light (`indirectStage_`, between `fog_` and `skyFog_` in the
 /// file, laid out as `indirectChara_`): the diffuse light map's scale and colour, and the scale
 /// on the set's ambient colour. Rasenboden's noon: 7, (0.1, 0.2602, 1) and 0, so its shade is
@@ -705,5 +849,51 @@ mod rim_tests {
         let a = br#"<root indirectStage_IDLScalerOfAmbientDiffuseMap="2.5" indirectStage_IDLScalerOfAmbientDiffuseMapColorRGB="1.642000, 1.978000, 4.000000" indirectStage_AmbientLightScale="0"></root>"#;
         let (rgb, main) = super::stage_ambient(a).unwrap();
         assert!((rgb[0] - 4.105).abs() < 1e-4 && (rgb[2] - 10.0).abs() < 1e-4 && main == 0.0);
+    }
+}
+
+#[cfg(test)]
+mod cloud_tests {
+    use super::*;
+
+    /// Rasenboden's sunny noon: the set's words, and the constants the game's strip draws
+    /// carried in a captured frame, to four figures.
+    #[test]
+    fn the_clouds_constants_are_the_games() {
+        let mut env = vec![0u8; SET_SIZE * SETS];
+        let set = SET_SIZE;
+        let mut put = |o: usize, v: &[f32]| {
+            for (k, x) in v.iter().enumerate() {
+                env[set + o + 4 * k..set + o + 4 * k + 4].copy_from_slice(&x.to_le_bytes());
+            }
+        };
+        put(CLOUDS, &[0.35, 0.32, 0.4688, 0.8, 1.0, 0.0, -150.0, 6000.0, 50000.0, 1.2, 1.2]);
+        put(CLOUDS + 0x34, &[1050.0, 500.0, 1.0, 16.0, 0.02, 0.1, 0.05, 8.0, 0.56, 0.96, 0.96, 1.5, 1000.0, 500.0, 0.3, 4.0, 4.0]);
+        put(CLOUD_LIGHT, &[35.0, 48.840305, 70.0, 30.000133, 30.0004]);
+        put(SKY_FOG, &[1000.0, 300000.0, 0.713094, 0.713094, 0.713094, 0.973688, 0.02, 0.118, 1.0, 40.0, 0.0]);
+        let clouds = Clouds::read(&env, Time::Noon, Weather::Sunny).unwrap();
+        let (_, sky) = Fog::read(&env, Time::Noon, Weather::Sunny).unwrap();
+        let s = clouds.shader(&sky, [32526.793, 6363.3193, 29944.662], 1.0 / 60.0);
+        let near = |what: &str, got: &[f32], want: &[f32]| {
+            assert_eq!(got.len(), want.len(), "{what}");
+            for (g, w) in got.iter().zip(want) {
+                assert!((g - w).abs() <= 1e-4 * w.abs().max(1e-6), "{what}: {got:?} against {want:?}");
+            }
+        };
+        near("litDir", &s.lit_dir, &[-0.43301824, -0.5000033, -0.7499947]);
+        near("litCol", &s.lit_col, &[35.0, 48.840305, 70.0]);
+        near("cDif", &s.c_dif, &[0.32, 0.4688, 0.8]);
+        near("vPosOf", &s.pos_of, &[64000.0, 64000.0, 526.79297, -2055.338]);
+        near("vTexOf", &s.tex_of, &[1.2, 1.2, 4.0, 4.0, 0.0, 0.000046875004, -0.0010416667, -0.00052083336]);
+        near("vRange", &s.range[1..], &[0.35, -0.0000061211067, 18363.32]);
+        near("fog", &s.fog, &[0.0000033444817, -0.0033444816]);
+        near("vTraceParams", &s.trace_params, &[1050.0, 0.02, 0.002, 1.0]);
+        near("vTraceDeltaScale", &s.trace_delta_scale, &[0.00001875, 0.00001875]);
+        near("Scat0", &s.scat[0], &[-1.0576435, -1.1990275, -2.4714847, 1.0]);
+        near("Scat1", &s.scat[1], &[0.0, 0.0, 0.0, 1.0]);
+        near("Scat2", &s.scat[2], &[2.2795267, 16.55454, 97.54973, -1.9473761]);
+        near("Scat3", &s.scat[3], &[0.07502586, 0.09234883, 0.06421291, 1.9480684]);
+        let (range, persistence, scale) = clouds.noise();
+        near("noise", &[range[0], range[1], persistence, scale], &[7.68, 7.68, 0.56, 1.5]);
     }
 }

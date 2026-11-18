@@ -1561,6 +1561,18 @@ another call and are not listed:
 | (ambient scales) | 0x202c | not placed | `0x140701cb0` | ambientDiffuseUpScale +0x0, ambientLightDownScale +0x4 |
 | (lens flare) | 0x2070 | not placed | `0x1406ff610` | %f,%f,%f,%f +0x0, flare.amount +0x10, flare.curve_center +0x14, flare.curve_coefficient +0x18, %f,%f,%f,%f +0x20, paraffin.amount +0x30, paraffin.curve_center +0x34, paraffin.curve_coefficient +0x38, intensity +0x40, sky_intensity +0x44 |
 
+**The `cloud_` block's values**, read from Rasenboden's noon and the other eleven sets (file offsets in the set): the
+colour is a word triple at 0x19c (+0x4; the clouds' `cDif`, with 1 at 0x1a8), `CloudWindX/Z` at
+0x1ac and 0x1b0 (noon: 0 and -150), `CloudOffsetY` 6000 (sunny; -3000 and -2000 in the others), `CloudViewRange`
+50000 (45000 at night), `CloudDensityMapFrequency` 1.2 to 2.5, `CloudShadingType` 2, `CloudThickness`
+1050 at noon (200 to 1000 elsewhere), `CloudAttenuationDistance` 500 to 900, `CloudRayTraceNum` 16,
+`CloudMaxRayTraceDeltaUV` 0.02, the `CloudHeightNoiseSeed*` words 8, 0.56, 0.96, 0.96 and 1.5 (the
+density noise's: the ranges are 0.96 × 8, persistence and scale), `Cloud2ndWind` (1000, 500) and
+`CloudDensityNoiseMapFrequency` 4 and 4. The cloud light (0x538) is the set's second light: colour, then
+elevation and azimuth. The sky's large clouds take their shader constants from these: docs/shading.md,
+"Ryza DX: the sky, the clouds".
+
+
 **The sky.** A set names its sky dome at 0x3d8 (64 bytes, zero-ended; `SkyDome_`'s
 `SkyDomeDisplaySetFactory` in the executable, whose reader also reads `SkyDomeLightGroupID`,
 `SkyDomeWorldPosition`, `SkyDomeWorldScale` and two more): a container

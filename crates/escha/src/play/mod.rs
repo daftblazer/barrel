@@ -6840,6 +6840,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         layers: &layers,
         readback: saved_shot.then_some(readback),
         sky_plane: false,
+        clouds: None,
     };
     if let Some(c) = cpu.as_mut() {
         c.mark("HUD layers");

@@ -289,11 +289,15 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 - **The sky.** `barrel` draws the sky plane with the game's own constants (the set's
   `skyFog_`, the sun times its power, the path through the atmosphere, the horizon haze of
   the glow block) and the set's cloud dome where the set places it, lit by the set's ambient
-  and sun for it and fogged with the sky's scattering (docs/shading.md, "the sky"). Left, largest first: **the
-  clouds** (the game's large white clouds are not the dome: a strip showing a 1024 × 1024
-  target they are ray-marched into, from the set's `cloud_` block, and the cloud particles
-  of `cloudParticle_`; neither is drawn, so the sky is the thin dome layer alone, paler and
-  emptier than the game's), the dome's specular term, its layers' scroll.
+  and sun for it and fogged with the sky's scattering (docs/shading.md, "the sky"). The game's large white clouds
+  are drawn too (a strip showing a 1024 × 1024 cloud map ray-marched from the set's `cloud_`
+  block, docs/shading.md "the clouds"; where they fall differs from the game's, whose noise
+  table is reshuffled each run, so the gate's sky mean runs 130 to 149 in red over three tables
+  tried, the game's still 153). Left, largest first: **the cloud particles** (`cloudParticle_`: a few dozen
+  billboards from a CPU system whose rules are not read), the clouds' stand-ins (their
+  threshold and sharpness move with a height noise; the grid's height and fall are read from
+  one frame, so other eye heights and sets are unchecked), the dome's specular term, its
+  layers' scroll.
   At the gate's noon a gap in the leaves at the top of the view shows bright sky where the
   still shows leaves: the tree's foliage there, not the sky. Morning, evening and night have
   no reference frame.

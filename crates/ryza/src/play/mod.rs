@@ -33,6 +33,7 @@ use ash::vk;
 use barrel_formats::elixir::Elixir;
 use barrel_formats::g1m::G1m;
 use barrel_formats::g1t::G1t;
+use barrel_render::clouds::{CloudFrame, Density as CloudDensity, Shape as CloudShape};
 use barrel_render::renderer::{Camera, Frame, Renderer};
 use barrel_render::settings::RenderSettings;
 use barrel_render::*;
@@ -361,6 +362,11 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
 /// The glow's rate over the set's `fBloomWeight`: the glow is stored at half its range, as the
 /// scene is.
 const GLOW_RANGE: f32 = 2.0;
+
+// STAND-IN: The cloud map's threshold is the game's first frame at Rasenboden's noon; the real thing is the set's density moved by its height noise (`CloudHeightNoiseChangeSpeed`, `CloudHeightNoiseScale`), not found.
+const CLOUD_THRESHOLD: f32 = 0.6413691;
+// STAND-IN: The cloud map's sharpness is the game's first frame at Rasenboden's noon; the real rule (moved with the height noise too) is not found.
+const CLOUD_SHARPNESS: f32 = 8.365147;
 
 /// The sky plane's ground radius and atmosphere height (the game's `skyPos`, as its sky
 /// plane's constants hold them: 6,378 km and 10 km in metres).
@@ -962,7 +968,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let bin = barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)).ok_or("environment has no settings")?;
             let light = Light::read(bin, a.time, a.weather)?;
             let (fog, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
-            let sky_fog = (sky_fog, barrel_ryza::environment::SkyGlow::read(bin, a.time, a.weather)?, barrel_ryza::environment::DomeLight::read(bin, a.time, a.weather)?);
+            let sky_fog = (sky_fog, barrel_ryza::environment::SkyGlow::read(bin, a.time, a.weather)?, barrel_ryza::environment::DomeLight::read(bin, a.time, a.weather)?, barrel_ryza::environment::Clouds::read(bin, a.time, a.weather)?);
             gust = Some(barrel_ryza::environment::Gust::read(bin, a.time, a.weather)?);
             // The cloud shadows: the set's pattern over the field's light texture.
             if let (Some(p), Some(t)) = (barrel_ryza::environment::Pattern::read(bin, a.time, a.weather)?, barrel_engine::field::named(&env, &format!("{}_pat.g1t", files.area)).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty()))) {
@@ -1374,7 +1380,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
             _ => dist,
         };
-        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, title_clip);
+        // The field's clock for the sky (the clouds' wind): a window's own, 60 Hz offscreen.
+        let sky_clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1524,6 +1532,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             layers: &layers,
             readback: readback.map(|(b, _)| b),
             sky_plane: view.sky_plane,
+            clouds: view.clouds,
         };
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
@@ -1596,7 +1605,7 @@ const LOOK_HEIGHT: f32 = 128.0;
 const CAMERA_TURN: f32 = 120.0;
 
 /// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
-type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, f32);
+type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight, barrel_ryza::environment::Clouds), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, f32);
 
 /// A frame's view: the look block and what goes with it.
 struct View {
@@ -1606,6 +1615,8 @@ struct View {
     /// The far shadow square wanted and its look slot (texel, layer to fill, fades).
     shadow_far: Option<(Mat4, [f32; 4])>,
     sky_plane: bool,
+    /// The sky's large clouds, when the set has them: what their maps are made from.
+    clouds: Option<CloudFrame>,
     near: f32,
     far: f32,
     exposure: Option<f32>,
@@ -1618,7 +1629,7 @@ struct View {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, clip: Option<(f32, f32)>) -> View {
+fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, clip: Option<(f32, f32)>, seconds: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -1635,6 +1646,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         look[44 + k] = now;
     }
     let mut sky_plane = false;
+    let mut clouds = None;
     let mut exposure_k = None;
     look[4] = [eye.x, eye.y, eye.z, 1.0];
     // The billboards' axes (model.vert; the field's plants): upright cards turning about the
@@ -1694,7 +1706,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         // The sky plane (docs/shading.md, "Ryza DX: the sky"): Scat as measured in the game,
         // from `skyFog_` and the sun's colour times its power (scaled by the frame's exposure).
         {
-            let (f, glow, _) = *sky_fog;
+            let (f, glow, _, _) = *sky_fog;
             let sun = light.parallel[0].color.map(|v| v * f.power * k);
             let ext: [f32; 3] = std::array::from_fn(|i| f.rayleigh[i] + f.mie[i]);
             let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
@@ -1720,6 +1732,36 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             let sun_way = from_light(light.parallel[0].elevation, light.parallel[0].azimuth);
             look[s0 + 7] = [sun_way.x, sun_way.y, sun_way.z, 0.0];
             sky_plane = true;
+        }
+        // The sky's large clouds (docs/shading.md, "Ryza DX: the sky, the clouds"): the constants
+        // the game's strip draws take from the set's `cloud_` block and its light for them, in
+        // render space (x mirrored) and times the exposure; the maps' constants beside.
+        {
+            let (sky, _, _, set) = *sky_fog;
+            let s = set.shader(&sky, [-eye.x, eye.y, eye.z], seconds);
+            let c = CLOUD_SLOT;
+            let lit = |v: [f32; 3]| [v[0] * k, v[1] * k, v[2] * k];
+            let wrap = |v: f32| v - v.floor();
+            look[c] = [-s.lit_dir[0], s.lit_dir[1], s.lit_dir[2], 0.0];
+            let l = lit(s.lit_col);
+            look[c + 1] = [l[0], l[1], l[2], 0.0];
+            // STAND-IN: The clouds' ambient light is none; the real thing is the lighting set's word for it (zero in the capture at Rasenboden's noon).
+            look[c + 2] = [0.0, 0.0, 0.0, 0.0];
+            look[c + 3] = [s.c_dif[0], s.c_dif[1], s.c_dif[2], s.range[1]];
+            look[c + 4] = [s.pos_of[0], 0.0, s.range[2], s.range[3]];
+            look[c + 5] = [s.tex_of[0], s.tex_of[1], wrap(s.tex_of[4]), wrap(s.tex_of[5])];
+            look[c + 6] = s.trace_params;
+            look[c + 7] = [s.trace_delta_scale[0], s.trace_delta_scale[1], s.fog[0], s.fog[1]];
+            look[c + 8] = s.scat[0];
+            for (row, scat) in s.scat.iter().enumerate().skip(1) {
+                let v = lit([scat[0], scat[1], scat[2]]);
+                look[c + 8 + row] = [v[0], v[1], v[2], scat[3]];
+            }
+            let (range, persistence, scale) = set.noise();
+            clouds = Some(CloudFrame {
+                density: CloudDensity { range, persistence, scale, octaves: barrel_ryza::environment::CLOUD_OCTAVES },
+                shape: CloudShape { threshold: [CLOUD_THRESHOLD; 4], sharpness: [CLOUD_SHARPNESS; 4], thinness: [1.0; 4], height: [1.0; 4] },
+            });
         }
         // STAND-IN: The sun's shadow is one square over the camera's target; the real thing is the game's cascades.
         // The sun's shadow map: one square over the camera's target, wide enough for the
@@ -1748,5 +1790,5 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         }
         exposure_k = Some(k);
     }
-    View { look, vp, shadow_vp, shadow_far, sky_plane, near, far, exposure: exposure_k }
+    View { look, vp, shadow_vp, shadow_far, sky_plane, clouds, near, far, exposure: exposure_k }
 }

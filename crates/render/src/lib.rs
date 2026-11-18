@@ -12,6 +12,7 @@ use glam::{Mat4, Vec3};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+pub mod clouds;
 pub mod fsr;
 pub mod glow;
 pub mod locate;
@@ -59,7 +60,11 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// field's plants).
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
-pub const LOOK_SLOTS: usize = 97;
+pub const LOOK_SLOTS: usize = 109;
+/// The first of the sky clouds' look slots (`cloud_strip.vert`): the light's way, its colour,
+/// the ambient, the clouds' colour and density, the grid and the surface's shape, the map's
+/// tiling and offset, the march's constants, the step's scale and the fog, then Scat (12).
+pub const CLOUD_SLOT: usize = 97;
 pub const DOME_SUN_SLOT: usize = 95;
 pub const EMISSION_SLOT: usize = 94;
 pub const DOME_LIGHT_SLOT: usize = 92;
