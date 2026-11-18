@@ -1779,7 +1779,8 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
-    let (near, far) = clip.unwrap_or((dist * 0.01, (dist * 20.0).max(80_000.0)));
+    // The game's projection: near 50 and far 300000 (its depth terms at the gate: the nearest pixel at z 315 has depth 0.8417, the sky at 1 unprojects to 300036), so the backdrop's mountains out to 123000 units are not cut.
+    let (near, far) = clip.unwrap_or((50.0, 300_000.0));
     let mut proj = Mat4::perspective_rh(fov, width as f32 / height as f32, near, far);
     proj.y_axis.y *= -1.0;
     proj.x_axis.x *= -1.0;

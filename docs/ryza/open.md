@@ -267,13 +267,17 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   23.34). What the 23.85 is made of at the gate (shares of the summed error; the picture's
   error is mostly broad, not fine: still 16.4 after a 32 by 32 box blur of both):
   - **Leaves missing in the trees' crowns: 14%** (2.5% of the picture, mean abs 137). Barrel
-    shows sky where the game has leaves (11.2% of the picture is sky in Barrel's lit scene,
-    9.05% in the game's; the other way round 0.4%), and the bloom's bright pass takes it:
+    shows sky where the game has leaves (10.4% of the picture is sky in Barrel's lit scene,
+    9.05% in the game's, 11.2% before the projection's far plane was the game's 300000: the
+    backdrop's mountains past 80000 units were cut and the sky showed through them; the sky
+    drawn where the game has geometry is 1.7%, the other way round 0.4%; what is left is the big
+    tree's canopy, the leaf clusters look sparser than the game's, and the pole's edges one or
+    two pixels), and the bloom's bright pass takes it:
     over the game's covered pixels its sum is 26,725 against the game's 1,691, while over the
     game's sky it is 17,394 against 23,335. Ruled out (each tried at this frame): the alpha
     test's reference (5 of 255 instead of 50 and 63 fills little; switching the test off
     fills 44% of it and shows the leaf cards' whole quads), the skyline test (`--no-skyline`),
-    the objects' draw ranges and levels of detail, the plants (hiding them changes not a
+    the objects' draw ranges and levels of detail, the filtering (4 times anisotropic, as the game's sampler state, moves the sky by 0.004%), the plants (hiding them changes not a
     pixel of it), the plant cells' side planes, the camera. Every game draw with a named
     texture has a Barrel match (858 of 913; the rest are terrain tiles, the shore's bubbles and
     three others), so it is what the matched draws leave at those pixels: the leaf cards'
@@ -289,7 +293,9 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
     10 to 15 pixels at her feet (the idle's phase), her shaded side and outlines.
   - **The rest, about a third**, spread over the stage at 15 a pixel: the shadows' edges (the
-    one-square stand-in: of the game's fully shadowed stage pixels, 7% are sunlit in Barrel),
+    sun's share against the game's alpha: 0.072 mean abs over the stage, a third of it from the
+    stage past 10000 units, where the game reads its static map and the clouds' pattern,
+    random per run; the characters' own small shadow map is not built),
     the reflections, the depth of field's softness, the temporal anti-aliasing, the lantern's
     glass (lit white in the game, dark in Barrel).
   Where the game's occlusion is 1 and the sun's share 0, Barrel's scene is within 3 to 5% of
@@ -347,13 +353,25 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
 --time morning`. What differs there, largest first:
 
 - **Shadows.** The game's path and rocks lie in the trees' shade, lit blue by the sky.
-  `barrel` now casts the sun's shadow from every placed model and Ryza (`--no-shadows`
-  to compare) over one square around the target (`1.5 ×` the camera distance, 1500 to 6000
-  units across each way) and a far layer out to 30000 units, fading from 20000 (the
-  override's `shadowMap_ShadowErase*`; docs/renderer.md, "Shadows"). The far square moves in
-  2000-unit steps and is drawn again over 8 frames (about 1 ms each on the PC; on the RP6 to
-  be measured). The shade
-  comes out lighter than the game's.
+  `barrel` casts the sun's shadow from every placed model and Ryza (`--no-shadows` to
+  compare) as the game's three cascades (boxes round the view's slices to 1600, 3600 and
+  10000 units, with the game's depth bias and filter) and a static layer over the whole field
+  past them (docs/shading.md, "The cascades"; docs/renderer.md, "Shadows"). Measured against
+  the game's sun share at the gate (`barrel-parity pixels`, the `shadow` stage): the stage 0.0720
+  mean abs, as the one square and a far layer had, but the middle tree 0.117 (the game's
+  0.117; 0.103 before) and the far stage closer; the left canopy 0.034 against the game's
+  0.010 and the trunk 0.012 against 0.001. Left: (1) where the game takes its cascades' ends
+  (1600, 3600 and 10000 and the fade's 3500 are one frame's constants, `CASCADE_ENDS`), the
+  depth plane 36755 before the camera and the third cascade's box (11672 wide, no slice from
+  3600 fits it); (2) which draws cast (a placed model casts here; Barrel's cascades hold 160,
+  235 and 687 draws against the game's 104, 177 and 669: the choice is not found); (3) the
+  characters' map (`mSubW2S`, 25 draws), whose shadow of Ryza on the ground is darker and
+  sharper in the game; (4) the static map's contents (drawn once at load in the game: it is
+  not in the capture). The lit canopy's brightness (0.05 against 0.022) is not the sun's share
+  but the occlusion: regressing the lit stage on the share per pixel, Barrel's ambient part is
+  0.061 against the game's 0.039 in the canopy and 0.070 against 0.031 on the middle tree, the
+  game's sun slope half Barrel's (the ambient occlusion is not built, above). The shadow
+  pass is 6.9 ms against 1.4.
 - **The sky.** `barrel` draws the sky plane with the game's own constants (the set's
   `skyFog_`, the sun times its power, the path through the atmosphere, the horizon haze of
   the glow block) and the set's cloud dome where the set places it, lit by the set's ambient
@@ -562,9 +580,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   these distances come from the tables it names (Middle 8000 / 25000 on the handheld preset).
   The general preset's object draw ranges (`DispRangeType`) take the place of the field's
   own below the top setting and are not used at it (`docs/renderer.md`, "Ryza DX: object
-  draw ranges"): the handheld's Middle (7000, 15000, 30000) drops far small objects. The shadow distance (`ShadowDistType`: 1, 0.7, 0.5) scales the far
-  shadow layer's fade (20000 to 30000 on High; 14000 to 21000 on the handheld's Middle): a
-  guess at what it scales, as the game's cascades (1200 / 6000 / 13000) are not drawn as such.
+  draw ranges"): the handheld's Middle (7000, 15000, 30000) drops far small objects. The shadow distance (`ShadowDistType`: 1, 0.7, 0.5) scales the
+  cascades' ends (1600, 3600, 10000 on High; 0.7 times them on the handheld's Middle): a
+  guess at what it scales, as the game's own use of it is not read.
   In the far view 0.5% of the pixels change and the time does not (the far layer is redrawn
   only when it moves). The texture mip bias (`TextureType`) leaves out each texture's largest
   levels at upload (`g1t::Texture::without_top_levels`, kept at 4 × 4 or more): Rasenboden's

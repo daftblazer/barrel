@@ -204,3 +204,27 @@ pub fn fit_view_proj(points: &[glam::Vec3], dir: glam::Vec3, plane: f32) -> glam
     // The sun looks down -z of its view: the nearest point to the sun has the largest z.
     glam::Mat4::orthographic_rh(lo.x, hi.x, lo.y, hi.y, (-hi.z).min(plane), -lo.z) * view
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Vec3;
+
+    #[test]
+    fn a_fitted_box_holds_its_points_and_starts_at_the_plane() {
+        let sun = Vec3::new(-0.35, -0.7, -0.6).normalize();
+        let points = [Vec3::new(0.0, 0.0, 0.0), Vec3::new(1000.0, 200.0, -300.0), Vec3::new(-500.0, 80.0, 900.0), Vec3::new(300.0, 600.0, 100.0)];
+        let plane = points.iter().map(|p| p.dot(sun)).fold(f32::MAX, f32::min) - 5000.0;
+        let m = fit_view_proj(&points, sun, plane);
+        for p in points {
+            let c = m.project_point3(p);
+            assert!(c.x >= -1.001 && c.x <= 1.001 && c.y >= -1.001 && c.y <= 1.001 && c.z >= 0.0 && c.z <= 1.001, "{c:?}");
+        }
+        // A point on the plane has depth 0.
+        assert!(m.project_point3(sun * plane).z.abs() < 1e-4);
+        // With no plane before the points, the box starts at the nearest of them.
+        let tight = fit_view_proj(&points, sun, f32::MAX);
+        let nearest = points.iter().map(|p| tight.project_point3(*p).z).fold(f32::MAX, f32::min);
+        assert!(nearest.abs() < 1e-4);
+    }
+}

@@ -838,6 +838,48 @@ share in alpha:
   the set's `indirectStage_` block (0.7, 1, 50000, 50000, 0.005, 0.005 at noon; the other
   times hold strength 1 and switch 0, taken as off).
 
+**The cascades** (the pass's shadow term, one frame at the gate; docs/ryza/open.md). The
+pass reads three cascades (`mW2S`, an array of three orthographic matrices: u along the
+horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2S`, 2048², mode
+`iSemiStaticSMMode` 2) and a small map round the characters (`mSubW2S`, 1024², `nSubSdw` 1).
+- **Picking.** The distance along the view `z` is `vS2VZ` on the first cascade's coordinates
+  minus 1600: cascade 0 up to 1600, cascade 1 to 1600 + `vSMDF.x` = 3600, cascade 2 beyond.
+  `sdplane` is (10000 - z) / 3500 on the same coordinates, saturated: the cascades hold to z
+  6500, fade to the static map by 10000 (`1 - shadowed × weight`, where weight 0 reads the
+  static map alone).
+- **The boxes.** Cascades 0 and 1 are the smallest box in the sun's view (up along +y) round the
+  view's frustum from z 0 to 1600 and 1600 to 3600 (widths 2115 and 4758, to 0.4% in both
+  directions), their depth from one plane 36755 before the camera toward the sun (the same
+  for all three: 36900 to 37500 deep) to the slice's far side. Cascade 2 is 11672 wide, which
+  no slice from 3600 reaches (a slice to 10000 is 13209): not found. The boxes are not
+  snapped to texels. The maps are 2000 × 2400, 2000 × 2400 and 1600 × 1600 (the texels
+  1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024².
+- **The casters' pass.** Back faces culled, no raster bias; the pixel program writes the depth
+  plus `sbias.x` × (|ddx| + |ddy|) plus `sbias.y` to a float target (the depth buffer holds
+  the nearest), and the cut-out variant drops texels under `sbias.w` of alpha. `sbias`: (1,
+  0.0001), (0.5, 0.0003) and (0.05, 0.001) for the three cascades (the constants a fraction
+  of the box's depth: 4, 11 and 37 units), (2.5, 0.01) and (5, 0.07) for the sub map; the
+  alpha 0.392 (100 / 255) in all. The draws: 104, 177 and 669 (the cascades), 25 (the sub map),
+  Barrel's: 160, 235 and 687.
+- **The filter.** Sixteen taps four by four, one texel apart from 1.5 texels before the
+  point, each a bilinear depth comparison (`sample < depth` shadowed, no receiver bias); the
+  sub map's loop is `nSubSdw` times, the larger shadow kept.
+- **The share.** The pass's alpha is `saturate(lit - fOverallShadow)` times the cloud
+  pattern's term; at the gate the trees come out almost fully shaded (0.01 on the left canopy,
+  0.00 on the trunk, 0.12 on the middle tree, 0.43 on the grass in the clouds' pattern).
+
+**The far hills' fog.** The game fogs the backdrop's mountains as stage pixels (stencil 2) at
+their own distance in the scene fog's first draw: at the gate they stand 12000 to 90000 units
+away (mean 44900 over the right-hand strip), `s` = 1.44e-6 × distance - 0.00719 stays under
+0.13, the extinction `exp2(s × Scat0)` keeps 0.89, 0.90 and 0.94, and the in-scattering adds
+(0.04, 0.20, 0.33) to their (0.085, 0.118, 0.093) (the formula `fog_add × (1 - keep)`
+reproduces it to 10%: 0.129, 0.343, 0.476 against 0.124, 0.314, 0.424). Barrel's far hills were
+not haze: the projection's far plane was 80000 and the mountains past it were cut, so the sky
+showed through where the game has hills (`look_for`: near 50 and far 300000 now, the
+game's, from its depth terms). The hills are 0.45, 0.81, 0.74 in Barrel's scene against the
+game's 0.13, 0.32, 0.43 over the strip: their unfogged colour is about 5 times the game's, so
+what is left is the backdrop's own lighting or material (not found), not its fog.
+
 **The lighting pass** (stage draws: `litCol` = the sun × 3, the second light × 1; the
 characters' draw: the sun × 0.8, the second light × 0.487; the scales are the blocks' words
 at +0x34 and +0x2c). With albedo `a`, specular colour `F0`, occlusion `o` (the colour

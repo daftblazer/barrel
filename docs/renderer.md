@@ -624,23 +624,24 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
-The map is an array of three layers (`shadow::CASCADES`). Layer 0 is the square above;
-layers 1 and 2 hold a far square a game asks for (`Renderer::far_shadow(want)` each frame,
-before it writes look slots 87 to 91: the view-projection and {texel, layer (0: none), fade
-start, fade end} it gives back). Receivers outside the near square read it, fading to lit
-with the distance from the eye. The far square is drawn only when `want` moves (so a game
-steps it), into the layer not shown, a slice of the casters a frame (by index count, an
-eighth each, `FAR_FRAMES`), the old square read until it is done; with nothing shown yet it
-is drawn whole at once. Casters under four of its texels across are left out of it
-(`Bounds::extent`). Escha asks for none: layers 1 and 2 are cleared once and never read, and
-its frames are unchanged. Ryza's far square: its centre snaps to a 2000-unit grid and it
-reaches 30000 units each way (the default environment override's
-`shadowMap_ShadowEraseFarEnd`, fading from `ShadowEraseFarStart` 20000). At Rasenboden's
-gate (1920x1080) drawing it whole takes the shadow pass to 10.8 ms (1.7 without); in slices
-2.7 ms on each of the 8 frames, and the frame's median with it standing still is 5.96 ms
-against 5.71 without one (the receivers' second lookup). The game's own cascades
-(`shadowMap_ShadowCascadeStart` 1200, 6000, 13000) are not copied: the near square stands
-for the first three.
+The map is an array of four layers (`shadow::CASCADES`). Layer 0 is the square above (Escha's
+only one: its frames are unchanged, the other layers cleared once and never read). The Ryza
+games draw the game's three cascades into layers 0 to 2 every frame (`Frame::shadow_cascades`:
+layer 0 is `shadow_vp`) and a static layer into layer 3 (`Renderer::far_shadow(want)` each
+frame, before it writes the look slots 87 to 91): the casters of the whole field in one box,
+drawn once, whole, in the frame it is first asked for. A cascade is the smallest box in the
+sun's view around a slice of the view's frustum (`shadow::fit_view_proj`; docs/shading.md,
+"The cascades"); the receivers pick the cascade by the distance along the view
+(`shadow_cascades.glsl`, from the look slots `SHADOW_CASCADE_SLOT`) and fade into the static
+layer before the last cascade's end. The cascades' depth is written with the game's own bias
+(`shadow_cascade.frag`, `shadow::Bias`; the near square keeps the fixed bias), and casters
+under four of a layer's texels across are left out of layers 1 to 3 (`Bounds::extent`). At
+Rasenboden's gate (1920x1080) the shadow pass takes 6.9 ms (1.4 for the one near square and
+the far square moving a slice a frame before) and the frame 11.6 ms against 6.4: 1,100 caster
+draws a frame (160, 235 and 687 in the cascades; the game's passes hold 104, 177 and 669),
+about 6 µs a draw, not the vertex work (a position-only vertex path and no depth write changed
+it by under 10%). The preset's shadow distance (`shadow_reach`, 1 on High, 0.7 on Middle)
+scales the cascades' ends; how the game applies it is not known.
 
 **`xEF_` models are not lit.** Field objects whose names hold `xEF_` (TOWN_03's
 `obj-xEF_windows_tw03`, the light through the bureau's windows; TOWN_11's `obj-xEF_einn`,
