@@ -479,7 +479,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   cell's vertices the first time the cell is drawn: a generator `s × 69069 + 1` seeded from
   the cell's grid index, each member's run seeded from the cell's, four numbers a plant):
   all 574 plant cells of the pixel board's three captures come out plant for plant, place
-  and size. Not read in the builder: a second run of numbers that can drop plants (none is
+  and size. The title's 348 cells' first plants stand where the rule puts them too. Not read in the builder: a second run of numbers that can drop plants (none is
   dropped in these captures), and a branch for cells at the edge of a neighbour with
   another setting (flags at the cell's +0x100, +0x104, +0x124). The row length in the seed
   (256) is the builder's on Rasenboden; whether it follows the grid's size is not checked on
