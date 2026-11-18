@@ -210,8 +210,12 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   Barrel's draws of the same view): per skinned draw the rigid motion that takes Barrel's palette to the
   game's, as her facing's difference (yaw) and how far her point moves, so iterating
   `--ryza` and `--turn` until the yaw reads 0 and the move under a unit places her from the capture's
-  matrices, not from a bone's mean: `--ryza 32200.7,6191.4,30166.9 --turn -126.35` (the height comes from
-  the terrain under her; the draws' spread over the bones is under 1 unit).
+  matrices, not from a bone's mean, and `--motion-time` (her idle's phase) until the bones'
+  worst translation is at its least: the gate `--ryza 32520,6180,30334.02 --turn -1.0 --motion-time 1.15`
+  (bones within 0.14 units), the turn view `--ryza 32200.55,6193.3,30166.94 --turn -126.33
+  --motion-time 2.2` (0.19). The height comes from the terrain under her, read on its cells'
+  triangles as the game does (`Heightmap::at_faces`: the fit had her 1.36 units low in the turn
+  view on the bilinear height, and 0.02 on the triangles).
 - `BARREL_DUMP_STAGES=<dir>` on a Ryza field render (offscreen) writes Barrel's targets in the
   same layout (`<name>.f32`, `<name>.txt`: `width height channels format`, RGBA floats, rows
   top to bottom) and `tone.png`, in the game's units: the scene is stored at half

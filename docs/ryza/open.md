@@ -272,7 +272,9 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   then lost its windmill-tower band when the field clock turned the sails to the capture's phase
   (7.05 s; the sail shadow had fallen on the tower's other side): tone 10.12 (stage 9.11, sky
   16.4, characters 26.4 over her pose). With the dome's layers slid as the game's
-  (`BARREL_DOME_CLOCK`) the gate reads 8.12 (sky 3.7) and the turn view 9.05 (sky 4.9). Shares left on the turn view (lit, game against Barrel):
+  (`BARREL_DOME_CLOCK`) the gate reads 8.12 (sky 3.7) and the turn view 9.05 (sky 4.9); with
+  Ryza where the capture has her, at her idle's phase (docs/parity.md), 6.79 (characters 9.5 from
+  36.9, stage 7.05) and 8.69 (characters 13.9 from 26.4, stage 8.94). Shares left on the turn view (lit, game against Barrel):
   the tower's sunlit side 1.70 against 1.86 and shaded 0.86 against 0.93 (the sun's share 0.43
   against 0.47 and 0.45 against 0.48: the cloud pattern's level; the occlusion and normals
   agree, the normals within 3 to 4 degrees), the house's white wall 2.41 against 2.77 (share

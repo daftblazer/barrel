@@ -34,6 +34,27 @@ impl Heightmap {
         let row = |z: usize| self.height(ix, z) * (1.0 - tx) + self.height(ix + 1, z) * tx;
         Some(row(iz) * (1.0 - tz) + row(iz + 1) * tz)
     }
+
+    /// The height at (x, z) on the cell's two triangles, split along the diagonal from its
+    /// (x + 1, z) corner to its (x, z + 1) corner: the ground Atelier Ryza stands a character
+    /// on (her feet in a captured frame are at 6193.34 where this gives 6193.32 and the
+    /// bilinear height 6191.98); none outside the map.
+    pub fn at_faces(&self, x: f32, z: f32) -> Option<f32> {
+        let (fx, fz) = (x / self.cell_size, z / self.cell_size);
+        if !(fx >= 0.0 && fz >= 0.0 && fx < self.cells_x as f32 && fz < self.cells_z as f32) {
+            return None;
+        }
+        let (ix, iz) = (fx as usize, fz as usize);
+        let (tx, tz) = (fx - ix as f32, fz - iz as f32);
+        let (near, far) = (self.height(ix + 1, iz), self.height(ix, iz + 1));
+        Some(if tx + tz <= 1.0 {
+            let corner = self.height(ix, iz);
+            corner + (near - corner) * tx + (far - corner) * tz
+        } else {
+            let corner = self.height(ix + 1, iz + 1);
+            corner + (far - corner) * (1.0 - tx) + (near - corner) * (1.0 - tz)
+        })
+    }
 }
 
 pub fn parse(d: &[u8]) -> Result<Heightmap, Error> {
@@ -78,5 +99,11 @@ mod tests {
         assert_eq!(h.height(1, 0), 10.0);
         assert!(h.height(0, 1).abs() < 0.01);
         assert_eq!(h.flags[2], 2);
+        // Corners -10 (0,0), 10 (1,0), 0 (0,1), -10 (1,1): the cell's centre lies on the
+        // diagonal between (1,0) and (0,1), at 5 on the triangles and -2.5 bilinear.
+        assert!((h.at_faces(50.0, 50.0).unwrap() - 5.0).abs() < 0.01);
+        assert!((h.at(50.0, 50.0).unwrap() + 2.5).abs() < 0.01);
+        assert!((h.at_faces(25.0, 25.0).unwrap() + 2.5).abs() < 0.01);
+        assert!((h.at_faces(75.0, 75.0).unwrap() + 2.5).abs() < 0.01);
     }
 }

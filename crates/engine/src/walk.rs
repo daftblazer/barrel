@@ -146,6 +146,9 @@ impl Walls {
 /// mesh's floors (its triangles that are not upright).
 pub struct Ground {
     heightmap: Option<barrel_formats::khm::Heightmap>,
+    /// The heightmap is read as its cells' triangles (`Heightmap::at_faces`: the Ryza games),
+    /// not bilinear between its vertices.
+    faces: bool,
     floors: Vec<[[f32; 3]; 3]>,
     /// The floors by square cells of `FLOOR_CELL` on the ground (x, z): each floor in every
     /// cell its box (widened by `floor_height`'s tolerance) touches, so a height looks only at
@@ -159,15 +162,16 @@ const FLOOR_CELL: f32 = 256.0;
 impl Ground {
     /// The floors are the collision mesh's triangles no steeper than `max_slope` (degrees).
     pub fn new(heightmap: Option<barrel_formats::khm::Heightmap>, c: &Collision, max_slope: f32) -> Ground {
-        let mut g = Ground { heightmap, floors: Vec::new(), cells: Default::default() };
+        let mut g = Ground { heightmap, faces: false, floors: Vec::new(), cells: Default::default() };
         g.add_floors(c, max_slope);
         g
     }
 
     /// A ground of the heightmap alone (a field whose collision is not read: the Ryza games
-    /// keep theirs in other files, `docs/ryza/open.md`).
+    /// keep theirs in other files, `docs/ryza/open.md`), stood on by its cells' triangles as
+    /// those games do.
     pub fn of_heightmap(heightmap: barrel_formats::khm::Heightmap) -> Ground {
-        Ground { heightmap: Some(heightmap), floors: Vec::new(), cells: Default::default() }
+        Ground { heightmap: Some(heightmap), faces: true, floors: Vec::new(), cells: Default::default() }
     }
 
     /// More floors: a collision mesh's triangles no steeper than `max_slope` (degrees).
@@ -190,9 +194,11 @@ impl Ground {
         }
     }
 
-    /// The heightmap's height at (x, z), bilinear between its vertices; none outside it.
+    /// The heightmap's height at (x, z): bilinear between its vertices, or on its cells'
+    /// triangles (`faces`); none outside it.
     fn terrain(&self, x: f32, z: f32) -> Option<f32> {
-        self.heightmap.as_ref()?.at(x, z)
+        let map = self.heightmap.as_ref()?;
+        if self.faces { map.at_faces(x, z) } else { map.at(x, z) }
     }
 
     /// Where a character with its feet at `y` stands at (x, z): the highest of the heightmap and
