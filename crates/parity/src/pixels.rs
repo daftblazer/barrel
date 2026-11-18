@@ -261,6 +261,44 @@ fn side_by_side(game: &Image, barrel: &Image, hdr: bool) -> (u32, u32, Vec<u8>) 
     ((3 * tile_w) as u32, tile_h as u32, out)
 }
 
+/// Where Barrel's scene draws nothing against where the game's depth is at the far plane
+/// (sky), on Barrel's half-size normal and depth target (`depth`: view depth in the fourth
+/// channel, `ao::CLEAR_DEPTH` where nothing is drawn). A half-size pixel is the game's when at
+/// least two of its four full-size pixels are. Prints the shares of the picture and, for the
+/// cells of the 6 by 4 grid of 320 by 270 pixels that hold the crowns, the share of each cell.
+fn coverage(masks: &Image, depth: &Image) {
+    if (masks.w, masks.h) != (2 * depth.w, 2 * depth.h) {
+        println!("coverage: sizes differ, {}x{} against {}x{}", masks.w, masks.h, depth.w, depth.h);
+        return;
+    }
+    // Where nothing was drawn, the target holds its clear depth.
+    let far = |px: &[f32]| px[3] >= 1.0e8;
+    let game_sky = |x: usize, y: usize| (0..4).filter(|k| masks.at(2 * x + k % 2, 2 * y + k / 2)[0] >= 1.0).count() >= 2;
+    let (mut g, mut b, mut b_only, mut g_only) = (0usize, 0usize, 0usize, 0usize);
+    const CELL: (usize, usize) = (160, 135);
+    let mut cells = [[0usize; 3]; 24];
+    for y in 0..depth.h {
+        for x in 0..depth.w {
+            let (gs, bs) = (game_sky(x, y), far(depth.at(x, y)));
+            g += usize::from(gs);
+            b += usize::from(bs);
+            b_only += usize::from(bs && !gs);
+            g_only += usize::from(gs && !bs);
+            let c = &mut cells[y / CELL.1 * 6 + x / CELL.0];
+            c[0] += usize::from(bs && !gs);
+            c[1] += usize::from(gs && !bs);
+            c[2] += 1;
+        }
+    }
+    let n = (depth.w * depth.h) as f64;
+    let pct = |v: usize, of: f64| 100.0 * v as f64 / of;
+    println!("coverage: game sky {:.2}%, barrel sky {:.2}%, barrel-only {:.2}%, game-only {:.2}%", pct(g, n), pct(b, n), pct(b_only, n), pct(g_only, n));
+    for (row, col) in [(0, 2), (0, 3)] {
+        let c = cells[row * 6 + col];
+        println!("  cell ({col},{row}): barrel-only {:.1}%, game-only {:.1}%", pct(c[0], c[2] as f64), pct(c[1], c[2] as f64));
+    }
+}
+
 pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
     if let Some(p) = pictures {
         std::fs::create_dir_all(p)?;
@@ -324,6 +362,9 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
             let (w, h, rgba) = side_by_side(&g, &b, stage.scale == 1.0);
             std::fs::write(p.join(format!("{}.png", stage.name)), barrel_formats::png::encode_rgba(w, h, &rgba))?;
         }
+    }
+    if let (Some(m), Ok(d)) = (&masks, load_f32(&barrel.join("depth"))) {
+        coverage(m, &d);
     }
     match tone {
         Some(t) => println!("pixels: tone mean abs {t:.2}"),

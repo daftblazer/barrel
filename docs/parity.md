@@ -202,6 +202,12 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   ten regions of the picture (canopy, trunk, grass, sand, far hills, the dark canopy, the stone
   wall, the shaded path), the game's and Barrel's,
   over the pixels the game drew before the sky.
+- A `depth` stage (the occlusion's normal and depth target at half size: the view depth in
+  the fourth channel, a large clear value where nothing is drawn, the distant view's solid pieces
+  included) gives the coverage line, printed after the stages: `coverage: game sky X%, barrel sky
+  Y%, barrel-only Z%, game-only W%` (the game's from its depth at the far plane, a half-size pixel
+  the game's when two of its four are) and the two crown cells of the 6 by 4 grid of 320 by 270
+  pixels, `cell (2,0)` and `cell (3,0)`: their Barrel-only and game-only shares.
 - The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
   not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
   `BARREL_PATTERN_PHASE=<offset>` (the cloud shadows' pattern, both axes, in repeats) and

@@ -308,6 +308,8 @@ pub struct Light {
     pub diffuse: [f32; 4],
     /// `cAmb`: the ambient.
     pub ambient: [f32; 3],
+    /// The word of nibble flags after the ambient.
+    pub flags: u32,
 }
 
 /// Submeshes drawn with one shader in one pass (G1MG section 0x10009).
@@ -673,7 +675,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
                 for e in 0..bounded(count)? {
                     let at = 16 + 64 * e;
                     let f = |k: usize| f32_at(sec, at + 4 * k);
-                    g.lights.push(Light { diffuse: [f(0)?, f(1)?, f(2)?, f(3)?], ambient: [f(4)?, f(5)?, f(6)?] });
+                    g.lights.push(Light { diffuse: [f(0)?, f(1)?, f(2)?, f(3)?], ambient: [f(4)?, f(5)?, f(6)?], flags: u32_at(sec, at + 28)? });
                 }
             }
             0x10009 => {

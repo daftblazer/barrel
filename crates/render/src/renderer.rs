@@ -45,6 +45,9 @@ pub struct Renderer {
     pub fs: vk::ShaderModule,
     pub pipeline_layout: vk::PipelineLayout,
     pub pipeline: vk::Pipeline,
+    /// The scene pipeline with no face culling, for the draws a material shows from both
+    /// sides (`Draw::two_sided`).
+    pub pipeline_two_sided: vk::Pipeline,
     pub sky_pipeline: vk::Pipeline,
     /// The sky plane (sky.vert/frag): drawn first among the far plane's fragments when a
     /// frame asks (`Frame::sky_plane`).
@@ -61,6 +64,7 @@ pub struct Renderer {
     /// models' and the terrain's normals and depth into them.
     pub ao: ao::Occlusion,
     ao_gbuf_pipeline: vk::Pipeline,
+    ao_gbuf_two_sided_pipeline: vk::Pipeline,
     ao_gbuf_terrain_pipeline: vk::Pipeline,
     pub post_vs: vk::ShaderModule,
     pub post_fs: vk::ShaderModule,
@@ -586,6 +590,11 @@ impl Renderer {
             d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info], None).map_err(|(_, e)| e)?[0]
         };
 
+        let two_sided_raster = raster.cull_mode(vk::CullModeFlags::NONE);
+        let pipeline_two_sided = unsafe {
+            d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info.rasterization_state(&two_sided_raster)], None).map_err(|(_, e)| e)?[0]
+        };
+
         // The distant view: drawn after the field's opaque geometry with a viewport whose depth range
         // is 1 to 1 (its clipping unchanged, every fragment on the far plane), where the depth is
         // still the cleared 1.0: only the pixels nothing covers are shaded. No depth write, so its
@@ -730,10 +739,11 @@ impl Renderer {
         let ao_info = pipeline_info.multisample_state(&msaa).color_blend_state(&ao_blend).render_pass(ao.gbuf_pass);
         let ao_ground_raster = raster.cull_mode(vk::CullModeFlags::NONE);
         let ao_gbuf_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_models)], None).map_err(|(_, e)| e)?[0] };
+        let ao_gbuf_two_sided_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_models).rasterization_state(&two_sided_raster)], None).map_err(|(_, e)| e)?[0] };
         let ao_gbuf_terrain_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_ground).rasterization_state(&ao_ground_raster).layout(terrain_gpu.pipeline_layout)], None).map_err(|(_, e)| e)?[0] };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -932,9 +942,13 @@ impl Renderer {
                         (!draw.sky || bits & 16 != 0).then(|| (draw, u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | bits, tint))
                     })
                     .collect();
-                batch.sort_by_key(|(draw, flags, _)| (flags & 8192 != 0, draw.texture));
-                let (mut texture, mut mask_bound) = (usize::MAX, false);
+                batch.sort_by_key(|(draw, flags, _)| (draw.two_sided, flags & 8192 != 0, draw.texture));
+                let (mut texture, mut mask_bound, mut two_sided) = (usize::MAX, false, false);
                 for (draw, flags, tint) in batch {
+                    if draw.two_sided != two_sided {
+                        two_sided = draw.two_sided;
+                        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if two_sided { self.ao_gbuf_two_sided_pipeline } else { self.ao_gbuf_pipeline });
+                    }
                     let mut per_draw = [0u8; 16];
                     per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
                     per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
@@ -960,6 +974,11 @@ impl Renderer {
             }
             if let (Some(dump), Some((image, size))) = (&self.dump, self.ao.map_image()) {
                 dump.grab(gpu, cb, "ao", image, size, dump::Texels::Rgba8, 1.0);
+            }
+            // The normals and view depth the occlusion reads (at half size; the clear depth where
+            // nothing is drawn): the coverage the board compares against the game's depth.
+            if let (Some(dump), Some((image, size))) = (&self.dump, self.ao.gbuf_image()) {
+                dump.grab(gpu, cb, "depth", image, size, dump::Texels::Rgba32F, 1.0);
             }
             if let Some(t) = &timer {
                 t.mark(d, cb, 2);
@@ -1039,11 +1058,16 @@ impl Renderer {
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             }
+            let mut two_sided = false;
             for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)) {
                 // The instance, and whether it is shaded as a character (not part of a field), as
                 // an eye and as the distant view; the game's own material bits and tint.
                 let (bits, tint) = material(draw);
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | bits;
+                if draw.two_sided != two_sided {
+                    two_sided = draw.two_sided;
+                    d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if two_sided { self.pipeline_two_sided } else { pipe });
+                }
                 let mut per_draw = [0u8; 16];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
                 per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
@@ -1239,6 +1263,8 @@ impl Renderer {
             d.destroy_render_pass(self.post_pass, None);
             d.destroy_pipeline(self.outline_pipeline, None);
             d.destroy_pipeline(self.ao_gbuf_pipeline, None);
+            d.destroy_pipeline(self.ao_gbuf_two_sided_pipeline, None);
+            d.destroy_pipeline(self.pipeline_two_sided, None);
             d.destroy_pipeline(self.ao_gbuf_terrain_pipeline, None);
             d.destroy_pipeline(self.shadow_pipeline, None);
             d.destroy_pipeline(self.shadow_cascade_pipeline, None);

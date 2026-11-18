@@ -647,6 +647,11 @@ nothing). They are copied into device memory once through a staging buffer
 ms with the occlusion (0.48) in it (median of 37 frames, the gate on an RX 9070 XT; the
 instances, palette and morphs stay in host memory, as they change each frame). The preset's shadow distance (`shadow_reach`, 1 on High, 0.7 on Middle)
 scales the cascades' ends; how the game applies it is not known.
+The canopies' sun share against the game's alpha at the gate: left canopy 0.010 (the game's
+0.010), dark canopy 0.012 (0.009), trunk 0.002 (0.001), middle tree 0.112 (0.117); the 3% of lit
+pixels the canopies leaked were the leaf cards' back faces culled in the main pass (docs/shading.md,
+"Two-sided materials"), not the casters. With them two-sided the scene pass takes 1.5 ms (1.25
+before: the crowns are denser) and the frame 4.0 ms.
 
 **Ambient occlusion.** The Ryza games' frames (`Frame::occlusion`; the graphics setting
 `occlusion`, on in the desktop presets and off in the handheld's, config `occlusion on | off`)
@@ -751,7 +756,9 @@ again. Before this the whole picture was mirrored.
 
 **Culling.** Models are drawn with back faces culled (front faces wind clockwise once x is
 mirrored into render space); the terrain is not culled (it winds the other way and is only seen
-from above). Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are
+from above); Ryza's alpha-tested field materials (`PBBA2-N`, docs/shading.md, "Two-sided
+materials") are not culled either, a second scene pipeline and a second normal-pass
+pipeline for them. Rooms such as `TOWN_11` (the workshop in the opening, `EVENT_MM01_OP1_111`) are
 one-sided boxes with a ceiling that the event camera looks into from outside: without
 culling, the outside of a wall filled the view.
 

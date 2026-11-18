@@ -267,25 +267,16 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   camera is within a pixel or two (the best shift of the picture is (-1, 2) px: 22.97 against
   23.34). What the 23.85 is made of at the gate (shares of the summed error; the picture's
   error is mostly broad, not fine: still 16.4 after a 32 by 32 box blur of both):
-  - **Leaves missing in the trees' crowns: 14%** (2.5% of the picture, mean abs 137). Barrel
-    shows sky where the game has leaves (10.4% of the picture is sky in Barrel's lit scene,
-    9.05% in the game's, 11.2% before the projection's far plane was the game's 300000: the
-    backdrop's mountains past 80000 units were cut and the sky showed through them; the sky
-    drawn where the game has geometry is 1.7%, the other way round 0.4%; what is left is the big
-    tree's canopy, the leaf clusters look sparser than the game's, and the pole's edges one or
-    two pixels), and the bloom's bright pass takes it:
-    over the game's covered pixels its sum is 26,725 against the game's 1,691, while over the
-    game's sky it is 17,394 against 23,335. Ruled out (each tried at this frame): the alpha
-    test's reference (5 of 255 instead of 50 and 63 fills little; switching the test off
-    fills 44% of it and shows the leaf cards' whole quads), the skyline test (`--no-skyline`),
-    the objects' draw ranges and levels of detail, the filtering (4 times anisotropic, as the game's sampler state, moves the sky by 0.004%), the plants (hiding them changes not a
-    pixel of it), the plant cells' side planes, the camera. Every game draw with a named
-    texture has a Barrel match (858 of 913; the rest are terrain tiles, the shore's bubbles and
-    three others), so it is what the matched draws leave at those pixels: the leaf cards'
-    alpha as the game's G-buffer program reads it (`saturate(alpha x vSAMap.y + vSAMap.z)`
-    against `vATest`, vSAMap (1, 0) in the capture) or their sway (the game's wind at the
-    frame: `g_vAttCache0` 10.5 and `g_fOscPhase` 0.65 against the field's first frame's gust
-    here), neither checked.
+  - **Leaves missing in the trees' crowns: solved.** The alpha-tested field materials
+    (`PBBA2-N`: the trees' leaf cards, house trims, signs) are drawn by the game with no face
+    culling, and Barrel culled their back faces: from below, the cards that face up were gone
+    (docs/shading.md, "Two-sided materials"). Sky is 9.10% of Barrel's half-size depth against
+    the game's 9.15% (10.40% before; barrel-only 0.51%, game-only 0.56%), the crowns'
+    cells (2,0) and (3,0) hold 1.4% and 3.9% Barrel-only sky (12.1% and 14.3% before), and the
+    tone error is 17.36 (20.44 before). What is left of the sky's edge is leaf detail (the
+    game-only share is as large). The sway's phase and the alpha the G-buffer program reads
+    are the game's, so nothing there was checked further. Not found: what the game keys the
+    single-sided `PBBA2-N` draws on (flowerbeds, ivy: lighting-material flags `0x133`).
   - **The ambient occlusion: about 13%** (the pixels with an occlusion below 0.85 are 35% of
     the picture at a mean error of 27.4 against 15.0 elsewhere; the game's own occlusion laid
     over Barrel's scene took the tone error from 23.2 to 20.1). The feature is built from the
@@ -367,10 +358,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   compare) as the game's three cascades (boxes round the view's slices to 1600, 3600 and
   10000 units, with the game's depth bias and filter) and a static layer over the whole field
   past them (docs/shading.md, "The cascades"; docs/renderer.md, "Shadows"). Measured against
-  the game's sun share at the gate (`barrel-parity pixels`, the `shadow` stage): the stage 0.0720
-  mean abs, as the one square and a far layer had, but the middle tree 0.117 (the game's
-  0.117; 0.103 before) and the far stage closer; the left canopy 0.034 against the game's
-  0.010 and the trunk 0.012 against 0.001. Left: (1) where the game takes its cascades' ends
+  the game's sun share at the gate (`barrel-parity pixels`, the `shadow` stage): the stage 0.0785
+  mean abs, the middle tree 0.112 (the game's 0.117), the left canopy 0.010 (the game's 0.010,
+  0.034 before the leaf cards were two-sided: the leaks were the cards' missing back faces,
+  not the sun), the dark canopy 0.012 against 0.009, the trunk 0.002 against 0.001, the grass
+  0.402 against 0.428, the sand 0.345 against 0.380. Left: (1) where the game takes its cascades' ends
   (1600, 3600 and 10000 and the fade's 3500 are one frame's constants, `CASCADE_ENDS`), the
   depth plane 36755 before the camera and the third cascade's box (11672 wide, no slice from
   3600 fits it); (2) which draws cast (a placed model casts here; Barrel's cascades hold 160,
@@ -382,7 +374,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   0.061 against the game's 0.039 in the canopy and 0.070 against 0.031 on the middle tree, the
   game's sun slope half Barrel's. With the occlusion built (docs/shading.md, "What is left in
   the lit scene") the canopy's lit colour is 0.044 against the game's 0.022: the sun's share
-  (0.034 against 0.010) and an ambient 15 to 20% high on the leaf cards remain. The shadow pass
+  was the part left (0.034 against 0.010): two-sided leaf cards close it (lit stage: left canopy
+  0.023, 0.044, 0.034 against the game's 0.022, 0.042, 0.032; dark canopy 0.032, 0.059, 0.045
+  against 0.030, 0.053, 0.032; trunk 0.024, 0.034, 0.038 against 0.019, 0.028, 0.031). The shadow pass
   is 1.9 ms (6.9 before the geometry moved into device memory, docs/renderer.md); which draws
   cast is still the open part (160, 235 and 687 against the game's 104, 177 and 669).
 - **The sky.** `barrel` draws the sky plane with the game's own constants (the set's

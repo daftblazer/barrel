@@ -471,6 +471,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             part: None,
             bones: Vec::new(),
             shader: String::new(),
+            two_sided: false,
         });
     }
     eprintln!("plants: {} in {} draws", plants.len(), blocks.len());

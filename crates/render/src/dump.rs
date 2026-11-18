@@ -60,6 +60,8 @@ pub enum Texels {
     /// `B10G11R11_UFLOAT_PACK32`.
     Packed,
     Rgba16F,
+    /// Four 32-bit floats.
+    Rgba32F,
 }
 
 impl Texels {
@@ -75,6 +77,7 @@ impl Texels {
         match self {
             Texels::Rgba8 | Texels::Packed => 4,
             Texels::Rgba16F => 8,
+            Texels::Rgba32F => 16,
         }
     }
 }
@@ -141,6 +144,7 @@ impl Dump {
                         let w = u32::from_le_bytes(raw[4 * i..4 * i + 4].try_into().unwrap());
                         [unpack_float(w & 0x7ff, 6), unpack_float(w >> 11 & 0x7ff, 6), unpack_float(w >> 22 & 0x3ff, 5), 1.0]
                     }
+                    Texels::Rgba32F => std::array::from_fn(|c| f32::from_le_bytes(raw[16 * i + 4 * c..16 * i + 4 * c + 4].try_into().unwrap())),
                     Texels::Rgba16F => std::array::from_fn(|c| half(u16::from_le_bytes([raw[8 * i + 2 * c], raw[8 * i + 2 * c + 1]]))),
                 };
                 for (c, v) in rgba.iter().enumerate() {

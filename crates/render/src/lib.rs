@@ -168,6 +168,8 @@ impl Instance {
 pub struct Draw {
     /// The shader its model names for the colour pass (`MapSTD`, `MapSTDNA` ...; empty if none).
     pub shader: String,
+    /// Drawn with no face culling: the material shows both sides of its cards.
+    pub two_sided: bool,
     pub first_index: u32,
     pub index_count: u32,
     pub texture: usize,
@@ -325,6 +327,15 @@ pub const FULL_LIGHT: u32 = 0xffff_ffff;
 
 /// A model's lighting material as the push constants take it: `cDiff` (its red) and `cAmb`
 /// (its red) as unorm16 (`unpackUnorm2x16`).
+/// Whether a submesh's material shows both sides of its cards. The game draws the alpha-tested
+/// field materials (`PBBA2-N`: leaves, grapes, signs, house trims) with no face culling, except
+/// those whose lighting material (G1MG section 0x10001) carries the flags `0x133` alone (flowerbeds, ivy:
+/// culled as the opaque `PBB-N` is), measured on the capture's raster states (`docs/shading.md`,
+/// "Two-sided materials").
+fn two_sided(geometry: &barrel_formats::g1m::Geometry, submesh: usize) -> bool {
+    geometry.shader_of(submesh) == Some("PBBA2-N") && geometry.lights.first().is_none_or(|l| l.flags & 0xf != 0x3)
+}
+
 pub fn light_word(geometry: &barrel_formats::g1m::Geometry) -> u32 {
     geometry.lights.first().map_or(FULL_LIGHT, |l| {
         let q = |v: f32| (v.clamp(0.0, 1.0) * 65535.0).round() as u32;
@@ -761,7 +772,7 @@ impl Scene {
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let specular = material.and_then(|m| m.textures.iter().find(|t| t.kind == 2)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string() });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string(), two_sided: two_sided(geometry, submesh) });
         }
         Ok(())
     }

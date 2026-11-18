@@ -575,6 +575,18 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
   (1 and 0 on every draw of the capture) below `vATest` is discarded. `vATest` is 50.1 / 255
   on every model's draw (the field's and the characters') and 63.1 / 255 on the plants'
   (`play::MODEL_ALPHA_REF`, `PLANT_ALPHA_REF`; the renderer's swaying draws take the second).
+- **Two-sided materials.** The raster state of a G-buffer draw (the capture's state blobs,
+  D3D11's `CullMode`) is back-face culling for the opaque materials (`PBB-N`), front-face
+  culling for the grass cards and none for the alpha-tested ones (`PBBA2-N`, the program with
+  the `discard`): all 47 of the gate's, the trees' leaf cards among them, except five that are
+  culled as the opaque ones (flowerbeds and ivy: their lighting material, G1MG section
+  0x10001, has the flags `0x133` alone, `g1m::Light::flags`; the leaf cards, grapes, signs and
+  house trims have `0x111` or `0x1111` first). The program reads no face, so a back face is lit
+  with the vertex's normal as it is. Barrel's `Draw::two_sided` follows that rule (`PBBA2-N`,
+  the first lighting flags' low nibble not 3), with a pipeline of its own and the same in the
+  occlusion's normal pass; the casters' passes never culled. Without it the cards that face up
+  were culled from below, and 1.7% of the picture showed sky where the game has leaves. What
+  the game keys the culling on is not read: the rule is the capture's, checked on its 47 draws.
 - **Pixel program 3**, textures `sStage0` (the colour tile, kind 1), `sSpMap` (kind 2), `sNMap`
   (kind 3); constants `vDifScl`, `vSpcScl`, `atColor`. With `m` = `sSpMap.g` and metal =
   `sSpMap.b` ≥ 0.5:
@@ -866,7 +878,9 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   sub map's loop is `nSubSdw` times, the larger shadow kept.
 - **The share.** The pass's alpha is `saturate(lit - fOverallShadow)` times the cloud
   pattern's term; at the gate the trees come out almost fully shaded (0.01 on the left canopy,
-  0.00 on the trunk, 0.12 on the middle tree, 0.43 on the grass in the clouds' pattern).
+  0.00 on the trunk, 0.12 on the middle tree, 0.43 on the grass in the clouds' pattern). Barrel
+  matches that once the leaf cards are two-sided (above, "Two-sided materials"): 0.010, 0.002,
+  0.112, 0.402.
 
 **The far hills' fog.** The game fogs the backdrop's mountains as stage pixels (stencil 2) at
 their own distance in the scene fog's first draw: at the gate they stand 12000 to 90000 units
@@ -1025,7 +1039,8 @@ frame's stages as the game wrote them):
   (tone error 22.8 to 20.6 on the board), the leaves (below), and the shadows' edges. The tree
   regions of the lit stage, with the occlusion: left canopy 0.044, 0.068, 0.054 against the
   game's 0.022, 0.042, 0.032, middle tree 0.071, 0.105, 0.057 against 0.064, 0.089, 0.033,
-  trunk 0.036, 0.047, 0.049 against 0.019, 0.028, 0.031 (before: 0.053, 0.086, 0.067; 0.134,
+  trunk 0.036, 0.047, 0.049 against 0.019, 0.028, 0.031 (with the leaf cards two-sided, above:
+  0.023, 0.044, 0.034; 0.061, 0.089, 0.037; 0.024, 0.034, 0.038; before: 0.053, 0.086, 0.067; 0.134,
   0.191, 0.102; 0.043, 0.059, 0.061). What the occlusion leaves is the sun's share (the canopy's
   0.034 against the game's 0.010, the trunk's 0.012 against 0.001: about a third of the
   canopy's red) and an ambient and albedo 15 to 20% above the game's there (the ambient on the
