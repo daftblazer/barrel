@@ -216,20 +216,36 @@ void main() {
         // `PBSkyDome`; the map read as the field models' is, below).
         if ((pc.flags & 4096u) != 0u) {
             vec3 dn = normalize(normal);
+            // The game's `PBSkyDome` program: the normal map's x (red times alpha) runs along
+            // the bitangent, its y along the tangent, and the sum is not normalised; the sky's
+            // maps are flat black (x = y = -1, z = 0), so the normal is -(T + B), a vector of
+            // length 1.41, and its sun term is that much stronger. (STAND-IN: the tangent comes from
+            // the screen derivatives of the position and UV, as the field models' does, where the game's
+            // is the mesh's, which Barrel's vertices do not carry.) The specular map's green is
+            // the reflectance and its alpha the gloss (a shininess of 2^(10 gloss + 1)).
+            vec3 sn = dn;
             if ((pc.flags & 8192u) != 0u) {
                 vec4 t = texture(mask, uv);
                 vec2 xy = vec2(t.r * t.a, t.g) * 2.0 - 1.0;
-                vec3 tn = vec3(xy, sqrt(max(1.0 - dot(xy, xy), 0.0)));
                 vec3 dp1 = dFdx(world), dp2 = dFdy(world);
                 vec2 du1 = dFdx(uv), du2 = dFdy(uv);
-                vec3 p2 = cross(dp2, dn), p1 = cross(dn, dp1);
-                vec3 tg = p2 * du1.x + p1 * du2.x;
-                vec3 bt = p2 * du1.y + p1 * du2.y;
-                float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
-                dn = normalize(mat3(tg * inv, bt * inv, dn) * tn);
+                vec3 tg = (cross(dp2, dn) * du1.x + cross(dn, dp1) * du2.x);
+                tg = normalize(tg - dn * dot(dn, tg));
+                sn = tg * xy.y + cross(tg, dn) * xy.x + dn * sqrt(max(1.0 - dot(xy, xy), 0.0));
             }
-            vec3 dome = field_light + look.dome_sun.rgb * clamp(dot(dn, look.dome_sun_way.xyz), 0.0, 1.0);
-            color = vec4(tinted(mix(fog_add, dome * c.rgb, fog_keep)) * pc.params.w, c.a);
+            // (a dome without a specular map has none: no reflectance, a dull gloss)
+            vec4 sp = (pc.flags & (1u << 24)) != 0u ? texture(spec_map, uv) : vec4(0.0);
+            float f0 = sp.g;
+            vec3 to_eye = normalize(look.eye.xyz - world);
+            vec3 sun_way = look.dome_sun_way.xyz;
+            float n_dot_l = clamp(dot(sn, sun_way), 0.0, 1.0);
+            vec3 half_way = normalize(to_eye + sun_way);
+            float shine = exp2(sp.a * 10.0 + 1.0);
+            float fresnel = f0 + (1.0 - f0) * pow(1.0 - clamp(dot(to_eye, half_way), 0.0, 1.0), 5.0);
+            float highlight = pow(clamp(dot(sn, half_way), 0.0, 1.0), shine) * (shine * 0.125 + 0.25) * fresnel;
+            vec3 sun = look.dome_sun.rgb * n_dot_l;
+            vec3 dome = (field_light + sun) * c.rgb * (1.0 - f0) + sun * highlight;
+            color = vec4(tinted(mix(fog_add, dome, fog_keep)) * pc.params.w, c.a);
             return;
         }
         color = vec4(tinted(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep)) * pc.params.w, c.a);

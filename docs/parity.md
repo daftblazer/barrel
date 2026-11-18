@@ -224,10 +224,11 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   `cloud_map` stage reads 0. The strip's wind still comes from `BARREL_SKY_CLOCK`. The cloud
   shadows on the ground are not from this map (they are the shadow pass's own pattern,
   `BARREL_PATTERN_PHASE`), so the `shadow` stage does not move with it.
-- Two stages are for the sky: `dome` (the game's `1914`, after the plane and both dome layers,
-  against Barrel's `dome`), and after the stage lines `strip`, the cloud strip's own
+- Three stages are for the sky's draws one at a time: `plane` (the game's `1912`), `dome1` (`1913`, the first dome layer) and `dome` (`1914`, after both layers)
+  against Barrel's stages of the same names, and after the stage lines `strip`, the cloud strip's own
   contribution over the sky pixels (the game's `1915` less `1914`, Barrel's `sky` less `dome`):
-  the mean abs of the two contributions and, by bands of 60 rows, each one's mean light.
+  the mean abs of the two contributions and, by bands of 60 rows, each one's mean light, over the
+  pixels that are sky in both pictures.
 - `barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
   (`cloud_map`, `ao` (the game's `914-914_rt960x540.27#2`: the occlusion, half size, with the
   regions' means taken over the half size picture), `shadow`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),

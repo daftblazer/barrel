@@ -1262,6 +1262,18 @@ to four figures):
   through the trees' leaves, docs/ryza/open.md). The clear sky (the plane and the dome) was
   right to within a few percent.
 
+**The dome's program** (`sh1cd42d63d688dec3`, draws `1913` and `1914`): the diffuse light is
+`albedo (1 - F0) (ambLit + ambient map vAmbParam.x vAmbDifScl + litCol N.L)` with the specular
+map's green as `F0` and its alpha as gloss (shininess `2^(10 gloss + 1)`, scaled `(n + 2) / 8`,
+Fresnel `F0 + (1 - F0)(1 - V.H)^5`, times the sun's light), the ambient map and the specular
+ambient scaled by `vAmbParam` x and y, both 0 at noon. The normal is `T n.y + B n.x + N n.z`
+(`B = cross(T, N) w`) and is not normalised; the sky's maps are black, so it is `-(T + B)`, 1.41
+long. The blend is the plain alpha one, the depth test on and not written. Barrel's frame for
+it comes from the screen derivatives (the mesh's tangent is not in its vertices), and it read
+a scene texture as the dome's normal map until the draw's normal-map index was moved with the
+rest of the dome's. The stage dumps `plane`, `dome1` (the first layer) and `dome` take the
+sky's draws one at a time.
+
 **Not drawn: the cloud particles** (`shb50b0ba6`, `sh040b16cf`, `cloudpiece.g1t`, set block
 `cloudParticle_`): billboards a CPU system places, in the frame read 49 quads (294 indices)
 around 50,000 to 60,000 units out, a unit or so across (just spawned), lit by the same light

@@ -124,6 +124,8 @@ fn region_mean(im: &Image, masks: Option<&Image>, [x0, y0, x1, y1]: [usize; 4]) 
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
     Stage { name: "cloud_map", game: "1911-1911_rt1024x1024.27#4", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "plane", game: "1912-1912_rt1920x1080.26#4", barrel: "plane", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "dome1", game: "1913-1913_rt1920x1080.26#4", barrel: "dome1", scale: 1.0, alpha: false, regions: false },
     Stage { name: "dome", game: "1914-1914_rt1920x1080.26#4", barrel: "dome", scale: 1.0, alpha: false, regions: false },
     Stage { name: "ao", game: "914-914_rt960x540.27#2", barrel: "ao", scale: 1.0, alpha: false, regions: true },
     Stage { name: "shadow", game: "1892-1894_rt1920x1080.9#15", barrel: "shadow", scale: 1.0, alpha: true, regions: true },

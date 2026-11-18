@@ -912,8 +912,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         for d in &mut scene.draws[first..] {
             d.texture += textures.len();
             d.mask = d.mask.map(|m| m + textures.len());
+            d.normal_map = d.normal_map.map(|m| m + textures.len());
             d.overlay = d.overlay.map(|o| o + textures.len());
-            d.specular = None;
+            d.specular = d.specular.map(|m| m + textures.len());
             d.field = Some(0);
             d.sky = true;
             d.casts = false;
@@ -1247,7 +1248,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // slots `DOME_LIGHT_SLOT`, `DOME_SUN_SLOT`), as the game's `PBSkyDome` does.
         let base = if environment.is_some() {
             if d.sky {
-                DOME_LIT | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 }
+                DOME_LIT | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 } | if d.specular.is_some() { SPECULAR_AMBIENT } else { 0 }
             } else if d.name == "plants" {
                 // Normal-mapped by the cards' own normal maps, as `ObjectGrassPBS` does.
                 FADED | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 }
@@ -1632,7 +1633,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // scene written; the last, full frame below adds the rest.
         if renderer.dump.is_some() && readback.is_some() && presenter.is_none() && frame_no + 1 >= a.frames.unwrap_or(1) {
             use barrel_render::dump::Stop;
-            for stage in [Stop::Lit, Stop::Shadow, Stop::Dome, Stop::Sky] {
+            for stage in [Stop::Lit, Stop::Shadow, Stop::Plane, Stop::Layer1, Stop::Dome, Stop::Sky] {
                 renderer.upto.set(stage);
                 // The shadow stage's look: the shaders write the sun's share (slot 31's w).
                 view.look[31][3] = if stage == Stop::Shadow { 1.0 } else { 0.0 };

@@ -291,8 +291,18 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     texture's v (Barrel's frame from the screen derivatives had it along v: over the stage the
     median angle to the game's normal target went from 14.6 to 11.8 degrees, the stone wall
     from 24.5 to 16.3). What is left there is about 20%.
-  - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9): where the clouds stand
-    (random per run), the cloud particles, the dome's scroll, a few percent on the clear sky.
+  - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9; with the game's own cloud map
+    (`BARREL_CLOUD_MAP`, docs/parity.md) 16.9 and the tone error 15.76 against 17.01 without it). Measured on
+    the board's stages (sky pixels, game units): the plane 0.091, the plane and the dome's first
+    layer 0.106, both layers 0.416 (the dome's second layer is the clouds on the dome: its
+    contribution to the sky is a quarter weaker than the game's in the rows 0 to 180, 0.47, 1.0 against 0.63, 1.33 in
+    green and blue; the game's sun term there is about 0.37 stronger, which the derived tangent
+    frame cannot give: the game's is the mesh's tangent, which Barrel's vertices do not carry),
+    the strip's contribution 0.106 (0.241 with the grid cells split along the other diagonal; the rest is in
+    the rows 0 to 60), the finished sky 0.51. The dome's scroll (`txTrs01`: 0.0568 and 0.0284 at
+    this frame, the second layer at half the first's rate, 0.00414 a second) is not drawn (a
+    stand-in), as are the cloud particles: the game's draw `1916` leaves the picture as it is at
+    this frame (its target equals the strip's, every pixel exactly), so they are not built.
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
     10 to 15 pixels at her feet (the idle's phase), her shaded side and outlines.
   - **The rest, about a third**, spread over the stage at 15 a pixel: the shadows' edges (the

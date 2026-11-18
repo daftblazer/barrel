@@ -23,6 +23,9 @@ pub enum Stop {
     /// The terrain and the models drawn as the sun's share at each pixel (the shadow and the
     /// cloud pattern, 0 to 1 in all three channels), the game's ambient-and-shadow pass's alpha.
     Shadow,
+    /// And the sky plane alone (the game's first sky draw), then with the dome's first layer.
+    Plane,
+    Layer1,
     /// And the sky plane and the dome, without the clouds' strip.
     Dome,
     /// And the clouds' strip: the sky as it ends.
@@ -36,6 +39,8 @@ impl Stop {
             Stop::Full => "scene",
             Stop::Lit => "lit",
             Stop::Shadow => "shadow",
+            Stop::Plane => "plane",
+            Stop::Layer1 => "dome1",
             Stop::Dome => "dome",
             Stop::Sky => "sky",
         }
@@ -44,6 +49,14 @@ impl Stop {
     /// Whether the second pass (the sky's) is drawn, and its clouds, and the outlines.
     pub fn sky(self) -> bool {
         !matches!(self, Stop::Lit | Stop::Shadow)
+    }
+    /// How many of the dome's layers are drawn.
+    pub fn dome_layers(self) -> usize {
+        match self {
+            Stop::Plane => 0,
+            Stop::Layer1 => 1,
+            _ => usize::MAX,
+        }
     }
     pub fn clouds(self) -> bool {
         matches!(self, Stop::Sky | Stop::Full)

@@ -1065,7 +1065,15 @@ impl Renderer {
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             }
             let mut two_sided = false;
-            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)) {
+            let mut dome_seen = 0usize;
+            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)).filter(|d| {
+                // The stage dumps' stops inside the dome: its first layers only.
+                if pass_sky && d.name == "sky dome" {
+                    dome_seen += 1;
+                    return dome_seen <= upto.dome_layers();
+                }
+                true
+            }) {
                 // The instance, and whether it is shaded as a character (not part of a field), as
                 // an eye and as the distant view; the game's own material bits and tint.
                 let (bits, tint) = material(draw);
