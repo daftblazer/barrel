@@ -1029,6 +1029,10 @@ plane draw):
   -6 degrees give the captured (-1.897, 0.8017)).
 
 `barrel` sets all of these so (`environment::SkyGlow`, `play::look_for`), times its exposure.
+The plane is stored at half like the rest of the scene (`sky.frag`'s `HDR_RANGE_INV`); against
+the game's own pixels after that draw alone it is the game's to a few hundredths from the top
+of the view to the horizon (unhalved it was twice the game's, a white band along the horizon
+wherever the dome's clouds did not cover it).
 
 The executable's builder (0x140b08b10, found by the phase
 constants 3/(16π) at 0x1417927d0 and 1/(4π) at 0x1417a7378) fills four float4s at its render

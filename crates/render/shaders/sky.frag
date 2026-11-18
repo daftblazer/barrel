@@ -16,6 +16,8 @@ layout(std140, set = 1, binding = 4) uniform Look {
 layout(location = 0) in vec3 ray;
 layout(location = 0) out vec4 colour;
 layout(location = 1) out vec4 motion;
+// The scene is stored at half (`HDR_RANGE_INV`, as the models, the water and the cloud strip have it).
+const float HDR_RANGE_INV = 0.5;
 void main() {
     vec3 d = normalize(ray);
     vec4 sp = look.sky[5];
@@ -26,7 +28,7 @@ void main() {
     vec3 in_scattered = s * t;
     float x = clamp(dot(d, look.sky[8].xyz) * look.sky[10].x + look.sky[10].y, 0.0, 1.0);
     float k = (1.0 - exp(-x * x)) * clamp(look.sky[9].w, 0.0, 1.0);
-    colour = vec4(mix(in_scattered, look.sky[9].rgb, k), 1.0);
+    colour = vec4(mix(in_scattered, look.sky[9].rgb, k) * HDR_RANGE_INV, 1.0);
     // The far plane does not move with the scene: no motion of its own.
     motion = vec4(0.0);
 }
