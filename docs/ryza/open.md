@@ -506,8 +506,20 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   Neither limit is one number for both views, by any of: the box's centre less its diagonal,
   half-diagonal or plan diagonal, its nearest corner, its distance from the eye; at the
   sides by planes made unit length with the sphere or the box, the side planes alone, or in
-  plan. So the game's box or its eye is not Barrel's: next, read the draw test beside the
-  cell builder (`0x140a77060`) rather than fit it. Where a plant stands in its
+  plan. The game's test, read from its code: the plants' update (`0x140a78dd0`) walks the
+  cells of a rectangle (`0x1409990c0`, from the planes, widened by 100) and keeps a cell when
+  its box is inside all six planes at `+0x280` of the plants' object (each plane against the
+  box corner it picks, `>= 0` leaves the cell out: no margin). The box is the cell's square,
+  from the cell's height (an i16 grid at `+0x240` times 100) up by the tallest plant of the
+  cell's kind (`+0x48` of its kind; with the byte `+0x4cc` set, the heights `+0x490`,
+  `+0x494` instead). The planes (`0x140a786a0`): a copy of the current camera
+  (`0x14042b640`, into `+0x310`) whose far distance (`+0x444`) is cut to the grass range
+  (`+0x48c`), moved by the origin at `+0x470`, its matrices rebuilt (`0x14042bdd0`,
+  `0x14042c360`) and the planes taken from the view-projection at `+0x400` (`0x140998e10`).
+  Yet against Barrel's view no widening (drawn cells need up to 1.30 times the width, left-out
+  ones 1.05) and no turn (-8° to 8°) fits; so the copy is not the frame's camera as drawn, or
+  the boxes differ. Next: read the planes themselves (a hook on `0x140998e10` logging its
+  output, or the object found by its `+0x48c` range) at frame 2550. Where a plant stands in its
   cell and where in its ranges its size falls are the game's own numbers
   (`barrel_ryza::grass::Scatter`, from the game's cell builder `0x140a77060`, which fills a
   cell's vertices the first time the cell is drawn: a generator `s × 69069 + 1` seeded from
