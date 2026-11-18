@@ -672,8 +672,19 @@ part (`@6679C989`) `ocrAdj`, `ocrBDir`, `ocrUDir` ("Ocr" programs). The constant
 (`cRimTbl`, `rampCoord*`, `fOccAlbScl`) are set at run time and not found. `barrel` lays the ramp
 over the field-model light on her draws (`model.frag` flag 128, the index in bits 16 to 23,
 the ramp in the mask slot) as the pass does for the sun: 0.27 × the half-Lambert term × the
-shadow, inside 0.2 to 0.5, on the row before the index (the occlusion and the second term,
-which never passes 0.2, are left out).
+shadow, inside 0.2 to 0.5, on the row before the index, with the occlusion as the pass
+takes it. The occlusion is the green of the material's kind-5 texture (`sOcc`, written to
+GBuf0's `w` by the G-buffer program as `1 + saturate(fOccScaler) × (g − 1)`; sampled as
+stored, in `model.frag`'s emission slot), for the submeshes with a `rampIndex`: a plain
+piece's program (`shf0a7409ad8ddab19`: colour and specular map only) samples none though
+its material names one. With `o` the occlusion and `s` the shadow: the
+lit part is `min(o, s)`; the sun's light is × mix(albedo × `fOccAlbScl`, 1, `1 + 0.2497 ×
+(o − 1)`) × the lit part; the ambient × mix(albedo × `fOccAlbScl`, 1, `0.7527 × o +
+0.2473`); the ramp's u is the larger of 0.27 × half-Lambert × the lit part and 0.116 ×
+saturate((1 + 0.2497 × (o − 1)) × 0.5 + 0.5), or `o × 0.2` where `o` is under 0.2. The
+constants (`fOccAlbScl` 0.5028, `IRAFade` 0.2497, `vAmbOccRat` (0.7527, 0.2473), the
+threshold 0.2) are one captured frame's (Rasenboden's noon). Not done: the pass's specular
+term, its rim by the table's power, the second light's own ramp.
 
 The pass's constants come from the environment overrides (`saves\fieldmap\override_env\
 env_<name>.xml`, one `<root>` of `group_name` attributes; `env_default.xml` and a few fields'
@@ -701,21 +712,25 @@ light map along the normal × `vAmbParam.x` × `vAmbDifScl` + `ambLit` + `litCol
 albedo, plus a specular term from the kind-3 map and the ambient specular map, then the
 height fog layers (`cHFog`, `hFogParam`, a sum of 20-odd sines for their wavy top). The
 dome's normals point inward and down (y -0.5 to -0.76), so the sun's N·L is 0 overhead and
-the clouds take the ambient and the specular: how bright they come out rests on run-time
-scales not read (`vAmbParam`, `vAmbDifScl`, `cb0[48..50]`). `barrel` lights the dome
-with the light an upward-facing surface takes (the light map upward times the ambient colour,
-plus the two lights by their elevation, times the exposure; look slot 92, `model.vert`'s flag
-4096): a stand-in for the game's lighting, whose scales are not read. The cloud texture's
-colour is an even blue (about 110, 155, 190 at every alpha; its alpha is the density), so lit
-so the clouds come out white-blue: at the gate's noon 145, 215, 228 against the still's 149,
-216, 218 (83, 149, 160 unlit), and orange at evening.
+the clouds take mostly the ambient. Its vertex program (`shfcc3b7e2d2785fde`) takes no
+vertex colour and fogs the dome with the sky's scattering, not the field's: the sky plane's
+`Scat` rows and its `fog` range (noon: 1000 to 300,000), extinction `min(exp(s × Scat[0]),
+1)`, the pixel's colour mixed with the in-scattered light by it. As the game sets them at
+Rasenboden's noon: `litCol` (4.78, 5, 3.5) along (-0.354, -0.707, -0.612), `ambLit` (3, 6,
+4), `vAmbParam.x` 0 (no ambient map), `cHFog` zero (no height fog), `atColor` 1; the model
+stands at (30000, 0, 30000) three times its size, its two layers scrolled by `txTrs01`
+(0.0568 and 0.0284 in that frame). The set holds these (docs/formats.md, "The sky").
 
-The overrides present are `env_default`, two fields' (`s02_l_hap_main`,
-`s04_l_sad_main`) and test ones. `trueHDR_vSaturationScale` (1.2) is applied in the post pass
-(`post.frag`, its `pad.y`; 0 for Escha: unchanged). `barrel_ryza::environment::Rim` reads the rim: on her draws whose
-material has an `rmIndex`, `pow(1 - N·V, 10) × 1.5` of the sun's colour where the eye faces
-into the sun, saturated with the sun's `N·L` as the pass does (`model.frag`, the rim word in
-the tint's place).
+`barrel` lights the dome so: (`ambLit` + `litCol` × N·L, the normal from the dome's normal
+map where it has one) × the exposure × the cloud texture (look slots 92, 95 and 96,
+`model.vert`'s and `model.frag`'s flag 4096), fogged with the sky's scattering, placed where
+the set says. Not done: the specular term, the scroll. The dome is the thin, pale layer of
+the sky only: the game's large white clouds are two more draws of its sky pass, a strip
+showing a 1024 × 1024 target the clouds are ray-marched into (the set's `cloud_` block) and
+the cloud particles (`\data\x64\sky\cloudpiece.g1t`, the set's `cloudParticle_` block),
+both lit by the second light after the dome's in the set ((35, 48.8, 70) at noon). Without
+them the sky's pixels at the gate's noon average 123, 226, 253 against the still's 153, 242,
+252.
 
 ## Ryza DX: the tone curve, saturation and fog passes
 
@@ -842,18 +857,24 @@ luma by `vSaturationScale` (1 here), the filmic curve times `1 / f(fLumiMax)`, t
 far above 0.2, so E sits at 0.9.
 
 **The bloom's bright pass**: `c × saturate((lum − T) / (fLumiMax − T))` on the metered
-quarter-size scene, `T = fLumiThreshold × fLumiMax` (1.29 at noon).
+quarter-size scene, `T = fLumiThreshold × fLumiMax` (1.29 at noon), `lum` by (0.29891,
+0.58661, 0.11448). **Its chain** (a 1920 × 1080 frame): a 13-tap diamond blur at a quarter
+of the screen (weights: centre 0.18385795, the four at one texel 0.11151548, the diagonals
+0.067637555, the four at two texels 0.024882466), a copy down to an eighth, the same
+diamond there, then a Gaussian across and down (centre 0.19967563; pairs at 1.40733,
+3.29421 and 5.20181 texels weighing 0.2973225, 0.091848336 and 0.010991331). The tone pass
+adds the result times `fBloomWeight`. A star filter (twelve passes at a quarter) follows.
 
 **What `barrel` does of this**: the sun at the stage's key scale, the cloud pattern
 (`environment::Pattern`; its phase starts with the field), the exposure at the range's
-bottom, the colour scale, the curve, the gamma and the last saturation. Against the gate's
+bottom, the colour scale, the curve, the gamma, the last saturation, and the bloom's bright
+pass and chain (`render::glow`). Against the gate's
 still, fourteen spots' mean error falls from 14.5 to 12.8 levels a channel; the sunlit sand
 and stone and the path in shade come within 10 (a shaded path 25, 57, 117 against 25, 57,
 115). What it does not, largest first by what shows: the specular ambient and reflections
 (dark bark and leaves in shade stay at half the still's brightness: light that does not
 scale with the albedo), the ambient occlusion and its tint, the direct specular, the second
-kind's ambient (which draws take it is not read; plants are likely), the game's bright pass
-and bloom chain, the metering (night and interiors would rise above 0.9), the light volume,
+kind's ambient (which draws take it is not read; plants are likely), the bloom's star filter, the metering (night and interiors would rise above 0.9), the light volume,
 the point lights, the height fog.
 
 ## Ryza DX: the sky
@@ -870,7 +891,8 @@ normalized view ray (game space, y up) and `cosθ = d · -litDir`:
 - **In-scattering**: `S = (1 + cos²θ) × Scat[2].rgb` (Rayleigh) `+ (cosθ × Scat[2].w +
   Scat[3].w)^-1.5 × Scat[3].rgb` (Mie, Henyey-Greenstein's form with the g terms folded into
   `.w`) `+ Scat[1].rgb`.
-- **Glow**: `k = saturate(d · vGlowDir × hGlowParam.x + hGlowParam.y) × saturate(cGlow.w)`.
+- **Glow**: `x = saturate(d · vGlowDir × hGlowParam.x + hGlowParam.y)`,
+  `k = (1 - exp(-x²)) × saturate(cGlow.w)`.
 - **Colour**: `S × T` mixed `k` of the way to `cGlow.rgb`; alpha 1. `litCol` is not used here.
 
 **The constants, measured** (read from the running game's memory at Rasenboden's sunny noon,
@@ -888,8 +910,19 @@ where they sit in every lit draw's constants too; checked channel by channel):
   disassembly above, but the values need `(1 - g)²`, so a step was misread there.)
 
 The coefficients come straight from `skyFog_` (docs/formats.md, "Fog and sky scattering"),
-unscaled. Not read yet: `skyPos`, `fog` (the path length's terms), `litDir` and the glow's
-three constants.
+unscaled. The rest, as the game sets them at Rasenboden's noon (a captured frame's sky
+plane draw):
+
+- `fog = (1 / (end - start), -start / (end - start))` of `skyFog_` (1000 and 300,000).
+- `skyPos = (-R, R², 2RH + H²)` with R = 6,378,000 and H = 10,000: the ground's radius and
+  the atmosphere's height, the same in every set.
+- `vGlowDir` is the direction a light at the set's `SkyPlaneGlowElevation` and `Azimuth`
+  shines along (noon: straight down, so the glow is a haze along the horizon), `cGlow` the
+  glow block's colour with `SkyPlaneGlowFade` in `w` ((2.46, 6.84, 10), 0.5), and
+  `hGlowParam = (1 / (sin(EndAngle) - sin(StartAngle)), -sin(StartAngle) × that)` (25 and
+  -6 degrees give the captured (-1.897, 0.8017)).
+
+`barrel` sets all of these so (`environment::SkyGlow`, `play::look_for`), times its exposure.
 
 The executable's builder (0x140b08b10, found by the phase
 constants 3/(16π) at 0x1417927d0 and 1/(4π) at 0x1417a7378) fills four float4s at its render

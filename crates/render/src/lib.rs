@@ -54,12 +54,13 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// `SKY_SLOT`, sky.frag).
 /// Then the far shadow square: its view-projection (87 to 90) and {texel, layer (0: none),
 /// fade start, fade end} (91; the fade by distance from the eye, to lit).
-/// Then the light on an upward-facing surface ({rgb}, 92: `model.vert`'s flag 4096, a sky dome
-/// lit so).
+/// Then a sky dome's ambient light ({rgb}, 92: `model.vert`'s flag 4096).
 /// Then where billboards shrink away ({begin, end} from the eye, `model.vert`'s flag 16384: a
 /// field's plants).
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
-pub const LOOK_SLOTS: usize = 95;
+/// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
+pub const LOOK_SLOTS: usize = 97;
+pub const DOME_SUN_SLOT: usize = 95;
 pub const EMISSION_SLOT: usize = 94;
 pub const DOME_LIGHT_SLOT: usize = 92;
 pub const FADE_SLOT: usize = 93;

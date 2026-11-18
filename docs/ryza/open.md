@@ -220,11 +220,10 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   second kind, a flat (3, 6, 4), is a guess) and the bloom. (3) **the ambient occlusion**
   and its tint, and the direct specular: not drawn. (4) **the exposure** is not metered
   (the game's rule is read: 0.18 over the log-average luminance, inside 0.9 to 2.4): night
-  and interiors would rise above 0.9. (5) **the bloom**: the set's threshold on the stored
-  scene; the game's bright pass (read) and chain are not Barrel's. (6) **the cloud pattern's
+  and interiors would rise above 0.9. (5) **the bloom**: the game's bright pass and chain are done, its star
+  filter is not. (6) **the cloud pattern's
   phase** starts with the field (the game's is not read), and the pattern's switch for the
-  other times of day is a reading of one word (stand-in). (7) **the sky**: the plane's and
-  the dome's scales (`SKY_SCALE`, `DOME_SCALE`) were fitted under the old exposure. Evening,
+  other times of day is a reading of one word (stand-in). (7) **the sky**: the plane and the dome take the game's own constants (below). Evening,
   morning and night have no reference frame. Ryza takes the characters' light (`indirectChara_`:
   the sun at 0.8, the set's ambient at 0.2 plus the light map's mean at 1.5 × (0.8, 1, 1),
   flat rather than by her normals); the game also scales her second light (0.487) and adds
@@ -287,18 +286,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   2000-unit steps and is drawn again over 8 frames (about 1 ms each on the PC; on the RP6 to
   be measured). The shade
   comes out lighter than the game's.
-- **The sky.** `barrel` draws the sky plane with the game's measured scattering (the set's
-  `skyFog_`, the sun times its power). Stand-ins: the path length's terms (`skyPos`, `fog`:
-  an atmosphere `end` thick over a ground ten times as wide) and no glow around the sun
-  (`vGlowDir`, `cGlow`, `hGlowParam` not read). Against the game at Rasenboden's noon the blue
-  comes out deeper and without the white haze toward the horizon, which the path length and the
-  glow shape. The sunny morning's sky comes out dark grey (its `skyFog_`: power 10, rayleigh
-  (1.5, 1.98, 3.0), nearly grey), where the game's opening shows a blue morning sky: the path
-  length's terms or the glow must carry more there. The set's cloud dome is drawn (texture × vertex
-  colour, lit by the light on an upward surface, alpha-blended over the sky plane; its shader
-  `PBSkyDome-NT0Tn` lights it with a normal map, not read) centred under the view's target (or under Ryza, and moving
-  with her in a window) at height 0: where the game puts it (`SkyDomeWorldPosition`,
-  `WorldScale`) is not placed.
+- **The sky.** `barrel` draws the sky plane with the game's own constants (the set's
+  `skyFog_`, the sun times its power, the path through the atmosphere, the horizon haze of
+  the glow block) and the set's cloud dome where the set places it, lit by the set's ambient
+  and sun for it and fogged with the sky's scattering (docs/shading.md, "the sky"). Left, largest first: **the
+  clouds** (the game's large white clouds are not the dome: a strip showing a 1024 × 1024
+  target they are ray-marched into, from the set's `cloud_` block, and the cloud particles
+  of `cloudParticle_`; neither is drawn, so the sky is the thin dome layer alone, paler and
+  emptier than the game's), the dome's specular term, its layers' scroll.
+  At the gate's noon a gap in the leaves at the top of the view shows bright sky where the
+  still shows leaves: the tree's foliage there, not the sky. Morning, evening and night have
+  no reference frame.
 - **Which set at which hour.** The game's first view of free play
   (`work/ryza-ref/rasen-path-start.png`, the clock at 10 AM) looks like our noon set there:
   deep shade, blue-lit path and rocks, a clear blue sky. Our morning set comes out pale and
@@ -350,11 +348,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   and the scale's values are set at run time, not read. The title's capture has no
   other grass draws: whatever grass shows on the ground itself is the terrain's own shading.
 - **Brightness and bloom.** The brightness and saturation are the game's now (above,
-  "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The glow
-  takes the set's `fLumiThreshold` (0.3, evening 0.8) on the stored scene and its
-  `fBloomWeight` (0.4, evening 0.6): a soft halo on the sunlit leaves at the gate, the
-  still's haze is wider. The game's bright pass is read (docs/shading.md, "the frame as the
-  game draws it": the threshold times `fLumiMax`, on the metered scene) and not done. Only
+  "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The bloom
+  is the game's bright pass and chain (docs/shading.md, "the frame as the game draws it")
+  with the set's `fLumiThreshold` and `fBloomWeight`; its star filter is not done. Only
   `s02_l_hap_main` and `s04_l_sad_main` have their own overrides (`env_<field>.xml`): every
   field takes `env_default.xml` here.
 

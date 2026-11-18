@@ -358,16 +358,14 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
     -toward * Vec3::new(-1.0, 1.0, 1.0)
 }
 
-// STAND-IN: The sky and dome scales are fitted to one still; the real thing is the game's own scales.
-/// The sky plane's in-scattered light scaled, and the sky dome's light scaled, both fitted to
-/// the gate's noon still under the game's tone curve (stand-ins: the game's own scales are not
-/// read; five sky regions' RGB error 170, from 359 at 2.5 and 1).
-const SKY_SCALE: f32 = 0.7;
-const DOME_SCALE: f32 = 2.5;
-
 /// The glow's rate over the set's `fBloomWeight`: the glow is stored at half its range, as the
 /// scene is.
 const GLOW_RANGE: f32 = 2.0;
+
+/// The sky plane's ground radius and atmosphere height (the game's `skyPos`, as its sky
+/// plane's constants hold them: 6,378 km and 10 km in metres).
+const GROUND_RADIUS: f32 = 6_378_000.0;
+const SKY_HEIGHT: f32 = 10_000.0;
 
 /// The most plants a field draws (Rasenboden: about 36,000 at the kinds' densities).
 const PLANT_LIMIT: usize = 200_000;
@@ -851,22 +849,21 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
         eprintln!("gimmicks: {} drawn of {} here", gimmick_instances.len(), gimmicks.len());
     }
-    // STAND-IN: The sky dome is centred under the view's target at height 0; the real thing is the game's SkyDomeWorldPosition and WorldScale.
+    // STAND-IN: The sky dome's clouds stand still; the real thing is the game's scroll of their two layers (`txTrs01`, the second at half the first's rate).
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,
-    // drawn as the distant view (unlit, after the sky plane, alpha-blended). Where the game
-    // puts it (`SkyDomeWorldPosition`, `WorldScale`) is not read: centred under the view's
-    // target at height 0 (`docs/ryza/open.md`).
+    // drawn as the distant view (after the sky plane, alpha-blended), where the set puts it
+    // (`environment::sky_dome_place`: a place in the field, at height 0, and a scale).
     let dome_files = match files.env.as_deref().map(Elixir::parse).transpose()? {
         Some(env) => match barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)) {
             Some(bin) => match barrel_ryza::environment::sky_dome(bin, a.time, a.weather)? {
-                Some(path) => Some((path.clone(), install.read(&path)?)),
+                Some(path) => Some((path.clone(), install.read(&path)?, barrel_ryza::environment::sky_dome_place(bin, a.time, a.weather)?)),
                 None => None,
             },
             None => None,
         },
         None => None,
     };
-    let dome_container = dome_files.as_ref().map(|(_, b)| Elixir::parse(b)).transpose()?;
+    let dome_container = dome_files.as_ref().map(|(_, b, _)| Elixir::parse(b)).transpose()?;
     let dome_parts = match &dome_container {
         Some(c) => {
             let real: Vec<_> = c.entries.iter().filter(|e| !e.is_dummy()).collect();
@@ -876,12 +873,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
         None => None,
     };
-    let mut dome_instance = None;
     if let Some((model, dp)) = &dome_parts {
-        let at = a.look_at.or(a.ryza.as_ref().map(|r| r.0)).unwrap_or(Vec3::ZERO);
+        let (at, scale) = dome_files.as_ref().map_or(([0.0; 2], [1.0; 3]), |f| f.2);
         let first = scene.draws.len();
-        let instance = scene.instance(Mat4::from_translation(Vec3::new(at.x, 0.0, at.z)));
-        dome_instance = Some(instance);
+        let instance = scene.instance(Mat4::from_scale_rotation_translation(Vec3::from(scale), glam::Quat::IDENTITY, Vec3::new(at[0], 0.0, at[1])));
         scene.add_posed(model.geometry.as_ref().unwrap(), Mat4::IDENTITY, dp.textures.len(), None, instance)?;
         for d in &mut scene.draws[first..] {
             d.texture += textures.len();
@@ -915,9 +910,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
     }
     // A field model's normal map goes in the mask slot (unused by the field's models
-    // otherwise; `NORMAL_MAPPED`); her draws keep the toon ramp there.
+    // otherwise; `NORMAL_MAPPED`), a sky dome's too; her draws keep the toon ramp there.
     for d in draws.iter_mut() {
-        if !d.sky && d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
+        if d.normal_map.is_some() && !ramp_rows.contains_key(&(d.first_index, d.instance)) {
             d.mask = d.normal_map;
         }
     }
@@ -967,6 +962,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let bin = barrel_engine::field::named(&env, &format!("{}_env.bin", files.area)).ok_or("environment has no settings")?;
             let light = Light::read(bin, a.time, a.weather)?;
             let (fog, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
+            let sky_fog = (sky_fog, barrel_ryza::environment::SkyGlow::read(bin, a.time, a.weather)?, barrel_ryza::environment::DomeLight::read(bin, a.time, a.weather)?);
             gust = Some(barrel_ryza::environment::Gust::read(bin, a.time, a.weather)?);
             // The cloud shadows: the set's pattern over the field's light texture.
             if let (Some(p), Some(t)) = (barrel_ryza::environment::Pattern::read(bin, a.time, a.weather)?, barrel_engine::field::named(&env, &format!("{}_pat.g1t", files.area)).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty()))) {
@@ -1056,7 +1052,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
     }
     for d in &draws {
-        for k in [d.mask, d.normal_map].into_iter().flatten() {
+        // (a character's emission slot holds its occlusion map: as stored)
+        let occlusion = d.emission.filter(|_| ramp_rows.contains_key(&(d.first_index, d.instance)));
+        for k in [d.mask, d.normal_map, occlusion].into_iter().flatten() {
             linear[k] = false;
         }
     }
@@ -1194,11 +1192,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     // Her draws take the toon ramp (flag 128, the row in bits 16-23).
     let material = |d: &Draw| {
-        // The sky dome's clouds lit by the light on an upward-facing surface (flag 4096, look
-        // slot `DOME_LIGHT_SLOT`): the game lights them (`PBSkyDome`, its scales not read).
+        // The sky dome's clouds lit by the set's light for them (flag 4096, look
+        // slots `DOME_LIGHT_SLOT`, `DOME_SUN_SLOT`), as the game's `PBSkyDome` does.
         let base = if environment.is_some() {
             if d.sky {
-                DOME_LIT
+                DOME_LIT | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 }
             } else if d.name == "plants" {
                 // Normal-mapped by the cards' own normal maps, as `ObjectGrassPBS` does.
                 FADED | if d.normal_map.is_some() { NORMAL_MAPPED } else { 0 }
@@ -1327,11 +1325,6 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 i.prev_model = i.model;
                 i.model = render_space(Mat4::from_scale_rotation_translation(Vec3::from(r.chara.size), glam::Quat::from_rotation_y(r.player.turn), r.player.at));
                 center = (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
-                // The sky dome goes with her (centred under the look point, as it was placed).
-                if let Some(i) = dome_instance.and_then(|k| instances.get_mut(k as usize)) {
-                    i.prev_model = i.model;
-                    i.model = render_space(Mat4::from_translation(Vec3::new(r.player.at.x, 0.0, r.player.at.z)));
-                }
                 if frame_no % 60 == 0 {
                     eprintln!("frame {frame_no} ({:.2}s): Ryza at {:?}, {:?}, motion {} at {:.2}s", started.elapsed().as_secs_f32(), r.player.at, r.player.gait, r.player.motion, r.player.clock);
                 }
@@ -1603,7 +1596,7 @@ const LOOK_HEIGHT: f32 = 128.0;
 const CAMERA_TURN: f32 = 120.0;
 
 /// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
-type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, barrel_ryza::environment::Fog, barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, f32);
+type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, f32);
 
 /// A frame's view: the look block and what goes with it.
 struct View {
@@ -1660,16 +1653,13 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     if let Some((c, stage, light, sky_fog, fog, chara, key)) = environment {
         // STAND-IN: The exposure is held at the bottom of the set's range, where daylight puts it; the real thing is the game's metering (0.18 over the frame's log-average luminance, eased over 3 s, kept inside the range).
         let k = light.exposure_range.0;
-        // The light on an upward-facing surface, for the sky dome's clouds: the light map
-        // upward times the set's ambient colour, and the two lights by their elevation.
+        // The sky dome's clouds: the set's own ambient and sun for them (`DomeLight`).
         {
-            let up = barrel_ryza::environment::basis([0.0, 1.0, 0.0]);
-            let rgb: [f32; 3] = std::array::from_fn(|ch| {
-                let sky = (0..9).map(|i| c[i][ch] * up[i]).sum::<f32>() * light.ambient[ch];
-                let sun = light.parallel.iter().map(|p| p.color[ch] * p.elevation.to_radians().sin().max(0.0)).sum::<f32>();
-                (sky + sun) * k * DOME_SCALE
-            });
-            look[DOME_LIGHT_SLOT] = [rgb[0], rgb[1], rgb[2], 1.0];
+            let dome = sky_fog.2;
+            let way = -from_light(dome.elevation, dome.azimuth);
+            look[DOME_LIGHT_SLOT] = [dome.ambient[0] * k, dome.ambient[1] * k, dome.ambient[2] * k, 1.0];
+            look[DOME_SUN_SLOT] = [dome.sun[0] * k, dome.sun[1] * k, dome.sun[2] * k, 0.0];
+            look[DOME_SUN_SLOT + 1] = [way.x, way.y, way.z, 0.0];
         }
         // The characters' ambient (model.vert: a flat one for flag 128).
         let ca = chara.ambient_light(light, c);
@@ -1703,13 +1693,9 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         }
         // The sky plane (docs/shading.md, "Ryza DX: the sky"): Scat as measured in the game,
         // from `skyFog_` and the sun's colour times its power (scaled by the frame's exposure).
-        // STAND-IN: The sky plane's path length is chosen and it has no glow; the real thing is the game's own scattering terms.
-        // Stand-ins, not read: the path length's terms (an atmosphere `end` thick over a ground
-        // ten times as wide, so the zenith is one fog span and the horizon about 4.6) and no
-        // glow (`docs/ryza/open.md`).
         {
-            let f = *sky_fog;
-            let sun = light.parallel[0].color.map(|v| v * f.power * k * SKY_SCALE);
+            let (f, glow, _) = *sky_fog;
+            let sun = light.parallel[0].color.map(|v| v * f.power * k);
             let ext: [f32; 3] = std::array::from_fn(|i| f.rayleigh[i] + f.mie[i]);
             let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
             let ray_k = 3.0 / (16.0 * std::f32::consts::PI);
@@ -1720,11 +1706,17 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             look[s0 + 2] = [0.0, 0.0, 0.0, 1.0];
             look[s0 + 3] = [ray_k * sun[0] * part(f.rayleigh, 0), ray_k * sun[1] * part(f.rayleigh, 1), ray_k * sun[2] * part(f.rayleigh, 2), -2.0 * f.g];
             look[s0 + 4] = [mie_k * sun[0] * part(f.mie, 0), mie_k * sun[1] * part(f.mie, 1), mie_k * sun[2] * part(f.mie, 2), 1.0 + f.g * f.g];
+            // The path out through the atmosphere (`skyPos`: the ground's radius and the
+            // atmosphere's height, the game's own) as a part of the fog's span (`fog`).
             let thick = (f.end - f.start).max(1.0);
-            let ground = 10.0 * thick;
-            let top = ground + thick;
-            look[s0 + 5] = [ground, ground * ground, top * top - ground * ground, 0.0];
-            look[s0 + 6] = [1.0 / thick, 0.0, 0.0, 0.0];
+            look[s0 + 5] = [-GROUND_RADIUS, GROUND_RADIUS * GROUND_RADIUS, (2.0 * GROUND_RADIUS + SKY_HEIGHT) * SKY_HEIGHT, 0.0];
+            look[s0 + 6] = [1.0 / thick, -f.start / thick, 0.0, 0.0];
+            // The haze (`vGlowDir`, `cGlow`, `hGlowParam`).
+            let glow_way = from_light(glow.elevation, glow.azimuth);
+            let ramp = glow.ramp();
+            look[s0 + 8] = [glow_way.x, glow_way.y, glow_way.z, 0.0];
+            look[s0 + 9] = [glow.color[0] * k, glow.color[1] * k, glow.color[2] * k, glow.fade];
+            look[s0 + 10] = [ramp[0], ramp[1], 0.0, 0.0];
             let sun_way = from_light(light.parallel[0].elevation, light.parallel[0].azimuth);
             look[s0 + 7] = [sun_way.x, sun_way.y, sun_way.z, 0.0];
             sky_plane = true;

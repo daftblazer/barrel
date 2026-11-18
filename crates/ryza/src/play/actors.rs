@@ -371,9 +371,16 @@ pub fn add_character(
             }
         }
     }
+    // STAND-IN: The ramp's and the occlusion's constants (model.frag) are one capture's, Rasenboden at noon; the real thing is wherever the game keeps them a field, time and weather.
+    // The occlusion maps (`sOcc`, texture kind 5), in the emissive slot (a character's draws
+    // have no emission map of their own drawn): for the submeshes the toon ramp shades (those
+    // with a `rampIndex`; a plain piece's program samples no occlusion though its material
+    // names one).
+    let occlusions: Vec<Option<usize>> = drawn.iter().map(|s| geometry.materials.get(s.material as usize).filter(|_| geometry.param(s, "rampIndex").is_some()).and_then(|m| m.textures.iter().find(|t| t.kind == 5)).map(|t| t.index as usize)).collect();
     if scene.draws.len() - first == rows.len() {
-        for (d, &row) in scene.draws[first..].iter().zip(&rows) {
+        for ((d, &row), occlusion) in scene.draws[first..].iter_mut().zip(&rows).zip(&occlusions) {
             ramp_rows.insert((d.first_index, d.instance), row);
+            d.emission = *occlusion;
         }
     } else {
         eprintln!("{name}: {} draws for {} submeshes: no toon ramp", scene.draws.len() - first, rows.len());

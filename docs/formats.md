@@ -1538,7 +1538,7 @@ another call and are not listed:
 | Block | Memory | File | Reader | Members |
 |---|---|---|---|---|
 | trueHDR_ | 0x0 | 0x0 | `0x1406fe490` | fLumiMax +0x0, fHexInclination +0x4, fHexScale +0x8, fDistantBlurZThreshold +0xc, fDistantBlurIntensity +0x10, fKIDSDOFType +0x14, fLumiThreshold +0x18, fMiddleGray +0x1c, fLightAdaptedScale +0x28, fDarkAdaptedScale +0x2c, fFXAAEdgeThreshold +0x30, fFXAAEdgeThresholdMin +0x34, fFXAAEdgeSharpness +0x38, fFXAAPixelRange +0x3c, fGamma +0x40, fBloomWeight +0x5c, fStarWeight +0x60, nStarLines +0x64, fStarLength +0x68, fAttenuation +0x6c, fInclination +0x70, fLensFlareWeight +0x74, fAperture +0x78 |
-| the sky plane glow | 0x180 | 0x174 | `0x140706eb0` | SkyPlaneGlowElevation +0x4, SkyPlaneGlowAzimuth +0x8, SkyPlaneGlowStartAngle +0x18, SkyPlaneGlowEndAngle +0x1c, SkyPlaneGlowFade +0x20 |
+| the sky plane glow | 0x180 | 0x174 | `0x140706eb0` | SkyPlaneGlowElevation +0x4, SkyPlaneGlowAzimuth +0x8, the glow's colour +0xc (RGB), SkyPlaneGlowStartAngle +0x18, SkyPlaneGlowEndAngle +0x1c, SkyPlaneGlowFade +0x20 |
 | cloud_ | 0x1a4 | 0x198 | `0x1406faf40` | CloudDensity +0x0, CloudWindX +0x14, CloudWindZ +0x18, CloudOffsetY +0x1c, CloudViewRange +0x20, CloudDensityMapFrequencyX +0x24, CloudDensityMapFrequencyZ +0x28, CloudShadingType +0x2c, CloudAttenuationScale +0x30, CloudThickness +0x34, CloudAttenuationDistance +0x38, CloudScatteringAttenuationScale +0x3c, CloudRayTraceNum +0x40, CloudMaxRayTraceDeltaUV +0x44, CloudHeightNoiseChangeSpeed +0x48, CloudHeightNoiseScale +0x4c, CloudHeightNoiseSeedOctave +0x50, CloudHeightNoiseSeedPersistence +0x54, CloudHeightNoiseSeedFreqScaleU +0x58, CloudHeightNoiseSeedFreqScaleV +0x5c, CloudHeightNoiseSeedScale +0x60, Cloud2ndWindX +0x64, Cloud2ndWindZ +0x68, CloudNoiseScale +0x6c, CloudDensityNoiseMapFrequencyX +0x70, CloudDensityNoiseMapFrequencyZ +0x74 |
 | cloudParticle_ | 0x21c | 0x210 | `0x1406fc0e0` | CloudParticleNum +0x0, CloudParticleMaxNum +0x4, CloudParticleWindX +0x24, CloudParticleWindZ +0x28, CloudParticleFadeoutScaler +0x2c, CloudParticleExistRange +0x30, CloudParticleExtinctRange +0x34, CloudParticleViewRange +0x38, CloudParticleScale +0x3c, CloudParticleThickness +0x40 |
 | rlr_ | 0x260 | 0x254 | `0x140705070` | MaxRaySamples +0x0, SampleFadeStart +0x4, PixelsPerStep +0x8, ViewFadeStart +0xc, ViewFadeEnd +0x10, DepthFadeStart +0x14, DepthFadeEnd +0x18, EdgeFadeRange +0x1c |
@@ -1570,6 +1570,12 @@ weathers none; the attic and the living room only noon (`obj-A21-TEST-SKYCLOUD-A
 `MORNING_SUNNY_02` is one model (two submeshes, shader `PBSkyDome-NT0Tn`: colour, normal map,
 alpha-cut) of clouds alone, 148 km across and 29 km high around the origin: the blue behind
 them is the sky shader's (`skyplane.g1s`, the sky glow block at 0x180), not a texture.
+After the name: the dome's place at 0x45c (three floats; noon (30000, 2300, 30000), and the
+game draws it at height 0), its scale at 0x478 (3 each), its sun's colour at 0x494 with the
+sun's elevation and azimuth at 0x4a0 and 0x4a4 ((4.78, 5, 3.5), 45, 30), its ambient colour
+at 0x528 ((3, 6, 4)), and a second light for the cloud pieces at 0x538 ((35, 48.8, 70), with
+30 and 30 after it): the values the game's dome draws carry as `mL2W`, `litCol`, `litDir`
+and `ambLit`.
 
 **Fog and sky scattering.** Two blocks of the same shape (the executable's `EnvDataFog` reader,
 for `fog_` at structure +0xd4c and `skyFog_` at +0x1604; member names from the environment

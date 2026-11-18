@@ -2,14 +2,21 @@
 //! (`saturate(scene - threshold)`) into a target a quarter of the screen's size, blurred across
 //! and down over five levels each half the last, blurred back up adding into each level, and
 //! level 0 added to the scene at `glow_add_rate` by the post pass.
+//!
+//! The Ryza games' bloom instead, for an HDR scene (`docs/shading.md`, "The frame as the game
+//! draws it"): the bright parts by luminance at a quarter of the screen, a 13-tap diamond blur
+//! there and again at an eighth, then a Gaussian across and down; the tone pass adds it.
 
 use ash::vk;
 
 use crate::{Gpu, Result};
 
 pub const LEVELS: usize = 5;
-/// The glow targets' format (the game's are 8-bit, like the scene).
+/// The glow targets' format (the game's are 8-bit, like the scene), and the bloom's (float,
+/// like its scene).
 const FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+const BLOOM_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
+
 const POST_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/post.vert.spv"));
 const GLOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/glow.frag.spv"));
 
@@ -22,6 +29,9 @@ pub struct Pipelines {
     modules: [vk::ShaderModule; 2],
     overwrite: vk::Pipeline,
     add: vk::Pipeline,
+    /// The Ryza games' bloom instead of the glow (an HDR scene's): the bright parts by
+    /// luminance, blurred at a quarter and an eighth of the screen (`Targets::record`).
+    bloom: bool,
 }
 
 /// One target: its image, view and framebuffer, and a set to read it from.
@@ -41,6 +51,7 @@ pub struct Targets {
     scene_set: vk::DescriptorSet,
     x: Vec<Target>,
     y: Vec<Target>,
+    bloom: bool,
 }
 
 #[repr(C)]
@@ -51,9 +62,9 @@ struct Push {
     mode: u32,
 }
 
-fn pass(gpu: &Gpu, load: vk::AttachmentLoadOp) -> Result<vk::RenderPass> {
+fn pass(gpu: &Gpu, format: vk::Format, load: vk::AttachmentLoadOp) -> Result<vk::RenderPass> {
     let attachment = [vk::AttachmentDescription::default()
-        .format(FORMAT)
+        .format(format)
         .samples(vk::SampleCountFlags::TYPE_1)
         .load_op(load)
         .store_op(vk::AttachmentStoreOp::STORE)
@@ -82,10 +93,11 @@ fn pass(gpu: &Gpu, load: vk::AttachmentLoadOp) -> Result<vk::RenderPass> {
 }
 
 impl Pipelines {
-    pub fn new(gpu: &Gpu) -> Result<Pipelines> {
+    pub fn new(gpu: &Gpu, bloom: bool) -> Result<Pipelines> {
         let d = &gpu.device;
-        let overwrite_pass = pass(gpu, vk::AttachmentLoadOp::DONT_CARE)?;
-        let add_pass = pass(gpu, vk::AttachmentLoadOp::LOAD)?;
+        let format = if bloom { BLOOM_FORMAT } else { FORMAT };
+        let overwrite_pass = pass(gpu, format, vk::AttachmentLoadOp::DONT_CARE)?;
+        let add_pass = pass(gpu, format, vk::AttachmentLoadOp::LOAD)?;
         let binding = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -143,7 +155,7 @@ impl Pipelines {
             };
             let overwrite = make(false, overwrite_pass)?;
             let add = make(true, add_pass)?;
-            Ok(Pipelines { overwrite_pass, add_pass, set_layout, layout, modules, overwrite, add })
+            Ok(Pipelines { overwrite_pass, add_pass, set_layout, layout, modules, overwrite, add, bloom })
         }
     }
 
@@ -182,11 +194,12 @@ impl Targets {
             };
             Ok(set)
         };
+        let format = if p.bloom { BLOOM_FORMAT } else { FORMAT };
         let target = |w: u32, h: u32| -> Result<Target> {
             let (image, memory) = gpu.image(
                 &vk::ImageCreateInfo::default()
                     .image_type(vk::ImageType::TYPE_2D)
-                    .format(FORMAT)
+                    .format(format)
                     .extent(vk::Extent3D { width: w, height: h, depth: 1 })
                     .mip_levels(1)
                     .array_layers(1)
@@ -198,7 +211,7 @@ impl Targets {
                     &vk::ImageViewCreateInfo::default()
                         .image(image)
                         .view_type(vk::ImageViewType::TYPE_2D)
-                        .format(FORMAT)
+                        .format(format)
                         .subresource_range(vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1)),
                     None,
                 )?
@@ -215,19 +228,19 @@ impl Targets {
             x.push(target(w, h)?);
             y.push(target(w, h)?);
         }
-        Ok(Targets { pool, scene_set: set_for(scene)?, x, y })
+        Ok(Targets { pool, scene_set: set_for(scene)?, x, y, bloom: p.bloom })
     }
 
     /// The finished glow, for the post pass to read.
     pub fn result(&self) -> vk::ImageView {
-        self.y[0].view
+        self.y[if self.bloom { 1 } else { 0 }].view
     }
 
     /// Records the glow: bright pass, blurs down, blurs back up adding.
     ///
     /// # Safety
     /// `cb` is recording outside a render pass, after the scene's pass.
-    pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, threshold: f32) {
+    pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, threshold: f32, white: f32) {
         let run = |to: &Target, from: vk::DescriptorSet, add: bool, push: Push| unsafe {
             let (w, h) = to.size;
             let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: w, height: h } };
@@ -241,6 +254,20 @@ impl Targets {
             d.cmd_draw(cb, 3, 1, 0, 0);
             d.cmd_end_render_pass(cb);
         };
+        if self.bloom {
+            // The Ryza games' bloom: the bright parts by luminance (the threshold a part of
+            // the white point) into the quarter, a 13-tap diamond there, the same at the
+            // eighth, then a Gaussian across and down; the eighth's is the result.
+            let texel = |t: &Target| [1.0 / t.size.0 as f32, 1.0 / t.size.1 as f32];
+            let (q, e) = (0, 1);
+            run(&self.y[q], self.scene_set, false, Push { step: [threshold * white, white], threshold: 0.0, mode: 2 });
+            run(&self.x[q], self.y[q].set, false, Push { step: texel(&self.x[q]), threshold: 0.0, mode: 3 });
+            run(&self.x[e], self.x[q].set, false, Push { step: [0.0; 2], threshold: 0.0, mode: 5 });
+            run(&self.y[e], self.x[e].set, false, Push { step: texel(&self.y[e]), threshold: 0.0, mode: 3 });
+            run(&self.x[e], self.y[e].set, false, Push { step: [texel(&self.x[e])[0], 0.0], threshold: 0.0, mode: 4 });
+            run(&self.y[e], self.x[e].set, false, Push { step: [0.0, texel(&self.y[e])[1]], threshold: 0.0, mode: 4 });
+            return;
+        }
         let across = |t: &Target| Push { step: [1.0 / t.size.0 as f32, 0.0], threshold, mode: 1 };
         let down = |t: &Target| Push { step: [0.0, 1.0 / t.size.1 as f32], threshold, mode: 1 };
         // The bright parts into y0; then each level: across from the level above (or y0

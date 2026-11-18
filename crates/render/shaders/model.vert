@@ -88,10 +88,14 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 sh[9];
     // Slots 76 to 91: the sky plane's and the far shadow square's.
     vec4 vert_pad[16];
-    // The light an upward-facing surface takes ({rgb}, lib.rs DOME_LIGHT_SLOT): flag 4096.
+    // A sky dome's ambient light ({rgb}, lib.rs DOME_LIGHT_SLOT): flag 4096.
     vec4 dome_light;
     // The fade range from the eye {begin, end} (lib.rs FADE_SLOT): flag 16384.
     vec4 fade;
+    vec4 emission_pad;
+    // A sky dome's sun: its colour and the way to it (lib.rs DOME_SUN_SLOT).
+    vec4 dome_sun;
+    vec4 dome_sun_way;
 } look;
 // This frame's and last frame's clip positions, for the motion vectors (`--motion`).
 layout(location = 9) out vec4 cur_clip;
@@ -235,11 +239,18 @@ void main() {
     // (flag 16: its solid pieces, lit as the field's models are); nor are the field's xEF_
     // models (flag 32: window light).
     if ((pc.flags & 24u) == 8u || (pc.flags & 32u) != 0u) {
-        // Flag 4096: lit by the light on an upward-facing surface (Ryza's sky dome).
-        field_light = (pc.flags & 4096u) != 0u ? in_color.rgb * look.dome_light.rgb : in_color.rgb;
+        // Flag 4096: a sky dome, lit by its own ambient here and its sun per pixel
+        // (model.frag; Ryza's `PBSkyDome`, which takes no vertex colour).
+        field_light = (pc.flags & 4096u) != 0u ? look.dome_light.rgb : in_color.rgb;
         sun_part = vec3(0.0);
     }
     gl_Position = pc.view_proj * w;
+    // The distant view is drawn on the far plane whatever its distance (the viewport's depth
+    // range puts it there), so the far plane does not cut it: a dome wider than the view
+    // reaches is drawn whole.
+    if ((pc.flags & 8u) != 0u) {
+        gl_Position.z = 0.5 * gl_Position.w;
+    }
     tint_mul = i.tint_mul;
     tint_add = i.tint_add;
     cur_clip = look.view_proj * w;
@@ -262,6 +273,14 @@ void main() {
         // No sun (a field whose lights are not read): no Mie lobe toward it, rather than NaN.
         float c = dot(look.sun_dir.xyz, look.sun_dir.xyz) > 0.0 ? dot(normalize(e), normalize(look.sun_dir.xyz)) : 0.0;
         fog_add = look.scat[3].xyz * pow(max(look.scat[2].w * c + look.scat[3].w, 0.0001), -1.5) + (1.0 + c * c) * look.scat[2].xyz + look.scat[1].xyz;
+        // A sky dome (flag 4096) takes the sky's scattering, not the field's (the sky plane's
+        // slots, lib.rs SKY_SLOT: its range, its constants and the sun's way).
+        if ((pc.flags & 4096u) != 0u) {
+            float sky_s = look.vert_pad[6].x * length(e) + look.vert_pad[6].y;
+            float sky_c = dot(normalize(e), look.vert_pad[7].xyz);
+            fog_keep = min(exp2(sky_s * look.vert_pad[1].xyz), vec3(1.0));
+            fog_add = look.vert_pad[4].xyz * pow(max(look.vert_pad[3].w * sky_c + look.vert_pad[4].w, 0.0001), -1.5) + (1.0 + sky_c * sky_c) * look.vert_pad[3].xyz + look.vert_pad[2].xyz;
+        }
     }
     if ((pc.flags & 4u) != 0u) {
         // The outline pass (CharaFra*): pushed out along the clip-space normal, about the same

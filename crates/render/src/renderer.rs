@@ -442,7 +442,7 @@ impl Renderer {
         let clear = [0u8; 4];
         let filter = upload_texture(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&clear[..]] }, false)?;
         write_filter(&gpu, &post_sets, post_sampler, filter.2);
-        let glow_pipelines = glow::Pipelines::new(&gpu)?;
+        let glow_pipelines = glow::Pipelines::new(&gpu, settings.hdr_scene)?;
         let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
         let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode, settings.scene_format())?) } else { None };
         let taa_pipelines = if settings.taa { Some(taa::Pipelines::new(&gpu, settings.scene_format())?) } else { None };
@@ -894,7 +894,7 @@ impl Renderer {
             // the post pass.
             let (threshold, rate) = glow;
             if let Some(g) = &targets.glow {
-                g.record(d, &glow_pipelines, cb, threshold);
+                g.record(d, &glow_pipelines, cb, threshold, tone_white);
             }
             if let (Some(t), Some(p)) = (&targets.taa, &taa_pipelines) {
                 let fresh = targets.history_fresh.replace(false);

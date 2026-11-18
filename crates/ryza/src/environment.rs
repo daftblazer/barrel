@@ -160,6 +160,42 @@ pub fn sky_dome(env: &[u8], time: Time, weather: Weather) -> Result<Option<Strin
     Ok(Some(format!("\\data\\x64\\field\\skydome\\{}.elixir.gz", name.to_ascii_lowercase())))
 }
 
+/// The sky dome's own light (the set's words the game's dome draws carry as `litCol`,
+/// `litDir` and `ambLit`): a sun from `elevation` and `azimuth`, and an ambient colour.
+/// Rasenboden's noon: (4.78, 5, 3.5) from 45 degrees up, ambient (3, 6, 4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DomeLight {
+    pub sun: [f32; 3],
+    pub elevation: f32,
+    pub azimuth: f32,
+    pub ambient: [f32; 3],
+}
+
+const DOME_SUN: usize = 0x494;
+const DOME_AMBIENT: usize = 0x528;
+
+impl DomeLight {
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<DomeLight, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |o: usize| f32::from_le_bytes(set[o..o + 4].try_into().unwrap());
+        let rgb = |o: usize| [f(o), f(o + 4), f(o + 8)];
+        Ok(DomeLight { sun: rgb(DOME_SUN), elevation: f(DOME_SUN + 0xc), azimuth: f(DOME_SUN + 0x10), ambient: rgb(DOME_AMBIENT) })
+    }
+}
+
+const SKY_DOME_PLACE: usize = 0x45c;
+const SKY_DOME_SCALE: usize = 0x478;
+
+/// Where the set's sky dome stands in the field and its scale (`SkyDomeWorldPosition`,
+/// `SkyDomeWorldScale`; placed by the game's own dome draws at Rasenboden's noon, which
+/// stand at (30000, 0, 30000) three times the model's size: the middle word, 2300 there, is
+/// not the height the game draws it at and is not returned).
+pub fn sky_dome_place(env: &[u8], time: Time, weather: Weather) -> Result<([f32; 2], [f32; 3]), String> {
+    let set = set_of(env, time, weather)?;
+    let f = |o: usize| f32::from_le_bytes(set[o..o + 4].try_into().unwrap());
+    Ok(([f(SKY_DOME_PLACE), f(SKY_DOME_PLACE + 8)], [f(SKY_DOME_SCALE), f(SKY_DOME_SCALE + 4), f(SKY_DOME_SCALE + 8)]))
+}
+
 /// One of a set's two scattering blocks (`fog_` for the scene, `skyFog_` for the sky): the
 /// executable's `EnvDataFog` reader, members `start`, `end`, `mie`, `g`, `rayleigh`, `power`,
 /// `ambient` (names from the environment XMLs).
@@ -275,6 +311,52 @@ impl Fog {
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<(Fog, Fog), String> {
         let set = set_of(env, time, weather)?;
         Ok((Fog::at(set, FOG), Fog::at(set, SKY_FOG)))
+    }
+}
+
+/// The sky plane's haze (the set's sky plane glow block, `SkyPlaneGlow*` in the executable's
+/// reader): the sky's colour is mixed toward `color` around the direction a light at
+/// `elevation` and `azimuth` shines along, from nothing `start` degrees off that direction's
+/// horizon to `fade` of the way at `end`. Rasenboden's noon: straight down (the haze lies on
+/// the horizon), (2.46, 6.84, 10), 25 to -6 degrees, 0.5.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyGlow {
+    pub elevation: f32,
+    pub azimuth: f32,
+    pub color: [f32; 3],
+    pub start: f32,
+    pub end: f32,
+    pub fade: f32,
+}
+
+const SKY_GLOW: usize = 0x174;
+
+impl SkyGlow {
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<SkyGlow, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |o: usize| f32::from_le_bytes(set[SKY_GLOW + o..SKY_GLOW + o + 4].try_into().unwrap());
+        Ok(SkyGlow { elevation: f(0x4), azimuth: f(0x8), color: [f(0xc), f(0x10), f(0x14)], start: f(0x18), end: f(0x1c), fade: f(0x20) })
+    }
+
+    /// The shader's `hGlowParam`: the scale and offset taking the cosine of the angle from the
+    /// glow's direction to 0 at `start` and 1 at `end`.
+    pub fn ramp(&self) -> [f32; 2] {
+        let (from, to) = (self.start.to_radians().sin(), self.end.to_radians().sin());
+        let scale = if to != from { 1.0 / (to - from) } else { 0.0 };
+        [scale, -from * scale]
+    }
+}
+
+#[cfg(test)]
+mod sky_tests {
+    use super::*;
+
+    /// The shader's `hGlowParam` as the game sets it for Rasenboden's noon (25 to -6 degrees).
+    #[test]
+    fn the_haze_ramp_is_the_games() {
+        let g = SkyGlow { elevation: -89.98, azimuth: 0.0, color: [2.4582355, 6.841112, 10.0], start: 25.0, end: -6.0, fade: 0.5 };
+        let r = g.ramp();
+        assert!((r[0] + 1.8970026).abs() < 1e-4 && (r[1] - 0.8017092).abs() < 1e-4, "{r:?}");
     }
 }
 
