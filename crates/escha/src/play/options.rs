@@ -79,6 +79,7 @@ fn name(row: Row) -> &'static str {
         Row::Sharpening => "Sharpening",
         Row::Shadows => "Shadows",
         Row::Filtering => "Texture Filtering",
+        Row::Occlusion => "Ambient Occlusion",
     }
 }
 
@@ -109,6 +110,7 @@ pub fn choices(row: Row, now: &Graphics) -> Vec<Choice> {
         Row::Sharpening => [false, true].iter().map(|&on| (if on { "On" } else { "Off" }.to_string(), g::sharpen_open(s).map(|_| render(&|t| g::set_sharpen(t, on))))).collect(),
         Row::Shadows => [false, true].iter().map(|&high| (if high { "High" } else { "Low" }.to_string(), Ok(render(&|t| g::set_shadows(t, high))))).collect(),
         Row::Filtering => g::FILTERING.iter().map(|&n| (if n == 1 { "Off".to_string() } else { format!("{n}x") }, Ok(render(&|t| t.anisotropy = n)))).collect(),
+        Row::Occlusion => [false, true].iter().map(|&on| (if on { "On" } else { "Off" }.to_string(), Ok(render(&|t| g::set_occlusion(t, on))))).collect(),
     }
 }
 
@@ -124,6 +126,7 @@ pub fn value(row: Row, now: &Graphics) -> String {
         Row::Sharpening => if s.sharpen { "On" } else { "Off" }.to_string(),
         Row::Shadows => if s.shadows.size >= 2048 { "High" } else { "Low" }.to_string(),
         Row::Filtering => if s.anisotropy <= 1 { "Off".to_string() } else { format!("{}x", s.anisotropy) },
+        Row::Occlusion => if s.occlusion { "On" } else { "Off" }.to_string(),
     }
 }
 
@@ -147,6 +150,7 @@ fn description(row: Row) -> &'static str {
         Row::Sharpening => "Sharpens the picture.",
         Row::Shadows => "The shadow maps' detail.",
         Row::Filtering => "Keeps textures sharp at a slant.",
+        Row::Occlusion => "Darkens creases and corners the light does not reach.",
     }
 }
 
@@ -375,6 +379,17 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_occlusion_row_toggles_the_setting_and_is_not_on_this_page() {
+        assert!(!g::ROWS.contains(&Row::Occlusion));
+        let start = Graphics { render: RenderSettings::DESKTOP.resolved(), display: Display::DEFAULT };
+        assert_eq!(value(Row::Occlusion, &start), "On");
+        let off = stepped(Row::Occlusion, &start, 1).unwrap();
+        assert!(!off.render.occlusion);
+        assert_eq!(value(Row::Occlusion, &off), "Off");
+        assert_eq!(name(Row::Occlusion), "Ambient Occlusion");
+    }
 
     #[test]
     fn right_skips_closed_choices() {

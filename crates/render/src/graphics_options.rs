@@ -20,9 +20,14 @@ pub enum Row {
     Sharpening,
     Shadows,
     Filtering,
+    /// The screen-space ambient occlusion (`ao.rs`), for the games that have the pass.
+    Occlusion,
 }
 
+/// The rows of a game without the occlusion pass (Escha's page).
 pub const ROWS: [Row; 8] = [Row::Mode, Row::WindowSize, Row::Scale, Row::AntiAliasing, Row::Upscaling, Row::Sharpening, Row::Shadows, Row::Filtering];
+/// The rows of a game with it (Ryza's): the same, and the occlusion's.
+pub const ROWS_WITH_OCCLUSION: [Row; 9] = [Row::Mode, Row::WindowSize, Row::Scale, Row::AntiAliasing, Row::Upscaling, Row::Sharpening, Row::Shadows, Row::Filtering, Row::Occlusion];
 
 /// The render scales offered.
 pub const SCALES: [f32; 8] = [0.5, 2.0 / 3.0, 0.75, 0.85, 1.0, 1.25, 1.5, 2.0];
@@ -225,9 +230,29 @@ pub fn set_shadows(s: &mut RenderSettings, high: bool) {
     s.shadows = if high { Shadows::DESKTOP } else { Shadows::HANDHELD };
 }
 
+pub fn set_occlusion(s: &mut RenderSettings, on: bool) {
+    s.occlusion = on;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_game_with_the_pass_has_the_occlusion_row() {
+        assert!(!ROWS.contains(&Row::Occlusion));
+        assert_eq!(ROWS_WITH_OCCLUSION[..ROWS.len()], ROWS);
+        assert_eq!(ROWS_WITH_OCCLUSION[ROWS.len()..], [Row::Occlusion]);
+    }
+
+    #[test]
+    fn the_occlusion_choice_sets_the_setting_and_is_kept_by_the_config() {
+        let mut s = RenderSettings::DESKTOP.resolved();
+        set_occlusion(&mut s, false);
+        assert!(!s.occlusion);
+        set_occlusion(&mut s, true);
+        assert!(s.occlusion);
+    }
 
     /// Every open choice from `s`, applied.
     fn moves(s: RenderSettings) -> Vec<RenderSettings> {
