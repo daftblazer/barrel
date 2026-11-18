@@ -543,9 +543,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   used), the direct specular term (0.4% of her light), the back-light amount, the second light on
   fields where it differs, the hair highlight is laid on fixed (the game slides it with the
   view's pitch). Which override a field uses (most have none: `env_default`) and the point
-  lights' share of the pass are not done. A field's gimmicks go through the character path
-  here and are grey where the game's are lit as the stage (the purple building at the gate's
-  left). Her own G-buffer programs are not read: her mesh names them by hashes that match no
+  lights' share of the pass are not done. A field's gimmicks are drawn as the stage's models,
+  as the game does (the notice board at the gate's left; `actors::add_character` without the ramp
+  rows). Her own G-buffer programs are not read: her mesh names them by hashes that match no
   shader pack's name (docs/formats.md, "Ryza's character files"); her materials' ramp rows
   (`rampIndex` 3 for her coat's cloth, 1 elsewhere) are read. Her face takes its default expression
   and blinks (every 4 s, a stand-in timing); the other expressions and the eyes' directions

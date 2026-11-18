@@ -97,6 +97,7 @@ const REGIONS: &[(&str, [usize; 4])] = &[
     ("stone wall", [860, 400, 1000, 450]),
     ("shaded path", [600, 620, 800, 680]),
     ("ryza shadow", [880, 880, 1250, 1060]),
+    ("board", [0, 522, 52, 556]),
 ];
 
 /// The mean of a region's three channels, per channel, over the pixels the game drew before the
@@ -120,8 +121,7 @@ fn region_mean(im: &Image, masks: Option<&Image>, [x0, y0, x1, y1]: [usize; 4]) 
 }
 
 /// Barrel's own characters: the connected pieces of its coverage stage (`chara`, 1 where a
-/// character-path draw is) that touch the game's characters (stencil 8). Barrel draws a few
-/// props (a field's gimmicks) through the character path too; the game lights them as the stage.
+/// character-path draw is) that touch the game's characters (stencil 8): her and the townsfolk.
 fn own_characters(masks: &Image, chara: &Image) -> Vec<bool> {
     let (w, h) = (chara.w, chara.h);
     let covered = |i: usize| chara.px[4 * i] > 0.5;
@@ -282,7 +282,7 @@ const STAGES: &[Stage] = &[
     Stage { name: "scene", game: "2037-2037_rt1920x1080.26#4", barrel: "scene", scale: 1.0, alpha: false, regions: true },
     Stage { name: "bright", game: "2052-2052_rt482x272.26#1", barrel: "bright", scale: 1.0, alpha: false, regions: false },
     Stage { name: "bloom", game: "2057-2057_rt240x135.26#1", barrel: "bloom", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "tone", game: "2078-2078_rt1920x1080.90#7", barrel: "tone", scale: 255.0, alpha: false, regions: false },
+    Stage { name: "tone", game: "2078-2078_rt1920x1080.90#7", barrel: "tone", scale: 255.0, alpha: false, regions: true },
 ];
 
 /// The game's depth and stencil before the sky, for the masks.

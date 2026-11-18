@@ -211,8 +211,8 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
 - A `chara` stage (`Stop::Chara`, `look` slot 31's w 2) draws the terrain and the models as
   coverage: 1 where a draw of the character path (flag 128) lands, 0 elsewhere, the water
   skipped. `barrel-parity pixels` takes the connected pieces of it that touch the game's
-  characters (stencil 8) as Barrel's own character pixels (Barrel draws a field's gimmicks
-  through the character path too; the game lights them as the stage), and under the `lit`,
+  characters (stencil 8) as Barrel's own character pixels (a field's gimmicks are drawn as
+  the stage's models, as the game lights them, so they are not in it), and under the `lit`,
   `scene` and `tone` stages prints a `chara <stage>` line: the mean colour of the game's
   characters and of Barrel's, each over its own pixels (with the pixel counts), the mean
   luminance's difference in percent, the mean absolute difference between the two sorted
@@ -229,6 +229,15 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   lowest 15% of its height, and 62% to 80% of it): the game's and Barrel's (boots 0.0415 0.0167
   0.0145 against 0.0492 0.0193 0.0158, thighs 0.0794 0.0319 0.0281 against 0.0936 0.0369
   0.0316: the sheen is a fifth too bright, the screen-space reflections left out).
+- The `board` region (0, 522, 52, 556) is the notice board at the gate's left, a field gimmick
+  (a stage model: the game draws it in the G-buffer pass with stencil 2 and the field models'
+  program, and into the cascades), printed under the `lit`, `scene` and `tone` stages like the
+  others. Drawn through the character path (before) the `lit` mean was 0.323 0.150 0.216
+  against the game's 0.245 0.136 0.240; drawn as the stage's models 0.263 0.161 0.300 (0.221
+  0.101 0.251 without the specular ambient, which comes out about twice the game's here, as it
+  does on the stage's models: the screen-space reflections are left out). The tone stage's
+  0.486 0.314 0.430 became 0.418 0.335 0.522 against the game's 0.399 0.277 0.399 (the water
+  beside it and the glow's bleed into the blue).
 - The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
   not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
   `BARREL_PATTERN_PHASE=<offset>` (the cloud shadows' pattern, both axes, in repeats) and

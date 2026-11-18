@@ -771,7 +771,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         eprintln!("Ryza: {chara:?}");
         let instance = scene.instance(Mat4::from_scale_rotation_translation(Vec3::from(chara.size), glam::Quat::from_rotation_y(turn.to_radians()), *at));
         // Her pack follows the scene's textures, the toon ramp her pack.
-        let drawn = actors::add_character(&mut scene, geometry, rp.textures.len(), &joints, instance, textures.len(), textures.len() + rp.textures.len(), "ryza", &[], &mut ramp_rows)?;
+        let drawn = actors::add_character(&mut scene, geometry, rp.textures.len(), &joints, instance, textures.len(), textures.len() + rp.textures.len(), "ryza", &[], Some(&mut ramp_rows))?;
         actors::cast_in_sub_map(&mut scene.draws, drawn, geometry, &SUB_BIAS_EX_SHADERS);
         eprintln!("Ryza: {drawn} draws, {} joints, motion {motion} {:.2}s long", joints.len(), anim.duration);
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
@@ -805,7 +805,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 let joints = actor.joints(body, play.stage.time);
                 actor.instance = scene.instance(actor.model(body));
                 let name = format!("slot {}", actor.slot);
-                let drawn = actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, actor.instance, textures.len(), ramp, &name, &actor.swing, &mut ramp_rows)?;
+                let drawn = actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, actor.instance, textures.len(), ramp, &name, &actor.swing, Some(&mut ramp_rows))?;
                 eprintln!("{name}: {drawn} draws, {:?} at stage {:.3} s", body.map(|b| (b.position, b.facing.to_degrees(), &b.motion)), play.stage.time);
                 textures.extend(actor.pack.textures.iter());
             }
@@ -855,7 +855,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 };
                 let instance = scene.instance(actor.placed(Vec3::from(at), yaw.to_radians()));
                 let joints = actor.joints_of(Some(motion), 0.0, 0.0);
-                actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, tag, &actor.swing, &mut ramp_rows)?;
+                actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, tag, &actor.swing, Some(&mut ramp_rows))?;
                 npc_drawn.push((k, instance, motion, walk.as_ref()));
             }
         }
@@ -876,11 +876,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let joints = actor.joints_of(None, 0.0, 0.0);
             for g in gimmicks.iter().filter(|g| g.tag == file.tag()) {
                 let instance = scene.instance(actor.gimmick_model(Vec3::from(g.position), g.yaw, g.rotation, g.scale));
-                actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, file.tag(), &actor.swing, &mut ramp_rows)?;
+                actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, instance, base, ramp, file.tag(), &actor.swing, None)?;
                 gimmick_instances.push(instance);
             }
         }
-        eprintln!("gimmicks: {} drawn of {} here", gimmick_instances.len(), gimmicks.len());
+        eprintln!("gimmicks: {} drawn of {} here ({})", gimmick_instances.len(), gimmicks.len(), gimmick_files.iter().map(|f| f.tag()).collect::<Vec<_>>().join(", "));
     }
     // STAND-IN: The sky dome's clouds stand still; the real thing is the game's scroll of their two layers (`txTrs01`, the second at half the first's rate).
     // The set's sky dome (its clouds; the blue is the sky plane's): its model and textures,

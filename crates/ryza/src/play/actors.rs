@@ -340,7 +340,8 @@ pub fn advance(play: &mut Playback, seconds: f32) {
 /// A posed character's submeshes added to the scene as `name`, with their toon-ramp rows
 /// (`ramp_rows`, by first index and instance), her hair highlights, and her textures shifted by
 /// `texture_base` (where her pack starts among the scene's textures; `ramp` is the toon ramp's
-/// texture number). Returns the number of draws added.
+/// texture number). Returns the number of draws added. Without `ramp_rows` the model is a prop of
+/// the field (a gimmick), drawn as the field's models are: no toon ramp, its own emission map.
 #[allow(clippy::too_many_arguments)]
 pub fn add_character(
     scene: &mut Scene,
@@ -352,7 +353,7 @@ pub fn add_character(
     ramp: usize,
     name: &str,
     swing: &[u32],
-    ramp_rows: &mut HashMap<(u32, u32), u32>,
+    mut ramp_rows: Option<&mut HashMap<(u32, u32), u32>>,
 ) -> Result<usize> {
     let first = scene.draws.len();
     scene.add_posed(geometry, Mat4::IDENTITY, texture_count, Some(joints), instance)?;
@@ -377,16 +378,18 @@ pub fn add_character(
     // with a `rampIndex`; a plain piece's program samples no occlusion though its material
     // names one).
     let occlusions: Vec<Option<usize>> = drawn.iter().map(|s| geometry.materials.get(s.material as usize).filter(|_| geometry.param(s, "rampIndex").is_some()).and_then(|m| m.textures.iter().find(|t| t.kind == 5)).map(|t| t.index as usize)).collect();
-    if scene.draws.len() - first == rows.len() {
-        for ((d, &row), occlusion) in scene.draws[first..].iter_mut().zip(&rows).zip(&occlusions) {
-            ramp_rows.insert((d.first_index, d.instance), row);
-            d.emission = *occlusion;
+    if let Some(ramp_rows) = ramp_rows.as_deref_mut() {
+        if scene.draws.len() - first == rows.len() {
+            for ((d, &row), occlusion) in scene.draws[first..].iter_mut().zip(&rows).zip(&occlusions) {
+                ramp_rows.insert((d.first_index, d.instance), row);
+                d.emission = *occlusion;
+            }
+        } else {
+            eprintln!("{name}: {} draws for {} submeshes: no toon ramp", scene.draws.len() - first, rows.len());
         }
-    } else {
-        eprintln!("{name}: {} draws for {} submeshes: no toon ramp", scene.draws.len() - first, rows.len());
     }
     for d in &mut scene.draws[first..] {
-        let ramped = ramp_rows.contains_key(&(d.first_index, d.instance));
+        let ramped = ramp_rows.as_deref().is_some_and(|r| r.contains_key(&(d.first_index, d.instance)));
         d.texture += texture_base;
         d.mask = if ramped { Some(ramp) } else { d.mask.map(|m| m + texture_base) };
         d.overlay = d.overlay.map(|o| o + texture_base);
