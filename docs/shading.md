@@ -878,7 +878,21 @@ not haze: the projection's far plane was 80000 and the mountains past it were cu
 showed through where the game has hills (`look_for`: near 50 and far 300000 now, the
 game's, from its depth terms). The hills are 0.45, 0.81, 0.74 in Barrel's scene against the
 game's 0.13, 0.32, 0.43 over the strip: their unfogged colour is about 5 times the game's, so
-what is left is the backdrop's own lighting or material (not found), not its fog.
+what is left is not their fog. The hills are field models, `obj-A21-COMMON-MOUNTAIN-*` (class
+3, the baked-in-place instance), not the sky pass's draws: the game draws them in its G-buffer
+with the field models' own pixel program (draws 552 and 719 at the gate: colour, specular map
+and normal map), so they are lit by the lighting pass like the rest, with the occlusion (0.79
+there; Barrel's 0.82 now), and Barrel lights them as it lights a field model (flags: normal
+mapped, specular map). Measured over the strip (1500, 330, 1800, 350), Barrel against the game:
+ambient (0.235, 0.628, 2.91 against 0.212, 0.541, 2.47), colour (0.132, 0.133, 0.049 against the
+G-buffer's 0.11, 0.108, 0.035), the sun's share 0.484 against 0.411, and the sun's Lambert term
+0.49 against 0.10: that is the difference (the sun, 14.3 15 10.5, is behind the hills, the
+game's normals face the camera: world (-0.09, 0.29, -0.64) on average, Barrel's mapped normals
+(0.18, 0.74, -0.20) in game axes and its vertex normals' mean 0.82 up). The ambient and colour
+are 10 to 40% high, the sun's term four times. Not the tangent frame's axes (swapping red and
+green moves the strip by 3%); not found: where the game's normals come from (the vertex
+tangent, which Barrel's vertices do not carry, or the normal map's decoding on these large
+UVs).
 
 **The lighting pass** (stage draws: `litCol` = the sun × 3, the second light × 1; the
 characters' draw: the sun × 0.8, the second light × 0.487; the scales are the blocks' words

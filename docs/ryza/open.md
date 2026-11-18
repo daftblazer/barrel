@@ -293,6 +293,11 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     texture, so the occlusion's pattern differs (mean abs 0.128 against the half size picture, its
     regions' means 0.02 to 0.08 above the game's: the left canopy 0.741 against 0.657); the tree
     regions of the lit stage are still 1.5 to 2 times the game's brightness (item below).
+    **The far hills** (the strip (1500, 330, 1800, 350), lit stage 0.380, 0.718, 0.701 against the
+    game's 0.085, 0.118, 0.093, fogged 0.38, 0.72, 0.70 against 0.13, 0.32, 0.43): the mountain
+    models' normals (docs/shading.md, "The far hills' fog": the sun's Lambert term 0.49 against
+    0.10, the sun being behind them), not their fog, occlusion (0.82 against 0.79), ambient or
+    colour (10 to 40% high); not found: where the game's normals for them come from.
   - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9): where the clouds stand
     (random per run), the cloud particles, the dome's scroll, a few percent on the clear sky.
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
