@@ -12,7 +12,9 @@
 //! ground (its terrain's square; the backdrop's mountains far outside it are drawn, not framed),
 //! or looks at X,Y,Z (field units, as the placement list gives them) from D away. The light is
 //! the field environment's set for the time and weather (noon, sunny by default). `--hide`
-//! leaves out the objects whose placement names contain NAME (to find which object is which).
+//! leaves out the objects whose placement names contain NAME (to find which object is which);
+//! `--unseen NAME` leaves them out of the view alone (they still cast their shadows: what the
+//! game does with an object right in front of the camera).
 //! `--done` names the story events that have played (`MM00_010`): the people and objects the
 //! field's tables hang on the story follow them (none played by default). `--save FILE`
 //! takes them from a save of the game's (a `data.dat`) instead.
@@ -81,6 +83,8 @@ struct Args {
     time: Time,
     weather: Weather,
     hide: Vec<String>,
+    /// `--unseen NAME`: objects left out of the view that still cast their shadows.
+    unseen: Vec<String>,
     /// The story's progress (`--done`, or the save's with `--save`).
     story: barrel_ryza::story::Story,
     /// A save file to take the story's progress from (`--save`).
@@ -143,7 +147,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), story: Default::default(), save: None, no_skyline: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -161,6 +165,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--distance" => a.distance = Some(value()?.parse()?),
             "--hide" => a.hide.push(value()?),
+            "--unseen" => a.unseen.push(value()?),
             "--no-shadows" => a.no_shadows = true,
             "--fov" => a.fov = Some(value()?.parse()?),
             "--draw-ranges" => a.draw_ranges = value()?,
@@ -1199,6 +1204,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         .map(|g| std::cell::RefCell::new(barrel_ryza::horizon::Horizon::new(g)));
     let npc_spots = std::cell::RefCell::new(std::collections::HashMap::<u32, Vec3>::new());
     let in_sight = |d: &Draw| {
+        if a.unseen.iter().any(|h| d.name.contains(h.as_str())) {
+            return false;
+        }
         let Some(h) = &horizon else { return true };
         // STAND-IN: A townsperson is tested as a sphere of PERSON_SPHERE.1 units around a point PERSON_SPHERE.0 above the feet; the real thing is the game's own bounds for a character.
         if let Some(&feet) = npc_spots.borrow().get(&d.instance) {

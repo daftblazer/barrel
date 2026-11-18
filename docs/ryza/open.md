@@ -505,8 +505,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   the pixel board (`docs/ryza/views/left.txt`) the roofed post `obj-A21-S06-POST`, 125 units
   from the eye over the ground and under the eye's height, has no draw in the G-buffer pass
   and three in the nearest shadow cascade; in the turn view, 355 units away, it is drawn.
-  `barrel` draws it (it fills a quarter of the picture), so the left view's run hides it by
-  name, shadow and all. The rule is not read: the camera file has no setting for it (the
+  `barrel` draws it (it fills a quarter of the picture), so the left view's run leaves it
+  out of the view by name (`--unseen`). The rule is not read: the camera file has no setting for it (the
   program knows no `camera_ct` name; the field template's note calls it "things in front of
   the camera turn see-through", with a speed and a radius), and whether it fades or cuts is
   not known (one frame, 300 frames after the camera stopped).

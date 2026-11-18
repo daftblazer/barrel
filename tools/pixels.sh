@@ -23,10 +23,10 @@ turn)
     clocks="BARREL_SKY_CLOCK=7.0500 BARREL_DOME_CLOCK=21.73 BARREL_PATTERN_PHASE=-0.10466671 BARREL_CLOUD_THRESHOLD=0.64210135 BARREL_PLANT_WIND=10.312922,3.7927282"
     camera="--look-at 31721.86,6238.42,29814.96 --yaw 306.32707 --ryza 32200.55,6193.3,30166.94 --turn -126.33 --motion-time 2.2" ;;
 left)
-    # The post in front of the camera is hidden as the game hides it (docs/ryza/open.md).
+    # The post in front of the camera is left out of the view as the game leaves it (docs/ryza/open.md).
     dump=$key/pixels-left/pixels/f2150 map=1643-1643
     clocks="BARREL_SKY_CLOCK=7.0500 BARREL_DOME_CLOCK=21.75 BARREL_PATTERN_PHASE=-0.10466671 BARREL_CLOUD_THRESHOLD=0.64210135 BARREL_PLANT_WIND=10.312922,3.7927282"
-    camera="--look-at 33029.292,6225.087,30640.031 --yaw 121.0000952 $at --motion-time 2.043 --hide obj-A21-S06-POST" ;;
+    camera="--look-at 33029.292,6225.087,30640.031 --yaw 121.0000952 $at --motion-time 2.043 --unseen obj-A21-S06-POST" ;;
 *) echo "no view $view" >&2; exit 2 ;;
 esac
 rm -rf "${out:?}/$view" "${out:?}/$view-pictures"
