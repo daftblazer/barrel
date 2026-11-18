@@ -236,11 +236,13 @@ pub struct Geometry<'a> {
     /// The cloth pieces' control points (the model's `NUNO` chunk), which the cloth
     /// submeshes' vertices are built from ([`Geometry::cloth_of`]).
     pub cloths: Vec<Cloth>,
+    /// The `COLL` chunk's collider groups ([`Cloth::collider_groups`] name them).
+    pub collider_groups: Vec<Vec<Collider>>,
 }
 
 /// One cloth piece (an entry of the `NUNO` chunk's section 0x30003): a grid of control
 /// points the game's simulation moves; a cloth submesh's vertices hang between them.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Cloth {
     /// The bone (as [`Skeleton::joint`] takes it) whose space the points are stored in.
     pub parent_bone: u32,
@@ -249,6 +251,157 @@ pub struct Cloth {
     /// Once placed: the parent's joint and its bind matrix (three rows of four), which took
     /// the points into the model's space and takes the piece's ordinary vertices there too.
     pub placed: Option<(u32, [[f32; 4]; 3])>,
+    /// The mesh bone palette (an index into [`Geometry::bone_maps`]) the pinned points are skinned by.
+    pub palette: u32,
+    /// Points per row of the grid.
+    pub row_len: u32,
+    /// The simulation's settings.
+    pub settings: ClothSettings,
+    /// One link per point, in point order.
+    pub links: Vec<ClothLink>,
+    /// The pinned points (the first `pins.len()` points), how each follows the body.
+    pub pins: Vec<ClothPin>,
+    /// The collider groups ([`Geometry::collider_groups`]) whose colliders act on the piece.
+    pub collider_groups: Vec<u32>,
+    /// The movable points as inclusive ranges `(first, last)`.
+    pub ranges: Vec<(u32, u32)>,
+    /// Points held within a length of an anchor point.
+    pub limits: Vec<ClothLimit>,
+}
+
+/// A point's neighbours in the grid and the lengths to two of them at rest.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClothLink {
+    /// Left, right, up and down as point numbers (`None` at the edge).
+    pub left: Option<u32>,
+    pub right: Option<u32>,
+    pub up: Option<u32>,
+    pub down: Option<u32>,
+    /// The distance to the right and to the lower neighbour at rest.
+    pub right_len: f32,
+    pub down_len: f32,
+}
+
+/// A pinned point: skinned like a vertex by the piece's palette, then taken into the parent's space.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClothPin {
+    /// The point's unit normal.
+    pub normal: [f32; 3],
+    pub weights: [f32; 4],
+    /// Palette slots (not joints) the four weights belong to.
+    pub slots: [u8; 4],
+}
+
+/// A point kept within `length` of its anchor.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClothLimit {
+    pub point: u32,
+    pub anchor: u32,
+    pub length: f32,
+}
+
+/// The settings of a cloth piece's header (the names are what the solver does with them; the
+/// header's bytes from 0x38 on). Values of Ryza's skirt in brackets.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClothSettings {
+    /// Gravity as a multiple of 980 (3).
+    pub gravity_scale: f32,
+    /// Share of the velocity lost per step (0.1).
+    pub damping: f32,
+    /// Stiffness of the horizontal, shear and vertical links (0.7, 0.5, 0.7).
+    pub stiff_horizontal: f32,
+    pub stiff_shear: f32,
+    pub stiff_vertical: f32,
+    /// Bend stiffness (0.4).
+    pub bend: f32,
+    /// Drag toward the wind (0.1).
+    pub drag: f32,
+    /// Share of the wind that does not blow the cloth (0.8).
+    pub wind_damping: f32,
+    /// The parent-motion checks: zero both accelerations above the hard limits, clamp above the soft ones.
+    pub accel_zero_check: bool,
+    pub accel_clamp_check: bool,
+    /// Clamp the speed to `speed_limit` (0: off).
+    pub speed_clamp: bool,
+    pub speed_limit: f32,
+    /// Linear and angular acceleration above which the parent's move is a jump (10000, 2000)
+    /// and what the linear and angular acceleration are clamped to (100, 20).
+    pub accel_soft: [f32; 2],
+    pub accel_clamp: [f32; 2],
+    /// Scales of the parent's velocity and spin (1, 1).
+    pub parent_velocity_scale: f32,
+    pub parent_spin_scale: f32,
+    /// Constraint iterations per step (2).
+    pub iterations: u8,
+    /// Local gravity's axis: 1 +x, 2 -x, 3 +y, 4 -y, 5 +z, 6 -z, 0 none (2).
+    pub gravity_axis: u8,
+    /// Acceleration above which the move is a jump, hard limits (1e6, 2e5).
+    pub accel_hard: [f32; 2],
+    /// Bends with less than this (x0.1) of error are left alone (1).
+    pub bend_skip: f32,
+    /// The bend factor for a pinned centre (4).
+    pub bend_pinned: f32,
+    /// Passes of the distance, bend and collision constraints (1, 1, 1).
+    pub dist_passes: u8,
+    pub bend_passes: u8,
+    pub collision_passes: u8,
+    /// Scale of the local gravity (1).
+    pub local_gravity_scale: f32,
+    /// The parent's rotation limit (-1: none).
+    pub rotation_limit: f32,
+    /// The spin term's factor (0).
+    pub spin_factor: f32,
+}
+
+impl ClothSettings {
+    /// Read the settings out of an entry's header (anything past its end reads as zero).
+    fn read(h: &[u8]) -> Self {
+        let f = |at: usize| h.get(at..at + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()));
+        let b = |at: usize| h.get(at).copied().unwrap_or(0);
+        ClothSettings {
+            gravity_scale: f(0x38),
+            damping: f(0x3c),
+            stiff_horizontal: f(0x40),
+            stiff_vertical: f(0x44),
+            stiff_shear: f(0x48),
+            bend: f(0x4c),
+            drag: f(0x50),
+            wind_damping: f(0x58),
+            accel_zero_check: b(0x60) != 0,
+            accel_clamp_check: b(0x62) != 0,
+            speed_clamp: b(0x63) != 0,
+            speed_limit: f(0x6c),
+            accel_soft: [f(0x70), f(0x74)],
+            accel_clamp: [f(0x78), f(0x7c)],
+            parent_velocity_scale: f(0x80),
+            parent_spin_scale: f(0x84),
+            iterations: b(0x90),
+            gravity_axis: b(0x93),
+            accel_hard: [f(0xa4), f(0xa8)],
+            bend_skip: f(0xac),
+            bend_pinned: f(0xb8),
+            dist_passes: b(0xbd),
+            bend_passes: b(0xbe),
+            collision_passes: b(0xbf),
+            local_gravity_scale: f(0xc0),
+            rotation_limit: f(0x15c),
+            spin_factor: f(0x164),
+        }
+    }
+}
+
+/// One collider (a record of the `COLL` chunk): a capsule along its local y or a sphere,
+/// carried by a bone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Collider {
+    /// 5 a capsule, 6 a sphere.
+    pub shape: u32,
+    /// The bone it hangs on (as [`Skeleton::joint`] takes it).
+    pub bone: u32,
+    /// Radius, half length (capsule), radius.
+    pub size: [f32; 3],
+    /// Placement relative to the bone (row-vector matrix).
+    pub offset: [[f32; 4]; 4],
 }
 
 impl Cloth {
@@ -279,6 +432,7 @@ fn apply(rows: &[[f32; 4]; 3], p: [f32; 3], w: f32) -> [f32; 3] {
 /// taken. Anything that fits neither reads as no cloth.
 fn parse_cloths(body: &[u8]) -> Vec<Cloth> {
     let word = |at: usize| body.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let float = |at: usize| word(at).map(f32::from_bits);
     let read = |header: usize| -> Option<Vec<Cloth>> {
         let mut out = Vec::new();
         let mut at = 4;
@@ -289,10 +443,52 @@ fn parse_cloths(body: &[u8]) -> Vec<Cloth> {
                 let mut p = at + 12;
                 for _ in 0..entries {
                     let n = word(p + 4)? as usize;
-                    let tail = 48 * word(p + 8)? as usize + 4 * word(p + 12)? as usize + 8 * word(p + 20)? as usize + 12 * word(p + 24)? as usize;
+                    let (pins, groups, ranges, limits) = (word(p + 8)? as usize, word(p + 12)? as usize, word(p + 20)? as usize, word(p + 24)? as usize);
+                    let tail = 48 * pins + 4 * groups + 8 * ranges + 12 * limits;
                     let next = p.checked_add(header + n.checked_mul(40)? + tail).filter(|&e| e <= end)?;
-                    let points = (0..n).map(|k| std::array::from_fn(|i| f32::from_bits(word(p + header + 16 * k + 4 * i).unwrap_or(0)))).collect();
-                    out.push(Cloth { parent_bone: word(p)? & 0x7fff_ffff, points, placed: None });
+                    let points = (0..n).map(|k| std::array::from_fn(|i| float(p + header + 16 * k + 4 * i).unwrap_or(0.0))).collect();
+                    let neighbour = |w: u32| (w != u32::MAX).then_some(w);
+                    let links_at = p + header + 16 * n;
+                    let links = (0..n)
+                        .map(|k| {
+                            let l = links_at + 24 * k;
+                            let w = |i: usize| neighbour(word(l + 4 * i).unwrap_or(u32::MAX));
+                            ClothLink { left: w(0), right: w(1), up: w(2), down: w(3), right_len: float(l + 16).unwrap_or(0.0), down_len: float(l + 20).unwrap_or(0.0) }
+                        })
+                        .collect();
+                    let mut t = p + header + 40 * n;
+                    let pin_records = (0..pins)
+                        .map(|k| {
+                            let r = t + 48 * k;
+                            let slots = body.get(r + 36..r + 40).map_or([0; 4], |b| b.try_into().unwrap());
+                            ClothPin {
+                                normal: std::array::from_fn(|i| float(r + 4 * i).unwrap_or(0.0)),
+                                weights: std::array::from_fn(|i| float(r + 16 + 4 * i).unwrap_or(0.0)),
+                                slots,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    t += 48 * pins;
+                    let collider_groups = (0..groups).map(|k| word(t + 4 * k).unwrap_or(0)).collect();
+                    t += 4 * groups;
+                    let range_records = (0..ranges).map(|k| (word(t + 8 * k).unwrap_or(0), word(t + 8 * k + 4).unwrap_or(0))).collect();
+                    t += 8 * ranges;
+                    let limit_records = (0..limits)
+                        .map(|k| ClothLimit { point: word(t + 12 * k).unwrap_or(0), anchor: word(t + 12 * k + 4).unwrap_or(0), length: float(t + 12 * k + 8).unwrap_or(0.0) })
+                        .collect();
+                    out.push(Cloth {
+                        parent_bone: word(p)? & 0x7fff_ffff,
+                        points,
+                        placed: None,
+                        palette: word(p + 16)?,
+                        row_len: word(p + 44)?,
+                        settings: ClothSettings::read(&body[p..p + header]),
+                        links,
+                        pins: pin_records,
+                        collider_groups,
+                        ranges: range_records,
+                        limits: limit_records,
+                    });
                     p = next;
                 }
                 if p != end {
@@ -304,6 +500,42 @@ fn parse_cloths(body: &[u8]) -> Vec<Cloth> {
         Some(out)
     };
     read(0x14c).or_else(|| read(0x180)).unwrap_or_default()
+}
+
+/// The collider groups of a `COLL` chunk's body: `{u32 sections}`, each section `{type,
+/// size, group count}` and its groups `{u32 1, u32 n}` and `n` records of 0x70 bytes.
+fn parse_colliders(body: &[u8]) -> Vec<Vec<Collider>> {
+    let word = |at: usize| body.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let float = |at: usize| word(at).map(f32::from_bits);
+    let read = || -> Option<Vec<Vec<Collider>>> {
+        let mut out = Vec::new();
+        let mut at = 4;
+        for _ in 0..word(0)? {
+            let (kind, size, groups) = (word(at)?, word(at + 4)? as usize, word(at + 8)? as usize);
+            let end = at.checked_add(size).filter(|&e| e <= body.len() && size >= 12)?;
+            if kind == 0x20001 {
+                let mut p = at + 12;
+                for _ in 0..groups {
+                    let n = word(p + 4)? as usize;
+                    p += 8;
+                    let mut group = Vec::new();
+                    for _ in 0..n {
+                        group.push(Collider {
+                            shape: word(p)?,
+                            bone: word(p + 4)? & 0x7fff_ffff,
+                            size: [float(p + 16)?, float(p + 20)?, float(p + 24)?],
+                            offset: std::array::from_fn(|r| std::array::from_fn(|c| float(p + 32 + 16 * r + 4 * c).unwrap_or(0.0))),
+                        });
+                        p += 0x70;
+                    }
+                    out.push(group);
+                }
+            }
+            at = end;
+        }
+        Some(out)
+    };
+    read().unwrap_or_default()
 }
 
 /// A lighting material (G1MG section 0x10001): what the field light is scaled by.
@@ -520,6 +752,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         lights: Vec::new(),
         other_sections: Vec::new(),
         cloths: Vec::new(),
+        collider_groups: Vec::new(),
     };
     let mut at = 36;
     for _ in 0..sections {
@@ -769,6 +1002,9 @@ impl<'a> G1m<'a> {
         }
         if let (Some(g), Some(c)) = (geometry.as_mut(), chunks.iter().find(|c| &c.magic == b"ONUN" && &c.version == b"6300")) {
             g.cloths = parse_cloths(c.body);
+        }
+        if let (Some(g), Some(c)) = (geometry.as_mut(), chunks.iter().find(|c| &c.magic == b"LLOC" && &c.version == b"4100")) {
+            g.collider_groups = parse_colliders(c.body);
         }
         Ok(G1m { version, chunks, geometry, skeleton })
     }
@@ -1083,14 +1319,16 @@ mod tests {
         let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
         for header in [0x14c, 0x180] {
             let cloths = parse_cloths(&cloth_section(header, &points));
-            assert_eq!(cloths, vec![Cloth { parent_bone: 7, points: points.to_vec(), placed: None }]);
+            assert_eq!(cloths.len(), 1);
+            assert_eq!((cloths[0].parent_bone, &cloths[0].points[..]), (7, &points[..]));
+            assert_eq!(cloths[0].links.len(), 2);
         }
         assert!(parse_cloths(&cloth_section(0x160, &points)).is_empty());
     }
 
     #[test]
     fn placing_a_cloth_moves_its_points_once() {
-        let mut c = Cloth { parent_bone: 7, points: vec![[1.0, 2.0, 3.0]], placed: None };
+        let mut c = Cloth { parent_bone: 7, points: vec![[1.0, 2.0, 3.0]], ..Default::default() };
         let rows = [[0.0, 1.0, 0.0, 10.0], [1.0, 0.0, 0.0, 20.0], [0.0, 0.0, 1.0, 30.0]];
         c.place(4, rows);
         c.place(4, rows);
