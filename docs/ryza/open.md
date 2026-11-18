@@ -19,9 +19,9 @@ checks are `runchecks docs/ryza/checks.txt` (44 rows; frames are the exact captu
    backdrop"; docs/events.md, "Timing and loops"): diff3d at frame 1400 matches 615 of 995
    draws, all three characters' bones within 0.012 units (rows `title-3d-poses-1400`,
    `title-3d-props-1400`), the event's commands pair with the game's log. Left: the cloth
-   submeshes hang at rest, carried by their parent joint (built from the model's control
-   points, docs/formats.md "Cloth pieces"; the game's cloth and swing simulation moves the
-   points and is not done; the pieces of sections 0x30002 and 0x30005, in 8 of the 37
+   submeshes of the title's characters hang at rest, carried by their parent joint (built from the
+   model's control points, docs/formats.md "Cloth pieces"; the field's Ryza runs the game's
+   cloth solver, `barrel_engine::cloth`, and the title's cast could take it the same way; the pieces of sections 0x30002 and 0x30005, in 8 of the 37
    character models with cloth, are still drawn rigid on one joint); a head turn
    (`s88`) takes its first angle only, at once (the title's `s88 0 -7 0 0` is 7 degrees about
    the model's x axis in the head's bind frame; the opening's `s88 0 0 56 -4` and the timed
@@ -524,9 +524,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   runs in the field. The plants lean as the game's now that their cards are anchored at the
   foot (docs/shading.md, "the plants"): with a capture's wind (`BARREL_PLANT_WIND`) the
   left view's grass strip went from 23.5 to 12.3 and no other sway phase comes near (24),
-  the board to 3.30 / 3.75 / 4.38. Not done: the hanging lamps, and Ryza's hair, skirt and jacket hem ("Ryza in the field" below; the
-  `SWGQ` reader is 0x1407a6d50, 15 files read at the title and at the field's load, its
-  users not followed).
+  the board to 3.30 / 3.75 / 4.38. Ryza's cloth pieces (NUNO: skirt, jacket hem, hair) run the
+  game's solver, read and matched stage by stage against a capture (docs/formats.md "Cloth
+  pieces"): the board to 3.12 / 3.63 / 4.21. Not done: the hanging lamps.
 - **Brightness and bloom.** The brightness and saturation are the game's now (above,
   "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The bloom
   is the game's bright pass and chain (docs/shading.md, "the frame as the game draws it")
@@ -609,9 +609,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   shader pack's name (docs/formats.md, "Ryza's character files"); her materials' ramp rows
   (`rampIndex` 3 for her coat's cloth, 1 elsewhere) are read. Her face takes its default expression
   and blinks (every 4 s, a stand-in timing); the other expressions and the eyes' directions
-  are not used. Her hair, skirt and bust do not swing: the settings (`.swg`, 10 records over
-  652 swing bones, docs/formats.md "Swing settings") are read but their floats are not
-  understood, and the game's swing physics is not.
+  are not used. Her skirt, jacket hem and hair move by the game's cloth solver (the model's NUNO
+  pieces, docs/formats.md "Cloth pieces"). Not done there: the parent's rotation limit and the
+  game's smoothing of the parent's acceleration (plain differences stand in), and the other
+  characters' cloth. The `.swg` settings (10 records over 652 swing bones, docs/formats.md
+  "Swing settings") are a separate system the field does not run for her.
 
 ## On handhelds
 
