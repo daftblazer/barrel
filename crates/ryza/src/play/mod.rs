@@ -1467,6 +1467,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let wind_clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
         let (wind_power, wind_turned) = gust.map_or((0.0, 0.0), |g| g.at(wind_clock));
         let bend = barrel_ryza::environment::Gust::bend(wind_power);
+        // For parity: a captured frame's bend and sway phase (`g_vAttCache0.x`, `g_fOscPhase`).
+        let (bend, wind_turned) = std::env::var("BARREL_PLANT_WIND")
+            .ok()
+            .and_then(|v| v.split_once(',').and_then(|(b, t)| Some((b.trim().parse().ok()?, t.trim().parse().ok()?))))
+            .unwrap_or((bend, wind_turned));
         // STAND-IN: The cloud shadows' drift starts with the field; the real thing is the game's own phase.
         if let Some((p, _)) = &cloud {
             let drift = |speed: f32| phase_override("BARREL_PATTERN_PHASE").unwrap_or_else(|| (wind_clock * speed).rem_euclid(1.0));
