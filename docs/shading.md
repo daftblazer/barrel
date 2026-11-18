@@ -934,6 +934,19 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   no slice from 3600 reaches (a slice to 10000 is 13209): not found. The boxes are not
   snapped to texels. The maps are 2000 × 2400, 2000 × 2400 and 1600 × 1600 (the texels
   1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024².
+- **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box
+  in the sun's view (u horizontal, v up the slope, the cascades' way) spans exactly the
+  heightmap's square (0 to 64,000 in x and z on Rasenboden) at heights 0 to 5,000 (not the
+  map's 1,766 to 7,000), its depth 173,439 from the square's far corner toward the sun: 42.7 ×
+  31.9 units a texel. Mode 2 (`iSemiStaticSMMode`; 1 reads it alone, others not at all) reads
+  it where the cascades' fade weight is below 1: sixteen point taps four by four a texel apart
+  from 1.5 texels before the point, each `sample < depth` shadowed with the depth saturated, 1
+  when the taps' square leaves the map, mixed with the cascades' light by the fade weight. Its
+  contents are drawn at load (not in the capture); Barrel draws the field's casters into it
+  with the far cascade's bias (a stand-in). Past z 10000 the sun's share then matches the
+  game's on average (gate 0.352 against 0.350, turn 0.497 against 0.443, left 0.384 against
+  0.372; it was 0.42 to 0.53 with a box round the whole scene, distant view included, some
+  450,000 units across).
 - **The casters' pass.** Back faces culled, no raster bias; the pixel program writes the depth
   plus `sbias.x` × (|ddx| + |ddy|) plus `sbias.y` to a float target (the depth buffer holds
   the nearest), and the cut-out variant drops texels under `sbias.w` of alpha. `sbias`: (1,

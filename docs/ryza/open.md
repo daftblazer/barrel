@@ -429,7 +429,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   3600 fits it); (2) which draws cast (a placed model casts here; Barrel's cascades hold 160,
   235 and 687 draws against the game's 104, 177 and 669: the choice is not found); (3) the
   characters' map (`mSubW2S`, 25 draws: built, with a stand-in box); (4) the static map's contents (drawn once at load in the game: it is
-  not in the capture). The lit canopy's brightness (0.05 against 0.022) is not the sun's share
+  not in the capture; its box and its reading are the game's, docs/shading.md "The cascades",
+  and its bias is the far cascade's as a stand-in; where its top 5,000 and its depth 173,439
+  come from is not found). The lit canopy's brightness (0.05 against 0.022) is not the sun's share
   but the occlusion: regressing the lit stage on the share per pixel, Barrel's ambient part is
   0.061 against the game's 0.039 in the canopy and 0.070 against 0.031 on the middle tree, the
   game's sun slope half Barrel's. With the occlusion built (docs/shading.md, "What is left in

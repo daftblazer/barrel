@@ -866,7 +866,7 @@ impl Renderer {
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
                 d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
                 // A cascade is written with the game's bias where the game gave one.
-                let bias = if layer == shadow::SUB_LAYER { shadow_sub.map(|(_, b)| b[0]) } else { shadow_bias.filter(|_| layer < shadow::STATIC_LAYER).map(|b| b[layer]) };
+                let bias = if layer == shadow::SUB_LAYER { shadow_sub.map(|(_, b)| b[0]) } else { shadow_bias.filter(|_| layer <= shadow::STATIC_LAYER).map(|b| b[layer.min(2)]) };
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if bias.is_some() { shadow_cascade_pipeline } else { shadow_pipeline });
                 let mut push = [0f32; 32];
                 // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).

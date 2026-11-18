@@ -397,6 +397,13 @@ const SUB_BIAS: [(f32, f32); 2] = [(2.5, 0.01), (5.0, 0.07)];
 const SUB_BIAS_EX_SHADERS: [&str; 2] = ["@D0A7806D", "@456FF036"];
 // STAND-IN: The characters' map's box is the box of her draws (their vertices on the scene's starting joints) grown by this much on every side, from the gate's: its U and V extents are 144.5 and 220.8 against the box's own 76.2 and 163 (`mSubW2S`); the real thing is how the game bounds the characters (the extents grow with her pose: 175 by 273 running), not found.
 const SUB_BOX_PAD: f32 = 17.3;
+// The static shadow map's box (`mSemiStaticW2S`, Rasenboden at noon, to 1e-4 of a texel): its
+// u and v span the heightmap's 64,000-unit square at heights 0 to 5,000 exactly (the map's
+// heights run 1,766 to 7,000, so the top is not the map's), and its depth runs 173,439 from
+// the square's far corner toward the sun.
+// STAND-IN: the top and the depth are one field's numbers; the rule behind them is not found.
+const STATIC_TOP: f32 = 5000.0;
+const STATIC_DEPTH: f32 = 173_439.0;
 
 // STAND-IN: The cloud map's threshold is the game's first frame at Rasenboden's noon; the real thing is the set's density moved by its height noise (`CloudHeightNoiseChangeSpeed`, `CloudHeightNoiseScale`), not found.
 const CLOUD_THRESHOLD: f32 = 0.6413691;
@@ -1158,6 +1165,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // space mirrors x: the terrain spans x -extent..0, z 0..extent), or everything when there
     // is no terrain.
     let ground = terrains.first().map(|(_, t)| t.extent);
+    let static_box = match ground {
+        Some([ex, ez]) => ((Vec3::new(-ex, 0.0, 0.0), Vec3::new(0.0, STATIC_TOP, ez)), true),
+        None => ((lo, hi), false),
+    };
     let (center, radius) = match (a.look_at, ground) {
         (Some(p), _) => (p * Vec3::new(-1.0, 1.0, 1.0), 0.0),
         (None, Some([ex, ez])) => {
@@ -1491,7 +1502,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let (lo, hi) = corners.fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(l, h), c| (l.min(c), h.max(c)));
             Some(acc.map_or((lo, hi), |(l, h)| (l.min(lo), h.max(hi))))
         });
-        let mut view = look_for(sub_box, center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, (lo, hi), title_clip, sky_clock);
+        let mut view = look_for(sub_box, center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, static_box, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1884,7 +1895,7 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, world: (Vec3, Vec3), clip: Option<(f32, f32)>, seconds: f32) -> View {
+fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, (world, terrain_box): ((Vec3, Vec3), bool), clip: Option<(f32, f32)>, seconds: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -2087,9 +2098,12 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, d
                 look[SHADOW_SUB_SLOT + 4] = [1.0 / side, side / size as f32, 1.0, shadow::SUB_LAYER as f32];
                 shadow_sub = Some(vp);
             }
-            // The static layer: the whole field's box in the sun's view, drawn once.
+            // The static layer, drawn once: the game's box (`mSemiStaticW2S`) is the smallest in
+            // the sun's view round the terrain's square at heights 0 to STATIC_TOP, reaching
+            // STATIC_DEPTH toward the sun from its far side; with no terrain, the whole scene's.
             let corners: [Vec3; 8] = std::array::from_fn(|k| Vec3::new(if k & 1 == 0 { world.0.x } else { world.1.x }, if k & 2 == 0 { world.0.y } else { world.1.y }, if k & 4 == 0 { world.0.z } else { world.1.z }));
-            shadow_far = Some((shadow::fit_view_proj(&corners, sun, f32::MAX), [1.0 / size as f32, 0.0, 0.0, 0.0]));
+            let plane = if terrain_box { corners.iter().map(|c| c.dot(sun.normalize())).fold(f32::MIN, f32::max) - STATIC_DEPTH } else { f32::MAX };
+            shadow_far = Some((shadow::fit_view_proj(&corners, sun, plane), [1.0 / size as f32, 0.0, 0.0, 0.0]));
         }
         exposure_k = Some(k);
     }

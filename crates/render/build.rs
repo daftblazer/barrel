@@ -5,10 +5,13 @@ use std::process::Command;
 
 fn main() {
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    // Included by others.
-    println!("cargo:rerun-if-changed=shaders/gsr2_common.glsl");
-    println!("cargo:rerun-if-changed=shaders/specular_ambient.glsl");
-    println!("cargo:rerun-if-changed=shaders/specular_direct.glsl");
+    // Included by others: every .glsl beside the programs.
+    for entry in std::fs::read_dir("shaders").unwrap().flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "glsl") {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
     for name in ["model.vert", "model.frag", "ao.frag", "terrain.frag", "text.vert", "text.frag", "movie.vert", "movie.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "cloud_density.frag", "cloud_map.frag", "cloud_strip.vert", "cloud_strip.frag", "water.vert", "water.frag", "glow.frag", "bright.frag", "meter.frag", "shadow.frag", "shadow_cascade.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
         let src = PathBuf::from("shaders").join(name);
         println!("cargo:rerun-if-changed={}", src.display());

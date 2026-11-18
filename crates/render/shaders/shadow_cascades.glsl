@@ -41,6 +41,28 @@ float sub_light(vec3 p) {
     return lit / 16.0;
 }
 
+// The static layer's light at p (the game's `sSemiStaticShadow`, mode 2): sixteen point taps
+// four by four a texel apart from 1.5 texels before p, each a plain depth comparison with the
+// depth saturated; 1 when the taps' square leaves the map.
+float static_light(vec3 p) {
+    vec4 c = look.shadow_far * vec4(p, 1.0);
+    vec2 at = (c.xy / c.w) * 0.5 + 0.5;
+    float depth = clamp(c.z / c.w, 0.0, 1.0);
+    float t = look.shadow_far_info.x;
+    vec2 first = at - 1.5 * t;
+    if (any(greaterThanEqual(first, vec2(1.0))) || any(lessThanEqual(first + 3.0 * t, vec2(0.0)))) return 1.0;
+    float texels = 1.0 / t;
+    float lit = 0.0;
+    for (int i = 0; i < 4; i++) {
+        for (int k = 0; k < 4; k++) {
+            vec2 q = first + vec2(float(i), float(k)) * t;
+            q = (floor(clamp(q, vec2(0.0), vec2(0.999999)) * texels) + 0.5) * t;
+            lit += texture(shadow_map, vec4(q, look.shadow_far_info.y, depth));
+        }
+    }
+    return lit / 16.0;
+}
+
 // The sun's light at p: the cascade of p's distance along the view (the next one where p
 // falls outside its box), fading before the last cascade's end into the static layer
 // (the game's semi-static map), which holds the rest.
@@ -59,8 +81,7 @@ float sun_shadow_cascades(vec3 p) {
     if (w < 1.0) {
         float fixed_lit = 1.0;
         if (look.shadow_far_info.y > 0.5) {
-            fixed_lit = cascade_light(look.shadow_far, look.shadow_far_info.y, look.shadow_far_info.x, p);
-            if (fixed_lit < 0.0) fixed_lit = 1.0;
+            fixed_lit = static_light(p);
         }
         lit = mix(fixed_lit, lit, w);
     }
