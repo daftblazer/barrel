@@ -179,8 +179,18 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   draws 113 the game does not: 62 of the field's models and some 20 townsfolk draws, in view
   and hidden behind the town's buildings and ground (the game's own test of what is hidden
   is not read; Barrel's stand-in, the ground's skyline, leaves out 211 draws the game also
-  leaves out and none it draws: `docs/renderer.md`, "Ryza DX: objects behind the ground"),
-  and 15 draws of the title's backdrop. What got it here from 809: objects are
+  leaves out and none it draws: `docs/renderer.md`, "Ryza DX: objects behind the ground").
+  The "title backdrop" draws are Rasenboden's own cliffs and rocks (their textures share
+  names with the backdrop's in the index; `PARITY_LIST=1` now names each extra draw's model,
+  object number and place). Of the 47 field objects still drawn only by Barrel at the gate,
+  34 are on screen and 13 straddle the eye, at all distances (157 to 44,000 units) and sizes,
+  in all four classes. Ruled out as the game's rule: the view (none outside it), distance and
+  size (the drawn ones span the same), the GPU's queries (none), and the finished picture's
+  depth: against the game's own depth target (`1 - 50 / view depth`), 75 objects it draws are
+  wholly behind it and some it hides are mostly in front (a fence's box 89%). Where to start:
+  the code, not the data: hook the field object's per-frame draw (find it from a hidden
+  object's record by RYZA_FIND on its position, `+0x230`, then RYZA_WATCH the flag words near
+  `+0x5a0` over a frame), and read what sets the skip. What got it here from 809: objects are
   in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
   drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
   game's code and capture say ("Ryza DX: object draw ranges"). The story's progress decides

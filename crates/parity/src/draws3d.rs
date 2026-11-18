@@ -336,6 +336,8 @@ struct BarrelDraw {
     bones: Vec<M>,
     /// The slots among them the game moves by its cloth simulation.
     simulated: Vec<usize>,
+    /// The model's name and its object number in the scene, when the trace has them.
+    name: String,
 }
 
 /// A trace draw's `bones`: 16 floats a bone.
@@ -368,7 +370,7 @@ fn barrel_frame(path: &Path, frame: u64) -> Result<(Vec<BarrelDraw>, Option<M>)>
         .as_array()
         .into_iter()
         .flatten()
-        .map(|d| BarrelDraw { pass: d["pass"].as_str().unwrap_or("").to_string(), idx: d["idx"].as_u64().unwrap_or(0), tex: strs(&d["tex"]), world: m(&d["world"]).unwrap_or([0.0; 16]), bones: bones(&d["bones"]), simulated: d["simulated"].as_array().into_iter().flatten().filter_map(|x| x.as_u64().map(|x| x as usize)).collect() })
+        .map(|d| BarrelDraw { pass: d["pass"].as_str().unwrap_or("").to_string(), idx: d["idx"].as_u64().unwrap_or(0), tex: strs(&d["tex"]), world: m(&d["world"]).unwrap_or([0.0; 16]), bones: bones(&d["bones"]), simulated: d["simulated"].as_array().into_iter().flatten().filter_map(|x| x.as_u64().map(|x| x as usize)).collect(), name: format!("{} {}", d["name"].as_str().unwrap_or("-"), d["object"].as_u64().map_or(String::new(), |o| o.to_string())) })
         .collect();
     Ok((draws, m(&v["view_proj"])))
 }
@@ -555,13 +557,14 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
         }
     }
     let unmatched_barrel: Vec<&Key> = bkeys.iter().zip(&bused).filter(|(_, u)| !**u).map(|(k, _)| k).collect();
+    let unmatched_where: Vec<(&str, [f32; 3])> = bdraws.iter().zip(&bused).filter(|(_, u)| !**u).map(|(d, _)| (d.name.as_str(), [d.world[12], d.world[13], d.world[14]])).collect();
     println!("game draws without a Barrel match: {}\n{}", unmatched_game.len(), group(&unmatched_game));
     println!("  by vertex shader: {}", unmatched_vs.iter().map(|(v, n)| format!("{v} x{n}")).collect::<Vec<_>>().join(", "));
     println!("Barrel draws without a game match: {}\n{}", unmatched_barrel.len(), group(&unmatched_barrel));
     // PARITY_LIST=1: each unmatched Barrel draw's first texture and index count.
     if std::env::var_os("PARITY_LIST").is_some() {
-        for k in &unmatched_barrel {
-            println!("  barrel only: {} indices, {}", k.1, k.0.first().map_or("(no named texture)", |n| n.as_str()));
+        for (k, (name, at)) in unmatched_barrel.iter().zip(&unmatched_where) {
+            println!("  barrel only: {} indices, {} [{name} at {:.0} {:.0} {:.0}]", k.1, k.0.first().map_or("(no named texture)", |n| n.as_str()), at[0], at[1], at[2]);
         }
     }
     println!("world matrices compared: {compared} ({mirror_wins} fit best with Barrel's x mirror); worst: {worst_at}");
