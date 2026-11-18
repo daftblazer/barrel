@@ -1029,7 +1029,8 @@ colour at +0x14, `vAmbOccRat.x` the word at +0x20 (the characters' 0.7527; `.y` 
 complement); `vAmbParam.z` is the cube map's mip count less one. `vAmbSpcWgt.x` is 1 in the
 capture and not found in the set; `vAmbOccRat.zw` and `vMerge` are as captured. A field
 model's `F0` and `g` are the G-buffer program's: `pbb-n_gb` writes `F0` = the specular map's
-green (a metal, blue ≥ 0.5, takes the colour tile × (1 − green) instead) and `g` = its alpha,
+green (a metal, blue ≥ 0.5, takes the colour tile × (1 − green) instead, and its diffuse
+colour is the tile × 0.2 × green: `shb629ba7124d0dec8`, as the characters') and `g` = its alpha,
 each times `vSpcScl` (1 on every field draw of the capture). The terrain's program writes
 the blended colour tiles' alpha as `F0` and the blended normal maps' alpha as `g`: the
 ambient term adds almost nothing there, but the direct term (the sun is ten times the
@@ -1192,7 +1193,7 @@ the cube map from the set (`_as`, scale and tint of the stage's block), the spec
 set of its own, the fog on the light. Left out of it: the screen-space reflections (the cube
 map alone), the occlusion (the screen-space one, above, as the pass's `o`), the terrain
 and the plants. The characters take it too, with their own block of the set and their
-own metal rule ("Her forward passes"). Its light on bark and leaves is small, as the specular maps are dull
+own block's scale ("Her forward passes"; the metal rule is the same). Its light on bark and leaves is small, as the specular maps are dull
 (`F0` 0.02), and the shade stays well below the still's. What it does not, largest first by
 what shows: the reflections and what makes the shade bluer, the ambient occlusion's tint (built), the direct specular, the second
 kind's ambient (which draws take it is not read; plants are likely), the bloom's star filter, the metering (night and interiors would rise above 0.9), the light volume,

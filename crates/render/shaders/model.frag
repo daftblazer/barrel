@@ -365,12 +365,12 @@ void main() {
         // the lighting pass's own term (not done), not the field models' rule.
         bool chara = (pc.flags & 128u) != 0u;
         float spec_occlusion = occlusion;
-        // The diffuse colour: a character's metal (the specular map's blue at 0.5 or more) takes
-        // the colour tile times 0.2 times the map's green, as the G-buffer program writes it (the
-        // colour left over is its specular colour).
+        // The diffuse colour: metal (the specular map's blue at 0.5 or more) takes the colour
+        // tile times 0.2 times the map's green, as the G-buffer programs write it, the field
+        // models' and the characters' alike (the colour left over is its specular colour).
         vec3 albedo = c.rgb;
         if (specular) {
-            if (chara && texture(spec_map, uv).b >= 0.5) {
+            if (texture(spec_map, uv).b >= 0.5) {
                 albedo = c.rgb * (texture(spec_map, uv).g * 0.2);
             }
             specular_surface(c.rgb, f0, gloss);

@@ -25,3 +25,7 @@ region house_wall_white 1400 170 1470 480
 region house_wall_blue 1620 530 1800 565
 region planter 1440 660 1540 740
 region tree_left 80 120 300 220
+region sea 1050 372 1200 390
+region fence 1010 400 1240 440
+region ornament 1300 370 1350 430
+region deck 1600 850 1800 950
