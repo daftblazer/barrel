@@ -250,8 +250,15 @@ fn coverage(masks: &Image, depth: &Image) {
 
 /// The cloud strip's own contribution (the stage after it less the stage before, the game's
 /// `1915` less `1914`, Barrel's `sky` less `dome`) over the sky pixels, by bands of rows: the
-/// mean absolute difference of the two contributions, and each one's mean light.
+/// mean absolute difference of the two contributions, and each one's mean light (over the
+/// pixels that are sky in both).
 fn strip(game: &Path, barrel: &Path, masks: &Image) {
+    // Only where both pictures have sky: the trees' edges differ in coverage, which is not the
+    // strip's.
+    let Ok(depth) = load(barrel, "depth") else {
+        println!("strip: no depth");
+        return;
+    };
     let (Ok(g1), Ok(g0), Ok(b1), Ok(b0)) = (load(game, "1915-1915_rt1920x1080.26#4"), load(game, "1914-1914_rt1920x1080.26#4"), load(barrel, "sky"), load(barrel, "dome")) else {
         println!("strip: missing");
         return;
@@ -264,7 +271,7 @@ fn strip(game: &Path, barrel: &Path, masks: &Image) {
     let mut bands = vec![([0f64; 3], [0f64; 3], 0f64, 0f64); g1.h.div_ceil(BAND)];
     for y in 0..g1.h {
         for x in 0..g1.w {
-            if masks.at(x, y)[0] < 1.0 {
+            if masks.at(x, y)[0] < 1.0 || depth.at(x / 2, y / 2)[3] < 1.0e8 {
                 continue;
             }
             let band = &mut bands[y / BAND];

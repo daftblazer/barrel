@@ -2,7 +2,10 @@
 // The sky's large clouds (the Ryza games' strip, docs/shading.md "Ryza DX: the sky, the
 // clouds"): a 16 by 16 grid of cells centred on the eye, its height a parabola falling away
 // with the square of the distance, so it bowls over the whole view. Each cell is two triangles
-// (the game's grid is one triangle strip). Render space mirrors x against the game's, so the
+// split along the diagonal from its (0, 0) corner to its (1, 1) corner, as the game's grid (one
+// triangle strip down each column, its index buffer's order) splits them: the height's parabola
+// and the edge fade are only linear across a triangle, so the diagonal shows in the picture.
+// Render space mirrors x against the game's, so the
 // grid's x runs the other way; the map's coordinates run with the game's.
 // Look slots 97 on (`cloud`): [0] the light's way, [1] its colour, [2] the ambient, [3] the
 // clouds' colour and density, [4] {grid width, -, the surface's fall, its height at the eye's
@@ -25,7 +28,7 @@ layout(location = 2) out vec4 tint;
 layout(location = 3) out vec2 fog_height;
 
 const int CELLS = 16;
-const ivec2 CORNER[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(0, 1), ivec2(1, 0), ivec2(1, 1), ivec2(0, 1));
+const ivec2 CORNER[6] = ivec2[](ivec2(0, 0), ivec2(1, 0), ivec2(1, 1), ivec2(0, 0), ivec2(1, 1), ivec2(0, 1));
 
 void main() {
     int cell = gl_VertexIndex / 6;

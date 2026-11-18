@@ -1202,7 +1202,10 @@ change. Noon: threshold 0.6414, sharpness 8.365 (both read from a captured frame
 thinness and height scale 1.
 
 **The strip** (`cloud_strip.vert/frag`; `sh8a4c237c`, `shf2d21137`): a grid of 16 × 16 cells
-(574 vertices as the game's one triangle strip; Barrel's is a list built in the vertex shader),
+(574 vertices as the game's one triangle strip, which splits each cell along the diagonal from its
+(0, 0) corner to its (1, 1) corner; Barrel's is a list built in the vertex shader with the same
+split, which matters because the parabola and the edge fade are only linear across a triangle: with
+the other diagonal the strip's contribution to the sky was 0.24 from the game's, with this one 0.11),
 `vPosOf` wide, centred on the eye in x and z; the height is a parabola in the distance `r` from
 the eye's column, `y = vRange.w + vRange.z r²`. The map's coordinate is the grid's `(u, v)` times
 the tiling (`CloudDensityMapFrequencyX/Z`, 1.2) plus the wind's offset, `-Wind × t × tiling /
