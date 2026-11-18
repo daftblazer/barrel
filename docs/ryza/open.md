@@ -539,7 +539,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   the specular ambient mixes toward (a stand-in: the boots and the thigh come out a fifth
   too bright, 0.049 against 0.042 and 0.094 against 0.079 in red), the hull's own
   fog (nothing at her distance), the face's and the townsfolk's faces' forward programs
-  (draws 2025 to 2031, not read), the normal map in her lighting (the vertex normal is
+  (draws 2025 to 2031, not read), the normal map in her lighting (her G-buffer program reads it as `rgb x 2 - 1`, normalised, in the
+  mesh's tangent frame, not the field models' red x alpha; her draws have no free texture slot for it: the
+  mask slot holds the ramp, set 3 her occlusion map, set 4 her specular map; the vertex normal is
   used), the direct specular term (0.4% of her light), the back-light amount, the second light on
   fields where it differs, the hair highlight is laid on fixed (the game slides it with the
   view's pitch). Which override a field uses (most have none: `env_default`) and the point

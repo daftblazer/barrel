@@ -229,6 +229,11 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   lowest 15% of its height, and 62% to 80% of it): the game's and Barrel's (boots 0.0415 0.0167
   0.0145 against 0.0492 0.0193 0.0158, thighs 0.0794 0.0319 0.0281 against 0.0936 0.0369
   0.0316: the sheen is a fifth too bright, the screen-space reflections left out).
+  The picture's tone error went from 15.85 to 15.87 with them: her lines and sheen are now where
+  the game's are but her pose differs by 10 to 15 pixels, so each line is a pair of errors.
+  The direct specular of her lighting pass (the same highlight rule as the field models') was
+  tried on top and left out: it moved the mean the wrong way (0.4147 against 0.4134, the tone
+  distribution 2.65 against 2.43) while the specular ambient is still too strong.
 - The `board` region (0, 522, 52, 556) is the notice board at the gate's left, a field gimmick
   (a stage model: the game draws it in the G-buffer pass with stencil 2 and the field models'
   program, and into the cascades), printed under the `lit`, `scene` and `tone` stages like the
