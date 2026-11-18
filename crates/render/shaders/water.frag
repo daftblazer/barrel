@@ -1,8 +1,8 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 // The Ryza games' water, shaded forward (docs/shading.md, "Ryza DX: the water"): a wave normal,
-// Fresnel between the body's lit colour and the sky it reflects, the sun's highlight, then the
-// sky's scattering over the distance as the clouds'.
+// the lighting pass's light and highlights on the body's albedo, the refracted opaque scene seen
+// through it, then the field's fog over the distance.
 layout(std140, set = 1, binding = 4) uniform Look {
     vec4 light_dir;
     vec4 light_color;
@@ -100,18 +100,6 @@ vec3 wave_normal(vec2 p, float time, float pixel) {
         slope += DIR[i].xy * (cos(phase) * DIR[i].z * 9.0 / float(i + 1) * seen);
     }
     return normalize(vec3(-slope.x, 1.0, -slope.y));
-}
-
-// The sky plane's colour along d (sky.frag).
-vec3 sky_colour(vec3 d) {
-    vec4 sp = look.others[5];
-    float l = abs(-d.y * sp.x - sqrt(max(d.y * d.y * sp.y + sp.z, 0.0))) * look.others[6].x + look.others[6].y;
-    vec3 t = vec3(1.0) - min(exp2(l * look.others[1].xyz), vec3(1.0));
-    float c = dot(d, -look.others[7].xyz);
-    vec3 s = (1.0 + c * c) * look.others[3].xyz + pow(max(c * look.others[3].w + look.others[4].w, 0.0001), -1.5) * look.others[4].xyz + look.others[2].xyz;
-    float x = clamp(dot(d, look.others[8].xyz) * look.others[10].x + look.others[10].y, 0.0, 1.0);
-    float k = (1.0 - exp(-x * x)) * clamp(look.others[9].w, 0.0, 1.0);
-    return mix(s * t, look.others[9].rgb, k);
 }
 
 void main() {

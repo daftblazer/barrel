@@ -1389,16 +1389,41 @@ are laid over it. It writes the albedo, the reflectance (`vReflectance`, gloss 0
 octahedral normal and the fade; the lighting pass then adds the sun, the reflection
 (`mRrW2T`, `vRrCameraPos`: a reflection target) and the caustics.
 
+The lighting pass has no reflection of its own: `mRrW2T` is the camera's projection, used to find
+where the refracted ray ends on the screen, and the highlights are the two directional lights'
+(Schlick, power 2 at the program's gloss 0). What the pass writes for a water pixel is the
+highlights plus `(1 - k)` of the body's albedo taking `(1 - F0)` of the diffuse light plus `k` of
+the refracted scene, with `k = 2^(-depth behind the surface / fRrTransparency)`.
+
 Barrel draws it forward (`water.vert`, `water.frag`; look slots from `WATER_SLOT`): each piece a
-24 by 2 grid made in the vertex program from the piece's cubic and widths, in the scene pass with
-depth, and again in the distant view's pass, after the sky plane and before the backdrop, with
-its depth pulled onto the far plane past it (the sea runs to the horizon, far beyond the
-camera's far plane). The surface: the body's albedo lit by the field's sun and ambient (at the
-scene's half brightness), mixed with the sky plane's colour along the reflected view by the
-Fresnel term (F0 the body's reflectance), the sun's highlight, then the field's fog as the models.
-Not done: the wave volume's normals (a few travelling sines stand in), the refraction and the
-depth fade (the surface is opaque), the shore bubbles, caustics, the planar reflection (the sky
-plane's colour only: no scene in it), the piece's skirt, the surface's scroll.
+24 by 2 grid made in the vertex program from the piece's cubic and widths, with the body's
+refraction (index less 1, transparency) in the `w` of the curve's last two terms. It is drawn
+after the field's opaque scene with depth, and again in the distant view's pass, after the sky
+plane and before the backdrop, with its depth pulled onto the far plane past it (the sea runs to
+the horizon, far beyond the camera's far plane).
+
+The scene pass is drawn in two parts when a frame has water and the occlusion pass ran (`ScenePart`
+in `renderer.rs`): the opaque scene, then a copy of it (the refraction map) and the second part,
+which loads the kept colour and depth again and draws the water and everything after it. The
+water reads the occlusion pass's view depth (its alpha, at half size, the scene without the
+water) as the game reads its depth map: the nearest of four texels, the thickness behind the
+surface, the refracted ray (the view ray bent by `index - 1` along `up - normal`) walked that far
+(at most 8 transparencies), the depth and the colour there (the copy; the surface's own pixel when
+something is in front of the ray's end), and `k` from it. The lit part is the lighting pass's:
+the cube map's ambient on the wave normal, the second light, the sun times the shadow cascades and
+the light texture (`sun_light.glsl`, shared with the models and terrain), the body's albedo taking
+`1 - F0`, the two highlights (`specular_direct.glsl`), at the scene's half brightness. The field's
+fog takes the lit part; what is seen through the water has its own fog already. Without the
+occlusion pass the water is opaque.
+
+On the pixel board the water's scene values (game, Barrel) are: left view, the river's pixels
+0.55 1.18 3.21 and 0.67 1.21 2.78, its region 0.281 0.496 0.829 and 0.323 0.527 0.764; the turn
+view's sea region 0.335 0.333 0.471 and 0.325 0.309 0.441; the gate view's river region
+0.259 0.760 2.295 and 0.270 0.735 2.149. The wave normal's shape does not move these means.
+
+Not done: the wave volume's normals (a few travelling sines stand in), the shore bubbles
+(`wavebubbles-sequence-a01.g1t`), the caustics' light on what is seen through, the piece's skirt,
+the surface's scroll.
 
 ## Ryza DX: the plants (`ObjectGrassPBS.g1s`)
 
