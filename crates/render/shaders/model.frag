@@ -104,6 +104,8 @@ layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
 layout(location = 11) flat in vec4 tint_mul;
 layout(location = 12) flat in vec4 tint_add;
+// The mesh's tangent (turned like the normal) and the bitangent's sign; zero without one.
+layout(location = 13) in vec4 tangent;
 
 // The instance's colour transform on its lit colour, in display (sRGB) terms; none unless on.
 vec3 tinted(vec3 c) {
@@ -217,21 +219,28 @@ void main() {
         if ((pc.flags & 4096u) != 0u) {
             vec3 dn = normalize(normal);
             // The game's `PBSkyDome` program: the normal map's x (red times alpha) runs along
-            // the bitangent, its y along the tangent, and the sum is not normalised; the sky's
-            // maps are flat black (x = y = -1, z = 0), so the normal is -(T + B), a vector of
-            // length 1.41, and its sun term is that much stronger. (STAND-IN: the tangent comes from
-            // the screen derivatives of the position and UV, as the field models' does, where the game's
-            // is the mesh's, which Barrel's vertices do not carry.) The specular map's green is
-            // the reflectance and its alpha the gloss (a shininess of 2^(10 gloss + 1)).
+            // the bitangent `cross(N, T) * w`, its y along the mesh's tangent, and the sum is not
+            // normalised; the sky's maps are flat black (x = y = -1, z = 0), so the normal is
+            // -(T + B), a vector of length 1.41, and its sun term is that much stronger. The
+            // specular map's green is the reflectance and its alpha the gloss (a shininess of
+            // 2^(10 gloss + 1)).
             vec3 sn = dn;
             if ((pc.flags & 8192u) != 0u) {
                 vec4 t = texture(mask, uv);
                 vec2 xy = vec2(t.r * t.a, t.g) * 2.0 - 1.0;
-                vec3 dp1 = dFdx(world), dp2 = dFdy(world);
-                vec2 du1 = dFdx(uv), du2 = dFdy(uv);
-                vec3 tg = (cross(dp2, dn) * du1.x + cross(dn, dp1) * du2.x);
-                tg = normalize(tg - dn * dot(dn, tg));
-                sn = tg * xy.y + cross(tg, dn) * xy.x + dn * sqrt(max(1.0 - dot(xy, xy), 0.0));
+                vec3 tg, bt;
+                if (dot(tangent.xyz, tangent.xyz) > 0.0) {
+                    tg = normalize(tangent.xyz);
+                    bt = cross(dn, tg) * tangent.w;
+                } else {
+                    // A mesh without a tangent: the frame from the screen derivatives.
+                    vec3 dp1 = dFdx(world), dp2 = dFdy(world);
+                    vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+                    tg = (cross(dp2, dn) * du1.x + cross(dn, dp1) * du2.x);
+                    tg = normalize(tg - dn * dot(dn, tg));
+                    bt = cross(tg, dn);
+                }
+                sn = tg * xy.y + bt * xy.x + dn * sqrt(max(1.0 - dot(xy, xy), 0.0));
             }
             // (a dome without a specular map has none: no reflectance, a dull gloss)
             vec4 sp = (pc.flags & (1u << 24)) != 0u ? texture(spec_map, uv) : vec4(0.0);
@@ -273,15 +282,24 @@ void main() {
             vec4 t = texture(mask, uv);
             vec2 xy = vec2(t.r * t.a, t.g) * 2.0 - 1.0;
             vec3 tn = vec3(xy, sqrt(max(1.0 - dot(xy, xy), 0.0)));
-            vec3 dp1 = dFdx(world), dp2 = dFdy(world);
-            vec2 du1 = dFdx(uv), du2 = dFdy(uv);
-            vec3 p2 = cross(dp2, n), p1 = cross(n, dp1);
-            vec3 tg = p2 * du1.x + p1 * du2.x;
-            vec3 bt = p2 * du1.y + p1 * du2.y;
-            float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
-            // Green runs against the texture's v (the game's frame is the mesh's tangent and
-            // `cross(N, T) * w`; against its normal target this sign halves the error).
-            vec3 nm = normalize(mat3(tg * inv, -bt * inv, n) * tn);
+            vec3 nm;
+            if (dot(tangent.xyz, tangent.xyz) > 0.0) {
+                // The game's frame: T the mesh's tangent, B = cross(N, T) * w, N the normal, none
+                // of them orthogonalised; the game turns the sum by the view and encodes it
+                // without normalising, so only its direction counts.
+                vec3 tg = normalize(tangent.xyz);
+                nm = normalize(tg * tn.y + cross(n, tg) * tangent.w * tn.x + n * tn.z);
+            } else {
+                // A mesh without a tangent: the frame from the screen derivatives of the
+                // position and UV, green against the texture's v.
+                vec3 dp1 = dFdx(world), dp2 = dFdy(world);
+                vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+                vec3 p2 = cross(dp2, n), p1 = cross(n, dp1);
+                vec3 tg = p2 * du1.x + p1 * du2.x;
+                vec3 bt = p2 * du1.y + p1 * du2.y;
+                float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
+                nm = normalize(mat3(tg * inv, -bt * inv, n) * tn);
+            }
             float after = max(dot(nm, -normalize(look.sun_dir.xyz)), 0.0);
             vec2 material = unpackUnorm2x16(pc.light);
             sun_now = look.sun_color.rgb * material.x * after;

@@ -290,14 +290,19 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     (Barrel turned them by the inverse transpose), and the normal map's green runs against the
     texture's v (Barrel's frame from the screen derivatives had it along v: over the stage the
     median angle to the game's normal target went from 14.6 to 11.8 degrees, the stone wall
-    from 24.5 to 16.3). What is left there is about 20%.
+    from 24.5 to 16.3). The meshes' own tangents (the game's frame, `B = cross(T, N) w`) take the
+    median angle over the stage (the board's `normal` line, half size) from 5.7 to 5.6 degrees,
+    the far hills' from 24.0 to 22.8, the wall's from 7.6 to 7.0, the trunk's from 10.9 to 10.7: the
+    derived frame was nearly the same. The grass is the biggest region left (the game's normals
+    there vary with a standard deviation of 0.17 in y, Barrel's plant cards' 0.01). What is left
+    on the hills is about 20%.
   - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9; with the game's own cloud map
     (`BARREL_CLOUD_MAP`, docs/parity.md) 16.9 and the tone error 15.76 against 17.01 without it). Measured on
     the board's stages (sky pixels, game units): the plane 0.091, the plane and the dome's first
     layer 0.106, both layers 0.416 (the dome's second layer is the clouds on the dome: its
     contribution to the sky is a quarter weaker than the game's in the rows 0 to 180, 0.47, 1.0 against 0.63, 1.33 in
-    green and blue; the game's sun term there is about 0.37 stronger, which the derived tangent
-    frame cannot give: the game's is the mesh's tangent, which Barrel's vertices do not carry),
+    green and blue; the game's sun term there is about 0.37 stronger; the mesh's own tangent, now in
+    Barrel's vertices, changed the `dome` stage by less than 0.001, so that is not the cause),
     the strip's contribution 0.106 (0.241 with the grid cells split along the other diagonal; the rest is in
     the rows 0 to 60), the finished sky 0.51. The dome's scroll (`txTrs01`: 0.0568 and 0.0284 at
     this frame, the second layer at half the first's rate, 0.00414 a second) is not drawn (a

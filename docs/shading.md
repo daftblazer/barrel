@@ -597,14 +597,19 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
     frame, turned to view space by `mWV`, octahedral-encoded in xy), and `sSpMap.a ×
     vSpcScl.w` (roughness or gloss) packed in w;
   - targets 3 and 4: 1.
-  `barrel` draws the normal map (`model.frag`'s flag 8192, the map in the mask slot):
-  its tangent frame comes from the screen derivatives of the position and UV (the vertices
-  carry no tangent here; the map's red runs along u and its green against v, which is the
-  sign that agrees with the game's normal target), and with the mapped normal the sun's Lambert term and the cube
+  `barrel` draws the normal map (`model.frag`'s flag 8192, the map in the mask slot) in the
+  game's frame: the mesh's tangent (semantic 6, four floats, in the vertex as a packed
+  10-10-10-2 turned like the normal, `render::pack_tangent`), `N = normalize(normal)`,
+  `T = normalize(tangent.xyz)`, `B = cross(T, N) * w` (the program's `r4 = T.yzx*N.zxy -
+  N.yzx*T.zxy`: T crossed with N, not N with T; in Barrel's mirrored render space the same
+  vector is `cross(N, T) * w` with the stored w unchanged) and the result `T y + B x + N z`,
+  none of them orthogonalised. Every normal-mapped submesh at the gate has a tangent; a mesh
+  without one takes a frame from the screen derivatives of the position and UV (the map's
+  red along u, its green against v), which stands within a degree of it over the stage
+  (the median angle to the game's normal target 5.7 degrees against 5.6 with the tangent). With the mapped normal the sun's Lambert term and the cube
   map's light are taken again per pixel (the vertex's light otherwise). Every field draw at
   Rasenboden has one; it shows as relief on the rocks and bark, the shade included, for about
-  0.07 ms at 1280×720 on the PC. Whether green points up or down in the tangent frame is not
-  checked against the game.
+  0.07 ms at 1280×720 on the PC.
   The red maps of the attic's furniture (green and blue near 0) give the colour tile as the
   diffuse and no specular: albedo times light, as `barrel` draws them.
 
@@ -1269,7 +1274,8 @@ Fresnel `F0 + (1 - F0)(1 - V.H)^5`, times the sun's light), the ambient map and 
 ambient scaled by `vAmbParam` x and y, both 0 at noon. The normal is `T n.y + B n.x + N n.z`
 (`B = cross(T, N) w`) and is not normalised; the sky's maps are black, so it is `-(T + B)`, 1.41
 long. The blend is the plain alpha one, the depth test on and not written. Barrel's frame for
-it comes from the screen derivatives (the mesh's tangent is not in its vertices), and it read
+it is the mesh's tangent as the game's (it matches the screen derivatives' frame on the dome's
+regular UVs to the fourth digit of the board's `dome` stage), and it read
 a scene texture as the dome's normal map until the draw's normal-map index was moved with the
 rest of the dome's. The stage dumps `plane`, `dome1` (the first layer) and `dome` take the
 sky's draws one at a time.

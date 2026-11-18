@@ -9,6 +9,8 @@ layout(location = 5) in uvec2 in_morph;
 layout(location = 6) in vec4 in_color;
 // A billboard corner (MapSTD-B*'s PSIZE), turned by the camera's axes below; zero otherwise.
 layout(location = 7) in vec3 in_corner;
+// The mesh's tangent (xyz) and the bitangent's sign (w); all zero for a mesh without one.
+layout(location = 8) in vec4 in_tangent;
 // view_proj: the camera; instance: which of the instances places this draw.
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
     // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
@@ -103,6 +105,8 @@ layout(location = 10) out vec4 prev_clip;
 // The instance's colour transform (lib.rs `Instance::tint_mul` / `tint_add`).
 layout(location = 11) flat out vec4 tint_mul;
 layout(location = 12) flat out vec4 tint_add;
+// The tangent frame's tangent turned like the normal (xyz, not normalised) and the sign.
+layout(location = 13) out vec4 tangent;
 // The environment light map's light on a surface facing n (render space), from its nine
 // coefficients (game space: x mirrored back).
 vec3 environment_light(vec3 n) {
@@ -133,6 +137,7 @@ void main() {
         pos.xyz += weights.weight[first_weight + k] * deltas.delta[in_morph.x + k].xyz * vec3(-1.0, 1.0, 1.0);
     }
     vec3 n = in_normal;
+    vec3 t = in_tangent.xyz;
     float total = dot(in_weights, vec4(1.0));
     // Last frame's position too, for the motion vectors: the same vertex on last frame's joints
     // and model matrix (its morphs taken as this frame's).
@@ -147,6 +152,7 @@ void main() {
         pos = skin * pos;
         prev_pos = prev_skin * prev_pos;
         n = mat3(skin) * n;
+        t = mat3(skin) * t;
     }
     vec4 w = i.model * pos;
     vec4 prev_w = i.prev_model * prev_pos;
@@ -300,5 +306,6 @@ void main() {
     screen_uv = gl_Position.xy / (gl_Position.w * 5.0);
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;
+    tangent = vec4(mat3(i.model) * t, in_tangent.w);
     uv = in_uv;
 }

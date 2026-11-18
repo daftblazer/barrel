@@ -166,7 +166,8 @@ second one.
 
 Attribute types: 0, 1, 2, 3 are 1 to 4 floats; 5 is four bytes (bone indices); 13 is four
 normalized bytes (colour). Semantics: 0 position, 1 weights, 2 bone indices, 3 normal,
-4 tangent, 5 UV, 10 colour.
+4 PSIZE (on billboards), 5 UV, 6 tangent (four floats: the tangent's xyz and the
+bitangent's sign; Ryza's field models and sky domes carry it, `SimpleMesh::tangents`), 10 colour.
 
 ### Skeleton (G1MS)
 

@@ -133,6 +133,17 @@ pub struct Vertex {
     /// A billboard corner (`MapSTD-B*`, PSIZE): the vertex is its quad's centre and this
     /// offset, already scaled with the model, turns to face the camera; zero otherwise.
     pub corner: [f32; 3],
+    /// The mesh's tangent (xyz, turned like the normal) and the bitangent's sign (w), packed as
+    /// signed 10-10-10-2 (`pack_tangent`); all zero for a mesh with none (the pixel shader
+    /// then takes the frame from the screen derivatives).
+    pub tangent: u32,
+}
+
+/// A tangent packed for the vertex (x, y, z in 10 bits each, the sign in the top two, all
+/// signed normalized: `A2B10G10R10_SNORM`). Components are clamped to -1..1.
+pub fn pack_tangent(xyz: Vec3, sign: f32) -> u32 {
+    let q = |v: f32, max: f32| ((v.clamp(-1.0, 1.0) * max).round() as i32) as u32;
+    (q(xyz.x, 511.0) & 0x3ff) | (q(xyz.y, 511.0) & 0x3ff) << 10 | (q(xyz.z, 511.0) & 0x3ff) << 20 | (q(sign, 1.0) & 3) << 30
 }
 
 /// A model's placement on the GPU (std430: 176 bytes): its matrix and where its joints'
@@ -740,7 +751,13 @@ impl Scene {
                 let corner = mesh.corners.get(i).map_or([0.0; 3], |c| (Vec3::from(*c) * transform.x_axis.truncate().length()).into());
                 // A billboard's normal stays in its own frame, for the camera's axes to turn.
                 let n = if corner == [0.0; 3] { n } else { nrm };
-                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q, morph: morph_ref, color, corner });
+                // The tangent turns as the normal does; the mirror flips the frame's handedness,
+                // so the bitangent's sign flips with it (`cross(N, T) * w` in render space).
+                let tangent = mesh.tangents.get(i).map_or(0, |t| {
+                    let tn = (normals.transform_vector3(Vec3::new(t[0], t[1], t[2])).normalize_or_zero() * mirror).normalize_or_zero();
+                    pack_tangent(tn, t[3].signum())
+                });
+                self.vertices.push(Vertex { pos: p.into(), normal: n.into(), uv: mesh.uvs[i], joints: joint_ix, weights: weight_q, morph: morph_ref, color, corner, tangent });
             }
             let first_index = self.indices.len() as u32;
             for t in &mesh.triangles {
@@ -823,7 +840,7 @@ impl Scene {
                     // corners), lit as a field model's vertex colour is (the near colour; the
                     // LOD morph toward the second is not done).
                     let [r, g, b, _] = v.colour;
-                    self.vertices.push(Vertex { pos: pos.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [r, g, b, 255], corner: [0.0; 3] });
+                    self.vertices.push(Vertex { pos: pos.into(), normal: n.into(), uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [r, g, b, 255], corner: [0.0; 3], tangent: 0 });
                 }
                 for t in barrel_formats::ktf::patch_triangles(m, p, d) {
                     if t.iter().all(|&i| (i as usize) < verts.len()) {
@@ -1365,6 +1382,16 @@ mod ground_tests {
 
     fn layer(colour: u16, normal: Option<u16>) -> Layer {
         Layer { colour, normal, repeat: 1, scale: 1.0 }
+    }
+
+    #[test]
+    fn a_tangent_packs_to_ten_bit_components_and_a_sign() {
+        let p = pack_tangent(Vec3::new(1.0, -1.0, 0.0), -1.0);
+        assert_eq!(p & 0x3ff, 511);
+        assert_eq!(p >> 10 & 0x3ff, 0x3ff & (-511i32 as u32));
+        assert_eq!(p >> 20 & 0x3ff, 0);
+        assert_eq!(p >> 30, 3);
+        assert_eq!(pack_tangent(Vec3::ZERO, 1.0) >> 30, 1);
     }
 
     #[test]

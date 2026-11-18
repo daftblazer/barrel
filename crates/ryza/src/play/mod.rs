@@ -441,7 +441,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             let centre = [-p.at[0], p.at[1] + h * 0.5, p.at[2]];
             let base = scene.vertices.len() as u32;
             for (dx, dy, uv) in [(-0.5, -0.5, [u, v + ch]), (0.5, -0.5, [u + cw, v + ch]), (0.5, 0.5, [u + cw, v]), (-0.5, 0.5, [u, v])] {
-                scene.vertices.push(Vertex { pos: centre, normal: PLANT_NORMAL, uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0] });
+                scene.vertices.push(Vertex { pos: centre, normal: PLANT_NORMAL, uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0], tangent: 0 });
             }
             scene.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }

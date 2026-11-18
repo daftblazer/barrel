@@ -84,6 +84,10 @@ pub enum Semantic {
     /// (`MapSTD-B*`) each vertex's corner offset from its quad's centre, in billboard space.
     PointSize,
     TexCoord,
+    /// Direct3D's TANGENT: four floats, the tangent's xyz and the bitangent's sign (Ryza's
+    /// field models and sky domes; the pixel programs build the bitangent as
+    /// `cross(N, T) * w`).
+    Tangent,
     Color,
     Other(u8),
 }
@@ -97,6 +101,7 @@ impl Semantic {
             3 => Semantic::Normal,
             4 => Semantic::PointSize,
             5 => Semantic::TexCoord,
+            6 => Semantic::Tangent,
             10 => Semantic::Color,
             other => Semantic::Other(other),
         }
@@ -778,6 +783,8 @@ pub struct SimpleMesh {
     /// Vertex colours (0 to 1), when the layout has them (field models do: the light baked
     /// into them, `docs/shading.md`).
     pub colors: Vec<[f32; 4]>,
+    /// Tangents (xyz, and the bitangent's sign in w), when the layout has them as four floats.
+    pub tangents: Vec<[f32; 4]>,
     /// Billboard corners (PSIZE), when the layout has them: the vertex sits at its quad's
     /// centre (`positions`) and this offset turns with the camera (`docs/shading.md`,
     /// "Billboards").
@@ -976,6 +983,7 @@ impl Geometry<'_> {
         let nrm = find(Semantic::Normal).filter(|a| a.kind == AttrType::Float3 || (a.kind == AttrType::Float4 && pos.kind == AttrType::Float4));
         let uv = find(Semantic::TexCoord).filter(|a| a.kind == AttrType::Float2);
         let color = find(Semantic::Color).filter(|a| matches!(a.kind, AttrType::UNorm4 | AttrType::Float4));
+        let tangent = find(Semantic::Tangent).filter(|a| a.kind == AttrType::Float4);
         let corner = find(Semantic::PointSize).filter(|a| a.kind == AttrType::Float3);
         let ib = &self.index_buffers[s.index_buffer][s.index_start..s.index_start + s.index_count];
         let lo = ib.iter().copied().min().unwrap_or(0) as usize;
@@ -1001,6 +1009,15 @@ impl Geometry<'_> {
             if let Some(a) = uv {
                 let t = read(v, a, 2)?;
                 m.uvs.push([t[0], t[1]]);
+            }
+            if let Some(a) = tangent {
+                let vb = &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
+                let base = v * vb.stride + a.offset as usize;
+                let mut t = [0f32; 4];
+                for (i, o) in t.iter_mut().enumerate() {
+                    *o = f32_at(vb.data, base + 4 * i)?;
+                }
+                m.tangents.push(t);
             }
             if let Some(a) = corner {
                 m.corners.push(read(v, a, 3)?);

@@ -139,7 +139,11 @@ carries up to four joints (u16, indices into its model's skeleton) and weights (
 renormalised to their sum), and each instance says where its joints' matrices begin in a
 second storage buffer, the palette (set 1, binding 1), held in render space as S·M·S like
 placements. Vertices with all weights 0 (the field) are not skinned. So a new pose is a new
-palette, a new place a new instance matrix; the vertex buffer never changes. Checked against
+palette, a new place a new instance matrix; the vertex buffer never changes. A vertex also
+carries the mesh's tangent as one packed word (signed 10-10-10-2: xyz, and the bitangent's
+sign in the top two bits; zero for a mesh without one), baked like the normal by the
+transform's own 3×3 and turned by the joints in the vertex program: 72 bytes a vertex, 4 more
+than before. Checked against
 the CPU-skinned frame of `EVENT_MM08_AS4_130`: 745 of 2,073,600 bytes differ by more than 8
 (from the 8-bit weights), the same picture.
 

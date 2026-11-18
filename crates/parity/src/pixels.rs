@@ -250,6 +250,94 @@ fn coverage(masks: &Image, depth: &Image) {
     }
 }
 
+/// The game's normal target (`9-911`, after the G-buffer's draws): the view-space normal as
+/// the octahedral pair in xy.
+const GAME_NORMAL: &str = "9-911_rt1920x1080.9#12";
+
+/// The view's rotation `mWV` of the captured frame (rows: the world's axes in view space,
+/// the game's left-handed world), from the draw capture's constants.
+const VIEW_ROWS: [[f32; 3]; 3] = [[-0.9998477, 0.0, -0.017449148], [-0.0024284574, 0.990268, 0.13915221], [0.017279334, 0.1391734, -0.9901173]];
+
+/// The game's view-space normal from its octahedral pair `(a, b)` (stored 0 to 1): with
+/// `p = (z, x, y) / |.|_1`, the front (`p.x >= 0`) holds `(p.y, p.z)` and the back
+/// `((1 - |p.z|) sign(p.y), (1 - |p.y|) sign(p.z))`. Returns the unit vector `(x, y, z)`.
+fn octahedral_view(a: f32, b: f32) -> [f32; 3] {
+    let (u, v) = (a * 2.0 - 1.0, b * 2.0 - 1.0);
+    let (px, py, pz) = if u.abs() + v.abs() <= 1.0 {
+        (1.0 - u.abs() - v.abs(), u, v)
+    } else {
+        (1.0 - u.abs() - v.abs(), u.signum() * (1.0 - v.abs()), v.signum() * (1.0 - u.abs()))
+    };
+    let len = (px * px + py * py + pz * pz).sqrt().max(1.0e-9);
+    [py / len, pz / len, px / len]
+}
+
+/// The game's normal in Barrel's render space (the world with x mirrored): the view vector
+/// turned back by `mWV`'s transpose.
+fn game_normal_render(a: f32, b: f32) -> [f32; 3] {
+    let v = octahedral_view(a, b);
+    let w: [f32; 3] = std::array::from_fn(|c| (0..3).map(|r| v[r] * VIEW_ROWS[r][c]).sum());
+    [-w[0], w[1], w[2]]
+}
+
+/// The mapped normals over the stage's pixels (stencil 2) as an angle between Barrel's (the
+/// occlusion pass's `depth` target, half size, render space) and the game's (the G-buffer's
+/// target at the half-size pixel's top-left full-size pixel): mean and median in degrees, and
+/// the same over the regions. A picture of the angle (0 to 45 degrees, black to white) is
+/// written when there is a picture folder.
+fn normals(game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
+    let (Ok(g), Ok(b)) = (load(game, GAME_NORMAL), load_f32(&barrel.join("depth"))) else {
+        println!("normal: missing");
+        return;
+    };
+    if (g.w, g.h) != (2 * b.w, 2 * b.h) || (masks.w, masks.h) != (g.w, g.h) {
+        println!("normal: sizes differ");
+        return;
+    }
+    let angle = |x: usize, y: usize| -> Option<f32> {
+        let (gx, gy) = (2 * x, 2 * y);
+        let (m, bp) = (masks.at(gx, gy), b.at(x, y));
+        if m[0] >= 1.0 || m[1] as u32 != 2 || bp[3] >= 1.0e8 {
+            return None;
+        }
+        let gp = g.at(gx, gy);
+        let gn = game_normal_render(gp[0], gp[1]);
+        let len = (bp[0] * bp[0] + bp[1] * bp[1] + bp[2] * bp[2]).sqrt().max(1.0e-9);
+        let cos = (0..3).map(|c| gn[c] * bp[c] / len).sum::<f32>();
+        Some(cos.clamp(-1.0, 1.0).acos().to_degrees())
+    };
+    let stats = |mut v: Vec<f32>| -> String {
+        if v.is_empty() {
+            return "no pixels".into();
+        }
+        v.sort_by(f32::total_cmp);
+        format!("median {:.1}, mean {:.1} degrees over {} pixels", v[v.len() / 2], v.iter().sum::<f32>() / v.len() as f32, v.len())
+    };
+    let mut all = Vec::new();
+    let mut by_region: Vec<Vec<f32>> = vec![Vec::new(); REGIONS.len()];
+    let mut out = vec![255u8; 4 * b.w * b.h];
+    for y in 0..b.h {
+        for x in 0..b.w {
+            let Some(a) = angle(x, y) else { continue };
+            all.push(a);
+            for ((_, [x0, y0, x1, y1]), v) in REGIONS.iter().zip(&mut by_region) {
+                if (x0 / 2..x1 / 2).contains(&x) && (y0 / 2..y1 / 2).contains(&y) {
+                    v.push(a);
+                }
+            }
+            let g = (a / 45.0).clamp(0.0, 1.0) * 255.0;
+            out[4 * (y * b.w + x)..][..3].fill(g as u8);
+        }
+    }
+    println!("normal: {}", stats(all));
+    for ((name, _), v) in REGIONS.iter().zip(by_region) {
+        println!("  region {name}: {}", stats(v));
+    }
+    if let Some(p) = pictures {
+        let _ = std::fs::write(p.join("normal.png"), barrel_formats::png::encode_rgba(b.w as u32, b.h as u32, &out));
+    }
+}
+
 /// The cloud strip's own contribution (the stage after it less the stage before, the game's
 /// `1915` less `1914`, Barrel's `sky` less `dome`) over the sky pixels, by bands of rows: the
 /// mean absolute difference of the two contributions, and each one's mean light (over the
@@ -365,6 +453,9 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
     }
     if let (Some(m), Ok(d)) = (&masks, load_f32(&barrel.join("depth"))) {
         coverage(m, &d);
+    }
+    if let Some(m) = &masks {
+        normals(game, barrel, m, pictures);
     }
     match tone {
         Some(t) => println!("pixels: tone mean abs {t:.2}"),

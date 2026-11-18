@@ -539,6 +539,7 @@ impl Renderer {
             vk::VertexInputAttributeDescription { location: 5, binding: 0, format: vk::Format::R32G32_UINT, offset: 44 },
             vk::VertexInputAttributeDescription { location: 6, binding: 0, format: vk::Format::R8G8B8A8_UNORM, offset: 52 },
             vk::VertexInputAttributeDescription { location: 7, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 56 },
+            vk::VertexInputAttributeDescription { location: 8, binding: 0, format: vk::Format::A2B10G10R10_SNORM_PACK32, offset: 68 },
         ];
         let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
         let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);

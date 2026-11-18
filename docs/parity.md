@@ -229,6 +229,14 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   contribution over the sky pixels (the game's `1915` less `1914`, Barrel's `sky` less `dome`):
   the mean abs of the two contributions and, by bands of 60 rows, each one's mean light, over the
   pixels that are sky in both pictures.
+- A `normal` line after the coverage: the angle between Barrel's mapped normals (the `depth`
+  target's xyz, half size, render space) and the game's normal target (`9-911_rt1920x1080.9#12`:
+  the view-space normal as an octahedral pair, turned back to the world by the capture's `mWV`
+  and mirrored in x), at each half-size pixel's top-left full-size pixel, over the stage's pixels
+  (stencil 2 before the sky, drawn in both): the median and mean in degrees and the same in
+  each region of the list above (halved); `normal.png` shows the angle, 0 to 45 degrees black to
+  white. Two samples of a normal map half a pixel apart already differ by 4 to 5 degrees, so the
+  median does not go below that.
 - `barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
   (`cloud_map`, `ao` (the game's `914-914_rt960x540.27#2`: the occlusion, half size, with the
   regions' means taken over the half size picture), `shadow`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),
