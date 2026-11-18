@@ -279,3 +279,30 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_png_reads_back_as_written() {
+        let rgba: Vec<u8> = (0..4 * 6).map(|i| (i * 11) as u8).collect();
+        let dir = std::env::temp_dir().join(format!("barrel-pixels-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.png");
+        std::fs::write(&path, barrel_formats::png::encode_rgba(3, 2, &rgba)).unwrap();
+        let im = load_png(&path).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!((im.w, im.h), (3, 2));
+        let px = |i: usize| f32::from(rgba[i]) / 255.0;
+        assert_eq!(im.at(2, 1), [px(20), px(21), px(22), px(23)]);
+    }
+
+    #[test]
+    fn errors_are_over_the_games_light() {
+        let mut s = Sums::default();
+        s.add(&[1.0, 2.0, 3.0, 1.0], &[2.0, 2.0, 1.0, 1.0]);
+        assert_eq!(s.mean_abs(1.0), 1.0);
+        assert!((s.rel() - 0.5).abs() < 1e-9);
+    }
+}

@@ -254,20 +254,48 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   volume's clusters, the depth of field, the star filter, the light shafts, the temporal
   anti-aliasing), or in a formula. The board's values that are stand-ins (the dome's and the
   strip's wind offsets are left out: time-dependent) are marked in `play/constants.rs`.
-  (9) **The halo around the clouds.** The clouds are far brighter than the sky in the scene's
-  light: the strip's draw takes the sun at (35, 48.8, 70) on a colour of (0.32, 0.47, 0.8), so
-  a thin cloud is 16 and more where the clear sky is about 4, and the bloom (everything above
-  1.29, times 0.4) spreads a wide halo from it. The game's targets do not clip this: its scene
-  and bloom targets are 11-bit float and its quarter-size layers 16-bit float (the views'
-  formats, read in a run), and its strip, sky plane, dome, bright pass and tone pass are
-  `barrel`'s line for line. So a halo belongs where a cloud is; what differs from the still is
-  where the clouds are (their drift is the game's clock, a stand-in here), which puts
-  `barrel`'s halo over the trees at the gate where the still has clear sky. The sky spots of a
-  comparison with a still are therefore not a measure. What is left that does not depend on
-  the clouds: lit surfaces come out about a tenth darker on screen than the still's (sand,
-  grass, stone, the hat) while shade matches, and the trunk's shade lacks the still's blue.
-  Telling an exposure difference from a missing light needs the game's own pixels for a frame
-  whose draws are captured, which the reference run (it draws nothing) cannot give.
+  (9) **The halo and the gate's picture against the game's pixels.** The game's own render
+  targets for the gate (frame 2550; the pixel board, docs/parity.md) replaced the still as the
+  measure. The halo was Barrel's, not the game's: the cloud strip's colour was not stored at
+  half like the rest of the scene, so the clouds were twice as bright (fixed:
+  docs/shading.md, "Ryza DX: the sky, the clouds"), and the bloom's bright pass three times the
+  game's. Tone error against the game's tone pass (mean absolute, 0 to 255): 24.63 at the
+  start, 24.13 with the strip's fix, 23.85 with the clouds given the capture's phases
+  (`BARREL_SKY_CLOCK`, `BARREL_PATTERN_PHASE`, `BARREL_CLOUD_THRESHOLD`; the game's cloud map is
+  noise from a lattice it shuffles each run, so its clouds' places cannot be reproduced). The
+  camera is within a pixel or two (the best shift of the picture is (-1, 2) px: 22.97 against
+  23.34). What the 23.85 is made of at the gate (shares of the summed error; the picture's
+  error is mostly broad, not fine: still 16.4 after a 32 by 32 box blur of both):
+  - **Leaves missing in the trees' crowns: 14%** (2.5% of the picture, mean abs 137). Barrel
+    shows sky where the game has leaves (11.2% of the picture is sky in Barrel's lit scene,
+    9.05% in the game's; the other way round 0.4%), and the bloom's bright pass takes it:
+    over the game's covered pixels its sum is 26,725 against the game's 1,691, while over the
+    game's sky it is 17,394 against 23,335. Ruled out (each tried at this frame): the alpha
+    test's reference (5 of 255 instead of 50 and 63 fills little; switching the test off
+    fills 44% of it and shows the leaf cards' whole quads), the skyline test (`--no-skyline`),
+    the objects' draw ranges and levels of detail, the plants (hiding them changes not a
+    pixel of it), the plant cells' side planes, the camera. Every game draw with a named
+    texture has a Barrel match (858 of 913; the rest are terrain tiles, the shore's bubbles and
+    three others), so it is what the matched draws leave at those pixels: the leaf cards'
+    alpha as the game's G-buffer program reads it (`saturate(alpha x vSAMap.y + vSAMap.z)`
+    against `vATest`, vSAMap (1, 0) in the capture) or their sway (the game's wind at the
+    frame: `g_vAttCache0` 10.5 and `g_fOscPhase` 0.65 against the field's first frame's gust
+    here), neither checked.
+  - **The ambient occlusion: about 13%** (the pixels with an occlusion below 0.85 are 35% of
+    the picture at a mean error of 27.4 against 15.0 elsewhere; the game's own occlusion laid
+    over Barrel's scene takes the tone error from 23.2 to 20.1). The feature is not built.
+  - **The sky's pixels: 9.5%** (9% of the picture, mean abs 24.9): where the clouds stand
+    (random per run), the cloud particles, the dome's scroll, a few percent on the clear sky.
+  - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
+    10 to 15 pixels at her feet (the idle's phase), her shaded side and outlines.
+  - **The rest, about a third**, spread over the stage at 15 a pixel: the shadows' edges (the
+    one-square stand-in: of the game's fully shadowed stage pixels, 7% are sunlit in Barrel),
+    the reflections, the depth of field's softness, the temporal anti-aliasing, the lantern's
+    glass (lit white in the game, dark in Barrel).
+  Where the game's occlusion is 1 and the sun's share 0, Barrel's scene is within 3 to 5% of
+  the game's, the stage's ambient equals the game's ambient pass to 1%, and the sunlit sand and
+  stone are within 6% (docs/shading.md, "Against the game's own pixels"): the lighting set's
+  values and the exposure are right; the picture's error is coverage and occlusion.
   Ryza herself, seen from behind at the gate (her shaded side), with the toon ramp sampled
   as the game's pass does (docs/shading.md, "Ramp"): coat 161, 146, 69 against the still's
   162, 150, 75, thigh 154, 138, 142 against 156, 143, 102, hat 149, 142, 138 against 162,
@@ -335,7 +363,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   table is reshuffled each run, so the gate's sky mean runs 130 to 149 in red over three tables
   tried, the game's still 153). Left, largest first: **the cloud particles** (`cloudParticle_`: a few dozen
   billboards from a CPU system whose rules are not read), the clouds' stand-ins (their
-  threshold and sharpness move with a height noise; the grid's height and fall are read from
+  threshold moves with a height noise and the sharpness follows it, `3 / (1 - threshold)`; the grid's height and fall are read from
   one frame, so other eye heights and sets are unchecked), the dome's specular term, its
   layers' scroll.
   At the gate's noon a gap in the leaves at the top of the view shows bright sky where the

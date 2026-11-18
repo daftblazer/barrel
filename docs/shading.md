@@ -896,6 +896,27 @@ characters, and the models without a specular map (the plants), keep the vertex 
 At the gate: sunlit sand 193, 195, 94 against the still's 217, 219, 114 (187, 188, 70
 before), grass 150, 194, 47 against 171, 210, 64 (133, 190, 2); mean error 23.2 (25.9).
 
+**Against the game's own pixels** (the pixel board, docs/parity.md; the gate at noon, the
+frame's stages as the game wrote them):
+
+- The units: the game's finished scene (the target before the tone pass) times the exposure
+  0.9 goes through the tone pass to the game's picture (sunlit sand 179.8, 194.0, 83.7
+  against the picture's 180.0, 194.1, 84.1), so the game's scene is Barrel's stored scene
+  times 2 over 0.9.
+- **The stage's ambient is the game's**: the nine harmonics of the diffuse light map times 7 and
+  (0.1, 0.2602, 1), evaluated at the G-buffer's normals (octahedral, view space, turned by the
+  capture's view-to-world matrix), equal the game's ambient pass (its output, rgb) to 1% in
+  every band of the normal's height (0.176, 0.517, 2.765 mean against 0.173, 0.511, 2.763).
+  The set's ambient colour is not added (`StageLight::ambient` is 0 at noon).
+- Where the game's occlusion is 1 (the colour target's alpha after the ambient occlusion pass)
+  and the sun's share (the ambient pass's alpha) is 0, Barrel's finished scene is within 3 to 5%
+  of the game's (specular ambient included: it is a later pass of the game's, so the board's
+  `lit` stage, which has it in already, reads 12 to 20% high in the shade). Where the sun
+  reaches (alpha above 0), the sunlit sand and stone are within 6%.
+- What is left in the lit scene, measured over the stage's pixels: the ambient occlusion
+  (13% of the tone error: the game's own occlusion laid over Barrel's scene
+  takes the tone error from 23.2 to 20.1), the leaves (below), and the shadows' edges.
+
 **The tone pass** (the last full-screen pass): `c = scene × E` (the metered exposure), the
 depth of field and distant blur, the 2D effects taken back through the curve and laid over,
 `+ bloom × fBloomWeight` (0.4) `+ star + flare + light shafts`, `× vColorScale` (the set's
@@ -1087,10 +1108,21 @@ to four figures):
 - **Stand-ins**: the grid's width 64,000 and its middle height `eye.y + 6000 + CloudOffsetY` (12,000
   over the eye at noon; the offset could also count twice), its fall `5/6` of that height at
   `CloudViewRange` (a ratio read from one frame; 5/6 is also 1 / 1.2, the tiling), the cloud map's
-  threshold 0.6414 and sharpness 8.365 (a frame's values: the game moves them with a height noise,
-  `CloudHeightNoiseChangeSpeed` 0.1 and `Scale` 0.05, whose rule is not found; 1 - `CloudDensity`
-  is 0.65), the clouds' ambient light (zero in the frame).
+  threshold 0.6414 (a frame's value: the game moves it with a height noise,
+  `CloudHeightNoiseChangeSpeed` 0.1 and `Scale` 0.05, whose rule is not found and whose series
+  differs by run: it ran 0.6413 to 0.6560 over the capture's 800 frames; 1 - `CloudDensity` is
+  0.65), the clouds' ambient light (zero in the frame). The sharpness is not a stand-in: it
+  is `3 / (1 - threshold)` in all seventeen captured frames (0.6413145 gives 8.3638735,
+  0.6560234 gives 8.721523).
 - The sky's exposure folds into the colours as the sky plane's does.
+- **The scene is stored at half** (`HDR_RANGE_INV`): the strip's colour is written times 0.5
+  (`cloud_strip.frag`) as the models' and the water's are. It was written whole, which made the
+  clouds twice as bright against the game's pixels (the sky's brightest pixel at the stage after the strip, in the game's
+  units: Barrel 4.5, 10.0, 25.0 against the game's 2.6, 5.9, 14.0; with the factor 2.7, 6.2,
+  14.7) and the bloom's bright pass three times the game's (its mean 0.067, 0.165, 0.398
+  against 0.022, 0.052, 0.120; with the factor 1.6 to 1.8 times, the rest being the sky seen
+  through the trees' leaves, docs/ryza/open.md). The clear sky (the plane and the dome) was
+  right to within a few percent.
 
 **Not drawn: the cloud particles** (`shb50b0ba6`, `sh040b16cf`, `cloudpiece.g1t`, set block
 `cloudParticle_`): billboards a CPU system places, in the frame read 49 quads (294 indices)

@@ -172,6 +172,53 @@ noon, against the view of the scoreboard row `rasen-3d-2550`).
   the depth of field, the temporal anti-aliasing, the shadow cascades, the water's own
   light).
 
+## The pixel board (Ryza fields)
+
+The game's render targets for the captured frame (frame 2550 of the load-rasen capture, the
+gate at Rasenboden at noon) against Barrel's own at the stages they share. The game's pixels
+come from the reference run's pixel mirror (ryza-recomp's `docs/DESIGN.md`, "Pixel mirror":
+`RYZA_PIXELS=<dir>` with the capture's frames, one folder `f<frame>` of `<first draw>-<last
+draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is read only here.
+
+- `BARREL_DUMP_STAGES=<dir>` on a Ryza field render (offscreen) writes Barrel's targets in the
+  same layout (`<name>.f32`, `<name>.txt`: `width height channels format`, RGBA floats, rows
+  top to bottom) and `tone.png`, in the game's units: the scene is stored at half
+  (`HDR_RANGE_INV`) and lit at the bottom of the set's range, so a dumped value is the stored
+  one times 2 over that exposure (0.9 at noon), the glow's targets times 2. The frame is drawn
+  again up to each stage (`render::dump::Stop`) and the scene copied out: `lit` (the terrain,
+  the models and the water: the game's lit scene before the sky, but with the scene fog and the
+  specular ambient in each fragment, which the game adds in its fog and forward passes),
+  `dome` (and the sky plane and dome, without the cloud strip), `sky` (and the strip: the game's
+  sky stage, and with Barrel's fog already in, its stage after the fog), `scene` (the finished
+  HDR scene, with the outlines), `cloud_map` (the strip's 1024 by 1024 map, 0 to 1), `bright`
+  (the bloom's bright pass at a quarter) and `bloom` (its result at an eighth). Barrel has no
+  G-buffer, ambient pass or lighting pass of its own, so those have no dump. Nothing is made
+  while the variable is unset.
+- The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
+  not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
+  `BARREL_PATTERN_PHASE=<offset>` (the cloud shadows' pattern, both axes, in repeats) and
+  `BARREL_CLOUD_THRESHOLD=<t>` (the cloud map's threshold; the sharpness follows as `3 / (1 -
+  t)`) give them the capture's values. Frame 2550: `13.7166` (the strip's `vTexOf` offset
+  0.03857833 over its 0.0028125 a second; the second layer's `vTexOf` offsets, 1000 and 500
+  over the grid a second, give the same 13.7), `-0.07133281` (`mW2Pt`'s translation) and `0.6538959` (`vThreshold`). The
+  game's cloud map also comes from a noise lattice it shuffles each run, so where its clouds
+  stand is not reproducible (the share of the sky error that is placement is in
+  `docs/ryza/open.md`).
+- `barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
+  (`cloud_map`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),
+  `sky`, `scene`, `bright` (the game's 482 by 272 cropped to Barrel's 480 by 270), `bloom`,
+  `tone`) and prints one line each: `stage: mean abs X, rel Y, worst region (c,r) Z`, `X` the
+  mean absolute difference over the three colour channels (in the game's units, in 0 to 255
+  for the tone pass), `Y` that over the game's own light (`sum |g - b| / sum g`), the worst of
+  an 8 by 6 grid of regions with its mean absolute error; below it, for the 1920 by 1080
+  stages, the same for the masks from the game's depth and stencil before the sky (`sky`: depth
+  at the far plane, `characters`: stencil 8, `stage`: the rest). The last line is `pixels: tone
+  mean abs N`. With a picture folder it writes `<stage>.png`, the game's, Barrel's and their
+  difference (red: Barrel brighter, blue: darker, four times as strong) side by side, 960 wide
+  at most (HDR light shown as `x / (1 + x)` with a gamma).
+- The row is `rasen-pixels` in the local checks file: it passes while the tone error is at or
+  below the number reached.
+
 ## Stand-ins
 
 A stand-in is anything the code uses that is not the game's own rule or data: a value fitted
