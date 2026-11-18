@@ -196,7 +196,22 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   game's memory at frame 2550 for the objects' positions (RYZA_FIND) finds their records; a
   byte 0x727 past the position was 1 on two hidden rocks and 0 on two drawn ones, but over
   107 records it is 1 on 52 drawn and 0 on 10 hidden: not the flag. (RYZA_FIND stops at 2000
-  hits; leave out an object placed at the origin, whose zeros match everywhere.) What got it here from 809: objects are
+  hits; leave out an object placed at the origin, whose zeros match everywhere.) **The rule
+  is occluders**: the field's `_le.koc` quads (docs/formats.md, "Ryza field walls"). Each frame
+  (`0x140a3cac0`, called from `0x140725b50`) the game keeps the quads in view (each as two
+  triangles against the frustum, `0x14099aa20`; a quad's byte `+0x45` turns it on), sorts them
+  by their nearest corner's depth (`0x140a3b7d0`), gives each five planes (its face turned
+  away from the eye and its four edges through the eye, `0x140985080`), drops quads wholly
+  behind a nearer one (flag `+0x5d` of the 0x60-byte records at `+0x30`, count `+0xc8`), then
+  measures the kept ones' corners in a 2D camera basis (from `0x140a3d183`; use not read).
+  Tested with Barrel's draw boxes at the gate (scratch `koc2.py`), per model part, as `diff3d`
+  pairs repeated baked models by count and not by place: a box wholly inside one quad's
+  five planes accounts for 45 of the 53 parts the game hides, but 3 the game draws would be
+  hidden (`S06-HOUSE-01`, `COMMON-STUMP-01`, `S09-STAIR-02`) and 11 it hides are not
+  (cliff blocks, `CLIFF-15M-01`, `CLIFF-30M-02`, a mountain). A bounding sphere fits worse (12).
+  Next: the per-object query that reads these records (not in `0x140a3cac0`; find a reader of
+  the count `+0xc8` among the field object's draw, near `0x14072a300`, which makes the pool),
+  for its shape (box, sphere, or the 2D extents) before Barrel uses it. What got it here from 809: objects are
   in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
   drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
   game's code and capture say ("Ryza DX: object draw ranges"). The story's progress decides

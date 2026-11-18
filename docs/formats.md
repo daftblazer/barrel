@@ -1435,7 +1435,9 @@ A loose file beside the field's containers (36 fields in Ryza DX; Ryza 2 DX has 
 (b, top), the line a to b on the ground spanning bottom to top (Rasenboden: 99 quads, 96
 upright, 300 to 14,000 units long, the field's edges, cliffs and banks). Two there are sloped
 and one flat (at y 5843), use not known. `barrel_ryza::koc` reads them and gives the upright
-ones to the shared walker as walls. Beside it: `_coll.bin` in the main container (Rasenboden:
+ones to the shared walker as walls. The game reads them (`0x140a3c880`, the name
+`Res:Field/%s/%s_le.koc`) as occluders for hiding objects behind them (docs/ryza/open.md,
+"Rasenboden against the game's draws"). Beside it: `_coll.bin` in the main container (Rasenboden:
 4 records of a position, a rotation and a size, likely boxes), `.g1pf` and `.elixir.g1pf`
 (`FP1G`, over a 128,000-unit square: path-finding, not read) and `.trmd` (`TRMD`, 1024 × 1024
 cells of 5 bytes: likely the ground's material, not read). In Rasenboden's `.trmd` (header
