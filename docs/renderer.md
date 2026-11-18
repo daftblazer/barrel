@@ -1520,3 +1520,27 @@ they were), and `barrel-parity` settles ties between a turned rectangle's equidi
 `PARITY_TURNED_TIES=left` is set; off by default because Escha's diamonds are matched to the
 noise as it falls (the checks-boot rows set it). Escha's 15 2D rows stay 0 (run with the
 change).
+
+### Ryza DX: objects behind the field's occluders
+
+The field's `<field>_le.koc` quads are also the game's occluders for placed objects
+(`barrel_ryza::occluders`; the walker's walls use the same file). Each frame the game keeps
+the quads whose triangles (0,1,2) or (0,2,3) touch the view, sorts them by their nearest
+corner's depth, gives each five planes (its face, inside away from the eye, and one through
+the eye and each edge, the quad's centre inside) and drops a quad wholly inside an earlier
+one. An object's query (`0x140a39fc0`) walks the kept quads: it stops, object drawn, at the
+first quad whose nearest corner is deeper than the object's nearest point; an object whose
+box lies strictly inside all five planes of a quad is hidden. The box is one oriented box per
+placed object (the placement's transform of the model's own bounds, `field::PlacedBox`),
+so all its draws, levels of detail included, go together. Only placed field objects take
+the test (not plants, terrain, sky or characters); the skyline stand-in stays. `--no-occluders`
+draws them all.
+
+Rasenboden's answer key (`load-rasen`): the gate's Barrel-only field parts go from 78 to 38
+and the title is unchanged (963 matched, no `_le.koc` use on the title). Gate matched goes
+859 to 858: object 1147 (a stump, class 2) is strictly inside two kept quads (the nearest, q7,
+by 316 units at its least plane) yet the game draws it; not explained. Dropping the frustum
+step, the culling of covered quads or the depth stop changes nothing here, and the stored
+bounds and the drawn vertices' bounds give the same box. About 38 remain: the large cliffs and
+mountain (objects 8, 78, 95, 96, 586, 587) are not inside any single quad's planes by 20 to
+thousands of units, and the far trees (785 to 1183).

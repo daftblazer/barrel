@@ -13,6 +13,7 @@ pub mod river;
 pub mod horizon;
 pub mod install;
 pub mod koc;
+pub mod occluders;
 pub mod light;
 pub mod maps;
 pub mod motion;

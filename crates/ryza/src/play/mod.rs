@@ -92,6 +92,7 @@ struct Args {
     save: Option<String>,
     /// `--no-skyline`: objects behind the ground are drawn too.
     no_skyline: bool,
+    no_occluders: bool,
     ryza: Option<(Vec3, f32, String, f32)>,
     no_shadows: bool,
     /// The camera's vertical field of view, degrees (`--fov`).
@@ -151,7 +152,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -205,6 +206,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
             "--save" => a.save = Some(value()?),
             "--no-skyline" => a.no_skyline = true,
+            "--no-occluders" => a.no_occluders = true,
             "--ryza" => {
                 let v = value()?.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
                 let [x, y, z] = v[..] else { return Err("--ryza X,Y,Z".into()) };
@@ -613,7 +615,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // container of the game's (`docs/formats.md`, "Shared field motions").
     let shared_bytes = install.shared_motions();
     let shared = shared_bytes.as_deref().map(Elixir::parse).transpose()?;
-    let barrel_engine::field::Loaded { textures: pack, moving, .. } = barrel_engine::field::load(&files.area, &main, &objects, shared.as_ref(), &mut scene, 0, &place)?;
+    let barrel_engine::field::Loaded { textures: pack, moving, boxes: object_boxes, .. } = barrel_engine::field::load(&files.area, &main, &objects, shared.as_ref(), &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
     let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
@@ -1250,6 +1252,18 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // The boxes are in the renderer's space, the skyline in the field's: x is mirrored.
         !horizon.as_ref().zip(boxes.get(&(d.first_index, d.instance))).is_some_and(|(h, &(lo, hi))| h.borrow().hides((lo + hi) * Vec3::new(-0.5, 0.5, 0.5), lo.distance(hi) * 0.5))
     };
+    // The field's occluders (`<field>_le.koc`, `barrel_ryza::occluders`) and each placed
+    // object's oriented box, both in render space (x mirrored); the kept quads are found
+    // each frame from the eye.
+    let mirror = Vec3::new(-1.0, 1.0, 1.0);
+    let occluder_quads: Vec<barrel_ryza::occluders::Corners> = if a.title || a.no_occluders {
+        Vec::new()
+    } else {
+        install.read(&format!("\\data\\x64\\field\\{0}\\{0}_le.koc", a.field.to_ascii_lowercase())).ok().and_then(|b| barrel_ryza::koc::parse(&b).ok()).unwrap_or_default().iter().map(|q| q.map(|c| Vec3::from(c) * mirror)).collect()
+    };
+    let occluded_boxes: std::collections::HashMap<u32, barrel_ryza::occluders::OrientedBox> =
+        object_boxes.iter().map(|b| (b.object, barrel_ryza::occluders::OrientedBox { center: b.center * mirror, axes: b.axes.map(|v| v * mirror) })).collect();
+    let occluders = std::cell::RefCell::new(barrel_ryza::occluders::Occluders::default());
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
     let forward_now = std::cell::Cell::new(Vec3::ZERO);
     let sides_now = std::cell::Cell::new([glam::Vec4::ZERO; 4]);
@@ -1267,6 +1281,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 let depth = |c: Vec3| forward_now.get().dot(c - eye_now.get());
                 corners.clone().any(|c| depth(c) <= plant_preset.far[1]) && sides_now.get().iter().all(|p| corners.clone().any(|c| p.truncate().dot(c) + p.w >= 0.0))
             })
+            // A placed object wholly behind one of the field's occluder quads is left out.
+            && (d.object == 0 || occluded_boxes.get(&d.object).is_none_or(|b| !occluders.borrow().hides(b, eye_now.get(), forward_now.get())))
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
@@ -1514,6 +1530,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // The view's four side planes, each scaled to measure across the view (along its own
         // axis) rather than square to the plane.
         let (across, up, deep) = (view.vp.row(0), view.vp.row(1), view.vp.row(3));
+        *occluders.borrow_mut() = barrel_ryza::occluders::Occluders::new(&occluder_quads, eye_now.get(), forward_now.get(), &barrel_render::view_planes(&view.vp));
         sides_now.set([(deep + across) / across.truncate().length(), (deep - across) / across.truncate().length(), (deep + up) / up.truncate().length(), (deep - up) / up.truncate().length()]);
         // The plants' wind (sway slots 0 and 1; nothing else sways in Ryza's fields yet).
         // `g_vAttCache0` (a, a, a/2, -a/2) and {`g_fAttCache1` 1, `g_fPhase` 0, `g_fOscPhase`}.

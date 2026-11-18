@@ -61,6 +61,31 @@ pub struct Loaded {
     pub pattern: Option<Vec<u8>>,
     /// Its objects that play a motion.
     pub moving: Vec<Moving>,
+    /// Each placed object's oriented box, by object number (`Draw::object`).
+    pub boxes: Vec<PlacedBox>,
+}
+
+/// A placed object's model bounds as the placement puts them: an oriented box, game space.
+#[derive(Clone, Copy, Debug)]
+pub struct PlacedBox {
+    /// The object's number (`Draw::object`).
+    pub object: u32,
+    pub center: Vec3,
+    /// Half of each of the box's three edges, as vectors.
+    pub axes: [Vec3; 3],
+}
+
+impl PlacedBox {
+    /// The model's bounds (`[min, max]` x, y, z) put in place by `transform`.
+    pub fn of(object: u32, bounds: [f32; 6], transform: Mat4) -> PlacedBox {
+        let (lo, hi) = (Vec3::new(bounds[0], bounds[1], bounds[2]), Vec3::new(bounds[3], bounds[4], bounds[5]));
+        let half = (hi - lo) * 0.5;
+        PlacedBox {
+            object,
+            center: transform.transform_point3((lo + hi) * 0.5),
+            axes: [transform.transform_vector3(Vec3::X * half.x), transform.transform_vector3(Vec3::Y * half.y), transform.transform_vector3(Vec3::Z * half.z)],
+        }
+    }
 }
 
 /// Where a placement puts its model: scale, then rotate about x, y and z in that order, then
@@ -133,6 +158,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, shared: Option<&Elixir>
     let placements = opl2::parse(named(&main, &format!("{area}.opl2")).ok_or("field has no placement list")?)?;
     let (mut placed, mut missing) = (0usize, 0usize);
     let mut moving = Vec::new();
+    let mut boxes = Vec::new();
     for t in &placements.objects {
         let Some(bytes) = named(&objects, &format!("{}_hi.g1m", t.name)) else {
             missing += t.instances.len();
@@ -149,6 +175,7 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, shared: Option<&Elixir>
             let transform = placement_transform(i);
             let how = place(t, i);
             let levels: Vec<&barrel_formats::g1m::Geometry> = std::iter::once(geometry).chain(if how.lods { lower.iter().filter_map(|m| m.geometry.as_ref()).collect() } else { Vec::new() }).collect();
+            let (mut full_draws, mut baked) = (0..0, true);
             for (level, g) in levels.iter().enumerate() {
                 let before = scene.draws.len();
                 // An object the game moves (a tree's spring) gets its own instance; the rest
@@ -178,7 +205,20 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, shared: Option<&Elixir>
                     d.lod = lod;
                     d.object = placed as u32 + 1;
                 }
+                if level == 0 {
+                    full_draws = before..scene.draws.len();
+                    baked = !(how.own_instance || (how.moves && motion.is_some()));
+                }
             }
+            // The box of what the full level draws (its vertices back in the model's own
+            // space), else the model's stored bounds.
+            let within = if baked { barrel_render::render_space(transform).inverse() } else { Mat4::IDENTITY };
+            let local = scene.draws[full_draws].iter().flat_map(|d| scene.indices[d.first_index as usize..(d.first_index + d.index_count) as usize].iter()).fold(None, |acc: Option<(Vec3, Vec3)>, &v| {
+                let p = within.transform_point3(Vec3::from(scene.vertices[v as usize].pos)) * Vec3::new(-1.0, 1.0, 1.0);
+                Some(acc.map_or((p, p), |(lo, hi)| (lo.min(p), hi.max(p))))
+            });
+            let bounds = local.map_or(geometry.bounds, |(lo, hi)| [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z]);
+            boxes.push(PlacedBox::of(placed as u32 + 1, bounds, transform));
             placed += 1;
         }
     }
@@ -191,6 +231,6 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, shared: Option<&Elixir>
         d.emission = d.emission.map(|m| m + base);
         d.specular = d.specular.map(|m| m + base);
     }
-    Ok(Loaded { textures, pattern, moving })
+    Ok(Loaded { textures, pattern, moving, boxes })
 }
 
