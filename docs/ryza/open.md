@@ -497,7 +497,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   depth than the grass range's end by the box's diagonal (the deepest cell the title draws is
   at 15000.0 by this measure); at the view's sides a cell is drawn while its centre is no further
   outside than a measured length (`PLANT_EDGE`, a stand-in between the last cell drawn and
-  the first hidden: docs/renderer.md, "View culling"); Barrel draws 2 more cells than the game. Where a plant stands in its
+  the first hidden: docs/renderer.md, "View culling"); Barrel draws 2 more cells than the game. At
+  the gate (row `rasen-3d-2550`, the game's cells told apart by their vertex buffers' squares)
+  Barrel draws 198 cells, the game 190, 183 the same: Barrel's 15 extra are the far row (12,
+  by Barrel's measure 14,925 to 14,991, where the game's deepest drawn is 14,724 and its
+  nearest left out 14,733, against the title's 15,000.0) and 3 at the side; the game's 7 more
+  stand outside the side, 553 to 866 by `PLANT_EDGE`'s measure (the title's limit 656 to 695).
+  Neither limit is one number for both views, by any of: the box's centre less its diagonal,
+  half-diagonal or plan diagonal, its nearest corner, its distance from the eye; at the
+  sides by planes made unit length with the sphere or the box, the side planes alone, or in
+  plan. So the game's box or its eye is not Barrel's: next, read the draw test beside the
+  cell builder (`0x140a77060`) rather than fit it. Where a plant stands in its
   cell and where in its ranges its size falls are the game's own numbers
   (`barrel_ryza::grass::Scatter`, from the game's cell builder `0x140a77060`, which fills a
   cell's vertices the first time the cell is drawn: a generator `s × 69069 + 1` seeded from
