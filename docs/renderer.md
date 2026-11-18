@@ -1232,6 +1232,20 @@ models, the normal map; for her, the toon ramp) and 3 its emission map (`Draw::e
 material's kind-19 texture), white where a draw has none. The fragment program reads set 3
 only under flag 32768, so a game that never sets it (Escha) draws as before.
 
+## The forward pass over Ryza's characters
+
+After the scene's models (and the Escha outlines' place), the draws that take the toon ramp
+(flag 128) are drawn again with a pipeline of their own (`Renderer::forward_pipeline`: front
+faces culled, source-alpha blended, depth tested less or equal and not written) and
+`model.vert`/`model.frag`'s flag 1 << 25: the hull of the game's forward pass, inflated along the
+clip-space normal (docs/shading.md, "Her forward passes"), its colour her tile plus the specular
+highlights, at the game's units times the scene's exposure, blended by the tile's alpha. It runs
+for the finished scene only (`dump::Stop::outlines`), so the board's `lit` stage does not have it.
+A character's vertex colour alpha (0.4 on her) is kept for it; the rest of her vertex colour is
+white as the field models'. Her specular ambient (the sheen on her metal) is in the main pass:
+flag 1 << 24 with 128, her specular map in set 4 and `look.chara_spec` (the cube map's scale
+times its tint from the set's `indirectChara_` block, and the exposure in w).
+
 ## Foliage
 
 `RenderSettings::foliage` (full, reduced, least; config `foliage`) is how much of a field's

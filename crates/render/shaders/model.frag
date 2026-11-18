@@ -85,6 +85,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // layer, on, layer}.
     mat4 shadow_sub;
     vec4 shadow_sub_info;
+    // The characters' specular ambient (lib.rs CHARA_SPECULAR_SLOT): the light's scale times
+    // its tint (rgb), and the exposure the lights carry (w).
+    vec4 chara_spec;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -268,6 +271,36 @@ void main() {
     }
     // The alpha test: a swaying draw (a plant) against its own reference (params.y).
     if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
+    if ((pc.flags & (1u << 25)) != 0u) {
+        // The game's forward pass over a character (`sh0d2367f637ea8f6a`, docs/shading.md, "Her
+        // forward pass"): the colour tile plus, with a specular map, its red times the two
+        // lights' Blinn-Phong highlights (`cSpec` power 20), at `vOLColorScaler` and faded by
+        // `fOLLtEfFade` toward the ambient term (`vOLAmbEfScaler` 0), fogged as the scene is, over
+        // the light by the tile's alpha. The values are the capture's, in the game's units (the
+        // scene's exposure back in).
+        const float OL_COLOUR = 0.5;      // vOLColorScaler
+        const float OL_LIGHT_FADE = 0.5;  // fOLLtEfFade
+        const float OL_AMBIENT = 0.0;     // vOLAmbEfScaler
+        const float OL_SHINE = 20.0;      // cSpec.w
+        vec3 fn = normalize(normal);
+        vec3 fv = normalize(look.eye.xyz - world);
+        vec3 spec = vec3(0.0);
+        if ((pc.flags & (1u << 24)) != 0u) {
+            vec3 ways[2] = vec3[2](look.sun_dir.xyz, look.fill_dir.xyz);
+            vec3 cols[2] = vec3[2](look.sun_color.rgb, look.fill_color.rgb);
+            for (int k = 0; k < 2; k++) {
+                if (dot(ways[k], ways[k]) == 0.0) continue;
+                vec3 l = -normalize(ways[k]);
+                float nl = dot(fn, l);
+                float nh = dot(fn, normalize(fv + l));
+                if (nl >= 0.0 && nh >= 0.0) spec += cols[k] * pow(nh, OL_SHINE);
+            }
+            spec *= texture(spec_map, uv).r;
+        }
+        vec3 fc = (c.rgb + spec / look.chara_spec.w) * OL_COLOUR * (1.0 - OL_LIGHT_FADE + OL_LIGHT_FADE * OL_AMBIENT);
+        color = vec4(tinted(mix(fog_add, fc * look.chara_spec.w, fog_keep)) * pc.params.w, clamp(c.a, 0.0, 1.0));
+        return;
+    }
     vec3 n = normalize(normal);
     if (AO_PASS && (pc.flags & 1u) != 0u) {
         color = vec4(n, 1.0 / gl_FragCoord.w);
@@ -328,10 +361,23 @@ void main() {
         float gloss = 0.0;
         vec3 highlights = vec3(0.0);
         bool specular = (pc.flags & (1u << 24)) != 0u;
+        // A Ryza character (flag 128) takes the specular ambient only: its direct specular is
+        // the lighting pass's own term (not done), not the field models' rule.
+        bool chara = (pc.flags & 128u) != 0u;
+        float spec_occlusion = occlusion;
+        // The diffuse colour: a character's metal (the specular map's blue at 0.5 or more) takes
+        // the colour tile times 0.2 times the map's green, as the G-buffer program writes it (the
+        // colour left over is its specular colour).
+        vec3 albedo = c.rgb;
         if (specular) {
+            if (chara && texture(spec_map, uv).b >= 0.5) {
+                albedo = c.rgb * (texture(spec_map, uv).g * 0.2);
+            }
             specular_surface(c.rgb, f0, gloss);
-            lit *= 1.0 - f0;
-            highlights = direct_specular(n, f0, gloss, sun_lit, occlusion);
+            if (!chara) {
+                lit *= 1.0 - f0;
+                highlights = direct_specular(n, f0, gloss, sun_lit, occlusion);
+            }
         }
         // The lighting pass's occlusion on all the diffuse light, tinted by the colour. (A Ryza
         // character's own lighting below takes it with its occlusion map.)
@@ -373,10 +419,11 @@ void main() {
             // row 0 takes the shadow alone).
             float row = float((pc.flags >> 16) & 255u);
             float occ = texture(emissive, uv).g * occlusion;
+            spec_occlusion = occ;
             float shadow = sun_shadow(world) * cloud_light(world);
             float lit_part = row > 0.0 ? min(occ, shadow) : shadow;
             float occ_light = row > 0.0 ? 1.0 + OCC_ON_SUN * (occ - 1.0) : occ;
-            vec3 own = c.rgb * OCC_COLOUR;
+            vec3 own = albedo * OCC_COLOUR;
             vec3 toward_light = mix(own, vec3(1.0), occ_light);
             lit = field_now * mix(own, vec3(1.0), occ * OCC_ON_AMBIENT.x + OCC_ON_AMBIENT.y)
                 + (col0 * weight0 * lit_part + col1 * weight1) * toward_light;
@@ -392,9 +439,9 @@ void main() {
                 lit *= textureLod(mask, vec2(u, (row - 0.5) / 256.0), 0.0).rgb;
             }
         }
-        vec3 rgb = tinted(mix(fog_add, lit * c.rgb * at_color + highlights, fog_keep));
+        vec3 rgb = tinted(mix(fog_add, lit * albedo * at_color + highlights, fog_keep));
         if (specular && look.spec_amb.x > 0.0) {
-            rgb += specular_light(n, f0, gloss, occlusion);
+            rgb += chara ? specular_light(n, f0, gloss, spec_occlusion, look.chara_spec.rgb) : specular_light(n, f0, gloss, occlusion);
         }
         color = vec4(rgb * pc.params.w, 1.0);
         return;

@@ -220,10 +220,15 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   does not count: in the stage's units, and over the game's mean luminance as `rel`) and the
   same for the saturation `(max - min) / max`. The `lit` stage has Barrel's fog in it and the
   game's not (the game adds it before the sky, with the forward draws), so the `scene` line is
-  the one to read. At the gate: mean colour within 1% (0.4109 0.3126 0.2245 against 0.4130
-  0.3149 0.2248), the luminance distributions 0.0112 apart (3.4% of the mean; 0.0164 before the
-  character lighting followed the program, docs/shading.md), the tone stage's 3.14 of 255 (3.53
-  before). What is left is her outline pass (docs/shading.md, "Her forward passes").
+  the one to read. At the gate: mean colour within 0.6% (0.4109 0.3126 0.2245 against 0.4134
+  0.3126 0.2230), the luminance distributions 0.0091 apart (2.8% of the mean; 0.0112 before her
+  forward passes, 0.0164 before the character lighting followed the program, docs/shading.md),
+  the saturation distributions 0.0067 (0.0354), the tone stage's 2.43 of 255 (3.14, 3.53). Two
+  lines under it, `chara <stage> boots` and `thighs`, give the mean colour of two bands of her
+  body, each in its own picture's coordinates (the largest piece of the character mask: the
+  lowest 15% of its height, and 62% to 80% of it): the game's and Barrel's (boots 0.0415 0.0167
+  0.0145 against 0.0492 0.0193 0.0158, thighs 0.0794 0.0319 0.0281 against 0.0936 0.0369
+  0.0316: the sheen is a fifth too bright, the screen-space reflections left out).
 - The clouds' and the cloud shadows' phases are the field's clock, which the game's run does
   not repeat: `BARREL_SKY_CLOCK=<seconds>` (the sky's clock: the strip's wind, the water),
   `BARREL_PATTERN_PHASE=<offset>` (the cloud shadows' pattern, both axes, in repeats) and

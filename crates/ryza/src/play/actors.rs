@@ -392,7 +392,7 @@ pub fn add_character(
         d.overlay = d.overlay.map(|o| o + texture_base);
         d.normal_map = d.normal_map.map(|n| n + texture_base);
         d.emission = d.emission.map(|e| e + texture_base);
-        d.specular = None;
+        d.specular = d.specular.map(|m| m + texture_base);
         d.field = Some(0);
         d.name = name.into();
         d.casts = true;

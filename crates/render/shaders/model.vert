@@ -301,6 +301,25 @@ void main() {
         float k = (1.75 - 0.75 * in_color.r) * sign(clip_w) * min(abs(clip_w), 350.0) * (1.0 - 0.2 * clamp((dist - 190.0) * 0.05, 0.0, 1.0));
         gl_Position += vec4(cn.x * 0.0025, cn.y * 0.0025 * pc.params.z, cn.z * 0.0025, cn.w * 0.0025) * k;
     }
+    if ((pc.flags & (1u << 25)) != 0u) {
+        // The game's forward pass over a character (`sh470bcc97a7144d67`, docs/shading.md, "Her
+        // forward pass"): the hull pushed out along the clip-space normal's direction by a
+        // thickness that thins with the distance and follows the vertex colour's alpha, x by
+        // the aspect, z only away from the eye. The constants are the capture's (Rasenboden).
+        const vec2 OL_INTENSITY = vec2(0.0, 0.6);   // vOLIntensity
+        const float OL_Z_DECAY = 0.35;              // fOLZDecayRatio
+        const float OL_CONSTANT = 0.01;             // fOLThicknessConstantRatio
+        const float OL_ASPECT = 1.0;                // fAdjByAspect
+        const float OL_Z_SCALE = 0.1;               // fOLZScale
+        vec4 cn = pc.view_proj * vec4(mat3(i.model) * n, 0.0);
+        cn = cn / max(length(cn), 0.00001);
+        float depth = clamp(gl_Position.z / gl_Position.w, 0.0, 1.0);
+        float thick = (pow(1.0 - depth, OL_Z_DECAY) * (OL_INTENSITY.y - OL_INTENSITY.x) + OL_INTENSITY.x) * in_color.a * (1.0 + OL_CONSTANT * (gl_Position.w - 1.0));
+        vec3 push = abs(thick) * cn.xyz;
+        push.x *= OL_ASPECT;
+        push.z = max(push.z, 0.0) * OL_Z_SCALE;
+        gl_Position.xyz += push;
+    }
     screen_uv = gl_Position.xy / (gl_Position.w * 5.0);
     // Instances are rotations and translations (no scale), so their upper 3x3 turns normals.
     normal = mat3(i.model) * n;

@@ -55,6 +55,9 @@ pub struct Renderer {
     pub sky_vs: vk::ShaderModule,
     pub sky_fs: vk::ShaderModule,
     pub outline_pipeline: vk::Pipeline,
+    /// The game's forward pass over a character (`model.frag`'s flag 1 << 25): the hull with
+    /// front faces culled, blended by its alpha over the lit scene, depth tested, not written.
+    pub forward_pipeline: vk::Pipeline,
     pub shadow_fs: vk::ShaderModule,
     pub shadow_pipeline: vk::Pipeline,
     /// The same writing a cascade's depth with the game's bias (`shadow::Bias`).
@@ -666,6 +669,8 @@ impl Renderer {
         let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
         let outline_info = pipeline_info.rasterization_state(&outline_raster);
         let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
+        let forward_info = outline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
+        let forward_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[forward_info], None).map_err(|(_, e)| e)?[0] };
 
         // The sun's shadow map pass: the same vertex shader from the sun, depth only (the alpha
         // test kept), both faces, a little depth bias against acne.
@@ -751,7 +756,7 @@ impl Renderer {
         let ao_gbuf_terrain_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[ao_info.stages(&ao_ground).rasterization_state(&ao_ground_raster).layout(terrain_gpu.pipeline_layout)], None).map_err(|(_, e)| e)?[0] };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -764,7 +769,7 @@ impl Renderer {
         let d = &gpu.device;
         let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion } = *frame;
         let upto = self.upto.get();
-        let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
+        let Renderer { forward_pipeline, ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let ao_set = self.ao.map_set();
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -1159,6 +1164,32 @@ impl Renderer {
                     }
                 }
             }
+            // The forward pass over the characters (a Ryza character's toon-ramp draws): the
+            // game's second look at them, the hull blended over the lit scene.
+            if upto.outlines() {
+                let mut bound = false;
+                for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_some() && !d.sky) {
+                    let (bits, _) = material(draw);
+                    if bits & 128 == 0 {
+                        continue;
+                    }
+                    if !bound {
+                        d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, forward_pipeline);
+                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
+                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 5, &[ao_set], &[]);
+                        bound = true;
+                    }
+                    let flags = (bits & 128) | u32::from(draw.specular.is_some()) << 24 | 1 << 25;
+                    let mut per_draw = [0u8; 16];
+                    per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
+                    per_draw[4..8].copy_from_slice(&flags.to_le_bytes());
+                    per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
+                    d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[white], sets[white], sets[draw.specular.unwrap_or(white)]], &[]);
+                    d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                }
+            }
             d.cmd_end_render_pass(cb);
             // The stage dumps: the scene in the game's units (it is stored at half and lit at
             // the exposure it was baked with).
@@ -1296,6 +1327,7 @@ impl Renderer {
             d.free_memory(self.filter.1, None);
             d.destroy_render_pass(self.post_pass, None);
             d.destroy_pipeline(self.outline_pipeline, None);
+            d.destroy_pipeline(self.forward_pipeline, None);
             d.destroy_pipeline(self.ao_gbuf_pipeline, None);
             d.destroy_pipeline(self.ao_gbuf_two_sided_pipeline, None);
             d.destroy_pipeline(self.pipeline_two_sided, None);

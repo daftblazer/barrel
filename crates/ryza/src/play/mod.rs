@@ -939,9 +939,12 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The models' Color0 does not reach their materials: the G-buffer programs (`pbb-*_gb.g1s`,
     // docs/shading.md) take no COLOR0, and some models hold masks there (the attic's
     // cabinet). So white; the terrain's (its baked shade) is kept.
+    // (A character's alpha stays: the game's forward pass takes its hull's thickness from it.)
     for d in &draws {
+        let alpha = ramp_rows.contains_key(&(d.first_index, d.instance));
         for &i in &indices[d.first_index as usize..(d.first_index + d.index_count) as usize] {
-            vertices[i as usize].color = [255; 4];
+            let v = &mut vertices[i as usize];
+            v.color = [255, 255, 255, if alpha { v.color[3] } else { 255 }];
         }
     }
     // A field model's normal map goes in the mask slot (unused by the field's models
@@ -1263,7 +1266,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             UNLIT
         };
         // A field model with a specular map reflects the environment's cube map.
-        let base = if spec_on && d.specular.is_some() && !d.sky && d.name != "plants" && !ramp_rows.contains_key(&(d.first_index, d.instance)) { base | SPECULAR_AMBIENT } else { base };
+        let base = if spec_on && d.specular.is_some() && !d.sky && d.name != "plants" { base | SPECULAR_AMBIENT } else { base };
         match ramp_rows.get(&(d.first_index, d.instance)) {
             Some(&row) if ramp_pack.is_some() && environment.is_some() => (base | 128 | row << 16, 0),
             _ => (base, 0),
@@ -1863,6 +1866,9 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, d
         // The characters' ambient (model.vert: a flat one for flag 128).
         let ca = chara.ambient_light(light, c);
         look[26] = [ca[0] * k, ca[1] * k, ca[2] * k, 1.0];
+        // The cube map's light as the characters take it (`indirectChara_`: the map's scale and tint).
+        let s = chara.specular_map;
+        look[CHARA_SPECULAR_SLOT] = [s * chara.specular_map_color[0], s * chara.specular_map_color[1], s * chara.specular_map_color[2], k];
         // y: what the characters' second light is scaled by beyond the draws' `light` word
         // (which scales the sun and the second light alike by their sun's scale over the
         // stage's): their second light's scale over the stage's, over that.

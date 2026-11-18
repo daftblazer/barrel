@@ -68,7 +68,11 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
 /// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
-pub const LOOK_SLOTS: usize = SHADOW_SUB_SLOT + 5;
+pub const LOOK_SLOTS: usize = CHARA_SPECULAR_SLOT + 1;
+/// The characters' specular ambient (`model.frag`, flag 128 with 1 << 24): the cube map's light
+/// scale times its tint, {rgb}, from the set's `indirectChara_` block (its own, not the stage's), and
+/// the exposure the lights carry (the forward pass's colours are in the game's units) in w.
+pub const CHARA_SPECULAR_SLOT: usize = SHADOW_SUB_SLOT + 5;
 /// The characters' shadow map (`model.frag`, `terrain.frag`; `shadow::SUB_LAYER`): its
 /// view-projection (4 slots), then {the texel in the map's own uv, the share of the layer the map
 /// covers, on (1), 0}. Used when the last's `z` is on.

@@ -65,6 +65,23 @@ pub(super) const CHARA_PASS: &[(&str, &[f32])] = &[
     ("rampCoordRange", &[0.2, 0.5]),
     ("rampCoeAdj", &[1.0, 1.0]),
 ];
+/// The forward pass over the characters (`sh470bcc97a7144d67` and `sh0d2367f637ea8f6a`: the hull's
+/// thickness and the colour's scales), as the capture has them at Rasenboden at noon; run-time
+/// settings of the set's `outline_` and `ir_` groups, which are not found, so one frame's, taken
+/// for every field. `fOLCSatFade` is 0 and `fAdjByAspect` 1: the shaders fold them away.
+// STAND-IN: The forward pass's constants (model.vert, model.frag) are one capture's, Rasenboden at noon; the real thing is the field's `outline_` and `ir_` settings, not found.
+pub(super) const FORWARD_PASS: &[(&str, &[f32])] = &[
+    ("vOLIntensity", &[0.0, 0.6]),
+    ("fOLZDecayRatio", &[0.35]),
+    ("fOLThicknessConstantRatio", &[0.01]),
+    ("fAdjByAspect", &[1.0]),
+    ("fOLZScale", &[0.1]),
+    ("vOLColorScaler", &[0.5, 0.5, 0.5]),
+    ("fOLLtEfFade", &[0.5]),
+    ("vOLAmbEfScaler", &[0.0, 0.0, 0.0]),
+    ("fOLCSatFade", &[0.0]),
+    ("cSpec", &[1.0, 1.0, 1.0, 20.0]),
+];
 /// `vAmbOccRat`'s first two values (the others are not used).
 pub(super) const AMBIENT_OCCLUSION_RATIO: [f32; 2] = [0.75268143, 0.24731857];
 /// The rim table's entries as the capture has them, all alike: strength (`x`) and power (`w`).
@@ -105,7 +122,7 @@ fn lights(dir: [[f32; 3]; 2], col: [[f32; 3]; 2]) -> (Vec<Option<f32>>, Vec<Opti
 /// The dump as JSON text.
 pub(super) fn json(i: &Inputs) -> String {
     let (_, _, light, sky_fog, _, chara, [key, second]) = i.environment;
-    let (key, _second) = (*key, *second);
+    let (key, second) = (*key, *second);
     let look = i.look;
     let k = light.exposure_range.0;
     let eye = look[4];
@@ -131,6 +148,14 @@ pub(super) fn json(i: &Inputs) -> String {
     lighting.insert("litCol", lit_col);
     lighting.insert("vEye", v_eye.clone());
     put("lighting.stage", lighting.clone());
+    // The forward pass over the characters takes the stage's lights at the set's own colours (the
+    // lighting pass's are those times the stage's key and second light scales).
+    let mut forward = lighting.clone();
+    forward.insert("litCol", lights(dirs, [stage_cols[0].map(|v| v / key), stage_cols[1].map(|v| v / second)]).1);
+    for (name, values) in FORWARD_PASS {
+        forward.insert(name, values.iter().map(|&v| Some(v)).collect());
+    }
+    put("forward.chara", forward);
     lighting.insert("litCol", chara_col);
     for (name, values) in CHARA_PASS {
         lighting.insert(name, values.iter().map(|&v| Some(v)).collect());
@@ -379,6 +404,26 @@ mod tests {
         assert_eq!(numbers("RAMP_RANGE"), pass("rampCoordRange"));
         assert_eq!(numbers("OCC_ON_AMBIENT"), AMBIENT_OCCLUSION_RATIO);
         assert_eq!(numbers("RIM"), RIM_ENTRY);
+    }
+
+    #[test]
+    fn the_forward_pass_shaders_hold_the_same_constants() {
+        let numbers = |source: &str, name: &str| -> Vec<f32> {
+            let line = source.lines().find(|l| l.contains(&format!(" {name} = "))).unwrap_or_else(|| panic!("no {name}"));
+            let rhs = line.split(" = ").nth(1).unwrap().split(';').next().unwrap();
+            rhs.split_once('(').map_or(rhs, |(_, inner)| inner.trim_end_matches(')')).split(',').map(|v| v.trim().parse().unwrap_or_else(|_| panic!("{name}: {v}"))).collect()
+        };
+        let pass = |name: &str| FORWARD_PASS.iter().find(|(n, _)| *n == name).unwrap().1.to_vec();
+        let (vert, frag) = (include_str!("../../../render/shaders/model.vert"), include_str!("../../../render/shaders/model.frag"));
+        assert_eq!(numbers(vert, "OL_INTENSITY"), pass("vOLIntensity"));
+        assert_eq!(numbers(vert, "OL_Z_DECAY"), pass("fOLZDecayRatio"));
+        assert_eq!(numbers(vert, "OL_CONSTANT"), pass("fOLThicknessConstantRatio"));
+        assert_eq!(numbers(vert, "OL_ASPECT"), pass("fAdjByAspect"));
+        assert_eq!(numbers(vert, "OL_Z_SCALE"), pass("fOLZScale"));
+        assert_eq!(numbers(frag, "OL_COLOUR"), pass("vOLColorScaler")[..1]);
+        assert_eq!(numbers(frag, "OL_LIGHT_FADE"), pass("fOLLtEfFade"));
+        assert_eq!(numbers(frag, "OL_AMBIENT"), pass("vOLAmbEfScaler")[..1]);
+        assert_eq!(numbers(frag, "OL_SHINE"), pass("cSpec")[3..]);
     }
 
     #[test]

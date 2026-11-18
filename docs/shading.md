@@ -710,28 +710,56 @@ strength 1, power 2, row 0 on her), and the diffuse light is `(sun × w0 × m + 
 × mix(albedo × fOccAlbScl, 1, o')` plus the ambient × `mix(albedo × fOccAlbScl, 1, 0.7527 o +
 0.2473)`, with `o' = 1 + IRAFade (o - 1)` (0.2497); a material without a ramp row takes `o`
 for `o'` and the shadow alone for `m`. The result times the ramp's colour at `u` above. Not
-done: the specular term (0.4% of her light on the capture), the back-light amount (0 on her),
-the point lights' share of the pass, the normal map (the G-buffer's normal carries it; the
-vertex normal is used), and the forward outline pass below.
+done: the direct specular term (0.4% of her light on the capture), the back-light amount (0 on her),
+the point lights' share of the pass, and the normal map (the G-buffer's normal carries it; the
+vertex normal is used). Her forward passes follow.
 
-**Her forward passes.** After the lighting pass the game draws her again in the forward
-pass (draws 1986 to 2031 of the capture, one per submesh, with `sh470bcc97a7144d67` and
-`sh0d2367f637ea8f6a`, their textures her colour and specular map, the G-buffer targets, the
-occlusion and the ambient cube maps): it is an outline ("OL") pass, an inverted hull
-inflated along the clip-space normal, and it changes her pixels a lot: the boots go from 0.010
-to 0.057 in red and the thigh from 0.20 to 0.26 over the pass. The vertex program: the skinned
-position and normal; the thickness is `((1 - sat(z / w))^fOLZDecayRatio × (vOLIntensity.y -
-vOLIntensity.x) + vOLIntensity.x) × vertex colour alpha × (1 + fOLThicknessConstantRatio (w -
-1))`, the clip-space normal's direction (normalised over its four components) times it, its x by
-`fAdjByAspect` and its z (kept positive) by `fOLZScale`, added to the clip position. The
-constants at the gate: `vOLIntensity` (0, 0.6), `fOLZDecayRatio` 0.35,
-`fOLThicknessConstantRatio` 0.01, `fAdjByAspect` 1, `fOLZScale` 0.1, `vOLColorScaler` 0.5,
-`fOLLtEfFade` 0.5, `fOLCSatFade` 0, `vOLAmbEfScaler` 0. The pixel program takes her colour
-texture (and with `vSpMap` the specular map's red as a second term), adds them, scales by
-`vOLColorScaler`, pushes the saturation (`fOLCSatFade`: the channels below the brightest zeroed
-by that share) and fogs the result with the two height-fog layers and the scattering as the
-other forward draws. Barrel draws no outline on her: the outline pipeline is Escha's
-`CharaFra*` one, keyed on a material's `atEdge`, which her materials do not have.
+**Her forward passes.** Two things happen to her pixels between the lighting pass and the tone
+pass (the draws `1927` to `2031` of the capture; the dump brackets them as one range), and the
+larger is not the hull.
+
+- *The fog and specular ambient pass* (`1927` and `1928`, one program told apart by stencil: the
+  stage, then the characters) adds the cube map's light reflected off her by Fresnel on her
+  G-buffer's specular colour, as for the stage (the paragraph on the specular ambient pass
+  above), with her block of the set: `vAmbParam` (1.5, 6, 5, 1/256), `vAmbSpcScl` 0.6,
+  `vAmbOccRat` (0.7527, 0.2473, 1, 0): the light scale 6 x 0.6 = 3.6, against the stage's 1. Her
+  specular colour and gloss are written by her G-buffer program (`shb62cde394912a5a7`) as the
+  field models' are: `F0` the specular map's green (a metal, blue 0.5 or more, takes the colour
+  tile x (1 - green)), the gloss its alpha, and the metal's diffuse is the tile x 0.2 x green. This
+  is the red sheen on her stockings and boots (the stockings are metal in the map): the thigh goes
+  from 0.0096 to 0.080 in red over the passes, the boots from 0.019 to 0.042, the coat not at all.
+  `barrel` does it in `model.frag` (flag 128 with 1 << 24: her specular map in set 4, her
+  metal's diffuse, the cube map at her block's scale, `look.chara_spec`) with her own occlusion
+  as `o`. Left out as in the stage's: the half-size screen-space reflections the pass mixes
+  toward by their alpha (they stand in for 15 to 20% of the sheen: the sheen is that much
+  too bright on the boots and the thigh).
+- *The hull* (draws `1929` to `2024`, `sh470bcc97a7144d67` and `sh0d2367f637ea8f6a`, one per
+  submesh of every character: her, the townsfolk): the model again with front faces culled,
+  inflated along the clip-space normal, alpha-blended (source alpha) over the scene with the
+  depth tested (less or equal) and written, stencil 8 written. Only the pushed-out back faces
+  that reach past the body show, as a dark line of one to two pixels on her silhouette and the
+  seams of her overlapping pieces (the cause of the dark rings on her coat's loops and
+  hood). The vertex program: the skinned position and normal; the thickness is
+  `((1 - sat(z / w))^fOLZDecayRatio x (vOLIntensity.y - vOLIntensity.x) + vOLIntensity.x) x
+  vertex colour alpha x (1 + fOLThicknessConstantRatio (w - 1))` (her vertex colour's alpha is
+  0.4 on every vertex of her body), the clip-space normal's direction (normalised over its four
+  components) times it, x by `fAdjByAspect`, z (kept positive, away from the eye) by `fOLZScale`,
+  added to the clip position. The constants at the gate: `vOLIntensity` (0, 0.6),
+  `fOLZDecayRatio` 0.35, `fOLThicknessConstantRatio` 0.01, `fAdjByAspect` 1, `fOLZScale` 0.1,
+  `vOLColorScaler` 0.5, `fOLLtEfFade` 0.5, `fOLCSatFade` 0, `vOLAmbEfScaler` 0 (on the constants
+  board as `forward.chara`). The pixel program takes the colour tile's alpha as the blend and
+  the alpha test (`vATest` 50.1 / 255), the colour tile plus (with a specular map, `vSpMap` (1, 0,
+  1, 0)) its red times the two lights' Blinn-Phong highlights (`cSpec` power 20, the lights at
+  the set's own colours, the sun's 4.78, 5, 3.5 and the second light's 0.15, 0.29, 0.5), scaled by
+  `vOLColorScaler` and by `1 + sat(fOLLtEfFade)(ambLit x vOLAmbEfScaler - 1)` (0.5), then
+  fogged with the height-fog layers and the scattering as the other forward draws (nothing
+  at her distance here: the extinction is 1). A submesh without a specular map takes the
+  same program less the highlights (`sh718056b9b500791f`). The programs of her face and the
+  townsfolk's faces (`sh6ff58774ff997f98`, `shf9b98df9548ba6fa`, draws 2025 to 2031, 4,800 lines)
+  are not read. `barrel` draws the hull in `renderer.rs` after the scene (flag 1 << 25 of
+  `model.frag` and `model.vert`, a pipeline of its own that culls front faces and blends, depth
+  not written), for the draws that take the toon ramp, the colour in the game's units
+  times the scene's exposure.
 
 The pass's constants come from the environment overrides (`saves\fieldmap\override_env\
 env_<name>.xml`, one `<root>` of `group_name` attributes; `env_default.xml` and a few fields'
@@ -1159,8 +1187,8 @@ program (`model.frag`, `specular_ambient.glsl`; flag 1 << 24 on a model with a s
 the cube map from the set (`_as`, scale and tint of the stage's block), the specular map in a
 set of its own, the fog on the light. Left out of it: the screen-space reflections (the cube
 map alone), the occlusion (the screen-space one, above, as the pass's `o`), the terrain
-and the plants, and the characters (their specular colour and gloss come from other
-G-buffer programs). Its light on bark and leaves is small, as the specular maps are dull
+and the plants. The characters take it too, with their own block of the set and their
+own metal rule ("Her forward passes"). Its light on bark and leaves is small, as the specular maps are dull
 (`F0` 0.02), and the shade stays well below the still's. What it does not, largest first by
 what shows: the reflections and what makes the shade bluer, the ambient occlusion's tint (built), the direct specular, the second
 kind's ambient (which draws take it is not read; plants are likely), the bloom's star filter, the metering (night and interiors would rise above 0.9), the light volume,

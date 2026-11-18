@@ -199,6 +199,72 @@ fn chara_stats(name: &str, game: &Image, barrel: &Image, masks: &Image, own: &[b
     );
 }
 
+/// The largest connected piece of a mask: the player, without the townsfolk's few pixels.
+fn largest_piece(mask: &[bool], w: usize) -> Vec<bool> {
+    let h = mask.len() / w;
+    let mut label = vec![0u32; mask.len()];
+    let (mut best, mut best_size, mut next) = (0u32, 0usize, 0u32);
+    let mut stack = Vec::new();
+    for start in (0..mask.len()).filter(|&i| mask[i]) {
+        if label[start] != 0 {
+            continue;
+        }
+        next += 1;
+        label[start] = next;
+        stack.push(start);
+        let mut size = 0;
+        while let Some(i) = stack.pop() {
+            size += 1;
+            let (x, y) = (i % w, i / w);
+            for (nx, ny) in [(x.wrapping_sub(1), y), (x + 1, y), (x, y.wrapping_sub(1)), (x, y + 1)] {
+                if nx < w && ny < h && mask[ny * w + nx] && label[ny * w + nx] == 0 {
+                    label[ny * w + nx] = next;
+                    stack.push(ny * w + nx);
+                }
+            }
+        }
+        if size > best_size {
+            (best, best_size) = (next, size);
+        }
+    }
+    label.iter().map(|&l| l == best).collect()
+}
+
+/// Her body's bands, each in its own picture's coordinates (a fraction of the height of the
+/// largest piece of the character mask, from its top): the boots (the lowest 15%) and the thighs
+/// (62% to 80%), the mean colour of the game's and Barrel's.
+fn chara_bands(name: &str, game: &Image, barrel: &Image, masks: &Image, own: &[bool], scale: f64) {
+    let w = game.w;
+    let game_mask: Vec<bool> = (0..w * game.h).map(|i| masks.px[4 * i] < 1.0 && masks.px[4 * i + 1] as u32 == 8).collect();
+    let (gm, bm) = (largest_piece(&game_mask, w), largest_piece(own, w));
+    let rows = |m: &[bool]| {
+        let ys: Vec<usize> = (0..m.len()).filter(|&i| m[i]).map(|i| i / w).collect();
+        (ys.iter().copied().min().unwrap_or(0), ys.iter().copied().max().unwrap_or(0))
+    };
+    let mean = |im: &Image, m: &[bool], (y0, y1): (usize, usize), (a, b): (f64, f64)| -> [f64; 3] {
+        let h = (y1 - y0 + 1) as f64;
+        let (lo, hi) = (y0 + (a * h) as usize, y0 + (b * h) as usize);
+        let (mut sum, mut n) = ([0f64; 3], 0f64);
+        for y in lo..=hi.min(y1) {
+            for x in 0..w {
+                if m[y * w + x] {
+                    let p = im.at(x, y);
+                    for c in 0..3 {
+                        sum[c] += f64::from(p[c]);
+                    }
+                    n += 1.0;
+                }
+            }
+        }
+        sum.map(|v| v * scale / n.max(1.0))
+    };
+    let (gr, br) = (rows(&gm), rows(&bm));
+    for (band, range) in [("boots", (0.85, 1.0)), ("thighs", (0.62, 0.80))] {
+        let (g, b) = (mean(game, &gm, gr, range), mean(barrel, &bm, br, range));
+        println!("  chara {name} {band}: game {:.4} {:.4} {:.4}, barrel {:.4} {:.4} {:.4}", g[0], g[1], g[2], b[0], b[1], b[2]);
+    }
+}
+
 /// In the frame's order. Where Barrel has no pass of its own, the game's later stage is the
 /// match: its scene fog is in each fragment's light, so its picture before the sky is compared
 /// with the game's after the fog (`lit`: the game's lit scene without it, kept for the
@@ -516,7 +582,9 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
         // them halved (and has no masks).
         if let (Some(m), Some(c)) = (full, chara.as_ref().filter(|c| (c.w, c.h) == (g.w, g.h))) {
             if matches!(stage.name, "lit" | "scene" | "tone") {
-                chara_stats(stage.name, &g, &b, m, &own_characters(m, c), stage.scale);
+                let own = own_characters(m, c);
+                chara_stats(stage.name, &g, &b, m, &own, stage.scale);
+                chara_bands(stage.name, &g, &b, m, &own, stage.scale);
             }
         }
         if stage.regions && ((g.w, g.h) == (1920, 1080) || (g.w, g.h) == (960, 540)) {
