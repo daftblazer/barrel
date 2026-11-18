@@ -68,7 +68,11 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
 /// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
-pub const LOOK_SLOTS: usize = SHADOW_CASCADE_SLOT + 10;
+pub const LOOK_SLOTS: usize = SHADOW_SUB_SLOT + 5;
+/// The characters' shadow map (`model.frag`, `terrain.frag`; `shadow::SUB_LAYER`): its
+/// view-projection (4 slots), then {the texel in the map's own uv, the share of the layer the map
+/// covers, on (1), 0}. Used when the last's `z` is on.
+pub const SHADOW_SUB_SLOT: usize = SHADOW_CASCADE_SLOT + 10;
 /// The shadow cascades past the first (`model.frag`, `terrain.frag`): the second's and the
 /// third's view-projections (4 slots each), then {the cascades' ends along the view, three,
 /// and the width of the fade into the static layer before the last end}, then {the view's
@@ -214,6 +218,10 @@ pub struct Draw {
     /// Drawn into the sun's shadow map: the characters, and the field objects marked `xDS_`
     /// (in their name or their placement's tags; docs/renderer.md, "Shadows").
     pub casts: bool,
+    /// A caster of the characters' shadow map (`shadow::SUB_LAYER`) with this bias set (an
+    /// index into `Frame::shadow_sub`); such a draw is left out of the cascades. None: the
+    /// cascades' caster as any other.
+    pub sub_bias: Option<u8>,
     /// What it is part of, for `BARREL_HIDE` (a field object's placement name, `sky:<model>`
     /// for the distant view, empty for characters).
     pub name: String,
@@ -789,7 +797,7 @@ impl Scene {
             let emission = material.and_then(|m| m.textures.iter().find(|t| t.kind == 19)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let specular = material.and_then(|m| m.textures.iter().find(|t| t.kind == 2)).map(|t| (t.index as usize).min(textures.saturating_sub(1)));
             let outline = geometry.param(s, "atEdge").and(Some(geometry.param(s, "atOutCol").and_then(|c| c.first().copied()).unwrap_or(1.0)));
-            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, outline, field: self.field, casts: true, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string(), two_sided: two_sided(geometry, submesh) });
+            self.draws.push(Draw { first_index, index_count: self.indices.len() as u32 - first_index, texture, overlay, instance, mask, normal_map, emission, specular, eye, sky: false, outline, field: self.field, casts: true, sub_bias: None, name: String::new(), version: None, lod: 0, light: light_word(geometry), tint: 0, bounds: None, class: 0, object: 0, part: None, bones: joints.filter(|_| geometry.palette_indexed(s)).and_then(|_| geometry.bone_maps.get(s.bone_map)).map_or_else(Vec::new, |m| m.iter().map(|r| r.joint).collect()), shader: geometry.shader_of(submesh).unwrap_or_default().to_string(), two_sided: two_sided(geometry, submesh) });
         }
         Ok(())
     }

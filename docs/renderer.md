@@ -628,7 +628,7 @@ shaded centre and right measure 101, 64 and 67 against the game's 101, 65 and 67
 255). With every model casting, the drawn ceiling shaded the whole floor instead.
 `BARREL_NO_SHADOWS` turns them off.
 
-The map is an array of four layers (`shadow::CASCADES`). Layer 0 is the square above (Escha's
+The map is an array of five layers (`shadow::CASCADES`; the fifth below). Layer 0 is the square above (Escha's
 only one: its frames are unchanged, the other layers cleared once and never read). The Ryza
 games draw the game's three cascades into layers 0 to 2 every frame (`Frame::shadow_cascades`:
 layer 0 is `shadow_vp`) and a static layer into layer 3 (`Renderer::far_shadow(want)` each
@@ -637,7 +637,15 @@ drawn once, whole, in the frame it is first asked for. A cascade is the smallest
 sun's view around a slice of the view's frustum (`shadow::fit_view_proj`; docs/shading.md,
 "The cascades"); the receivers pick the cascade by the distance along the view
 (`shadow_cascades.glsl`, from the look slots `SHADOW_CASCADE_SLOT`) and fade into the static
-layer before the last cascade's end. The cascades' depth is written with the game's own bias
+layer before the last cascade's end. The fifth layer (`shadow::SUB_LAYER`) is the characters' own map, the game's `sSubShadow`
+(`Frame::shadow_sub`, Ryza's player): the player's draws (`Draw::sub_bias`) are drawn into it
+every frame, 1024 texels a side in the layer's corner (`shadow::SUB_SIZE`), from the smallest
+box in the sun's view around her box, with the game's bias (a set per draw, the push
+constant's alpha reference, slope and constant rewritten between draws); and they are left out of
+the cascades, as the game's three passes hold none of her draws (docs/shading.md). The receivers
+take the smaller light of the cascades and this map before the fade into the static layer
+(`sub_light` in `shadow_cascades.glsl`, the look slots `SHADOW_SUB_SLOT`). The cascades' depth
+is written with the game's own bias
 (`shadow_cascade.frag`, `shadow::Bias`; the near square keeps the fixed bias), and casters
 under four of a layer's texels across are left out of layers 1 to 3 (`Bounds::extent`). At
 Rasenboden's gate (1920x1080) the shadow pass took 6.9 ms and the frame 11.6 ms (6.4 with the one

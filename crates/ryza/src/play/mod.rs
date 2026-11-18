@@ -379,6 +379,14 @@ const CASTER_PLANE: f32 = 36_755.0;
 /// scale, constant (of the cascade's depth), and the alpha under which a texel casts nothing.
 const CASCADE_BIAS: [(f32, f32); 3] = [(1.0, 0.0001), (0.5, 0.0003), (0.05, 0.001)];
 const CASCADE_ALPHA_REF: f32 = 100.0 / 255.0;
+/// How the game writes the characters' map's depth (the shadow pass's `sbias` for its 25 draws at
+/// the gate): slope scale and constant for the two sets of its shaders; the alpha reference is
+/// the cascades'.
+const SUB_BIAS: [(f32, f32); 2] = [(2.5, 0.01), (5.0, 0.07)];
+// STAND-IN: The shadow shaders that take the second bias set are those the gate's capture shows with it (the model's shadow groups `@D0A7806D` and `@456FF036`; the other groups take the first); the real thing is the game's rule for choosing between its `ShadowSlopeBias` and `ShadowSlopeBiasEx`, not found.
+const SUB_BIAS_EX_SHADERS: [&str; 2] = ["@D0A7806D", "@456FF036"];
+// STAND-IN: The characters' map's box is the box of her draws (their vertices on the scene's starting joints) grown by this much on every side, from the gate's: its U and V extents are 144.5 and 220.8 against the box's own 76.2 and 163 (`mSubW2S`); the real thing is how the game bounds the characters (the extents grow with her pose: 175 by 273 running), not found.
+const SUB_BOX_PAD: f32 = 17.3;
 
 // STAND-IN: The cloud map's threshold is the game's first frame at Rasenboden's noon; the real thing is the set's density moved by its height noise (`CloudHeightNoiseChangeSpeed`, `CloudHeightNoiseScale`), not found.
 const CLOUD_THRESHOLD: f32 = 0.6413691;
@@ -460,6 +468,7 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             outline: None,
             field: Some(0),
             casts: false,
+            sub_bias: None,
             name: "plants".into(),
             version: None,
             lod: 0,
@@ -771,6 +780,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let instance = scene.instance(Mat4::from_scale_rotation_translation(Vec3::from(chara.size), glam::Quat::from_rotation_y(turn.to_radians()), *at));
         // Her pack follows the scene's textures, the toon ramp her pack.
         let drawn = actors::add_character(&mut scene, geometry, rp.textures.len(), &joints, instance, textures.len(), textures.len() + rp.textures.len(), "ryza", &[], &mut ramp_rows)?;
+        actors::cast_in_sub_map(&mut scene.draws, drawn, geometry, &SUB_BIAS_EX_SHADERS);
         eprintln!("Ryza: {drawn} draws, {} joints, motion {motion} {:.2}s long", joints.len(), anim.duration);
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
         let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
@@ -1430,7 +1440,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         // The field's clock for the sky (the clouds' wind): a window's own, 60 Hz offscreen.
         let sky_clock = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 });
-        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, (lo, hi), title_clip, sky_clock);
+        // Her box (the player's draws, in render space) for the characters' shadow map.
+        let sub_box = draws.iter().filter(|d| d.sub_bias.is_some()).filter_map(|d| Some((d.bounds?, instances[d.instance as usize].model))).fold(None, |acc: Option<(Vec3, Vec3)>, (b, m)| {
+            let corners = (0..8).map(|k| m.transform_point3(Vec3::new(if k & 1 == 0 { b.lo.x } else { b.hi.x }, if k & 2 == 0 { b.lo.y } else { b.hi.y }, if k & 4 == 0 { b.lo.z } else { b.hi.z })));
+            let (lo, hi) = corners.fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(l, h), c| (l.min(c), h.max(c)));
+            Some(acc.map_or((lo, hi), |(l, h)| (l.min(lo), h.max(hi))))
+        });
+        let mut view = look_for(sub_box, center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, (lo, hi), title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1576,6 +1592,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
             shadow_cascades: view.shadow_cascades,
+            shadow_sub: view.shadow_sub.map(|vp| (vp, SUB_BIAS.map(|(slope, constant)| shadow::Bias { slope, constant, alpha_ref: CASCADE_ALPHA_REF }))),
             shadow_bias: view.shadow_cascades[0].map(|_| CASCADE_BIAS.map(|(slope, constant)| shadow::Bias { slope, constant, alpha_ref: CASCADE_ALPHA_REF })),
             alpha_cutoff: MODEL_ALPHA_REF,
             sway_cutoff: PLANT_ALPHA_REF,
@@ -1761,6 +1778,8 @@ struct View {
     shadow_vp: Mat4,
     /// The cascades past the first.
     shadow_cascades: [Option<Mat4>; 2],
+    /// The characters' map's view-projection.
+    shadow_sub: Option<Mat4>,
     /// The static shadow layer wanted and its look slot (texel, layer to fill).
     shadow_far: Option<(Mat4, [f32; 4])>,
     sky_plane: bool,
@@ -1796,7 +1815,7 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, world: (Vec3, Vec3), clip: Option<(f32, f32)>, seconds: f32) -> View {
+fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, world: (Vec3, Vec3), clip: Option<(f32, f32)>, seconds: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -1810,6 +1829,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     let mut shadow_vp = vp;
     let mut shadow_far = None;
     let mut shadow_cascades = [None; 2];
+    let mut shadow_sub = None;
     let eye_point = eye;
     for (k, (now, before)) in vp.to_cols_array_2d().into_iter().zip(prev_vp.unwrap_or(vp).to_cols_array_2d()).enumerate() {
         look[40 + k] = before;
@@ -1983,11 +2003,23 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             }
             look[SHADOW_CASCADE_SLOT + 8] = [ends[0], ends[1], ends[2], CASCADE_BLEND * shadow_reach];
             look[SHADOW_CASCADE_SLOT + 9] = [forward.x, forward.y, forward.z, 0.0];
+            // The characters' map: the smallest box in the sun's view around the characters' box.
+            if let Some((lo, hi)) = sub_box {
+                let (lo, hi) = (lo - Vec3::splat(SUB_BOX_PAD), hi + Vec3::splat(SUB_BOX_PAD));
+                let corners: [Vec3; 8] = std::array::from_fn(|k| Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
+                let vp = shadow::fit_view_proj(&corners, sun, f32::MAX);
+                let side = shadow::SUB_SIZE.min(size) as f32;
+                for (k, col) in vp.to_cols_array_2d().into_iter().enumerate() {
+                    look[SHADOW_SUB_SLOT + k] = col;
+                }
+                look[SHADOW_SUB_SLOT + 4] = [1.0 / side, side / size as f32, 1.0, shadow::SUB_LAYER as f32];
+                shadow_sub = Some(vp);
+            }
             // The static layer: the whole field's box in the sun's view, drawn once.
             let corners: [Vec3; 8] = std::array::from_fn(|k| Vec3::new(if k & 1 == 0 { world.0.x } else { world.1.x }, if k & 2 == 0 { world.0.y } else { world.1.y }, if k & 4 == 0 { world.0.z } else { world.1.z }));
             shadow_far = Some((shadow::fit_view_proj(&corners, sun, f32::MAX), [1.0 / size as f32, 0.0, 0.0, 0.0]));
         }
         exposure_k = Some(k);
     }
-    View { look, vp, shadow_vp, shadow_cascades, shadow_far, sky_plane, clouds, near, far, exposure: exposure_k }
+    View { look, vp, shadow_vp, shadow_cascades, shadow_sub, shadow_far, sky_plane, clouds, near, far, exposure: exposure_k }
 }

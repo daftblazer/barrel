@@ -309,11 +309,20 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     stand-in), as are the cloud particles: the game's draw `1916` leaves the picture as it is at
     this frame (its target equals the strip's, every pixel exactly), so they are not built.
   - **The characters: 3.7%** (2.2% of the picture, mean abs 39.4): Ryza's pose differs by
-    10 to 15 pixels at her feet (the idle's phase), her shaded side and outlines.
+    10 to 15 pixels at her feet (the idle's phase), her shaded side and outlines. The
+    characters' own shadow map (docs/shading.md, "The characters' map": her draws are in it and
+    not in the cascades; 1024², its box around her) is built: her shadow on the ground has the
+    game's crisp shape and is cut at the box's edge, and the `shadow` stage's characters mask is
+    0.099 mean abs (0.114 before; the game's sun share on her pixels is 0.086, Barrel's 0.092
+    against 0.110). The tone error did not follow: 15.81 to 15.85 over the picture, the `ryza
+    shadow` region's tone 29.96 to 31.03, because the crisp shadow now lies where her pose differs
+    from the game's (a blurred one overlapped more). Left: the box's rule (the game's grows with
+    her pose; Barrel's is her box on the starting joints plus a constant, a stand-in), which
+    shaders take the second bias set (a stand-in list).
   - **The rest, about a third**, spread over the stage at 15 a pixel: the shadows' edges (the
     sun's share against the game's alpha: 0.072 mean abs over the stage, a third of it from the
     stage past 10000 units, where the game reads its static map and the clouds' pattern,
-    random per run; the characters' own small shadow map is not built),
+    random per run; the characters' own shadow map is built, below),
     the reflections, the depth of field's softness, the temporal anti-aliasing, the lantern's
     glass (lit white in the game, dark in Barrel).
   Where the game's occlusion is 1 and the sun's share 0, Barrel's scene is within 3 to 5% of
@@ -384,8 +393,7 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   depth plane 36755 before the camera and the third cascade's box (11672 wide, no slice from
   3600 fits it); (2) which draws cast (a placed model casts here; Barrel's cascades hold 160,
   235 and 687 draws against the game's 104, 177 and 669: the choice is not found); (3) the
-  characters' map (`mSubW2S`, 25 draws), whose shadow of Ryza on the ground is darker and
-  sharper in the game; (4) the static map's contents (drawn once at load in the game: it is
+  characters' map (`mSubW2S`, 25 draws: built, with a stand-in box); (4) the static map's contents (drawn once at load in the game: it is
   not in the capture). The lit canopy's brightness (0.05 against 0.022) is not the sun's share
   but the occlusion: regressing the lit stage on the share per pixel, Barrel's ambient part is
   0.061 against the game's 0.039 in the canopy and 0.070 against 0.031 on the middle tree, the

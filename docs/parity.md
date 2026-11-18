@@ -199,8 +199,8 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   sun's share per pixel (the cascades' light times the cloud pattern, the same meaning as the
   alpha of the game's ambient-and-shadow pass, `1892-1894_rt1920x1080.9#15`), paired by
   `barrel-parity pixels` with that alpha. The stages marked in `pixels.rs` print the mean of
-  ten regions of the picture (canopy, trunk, grass, sand, far hills, the dark canopy, the stone
-  wall, the shaded path), the game's and Barrel's,
+  eleven regions of the picture (canopy, trunk, grass, sand, far hills, the dark canopy, the stone
+  wall, the shaded path, and `ryza shadow` (880, 880, 1250, 1060): her shadow on the sand), the game's and Barrel's,
   over the pixels the game drew before the sky.
 - A `depth` stage (the occlusion's normal and depth target at half size: the view depth in
   the fourth channel, a large clear value where nothing is drawn, the distant view's solid pieces

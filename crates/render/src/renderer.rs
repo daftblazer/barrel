@@ -161,6 +161,10 @@ pub struct Frame<'a> {
     /// How the three cascades' depth is written (`shadow::Bias`); none: the fixed bias of the
     /// near square (Escha).
     pub shadow_bias: Option<[shadow::Bias; 3]>,
+    /// The characters' shadow map (`shadow::SUB_LAYER`): its view-projection and how the game
+    /// writes its depth for each of the bias sets the draws name (`Draw::sub_bias`); none for a
+    /// game without one. Its casters are left out of the cascades.
+    pub shadow_sub: Option<(Mat4, [shadow::Bias; 2])>,
     pub alpha_cutoff: f32,
     /// The alpha test's reference for swaying draws (the plants), where a game holds another.
     pub sway_cutoff: f32,
@@ -758,7 +762,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion } = *frame;
         let upto = self.upto.get();
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
@@ -807,10 +811,14 @@ impl Renderer {
             }
             if !far.cleared {
                 far.cleared = true;
-                jobs.extend((1..shadow::CASCADES).filter(|l| *l == shadow::STATIC_LAYER || shadow_cascades[l - 1].is_none()).map(|l| (l, None, false)));
+                jobs.extend((1..shadow::CASCADES).filter(|l| *l == shadow::STATIC_LAYER || *l == shadow::SUB_LAYER || shadow_cascades[l - 1].is_none()).map(|l| (l, None, false)));
             }
             if let Some(b) = &far.build {
                 jobs.push((b.layer, Some(b.vp), false));
+            }
+            // The characters' map, drawn every frame; cleared once when the game has none.
+            if let Some((vp, _)) = shadow_sub {
+                jobs.push((shadow::SUB_LAYER, Some(vp), false));
             }
             for (layer, cascade, load) in jobs {
                 let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
@@ -825,12 +833,15 @@ impl Renderer {
                     d.cmd_end_render_pass(cb);
                     continue;
                 };
-                d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: shadow_target.size as f32, height: shadow_target.size as f32, min_depth: 0.0, max_depth: 1.0 }]);
-                d.cmd_set_scissor(cb, 0, &[full]);
+                // The characters' map is written `SUB_SIZE` texels a side in the layer's corner.
+                let side = if layer == shadow::SUB_LAYER { shadow::SUB_SIZE.min(shadow_target.size) } else { shadow_target.size };
+                let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: side, height: side } };
+                d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: side as f32, height: side as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                d.cmd_set_scissor(cb, 0, &[area]);
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
                 d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
                 // A cascade is written with the game's bias where the game gave one.
-                let bias = shadow_bias.filter(|_| layer < shadow::STATIC_LAYER).map(|b| b[layer]);
+                let bias = if layer == shadow::SUB_LAYER { shadow_sub.map(|(_, b)| b[0]) } else { shadow_bias.filter(|_| layer < shadow::STATIC_LAYER).map(|b| b[layer]) };
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if bias.is_some() { shadow_cascade_pipeline } else { shadow_pipeline });
                 let mut push = [0f32; 32];
                 // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
@@ -846,9 +857,11 @@ impl Renderer {
                 let shadow_planes = view_planes(&shadow_vp);
                 // In a far layer, casters whose box is under four of its texels across (the
                 // map's side over its size) cast nothing seen: left out.
-                let least = if layer > 0 { 4.0 * 2.0 / (shadow_vp.x_axis.x.hypot(shadow_vp.y_axis.x).hypot(shadow_vp.z_axis.x) * shadow_target.size as f32) } else { 0.0 };
+                let least = if layer > 0 && layer != shadow::SUB_LAYER { 4.0 * 2.0 / (shadow_vp.x_axis.x.hypot(shadow_vp.y_axis.x).hypot(shadow_vp.z_axis.x) * shadow_target.size as f32) } else { 0.0 };
                 let big = |d: &Draw| least == 0.0 || d.bounds.is_none_or(|b| b.extent(&instances[d.instance as usize].model) >= least);
-                let casts = |d: &Draw| big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d);
+                // The characters' map takes its own casters and the cascades leave them out.
+                let own = |d: &Draw| (layer == shadow::SUB_LAYER) == (d.sub_bias.is_some() && shadow_sub.is_some());
+                let casts = |d: &Draw| own(d) && big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d);
                 for draw in draws.iter() {
                     if !casts(draw) {
                         continue;
@@ -859,6 +872,12 @@ impl Renderer {
                     let mut per_draw = [0u8; 8];
                     per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
                     per_draw[4..].copy_from_slice(&flags.to_le_bytes());
+                    // One bias set a draw in the characters' map (the shaders it casts with differ).
+                    if let (Some(k), Some((_, sets))) = (draw.sub_bias, shadow_sub) {
+                        let b = sets[usize::from(k)];
+                        let params = [b.alpha_ref, b.slope, b.constant, 0.0];
+                        d.cmd_push_constants(cb, pipeline_layout, stages_pc, 64, std::slice::from_raw_parts(params.as_ptr() as *const u8, 16));
+                    }
                     d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);

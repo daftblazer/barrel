@@ -18,6 +18,29 @@ float cascade_light(mat4 vp, float layer, float t, vec3 p) {
     return lit / 16.0;
 }
 
+// The characters' map's light at p (the game's `mSubW2S` and `sSubShadow`): sixteen point taps, four
+// by four a texel apart from 1.5 texels before p, each a plain depth comparison (the game's
+// sampler is a point one: the tap is moved to its texel's centre for the comparison sampler),
+// the depth saturated; 1 outside the map's box. The map takes `shadow_sub_info.y` of the
+// layer's side, from its corner.
+float sub_light(vec3 p) {
+    vec4 c = look.shadow_sub * vec4(p, 1.0);
+    vec2 at = c.xy * 0.5 + 0.5;
+    float depth = clamp(c.z, 0.0, 1.0);
+    float t = look.shadow_sub_info.x;
+    if (any(greaterThanEqual(at - 1.5 * t, vec2(1.0))) || any(lessThanEqual(at + 1.5 * t, vec2(0.0)))) return 1.0;
+    float texels = 1.0 / t;
+    float lit = 0.0;
+    for (int i = 0; i < 4; i++) {
+        for (int k = 0; k < 4; k++) {
+            vec2 q = at + (vec2(float(i), float(k)) - 1.5) * t;
+            q = (floor(clamp(q, vec2(0.0), vec2(0.999999)) * texels) + 0.5) * t;
+            lit += texture(shadow_map, vec4(q * look.shadow_sub_info.y, look.shadow_sub_info.w, depth));
+        }
+    }
+    return lit / 16.0;
+}
+
 // The sun's light at p: the cascade of p's distance along the view (the next one where p
 // falls outside its box), fading before the last cascade's end into the static layer
 // (the game's semi-static map), which holds the rest.
@@ -30,6 +53,8 @@ float sun_shadow_cascades(vec3 p) {
         lit = cascade_light(k == 0 ? look.shadow_vp : (k == 1 ? look.shadow_c1 : look.shadow_c2), float(k), t, p);
     }
     if (lit < 0.0) lit = 1.0;
+    // The characters' own map shades what the cascades light (the larger shadow kept).
+    if (look.shadow_sub_info.z > 0.5) lit = min(lit, sub_light(p));
     float w = clamp((look.shadow_ends.z - z) / look.shadow_ends.w, 0.0, 1.0);
     if (w < 1.0) {
         float fixed_lit = 1.0;

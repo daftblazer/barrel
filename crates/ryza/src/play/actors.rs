@@ -403,6 +403,18 @@ pub fn add_character(
     Ok(scene.draws.len() - first)
 }
 
+/// The last `drawn` draws (a character's, one per submesh that draws, in order) cast into the
+/// characters' shadow map instead of the cascades, each with the bias set its shadow group's
+/// shader takes: the second for the shaders named in `second`, else the first.
+pub fn cast_in_sub_map(draws: &mut [Draw], drawn: usize, geometry: &Geometry, second: &[&str]) {
+    let start = draws.len() - drawn;
+    let submeshes = geometry.submeshes.iter().enumerate().filter(|(_, s)| geometry.simple_mesh(s).is_ok_and(|m| !m.uvs.is_empty() && !m.normals.is_empty()));
+    for (d, (k, _)) in draws[start..].iter_mut().zip(submeshes) {
+        let shader = geometry.mesh_groups.iter().find(|m| m.group == 1 && m.submeshes.contains(&(k as u32))).map(|m| m.shader.as_str());
+        d.sub_bias = Some(u8::from(shader.is_some_and(|s| second.contains(&s))));
+    }
+}
+
 // STAND-IN: The cloth pieces hang at rest, carried by their parent joints; the real thing is the game's cloth simulation moving their control points.
 /// Move a model's cloth pieces' points from their parent joints' space into the model's, so
 /// its cloth submeshes are built where they hang at rest (`Geometry::cloth_of`).

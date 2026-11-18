@@ -22,10 +22,17 @@ impl Shadows {
 }
 
 /// The map's layers: three cascades (layer 0 the near square every game has; Ryza adds the
-/// next two, `Frame::shadow_cascades`), then the static layer (`Far`).
-pub const CASCADES: usize = 4;
+/// next two, `Frame::shadow_cascades`), then the static layer (`Far`), then the characters'
+/// own map (`Frame::shadow_sub`).
+pub const CASCADES: usize = 5;
 /// The static layer: the casters of the whole field, drawn once (the game's semi-static map).
 pub const STATIC_LAYER: usize = 3;
+/// The characters' map (the game's `sSubShadow`): drawn every frame at `SUB_SIZE` texels a
+/// side in the layer's corner, read through its own sampling (`shadow_cascades.glsl`).
+pub const SUB_LAYER: usize = 4;
+/// The characters' map's side in texels (the game's `scSubSM`: 1024 over 1024), or the layer's
+/// when that is smaller (the handhelds).
+pub const SUB_SIZE: u32 = 1024;
 
 /// How the game writes a cascade's depth (its shadow pass's `sbias`): the depth stored is the
 /// depth plus `slope` times its change over a texel (`|dz/dx| + |dz/dy|`) plus `constant` (a

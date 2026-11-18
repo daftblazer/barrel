@@ -81,6 +81,10 @@ layout(std140, set = 1, binding = 4) uniform Look {
     mat4 shadow_c2;
     vec4 shadow_ends;
     vec4 shadow_fwd;
+    // The characters' map (lib.rs SHADOW_SUB_SLOT): view-projection, {texel, share of the
+    // layer, on, layer}.
+    mat4 shadow_sub;
+    vec4 shadow_sub_info;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;

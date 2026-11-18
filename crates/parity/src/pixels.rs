@@ -96,6 +96,7 @@ const REGIONS: &[(&str, [usize; 4])] = &[
     ("canopy dark", [150, 300, 500, 420]),
     ("stone wall", [860, 400, 1000, 450]),
     ("shaded path", [600, 620, 800, 680]),
+    ("ryza shadow", [880, 880, 1250, 1060]),
 ];
 
 /// The mean of a region's three channels, per channel, over the pixels the game drew before the

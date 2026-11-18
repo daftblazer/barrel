@@ -879,6 +879,28 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   of the box's depth: 4, 11 and 37 units), (2.5, 0.01) and (5, 0.07) for the sub map; the
   alpha 0.392 (100 / 255) in all. The draws: 104, 177 and 669 (the cascades), 25 (the sub map),
   Barrel's: 160, 235 and 687.
+- **The characters' map** (`mSubW2S`, `scSubSM`, `nSubSdw`, `sSubShadow`; pass 10, 25 draws
+  into the 1024² map, all of the player's submeshes of her first level of detail, one draw each):
+  the characters are in this map and not in the two near cascades (none of her 25 draws' index
+  counts and shaders occurs among passes 7's and 8's draws; five of them (9402, 1530, 1098, 240,
+  144) also occur in pass 9, the far cascade, which was not looked into). Its box is the smallest in
+  the sun's view around a world-space box: its depth and its v extents are equal (220.8 at the
+  gate) and its u extent smaller (144.5), the box's centre about 92 units above her feet, and the
+  extents change with her pose (143.9 by 220.1 at the start of the walk capture, 175 by 273 at its
+  later frames; the sun's way is the cascades'). The pass writes the depth as the cascades do, with
+  `sbias` (2.5, 0.01) for the shadow shaders `@00012B6D` and `@03C5C6E3` and (5, 0.07) for
+  `@D0A7806D` and `@456FF036` (17 draws and 8: the shader groups of the model's shadow pass),
+  alpha 0.392. The pass reads it as 16 point taps (the sampler is a point one, clamped), four by
+  four a texel apart from 1.5 texels before the point, each `sample < depth` shadowed with the
+  depth saturated; outside the box (tested on the first tap's corner and the last's) it shades
+  nothing; `nSubSdw` (1) layers are read and the larger shadow kept (`max`). It is read where the
+  cascades' share is not already shadow, and in the fade into the static map it is mixed in with the
+  cascades' term (`min` of the two lights before the mix). So her ground shadow is the sub map's
+  alone, cut at the box's edge (the game's is shorter than the cascades' was), and her own pixels
+  are shaded by her own map: the sun's share on them is 0.086 (the board's `characters` mask of
+  the `shadow` stage: 0.114 mean abs against 0.099 with the map). Barrel's box is her draws'
+  own box on the scene's starting joints grown by a constant (a stand-in: the rule that gives
+  the game's pose-dependent extents is not found).
 - **The filter.** Sixteen taps four by four, one texel apart from 1.5 texels before the
   point, each a bilinear depth comparison (`sample < depth` shadowed, no receiver bias); the
   sub map's loop is `nSubSdw` times, the larger shadow kept.
