@@ -44,6 +44,11 @@ use glam::{Mat4, Vec3};
 mod actors;
 
 /// The renderer's material bit for a draw shown with its texture alone, unlit (`model.frag`).
+/// The alpha test's reference (`vATest`) on every field and character model's draw of the
+/// game's frame, and on its plants' (docs/shading.md): 50.1 and 63.1 of 255.
+const MODEL_ALPHA_REF: f32 = 50.1 / 255.0;
+const PLANT_ALPHA_REF: f32 = 63.1 / 255.0;
+
 const UNLIT: u32 = 32;
 /// `model.vert`'s flag for a sky dome lit by the look's `DOME_LIGHT_SLOT`.
 const DOME_LIT: u32 = 4096;
@@ -1538,7 +1543,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             draw_vp: view.vp,
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
-            alpha_cutoff: 0.3,
+            alpha_cutoff: MODEL_ALPHA_REF,
+            sway_cutoff: PLANT_ALPHA_REF,
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored) and `fBloomWeight` as the rate.
             glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, l.bloom_weight * GLOW_RANGE)),

@@ -209,7 +209,8 @@ void main() {
         color = vec4(tinted(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c.rgb, fog_keep)) * pc.params.w, c.a);
         return;
     }
-    if (c.a < pc.params.x) discard;
+    // The alpha test: a swaying draw (a plant) against its own reference (params.y).
+    if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
     vec3 n = normalize(normal);
     if ((pc.flags & 1u) == 0u) {
         // A field model: its light (from the vertex program) on its colour; specular, the

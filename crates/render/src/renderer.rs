@@ -133,6 +133,8 @@ pub struct Frame<'a> {
     pub view_planes: [glam::Vec4; 6],
     pub shadow_vp: Mat4,
     pub alpha_cutoff: f32,
+    /// The alpha test's reference for swaying draws (the plants), where a game holds another.
+    pub sway_cutoff: f32,
     /// The glow: its bright pass's threshold and its rate (0: none).
     pub glow: (f32, f32),
     /// The exposure to meter the scene to (the Ryza games'; the scene was lit at `baked`, and the
@@ -677,7 +679,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -841,6 +843,7 @@ impl Renderer {
                 push[31] = f32::from_bits(FULL_LIGHT);
             push[..16].copy_from_slice(&draw_vp.to_cols_array());
             push[16] = alpha_cutoff;
+            push[17] = sway_cutoff;
             push[18] = width as f32 / height.max(1) as f32;
             push[19] = HDR_RANGE_INV;
             // The terrain's push constants: the shared ones with its field size and layer scales.

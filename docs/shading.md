@@ -571,6 +571,10 @@ Atelier Ryza DX draws its field models deferred. A material's shader name (`PBB-
 - **Vertex programs** (0 rigid, 1 skinned, 2 one joint) take position, normal, UV and tangent:
   **no `COLOR0`**. So the models' vertex colours do not reach these materials, and
   `barrel` draws them white (the attic's cabinet holds masks there for other passes).
+- **The alpha test** of the programs that have one: `saturate(alpha × vSAMap.y + vSAMap.z)`
+  (1 and 0 on every draw of the capture) below `vATest` is discarded. `vATest` is 50.1 / 255
+  on every model's draw (the field's and the characters') and 63.1 / 255 on the plants'
+  (`play::MODEL_ALPHA_REF`, `PLANT_ALPHA_REF`; the renderer's swaying draws take the second).
 - **Pixel program 3**, textures `sStage0` (the colour tile, kind 1), `sSpMap` (kind 2), `sNMap`
   (kind 3); constants `vDifScl`, `vSpcScl`, `atColor`. With `m` = `sSpMap.g` and metal =
   `sSpMap.b` ≥ 0.5:
