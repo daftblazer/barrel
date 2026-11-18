@@ -1469,7 +1469,12 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // STAND-IN: The cloud shadows' drift starts with the field; the real thing is the game's own phase.
         if let Some((p, _)) = &cloud {
             let drift = |speed: f32| phase_override("BARREL_PATTERN_PHASE").unwrap_or_else(|| (wind_clock * speed).rem_euclid(1.0));
-            view.look[48] = [1.0 / p.size[0], 1.0 / p.size[1], drift(p.speed[0]), drift(p.speed[1])];
+            // The game's matrix (`mW2Pt`) slides a point along the sunlight onto the plane at
+            // height 0 (its translation is the drift alone, the same on both axes); the shader
+            // slides onto the plane 1000 up, so that plane's share is taken off here.
+            let sun = view.look[22];
+            let onto = |way: f32, size: f32| if sun[1].abs() > 1e-4 { 1000.0 * way / (sun[1] * size) } else { 0.0 };
+            view.look[48] = [1.0 / p.size[0], 1.0 / p.size[1], drift(p.speed[0]) - onto(-sun[0], p.size[0]), drift(p.speed[1]) - onto(sun[2], p.size[1])];
             view.look[49] = [1.0, p.strength, 0.0, 0.0];
         }
         view.look[50] = [bend, bend, bend * 0.5, -bend * 0.5];

@@ -909,7 +909,12 @@ share in alpha:
   (`<field>_pat.g1t`'s red, at the world position through `mW2Pt`) takes away up to `fPtn`
   (0.7) of the sun. `mW2Pt` at the gate: u = (x − y d.x / d.y) / 50000 + o, v = (z − y d.z /
   d.y) / 50000 + o with d the sun's direction, o growing 0.005 a second (-0.138 at frame
-  1750). The strength, a switch, the size and the speed are the words at +0x38 to +0x4c of
+  1750). The plane the points slide onto is at height 0 here (the translation is `o`
+  alone, on both axes), not Escha's 1000 up: `play` takes the 1000-plane's share off the
+  drift it hands the shader. Checked on the turn view's dumps: the pattern's red (as sRGB)
+  through `mW2Pt` at each pixel's world position gives the pass's alpha on open ground to
+  0.002; Barrel's reads 0.456 against 0.458 there (0.533 before, the pattern standing 500 and
+  866 units off). The strength, a switch, the size and the speed are the words at +0x38 to +0x4c of
   the set's `indirectStage_` block (0.7, 1, 50000, 50000, 0.005, 0.005 at noon; the other
   times hold strength 1 and switch 0, taken as off).
 

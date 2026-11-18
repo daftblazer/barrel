@@ -277,7 +277,10 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   36.9, stage 7.05) and 8.69 (characters 13.9 from 26.4, stage 8.94); with the field models'
   metal darkened as the G-buffer program writes it (colour times 0.2 times the specular map's
   green: the mailbox's ornament read 0.74 0.54 0.16 against the game's 0.25 0.15 0.06 lit, now
-  0.29 0.19 0.11) 6.77 and 8.53. Shares left on the turn view (lit, game against Barrel):
+  0.29 0.19 0.11) 6.77 and 8.53; with the cloud pattern where the game's matrix puts it (it
+  stood 500 and 866 units off: docs/shading.md) 6.19 and 5.48, the sun's share on open ground
+  0.456 against 0.458 and 0.446 against 0.448 (so the shares below, measured before, are
+  mostly gone). Shares left on the turn view (lit, game against Barrel):
   the tower's sunlit side 1.70 against 1.86 and shaded 0.86 against 0.93 (the sun's share 0.43
   against 0.47 and 0.45 against 0.48: the cloud pattern's level; the occlusion and normals
   agree, the normals within 3 to 4 degrees), the house's white wall 2.41 against 2.77 (share
