@@ -451,6 +451,10 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
     boxes
 }
 
+/// The most ticks the title's event is run ahead for its people's placing (ten seconds: it
+/// places them within its first second).
+const PLACING_TICKS: u32 = 600;
+
 /// Plays Ryza with `raw`, the command line after the program's name. `chosen` is the install the
 /// `barrel` program found and set up (`locate::start`); without it this finds the game itself:
 /// `--game DIR`, the command line's INSTALL, `BARREL_GAME_DIR`, the config's, Steam's, else the
@@ -598,6 +602,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // after the boot the title's own time starts where the boot ends
         let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
         actors::advance(play, a.title_at + boot_ahead - actors::EVENT_START);
+        // Before the event has placed anyone (the boot's logos, the title's first frames) the
+        // stage is run on to where it has, so its people are loaded and in the scene by the
+        // time the title shows; the clock then catches the stage up (it never runs back).
+        for _ in 0..PLACING_TICKS {
+            if !play.stage.characters.is_empty() {
+                break;
+            }
+            play.tick();
+        }
         // the people the stage has placed, then the props only the event's `q5` adds
         let slots: std::collections::BTreeSet<u32> = play.stage.characters.keys().chain(added.keys()).copied().collect();
         for slot in slots {
