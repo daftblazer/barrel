@@ -190,7 +190,13 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   wholly behind it and some it hides are mostly in front (a fence's box 89%). Where to start:
   the code, not the data: hook the field object's per-frame draw (find it from a hidden
   object's record by RYZA_FIND on its position, `+0x230`, then RYZA_WATCH the flag words near
-  `+0x5a0` over a frame), and read what sets the skip. What got it here from 809: objects are
+  `+0x5a0` over a frame), and read what sets the skip. Tried since: the placement word's
+  unread bits (0x08 to 0x10000) do not split hidden from drawn (both carry 0x28, 0x68, 0xa8,
+  0x120a8); a trace object's number is its placement's index plus one. Searching the running
+  game's memory at frame 2550 for the objects' positions (RYZA_FIND) finds their records; a
+  byte 0x727 past the position was 1 on two hidden rocks and 0 on two drawn ones, but over
+  107 records it is 1 on 52 drawn and 0 on 10 hidden: not the flag. (RYZA_FIND stops at 2000
+  hits; leave out an object placed at the origin, whose zeros match everywhere.) What got it here from 809: objects are
   in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
   drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
   game's code and capture say ("Ryza DX: object draw ranges"). The story's progress decides
