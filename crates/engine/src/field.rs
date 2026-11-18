@@ -30,11 +30,12 @@ pub struct Placement {
     /// Also its `_mid` and `_low` models where the container has them, each draw marked with
     /// its level (`Draw::lod`) for the game to pick by distance.
     pub lods: bool,
-    /// It plays the motion the object container has under its name (`<model>.g1a`), looped.
+    /// It plays the motion the object container, or the game's container of motions shared
+    /// between fields, has under its name (`<model>.g1a`), looped.
     pub moves: bool,
 }
 
-/// A placed object that plays its motion (a windmill's sails, a moored boat).
+/// A placed object that plays its motion (a windmill's sails, a moored boat, a tree's leaves).
 pub struct Moving {
     pub instance: u32,
     pub skeleton: Rc<Skeleton>,
@@ -82,8 +83,9 @@ pub fn named<'a>(container: &'a Elixir, name: &str) -> Option<&'a [u8]> {
 }
 
 /// A field's ground and objects into the scene, as field `scene.field`, its textures taken to
-/// start at `base` in the scene's list.
-pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base: usize, place: &dyn Fn(&PlacedType, &Instance) -> Placement) -> Result<Loaded> {
+/// start at `base` in the scene's list. `shared` is the game's container of motions for the
+/// objects many fields place (Ryza's trees), looked in after the field's own.
+pub fn load(area: &str, main: &Elixir, objects: &Elixir, shared: Option<&Elixir>, scene: &mut Scene, base: usize, place: &dyn Fn(&PlacedType, &Instance) -> Placement) -> Result<Loaded> {
     let first_draw = scene.draws.len();
     let textures = named(&main, &format!("{area}.g1t")).ok_or("field has no texture pack")?.to_vec();
     let pattern = named(&main, &format!("{area}_pat.g1t")).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty())).map(<[u8]>::to_vec);
@@ -139,8 +141,9 @@ pub fn load(area: &str, main: &Elixir, objects: &Elixir, scene: &mut Scene, base
         let model = G1m::parse(bytes)?;
         let Some(geometry) = model.geometry.as_ref() else { continue };
         // Its lower levels of detail, for a game that draws them (`Placement::lods`).
-        // Its motion, when the container has one for it and the model has joints to move.
-        let motion = named(&objects, &format!("{}.g1a", t.name)).and_then(|b| barrel_formats::g1a::parse(b).ok()).zip(model.skeleton.clone()).map(|(a, s)| (Rc::new(s), Rc::new(a)));
+        // Its motion, when a container has one for it and the model has joints to move.
+        let motion_name = format!("{}.g1a", t.name);
+        let motion = named(&objects, &motion_name).or_else(|| shared.and_then(|c| named(c, &motion_name))).and_then(|b| barrel_formats::g1a::parse(b).ok()).zip(model.skeleton.clone()).map(|(a, s)| (Rc::new(s), Rc::new(a)));
         let lower: Vec<G1m> = ["_mid", "_low"].iter().filter_map(|l| named(&objects, &format!("{}{l}.g1m", t.name)).and_then(|b| G1m::parse(b).ok())).filter(|m| m.geometry.is_some()).collect();
         for i in &t.instances {
             let transform = placement_transform(i);

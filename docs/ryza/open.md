@@ -510,11 +510,21 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   program knows no `camera_ct` name; the field template's note calls it "things in front of
   the camera turn see-through", with a speed and a radius), and whether it fades or cuts is
   not known (one frame, 300 frames after the camera stopped).
-- **What moves in the wind.** The trees' branches, the tall grass and the hanging lamps are
-  moved by the game's swing physics, not read ("Ryza in the field" below): on the pixel
-  board a leaf cluster's shadow at the gate lies 40 pixels off, and the foliage edges, the
-  grass blades and the leaf shadows on the path differ in all three views while their
-  regions' mean colours agree to a few percent.
+- **What moves in the wind.** The trees' leaves are not physics: each tree is a field object
+  that plays a looping motion (docs/formats.md, "Shared field motions"), 4 or 8 s long,
+  turning its leaf joints by up to about a degree; the leaf meshes are skinned one joint a
+  vertex and the trunks are not. Barrel plays them (`field::Moving`), and the joints agree
+  with the capture's (rotation 0.0000, translation within 0.1). All the field's motions,
+  the windmills' too, run on one clock that starts with the field and is a frame ahead of
+  the sky's. With them the pixel board went from 5.82 / 4.71 / 7.61 to 3.53 / 3.89 / 5.08.
+  How the game does it, for the next thing that moves: the objects are `EXFieldObjectMotion`
+  (update 0x1407509e0, player advance 0x1406c2870, evaluate 0x1406c4280 into the animation
+  evaluator 0x140ac01b0, joints to world in 0x1406eb430). The engine's swing class with
+  named parameters (0x14086f2e0: Gravity, SpringCoef, Damping, WindResistance, ...) never
+  runs in the field. Not done: the tall grass (`BARREL_PLANT_WIND` gives a capture's wind),
+  the hanging lamps, and Ryza's hair, skirt and jacket hem ("Ryza in the field" below; the
+  `SWGQ` reader is 0x1407a6d50, 15 files read at the title and at the field's load, its
+  users not followed).
 - **Brightness and bloom.** The brightness and saturation are the game's now (above,
   "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The bloom
   is the game's bright pass and chain (docs/shading.md, "the frame as the game draws it")

@@ -3025,7 +3025,7 @@ fn field_scene(dir: &Path, scene: &mut Scene, base: usize) -> Result<(Vec<u8>, O
         version: object_version(&i.tags),
         ..Default::default()
     };
-    barrel_engine::field::load(&area, &main, &objects, scene, base, &place).map(|f| (f.textures, f.pattern))
+    barrel_engine::field::load(&area, &main, &objects, None, scene, base, &place).map(|f| (f.textures, f.pattern))
 }
 
 /// The version a placement's tags give it: `<N>` from `xAM_balloon_ver<N>` (TOWN_07's dock

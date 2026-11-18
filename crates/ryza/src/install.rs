@@ -55,6 +55,13 @@ impl Install {
         out
     }
 
+    /// The container of motions shared between fields (`common_model.elixir.gz`: one looping
+    /// `<model>.g1a` for each tree model and a few other objects, the ones
+    /// `\saves\fieldmap\common_model.xml` lists), when the archives have it.
+    pub fn shared_motions(&self) -> Option<Vec<u8>> {
+        self.archives.read("\\data\\x64\\field\\common_model\\common_model.elixir.gz")?.ok()
+    }
+
     /// A field's containers by its name (`s01_i_attic`, any case).
     pub fn field(&self, name: &str) -> Result<FieldFiles> {
         let n = name.to_ascii_lowercase();

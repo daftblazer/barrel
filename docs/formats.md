@@ -275,6 +275,16 @@ moves its pieces outward; most bones hold still with one key.
 subtype 1 is an eye: texture 0 the eye white, 1 the iris (BC3, with alpha), 2 a glow, 3 the
 highlights. All four use the eye mesh's single UV set.
 
+### Shared field motions (Ryza DX)
+
+`\data\x64\field\common_model\common_model.elixir.gz` holds one `<model>.g1a` for each of
+42 object models many fields place (version `2400`): 35 trees (`obj-A21-COMMON-TREE-...`,
+their leaves stirring, 4.017 or 8.017 s), a maple, five lotuses and a crystal light.
+`\saves\fieldmap\common_model.xml` lists them (`name`, `path`). The game reads the
+container once at start and plays a model's motion, looped, on every placement of it, as it
+does the motions in a field's own object container (the windmills, the boat).
+`barrel_engine::field::load` looks in the field's container first, then this one.
+
 ## Decoding Vorbis (`barrel_formats::vorbis`)
 
 The voices (and the other Ogg sounds) are decoded natively, from the Vorbis I specification

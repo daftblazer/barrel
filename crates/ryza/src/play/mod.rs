@@ -589,13 +589,17 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
     let mut scene = Scene::new();
     scene.field = Some(0);
-    // STAND-IN: Every placed model casts the sun's shadow and nothing sways; the real thing is the game's own caster choice and sway.
+    // STAND-IN: Every placed model casts the sun's shadow; the real thing is the game's own caster choice.
     // Ryza's placements carry no tags (Escha marks its casters `xDS_`): every placed model
-    // casts the sun's shadow; nothing sways yet (`docs/ryza/open.md`).
+    // casts the sun's shadow, and plays its motion where it has one.
     // Each keeps its placement's draw class (near, middle, far, landmark), for the field's draw
     // distances.
     let place = |_: &barrel_formats::opl2::PlacedType, i: &barrel_formats::opl2::Instance| barrel_engine::field::Placement { casts: true, class: (i.word & 3) as u8, lods: true, moves: true, ..Default::default() };
-    let barrel_engine::field::Loaded { textures: pack, moving, .. } = barrel_engine::field::load(&files.area, &main, &objects, &mut scene, 0, &place)?;
+    // The motions of the objects many fields place (the trees' leaves stirring), in one
+    // container of the game's (`docs/formats.md`, "Shared field motions").
+    let shared_bytes = install.shared_motions();
+    let shared = shared_bytes.as_deref().map(Elixir::parse).transpose()?;
+    let barrel_engine::field::Loaded { textures: pack, moving, .. } = barrel_engine::field::load(&files.area, &main, &objects, shared.as_ref(), &mut scene, 0, &place)?;
     let pack = G1t::parse(&pack)?;
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
     let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
@@ -1320,9 +1324,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
     loop {
         // Last frame's joints, then the field's moving objects at this frame's moment (the
-        // game turns Rasenboden's windmills once in their motion's 12 s, all together).
+        // game turns Rasenboden's windmills once in their motion's 12 s and stirs its trees'
+        // leaves, all on one clock). That clock runs a frame ahead of the sky's: the motions
+        // step before the first frame is drawn (`docs/ryza/open.md`, "What moves in the wind").
         prev_palette.copy_from_slice(&palette);
-        let field_time = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 });
+        let field_time = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 }) + 1.0 / 60.0;
         for m in &moving {
             m.pose(field_time, &instances, &mut palette);
         }
