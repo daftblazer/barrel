@@ -118,6 +118,8 @@ vec3 soft_light(vec3 a, vec4 kw) {
 layout(set = 1, binding = 6) uniform sampler2D pattern_map;
 // The field's specular environment cube map (the game's axes: x not mirrored).
 layout(set = 1, binding = 7) uniform samplerCube spec_cube;
+#include "environment_light.glsl"
+#include "specular_direct.glsl"
 #include "specular_ambient.glsl"
 
 // The field's light texture at world point p (render space): the point slid along the
@@ -165,22 +167,12 @@ float sun_shadow(vec3 p) {
     float fade = clamp((distance(p, look.eye.xyz) - look.shadow_far_info.z) / max(look.shadow_far_info.w - look.shadow_far_info.z, 1.0), 0.0, 1.0);
     return mix(far, 1.0, fade);
 }
-// The field's light from its cube map on normal n (as model.vert's `environment_light`).
-vec3 environment_light(vec3 n) {
-    vec3 g = normalize(vec3(-n.x, n.y, n.z));
-    float b[9] = float[9](0.282095, 0.488603 * g.y, 0.488603 * g.z, 0.488603 * g.x, 1.092548 * g.x * g.y,
-        1.092548 * g.y * g.z, 0.315392 * (3.0 * g.z * g.z - 1.0), 1.092548 * g.x * g.z, 0.546274 * (g.x * g.x - g.y * g.y));
-    vec3 c = vec3(0.0);
-    for (int k = 0; k < 9; k++) {
-        c += look.sh[k].rgb * b[k];
-    }
-    return max(c, vec3(0.0));
-}
-// A field model's specular ambient: its specular colour and gloss from its specular map as
-// the G-buffer program writes them (green: reflectance, blue: metal; alpha: gloss).
-vec3 specular_ambient(vec3 n, vec3 albedo) {
+// A field model's specular colour and gloss from its specular map as the G-buffer program
+// writes them (green: reflectance, blue: metal; alpha: gloss).
+void specular_surface(vec3 albedo, out vec3 f0, out float gloss) {
     vec4 sp = texture(spec_map, uv);
-    return specular_light(n, sp.b >= 0.5 ? albedo * (1.0 - sp.g) : vec3(sp.g), sp.a);
+    f0 = sp.b >= 0.5 ? albedo * (1.0 - sp.g) : vec3(sp.g);
+    gloss = sp.a;
 }
 
 void main() {
@@ -250,7 +242,19 @@ void main() {
             }
             n = nm;
         }
-        vec3 lit = field_now + sun_now * sun_shadow(world) * cloud_light(world);
+        float sun_lit = sun_shadow(world) * cloud_light(world);
+        vec3 lit = field_now + sun_now * sun_lit;
+        // A model with a specular map (flag 1 << 24): its specular colour takes its share of the
+        // diffuse light (1 - F0), and the lights' highlights are added.
+        vec3 f0 = vec3(0.0);
+        float gloss = 0.0;
+        vec3 highlights = vec3(0.0);
+        bool specular = (pc.flags & (1u << 24)) != 0u;
+        if (specular) {
+            specular_surface(c.rgb, f0, gloss);
+            lit *= 1.0 - f0;
+            highlights = direct_specular(n, f0, gloss, sun_lit);
+        }
         // Flag 32768: the emission map as light of its own (PBB-EmN's `sEmi × emScl`, added to
         // the light before the colour multiplies it).
         if ((pc.flags & 32768u) != 0u) {
@@ -302,9 +306,9 @@ void main() {
                 lit *= textureLod(mask, vec2(u, (row - 0.5) / 256.0), 0.0).rgb;
             }
         }
-        vec3 rgb = tinted(mix(fog_add, lit * c.rgb * at_color, fog_keep));
-        if ((pc.flags & (1u << 24)) != 0u && look.spec_amb.x > 0.0) {
-            rgb += specular_ambient(n, c.rgb);
+        vec3 rgb = tinted(mix(fog_add, lit * c.rgb * at_color + highlights, fog_keep));
+        if (specular && look.spec_amb.x > 0.0) {
+            rgb += specular_light(n, f0, gloss);
         }
         color = vec4(rgb * pc.params.w, 1.0);
         return;

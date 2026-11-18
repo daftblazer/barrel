@@ -4,6 +4,9 @@
 // of one blend map's channels, each divided by their sum.
 layout(set = 0, binding = 0) uniform sampler2D blend[8];
 layout(set = 0, binding = 1) uniform sampler2D layers[20];
+// Each layer's normal map (Ryza's, as stored: red, green and blue the normal's parts in the
+// ground's frame, alpha the gloss), or flat ones where the game has none.
+layout(set = 0, binding = 2) uniform sampler2D normals[20];
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; } pc;
 layout(location = 0) in vec3 normal;
 // x: layer a + 32 × layer b + 1024 × blend (map × 4 + channel pair, 3 one layer alone)
@@ -54,12 +57,20 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The grass sway groups (`<v_shaker>`, game::wind): {wind.xyz, clock}, {1 / height,
     // root height, shift x, shift z} each, metres.
     vec4 sway[16];
-    // Slots 66 to 86: the vertex program's and the sky plane's.
-    vec4 others[21];
+    // Slot 66: the cube map's light on (x > 0.5); 67 to 75 its spherical-harmonic
+    // coefficients (model.vert's `environment_light`); 76 to 86 the sky plane's.
+    vec4 sh_on;
+    vec4 sh[9];
+    vec4 others[11];
     // The far shadow square (lib.rs SHADOW_FAR_SLOT): view-projection, {texel, layer (0:
     // none), fade start, fade end}.
     mat4 shadow_far;
     vec4 shadow_far_info;
+    // Slots 92 to 108: the vertex program's, the emission's, the sky's.
+    vec4 frag_pad[17];
+    // 109: the specular ambient's (model.frag); z: the game's per-pixel lighting of the
+    // ground (its normal maps and direct specular) on, for the Ryza games' fields.
+    vec4 spec_amb;
 } look;
 layout(set = 1, binding = 5) uniform sampler2DArrayShadow shadow_map;
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
@@ -112,6 +123,9 @@ float sun_shadow(vec3 p) {
     return mix(far, 1.0, fade);
 }
 
+#include "environment_light.glsl"
+#include "specular_direct.glsl"
+
 layout(location = 0) out vec4 color;
 // The motion vector (`--motion`): how far this point moved on screen since the last frame, in
 // texture coordinates (no attachment takes it when motion is off).
@@ -132,10 +146,20 @@ void main() {
     vec2 ua = field_xz / (cell * float(reps & 255)), ub = field_xz / (cell * float(reps >> 8));
     vec2 ua_dx = dFdx(ua), ua_dy = dFdy(ua), ub_dx = dFdx(ub), ub_dy = dFdy(ub);
     vec2 m_dx = dFdx(map_uv), m_dy = dFdy(map_uv);
-    vec3 ta = vec3(0.0), tb = vec3(0.0), m = vec3(0.0);
+    // The colour tiles (alpha: the specular colour) and, with the per-pixel lighting, the
+    // normal maps (alpha: the gloss).
+    bool per_pixel = look.spec_amb.z > 0.5;
+    vec4 ta = vec4(0.0), tb = vec4(0.0), na = vec4(0.0), nb = vec4(0.0);
+    vec3 m = vec3(0.0);
     for (int i = 0; i < 20; i++) {
-        if (i == la) ta = textureGrad(layers[i], ua, ua_dx, ua_dy).rgb;
-        if (i == lb) tb = textureGrad(layers[i], ub, ub_dx, ub_dy).rgb;
+        if (i == la) {
+            ta = textureGrad(layers[i], ua, ua_dx, ua_dy);
+            if (per_pixel) na = textureGrad(normals[i], ua, ua_dx, ua_dy);
+        }
+        if (i == lb) {
+            tb = textureGrad(layers[i], ub, ub_dx, ub_dy);
+            if (per_pixel) nb = textureGrad(normals[i], ub, ub_dx, ub_dy);
+        }
     }
     // Every map once (the pair's and the bake's channels read from them).
     vec3 maps[8];
@@ -143,7 +167,7 @@ void main() {
     m = maps[mix_code >> 2];
     // The bake (the game's screen-sized target, sRtt): each entry's tile times its map channel,
     // summed, and the weights summed (twice the target's alpha in the game).
-    vec3 bake = vec3(0.0);
+    vec4 bake = vec4(0.0), bake_n = vec4(0.0);
     float bake_w = 0.0;
     if (baked) {
         uint words[5] = uint[5](floatBitsToUint(pc.scale_a.w), floatBitsToUint(pc.scale_b.x), floatBitsToUint(pc.scale_b.y), floatBitsToUint(pc.scale_b.z), floatBitsToUint(pc.scale_b.w));
@@ -156,15 +180,19 @@ void main() {
             float w = channel == 0 ? mm.r : (channel == 1 ? mm.g : mm.b);
             vec2 uk = field_xz / (cell * float(max(reps_k, 1)));
             vec2 uk_dx = dFdx(uk), uk_dy = dFdy(uk);
-            vec3 t = vec3(0.0);
+            vec4 t = vec4(0.0), tn = vec4(0.0);
             for (int i = 0; i < 20; i++) {
-                if (i == layer) t = textureGrad(layers[i], uk, uk_dx, uk_dy).rgb;
+                if (i == layer) {
+                    t = textureGrad(layers[i], uk, uk_dx, uk_dy);
+                    if (per_pixel) tn = textureGrad(normals[i], uk, uk_dx, uk_dy);
+                }
             }
             bake += t * w;
+            bake_n += tn * w;
             bake_w += w;
         }
     }
-    vec3 c = ta;
+    vec4 c = ta, nm = na;
     if ((mix_code & 3) != 3) {
         // The pairs: red and green, green and blue, blue and red.
         int p = mix_code & 3;
@@ -172,13 +200,38 @@ void main() {
         // Programs 9-11: the pair divided by its sum; 13-15: by the sum with the bake's.
         float total = w.x + w.y + bake_w + 1.0 / 1024.0;
         c = (ta * w.x + tb * w.y + bake) / total;
+        nm = (na * w.x + nb * w.y + bake_n) / total;
     } else if (baked) {
         // Program 12: the tile weighs what the bake leaves.
         float wa = clamp(1.0 - bake_w, 0.0, 1.0);
         c = bake / max(bake_w + wa, 1.0 / 1024.0) + ta * wa;
+        nm = bake_n / max(bake_w + wa, 1.0 / 1024.0) + na * wa;
+    }
+    float sun_lit = sun_shadow(world) * cloud_light(world);
+    if (per_pixel) {
+        // The ground as the game's passes light it (docs/shading.md): the normal from the
+        // blended normal maps in the frame of the vertex normal (the game's space, x not
+        // mirrored; the map's red along the side axis, green along the slope, blue along the
+        // normal), the specular colour from the colour tiles' alpha and the gloss from the
+        // normal maps'; no vertex colour. The diffuse light takes (1 - F0) of itself, the two
+        // lights' highlights add.
+        vec3 up = normalize(vec3(-normal.x, normal.y, normal.z));
+        vec3 slope = normalize(vec3(0.0, up.z, -up.y));
+        vec3 side = cross(slope, up);
+        vec3 t = normalize(nm.rgb - 0.5);
+        vec3 n_game = up * t.z + side * t.x + slope * t.y;
+        vec3 n = normalize(vec3(-n_game.x, n_game.y, n_game.z));
+        vec3 ambient = look.sh_on.x > 0.5 ? environment_light(n) : look.ambient.rgb;
+        vec3 fill = (dot(look.fill_dir.xyz, look.fill_dir.xyz) > 0.0 ? max(dot(n, -normalize(look.fill_dir.xyz)), 0.0) : 0.0) * look.fill_color.rgb;
+        vec3 sun = (dot(look.sun_dir.xyz, look.sun_dir.xyz) > 0.0 ? max(dot(n, -normalize(look.sun_dir.xyz)), 0.0) : 0.0) * look.sun_color.rgb;
+        vec3 f0 = vec3(c.a);
+        vec3 lit = (ambient + fill + sun * sun_lit) * (1.0 - f0);
+        vec3 highlights = direct_specular(n, f0, nm.a, sun_lit);
+        color = vec4(mix(fog_add, lit * c.rgb + highlights, fog_keep) * pc.params.w, 1.0);
+        return;
     }
     // Lit as the field's own terrain program does (its pack's pixel program 9 in TOWN_10):
     // the same per-vertex light as the field's models (the vertex colour white), on the
     // blended layers; the light texture, shadow and specular are not done yet.
-    color = vec4(mix(fog_add, (field_light + sun_part * sun_shadow(world) * cloud_light(world)) * c, fog_keep) * pc.params.w, 1.0);
+    color = vec4(mix(fog_add, (field_light + sun_part * sun_lit) * c.rgb, fog_keep) * pc.params.w, 1.0);
 }

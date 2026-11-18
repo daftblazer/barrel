@@ -205,20 +205,21 @@ impl SceneGpu {
         let mut grounds = Vec::new();
         if !data.grounds.is_empty() {
             let n = data.grounds.len() as u32;
-            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: (crate::TERRAIN_MAPS + crate::TERRAIN_LAYERS) as u32 * n }];
+            let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: (crate::TERRAIN_MAPS + 2 * crate::TERRAIN_LAYERS) as u32 * n }];
             let tpool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(n).pool_sizes(&sizes), None)? };
             ground_pool = Some(tpool);
             for g in data.grounds {
                 let tl = [shared.terrain_layout];
                 let set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
-                let infos: Vec<vk::DescriptorImageInfo> = g
-                    .textures
-                    .iter()
-                    .map(|(_, _, view)| vk::DescriptorImageInfo::default().sampler(shared.sampler).image_view(*view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL))
-                    .collect();
+                let info = |k: usize| vk::DescriptorImageInfo::default().sampler(shared.sampler).image_view(g.textures[k].2).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                let first_normal = crate::TERRAIN_MAPS + crate::TERRAIN_LAYERS;
+                let infos: Vec<vk::DescriptorImageInfo> = (0..first_normal).map(info).collect();
+                // The normal maps (as many as the layers have, the last repeated for the slots past them).
+                let normal_infos: Vec<vk::DescriptorImageInfo> = (0..crate::TERRAIN_LAYERS).map(|i| info((first_normal + i).min(g.textures.len() - 1))).collect();
                 let writes = [
                     vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..crate::TERRAIN_MAPS]),
                     vk::WriteDescriptorSet::default().dst_set(set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[crate::TERRAIN_MAPS..]),
+                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&normal_infos),
                 ];
                 unsafe { d.update_descriptor_sets(&writes, &[]) };
                 grounds.push(Ground {

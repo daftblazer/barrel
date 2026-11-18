@@ -1438,6 +1438,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             view.look[SPECULAR_SLOT] = [*scale, specular_mips, 0.0, 0.0];
             view.look[SPECULAR_SLOT + 1] = [tint[0], tint[1], tint[2], 0.0];
         }
+        // The ground's per-pixel lighting (terrain.frag: its normal maps and the direct specular), on in every field.
+        view.look[SPECULAR_SLOT][2] = 1.0;
         if frame_no == 0
             && let Some(k) = view.exposure
         {

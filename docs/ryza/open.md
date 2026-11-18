@@ -220,9 +220,14 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   what is left is the screen-space reflections (the pass mixes the cube map toward them),
   the ambient occlusion in the pass's terms (taken as 1), and the terrain's, the plants' and
   the characters' specular ambient (not drawn; the terrain's tiles are as dull). (2) **sunlit grass**
-  lacks red and blue (136, 199, 1 against 170, 208, 64): the plants' own ambient (the pass's
-  second kind, a flat (3, 6, 4), is a guess) and the bloom. (3) **the ambient occlusion**
-  and its tint, and the direct specular: not drawn. (4) **the exposure** is not metered
+  lacks red and blue (150, 194, 47 against 171, 210, 64; 133, 190, 2 before the direct
+  specular and the terrain's normal maps): the plants' own ambient (the pass's
+  second kind, a flat (3, 6, 4), is a guess) and the bloom. Sunlit sand is 193, 195, 94
+  against 217, 219, 114: a gap of about a tenth in every channel that the ground's
+  light does not explain yet. (3) **the ambient occlusion**
+  and its tint: not drawn (1 in the direct specular too). The direct specular is drawn for
+  the models with a specular map and for the terrain (docs/shading.md, "What Barrel does of
+  the lighting pass"); the characters' and the plants' are not. (4) **the exposure** is not metered
   (the game's rule is read: 0.18 over the log-average luminance, inside 0.9 to 2.4): night
   and interiors would rise above 0.9. (5) **the bloom**: the game's bright pass and chain are done, its star
   filter is not. (6) **the cloud pattern's

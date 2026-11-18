@@ -63,8 +63,9 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
 pub const LOOK_SLOTS: usize = 111;
 /// The specular ambient's look slots (`model.frag`'s flag 1 << 24, the environment cube map
-/// reflected off a surface): {the light's scale, the mip count less one, 0, 0}, then {rgb
-/// tint}. The scale is 0 for a field without the cube map.
+/// reflected off a surface): {the light's scale, the mip count less one, the ground's per-pixel
+/// lighting on (`terrain.frag`: the Ryza games' fields), 0}, then {rgb tint}. The scale is 0 for a
+/// field without the cube map.
 pub const SPECULAR_SLOT: usize = 109;
 /// The first of the sky clouds' look slots (`cloud_strip.vert`): the light's way, its colour,
 /// the ambient, the clouds' colour and density, the grid and the surface's shape, the map's
@@ -1273,9 +1274,17 @@ pub fn upload_textures(
     Ok((textures, outline_tex, white))
 }
 
+/// The texture each layer's normal map is, when every layer has one inside the pack of `count`
+/// textures (the Ryza games'); empty otherwise (Escha's layers have none).
+fn ground_normal_maps(layers: &[barrel_formats::ktf::Layer], count: usize) -> Vec<usize> {
+    let maps: Vec<usize> = layers.iter().filter_map(|l| l.normal.map(usize::from)).filter(|&n| n < count).collect();
+    if maps.len() == layers.len() { maps } else { Vec::new() }
+}
+
 /// Uploads each field's ground textures: its 2 blend maps (a black second one where the field
 /// has one) and 6 layers (the last repeated where it has fewer; `linear`: sampled in linear
-/// light, `upload_texture`).
+/// light, `upload_texture`), then each layer's normal map (the last repeated; one flat map where
+/// the layers have none).
 pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, TerrainDraw)], linear: bool) -> Result<Vec<scene_gpu::GroundData>> {
     let mut grounds = Vec::new();
     for (field, t) in terrains {
@@ -1297,7 +1306,43 @@ pub fn upload_grounds(gpu: &Gpu, pool: vk::CommandPool, terrains: &[(u16, Terrai
         for i in 0..TERRAIN_LAYERS {
             tex.push(upload_texture(gpu, pool, &bundle.layers.textures[colours[i.min(colours.len() - 1)]], linear)?);
         }
+        // Each layer's normal map, as stored (not colour), or one flat map (a normal straight
+        // up, no gloss) when the layers have none (Escha's). They follow the colour tiles, one per
+        // layer: `Ground` repeats the last for the slots past them.
+        let flat = [128u8, 128, 255, 0];
+        let flat_tex = barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&flat[..]] };
+        let normals = ground_normal_maps(&bundle.layer_list(), count);
+        if normals.is_empty() {
+            tex.push(upload_texture(gpu, pool, &flat_tex, false)?);
+        } else {
+            for &n in &normals {
+                tex.push(upload_texture(gpu, pool, &bundle.layers.textures[n], false)?);
+            }
+        }
         grounds.push(scene_gpu::GroundData { field: *field, textures: tex, patches: t.patches.clone(), cell: t.cell, extent: t.extent });
     }
     Ok(grounds)
+}
+
+#[cfg(test)]
+mod ground_tests {
+    use super::*;
+    use barrel_formats::ktf::Layer;
+
+    fn layer(colour: u16, normal: Option<u16>) -> Layer {
+        Layer { colour, normal, repeat: 1, scale: 1.0 }
+    }
+
+    #[test]
+    fn normal_maps_follow_the_layer_records() {
+        // Ryza: colour tile 2k, normal map 2k + 1.
+        assert_eq!(ground_normal_maps(&[layer(0, Some(1)), layer(2, Some(3)), layer(4, Some(5))], 6), vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn layers_without_normal_maps_give_none() {
+        // Escha: no normal maps; a record naming a texture outside the pack is not one either.
+        assert!(ground_normal_maps(&[layer(0, None), layer(1, None)], 2).is_empty());
+        assert!(ground_normal_maps(&[layer(0, Some(1)), layer(2, Some(9))], 4).is_empty());
+    }
 }

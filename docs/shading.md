@@ -866,9 +866,25 @@ capture and not found in the set; `vAmbOccRat.zw` and `vMerge` are as captured. 
 model's `F0` and `g` are the G-buffer program's: `pbb-n_gb` writes `F0` = the specular map's
 green (a metal, blue ≥ 0.5, takes the colour tile × (1 − green) instead) and `g` = its alpha,
 each times `vSpcScl` (1 on every field draw of the capture). The terrain's program writes
-the blended colour tiles' alpha as `F0` and the blended normal maps' alpha as `g`: at
-Rasenboden the ground's are a few hundredths, so the term adds almost nothing there (read from the render, not the files). The
-bark's specular map has `F0` 0.02 and `g` 0.2.
+the blended colour tiles' alpha as `F0` and the blended normal maps' alpha as `g`: the
+ambient term adds almost nothing there, but the direct term (the sun is ten times the
+ambient) does. The terrain's G-buffer program also takes its normal from the blended normal
+maps: the map's `rgb - 0.5`, normalised, in the frame of the vertex normal `N` (the terrain
+vertex program rebuilds `N` from two bytes and takes no vertex colour), with `T = (0, N.z,
+-N.y)` normalised and `B = T × N`: `n = N × blue + B × red + T × green`. The bark's specular
+map has `F0` 0.02 and `g` 0.2.
+
+**What Barrel does of the lighting pass** (Ryza fields; Escha's are as before): the field
+models with a specular map and the terrain take the pass's rule per pixel: diffuse times
+`(1 - F0)`, and the highlights of the sun (times its shadow and cloud light, the pass's
+alpha) and of the second light, with `o` = 1 (stand-in: no screen-space occlusion). The
+ground takes its normal, `F0` and gloss from the layers' normal maps and colour tiles as the
+G-buffer program does, blended by the same weights (the bake's entries included), and its
+ambient, second light and sun per pixel on that normal with no vertex colour; the colour
+tiles' alpha is read as `F0` (they are sRGB views, so the alpha stays linear). The
+characters, and the models without a specular map (the plants), keep the vertex light.
+At the gate: sunlit sand 193, 195, 94 against the still's 217, 219, 114 (187, 188, 70
+before), grass 150, 194, 47 against 171, 210, 64 (133, 190, 2); mean error 23.2 (25.9).
 
 **The tone pass** (the last full-screen pass): `c = scene × E` (the metered exposure), the
 depth of field and distant blur, the 2D effects taken back through the curve and laid over,

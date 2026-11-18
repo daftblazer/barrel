@@ -254,7 +254,7 @@ impl Renderer {
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
         ];
         let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-        // Each field's ground textures: a set of 2 blend maps + 6 layers.
+        // Each field's ground textures: its blend maps, its layers' colour tiles and their normal maps.
         let terrain_bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
@@ -263,6 +263,11 @@ impl Renderer {
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
             vk::DescriptorSetLayoutBinding::default()
                 .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(TERRAIN_LAYERS as u32)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(2)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .descriptor_count(TERRAIN_LAYERS as u32)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
