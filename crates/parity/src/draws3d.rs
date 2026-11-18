@@ -19,7 +19,7 @@ struct Reflection {
 }
 
 /// One constant variable's value: its name, its size in bytes and its floats.
-type Var = (String, u32, Vec<f32>);
+pub(crate) type Var = (String, u32, Vec<f32>);
 
 /// The variables of the constant buffer bound at `slot`, read from `blob` by the shader's
 /// reflection.
@@ -43,18 +43,18 @@ fn shown_by_default(name: &str, size: u32) -> bool {
 }
 
 /// A draw of the capture with what the 3D comparison needs.
-struct GameDraw {
-    n: u64,
+pub(crate) struct GameDraw {
+    pub n: u64,
     count: u64,
     instances: u64,
     topology: u64,
-    vs: String,
-    ps: String,
+    pub vs: String,
+    pub ps: String,
     /// Texture hashes by slot, pixel stage then vertex stage.
     textures: Vec<(String, String)>,
-    rt: Vec<String>,
-    ds: String,
-    vars: Vec<Var>,
+    pub rt: Vec<String>,
+    pub ds: String,
+    pub vars: Vec<Var>,
     /// A skinned draw's bone palette: its `mL2W` is an array of bones (1536 bytes, 32 bones of
     /// three registers, see `game_bone`) where a rigid draw's is one matrix (48).
     palette: Vec<f32>,
@@ -64,7 +64,7 @@ fn strs(v: &Value) -> Vec<String> {
     v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default()
 }
 
-fn game_draws(t: &Trace, frame: u64) -> Result<Vec<GameDraw>> {
+pub(crate) fn game_draws(t: &Trace, frame: u64) -> Result<Vec<GameDraw>> {
     let mut cache: HashMap<String, Reflection> = HashMap::new();
     let mut out = Vec::new();
     for e in t.frame(frame)? {
@@ -112,7 +112,7 @@ fn game_draws(t: &Trace, frame: u64) -> Result<Vec<GameDraw>> {
 }
 
 /// Runs of consecutive items with the same key: (key, first item, one past the last).
-fn passes<K: PartialEq + Clone>(keys: &[K]) -> Vec<(K, usize, usize)> {
+pub(crate) fn passes<K: PartialEq + Clone>(keys: &[K]) -> Vec<(K, usize, usize)> {
     let mut out: Vec<(K, usize, usize)> = Vec::new();
     for (i, k) in keys.iter().enumerate() {
         match out.last_mut() {
@@ -151,7 +151,7 @@ pub fn draws(dir: &Path, frame: u64, idx: Option<&str>, vars: Option<&str>, pass
             println!("  #{} count {} x{} topo {} vs {} ps {} tex [{}]", d.n, d.count, d.instances, d.topology, d.vs, d.ps, tx.join(" "));
             for (name, size, v) in &d.vars {
                 let on = match &wanted {
-                    Some(w) => w.contains(&name.as_str()),
+                    Some(w) => w.contains(&name.as_str()) || w.contains(&"all"),
                     None => shown_by_default(name, *size),
                 };
                 if on {

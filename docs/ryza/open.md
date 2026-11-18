@@ -11,7 +11,7 @@ achievements are the player's own, and the DX version has not been played there)
 
 Ranked by what it blocks. Each says what is known, what is ruled out, where to start, and when it
 is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run notes); Barrel's
-checks are `runchecks docs/ryza/checks.txt` (43 rows; frames are the exact capture's) and
+checks are `runchecks docs/ryza/checks.txt` (44 rows; frames are the exact capture's) and
 `docs/escha/checks.txt` (17).
 
 1. **The title backdrop's cast: what is left** (P1). Ryza, Lent and Tao and the three
@@ -240,8 +240,20 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   other times of day is a reading of one word (stand-in). (7) **the sky**: the plane and the dome take the game's own constants (below). Evening,
   morning and night have no reference frame. Ryza takes the characters' light (`indirectChara_`:
   the sun at 0.8, the set's ambient at 0.2 plus the light map's mean at 1.5 × (0.8, 1, 1),
-  flat rather than by her normals); the game also scales her second light (0.487) and adds
+  flat rather than by her normals), her second light at 0.487 (`KeyLight1Scale`); the game also adds
   the light volume, which Barrel does not.
+  (8) **The constants board** (`barrel-parity constants`, docs/parity.md, "Constants parity"):
+  397 constants of the lighting and post draws at the gate against what Barrel uses, 0 differ
+  (17 before the board's own conventions and Barrel's two wrong values were put right: the
+  scene fog's in-scattering was the sun at 1 where the game's fog pass takes it at the stage's key
+  scale 3, and the characters' second light was at 1 and 0.267 where the game takes 0.487).
+  So the lighting set's values are not what separates the pictures at the gate (the pale
+  distant hills, the white horizon band, the sand's tenth): the cause is in what Barrel has no
+  counterpart for, the 240 constants the board lists as not dumped (height fog parameters read as
+  zero at noon, the ambient occlusion, the reflections, the cascades' matrices, the light
+  volume's clusters, the depth of field, the star filter, the light shafts, the temporal
+  anti-aliasing), or in a formula. The board's values that are stand-ins (the dome's and the
+  strip's wind offsets are left out: time-dependent) are marked in `play/constants.rs`.
   Ryza herself, seen from behind at the gate (her shaded side), with the toon ramp sampled
   as the game's pass does (docs/shading.md, "Ramp"): coat 161, 146, 69 against the still's
   162, 150, 75, thigh 154, 138, 142 against 156, 143, 102, hat 149, 142, 138 against 162,

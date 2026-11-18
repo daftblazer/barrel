@@ -136,6 +136,42 @@ Conventions found in the capture (checked on the title's characters, `sha0de8a` 
 - Not covered yet: shadow passes (game and Barrel both list them; `diff3d` compares colour
   passes only), instanced draws (Barrel writes `inst` 1), view and projection separately.
 
+## Constants parity (Ryza fields)
+
+The lighting and post-processing constants of a captured frame against what Barrel uses for the
+same view, constant by constant (frame 2550 of the load-rasen capture, the gate at Rasenboden at
+noon, against the view of the scoreboard row `rasen-3d-2550`).
+
+- `BARREL_TRACE_CONSTANTS=<file>` on a Ryza field render writes one JSON object: role -> constant
+  name -> floats, with `null` for a component Barrel has no counterpart for. A role is one draw of
+  the game's frame (`ambient.stage`, `lighting.chara`, `sky.plane`, `fog.stage`, `specular.chara`,
+  `water.first`, `meter.adapt`, `bloom.bright`, `tone`...), and the names and layouts are the
+  game's constants for it (`litDir` and `litCol` as two lights of four floats, `Scat` as 16, ...).
+  The dump (`crates/ryza/src/play/constants.rs`) is built where the frame is: from the look slots
+  the frame feeds, from the set's readers for what Barrel keeps in another form, and from the
+  frame's tone, glow and metering values. It undoes the two differences from the game's values:
+  the exposure (the scene is lit at the bottom of the set's range, folded into every light colour:
+  divided out) and the mirror (render space has x negated: negated back). It costs nothing when
+  the variable is unset.
+- `barrel-parity constants <capture> <frame> <barrel constants json> [index.tsv]` finds each
+  role's draw in the capture (`ROLES` in `crates/parity/src/constants.rs`: pass and draw, the
+  passes counted as `draws` counts them), reads the game's value of each named constant and
+  prints a mismatch beyond a relative 1e-3 (absolute 1e-5 near zero) as `pass P draw D program
+  name[i]: game X barrel Y`. A name in both shader stages' buffers is compared with the copy that
+  agrees best. Then it lists what Barrel does not dump: every named constant of the lighting
+  and post passes (the ambient-and-shadow pass to the last pass before the interface, and of the
+  forward pass only the specular ambient's two draws), minus the camera's matrices and the 2D
+  passes' viewport plumbing, one line a pass with identical draws once. It ends with `N constants
+  compared, M differ, K of the game's lighting/post constants not dumped (names)`, K counting
+  (pass, name) pairs.
+- Left out of the comparison as time-dependent: the cloud pattern's offsets (`mW2Pt` 12 and 13) and the sky
+  strip's layer offsets (`vTexOf` 4 to 7), which are the wind's travel since the field came up.
+- The board row is `rasen-constants` in the local checks file: it passes while the differ count is
+  at or below the number reached. The not-dumped list is the map of what Barrel has no
+  counterpart for (ambient occlusion, reflections, height fog, light shafts, the star filter,
+  the depth of field, the temporal anti-aliasing, the shadow cascades, the water's own
+  light).
+
 ## Stand-ins
 
 A stand-in is anything the code uses that is not the game's own rule or data: a value fitted

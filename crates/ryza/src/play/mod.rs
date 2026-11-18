@@ -42,6 +42,7 @@ use barrel_ryza::install::Install;
 use glam::{Mat4, Vec3};
 
 mod actors;
+mod constants;
 
 /// The renderer's material bit for a draw shown with its texture alone, unlit (`model.frag`).
 /// The alpha test's reference (`vATest`) on every field and character model's draw of the
@@ -974,6 +975,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let mut cloud: Option<(barrel_ryza::environment::Pattern, Vec<u8>)> = None;
     // The specular light map (`_as.g1t`, the file's bytes) with the stage's scale and tint of it.
     let mut specular: Option<(Vec<u8>, f32, [f32; 3])> = None;
+    let mut stage_light = None;
     let environment = match files.env.as_deref().map(Elixir::parse).transpose()? {
         Some(env) => {
             let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
@@ -998,11 +1000,14 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             // The sun on the stage is the set's times the stage's key scale (3 at Rasenboden's
             // noon); a character's draws take their own scale of it (0.8 there).
             let key = if stage.key > 0.0 { stage.key } else { 1.0 };
+            // The second light's scale on the stage likewise (1 at noon).
+            let second = if stage.second > 0.0 { stage.second } else { 1.0 };
             for d in draws.iter_mut().filter(|d| ramp_rows.contains_key(&(d.first_index, d.instance))) {
                 d.light = ((chara.key / key).clamp(0.0, 1.0) * 65535.0).round() as u32 | 0xffff << 16;
             }
+            stage_light = Some(stage);
             let stage = stage.harmonics(&light, &c);
-            Some((c, stage, light, sky_fog, fog, chara, key))
+            Some((c, stage, light, sky_fog, fog, chara, [key, second]))
         }
         None => None,
     };
@@ -1586,6 +1591,22 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             clouds: view.clouds,
             water_pieces,
         };
+        constants::write_if_asked(|| {
+            Some(constants::json(&constants::Inputs {
+                look: &view.look,
+                environment: environment.as_ref()?,
+                stage: stage_light.as_ref()?,
+                pattern: cloud.as_ref().map(|c| &c.0),
+                specular_mips,
+                seconds: sky_clock,
+                glow: frame.glow,
+                meter: frame.meter.as_ref(),
+                tone_white: frame.tone_white,
+                tone_gamma: frame.tone_gamma,
+                tone_scale: frame.tone_scale,
+                tone_vivid: frame.tone_vivid,
+            }))
+        });
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
         let drawn = renderer.record(&gpu, cb, &frame);
@@ -1660,7 +1681,7 @@ const LOOK_HEIGHT: f32 = 128.0;
 const CAMERA_TURN: f32 = 120.0;
 
 /// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
-type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight, barrel_ryza::environment::Clouds), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, f32);
+type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight, barrel_ryza::environment::Clouds), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, [f32; 2]);
 
 /// A frame's view: the look block and what goes with it.
 struct View {
@@ -1732,10 +1753,12 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         look[39] = [back.x, back.y, back.z, 0.0];
     }
     look[26] = [1.0, 1.0, 1.0, 1.0];
+    look[66][1] = 1.0;
     // The environment's light instead, when the field has one, in linear light: the cube map's
     // light as the stage takes it (`StageLight`; model.vert's `sh`), the sun and the second light
     // as the field's two directional lights, all scaled by one exposure.
-    if let Some((c, stage, light, sky_fog, fog, chara, key)) = environment {
+    if let Some((c, stage, light, sky_fog, fog, chara, [key, second])) = environment {
+        let (key, second) = (*key, *second);
         // The scene is lit at the bottom of the set's range, and the renderer's metering
         // (`barrel_render::meter`) takes the frame to the exposure its brightness calls for.
         let k = light.exposure_range.0;
@@ -1750,14 +1773,18 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         // The characters' ambient (model.vert: a flat one for flag 128).
         let ca = chara.ambient_light(light, c);
         look[26] = [ca[0] * k, ca[1] * k, ca[2] * k, 1.0];
-        look[66] = [1.0, 0.0, 0.0, 0.0];
+        // y: what the characters' second light is scaled by beyond the draws' `light` word
+        // (which scales the sun and the second light alike by their sun's scale over the
+        // stage's): their second light's scale over the stage's, over that.
+        let chara_sun = (chara.key / key).clamp(0.0, 1.0);
+        look[66] = [1.0, if chara_sun > 0.0 { chara.second / second / chara_sun } else { 1.0 }, 0.0, 0.0];
         for (i, [r, g, b]) in stage.iter().copied().enumerate() {
             look[67 + i] = [r * k, g * k, b * k, 0.0];
         }
         for (slot, p) in [22usize, 24].into_iter().zip(light.parallel) {
             let d = from_light(p.elevation, p.azimuth);
             look[slot] = [d.x, d.y, d.z, 0.0];
-            let k = if slot == 22 { k * key } else { k };
+            let k = if slot == 22 { k * key } else { k * second };
             look[slot + 1] = [p.color[0] * k, p.color[1] * k, p.color[2] * k, 1.0];
         }
         // The scene's fog (`fog_`; heightfog.g1s and the lighting passes): extinction and
@@ -1767,7 +1794,11 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
             let f = *fog;
             let span = (f.end - f.start).max(1.0);
             look[32] = [1.0 / span, -f.start / span, 0.0, 0.0];
-            let sun = light.parallel[0].color.map(|v| v * f.power * k);
+            // The fog pass of the stage and characters takes the sun at the stage's key scale (the
+            // lighting pass's: 3 at noon); the specular ambient's own fog takes it at 1
+            // (`look[32].z` is the scale, for `specular_ambient.glsl` to divide out).
+            let sun = light.parallel[0].color.map(|v| v * f.power * k * key);
+            look[32][2] = key;
             let ext: [f32; 3] = std::array::from_fn(|i| f.rayleigh[i] + f.mie[i]);
             let part = |b: [f32; 3], i: usize| if ext[i] > 0.0 { b[i] / ext[i] } else { 0.0 };
             let ray_k = 3.0 / (16.0 * std::f32::consts::PI);

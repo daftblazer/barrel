@@ -774,7 +774,11 @@ start)`, `y = -start / (end - start)`. Then the scene fog, as Escha's: extinctio
 light `(1 + cos²θ) Scat[2] + Scat[3] (cosθ Scat[2].w + Scat[3].w)^-1.5 + Scat[1]`.
 `barrel` draws the scene fog from the set's `fog_` (Rasenboden's noon: from 5000 to
 700,000 units, so only the far hills take it), built as the sky's `Scat` is; the height fog is
-not drawn.
+not drawn. The fog pass of the stage and characters takes the sun at the stage's key scale: its
+`Scat[2]` is three times the specular ambient pass's own (0.4077, 2.046, 5.648 against 0.1359,
+0.6821, 1.8828 at noon), the lighting pass's `litCol` scale (`KeyLight0Scale`, 3); `barrel`
+builds the scene's `Scat` with it (`look[32].z` holds the scale, and the specular ambient divides
+it out for its own fog). The sky's `Scat` takes the sun at 1.
 
 **The characters' light scales.** The lighting blocks read at the gate hold the sun at 0.8 of
 its colour and the set's ambient at 0.2 for one kind of draw (the characters'), which are the
@@ -784,7 +788,9 @@ offsets; its first words 1.5 and 6 are the diffuse and specular map scales, then
 map's colour (0.8, 1, 1) and the specular's). The stage's block, `indirectStage_`, is laid out
 the same at 0x54c, between `fog_` and `skyFog_`: Rasenboden's noon holds a diffuse map scale
 of 7 and colour (0.1, 0.2602, 1) with `AmbientLightScale` 0 (+0x30) and `KeyLight0Scale` 3
-(+0x34: the game's lighting pass takes the sun at three times the set's), so the stage's shade is
+(+0x34: the game's lighting pass takes the sun at three times the set's; the word at +0x2c,
+`KeyLight1Scale`, scales the second light: 1 on the stage, 0.4874 on the characters, whose draw
+holds the sun at 0.8 and the second light at 0.4874 of the set's), so the stage's shade is
 the light map tinted deep blue and the set's ambient colour is left out; a colour fitted to
 the game's still before the block was found came out (0.8, 2.0, 6.5) against its (0.7, 1.82,
 7). The attic's sets hold 1 × (1.9, 2.3, 4) in the morning and 1 × (2.0, 2.2, 2.7) in the

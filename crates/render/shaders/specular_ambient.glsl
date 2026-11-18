@@ -17,6 +17,7 @@ vec3 specular_light(vec3 n, vec3 f0, float gloss) {
     vec3 r = reflect(-v, n);
     vec3 env = textureLod(spec_cube, vec3(-r.x, r.y, r.z), look.spec_amb.y * (1.0 - gloss)).rgb * look.spec_amb.x * look.spec_tint.rgb;
     // STAND-IN: the game mixes this toward its screen-space reflections by their alpha; this renderer has none, so the cube map alone.
-    env = mix(fog_add, env, fog_keep);
+    // (The scene's fog light is at the stage's key scale, look.fog.z; this pass's own is at 1.)
+    env = mix(fog_add / max(look.fog.z, 1e-3), env, fog_keep);
     return occ * f * env * (occ + spec_occ * (1.0 - occ));
 }
