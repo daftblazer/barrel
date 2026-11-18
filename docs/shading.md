@@ -1464,7 +1464,13 @@ the variant without `g_vFieldRange`: no pigment map is sampled at the gate. Per 
 The lighting pass's blocks (`litDir`, `litCol`, `ambLit`, `vEye`, then `emScl` at +96) hold
 the sun's direction (−0.354, −0.707, −0.612), `litCol` (4.781, 5.0, 3.5) with `ambLit`
 (3, 3, 4) in one kind and (3.825, 4, 2.8) with (0.6, 0.6, 0.8) in another, and `emScl` 0 at
-10 AM (the windows do not glow by day, as `EMISSION_BY_TIME` has it).
+10 AM in those blocks. The models' own emission is another `emScl`, the G-buffer program's of
+a material with an emission map (`sh8b7f9717e671dddc`: the map times `|emScl|` goes out as
+light of its own, kept to 32): at noon it is 1 on the houses' window glass (0.8 to 0.85 on
+five draws of one other material), so the glass glows a little by day too: in a wall's shade
+the game's lit glass is (0.19, 0.28, 0.52), Barrel's (0.21, 0.30, 0.46) with the map at 1
+and (0.04, 0.10, 0.38) without. `EMISSION_BY_TIME` takes the 1 at noon; the other times' are
+a stand-in.
 
 ## Escha's maps: the screen texture filter
 

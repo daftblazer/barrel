@@ -62,11 +62,12 @@ const FADED: u32 = 16384;
 const SPECULAR_AMBIENT: u32 = 1 << 24;
 /// `model.frag`'s flag for a field model lit by its emission map (`PBB-EmN`).
 const EMISSIVE: u32 = 32768;
-// STAND-IN: The emission strengths by time of day are chosen by the stills; the real thing is the game's run-time emScl.
+// STAND-IN: The emission strengths of morning, evening and night are chosen by the stills; the real thing is the game's run-time emScl.
 /// The emission maps' strength by time of day (morning, noon, evening, night), in the light's
-/// units: a stand-in, the game's `emScl` is set at run time (not read): its windows and lamps
-/// unlit by day, lit at evening and night.
-const EMISSION_BY_TIME: [f32; 4] = [0.0, 0.0, 2.0, 3.0];
+/// units. Noon's is the game's: its `emScl` on a captured noon frame is 1 on the houses' window
+/// glass (and 0.8 to 0.85 on five draws of one other material, not told apart here). The other
+/// times' are a stand-in: the game sets `emScl` at run time (not read).
+const EMISSION_BY_TIME: [f32; 4] = [0.0, 1.0, 2.0, 3.0];
 
 struct Args {
     install: String,
