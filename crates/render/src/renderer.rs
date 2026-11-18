@@ -70,6 +70,10 @@ pub struct Renderer {
     pub cloud_layout: vk::PipelineLayout,
     pub cloud_pipeline: vk::Pipeline,
     pub cloud_modules: [vk::ShaderModule; 2],
+    /// The water: a ribbon grid from the look block's water slots, with the scene's layout.
+    pub water_pipeline: vk::Pipeline,
+    pub water_far_pipeline: vk::Pipeline,
+    pub water_modules: [vk::ShaderModule; 2],
     /// The clouds' maps, made when a frame first asks for clouds.
     pub clouds: std::cell::RefCell<Option<clouds::Maps>>,
 }
@@ -171,6 +175,9 @@ pub struct Frame<'a> {
     /// Draw the sky's large clouds after the distant view (their look slots from `CLOUD_SLOT`),
     /// making the maps they read as asked.
     pub clouds: Option<clouds::CloudFrame>,
+    /// The water's pieces (their look slots from `WATER_SLOT`), drawn after the field's opaque
+    /// geometry; 0 for none.
+    pub water_pieces: u32,
 }
 
 impl Renderer {
@@ -601,6 +608,19 @@ impl Renderer {
         ];
         let cloud_info = pipeline_info.stages(&cloud_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).depth_stencil_state(&no_depth).color_blend_state(&sky_blend).layout(cloud_layout);
         let cloud_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[cloud_info], None).map_err(|(_, e)| e)?[0] };
+        // The water: ribbons from no vertex buffer, opaque, writing depth, both faces.
+        let water_modules = [module(WATER_VERT)?, module(WATER_FRAG)?];
+        let water_stages = [
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(water_modules[0]).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(water_modules[1]).name(c"main"),
+        ];
+        let water_info = pipeline_info.stages(&water_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster);
+        let water_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[water_info], None).map_err(|(_, e)| e)?[0] };
+        // Its far part, drawn again in the distant view's pass (on the far plane, where nothing
+        // nearer is): past the far plane its vertices are pulled onto it, and the sky plane,
+        // drawn there first, does not cover it; the backdrop's mountains cover it after.
+        let water_far_info = water_info.depth_stencil_state(&no_depth);
+        let water_far_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[water_far_info], None).map_err(|(_, e)| e)?[0] };
 
         // The characters' outline pass: the same shaders in outline mode, front faces culled (an
         // inverted hull: only the pushed-out back faces show, as a rim).
@@ -668,7 +688,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, clouds: Default::default() })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default() })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -679,7 +699,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -891,6 +911,11 @@ impl Renderer {
                 d.cmd_draw(cb, 3, 1, 0, 0);
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             }
+            if pass_sky && sky_plane && water_pieces > 0 {
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.water_far_pipeline);
+                d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
+            }
             for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)) {
                 // The instance, and whether it is shaded as a character (not part of a field), as
                 // an eye and as the distant view; the game's own material bits and tint.
@@ -919,6 +944,11 @@ impl Renderer {
                     }
                 }
                 drawn[0] += 1;
+            }
+            // The water, over the opaque scene (it writes depth: the sky plane shows past it).
+            if !pass_sky && water_pieces > 0 {
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, self.water_pipeline);
+                d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
             }
             // The sky's large clouds, over the dome (on the far plane too, so where nothing covers it).
             if pass_sky && cloud_frame.is_some() && let Some(m) = self.clouds.borrow().as_ref() {
@@ -1076,6 +1106,11 @@ impl Renderer {
             d.destroy_shader_module(self.sky_vs, None);
             d.destroy_shader_module(self.sky_fs, None);
             d.destroy_pipeline(self.cloud_pipeline, None);
+            d.destroy_pipeline(self.water_pipeline, None);
+            d.destroy_pipeline(self.water_far_pipeline, None);
+            for m in self.water_modules {
+                d.destroy_shader_module(m, None);
+            }
             d.destroy_pipeline_layout(self.cloud_layout, None);
             d.destroy_descriptor_set_layout(self.cloud_set_layout, None);
             for m in self.cloud_modules {

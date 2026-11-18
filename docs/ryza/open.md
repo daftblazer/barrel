@@ -161,13 +161,15 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
-- **Water** (P2). Barrel draws no water in Ryza's fields. The game draws Rasenboden's in a
-  pass of its own after the scene: 10 draws of 8,710 indices each (strips), one vertex and
-  one pixel shader, with the wave volume texture, the shore bubble texture
-  (`waterqualitypreset.xml`'s `EnableShoreBubble`), the scene's colour and depth and
-  reflection matrices (`mRrW2T`, `vRrCameraPos`). Where the surface's shape comes from
-  (the field's `_river.bin`, 1,332 bytes in Rasenboden, is not read) and both shaders are
-  to be read: `barrel-parity draws` on the `load-rasen` capture, frame 2550, pass 13.
+- **Water** (P2). Barrel draws Rasenboden's river and sea (`docs/shading.md`, "Ryza DX: the
+  water"; the file `_river.bin`, `docs/formats.md`): the ribbons of its two bodies from the file's
+  points and widths, lit by the field's sun, mixed with the sky's colour by the Fresnel term, fogged
+  as the models; the sea runs to the horizon. Left: the game's wave volume normals, the refraction
+  and the depth fade (the sea is opaque), shore bubbles, the planar reflection, and the cubic the
+  game makes of each piece from the points (Catmull-Rom stands in: the draw's own stream is not in
+  the capture). Barrel's draws still do not match the game's 10 water draws in `diff3d` (they are
+  not in Barrel's trace); at the gate the sea lies behind the camera, so the horizon's white haze
+  there is the sky's, not the water's.
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
   `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov

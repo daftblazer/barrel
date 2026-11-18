@@ -40,6 +40,8 @@ pub const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv
 pub const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
 pub const SKY_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.vert.spv"));
 pub const SKY_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv"));
+pub const WATER_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.vert.spv"));
+pub const WATER_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.frag.spv"));
 pub const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 pub const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
@@ -62,7 +64,13 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
 /// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
-pub const LOOK_SLOTS: usize = 111;
+pub const LOOK_SLOTS: usize = WATER_SLOT + 1 + 5 * MAX_WATER_PIECES;
+/// The water's look slots (`water.vert`): {pieces, seconds}, then five a piece (its centre line
+/// and widths, the look of its body). Zero pieces: no water.
+pub const WATER_SLOT: usize = 111;
+pub const MAX_WATER_PIECES: usize = 16;
+/// The vertices of one piece of water (`water.vert`).
+pub const WATER_PIECE_VERTICES: u32 = 24 * 2 * 6;
 /// The specular ambient's look slots (`model.frag`'s flag 1 << 24, the environment cube map
 /// reflected off a surface): {the light's scale, the mip count less one, the ground's per-pixel
 /// lighting on (`terrain.frag`: the Ryza games' fields), 0}, then {rgb tint}. The scale is 0 for a

@@ -1306,6 +1306,27 @@ travel, so the speed she moves at is the game's. Motion 131 lowers the hips to 7
 30, 40 and the rest are not identified yet. The tracks name bone ids, mapped to joints through
 the skeleton's index map ("Skeletons" above).
 
+### Ryza field water (`<FIELD>_river.bin`)
+
+In the field's main container (Rasenboden's is 1,332 bytes). An `i32` -2, then bodies, each a
+`u32` 0, 48 `f32` of the surface's look, a `u32` point count and the points, 4 `f32` each: x,
+the surface's height, z, a width. A body with no points ends the list; the shore bubbles'
+tables (`vBubbleParamArray`, two blocks of 352 bytes in Rasenboden) follow, not read. The look's
+words, by byte from the body's first (`barrel_ryza::river`): 48 the refractive index (`fRrRefractiveIndex`, 1.37
+and 1.33; the game's `vRrParam` is {1/n, n - 1, 8 T, -1/T}), 52 the transparency distance T
+(`fRrTransparency`, 1000 and 315.5), 160 the albedo (`vAlbedoColor`; rgb), 176 the reflectance
+at normal incidence (`vReflectance`; rgb), 188 the `w` the game's two vectors share (0.699 and 0.5);
+the rest (the normal noise, the bubbles' strength, depth fades) is placed in the constants the
+game's pixel program takes but not in the words. Rasenboden has two bodies: the river, 6 points
+along a bend from (52463, 53337) to (31534, -669), the level 4705 and a width about 5063
+(the first point 5037 and 7558), and the sea, 8 points along x at z = -121,882, the level 4087.6
+and a width 304,868. A body's pieces (between two points) are drawn one a triangle strip of
+8,710 indices (a 65 by 67 grid, `vTileSizeXZ` 10,000 a side) by the vertex program, which takes
+the piece's cubic centre line (coefficients in a vertex stream of stride 0: one value for the
+draw), an up vector, the widths at its ends and a skirt; the stream is not in the capture, so how
+the pieces' cubics come from the points is not read (Barrel: Catmull-Rom). The sheet's sides
+are the width either side of the centre line (checked by where the sea meets the shore).
+
 ### Ryza field walls (`<field>_le.koc`)
 
 A loose file beside the field's containers (36 fields in Ryza DX; Ryza 2 DX has 47, Ryza 3 DX

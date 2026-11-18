@@ -569,6 +569,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The field's plants (`_grass.bin`, `_grass.g1t`: barrel_ryza::grass), when it has them.
     let grass = barrel_engine::field::named(&main, &format!("{}_grass.bin", files.area)).and_then(|b| barrel_ryza::grass::Grass::parse(b).ok());
     let grass_pack = barrel_engine::field::named(&main, &format!("{}_grass.g1t", files.area)).and_then(|b| G1t::parse(b).ok());
+    // The field's water (`<FIELD>_river.bin`): the pieces of its rivers and sea, in render space.
+    let water = barrel_engine::field::named(&main, &format!("{}_river.bin", files.area)).and_then(|b| barrel_ryza::river::parse(b).ok()).map(|bodies| water_slots(&bodies));
     // The game's general graphics preset for the graphics' foliage (full: High, reduced:
     // Middle, least: Low), its plants and levels of detail (`barrel_ryza::presets::Graphics`).
     let presets = {
@@ -1435,6 +1437,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             view.look[49] = [1.0, p.strength, 0.0, 0.0];
         }
         view.look[50] = [bend, bend, bend * 0.5, -bend * 0.5];
+        // The water, where the set has a sky to reflect and the field has water.
+        let water_pieces = match &water {
+            Some(w) if view.sky_plane => {
+                view.look[WATER_SLOT..WATER_SLOT + w.len()].copy_from_slice(w);
+                view.look[WATER_SLOT][1] = sky_clock;
+                view.look[WATER_SLOT][0] as u32
+            }
+            _ => 0,
+        };
         view.look[51] = [1.0, 0.0, wind_turned % std::f32::consts::TAU, 0.0];
         view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
         view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
@@ -1573,6 +1584,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             readback: readback.map(|(b, _)| b),
             sky_plane: view.sky_plane,
             clouds: view.clouds,
+            water_pieces,
         };
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
         unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
@@ -1663,6 +1675,24 @@ struct View {
     near: f32,
     far: f32,
     exposure: Option<f32>,
+}
+
+/// A field's water as look slots from `WATER_SLOT` (`water.vert`): {pieces, 0}, then a piece's five:
+/// its curve (x mirrored into render space) with its end widths, and its body's colour and
+/// reflectance at normal incidence.
+fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
+    let mut slots = vec![[0.0; 4]];
+    for body in bodies {
+        for p in body.pieces() {
+            if slots.len() + 5 > 1 + 5 * MAX_WATER_PIECES {
+                break;
+            }
+            let mirror = |v: [f32; 3], w: f32| [-v[0], v[1], v[2], w];
+            slots.extend([mirror(p.a, p.widths[0]), mirror(p.b, p.widths[1]), mirror(p.c, 0.0), mirror(p.d, 0.0), [body.albedo[0], body.albedo[1], body.albedo[2], body.reflectance[0]]]);
+        }
+    }
+    slots[0][0] = ((slots.len() - 1) / 5) as f32;
+    slots
 }
 
 /// The view from `dist` away from `center` (render space) at `yaw` and `pitch` degrees, and

@@ -1091,6 +1091,36 @@ to four figures):
 around 50,000 to 60,000 units out, a unit or so across (just spawned), lit by the same light
 through their normal map. Their spawning, growth and fade rules are not read.
 
+## Ryza DX: the water
+
+The game draws a field's water in one pass after the scene (Rasenboden at the gate, frame 2550:
+pass 13, 10 draws of 8,710 indices, vertex program `sh3b59ff800bd4a704`, pixel program
+`sh307bbe2b1903717c`) into the G-buffer, then a full-screen ambient draw (the second kind, flat
+`ambLit`) and the lighting draw (`sh3f2bb7102c69409c`) for the stencil-marked pixels. The ten draws
+are the pieces of the field's water file (`docs/formats.md`, "Ryza field water"): 3 of the river and
+7 of the sea (the draws' two constant sets match the two bodies').
+
+The pixel program: the wave normal is the wave volume texture's (`wavevolume.g1t`, a volume)
+sampled five times, offsets along the view, summed and tilted by the vertex normal; the
+refraction direction takes the surface up with `vRrParam.y`; the water's thickness is the scene's
+depth along it less the surface's (read at the refracted point from the depth map), and the
+colour fades from the body's albedo toward the refracted scene by `1 - exp2(-thickness |dir.y|
+vRrParam.w)`; the shore bubbles (`wavebubbles-sequence-a01.g1t`, by the depth over the shore)
+are laid over it. It writes the albedo, the reflectance (`vReflectance`, gloss 0.125), the
+octahedral normal and the fade; the lighting pass then adds the sun, the reflection
+(`mRrW2T`, `vRrCameraPos`: a reflection target) and the caustics.
+
+Barrel draws it forward (`water.vert`, `water.frag`; look slots from `WATER_SLOT`): each piece a
+24 by 2 grid made in the vertex program from the piece's cubic and widths, in the scene pass with
+depth, and again in the distant view's pass, after the sky plane and before the backdrop, with
+its depth pulled onto the far plane past it (the sea runs to the horizon, far beyond the
+camera's far plane). The surface: the body's albedo lit by the field's sun and ambient (at the
+scene's half brightness), mixed with the sky plane's colour along the reflected view by the
+Fresnel term (F0 the body's reflectance), the sun's highlight, then the field's fog as the models.
+Not done: the wave volume's normals (a few travelling sines stand in), the refraction and the
+depth fade (the surface is opaque), the shore bubbles, caustics, the planar reflection (the sky
+plane's colour only: no scene in it), the piece's skirt, the surface's scroll.
+
 ## Ryza DX: the plants (`ObjectGrassPBS.g1s`)
 
 The field's plants (`_grass.bin`, docs/formats.md) are quads the game builds on the CPU,
