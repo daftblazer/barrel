@@ -197,35 +197,35 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   x scale 1.3578 against 1.3447 for the same y scale): not read.
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
   first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").
-- **Field lighting.** `barrel --time T --weather W` lights a field in linear light as
-  the game does (docs/shading.md, "Ryza DX: the tone curve, saturation and fog passes"): colour
-  textures sampled as sRGB, the sun and the second light from the set (their directions match
-  the game's `litDir` exactly), the game's filmic curve with the set's `fLumiMax` and `fGamma`,
-  the scene fog from the set's `fog_`. Against the game's noon still at the garden gate, from
-  the game's own camera (`work/ryza-ref/rasen-gate-constants.png`; `--ryza
-  32518.2,6179.6,30331.5 --turn -0.0222`): sunlit sand 221, 203, 157 against 222, 203, 146,
-  stone 221, 223, 220 against 224, 227, 216, shaded path 35, 65, 58 against 23, 65, 53, rock
-  39, 64, 76 against 36, 67, 83, fence 75, 71, 68 against 71, 70, 62. Stand-ins left:
-  (1) **what the shade lacks**: the stage's ambient is the diffuse light map at the set's
-  `indirectStage_` scale and colour (`StageLight`: 7 × (0.1, 0.2602, 1) at Rasenboden's noon,
-  1 × (1.9, 2.3, 4) in the attic's morning), but the game's shade also carries light that
-  does not scale with the surface's colour (dark trunks come out 37, 48, 57 where ours are
-  23, 27, 30): the light volume (`sLPVBuffer` × `fDiffuseScale`, 4.2227 in the blocks read),
-  the specular light map and the SSAO are not drawn. The word at +0x34 of the stage's block
-  (3 at noon, 5 in the morning; the characters' is their sun scale) is not the stage's sun
-  scale: the lighting blocks hold the sun unscaled, and 54 blocks of another kind hold it
-  times 3 (not placed). (2) **the exposure**: the default override's range top
-  (1.2) at every time of day; the game adapts (`fMiddleGray`, `fLightAdaptedScale`,
-  `fDarkAdaptedScale`: not read), and night comes out far too bright (the moon is (1, 4, 5)).
-  (3) **the bloom**: the set's threshold on the stored scene and its weight; the game's bright
-  pass is not read, and sunlit grass stays darker than the still's (129, 177, 34 against 155,
-  199, 47). (4) **the sky**: the sky plane's light scaled by a fitted 0.7 and the dome's by
-  2.5 (`SKY_SCALE`, `DOME_SCALE`); morning's sky comes out pale. (5) no saturation pass
-  (`vSaturationScale`, `SaturationScaleEx`: both worsen the match). Evening, morning and night
-  have no reference frame. Ryza takes the characters' light (`indirectChara_` in the set: the
-  sun at 0.8, the set's ambient at 0.2 plus the light map's mean at 1.5 × (0.8, 1, 1), flat
-  rather than by her normals; `barrel_ryza::environment::CharaLight`): her colours come out
-  as the still's, a little brighter (her hat 240, 232, 215 against 225, 215, 195).
+- **Field lighting.** `barrel --time T --weather W` lights a field with the game's own
+  constants where they are read (docs/shading.md, "Ryza DX: the frame as the game draws it":
+  every pass, its formula and its constants at Rasenboden's noon, from the answer key's
+  capture): colour textures sampled as sRGB, the sun at the stage's key scale (3 at noon) and
+  the second light from the set, the cloud pattern on the sun (strength 0.7), the stage's
+  ambient from the diffuse light map (7 × (0.1, 0.2602, 1)), the exposure at the bottom of
+  the set's range (0.9), the colour scale (1.27, 1.3, 1.2), the filmic curve with the set's
+  `fLumiMax` and `fGamma`, and `SaturationScaleEx` (1.6) after the gamma. Against the game's
+  noon still at the gate (`work/ryza-ref/rasen-gate-noon.png`, fourteen spots): sunlit sand
+  237, 217, 144 against 246, 232, 175, stone 226, 227, 209 against 236, 236, 210, a path in
+  shade 25, 57, 117 against 25, 57, 115, a rock in shade 46, 73, 119 against 56, 82, 118;
+  mean error 12.8 levels a channel (14.5 before these). Left, largest first:
+  (1) **dark surfaces in shade** come out at half the still's brightness (a trunk 22, 23, 29
+  against 43, 52, 63, dark leaves 21, 56, 31 against 50, 85, 77): the game adds the specular
+  ambient (the `_as` cube map by the reflected view, with screen-space reflections) in a
+  pass of its own, light that does not scale with the albedo; not drawn. (2) **sunlit grass**
+  lacks red and blue (136, 199, 1 against 170, 208, 64): the plants' own ambient (the pass's
+  second kind, a flat (3, 6, 4), is a guess) and the bloom. (3) **the ambient occlusion**
+  and its tint, and the direct specular: not drawn. (4) **the exposure** is not metered
+  (the game's rule is read: 0.18 over the log-average luminance, inside 0.9 to 2.4): night
+  and interiors would rise above 0.9. (5) **the bloom**: the set's threshold on the stored
+  scene; the game's bright pass (read) and chain are not Barrel's. (6) **the cloud pattern's
+  phase** starts with the field (the game's is not read), and the pattern's switch for the
+  other times of day is a reading of one word (stand-in). (7) **the sky**: the plane's and
+  the dome's scales (`SKY_SCALE`, `DOME_SCALE`) were fitted under the old exposure. Evening,
+  morning and night have no reference frame. Ryza takes the characters' light (`indirectChara_`:
+  the sun at 0.8, the set's ambient at 0.2 plus the light map's mean at 1.5 × (0.8, 1, 1),
+  flat rather than by her normals); the game also scales her second light (0.487) and adds
+  the light volume, which Barrel does not.
 - **Model lighting material.** Ryza's models' G1MG section 0x10001 reads as in Escha but holds
   diffuse 0.8 and ambient 0 (`barrel g1m-materials`): their shaders (`PBB-N`, `PBB-EmN`, ...)
   take the ambient from the environment, not `cAmb`. `barrel` gives every draw the full
@@ -339,16 +339,14 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the plants"); which texture is the pigment
   and the scale's values are set at run time, not read. The title's capture has no
   other grass draws: whatever grass shows on the ground itself is the terrain's own shading.
-- **Brightness and bloom.** The game is brighter and more saturated, with bloom on the sky
-  (left over: exposure, `trueHDR_`). The glow now takes the set's `fLumiThreshold` (0.3,
-  evening 0.8) on the stored scene and its `fBloomWeight` (0.4, evening 0.6): a soft halo on
-  the sunlit leaves at the gate, the still's haze is wider; which space the game thresholds
-  in is not read. Against the still the leaves' and rocks' shade is too blue (the ambient
-  tint's hue, below). The default environment override's
-  `trueHDR_vSaturationScale` (1.2) is laid on the finished frame about its BT.601 luma (where
-  in the game's HDR chain it applies is not read); its bloom weight (0.3), FXAA and exposure
-  range (0.9 to 1.2) are not. Only `s02_l_hap_main` and `s04_l_sad_main` have their own
-  overrides (`env_<field>.xml`): every field takes `env_default.xml` here.
+- **Brightness and bloom.** The brightness and saturation are the game's now (above,
+  "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The glow
+  takes the set's `fLumiThreshold` (0.3, evening 0.8) on the stored scene and its
+  `fBloomWeight` (0.4, evening 0.6): a soft halo on the sunlit leaves at the gate, the
+  still's haze is wider. The game's bright pass is read (docs/shading.md, "the frame as the
+  game draws it": the threshold times `fLumiMax`, on the metered scene) and not done. Only
+  `s02_l_hap_main` and `s04_l_sad_main` have their own overrides (`env_<field>.xml`): every
+  field takes `env_default.xml` here.
 
 ## Ryza in the field
 

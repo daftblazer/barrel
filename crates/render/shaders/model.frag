@@ -117,7 +117,10 @@ float cloud_light(vec3 p) {
     vec3 g = vec3(-p.x, p.y, p.z);
     float k = (g.y - 1000.0) / d.y;
     vec2 uv = vec2((g.x - k * d.x) * look.pattern.x + look.pattern.z, (g.z - k * d.z) * look.pattern.y + look.pattern.w);
-    return texture(pattern_map, uv).r;
+    float light = texture(pattern_map, uv).r;
+    // pattern_on.y: the texture's strength (the Ryza games' `fPtn`: the light is 1 less that
+    // much of the texture's shade); 0: the texture as it is.
+    return look.pattern_on.y > 0.0 ? clamp(1.0 + look.pattern_on.y * (light - 1.0), 0.0, 1.0) : light;
 }
 
 // One shadow layer's light at p (16 taps over 1.5 texels), or -1 outside it.

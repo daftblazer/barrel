@@ -6830,6 +6830,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         saturation: [0.0; 3],
         tone_white: 0.0,
         tone_gamma: 0.0,
+        tone_scale: [0.0; 3],
+        tone_vivid: 0.0,
         filter: area_map.as_ref().zip(field_looks.get(current_field as usize).and_then(|l| l.as_ref())).and_then(|(a, l)| if a.world { l.filter_world } else { l.filter_area }).unwrap_or(0.0),
         camera: renderer::Camera { jitter: frame_jitter, fov, near: dist * 0.01 * zoom, far: (dist * 20.0 * zoom).max(80_000.0), dt: frame_dt, same: same_camera },
         freeze_now,

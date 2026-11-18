@@ -358,12 +358,6 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
     -toward * Vec3::new(-1.0, 1.0, 1.0)
 }
 
-// STAND-IN: The exposure is held at the range's top; the real thing is the game's adaptation between the range's ends.
-/// The frame's exposure where the default override gives no range: its `trueHDR_vExposureRange`
-/// top. The game adapts between the range's ends (not read); the gate's noon still sits at the
-/// top (sunlit sand and stone match it within a few levels at 1.2).
-const EXPOSURE: f32 = 1.2;
-
 // STAND-IN: The sky and dome scales are fitted to one still; the real thing is the game's own scales.
 /// The sky plane's in-scattered light scaled, and the sky dome's light scaled, both fitted to
 /// the gate's noon still under the game's tone curve (stand-ins: the game's own scales are not
@@ -654,10 +648,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         false => None,
     };
     eprintln!("character rim: {rim:?}");
-    // The exposure's cap (`exposure`): the default override's `trueHDR_vExposureRange` top.
-    // The sets hold their own range (`Light::exposure_range`, 0.9 to 2.4 at Rasenboden), whose
-    // top would leave evening uncapped: how the game's adaptation uses it is not read.
-    let exposure_range = install.read(barrel_ryza::environment::Rim::DEFAULT_PATH).ok().and_then(|b| barrel_ryza::environment::override_values(&b, "trueHDR_vExposureRange").ok()).filter(|v| v.len() == 2).map(|v| (v[0], v[1]));
+    // The saturation after the gamma, from the light sets' table.
+    let tone_vivid = install.read(barrel_ryza::environment::SATURATION_PATH).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::environment::saturation_ex(&b, barrel_ryza::environment::SATURATION_SET, a.time, a.weather)).map_err(|e| eprintln!("{e}")).unwrap_or(0.0);
+    eprintln!("saturation after the gamma: {tone_vivid}");
     let rim_word = |sharpness: f32, strength: f32| u32::from_le_bytes([(sharpness / 64.0 * 255.0).round().clamp(0.0, 255.0) as u8, (strength / 4.0 * 255.0).round().clamp(0.0, 255.0) as u8, 0, 0]);
     let mut rig: Option<Rig> = None;
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
@@ -950,6 +943,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The field's light: its environment's diffuse cube map, and the set for the time and
     // weather (sun, second light, ambient colour).
     let mut gust: Option<barrel_ryza::environment::Gust> = None;
+    let mut cloud: Option<(barrel_ryza::environment::Pattern, Vec<u8>)> = None;
     let environment = match files.env.as_deref().map(Elixir::parse).transpose()? {
         Some(env) => {
             let ad = barrel_engine::field::named(&env, &format!("{}_ad.g1t", files.area)).ok_or("environment has no diffuse light map")?;
@@ -958,18 +952,25 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let light = Light::read(bin, a.time, a.weather)?;
             let (fog, sky_fog) = barrel_ryza::environment::Fog::read(bin, a.time, a.weather)?;
             gust = Some(barrel_ryza::environment::Gust::read(bin, a.time, a.weather)?);
+            // The cloud shadows: the set's pattern over the field's light texture.
+            if let (Some(p), Some(t)) = (barrel_ryza::environment::Pattern::read(bin, a.time, a.weather)?, barrel_engine::field::named(&env, &format!("{}_pat.g1t", files.area)).filter(|b| G1t::parse(b).is_ok_and(|g| !g.textures.is_empty()))) {
+                eprintln!("cloud shadows: {p:?}");
+                cloud = Some((p, t.to_vec()));
+            }
             eprintln!("light ({:?}, {:?}): {light:?}; wind {gust:?}", a.time, a.weather);
             let chara = barrel_ryza::environment::CharaLight::read(bin, a.time, a.weather)?;
             eprintln!("character light: {chara:?}");
-            // Her draws take the sun at the characters' scale (their light word's diffuse).
-            for d in draws.iter_mut().filter(|d| ramp_rows.contains_key(&(d.first_index, d.instance))) {
-                d.light = (chara.key.clamp(0.0, 1.0) * 65535.0).round() as u32 | 0xffff << 16;
-            }
             // The stage's ambient (`StageLight`): the light map at the set's scale and colour.
             let stage = barrel_ryza::environment::StageLight::read(bin, a.time, a.weather)?;
             eprintln!("stage light: {stage:?}");
+            // The sun on the stage is the set's times the stage's key scale (3 at Rasenboden's
+            // noon); a character's draws take their own scale of it (0.8 there).
+            let key = if stage.key > 0.0 { stage.key } else { 1.0 };
+            for d in draws.iter_mut().filter(|d| ramp_rows.contains_key(&(d.first_index, d.instance))) {
+                d.light = ((chara.key / key).clamp(0.0, 1.0) * 65535.0).round() as u32 | 0xffff << 16;
+            }
             let stage = stage.harmonics(&light, &c);
-            Some((c, stage, light, sky_fog, fog, chara))
+            Some((c, stage, light, sky_fog, fog, chara, key))
         }
         None => None,
     };
@@ -1044,8 +1045,13 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         }
     }
     let (uploaded, outline_tex, white) = upload_textures(&gpu, renderer.pool, &textures, None, &linear)?;
+    // The cloud shadows' texture, sampled as sRGB as the game does.
+    let cloud_texture = match &cloud {
+        Some((_, bytes)) => Some(barrel_render::upload_texture(&gpu, renderer.pool, &G1t::parse(bytes)?.textures[0], true)?),
+        None => None,
+    };
     let grounds = upload_grounds(&gpu, renderer.pool, &terrains, true)?;
-    let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![None], white };
+    let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], white };
     let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
     // The camera: on the given point (or on Ryza in a window), framing the ground (render
@@ -1355,7 +1361,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             }
             _ => dist,
         };
-        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), exposure_range, shadow_size, presets.shadow, title_clip);
+        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, title_clip);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1376,6 +1382,12 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let wind_clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
         let (wind_power, wind_turned) = gust.map_or((0.0, 0.0), |g| g.at(wind_clock));
         let bend = barrel_ryza::environment::Gust::bend(wind_power);
+        // STAND-IN: The cloud shadows' drift starts with the field; the real thing is the game's own phase.
+        if let Some((p, _)) = &cloud {
+            let drift = |speed: f32| (wind_clock * speed).rem_euclid(1.0);
+            view.look[48] = [1.0 / p.size[0], 1.0 / p.size[1], drift(p.speed[0]), drift(p.speed[1])];
+            view.look[49] = [1.0, p.strength, 0.0, 0.0];
+        }
         view.look[50] = [bend, bend, bend * 0.5, -bend * 0.5];
         view.look[51] = [1.0, 0.0, wind_turned % std::f32::consts::TAU, 0.0];
         view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
@@ -1481,15 +1493,16 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             alpha_cutoff: 0.3,
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored) and `fBloomWeight` as the rate.
-            glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _)| (l.lumi_threshold, l.bloom_weight * GLOW_RANGE)),
-            // STAND-IN: The saturation is left off; the real thing is the game's own saturation scales.
-            // No saturation: neither the set's `vSaturationScale` nor `SaturationScaleEx` (1.6
-            // at noon) brings the gate's noon closer to the still (docs/ryza/open.md).
+            glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, l.bloom_weight * GLOW_RANGE)),
             saturation: [0.0; 3],
             // The game's tone curve: filmic, the set's `fLumiMax` as its white point, then the
             // set's `fGamma` (docs/shading.md, "Ryza DX: the tone curve").
-            tone_white: environment.as_ref().map_or(0.0, |(_, _, l, _, _, _)| l.lumi_max),
-            tone_gamma: environment.as_ref().map_or(0.0, |(_, _, l, _, _, _)| l.gamma),
+            tone_white: environment.as_ref().map_or(0.0, |(_, _, l, _, _, _, _)| l.lumi_max),
+            tone_gamma: environment.as_ref().map_or(0.0, |(_, _, l, _, _, _, _)| l.gamma),
+            // The game's last pass scales the colour by the set's `vColorScale` before the
+            // curve and lays `SaturationScaleEx` on after the gamma (docs/shading.md).
+            tone_scale: environment.as_ref().map_or([0.0; 3], |(_, _, l, _, _, _, _)| l.color_scale),
+            tone_vivid,
             filter: 0.0,
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
@@ -1570,7 +1583,7 @@ const LOOK_HEIGHT: f32 = 128.0;
 const CAMERA_TURN: f32 = 120.0;
 
 /// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
-type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, barrel_ryza::environment::Fog, barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight);
+type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, barrel_ryza::environment::Fog, barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, f32);
 
 /// A frame's view: the look block and what goes with it.
 struct View {
@@ -1592,7 +1605,7 @@ struct View {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, exposure_range: Option<(f32, f32)>, shadow_size: Option<u32>, shadow_reach: f32, clip: Option<(f32, f32)>) -> View {
+fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, clip: Option<(f32, f32)>) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -1624,8 +1637,9 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     // The environment's light instead, when the field has one, in linear light: the cube map's
     // light as the stage takes it (`StageLight`; model.vert's `sh`), the sun and the second light
     // as the field's two directional lights, all scaled by one exposure.
-    if let Some((c, stage, light, sky_fog, fog, chara)) = environment {
-        let k = exposure_range.map_or(EXPOSURE, |(_, hi)| hi);
+    if let Some((c, stage, light, sky_fog, fog, chara, key)) = environment {
+        // STAND-IN: The exposure is held at the bottom of the set's range, where daylight puts it; the real thing is the game's metering (0.18 over the frame's log-average luminance, eased over 3 s, kept inside the range).
+        let k = light.exposure_range.0;
         // The light on an upward-facing surface, for the sky dome's clouds: the light map
         // upward times the set's ambient colour, and the two lights by their elevation.
         {
@@ -1647,6 +1661,7 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
         for (slot, p) in [22usize, 24].into_iter().zip(light.parallel) {
             let d = from_light(p.elevation, p.azimuth);
             look[slot] = [d.x, d.y, d.z, 0.0];
+            let k = if slot == 22 { k * key } else { k };
             look[slot + 1] = [p.color[0] * k, p.color[1] * k, p.color[2] * k, 1.0];
         }
         // The scene's fog (`fog_`; heightfog.g1s and the lighting passes): extinction and

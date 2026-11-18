@@ -719,18 +719,17 @@ Hable's filmic curve, `f(x) = (x (A x + C B) + D E) / (x (A x + B) + D F) - E / 
 white point (`fInvToneMapParam`), followed by a gamma of `1 / fGamma`. So the game lights in
 linear light and finishes with `pow(f(x) / f(W), 1 / fGamma)`; the set's `trueHDR_fLumiMax`
 (4.3 at Rasenboden's noon) taken as W and its `fGamma` (1.8 at noon, 2.2 otherwise) match the
-game's still: at an exposure of 1.2 (the default override's `vExposureRange` top) the sunlit
-sand comes out 221, 203, 157 against 222, 203, 146 and the sunlit stone 221, 223, 220 against
-224, 227, 216, with the colour textures sampled as sRGB (as stored values the sand's blue
-comes out twice too high). `barrel` does this (`post.frag`'s `filmic`, `Frame::tone_gamma`;
-`upload_texture`'s `linear`).
+game's own constants (below, "the frame as the game draws it"), with the colour textures
+sampled as sRGB (as stored values the sand's blue comes out twice too high). `barrel` does
+this (`post.frag`'s `filmic`, `Frame::tone_gamma`; `upload_texture`'s `linear`).
 
 **`SaturationScaleEx`** (`saturationscaleex.g1s`, constant `fScale`; the per-set values of
 `env_override.xml`): `c = y + s (c - y)` about the BT.601 luma `y` (0.29891, 0.58661,
 0.11448), where for a scale above 1 `s = 1 + (1 - L)(fScale - 1)` with `L = (min + max) / 2`
-(dark pixels take the whole scale, white ones none), and below 1 `s = fScale`. Not applied:
-at 1.6 (noon, if Rasenboden is `LGT01_DEFAULT_01`) the gate's noon comes out further from the
-still than without.
+(dark pixels take the whole scale, white ones none), and below 1 `s = fScale`. The game's
+last pass does the same after its gamma (`fSaturationScaleEx`: 1.6 at Rasenboden's noon and
+on the title, `LGT01_DEFAULT_01`'s row for a clear noon), and `barrel` lays it on there
+(`Frame::tone_vivid`, `environment::saturation_ex`).
 
 **Height fog and scene fog** (`heightfog.g1s`, pixel program 1, on the scene's depth and
 colour; the lighting passes carry the same constants). The point's world position comes from
@@ -756,12 +755,97 @@ words at +0x34 and +0x30 of a block at 0x5d0 of the noon set, right after `skyFo
 offsets; its first words 1.5 and 6 are the diffuse and specular map scales, then the diffuse
 map's colour (0.8, 1, 1) and the specular's). The stage's block, `indirectStage_`, is laid out
 the same at 0x54c, between `fog_` and `skyFog_`: Rasenboden's noon holds a diffuse map scale
-of 7 and colour (0.1, 0.2602, 1) with `AmbientLightScale` 0 (+0x30), so the stage's shade is
+of 7 and colour (0.1, 0.2602, 1) with `AmbientLightScale` 0 (+0x30) and `KeyLight0Scale` 3
+(+0x34: the game's lighting pass takes the sun at three times the set's), so the stage's shade is
 the light map tinted deep blue and the set's ambient colour is left out; a colour fitted to
 the game's still before the block was found came out (0.8, 2.0, 6.5) against its (0.7, 1.82,
 7). The attic's sets hold 1 × (1.9, 2.3, 4) in the morning and 1 × (2.0, 2.2, 2.7) in the
 evening. Before it, at 0x528, ten words: a colour, then a third directional light (35, 48.8,
 70 at 30°, 30° at noon: not placed).
+
+## Ryza DX: the frame as the game draws it (measured)
+
+From the answer key's captures (Rasenboden at the gate, noon, frame 2550; the title's frame
+1135 holds the same constants). The capture names each bound view's format, so what is
+decoded as sRGB is known, not guessed.
+
+**The passes**, in order: a depth pre-pass (9 draws); the G-buffer (903 draws into four
+targets: colour, specular colour, normal and gloss, a fourth); the ambient occlusion (the
+depth made linear at half size, the occlusion from depth and normals, a blur, the result
+written into the colour target's alpha); four shadow maps (two cascades of 2000 × 2400, one
+of 1600 × 1600, one of 1024 × 1024); the ambient-and-shadow pass (3 draws, below); the
+lighting pass (4 draws, below); the water (10 draws) and its own ambient and lighting; the
+sky (the scattering plane, the dome's two layers, the clouds); the scene fog; screen-space
+reflections at half size and the pass that adds the specular ambient; 105 forward draws
+(transparent things, the characters' outlines and faces); then the post chain: temporal
+anti-aliasing, depth of field, the luminance metering (64, 16, 4, 1 pixels), the bloom and
+star chains, light shafts, the tone pass, the interface.
+
+**What is sRGB.** Every game texture has two views, one sRGB and one not. The colour map is
+sampled through the sRGB one, the specular and normal maps through the other; the G-buffer's
+colour target is written and read through sRGB views (so it holds linear colour at sRGB
+precision), the specular target as stored. The cloud pattern is sampled as sRGB. The lit
+scene is a float target; the tone pass writes its own gamma into a plain 8-bit target.
+
+**The ambient-and-shadow pass** (one program, drawn three times with different constants:
+the stage, a second kind, the characters) writes the ambient light in rgb and the sun's
+share in alpha:
+
+- rgb = `sAmbDif(n) × vAmbParam.x × vAmbDifScl.rgb + LPV(n) × fDiffuseScale + ambLit`
+  (the two `ilaScale` words, 0 here, would scale the parts by the normal target's low byte).
+  The stage: 7 × (0.1, 0.2602, 1) on the diffuse map, no LPV, `ambLit` 0. The second kind:
+  no map, `ambLit` (3, 6, 4). The characters: 1.5 × (0.8, 1, 1), LPV at 0.0637, `ambLit`
+  (0.6, 0.6, 0.8) = the set's ambient × 0.2.
+- alpha = the cascades' shadow × `saturate(1 + fPtn × (pattern − 1))`: the cloud pattern
+  (`<field>_pat.g1t`'s red, at the world position through `mW2Pt`) takes away up to `fPtn`
+  (0.7) of the sun. `mW2Pt` at the gate: u = (x − y d.x / d.y) / 50000 + o, v = (z − y d.z /
+  d.y) / 50000 + o with d the sun's direction, o growing 0.005 a second (-0.138 at frame
+  1750). The strength, a switch, the size and the speed are the words at +0x38 to +0x4c of
+  the set's `indirectStage_` block (0.7, 1, 50000, 50000, 0.005, 0.005 at noon; the other
+  times hold strength 1 and switch 0, taken as off).
+
+**The lighting pass** (stage draws: `litCol` = the sun × 3, the second light × 1; the
+characters' draw: the sun × 0.8, the second light × 0.487; the scales are the blocks' words
+at +0x34 and +0x2c). With albedo `a`, specular colour `F0`, occlusion `o` (the colour
+target's alpha), gloss `g`:
+
+- `occ = a × fOccAlbScl + o (1 − a × fOccAlbScl)`: the occlusion tinted by the surface's
+  own colour (1 where nothing occludes);
+- diffuse = `a (1 − F0) × occ × (ambient + sun × N·L × alpha + second × N·L₂ + point lights)`;
+- specular, per light = `light × N·L × (p + 2) / 8 × (F0 + (1 − F0)(1 − V·H)⁵) × (N·H)^p ×
+  saturate((N·V + o)² + o − 1)` with `p = 2^(10 g + 1)`; the sun's also times alpha;
+- the point lights come from a clustered list (16 depth slices, 64-pixel tiles), each with
+  an exponential falloff.
+
+No division by π anywhere: the set's light is the surface's brightness for a white albedo.
+
+**The tone pass** (the last full-screen pass): `c = scene × E` (the metered exposure), the
+depth of field and distant blur, the 2D effects taken back through the curve and laid over,
+`+ bloom × fBloomWeight` (0.4) `+ star + flare + light shafts`, `× vColorScale` (the set's
+(1.27, 1.3, 1.2), the words `barrel` once read as a saturation), a saturation about the
+luma by `vSaturationScale` (1 here), the filmic curve times `1 / f(fLumiMax)`, the gamma
+(`1 / fGamma`), then `fSaturationScaleEx`.
+
+**The exposure** is metered: the half-size scene × E is averaged as `exp2(mean(log2(lum +
+1))) − 1` down to one pixel, divided by E again, eased toward over `fAdaptTime` (3 s; rate
+`1 − (1 − 0.95)^(dt / 3)`, halved by `fLightAdaptedScale` / `fDarkAdaptedScale` 0.5), and
+`E = 0.18 / L` kept inside the set's `vExposureRange` (0.9 to 2.4). Any daylit view averages
+far above 0.2, so E sits at 0.9.
+
+**The bloom's bright pass**: `c × saturate((lum − T) / (fLumiMax − T))` on the metered
+quarter-size scene, `T = fLumiThreshold × fLumiMax` (1.29 at noon).
+
+**What `barrel` does of this**: the sun at the stage's key scale, the cloud pattern
+(`environment::Pattern`; its phase starts with the field), the exposure at the range's
+bottom, the colour scale, the curve, the gamma and the last saturation. Against the gate's
+still, fourteen spots' mean error falls from 14.5 to 12.8 levels a channel; the sunlit sand
+and stone and the path in shade come within 10 (a shaded path 25, 57, 117 against 25, 57,
+115). What it does not, largest first by what shows: the specular ambient and reflections
+(dark bark and leaves in shade stay at half the still's brightness: light that does not
+scale with the albedo), the ambient occlusion and its tint, the direct specular, the second
+kind's ambient (which draws take it is not read; plants are likely), the game's bright pass
+and bloom chain, the metering (night and interiors would rise above 0.9), the light volume,
+the point lights, the height fog.
 
 ## Ryza DX: the sky
 

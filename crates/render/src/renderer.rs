@@ -133,6 +133,11 @@ pub struct Frame<'a> {
     /// The game's filmic curve instead, with `tone_white` as its white point, and this gamma
     /// after it (0: the Reinhard curve, if any).
     pub tone_gamma: f32,
+    /// With the filmic curve: a scale per channel on the light before the curve (the Ryza
+    /// games' `vColorScale`; 0: none), and after the gamma a saturation about the luma that
+    /// grows as the colour darkens (`fSaturationScaleEx`; 1 or less: none).
+    pub tone_scale: [f32; 3],
+    pub tone_vivid: f32,
     /// The screen filter's strength (Escha's `overlayModifier`, `PostEffectTexFilter`: the
     /// texture set by [`Renderer::set_filter`] overlay-blended over the frame by its alpha
     /// times this; 0: none).
@@ -581,7 +586,7 @@ impl Renderer {
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post_vs).name(c"main"),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(post_fs).name(c"main"),
         ];
-        let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 64 }];
+        let post_push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 80 }];
         let post_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&post_layouts).push_constant_ranges(&post_push), None)? };
         let no_input = vk::PipelineVertexInputStateCreateInfo::default();
         let post_depth = vk::PipelineDepthStencilStateCreateInfo::default();
@@ -629,7 +634,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, glow, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane } = *frame;
         let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
@@ -930,7 +935,7 @@ impl Renderer {
             );
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, post_layout, 0, &[targets.post_set()], &[]);
-            let mut post_push = [0u8; 64];
+            let mut post_push = [0u8; 80];
             post_push[48..52].copy_from_slice(&filter_strength.to_le_bytes());
             post_push[..4].copy_from_slice(&rate.to_le_bytes());
             post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
@@ -940,6 +945,10 @@ impl Renderer {
             }
             post_push[44..48].copy_from_slice(&tone_white.to_le_bytes());
             post_push[12..16].copy_from_slice(&tone_gamma.to_le_bytes());
+            for (k, v) in tone_scale.iter().enumerate() {
+                post_push[64 + 4 * k..68 + 4 * k].copy_from_slice(&v.to_le_bytes());
+            }
+            post_push[76..80].copy_from_slice(&tone_vivid.to_le_bytes());
             for (k, v) in overlay.iter().enumerate() {
                 post_push[16 + 4 * k..20 + 4 * k].copy_from_slice(&v.to_le_bytes());
             }

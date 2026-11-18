@@ -12,7 +12,7 @@ layout(set = 0, binding = 3) uniform sampler2D screen_filter;
 // BT.601 luma (0: none), and in w a tone curve's white point (0: none): extended Reinhard,
 // c (1 + c / w²) / (1 + c), or with a gamma in pad.y the Ryza games' filmic curve over the
 // white point's, then that gamma.
-layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; vec4 screen; } pc;
+layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; vec4 screen; vec4 grade; } pc;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
 // The Ryza games' tone curve (the inverse of what `effect2dpreinvtonemapandgamma.g1s` undoes,
@@ -37,7 +37,18 @@ void main() {
         c += (over - c) * f.a * pc.screen.x;
     }
     if (pc.pad.y > 0.0) {
-        c = pow(filmic(c) / filmic(vec3(pc.saturation.w)), vec3(1.0 / pc.pad.y));
+        // The Ryza games' last pass: the colour scale (grade.rgb, `vColorScale`), the curve
+        // over the white point's, the gamma, then `fSaturationScaleEx` (grade.a): a
+        // saturation about the luma, 1 at white and grade.a at black.
+        if (pc.grade.x > 0.0) {
+            c *= pc.grade.rgb;
+        }
+        c = pow(max(filmic(c) / filmic(vec3(pc.saturation.w)), 0.0), vec3(1.0 / pc.pad.y));
+        if (pc.grade.a > 1.0) {
+            float mid = 0.5 * (min(c.r, min(c.g, c.b)) + max(c.r, max(c.g, c.b)));
+            float y = dot(c, vec3(0.29891, 0.58661, 0.11448));
+            c = y + (c - y) * (1.0 + (1.0 - mid) * (pc.grade.a - 1.0));
+        }
     } else if (pc.saturation.w > 0.0) {
         float w2 = pc.saturation.w * pc.saturation.w;
         c = c * (1.0 + c / w2) / (1.0 + c);

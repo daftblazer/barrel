@@ -103,12 +103,13 @@ pub struct Light {
     /// `trueHDR_fLumiMax` and `fMiddleGray`.
     pub lumi_max: f32,
     pub middle_gray: f32,
-    /// `trueHDR_vExposureRange`, `fGamma`, `vSaturationScale` (per channel) and `fBloomWeight`:
+    /// `trueHDR_vExposureRange`, `fGamma`, the colour scale (per channel: the last pass's
+    /// `vColorScale`, laid on before the tone curve) and `fBloomWeight`:
     /// the set's own, not the override's (Rasenboden's noon: 0.9 to 2.4, 1.8, (1.27, 1.3,
     /// 1.2), 0.4).
     pub exposure_range: (f32, f32),
     pub gamma: f32,
-    pub saturation: [f32; 3],
+    pub color_scale: [f32; 3],
     pub bloom_weight: f32,
     /// `trueHDR_fLumiThreshold`: the bloom's bright-pass threshold (0.3; Rasenboden's evening 0.8).
     pub lumi_threshold: f32,
@@ -126,7 +127,7 @@ const MIDDLE_GRAY: usize = 0x1c;
 const EXPOSURE_RANGE: usize = 0x20;
 const GAMMA: usize = 0x40;
 const LUMI_THRESHOLD: usize = 0x18;
-const SATURATION: usize = 0x44;
+const COLOR_SCALE: usize = 0x44;
 const BLOOM_WEIGHT: usize = 0x5c;
 const MAIN_AMBIENT: usize = 0x484;
 const PARALLEL: usize = 0x494;
@@ -287,6 +288,9 @@ pub struct StageLight {
     pub diffuse_map: f32,
     pub diffuse_map_color: [f32; 3],
     pub ambient: f32,
+    /// The scale on the sun (`KeyLight0Scale`: 3 at Rasenboden's noon, where the game's
+    /// lighting pass takes the sun at three times the set's colour).
+    pub key: f32,
 }
 
 const INDIRECT_STAGE: usize = 0x54c;
@@ -295,13 +299,35 @@ impl StageLight {
     pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<StageLight, String> {
         let set = set_of(env, time, weather)?;
         let f = |o: usize| f32::from_le_bytes(set[INDIRECT_STAGE + o..INDIRECT_STAGE + o + 4].try_into().unwrap());
-        Ok(StageLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], ambient: f(0x30) })
+        Ok(StageLight { diffuse_map: f(0), diffuse_map_color: [f(8), f(12), f(16)], ambient: f(0x30), key: f(0x34) })
     }
 
     /// The stage's ambient as the nine coefficients the renderer takes: the light map's times
     /// its scale and colour, the set's ambient colour at its scale added evenly.
     pub fn harmonics(&self, light: &Light, harmonics: &[[f32; 3]; 9]) -> [[f32; 3]; 9] {
         std::array::from_fn(|i| std::array::from_fn(|ch| harmonics[i][ch] * self.diffuse_map * self.diffuse_map_color[ch] + if i == 0 { light.ambient[ch] * self.ambient / 0.282_095 } else { 0.0 }))
+    }
+}
+
+/// The cloud shadows drifting over the sun's light (the game's `fPtn` and `mW2Pt`; the texture
+/// is the field's `_pat.g1t`, sampled as sRGB): how much of the texture's shade is laid on, the
+/// size of one repeat over the ground and the drift a second, in repeats. Rasenboden's noon:
+/// 0.7, 50000 × 50000, 0.005 each way, as the game's constants there show.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pattern {
+    pub strength: f32,
+    pub size: [f32; 2],
+    pub speed: [f32; 2],
+}
+
+const PATTERN: usize = INDIRECT_STAGE + 0x38;
+
+impl Pattern {
+    // STAND-IN: The word after the strength is taken as the pattern's switch (1 in the noon sets, 0 in the others); the real thing is the game's own reading of it.
+    pub fn read(env: &[u8], time: Time, weather: Weather) -> Result<Option<Pattern>, String> {
+        let set = set_of(env, time, weather)?;
+        let f = |o: usize| f32::from_le_bytes(set[PATTERN + o..PATTERN + o + 4].try_into().unwrap());
+        Ok((f(4) != 0.0 && f(8) > 0.0 && f(12) > 0.0).then(|| Pattern { strength: f(0), size: [f(8), f(12)], speed: [f(16), f(20)] }))
     }
 }
 
@@ -349,7 +375,7 @@ impl Light {
             middle_gray: f(MIDDLE_GRAY),
             exposure_range: (f(EXPOSURE_RANGE), f(EXPOSURE_RANGE + 4)),
             gamma: f(GAMMA),
-            saturation: rgb(SATURATION),
+            color_scale: rgb(COLOR_SCALE),
             bloom_weight: f(BLOOM_WEIGHT),
             lumi_threshold: f(LUMI_THRESHOLD),
             ambient: rgb(MAIN_AMBIENT), parallel: [parallel(0), parallel(1)] })
@@ -404,7 +430,7 @@ mod tests {
         }
         let l = Light::read(&env, Time::Evening, Weather::Sunny).unwrap();
         assert_eq!((l.lumi_max, l.middle_gray, l.ambient[0]), (4.2, 0.18, 2.0));
-        assert_eq!((l.exposure_range, l.gamma, l.saturation, l.bloom_weight), ((0.9, 2.4), 2.2, [1.2, 1.1, 1.0], 0.6));
+        assert_eq!((l.exposure_range, l.gamma, l.color_scale, l.bloom_weight), ((0.9, 2.4), 2.2, [1.2, 1.1, 1.0], 0.6));
         assert_eq!(l.lumi_threshold, 0.8);
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
@@ -414,11 +440,11 @@ mod tests {
     fn stage_light_of_a_set() {
         let mut env = vec![0u8; SET_SIZE * SETS];
         let at = SET_SIZE + 0x54c;
-        for (k, v) in [(0, 7.0f32), (8, 0.1), (12, 0.2602), (16, 1.0), (0x30, 0.25)] {
+        for (k, v) in [(0, 7.0f32), (8, 0.1), (12, 0.2602), (16, 1.0), (0x30, 0.25), (0x34, 3.0)] {
             env[at + k..at + k + 4].copy_from_slice(&v.to_le_bytes());
         }
         let st = StageLight::read(&env, Time::Noon, Weather::Sunny).unwrap();
-        assert_eq!(st, StageLight { diffuse_map: 7.0, diffuse_map_color: [0.1, 0.2602, 1.0], ambient: 0.25 });
+        assert_eq!(st, StageLight { diffuse_map: 7.0, diffuse_map_color: [0.1, 0.2602, 1.0], ambient: 0.25, key: 3.0 });
         let mut light = Light::read(&env, Time::Noon, Weather::Sunny).unwrap();
         light.ambient = [3.0, 3.0, 4.0];
         let mut h = [[0.0; 3]; 9];
@@ -514,6 +540,36 @@ pub fn stage_ambient(bytes: &[u8]) -> Option<([f32; 3], f32)> {
     Some(([rgb[0] * scale, rgb[1] * scale, rgb[2] * scale], main))
 }
 
+/// The table of the saturation laid on after the gamma (`fSaturationScaleEx` in the game's
+/// last pass), by light set name, weather and time.
+pub const SATURATION_PATH: &str = "\\saves\\envoverride\\env_override.xml";
+
+/// The outdoor fields' light set in that table: Rasenboden's noon shows its 1.6 in the game's
+/// own constants.
+pub const SATURATION_SET: &str = "LGT01_DEFAULT_01";
+
+/// A light set's `SaturationScaleEx` for a time and weather: the row that names both, else
+/// one, else neither (-1 stands for any).
+pub fn saturation_ex(bytes: &[u8], name: &str, time: Time, weather: Weather) -> Result<f32, String> {
+    let root = barrel_formats::table::parse(bytes).map_err(|e| format!("saturation table: {e}"))?;
+    let number = |e: &barrel_formats::table::Element, key: &str| e.attr(key).and_then(|v| v.trim().parse::<f32>().ok());
+    let mut best: Option<(u32, f32)> = None;
+    let mut rows: Vec<&barrel_formats::table::Element> = vec![&root];
+    while let Some(e) = rows.pop() {
+        rows.extend(e.children.iter());
+        if e.attr("Name") != Some(name) {
+            continue;
+        }
+        let (Some(w), Some(t), Some(s)) = (number(e, "Weather"), number(e, "Time"), number(e, "SaturationScaleEx")) else { continue };
+        let fits = |v: f32, want: usize| if v < 0.0 { Some(0) } else if v as usize == want { Some(1) } else { None };
+        let (Some(a), Some(b)) = (fits(w, weather as usize), fits(t, time as usize)) else { continue };
+        if best.is_none_or(|(score, _)| a + b > score) {
+            best = Some((a + b, s));
+        }
+    }
+    best.map(|(_, s)| s).ok_or(format!("saturation table: no row for {name}"))
+}
+
 /// One number from an environment override (its first component for a vector).
 pub fn override_number(bytes: &[u8], key: &str) -> Result<f32, String> {
     override_values(bytes, key)?.first().copied().ok_or(format!("override env: {key} empty"))
@@ -525,6 +581,31 @@ pub fn override_values(bytes: &[u8], key: &str) -> Result<Vec<f32>, String> {
     let e = if root.name == "root" { &root } else { root.children.iter().find(|c| c.name == "root").ok_or("override env: no root")? };
     let v = e.attr(key).ok_or(format!("override env: no {key}"))?;
     v.split(',').map(|c| c.trim().parse::<f32>().map_err(|_| format!("override env: {key} = {v}"))).collect()
+}
+
+#[cfg(test)]
+mod grade_tests {
+    use super::*;
+
+    #[test]
+    fn saturation_by_set_time_and_weather() {
+        let xml = br#"<root><row Name="A" Weather="-1" Time="-1" SaturationScaleEx="1.2"/><row Name="A" Weather="0" Time="1" SaturationScaleEx="1.6"/><row Name="A" Weather="0" Time="-1" SaturationScaleEx="1.3"/><row Name="B" Weather="-1" Time="-1" SaturationScaleEx="2"/></root>"#;
+        assert_eq!(saturation_ex(xml, "A", Time::Noon, Weather::Sunny), Ok(1.6));
+        assert_eq!(saturation_ex(xml, "A", Time::Night, Weather::Sunny), Ok(1.3));
+        assert_eq!(saturation_ex(xml, "A", Time::Noon, Weather::Foggy), Ok(1.2));
+        assert!(saturation_ex(xml, "C", Time::Noon, Weather::Sunny).is_err());
+    }
+
+    #[test]
+    fn pattern_of_a_set() {
+        let mut env = vec![0u8; SET_SIZE * SETS];
+        let at = SET_SIZE + 0x584;
+        for (k, v) in [0.7f32, 1.0, 50000.0, 50000.0, 0.005, 0.005].into_iter().enumerate() {
+            env[at + 4 * k..at + 4 * k + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(Pattern::read(&env, Time::Noon, Weather::Sunny), Ok(Some(Pattern { strength: 0.7, size: [50000.0; 2], speed: [0.005; 2] })));
+        assert_eq!(Pattern::read(&env, Time::Morning, Weather::Sunny), Ok(None));
+    }
 }
 
 #[cfg(test)]
