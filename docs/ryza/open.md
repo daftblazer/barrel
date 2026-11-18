@@ -172,8 +172,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   there is the sky's, not the water's.
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;
-  `barrel FIELD --look-at 32509.5,6224.1,30934.96 --distance 1000 --pitch 8 --yaw 181 --fov
-  45.4 --ryza 32517,6180,30336 --done MM00_010`, row `rasen-3d-2550`), 858 of the game's 913
+  `barrel FIELD --look-at 32509.512,6224.147,30934.779 --distance 1000 --pitch 8 --yaw 180.99981
+  --fov 45 --ryza 32517,6180,30336 --done MM00_010`, row `rasen-3d-2550`), 856 of the game's 913
   draws have a Barrel match. The 55 without: the terrain's 42 strips (Barrel draws a patch at
   once), the water's 10 (below), one `npc23a` draw and 2 of the field's models. Barrel
   draws 113 the game does not: 62 of the field's models and some 20 townsfolk draws, in view
@@ -198,8 +198,16 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   order). The windmills' sails turn and the boat rocks by the motions the object
   container has under their names (`<model>.g1a`, looped: the game turns the sails 0.5° a
   frame, all windmills together); where in the motion the game is when a field appears is
-  not read (Barrel starts it with the field). The game's projection is narrower than 16:9 by 1% (its
-  x scale 1.3578 against 1.3447 for the same y scale): not read.
+  not read (Barrel starts it with the field; the board's `BARREL_SKY_CLOCK` sets it, and the capture's
+  sail joints sit where the sky's clock puts them: 7.05 s at frame 2150). The game's projection is a
+  vertical field of 45.0 degrees at 16:9 (`mW2P`: y scale 2.4142 over the view's pitch cosine, x
+  1.3578): the 45.4 the gate's row used was 1% too wide (read off the culling, not the matrix).
+  With the exact camera (eye from `mW2P`'s zero point, the yaw and pitch from `mWV`'s third row,
+  the field of view from its y scale) the clip matrix equals the game's to 5 digits and the
+  game does not jitter its projection at these frames (the temporal anti-aliasing's constants
+  are not dumped, but `mW2P` has no sub-pixel offset). The cull stand-in (docs/renderer.md, "which
+  field models are drawn") was measured under the 45.4 view: 858 pairs then, 856 with the exact
+  one (2 parts of objects at the view's edge).
 - **Ryza 3 DX's placement lists** read neither as Escha's nor as Ryza DX's (they fail at the
   first type's instance count): for when Ryza 3 starts (`docs/formats.md`, "Placement lists").
 - **Field lighting.** `barrel --time T --weather W` lights a field with the game's own
@@ -255,7 +263,24 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   volume's clusters, the depth of field, the star filter, the light shafts, the temporal
   anti-aliasing), or in a formula. The board's values that are stand-ins (the dome's and the
   strip's wind offsets are left out: time-dependent) are marked in `play/constants.rs`.
-  (9) **The halo and the gate's picture against the game's pixels.** The game's own render
+  (9) **The halo and the gate's picture against the game's pixels.** Two views are on the board
+  (`docs/ryza/views`): the gate and the turn view (frame 2150, toward the windmill tower and a
+  house). The camera first: the gate's row had `--fov 45.4` and a yaw of 181, 1% wider than the
+  game's projection and 0.0002 degrees off; with the matrix's own 45.0 and the exact yaw the gate's
+  tone error went from 15.87 to 9.02 (stage 15.2 to 8.0, the `normal` median from 4.3 to 1.5
+  degrees) and the turn view's from 19.5 to 10.9, all of the "thin edge offset". The turn view
+  then lost its windmill-tower band when the field clock turned the sails to the capture's phase
+  (7.05 s; the sail shadow had fallen on the tower's other side): tone 10.12 (stage 9.11, sky
+  16.4, characters 26.4 over her pose). Shares left on the turn view (lit, game against Barrel):
+  the tower's sunlit side 1.70 against 1.86 and shaded 0.86 against 0.93 (the sun's share 0.43
+  against 0.47 and 0.45 against 0.48: the cloud pattern's level; the occlusion and normals
+  agree, the normals within 3 to 4 degrees), the house's white wall 2.41 against 2.77 (share
+  0.425 against 0.492, flat in the game and banded in Barrel's: the pattern's lookup on a
+  vertical wall), the planter 0.20 against 0.26 (share 0.45 against 0.56), the rock 1.04
+  against 0.84 (Barrel darker, share 0.54 against 0.51, normals 3.5 degrees), the crates and the
+  grass and the path within 3% (grass 3%). The pattern's level is the open term at both views:
+  the gate's ground has Barrel 7% under the game's share, the walls 16% over.
+  Earlier measures, before the camera was exact: The game's own render
   targets for the gate (frame 2550; the pixel board, docs/parity.md) replaced the still as the
   measure. The halo was Barrel's, not the game's: the cloud strip's colour was not stored at
   half like the rest of the scene, so the clouds were twice as bright (fixed:

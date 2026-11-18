@@ -842,7 +842,8 @@ not padded (nothing moves it but its placement; a skinned one keeps the padding)
 against the game's draws in Rasenboden (913 draws, frame 2550, paired by index count and
 place): with each part tested by its own box, 41 of the game's field model draws had no pair,
 among them parts of the gate behind the camera and small parts a step from the eye; with
-each part's own sphere, 22; with the object's sphere, 2. What the game really tests is not
+each part's own sphere, 22; with the object's sphere, 2 (measured under a 45.4-degree view, 1% wider than the game's own
+45 degrees: with the exact view two more of the game's draws have no pair, `docs/ryza/open.md`). What the game really tests is not
 read from its code.
 
 **Ryza DX: objects behind the ground.** The game also leaves out models inside the view

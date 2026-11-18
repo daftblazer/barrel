@@ -193,6 +193,14 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   `turn.txt` (frame 2150 of the pixels-turn capture: the camera turned toward the windmill tower and
   the house, her a few steps on; regions: the tower's sunlit and shaded sides, the crates, the rock,
   grass, path, the house's white and blue wall, the planter, the left tree).
+- The camera of a view comes from the capture's `mW2P` and `mWV` (`barrel-parity draws --vars mW2P,mWV`
+  with `PARITY_FULL=1`): the eye from `barrel-parity state`, the look-at the eye less 1000 times
+  `mWV`'s third row, the pitch `asin` of that row's y, the yaw 360 less its `atan2(x, z)` in degrees,
+  and the vertical field of view from `mW2P`'s y scale over the pitch's cosine (2.41421: 45.0
+  degrees at 16:9, for both views; the board's first rows used 45.4, 1% too wide). Compared with
+  `view_proj` in Barrel's trace (`BARREL_TRACE_DRAWS`, the game's matrix with x and y flipped) the
+  clip matrix equals the game's to 5 digits, so the game adds no jitter at these frames. The sails'
+  and the sky's clock is the same number (`BARREL_SKY_CLOCK`).
 - The turn view's run (row `turn-pixels` in the local checks file): the clock constants read from the
   capture's draws as for the gate (`PARITY_FULL=1 barrel-parity draws <draws> 2150 <index> --vars
   vTexOf,vThreshold,mW2Pt`): the strip's `vTexOf` offset 0.0198282 over 0.0028125 a second gives

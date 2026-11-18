@@ -1309,7 +1309,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // Last frame's joints, then the field's moving objects at this frame's moment (the
         // game turns Rasenboden's windmills once in their motion's 12 s, all together).
         prev_palette.copy_from_slice(&palette);
-        let field_time = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
+        let field_time = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 });
         for m in &moving {
             m.pose(field_time, &instances, &mut palette);
         }
@@ -1738,7 +1738,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
 /// wind and the water's flow) from `BARREL_SKY_CLOCK`, the cloud shadows' pattern offset
 /// (both axes, in the pattern's own widths) from `BARREL_PATTERN_PHASE`, and the cloud map's
 /// threshold from `BARREL_CLOUD_THRESHOLD`, in place of the field's own (the game's differ by
-/// run: docs/parity.md, "The pixel board").
+/// run: docs/parity.md, "The pixel board"). The same clock turns the windmills and rocks the boat
+/// (the capture's sail joints sit where the clock's seconds put them: 7.05 at frame 2150).
 fn phase_override(name: &str) -> Option<f32> {
     std::env::var(name).ok()?.trim().parse().ok()
 }
