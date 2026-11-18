@@ -667,7 +667,10 @@ impl Scene {
                 offset += w.len() as u32;
             }
         }
-        let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform).inverse().transpose());
+        // Normals turn by the transform's own 3x3, scale and all, as the games' vertex programs
+        // turn them by the local-to-world matrix (a model squashed in height leans its normals
+        // over: the far mountains of Ryza's fields, at 0.47 of their height, face the viewer).
+        let normals = Mat4::from_mat3(glam::Mat3::from_mat4(transform));
         for (submesh, s) in geometry.submeshes.iter().enumerate() {
             let mesh = geometry.simple_mesh(s)?;
             if mesh.uvs.is_empty() || mesh.normals.is_empty() {
