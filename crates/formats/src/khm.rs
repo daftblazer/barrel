@@ -14,6 +14,8 @@ pub struct Heightmap {
     pub cells_x: usize,
     pub cells_z: usize,
     pub cell_size: f32,
+    /// The header's lowest and highest heights.
+    pub range: [f32; 2],
     pub heights: Vec<f32>,
     pub flags: Vec<u8>,
 }
@@ -76,7 +78,7 @@ pub fn parse(d: &[u8]) -> Result<Heightmap, Error> {
         heights.push(low + (v >> 8) as f32 / 16_777_215.0 * (high - low));
         flags.push(v as u8);
     }
-    Ok(Heightmap { cells_x, cells_z, cell_size, heights, flags })
+    Ok(Heightmap { cells_x, cells_z, cell_size, range: [low, high], heights, flags })
 }
 
 #[cfg(test)]

@@ -425,28 +425,27 @@ const PLANT_LIMIT: usize = 200_000;
 /// the light of the ground it stands on rather than of a wall facing the camera.
 const PLANT_NORMAL: [f32; 3] = [0.0, 1.0, 0.0];
 
-// STAND-IN: The plant cells' reach past the view's sides is a measured bound; the real thing is the game's own cull test.
 /// A standing person's sphere for the skyline test: its centre's height above the feet and
 /// its radius (a person is some 170 units tall; the arms and what they carry reach wider).
 const PERSON_SPHERE: (f32, f32) = (90.0, 120.0);
 
-/// How far outside a side of the view a plant cell's centre may be, across the view, and
-/// still be drawn: on the title the game draws cells out to 656 and hides them from 695.
-const PLANT_EDGE: f32 = 675.0;
-
 /// The field's plants as camera-facing cards on its heightmap (`barrel_ryza::grass`), one draw
 /// a grid cell as the game's, the atlas being texture `atlas`.
-/// Returns each draw's first index with its cell's box in render space: the cell's square from
-/// the lowest foot to the highest top of its plants.
-fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) -> std::collections::HashMap<u32, (Vec3, Vec3)> {
+/// Returns each draw's first index with two boxes of its cell in render space: the cell's
+/// square from the lowest foot to the highest top of its plants (for the draw trace), and the
+/// box the game tests against the view (`shown`): the square from the heightmap's lowest
+/// height to its highest plus the cell's tallest plant (the plants' update, `0x140a78dd0`,
+/// with the range the field sets from its heightmap).
+fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) -> std::collections::HashMap<u32, [(Vec3, Vec3); 2]> {
     let mut boxes = std::collections::HashMap::new();
     let Some(ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
         .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
         .and_then(|b| barrel_formats::khm::parse(b).ok())
-        .map(barrel_engine::walk::Ground::of_heightmap)
+        .map(|h| (h.range, barrel_engine::walk::Ground::of_heightmap(h)))
     else {
         return boxes;
     };
+    let ([low, high], ground) = ground;
     let [cx, cz] = g.cell();
     let plants = g.plants(PLANT_LIMIT, density, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
     let mut blocks: std::collections::BTreeMap<(u32, u32), Vec<&barrel_ryza::grass::Plant>> = Default::default();
@@ -457,8 +456,10 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
     for (&(i, j), list) in &blocks {
         let first_index = scene.indices.len() as u32;
         let (foot, top) = list.iter().fold((f32::MAX, f32::MIN), |(f, t), p| (f.min(p.at[1]), t.max(p.at[1] + p.size[1])));
+        let tallest = list.iter().fold(0.0f32, |t, p| t.max(p.size[1]));
         // (render space: game x mirrored)
-        boxes.insert(first_index, (Vec3::new(-((i + 1) as f32) * cx, foot, j as f32 * cz), Vec3::new(-(i as f32) * cx, top, (j + 1) as f32 * cz)));
+        let square = |lo: f32, hi: f32| (Vec3::new(-((i + 1) as f32) * cx, lo, j as f32 * cz), Vec3::new(-(i as f32) * cx, hi, (j + 1) as f32 * cz));
+        boxes.insert(first_index, [square(foot, top), square(low, high + tallest)]);
         for p in list {
             let [u, v, cw, ch] = p.card;
             let [w, h] = p.size;
@@ -993,7 +994,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // A plant cell has its own rule for the view's edges (`shown`, below): its box is kept
         // for the draw trace, padded past any view.
         d.bounds = match plant_boxes.get(&d.first_index).filter(|_| d.name == "plants") {
-            Some(&(lo, hi)) => Some(Bounds { lo, hi, pad: f32::INFINITY, round: false }),
+            Some(&[(lo, hi), _]) => Some(Bounds { lo, hi, pad: f32::INFINITY, round: false }),
             // A rigid draw is where its vertices are (nothing but the plants sways in Ryza's
             // fields yet), so its box alone decides, as in the game: on the title it hides
             // the models whose boxes are outside the view. A skinned one keeps the padding.
@@ -1250,9 +1251,6 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         !horizon.as_ref().zip(boxes.get(&(d.first_index, d.instance))).is_some_and(|(h, &(lo, hi))| h.borrow().hides((lo + hi) * Vec3::new(-0.5, 0.5, 0.5), lo.distance(hi) * 0.5))
     };
     let eye_now = std::cell::Cell::new(Vec3::ZERO);
-    // The plants' cells are drawn only as deep into the view as the grass preset's range ends:
-    // a cell shows while its box's centre is nearer than that by the box's diagonal (the
-    // title's capture: the deepest cell drawn is at 15000.0 by this measure, to the unit).
     let forward_now = std::cell::Cell::new(Vec3::ZERO);
     let sides_now = std::cell::Cell::new([glam::Vec4::ZERO; 4]);
     // The boot sequence's screens come before the scene exists: it is left out until the title.
@@ -1260,13 +1258,14 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let shown = |d: &Draw| {
         scene_on.get()
             && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
-            // A plant cell is drawn while its box's centre is short of the grass range's end by
-            // the box's diagonal in depth, and no further outside a side of the view than
-            // `PLANT_EDGE` across it (measured on the title: docs/renderer.md, "Ryza DX: which
+            // A plant cell is drawn unless its test box (`add_plants`) is wholly outside one of
+            // the view's four sides or past the grass range's end, as the game's plants' update
+            // tests it against its six planes (`0x140a78dd0`; docs/renderer.md, "Ryza DX: which
             // plant cells are drawn").
-            && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&(lo, hi)| {
-                let c = (lo + hi) * 0.5;
-                forward_now.get().dot(c - eye_now.get()) - lo.distance(hi) <= plant_preset.far[1] && sides_now.get().iter().all(|p| p.truncate().dot(c) + p.w >= -PLANT_EDGE)
+            && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&[_, (lo, hi)]| {
+                let corners = (0..8).map(|k| Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
+                let depth = |c: Vec3| forward_now.get().dot(c - eye_now.get());
+                corners.clone().any(|c| depth(c) <= plant_preset.far[1]) && sides_now.get().iter().all(|p| corners.clone().any(|c| p.truncate().dot(c) + p.w >= 0.0))
             })
             && match (ranges, boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),

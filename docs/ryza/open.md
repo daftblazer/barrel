@@ -492,34 +492,13 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (docs/formats.md): which kinds grow in a cell, how many, their cards and their sizes' ranges
   are the file's, and `barrel` draws them as the game does, one draw a 500-unit cell of upright
   cards turning about the vertical (look slots 37 to 39), on the heightmap: the title's 348
-  plant draws all have their match by card atlas and plant count. A cell is drawn while its
-  box's centre (the cell's square from its lowest foot to its highest top) is nearer in view
-  depth than the grass range's end by the box's diagonal (the deepest cell the title draws is
-  at 15000.0 by this measure); at the view's sides a cell is drawn while its centre is no further
-  outside than a measured length (`PLANT_EDGE`, a stand-in between the last cell drawn and
-  the first hidden: docs/renderer.md, "View culling"); Barrel draws 2 more cells than the game. At
-  the gate (row `rasen-3d-2550`, the game's cells told apart by their vertex buffers' squares)
-  Barrel draws 198 cells, the game 190, 183 the same: Barrel's 15 extra are the far row (12,
-  by Barrel's measure 14,925 to 14,991, where the game's deepest drawn is 14,724 and its
-  nearest left out 14,733, against the title's 15,000.0) and 3 at the side; the game's 7 more
-  stand outside the side, 553 to 866 by `PLANT_EDGE`'s measure (the title's limit 656 to 695).
-  Neither limit is one number for both views, by any of: the box's centre less its diagonal,
-  half-diagonal or plan diagonal, its nearest corner, its distance from the eye; at the
-  sides by planes made unit length with the sphere or the box, the side planes alone, or in
-  plan. The game's test, read from its code: the plants' update (`0x140a78dd0`) walks the
-  cells of a rectangle (`0x1409990c0`, from the planes, widened by 100) and keeps a cell when
-  its box is inside all six planes at `+0x280` of the plants' object (each plane against the
-  box corner it picks, `>= 0` leaves the cell out: no margin). The box is the cell's square,
-  from the cell's height (an i16 grid at `+0x240` times 100) up by the tallest plant of the
-  cell's kind (`+0x48` of its kind; with the byte `+0x4cc` set, the heights `+0x490`,
-  `+0x494` instead). The planes (`0x140a786a0`): a copy of the current camera
-  (`0x14042b640`, into `+0x310`) whose far distance (`+0x444`) is cut to the grass range
-  (`+0x48c`), moved by the origin at `+0x470`, its matrices rebuilt (`0x14042bdd0`,
-  `0x14042c360`) and the planes taken from the view-projection at `+0x400` (`0x140998e10`).
-  Yet against Barrel's view no widening (drawn cells need up to 1.30 times the width, left-out
-  ones 1.05) and no turn (-8° to 8°) fits; so the copy is not the frame's camera as drawn, or
-  the boxes differ. Next: read the planes themselves (a hook on `0x140998e10` logging its
-  output, or the object found by its `+0x48c` range) at frame 2550. Where a plant stands in its
+  plant draws all have their match by card atlas and plant count. Which cells are drawn is
+  the game's own test (docs/renderer.md, "Ryza DX: which plant cells are drawn"): read from
+  `0x140a78dd0` and its planes hooked at `0x1409990c0` (the call from `0x140a79304`), it gives
+  the game's cells but for 1 on the title and 2 at the gate; Barrel's left-over plant draws
+  are 1 on the title and 3 at the gate (they were 2 and 15 with the measured limits it
+  replaced). Not modelled: the test box's top uses the tallest plant of the cell's kind
+  (`+0x48` of the kind), where Barrel takes the cell's tallest plant. Where a plant stands in its
   cell and where in its ranges its size falls are the game's own numbers
   (`barrel_ryza::grass::Scatter`, from the game's cell builder `0x140a77060`, which fills a
   cell's vertices the first time the cell is drawn: a generator `s × 69069 + 1` seeded from

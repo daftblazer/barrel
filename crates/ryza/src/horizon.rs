@@ -83,7 +83,7 @@ mod tests {
     fn ridge() -> Heightmap {
         let n = 21;
         let heights = (0..n * n).map(|i| if i / n == 10 { 500.0 } else { 100.0 }).collect();
-        Heightmap { cells_x: n - 1, cells_z: n - 1, cell_size: 500.0, heights, flags: vec![0; n * n] }
+        Heightmap { cells_x: n - 1, cells_z: n - 1, cell_size: 500.0, range: [0.0, 0.0], heights, flags: vec![0; n * n] }
     }
 
     #[test]

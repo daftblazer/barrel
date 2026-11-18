@@ -900,14 +900,16 @@ by its joints, the motion looped in real time (the windmill's 12 s a turn, as th
 fields do not ask for it (`Placement::moves`).
 
 **Ryza DX: which plant cells are drawn.** A plant cell (`_grass.bin`, one draw a cell) has its
-own test, on the cell's box (its 500-unit square from its lowest foot to its highest top):
-drawn while the box's centre is nearer in view depth than the grass range's end by the box's
-diagonal (the deepest cell the title draws is at 15000.0 by this measure), and no further
-outside a side of the view than a fixed length measured across the view (the plane's distance
-divided by the projection's scale on that axis: the title's cells are drawn out to 656 and
-hidden from 695; `PLANT_EDGE` is 675, a stand-in between the two). Of the title's 348 cells
-all are drawn, and Barrel draws 2 the game does not (one behind the eye). The objects' draw
-ranges do not apply to plant cells.
+own test, the game's (its plants' update, `0x140a78dd0`): the cell is drawn unless its test box
+is wholly outside one of the view's four sides or a far plane at the grass range's end (the
+preset's `FarClipEnd`, 15,000 on High), measured along the view from the eye. The game's sixth
+plane, the near one, is left out (a cell box behind the eye is mostly outside a side already). The test box is the cell's 500-unit square from the heightmap's lowest height to
+its highest plus the cell's tallest plant (the field gives the plants the heightmap header's
+range: Rasenboden's 1,766 and 7,000; the title's field 3,000 and 9,600). Hooked in the
+recompiled game, its planes are the drawn camera's, re-run every frame. The objects' draw
+ranges do not apply to plant cells. With the game's own planes the test reproduces its cells
+but for 1 of 1,024 on the title and 2 of 1,122 at the gate; Barrel draws 1 and 3 cells more
+than the game.
 
 The gain is small: only the current field's objects were drawn before too (an event's other
 fields wait), and from the third-person camera most of a field is in view. On the RP6 at native
