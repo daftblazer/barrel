@@ -1,0 +1,27 @@
+# The turn view: the same field, camera turned toward the windmill tower and a house, frame 2150
+# of the pixels-turn capture. Dump file stems are in the frame's folder.
+stage cloud_map 1870-1870_rt1024x1024.27#4
+stage ao 748-748_rt960x540.27#2
+stage shadow 1854-1856_rt1920x1080.9#15
+stage lit 1857-1860_rt1920x1080.26#4
+stage lit_fogged 1878-1878_rt1920x1080.26#4
+stage sky 1871-1875_rt1920x1080.26#4
+stage scene 2005-2005_rt1920x1080.26#4
+stage bright 2020-2020_rt482x272.26#1
+stage bloom 2025-2025_rt240x135.26#1
+stage tone 2046-2046_rt1920x1080.90#7
+masks 1857-1860_rt1920x1080.19#15.depth
+normal 5-745_rt1920x1080.9#12
+# The capture's mWV rotation.
+view 0.59239393 0 -0.8056485  -0.11212464 0.990268 -0.08244533  0.7978079 0.13917315 0.58662874
+region tower_sunlit 880 120 960 340
+region tower_shaded 990 100 1030 330
+region crates 20 350 240 500
+region crates_right 300 360 440 520
+region rock 400 210 600 300
+region grass 120 600 400 680
+region path 1040 470 1120 500
+region house_wall_white 1400 170 1470 480
+region house_wall_blue 1620 530 1800 565
+region planter 1440 660 1540 740
+region tree_left 80 120 300 220

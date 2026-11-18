@@ -12,7 +12,7 @@
 //!                                                      constant buffers' values (3D)
 //!   barrel-parity diff3d <trace dir> <frame> <barrel trace> <frame> [index]
 //!                                                      the game's 3D draws against Barrel's
-//!   barrel-parity pixels <game dump dir> <barrel dump dir> [picture dir]
+//!   barrel-parity pixels <view file> <game dump dir> <barrel dump dir> [picture dir]
 //!                                                      the game's render targets against Barrel's
 //!                                                      at each stage (the pixel board)
 //!   barrel-parity align <trace dir> <a-b/step> <barrel trace> <a-b> [index]
@@ -848,7 +848,7 @@ fn align(trace: &Path, grange: &str, barrel: &Path, brange: &str, idx: Option<&s
 fn main() -> Result<()> {
     let a: Vec<String> = std::env::args().skip(1).collect();
     match a.first().map(String::as_str) {
-        Some("pixels") if a.len() >= 3 => pixels::run(Path::new(&a[1]), Path::new(&a[2]), a.get(3).map(Path::new)),
+        Some("pixels") if a.len() >= 4 => pixels::run(Path::new(&a[1]), Path::new(&a[2]), Path::new(&a[3]), a.get(4).map(Path::new)),
         Some("textures") if a.len() == 3 => textures(Path::new(&a[1]), Path::new(&a[2])),
         Some("shader") if a.len() == 3 => shader(Path::new(&a[1]), &a[2]),
         Some("diff") if a.len() >= 5 => {

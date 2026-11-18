@@ -1,0 +1,32 @@
+# The gate: Rasenboden at noon, frame 2550 of the load-rasen capture (docs/parity.md, "The pixel
+# board"). Dump file stems are in the frame's folder; the draw numbers are the game's.
+stage cloud_map 1911-1911_rt1024x1024.27#4
+stage plane 1912-1912_rt1920x1080.26#4
+stage dome1 1913-1913_rt1920x1080.26#4
+stage dome 1914-1914_rt1920x1080.26#4
+stage ao 914-914_rt960x540.27#2
+stage shadow 1892-1894_rt1920x1080.9#15
+stage lit 1895-1898_rt1920x1080.26#4
+stage lit_fogged 1919-1919_rt1920x1080.26#4
+stage sky 1912-1916_rt1920x1080.26#4
+stage scene 2037-2037_rt1920x1080.26#4
+stage bright 2052-2052_rt482x272.26#1
+stage bloom 2057-2057_rt240x135.26#1
+stage tone 2078-2078_rt1920x1080.90#7
+masks 1895-1898_rt1920x1080.19#15.depth
+normal 9-911_rt1920x1080.9#12
+strip 1915-1915_rt1920x1080.26#4 1914-1914_rt1920x1080.26#4
+# The capture's mWV rotation (the world's axes in view space).
+view -0.9998477 0.0 -0.017449148  -0.0024284574 0.990268 0.13915221  0.017279334 0.1391734 -0.9901173
+region canopy_left 100 40 600 260
+region mid_tree 960 150 1250 330
+region trunk 560 150 680 420
+region grass 100 800 500 900
+region sand 1100 950 1500 1050
+region hills_right 1500 330 1800 350
+region far_field 700 380 820 410
+region canopy_dark 150 300 500 420
+region stone_wall 860 400 1000 450
+region shaded_path 600 620 800 680
+region ryza_shadow 880 880 1250 1060
+region board 0 522 52 556

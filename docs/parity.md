@@ -132,7 +132,9 @@ Conventions found in the capture (checked on the title's characters, `sha0de8a` 
   bones worst translation T, rotation R` (the largest entry difference of the 3 x 3 part). Joints
   the game moves by cloth simulation (`simulated` in the trace: no motion moves them off the bind
   pose) and submeshes Barrel draws rigid (`palette_indexed` false) are not compared.
-  `DIFF3D_POSES=1` lists each draw.
+  `DIFF3D_POSES=1` lists each draw; `=fit` adds under each the rigid motion (yaw, translation, and the
+  spread of the translation over the bones) that takes Barrel's palette to the game's, which is where
+  she stands and faces when the pose is the same.
 - Not covered yet: shadow passes (game and Barrel both list them; `diff3d` compares colour
   passes only), instanced draws (Barrel writes `inst` 1), view and projection separately.
 
@@ -180,6 +182,28 @@ come from the reference run's pixel mirror (ryza-recomp's `docs/DESIGN.md`, "Pix
 `RYZA_PIXELS=<dir>` with the capture's frames, one folder `f<frame>` of `<first draw>-<last
 draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is read only here.
 
+- A **view file** (`docs/ryza/views/<name>.txt`: numbers and names only, no paths) says which
+  frame the board reads: per stage the game's dump file stem (`stage tone 2078-2078_rt1920x1080.90#7`),
+  `masks` (the depth and stencil before the sky), `normal` (the G-buffer's normal target), `strip` (the two
+  targets round the cloud strip, when the dump has them), `view` (the capture's `mWV` rotation, nine
+  numbers, for the `normal` line) and the `region` lines (name and a box in the 1920 by 1080 picture).
+  A stage the file does not name is skipped. The game's draw numbers differ between frames (the dump names
+  follow the capture's draws), so each view names its own; the folder of dumps is the first
+  argument after the view. Two views: `gate.txt` (frame 2550 of the load-rasen capture) and
+  `turn.txt` (frame 2150 of the pixels-turn capture: the camera turned toward the windmill tower and
+  the house, her a few steps on; regions: the tower's sunlit and shaded sides, the crates, the rock,
+  grass, path, the house's white and blue wall, the planter, the left tree).
+- The turn view's run (row `turn-pixels` in the local checks file): the clock constants read from the
+  capture's draws as for the gate (`PARITY_FULL=1 barrel-parity draws <draws> 2150 <index> --vars
+  vTexOf,vThreshold,mW2Pt`): the strip's `vTexOf` offset 0.0198282 over 0.0028125 a second gives
+  `BARREL_SKY_CLOCK=7.0500` (the second layer's -0.44062734 over 0.0625 gives 7.0500), `mW2Pt`'s
+  translation `BARREL_PATTERN_PHASE=-0.10466671` and `vThreshold` `BARREL_CLOUD_THRESHOLD=0.64210135`.
+  Her place is read by `DIFF3D_POSES=fit DIFF3D_FIT_AT=<her x,y,z> barrel-parity diff3d` (a trace of
+  Barrel's draws of the same view): per skinned draw the rigid motion that takes Barrel's palette to the
+  game's, as her facing's difference (yaw) and how far her point moves, so iterating
+  `--ryza` and `--turn` until the yaw reads 0 and the move under a unit places her from the capture's
+  matrices, not from a bone's mean: `--ryza 32200.7,6191.4,30166.9 --turn -126.35` (the height comes from
+  the terrain under her; the draws' spread over the bones is under 1 unit).
 - `BARREL_DUMP_STAGES=<dir>` on a Ryza field render (offscreen) writes Barrel's targets in the
   same layout (`<name>.f32`, `<name>.txt`: `width height channels format`, RGBA floats, rows
   top to bottom) and `tone.png`, in the game's units: the scene is stored at half
@@ -272,7 +296,7 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   each region of the list above (halved); `normal.png` shows the angle, 0 to 45 degrees black to
   white. Two samples of a normal map half a pixel apart already differ by 4 to 5 degrees, so the
   median does not go below that.
-- `barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
+- `barrel-parity pixels <view file> <game dump dir> <barrel dump dir> [<picture dir>]` pairs the stages
   (`cloud_map`, `ao` (the game's `914-914_rt960x540.27#2`: the occlusion, half size, with the
   regions' means taken over the half size picture), `shadow`, `lit`, `lit_fogged` (Barrel's `sky` against the game's stage after both fogs),
   `sky`, `scene`, `bright` (the game's 482 by 272 cropped to Barrel's 480 by 270), `bloom`,

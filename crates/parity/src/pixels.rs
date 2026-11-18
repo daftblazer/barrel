@@ -2,12 +2,15 @@
 //! against Barrel's own at the matching stages (`BARREL_DUMP_STAGES`, docs/parity.md, "The pixel
 //! board"), as errors over the frame, a grid of regions and masks, and side-by-side pictures.
 //!
-//!   barrel-parity pixels <game dump dir> <barrel dump dir> [<picture dir>]
+//!   barrel-parity pixels <view file> <game dump dir> <barrel dump dir> [<picture dir>]
 //!
 //! The game's dump dir is one frame's folder (`f2550`); its files are named
 //! `<first draw>-<last draw>_<target>`. Floats are read from `.f32` (width, height, channels and
 //! format in the `.txt` beside it), 8-bit targets from `.png` (as 0 to 1), Barrel's the same.
+//! The view file (`docs/ryza/views/`) names the game's file for each stage and holds the
+//! view's matrix and regions.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 
@@ -70,11 +73,10 @@ fn load(dir: &Path, stem: &str) -> Result<Image> {
     }
 }
 
-/// One pair of targets: the game's file (this capture's frame 2550) and Barrel's name, and the
-/// scale of its error (255 for the 8-bit picture).
+/// One pair of targets: the stage's name (the view names the game's file for it) and Barrel's
+/// name, and the scale of its error (255 for the 8-bit picture).
 struct Stage {
     name: &'static str,
-    game: &'static str,
     barrel: &'static str,
     scale: f64,
     /// The game's alpha is the value (the sun's share), taken as grey; its colour is not.
@@ -83,22 +85,52 @@ struct Stage {
     regions: bool,
 }
 
-/// Regions of the 1920 by 1080 pictures (x0, y0, x1, y1) where the picture is judged by eye:
-/// the trees' canopy, the trunk, the grass, the sand, the far hills and field.
-const REGIONS: &[(&str, [usize; 4])] = &[
-    ("canopy left", [100, 40, 600, 260]),
-    ("mid tree", [960, 150, 1250, 330]),
-    ("trunk", [560, 150, 680, 420]),
-    ("grass", [100, 800, 500, 900]),
-    ("sand", [1100, 950, 1500, 1050]),
-    ("hills right", [1500, 330, 1800, 350]),
-    ("far field", [700, 380, 820, 410]),
-    ("canopy dark", [150, 300, 500, 420]),
-    ("stone wall", [860, 400, 1000, 450]),
-    ("shaded path", [600, 620, 800, 680]),
-    ("ryza shadow", [880, 880, 1250, 1060]),
-    ("board", [0, 522, 52, 556]),
-];
+/// One view of a captured frame (a text file, `docs/ryza/views/`), a line each: `stage <name>
+/// <game file stem>`, `masks <stem>` (the game's depth and stencil before the sky), `normal
+/// <stem>` (its normal target), `strip <after stem> <before stem>` (the cloud strip's two
+/// targets), `view <nine numbers>` (the capture's `mWV` rotation, row by row) and `region <name>
+/// x0 y0 x1 y1` (in the 1920 by 1080 picture's pixels, where the picture is judged by eye; `_`
+/// in the name is a space). A line starting with `#`, or a `#` after a space, is a comment (a
+/// target's own name has a `#` in it). A stage the view does not name is not compared.
+struct View {
+    stages: HashMap<String, String>,
+    masks: Option<String>,
+    normal: Option<String>,
+    strip: Option<(String, String)>,
+    rows: [[f32; 3]; 3],
+    regions: Vec<(String, [usize; 4])>,
+}
+
+impl View {
+    fn parse(text: &str) -> Result<View> {
+        let mut v = View { stages: HashMap::new(), masks: None, normal: None, strip: None, rows: [[0.0; 3]; 3], regions: Vec::new() };
+        for raw in text.lines() {
+            let line = raw.find(" #").map_or(raw, |i| &raw[..i]);
+            let w: Vec<&str> = line.split_whitespace().collect();
+            match w.as_slice() {
+                [] => {}
+                [first, ..] if first.starts_with('#') => {}
+                ["stage", name, stem] => {
+                    v.stages.insert((*name).into(), (*stem).into());
+                }
+                ["masks", stem] => v.masks = Some((*stem).into()),
+                ["normal", stem] => v.normal = Some((*stem).into()),
+                ["strip", after, before] => v.strip = Some(((*after).into(), (*before).into())),
+                ["view", n @ ..] if n.len() == 9 => {
+                    for (i, t) in n.iter().enumerate() {
+                        v.rows[i / 3][i % 3] = t.parse()?;
+                    }
+                }
+                ["region", name, r @ ..] if r.len() == 4 => {
+                    let r: Vec<usize> = r.iter().map(|t| t.parse()).collect::<std::result::Result<_, _>>()?;
+                    v.regions.push(((*name).replace('_', " "), [r[0], r[1], r[2], r[3]]));
+                }
+                _ => return Err(format!("view file: cannot read `{raw}`").into()),
+            }
+        }
+        Ok(v)
+    }
+}
 
 /// The mean of a region's three channels, per channel, over the pixels the game drew before the
 /// sky (depth under the far plane) when it has `masks`.
@@ -270,23 +302,20 @@ fn chara_bands(name: &str, game: &Image, barrel: &Image, masks: &Image, own: &[b
 /// with the game's after the fog (`lit`: the game's lit scene without it, kept for the
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
-    Stage { name: "cloud_map", game: "1911-1911_rt1024x1024.27#4", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "plane", game: "1912-1912_rt1920x1080.26#4", barrel: "plane", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "dome1", game: "1913-1913_rt1920x1080.26#4", barrel: "dome1", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "dome", game: "1914-1914_rt1920x1080.26#4", barrel: "dome", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "ao", game: "914-914_rt960x540.27#2", barrel: "ao", scale: 1.0, alpha: false, regions: true },
-    Stage { name: "shadow", game: "1892-1894_rt1920x1080.9#15", barrel: "shadow", scale: 1.0, alpha: true, regions: true },
-    Stage { name: "lit", game: "1895-1898_rt1920x1080.26#4", barrel: "lit", scale: 1.0, alpha: false, regions: true },
-    Stage { name: "lit_fogged", game: "1919-1919_rt1920x1080.26#4", barrel: "sky", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "sky", game: "1912-1916_rt1920x1080.26#4", barrel: "sky", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "scene", game: "2037-2037_rt1920x1080.26#4", barrel: "scene", scale: 1.0, alpha: false, regions: true },
-    Stage { name: "bright", game: "2052-2052_rt482x272.26#1", barrel: "bright", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "bloom", game: "2057-2057_rt240x135.26#1", barrel: "bloom", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "tone", game: "2078-2078_rt1920x1080.90#7", barrel: "tone", scale: 255.0, alpha: false, regions: true },
+    Stage { name: "cloud_map", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "plane", barrel: "plane", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "dome1", barrel: "dome1", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "dome", barrel: "dome", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "ao", barrel: "ao", scale: 1.0, alpha: false, regions: true },
+    Stage { name: "shadow", barrel: "shadow", scale: 1.0, alpha: true, regions: true },
+    Stage { name: "lit", barrel: "lit", scale: 1.0, alpha: false, regions: true },
+    Stage { name: "lit_fogged", barrel: "sky", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "sky", barrel: "sky", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "scene", barrel: "scene", scale: 1.0, alpha: false, regions: true },
+    Stage { name: "bright", barrel: "bright", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "bloom", barrel: "bloom", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "tone", barrel: "tone", scale: 255.0, alpha: false, regions: true },
 ];
-
-/// The game's depth and stencil before the sky, for the masks.
-const MASKS: &str = "1895-1898_rt1920x1080.19#15.depth";
 
 #[derive(Default, Clone, Copy)]
 struct Sums {
@@ -397,14 +426,6 @@ fn coverage(masks: &Image, depth: &Image) {
     }
 }
 
-/// The game's normal target (`9-911`, after the G-buffer's draws): the view-space normal as
-/// the octahedral pair in xy.
-const GAME_NORMAL: &str = "9-911_rt1920x1080.9#12";
-
-/// The view's rotation `mWV` of the captured frame (rows: the world's axes in view space,
-/// the game's left-handed world), from the draw capture's constants.
-const VIEW_ROWS: [[f32; 3]; 3] = [[-0.9998477, 0.0, -0.017449148], [-0.0024284574, 0.990268, 0.13915221], [0.017279334, 0.1391734, -0.9901173]];
-
 /// The game's view-space normal from its octahedral pair `(a, b)` (stored 0 to 1): with
 /// `p = (z, x, y) / |.|_1`, the front (`p.x >= 0`) holds `(p.y, p.z)` and the back
 /// `((1 - |p.z|) sign(p.y), (1 - |p.y|) sign(p.z))`. Returns the unit vector `(x, y, z)`.
@@ -421,9 +442,9 @@ fn octahedral_view(a: f32, b: f32) -> [f32; 3] {
 
 /// The game's normal in Barrel's render space (the world with x mirrored): the view vector
 /// turned back by `mWV`'s transpose.
-fn game_normal_render(a: f32, b: f32) -> [f32; 3] {
+fn game_normal_render(a: f32, b: f32, rows: &[[f32; 3]; 3]) -> [f32; 3] {
     let v = octahedral_view(a, b);
-    let w: [f32; 3] = std::array::from_fn(|c| (0..3).map(|r| v[r] * VIEW_ROWS[r][c]).sum());
+    let w: [f32; 3] = std::array::from_fn(|c| (0..3).map(|r| v[r] * rows[r][c]).sum());
     [-w[0], w[1], w[2]]
 }
 
@@ -432,8 +453,12 @@ fn game_normal_render(a: f32, b: f32) -> [f32; 3] {
 /// target at the half-size pixel's top-left full-size pixel): mean and median in degrees, and
 /// the same over the regions. A picture of the angle (0 to 45 degrees, black to white) is
 /// written when there is a picture folder.
-fn normals(game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
-    let (Ok(g), Ok(b)) = (load(game, GAME_NORMAL), load_f32(&barrel.join("depth"))) else {
+fn normals(view: &View, game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
+    let (Some(stem), Ok(b)) = (&view.normal, load_f32(&barrel.join("depth"))) else {
+        println!("normal: missing");
+        return;
+    };
+    let Ok(g) = load(game, stem) else {
         println!("normal: missing");
         return;
     };
@@ -448,7 +473,7 @@ fn normals(game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
             return None;
         }
         let gp = g.at(gx, gy);
-        let gn = game_normal_render(gp[0], gp[1]);
+        let gn = game_normal_render(gp[0], gp[1], &view.rows);
         let len = (bp[0] * bp[0] + bp[1] * bp[1] + bp[2] * bp[2]).sqrt().max(1.0e-9);
         let cos = (0..3).map(|c| gn[c] * bp[c] / len).sum::<f32>();
         Some(cos.clamp(-1.0, 1.0).acos().to_degrees())
@@ -461,13 +486,13 @@ fn normals(game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
         format!("median {:.1}, mean {:.1} degrees over {} pixels", v[v.len() / 2], v.iter().sum::<f32>() / v.len() as f32, v.len())
     };
     let mut all = Vec::new();
-    let mut by_region: Vec<Vec<f32>> = vec![Vec::new(); REGIONS.len()];
+    let mut by_region: Vec<Vec<f32>> = vec![Vec::new(); view.regions.len()];
     let mut out = vec![255u8; 4 * b.w * b.h];
     for y in 0..b.h {
         for x in 0..b.w {
             let Some(a) = angle(x, y) else { continue };
             all.push(a);
-            for ((_, [x0, y0, x1, y1]), v) in REGIONS.iter().zip(&mut by_region) {
+            for ((_, [x0, y0, x1, y1]), v) in view.regions.iter().zip(&mut by_region) {
                 if (x0 / 2..x1 / 2).contains(&x) && (y0 / 2..y1 / 2).contains(&y) {
                     v.push(a);
                 }
@@ -477,7 +502,7 @@ fn normals(game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
         }
     }
     println!("normal: {}", stats(all));
-    for ((name, _), v) in REGIONS.iter().zip(by_region) {
+    for ((name, _), v) in view.regions.iter().zip(by_region) {
         println!("  region {name}: {}", stats(v));
     }
     if let Some(p) = pictures {
@@ -486,17 +511,18 @@ fn normals(game: &Path, barrel: &Path, masks: &Image, pictures: Option<&Path>) {
 }
 
 /// The cloud strip's own contribution (the stage after it less the stage before, the game's
-/// `1915` less `1914`, Barrel's `sky` less `dome`) over the sky pixels, by bands of rows: the
+/// the view's `strip` pair, Barrel's `sky` less `dome`) over the sky pixels, by bands of rows: the
 /// mean absolute difference of the two contributions, and each one's mean light (over the
 /// pixels that are sky in both).
-fn strip(game: &Path, barrel: &Path, masks: &Image) {
+fn strip(view: &View, game: &Path, barrel: &Path, masks: &Image) {
+    let Some((after, before)) = &view.strip else { return };
     // Only where both pictures have sky: the trees' edges differ in coverage, which is not the
     // strip's.
     let Ok(depth) = load(barrel, "depth") else {
         println!("strip: no depth");
         return;
     };
-    let (Ok(g1), Ok(g0), Ok(b1), Ok(b0)) = (load(game, "1915-1915_rt1920x1080.26#4"), load(game, "1914-1914_rt1920x1080.26#4"), load(barrel, "sky"), load(barrel, "dome")) else {
+    let (Ok(g1), Ok(g0), Ok(b1), Ok(b0)) = (load(game, after), load(game, before), load(barrel, "sky"), load(barrel, "dome")) else {
         println!("strip: missing");
         return;
     };
@@ -531,15 +557,17 @@ fn strip(game: &Path, barrel: &Path, masks: &Image) {
     }
 }
 
-pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
+pub fn run(view: &Path, game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
+    let view = View::parse(&std::fs::read_to_string(view)?)?;
     if let Some(p) = pictures {
         std::fs::create_dir_all(p)?;
     }
-    let masks = load_f32(&game.join(MASKS)).ok();
+    let masks = view.masks.as_ref().and_then(|m| load_f32(&game.join(m)).ok());
     let chara = load_f32(&barrel.join("chara")).ok();
     let mut tone = None;
     for stage in STAGES {
-        let (g, b) = match (load(game, stage.game), load(barrel, if stage.barrel == "tone" { "tone" } else { stage.barrel })) {
+        let Some(stem) = view.stages.get(stage.name) else { continue };
+        let (g, b) = match (load(game, stem), load(barrel, if stage.barrel == "tone" { "tone" } else { stage.barrel })) {
             (Ok(g), Ok(b)) => (g, b),
             (g, b) => {
                 println!("{}: missing ({})", stage.name, g.err().or(b.err()).map_or(String::new(), |e| e.to_string()));
@@ -589,7 +617,7 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
         }
         if stage.regions && ((g.w, g.h) == (1920, 1080) || (g.w, g.h) == (960, 540)) {
             let k = 1920 / g.w;
-            for (name, r) in REGIONS {
+            for (name, r) in &view.regions {
                 let r = r.map(|v| v / k);
                 let (gm, bm) = (region_mean(&g, full, r), region_mean(&b, full, r));
                 println!("  region {name}: game {:.3} {:.3} {:.3}, barrel {:.3} {:.3} {:.3}", gm[0], gm[1], gm[2], bm[0], bm[1], bm[2]);
@@ -604,13 +632,13 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
         }
     }
     if let Some(m) = &masks {
-        strip(game, barrel, m);
+        strip(&view, game, barrel, m);
     }
     if let (Some(m), Ok(d)) = (&masks, load_f32(&barrel.join("depth"))) {
         coverage(m, &d);
     }
     if let Some(m) = &masks {
-        normals(game, barrel, m, pictures);
+        normals(&view, game, barrel, m, pictures);
     }
     match tone {
         Some(t) => println!("pixels: tone mean abs {t:.2}"),
@@ -643,5 +671,16 @@ mod tests {
         s.add(&[1.0, 2.0, 3.0, 1.0], &[2.0, 2.0, 1.0, 1.0]);
         assert_eq!(s.mean_abs(1.0), 1.0);
         assert!((s.rel() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_view_file_reads_back() {
+        let text = "# a comment\nstage tone 2078-2078_rt1920x1080.90#7  # after a space\nmasks 1-2_rt.19#15.depth\nview 1 0 0 0 1 0 0 0 1\nregion mid_tree 1 2 3 4\n";
+        let v = View::parse(text).unwrap();
+        assert_eq!(v.stages["tone"], "2078-2078_rt1920x1080.90#7");
+        assert_eq!(v.masks.as_deref(), Some("1-2_rt.19#15.depth"));
+        assert_eq!(v.rows[1][1], 1.0);
+        assert_eq!(v.regions, vec![("mid tree".to_string(), [1, 2, 3, 4])]);
+        assert!(View::parse("stage only").is_err());
     }
 }

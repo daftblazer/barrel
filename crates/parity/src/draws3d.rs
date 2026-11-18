@@ -239,6 +239,51 @@ fn palette_diff(game: &[f32], barrel: &[M], simulated: &[usize]) -> ((f32, usize
     (t, r, swing)
 }
 
+/// The 3 x 3 part of a bone matrix as rows, and its inverse.
+fn rot_rows(m: &M) -> [[f64; 3]; 3] {
+    std::array::from_fn(|r| std::array::from_fn(|c| f64::from(m[c * 4 + r])))
+}
+
+fn inverse3(a: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+    let cof = |r: usize, c: usize| {
+        let (r1, r2, c1, c2) = ((r + 1) % 3, (r + 2) % 3, (c + 1) % 3, (c + 2) % 3);
+        a[r1][c1] * a[r2][c2] - a[r1][c2] * a[r2][c1]
+    };
+    let det: f64 = (0..3).map(|c| a[0][c] * cof(0, c)).sum();
+    (det.abs() > 1.0e-12).then(|| std::array::from_fn(|r| std::array::from_fn(|c| cof(c, r) / det)))
+}
+
+/// The rigid motion `D` (`p' = R p + t`, render space) that takes Barrel's pose to the game's,
+/// `D = G B^-1` per bone, as the median over the bones: the yaw in degrees (the rotation about
+/// the vertical, `atan2(R[0][2], R[0][0])`), the displacement `D(c) - c` of the point `c` (in
+/// the game's world, where she stands: a point far from the character makes the translation
+/// ill-conditioned, a bone's tiny rotation difference times the distance to the origin), and the
+/// largest spread (10th to 90th percentile) of the displacement over the bones, which is how far
+/// the poses differ besides the motion (0 when she stands in the same pose elsewhere). The
+/// `simulated` bones are left out.
+fn rigid_fit(game: &[f32], barrel: &[M], simulated: &[usize], c: [f64; 3]) -> Option<(f64, [f64; 3], f64)> {
+    let c = [-c[0], c[1], c[2]];
+    let mut each: Vec<[f64; 4]> = Vec::new();
+    for (k, b) in barrel.iter().enumerate().filter(|(k, _)| !simulated.contains(k)) {
+        let Some(g) = game_bone(game, k).map(|g| mirrored(&g)) else { continue };
+        let (ag, ab) = (rot_rows(&g), rot_rows(b));
+        let Some(abi) = inverse3(&ab) else { continue };
+        let r: [[f64; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|c| ag[i][c] * abi[c][j]).sum()));
+        let d: [f64; 3] = std::array::from_fn(|i| f64::from(g[12 + i]) - (0..3).map(|j| r[i][j] * f64::from(b[12 + j])).sum::<f64>() + (0..3).map(|j| r[i][j] * c[j]).sum::<f64>() - c[i]);
+        each.push([r[0][2].atan2(r[0][0]).to_degrees(), -d[0], d[1], d[2]]);
+    }
+    if each.is_empty() {
+        return None;
+    }
+    let at = |c: usize, q: f64| {
+        let mut v: Vec<f64> = each.iter().map(|e| e[c]).collect();
+        v.sort_by(f64::total_cmp);
+        v[((v.len() - 1) as f64 * q).round() as usize]
+    };
+    let spread = (1..4).map(|c| at(c, 0.9) - at(c, 0.1)).fold(0.0, f64::max);
+    Some((at(0, 0.5), [at(1, 0.5), at(2, 0.5), at(3, 0.5)], spread))
+}
+
 /// `S * m * S` with S the x mirror Barrel's render space applies.
 fn mirrored(m: &M) -> M {
     let mut o = *m;
@@ -472,6 +517,12 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
             let ((t, tk), (r, rk), swing) = palette_diff(&g.palette, &bdraws[j].bones, &bdraws[j].simulated);
             if std::env::var_os("DIFF3D_POSES").is_some() {
                 println!("  skinned draw #{} ({} indices): translation {t:.3} (bone {tk}), rotation {r:.4} (bone {rk}), {swing} swing bones left out", g.n, g.count);
+                if std::env::var("DIFF3D_POSES").is_ok_and(|v| v == "fit") {
+                    let at: Vec<f64> = std::env::var("DIFF3D_FIT_AT").unwrap_or_default().split(',').filter_map(|v| v.parse().ok()).collect();
+                    if let Some((yaw, d, spread)) = <[f64; 3]>::try_from(at).ok().and_then(|at| rigid_fit(&g.palette, &bdraws[j].bones, &bdraws[j].simulated, at)) {
+                        println!("    fit: yaw {yaw:.3} degrees, her point moves {:.2} {:.2} {:.2} (game world), spread {spread:.2}", d[0], d[1], d[2]);
+                    }
+                }
                 // DIFF3D_POSES=bones: the worst bone's two matrices (the game's mirrored into
                 // Barrel's space), for working out what turns it.
                 if std::env::var("DIFF3D_POSES").is_ok_and(|v| v == "bones") && t > 1.0 {
