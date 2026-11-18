@@ -1444,7 +1444,11 @@ drawn with `ObjectGrassPBS`. Vertex program 1 (the one with the pigment map):
   where h > 0.01 (the top corners): the card bends on an arc and keeps its height. With the
   measured (a, a, a/2, −a/2) the top leans steadily toward +x +z (about 0.01 · a · √2 of the
   height: some 8°) and circles by a/2 · 0.01 as Osc turns. `barrel` does exactly this
-  (`model.vert` flag 16384, sway slots 0 and 1), the strength held at 9.6.
+  (`model.vert` flag 16384, sway slots 0 and 1), the strength held at 9.6. The height is the
+  whole card's: the game's vertices all sit at the plant's foot, their `PSIZE` half the width
+  to either side and 0 or the height up (64 bytes a vertex: the foot, a 15000 the program
+  does not use, `PSIZE`, normal, tangent, the card's place in the atlas), and Barrel's cards
+  are built the same (anchored at their middles they leaned half as far).
 - **Pigment.** `sPigmentMap` (t9) is sampled at the plant's ground point, `(x, z) -
   g_vFieldRange.xy` over `g_vFieldRange.zw` (cb0[41]), clamped: a map over the whole field.
 - **Billboard.** `mBbL2W` (cb0[12] to cb0[14]) turns the corner; the card's normal and tangent

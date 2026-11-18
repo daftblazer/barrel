@@ -521,8 +521,10 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (update 0x1407509e0, player advance 0x1406c2870, evaluate 0x1406c4280 into the animation
   evaluator 0x140ac01b0, joints to world in 0x1406eb430). The engine's swing class with
   named parameters (0x14086f2e0: Gravity, SpringCoef, Damping, WindResistance, ...) never
-  runs in the field. Not done: the tall grass (`BARREL_PLANT_WIND` gives a capture's wind),
-  the hanging lamps, and Ryza's hair, skirt and jacket hem ("Ryza in the field" below; the
+  runs in the field. The plants lean as the game's now that their cards are anchored at the
+  foot (docs/shading.md, "the plants"): with a capture's wind (`BARREL_PLANT_WIND`) the
+  left view's grass strip went from 23.5 to 12.3 and no other sway phase comes near (24),
+  the board to 3.30 / 3.75 / 4.38. Not done: the hanging lamps, and Ryza's hair, skirt and jacket hem ("Ryza in the field" below; the
   `SWGQ` reader is 0x1407a6d50, 15 files read at the title and at the field's load, its
   users not followed).
 - **Brightness and bloom.** The brightness and saturation are the game's now (above,
