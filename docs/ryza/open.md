@@ -19,7 +19,10 @@ checks are `runchecks docs/ryza/checks.txt` (43 rows; frames are the exact captu
    backdrop"; docs/events.md, "Timing and loops"): diff3d at frame 1400 matches 615 of 995
    draws, all three characters' bones within 0.012 units (rows `title-3d-poses-1400`,
    `title-3d-props-1400`), the event's commands pair with the game's log. Left: the cloth
-   submeshes are drawn rigid on one joint (the game's cloth and swing simulation); a head turn
+   submeshes hang at rest, carried by their parent joint (built from the model's control
+   points, docs/formats.md "Cloth pieces"; the game's cloth and swing simulation moves the
+   points and is not done; the pieces of sections 0x30002 and 0x30005, in 8 of the 37
+   character models with cloth, are still drawn rigid on one joint); a head turn
    (`s88`) takes its first angle only, at once (the title's `s88 0 -7 0 0` is 7 degrees about
    the model's x axis in the head's bind frame; the opening's `s88 0 0 56 -4` and the timed
    `s90` are the way to the other two); `npc34a`'s two draws have no Barrel bones to compare.

@@ -843,7 +843,35 @@ other numbers there: dense values from 0 up past their palette's size (80 values
 palette of 5), even with zero weight counted out. These look like the cloth and physics
 parts the containers' `.swg` and `.rigbin` files drive. The reader treats a submesh as
 palette-skinned only when every index is a multiple of 3 and keeps the others rigid on
-their palette's first joint for now.
+their palette's first joint, except the cloth pieces it reads (next).
+
+**Cloth pieces** (Ryza DX; the `NUNO` chunk, version 0036). The chunk is `{u32 section
+count}` then sections `{type, size, entry count}`; type 0x30003's entries are the cloth
+pieces (0x30002 and 0x30005 exist in a few models and are not read). An entry: a header
+(word 0 the parent bone with the top bit set, word 1 the point count `n`, words 2, 3, 5 and
+6 counts `a`, `b`, `d`, `e`, the rest the simulation's settings), `n` control points `{x, y,
+z, 1}` in the parent joint's space, `n` links of 24 bytes (the neighbours left, right, up
+and down as point numbers, -1 none, and two floats) and a tail of `48 a + 4 b + 8 d + 12 e`
+bytes. The header is 0x14c bytes in 34 of the 37 character models with cloth and 0x180 in
+3; the reader takes the size that walks the section to its exact end.
+
+A cloth submesh is named by its mesh group entry (section 0x10009): the word after the
+shader's name is 1 and the next is 20000 plus the piece's number. Its layout holds no
+positions: as the game's vertex program reads it (the control points arrive in a constant
+array, `vCtrl`, where the file's values show within the simulation's sag),
+
+- four index attributes (BLENDINDICES, PSIZE, FOG, TEXCOORD5) each name four points;
+- POSITION's four floats weigh each group's points into a corner `P_g`, BINORMAL's weigh
+  them into a lean `Q_g`;
+- BLENDWEIGHT mixes the corners into the vertex's place `c = Σ w_g P_g` and the leans into
+  a direction `d0 = Σ w_g Q_g`; COLOR1 mixes the corners into the other direction `d1`;
+- the vertex is `c + cross(d1, d0) × NORMAL.w`, its normal `normalize(d0 n.x + d1 n.y +
+  cross(d1, d0) n.z)` (the tangent likewise), then the parent joint's matrix.
+
+A vertex whose PSIZE group is all zero is an ordinary one (the row sewn to the body): a
+position in the parent joint's space, skinned through the palette with its weights.
+`barrel` builds the cloth vertices once from the points at rest
+(`Geometry::cloth_of`, `Cloth::place`) and lets the parent joint carry them.
 
 A layout with bone indices and no weights (Ryza DX's field objects that move: a windmill, a
 moored boat) puts each vertex wholly on its first index's joint. One submesh can hold parts

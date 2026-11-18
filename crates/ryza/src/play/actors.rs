@@ -204,7 +204,8 @@ impl Files {
         // A person's entries are `<TAG>_MODEL`, a prop's the bare `<TAG>`.
         let suffix = if self.prop.is_some() { "" } else { "_MODEL" };
         let skeleton = G1m::parse(named(format!("{}{suffix}.g1m", self.entry))?)?.skeleton.ok_or("the model has no skeleton")?;
-        let geometry = G1m::parse(named(format!("{}{suffix}_default.g1m", self.entry))?)?.geometry.ok_or("the mesh has no geometry")?;
+        let mut geometry = G1m::parse(named(format!("{}{suffix}_default.g1m", self.entry))?)?.geometry.ok_or("the mesh has no geometry")?;
+        place_cloths(&mut geometry, &skeleton);
         let face = self.face.as_ref().map(|a| barrel_ryza::face::Face::new(&skeleton, a));
         let swing = unmoved_joints(&skeleton, self.anims.values(), face.as_ref());
         Ok(Actor { slot: self.slot, size: self.size, skeleton, geometry, pack: G1t::parse(&self.pack)?, anims: &self.anims, bases: &self.bases, swing, face, instance: 0, prop: self.prop, head: Vec::new() })
@@ -392,6 +393,18 @@ pub fn add_character(
         }
     }
     Ok(scene.draws.len() - first)
+}
+
+// STAND-IN: The cloth pieces hang at rest, carried by their parent joints; the real thing is the game's cloth simulation moving their control points.
+/// Move a model's cloth pieces' points from their parent joints' space into the model's, so
+/// its cloth submeshes are built where they hang at rest (`Geometry::cloth_of`).
+pub fn place_cloths(geometry: &mut Geometry, skeleton: &Skeleton) {
+    let bind = barrel_engine::skin::bind_world(skeleton);
+    for cloth in &mut geometry.cloths {
+        if let Some((j, m)) = skeleton.joint(cloth.parent_bone).and_then(|j| Some((j, bind.get(j)?))) {
+            cloth.place(j as u32, [m.row(0).into(), m.row(1).into(), m.row(2).into()]);
+        }
+    }
 }
 
 /// The joints that stay at their bind pose in every one of `anims` (sampled eight times over each)

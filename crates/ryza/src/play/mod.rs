@@ -656,7 +656,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     if let (Some((at, turn, motion, time)), Some((model, _, motions)), Some(rp)) = (&a.ryza, &ryza_files, &ryza_pack) {
         let model = Elixir::parse(model)?;
         let skeleton = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL.g1m").ok_or("no PC00A_MODEL.g1m")?)?.skeleton.ok_or("Ryza's model has no skeleton")?;
-        let mesh = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL_default.g1m").ok_or("no PC00A_MODEL_default.g1m")?)?;
+        let mut mesh = G1m::parse(barrel_engine::field::named(&model, "PC00A_MODEL_default.g1m").ok_or("no PC00A_MODEL_default.g1m")?)?;
+        if let Some(g) = mesh.geometry.as_mut() {
+            actors::place_cloths(g, &skeleton);
+        }
         let geometry = mesh.geometry.as_ref().ok_or("Ryza's mesh has no geometry")?;
         let mut anims = Vec::new();
         for (n, bytes) in motions {

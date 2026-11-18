@@ -228,6 +228,77 @@ pub struct Geometry<'a> {
     pub lights: Vec<Light>,
     /// Sections not decoded yet: (type, count, body).
     pub other_sections: Vec<(u32, u32, &'a [u8])>,
+    /// The cloth pieces' control points (the model's `NUNO` chunk), which the cloth
+    /// submeshes' vertices are built from ([`Geometry::cloth_of`]).
+    pub cloths: Vec<Cloth>,
+}
+
+/// One cloth piece (an entry of the `NUNO` chunk's section 0x30003): a grid of control
+/// points the game's simulation moves; a cloth submesh's vertices hang between them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cloth {
+    /// The bone (as [`Skeleton::joint`] takes it) whose space the points are stored in.
+    pub parent_bone: u32,
+    /// The points at rest, in the parent's space until [`Cloth::place`] moves them.
+    pub points: Vec<[f32; 3]>,
+    /// Once placed: the parent's joint and its bind matrix (three rows of four), which took
+    /// the points into the model's space and takes the piece's ordinary vertices there too.
+    pub placed: Option<(u32, [[f32; 4]; 3])>,
+}
+
+impl Cloth {
+    /// Move the points from the parent joint's space into the model's by the parent's bind
+    /// matrix (`rows`: its first three rows; `joint`: the parent in the skeleton's joints).
+    pub fn place(&mut self, joint: u32, rows: [[f32; 4]; 3]) {
+        if self.placed.is_none() {
+            for p in &mut self.points {
+                *p = apply(&rows, *p, 1.0);
+            }
+            self.placed = Some((joint, rows));
+        }
+    }
+}
+
+/// A point (`w` 1) or direction (`w` 0) through a matrix's first three rows.
+fn apply(rows: &[[f32; 4]; 3], p: [f32; 3], w: f32) -> [f32; 3] {
+    std::array::from_fn(|r| rows[r][0] * p[0] + rows[r][1] * p[1] + rows[r][2] * p[2] + rows[r][3] * w)
+}
+
+/// The cloth pieces of a `NUNO` chunk's body: section 0x30003's entries in order. An entry
+/// is a header (the parent bone with the top bit set, the point count `n`, then counts
+/// `a`, `b`, a number, `d`, `e` and the simulation's settings), `n` points of four floats,
+/// `n` links of 24 bytes (the neighbours left, right, up and down, two floats) and a tail of
+/// `48 a + 4 b + 8 d + 12 e` bytes. The header is 0x14c bytes in 34 of Ryza DX's character
+/// models and 0x180 in 3 (Ryza's among them), under one chunk version: what tells them
+/// apart is not found, so the size that walks the section's entries to its exact end is
+/// taken. Anything that fits neither reads as no cloth.
+fn parse_cloths(body: &[u8]) -> Vec<Cloth> {
+    let word = |at: usize| body.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let read = |header: usize| -> Option<Vec<Cloth>> {
+        let mut out = Vec::new();
+        let mut at = 4;
+        for _ in 0..word(0)? {
+            let (kind, size, entries) = (word(at)?, word(at + 4)? as usize, word(at + 8)? as usize);
+            let end = at.checked_add(size).filter(|&e| e <= body.len() && size >= 12)?;
+            if kind == 0x30003 {
+                let mut p = at + 12;
+                for _ in 0..entries {
+                    let n = word(p + 4)? as usize;
+                    let tail = 48 * word(p + 8)? as usize + 4 * word(p + 12)? as usize + 8 * word(p + 20)? as usize + 12 * word(p + 24)? as usize;
+                    let next = p.checked_add(header + n.checked_mul(40)? + tail).filter(|&e| e <= end)?;
+                    let points = (0..n).map(|k| std::array::from_fn(|i| f32::from_bits(word(p + header + 16 * k + 4 * i).unwrap_or(0)))).collect();
+                    out.push(Cloth { parent_bone: word(p)? & 0x7fff_ffff, points, placed: None });
+                    p = next;
+                }
+                if p != end {
+                    return None;
+                }
+            }
+            at = end;
+        }
+        Some(out)
+    };
+    read(0x14c).or_else(|| read(0x180)).unwrap_or_default()
 }
 
 /// A lighting material (G1MG section 0x10001): what the field light is scaled by.
@@ -441,6 +512,7 @@ fn parse_geometry(body: &[u8]) -> Result<Geometry<'_>, Error> {
         mesh_groups: Vec::new(),
         lights: Vec::new(),
         other_sections: Vec::new(),
+        cloths: Vec::new(),
     };
     let mut at = 36;
     for _ in 0..sections {
@@ -688,6 +760,9 @@ impl<'a> G1m<'a> {
             chunks.push(chunk);
             at += len;
         }
+        if let (Some(g), Some(c)) = (geometry.as_mut(), chunks.iter().find(|c| &c.magic == b"ONUN" && &c.version == b"6300")) {
+            g.cloths = parse_cloths(c.body);
+        }
         Ok(G1m { version, chunks, geometry, skeleton })
     }
 }
@@ -787,13 +862,21 @@ impl Geometry<'_> {
             _ => return Err(Error::Corrupt("weights are not floats")),
         };
         let mut out = Vec::with_capacity(hi - lo);
+        // A cloth piece: the vertices built from its points ride its parent joint; its
+        // ordinary ones (no second group of points) are skinned through the palette.
+        let cloth = self.cloth_of(s).and_then(|c| Some((c.placed?.0, find(Semantic::PointSize)?)));
         // Submeshes whose indices are not palette slots stay rigid on the palette's first
         // joint until what their numbers mean is worked out.
-        if !self.palette_indexed(s) {
+        if cloth.is_none() && !self.palette_indexed(s) {
             let joint = palette.first().map_or(0, |r| r.joint);
             return Ok(Some(vec![([joint; 4], [1.0, 0.0, 0.0, 0.0]); hi - lo]));
         }
         for v in lo..hi {
+            if let Some((joint, group)) = cloth
+                && bone_indices(buffer(group), group, v) != [0; 4] {
+                    out.push(([joint; 4], [1.0, 0.0, 0.0, 0.0]));
+                    continue;
+                }
             let b = bone_indices(bvb, bones, v);
             let mut w = [0f32; 4];
             for (i, x) in w.iter_mut().enumerate().take(count) {
@@ -810,6 +893,60 @@ impl Geometry<'_> {
             out.push((j, w));
         }
         Ok(Some(out))
+    }
+
+    /// The cloth piece a submesh hangs on, if it is a cloth submesh whose piece is read and
+    /// placed: its mesh group entry's first word is 1 (cloth) and its second 20000 plus the
+    /// piece's number.
+    pub fn cloth_of(&self, s: &Submesh) -> Option<&Cloth> {
+        let k = self.submeshes.iter().position(|x| (x.index_buffer, x.index_start, x.index_count) == (s.index_buffer, s.index_start, s.index_count))? as u32;
+        let group = self.mesh_groups.iter().find(|m| m.submeshes.contains(&k) && m.words[0] & 0xffff == 1 && m.words[1] >= 20000)?;
+        self.cloths.get((group.words[1] - 20000) as usize).filter(|c| c.placed.is_some())
+    }
+
+    /// A cloth vertex's position and normal, as the game's vertex shader builds them from
+    /// the control points `c`: the four index attributes (bone indices, PSIZE, FOG,
+    /// TEXCOORD5) each name four points; the "position" weighs a group's points into one
+    /// corner and the binormal into that corner's lean; the blend weights mix the corners
+    /// into the vertex's place on the sheet and the leans into one direction along it, the
+    /// second colour mixes the corners into the other direction; the vertex stands off the
+    /// sheet along their cross product by the normal's fourth word, and its normal is the
+    /// stored one in that frame. None for a vertex with no second group: an ordinary skinned
+    /// vertex (the piece's row sewn to the body), kept in the parent joint's space.
+    fn cloth_vertex(&self, layout: &Layout, cloth: &Cloth, v: usize) -> Option<([f32; 3], [f32; 3])> {
+        let find = |sem: Semantic, layer: u8| layout.attributes.iter().find(|a| a.semantic == sem && a.layer == layer);
+        let buffer = |a: &Attribute| &self.vertex_buffers[layout.buffers[a.buffer as usize] as usize];
+        let floats = |a: &Attribute| -> Option<[f32; 4]> {
+            let vb = buffer(a);
+            let at = v * vb.stride + a.offset as usize;
+            (a.kind == AttrType::Float4).then_some(())?;
+            let b = vb.data.get(at..at + 16)?;
+            Some(std::array::from_fn(|i| f32::from_le_bytes(b[4 * i..4 * i + 4].try_into().unwrap())))
+        };
+        let groups = [find(Semantic::BoneIndices, 0)?, find(Semantic::PointSize, 0)?, find(Semantic::Other(11), 0)?, find(Semantic::TexCoord, 5)?];
+        let groups = groups.map(|a| bone_indices(buffer(a), a, v));
+        if groups[1] == [0; 4] {
+            return None;
+        }
+        let (along, lean) = (floats(find(Semantic::Position, 0)?)?, floats(find(Semantic::Other(7), 0)?)?);
+        let (mix, across, normal) = (floats(find(Semantic::Weights, 0)?)?, floats(find(Semantic::Color, 1)?)?, floats(find(Semantic::Normal, 0)?)?);
+        let add = |a: [f32; 3], b: [f32; 3], k: f32| [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+        let (mut centre, mut d0, mut d1) = ([0.0; 3], [0.0; 3], [0.0; 3]);
+        for (g, group) in groups.iter().enumerate() {
+            let (mut corner, mut leaning) = ([0.0; 3], [0.0; 3]);
+            for (i, &point) in group.iter().enumerate() {
+                let p = *cloth.points.get(point as usize)?;
+                corner = add(corner, p, along[i]);
+                leaning = add(leaning, p, lean[i]);
+            }
+            centre = add(centre, corner, mix[g]);
+            d1 = add(d1, corner, across[g]);
+            d0 = add(d0, leaning, mix[g]);
+        }
+        let off = [d1[1] * d0[2] - d1[2] * d0[1], d1[2] * d0[0] - d1[0] * d0[2], d1[0] * d0[1] - d1[1] * d0[0]];
+        let n = add(add(add([0.0; 3], d0, normal[0]), d1, normal[1]), off, normal[2]);
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        Some((add(centre, off, normal[3]), if len > 0.0 { n.map(|x| x / len) } else { n }))
     }
 
     /// How many vertices a layout's buffers hold.
@@ -842,10 +979,22 @@ impl Geometry<'_> {
         let lo = ib.iter().copied().min().unwrap_or(0) as usize;
         let hi = ib.iter().copied().max().map_or(0, |h| h as usize + 1);
         m.first_vertex = lo;
+        let cloth = self.cloth_of(s);
         for v in lo..hi {
-            m.positions.push(read(v, pos, 3)?);
-            if let Some(a) = nrm {
-                m.normals.push(read(v, a, 3)?);
+            // A cloth vertex is built from its piece's control points.
+            if let Some((p, n)) = cloth.and_then(|c| self.cloth_vertex(layout, c, v)) {
+                m.positions.push(p);
+                m.normals.push(n);
+            } else if let Some((_, rows)) = cloth.and_then(|c| c.placed.as_ref()) {
+                m.positions.push(apply(rows, read(v, pos, 3)?, 1.0));
+                if let Some(a) = nrm {
+                    m.normals.push(apply(rows, read(v, a, 3)?, 0.0));
+                }
+            } else {
+                m.positions.push(read(v, pos, 3)?);
+                if let Some(a) = nrm {
+                    m.normals.push(read(v, a, 3)?);
+                }
             }
             if let Some(a) = uv {
                 let t = read(v, a, 2)?;
@@ -894,6 +1043,40 @@ impl Geometry<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A cloth section of one entry: `n` points, a header of `header` bytes, no tail.
+    fn cloth_section(header: usize, points: &[[f32; 3]]) -> Vec<u8> {
+        let mut entry = vec![0u8; header];
+        entry[..4].copy_from_slice(&0x8000_0007u32.to_le_bytes());
+        entry[4..8].copy_from_slice(&(points.len() as u32).to_le_bytes());
+        for p in points {
+            entry.extend(p.iter().chain(&[1.0]).flat_map(|f| f.to_le_bytes()));
+        }
+        entry.extend(std::iter::repeat_n(0u8, 24 * points.len()));
+        let mut body = 1u32.to_le_bytes().to_vec();
+        body.extend([0x30003u32, entry.len() as u32 + 12, 1].iter().flat_map(|w| w.to_le_bytes()));
+        body.extend(entry);
+        body
+    }
+
+    #[test]
+    fn cloth_points_under_either_header() {
+        let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+        for header in [0x14c, 0x180] {
+            let cloths = parse_cloths(&cloth_section(header, &points));
+            assert_eq!(cloths, vec![Cloth { parent_bone: 7, points: points.to_vec(), placed: None }]);
+        }
+        assert!(parse_cloths(&cloth_section(0x160, &points)).is_empty());
+    }
+
+    #[test]
+    fn placing_a_cloth_moves_its_points_once() {
+        let mut c = Cloth { parent_bone: 7, points: vec![[1.0, 2.0, 3.0]], placed: None };
+        let rows = [[0.0, 1.0, 0.0, 10.0], [1.0, 0.0, 0.0, 20.0], [0.0, 0.0, 1.0, 30.0]];
+        c.place(4, rows);
+        c.place(4, rows);
+        assert_eq!((c.points[0], c.placed), ([12.0, 21.0, 33.0], Some((4, rows))));
+    }
 
     #[test]
     fn bone_ids_go_through_the_index_map() {
