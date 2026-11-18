@@ -216,6 +216,10 @@ draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is 
   --motion-time 2.2` (0.19). The height comes from the terrain under her, read on its cells'
   triangles as the game does (`Heightmap::at_faces`: the fit had her 1.36 units low in the turn
   view on the bilinear height, and 0.02 on the triangles).
+- `tools/pixels.sh gate|turn|left` renders one view of the board with its clocks, camera and
+  her place and scores it (the views' files are `docs/ryza/views/`; usage in its header): the
+  three views are the gate, the windmill past the house (the turn view) and the cliffs and
+  tall grass with the river far off (the left view).
 - `BARREL_DUMP_STAGES=<dir>` on a Ryza field render (offscreen) writes Barrel's targets in the
   same layout (`<name>.f32`, `<name>.txt`: `width height channels format`, RGBA floats, rows
   top to bottom) and `tone.png`, in the game's units: the scene is stored at half
