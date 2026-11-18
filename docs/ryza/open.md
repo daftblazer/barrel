@@ -500,7 +500,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   at the gate: 120,884 plants in 1,432 draws, 4.5 ms a frame on the PC at 1280 × 720. The
   game's plant program mixes the vertex colour with a field-wide pigment map by
   `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the plants"); which texture is the pigment
-  and the scale's values are set at run time, not read. The title's capture has no
+  and the scale's values are set at run time, not read. What is left of the grass on the pixel board is fine detail: the
+  left view's grass strip (y 480 to 600) is 12.3 of tone error a pixel but 3.6 with both pictures
+  blurred by 6 pixels, the two line up to the pixel (no half-pixel shift does better), and their
+  sharpness (mean Laplacian 63.1 against 64.1) and spread (standard deviation 54.3 against 54.0)
+  agree: the blades differ one by one, not in shade. Over the whole board half the error is
+  such detail (4.08 against 2.02 blurred on the left view). The title's capture has no
   other grass draws: whatever grass shows on the ground itself is the terrain's own shading.
 - **Things in front of the camera.** The game leaves a placed object that stands right in
   front of the camera out of the view, while it still casts its shadow: in the left view of

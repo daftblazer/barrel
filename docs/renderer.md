@@ -851,7 +851,8 @@ that something stands in front of (fences, stairs, rocks: 46 draws on the title,
 in Rasenboden, and the townsfolk out of sight), hidden and drawn ones at the same distances
 and of the same draw-distance classes. How it tests is not read: its files hold no occluder
 shapes, and it is not the GPU's occlusion queries (the answer key reports none visible, and
-most objects are drawn). The ground explains most of it: of Rasenboden's 107 objects the
+most objects are drawn; with `RYZA_TRACE_D3D` the game makes only event, timestamp and
+disjoint queries, a few a frame, and no occlusion query or predicate at all). The ground explains most of it: of Rasenboden's 107 objects the
 game hides whole, 92 have the heightmap between the eye and all eight corners of their box,
 against 3 of the 213 it draws whole. Barrel's test (`barrel_ryza::horizon`, a stand-in)
 takes the ground's skyline from the eye: for each of 1,440 directions, the steepest slope
