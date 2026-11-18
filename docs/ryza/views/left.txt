@@ -1,0 +1,24 @@
+# The left view: the same field, camera turned left toward the cliffs and the tall grass (the
+# river far off at the right), frame 2150 of the pixels-left capture. Dump file stems are in
+# the frame's folder. The game leaves the roofed post just in front of the camera out of the
+# view (it still casts its shadow): Barrel's run hides it by name (docs/ryza/open.md).
+stage cloud_map 1643-1643_rt1024x1024.27#4
+stage ao 826-826_rt960x540.27#2
+stage shadow 1625-1627_rt1920x1080.9#15
+stage lit 1628-1631_rt1920x1080.26#4
+stage lit_fogged 1651-1651_rt1920x1080.26#4
+stage sky 1644-1648_rt1920x1080.26#4
+stage scene 1732-1732_rt1920x1080.26#4
+stage bright 1747-1747_rt482x272.26#1
+stage bloom 1752-1752_rt240x135.26#1
+stage tone 1773-1773_rt1920x1080.90#7
+masks 1628-1631_rt1920x1080.19#15.depth
+normal 7-823_rt1920x1080.9#12
+# The capture's mWV rotation.
+view -0.5150395 0 0.8571664  0.11929442 0.990268 0.07167959  -0.84882456 0.139173 -0.51002717
+# Regions (pixels at 1920x1080: left top right bottom).
+region grass 0 420 800 600
+region river 1340 410 1540 500
+region lawn 300 640 800 720
+region path 1100 700 1900 1060
+region cliff 0 300 600 400

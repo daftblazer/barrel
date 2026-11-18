@@ -504,6 +504,21 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   `g_vPigmentMapScale` (docs/shading.md, "Ryza DX: the plants"); which texture is the pigment
   and the scale's values are set at run time, not read. The title's capture has no
   other grass draws: whatever grass shows on the ground itself is the terrain's own shading.
+- **Things in front of the camera.** The game leaves a placed object that stands right in
+  front of the camera out of the view, while it still casts its shadow: in the left view of
+  the pixel board (`docs/ryza/views/left.txt`) the roofed post `obj-A21-S06-POST`, 125 units
+  from the eye over the ground and under the eye's height, has no draw in the G-buffer pass
+  and three in the nearest shadow cascade; in the turn view, 355 units away, it is drawn.
+  `barrel` draws it (it fills a quarter of the picture), so the left view's run hides it by
+  name, shadow and all. The rule is not read: the camera file has no setting for it (the
+  program knows no `camera_ct` name; the field template's note calls it "things in front of
+  the camera turn see-through", with a speed and a radius), and whether it fades or cuts is
+  not known (one frame, 300 frames after the camera stopped).
+- **What moves in the wind.** The trees' branches, the tall grass and the hanging lamps are
+  moved by the game's swing physics, not read ("Ryza in the field" below): on the pixel
+  board a leaf cluster's shadow at the gate lies 40 pixels off, and the foliage edges, the
+  grass blades and the leaf shadows on the path differ in all three views while their
+  regions' mean colours agree to a few percent.
 - **Brightness and bloom.** The brightness and saturation are the game's now (above,
   "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The bloom
   is the game's bright pass and chain (docs/shading.md, "the frame as the game draws it")

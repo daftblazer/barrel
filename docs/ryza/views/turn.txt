@@ -29,3 +29,5 @@ region sea 1050 372 1200 390
 region fence 1010 400 1240 440
 region ornament 1300 370 1350 430
 region deck 1600 850 1800 950
+region glass_shaded 1740 440 1770 480
+region glass_lit 1620 290 1670 330
